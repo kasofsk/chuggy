@@ -1,6 +1,12 @@
 # What a ticket produces, and what is done with it
 
-**Status: PROPOSED** — argued, not built. No slice has landed.
+**Status: IMPLEMENTED** — all four slices landed.
+
+| Slice | State |
+|---|---|
+| 1–2 · the artifact, and the measure blindness it needed | **Landed** |
+| 3 · the wrap-up kind, the generic lease, the merge vocabulary out | **Landed** |
+| 4 · `architecture.md` | **Landed** |
 
 ## The two questions
 
@@ -176,7 +182,7 @@ The invalidation hazard runs in **opposite directions** depending on when the ef
 
 **Can a dependency's artifact change under a dependent?** No — see Part 1. The question dissolves on `terminalsAbsorbing`.
 
-## Sequencing
+## Sequencing, as executed
 
 1. `measure.qnt` first — rung renames, the artifact's measure-blindness test, the descent table re-derived for the `WNone` three-rung drop.
 2. The artifact: the field, set at `work-passed`, the exists-iff-work-passed invariant, and the cross-ticket read.
@@ -206,3 +212,26 @@ What survives: the artifact, on the narrower and honest grounds in Part 1 — cr
 What changed: the hazard is generalized rather than removed, so the environment draw, the two-phase lease and the re-validation path all stay. The deletion is real but smaller — the promotion split and the git vocabulary, not the apparatus.
 
 Caught before any code was written, by asking what the replacement invariant would actually be checked against.
+
+### Correction — 2026-08-14 (two defects the suites did not catch)
+
+Both slices landed green on the unit and witness suites and were then found
+wrong by the random layer, which is worth recording because it is the second
+time in this repo that an all-green suite has hidden something.
+
+**A `WNone` completion left live tasks on a Done ticket.** `completeTicket`
+does not retire a task set — on the lease path the set is already retired
+when the ticket enqueues — so the route that skips the wrap-up phases skipped
+the retirement too. The gate reddened on one run in fourteen and was clean on
+the other thirteen; reproducing it took 25,000 samples. The fix is six words;
+finding it was not. `chuggy_witness_wrapup_none_test`'s empty-task-set
+conjunct now makes it a deterministic one-line failure.
+
+**`wrapUpIsolation`'s completeness arm assumed every completion was an
+attempt.** It forbade the `ticket-done` label on any step carrying no
+attribution. A `WNone` completion resolves no wrap-up attempt and so
+legitimately carries none. The arm now permits exactly that case and
+constrains it to tickets whose kind is `WNone`.
+
+Neither is a flaw in the design above; both are the design meeting parts of
+the machine written before it existed.
