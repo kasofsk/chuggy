@@ -8,27 +8,10 @@
 #
 # Run:  .githooks/pre-commit.test.sh
 set -eu
-export LC_ALL=C
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/../.chug/tasks/_suite.sh"
 SUT="$HERE/pre-commit"
-
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
-
-pass=0
-fail=0
-check() { # <name> <expected-rc> <actual-rc> <must-contain>
-	name="$1"; want="$2"; got="$3"; needle="$4"
-	if [ "$got" = "$want" ] && grep -qF "$needle" "$OUT"; then
-		echo "ok   - $name (rc=$got)"
-		pass=$((pass + 1))
-	else
-		echo "FAIL - $name: rc want=$want got=$got; expected output to contain: $needle"
-		echo "----- output -----"; cat "$OUT"; echo "------------------"
-		fail=$((fail + 1))
-	fi
-}
 
 R="$WORK/repo"
 
@@ -97,5 +80,4 @@ RC=$?
 set -e
 check "outside a checkout the hook fails open" 0 "$RC" "skipping"
 
-echo "pre-commit.test.sh: $pass passed, $fail failed"
-[ "$fail" -eq 0 ]
+done_ "pre-commit.test.sh"

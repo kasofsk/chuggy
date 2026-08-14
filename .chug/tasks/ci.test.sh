@@ -11,28 +11,12 @@
 #
 # Run:  .chug/tasks/ci.test.sh
 set -eu
-export LC_ALL=C
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/_suite.sh"
 SUT="$HERE/ci.sh"
-
-WORK="$(mktemp -d)"
 BARE="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$BARE"' EXIT
-
-pass=0
-fail=0
-check() { # <name> <expected-rc> <actual-rc> <must-contain>
-	name="$1"; want="$2"; got="$3"; needle="$4"
-	if [ "$got" = "$want" ] && grep -qF "$needle" "$OUT"; then
-		echo "ok   - $name (rc=$got)"
-		pass=$((pass + 1))
-	else
-		echo "FAIL - $name: rc want=$want got=$got; expected output to contain: $needle"
-		echo "----- output -----"; cat "$OUT"; echo "------------------"
-		fail=$((fail + 1))
-	fi
-}
 
 R="$WORK/repo"
 
@@ -136,5 +120,4 @@ RC=$?
 set -e
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
 
-echo "ci.test.sh: $pass passed, $fail failed"
-[ "$fail" -eq 0 ]
+done_ "ci.test.sh"

@@ -24,7 +24,7 @@
 #      with a quoted delimiter. Both are measured below rather than assumed:
 #      the first agrees between the shells and the second expands in neither, so
 #      flagging them would be noise of exactly the kind that gets a gate tuned
-#      away. 3b is the live shape from .chug/tasks/gcp-proof.test.sh.
+#      away. 3b is a shape the predecessor really carried.
 #   4. The whole tree is clean, in the gate's own default mode. That is the
 #      claim the CI wiring makes, and it is worth one assertion rather than a
 #      reader's trust.
@@ -47,24 +47,8 @@
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/_suite.sh"
 SUT="$HERE/check-shell-quoting.sh"
-
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
-
-pass=0
-fail=0
-check() { # <name> <expected-rc> <actual-rc> <output-file> <must-contain>
-	name="$1"; want="$2"; got="$3"; out="$4"; needle="$5"
-	if [ "$got" = "$want" ] && grep -qF "$needle" "$out"; then
-		echo "ok   - $name (rc=$got)"
-		pass=$((pass + 1))
-	else
-		echo "FAIL - $name: rc want=$want got=$got; expected output to contain: $needle"
-		echo "----- output -----"; cat "$out"; echo "------------------"
-		fail=$((fail + 1))
-	fi
-}
 
 run_sut() { # <arg>... -> writes rc to $RC, output to $OUT
 	OUT="$WORK/out"
@@ -88,20 +72,20 @@ CLEAN="no quote-in-default"
 	echo 'echo "$HOST_ROOT_PROBE"'
 } > "$WORK/broken.sh"
 run_sut "$WORK/broken.sh"
-check "an apostrophe in a \${VAR:-word} default is a finding" 1 "$RC" "$OUT" "broken.sh:2:"
+check "an apostrophe in a \${VAR:-word} default is a finding" 1 "$RC" "broken.sh:2:"
 
 # 1b. The colon-less operator. bash reads the word of `${V-w}` exactly as it
 #     reads `${V:-w}`, so a gate that saw only the colon form would pass the
 #     reported bug back with one character removed.
 echo "MSG=\"max is '\${WORKER_SLOTS_MAX-<unset: this node${APOSTROPHE}s CPU count>}'\"" > "$WORK/nocolon.sh"
 run_sut "$WORK/nocolon.sh"
-check "an apostrophe in a \${VAR-word} default is a finding" 1 "$RC" "$OUT" "nocolon.sh:1:"
+check "an apostrophe in a \${VAR-word} default is a finding" 1 "$RC" "nocolon.sh:1:"
 
 # 1c. A positional parameter, which is the commonest default expansion in this
 #     tree (30+ sites, `.chug/tasks/ci.sh` and `.githooks/pre-commit` among them).
 echo "LABEL=\"stage \${1:-the caller${APOSTROPHE}s own}\"" > "$WORK/positional.sh"
 run_sut "$WORK/positional.sh"
-check "an apostrophe in a \${1:-word} default is a finding" 1 "$RC" "$OUT" "positional.sh:1:"
+check "an apostrophe in a \${1:-word} default is a finding" 1 "$RC" "positional.sh:1:"
 
 # 1d. A heredoc body with a plain delimiter. Nothing on the line is quoted, yet
 #     both shells expand it and only bash reads the apostrophe — and this repo
@@ -112,12 +96,12 @@ check "an apostrophe in a \${1:-word} default is a finding" 1 "$RC" "$OUT" "posi
 	echo 'EOF'
 } > "$WORK/heredoc.sh"
 run_sut "$WORK/heredoc.sh"
-check "an apostrophe in a heredoc body default is a finding" 1 "$RC" "$OUT" "heredoc.sh:2:"
+check "an apostrophe in a heredoc body default is a finding" 1 "$RC" "heredoc.sh:2:"
 
 # 2. The fix, which is the prose rewritten rather than the quote escaped.
 sed "s/this node${APOSTROPHE}s CPU count/the CPU count of this node/" "$WORK/broken.sh" > "$WORK/fixed.sh"
 run_sut "$WORK/fixed.sh"
-check "the same message without the apostrophe passes" 0 "$RC" "$OUT" "$CLEAN"
+check "the same message without the apostrophe passes" 0 "$RC" "$CLEAN"
 
 # 3. Command substitution inside a default is correct code in both shells.
 {
@@ -125,7 +109,7 @@ check "the same message without the apostrophe passes" 0 "$RC" "$OUT" "$CLEAN"
 	echo 'echo "$FIXTURE"'
 } > "$WORK/cmdsub.sh"
 run_sut "$WORK/cmdsub.sh"
-check "a \$(…) in a default is not a finding" 0 "$RC" "$OUT" "$CLEAN"
+check "a \$(…) in a default is not a finding" 0 "$RC" "$CLEAN"
 
 # 3b. An UNQUOTED expansion. POSIX has the word expanded like any other word
 #     here, so the shells agree (asserted below) and the quotes are load-bearing
@@ -136,7 +120,7 @@ check "a \$(…) in a default is not a finding" 0 "$RC" "$OUT" "$CLEAN"
 	echo '  sh -c :'
 } > "$WORK/unquoted.sh"
 run_sut "$WORK/unquoted.sh"
-check "an unquoted expansion is not a finding" 0 "$RC" "$OUT" "$CLEAN"
+check "an unquoted expansion is not a finding" 0 "$RC" "$CLEAN"
 
 # 3c. A heredoc with a quoted delimiter performs no expansion at all, so there
 #     is nothing for the two shells to disagree about.
@@ -146,11 +130,11 @@ check "an unquoted expansion is not a finding" 0 "$RC" "$OUT" "$CLEAN"
 	echo 'EOF'
 } > "$WORK/heredoc-quoted.sh"
 run_sut "$WORK/heredoc-quoted.sh"
-check "a quoted-delimiter heredoc is not a finding" 0 "$RC" "$OUT" "$CLEAN"
+check "a quoted-delimiter heredoc is not a finding" 0 "$RC" "$CLEAN"
 
 # 4. The tree the gate is wired over, in its own default mode.
-( cd "$HERE/../.." && "$SUT" > "$WORK/tree.out" 2>&1 ) && RC=0 || RC=$?
-check "the whole tree is clean" 0 "$RC" "$WORK/tree.out" "$CLEAN"
+( cd "$HERE/../.." && "$SUT" > "$OUT" 2>&1 ) && RC=0 || RC=$?
+check "the whole tree is clean" 0 "$RC" "$CLEAN"
 
 # 5. A gate that cannot run says so (rc 2) instead of reporting a clean tree.
 mkdir -p "$WORK/bin"
@@ -159,7 +143,7 @@ set +e
 env PATH="$WORK/bin" /bin/sh "$SUT" "$WORK/fixed.sh" > "$OUT" 2>&1
 RC=$?
 set -e
-check "no awk is a broken gate, not a pass" 2 "$RC" "$OUT" "no \`awk\` on PATH"
+check "no awk is a broken gate, not a pass" 2 "$RC" "no \`awk\` on PATH"
 
 # The premise: a strict POSIX shell accepts the fixture outright, and bash reads
 # it as something else. If this ever stops holding, the gate guards nothing.

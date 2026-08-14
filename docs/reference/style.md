@@ -12,14 +12,9 @@ Every Tier 1 rule is tagged **live** or **pending**, and a pending rule names wh
 
 A pending rule still binds the author — it is the standard, and code that violates it will be rejected in review. What "pending" means is only that *no script enforces it yet*. Nothing here describes machinery that does not exist; that is the doc-claim rule (`docs.md`) applied to this file, and it is the failure this whole apparatus exists to prevent.
 
-**A fired trigger is a debt, and this table says which are owed.** Rules 4
-and 5 name triggers that fired and were not honoured — the second gate
-script arrived at commit 2 and the third shell script shortly after, and
-both gates are still unwritten. They are marked *overdue* rather than
-quietly re-dated, because the failure mode this whole scheme guards against
-is a `pending` that never converts. Rule 12's trigger was simply *wrong*:
-`package.json` arrived to pin the model checker, which has nothing to
-format, so the trigger is restated as the first TypeScript file.
+**Rule 12's trigger was wrong rather than late.** `package.json` arrived to
+pin the model checker, which has nothing to format, so the trigger is
+restated as the first TypeScript file.
 
 **Why so many rules are pending on day 1, and why that is the point.** This repo adopted its standards before it had code. In the predecessor the order was reversed, and the cost is measurable: its comment ban had to be retrofitted by a job that deleted every comment in the tree; its two-sentence cap is still a ratchet carrying ~500 grandfathered violations; and its module-boundary rule has sat `pending` since the day it was written, because the folder split it presupposes never happened. **A pending rule here converts to live when the thing it governs arrives, in the same commit** — never in the commit after.
 
@@ -32,7 +27,7 @@ format, so the trigger is restated as the first TypeScript file.
 | 1 | **No comments except doc comments; a doc comment is at most two sentences.** | pending — lands with `check-comments.sh` | `.chug/tasks/check-comments.sh` |
 | 2 | **Markdown is well-formed**: a heading needs a space after `#`, a fence must close, an intra-repo relative link must resolve, and a design filename is `{seq}-{slug}.md`. | **live** | `.chug/tasks/doc-lint.sh` |
 | 3 | **Every doc's factual claims about the tree resolve, or are marked.** | pending — lands with `check-doc-facts.sh` | `.chug/tasks/check-doc-facts.sh` |
-| 4 | **No duplicated code: zero clones.** | pending — **trigger fired, overdue** | `.chug/tasks/check-duplication.sh` |
+| 4 | **No duplicated code: zero clones**, tests included. | **live** | `.chug/tasks/check-duplication.sh` |
 | 5 | **No quote inside the word of a `${VAR:-word}` shell expansion.** | **live** | `.chug/tasks/check-shell-quoting.sh` |
 | 6 | **Every gate script has a sibling `*.test.sh`.** | **live** | `.chug/tasks/check-gates.sh` |
 | 7 | **`domain/` reaches no I/O, transitively.** | pending — **lands in the same commit as the folder split** | dependency-cruiser |

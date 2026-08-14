@@ -67,6 +67,10 @@ if [ -x ./.chug/tasks/check-shell-quoting.sh ]; then
 	run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
 fi
 
+if [ -x ./.chug/tasks/check-duplication.sh ]; then
+	run_gate "check-duplication" ./.chug/tasks/check-duplication.sh
+fi
+
 if [ -x ./.chug/tasks/check-gates.sh ]; then
 	run_gate "check-gates" ./.chug/tasks/check-gates.sh
 fi

@@ -23,8 +23,10 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
+# A leading underscore marks a sourced library rather than a gate; it has no
+# verdict of its own, so it has nothing to test.
 gates="$(git ls-files '.chug/tasks/*.sh' '.githooks/pre-commit' 2>/dev/null \
-	| grep -v '\.test\.sh$' || true)"
+	| grep -v '\.test\.sh$' | grep -v '/_' || true)"
 
 if [ -z "$gates" ]; then
 	echo "check-gates: LINTER ERROR — no gate scripts found; the glob matched nothing"

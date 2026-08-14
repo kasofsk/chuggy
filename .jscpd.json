@@ -1,0 +1,15 @@
+{
+  "threshold": 0,
+  "minLines": 10,
+  "minTokens": 80,
+  "reporters": ["console"],
+  "ignorePattern": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/*.md",
+    "**/*.json",
+    "**/*.lock"
+  ]
+}
