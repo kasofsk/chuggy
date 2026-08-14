@@ -69,6 +69,7 @@ run_gate() { # <label> <script>
 }
 
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
+run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
 run_gate "check-gates" ./.chug/tasks/check-gates.sh
 
 elapsed=$(( $(date +%s) - started ))

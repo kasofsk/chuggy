@@ -72,7 +72,7 @@ Prefer editing a doc to adding one. A doc nobody can summarise in one line is a 
 | `check-comments.sh` | every check, every commit | non-doc comments, the two-sentence cap | **error** | its own landing |
 | `check-doc-facts.sh` | every check; `--staged` in the hook | paths, restated constants, owned definitions, the catalogue, heading anchors | **error** | its own landing |
 | `check-duplication.sh` | every check | copy-paste, threshold 0 | **error** | **fired at commit 2 — overdue** |
-| `check-shell-quoting.sh` | every check | the `${VAR:-word}` divergence | **error** | **fired — overdue** |
+| `check-shell-quoting.sh` | every check | the `${VAR:-word}` divergence | **error** | — **live** |
 | `check-gates.sh` | every check | every gate has a sibling suite | **error** | — **live** |
 | `check-model.sh` | every check | the model typechecks, its suites pass, its invariants hold | **error** | — **live** |
 | landed-slice resolution | — | `**Landed**` rows against history | **error**, when it can run | a slice table, and an index it can have — see below |

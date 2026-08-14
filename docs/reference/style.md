@@ -33,7 +33,7 @@ format, so the trigger is restated as the first TypeScript file.
 | 2 | **Markdown is well-formed**: a heading needs a space after `#`, a fence must close, an intra-repo relative link must resolve, and a design filename is `{seq}-{slug}.md`. | **live** | `.chug/tasks/doc-lint.sh` |
 | 3 | **Every doc's factual claims about the tree resolve, or are marked.** | pending — lands with `check-doc-facts.sh` | `.chug/tasks/check-doc-facts.sh` |
 | 4 | **No duplicated code: zero clones.** | pending — **trigger fired, overdue** | `.chug/tasks/check-duplication.sh` |
-| 5 | **No quote inside the word of a `${VAR:-word}` shell expansion.** | pending — **trigger fired, overdue** | `.chug/tasks/check-shell-quoting.sh` |
+| 5 | **No quote inside the word of a `${VAR:-word}` shell expansion.** | **live** | `.chug/tasks/check-shell-quoting.sh` |
 | 6 | **Every gate script has a sibling `*.test.sh`.** | **live** | `.chug/tasks/check-gates.sh` |
 | 7 | **`domain/` reaches no I/O, transitively.** | pending — **lands in the same commit as the folder split** | dependency-cruiser |
 | 8 | **`domain/` uses no ambient capability**: no `Date`, `Math.random`, `process`, `fetch`, `setTimeout`, `crypto`. | pending — same commit as rule 7 | eslint, scoped to `src/domain/**` |
