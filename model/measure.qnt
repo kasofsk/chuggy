@@ -28,7 +28,7 @@
 ///     spawned into TSRunning, settled exactly once into
 ///     TSResolved(outcome) — instead of TRunning posing as an outcome.
 ///   - "rework budget ... into impl / middleware": the bound survives as a
-///     POLICY PARAMETER (ReworkPolicy, the GatePricing pattern); the
+///     POLICY PARAMETER (ReworkPolicy, the WrapUpPricing pattern); the
 ///     account digit the measure needs is derived from it.
 ///   - "what is deadline left": the required account is named what it is —
 ///     GAS (`gasLeft`, wall `gas_exhausted`). The charter's §2
@@ -45,16 +45,16 @@
 ///   - `Ticket.repo` — the ticket's TARGET REPO, an authored field like
 ///     deps and the program (chosen at arrival, immutable after). The
 ///     MEASURE NEVER READS IT — the repo-blindness theorem, by
-///     derivation: ticketMeasure reads gasLeft, gateLeft, reworkLeft,
+///     derivation: ticketMeasure reads gasLeft, wrapUpLeft, reworkLeft,
 ///     and micro (phase rank, stagesLeft over program+tasks,
 ///     runningCount) — `repo` appears in none of them, and every account
-///     radix derives from machine-wide consts (GAS, GATE_PRICING,
+///     radix derives from machine-wide consts (GAS, WRAPUP_PRICING,
 ///     REWORK_POLICY), none per-repo. Two tickets identical but for
 ///     `repo` have EQUAL ticketMeasure (pinned in tests/chuggy_test.qnt,
 ///     measureRepoBlindTest). Per-repo budgets/policies would break this
 ///     theorem and have NO charter provenance — deliberately not done
 ///     (README).
-///   - `LandingObs` + the StepRecord's `landing` field — the
+///   - `WrapUpObs` + the StepRecord's `landing` field — the
 ///     landing-boundary attribution the golden traces need: WHICH repo a
 ///     landing attempt targeted and whether the environment chose that
 ///     repo's default branch to have MOVED under the candidate
@@ -75,14 +75,14 @@
 /// this file FIRST, per standing rule 1 — the seventh time the rule held,
 /// and the first since PR 3 that it held by SURGERY rather than proof:
 /// the rank ladder grew twice.
-///   - PGated — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
+///   - PWrapUpHolding — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
 ///     spec.md §3.3 Merge Gate, Serialization: "the gate is a merge queue
 ///     of depth 1: at most one job per project is in the gate at a time";
 ///     per-project becomes per-repo at chuggy's landing boundary). A NEW
 ///     rank between Landing and settled: entering the gate descends, and
 ///     every gate resolution (AdvanceDefault, the priced eviction, the
 ///     walls) descends from there exactly as it used to from Landing.
-///     PLanding is re-read as the ENQUEUED state (chuggernaut's
+///     PWrapUp is re-read as the ENQUEUED state (chuggernaut's
 ///     WrapUp-on-the-queue); the queue's ORDER is deliberately not
 ///     modeled (a queue is a §2 non-goal; chuggernaut itself loses FIFO
 ///     order across restarts — spec.md §3.6 step 3 rebuilds the queue
@@ -101,8 +101,8 @@
 ///                       account; init admits no graph without it). Charged
 ///                       on every entry to Working and on metered operator
 ///                       retries; never refunded.
-///   2. gateLeft       — gate-rework budget, only under
-///                       GatePricing = Budgeted(n) (charter §2 gate-pricing
+///   2. wrapUpLeft       — gate-rework budget, only under
+///                       WrapUpPricing = Budgeted(n) (charter §2 gate-pricing
 ///                       row; identically 0 under DeadlineOnly).
 ///   3. reworkLeft     — eval-rework account, granted by the rework POLICY
 ///                       (ReworkPolicy = RWBudget(n), notes PR).
@@ -190,9 +190,9 @@
 ///       the ladder and can never silently drift from it.
 /// The domination chain above micro is unchanged in shape: micro <
 /// microBound, so one unit of reworkLeft outweighs any within-cycle climb
-/// (radix microBound), one unit of gateLeft outweighs any reworkLeft refill
+/// (radix microBound), one unit of wrapUpLeft outweighs any reworkLeft refill
 /// (radix reworkBudget), and one unit of gas outweighs everything below it
-/// (radix gateBudget). Every digit stays strictly below its radix, so the
+/// (radix wrapUpBudget). Every digit stays strictly below its radix, so the
 /// flattened integer order IS the lexicographic order.
 ///
 /// DESCENT TABLE — which transitions descend, and by which account.
@@ -241,7 +241,7 @@
 ///                                       the cycle via trusted backoffLimit)
 ///   eval-passed (the FINAL stage        rank 3->2 AND stagesLeft 1->0 (the
 ///     passes)                             ticket ENQUEUES for the gate —
-///                                         PLanding is the queued state)
+///                                         PWrapUp is the queued state)
 ///   gate-opened (merge-queue PR: the    rank 2->1 (the dequeue: the ticket
 ///     dequeue occupies the repo's         takes the repo's depth-1 slot;
 ///     depth-1 gate — drawn only when      no account moves — the gate
@@ -259,25 +259,25 @@
 ///                                       the queue; 1: the gated
 ///                                       AdvanceDefault out of the gate —
 ///                                       the §5e path rule)
-///   rework-started gate_failure         gas -1 (AND gateLeft -1 when
-///                                       Budgeted); from PGated since the
+///   rework-started wrapup_failure         gas -1 (AND wrapUpLeft -1 when
+///                                       Budgeted); from PWrapUpHolding since the
 ///                                       merge-queue PR — the eviction
 ///                                       frees the gate by phase (rank
 ///                                       1->4 climb + respawn, dominated
 ///                                       by the gas drop)
-///   ticket-escalated gate_budget_exhausted rank 1->0 (Budgeted only)
+///   ticket-escalated wrapup_budget_exhausted rank 1->0 (Budgeted only)
 ///   ticket-escalated revalidation_failed   rank 5->0 (the pre-work park —
 ///                                       Escalated is THE parked phase now;
 ///                                       the wall name survives as the
 ///                                       reason)
 ///   operator-retry, whenever it charges gas -1 (dominates the rank climb
 ///     gas (RWorking always — standing     back to 4/3/2 + respawn — for the
-///     rule 2; REvaluating/RLanding        REvaluating resume that includes
+///     rule 2; REvaluating/RWrapUp        REvaluating resume that includes
 ///     under RetryCharged)                 the stage digit reappearing at L:
 ///                                         the whole climb is < microBound,
-///                                         which gas outweighs; RLanding
+///                                         which gas outweighs; RWrapUp
 ///                                         re-ENQUEUES — resumes to
-///                                         PLanding, never into the gate)
+///                                         PWrapUp, never into the gate)
 ///
 /// NAMED NON-DESCENDING SETS — everything else, isolated by name:
 ///
@@ -386,12 +386,12 @@ module chuggy_measure {
   // Sum-type constructors share one namespace per module, hence the
   // prefixes (P/T/TK/TS/V/R/Rs/C/RW/Land). The two-branch parameter types
   // keep bare descriptive constructor names — Budgeted/DeadlineOnly
-  // (GatePricing) and RetryCharged/RetryFree (RetryPricing) — documented
+  // (WrapUpPricing) and RetryCharged/RetryFree (RetryPricing) — documented
   // here because they live in the same module-wide constructor namespace.
   // PR 3 added TK (TaskKind); the notes PR adds TS (TaskState — the
   // explicit task lifecycle) and RW (ReworkPolicy); the citations PR adds
   // the multi-repo PR
-  // adds LO (LandingObs — the landing-boundary attribution); the
+  // adds LO (WrapUpObs — the landing-boundary attribution); the
   // merge-queue PR added B (BatchMark), deleted again with grouping.
 
   /// STORED ticket phases. Deliberately few (charter standing rule 3, derive
@@ -400,7 +400,7 @@ module chuggy_measure {
   /// the waiting-room split is derived. PPending must be stored (phase is
   /// total and "never started" is not expressible as a predicate over the
   /// other fields without overloading them). PWorking/PEvaluating carry the
-  /// parallel task set; PLanding is its own phase because its outcome is
+  /// parallel task set; PWrapUp is its own phase because its outcome is
   /// the exclusivity boundary (charter §2, effect-only exclusivity); PDone
   /// is absorbing; PEscalated is the human desk.
   ///
@@ -430,20 +430,20 @@ module chuggy_measure {
   ///
   /// THE MERGE-QUEUE PR added two; the grouping removal deleted one of
   /// them (PBatched), leaving:
-  ///   - PGated — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
-  ///     §3.3 Merge Gate item 3 + Serialization). PLanding is re-read as
+  ///   - PWrapUpHolding — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
+  ///     §3.3 Merge Gate item 3 + Serialization). PWrapUp is re-read as
   ///     ENQUEUED (chuggernaut's WrapUp holds both queue and gate slot in
   ///     ONE state, the split living in dispatcher memory — the model
   ///     lifts the slot into phase so depth-1 exclusivity is a predicate
   ///     over stored state, while the queue's ORDER stays deliberately
-  ///     unmodeled). A ticket is PGated only when the environment chose
+  ///     unmodeled). A ticket is PWrapUpHolding only when the environment chose
   ///     its branch MOVED at the dequeue — a quiet dequeue lands directly
-  ///     (the fast-path) and never occupies the gate — so PGated ENCODES
-  ///     branchMoved = true with no stored flag (the envActive standing
+  ///     (the fast-path) and never occupies the gate — so PWrapUpHolding ENCODES
+  ///     invalidated = true with no stored flag (the envActive standing
   ///     rule, derived-not-stored applied to the environment's choice).
   type Phase =
     PDraft |
-    PPending | PWorking | PEvaluating | PLanding | PGated |
+    PPending | PWorking | PEvaluating | PWrapUp | PWrapUpHolding |
     PDone | PEscalated | PRevoked
 
   /// What a task IS for (PR 3, task-records depth — charter §2 job anatomy:
@@ -528,10 +528,10 @@ module chuggy_measure {
   /// Gate-rework pricing — a model parameter, not a constant (charter §2):
   /// the model generates escalation traces under both branches and the
   /// choice is made on evidence.
-  type GatePricing = Budgeted(int) | DeadlineOnly
+  type WrapUpPricing = Budgeted(int) | DeadlineOnly
 
   /// Eval-rework pricing (notes PR, "rework budget should be removed from
-  /// core job entity and into impl / middleware") — the GatePricing
+  /// core job entity and into impl / middleware") — the WrapUpPricing
   /// pattern applied to the rework bound: the machine consults an abstract
   /// policy, and RWBudget(n) grants a budget of n cycles. Deliberately the
   /// ONLY branch for now: the triage row keeps the bound in the model
@@ -539,7 +539,7 @@ module chuggy_measure {
   /// on middleware behavior — an unbounded (or gas-only) branch is exactly
   /// the removal that was rejected. If evidence ever argues for another
   /// pricing, it lands as a new constructor here, instantiated alongside
-  /// (the GatePricing method). The per-ticket ACCOUNT the policy meters
+  /// (the WrapUpPricing method). The per-ticket ACCOUNT the policy meters
   /// (Ticket.reworkLeft) is policy state the middleware owns in the
   /// implementation — see the field's note.
   type ReworkPolicy = RWBudget(int)
@@ -557,14 +557,14 @@ module chuggy_measure {
   /// released waiting room (PPending, where Ready/Blocked re-derive),
   /// never to a pipeline phase — a pre-work park spent nothing and
   /// resumes to exactly where it left.
-  type Resume = RNone | RPending | RWorking | REvaluating | RLanding
+  type Resume = RNone | RPending | RWorking | REvaluating | RWrapUp
 
   /// Why a ticket sits on the human desk. The wall VOCABULARY is carried from
   /// v1's explainer (docs/chuggernaut.md §5) and constrained by the charter
   /// §2 termination row — the charter itself does not name individual
   /// walls. With Stalled merged into Escalated (notes PR), the reason is
   /// what distinguishes the parks: RsWorkFailed / RsReworkBudgetExhausted /
-  /// RsGateBudgetExhausted (Budgeted pricing only) / RsGasExhausted are
+  /// RsWrapUpBudgetExhausted (Budgeted pricing only) / RsGasExhausted are
   /// the pipeline walls, and the PRE-WORK walls are RsRevalidationFailed
   /// (retryable — resumes to Pending, RPending) and RsDependencyRevoked
   /// (PR 2's cascade wall, chuggy-NEW — NOT retryable, its only exit is
@@ -574,7 +574,7 @@ module chuggy_measure {
   /// trusted backoffLimit, §2).
   type Reason =
     RsNone | RsWorkFailed | RsReworkBudgetExhausted |
-    RsGateBudgetExhausted | RsGasExhausted | RsRevalidationFailed |
+    RsWrapUpBudgetExhausted | RsGasExhausted | RsRevalidationFailed |
     RsDependencyRevoked
 
   /// How a landing resolves. The two SUCCESS outcomes are deliberately
@@ -586,28 +586,28 @@ module chuggy_measure {
   /// validated squash candidate, and no SquashMerge effect exists"):
   ///   - quiet branch  -> the gate is SKIPPED and the candidate
   ///     squash-merges DIRECTLY (chuggernaut §3.3 Merge Gate item 1, the
-  ///     skip fast-path) — LandSquashMerge, the ONLY quiet outcome;
+  ///     skip fast-path) — WOk, the ONLY quiet outcome;
   ///   - moved branch  -> the gate RUNS against the candidate merge
   ///     commit, and a clean pass ADVANCES the default ref to the
   ///     already-merged candidate (§3.3 item 4: "advance the default
   ///     branch to the candidate commit — this IS the squash-merge; do
-  ///     not re-merge") — LandAdvanceDefault — while a failure is the
-  ///     priced eviction — LandFailed.
-  /// domain.qnt landOutcomes is the draw rule; landingIsolation +
+  ///     not re-merge") — WOk — while a failure is the
+  ///     priced eviction — WFailed.
+  /// domain.qnt wrapUpOutcomes is the draw rule; wrapUpIsolation +
   /// gatedPromotesDirectSquashes make it durable on every reachable step.
   /// PROPOSED-requirement provenance (R3, README): derived from
   /// chuggernaut's spec + v1's replay finding, NOT from an intake answer —
   /// pending geoff/davemo88 confirmation.
-  type LandOutcome = LandAdvanceDefault | LandSquashMerge | LandFailed
+  type WrapUpOutcome = WOk | WFailed
 
   /// THE LANDING-BOUNDARY OBSERVATION (multi-repo PR — the roadmap PR 4
   /// gate's attribution half): every step that RESOLVES a landing attempt
-  /// carries LOAttempt with
+  /// carries WOAttempt with
   ///   - `repo`: the ticket's target repo — golden traces must be
   ///     per-repo attributable, and the repo cannot ride the effect
   ///     strings (no dynamic strings at this grain), so the step record
   ///     carries it structurally;
-  ///   - `branchMoved`: the environment's PER-ATTEMPT choice of whether
+  ///   - `invalidated`: the environment's PER-ATTEMPT choice of whether
   ///     the target repo's default branch moved under the candidate — the
   ///     ONLY reason a landing can fail (docs/chuggernaut.md §4; v1's
   ///     LConflictOrGateFail existed only while envActive). This is the
@@ -618,9 +618,28 @@ module chuggy_measure {
   ///     attempt (derive-don't-store applied to the environment).
   /// Every other step — including eval-passed (which merely ENQUEUES the
   /// landing) and land-duplicate (an absorbed re-delivery: no attempt
-  /// resolves, nothing is emitted) — carries LONone. The iff is the
-  /// landingIsolation invariant (domain.qnt).
-  type LandingObs = LONone | LOAttempt({ repo: int, branchMoved: bool })
+  /// resolves, nothing is emitted) — carries WONone. The iff is the
+  /// wrapUpIsolation invariant (domain.qnt).
+  type WrapUpObs = WONone | WOAttempt({ repo: int, invalidated: bool })
+
+  /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
+  /// like the eval program — eval-is-data applied one seam later.
+  ///
+  ///   WNone            the effect was external and already happened during
+  ///                    work; evaluation passing completes the ticket, and
+  ///                    it enters neither wrap-up phase. A deploy, a report.
+  ///   WExclusive(r)    the step needs a LEASE on resource r before it may
+  ///                    run — a merge takes its repo, a registry push takes
+  ///                    the registry, a deploy-to-env takes the environment.
+  ///
+  /// Mutual exclusion is the domain's business and git is not: deciding that
+  /// ticket A holds r and therefore B may not READS STATE BELONGING TO
+  /// ANOTHER TICKET, which is the authority split's own test for a global
+  /// decision, and pushing it to an adapter would make a second writer.
+  /// Which promotion mechanism a merge uses is not modelled at all.
+  ///
+  /// NOT a measure input; only the PHASE has a rank.
+  type WrapUp = WNone | WExclusive(int)
 
   /// WHAT A TICKET PRODUCED (design 002): an opaque identity for the thing
   /// work built, that evaluation judged, and that wrap-up commits. Its only
@@ -649,6 +668,10 @@ module chuggy_measure {
     // orchestrator-level, and forbidding cross-repo edges would be new
     // machinery with no charter provenance).
     deps: Set[int],
+    // How this ticket finishes (design 002): authored, immutable after
+    // arrival, and what decides whether it takes a lease or completes at
+    // eval-pass.
+    wrapUp: WrapUp,
     // The artifact this ticket has produced, if it has passed work (design
     // 002). Set at work-passed and superseded by each rework's product.
     artifact: ArtifactMark,
@@ -706,11 +729,11 @@ module chuggy_measure {
     // demand — and it stays on the model's Ticket record for the same reason
     // the ghost fields do their tickets: the termination measure needs its
     // bounded digit (the model's concern), while ownership of the counter
-    // is the implementation's (documented, like `landings`, rather than
+    // is the implementation's (documented, like `completions`, rather than
     // modeled).
     reworkLeft: int,
     // Gate-rework budget remaining; identically 0 under DeadlineOnly.
-    gateLeft: int,
+    wrapUpLeft: int,
     // GAS remaining — the REQUIRED account (charter §2 economy/deadline,
     // renamed by the notes PR: the bound is a spend meter, not a clock).
     gasLeft: int,
@@ -728,7 +751,7 @@ module chuggy_measure {
     // GHOST: landing effects ever emitted for this ticket — the counter the
     // effect-exclusivity invariant (charter §2: exactly one landing) reads.
     // Not implementation state.
-    landings: int
+    completions: int
   }
 
   /// Standing rule 3 (derive, don't store): the open-human-task flag IS a
@@ -765,15 +788,15 @@ module chuggy_measure {
 
   /// One decision's observable record, mirroring the golden-trace step
   /// schema {event, transitions, effects} — extended by the multi-repo PR
-  /// with the landing-boundary attribution field (`landing`, LONone on
-  /// every non-landing step; see LandingObs): the minimal StepRecord
+  /// with the landing-boundary attribution field (`landing`, WONone on
+  /// every non-landing step; see WrapUpObs): the minimal StepRecord
   /// extension that keeps golden traces per-repo attributable at the one
   /// boundary where the repo matters.
   type StepRecord = {
     label: str,
     transitions: List[Transition],
     effects: List[str],
-    landing: LandingObs
+    landing: WrapUpObs
   }
 
   /// What a pure decider returns: record performed + post-state.
@@ -789,7 +812,7 @@ module chuggy_measure {
     reworkPolicy: ReworkPolicy,
     nTasks: int,
     maxStages: int,
-    gatePricing: GatePricing
+    gatePricing: WrapUpPricing
   }
 
   // === The measure =========================================================
@@ -798,13 +821,13 @@ module chuggy_measure {
   /// DeadlineOnly grants none (gas alone meters the gate loop — v1's
   /// documented-livelock shape, kept as the branch to be priced on
   /// evidence).
-  pure def gateBudget(gp: GatePricing): int =
+  pure def wrapUpBudget(gp: WrapUpPricing): int =
     match gp {
       | Budgeted(n) => n
       | DeadlineOnly => 0
     }
 
-  /// The rework account's size under a policy (the GatePricing pattern —
+  /// The rework account's size under a policy (the WrapUpPricing pattern —
   /// see ReworkPolicy for why RWBudget is the only branch for now).
   pure def reworkBudget(rw: ReworkPolicy): int =
     match rw {
@@ -822,12 +845,12 @@ module chuggy_measure {
   /// The occupied depth-1 merge gate sits directly above settled
   /// (merge-queue PR): every gate resolution — the gated AdvanceDefault,
   /// the priced eviction, the walls — settles or reworks in one step.
-  pure val rankGated: int = rankSettled + 1
-  /// PLanding — ENQUEUED for the gate since the merge-queue PR: the
+  pure val rankHolding: int = rankSettled + 1
+  /// PWrapUp — ENQUEUED for the gate since the merge-queue PR: the
   /// dequeue (gate-opened) descends into the gate, the quiet fast-path
   /// descends straight to Done.
-  pure val rankLanding: int = rankGated + 1
-  pure val rankEvaluating: int = rankLanding + 1
+  pure val rankWrapUp: int = rankHolding + 1
+  pure val rankEvaluating: int = rankWrapUp + 1
   pure val rankWorking: int = rankEvaluating + 1
   /// The released waiting room (Ready/Blocked derive from it).
   pure val rankPending: int = rankWorking + 1
@@ -852,8 +875,8 @@ module chuggy_measure {
       | PPending => rankPending
       | PWorking => rankWorking
       | PEvaluating => rankEvaluating
-      | PLanding => rankLanding
-      | PGated => rankGated
+      | PWrapUp => rankWrapUp
+      | PWrapUpHolding => rankHolding
       | _ => rankSettled
     }
 
@@ -909,12 +932,12 @@ module chuggy_measure {
       + runningCount(ticket.tasks)
 
   /// THE per-ticket termination measure: lexicographic
-  /// (gasLeft, gateLeft, reworkLeft, micro), radix-flattened — each
+  /// (gasLeft, wrapUpLeft, reworkLeft, micro), radix-flattened — each
   /// account's radix is one more than its grant (radix again), so every
   /// digit stays strictly below its radix. Nonnegative whenever the
   /// accounts are (domain.qnt's accountsBounded keeps them so).
   pure def ticketMeasure(b: Bounds, ticket: Ticket): int =
-    ((ticket.gasLeft * radix(gateBudget(b.gatePricing)) + ticket.gateLeft)
+    ((ticket.gasLeft * radix(wrapUpBudget(b.gatePricing)) + ticket.wrapUpLeft)
         * radix(reworkBudget(b.reworkPolicy))
       + ticket.reworkLeft) * microBound(b)
     + micro(b, ticket)

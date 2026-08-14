@@ -31,17 +31,30 @@ That is the inverse of the usual arrangement and it is deliberate. The predecess
 
 Twenty-three invariants hold in every reachable state of every instance, checked by randomized runs and asserted after every step of eight deterministic witness traces. They are listed at `allInvariants` in `model/domain.qnt`; the load-bearing ones:
 
-- **Exactly one landing per ticket** (`landingExclusive`) — the exclusivity boundary. Any number of tasks may execute and duplicate, because the fabric is at-least-once; what is proved is that the landing effect fires once.
-- **A revoked ticket never lands** (`revokedNeverLands`), and both terminals are absorbing (`terminalsAbsorbing`).
+- **Exactly one completion per ticket** (`completionExclusive`) — the exclusivity boundary. Any number of tasks may execute and duplicate, because the fabric is at-least-once; what is proved is that the completion effect fires once, whatever kind of wrap-up produced it.
+- **A revoked ticket never completes** (`revokedNeverCompletes`), and both terminals are absorbing (`terminalsAbsorbing`).
 - **The cascade is atomic** (`cascadeSafety`) — every ticket transitively doomed by a revocation is parked with its own desk task in the same decision, so there is no reachable state where a doomed ticket waits invisibly.
 - **No structural deadlock** (`noStructuralDeadlock`) — every live ticket can still reach Done, or was settled by its author, or holds an open desk task.
+- **At most one holder of a resource** (`leaseExclusive`), and a ticket with no wrap-up step never takes a lease at all (`noLeaseWithoutAKind`).
 - **Accounts are resources** (`accountsBounded`) — nothing overdraws, nothing refunds.
 - **The record is append-only** (`recordMonotone`), task identity is history-unique (`idsAccounted`), and dependencies are acyclic (`depsAcyclic`).
 - **The measure descends** (`measureDescends`) on every step outside three named sets.
 
-And in `model/refinement.qnt`, under journal-then-effect: every journaled history projects to a legal machine trace (`journalLegal`), replay of the journal is exactly the state the actor holds (`recoveryComplete`), and crash-recover at any seam never charges an account twice or lands a diff twice (`noDoubleSpentBudget`, `noDuplicateCycle`).
+And in `model/refinement.qnt`, under journal-then-effect: every journaled history projects to a legal machine trace (`journalLegal`), replay of the journal is exactly the state the actor holds (`recoveryComplete`), and crash-recover at any seam never charges an account twice or completes a ticket twice (`noDoubleSpentBudget`, `noDuplicateCycle`).
 
-**Chuggy bounds work, not waiting.** The measure bounds how much work the fleet can do — no ticket churns forever. It does not bound how long a ticket waits, for an author to release it, for the dispatcher to choose it, or for the gate to free its slot. That is accepted, and `001-what-chuggy-is-not.md` records why.
+**Chuggy bounds work, not waiting.** The measure bounds how much work the fleet can do — no ticket churns forever. It does not bound how long a ticket waits, for an author to release it, for the dispatcher to choose it, or for a lease to free. That is accepted, and `001-what-chuggy-is-not.md` records why.
+
+## What a ticket produces
+
+A ticket produces an **artifact** — an opaque identity for the thing work built, evaluation judged, and wrap-up commits. Its only modelled property is distinctness; content is never modelled, because a diff, a build output and an evaluator's prose are all equally outside what the machine can reason about.
+
+It exists chiefly so a dependent can name what its dependency produced. That read is safe by construction rather than by discipline: a dependency is `Done` before any dependent can dispatch, and `Done` is absorbing, so nothing can change under a reader.
+
+## How a ticket finishes
+
+Wrap-up is a **declared kind**, authored on the ticket like its eval program. A ticket whose effect already happened during work — a deploy, a report — completes when evaluation passes, entering no wrap-up phase and taking no lease. A ticket that needs exclusive access to a resource takes a **lease** on it: a merge takes its repo, a registry push takes the registry, a deploy-to-environment takes the environment.
+
+Mutual exclusion is the domain's business; git is not. Deciding that one ticket holds a resource and another may not reads state belonging to another ticket, which is the authority split's test for a global decision — an adapter doing it would be a second writer. Which promotion mechanism a merge uses is not modelled at all.
 
 ## The single writer
 

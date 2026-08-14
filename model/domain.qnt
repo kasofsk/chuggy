@@ -35,7 +35,7 @@
 ///   - "agentic dispatcher modeled (not FIFO)": the dispatch chooser is
 ///     documented AS the dispatcher's agency — see the `dispatch` action.
 ///   - "rework budget ... into impl / middleware": REWORK_POLICY
-///     (ReworkPolicy, the GatePricing pattern) replaces the bare budget
+///     (ReworkPolicy, the WrapUpPricing pattern) replaces the bare budget
 ///     const; the account stays on Ticket as documented policy state.
 ///   - gas rename: GAS / gasLeft / gas_exhausted / RsGasExhausted — the
 ///     charter's required "deadline" account under its honest name.
@@ -85,25 +85,25 @@
 ///     landing-failure conditions enter as explicitly named nondet events,
 ///     NEVER a stored mystery flag): the environment CHOOSES, per landing
 ///     attempt, whether the target repo's default branch MOVED under the
-///     candidate (the `land` action's branchMoved draw), and LandFailed is
-///     drawable ONLY on a moved branch (landOutcomes — v1's §4 insight
+///     candidate (the `land` action's invalidated draw), and WFailed is
+///     drawable ONLY on a moved branch (wrapUpOutcomes — v1's §4 insight
 ///     made per-repo: docs/chuggernaut.md §4, the moving default branch is
 ///     the ONLY reason a landing can fail; a quiet branch always lands
 ///     cleanly). NO stored env state: quiet/moved is chosen fresh at every
-///     attempt and recorded on the step (StepRecord.landing, LOAttempt
-///     with repo + branchMoved — the per-repo trace attribution the gate
-///     demands). Before this PR the `land` action drew LandFailed
+///     attempt and recorded on the step (StepRecord.landing, WOAttempt
+///     with repo + invalidated — the per-repo trace attribution the gate
+///     demands). Before this PR the `land` action drew WFailed
 ///     unconditionally with no cause on the trace; v1's stored `envActive`
 ///     quiescence flag stays deferred with §4's contested theorem.
-///   - THE ISOLATION INVARIANTS (the gate): landingIsolation (a step that
+///   - THE ISOLATION INVARIANTS (the gate): wrapUpIsolation (a step that
 ///     resolves a landing attempt is attributed to the stepped ticket's
-///     OWN repo, and a gate-failure step carries branchMoved = true — a
+///     OWN repo, and a gate-failure step carries invalidated = true — a
 ///     landing can fail only via its own repo's branch moving),
 ///     quietRepoLandsCleanly (the stated per-attempt corollary: an
 ///     attempt the environment chose quiet is a success step), and
 ///     reposWellFormed. The MEASURE and all budgets stay REPO-BLIND
 ///     (measure.qnt, multi-repo header note — the derivation; pinned in
-///     measureRepoBlindTest), and landingExclusive stays PER-TICKET —
+///     measureRepoBlindTest), and completionExclusive stays PER-TICKET —
 ///     stronger than any per-repo exclusivity, deliberately not weakened.
 ///   - Deliberately NOT modeled: per-repo policies, budgets, or queues
 ///     (no charter provenance — the charter's accounts are per-ticket and
@@ -125,27 +125,27 @@
 ///   - THE DEPTH-1 MERGE GATE, PER REPO (R1/R4 — chuggernaut §3.3 Merge
 ///     Gate: "no commit reaches the default branch without every required
 ///     command evaluator passing against the exact tree that lands";
-///     Serialization: "a merge queue of depth 1"): PLanding is re-read as
-///     ENQUEUED, PGated is the occupied gate slot, and at most one ticket
-///     per repo is PGated (gateDepthOne — a derived predicate over phase,
+///     Serialization: "a merge queue of depth 1"): PWrapUp is re-read as
+///     ENQUEUED, PWrapUpHolding is the occupied gate slot, and at most one ticket
+///     per repo is PWrapUpHolding (leaseExclusive — a derived predicate over phase,
 ///     no stored queue; chuggernaut keeps the queue/slot split in
 ///     dispatcher MEMORY inside one WrapUp state and loses FIFO order
 ///     across restarts, §3.6 — so the model lifts the SLOT to phase and
 ///     deliberately leaves the ORDER unmodeled: the dequeue is a nondet
 ///     pick among enqueued tickets, the agentic-dispatcher shape again).
 ///   - THE PATH RULE (R3 — the §5e divergence become a theorem): the
-///     dequeue (gateEnter) draws the environment's branchMoved choice for
+///     dequeue (wrapUpStart) draws the environment's invalidated choice for
 ///     the attempt. QUIET -> the skip fast-path: gate never occupied, the
 ///     candidate squash-merges DIRECTLY in the same step (SquashMerge,
-///     PLanding -> PDone). MOVED -> the gate OPENS (gate-opened,
-///     PLanding -> PGated: the candidate is built and validated over a
+///     PWrapUp -> PDone). MOVED -> the gate OPENS (gate-opened,
+///     PWrapUp -> PWrapUpHolding: the candidate is built and validated over a
 ///     duration — which is exactly why occupancy must be a phase), and the
-///     resolution draws from landOutcomes(true): a clean pass ADVANCES the
+///     resolution draws from wrapUpOutcomes(true): a clean pass ADVANCES the
 ///     default ref to the validated candidate (AdvanceDefault, "this IS
-///     the squash-merge; do not re-merge") or the gate fails. PGated
+///     the squash-merge; do not re-merge") or the gate fails. PWrapUpHolding
 ///     ENCODES moved = true — no stored flag (envActive standing rule).
 ///   - THE EVICTION, PRICED AS BEFORE (R5): a gate failure re-enters work
-///     from PGated through the SAME GatePricing arms as ever — Budgeted
+///     from PWrapUpHolding through the SAME WrapUpPricing arms as ever — Budgeted
 ///     spends gate budget + gas, DeadlineOnly spends gas alone — and the
 ///     walls park with their existing names. The outer loop's pricing is
 ///     byte-identical; only the from-phase changed. Eviction and landing
@@ -223,7 +223,7 @@ module chuggy_domain {
   /// stageWeight radix needs exactly this cap.
   const N_TASKS: int
   /// Eval-rework pricing (notes PR: the bound is a POLICY PARAMETER on the
-  /// GatePricing pattern, not a core-entity constant — RWBudget(n) is the
+  /// WrapUpPricing pattern, not a core-entity constant — RWBudget(n) is the
   /// only branch for now, argued at the type in measure.qnt; the account
   /// it grants is middleware-owned policy state, documented at
   /// Ticket.reworkLeft).
@@ -235,7 +235,7 @@ module chuggy_domain {
   const GAS: int
   /// Gate-rework pricing (charter §2: a parameter, not a constant; both
   /// branches instantiated in mc/mc_chuggy.qnt).
-  const GATE_PRICING: GatePricing
+  const WRAPUP_PRICING: WrapUpPricing
   /// Operator-retry metering (charter §2: configurable per deployment,
   /// default charge — mc instantiates RetryCharged, plus a RetryFree
   /// instance so the free-resume churn path stays exercised).
@@ -256,6 +256,13 @@ module chuggy_domain {
   /// pre-multi-repo machine with a constant attribution field.
   const N_REPOS: int
 
+  /// Every AUTHORABLE wrap-up kind (design 002), the structural-refusal
+  /// shape validPrograms and repos already have: an arrival draws from
+  /// exactly this set, so a lease on a resource outside the universe cannot
+  /// enter a reachable state.
+  pure val wrapUpChoices: Set[WrapUp] =
+    Set(WNone).union(1.to(N_REPOS).map(r => WExclusive(r)))
+
   /// The repo universe (multi-repo PR): every ticket's authored target repo
   /// is a member (reposWellFormed); arrivals draw from exactly this set.
   pure val repos: Set[int] = 1.to(N_REPOS)
@@ -265,7 +272,7 @@ module chuggy_domain {
     reworkPolicy: REWORK_POLICY,
     nTasks: N_TASKS,
     maxStages: MAX_STAGES,
-    gatePricing: GATE_PRICING
+    gatePricing: WRAPUP_PRICING
   }
 
   /// The stage vocabulary an author may draw from: any fan-out 1..N_TASKS,
@@ -309,21 +316,23 @@ module chuggy_domain {
   /// first precisely so programs would have an arrival to ride).
   /// Multi-repo PR: the TARGET REPO arrives the same way — authored data
   /// riding the arrival, immutable after, like deps and the program.
-  pure def freshTicket(deps_: Set[int], prog: List[Stage], repo_: int): Ticket = {
+  pure def freshTicket(
+      deps_: Set[int], prog: List[Stage], repo_: int, wrapUp_: WrapUp): Ticket = {
     phase: PDraft,
     deps: deps_,
     program: prog,
+    wrapUp: wrapUp_,
     artifact: ANone,
     repo: repo_,
     tasks: Set(),
     record: [],
     spawned: 0,
     reworkLeft: reworkBudget(REWORK_POLICY),
-    gateLeft: gateBudget(GATE_PRICING),
+    wrapUpLeft: wrapUpBudget(WRAPUP_PRICING),
     gasLeft: GAS,
     resumeAt: RNone,
     reason: RsNone,
-    landings: 0
+    completions: 0
   }
 
   // ==========================================================================
@@ -339,34 +348,34 @@ module chuggy_domain {
   /// transition (golden-trace shaped, standing rule 4). PR 3: from == to is
   /// a real row now — the stage advance records
   /// Evaluating -> Evaluating (chuggernaut spec.md §2.1 line 832).
-  /// Multi-repo PR: `landing` is LONone here — only decideLand resolves a
+  /// Multi-repo PR: `landing` is WONone here — only decideWrapUpResolve resolves a
   /// landing attempt, and it stamps its own attribution over this default
-  /// (withLandingObs).
+  /// (withWrapUpObs).
   pure def move(c: Core, j: int, to_: Phase, label: str, effects_: List[str]): Decision =
     { rec: {
         label: label,
         transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: to_ }],
         effects: effects_,
-        landing: LONone },
+        landing: WONone },
       post: withTicket(c, j, { ...c.tickets.get(j), phase: to_ }) }
 
   /// A decision that changes nothing — the idempotent answer to duplicate
   /// deliveries (at-least-once fabric, charter §2: no-double-pods dropped,
   /// every effect idempotent). No landing attempt resolves here (a
   /// duplicate landing delivery absorbs with nothing emitted), so the
-  /// attribution field stays LONone.
+  /// attribution field stays WONone.
   pure def noop(c: Core, label: str): Decision =
-    { rec: { label: label, transitions: [], effects: [], landing: LONone }, post: c }
+    { rec: { label: label, transitions: [], effects: [], landing: WONone }, post: c }
 
   /// Stamp the landing-boundary attribution on a decision (multi-repo PR):
-  /// decideLand routes EVERY arm through this, so each step that resolves
+  /// decideWrapUpResolve routes EVERY arm through this, so each step that resolves
   /// a landing attempt — both successes, the gate rework, and both
   /// landing walls — carries the target repo and the environment's
-  /// branchMoved choice for that attempt (landingIsolation checks the
+  /// invalidated choice for that attempt (wrapUpIsolation checks the
   /// iff; the trace consumer gets per-repo attribution at exactly the
   /// boundary where the repo matters).
-  pure def withLandingObs(d: Decision, repo_: int, moved: bool): Decision =
-    { rec: { ...d.rec, landing: LOAttempt({ repo: repo_, branchMoved: moved }) },
+  pure def withWrapUpObs(d: Decision, repo_: int, moved: bool): Decision =
+    { rec: { ...d.rec, landing: WOAttempt({ repo: repo_, invalidated: moved }) },
       post: d.post }
 
   // --- Authoring (PR 2, reshaped by the notes PR): arrival, release, ------
@@ -414,11 +423,12 @@ module chuggy_domain {
   /// orchestrator-level and dependencies may cross repos — the dep gate
   /// downstream (depsDoneIn) reads Done-ness, never location.
   pure def decideArrive(
-      c: Core, deps_: Set[int], prog: List[Stage], repo_: int): Decision =
+      c: Core, deps_: Set[int], prog: List[Stage], repo_: int,
+      wrapUp_: WrapUp): Decision =
     val id = c.tickets.keys().size() + 1
     { rec: { label: "ticket-arrived", transitions: [], effects: ["CreateDraft"],
-        landing: LONone },
-      post: { ...c, tickets: c.tickets.put(id, freshTicket(deps_, prog, repo_)) } }
+        landing: WONone },
+      post: { ...c, tickets: c.tickets.put(id, freshTicket(deps_, prog, repo_, wrapUp_)) } }
 
   /// Draft -> Pending (table line 21 `(Draft, Ready | Blocked | ...)`):
   /// the ticket enters the released pipeline. The table's Ready/Blocked
@@ -513,7 +523,7 @@ module chuggy_domain {
         // dependent — and NONE for the revoked ticket itself.
         effects: ["Revoke"]
           .concat(parkedList.foldl([], (l, k) => l.append("OpenHumanTask"))),
-        landing: LONone },
+        landing: WONone },
       post: { ...c, tickets: c.tickets.keys().mapBy(k =>
         if (k == j)
           { ...retireLive(c.tickets.get(k)), phase: PRevoked,
@@ -540,7 +550,7 @@ module chuggy_domain {
   ///                 (standing rule 2). CHURN in the measure.
   ///   RWorking    — 1 always: entry to Working always meters (standing
   ///                 rule 2), even under RetryFree.
-  ///   REvaluating/RLanding — per OP_RETRY_PRICING (charter §2:
+  ///   REvaluating/RWrapUp — per OP_RETRY_PRICING (charter §2:
   ///                 configurable, default charge); RetryFree makes these
   ///                 the reproducible v1 livelock (model-status §5b).
   /// RNone falls through the wildcard but is unreachable: retryableIn
@@ -634,12 +644,12 @@ module chuggy_domain {
       c.tickets.get(j).phase == PEvaluating and runningCount(c.tickets.get(j).tasks) == 0)
 
   /// Enqueued tickets whose repo's gate is free (the depth-1 refusal).
-  pure def gateEnterablesIn(c: Core): Set[int] =
-    c.tickets.keys().filter(j => gateEnterableIn(c, j))
+  pure def wrapUpStartablesIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j => wrapUpStartableIn(c, j))
 
   /// The occupied gate slots.
-  pure def gatedIn(c: Core): Set[int] =
-    c.tickets.keys().filter(j => c.tickets.get(j).phase == PGated)
+  pure def holdingIn(c: Core): Set[int] =
+    c.tickets.keys().filter(j => c.tickets.get(j).phase == PWrapUpHolding)
 
   pure def doneIn(c: Core): Set[int] =
     c.tickets.keys().filter(j => c.tickets.get(j).phase == PDone)
@@ -689,25 +699,29 @@ module chuggy_domain {
   // --- The depth-1 gate guards (merge-queue PR, R4) ------------------------
 
   /// Is repo r's merge gate FREE? Occupancy is a DERIVED predicate over
-  /// phase (derive-don't-store — the whole point of PGated): no ticket
+  /// phase (derive-don't-store — the whole point of PWrapUpHolding): no ticket
   /// targeting r currently holds the slot. Landing, eviction, walls, and
   /// revoke all free the gate by leaving the phase; nothing cleans up.
-  pure def gateFreeIn(c: Core, r: int): bool =
+  /// The resource a ticket's wrap-up needs a lease on, if any.
+  pure def leaseOf(t: Ticket): int =
+    match t.wrapUp { | WNone => 0 | WExclusive(r) => r }
+
+  pure def leaseFreeIn(c: Core, r: int): bool =
     c.tickets.keys().forall(k =>
-      not(c.tickets.get(k).phase == PGated and c.tickets.get(k).repo == r))
+      not(c.tickets.get(k).phase == PWrapUpHolding and leaseOf(c.tickets.get(k)) == r))
 
   /// May ticket j be DEQUEUED — leave the landing queue and take its
   /// repo's gate slot (or fast-path out of it, if the environment draws
   /// the branch quiet)? Enqueued, and the target repo's gate free. THE
-  /// DEPTH-1 REFUSAL LIVES HERE: while any same-repo ticket is PGated,
+  /// DEPTH-1 REFUSAL LIVES HERE: while any same-repo ticket is PWrapUpHolding,
   /// this guard refuses every other dequeue for that repo — pinned as a
   /// guard-refusal on a deterministic machine trace
   /// (tests/chuggy_witness_test.qnt, gate module). Shared by the
-  /// `gateEnter` action and the witness drivers (guards are referenced,
+  /// `wrapUpStart` action and the witness drivers (guards are referenced,
   /// never copied — the dispatchableIn discipline).
-  pure def gateEnterableIn(c: Core, j: int): bool = and {
-    c.tickets.get(j).phase == PLanding,
-    gateFreeIn(c, c.tickets.get(j).repo)
+  pure def wrapUpStartableIn(c: Core, j: int): bool = and {
+    c.tickets.get(j).phase == PWrapUp,
+    leaseFreeIn(c, leaseOf(c.tickets.get(j)))
   }
 
   /// Park a ticket on the human desk, naming the wall (vocabulary carried
@@ -745,7 +759,7 @@ module chuggy_domain {
   /// conforms with any policy (LLM-driven, priority, whatever) because
   /// every policy refines unrestricted choice among Ready tickets. No
   /// policy-hook parameter is introduced: with exactly one honest default
-  /// (unrestricted nondet) a GatePricing-style const would have one
+  /// (unrestricted nondet) a WrapUpPricing-style const would have one
   /// branch and nothing to compare — it enters only when a real competing
   /// policy needs modeling. No queue, no fairness — non-goals unchanged
   /// (charter §2).
@@ -770,7 +784,7 @@ module chuggy_domain {
   /// inside the phase.
   pure def decideTaskDone(c: Core, j: int, tid: int, v: Verdict): Decision =
     if (c.tickets.get(j).tasks.exists(t => t.id == tid and t.state == TSRunning))
-      { rec: { label: "task-done", transitions: [], effects: [], landing: LONone },
+      { rec: { label: "task-done", transitions: [], effects: [], landing: WONone },
         post: withTicket(c, j, { ...c.tickets.get(j),
           tasks: resolveTask(c.tickets.get(j).tasks, tid,
             match v { | VPass => TPassed | VFail => TFailed }) }) }
@@ -820,7 +834,7 @@ module chuggy_domain {
   ///     evaluator passing and a later stage remains: create the next
   ///     stage's evaluator tasks"). Descends: stagesLeft -1 dominates the
   ///     spawn (measure.qnt, the PR 3 digit).
-  ///   - the FINAL stage passes -> the program passed: PLanding.
+  ///   - the FINAL stage passes -> the program passed: PWrapUp.
   ///   - stage FAILS -> SHORT-CIRCUIT (spec.md §3.3: "the later stages are
   ///     not created — they are skipped, not failed, so no task records
   ///     exist for them — and the eval reduce proceeds immediately"; the
@@ -852,9 +866,22 @@ module chuggy_domain {
           withTicket(c, j, spawnOn(retired, TKEval(s + 1), fan)),
           j, PEvaluating, "eval-stage-passed", ["SpawnEvalTasks"])
       else
-        move(
-          withTicket(c, j, retired),
-          j, PLanding, "eval-passed", ["EnqueueLanding"])
+        // THE WRAP-UP ROUTE (design 002). A WNone ticket's effect already
+        // happened during work, so evaluation passing IS its completion and
+        // it enters neither wrap-up phase — it never queues for a lease it
+        // does not need, and never records a wrap-up it did not perform.
+        match jb.wrapUp {
+          // On the RETIRED ticket, not the live one: completeTicket does not
+          // retire a task set, because on the lease path the set was already
+          // retired when the ticket enqueued. Skipping the wrap-up phases
+          // skips that retirement too, and a Done ticket holding live eval
+          // tasks breaks tasksWellFormed. Caught by the random layer.
+          | WNone => completeTicket(withTicket(c, j, retired), j, "Complete")
+          | WExclusive(_) =>
+            move(
+              withTicket(c, j, retired),
+              j, PWrapUp, "eval-passed", ["EnqueueWrapUp"])
+        }
     else if (jb.reworkLeft > 0 and jb.gasLeft > 0)
       move(
         withTicket(c, j, { ...spawnOn(retired, TKWork, N_TASKS),
@@ -869,7 +896,7 @@ module chuggy_domain {
         "ticket-escalated gas_exhausted")
 
   /// The outcomes the environment may DRAW for a landing attempt, given
-  /// its own branchMoved choice for the target repo. THE PATH RULE
+  /// its own invalidated choice for the target repo. THE PATH RULE
   /// (merge-queue PR, R3 — the §5e divergence as the outcome sets
   /// themselves; before this PR both success effects were drawable on
   /// either path, which is exactly the coarseness v1's replay harness
@@ -890,81 +917,80 @@ module chuggy_domain {
   /// Still chosen PER ATTEMPT and PER REPO, no stored flag (the envActive
   /// standing rule, docs/chuggy-notes-triage.md). This definition IS the
   /// draw rule (the validPrograms/dependableTickets structural-refusal
-  /// shape): the `gateEnter`/`gateResolve` actions draw from exactly
+  /// shape): the `wrapUpStart`/`wrapUpResolve` actions draw from exactly
   /// these sets, the witness drivers reference it as their guard, and
-  /// decideLand's callers guarantee membership — landingIsolation and
-  /// gatedPromotesDirectSquashes make the refusal durable on every
-  /// reachable step.
-  pure def landOutcomes(moved: bool): Set[LandOutcome] =
-    if (moved) Set(LandAdvanceDefault, LandFailed)
-    else Set(LandSquashMerge)
+  /// decideWrapUpResolve's callers guarantee membership — wrapUpIsolation
+  /// makes the refusal durable on every reachable step.
+  pure def wrapUpOutcomes(invalidated: bool): Set[WrapUpOutcome] =
+    if (invalidated) Set(WOk, WFailed)
+    else Set(WOk)
 
   /// THE DEQUEUE, MOVED ARM (merge-queue PR, R1/R4): the environment chose
   /// the branch MOVED at this dequeue, so the gate must RUN — the ticket
-  /// takes its repo's depth-1 slot (PLanding -> PGated) while the
+  /// takes its repo's depth-1 slot (PWrapUp -> PWrapUpHolding) while the
   /// candidate is built and validated over a duration. Charges nothing
   /// (the gate prices only its failures, R5). Callers guarantee
-  /// gateEnterableIn — the depth-1 refusal. PGated encodes the moved
-  /// choice: gateResolve needs no stored flag to know the attempt's cause
+  /// wrapUpStartableIn — the depth-1 refusal. PWrapUpHolding encodes the moved
+  /// choice: wrapUpResolve needs no stored flag to know the attempt's cause
   /// vocabulary (the envActive standing rule, one more time).
-  pure def decideGateOpen(c: Core, j: int): Decision =
-    move(c, j, PGated, "gate-opened", ["OpenGate"])
+  pure def decideWrapUpStart(c: Core, j: int): Decision =
+    move(c, j, PWrapUpHolding, "wrapup-started", ["OpenGate"])
 
   /// THE ROUTING RULE, hoisted (adversarial review, MAJOR 1 — the
   /// dispatchableIn/m6 discipline applied one level up): how a dequeue
-  /// ROUTES on the environment's branchMoved choice is machine semantics,
+  /// ROUTES on the environment's invalidated choice is machine semantics,
   /// so it lives in a DECIDER, not in an action's if/else composition —
-  ///   moved  -> the gate opens (decideGateOpen: the depth-1 slot,
+  ///   moved  -> the gate opens (decideWrapUpStart: the depth-1 slot,
   ///             validated over a duration);
   ///   quiet  -> the skip fast-path: the landing resolves in this same
-  ///             step as the direct squash (decideLand with the ONE
-  ///             element of landOutcomes(false)).
-  /// Both the `gateEnter` action and the witness drivers (doDequeue,
+  ///             step as the direct squash (decideWrapUpResolve with the ONE
+  ///             element of wrapUpOutcomes(false)).
+  /// Both the `wrapUpStart` action and the witness drivers (doDequeue,
   /// tests/chuggy_witness_test.qnt) REFERENCE this definition; neither
   /// copies the composition. Why that matters (the review's p3 mutant):
   /// when the routing lived inline in the action, rerouting QUIET into
   /// the gate shipped green through every layer — the drivers carried a
   /// copy of the composition, and once a quiet attempt is gated,
-  /// gateResolve stamps moved = true and every isolation conjunct is
+  /// wrapUpResolve stamps moved = true and every isolation conjunct is
   /// self-consistently wrong, so SquashMerge silently became unreachable.
   /// Hoisted, the route has ONE definition: mutating it is caught by the
   /// dequeueRoutesBothBranchesTest unit pins and by the quiet fast-path
   /// witness run (SquashMerge reachability, the R3 quiet half).
   pure def decideDequeue(c: Core, j: int, moved: bool): Decision =
-    if (moved) decideGateOpen(c, j)
-    else decideLand(c, j, LandSquashMerge, false)
+    if (moved) decideWrapUpStart(c, j)
+    else decideWrapUpResolve(c, j, WOk, false)
 
   /// A landing SUCCESS (either effect): the ticket lands, and that is the
   /// whole of it — ONE transition, ONE landing effect. The merge-queue
   /// PR's R2 fan-out (a lead's landing completing its group's members in
   /// the same decision) went with the grouping removal, so what was the
   /// memberless degeneration is now the only case.
-  pure def landSuccess(c: Core, j: int, eff: str): Decision =
+  pure def completeTicket(c: Core, j: int, eff: str): Decision =
     { rec: {
         label: "ticket-done",
         transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: PDone }],
         effects: [eff],
-        landing: LONone },
+        landing: WONone },
       post: withTicket(c, j,
         { ...c.tickets.get(j), phase: PDone,
-          landings: c.tickets.get(j).landings + 1 }) }
+          completions: c.tickets.get(j).completions + 1 }) }
 
   /// The landing resolves — since the merge-queue PR, at the END of a
   /// concrete path (R1/R3/R5; the outcome names are charter §2's, the path
-  /// rule is landOutcomes'):
-  ///   - QUIET fast-path: called from PLanding at the dequeue with
-  ///     (LandSquashMerge, false) — the gate skipped, the direct squash.
-  ///   - GATED: called from PGated with moved = true — LandAdvanceDefault
+  /// rule is wrapUpOutcomes'):
+  ///   - QUIET fast-path: called from PWrapUp at the dequeue with
+  ///     (WOk, false) — the gate skipped, the direct squash.
+  ///   - GATED: called from PWrapUpHolding with moved = true — WOk
   ///     (the validated candidate promoted by advancing the default ref)
-  ///     or LandFailed (the eviction).
-  /// A landing success is the ticket's single landing effect (landSuccess:
-  /// ghost `landings` counts it, one per ticket). A
-  /// landing failure re-enters work priced per GATE_PRICING exactly as
+  ///     or WFailed (the eviction).
+  /// A landing success is the ticket's single landing effect (completeTicket:
+  /// ghost `completions` counts it, one per ticket). A
+  /// landing failure re-enters work priced per WRAPUP_PRICING exactly as
   /// before the merge-queue PR: Budgeted(n) spends gate budget AND gas,
   /// DeadlineOnly spends gas alone (v1's shape — and v1's §5a gate-loop
   /// livelock is exactly why the pricing exists, R5); either wall parks
-  /// the ticket with its own name, resumeAt RLanding re-ENQUEUING (the
-  /// resume returns to PLanding — the queue — never into the gate).
+  /// the ticket with its own name, resumeAt RWrapUp re-ENQUEUING (the
+  /// resume returns to PWrapUp — the queue — never into the gate).
   /// Eviction and walls free the gate by phase. (Chuggernaut's STAGED gate
   /// internals — §3.3 item 3 stages, failure classes, the gate-fix fast
   /// path — stay below this grain: one abstract verdict, README.)
@@ -972,41 +998,40 @@ module chuggy_domain {
   /// Multi-repo PR: the attempt's cause vocabulary is per-repo. The
   /// event carries `moved` — the environment's per-attempt choice of
   /// whether THIS ticket's target repo's default branch moved under the
-  /// candidate (callers guarantee out ∈ landOutcomes(moved), so a failure
+  /// candidate (callers guarantee out ∈ wrapUpOutcomes(moved), so a failure
   /// implies moved, and — R3 — the success EFFECT is determined by it) —
   /// and EVERY arm stamps the step with the attempt's
-  /// attribution (withLandingObs: the ticket's own repo + the choice), so
+  /// attribution (withWrapUpObs: the ticket's own repo + the choice), so
   /// the golden trace attributes each landing resolution, success or
   /// failure, to its repo and its cause. Accounts and pricing are
   /// byte-identical to the pre-merge-queue decider: what changed is WHERE
   /// each arm fires from (the path).
-  pure def decideLand(c: Core, j: int, out: LandOutcome, moved: bool): Decision =
-    withLandingObs(match out {
-      | LandAdvanceDefault => landSuccess(c, j, "AdvanceDefault")
-      | LandSquashMerge => landSuccess(c, j, "SquashMerge")
-      | LandFailed =>
-        match GATE_PRICING {
+  pure def decideWrapUpResolve(c: Core, j: int, out: WrapUpOutcome, moved: bool): Decision =
+    withWrapUpObs(match out {
+      | WOk => completeTicket(c, j, "Complete")
+      | WFailed =>
+        match WRAPUP_PRICING {
           | Budgeted(_) =>
-            if (c.tickets.get(j).gateLeft > 0 and c.tickets.get(j).gasLeft > 0)
+            if (c.tickets.get(j).wrapUpLeft > 0 and c.tickets.get(j).gasLeft > 0)
               move(
                 withTicket(c, j, { ...spawnOn(c.tickets.get(j), TKWork, N_TASKS),
-                  gateLeft: c.tickets.get(j).gateLeft - 1,
+                  wrapUpLeft: c.tickets.get(j).wrapUpLeft - 1,
                   gasLeft: c.tickets.get(j).gasLeft - 1 }),
-                j, PWorking, "rework-started gate_failure", ["SpawnWorkTasks"])
-            else if (c.tickets.get(j).gateLeft == 0)
-              escalate(c, j, RLanding, RsGateBudgetExhausted,
-                "ticket-escalated gate_budget_exhausted")
+                j, PWorking, "rework-started wrapup_failure", ["SpawnWorkTasks"])
+            else if (c.tickets.get(j).wrapUpLeft == 0)
+              escalate(c, j, RWrapUp, RsWrapUpBudgetExhausted,
+                "ticket-escalated wrapup_budget_exhausted")
             else
-              escalate(c, j, RLanding, RsGasExhausted,
+              escalate(c, j, RWrapUp, RsGasExhausted,
                 "ticket-escalated gas_exhausted")
           | DeadlineOnly =>
             if (c.tickets.get(j).gasLeft > 0)
               move(
                 withTicket(c, j, { ...spawnOn(c.tickets.get(j), TKWork, N_TASKS),
                   gasLeft: c.tickets.get(j).gasLeft - 1 }),
-                j, PWorking, "rework-started gate_failure", ["SpawnWorkTasks"])
+                j, PWorking, "rework-started wrapup_failure", ["SpawnWorkTasks"])
             else
-              escalate(c, j, RLanding, RsGasExhausted,
+              escalate(c, j, RWrapUp, RsGasExhausted,
                 "ticket-escalated gas_exhausted")
         }
     }, c.tickets.get(j).repo, moved)
@@ -1014,10 +1039,10 @@ module chuggy_domain {
   /// A duplicate landing event for an already-Done ticket (at-least-once: a
   /// stale executor re-delivers). NO landing effect is emitted — this
   /// no-op IS the exactly-once-at-the-landing-boundary claim; the
-  /// landingExclusive invariant checks it (charter §2 exclusivity +
+  /// completionExclusive invariant checks it (charter §2 exclusivity +
   /// fabric rows).
-  pure def decideLandDuplicate(c: Core, j: int): Decision =
-    noop(c, "land-duplicate")
+  pure def decideCompleteDuplicate(c: Core, j: int): Decision =
+    noop(c, "complete-duplicate")
 
   /// Ready -> Escalated behind the revalidation wall: the world changed
   /// under a ticket before it ever ran (static config no longer valid). Free
@@ -1051,7 +1076,7 @@ module chuggy_domain {
   ///     against the intact branch ... with a fresh eval fan-out"; stages
   ///     are never resumed mid-sequence, §3.3). New ids: the retried tasks
   ///     are NEW records, the failed ones stay retired in the log.
-  ///   RLanding: re-enqueue the landing.
+  ///   RWrapUp: re-enqueue the landing.
   /// Under RetryFree the Evaluating/Landing resumes join the CHURN set —
   /// v1's livelock kept reproducible by configuration.
   pure def decideOpRetry(c: Core, j: int): Decision =
@@ -1068,8 +1093,8 @@ module chuggy_domain {
       | REvaluating =>
         move(withTicket(c, j, spawnOn(resumed, TKEval(0), jb.program[0].fanout)),
           j, PEvaluating, "operator-retry", ["SpawnEvalTasks"])
-      | RLanding =>
-        move(withTicket(c, j, resumed), j, PLanding, "operator-retry", ["EnqueueLanding"])
+      | RWrapUp =>
+        move(withTicket(c, j, resumed), j, PWrapUp, "operator-retry", ["EnqueueWrapUp"])
       | RNone =>
         // Unreachable: retryableIn refuses a ticket with no modeled resume
         // (the dependency_revoked wall — its only exit is revoke).
@@ -1180,13 +1205,13 @@ module chuggy_domain {
   val reducibleWork: Set[int] = reducibleWorkIn(core)
   val reducibleEval: Set[int] = reducibleEvalIn(core)
   /// The landing QUEUE, derived (merge-queue PR): enqueued tickets whose
-  /// dequeue the gate serializes. Deliberately unordered — see gateEnter.
-  val landingTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == PLanding)
+  /// dequeue the gate serializes. Deliberately unordered — see wrapUpStart.
+  val wrapUpTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == PWrapUp)
   /// Enqueued tickets whose repo's gate is FREE — the dequeue-enabled set
-  /// (gateEnterableIn is the shared guard; the depth-1 refusal).
-  val gateEnterable: Set[int] = gateEnterablesIn(core)
-  /// The occupied gate slots (at most one per repo — gateDepthOne).
-  val gatedTickets: Set[int] = gatedIn(core)
+  /// (wrapUpStartableIn is the shared guard; the depth-1 refusal).
+  val wrapUpStartable: Set[int] = wrapUpStartablesIn(core)
+  /// The occupied gate slots (at most one per repo — leaseExclusive).
+  val holdingTickets: Set[int] = holdingIn(core)
   val doneTickets: Set[int] = doneIn(core)
   /// Parked tickets the operator may Retry (retryableIn: a modeled resume
   /// exists and is affordable). Under RetryCharged a charging resume with
@@ -1229,9 +1254,9 @@ module chuggy_domain {
     MAX_STAGES >= 1,     // PR 3: at least one authorable program must exist
     N_REPOS >= 1,        // multi-repo PR: a ticket needs a repo to target
     reworkBudget(REWORK_POLICY) >= 0,
-    gateBudget(GATE_PRICING) >= 0,
+    wrapUpBudget(WRAPUP_PRICING) >= 0,
     tickets' = Map(),
-    lastStep' = { label: "init", transitions: [], effects: [], landing: LONone },
+    lastStep' = { label: "init", transitions: [], effects: [], landing: WONone },
     prevMeasure' = 0,
     prevRecords' = Map()
   }
@@ -1256,7 +1281,8 @@ module chuggy_domain {
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
     nondet repo_ = repos.oneOf()
-    apply(decideArrive(core, deps_, prog, repo_))
+    nondet wrapUp_ = wrapUpChoices.oneOf()
+    apply(decideArrive(core, deps_, prog, repo_, wrapUp_))
   }
 
   /// Author releases a Draft into the pipeline (table line 21;
@@ -1317,15 +1343,15 @@ module chuggy_domain {
   /// on the respawned set) — staleness is now absorbed structurally, and
   /// the only remaining first-write-wins case is a duplicate delivery for
   /// a LIVE resolved task. A stale landing SUCCESS still implies a success
-  /// occurred, and PDone is absorbing (landDuplicate). The observed/actual
+  /// occurred, and PDone is absorbing (completeDuplicate). The observed/actual
   /// split that would make mid-rework duplicates dangerous — a decider
   /// acting on a stale VIEW — is exactly the deferred §4 refinement layer
   /// (reconcile vs journaled-actor), not this shared domain layer. PR 2's
   /// deferred corner SHARPENED by the merge-queue PR: a ticket revoked
-  /// OUT of PLanding (enqueued) or PGated (the gate mid-validation) could
+  /// OUT of PWrapUp (enqueued) or PWrapUpHolding (the gate mid-validation) could
   /// race an in-flight merge in the real system — in-model
-  /// revokedNeverLands holds structurally (a revoked ticket leaves
-  /// gatedTickets/gateEnterable, so neither landing action can resolve
+  /// revokedNeverCompletes holds structurally (a revoked ticket leaves
+  /// holdingTickets/wrapUpStartable, so neither landing action can resolve
   /// it, and the revoke frees the slot by phase); the real revoke/merge
   /// race — the candidate already advancing when the revoke lands — is
   /// record-vs-effect atomicity, the §4 refinement layer (roadmap PR 6).
@@ -1357,10 +1383,10 @@ module chuggy_domain {
   /// no stored flag (the envActive standing rule) — whether that repo's
   /// default branch MOVED under the candidate since evaluation:
   ///   - quiet: the skip fast-path — the gate never opens; the one outcome
-  ///     landOutcomes(false) permits (LandSquashMerge, the direct squash)
+  ///     wrapUpOutcomes(false) permits (WOk, the direct squash)
   ///     resolves the landing in this same step;
-  ///   - moved: the gate OPENS (PGated) and holds its repo's depth-1 slot
-  ///     until gateResolve.
+  ///   - moved: the gate OPENS (PWrapUpHolding) and holds its repo's depth-1 slot
+  ///     until wrapUpResolve.
   /// WHICH enqueued ticket dequeues is unrestricted nondet — chuggernaut's
   /// queue is FIFO in dispatcher memory, but its order does not survive a
   /// restart (§3.6 step 3 re-enters WrapUp jobs from state, not from
@@ -1369,32 +1395,32 @@ module chuggy_domain {
   /// This action only DRAWS; the quiet/moved routing itself is
   /// decideDequeue (hoisted per the adversarial review — its header has
   /// the p3-mutant story), shared with the witness drivers.
-  action gateEnter = all {
-    gateEnterable.size() > 0,
-    nondet j = gateEnterable.oneOf()
+  action wrapUpStart = all {
+    wrapUpStartable.size() > 0,
+    nondet j = wrapUpStartable.oneOf()
     nondet moved = Set(true, false).oneOf()
     apply(decideDequeue(core, j, moved))
   }
 
   /// THE GATE RESOLVES (merge-queue PR, R3/R5): the occupant's candidate
-  /// was built against a MOVED branch (PGated encodes the choice — no
-  /// stored flag), so the outcome draws from landOutcomes(true): the
+  /// was built against a MOVED branch (PWrapUpHolding encodes the choice — no
+  /// stored flag), so the outcome draws from wrapUpOutcomes(true): the
   /// validated candidate promotes (AdvanceDefault) or the gate fails and
-  /// the eviction prices per GATE_PRICING. Either way the slot frees by
+  /// the eviction prices per WRAPUP_PRICING. Either way the slot frees by
   /// phase.
-  action gateResolve = all {
-    gatedTickets.size() > 0,
-    nondet j = gatedTickets.oneOf()
-    nondet out = landOutcomes(true).oneOf()
-    apply(decideLand(core, j, out, true))
+  action wrapUpResolve = all {
+    holdingTickets.size() > 0,
+    nondet j = holdingTickets.oneOf()
+    nondet out = wrapUpOutcomes(true).oneOf()
+    apply(decideWrapUpResolve(core, j, out, true))
   }
 
   /// At-least-once: a duplicate landing event for a Done ticket. Must emit
-  /// nothing (landingExclusive checks it).
-  action landDuplicate = all {
+  /// nothing (completionExclusive checks it).
+  action completeDuplicate = all {
     doneTickets.size() > 0,
     nondet j = doneTickets.oneOf()
-    apply(decideLandDuplicate(core, j))
+    apply(decideCompleteDuplicate(core, j))
   }
 
   /// Environment churn: revalidation fails at the moment a ticket would
@@ -1419,7 +1445,7 @@ module chuggy_domain {
   action settle = all {
     quiet,
     tickets' = tickets,
-    lastStep' = { label: "settled", transitions: [], effects: [], landing: LONone },
+    lastStep' = { label: "settled", transitions: [], effects: [], landing: WONone },
     prevMeasure' = currentMeasure,
     prevRecords' = currentRecords
   }
@@ -1432,9 +1458,9 @@ module chuggy_domain {
     taskDone,
     workReduce,
     evalReduce,
-    gateEnter,
-    gateResolve,
-    landDuplicate,
+    wrapUpStart,
+    wrapUpResolve,
+    completeDuplicate,
     revalFail,
     opRetry,
     settle
@@ -1452,7 +1478,7 @@ module chuggy_domain {
   /// any number of task executions may duplicate (at-least-once fabric),
   /// but the landing effect is emitted exactly once per ticket, exactly when
   /// it is Done. "Per cycle" collapses to "per ticket" because a landing
-  /// effect ends the ticket (PDone is absorbing) and failed landings emit no
+  /// effect ends the ticket (PDone is absorbing) and failed completions emit no
   /// landing effect. Multi-repo PR: DELIBERATELY UNCHANGED — per-ticket
   /// exclusivity is strictly stronger than any per-repo form (exactly one
   /// landing per ticket implies at most one per ticket per repo), so the
@@ -1462,86 +1488,93 @@ module chuggy_domain {
   /// That extension is WITHDRAWN with the grouping removal, and the
   /// invariant reverts to its plain form: Done iff exactly one landing
   /// effect, with no mark conjunct to carve out.
-  val landingExclusive: bool = liveTickets.forall(j => and {
-    tickets.get(j).landings <= 1,
-    (tickets.get(j).landings == 1) iff (tickets.get(j).phase == PDone)
+  val completionExclusive: bool = liveTickets.forall(j => and {
+    tickets.get(j).completions <= 1,
+    (tickets.get(j).completions == 1) iff (tickets.get(j).phase == PDone)
   })
 
   /// REVOKED NEVER LANDS (the PR 2 exclusivity extension): a revoked ticket
   /// has emitted no landing effect — and never will: PRevoked is absorbing
   /// (terminalsAbsorbing; table lines 45-46), no decider touches a revoked
-  /// ticket's `landings`, and revoke from PLanding clears the ticket OUT of the
+  /// ticket's `completions`, and revoke from PWrapUp clears the ticket OUT of the
   /// landing boundary before any effect fires. Stated as its own named
   /// invariant because it is the PR 2 gate's exclusivity half, though
-  /// state-wise it is a corollary of landingExclusive (landings = 1 iff
-  /// Done, landings <= 1, Revoked != Done ⇒ landings = 0) — same
+  /// state-wise it is a corollary of completionExclusive (completions = 1 iff
+  /// Done, completions <= 1, Revoked != Done ⇒ completions = 0) — same
   /// stated-corollary treatment as stuckSubsetCovered.
-  val revokedNeverLands: bool = liveTickets.forall(j =>
-    (tickets.get(j).phase == PRevoked) implies (tickets.get(j).landings == 0))
+  val revokedNeverCompletes: bool = liveTickets.forall(j =>
+    (tickets.get(j).phase == PRevoked) implies (tickets.get(j).completions == 0))
 
   // --- Isolation invariants (THE MULTI-REPO PR 4 gate) ----------------------
 
   /// LANDING ISOLATION (the gate's attribution half) — a step-invariant
   /// over lastStep, the stepDescends pattern. Reading it as an iff:
   ///
-  ///   - A step carrying a landing attempt (LOAttempt) is EXACTLY a step
+  ///   - A step carrying a landing attempt (WOAttempt) is EXACTLY a step
   ///     that resolves one: single ticket, one of the four
   ///     landing-resolution labels (ticket-done, the gate rework, the two
   ///     landing walls), the attribution naming the stepped ticket's OWN
   ///     repo (repo is immutable, so reading it from the post-state is
   ///     reading the authored field) from inside the repo universe.
   ///   - THE ISOLATION CLAIM: a gate-FAILURE step (any attempt that is
-  ///     not the ticket-done success) carries branchMoved = true — a
+  ///     not the ticket-done success) carries invalidated = true — a
   ///     landing can fail ONLY via its own repo's branch moving. There is
   ///     no cross-repo path to a failure: the attempt's attribution IS
   ///     the ticket's repo (the own-repo conjunct), and no other repo's
   ///     choice appears anywhere in the step (the environment draws
-  ///     branchMoved for the target repo alone — nothing else exists to
+  ///     invalidated for the target repo alone — nothing else exists to
   ///     leak in).
-  ///   - Completeness: a step with NO attempt (LONone) carries none of
+  ///   - Completeness: a step with NO attempt (WONone) carries none of
   ///     the uniquely-landing labels — a landing is never resolved
   ///     off-record. ("ticket-escalated gas_exhausted" is shared with the
-  ///     eval side, so it is legitimately LONone there — pinned in
+  ///     eval side, so it is legitimately WONone there — pinned in
   ///     tests/chuggy_test.qnt, nonLandingStepsCarryNoAttributionTest;
   ///     land-duplicate absorbs with nothing emitted and is not an
   ///     attempt; gate-opened OPENS an attempt but resolves none — the
   ///     resolution's attribution carries the choice the open encoded.)
   ///   - MERGE-QUEUE PR, the PATH iff (R3/R4): a MOVED attempt resolves
-  ///     out of the GATE (transitions[0].from == PGated — the slot the
+  ///     out of the GATE (transitions[0].from == PWrapUpHolding — the slot the
   ///     dequeue took when it drew moved), a QUIET one straight off the
-  ///     QUEUE (from == PLanding — the fast-path; the gate never opened).
-  ///     With gateDepthOne this is depth-1 serialization on the trace:
+  ///     QUEUE (from == PWrapUp — the fast-path; the gate never opened).
+  ///     With leaseExclusive this is depth-1 serialization on the trace:
   ///     every moved resolution names the unique slot-holder.
   ///   - EVERY attempt, success or not, touches exactly its ONE ticket.
   ///     The merge-queue PR's fan-out arm (R2), under which a success
   ///     could carry extra member transitions, went with the grouping
   ///     removal — so this is one transition per attempt again.
   ///
-  /// Together with landOutcomes (the draw rule the gateEnter/gateResolve
+  /// Together with wrapUpOutcomes (the draw rule the wrapUpStart/wrapUpResolve
   /// actions and the witness drivers share) this is the refusal made
-  /// durable: the machine cannot DRAW a quiet failure (or a quiet
-  /// AdvanceDefault, or a moved SquashMerge — gatedPromotesDirectSquashes
-  /// pins the effect half), and this invariant checks that no reachable
+  /// durable: the machine cannot DRAW a failure on an artifact the
+  /// environment left valid, and this invariant checks that no reachable
   /// step RECORDS one.
-  val landingIsolation: bool = match lastStep.landing {
-    | LONone => and {
-        lastStep.label != "ticket-done",
-        lastStep.label != "rework-started gate_failure",
-        lastStep.label != "ticket-escalated gate_budget_exhausted"
+  val wrapUpIsolation: bool = match lastStep.landing {
+    | WONone => and {
+        // A COMPLETION IS NOT ALWAYS AN ATTEMPT (design 002). A WNone
+        // ticket's effect happened during work, so evaluation passing
+        // completes it having resolved no wrap-up attempt at all — the one
+        // ticket-done that legitimately carries no attribution. Found by
+        // the random layer when the WNone route landed: the completeness
+        // arm was written when every completion WAS an attempt.
+        lastStep.label == "ticket-done" implies
+          (lastStep.transitions.length() == 1 and
+           tickets.get(lastStep.transitions[0].ticket).wrapUp == WNone),
+        lastStep.label != "rework-started wrapup_failure",
+        lastStep.label != "ticket-escalated wrapup_budget_exhausted"
       }
-    | LOAttempt(a) => and {
+    | WOAttempt(a) => and {
         repos.contains(a.repo),
         lastStep.transitions.length() >= 1,
         tickets.get(lastStep.transitions[0].ticket).repo == a.repo,
         or {
           lastStep.label == "ticket-done",
-          lastStep.label == "rework-started gate_failure",
-          lastStep.label == "ticket-escalated gate_budget_exhausted",
+          lastStep.label == "rework-started wrapup_failure",
+          lastStep.label == "ticket-escalated wrapup_budget_exhausted",
           lastStep.label == "ticket-escalated gas_exhausted"
         },
-        (lastStep.label != "ticket-done") implies a.branchMoved,
+        (lastStep.label != "ticket-done") implies a.invalidated,
         // The path iff: moved resolves from the gate, quiet from the queue.
-        lastStep.transitions[0].from == (if (a.branchMoved) PGated else PLanding),
+        lastStep.transitions[0].from == (if (a.invalidated) PWrapUpHolding else PWrapUp),
         // One landing attempt moves exactly one ticket.
         lastStep.transitions.length() == 1
       }
@@ -1556,8 +1589,8 @@ module chuggy_domain {
   /// theorem AS QUANTIFIED OVER REPOS. What IS a state theorem — checked
   /// here on every reachable step — is the per-attempt form: an attempt
   /// the environment chose QUIET resolves as the ticket-done success,
-  /// full stop (state-wise a corollary of landingIsolation's
-  /// failure-implies-moved conjunct, stated named like revokedNeverLands
+  /// full stop (state-wise a corollary of wrapUpIsolation's
+  /// failure-implies-moved conjunct, stated named like revokedNeverCompletes
   /// because it is the gate's claim in its own words). The TRACE-level
   /// reading — pin every draw for a repo quiet and its tickets all land
   /// cleanly / pin a move and the rework is attributed — is deliberately
@@ -1567,30 +1600,8 @@ module chuggy_domain {
   /// (the choice pinned moved, the gate rework and the wall both carry
   /// the attribution).
   val quietRepoLandsCleanly: bool = match lastStep.landing {
-    | LONone => true
-    | LOAttempt(a) => not(a.branchMoved) implies lastStep.label == "ticket-done"
-  }
-
-  /// THE §5e THEOREM, effect half (merge-queue PR, R3 — v1's one
-  /// conformance divergence, model-status §5e, become a checked rule
-  /// instead of an allowlist widening): a landing success's effect is
-  /// DETERMINED by its path — the gated promotion advances the default ref
-  /// (AdvanceDefault: "advance the default branch to the candidate commit
-  /// — this IS the squash-merge; do not re-merge", chuggernaut §3.3 item
-  /// 4), the quiet fast-path squash-merges directly (SquashMerge: item 1,
-  /// "skip the gate; squash-merge directly"). effects[0] is the landing
-  /// effect, and since the grouping removal it is the only one. The
-  /// structural half — WHICH phase each path resolves from — is
-  /// landingIsolation's path iff; v1's conformance allowlist widened
-  /// SquashMerge to "either promotion mechanism" because v1 could not see
-  /// the gate (trace-conformance §2.4 delta 3) — this invariant is the
-  /// promised split that retires the widening.
-  val gatedPromotesDirectSquashes: bool = match lastStep.landing {
-    | LONone => true
-    | LOAttempt(a) =>
-        (lastStep.label == "ticket-done") implies
-          (lastStep.effects[0] ==
-            (if (a.branchMoved) "AdvanceDefault" else "SquashMerge"))
+    | WONone => true
+    | WOAttempt(a) => not(a.invalidated) implies lastStep.label == "ticket-done"
   }
 
   /// THE DEPTH-1 GATE (merge-queue PR, R4 — chuggernaut §3.3
@@ -1599,19 +1610,29 @@ module chuggy_domain {
   /// boundary): occupancy is the derived phase predicate, and no repo's
   /// slot ever holds two tickets. The guard-refusal half — a second
   /// same-repo ticket cannot even DRAW the dequeue while the slot is held
-  /// (gateEnterableIn) — is pinned on a deterministic machine trace
+  /// (wrapUpStartableIn) — is pinned on a deterministic machine trace
   /// (tests/chuggy_witness_test.qnt, gate module). Gates of DIFFERENT
   /// repos are independent — serialization is per-repo, not global: a
-  /// state with one PGated ticket in EACH repo simultaneously satisfies
+  /// state with one PWrapUpHolding ticket in EACH repo simultaneously satisfies
   /// this invariant BY DESIGN (adversarial review, observation B — the
   /// per-repo quantifier is the shape, not an accident; the cross-repo
   /// dequeue staying enabled while another repo's slot is held is pinned
-  /// at guard grain in gateDepthOneGuardTest).
-  val gateDepthOne: bool = repos.forall(r =>
+  /// at guard grain in leaseExclusiveGuardTest).
+  val leaseExclusive: bool = repos.forall(r =>
     liveTickets.filter(j => and {
-      tickets.get(j).phase == PGated,
-      tickets.get(j).repo == r
+      tickets.get(j).phase == PWrapUpHolding,
+      leaseOf(tickets.get(j)) == r
     }).size() <= 1)
+
+  /// A WNone TICKET NEVER TAKES A LEASE (design 002). Structural rather than
+  /// argued: it is what stops a deploy from occupying — and blocking — a
+  /// resource whose serialization it has no stake in, which is the concrete
+  /// cost that made merge-only wrong rather than merely narrow.
+  val noLeaseWithoutAKind: bool = liveTickets.forall(j =>
+    (tickets.get(j).wrapUp == WNone) implies and {
+      tickets.get(j).phase != PWrapUp,
+      tickets.get(j).phase != PWrapUpHolding
+    })
 
   /// A COMPLETED TICKET PRODUCED SOMETHING (design 002). Deliberately the
   /// weak form: an artifact exists by the time a ticket is Done. The
@@ -1662,9 +1683,9 @@ module chuggy_domain {
 
   /// The gate-budget wall exists only under Budgeted pricing (the wall
   /// vocabulary is v1-carried; the pricing parameter is charter §2's).
-  val gateWallNamed: bool = match GATE_PRICING {
+  val wrapUpWallNamed: bool = match WRAPUP_PRICING {
     | Budgeted(_) => true
-    | DeadlineOnly => liveTickets.forall(j => tickets.get(j).reason != RsGateBudgetExhausted)
+    | DeadlineOnly => liveTickets.forall(j => tickets.get(j).reason != RsWrapUpBudgetExhausted)
   }
 
   /// Every account stays a resource: bounded below by 0 (nothing
@@ -1679,7 +1700,7 @@ module chuggy_domain {
     tickets.get(j).gasLeft >= 0, tickets.get(j).gasLeft <= GAS,
     tickets.get(j).reworkLeft >= 0,
     tickets.get(j).reworkLeft <= reworkBudget(REWORK_POLICY),
-    tickets.get(j).gateLeft >= 0, tickets.get(j).gateLeft <= gateBudget(GATE_PRICING)
+    tickets.get(j).wrapUpLeft >= 0, tickets.get(j).wrapUpLeft <= wrapUpBudget(WRAPUP_PRICING)
   })
 
   /// The LIVE task set is exactly the current phase's anatomy (PR 3
@@ -1999,7 +2020,7 @@ module chuggy_domain {
       lastStep.label == "init",
       // STUTTER: state-identical delivery noise + the dead-end self-loop.
       lastStep.label == "task-done-duplicate",
-      lastStep.label == "land-duplicate",
+      lastStep.label == "complete-duplicate",
       lastStep.label == "settled",
       // CHURN: the uncharged operator-resume flavors (measure.qnt CHURN):
       // the PRE-WORK resume (Escalated -> Pending; free under BOTH
@@ -2057,7 +2078,7 @@ module chuggy_domain {
     not(and {
       lastStep.label == "operator-retry",
       lastStep.transitions.foldl(false, (b, t) =>
-        b or t.to == PEvaluating or t.to == PLanding),
+        b or t.to == PEvaluating or t.to == PWrapUp),
       currentMeasure > prevMeasure
     })
 
@@ -2090,17 +2111,17 @@ module chuggy_domain {
 
   /// All safety invariants, for `--invariant=allInvariants`.
   val allInvariants: bool = and {
-    landingExclusive,
-    revokedNeverLands,
-    landingIsolation,
+    completionExclusive,
+    revokedNeverCompletes,
+    wrapUpIsolation,
     quietRepoLandsCleanly,
-    gatedPromotesDirectSquashes,
-    gateDepthOne,
+    leaseExclusive,
+    noLeaseWithoutAKind,
     artifactWellFormed,
     reposWellFormed,
     terminalsAbsorbing,
     deskConsistent,
-    gateWallNamed,
+    wrapUpWallNamed,
     accountsBounded,
     tasksWellFormed,
     recordWellFormed,

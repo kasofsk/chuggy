@@ -47,7 +47,7 @@ module chuggy_refinement_unit_test {
   // A three-decision history built BY the deciders (arrive, release,
   // dispatch), entry records taken from the decisions themselves — the
   // journal an honest actor would write.
-  pure val cmd1: Cmd = JArrive({ deps: Set(), prog: progFlat, repo: 1 })
+  pure val cmd1: Cmd = JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })
   pure val d1: Decision = execCmd(genesis, cmd1)
   pure val e1: Entry = { seq: 1, cmd: cmd1, rec: d1.rec }
   pure val cmd2: Cmd = JRelease(1)
@@ -103,7 +103,7 @@ module chuggy_refinement_unit_test {
     not(journalLegalOn([{ ...e2, seq: 1 }])),
     not(cmdEnabled(genesis, JTaskDone({ ticket: 1, tid: 1, verdict: VPass }))),
     not(cmdEnabled(genesis, JDispatch(1))),
-    not(cmdEnabled(genesis, JGateResolve({ ticket: 1, out: LandAdvanceDefault }))),
+    not(cmdEnabled(genesis, JGateResolve({ ticket: 1, out: WOk }))),
     not(cmdEnabled(genesis, JOpRetry(1)))
   })
 
@@ -179,7 +179,7 @@ module chuggy_refinement_witness_test {
   run crashRecoverContinueDeterministicTest =
     rinit
       // The Draft arrives and is journaled (entry 1)...
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1 })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
       .expect(and { journal.length() == 1, allDomainInvariants, refinementInvariants })
       // ...and the actor dies BEFORE emitting it. Recovery replays: the
       // Draft is in memory again — the decision was durable the instant
@@ -297,7 +297,7 @@ module chuggy_refinement_witness_test {
       .then(crashRecoverTo(12))
       .expect(and {
         memCore.tickets.get(1).phase == PDone,
-        memCore.tickets.get(1).landings == 1,
+        memCore.tickets.get(1).completions == 1,
         worldLandings(1) == 0,
         allDomainInvariants, refinementInvariants
       })
@@ -309,7 +309,7 @@ module chuggy_refinement_witness_test {
       // A stale landing confirmation re-delivers; the domain absorbs it
       // and the actor journals the no-op (entry 14) — the world's
       // landing count does not move.
-      .then(stepEmit(JLandDuplicate(1), "land-duplicate"))
+      .then(stepEmit(JLandDuplicate(1), "complete-duplicate"))
       .expect(and { worldLandings(1) == 1, allDomainInvariants, refinementInvariants })
       // Final full-loss recovery: replay of the complete journal
       // reconstructs the settled fleet exactly — the actor can die at
@@ -345,7 +345,7 @@ module chuggy_refinement_hazard_test {
   /// duplicate cycle"), each produced by one effect-first crash.
   run hazardDoubleSpendDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1 })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
       .then(emitNext)
       .then(journalStep(JRelease(1)))
       .then(emitNext)
@@ -392,18 +392,18 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(JEvalReduce(1)))
       .then(emitNext)
       .expect(and {
-        memCore.tickets.get(1).phase == PLanding,
+        memCore.tickets.get(1).phase == PWrapUp,
         allDomainInvariants
       })
       // THE SEAM AT THE LANDING: the quiet dequeue squash-merges IN THE
       // WORLD, the crash eats the journal write — the book still shows
-      // the ticket enqueued, landings 0.
+      // the ticket enqueued, completions 0.
       .then(effectCrash(JDequeue({ ticket: 1, moved: false })))
       .expect(and {
         orphans.length() == 2,
         worldLandings(1) == 1,
-        memCore.tickets.get(1).phase == PLanding,
-        memCore.tickets.get(1).landings == 0,
+        memCore.tickets.get(1).phase == PWrapUp,
+        memCore.tickets.get(1).completions == 0,
         journalLegal,
         recoveryComplete,
         allDomainInvariants
@@ -411,13 +411,13 @@ module chuggy_refinement_hazard_test {
       // The recovered actor re-lands the enqueued ticket: the SAME
       // diff merges a second time — the duplicate cycle — while the
       // journal records exactly one clean landing and the domain's
-      // landingExclusive stays green throughout.
+      // completionExclusive stays green throughout.
       .then(journalStep(JDequeue({ ticket: 1, moved: false })))
       .then(emitNext)
       .expect(and {
         worldLandings(1) == 2,
         journalLandings(1) == 1,
-        memCore.tickets.get(1).landings == 1,
+        memCore.tickets.get(1).completions == 1,
         not(noDuplicateCycle),
         refinementCore,
         allDomainInvariants
@@ -429,7 +429,7 @@ module chuggy_refinement_hazard_test {
   /// and the re-decided rework charges once for two Jobs in the world.
   run hazardReworkDoubleSpendDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1 })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
       .then(emitNext)
       .then(journalStep(JRelease(1)))
       .then(emitNext)

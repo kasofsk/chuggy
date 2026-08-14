@@ -13,7 +13,7 @@
 ///   - effect-exclusivity at the landing boundary on a happy path AND a
 ///     duplicate-completion / duplicate-landing path;
 ///   - every escalation wall carries its name (v1-carried vocabulary), on
-///     both GatePricing branches;
+///     both WrapUpPricing branches;
 ///   - both retry-metering branches (charter §2 op-retry row).
 ///
 /// PR 2 additions (authoring lifecycle; gate: revoke cascades proved safe):
@@ -75,16 +75,16 @@
 ///
 /// MULTI-REPO PR additions (roadmap PR 4; gate: isolation invariants —
 /// design at domain.qnt's header):
-///   - the landOutcomes draw rule pinned: a QUIET branch refuses
-///     LandFailed (the structural refusal — v1's "a quiet branch always
+///   - the wrapUpOutcomes draw rule pinned: a QUIET branch refuses
+///     WFailed (the structural refusal — v1's "a quiet branch always
 ///     lands cleanly" as the outcome set itself);
 ///   - landing-boundary ATTRIBUTION pinned at decider grain, on a
 ///     repo-2 ticket so own-repo attribution is distinguishable from
 ///     repo-constant stamping: both successes, the gate rework, and both
-///     landing walls each carry LOAttempt with the ticket's OWN repo and
-///     the attempt's branchMoved choice — and the effect vocabulary is
+///     landing walls each carry WOAttempt with the ticket's OWN repo and
+///     the attempt's invalidated choice — and the effect vocabulary is
 ///     untouched by the new field;
-///   - every NON-landing step carries LONone — including the shared
+///   - every NON-landing step carries WONone — including the shared
 ///     "ticket-escalated gas_exhausted" label from the EVAL side (the
 ///     attribution, not the label string, marks the landing boundary),
 ///     eval-passed (which merely enqueues), and the absorbed
@@ -105,17 +105,17 @@
 /// requirements R1-R7, and the severability map at domain.qnt's header and
 /// specs/chuggy/README.md):
 ///   - THE PATH RULE pinned (R3, the §5e theorem at decider grain):
-///     landOutcomes(false) is the SquashMerge singleton (the skip
-///     fast-path), landOutcomes(true) is {AdvanceDefault, Failed} (the
+///     wrapUpOutcomes(false) is the SquashMerge singleton (the skip
+///     fast-path), wrapUpOutcomes(true) is {AdvanceDefault, Failed} (the
 ///     gate ran) — quiet refuses failure AND the gated promotion, moved
 ///     refuses the direct squash; the two success effects come from their
 ///     two paths and nowhere else;
 ///   - THE DEPTH-1 GUARD pinned (R4): an occupied gate refuses every
-///     same-repo dequeue (gateEnterableIn false) while another repo's
+///     same-repo dequeue (wrapUpStartableIn false) while another repo's
 ///     dequeue stays enabled — serialization is per-repo; gate-opened is
-///     rank descent, LONone, charges nothing;
+///     rank descent, WONone, charges nothing;
 ///   - THE EVICTION unchanged in pricing (R5): the existing gate-rework/
-///     wall fixtures moved from PLanding to PGated (where failures now
+///     wall fixtures moved from PWrapUp to PWrapUpHolding (where failures now
 ///     fire from) with account deltas byte-identical;
 ///   - THE GROUP (R7) is GONE — the grouping removal deleted PBatched, the
 ///     marks, absorption, the dep union, the fan-out and the dissolution,
@@ -130,14 +130,14 @@ module chuggy_test {
   // (which is the point).
   import chuggy_domain(
     N_TICKETS = 2, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
-    GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
+    WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2, N_REPOS = 2
   ) as DB from "../domain"
 
   // DeadlineOnly gate pricing (the other §2 branch).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
-    GATE_PRICING = DeadlineOnly, OP_RETRY_PRICING = RetryCharged,
+    WRAPUP_PRICING = DeadlineOnly, OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2, N_REPOS = 2
   ) as DD from "../domain"
 
@@ -145,7 +145,7 @@ module chuggy_test {
   // by configuration (machine-level coverage: mc_chuggy_retryfree).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
-    GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryFree,
+    WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryFree,
     MAX_STAGES = 2, N_REPOS = 2
   ) as DF from "../domain"
 
@@ -155,7 +155,7 @@ module chuggy_test {
   // with a constant field (README's degeneration claim, pinned here).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
-    GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
+    WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2, N_REPOS = 1
   ) as DO from "../domain"
 
@@ -163,7 +163,7 @@ module chuggy_test {
   // account is named gas since the notes PR, the requirement unchanged).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 0,
-    GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
+    WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2, N_REPOS = 2
   ) as DZ from "../domain"
 
@@ -236,9 +236,9 @@ module chuggy_test {
   // chuggernaut spec.md §1.2).
 
   pure val cEmpty: Core = { tickets: Map() }
-  pure val dArr1 = DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 1)
+  pure val dArr1 = DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 1, WExclusive(1))
   pure val cA1 = dArr1.post                        // ticket 1: Draft
-  pure val dArr2 = DB::decideArrive(cA1, Set(1), DB::defaultProgram, 1)
+  pure val dArr2 = DB::decideArrive(cA1, Set(1), DB::defaultProgram, 1, WExclusive(1))
   pure val cA2 = dArr2.post                        // ticket 2: Draft, dep {1}
   pure val dRelease = DB::decideRelease(cA2, 1)
 
@@ -259,10 +259,10 @@ module chuggy_test {
   pure val c7 = dEvalReduce.post
   // The happy path lands QUIET (merge-queue PR): the solo ticket's branch
   // never moved, so the dequeue takes the skip fast-path — gate skipped,
-  // direct SquashMerge, one step off the queue (landOutcomes(false)'s one
+  // direct SquashMerge, one step off the queue (wrapUpOutcomes(false)'s one
   // element; the gated AdvanceDefault path is walked in the gate suite
   // below and in the witness gate module).
-  pure val dLand = DB::decideLand(c7, 1, LandSquashMerge, false)
+  pure val dLand = DB::decideWrapUpResolve(c7, 1, WOk, false)
   pure val c8 = dLand.post
 
   /// Every decision on the happy path strictly descends the measure —
@@ -289,9 +289,9 @@ module chuggy_test {
     dWorkReduce.rec.label == "work-passed",
     dWorkReduce.rec.transitions == [{ ticket: 1, from: PWorking, to: PEvaluating }],
     dEvalReduce.rec.label == "eval-passed",
-    dEvalReduce.rec.transitions == [{ ticket: 1, from: PEvaluating, to: PLanding }],
+    dEvalReduce.rec.transitions == [{ ticket: 1, from: PEvaluating, to: PWrapUp }],
     dLand.rec.label == "ticket-done",
-    dLand.rec.transitions == [{ ticket: 1, from: PLanding, to: PDone }],
+    dLand.rec.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }],
     // THE SPAWN EFFECTS, pinned here because nothing else pins them. The
     // citation-scoping removal took out the suite that used to, and a
     // spawn emitting no effect is a fan-out the world never hears about —
@@ -299,7 +299,7 @@ module chuggy_test {
     // dropping SpawnEvalTasks from work-passed left all 54 cases passing.
     dDispatch.rec.effects == ["SpawnWorkTasks"],
     dWorkReduce.rec.effects == ["SpawnEvalTasks"],
-    dEvalReduce.rec.effects == ["EnqueueLanding"]
+    dEvalReduce.rec.effects == ["EnqueueWrapUp"]
   })
 
   /// RETAINED TASK RECORDS (PR 3): at Done, ticket 1's chronological log holds
@@ -344,15 +344,15 @@ module chuggy_test {
   /// direct squash (the path rule: SquashMerge is the QUIET effect).
   run effectExclusivityHappyPathTest = assert(and {
     c8.tickets.get(1).phase == PDone,
-    c8.tickets.get(1).landings == 1,
-    dLand.rec.effects == ["SquashMerge"]
+    c8.tickets.get(1).completions == 1,
+    dLand.rec.effects == ["Complete"]
   })
 
   /// The gated twin of c7's landing: the dequeue drew MOVED, the gate
   /// opened, and the resolution promotes by ADVANCING the default ref.
-  pure val dGateOpen7 = DB::decideGateOpen(c7, 1)
+  pure val dGateOpen7 = DB::decideWrapUpStart(c7, 1)
   pure val cGated7 = dGateOpen7.post
-  pure val dLandGated = DB::decideLand(cGated7, 1, LandAdvanceDefault, true)
+  pure val dLandGated = DB::decideWrapUpResolve(cGated7, 1, WOk, true)
 
   /// The two landing SUCCESS outcomes are distinct, named effects — v1's
   /// one conformance divergence, pinned from day one (charter §2 landing
@@ -362,50 +362,50 @@ module chuggy_test {
   /// fast-path squash-merges directly. Same terminal, same exclusivity
   /// counter, different effect — determined by the path, not drawn.
   run landingOutcomesDistinctTest = assert(and {
-    dLandGated.rec.effects == ["AdvanceDefault"],
-    dLandGated.rec.transitions == [{ ticket: 1, from: PGated, to: PDone }],
+    dLandGated.rec.effects == ["Complete"],
+    dLandGated.rec.transitions == [{ ticket: 1, from: PWrapUpHolding, to: PDone }],
     dLandGated.post.tickets.get(1).phase == PDone,
-    dLandGated.post.tickets.get(1).landings == 1,
-    dLand.rec.effects == ["SquashMerge"],
-    dLand.rec.transitions == [{ ticket: 1, from: PLanding, to: PDone }]
+    dLandGated.post.tickets.get(1).completions == 1,
+    dLand.rec.effects == ["Complete"],
+    dLand.rec.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }]
   })
 
   /// The gate OPENS as its own recorded step (the dequeue's moved arm):
-  /// rank descent, no account moved, no attempt resolved (LONone — the
-  /// attribution rides the RESOLUTION, whose PGated from-phase carries the
+  /// rank descent, no account moved, no attempt resolved (WONone — the
+  /// attribution rides the RESOLUTION, whose PWrapUpHolding from-phase carries the
   /// choice this open encoded).
   run gateOpenClassifiedTest = assert(and {
-    dGateOpen7.rec.label == "gate-opened",
-    dGateOpen7.rec.transitions == [{ ticket: 1, from: PLanding, to: PGated }],
+    dGateOpen7.rec.label == "wrapup-started",
+    dGateOpen7.rec.transitions == [{ ticket: 1, from: PWrapUp, to: PWrapUpHolding }],
     dGateOpen7.rec.effects == ["OpenGate"],
-    dGateOpen7.rec.landing == LONone,
+    dGateOpen7.rec.landing == WONone,
     cGated7.tickets.get(1).gasLeft == c7.tickets.get(1).gasLeft,
-    cGated7.tickets.get(1).gateLeft == c7.tickets.get(1).gateLeft,
+    cGated7.tickets.get(1).wrapUpLeft == c7.tickets.get(1).wrapUpLeft,
     mB(cGated7) < mB(c7),
     mB(dLandGated.post) < mB(cGated7)
   })
 
   /// THE ROUTING DECIDER, both branches pinned (adversarial review,
   /// MAJOR 1): decideDequeue IS the quiet/moved route — moved into the
-  /// gate (equal, decision for decision, to decideGateOpen), quiet into
-  /// the same-step direct squash (equal to the fast-path decideLand call)
+  /// gate (equal, decision for decision, to decideWrapUpStart), quiet into
+  /// the same-step direct squash (equal to the fast-path decideWrapUpResolve call)
   /// — pinned as decision EQUALITIES plus the semantic content of each
   /// branch, so a re-routed branch cannot hide behind self-consistent
   /// downstream checks (the review's p3 mutant: quiet routed into the
   /// gate made SquashMerge unreachable while every trace-level check
   /// stayed green against the mutated route).
   run dequeueRoutesBothBranchesTest = assert(and {
-    DB::decideDequeue(c7, 1, true) == DB::decideGateOpen(c7, 1),
+    DB::decideDequeue(c7, 1, true) == DB::decideWrapUpStart(c7, 1),
     DB::decideDequeue(c7, 1, false)
-      == DB::decideLand(c7, 1, LandSquashMerge, false),
-    DB::decideDequeue(c7, 1, true).post.tickets.get(1).phase == PGated,
-    DB::decideDequeue(c7, 1, true).rec.label == "gate-opened",
+      == DB::decideWrapUpResolve(c7, 1, WOk, false),
+    DB::decideDequeue(c7, 1, true).post.tickets.get(1).phase == PWrapUpHolding,
+    DB::decideDequeue(c7, 1, true).rec.label == "wrapup-started",
     DB::decideDequeue(c7, 1, false).post.tickets.get(1).phase == PDone,
     DB::decideDequeue(c7, 1, false).rec.label == "ticket-done",
-    DB::decideDequeue(c7, 1, false).rec.effects == ["SquashMerge"],
+    DB::decideDequeue(c7, 1, false).rec.effects == ["Complete"],
     DB::decideDequeue(c7, 1, false).rec.landing
-      == LOAttempt({ repo: 1, branchMoved: false }),
-    DB::decideDequeue(c7, 1, false).post.tickets.get(1).landings == 1
+      == WOAttempt({ repo: 1, invalidated: false }),
+    DB::decideDequeue(c7, 1, false).post.tickets.get(1).completions == 1
   })
 
   // === At-least-once: duplicates are idempotent stutters ===================
@@ -443,11 +443,11 @@ module chuggy_test {
   /// event for a Done ticket emits NOTHING — exactly-once is proved at the
   /// landing boundary and nowhere else.
   run duplicateLandExclusiveTest = assert(and {
-    DB::decideLandDuplicate(c8, 1).post == c8,
-    DB::decideLandDuplicate(c8, 1).rec.label == "land-duplicate",
-    DB::decideLandDuplicate(c8, 1).rec.effects == [],
-    DB::decideLandDuplicate(c8, 1).post.tickets.get(1).landings == 1,
-    mB(DB::decideLandDuplicate(c8, 1).post) == mB(c8)
+    DB::decideCompleteDuplicate(c8, 1).post == c8,
+    DB::decideCompleteDuplicate(c8, 1).rec.label == "complete-duplicate",
+    DB::decideCompleteDuplicate(c8, 1).rec.effects == [],
+    DB::decideCompleteDuplicate(c8, 1).post.tickets.get(1).completions == 1,
+    mB(DB::decideCompleteDuplicate(c8, 1).post) == mB(c8)
   })
 
   // === The work wall: cycle-level, no below-cycle retries ==================
@@ -460,7 +460,7 @@ module chuggy_test {
   /// them is a §2 non-goal ("no retry machinery below the cycle").
   /// PR 3: the failed set is RETIRED, outcomes intact — the record shows
   /// WHICH task failed, provenance the desk can read.
-  pure val cWorkFail: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
+  pure val cWorkFail: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PWorking, gasLeft: 2, tasks: oneFailedW }) }
   pure val dWorkFail = DB::decideWorkReduce(cWorkFail, 1)
 
@@ -485,7 +485,7 @@ module chuggy_test {
   /// 1 rework budget + 1 gas buy a new cycle; both accounts (and the
   /// measure) descend. TFailed here also covers evaluator-infra death —
   /// the ticket pays, one account (charter §2 eval/evaluator-failure).
-  pure val cEvalFail: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
+  pure val cEvalFail: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEvaluating, reworkLeft: 1, gasLeft: 2, tasks: oneFailedE0 }) }
   pure val dEvalRework = DB::decideEvalStageReduce(cEvalFail, 1)
 
@@ -502,12 +502,12 @@ module chuggy_test {
   })
 
   /// Budget wall (checked before the gas wall, v1 convention).
-  pure val cReworkWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
+  pure val cReworkWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEvaluating, reworkLeft: 0, gasLeft: 2, tasks: oneFailedE0 }) }
   pure val dReworkWall = DB::decideEvalStageReduce(cReworkWall, 1)
 
   /// Deadline wall: budget remains but the gas is gone.
-  pure val cEvalGasWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
+  pure val cEvalGasWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEvaluating, reworkLeft: 1, gasLeft: 0, tasks: oneFailedE0 }) }
   pure val dEvalGasWall = DB::decideEvalStageReduce(cEvalGasWall, 1)
 
@@ -531,7 +531,7 @@ module chuggy_test {
 
   pure def allPassedW: Set[Task] = Set(wt(1, TPassed), wt(2, TPassed))
 
-  pure val cStagedWork: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progStaged, 1),
+  pure val cStagedWork: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progStaged, 1, WExclusive(1)),
     phase: PWorking, gasLeft: 2, tasks: allPassedW }) }
   // Work passes -> spawn the LOWEST stage: fan-out 1, id 3.
   pure val dToEval = DB::decideWorkReduce(cStagedWork, 1)
@@ -571,7 +571,7 @@ module chuggy_test {
   /// stage 1's CAnyPass passed on a mixed set).
   run stagedProgramPassesTest = assert(and {
     dStagedFinal.rec.label == "eval-passed",
-    dStagedFinal.rec.transitions == [{ ticket: 1, from: PEvaluating, to: PLanding }],
+    dStagedFinal.rec.transitions == [{ ticket: 1, from: PEvaluating, to: PWrapUp }],
     dStagedFinal.post.tickets.get(1).tasks == Set(),
     dStagedFinal.post.tickets.get(1).record ==
       [wt(1, TPassed), wt(2, TPassed), et(3, 0, TPassed),
@@ -596,7 +596,7 @@ module chuggy_test {
     dShort.rec.transitions == [{ ticket: 1, from: PEvaluating, to: PWorking }],
     cAfterShort.tickets.get(1).reworkLeft == 0,       // paid 1 rework
     cAfterShort.tickets.get(1).gasLeft == 1,     // paid 1 gas
-    cAfterShort.tickets.get(1).gateLeft == 1,         // gate untouched
+    cAfterShort.tickets.get(1).wrapUpLeft == 1,         // gate untouched
     // "no task records exist for them": stage 1 never spawned.
     cAfterShort.tickets.get(1).record ==
       [wt(1, TPassed), wt(2, TPassed), et(3, 0, TFailed)],
@@ -627,7 +627,7 @@ module chuggy_test {
   /// REWORK_POLICY = RWBudget(0) there): the same short-circuit against an empty
   /// rework account hits the EXISTING wall — stage 1 remains unlaunched,
   /// no new wall, no new account.
-  pure val cStagedNoBudget: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progStaged, 1),
+  pure val cStagedNoBudget: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progStaged, 1, WExclusive(1)),
     phase: PEvaluating, reworkLeft: 0, gasLeft: 2,
     record: [wt(1, TPassed), wt(2, TPassed)],
     tasks: Set(et(3, 0, TFailed)) }) }
@@ -657,7 +657,7 @@ module chuggy_test {
     // decision. Pin the account deltas as the claim.
     cStagedWork.tickets.get(1).reworkLeft - cAfterShort.tickets.get(1).reworkLeft == 1,
     cStagedWork.tickets.get(1).gasLeft - cAfterShort.tickets.get(1).gasLeft == 1,
-    cStagedWork.tickets.get(1).gateLeft == cAfterShort.tickets.get(1).gateLeft
+    cStagedWork.tickets.get(1).wrapUpLeft == cAfterShort.tickets.get(1).wrapUpLeft
   })
 
   /// Duplicate stale-stage completion, staged edition: while stage 1 is
@@ -678,14 +678,14 @@ module chuggy_test {
   pure val mixedE0: Set[Task] = Set(et(1, 0, TPassed), et(2, 0, TFailed))
   pure val allFailedE0: Set[Task] = Set(et(1, 0, TFailed), et(2, 0, TFailed))
 
-  pure val cMixedAny: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progA2, 1),
+  pure val cMixedAny: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progA2, 1, WExclusive(1)),
     phase: PEvaluating, tasks: mixedE0, gasLeft: 2 }) }
-  pure val cMixedUna: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
+  pure val cMixedUna: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEvaluating, tasks: mixedE0, gasLeft: 2 }) }
 
   run programAsDataCombinatorTest = assert(and {
     DB::decideEvalStageReduce(cMixedAny, 1).rec.label == "eval-passed",
-    DB::decideEvalStageReduce(cMixedAny, 1).post.tickets.get(1).phase == PLanding,
+    DB::decideEvalStageReduce(cMixedAny, 1).post.tickets.get(1).phase == PWrapUp,
     DB::decideEvalStageReduce(cMixedUna, 1).rec.label == "rework-started eval_failure",
     DB::decideEvalStageReduce(cMixedUna, 1).post.tickets.get(1).phase == PWorking,
     DB::decideEvalStageReduce(cMixedUna, 1).post.tickets.get(1).gasLeft == 1
@@ -695,7 +695,7 @@ module chuggy_test {
   /// 2-wide flat fan-out under the default program but a 1-wide stage-0
   /// under the staged program — the machine's very next task anatomy is
   /// decided by the program on the record.
-  pure val cFlatWork: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
+  pure val cFlatWork: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PWorking, gasLeft: 2, tasks: allPassedW }) }
 
   run programAsDataStructureTest = assert(and {
@@ -716,27 +716,27 @@ module chuggy_test {
 
   /// All-failed still walls under CAnyPass (a program is not "always
   /// pass"): the rework path is taken.
-  pure val cFailAny: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progA2, 1),
+  pure val cFailAny: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progA2, 1, WExclusive(1)),
     phase: PEvaluating, tasks: allFailedE0, gasLeft: 2 }) }
 
   run anyPassNotAlwaysPassTest = assert(
     DB::decideEvalStageReduce(cFailAny, 1).rec.label == "rework-started eval_failure")
 
-  // === The outer loop, priced per GatePricing (charter §2) =================
-  // Merge-queue PR (R5): failures fire FROM THE GATE now (PGated — the
+  // === The outer loop, priced per WrapUpPricing (charter §2) =================
+  // Merge-queue PR (R5): failures fire FROM THE GATE now (PWrapUpHolding — the
   // only phase a moved attempt resolves out of), so these fixtures sit in
   // the occupied slot; every account delta below is byte-identical to the
   // pre-merge-queue pricing (the eviction changed from-phase, never price).
 
   /// Budgeted branch: a landing failure spends 1 gate budget AND 1 gas.
-  pure val cGateB: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
-    phase: PGated, gateLeft: 1, gasLeft: 2 }) }
-  pure val dGateRework = DB::decideLand(cGateB, 1, LandFailed, true)
+  pure val cGateB: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
+    phase: PWrapUpHolding, wrapUpLeft: 1, gasLeft: 2 }) }
+  pure val dGateRework = DB::decideWrapUpResolve(cGateB, 1, WFailed, true)
 
   run gateReworkBudgetedDescendsTest = assert(and {
-    dGateRework.rec.label == "rework-started gate_failure",
+    dGateRework.rec.label == "rework-started wrapup_failure",
     dGateRework.post.tickets.get(1).phase == PWorking,
-    dGateRework.post.tickets.get(1).gateLeft == 0,
+    dGateRework.post.tickets.get(1).wrapUpLeft == 0,
     dGateRework.post.tickets.get(1).gasLeft == 1,
     // PR 3: the gate rework's work set is a fresh incarnation at fresh ids.
     dGateRework.post.tickets.get(1).tasks == Set(wr(1), wr(2)),
@@ -744,19 +744,19 @@ module chuggy_test {
   })
 
   /// The gate-budget wall — a reason that EXISTS ONLY under Budgeted.
-  pure val cGateWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
-    phase: PGated, gateLeft: 0, gasLeft: 2 }) }
-  pure val dGateWall = DB::decideLand(cGateWall, 1, LandFailed, true)
+  pure val cGateWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
+    phase: PWrapUpHolding, wrapUpLeft: 0, gasLeft: 2 }) }
+  pure val dGateWall = DB::decideWrapUpResolve(cGateWall, 1, WFailed, true)
 
   /// Budgeted branch, gas wall: gate budget remains, gas is gone.
-  pure val cGateGasWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
-    phase: PGated, gateLeft: 1, gasLeft: 0 }) }
-  pure val dGateGasWall = DB::decideLand(cGateGasWall, 1, LandFailed, true)
+  pure val cGateGasWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
+    phase: PWrapUpHolding, wrapUpLeft: 1, gasLeft: 0 }) }
+  pure val dGateGasWall = DB::decideWrapUpResolve(cGateGasWall, 1, WFailed, true)
 
   run gateWallsNamedTest = assert(and {
-    dGateWall.rec.label == "ticket-escalated gate_budget_exhausted",
-    dGateWall.post.tickets.get(1).reason == RsGateBudgetExhausted,
-    dGateWall.post.tickets.get(1).resumeAt == RLanding,
+    dGateWall.rec.label == "ticket-escalated wrapup_budget_exhausted",
+    dGateWall.post.tickets.get(1).reason == RsWrapUpBudgetExhausted,
+    dGateWall.post.tickets.get(1).resumeAt == RWrapUp,
     mB(dGateWall.post) < mB(cGateWall),
     dGateGasWall.rec.label == "ticket-escalated gas_exhausted",
     dGateGasWall.post.tickets.get(1).reason == RsGasExhausted,
@@ -766,18 +766,18 @@ module chuggy_test {
   /// DeadlineOnly branch: a landing failure spends gas alone (v1's shape;
   /// the required gas account is the only meter), and the gate-budget wall
   /// can never be the reason.
-  pure val cGateD: Core = { tickets: Map(1 -> { ...DD::freshTicket(Set(), progU2, 1),
-    phase: PGated, gasLeft: 2 }) }
-  pure val dGateD = DD::decideLand(cGateD, 1, LandFailed, true)
+  pure val cGateD: Core = { tickets: Map(1 -> { ...DD::freshTicket(Set(), progU2, 1, WExclusive(1)),
+    phase: PWrapUpHolding, gasLeft: 2 }) }
+  pure val dGateD = DD::decideWrapUpResolve(cGateD, 1, WFailed, true)
 
-  pure val cGateDWall: Core = { tickets: Map(1 -> { ...DD::freshTicket(Set(), progU2, 1),
-    phase: PGated, gasLeft: 0 }) }
-  pure val dGateDWall = DD::decideLand(cGateDWall, 1, LandFailed, true)
+  pure val cGateDWall: Core = { tickets: Map(1 -> { ...DD::freshTicket(Set(), progU2, 1, WExclusive(1)),
+    phase: PWrapUpHolding, gasLeft: 0 }) }
+  pure val dGateDWall = DD::decideWrapUpResolve(cGateDWall, 1, WFailed, true)
 
   run gateReworkDeadlineOnlyTest = assert(and {
-    dGateD.rec.label == "rework-started gate_failure",
+    dGateD.rec.label == "rework-started wrapup_failure",
     dGateD.post.tickets.get(1).phase == PWorking,
-    dGateD.post.tickets.get(1).gateLeft == 0,      // no gate account to spend
+    dGateD.post.tickets.get(1).wrapUpLeft == 0,      // no gate account to spend
     dGateD.post.tickets.get(1).gasLeft == 1,
     mD(dGateD.post) < mD(cGateD),
     dGateDWall.rec.label == "ticket-escalated gas_exhausted",
@@ -793,7 +793,7 @@ module chuggy_test {
   /// pipeline phase, because nothing pipeline ever ran) …
   /// (PR 2: freshTicket births a Draft, so the RELEASED fixture overrides
   /// the phase — revalFail is a Ready-phase edge.)
-  pure val cFresh: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1), phase: PPending }) }
+  pure val cFresh: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PPending }) }
   pure val dPark = DB::decideRevalFail(cFresh, 1)
 
   /// … and its operator resume — the old stalled-retry, now decideOpRetry's
@@ -844,20 +844,20 @@ module chuggy_test {
   /// pays 1 gas, so those retries descend the measure — v1's §5b livelock
   /// priced away. (The pre-work RPending flavor stays free either way —
   /// pinned above.)
-  pure val escLanding: Ticket = { ...DB::freshTicket(Set(), progU2, 1),
-    phase: PEscalated, resumeAt: RLanding, reason: RsGasExhausted,
+  pure val escLanding: Ticket = { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
+    phase: PEscalated, resumeAt: RWrapUp, reason: RsGasExhausted,
     gasLeft: 2 }
   pure val cEscB: Core = { tickets: Map(1 -> escLanding) }
   pure val dRetryCharged = DB::decideOpRetry(cEscB, 1)
 
-  pure val escWorking: Ticket = { ...DB::freshTicket(Set(), progU2, 1),
+  pure val escWorking: Ticket = { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEscalated, resumeAt: RWorking, reason: RsWorkFailed,
     gasLeft: 2 }
   pure val dRetryChargedWork = DB::decideOpRetry({ tickets: Map(1 -> escWorking) }, 1)
 
   run opRetryChargedDescendsTest = assert(and {
     dRetryCharged.rec.label == "operator-retry",
-    dRetryCharged.post.tickets.get(1).phase == PLanding,
+    dRetryCharged.post.tickets.get(1).phase == PWrapUp,
     dRetryCharged.post.tickets.get(1).gasLeft == 1,   // charged
     not(hasOpenHumanTask(dRetryCharged.post.tickets.get(1))),
     mB(dRetryCharged.post) < mB(cEscB),
@@ -871,7 +871,7 @@ module chuggy_test {
   /// with a fresh eval fan-out"; §3.3: stages are never resumed
   /// mid-sequence) — new task ids, the failed history untouched in the
   /// record.
-  pure val escEval: Ticket = { ...DB::freshTicket(Set(), progStaged, 1),
+  pure val escEval: Ticket = { ...DB::freshTicket(Set(), progStaged, 1, WExclusive(1)),
     phase: PEscalated, resumeAt: REvaluating, reason: RsReworkBudgetExhausted,
     gasLeft: 2, reworkLeft: 0,
     record: [wt(1, TPassed), wt(2, TPassed), et(3, 0, TFailed)] }
@@ -898,7 +898,7 @@ module chuggy_test {
   pure val dRetryFreeWork = DF::decideOpRetry({ tickets: Map(1 -> escWorking) }, 1)
 
   run opRetryFreeClassifiedTest = assert(and {
-    dRetryFree.post.tickets.get(1).phase == PLanding,
+    dRetryFree.post.tickets.get(1).phase == PWrapUp,
     dRetryFree.post.tickets.get(1).gasLeft == 2,      // NOT charged
     mB(dRetryFree.post) > mB(cEscF),                    // CHURN: climbs
     dRetryFreeWork.post.tickets.get(1).gasLeft == 1,  // Working resume pays
@@ -923,7 +923,7 @@ module chuggy_test {
     cA1.tickets.get(1).phase == PDraft,
     cA1.tickets.get(1).gasLeft == 3,     // full grant, nothing spent
     cA1.tickets.get(1).reworkLeft == 1,
-    cA1.tickets.get(1).gateLeft == 1,
+    cA1.tickets.get(1).wrapUpLeft == 1,
     cA1.tickets.get(1).program == DB::defaultProgram,  // PR 3: eval is data, authored
     cA1.tickets.get(1).record == [],                   // PR 3: no history yet
     cA2.tickets.keys() == Set(1, 2),          // dense: next id = size + 1
@@ -980,22 +980,22 @@ module chuggy_test {
   pure def accountsUntouched(pre: Ticket, post: Ticket): bool = and {
     post.gasLeft == pre.gasLeft,
     post.reworkLeft == pre.reworkLeft,
-    post.gateLeft == pre.gateLeft
+    post.wrapUpLeft == pre.wrapUpLeft
   }
 
   pure def spent(j: Ticket): Ticket =
-    { ...j, gasLeft: 2, reworkLeft: 0, gateLeft: 1 }
+    { ...j, gasLeft: 2, reworkLeft: 0, wrapUpLeft: 1 }
 
-  pure val jDraft: Ticket = spent(DB::freshTicket(Set(), progU2, 1))
+  pure val jDraft: Ticket = spent(DB::freshTicket(Set(), progU2, 1, WExclusive(1)))
   pure val jPend: Ticket = { ...jDraft, phase: PPending }
   pure val jWork: Ticket = { ...jDraft, phase: PWorking,
     tasks: spawnTasks(TKWork, 1, 2) }
   pure val jEval: Ticket = { ...jDraft, phase: PEvaluating, tasks: mixedE0 }
-  pure val jLand: Ticket = { ...jDraft, phase: PLanding }
+  pure val jLand: Ticket = { ...jDraft, phase: PWrapUp }
   /// Merge-queue PR: revoke from the OCCUPIED GATE — the slot frees by
-  /// phase (derive-don't-store: gateFreeIn is true of the post-state with
+  /// phase (derive-don't-store: leaseFreeIn is true of the post-state with
   /// no cleanup step anywhere).
-  pure val jGated: Ticket = { ...jDraft, phase: PGated }
+  pure val jGated: Ticket = { ...jDraft, phase: PWrapUpHolding }
   pure val jEsc: Ticket = { ...jDraft, phase: PEscalated,
     resumeAt: REvaluating, reason: RsReworkBudgetExhausted }
   pure val jParkPre: Ticket = { ...jDraft, phase: PEscalated,
@@ -1012,7 +1012,7 @@ module chuggy_test {
     revokeOne(j).rec.effects == ["Revoke"],   // no OpenHumanTask for the revoked ticket
     revokedShape(revokeOne(j).post.tickets.get(1)),
     accountsUntouched(j, revokeOne(j).post.tickets.get(1)),
-    revokeOne(j).post.tickets.get(1).landings == 0
+    revokeOne(j).post.tickets.get(1).completions == 0
   }
 
   run revokeFromEachPhaseTest = assert(and {
@@ -1021,7 +1021,7 @@ module chuggy_test {
     revokeOneOk(jGated),
     revokeOneOk(jEsc), revokeOneOk(jParkPre), revokeOneOk(jParkDep),
     // Revoking the gate's occupant frees the slot by phase alone.
-    DB::gateFreeIn(revokeOne(jGated).post, 1)
+    DB::leaseFreeIn(revokeOne(jGated).post, 1)
   })
 
   /// PR 3: revoke RETAINS the task record — "Revoked runs nothing" is
@@ -1071,10 +1071,10 @@ module chuggy_test {
   /// parked ON the landing strip emits no landing effect and leaves the
   /// landing counter at zero — contrast with the landed ticket (c8), whose
   /// counter is 1 and which is beyond revoke's reach (previous test).
-  run revokedNeverLandsTest = assert(and {
-    revokeOne(jLand).post.tickets.get(1).landings == 0,
+  run revokedNeverCompletesTest = assert(and {
+    revokeOne(jLand).post.tickets.get(1).completions == 0,
     revokeOne(jLand).rec.effects == ["Revoke"],
-    c8.tickets.get(1).landings == 1
+    c8.tickets.get(1).completions == 1
   })
 
   // === THE CASCADE, end-to-end on a 3-ticket chain (the PR 2 gate) ============
@@ -1084,9 +1084,9 @@ module chuggy_test {
   // dependency_revoked desk task, spending nothing anywhere.
 
   pure val cChain: Core = { tickets: Map(
-    1 -> { ...DB::freshTicket(Set(), progU2, 1), phase: PPending },
-    2 -> { ...DB::freshTicket(Set(1), progU2, 1), phase: PPending },
-    3 -> DB::freshTicket(Set(2), progU2, 1)
+    1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PPending },
+    2 -> { ...DB::freshTicket(Set(1), progU2, 1, WExclusive(1)), phase: PPending },
+    3 -> DB::freshTicket(Set(2), progU2, 1, WExclusive(1))
   ) }
   pure val dCascade = DB::decideRevoke(cChain, 1)
   pure val cParked = dCascade.post
@@ -1151,25 +1151,25 @@ module chuggy_test {
   /// only checked AT the dequeue, chuggernaut §3.3: "each dequeued job
   /// re-checks the skip fast-path against the then-current HEAD") — while
   /// repo 2's dequeue stays enabled: serialization is per-repo, gates are
-  /// independent. The occupant itself is not enqueued (PGated is not
-  /// PLanding), and a free repo's enqueued tickets are all dequeue-able
+  /// independent. The occupant itself is not enqueued (PWrapUpHolding is not
+  /// PWrapUp), and a free repo's enqueued tickets are all dequeue-able
   /// (which one dequeues is the nondet pick — order deliberately
   /// unmodeled).
   pure val cGateOcc: Core = { tickets: Map(
-    1 -> { ...DB::freshTicket(Set(), progU2, 1), phase: PGated },
-    2 -> { ...DB::freshTicket(Set(), progU2, 1), phase: PLanding },
-    3 -> { ...DB::freshTicket(Set(), progU2, 2), phase: PLanding }
+    1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PWrapUpHolding },
+    2 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PWrapUp },
+    3 -> { ...DB::freshTicket(Set(), progU2, 2, WExclusive(2)), phase: PWrapUp }
   ) }
 
-  run gateDepthOneGuardTest = assert(and {
-    not(DB::gateFreeIn(cGateOcc, 1)),
-    DB::gateFreeIn(cGateOcc, 2),
-    not(DB::gateEnterableIn(cGateOcc, 2)),   // same repo: REFUSED — depth 1
-    DB::gateEnterableIn(cGateOcc, 3),        // other repo: independent
-    not(DB::gateEnterableIn(cGateOcc, 1)),   // the occupant is not enqueued
+  run leaseExclusiveGuardTest = assert(and {
+    not(DB::leaseFreeIn(cGateOcc, 1)),
+    DB::leaseFreeIn(cGateOcc, 2),
+    not(DB::wrapUpStartableIn(cGateOcc, 2)),   // same repo: REFUSED — depth 1
+    DB::wrapUpStartableIn(cGateOcc, 3),        // other repo: independent
+    not(DB::wrapUpStartableIn(cGateOcc, 1)),   // the occupant is not enqueued
     // Once the slot frees (here: the occupant lands, gated), the refusal
     // lifts in the same post-state — occupancy is phase, nothing cleans up.
-    DB::gateEnterableIn(DB::decideLand(cGateOcc, 1, LandAdvanceDefault, true).post, 2)
+    DB::wrapUpStartableIn(DB::decideWrapUpResolve(cGateOcc, 1, WOk, true).post, 2)
   })
 
   // ==========================================================================
@@ -1187,110 +1187,107 @@ module chuggy_test {
   pure def onRepo2(c: Core): Core =
     { tickets: Map(1 -> { ...c.tickets.get(1), repo: 2 }) }
 
-  /// THE DRAW RULE (domain.qnt landOutcomes — the validPrograms shape: the
-  /// set IS the refusal), tightened by the merge-queue PR into THE PATH
-  /// RULE (R3): a QUIET branch cannot fail (v1's §4 insight — the moving
-  /// default branch is the only reason a landing can fail) and cannot
-  /// AdvanceDefault either (no gate ran, so there is no validated
-  /// candidate to advance onto — the skip fast-path squashes directly);
-  /// a MOVED branch cannot SquashMerge (the gate ran, and its clean pass
-  /// IS the promotion: "do not re-merge"). Per attempt and per repo, no
-  /// stored flag anywhere.
-  /// NOTE (the PR-4 gas-wall pattern — adversarial review, observation
-  /// A): the set-equality conjuncts below are THE guard for the draw
-  /// sets themselves. A widened landOutcomes — quiet+AdvanceDefault or
-  /// moved+SquashMerge readmitted — is caught HERE (and at the
-  /// oneRepoDegenerationTest twin) and nowhere else: the machine actions
-  /// and the witness drivers all draw FROM these sets, so every
-  /// trace-level check is self-consistently green against a widening.
-  run landOutcomesPathRuleTest = assert(and {
-    DB::landOutcomes(false) == Set(LandSquashMerge),
-    DB::landOutcomes(true) == Set(LandAdvanceDefault, LandFailed),
-    not(DB::landOutcomes(false).contains(LandFailed)),
-    not(DB::landOutcomes(false).contains(LandAdvanceDefault)),
-    not(DB::landOutcomes(true).contains(LandSquashMerge)),
+  /// THE DRAW RULE (domain.qnt wrapUpOutcomes — the validPrograms shape: the
+  /// set IS the refusal). An artifact the environment left VALID cannot
+  /// fail its wrap-up; only an INVALIDATED one may. That is the general
+  /// form of what was the merge path rule — the moving default branch was
+  /// one way an artifact stops being the thing that was evaluated, and a
+  /// registry version claimed by someone else is another.
+  ///
+  /// The set-equality conjuncts are THE guard for the draw sets. A widened
+  /// wrapUpOutcomes — a failure readmitted on a valid artifact — is caught
+  /// HERE and nowhere else: the machine actions and the witness drivers all
+  /// draw FROM these sets, so every trace-level check stays
+  /// self-consistently green against a widening.
+  run wrapUpOutcomesDrawRuleTest = assert(and {
+    DB::wrapUpOutcomes(false) == Set(WOk),
+    DB::wrapUpOutcomes(true) == Set(WOk, WFailed),
+    // The load-bearing refusal: a valid artifact has no failure to draw.
+    not(DB::wrapUpOutcomes(false).contains(WFailed)),
+    // And an invalidated one is not FORCED to fail — re-validation may pass.
+    DB::wrapUpOutcomes(true).contains(WOk),
     DB::repos == Set(1, 2)
   })
 
-  /// A quiet-dequeue fixture (PLanding — the queue): the fast-path
+  /// A quiet-dequeue fixture (PWrapUp — the queue): the fast-path
   /// resolves straight off it; the moved arms above resolve from cGateB's
   /// occupied slot.
-  pure val cQueueB: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
-    phase: PLanding, gateLeft: 1, gasLeft: 2 }) }
+  pure val cQueueB: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
+    phase: PWrapUp, wrapUpLeft: 1, gasLeft: 2 }) }
 
-  /// EVERY arm of decideLand stamps the attempt's attribution — the
+  /// EVERY arm of decideWrapUpResolve stamps the attempt's attribution — the
   /// ticket's OWN repo (repo 2 here: a constant-stamping mutant would say
-  /// 1) plus the environment's branchMoved choice — while the effect
+  /// 1) plus the environment's invalidated choice — while the effect
   /// vocabulary and pricing stay byte-identical to the pre-merge-queue
   /// decider (the existing gate tests above still pin the account deltas
-  /// verbatim). Combos are the PATH-legal ones only (landOutcomes):
+  /// verbatim). Combos are the PATH-legal ones only (wrapUpOutcomes):
   /// quiet+SquashMerge off the queue, moved+AdvanceDefault/Failed out of
   /// the gate.
   /// NOTE: the gas-wall conjuncts below are THE guard for that landing
-  /// arm's stamp — landingIsolation's completeness cannot forbid the
+  /// arm's stamp — wrapUpIsolation's completeness cannot forbid the
   /// shared gas_exhausted label, so a stamp-drop there is visible only
   /// here (multi-repo review, observation A).
   run landingAttributionStampsOwnRepoTest = assert(and {
     // Success, quiet: the fast-path off the queue — attributed, effects
     // untouched.
-    DB::decideLand(onRepo2(cQueueB), 1, LandSquashMerge, false).rec.landing
-      == LOAttempt({ repo: 2, branchMoved: false }),
-    DB::decideLand(onRepo2(cQueueB), 1, LandSquashMerge, false).rec.effects
-      == ["SquashMerge"],
+    DB::decideWrapUpResolve(onRepo2(cQueueB), 1, WOk, false).rec.landing
+      == WOAttempt({ repo: 2, invalidated: false }),
+    DB::decideWrapUpResolve(onRepo2(cQueueB), 1, WOk, false).rec.effects
+      == ["Complete"],
     // Success under a MOVED branch is drawable and honestly attributed:
     // the move makes failure POSSIBLE, never certain — and its clean
     // landing is the GATED promotion (R3).
-    DB::decideLand(onRepo2(cGateB), 1, LandAdvanceDefault, true).rec.landing
-      == LOAttempt({ repo: 2, branchMoved: true }),
-    DB::decideLand(onRepo2(cGateB), 1, LandAdvanceDefault, true).rec.effects
-      == ["AdvanceDefault"],
+    DB::decideWrapUpResolve(onRepo2(cGateB), 1, WOk, true).rec.landing
+      == WOAttempt({ repo: 2, invalidated: true }),
+    DB::decideWrapUpResolve(onRepo2(cGateB), 1, WOk, true).rec.effects
+      == ["Complete"],
     // Failure: the gate rework carries the repo AND the cause.
-    DB::decideLand(onRepo2(cGateB), 1, LandFailed, true).rec.label
-      == "rework-started gate_failure",
-    DB::decideLand(onRepo2(cGateB), 1, LandFailed, true).rec.landing
-      == LOAttempt({ repo: 2, branchMoved: true }),
+    DB::decideWrapUpResolve(onRepo2(cGateB), 1, WFailed, true).rec.label
+      == "rework-started wrapup_failure",
+    DB::decideWrapUpResolve(onRepo2(cGateB), 1, WFailed, true).rec.landing
+      == WOAttempt({ repo: 2, invalidated: true }),
     // Both landing walls carry it too — the attempt that PARKED the
     // ticket is attributable like the one that reworked it.
-    DB::decideLand(onRepo2(cGateWall), 1, LandFailed, true).rec.label
-      == "ticket-escalated gate_budget_exhausted",
-    DB::decideLand(onRepo2(cGateWall), 1, LandFailed, true).rec.landing
-      == LOAttempt({ repo: 2, branchMoved: true }),
-    DB::decideLand(onRepo2(cGateGasWall), 1, LandFailed, true).rec.landing
-      == LOAttempt({ repo: 2, branchMoved: true }),
+    DB::decideWrapUpResolve(onRepo2(cGateWall), 1, WFailed, true).rec.label
+      == "ticket-escalated wrapup_budget_exhausted",
+    DB::decideWrapUpResolve(onRepo2(cGateWall), 1, WFailed, true).rec.landing
+      == WOAttempt({ repo: 2, invalidated: true }),
+    DB::decideWrapUpResolve(onRepo2(cGateGasWall), 1, WFailed, true).rec.landing
+      == WOAttempt({ repo: 2, invalidated: true }),
     // DeadlineOnly's landing gas wall attributes the same way.
-    DD::decideLand(cGateDWall, 1, LandFailed, true).rec.landing
-      == LOAttempt({ repo: 1, branchMoved: true })
+    DD::decideWrapUpResolve(cGateDWall, 1, WFailed, true).rec.landing
+      == WOAttempt({ repo: 1, invalidated: true })
   })
 
   /// Attribution appears at the landing boundary and NOWHERE else: every
-  /// non-landing decision carries LONone — most pointedly the eval-side
+  /// non-landing decision carries WONone — most pointedly the eval-side
   /// "ticket-escalated gas_exhausted" (the SAME label string as the
   /// landing gas wall: the attribution field, not the label, marks the
   /// boundary), eval-passed (which only ENQUEUES the landing — the
   /// attempt resolves later, under a choice not yet made), and the
   /// absorbed land-duplicate (no attempt resolves, nothing is emitted).
   run nonLandingStepsCarryNoAttributionTest = assert(and {
-    dArr1.rec.landing == LONone,
-    dRelease.rec.landing == LONone,
-    dDispatch.rec.landing == LONone,
-    dWork1.rec.landing == LONone,
-    dWorkReduce.rec.landing == LONone,
-    dAdvance.rec.landing == LONone,
-    dEvalReduce.rec.landing == LONone,
-    dCascade.rec.landing == LONone,
-    dWorkFail.rec.landing == LONone,
-    dEvalGasWall.rec.landing == LONone,
+    dArr1.rec.landing == WONone,
+    dRelease.rec.landing == WONone,
+    dDispatch.rec.landing == WONone,
+    dWork1.rec.landing == WONone,
+    dWorkReduce.rec.landing == WONone,
+    dAdvance.rec.landing == WONone,
+    dEvalReduce.rec.landing == WONone,
+    dCascade.rec.landing == WONone,
+    dWorkFail.rec.landing == WONone,
+    dEvalGasWall.rec.landing == WONone,
     // The gate OPEN resolves no attempt (merge-queue PR): the moved
     // choice it encoded surfaces on the RESOLUTION's attribution.
-    dGateOpen7.rec.landing == LONone,
-    DB::decideLandDuplicate(c8, 1).rec.landing == LONone
+    dGateOpen7.rec.landing == WONone,
+    DB::decideCompleteDuplicate(c8, 1).rec.landing == WONone
   })
 
   /// REPO-BLINDNESS, machine-checked (the measure.qnt multi-repo header
   /// note's derivation pinned): tickets identical but for `repo` have
   /// EQUAL ticketMeasure — phase by phase across the part-spent revoke
   /// fixtures, a parked ticket, and under BOTH gate pricings. The
-  /// account radices derive from machine-wide consts (GAS, GATE_PRICING,
+  /// account radices derive from machine-wide consts (GAS, WRAPUP_PRICING,
   /// REWORK_POLICY — none per-repo), so budgets are repo-blind by type;
   /// this pins the measure function itself.
   /// ARTIFACT-BLINDNESS (design 002), the same derivation as repo: no digit,
@@ -1339,12 +1336,12 @@ module chuggy_test {
   /// The machine-trace version — the landing in repo 1 UNBLOCKING the
   /// repo-2 dependent — is the crossRepoDepDeterministicTest witness.
   pure val cXDepPre: Core = { tickets: Map(
-    1 -> { ...DB::freshTicket(Set(), progU2, 1), phase: PLanding },
-    2 -> { ...DB::freshTicket(Set(1), progU2, 2), phase: PPending }
+    1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PWrapUp },
+    2 -> { ...DB::freshTicket(Set(1), progU2, 2, WExclusive(2)), phase: PPending }
   ) }
   pure val cXDepDone: Core = { tickets: Map(
-    1 -> { ...DB::freshTicket(Set(), progU2, 1), phase: PDone, landings: 1 },
-    2 -> { ...DB::freshTicket(Set(1), progU2, 2), phase: PPending }
+    1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PDone, completions: 1 },
+    2 -> { ...DB::freshTicket(Set(1), progU2, 2, WExclusive(2)), phase: PPending }
   ) }
 
   run crossRepoDepGateLocationBlindTest = assert(and {
@@ -1358,20 +1355,20 @@ module chuggy_test {
   /// riding the same event as deps and the program, immutable after.
   run arrivalCarriesRepoTest = assert(and {
     cA1.tickets.get(1).repo == 1,
-    DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 2).post.tickets.get(1).repo == 2,
-    DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 2).rec.label == "ticket-arrived"
+    DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 2, WExclusive(2)).post.tickets.get(1).repo == 2,
+    DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 2, WExclusive(2)).rec.label == "ticket-arrived"
   })
 
   /// N_REPOS = 1 degeneration (adopted from the multi-repo review's probe):
   /// the collapsed universe and the intact draw rule are the whole claim —
   /// everything else is repo-blind by the measure theorem.
   /// NOTE: the two set equalities below are the SECOND guard for the
-  /// draw sets (landOutcomesPathRuleTest's note has the argument — the
+  /// draw sets (wrapUpOutcomesPathRuleTest's note has the argument — the
   /// sets are checkable only by pinning their contents; everything
   /// downstream draws from them).
   run oneRepoDegenerationTest = assert(and {
     DO::repos == Set(1),
-    DO::landOutcomes(false) == Set(LandSquashMerge),
-    DO::landOutcomes(true) == Set(LandAdvanceDefault, LandFailed)
+    DO::wrapUpOutcomes(false) == Set(WOk),
+    DO::wrapUpOutcomes(true) == Set(WOk, WFailed)
   })
 }

@@ -165,8 +165,8 @@
 ///      world — but re-emission carries the SAME decision seq and is
 ///      absorbed by identity; the JOURNAL never gains a duplicate
 ///      decision (seqs are dense and each entry re-checks as a fresh
-///      legal step; the ledger's landings ghost, capped at 1 by the
-///      domain's landingExclusive, equals the journal's landing count).
+///      legal step; the ledger's completions ghost, capped at 1 by the
+///      domain's completionExclusive, equals the journal's landing count).
 ///   3. RECOVERY COMPLETENESS (recoveryComplete): replay of the current
 ///      journal yields EXACTLY the domain state the actor holds — in
 ///      every reachable state, so every prefix of every run is covered
@@ -205,7 +205,7 @@
 /// and landing confirmations arrive at-least-once too, and the DOMAIN
 /// machine already absorbs them — duplicate task completions no-op by
 /// identity, duplicate landing deliveries no-op at the boundary
-/// (decideTaskDone/decideLandDuplicate, proved since PR 1/PR 3) — so the
+/// (decideTaskDone/decideCompleteDuplicate, proved since PR 1/PR 3) — so the
 /// actor journals the absorbing no-op decisions like any others and
 /// replay reproduces them. The composition: at-least-once OUT is
 /// absorbed by decision identity, at-least-once IN by the domain's
@@ -227,7 +227,7 @@
 /// default metering), MAX_STAGES = 1 / N_REPOS = 1
 /// (staging and multi-repo are orthogonal to the seam —
 /// each collapses to its documented degeneration; the landing's
-/// branchMoved draw still exercises both paths). Unlike the mc
+/// invalidated draw still exercises both paths). Unlike the mc
 /// instances there is no per-pricing spread: the seam model reads no
 /// account, so one pricing suffices — the domain instances keep that
 /// coverage.
@@ -279,7 +279,7 @@ module chuggy_refinement {
     N_TASKS = 1,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
-    GATE_PRICING = Budgeted(1),
+    WRAPUP_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 1,
     N_REPOS = 1
@@ -299,7 +299,7 @@ module chuggy_refinement {
   /// pure, so (Core, picks) determines everything; the picks are the
   /// only information the crash could lose.
   type Cmd =
-      JArrive({ deps: Set[int], prog: List[Stage], repo: int })
+      JArrive({ deps: Set[int], prog: List[Stage], repo: int, wrapUp: WrapUp })
     | JRelease(int)
     | JRevoke(int)
     | JDispatch(int)
@@ -307,7 +307,7 @@ module chuggy_refinement {
     | JWorkReduce(int)
     | JEvalReduce(int)
     | JDequeue({ ticket: int, moved: bool })
-    | JGateResolve({ ticket: int, out: LandOutcome })
+    | JGateResolve({ ticket: int, out: WrapUpOutcome })
     | JLandDuplicate(int)
     | JRevalFail(int)
     | JOpRetry(int)
@@ -335,7 +335,7 @@ module chuggy_refinement {
   /// step, and THE replay step: both sides of theorem 3 are this one
   /// function, so they cannot drift.
   pure def execCmd(c: Core, cmd: Cmd): Decision = match cmd {
-    | JArrive(a) => decideArrive(c, a.deps, a.prog, a.repo)
+    | JArrive(a) => decideArrive(c, a.deps, a.prog, a.repo, a.wrapUp)
     | JRelease(j) => decideRelease(c, j)
     | JRevoke(j) => decideRevoke(c, j)
     | JDispatch(j) => decideDispatch(c, j)
@@ -343,8 +343,8 @@ module chuggy_refinement {
     | JWorkReduce(j) => decideWorkReduce(c, j)
     | JEvalReduce(j) => decideEvalStageReduce(c, j)
     | JDequeue(a) => decideDequeue(c, a.ticket, a.moved)
-    | JGateResolve(a) => decideLand(c, a.ticket, a.out, true)
-    | JLandDuplicate(j) => decideLandDuplicate(c, j)
+    | JGateResolve(a) => decideWrapUpResolve(c, a.ticket, a.out, true)
+    | JLandDuplicate(j) => decideCompleteDuplicate(c, j)
     | JRevalFail(j) => decideRevalFail(c, j)
     | JOpRetry(j) => decideOpRetry(c, j)
   }
@@ -372,10 +372,10 @@ module chuggy_refinement {
       }
     | JWorkReduce(j) => reducibleWorkIn(c).contains(j)
     | JEvalReduce(j) => reducibleEvalIn(c).contains(j)
-    | JDequeue(a) => gateEnterablesIn(c).contains(a.ticket)
+    | JDequeue(a) => wrapUpStartablesIn(c).contains(a.ticket)
     | JGateResolve(a) => and {
-        gatedIn(c).contains(a.ticket),
-        landOutcomes(true).contains(a.out)
+        holdingIn(c).contains(a.ticket),
+        wrapUpOutcomes(true).contains(a.out)
       }
     | JLandDuplicate(j) => doneIn(c).contains(j)
     | JRevalFail(j) => readiesIn(c).contains(j)
@@ -416,7 +416,7 @@ module chuggy_refinement {
   // rides a charged account per the domain's descent table); a "landing"
   // emission merges the ticket's diff (the ticket-done success step).
   // Attribution is transitions[0].ticket: every effect-bearing record's
-  // head transition is the stepped ticket (domain.qnt move/landSuccess).
+  // head transition is the stepped ticket (domain.qnt move/completeTicket).
 
   pure def hasEffect(r: StepRecord, e: str): bool =
     r.effects.foldl(false, (b, x) => b or x == e)
@@ -579,7 +579,8 @@ module chuggy_refinement {
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
     nondet repo_ = repos.oneOf()
-    journalStep(JArrive({ deps: deps_, prog: prog, repo: repo_ }))
+    journalStep(JArrive({ deps: deps_, prog: prog, repo: repo_,
+      wrapUp: WExclusive(repo_) }))
   }
   action actorRelease = all {
     draftTickets.size() > 0,
@@ -614,15 +615,15 @@ module chuggy_refinement {
     journalStep(JEvalReduce(j))
   }
   action actorGateEnter = all {
-    gateEnterable.size() > 0,
-    nondet j = gateEnterable.oneOf()
+    wrapUpStartable.size() > 0,
+    nondet j = wrapUpStartable.oneOf()
     nondet moved = Set(true, false).oneOf()
     journalStep(JDequeue({ ticket: j, moved: moved }))
   }
   action actorGateResolve = all {
-    gatedTickets.size() > 0,
-    nondet j = gatedTickets.oneOf()
-    nondet out = landOutcomes(true).oneOf()
+    holdingTickets.size() > 0,
+    nondet j = holdingTickets.oneOf()
+    nondet out = wrapUpOutcomes(true).oneOf()
     journalStep(JGateResolve({ ticket: j, out: out }))
   }
   action actorLandDuplicate = all {
@@ -662,15 +663,15 @@ module chuggy_refinement {
     effectCrash(JEvalReduce(j))
   }
   action hazardGateEnter = all {
-    gateEnterable.size() > 0,
-    nondet j = gateEnterable.oneOf()
+    wrapUpStartable.size() > 0,
+    nondet j = wrapUpStartable.oneOf()
     nondet moved = Set(true, false).oneOf()
     effectCrash(JDequeue({ ticket: j, moved: moved }))
   }
   action hazardGateResolve = all {
-    gatedTickets.size() > 0,
-    nondet j = gatedTickets.oneOf()
-    nondet out = landOutcomes(true).oneOf()
+    holdingTickets.size() > 0,
+    nondet j = holdingTickets.oneOf()
+    nondet out = wrapUpOutcomes(true).oneOf()
     effectCrash(JGateResolve({ ticket: j, out: out }))
   }
 
@@ -742,14 +743,14 @@ module chuggy_refinement {
     worldLandings(j) <= 1)
 
   /// Theorem 2's journal half, stated as the ledger bridge: the
-  /// journal's landing count per ticket IS the domain's landings ghost —
-  /// which the domain's landingExclusive (checked live on the embedded
+  /// journal's landing count per ticket IS the domain's completions ghost —
+  /// which the domain's completionExclusive (checked live on the embedded
   /// instance) caps at one. The journal cannot gain a duplicate landing
   /// decision without the ledger disagreeing. (State-wise a corollary of
   /// journalLegal + recoveryComplete — the same stated-corollary
-  /// treatment as revokedNeverLands.)
+  /// treatment as revokedNeverCompletes.)
   val journalLandingsMatchLedger: bool = liveTickets.forall(j =>
-    journalLandings(j) == tickets.get(j).landings)
+    journalLandings(j) == tickets.get(j).completions)
 
   /// The discipline-INDEPENDENT core: holds under rstep AND rstepHazard
   /// (the hazard corrupts the world, never the journal or the replay).

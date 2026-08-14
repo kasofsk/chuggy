@@ -39,7 +39,7 @@
 /// GUARD DISCIPLINE (review finding m6): every driver conjunct REFERENCES
 /// a definition the machine action itself reads — an enablement val
 /// (canArrive, draftTickets, revocableTickets, taskPhaseTickets,
-/// reducibleWork, reducibleEval, landingTickets, doneTickets,
+/// reducibleWork, reducibleEval, wrapUpTickets, doneTickets,
 /// retryableEscalated, readyTickets), a shared pure guard
 /// (dispatchableIn), or a shared draw-set definition (deliverableTaskIds,
 /// dependableTickets, validPrograms). NONE is a copied
@@ -66,14 +66,14 @@
 ///
 /// THE MULTI-REPO PR (roadmap PR 4) extends THIS layer first, per its own
 /// convention: the machine's two NEW nondet draws — the authored repo pick
-/// at arrival and the environment's per-attempt branchMoved choice at the
+/// at arrival and the environment's per-attempt invalidated choice at the
 /// landing — each get deterministic runs exercising BOTH branches
 /// (chuggy_witness_multirepo_test: the choice pinned MOVED with the gate
 /// rework and the landing wall attributed; pinned QUIET with the landing
 /// succeeding; and the repo pick exercised off-default with a cross-repo
 /// dep chain unblocking). The existing four modules updated mechanically:
-/// arrivals author repo 1, and every landing driver names its branchMoved
-/// choice with the outcome guarded by the machine's own landOutcomes draw
+/// arrivals author repo 1, and every landing driver names its invalidated
+/// choice with the outcome guarded by the machine's own wrapUpOutcomes draw
 /// rule (a quiet failure is not drawable — the drivers reference the same
 /// definition the landing actions draw from, per the guard discipline
 /// above). The fifth module has NO paired random probe: its shapes are
@@ -83,11 +83,11 @@
 ///
 /// THE MERGE-QUEUE + LANDING PR (roadmap PR 5) extends this layer first,
 /// per the convention: the landing surface RESTRUCTURED (the old one-step
-/// `land` became the dequeue `gateEnter` — quiet arm fast-pathing the
+/// `land` became the dequeue `wrapUpStart` — quiet arm fast-pathing the
 /// direct SquashMerge, moved arm opening the depth-1 gate — plus the gated
-/// `gateResolve` drawing from landOutcomes(true)), so every landing driver
+/// `wrapUpResolve` drawing from wrapUpOutcomes(true)), so every landing driver
 /// here became the doDequeue/doGateResolve pair, referencing
-/// gateEnterableIn / gatedTickets / landOutcomes — and, per the
+/// wrapUpStartableIn / holdingTickets / wrapUpOutcomes — and, per the
 /// adversarial review's MAJOR 1, doDequeue applies the HOISTED routing
 /// decider decideDequeue rather than re-composing the quiet/moved route
 /// inline (a copied route drifts exactly like a copied guard: the p3
@@ -103,8 +103,8 @@
 ///     own witnessed run (SquashMerge reachability pinned against the
 ///     hoisted routing decider, the p3-mutant catcher);
 ///   - chuggy_witness_gate_deadline_test (deadline-only consts): the
-///     eviction priced on the OTHER GatePricing branch — two gate
-///     failures metered by gas alone (gateLeft identically 0) into the
+///     eviction priced on the OTHER WrapUpPricing branch — two gate
+///     failures metered by gas alone (wrapUpLeft identically 0) into the
 ///     gas wall, v1's §5a gate-loop shape reproduced on chuggy's machine
 ///     with the deadline backstop doing exactly its job (R5);
 /// (A ninth module, chuggy_witness_batch_test, witnessed the group half;
@@ -134,7 +134,7 @@ module chuggy_witness_free_test {
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 2,
-    GATE_PRICING = DeadlineOnly,
+    WRAPUP_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryFree,
     MAX_STAGES = 2,
     N_REPOS = 2
@@ -147,7 +147,7 @@ module chuggy_witness_free_test {
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
     repos.contains(repo_),
-    apply(decideArrive(core, deps_, prog, repo_))
+    apply(decideArrive(core, deps_, prog, repo_, WExclusive(repo_)))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -334,7 +334,7 @@ module chuggy_witness_cascade_test {
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
-    GATE_PRICING = Budgeted(1),
+    WRAPUP_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
     N_REPOS = 2
@@ -346,7 +346,7 @@ module chuggy_witness_cascade_test {
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
     repos.contains(repo_),
-    apply(decideArrive(core, deps_, prog, repo_))
+    apply(decideArrive(core, deps_, prog, repo_, WExclusive(repo_)))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -419,7 +419,7 @@ module chuggy_witness_stage_test {
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
-    GATE_PRICING = Budgeted(1),
+    WRAPUP_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
     N_REPOS = 2
@@ -431,7 +431,7 @@ module chuggy_witness_stage_test {
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
     repos.contains(repo_),
-    apply(decideArrive(core, deps_, prog, repo_))
+    apply(decideArrive(core, deps_, prog, repo_, WExclusive(repo_)))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -455,17 +455,17 @@ module chuggy_witness_stage_test {
     apply(decideEvalStageReduce(core, j))
   }
   action doDequeue(j: int, moved: bool): bool = all {
-    gateEnterableIn(core, j),
+    wrapUpStartableIn(core, j),
     apply(decideDequeue(core, j, moved))
   }
-  action doGateResolve(j: int, out: LandOutcome): bool = all {
-    gatedTickets.contains(j),
-    landOutcomes(true).contains(out),
-    apply(decideLand(core, j, out, true))
+  action doGateResolve(j: int, out: WrapUpOutcome): bool = all {
+    holdingTickets.contains(j),
+    wrapUpOutcomes(true).contains(out),
+    apply(decideWrapUpResolve(core, j, out, true))
   }
   action doLandDuplicate(j: int): bool = all {
     doneTickets.contains(j),
-    apply(decideLandDuplicate(core, j))
+    apply(decideCompleteDuplicate(core, j))
   }
 
   /// Two stages: a width-2 unanimous stage 0 (the pass must be UNANIMOUS
@@ -521,7 +521,7 @@ module chuggy_witness_stage_test {
       .expect(and {
         lastStep.label == "eval-passed",
         stageAdvanceNever,                         // ... and does NOT fire here
-        tickets.get(1).phase == PLanding,
+        tickets.get(1).phase == PWrapUp,
         allInvariants
       })
       // The dequeue draws QUIET: the skip fast-path — gate never opened,
@@ -530,19 +530,19 @@ module chuggy_witness_stage_test {
       .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.effects == ["SquashMerge"],
-        tickets.get(1).landings == 1,
+        lastStep.effects == ["Complete"],
+        tickets.get(1).completions == 1,
         allInvariants
       })
       // At-least-once: a stale landing success re-delivers after Done —
-      // absorbed with NO landing effect (landingExclusive's boundary; the
+      // absorbed with NO landing effect (completionExclusive's boundary; the
       // land-duplicate STUTTER arm of stepDescends fired on a machine
       // trace — the convention roster).
       .then(doLandDuplicate(1))
       .expect(and {
-        lastStep.label == "land-duplicate",
+        lastStep.label == "complete-duplicate",
         lastStep.effects == [],
-        tickets.get(1).landings == 1,
+        tickets.get(1).completions == 1,
         currentMeasure == prevMeasure,
         allInvariants
       })
@@ -553,14 +553,14 @@ module chuggy_witness_stage_test {
 /// per branch of the PR's new nondet surface:
 ///   - QUIET: a repo-2 ticket (the repo pick exercised off-default) whose
 ///     landing attempt the environment chose quiet — the landing MUST
-///     succeed (landOutcomes refuses a quiet failure) and the ticket-done
+///     succeed (wrapUpOutcomes refuses a quiet failure) and the ticket-done
 ///     step carries the quiet attribution. This run is the trace-pinned
 ///     half of quietRepoLandsCleanly (the invariant's header is explicit
 ///     about the split: per-attempt implication as the state theorem,
 ///     THIS trace as the pinned-quiet reading).
 ///   - MOVED: the same lifecycle whose attempts the environment chose
 ///     moved — the gate rework AND, on the second failure, the
-///     gate-budget wall each carry {repo, branchMoved: true}: the rework
+///     gate-budget wall each carry {repo, invalidated: true}: the rework
 ///     is attributed to the repo whose branch moved, and to nothing else.
 ///   - CROSS-REPO DEP: a repo-2 ticket dependent on a repo-1 ticket —
 ///     blocked while the dep is unlanded, READY the moment repo 1's
@@ -569,7 +569,7 @@ module chuggy_witness_stage_test {
 ///     MOVED branch, pinning at machine level that a move makes failure
 ///     possible, never certain. Each landing resolution is attributed to
 ///     its own repo in one trace with both repos live.
-/// allInvariants — now carrying landingIsolation, quietRepoLandsCleanly,
+/// allInvariants — now carrying wrapUpIsolation, quietRepoLandsCleanly,
 /// and reposWellFormed — is asserted after EVERY step of all three runs.
 /// NO paired random probe (file header): landing attempts are dense in
 /// random exploration, so the unseeded Stage 9 runs cover the random side;
@@ -581,7 +581,7 @@ module chuggy_witness_multirepo_test {
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
-    GATE_PRICING = Budgeted(1),
+    WRAPUP_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
     N_REPOS = 2
@@ -593,7 +593,7 @@ module chuggy_witness_multirepo_test {
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
     repos.contains(repo_),
-    apply(decideArrive(core, deps_, prog, repo_))
+    apply(decideArrive(core, deps_, prog, repo_, WExclusive(repo_)))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -617,13 +617,13 @@ module chuggy_witness_multirepo_test {
     apply(decideEvalStageReduce(core, j))
   }
   action doDequeue(j: int, moved: bool): bool = all {
-    gateEnterableIn(core, j),
+    wrapUpStartableIn(core, j),
     apply(decideDequeue(core, j, moved))
   }
-  action doGateResolve(j: int, out: LandOutcome): bool = all {
-    gatedTickets.contains(j),
-    landOutcomes(true).contains(out),
-    apply(decideLand(core, j, out, true))
+  action doGateResolve(j: int, out: WrapUpOutcome): bool = all {
+    holdingTickets.contains(j),
+    wrapUpOutcomes(true).contains(out),
+    apply(decideWrapUpResolve(core, j, out, true))
   }
 
   /// Single-stage single-evaluator program: these shapes need the landing
@@ -632,7 +632,7 @@ module chuggy_witness_multirepo_test {
 
   /// THE QUIET LANDING: the environment chooses the target repo's branch
   /// quiet for the attempt — the landing succeeds, attributed. (A quiet
-  /// FAILURE is not merely unobserved here: doLand's landOutcomes guard —
+  /// FAILURE is not merely unobserved here: doLand's wrapUpOutcomes guard —
   /// the machine's own draw rule — makes the step undrivable, so this run
   /// also documents the refusal structurally.)
   run quietLandDeterministicTest =
@@ -653,16 +653,16 @@ module chuggy_witness_multirepo_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      // THE WITNESSED STEP: the attempt's branchMoved choice is QUIET —
+      // THE WITNESSED STEP: the attempt's invalidated choice is QUIET —
       // the dequeue fast-paths (the gate never opens), the landing
       // succeeds, and the step is attributed to the ticket's own repo
       // with the quiet cause on record.
       .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.effects == ["SquashMerge"],
-        lastStep.landing == LOAttempt({ repo: 2, branchMoved: false }),
-        tickets.get(1).landings == 1,
+        lastStep.effects == ["Complete"],
+        lastStep.landing == WOAttempt({ repo: 2, invalidated: false }),
+        tickets.get(1).completions == 1,
         quietRepoLandsCleanly,                     // the state theorem, on the pinned-quiet step
         allInvariants
       })
@@ -670,7 +670,7 @@ module chuggy_witness_multirepo_test {
   /// THE MOVED REWORK, ATTRIBUTED: the environment chooses the branch
   /// MOVED at both attempts — the first failure buys the Budgeted gate
   /// rework, the second parks at the gate-budget wall, and BOTH steps
-  /// carry {repo: 1, branchMoved: true}: a landing failed only via its
+  /// carry {repo: 1, invalidated: true}: a landing failed only via its
   /// own repo's branch moving, and the trace says so each time.
   run movedReworkAttributedTest =
     init
@@ -694,21 +694,21 @@ module chuggy_witness_multirepo_test {
       // 1's depth-1 slot.
       .then(doDequeue(1, true))
       .expect(and {
-        lastStep.label == "gate-opened",
-        tickets.get(1).phase == PGated,
-        not(gateFreeIn(core, 1)),
+        lastStep.label == "wrapup-started",
+        tickets.get(1).phase == PWrapUpHolding,
+        not(leaseFreeIn(core, 1)),
         allInvariants
       })
       // THE WITNESSED STEP (rework half): the gate failed — Budgeted(1)
       // buys one gate rework (gate 1 -> 0, gas 2 -> 1; work ids 4, 5),
       // the step carries the attribution, and the slot frees by phase.
-      .then(doGateResolve(1, LandFailed))
+      .then(doGateResolve(1, WFailed))
       .expect(and {
-        lastStep.label == "rework-started gate_failure",
-        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
-        tickets.get(1).gateLeft == 0,
+        lastStep.label == "rework-started wrapup_failure",
+        lastStep.landing == WOAttempt({ repo: 1, invalidated: true }),
+        tickets.get(1).wrapUpLeft == 0,
         tickets.get(1).gasLeft == 1,
-        gateFreeIn(core, 1),
+        leaseFreeIn(core, 1),
         allInvariants
       })
       .then(doTaskDone(1, 4, VPass))
@@ -724,17 +724,17 @@ module chuggy_witness_multirepo_test {
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // The branch moved AGAIN at the re-dequeue: the gate re-opens...
       .then(doDequeue(1, true))
-      .expect(and { tickets.get(1).phase == PGated, allInvariants })
+      .expect(and { tickets.get(1).phase == PWrapUpHolding, allInvariants })
       // THE WITNESSED STEP (wall half): ...and fails with the gate
       // account empty — the ticket parks at the gate-budget wall, and the
       // PARKING step is attributed like the rework was.
-      .then(doGateResolve(1, LandFailed))
+      .then(doGateResolve(1, WFailed))
       .expect(and {
-        lastStep.label == "ticket-escalated gate_budget_exhausted",
-        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
+        lastStep.label == "ticket-escalated wrapup_budget_exhausted",
+        lastStep.landing == WOAttempt({ repo: 1, invalidated: true }),
         tickets.get(1).phase == PEscalated,
-        tickets.get(1).reason == RsGateBudgetExhausted,
-        tickets.get(1).resumeAt == RLanding,
+        tickets.get(1).reason == RsWrapUpBudgetExhausted,
+        tickets.get(1).resumeAt == RWrapUp,
         allInvariants
       })
 
@@ -777,17 +777,17 @@ module chuggy_witness_multirepo_test {
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // The branch moved: repo 1's gate opens for the candidate.
       .then(doDequeue(1, true))
-      .expect(and { tickets.get(1).phase == PGated, allInvariants })
+      .expect(and { tickets.get(1).phase == PWrapUpHolding, allInvariants })
       // THE WITNESSED STEP: repo 1 lands out of the gate (moved branch,
       // clean integration anyway — the move makes failure possible, not
       // certain; the gated promotion is AdvanceDefault, the path rule)
       // and the repo-2 dependent derives READY in the same post-state:
       // the cross-repo unblock, no machinery, no repo consulted.
-      .then(doGateResolve(1, LandAdvanceDefault))
+      .then(doGateResolve(1, WOk))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.effects == ["AdvanceDefault"],
-        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
+        lastStep.effects == ["Complete"],
+        lastStep.landing == WOAttempt({ repo: 1, invalidated: true }),
         tickets.get(1).phase == PDone,
         isReady(2),                                // THE cross-repo unblock
         allInvariants
@@ -805,15 +805,15 @@ module chuggy_witness_multirepo_test {
       .then(doEvalReduce(2))
       .expect(allInvariants)
       // The dependent lands in ITS repo, quiet (the fast-path direct
-      // squash), attributed to repo 2 — two repos, two landings, each on
+      // squash), attributed to repo 2 — two repos, two completions, each on
       // its own record.
       .then(doDequeue(2, false))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.landing == LOAttempt({ repo: 2, branchMoved: false }),
+        lastStep.landing == WOAttempt({ repo: 2, invalidated: false }),
         tickets.get(2).phase == PDone,
-        tickets.get(1).landings == 1,
-        tickets.get(2).landings == 1,
+        tickets.get(1).completions == 1,
+        tickets.get(2).completions == 1,
         allInvariants
       })
 }
@@ -821,7 +821,7 @@ module chuggy_witness_multirepo_test {
 /// SHAPE 6 — THE DEPTH-1 GATE (merge-queue PR, R3/R4; mc_chuggy_budgeted
 /// consts). Two same-repo tickets both enqueue; the first dequeue draws
 /// MOVED and occupies the gate — and the second ticket's dequeue is
-/// REFUSED BY GUARD while the slot is held (gateEnterableIn false: the
+/// REFUSED BY GUARD while the slot is held (wrapUpStartableIn false: the
 /// depth-1 exclusivity as a pinned guard-refusal, not just an invariant
 /// over states that happened to occur). The occupant resolves as the GATED
 /// promotion (AdvanceDefault — the default ref advanced onto the validated
@@ -842,7 +842,7 @@ module chuggy_witness_gate_test {
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
-    GATE_PRICING = Budgeted(1),
+    WRAPUP_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
     N_REPOS = 2
@@ -854,7 +854,7 @@ module chuggy_witness_gate_test {
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
     repos.contains(repo_),
-    apply(decideArrive(core, deps_, prog, repo_))
+    apply(decideArrive(core, deps_, prog, repo_, WExclusive(repo_)))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -878,18 +878,18 @@ module chuggy_witness_gate_test {
     apply(decideEvalStageReduce(core, j))
   }
   action doDequeue(j: int, moved: bool): bool = all {
-    gateEnterableIn(core, j),
+    wrapUpStartableIn(core, j),
     apply(decideDequeue(core, j, moved))
   }
-  action doGateResolve(j: int, out: LandOutcome): bool = all {
-    gatedTickets.contains(j),
-    landOutcomes(true).contains(out),
-    apply(decideLand(core, j, out, true))
+  action doGateResolve(j: int, out: WrapUpOutcome): bool = all {
+    holdingTickets.contains(j),
+    wrapUpOutcomes(true).contains(out),
+    apply(decideWrapUpResolve(core, j, out, true))
   }
 
   pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
 
-  run gateDepthOneDeterministicTest =
+  run leaseExclusiveDeterministicTest =
     init
       // Two same-repo tickets, walked to the landing queue one after the
       // other (each: dispatch gas 3 -> 2, work ids 1-2, eval id 3).
@@ -927,37 +927,37 @@ module chuggy_witness_gate_test {
       .expect(and {
         // Both enqueued, the gate free: EITHER may dequeue (order is
         // deliberately unmodeled — the nondet pick).
-        landingTickets == Set(1, 2),
-        gateEnterableIn(core, 1),
-        gateEnterableIn(core, 2),
+        wrapUpTickets == Set(1, 2),
+        wrapUpStartableIn(core, 1),
+        wrapUpStartableIn(core, 2),
         allInvariants
       })
       // Ticket 1 dequeues MOVED: the gate opens and holds repo 1's slot.
       .then(doDequeue(1, true))
       .expect(and {
-        lastStep.label == "gate-opened",
-        tickets.get(1).phase == PGated,
+        lastStep.label == "wrapup-started",
+        tickets.get(1).phase == PWrapUpHolding,
         // THE WITNESSED REFUSAL (R4): while the slot is held, the second
         // same-repo ticket CANNOT draw the dequeue — including its
         // would-be-quiet fast-path (quietness is only checked AT the
         // dequeue, chuggernaut §3.3: each dequeued job re-checks the
         // fast-path). A doDequeue(2, _) here would disable the run.
-        not(gateEnterableIn(core, 2)),
-        gateEnterable == Set(),
-        not(gateFreeIn(core, 1)),
-        allInvariants                          // carries gateDepthOne
+        not(wrapUpStartableIn(core, 2)),
+        wrapUpStartable == Set(),
+        not(leaseFreeIn(core, 1)),
+        allInvariants                          // carries leaseExclusive
       })
       // THE GATED PROMOTION (R3, one half): the validated candidate
       // advances the default ref — and the slot frees by phase, so the
       // refusal lifts in the same post-state.
-      .then(doGateResolve(1, LandAdvanceDefault))
+      .then(doGateResolve(1, WOk))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.effects == ["AdvanceDefault"],
-        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
-        tickets.get(1).landings == 1,
-        gateFreeIn(core, 1),
-        gateEnterableIn(core, 2),                // the queue moves on
+        lastStep.effects == ["Complete"],
+        lastStep.landing == WOAttempt({ repo: 1, invalidated: true }),
+        tickets.get(1).completions == 1,
+        leaseFreeIn(core, 1),
+        wrapUpStartableIn(core, 2),                // the queue moves on
         allInvariants
       })
       // THE FAST-PATH (R3, the other half): ticket 2 dequeues QUIET —
@@ -967,9 +967,9 @@ module chuggy_witness_gate_test {
       .then(doDequeue(2, false))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.effects == ["SquashMerge"],
-        lastStep.landing == LOAttempt({ repo: 1, branchMoved: false }),
-        tickets.get(2).landings == 1,
+        lastStep.effects == ["Complete"],
+        lastStep.landing == WOAttempt({ repo: 1, invalidated: false }),
+        tickets.get(2).completions == 1,
         allInvariants
       })
 
@@ -980,7 +980,7 @@ module chuggy_witness_gate_test {
   /// attribution, and the gate NEVER opens anywhere on the trace. A
   /// decideDequeue mutant that re-routed quiet into the gate (the
   /// review's p3, which the pre-hoisting composition let ship green)
-  /// leaves the ticket PGated at the witnessed step and fails every
+  /// leaves the ticket PWrapUpHolding at the witnessed step and fails every
   /// conjunct below; the driver references decideDequeue itself, so there
   /// is no copy of the route left to drift.
   run quietFastPathDeterministicTest =
@@ -1002,34 +1002,34 @@ module chuggy_witness_gate_test {
       .then(doEvalReduce(1))
       .expect(and {
         lastStep.label == "eval-passed",
-        tickets.get(1).phase == PLanding,
-        gateFreeIn(core, 1),
+        tickets.get(1).phase == PWrapUp,
+        leaseFreeIn(core, 1),
         allInvariants
       })
       // THE WITNESSED STEP: quiet dequeue = same-step landing.
       .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.effects == ["SquashMerge"],
-        lastStep.landing == LOAttempt({ repo: 1, branchMoved: false }),
-        lastStep.transitions == [{ ticket: 1, from: PLanding, to: PDone }],
+        lastStep.effects == ["Complete"],
+        lastStep.landing == WOAttempt({ repo: 1, invalidated: false }),
+        lastStep.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }],
         tickets.get(1).phase == PDone,
-        tickets.get(1).landings == 1,
-        gateFreeIn(core, 1),                       // the gate never opened
+        tickets.get(1).completions == 1,
+        leaseFreeIn(core, 1),                       // the gate never opened
         allInvariants
       })
 }
 
 /// SHAPE 7 — THE DEADLINE-ONLY EVICTION (merge-queue PR, R5;
-/// mc_chuggy_deadline_only consts). The OTHER GatePricing branch on a
-/// machine trace: two gate failures metered by GAS ALONE (gateLeft
+/// mc_chuggy_deadline_only consts). The OTHER WrapUpPricing branch on a
+/// machine trace: two gate failures metered by GAS ALONE (wrapUpLeft
 /// identically 0 — no gate account exists to spend) into the gas wall at
 /// the third — v1's §5a gate-loop shape reproduced on chuggy's machine,
 /// with the charter's required gas doing exactly the backstop job the v1
 /// finding said it must (docs/chuggernaut.md §6.2: without it, "the day
 /// never ends" and the queue behind the spinning ticket starves). Each
-/// eviction is attributed {repo, branchMoved: true}, and the final wall
-/// parks with resumeAt RLanding — re-ENQUEUE, not re-gate — unretryable
+/// eviction is attributed {repo, invalidated: true}, and the final wall
+/// parks with resumeAt RWrapUp — re-ENQUEUE, not re-gate — unretryable
 /// at zero gas under RetryCharged (the permanently-parked corner, honest).
 module chuggy_witness_gate_deadline_test {
   import chuggy_measure.* from "../measure"
@@ -1038,7 +1038,7 @@ module chuggy_witness_gate_deadline_test {
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
-    GATE_PRICING = DeadlineOnly,
+    WRAPUP_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
     N_REPOS = 2
@@ -1050,7 +1050,7 @@ module chuggy_witness_gate_deadline_test {
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
     repos.contains(repo_),
-    apply(decideArrive(core, deps_, prog, repo_))
+    apply(decideArrive(core, deps_, prog, repo_, WExclusive(repo_)))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -1074,13 +1074,13 @@ module chuggy_witness_gate_deadline_test {
     apply(decideEvalStageReduce(core, j))
   }
   action doDequeue(j: int, moved: bool): bool = all {
-    gateEnterableIn(core, j),
+    wrapUpStartableIn(core, j),
     apply(decideDequeue(core, j, moved))
   }
-  action doGateResolve(j: int, out: LandOutcome): bool = all {
-    gatedTickets.contains(j),
-    landOutcomes(true).contains(out),
-    apply(decideLand(core, j, out, true))
+  action doGateResolve(j: int, out: WrapUpOutcome): bool = all {
+    holdingTickets.contains(j),
+    wrapUpOutcomes(true).contains(out),
+    apply(decideWrapUpResolve(core, j, out, true))
   }
 
   pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
@@ -1105,12 +1105,12 @@ module chuggy_witness_gate_deadline_test {
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // Gate failure #1: gas alone pays (2 -> 1); no gate account exists.
       .then(doDequeue(1, true))
-      .expect(and { tickets.get(1).phase == PGated, allInvariants })
-      .then(doGateResolve(1, LandFailed))
+      .expect(and { tickets.get(1).phase == PWrapUpHolding, allInvariants })
+      .then(doGateResolve(1, WFailed))
       .expect(and {
-        lastStep.label == "rework-started gate_failure",
-        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
-        tickets.get(1).gateLeft == 0,              // identically zero: DeadlineOnly
+        lastStep.label == "rework-started wrapup_failure",
+        lastStep.landing == WOAttempt({ repo: 1, invalidated: true }),
+        tickets.get(1).wrapUpLeft == 0,              // identically zero: DeadlineOnly
         tickets.get(1).gasLeft == 1,
         allInvariants
       })
@@ -1127,10 +1127,10 @@ module chuggy_witness_gate_deadline_test {
       // Gate failure #2: the loop spins on gas (1 -> 0) — the §5a shape.
       .then(doDequeue(1, true))
       .expect(allInvariants)
-      .then(doGateResolve(1, LandFailed))
+      .then(doGateResolve(1, WFailed))
       .expect(and {
-        lastStep.label == "rework-started gate_failure",
-        tickets.get(1).gateLeft == 0,
+        lastStep.label == "rework-started wrapup_failure",
+        tickets.get(1).wrapUpLeft == 0,
         tickets.get(1).gasLeft == 0,
         allInvariants
       })
@@ -1149,17 +1149,17 @@ module chuggy_witness_gate_deadline_test {
       // never silently).
       .then(doDequeue(1, true))
       .expect(allInvariants)
-      .then(doGateResolve(1, LandFailed))
+      .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "ticket-escalated gas_exhausted",
-        lastStep.landing == LOAttempt({ repo: 1, branchMoved: true }),
+        lastStep.landing == WOAttempt({ repo: 1, invalidated: true }),
         tickets.get(1).phase == PEscalated,
         tickets.get(1).reason == RsGasExhausted,
-        tickets.get(1).resumeAt == RLanding,       // resume re-ENQUEUES
+        tickets.get(1).resumeAt == RWrapUp,       // resume re-ENQUEUES
         // Charging resume at zero gas: parked for good under RetryCharged
         // (the honest corner — a human funds nothing by pressing Retry).
         retryableEscalated == Set(),
-        gateFreeIn(core, 1),                       // the wall freed the slot
+        leaseFreeIn(core, 1),                       // the wall freed the slot
         allInvariants
       })
 }
@@ -1191,7 +1191,7 @@ module chuggy_witness_draft_wait_test {
     N_TASKS = 1,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
-    GATE_PRICING = Budgeted(1),
+    WRAPUP_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 1,
     N_REPOS = 1
@@ -1202,7 +1202,7 @@ module chuggy_witness_draft_wait_test {
     deps_.subseteq(dependableTickets),
     validPrograms.contains(prog),
     repos.contains(repo_),
-    apply(decideArrive(core, deps_, prog, repo_))
+    apply(decideArrive(core, deps_, prog, repo_, WExclusive(repo_)))
   }
   action doRelease(j: int): bool = all {
     draftTickets.contains(j),
@@ -1229,7 +1229,7 @@ module chuggy_witness_draft_wait_test {
         not(dispatchableIn(core, 2)),
         reducibleWork == Set(),
         reducibleEval == Set(),
-        landingTickets == Set(),
+        wrapUpTickets == Set(),
         retryableEscalated == Set(),
         // THE ACCEPTANCE: invisible to the desk walks, both empty, so the
         // containment holds over nothing at all.
@@ -1239,6 +1239,105 @@ module chuggy_witness_draft_wait_test {
         // AND NOT a structural deadlock: a continuation exists.
         canFinishSet == Set(1, 2),
         noStructuralDeadlock,
+        allInvariants
+      })
+}
+
+/// THE WRAP-UP-LESS COMPLETION (design 002) — a ticket whose effect already
+/// happened during work, so evaluation passing IS its completion. A deploy,
+/// a report: nothing to merge, no branch worth landing, and no lease to take.
+///
+/// It pins the route AND the bug the route arrived with. The first version
+/// completed the ticket off the LIVE core rather than the retired one, so a
+/// Done ticket kept its eval tasks — completeTicket does not retire a set,
+/// because on the lease path the set is already retired when the ticket
+/// enqueues, and skipping the wrap-up phases skipped that too. The random
+/// layer found it at roughly one run in fourteen; the empty-task-set
+/// conjunct below is what makes it a one-line failure instead.
+module chuggy_witness_wrapup_none_test {
+  import chuggy_measure.* from "../measure"
+  import chuggy_domain(
+    N_TICKETS = 2,
+    N_TASKS = 1,
+    REWORK_POLICY = RWBudget(1),
+    GAS = 3,
+    WRAPUP_PRICING = Budgeted(1),
+    OP_RETRY_PRICING = RetryCharged,
+    MAX_STAGES = 1,
+    N_REPOS = 1
+  ).* from "../domain"
+
+  action doArriveNone(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
+    canArrive,
+    deps_.subseteq(dependableTickets),
+    validPrograms.contains(prog),
+    repos.contains(repo_),
+    wrapUpChoices.contains(WNone),
+    apply(decideArrive(core, deps_, prog, repo_, WNone))
+  }
+  action doRelease(j: int): bool = all {
+    draftTickets.contains(j),
+    apply(decideRelease(core, j))
+  }
+  action doDispatch(j: int): bool = all {
+    readyTickets.contains(j),
+    dispatchableIn(core, j),
+    apply(decideDispatch(core, j))
+  }
+  action doTaskDone(j: int, tid: int, v: Verdict): bool = all {
+    taskPhaseTickets.contains(j),
+    deliverableTaskIds(core, j).contains(tid),
+    apply(decideTaskDone(core, j, tid, v))
+  }
+  action doWorkReduce(j: int): bool = all {
+    reducibleWork.contains(j),
+    apply(decideWorkReduce(core, j))
+  }
+  action doEvalReduce(j: int): bool = all {
+    reducibleEval.contains(j),
+    apply(decideEvalStageReduce(core, j))
+  }
+
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+
+  run wrapUpNoneCompletesDeterministicTest =
+    init
+      .then(doArriveNone(Set(), progFlat1, 1))
+      .expect(and { tickets.get(1).wrapUp == WNone, allInvariants })
+      .then(doRelease(1))
+      .expect(allInvariants)
+      .then(doDispatch(1))
+      .expect(allInvariants)
+      .then(doTaskDone(1, 1, VPass))
+      .expect(allInvariants)
+      .then(doWorkReduce(1))
+      .expect(and {
+        lastStep.label == "work-passed",
+        tickets.get(1).phase == PEvaluating,
+        // Work stamped what it produced; the deploy's release identity.
+        tickets.get(1).artifact != ANone,
+        allInvariants
+      })
+      .then(doTaskDone(1, 2, VPass))
+      .expect(allInvariants)
+      // THE WITNESSED STEP: evaluation passing completes it outright. No
+      // enqueue, no lease, no wrap-up phase entered at all.
+      .then(doEvalReduce(1))
+      .expect(and {
+        lastStep.label == "ticket-done",
+        lastStep.transitions == [{ ticket: 1, from: PEvaluating, to: PDone }],
+        lastStep.effects == ["Complete"],
+        // It resolved no wrap-up attempt, so it carries no attribution —
+        // the completeness arm of wrapUpIsolation permits exactly this.
+        lastStep.landing == WONone,
+        tickets.get(1).phase == PDone,
+        tickets.get(1).completions == 1,
+        // THE REGRESSION PIN: the eval set was retired on the way through.
+        tickets.get(1).tasks == Set(),
+        tickets.get(1).record.length() == 2,
+        // It never held, and never wanted, a lease.
+        holdingTickets == Set(),
+        wrapUpTickets == Set(),
         allInvariants
       })
 }

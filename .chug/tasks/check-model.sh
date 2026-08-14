@@ -69,7 +69,7 @@ echo "--- unit suite"
 # something the machine deliberately does not guarantee, so that the accepted
 # position is held by the suite rather than by a paragraph.
 echo "--- witnesses"
-for w in free cascade stage multirepo gate gate_deadline draft_wait; do
+for w in free cascade stage multirepo gate gate_deadline draft_wait wrapup_none; do
 	"$QUINT" test --main="chuggy_witness_${w}_test" \
 		model/tests/chuggy_witness_test.qnt >/dev/null 2>&1 \
 		|| { echo "ERROR witness $w failed"; failed=$((failed + 1)); }

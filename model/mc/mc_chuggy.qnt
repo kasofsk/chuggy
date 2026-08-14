@@ -1,5 +1,5 @@
 /// Small-scope instances of chuggy_domain for simulation: one per
-/// GatePricing branch (charter §2 gate-pricing row: parameterize and decide
+/// WrapUpPricing branch (charter §2 gate-pricing row: parameterize and decide
 /// on evidence — the model must generate traces under BOTH prices), plus a
 /// RetryFree instance so the operator-churn exemption in stepDescends is
 /// exercised by a machine run, not just by pure unit tests.
@@ -23,7 +23,7 @@
 ///
 /// NOTES-RECONCILIATION PR (docs/chuggy-notes-triage.md): the same three
 /// instances, reshaped consts — REWORK_POLICY = RWBudget(n) (the rework
-/// bound as a policy parameter, GatePricing pattern) and GAS (the renamed
+/// bound as a policy parameter, WrapUpPricing pattern) and GAS (the renamed
 /// required account). The action surface shrank (no freeze/unfreeze, no
 /// separate stalled-retry — the pre-work resume is an operator-retry
 /// flavor), so the Stage 9b probe seeds were re-examined against the new
@@ -35,9 +35,9 @@
 /// N_REPOS = 2, the smallest universe where per-repo attribution is
 /// distinguishable from global attribution. Arrivals draw the ticket's
 /// target repo (a third authored nondet draw) and every landing attempt
-/// draws the environment's per-attempt branchMoved choice, with the
-/// outcome drawn from landOutcomes(moved) — LandFailed drawable only on a
-/// moved branch. allInvariants gained landingIsolation,
+/// draws the environment's per-attempt invalidated choice, with the
+/// outcome drawn from wrapUpOutcomes(moved) — WFailed drawable only on a
+/// moved branch. allInvariants gained wrapUpIsolation,
 /// quietRepoLandsCleanly, and reposWellFormed. The two new draws changed
 /// the simulator's nondet structure YET AGAIN — every 9b-RND seed
 /// re-examined; forensics in scripts/check.sh (warn-only since the
@@ -47,11 +47,11 @@
 /// MERGE-QUEUE + LANDING PR (roadmap PR 5): every instance runs WITH THE
 /// GATE ENABLED — no new const (occupancy is a phase). The nondet surface
 /// changed AGAIN: the old `land` action (one draw of moved + one of
-/// outcome) became `gateEnter` (dequeue: a moved draw whose quiet arm
+/// outcome) became `wrapUpStart` (dequeue: a moved draw whose quiet arm
 /// fast-paths SquashMerge in one step and whose moved arm opens the gate)
-/// + `gateResolve` (the gated draw from landOutcomes(true) = AdvanceDefault
+/// + `wrapUpResolve` (the gated draw from wrapUpOutcomes(true) = AdvanceDefault
 /// or Failed). allInvariants gained gatedPromotesDirectSquashes and
-/// gateDepthOne; landingExclusive and landingIsolation were extended in
+/// leaseExclusive; completionExclusive and wrapUpIsolation were extended in
 /// place (the path iff). Every 9b-RND seed was re-examined once more —
 /// forensics in scripts/check.sh (warn-only: the deterministic layer is
 /// the gate).
@@ -74,7 +74,7 @@ module mc_chuggy_budgeted {
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
-    GATE_PRICING = Budgeted(1),
+    WRAPUP_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
     N_REPOS = 2
@@ -92,7 +92,7 @@ module mc_chuggy_deadline_only {
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 3,
-    GATE_PRICING = DeadlineOnly,
+    WRAPUP_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
     N_REPOS = 2
@@ -118,7 +118,7 @@ module mc_chuggy_retryfree {
     N_TASKS = 2,
     REWORK_POLICY = RWBudget(1),
     GAS = 2,
-    GATE_PRICING = DeadlineOnly,
+    WRAPUP_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryFree,
     MAX_STAGES = 2,
     N_REPOS = 2
