@@ -48,6 +48,8 @@ Three capabilities were never ruled out and are admitted by nothing built so far
 
 **Landing requirements.** The merge gate, its depth-1 serialization, the path rule determining which promotion effect fires, and the eviction pricing are all built against **derived** requirements — the modeller's best reading of the predecessor's specification and its machine-checked findings, not a stated requirement. They are marked proposed in the model's own commentary and each mechanic names the requirement that forces it, so a torn-up requirement maps to deletable code rather than archaeology.
 
+**The wrap-up resource namespace.** `WExclusive` carries a bare resource token, so a repo lease and an environment lease share one namespace and can collide. A single namespace is simpler and a collision is an authoring error; if those turn out to be common, giving the resource a kind is the fix.
+
 **System quiescence.** Per-ticket work-boundedness is the committed theorem. Whether the whole system provably comes to rest under a bounded environment is a strictly stronger claim, attempted if at all in a severable module that constrains nothing if abandoned.
 
 **A bound on landing-queue wait.** Every gate occupancy has an enabled resolution and every resolution frees the slot in the same step, so the queue always advances past its head. How long an enqueued ticket waits is not bounded — the accepted-unbounded position above, applied at the gate.

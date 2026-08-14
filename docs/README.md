@@ -26,4 +26,3 @@ The row is a one-line summary, and writing it is the point as much as having it:
 | Doc | What it is |
 |---|---|
 | [design/001-what-chuggy-is-not.md](./design/001-what-chuggy-is-not.md) | The absences and rejected alternatives, each with its argument — the decisions a proved model structurally cannot record, because an absence has nothing to state it. |
-| [design/002-artifacts-and-wrap-up.md](./design/002-artifacts-and-wrap-up.md) | PROPOSED: name what a ticket produces, so a dependent can reference it at all, and make wrap-up a declared kind so a ticket that merges nothing can finish. Carries a correction retracting the first drafts' central claim. |

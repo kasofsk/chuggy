@@ -56,6 +56,8 @@ Wrap-up is a **declared kind**, authored on the ticket like its eval program. A 
 
 Mutual exclusion is the domain's business; git is not. Deciding that one ticket holds a resource and another may not reads state belonging to another ticket, which is the authority split's test for a global decision — an adapter doing it would be a second writer. Which promotion mechanism a merge uses is not modelled at all.
 
+The hazard the two wrap-up phases exist for is that **an artifact validated at evaluation may no longer be valid when it is committed**, and the kind decides whether that can arise and what re-validating costs. For a merge it is the default branch moving underneath the candidate; for a registry push it is someone else publishing that version. For a ticket whose effect already happened it cannot arise at all — but the risk inverts rather than vanishing, because evaluation then judges after the fact and what it judges may have moved instead.
+
 ## The single writer
 
 One journaled actor holds all state and makes every decision. Nothing else writes.

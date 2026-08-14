@@ -67,6 +67,8 @@ The allowlist matches the text immediately after the opener, so **a directive is
 
 *Refutation trigger:* if the model gate's runtime makes `just check` something people skip, split it — a fast subset in `just check` and the full run before a push — rather than letting the whole check become optional.
 
+**A green suite is not evidence until it has been made red.** A new invariant is run against a tree carrying the defect it names, and a new deciding line is deleted to confirm some named case fails. Twice now an all-green deterministic suite has hidden a real defect that only randomized exploration found, and in the worse of the two the deterministic layer was green because nothing in it pinned the behaviour at all. The randomized layer catches those at a rate — one run in fourteen, in that instance — so a witness conjunct that turns it into a deterministic failure lands with the fix.
+
 ### Rule 7 — the boundary rule, and the sequencing that makes it real
 
 `src/domain/` must not reach `src/adapters/`, `src/interpret.ts` or any Node builtin **by any path in the module graph**, not merely by direct import. A `domain/util/paths.ts` that imports `node:path` and is used by a decider satisfies every per-file check and violates the invariant, which is why this is a graph rule and not a lint rule.
