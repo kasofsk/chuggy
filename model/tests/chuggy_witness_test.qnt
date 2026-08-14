@@ -81,26 +81,26 @@
 /// dense — unlike the carry), so the deterministic runs alone carry the
 /// gate.
 ///
-/// THE MERGE-QUEUE + LANDING PR (roadmap PR 5) extends this layer first,
+/// THE WRAP-UP (roadmap PR 5) extends this layer first,
 /// per the convention: the landing surface RESTRUCTURED (the old one-step
 /// `land` became the dequeue `wrapUpStart` — quiet arm fast-pathing the
-/// direct SquashMerge, moved arm opening the depth-1 gate — plus the gated
+/// direct completion, moved arm opening the depth-1 gate — plus the gated
 /// `wrapUpResolve` drawing from wrapUpOutcomes(true)), so every landing driver
 /// here became the doDequeue/doGateResolve pair, referencing
 /// wrapUpStartableIn / holdingTickets / wrapUpOutcomes — and, per the
 /// adversarial review's MAJOR 1, doDequeue applies the HOISTED routing
 /// decider decideDequeue rather than re-composing the quiet/moved route
 /// inline (a copied route drifts exactly like a copied guard: the p3
-/// mutant re-routed quiet into the gate and shipped green against the
+/// mutant re-routed quiet into the lease and shipped green against the
 /// drivers' copy; decideDequeue's header has the story). Nothing copied.
 /// Three NEW modules carry the PR's witness half:
 ///   - chuggy_witness_gate_test (budgeted consts): DEPTH-1 EXCLUSIVITY as
 ///     a guard-refusal pinned mid-trace (the second same-repo ticket's
 ///     dequeue REFUSED while the slot is held, enabled again the step the
 ///     slot frees) and BOTH success effects on one machine trace — the
-///     gated AdvanceDefault, then the quiet fast-path SquashMerge (the
+///     held WOk, then the direct completion (the
 ///     §5e path rule, R3, witnessed) — plus the QUIET FAST-PATH as its
-///     own witnessed run (SquashMerge reachability pinned against the
+///     own witnessed run (direct-path reachability pinned against the
 ///     hoisted routing decider, the p3-mutant catcher);
 ///   - chuggy_witness_gate_deadline_test (deadline-only consts): the
 ///     eviction priced on the OTHER WrapUpPricing branch — two gate
@@ -526,7 +526,7 @@ module chuggy_witness_stage_test {
       })
       // The dequeue draws QUIET: the skip fast-path — gate never opened,
       // the direct squash resolves the landing in one step (the path
-      // rule's quiet arm; the gated arm is the gate module's).
+      // rule's quiet arm; the held arm is the lease module's).
       .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
@@ -559,7 +559,7 @@ module chuggy_witness_stage_test {
 ///     about the split: per-attempt implication as the state theorem,
 ///     THIS trace as the pinned-quiet reading).
 ///   - MOVED: the same lifecycle whose attempts the environment chose
-///     moved — the gate rework AND, on the second failure, the
+///     moved — the wrap-up rework AND, on the second failure, the
 ///     gate-budget wall each carry {repo, invalidated: true}: the rework
 ///     is attributed to the repo whose branch moved, and to nothing else.
 ///   - CROSS-REPO DEP: a repo-2 ticket dependent on a repo-1 ticket —
@@ -573,7 +573,7 @@ module chuggy_witness_stage_test {
 /// and reposWellFormed — is asserted after EVERY step of all three runs.
 /// NO paired random probe (file header): landing attempts are dense in
 /// random exploration, so the unseeded Stage 9 runs cover the random side;
-/// these deterministic traces alone are the gate.
+/// these deterministic traces alone are the lease.
 module chuggy_witness_multirepo_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(
@@ -654,7 +654,7 @@ module chuggy_witness_multirepo_test {
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // THE WITNESSED STEP: the attempt's invalidated choice is QUIET —
-      // the dequeue fast-paths (the gate never opens), the landing
+      // the dequeue fast-paths (the lease is never taken), the landing
       // succeeds, and the step is attributed to the ticket's own repo
       // with the quiet cause on record.
       .then(doDequeue(1, false))
@@ -690,7 +690,7 @@ module chuggy_witness_multirepo_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      // The branch MOVED at the dequeue: the gate opens and holds repo
+      // The branch MOVED at the dequeue: the lease is taken and holds repo
       // 1's depth-1 slot.
       .then(doDequeue(1, true))
       .expect(and {
@@ -699,8 +699,8 @@ module chuggy_witness_multirepo_test {
         not(leaseFreeIn(core, 1)),
         allInvariants
       })
-      // THE WITNESSED STEP (rework half): the gate failed — Budgeted(1)
-      // buys one gate rework (gate 1 -> 0, gas 2 -> 1; work ids 4, 5),
+      // THE WITNESSED STEP (rework half): the lease failed — Budgeted(1)
+      // buys one wrap-up rework (gate 1 -> 0, gas 2 -> 1; work ids 4, 5),
       // the step carries the attribution, and the slot frees by phase.
       .then(doGateResolve(1, WFailed))
       .expect(and {
@@ -722,7 +722,7 @@ module chuggy_witness_multirepo_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      // The branch moved AGAIN at the re-dequeue: the gate re-opens...
+      // The branch moved AGAIN at the re-dequeue: the lease re-opens...
       .then(doDequeue(1, true))
       .expect(and { tickets.get(1).phase == PWrapUpHolding, allInvariants })
       // THE WITNESSED STEP (wall half): ...and fails with the gate
@@ -778,9 +778,9 @@ module chuggy_witness_multirepo_test {
       // The branch moved: repo 1's gate opens for the candidate.
       .then(doDequeue(1, true))
       .expect(and { tickets.get(1).phase == PWrapUpHolding, allInvariants })
-      // THE WITNESSED STEP: repo 1 lands out of the gate (moved branch,
+      // THE WITNESSED STEP: repo 1 lands out of the lease (moved branch,
       // clean integration anyway — the move makes failure possible, not
-      // certain; the gated promotion is AdvanceDefault, the path rule)
+      // certain; the held promotion is WOk, the path rule)
       // and the repo-2 dependent derives READY in the same post-state:
       // the cross-repo unblock, no machinery, no repo consulted.
       .then(doGateResolve(1, WOk))
@@ -820,18 +820,18 @@ module chuggy_witness_multirepo_test {
 
 /// SHAPE 6 — THE DEPTH-1 GATE (merge-queue PR, R3/R4; mc_chuggy_budgeted
 /// consts). Two same-repo tickets both enqueue; the first dequeue draws
-/// MOVED and occupies the gate — and the second ticket's dequeue is
+/// MOVED and takes the lease — and the second ticket's dequeue is
 /// REFUSED BY GUARD while the slot is held (wrapUpStartableIn false: the
 /// depth-1 exclusivity as a pinned guard-refusal, not just an invariant
 /// over states that happened to occur). The occupant resolves as the GATED
-/// promotion (AdvanceDefault — the default ref advanced onto the validated
+/// promotion (WOk — the default ref advanced onto the validated
 /// candidate), the slot frees BY PHASE in the same step, and the second
-/// ticket dequeues QUIET into the fast-path direct squash (SquashMerge) —
+/// ticket dequeues QUIET into the fast-path direct squash (WOk) —
 /// BOTH success effects distinguished on one machine trace, each from its
 /// own path: the §5e divergence as a theorem, witnessed. The SECOND run
 /// (adversarial review, MAJOR 1) is the QUIET FAST-PATH as its own named
-/// witnessed shape — SquashMerge reachability through decideDequeue's
-/// quiet branch on a solo trace where the gate NEVER opens: the
+/// witnessed shape — direct-path reachability through decideDequeue's
+/// valid artifact on a solo trace where the lease NEVER opens: the
 /// deterministic catcher for a routing mutant (quiet re-routed into the
 /// gate), which the pre-hoisting inline composition let ship green
 /// through every layer because the drivers carried a copy of the route.
@@ -925,14 +925,14 @@ module chuggy_witness_gate_test {
       .expect(allInvariants)
       .then(doEvalReduce(2))
       .expect(and {
-        // Both enqueued, the gate free: EITHER may dequeue (order is
+        // Both enqueued, the lease free: EITHER may dequeue (order is
         // deliberately unmodeled — the nondet pick).
         wrapUpTickets == Set(1, 2),
         wrapUpStartableIn(core, 1),
         wrapUpStartableIn(core, 2),
         allInvariants
       })
-      // Ticket 1 dequeues MOVED: the gate opens and holds repo 1's slot.
+      // Ticket 1 dequeues MOVED: the lease is taken and holds repo 1's slot.
       .then(doDequeue(1, true))
       .expect(and {
         lastStep.label == "wrapup-started",
@@ -961,7 +961,7 @@ module chuggy_witness_gate_test {
         allInvariants
       })
       // THE FAST-PATH (R3, the other half): ticket 2 dequeues QUIET —
-      // the gate is skipped and the direct squash lands in one step.
+      // the lease is skipped and the direct squash lands in one step.
       // Both success effects now stand on this one trace, each from its
       // own path.
       .then(doDequeue(2, false))
@@ -974,11 +974,11 @@ module chuggy_witness_gate_test {
       })
 
   /// THE QUIET FAST-PATH, witnessed as its own shape (adversarial review,
-  /// MAJOR 1 — SquashMerge reachability pinned against the ROUTING rule):
+  /// MAJOR 1 — direct-path reachability pinned against the ROUTING rule):
   /// a solo ticket walked to the queue and dequeued QUIET resolves its
   /// landing IN THE DEQUEUE STEP — ticket-done, the direct squash, quiet
-  /// attribution, and the gate NEVER opens anywhere on the trace. A
-  /// decideDequeue mutant that re-routed quiet into the gate (the
+  /// attribution, and the lease NEVER opens anywhere on the trace. A
+  /// decideDequeue mutant that re-routed quiet into the lease (the
   /// review's p3, which the pre-hoisting composition let ship green)
   /// leaves the ticket PWrapUpHolding at the witnessed step and fails every
   /// conjunct below; the driver references decideDequeue itself, so there
@@ -1006,7 +1006,7 @@ module chuggy_witness_gate_test {
         leaseFreeIn(core, 1),
         allInvariants
       })
-      // THE WITNESSED STEP: quiet dequeue = same-step landing.
+      // THE WITNESSED STEP: valid-artifact dequeue = same-step landing.
       .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
@@ -1015,14 +1015,14 @@ module chuggy_witness_gate_test {
         lastStep.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }],
         tickets.get(1).phase == PDone,
         tickets.get(1).completions == 1,
-        leaseFreeIn(core, 1),                       // the gate never opened
+        leaseFreeIn(core, 1),                       // the lease was never taken
         allInvariants
       })
 }
 
 /// SHAPE 7 — THE DEADLINE-ONLY EVICTION (merge-queue PR, R5;
 /// mc_chuggy_deadline_only consts). The OTHER WrapUpPricing branch on a
-/// machine trace: two gate failures metered by GAS ALONE (wrapUpLeft
+/// machine trace: two wrap-up failures metered by GAS ALONE (wrapUpLeft
 /// identically 0 — no gate account exists to spend) into the gas wall at
 /// the third — v1's §5a gate-loop shape reproduced on chuggy's machine,
 /// with the charter's required gas doing exactly the backstop job the v1

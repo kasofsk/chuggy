@@ -71,17 +71,15 @@
 /// `landing/requirements`, which was NEVER answered, so every requirement
 /// the mechanics serve is PROPOSED, derived from chuggernaut's own spec
 /// and v1's machine-checked findings, pending geoff/davemo88 confirmation
-/// — specs/chuggy/README.md, the proposed-requirements section) reworked
+/// — docs/reference/architecture.md, the proposed-requirements section) reworked
 /// this file FIRST, per standing rule 1 — the seventh time the rule held,
 /// and the first since PR 3 that it held by SURGERY rather than proof:
 /// the rank ladder grew twice.
 ///   - PWrapUpHolding — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
-///     spec.md §3.3 Merge Gate, Serialization: "the gate is a merge queue
-///     of depth 1: at most one job per project is in the gate at a time";
-///     per-project becomes per-repo at chuggy's landing boundary). A NEW
-///     rank between Landing and settled: entering the gate descends, and
-///     every gate resolution (AdvanceDefault, the priced eviction, the
-///     walls) descends from there exactly as it used to from Landing.
+///     shape generalized from chuggernaut's depth-1 merge queue). A rank
+///     between the queued state and settled: taking the lease descends,
+///     and every resolution — completion, the priced failure, the walls —
+///     descends from there.
 ///     PWrapUp is re-read as the ENQUEUED state (chuggernaut's
 ///     WrapUp-on-the-queue); the queue's ORDER is deliberately not
 ///     modeled (a queue is a §2 non-goal; chuggernaut itself loses FIFO
@@ -113,8 +111,7 @@
 ///                                    Batched by the grouping removal;
 ///                                    Pending 5 > Working 4 > Evaluating 3 >
 ///                                    Landing 2 (enqueued) >
-///                                    Gated 1 (the depth-1 merge gate,
-///                                    occupied — the merge-queue PR) >
+///                                    Holding 1 (the lease held) >
 ///                                    Done/Escalated/Revoked 0 — the settled
 ///                                    tier, one member fewer since Stalled
 ///                                    merged into Escalated)
@@ -255,10 +252,8 @@
 ///   ticket-escalated rework_budget_exhausted rank 3->0 (and stage digit ->0)
 ///   ticket-escalated gas_exhausted         rank {3,2,1}->0
 ///   ticket-done                            rank {2,1}->0 (2: the quiet
-///                                       fast-path SquashMerge straight off
-///                                       the queue; 1: the gated
-///                                       AdvanceDefault out of the gate —
-///                                       the §5e path rule)
+///                                       completing straight off the queue;
+///                                       1: completing out of the lease)
 ///   rework-started wrapup_failure         gas -1 (AND wrapUpLeft -1 when
 ///                                       Budgeted); from PWrapUpHolding since the
 ///                                       merge-queue PR — the eviction
@@ -577,27 +572,14 @@ module chuggy_measure {
     RsWrapUpBudgetExhausted | RsGasExhausted | RsRevalidationFailed |
     RsDependencyRevoked
 
-  /// How a landing resolves. The two SUCCESS outcomes are deliberately
-  /// distinct from day one — v1's single conformance divergence was exactly
-  /// AdvanceDefault vs SquashMerge (charter §2 landing row) — and since
-  /// the merge-queue PR the model SAYS WHICH FIRES WHEN (the §5e
-  /// divergence as a theorem, not a footnote — model-status.md §5e:
-  /// "promotion happens by fast-forwarding the default branch onto the
-  /// validated squash candidate, and no SquashMerge effect exists"):
-  ///   - quiet branch  -> the gate is SKIPPED and the candidate
-  ///     squash-merges DIRECTLY (chuggernaut §3.3 Merge Gate item 1, the
-  ///     skip fast-path) — WOk, the ONLY quiet outcome;
-  ///   - moved branch  -> the gate RUNS against the candidate merge
-  ///     commit, and a clean pass ADVANCES the default ref to the
-  ///     already-merged candidate (§3.3 item 4: "advance the default
-  ///     branch to the candidate commit — this IS the squash-merge; do
-  ///     not re-merge") — WOk — while a failure is the
-  ///     priced eviction — WFailed.
-  /// domain.qnt wrapUpOutcomes is the draw rule; wrapUpIsolation +
-  /// gatedPromotesDirectSquashes make it durable on every reachable step.
-  /// PROPOSED-requirement provenance (R3, README): derived from
-  /// chuggernaut's spec + v1's replay finding, NOT from an intake answer —
-  /// pending geoff/davemo88 confirmation.
+  /// How a wrap-up attempt resolves. ONE success, deliberately: an earlier
+  /// model named two, because a merge promotes differently depending on
+  /// whether it went through the gate — and *which* mechanism a merge uses
+  /// is a property of the merge adapter, not of the machine. The domain
+  /// knows only that the step succeeded or failed.
+  ///   - WOk      the step committed the artifact.
+  ///   - WFailed  it did not, and is drawable only when the environment
+  ///              invalidated the artifact (domain.qnt wrapUpOutcomes).
   type WrapUpOutcome = WOk | WFailed
 
   /// THE LANDING-BOUNDARY OBSERVATION (multi-repo PR — the roadmap PR 4
@@ -812,7 +794,7 @@ module chuggy_measure {
     reworkPolicy: ReworkPolicy,
     nTasks: int,
     maxStages: int,
-    gatePricing: WrapUpPricing
+    wrapUpPricing: WrapUpPricing
   }
 
   // === The measure =========================================================
@@ -842,9 +824,9 @@ module chuggy_measure {
   /// The settled tier: Done, Escalated, Revoked — one member fewer since
   /// Stalled merged into Escalated (notes PR). Nothing is below settled.
   pure val rankSettled: int = 0
-  /// The occupied depth-1 merge gate sits directly above settled
-  /// (merge-queue PR): every gate resolution — the gated AdvanceDefault,
-  /// the priced eviction, the walls — settles or reworks in one step.
+  /// The held lease sits directly above settled: every resolution —
+  /// completion, the priced failure, the walls — settles or reworks in one
+  /// step.
   pure val rankHolding: int = rankSettled + 1
   /// PWrapUp — ENQUEUED for the gate since the merge-queue PR: the
   /// dequeue (gate-opened) descends into the gate, the quiet fast-path
@@ -937,7 +919,7 @@ module chuggy_measure {
   /// digit stays strictly below its radix. Nonnegative whenever the
   /// accounts are (domain.qnt's accountsBounded keeps them so).
   pure def ticketMeasure(b: Bounds, ticket: Ticket): int =
-    ((ticket.gasLeft * radix(wrapUpBudget(b.gatePricing)) + ticket.wrapUpLeft)
+    ((ticket.gasLeft * radix(wrapUpBudget(b.wrapUpPricing)) + ticket.wrapUpLeft)
         * radix(reworkBudget(b.reworkPolicy))
       + ticket.reworkLeft) * microBound(b)
     + micro(b, ticket)

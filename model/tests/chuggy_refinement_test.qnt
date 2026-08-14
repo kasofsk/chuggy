@@ -1,4 +1,4 @@
-/// REFINEMENT-LAYER TESTS (roadmap PR 6 — specs/chuggy/refinement.qnt;
+/// REFINEMENT-LAYER TESTS (roadmap PR 6 — model/refinement.qnt;
 /// design, theorems, and the seam model at that file's header). Three
 /// modules, run by check.sh Stage 10 and `just chuggy`:
 ///
@@ -113,7 +113,7 @@ module chuggy_refinement_unit_test {
   /// illegal — the refinement claim at row grain).
   run journalRefusesForgedRecordTest = assert(and {
     not(journalLegalOn([e1, { ...e2, rec: { ...e2.rec, label: "ticket-done" } }])),
-    not(journalLegalOn([e1, { ...e2, rec: { ...e2.rec, effects: ["SquashMerge"] } }]))
+    not(journalLegalOn([e1, { ...e2, rec: { ...e2.rec, effects: ["WOk"] } }]))
   })
 
   /// The world/journal arithmetic of theorem 2, on concrete data: an
@@ -281,7 +281,7 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(JWorkReduce(1), "work-passed"))
       .then(stepEmit(JTaskDone({ ticket: 1, tid: 4, verdict: VPass }), "task-done"))
       .then(stepEmit(JEvalReduce(1), "eval-passed"))
-      // The quiet dequeue lands the ticket (entry 13, SquashMerge) —
+      // The valid-artifact dequeue lands the ticket (entry 13, WOk) —
       // journaled, not yet emitted: the merge has NOT happened yet.
       .then(journalStep(JDequeue({ ticket: 1, moved: false })))
       .expect(and {
@@ -395,7 +395,7 @@ module chuggy_refinement_hazard_test {
         memCore.tickets.get(1).phase == PWrapUp,
         allDomainInvariants
       })
-      // THE SEAM AT THE LANDING: the quiet dequeue squash-merges IN THE
+      // THE SEAM AT THE LANDING: a valid-artifact dequeue squash-merges IN THE
       // WORLD, the crash eats the journal write — the book still shows
       // the ticket enqueued, completions 0.
       .then(effectCrash(JDequeue({ ticket: 1, moved: false })))

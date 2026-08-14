@@ -76,11 +76,11 @@
 /// MULTI-REPO PR additions (roadmap PR 4; gate: isolation invariants —
 /// design at domain.qnt's header):
 ///   - the wrapUpOutcomes draw rule pinned: a QUIET branch refuses
-///     WFailed (the structural refusal — v1's "a quiet branch always
+///     WFailed (the structural refusal — v1's "a valid artifact always
 ///     lands cleanly" as the outcome set itself);
 ///   - landing-boundary ATTRIBUTION pinned at decider grain, on a
 ///     repo-2 ticket so own-repo attribution is distinguishable from
-///     repo-constant stamping: both successes, the gate rework, and both
+///     repo-constant stamping: both successes, the wrap-up rework, and both
 ///     landing walls each carry WOAttempt with the ticket's OWN repo and
 ///     the attempt's invalidated choice — and the effect vocabulary is
 ///     untouched by the new field;
@@ -101,13 +101,13 @@
 ///     quiet, failures draw moved — the only combinations the machine
 ///     can draw).
 ///
-/// MERGE-QUEUE + LANDING PR additions (roadmap PR 5 — design, PROPOSED
+/// WRAP-UP additions (roadmap PR 5 — design, PROPOSED
 /// requirements R1-R7, and the severability map at domain.qnt's header and
-/// specs/chuggy/README.md):
+/// docs/reference/architecture.md):
 ///   - THE PATH RULE pinned (R3, the §5e theorem at decider grain):
-///     wrapUpOutcomes(false) is the SquashMerge singleton (the skip
-///     fast-path), wrapUpOutcomes(true) is {AdvanceDefault, Failed} (the
-///     gate ran) — quiet refuses failure AND the gated promotion, moved
+///     wrapUpOutcomes(false) is the WOk singleton (the skip
+///     fast-path), wrapUpOutcomes(true) is {WOk, Failed} (the
+///     gate ran) — quiet refuses failure AND the held promotion, moved
 ///     refuses the direct squash; the two success effects come from their
 ///     two paths and nowhere else;
 ///   - THE DEPTH-1 GUARD pinned (R4): an occupied gate refuses every
@@ -173,9 +173,9 @@ module chuggy_test {
 
   // The same bounds the instances above carry, for measure recomputation.
   pure val bB: Bounds =
-    { reworkPolicy: RWBudget(1), nTasks: 2, maxStages: 2, gatePricing: Budgeted(1) }
+    { reworkPolicy: RWBudget(1), nTasks: 2, maxStages: 2, wrapUpPricing: Budgeted(1) }
   pure val bD: Bounds =
-    { reworkPolicy: RWBudget(1), nTasks: 2, maxStages: 2, gatePricing: DeadlineOnly }
+    { reworkPolicy: RWBudget(1), nTasks: 2, maxStages: 2, wrapUpPricing: DeadlineOnly }
 
   pure def mB(c: Core): int = sysMeasure(bB, c.tickets)
   pure def mD(c: Core): int = sysMeasure(bD, c.tickets)
@@ -259,8 +259,8 @@ module chuggy_test {
   pure val c7 = dEvalReduce.post
   // The happy path lands QUIET (merge-queue PR): the solo ticket's branch
   // never moved, so the dequeue takes the skip fast-path — gate skipped,
-  // direct SquashMerge, one step off the queue (wrapUpOutcomes(false)'s one
-  // element; the gated AdvanceDefault path is walked in the gate suite
+  // direct completion, one step off the queue (wrapUpOutcomes(false)'s one
+  // element; the held-lease completion path is walked in the lease suite
   // below and in the witness gate module).
   pure val dLand = DB::decideWrapUpResolve(c7, 1, WOk, false)
   pure val c8 = dLand.post
@@ -341,14 +341,14 @@ module chuggy_test {
 
   /// EFFECT EXCLUSIVITY, happy path (charter §2, effect-only exclusivity):
   /// exactly one landing effect, exactly at Done — the quiet fast-path's
-  /// direct squash (the path rule: SquashMerge is the QUIET effect).
+  /// direct squash (the path rule: WOk is the QUIET effect).
   run effectExclusivityHappyPathTest = assert(and {
     c8.tickets.get(1).phase == PDone,
     c8.tickets.get(1).completions == 1,
     dLand.rec.effects == ["Complete"]
   })
 
-  /// The gated twin of c7's landing: the dequeue drew MOVED, the gate
+  /// The held twin of c7's landing: the dequeue drew MOVED, the gate
   /// opened, and the resolution promotes by ADVANCING the default ref.
   pure val dGateOpen7 = DB::decideWrapUpStart(c7, 1)
   pure val cGated7 = dGateOpen7.post
@@ -357,7 +357,7 @@ module chuggy_test {
   /// The two landing SUCCESS outcomes are distinct, named effects — v1's
   /// one conformance divergence, pinned from day one (charter §2 landing
   /// row) — and since the merge-queue PR each comes from ITS path and no
-  /// other (R3, the §5e theorem at decider grain): the gated promotion
+  /// other (R3, the §5e theorem at decider grain): the held promotion
   /// advances the default ref onto the validated candidate; the quiet
   /// fast-path squash-merges directly. Same terminal, same exclusivity
   /// counter, different effect — determined by the path, not drawn.
@@ -392,7 +392,7 @@ module chuggy_test {
   /// — pinned as decision EQUALITIES plus the semantic content of each
   /// branch, so a re-routed branch cannot hide behind self-consistent
   /// downstream checks (the review's p3 mutant: quiet routed into the
-  /// gate made SquashMerge unreachable while every trace-level check
+  /// gate made WOk unreachable while every trace-level check
   /// stayed green against the mutated route).
   run dequeueRoutesBothBranchesTest = assert(and {
     DB::decideDequeue(c7, 1, true) == DB::decideWrapUpStart(c7, 1),
@@ -738,7 +738,7 @@ module chuggy_test {
     dGateRework.post.tickets.get(1).phase == PWorking,
     dGateRework.post.tickets.get(1).wrapUpLeft == 0,
     dGateRework.post.tickets.get(1).gasLeft == 1,
-    // PR 3: the gate rework's work set is a fresh incarnation at fresh ids.
+    // PR 3: the wrap-up rework's work set is a fresh incarnation at fresh ids.
     dGateRework.post.tickets.get(1).tasks == Set(wr(1), wr(2)),
     mB(dGateRework.post) < mB(cGateB)
   })
@@ -1139,10 +1139,10 @@ module chuggy_test {
   })
 
   // ==========================================================================
-  // === THE MERGE-QUEUE + LANDING PR: the depth-1 gate ======================
+  // === THE WRAP-UP: the depth-1 gate ======================
   // ==========================================================================
   // Design, PROPOSED requirements R1-R7, and provenance at domain.qnt's
-  // header and specs/chuggy/README.md (landing/requirements was never
+  // header and docs/reference/architecture.md (landing/requirements was never
   // answered — everything these mechanics serve is derived and pending
   // confirmation).
 
@@ -1221,8 +1221,8 @@ module chuggy_test {
   /// vocabulary and pricing stay byte-identical to the pre-merge-queue
   /// decider (the existing gate tests above still pin the account deltas
   /// verbatim). Combos are the PATH-legal ones only (wrapUpOutcomes):
-  /// quiet+SquashMerge off the queue, moved+AdvanceDefault/Failed out of
-  /// the gate.
+  /// quiet+WOk off the queue, moved+WOk/Failed out of
+  /// the lease.
   /// NOTE: the gas-wall conjuncts below are THE guard for that landing
   /// arm's stamp — wrapUpIsolation's completeness cannot forbid the
   /// shared gas_exhausted label, so a stamp-drop there is visible only
@@ -1241,7 +1241,7 @@ module chuggy_test {
       == WOAttempt({ repo: 2, invalidated: true }),
     DB::decideWrapUpResolve(onRepo2(cGateB), 1, WOk, true).rec.effects
       == ["Complete"],
-    // Failure: the gate rework carries the repo AND the cause.
+    // Failure: the wrap-up rework carries the repo AND the cause.
     DB::decideWrapUpResolve(onRepo2(cGateB), 1, WFailed, true).rec.label
       == "rework-started wrapup_failure",
     DB::decideWrapUpResolve(onRepo2(cGateB), 1, WFailed, true).rec.landing

@@ -81,18 +81,14 @@
 ///     provenance). The cross-repo unblock is witnessed deterministically
 ///     (tests/chuggy_witness_test.qnt, crossRepoDepDeterministicTest).
 ///   - LANDING FAILURE IS CONDITIONAL AND PER-REPO, honoring the envActive
-///     standing rule (docs/chuggy-notes-triage.md, "already true" row:
-///     landing-failure conditions enter as explicitly named nondet events,
-///     NEVER a stored mystery flag): the environment CHOOSES, per landing
-///     attempt, whether the target repo's default branch MOVED under the
-///     candidate (the `land` action's invalidated draw), and WFailed is
-///     drawable ONLY on a moved branch (wrapUpOutcomes — v1's §4 insight
-///     made per-repo: docs/chuggernaut.md §4, the moving default branch is
-///     the ONLY reason a landing can fail; a quiet branch always lands
-///     cleanly). NO stored env state: quiet/moved is chosen fresh at every
-///     attempt and recorded on the step (StepRecord.landing, WOAttempt
-///     with repo + invalidated — the per-repo trace attribution the gate
-///     demands). Before this PR the `land` action drew WFailed
+///     standing rule ("already true": invalidation conditions enter as
+///     explicitly named nondet events, NEVER a stored mystery flag): the
+///     environment CHOOSES, per attempt, whether the artifact was
+///     invalidated under the ticket, and WFailed is drawable ONLY then
+///     (wrapUpOutcomes). NO stored env state: the choice is fresh at every
+///     attempt and recorded on the step (StepRecord.landing, WOAttempt with
+///     repo + invalidated — the per-repo trace attribution the boundary
+///     demands). Before the multi-repo PR the resolution drew a failure
 ///     unconditionally with no cause on the trace; v1's stored `envActive`
 ///     quiescence flag stays deferred with §4's contested theorem.
 ///   - THE ISOLATION INVARIANTS (the gate): wrapUpIsolation (a step that
@@ -118,38 +114,47 @@
 /// landing row: deferred by choice, outcomes named). So the requirements
 /// these mechanics serve are DERIVED — from chuggernaut's own spec.md and
 /// v1's machine-checked findings — and every one is marked PROPOSED,
-/// pending geoff/davemo88 confirmation, in specs/chuggy/README.md's
+/// pending geoff/davemo88 confirmation, in docs/reference/architecture.md's
 /// proposed-requirements section (R1-R7 there; mechanics below cite their
 /// requirement by that name, so a torn-up requirement maps to deletable
 /// code — the severability rule). The mechanics, lean:
-///   - THE DEPTH-1 MERGE GATE, PER REPO (R1/R4 — chuggernaut §3.3 Merge
-///     Gate: "no commit reaches the default branch without every required
-///     command evaluator passing against the exact tree that lands";
-///     Serialization: "a merge queue of depth 1"): PWrapUp is re-read as
-///     ENQUEUED, PWrapUpHolding is the occupied gate slot, and at most one ticket
-///     per repo is PWrapUpHolding (leaseExclusive — a derived predicate over phase,
-///     no stored queue; chuggernaut keeps the queue/slot split in
-///     dispatcher MEMORY inside one WrapUp state and loses FIFO order
-///     across restarts, §3.6 — so the model lifts the SLOT to phase and
-///     deliberately leaves the ORDER unmodeled: the dequeue is a nondet
-///     pick among enqueued tickets, the agentic-dispatcher shape again).
-///   - THE PATH RULE (R3 — the §5e divergence become a theorem): the
-///     dequeue (wrapUpStart) draws the environment's invalidated choice for
-///     the attempt. QUIET -> the skip fast-path: gate never occupied, the
-///     candidate squash-merges DIRECTLY in the same step (SquashMerge,
-///     PWrapUp -> PDone). MOVED -> the gate OPENS (gate-opened,
-///     PWrapUp -> PWrapUpHolding: the candidate is built and validated over a
-///     duration — which is exactly why occupancy must be a phase), and the
-///     resolution draws from wrapUpOutcomes(true): a clean pass ADVANCES the
-///     default ref to the validated candidate (AdvanceDefault, "this IS
-///     the squash-merge; do not re-merge") or the gate fails. PWrapUpHolding
-///     ENCODES moved = true — no stored flag (envActive standing rule).
-///   - THE EVICTION, PRICED AS BEFORE (R5): a gate failure re-enters work
-///     from PWrapUpHolding through the SAME WrapUpPricing arms as ever — Budgeted
-///     spends gate budget + gas, DeadlineOnly spends gas alone — and the
-///     walls park with their existing names. The outer loop's pricing is
-///     byte-identical; only the from-phase changed. Eviction and landing
-///     both free the gate BY PHASE — derive-don't-store means no cleanup.
+///   - THE LEASE (R1/R4, generalized by design 002): a wrap-up kind may
+///     need EXCLUSIVE access to a named resource before its step may run.
+///     PWrapUp is the queued state, PWrapUpHolding the held one, and at
+///     most one ticket holds a given resource (leaseExclusive — a derived
+///     predicate over phase, no stored queue). A WNone ticket enters
+///     neither.
+///
+///     WHY THE DOMAIN OWNS THIS AND NOT THE ADAPTER: deciding that ticket A
+///     holds r and therefore B may not READS STATE BELONGING TO ANOTHER
+///     TICKET, which is the authority split's own test for a global
+///     decision — an adapter doing it would be a second writer. What the
+///     domain does NOT own is why any particular resource needs
+///     serializing.
+///
+///     PROVENANCE: the shape generalizes chuggernaut's depth-1 merge queue
+///     (§3.3 Serialization, "at most one job per project is in the gate at
+///     a time"). It kept queue and slot in dispatcher memory inside one
+///     state and lost FIFO order across restarts (§3.6), so the model lifts
+///     the slot to a phase and leaves ORDER deliberately unmodelled — the
+///     dequeue is a nondet pick, the agentic-dispatcher shape again.
+///     A merge is now one kind that takes a lease; a registry push and a
+///     deploy-to-environment are others.
+///   - THE INVALIDATION DRAW (design 002): an artifact validated at
+///     evaluation may no longer be valid when the step runs, and the kind
+///     decides whether that can happen. The environment draws it per
+///     attempt, never stored (the envActive standing rule). A valid
+///     artifact completes; an invalidated one may fail, and
+///     wrapUpOutcomes is the refusal that makes the wrong outcome
+///     undrawable. For a merge the invalidation is HEAD moving under the
+///     candidate; for a registry push, someone else claiming the version.
+///     Which promotion mechanism a merge then uses is not modelled at all
+///     — that split went with the git vocabulary (design 002).
+///   - THE EVICTION, PRICED AS BEFORE (R5): a wrap-up failure re-enters
+///     work through the SAME WrapUpPricing arms as ever — Budgeted spends
+///     the wrap-up account + gas, DeadlineOnly spends gas alone — and the
+///     walls park with their existing names. Failure and completion both
+///     free the lease BY PHASE, so nothing cleans up.
 ///   - BATCHED, WITHDRAWN (R7, and R2's group extension with it): the
 ///     merge-queue PR sited a pre-work GROUPING phase here — PBatched,
 ///     entered from PPending, an ordinary ticket (the LEAD) absorbing
@@ -179,11 +184,12 @@
 ///     again; stuck ⊆ covered stays a structural corollary.
 ///
 /// What is deliberately NOT here (and which roadmap PR restores it):
-///   - chuggernaut's STAGED merge gate internals (spec.md §3.3 Merge Gate
-///     item 3: gate stages, failure classification, the gate-fix fast
-///     path with its own 2-round budget) — the gate is ONE abstract
-///     verdict here; the staged structure enters only if the
-///     landing/requirements confirmation demands it (README);
+///   - any INTERNAL structure to a wrap-up step: staging, failure
+///     classification, a fix-and-retry fast path with a budget of its own.
+///     A step is ONE abstract verdict here. Whatever a merge, a registry
+///     push or a deploy does inside its step is that adapter's business,
+///     and the predecessor's staged merge gate (spec.md §3.3 item 3) is
+///     one worked example of what stays out;
 ///   - merge TRAINS, ticket BATCHING in any form (withdrawn above), and
 ///     CROSS-REPO ATOMIC LANDINGS (nothing lands in two repos atomically
 ///     — no provenance anywhere for it);
@@ -272,7 +278,7 @@ module chuggy_domain {
     reworkPolicy: REWORK_POLICY,
     nTasks: N_TASKS,
     maxStages: MAX_STAGES,
-    gatePricing: WRAPUP_PRICING
+    wrapUpPricing: WRAPUP_PRICING
   }
 
   /// The stage vocabulary an author may draw from: any fan-out 1..N_TASKS,
@@ -578,27 +584,31 @@ module chuggy_domain {
     resumeCharge(c.tickets.get(j).resumeAt) <= c.tickets.get(j).gasLeft
   }
 
-  /// THE DISPATCH GATE'S DEP SET — the single definition of what a ticket
-  /// waits on before it may run. Factored out so the readiness check
-  /// (depsDoneIn) and the structural-deadlock check (canFinishSet) read
-  /// the SAME relation: the grouping bug was exactly a DERIVED gate
-  /// (groupDeps) diverging from the stored field depsAcyclic watched, so a
-  /// future derived gate must move both or neither.
-  pure def gateDeps(c: Core, j: int): Set[int] = c.tickets.get(j).deps
+  /// WHAT A TICKET WAITS ON before it may run — the single definition, read
+  /// by the readiness check (depsDoneIn), the structural-deadlock check
+  /// (canFinishSet) and the cross-ticket artifact read alike. Named for
+  /// what it is rather than for the dispatch gate it feeds, because the
+  /// merge gate that used to share that word is gone and the collision
+  /// outlived it.
+  ///
+  /// One definition on purpose: the grouping defect was a DERIVED waiting
+  /// relation diverging from the stored field depsAcyclic watched, so a
+  /// future derived relation moves both checks or neither.
+  pure def waitsOn(c: Core, j: int): Set[int] = c.tickets.get(j).deps
 
   /// WHAT THIS TICKET'S DEPENDENCIES PRODUCED (design 002) — the read that
   /// makes a release ticket expressible at all. Derived, never stored, and
   /// stable: every dep is PDone before a dependent can dispatch, and PDone
   /// is absorbing, so nothing here can change under a reader.
   pure def depArtifacts(c: Core, j: int): Set[ArtifactMark] =
-    gateDeps(c, j).map(d => c.tickets.get(d).artifact)
+    waitsOn(c, j).map(d => c.tickets.get(d).artifact)
 
   pure def depsDoneIn(c: Core, j: int): bool =
-    gateDeps(c, j).forall(k => c.tickets.get(k).phase == PDone)
+    waitsOn(c, j).forall(k => c.tickets.get(k).phase == PDone)
 
   // --- Core-parameterized enablement (REFINEMENT PR, roadmap PR 6 — the
   // m6 hoist discipline one level up, applied to the enablement SETS):
-  // the journaled actor's replay checker (specs/chuggy/refinement.qnt,
+  // the journaled actor's replay checker (model/refinement.qnt,
   // journalLegalOn) must re-check each journaled decision's enablement at
   // the REPLAYED prefix state — a Core, not this module's live vars — and
   // a copied guard drifts exactly like the witness-driver copies m6
@@ -696,16 +706,18 @@ module chuggy_domain {
   pure def deliverableTaskIds(c: Core, j: int): Set[int] =
     firstTaskId.to(nextTaskId(c.tickets.get(j)) - 1)
 
-  // --- The depth-1 gate guards (merge-queue PR, R4) ------------------------
+  // --- The lease guards ----------------------------------------------------
 
-  /// Is repo r's merge gate FREE? Occupancy is a DERIVED predicate over
-  /// phase (derive-don't-store — the whole point of PWrapUpHolding): no ticket
-  /// targeting r currently holds the slot. Landing, eviction, walls, and
-  /// revoke all free the gate by leaving the phase; nothing cleans up.
-  /// The resource a ticket's wrap-up needs a lease on, if any.
+  /// The resource this ticket's wrap-up needs a lease on. A kind that needs
+  /// none answers 0, which no resource universe contains, so it can never
+  /// collide with a real holder.
   pure def leaseOf(t: Ticket): int =
     match t.wrapUp { | WNone => 0 | WExclusive(r) => r }
 
+  /// Is resource r unheld? Occupancy is a DERIVED predicate over phase
+  /// (derive-don't-store — the whole point of PWrapUpHolding): no ticket
+  /// currently holds r. Completion, failure, walls and revoke all release
+  /// it by leaving the phase, so nothing cleans up.
   pure def leaseFreeIn(c: Core, r: int): bool =
     c.tickets.keys().forall(k =>
       not(c.tickets.get(k).phase == PWrapUpHolding and leaseOf(c.tickets.get(k)) == r))
@@ -895,32 +907,23 @@ module chuggy_domain {
       escalate(c, j, REvaluating, RsGasExhausted,
         "ticket-escalated gas_exhausted")
 
-  /// The outcomes the environment may DRAW for a landing attempt, given
-  /// its own invalidated choice for the target repo. THE PATH RULE
-  /// (merge-queue PR, R3 — the §5e divergence as the outcome sets
-  /// themselves; before this PR both success effects were drawable on
-  /// either path, which is exactly the coarseness v1's replay harness
-  /// caught, model-status §5e):
-  ///   - QUIET  -> { SquashMerge } alone. The skip fast-path (chuggernaut
-  ///     §3.3 Merge Gate item 1): HEAD never moved, the evaluators already
-  ///     judged the exact tree that lands, the gate is SKIPPED and the
-  ///     candidate squash-merges directly. A quiet branch cannot fail
-  ///     (v1's §4 insight, docs/chuggernaut.md §4 — the moving default
-  ///     branch is the ONLY reason a landing can fail) and it cannot
-  ///     AdvanceDefault either: there is no gate result to advance onto.
-  ///   - MOVED  -> { AdvanceDefault, Failed }. The gate RAN against the
-  ///     candidate merge commit: a pass advances the default ref to the
-  ///     already-merged candidate ("this IS the squash-merge; do not
-  ///     re-merge" — §3.3 item 4), a failure evicts. The move makes
-  ///     failure POSSIBLE, never certain — a moved branch may still
-  ///     integrate, as AdvanceDefault.
-  /// Still chosen PER ATTEMPT and PER REPO, no stored flag (the envActive
-  /// standing rule, docs/chuggy-notes-triage.md). This definition IS the
-  /// draw rule (the validPrograms/dependableTickets structural-refusal
-  /// shape): the `wrapUpStart`/`wrapUpResolve` actions draw from exactly
-  /// these sets, the witness drivers reference it as their guard, and
-  /// decideWrapUpResolve's callers guarantee membership — wrapUpIsolation
-  /// makes the refusal durable on every reachable step.
+  /// The outcomes the environment may DRAW for a wrap-up attempt, given its
+  /// invalidation choice for that attempt. THE DRAW RULE, and the set IS
+  /// the refusal (the validPrograms/dependableTickets shape):
+  ///   - VALID       -> { WOk } alone. The artifact evaluation judged is
+  ///     still the artifact the step will commit, so there is nothing left
+  ///     to go wrong at this boundary — the step cannot fail here.
+  ///   - INVALIDATED -> { WOk, WFailed }. Something changed under the
+  ///     artifact and the step must re-validate. Invalidation makes failure
+  ///     POSSIBLE, never certain: re-validation may well pass.
+  /// For a merge the invalidation is the default branch moving under the
+  /// candidate; for a registry push, someone else claiming the version.
+  /// The domain models neither cause — only that the kind admits one.
+  ///
+  /// Chosen PER ATTEMPT, never stored (the envActive standing rule). The
+  /// `wrapUpStart`/`wrapUpResolve` actions draw from exactly these sets and
+  /// the witness drivers reference them as guards, so wrapUpIsolation is
+  /// what makes the refusal durable on every reachable step.
   pure def wrapUpOutcomes(invalidated: bool): Set[WrapUpOutcome] =
     if (invalidated) Set(WOk, WFailed)
     else Set(WOk)
@@ -945,17 +948,14 @@ module chuggy_domain {
   ///   quiet  -> the skip fast-path: the landing resolves in this same
   ///             step as the direct squash (decideWrapUpResolve with the ONE
   ///             element of wrapUpOutcomes(false)).
-  /// Both the `wrapUpStart` action and the witness drivers (doDequeue,
-  /// tests/chuggy_witness_test.qnt) REFERENCE this definition; neither
-  /// copies the composition. Why that matters (the review's p3 mutant):
-  /// when the routing lived inline in the action, rerouting QUIET into
-  /// the gate shipped green through every layer — the drivers carried a
-  /// copy of the composition, and once a quiet attempt is gated,
-  /// wrapUpResolve stamps moved = true and every isolation conjunct is
-  /// self-consistently wrong, so SquashMerge silently became unreachable.
-  /// Hoisted, the route has ONE definition: mutating it is caught by the
-  /// dequeueRoutesBothBranchesTest unit pins and by the quiet fast-path
-  /// witness run (SquashMerge reachability, the R3 quiet half).
+  /// Both the `wrapUpStart` action and the witness drivers REFERENCE this
+  /// definition; neither copies the composition. Why that matters (the p3
+  /// mutant): when the routing lived inline in the action, rerouting a
+  /// VALID artifact into the lease shipped green through every layer — the
+  /// drivers carried a copy of the composition, and once a valid attempt
+  /// holds the lease, the resolution stamps invalidated = true and every
+  /// isolation conjunct is self-consistently wrong, so the direct path
+  /// silently became unreachable. Hoisted, the route has ONE definition.
   pure def decideDequeue(c: Core, j: int, moved: bool): Decision =
     if (moved) decideWrapUpStart(c, j)
     else decideWrapUpResolve(c, j, WOk, false)
@@ -1405,7 +1405,7 @@ module chuggy_domain {
   /// THE GATE RESOLVES (merge-queue PR, R3/R5): the occupant's candidate
   /// was built against a MOVED branch (PWrapUpHolding encodes the choice — no
   /// stored flag), so the outcome draws from wrapUpOutcomes(true): the
-  /// validated candidate promotes (AdvanceDefault) or the gate fails and
+  /// the re-validated artifact completes (WOk) or the attempt fails and
   /// the eviction prices per WRAPUP_PRICING. Either way the slot frees by
   /// phase.
   action wrapUpResolve = all {
@@ -1604,20 +1604,19 @@ module chuggy_domain {
     | WOAttempt(a) => not(a.invalidated) implies lastStep.label == "ticket-done"
   }
 
-  /// THE DEPTH-1 GATE (merge-queue PR, R4 — chuggernaut §3.3
-  /// Serialization: "the gate is a merge queue of depth 1: at most one job
-  /// per project is in the gate at a time", per-repo at chuggy's landing
-  /// boundary): occupancy is the derived phase predicate, and no repo's
-  /// slot ever holds two tickets. The guard-refusal half — a second
-  /// same-repo ticket cannot even DRAW the dequeue while the slot is held
-  /// (wrapUpStartableIn) — is pinned on a deterministic machine trace
-  /// (tests/chuggy_witness_test.qnt, gate module). Gates of DIFFERENT
-  /// repos are independent — serialization is per-repo, not global: a
-  /// state with one PWrapUpHolding ticket in EACH repo simultaneously satisfies
-  /// this invariant BY DESIGN (adversarial review, observation B — the
-  /// per-repo quantifier is the shape, not an accident; the cross-repo
-  /// dequeue staying enabled while another repo's slot is held is pinned
-  /// at guard grain in leaseExclusiveGuardTest).
+  /// THE LEASE IS EXCLUSIVE: no resource is ever held by two tickets.
+  /// Occupancy is the derived phase predicate, so nothing tracks it
+  /// separately and nothing can disagree. The guard-refusal half — a
+  /// second ticket wanting the same resource cannot even DRAW the dequeue
+  /// while it is held (wrapUpStartableIn) — is pinned on a deterministic
+  /// machine trace (model/tests/chuggy_witness_test.qnt, the lease module).
+  /// Different resources are INDEPENDENT: a state holding one lease on each
+  /// satisfies this by design, and the cross-resource dequeue staying
+  /// enabled is pinned at guard grain.
+  ///
+  /// Provenance: generalized from chuggernaut's per-project depth-1 merge
+  /// queue. What made it per-repo there was that the resource happened to
+  /// be a repo; here the resource is whatever the wrap-up kind names.
   val leaseExclusive: bool = repos.forall(r =>
     liveTickets.filter(j => and {
       tickets.get(j).phase == PWrapUpHolding,
@@ -1918,7 +1917,7 @@ module chuggy_domain {
   /// Tickets with a REACHABLE route to Done — a least fixpoint UPWARD from
   /// the terminal, deliberately the opposite direction from stuckSet: Done
   /// has finished, and a non-Revoked ticket every one of whose gate deps
-  /// can finish can finish too. It recurses over gateDeps, the same
+  /// can finish can finish too. It recurses over waitsOn, the same
   /// relation the dispatch gate reads.
   ///
   /// WHY UPWARD (the grouping lesson): stuckSet grows outward from a base
@@ -1935,7 +1934,7 @@ module chuggy_domain {
         tickets.get(j).phase == PDone,
         and {
           tickets.get(j).phase != PRevoked,
-          gateDeps(core, j).forall(d => cf.contains(d))
+          waitsOn(core, j).forall(d => cf.contains(d))
         }
       }))
 
@@ -1952,7 +1951,7 @@ module chuggy_domain {
   /// recurses on gate deps and Done-ness, coverage recurses on
   /// escalations, so the containment is a claim about the machine. Its
   /// teeth are demonstrated against a real defect rather than argued —
-  /// see the validation note in specs/chuggy/README.md.
+  /// see the validation note in docs/reference/architecture.md.
   val noStructuralDeadlock: bool = liveTickets.forall(j => or {
     canFinishSet.contains(j),
     tickets.get(j).phase == PRevoked,

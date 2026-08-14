@@ -36,7 +36,7 @@
 ///
 /// SEVERABILITY (the §4 promise, verbatim shape: a severable module that
 /// "constrains nothing if abandoned"): this file is layered ON the
-/// domain — nothing in specs/chuggy/{measure,domain}.qnt, the mc
+/// domain — nothing in model/{measure,domain}.qnt, the mc
 /// instances, or stages 1-9 of check.sh reads it. Deleting refinement.qnt,
 /// its tests, and check.sh Stage 10 restores the pre-PR-6 tree except
 /// for domain.qnt's pure exports (which the witness drivers may keep —

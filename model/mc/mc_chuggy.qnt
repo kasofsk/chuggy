@@ -48,8 +48,8 @@
 /// GATE ENABLED — no new const (occupancy is a phase). The nondet surface
 /// changed AGAIN: the old `land` action (one draw of moved + one of
 /// outcome) became `wrapUpStart` (dequeue: a moved draw whose quiet arm
-/// fast-paths SquashMerge in one step and whose moved arm opens the gate)
-/// + `wrapUpResolve` (the gated draw from wrapUpOutcomes(true) = AdvanceDefault
+/// completes in one step and whose invalidated arm takes the lease)
+/// + `wrapUpResolve` (the held draw from wrapUpOutcomes(true) = WOk
 /// or Failed). allInvariants gained gatedPromotesDirectSquashes and
 /// leaseExclusive; completionExclusive and wrapUpIsolation were extended in
 /// place (the path iff). Every 9b-RND seed was re-examined once more —
