@@ -1,5 +1,5 @@
 /// THE REFINEMENT LAYER — the journaled actor (chuggy-charter.md §6,
-/// roadmap PR 6; the §4 fork RESOLVED offline 2026-08-12: **service +
+/// the refinement layer; the §4 fork RESOLVED offline 2026-08-12: **service +
 /// dumb K8s Jobs** — "one journaled single-writer actor keeps all state
 /// and makes every decision; Kubernetes runs things and decides
 /// nothing"). This module is the SERVICE SHAPE's refinement obligation
@@ -205,7 +205,7 @@
 /// and landing confirmations arrive at-least-once too, and the DOMAIN
 /// machine already absorbs them — duplicate task completions no-op by
 /// identity, duplicate landing deliveries no-op at the boundary
-/// (decideTaskDone/decideCompleteDuplicate, proved since PR 1/PR 3) — so the
+/// (decideTaskDone/decideCompleteDuplicate, proved since /) — so the
 /// actor journals the absorbing no-op decisions like any others and
 /// replay reproduces them. The composition: at-least-once OUT is
 /// absorbed by decision identity, at-least-once IN by the domain's

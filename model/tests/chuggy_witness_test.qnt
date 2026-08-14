@@ -45,9 +45,8 @@
 /// dependableTickets, validPrograms). NONE is a copied
 /// expression: a copied guard drifts silently — strengthen the machine's
 /// and the stale copy keeps these runs' "machine trace" claim alive while
-/// the machine refuses the step. The two guards that used to exist only
-/// inline were HOISTED into domain.qnt (dispatchableIn,
-/// deliverableTaskIds) and are consumed by both sides. Audit rule for
+/// the machine refuses the step. dispatchableIn and deliverableTaskIds are
+/// hoisted into domain.qnt and consumed by both sides. Audit rule for
 /// future drivers: if a conjunct cannot be written as a reference to a
 /// definition the machine action reads, hoist first.
 ///
@@ -64,7 +63,7 @@
 /// mirrors. (The count was stale at seven between the grouping removal,
 /// which deleted the batch module, and the accepted-wait module below.)
 ///
-/// THE MULTI-REPO PR extends THIS layer first, per its own
+/// New nondet extends THIS layer first, per its own
 /// convention: the machine's two NEW nondet draws — the authored repo pick
 /// at arrival and the environment's per-attempt invalidated choice at the
 /// landing — each get deterministic runs exercising BOTH branches
@@ -82,7 +81,7 @@
 /// gate.
 ///
 /// THE WRAP-UP extends this layer first,
-/// per the convention: the landing surface RESTRUCTURED (the old one-step
+/// per the convention: the wrap-up surface is staged (rather than one-step
 /// `land` became the dequeue `wrapUpStart` — quiet arm fast-pathing the
 /// direct completion, moved arm opening the depth-1 gate — plus the gated
 /// `wrapUpResolve` drawing from wrapUpOutcomes(true)), so every landing driver
@@ -548,7 +547,7 @@ module chuggy_witness_stage_test {
       })
 }
 
-/// SHAPE 5 — THE MULTI-REPO ISOLATION SHAPES (the roadmap PR 4 gate's
+/// SHAPE 5 — THE MULTI-REPO ISOLATION SHAPES (the the refinement layer gate's
 /// witness half; mc_chuggy_budgeted consts + N_REPOS = 2). Three runs, one
 /// per branch of the PR's new nondet surface:
 ///   - QUIET: a repo-2 ticket (the repo pick exercised off-default) whose
@@ -818,7 +817,7 @@ module chuggy_witness_multirepo_test {
       })
 }
 
-/// SHAPE 6 — THE DEPTH-1 GATE (merge-queue PR, R3/R4; mc_chuggy_budgeted
+/// SHAPE 6 — THE EXCLUSIVE LEASE (R3/R4; mc_chuggy_budgeted
 /// consts). Two same-repo tickets both enqueue; the first dequeue draws
 /// MOVED and takes the lease — and the second ticket's dequeue is
 /// REFUSED BY GUARD while the slot is held (wrapUpStartableIn false: the
@@ -1020,7 +1019,7 @@ module chuggy_witness_gate_test {
       })
 }
 
-/// SHAPE 7 — THE DEADLINE-ONLY EVICTION (merge-queue PR, R5;
+/// SHAPE 7 — THE DEADLINE-ONLY EVICTION (R5;
 /// mc_chuggy_deadline_only consts). The OTHER WrapUpPricing branch on a
 /// machine trace: two wrap-up failures metered by GAS ALONE (wrapUpLeft
 /// identically 0 — no gate account exists to spend) into the gas wall at

@@ -4,7 +4,7 @@
 /// recomputed with explicit Bounds — no init/step machinery, so the tests
 /// pin decider behavior independently of the machine's nondet choices.
 ///
-/// What is checked, per the PR 1 test brief:
+/// What is checked, per the  test brief:
 ///   - the measure STRICTLY DECREASES on every transition the descent
 ///     table (measure.qnt header) claims descends;
 ///   - the STUTTER-set transitions (duplicate deliveries) leave it exactly
@@ -16,7 +16,7 @@
 ///     both WrapUpPricing branches;
 ///   - both retry-metering branches (charter §2 op-retry row).
 ///
-/// PR 2 additions (authoring lifecycle; gate: revoke cascades proved safe):
+///  additions (authoring lifecycle; gate: revoke cascades proved safe):
 ///   - arrival/release strictly descend where the descent table says, and
 ///     the AUTHORING climber (arrival) is pinned as a climber;
 ///   - revoke from EVERY phase the v1 table permits (table.qnt lines
@@ -25,7 +25,7 @@
 ///   - the cascade end-to-end on a 3-ticket chain; unreleased deps block;
 ///     revoked never lands; revoke/cascade spend NOTHING.
 ///
-/// PR 3 additions (task-records depth; gate: phase-outcome combinators
+///  additions (task-records depth; gate: phase-outcome combinators
 /// pinned by the eval vocabulary EXTRACTED from chuggernaut — spec.md §3.3
 /// staged evaluation, §1.2 task records, and the golden fixture
 /// staged_eval_short_circuit.yaml; standing in until the intake
@@ -47,7 +47,7 @@
 ///   - task records are RETAINED: the per-ticket chronological log survives
 ///     reduces, escalations, and revoke (running tasks force-closed as
 ///     TCancelled — spec.md §1.2 "Revoke closes tasks");
-///   - PROGRAM-AS-DATA at machine level (the PR 1 combinator lesson
+///   - PROGRAM-AS-DATA at machine level (the  combinator lesson
 ///     generalized): two tickets in the SAME machine instance, identical but
 ///     for their programs, decide differently — combinator and structure
 ///     both;
@@ -59,7 +59,7 @@
 ///     died with the Frozen phase (the deliberate table-line deviation,
 ///     recorded at decideRelease);
 ///   - the revalidation park lands on PEscalated with reason + RPending
-///     resume, and its operator resume — the old stalled-retry, now a
+///     resume, and its operator resume — a
 ///     decideOpRetry flavor — is pinned FREE (both meterings) and CHURN;
 ///   - the dependency_revoked wall is pinned resume-less (retryableIn
 ///     false at any gas) — its only exit is revoke;
@@ -68,12 +68,12 @@
 ///   - gas rename throughout (gasLeft, gas_exhausted, RsGasExhausted,
 ///     GAS; gasRequiredTest is the charter's required-deadline row);
 ///   - REWORK_POLICY = RWBudget(n) instantiates the rework policy;
-///   - the task lifecycle is the explicit TaskState sum: every PR 3 test
+///   - the task lifecycle is the explicit TaskState sum: every  test
 ///     survived with MECHANICAL updates only (wt/et build resolved states,
 ///     wr/er build running ones) — the machine-behavior evidence that the
 ///     notes' "task state machine" row changed structure, not behavior.
 ///
-/// MULTI-REPO PR additions (roadmap PR 4; gate: isolation invariants —
+/// REPO ISOLATION (gate: the isolation invariants —
 /// design at domain.qnt's header):
 ///   - the wrapUpOutcomes draw rule pinned: a QUIET branch refuses
 ///     WFailed (the structural refusal — v1's "a valid artifact always
@@ -101,7 +101,7 @@
 ///     quiet, failures draw moved — the only combinations the machine
 ///     can draw).
 ///
-/// WRAP-UP additions (roadmap PR 5 — design, PROPOSED
+/// WRAP-UP additions (the refinement layer — design, PROPOSED
 /// requirements R1-R7, and the severability map at domain.qnt's header and
 /// docs/reference/architecture.md):
 ///   - THE PATH RULE pinned (R3, the §5e theorem at decider grain):
@@ -124,7 +124,7 @@ module chuggy_test {
   import chuggy_measure.* from "../measure"
 
   // Reference instance: Budgeted(1) gate pricing, charged retries (the
-  // charter defaults where the charter names a default). PR 3: programs up
+  // charter defaults where the charter names a default). programs up
   // to 2 stages — combinators are data on each ticket's program, so the
   // program-as-data tests below get both combinators from ONE instance
   // (which is the point).
@@ -183,7 +183,7 @@ module chuggy_test {
   // Task-record literals, kept terse: wt/et build RESOLVED work and
   // eval-stage tasks (the record's vocabulary — TSResolved carries the
   // outcome), wr/er build RUNNING ones (the live set's). The split IS the
-  // notes PR's explicit lifecycle showing up in the test vocabulary; every
+  // the explicit lifecycle showing up in the test vocabulary; every
   // pre-existing test needed only this mechanical rewrap.
   pure def wt(i: int, o: TaskOutcome): Task =
     { id: i, kind: TKWork, state: TSResolved(o) }
@@ -195,7 +195,7 @@ module chuggy_test {
     { id: i, kind: TKEval(s), state: TSRunning }
 
   // Programs used throughout. progU2 is exactly DB::defaultProgram (the
-  // charter's unanimous single-stage default — the PR 1-2 compatibility
+  // charter's unanimous single-stage default — the  compatibility
   // shape, chuggernaut spec.md §3.3: "a job whose evaluators all share one
   // stage (the default) is byte-for-byte the single-fan-out behavior").
   pure val progU2: List[Stage] = [{ fanout: 2, combinator: CUnanimousPass }]
@@ -228,9 +228,9 @@ module chuggy_test {
 
   // === The happy path, decision by decision ================================
   // The path STARTS at authoring — the fleet is empty, ticket 1 arrives
-  // as a Draft (freshTicket seam) and is released (notes PR: Draft -> Pending
+  // as a Draft (freshTicket seam) and is released (Draft -> Pending
   // directly, no freeze step exists any more); ticket 2 arrives as a Draft
-  // depending on 1 and stays unreleased throughout. PR 3: ticket 1 carries
+  // depending on 1 and stays unreleased throughout. ticket 1 carries
   // the DEFAULT program, and its task ids run 1..4 across the whole
   // history (work 1,2 then eval-stage-0 3,4 — sequential within the ticket,
   // chuggernaut spec.md §1.2).
@@ -306,7 +306,7 @@ module chuggy_test {
   /// its WHOLE anatomy — the work set then the eval stage, ids sequential,
   /// outcomes settled and never overwritten (chuggernaut spec.md §1.2:
   /// "tasks form a chronological log"). The single-stage default program's
-  /// history is byte-for-byte what the PR 1-2 machine would have produced
+  /// history is byte-for-byte what the model would have produced
   /// had it retained anything — the compatibility story, now with
   /// provenance the golden traces can carry.
   run happyPathRetainedRecordTest = assert(and {
@@ -426,7 +426,7 @@ module chuggy_test {
   /// for a task retired into the record — here work task 1 (an earlier
   /// incarnation) and eval task 3 delivered AFTER the eval stage retired —
   /// finds no live running match and absorbs as the duplicate stutter,
-  /// whatever verdict it carries. (PR 1 had to absorb the same-id case
+  /// whatever verdict it carries. (had to absorb the same-id case
   /// into the respawned set's nondet verdict; identity retired that
   /// argument — the honest extension of the duplicate-adversary scope.)
   run staleStageCompletionNoopsTest = assert(and {
@@ -521,7 +521,7 @@ module chuggy_test {
     mB(dEvalGasWall.post) < mB(cEvalGasWall)
   })
 
-  // === PR 3: THE STAGED PROGRAM, walked stage by stage =====================
+  // === : THE STAGED PROGRAM, walked stage by stage =====================
   // progStaged = [{1, unanimous}, {2, any}] on the reference instance. The
   // walk mirrors chuggernaut spec.md §3.3 "Staged progression" edge by
   // edge; the short-circuit mirrors the golden fixture
@@ -550,7 +550,7 @@ module chuggy_test {
   /// The advance edge, exactly: label eval-stage-passed, an Evaluating ->
   /// Evaluating transition, the next stage's fan-out spawned at fresh ids,
   /// the passed stage retired — and STRICT DESCENT (the stage digit
-  /// dominates the fresh fan-out: measure.qnt's PR 3 digit-order argument,
+  /// dominates the fresh fan-out: measure.qnt's  digit-order argument,
   /// machine-checked here).
   run stageAdvanceDescendsTest = assert(and {
     dAdvance.rec.label == "eval-stage-passed",
@@ -671,7 +671,7 @@ module chuggy_test {
 
   // === PROGRAM-AS-DATA at machine level ======
   // ONE machine instance (DB), two tickets identical but for the program on
-  // their record: different decisions. PR 1-2 needed a separate machine
+  // their record: different decisions.  needed a separate machine
   // instantiation (a machine-wide combinator parameter) to show this; the
   // program made it what the charter said it is — data.
 
@@ -723,10 +723,10 @@ module chuggy_test {
     DB::decideEvalStageReduce(cFailAny, 1).rec.label == "rework-started eval_failure")
 
   // === The outer loop, priced per WrapUpPricing (charter §2) =================
-  // Merge-queue PR (R5): failures fire FROM THE GATE now (PWrapUpHolding — the
+  // R5: failures fire from the held lease (PWrapUpHolding — the
   // only phase a moved attempt resolves out of), so these fixtures sit in
   // the occupied slot; every account delta below is byte-identical to the
-  // pre-merge-queue pricing (the eviction changed from-phase, never price).
+  // the earlier pricing (the eviction changed from-phase, never price).
 
   /// Budgeted branch: a landing failure spends 1 gate budget AND 1 gas.
   pure val cGateB: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
@@ -791,12 +791,12 @@ module chuggy_test {
   /// PEscalated's one parked phase — with the pre-work
   /// wall's reason AND resume point (RPending: back to Pending, never to a
   /// pipeline phase, because nothing pipeline ever ran) …
-  /// (PR 2: freshTicket births a Draft, so the RELEASED fixture overrides
+  /// (freshTicket births a Draft, so the RELEASED fixture overrides
   /// the phase — revalFail is a Ready-phase edge.)
   pure val cFresh: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PPending }) }
   pure val dPark = DB::decideRevalFail(cFresh, 1)
 
-  /// … and its operator resume — the old stalled-retry, now decideOpRetry's
+  /// … and its operator resume — decideOpRetry's
   /// RPending flavor (the notes triage's resume-flavor row) — is the CHURN
   /// set's canonical member: the measure CLIMBS and NOTHING is charged
   /// (nothing was ever spent; the pricing survived the merge) — pinned
@@ -906,7 +906,7 @@ module chuggy_test {
   })
 
   // ==========================================================================
-  // === PR 2: the authoring lifecycle =======================================
+  // === : the authoring lifecycle =======================================
   // ==========================================================================
 
   /// Arrival through the freshTicket seam: dense ids, born a Draft with FULL
@@ -924,8 +924,8 @@ module chuggy_test {
     cA1.tickets.get(1).gasLeft == 3,     // full grant, nothing spent
     cA1.tickets.get(1).reworkLeft == 1,
     cA1.tickets.get(1).wrapUpLeft == 1,
-    cA1.tickets.get(1).program == DB::defaultProgram,  // PR 3: eval is data, authored
-    cA1.tickets.get(1).record == [],                   // PR 3: no history yet
+    cA1.tickets.get(1).program == DB::defaultProgram,  // eval is data, authored
+    cA1.tickets.get(1).record == [],                   // no history yet
     cA2.tickets.keys() == Set(1, 2),          // dense: next id = size + 1
     cA2.tickets.get(2).deps == Set(1),        // dep on an UNRELEASED ticket: legal
     mB(cA1) > mB(cEmpty),                  // AUTHORING: climbs
@@ -934,7 +934,7 @@ module chuggy_test {
 
   /// Release strictly descends (Draft -> Pending, rank 5 -> 4 — the
   /// descent-table row for table.qnt line 21), golden-trace shaped, and
-  /// the derived waiting room splits it correctly on landing. Notes PR:
+  /// the derived waiting room splits it correctly on landing.
   /// there is no freeze/unfreeze pair to test any more — "Frozen removed.
   /// Draft -> Ready/Blocked" (the deliberate deviation recorded at
   /// decideRelease) — so release is authoring's only phase edge after
@@ -1173,9 +1173,9 @@ module chuggy_test {
   })
 
   // ==========================================================================
-  // === THE MULTI-REPO PR: isolation at the landing boundary ================
+  // === REPO ISOLATION at the landing boundary ==============================
   // ==========================================================================
-  // Design + provenance at domain.qnt's header (roadmap PR 4, gate:
+  // Design + provenance at domain.qnt's header (the refinement layer, gate:
   // isolation invariants; `domain/firstclass` "one orchestrator, many
   // targets"; the envActive standing rule). Repo universe on DB: {1, 2} —
   // N_REPOS = 2, the smallest universe where own-repo attribution is

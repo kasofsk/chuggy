@@ -1,4 +1,4 @@
-/// REFINEMENT-LAYER TESTS (roadmap PR 6 — model/refinement.qnt;
+/// REFINEMENT-LAYER TESTS (the refinement layer — model/refinement.qnt;
 /// design, theorems, and the seam model at that file's header). Three
 /// modules, run by check.sh Stage 10 and `just chuggy`:
 ///
