@@ -2,7 +2,7 @@
 /// LOAD-BEARING layer of check.sh Stage 9b's two-layer witness policy.
 ///
 /// WHY THIS FILE EXISTS: Stage 9b's four expected-violation probes
-/// (freeClimbNever / cascadeParkNever / stageAdvanceNever / carryNever)
+/// (freeClimbNever / cascadeParkNever / stageAdvanceNever)
 /// were pinned-seed random runs, and every PR that changes the machine's
 /// nondet structure kills the seeds — the citations PR was the FOURTH
 /// consecutive re-pin of the freeClimbNever seed, each dragging a paired
@@ -29,7 +29,7 @@
 /// pre-state; a violated guard disables the step and fails the run — with
 /// `apply` of the decider at named choices, and additionally asserts the
 /// choice lies within the set the machine action draws from
-/// (deps ⊆ dependableTickets, prog ∈ validPrograms, cited ⊆ regions, tid in
+/// (deps ⊆ dependableTickets, prog ∈ validPrograms, tid in
 /// the delivery range). Each driver is therefore the machine action with
 /// its nondet picks named, so every trace these runs accept is a trace of
 /// `step` — reachability is proved against the real transition relation,
@@ -42,7 +42,7 @@
 /// reducibleWork, reducibleEval, landingTickets, doneTickets,
 /// retryableEscalated, readyTickets), a shared pure guard
 /// (dispatchableIn), or a shared draw-set definition (deliverableTaskIds,
-/// dependableTickets, validPrograms, regions). NONE is a copied
+/// dependableTickets, validPrograms). NONE is a copied
 /// expression: a copied guard drifts silently — strengthen the machine's
 /// and the stale copy keeps these runs' "machine trace" claim alive while
 /// the machine refuses the step. The two guards that used to exist only
@@ -137,7 +137,6 @@ module chuggy_witness_free_test {
     GATE_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryFree,
     MAX_STAGES = 2,
-    N_REGIONS = 2,
     N_REPOS = 2
   ).* from "../domain"
 
@@ -158,11 +157,10 @@ module chuggy_witness_free_test {
     dispatchableIn(core, j),
     apply(decideDispatch(core, j))
   }
-  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
+  action doTaskDone(j: int, tid: int, v: Verdict): bool = all {
     taskPhaseTickets.contains(j),
     deliverableTaskIds(core, j).contains(tid),
-    cited_.subseteq(regions),
-    apply(decideTaskDone(core, j, tid, v, cited_))
+    apply(decideTaskDone(core, j, tid, v))
   }
   action doWorkReduce(j: int): bool = all {
     reducibleWork.contains(j),
@@ -194,20 +192,20 @@ module chuggy_witness_free_test {
       // gas 2 -> 1; the single work set spawns (ids 1, 2: width N_TASKS).
       .then(doDispatch(1))
       .expect(and { tickets.get(1).gasLeft == 1, allInvariants })
-      .then(doTaskDone(1, 1, VPass, Set()))
+      .then(doTaskDone(1, 1, VPass))
       .expect(allInvariants)
       // At-least-once: the SAME task's completion re-delivers — with a
       // DIFFERENT verdict and citation, which first-write-wins discards
       // whole. State-identical no-op: the task-done-duplicate STUTTER
       // arm of stepDescends fired on a machine trace (the convention
       // roster at stepDescends).
-      .then(doTaskDone(1, 1, VFail, Set(2)))
+      .then(doTaskDone(1, 1, VFail))
       .expect(and {
         lastStep.label == "task-done-duplicate",
         currentMeasure == prevMeasure,
         allInvariants
       })
-      .then(doTaskDone(1, 2, VPass, Set()))
+      .then(doTaskDone(1, 2, VPass))
       .expect(allInvariants)
       // Work passes: first-time stage-0 entry, eval task 3 spawns running.
       .then(doWorkReduce(1))
@@ -216,7 +214,7 @@ module chuggy_witness_free_test {
         tickets.get(1).phase == PEvaluating,
         allInvariants
       })
-      .then(doTaskDone(1, 3, VFail, Set()))
+      .then(doTaskDone(1, 3, VFail))
       .expect(allInvariants)
       // The short-circuit buys the one budgeted rework: rework 1 -> 0 AND
       // gas 1 -> 0 — both accounts empty from here on.
@@ -227,16 +225,15 @@ module chuggy_witness_free_test {
         tickets.get(1).gasLeft == 0,
         allInvariants
       })
-      .then(doTaskDone(1, 4, VPass, Set()))
+      .then(doTaskDone(1, 4, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 5, VPass, Set()))
+      .then(doTaskDone(1, 5, VPass))
       .expect(allInvariants)
       // Re-entry respawns the failed evaluator (task 6; nothing carries —
       // the failing evaluator always respawns, and the silent work
-      // attempts block every carry anyway).
       .then(doWorkReduce(1))
       .expect(and { lastStep.label == "work-passed", allInvariants })
-      .then(doTaskDone(1, 6, VFail, Set()))
+      .then(doTaskDone(1, 6, VFail))
       .expect(allInvariants)
       // The stage fails with the rework account empty: park on the desk
       // FROM A PIPELINE PHASE at gas 0, resume point REvaluating.
@@ -340,7 +337,6 @@ module chuggy_witness_cascade_test {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2,
     N_REPOS = 2
   ).* from "../domain"
 
@@ -426,7 +422,6 @@ module chuggy_witness_stage_test {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2,
     N_REPOS = 2
   ).* from "../domain"
 
@@ -446,11 +441,10 @@ module chuggy_witness_stage_test {
     dispatchableIn(core, j),
     apply(decideDispatch(core, j))
   }
-  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
+  action doTaskDone(j: int, tid: int, v: Verdict): bool = all {
     taskPhaseTickets.contains(j),
     deliverableTaskIds(core, j).contains(tid),
-    cited_.subseteq(regions),
-    apply(decideTaskDone(core, j, tid, v, cited_))
+    apply(decideTaskDone(core, j, tid, v))
   }
   action doWorkReduce(j: int): bool = all {
     reducibleWork.contains(j),
@@ -488,9 +482,9 @@ module chuggy_witness_stage_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass, Set()))
+      .then(doTaskDone(1, 1, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass, Set()))
+      .then(doTaskDone(1, 2, VPass))
       .expect(allInvariants)
       // Stage 0 spawns: ids 3, 4 (the program's declared width 2).
       .then(doWorkReduce(1))
@@ -500,9 +494,9 @@ module chuggy_witness_stage_test {
         tickets.get(1).tasks.size() == 2,
         allInvariants
       })
-      .then(doTaskDone(1, 3, VPass, Set()))
+      .then(doTaskDone(1, 3, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 4, VPass, Set()))
+      .then(doTaskDone(1, 4, VPass))
       .expect(allInvariants)
       // THE WITNESSED STEP: stage 0 passes UNANIMOUSLY with a later stage
       // remaining — the interpreter advances, Evaluating -> Evaluating,
@@ -520,7 +514,7 @@ module chuggy_witness_stage_test {
         currentMeasure < prevMeasure,
         allInvariants
       })
-      .then(doTaskDone(1, 5, VPass, Set()))
+      .then(doTaskDone(1, 5, VPass))
       .expect(allInvariants)
       // The FINAL stage passes: no advance this time (the program passed).
       .then(doEvalReduce(1))
@@ -552,218 +546,6 @@ module chuggy_witness_stage_test {
         currentMeasure == prevMeasure,
         allInvariants
       })
-}
-
-/// SHAPE 4 — THE CARRY (carryNever, mc_chuggy_citations consts: the probe
-/// instance's densest honest choreography, the GATE-REWORK carry). An
-/// evaluator passes citing region 2; the landing fails; the gate fix's
-/// work attempt touches only region 1 (disjoint); the rework's eval
-/// re-entry CARRIES the retained verdict (TSCarried, CarryEvalVerdicts,
-/// nothing runs) and the carried stage reduces straight through to a
-/// landing. The second run is the scope-discipline twin: the SAME
-/// choreography with an INTERSECTING footprint must respawn instead of
-/// carry — the deterministic catcher for a carry-despite-intersection
-/// mutant in spawnEvalScoped (a shape the reachability run alone cannot
-/// distinguish from the mutant, since its footprints are disjoint).
-module chuggy_witness_carry_test {
-  import chuggy_measure.* from "../measure"
-  import chuggy_domain(
-    N_TICKETS = 1,
-    N_TASKS = 1,
-    REWORK_POLICY = RWBudget(1),
-    GAS = 3,
-    GATE_PRICING = Budgeted(1),
-    OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 1,
-    N_REGIONS = 2,
-    N_REPOS = 2
-  ).* from "../domain"
-
-  // --- Deterministic drivers (file header; only the ones this shape uses).
-  action doArrive(deps_: Set[int], prog: List[Stage], repo_: int): bool = all {
-    canArrive,
-    deps_.subseteq(dependableTickets),
-    validPrograms.contains(prog),
-    repos.contains(repo_),
-    apply(decideArrive(core, deps_, prog, repo_))
-  }
-  action doRelease(j: int): bool = all {
-    draftTickets.contains(j),
-    apply(decideRelease(core, j))
-  }
-  action doDispatch(j: int): bool = all {
-    dispatchableIn(core, j),
-    apply(decideDispatch(core, j))
-  }
-  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
-    taskPhaseTickets.contains(j),
-    deliverableTaskIds(core, j).contains(tid),
-    cited_.subseteq(regions),
-    apply(decideTaskDone(core, j, tid, v, cited_))
-  }
-  action doWorkReduce(j: int): bool = all {
-    reducibleWork.contains(j),
-    apply(decideWorkReduce(core, j))
-  }
-  action doEvalReduce(j: int): bool = all {
-    reducibleEval.contains(j),
-    apply(decideEvalStageReduce(core, j))
-  }
-  action doDequeue(j: int, moved: bool): bool = all {
-    gateEnterableIn(core, j),
-    apply(decideDequeue(core, j, moved))
-  }
-  action doGateResolve(j: int, out: LandOutcome): bool = all {
-    gatedTickets.contains(j),
-    landOutcomes(true).contains(out),
-    apply(decideLand(core, j, out, true))
-  }
-
-  /// The only authorable program at these bounds (N_TASKS = 1,
-  /// MAX_STAGES = 1): one flat singleton stage.
-  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
-
-  /// The gate-rework carry, footprints DISJOINT: the carry fires.
-  run carryDeterministicTest =
-    init
-      .then(doArrive(Set(), progFlat1, 1))
-      .expect(allInvariants)
-      .then(doRelease(1))
-      .expect(allInvariants)
-      .then(doDispatch(1))                         // gas 3 -> 2; work id 1
-      .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass, Set(1)))       // the work touched region 1
-      .expect(allInvariants)
-      // First-time stage-0 entry: nothing to carry FROM — eval id 2 runs.
-      .then(doWorkReduce(1))
-      .expect(and {
-        lastStep.effects == ["SpawnEvalTasks"],
-        carryNever,                                // no carry on first entry
-        allInvariants
-      })
-      // The evaluator PASSES citing region 2 — the retained verdict a
-      // disjoint rework may carry.
-      .then(doTaskDone(1, 2, VPass, Set(2)))
-      .expect(allInvariants)
-      .then(doEvalReduce(1))
-      .expect(and { lastStep.label == "eval-passed", allInvariants })
-      // The dequeue draws MOVED: the gate opens (merge-queue PR — the
-      // depth-1 slot held while the candidate is validated).
-      .then(doDequeue(1, true))
-      .expect(and {
-        lastStep.label == "gate-opened",
-        tickets.get(1).phase == PGated,
-        allInvariants
-      })
-      // The gate fails: Budgeted(1) buys exactly one gate rework
-      // (gate 1 -> 0, gas 2 -> 1); work id 3 spawns; the slot frees.
-      .then(doGateResolve(1, LandFailed))
-      .expect(and {
-        lastStep.label == "rework-started gate_failure",
-        tickets.get(1).gateLeft == 0,
-        gateFreeIn(core, 1),
-        allInvariants
-      })
-      // The gate fix touches ONLY region 1 — disjoint from the retained
-      // evaluator citation {2}.
-      .then(doTaskDone(1, 3, VPass, Set(1)))
-      .expect(allInvariants)
-      // THE WITNESSED STEP: the eval re-entry finds the stage-0 retained
-      // pass cited {2}, change-since = {1}, disjoint -> position born
-      // TSCarried (id 4, citation inherited), NOTHING runs, and the
-      // spawn's effect vocabulary is exactly ["CarryEvalVerdicts"].
-      .then(doWorkReduce(1))
-      .expect(and {
-        lastStep.label == "work-passed",
-        lastStep.effects == ["CarryEvalVerdicts"],
-        not(carryNever),                           // the witness fires HERE
-        tickets.get(1).tasks == Set({ id: 4, kind: TKEval(0), state: TSCarried, cited: Set(2) }),
-        reducibleEval.contains(1),                 // born settled: immediately reducible
-        // allInvariants ON the carried state: citationsWellFormed,
-        // idsAccounted (spawned counts the carried spawn), recordMonotone,
-        // and measureDescends across the carried spawn — the removed
-        // pinned citations twin's whole job, now deterministic.
-        allInvariants
-      })
-      // The carried verdict IS the stage's verdict: the combinator reads
-      // TSCarried as a pass and the program completes without rerunning
-      // the evaluator.
-      .then(doEvalReduce(1))
-      .expect(and {
-        lastStep.label == "eval-passed",
-        tickets.get(1).phase == PLanding,
-        allInvariants
-      })
-      // Quiet dequeue: the fast-path direct squash (the only quiet
-      // outcome — the path rule).
-      .then(doDequeue(1, false))
-      .expect(and {
-        lastStep.label == "ticket-done",
-        lastStep.effects == ["SquashMerge"],
-        tickets.get(1).landings == 1,
-        // The carry mark survives into the retained record, citation
-        // intact — the replay vocabulary.
-        tickets.get(1).record[3].state == TSCarried,
-        tickets.get(1).record[3].cited == Set(2),
-        allInvariants
-      })
-      // The fleet is quiet (N_TICKETS = 1, its one ticket Done): the
-      // dead-end stutter is enabled — the machine's own `settle` action
-      // (deterministic, so it IS the driver), firing the settled STUTTER
-      // arm of stepDescends on a machine trace (the convention roster).
-      .then(settle)
-      .expect(and {
-        lastStep.label == "settled",
-        currentMeasure == prevMeasure,
-        allInvariants
-      })
-
-  /// The scope-discipline twin: SAME choreography, but the evaluator cites
-  /// region 1 and the gate fix touches region 1 — the footprints
-  /// INTERSECT, so the re-entry must RESPAWN (run the evaluator again),
-  /// not carry. This is the deterministic mutation catcher: a
-  /// spawnEvalScoped that dropped (or flipped) the disjointness test would
-  /// carry here and fail these expects.
-  run carryScopeRespectsIntersectionTest =
-    init
-      .then(doArrive(Set(), progFlat1, 1))
-      .expect(allInvariants)
-      .then(doRelease(1))
-      .expect(allInvariants)
-      .then(doDispatch(1))
-      .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass, Set(1)))
-      .expect(allInvariants)
-      .then(doWorkReduce(1))
-      .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass, Set(1)))       // evaluator cites region 1...
-      .expect(allInvariants)
-      .then(doEvalReduce(1))
-      .expect(and { lastStep.label == "eval-passed", allInvariants })
-      .then(doDequeue(1, true))
-      .expect(allInvariants)
-      .then(doGateResolve(1, LandFailed))
-      .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass, Set(1)))       // ...and the gate fix touches region 1
-      .expect(allInvariants)
-      // Footprints intersect: the retained pass is STALE for this change —
-      // the evaluator respawns RUNNING and no carry occurs.
-      .then(doWorkReduce(1))
-      .expect(and {
-        lastStep.label == "work-passed",
-        lastStep.effects == ["SpawnEvalTasks"],
-        carryNever,                                // NO carry on intersection
-        tickets.get(1).tasks == Set({ id: 4, kind: TKEval(0), state: TSRunning, cited: Set() }),
-        allInvariants
-      })
-      // The rerun re-earns the verdict and the ticket still lands (quiet
-      // fast-path: the direct squash).
-      .then(doTaskDone(1, 4, VPass, Set(1)))
-      .expect(allInvariants)
-      .then(doEvalReduce(1))
-      .expect(and { lastStep.label == "eval-passed", allInvariants })
-      .then(doDequeue(1, false))
-      .expect(and { tickets.get(1).landings == 1, allInvariants })
 }
 
 /// SHAPE 5 — THE MULTI-REPO ISOLATION SHAPES (the roadmap PR 4 gate's
@@ -802,7 +584,6 @@ module chuggy_witness_multirepo_test {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2,
     N_REPOS = 2
   ).* from "../domain"
 
@@ -822,11 +603,10 @@ module chuggy_witness_multirepo_test {
     dispatchableIn(core, j),
     apply(decideDispatch(core, j))
   }
-  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
+  action doTaskDone(j: int, tid: int, v: Verdict): bool = all {
     taskPhaseTickets.contains(j),
     deliverableTaskIds(core, j).contains(tid),
-    cited_.subseteq(regions),
-    apply(decideTaskDone(core, j, tid, v, cited_))
+    apply(decideTaskDone(core, j, tid, v))
   }
   action doWorkReduce(j: int): bool = all {
     reducibleWork.contains(j),
@@ -863,13 +643,13 @@ module chuggy_witness_multirepo_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass, Set()))
+      .then(doTaskDone(1, 1, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass, Set()))
+      .then(doTaskDone(1, 2, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // stage 0 spawns: eval id 3
       .expect(and { lastStep.label == "work-passed", allInvariants })
-      .then(doTaskDone(1, 3, VPass, Set()))
+      .then(doTaskDone(1, 3, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -900,13 +680,13 @@ module chuggy_witness_multirepo_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass, Set()))
+      .then(doTaskDone(1, 1, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass, Set()))
+      .then(doTaskDone(1, 2, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // stage 0 spawns: eval id 3
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass, Set()))
+      .then(doTaskDone(1, 3, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -931,14 +711,14 @@ module chuggy_witness_multirepo_test {
         gateFreeIn(core, 1),
         allInvariants
       })
-      .then(doTaskDone(1, 4, VPass, Set()))
+      .then(doTaskDone(1, 4, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 5, VPass, Set()))
+      .then(doTaskDone(1, 5, VPass))
       .expect(allInvariants)
       // Silent citations: the eval re-entry respawns in full (id 6).
       .then(doWorkReduce(1))
       .expect(and { lastStep.label == "work-passed", allInvariants })
-      .then(doTaskDone(1, 6, VPass, Set()))
+      .then(doTaskDone(1, 6, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -985,13 +765,13 @@ module chuggy_witness_multirepo_test {
       })
       .then(doDispatch(1))                         // gas 3 -> 2; ticket 1 work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass, Set()))
+      .then(doTaskDone(1, 1, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass, Set()))
+      .then(doTaskDone(1, 2, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(1))
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass, Set()))
+      .then(doTaskDone(1, 3, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -1014,13 +794,13 @@ module chuggy_witness_multirepo_test {
       })
       .then(doDispatch(2))                         // ticket 2's own ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(2, 1, VPass, Set()))
+      .then(doTaskDone(2, 1, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(2, 2, VPass, Set()))
+      .then(doTaskDone(2, 2, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(2))
       .expect(allInvariants)
-      .then(doTaskDone(2, 3, VPass, Set()))
+      .then(doTaskDone(2, 3, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(2))
       .expect(allInvariants)
@@ -1065,7 +845,6 @@ module chuggy_witness_gate_test {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2,
     N_REPOS = 2
   ).* from "../domain"
 
@@ -1085,11 +864,10 @@ module chuggy_witness_gate_test {
     dispatchableIn(core, j),
     apply(decideDispatch(core, j))
   }
-  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
+  action doTaskDone(j: int, tid: int, v: Verdict): bool = all {
     taskPhaseTickets.contains(j),
     deliverableTaskIds(core, j).contains(tid),
-    cited_.subseteq(regions),
-    apply(decideTaskDone(core, j, tid, v, cited_))
+    apply(decideTaskDone(core, j, tid, v))
   }
   action doWorkReduce(j: int): bool = all {
     reducibleWork.contains(j),
@@ -1125,25 +903,25 @@ module chuggy_witness_gate_test {
       .expect(allInvariants)
       .then(doDispatch(1))
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass, Set()))
+      .then(doTaskDone(1, 1, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass, Set()))
+      .then(doTaskDone(1, 2, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(1))
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass, Set()))
+      .then(doTaskDone(1, 3, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       .then(doDispatch(2))
       .expect(allInvariants)
-      .then(doTaskDone(2, 1, VPass, Set()))
+      .then(doTaskDone(2, 1, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(2, 2, VPass, Set()))
+      .then(doTaskDone(2, 2, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(2))
       .expect(allInvariants)
-      .then(doTaskDone(2, 3, VPass, Set()))
+      .then(doTaskDone(2, 3, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(2))
       .expect(and {
@@ -1213,13 +991,13 @@ module chuggy_witness_gate_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass, Set()))
+      .then(doTaskDone(1, 1, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass, Set()))
+      .then(doTaskDone(1, 2, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // eval id 3
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass, Set()))
+      .then(doTaskDone(1, 3, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and {
@@ -1263,7 +1041,6 @@ module chuggy_witness_gate_deadline_test {
     GATE_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2,
     N_REPOS = 2
   ).* from "../domain"
 
@@ -1283,11 +1060,10 @@ module chuggy_witness_gate_deadline_test {
     dispatchableIn(core, j),
     apply(decideDispatch(core, j))
   }
-  action doTaskDone(j: int, tid: int, v: Verdict, cited_: Set[int]): bool = all {
+  action doTaskDone(j: int, tid: int, v: Verdict): bool = all {
     taskPhaseTickets.contains(j),
     deliverableTaskIds(core, j).contains(tid),
-    cited_.subseteq(regions),
-    apply(decideTaskDone(core, j, tid, v, cited_))
+    apply(decideTaskDone(core, j, tid, v))
   }
   action doWorkReduce(j: int): bool = all {
     reducibleWork.contains(j),
@@ -1317,13 +1093,13 @@ module chuggy_witness_gate_deadline_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass, Set()))
+      .then(doTaskDone(1, 1, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass, Set()))
+      .then(doTaskDone(1, 2, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // eval id 3
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass, Set()))
+      .then(doTaskDone(1, 3, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -1338,13 +1114,13 @@ module chuggy_witness_gate_deadline_test {
         tickets.get(1).gasLeft == 1,
         allInvariants
       })
-      .then(doTaskDone(1, 4, VPass, Set()))
+      .then(doTaskDone(1, 4, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 5, VPass, Set()))
+      .then(doTaskDone(1, 5, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // eval id 6
       .expect(allInvariants)
-      .then(doTaskDone(1, 6, VPass, Set()))
+      .then(doTaskDone(1, 6, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -1358,13 +1134,13 @@ module chuggy_witness_gate_deadline_test {
         tickets.get(1).gasLeft == 0,
         allInvariants
       })
-      .then(doTaskDone(1, 7, VPass, Set()))
+      .then(doTaskDone(1, 7, VPass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 8, VPass, Set()))
+      .then(doTaskDone(1, 8, VPass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // eval id 9
       .expect(allInvariants)
-      .then(doTaskDone(1, 9, VPass, Set()))
+      .then(doTaskDone(1, 9, VPass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -1418,7 +1194,6 @@ module chuggy_witness_draft_wait_test {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 1,
-    N_REGIONS = 1,
     N_REPOS = 1
   ).* from "../domain"
 

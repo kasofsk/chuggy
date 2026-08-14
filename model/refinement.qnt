@@ -224,8 +224,8 @@
 /// (deps/grouping stay expressible), N_TASKS = 1 (singleton task sets),
 /// RWBudget(1) + GAS = 3 (dispatch + one eval rework + one gate rework
 /// all affordable, walls reachable), Budgeted(1), RetryCharged (the
-/// default metering), MAX_STAGES = 1 / N_REGIONS = 1 / N_REPOS = 1
-/// (staging, citations, and multi-repo are orthogonal to the seam —
+/// default metering), MAX_STAGES = 1 / N_REPOS = 1
+/// (staging and multi-repo are orthogonal to the seam —
 /// each collapses to its documented degeneration; the landing's
 /// branchMoved draw still exercises both paths). Unlike the mc
 /// instances there is no per-pricing spread: the seam model reads no
@@ -282,7 +282,6 @@ module chuggy_refinement {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 1,
-    N_REGIONS = 1,
     N_REPOS = 1
   ).* from "./domain"
 
@@ -304,7 +303,7 @@ module chuggy_refinement {
     | JRelease(int)
     | JRevoke(int)
     | JDispatch(int)
-    | JTaskDone({ ticket: int, tid: int, verdict: Verdict, cited: Set[int] })
+    | JTaskDone({ ticket: int, tid: int, verdict: Verdict })
     | JWorkReduce(int)
     | JEvalReduce(int)
     | JDequeue({ ticket: int, moved: bool })
@@ -340,7 +339,7 @@ module chuggy_refinement {
     | JRelease(j) => decideRelease(c, j)
     | JRevoke(j) => decideRevoke(c, j)
     | JDispatch(j) => decideDispatch(c, j)
-    | JTaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict, a.cited)
+    | JTaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict)
     | JWorkReduce(j) => decideWorkReduce(c, j)
     | JEvalReduce(j) => decideEvalStageReduce(c, j)
     | JDequeue(a) => decideDequeue(c, a.ticket, a.moved)
@@ -369,8 +368,7 @@ module chuggy_refinement {
     | JDispatch(j) => and { readiesIn(c).contains(j), dispatchableIn(c, j) }
     | JTaskDone(a) => and {
         taskPhaseIn(c).contains(a.ticket),
-        deliverableTaskIds(c, a.ticket).contains(a.tid),
-        a.cited.subseteq(regions)
+        deliverableTaskIds(c, a.ticket).contains(a.tid)
       }
     | JWorkReduce(j) => reducibleWorkIn(c).contains(j)
     | JEvalReduce(j) => reducibleEvalIn(c).contains(j)
@@ -603,8 +601,7 @@ module chuggy_refinement {
     nondet j = taskPhaseTickets.oneOf()
     nondet tid = deliverableTaskIds(core, j).oneOf()
     nondet v = Set(VPass, VFail).oneOf()
-    nondet cited_ = regions.powerset().oneOf()
-    journalStep(JTaskDone({ ticket: j, tid: tid, verdict: v, cited: cited_ }))
+    journalStep(JTaskDone({ ticket: j, tid: tid, verdict: v }))
   }
   action actorWorkReduce = all {
     reducibleWork.size() > 0,

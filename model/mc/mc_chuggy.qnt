@@ -30,16 +30,6 @@
 /// nondet structure (forensics in scripts/check.sh).
 ///
 /// CITATIONS PR: every instance runs WITH CITATIONS ENABLED —
-/// N_REGIONS = 2, so each task completion draws a nondet footprint from
-/// the 4 subsets of {1, 2} (the citation-claim/touch-report side of the
-/// resolution event; the draw multiplies task-completion branching by 4,
-/// which changed the simulator's nondet structure AGAIN — every 9b seed
-/// re-examined, forensics in scripts/check.sh) and scoped rework
-/// respawns are reachable: two regions is the smallest universe where a
-/// passing evaluator's citation can be disjoint from a nonempty change.
-/// allInvariants gained citationsWellFormed; the budgeted instance also
-/// feeds Stage 9b's fourth expected-violation run (carryNever, the
-/// carry-reachability probe).
 ///
 /// MULTI-REPO PR (roadmap PR 4): every instance runs WITH REPOS ENABLED —
 /// N_REPOS = 2, the smallest universe where per-repo attribution is
@@ -87,7 +77,6 @@ module mc_chuggy_budgeted {
     GATE_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2,
     N_REPOS = 2
   ).* from "../domain"
 }
@@ -106,7 +95,6 @@ module mc_chuggy_deadline_only {
     GATE_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REGIONS = 2,
     N_REPOS = 2
   ).* from "../domain"
 }
@@ -133,45 +121,6 @@ module mc_chuggy_retryfree {
     GATE_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryFree,
     MAX_STAGES = 2,
-    N_REGIONS = 2,
-    N_REPOS = 2
-  ).* from "../domain"
-}
-
-/// The CITATIONS probe instance (the mc_livelock move: a small-scope
-/// instance tuned so a rare choreography is dense enough for a pinned-seed
-/// probe). A machine-level carry is a long conjunction of nondet draws —
-/// the right program, the right action at ~10 consecutive any{} picks,
-/// and THREE independent citation draws landing on exactly-disjoint
-/// nonempty sets — which the shared instances' nondet surface buries
-/// (measured: carryNever HELD over ~2M unseeded samples on the 3-ticket
-/// budgeted instance and ~500k on a 1-ticket N_TASKS = 2 variant). This
-/// instance narrows to the densest honest choreography, the GATE-REWORK
-/// carry — the note's scenario verbatim: evaluation must rerun because
-/// the landing failed, and the evaluator that cited a region the gate fix
-/// did not touch is carried. One ticket, singleton task sets (N_TASKS = 1:
-/// the mixed-verdict eval-rework carry is impossible over singleton
-/// unanimous stages, and that path is unit-test-pinned anyway), flat
-/// programs, Budgeted(1) so exactly one gate rework exists to scope.
-/// check.sh Stage 9b's carry checks live here: the deterministic
-/// gate-rework-carry machine trace (tests/chuggy_witness_test.qnt, same
-/// consts — it subsumed the old paired pinned allInvariants run: green
-/// invariants ON a trace known to contain a carry, now asserted at every
-/// step of the deterministic trace) and the demoted pinned-seed
-/// carryNever probe. The three main instances above still reach carries
-/// when the dice align; this instance exists so the carry checks are
-/// deterministic and cheap, not because carries need special bounds.
-module mc_chuggy_citations {
-  import chuggy_measure.* from "../measure"
-  import chuggy_domain(
-    N_TICKETS = 1,
-    N_TASKS = 1,
-    REWORK_POLICY = RWBudget(1),
-    GAS = 3,
-    GATE_PRICING = Budgeted(1),
-    OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 1,
-    N_REGIONS = 2,
     N_REPOS = 2
   ).* from "../domain"
 }

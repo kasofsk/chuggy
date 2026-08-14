@@ -101,7 +101,7 @@ module chuggy_refinement_unit_test {
   run journalRefusesDisabledTest = assert(and {
     not(cmdEnabled(genesis, cmd2)),
     not(journalLegalOn([{ ...e2, seq: 1 }])),
-    not(cmdEnabled(genesis, JTaskDone({ ticket: 1, tid: 1, verdict: VPass, cited: Set() }))),
+    not(cmdEnabled(genesis, JTaskDone({ ticket: 1, tid: 1, verdict: VPass }))),
     not(cmdEnabled(genesis, JDispatch(1))),
     not(cmdEnabled(genesis, JGateResolve({ ticket: 1, out: LandAdvanceDefault }))),
     not(cmdEnabled(genesis, JOpRetry(1)))
@@ -135,10 +135,10 @@ module chuggy_refinement_unit_test {
   /// inbound at-least-once composed through the journal (the header's
   /// composition argument, inbound half).
   run journalNoopRowsReplayTest =
-    val dReal = execCmd(d3.post, JTaskDone({ ticket: 1, tid: 1, verdict: VPass, cited: Set() }))
-    val dDup = execCmd(dReal.post, JTaskDone({ ticket: 1, tid: 1, verdict: VFail, cited: Set(1) }))
-    val e4: Entry = { seq: 4, cmd: JTaskDone({ ticket: 1, tid: 1, verdict: VPass, cited: Set() }), rec: dReal.rec }
-    val e5: Entry = { seq: 5, cmd: JTaskDone({ ticket: 1, tid: 1, verdict: VFail, cited: Set(1) }), rec: dDup.rec }
+    val dReal = execCmd(d3.post, JTaskDone({ ticket: 1, tid: 1, verdict: VPass }))
+    val dDup = execCmd(dReal.post, JTaskDone({ ticket: 1, tid: 1, verdict: VFail }))
+    val e4: Entry = { seq: 4, cmd: JTaskDone({ ticket: 1, tid: 1, verdict: VPass }), rec: dReal.rec }
+    val e5: Entry = { seq: 5, cmd: JTaskDone({ ticket: 1, tid: 1, verdict: VFail }), rec: dDup.rec }
     assert(and {
       dDup.rec.label == "task-done-duplicate",
       dDup.post == dReal.post,
@@ -223,13 +223,13 @@ module chuggy_refinement_witness_test {
       // The work task resolves; its completion re-delivers with a
       // different verdict (inbound at-least-once) and the actor
       // journals the ABSORPTION — a no-op row (entry 5).
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 1, verdict: VPass, cited: Set() }), "task-done"))
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 1, verdict: VFail, cited: Set(1) }), "task-done-duplicate"))
+      .then(stepEmit(JTaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
+      .then(stepEmit(JTaskDone({ ticket: 1, tid: 1, verdict: VFail }), "task-done-duplicate"))
       .expect(and { journal.length() == 5, allDomainInvariants, refinementInvariants })
       // Work passes; the eval task (id 2) fails; THE REWORK charges
       // 1 rework + 1 gas and spawns the new cycle's work set (entry 8).
       .then(stepEmit(JWorkReduce(1), "work-passed"))
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 2, verdict: VFail, cited: Set() }), "task-done"))
+      .then(stepEmit(JTaskDone({ ticket: 1, tid: 2, verdict: VFail }), "task-done"))
       .then(journalStep(JEvalReduce(1)))
       .expect(and {
         obs.label == "rework-started eval_failure",
@@ -277,9 +277,9 @@ module chuggy_refinement_witness_test {
       })
       // The rework cycle passes work and eval (the failed evaluator
       // respawns — id 4), and the ticket enqueues for landing.
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 3, verdict: VPass, cited: Set() }), "task-done"))
+      .then(stepEmit(JTaskDone({ ticket: 1, tid: 3, verdict: VPass }), "task-done"))
       .then(stepEmit(JWorkReduce(1), "work-passed"))
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 4, verdict: VPass, cited: Set() }), "task-done"))
+      .then(stepEmit(JTaskDone({ ticket: 1, tid: 4, verdict: VPass }), "task-done"))
       .then(stepEmit(JEvalReduce(1), "eval-passed"))
       // The quiet dequeue lands the ticket (entry 13, SquashMerge) —
       // journaled, not yet emitted: the merge has NOT happened yet.
@@ -383,11 +383,11 @@ module chuggy_refinement_hazard_test {
         allDomainInvariants
       })
       // Walk the (journaled) cycle to the landing queue.
-      .then(journalStep(JTaskDone({ ticket: 1, tid: 1, verdict: VPass, cited: Set() })))
+      .then(journalStep(JTaskDone({ ticket: 1, tid: 1, verdict: VPass })))
       .then(emitNext)
       .then(journalStep(JWorkReduce(1)))
       .then(emitNext)
-      .then(journalStep(JTaskDone({ ticket: 1, tid: 2, verdict: VPass, cited: Set() })))
+      .then(journalStep(JTaskDone({ ticket: 1, tid: 2, verdict: VPass })))
       .then(emitNext)
       .then(journalStep(JEvalReduce(1)))
       .then(emitNext)
@@ -435,11 +435,11 @@ module chuggy_refinement_hazard_test {
       .then(emitNext)
       .then(journalStep(JDispatch(1)))
       .then(emitNext)
-      .then(journalStep(JTaskDone({ ticket: 1, tid: 1, verdict: VPass, cited: Set() })))
+      .then(journalStep(JTaskDone({ ticket: 1, tid: 1, verdict: VPass })))
       .then(emitNext)
       .then(journalStep(JWorkReduce(1)))
       .then(emitNext)
-      .then(journalStep(JTaskDone({ ticket: 1, tid: 2, verdict: VFail, cited: Set() })))
+      .then(journalStep(JTaskDone({ ticket: 1, tid: 2, verdict: VFail })))
       .then(emitNext)
       .expect(and {
         memCore.tickets.get(1).gasLeft == 2,

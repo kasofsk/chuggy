@@ -65,11 +65,11 @@ echo "--- unit suite"
 	|| { echo "ERROR model/tests/chuggy_test.qnt failed"; failed=$((failed + 1)); }
 
 # The witness modules prove each named shape REACHABLE and assert every
-# invariant after every step. The eighth is the odd one out: it witnesses
+# invariant after every step. The last is the odd one out: it witnesses
 # something the machine deliberately does not guarantee, so that the accepted
 # position is held by the suite rather than by a paragraph.
 echo "--- witnesses"
-for w in free cascade stage carry multirepo gate gate_deadline draft_wait; do
+for w in free cascade stage multirepo gate gate_deadline draft_wait; do
 	"$QUINT" test --main="chuggy_witness_${w}_test" \
 		model/tests/chuggy_witness_test.qnt >/dev/null 2>&1 \
 		|| { echo "ERROR witness $w failed"; failed=$((failed + 1)); }
@@ -83,7 +83,7 @@ for r in unit witness hazard; do
 done
 
 echo "--- invariants (randomized)"
-for i in budgeted deadline_only retryfree citations; do
+for i in budgeted deadline_only retryfree; do
 	"$QUINT" run model/mc/mc_chuggy.qnt --main="mc_chuggy_${i}" \
 		--invariant=allInvariants --max-samples=2000 --max-steps=40 >/dev/null 2>&1 \
 		|| { echo "ERROR instance $i violated an invariant"; failed=$((failed + 1)); }

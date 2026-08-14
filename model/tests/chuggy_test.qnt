@@ -73,34 +73,6 @@
 ///     wr/er build running ones) — the machine-behavior evidence that the
 ///     notes' "task state machine" row changed structure, not behavior.
 ///
-/// CITATIONS PR additions (docs/chuggy-notes-triage.md, "recorded for a
-/// later PR"; note + design at domain.qnt's header):
-///   - DEGENERATION pinned byte-for-byte: a rework whose work attempt
-///     touches every region respawns everything — same label,
-///     transitions, effects (["SpawnEvalTasks"] alone), task set, and
-///     record as the pre-citations recompute-all machine;
-///   - the CARRY pinned at decider grain: a disjoint retained passer is
-///     born TSCarried (fresh sequential id, citation inherited), the
-///     running respawn set SHRINKS, the measure still strictly descends,
-///     and the stage's outcome is the combinator over carried ∪
-///     respawned — pass AND fail arms both walked;
-///   - conservative defaults pinned: a SILENT passer reruns (the
-///     disjointness test alone would have skipped it — the empty-set arm
-///     is load-bearing), a SILENT work attempt blocks every carry, the
-///     FAILING evaluator respawns even when its own citation is
-///     disjoint, and FIRST-TIME entries (lowest stage and advance alike)
-///     always run in full;
-///   - the staged walk end-to-end: an all-carried re-entry (zero running
-///     tasks, ["CarryEvalVerdicts"] alone, immediately reducible)
-///     advancing into a scoped stage-1 re-entry (carry + respawn mixed),
-///     ids sequential and spawned == record + live throughout;
-///   - revoke retires a live carried task AS TSCarried (the mark
-///     survives into the log) while force-closing its running sibling;
-///   - every pre-citations test updated mechanically: helpers stamp
-///     cited: Set() and legacy completion events resolve silently, so
-///     every legacy walk takes the full-respawn path and its
-///     expectations hold verbatim.
-///
 /// MULTI-REPO PR additions (roadmap PR 4; gate: isolation invariants —
 /// design at domain.qnt's header):
 ///   - the landOutcomes draw rule pinned: a QUIET branch refuses
@@ -159,14 +131,14 @@ module chuggy_test {
   import chuggy_domain(
     N_TICKETS = 2, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2, N_REGIONS = 2, N_REPOS = 2
+    MAX_STAGES = 2, N_REPOS = 2
   ) as DB from "../domain"
 
   // DeadlineOnly gate pricing (the other §2 branch).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     GATE_PRICING = DeadlineOnly, OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2, N_REGIONS = 2, N_REPOS = 2
+    MAX_STAGES = 2, N_REPOS = 2
   ) as DD from "../domain"
 
   // Free retry metering — v1's model-status §5b churn, kept reproducible
@@ -174,7 +146,7 @@ module chuggy_test {
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryFree,
-    MAX_STAGES = 2, N_REGIONS = 2, N_REPOS = 2
+    MAX_STAGES = 2, N_REPOS = 2
   ) as DF from "../domain"
 
   // N_REPOS = 1 — the degeneration instance: the repo universe collapses
@@ -184,7 +156,7 @@ module chuggy_test {
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2, N_REGIONS = 2, N_REPOS = 1
+    MAX_STAGES = 2, N_REPOS = 1
   ) as DO from "../domain"
 
   // A GASLESS graph — invalid by charter §2 (economy/deadline; the
@@ -192,7 +164,7 @@ module chuggy_test {
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 0,
     GATE_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2, N_REGIONS = 2, N_REPOS = 2
+    MAX_STAGES = 2, N_REPOS = 2
   ) as DZ from "../domain"
 
   /// Charter §2, economy/deadline row under its honest name: a gasless
@@ -214,29 +186,13 @@ module chuggy_test {
   // notes PR's explicit lifecycle showing up in the test vocabulary; every
   // pre-existing test needed only this mechanical rewrap.
   pure def wt(i: int, o: TaskOutcome): Task =
-    { id: i, kind: TKWork, state: TSResolved(o), cited: Set() }
+    { id: i, kind: TKWork, state: TSResolved(o) }
   pure def et(i: int, s: int, o: TaskOutcome): Task =
-    { id: i, kind: TKEval(s), state: TSResolved(o), cited: Set() }
+    { id: i, kind: TKEval(s), state: TSResolved(o) }
   pure def wr(i: int): Task =
-    { id: i, kind: TKWork, state: TSRunning, cited: Set() }
+    { id: i, kind: TKWork, state: TSRunning }
   pure def er(i: int, s: int): Task =
-    { id: i, kind: TKEval(s), state: TSRunning, cited: Set() }
-
-  // Citations-PR literals: wtc/etc build resolved tasks WITH a citation
-  // footprint (work: the attempt's touch report; eval: the evaluator's
-  // citation), ec builds a CARRIED eval task (TSCarried plus the
-  // inherited citation — the born-settled shape spawnEvalScoped
-  // produces). The un-suffixed helpers above stamp cited: Set() — SILENT
-  // resolutions — which is exactly why every pre-citations test below
-  // holds verbatim: silence forces the full-respawn path (the
-  // conservative default), so the legacy walks are the degeneration
-  // story exercised by inertia.
-  pure def wtc(i: int, o: TaskOutcome, f: Set[int]): Task =
-    { id: i, kind: TKWork, state: TSResolved(o), cited: f }
-  pure def etc(i: int, s: int, o: TaskOutcome, f: Set[int]): Task =
-    { id: i, kind: TKEval(s), state: TSResolved(o), cited: f }
-  pure def ec(i: int, s: int, f: Set[int]): Task =
-    { id: i, kind: TKEval(s), state: TSCarried, cited: f }
+    { id: i, kind: TKEval(s), state: TSRunning }
 
   // Programs used throughout. progU2 is exactly DB::defaultProgram (the
   // charter's unanimous single-stage default — the PR 1-2 compatibility
@@ -289,15 +245,15 @@ module chuggy_test {
   pure val c0: Core = dRelease.post                // ticket 1: Pending, ticket 2: Draft
   pure val dDispatch = DB::decideDispatch(c0, 1)   // spawns TKWork ids 1,2
   pure val c1 = dDispatch.post
-  pure val dWork1 = DB::decideTaskDone(c1, 1, 1, VPass, Set())
+  pure val dWork1 = DB::decideTaskDone(c1, 1, 1, VPass)
   pure val c2 = dWork1.post
-  pure val dWork2 = DB::decideTaskDone(c2, 1, 2, VPass, Set())
+  pure val dWork2 = DB::decideTaskDone(c2, 1, 2, VPass)
   pure val c3 = dWork2.post
   pure val dWorkReduce = DB::decideWorkReduce(c3, 1)  // retires 1,2; spawns TKEval(0) 3,4
   pure val c4 = dWorkReduce.post
-  pure val dEval1 = DB::decideTaskDone(c4, 1, 3, VPass, Set())
+  pure val dEval1 = DB::decideTaskDone(c4, 1, 3, VPass)
   pure val c5 = dEval1.post
-  pure val dEval2 = DB::decideTaskDone(c5, 1, 4, VPass, Set())
+  pure val dEval2 = DB::decideTaskDone(c5, 1, 4, VPass)
   pure val c6 = dEval2.post
   pure val dEvalReduce = DB::decideEvalStageReduce(c6, 1)  // final (only) stage passes
   pure val c7 = dEvalReduce.post
@@ -335,7 +291,15 @@ module chuggy_test {
     dEvalReduce.rec.label == "eval-passed",
     dEvalReduce.rec.transitions == [{ ticket: 1, from: PEvaluating, to: PLanding }],
     dLand.rec.label == "ticket-done",
-    dLand.rec.transitions == [{ ticket: 1, from: PLanding, to: PDone }]
+    dLand.rec.transitions == [{ ticket: 1, from: PLanding, to: PDone }],
+    // THE SPAWN EFFECTS, pinned here because nothing else pins them. The
+    // citation-scoping removal took out the suite that used to, and a
+    // spawn emitting no effect is a fan-out the world never hears about —
+    // a hole an all-green test set cannot show you. Found by mutation:
+    // dropping SpawnEvalTasks from work-passed left all 54 cases passing.
+    dDispatch.rec.effects == ["SpawnWorkTasks"],
+    dWorkReduce.rec.effects == ["SpawnEvalTasks"],
+    dEvalReduce.rec.effects == ["EnqueueLanding"]
   })
 
   /// RETAINED TASK RECORDS (PR 3): at Done, ticket 1's chronological log holds
@@ -451,10 +415,10 @@ module chuggy_test {
   /// no effects, no measure movement. The dropped no-double-pods axiom,
   /// honored idempotently (charter §2 fabric row).
   run duplicateTaskDoneIdempotentTest = assert(and {
-    DB::decideTaskDone(c2, 1, 1, VFail, Set()).post == c2,
-    DB::decideTaskDone(c2, 1, 1, VFail, Set()).rec.label == "task-done-duplicate",
-    DB::decideTaskDone(c2, 1, 1, VFail, Set()).rec.effects == [],
-    mB(DB::decideTaskDone(c2, 1, 1, VFail, Set()).post) == mB(c2)
+    DB::decideTaskDone(c2, 1, 1, VFail).post == c2,
+    DB::decideTaskDone(c2, 1, 1, VFail).rec.label == "task-done-duplicate",
+    DB::decideTaskDone(c2, 1, 1, VFail).rec.effects == [],
+    mB(DB::decideTaskDone(c2, 1, 1, VFail).post) == mB(c2)
   })
 
   /// STALE-STAGE / STALE-INCARNATION completions no-op BY IDENTITY (PR 3):
@@ -467,12 +431,12 @@ module chuggy_test {
   /// argument — the honest extension of the duplicate-adversary scope.)
   run staleStageCompletionNoopsTest = assert(and {
     // c4: eval stage 0 live (ids 3,4); work ids 1,2 retired.
-    DB::decideTaskDone(c4, 1, 1, VFail, Set()).post == c4,
-    DB::decideTaskDone(c4, 1, 1, VFail, Set()).rec.label == "task-done-duplicate",
+    DB::decideTaskDone(c4, 1, 1, VFail).post == c4,
+    DB::decideTaskDone(c4, 1, 1, VFail).rec.label == "task-done-duplicate",
     // c7: Landing, everything retired; a stale eval completion no-ops.
-    DB::decideTaskDone(c7, 1, 3, VFail, Set()).post == c7,
-    DB::decideTaskDone(c7, 1, 3, VFail, Set()).rec.label == "task-done-duplicate",
-    mB(DB::decideTaskDone(c4, 1, 1, VFail, Set()).post) == mB(c4)
+    DB::decideTaskDone(c7, 1, 3, VFail).post == c7,
+    DB::decideTaskDone(c7, 1, 3, VFail).rec.label == "task-done-duplicate",
+    mB(DB::decideTaskDone(c4, 1, 1, VFail).post) == mB(c4)
   })
 
   /// EFFECT EXCLUSIVITY, duplicate-landing path: a re-delivered landing
@@ -573,14 +537,14 @@ module chuggy_test {
   pure val dToEval = DB::decideWorkReduce(cStagedWork, 1)
   pure val cS0 = dToEval.post
   // Stage 0's one task passes.
-  pure val dS0Done = DB::decideTaskDone(cS0, 1, 3, VPass, Set())
+  pure val dS0Done = DB::decideTaskDone(cS0, 1, 3, VPass)
   // THE ADVANCE: stage 0 passed, stage 1 remains -> Evaluating ->
   // Evaluating (chuggernaut spec.md §2.1 line 832), next fan-out spawns.
   pure val dAdvance = DB::decideEvalStageReduce(dS0Done.post, 1)
   pure val cS1 = dAdvance.post
   // Stage 1 (CAnyPass, fan-out 2): one pass, one fail -> stage passes.
-  pure val dS1a = DB::decideTaskDone(cS1, 1, 4, VPass, Set())
-  pure val dS1b = DB::decideTaskDone(dS1a.post, 1, 5, VFail, Set())
+  pure val dS1a = DB::decideTaskDone(cS1, 1, 4, VPass)
+  pure val dS1b = DB::decideTaskDone(dS1a.post, 1, 5, VFail)
   pure val dStagedFinal = DB::decideEvalStageReduce(dS1b.post, 1)
 
   /// The advance edge, exactly: label eval-stage-passed, an Evaluating ->
@@ -617,7 +581,7 @@ module chuggy_test {
 
   // --- The short-circuit: stage 0 fails, stage 1 is never created ----------
 
-  pure val dS0Fail = DB::decideTaskDone(cS0, 1, 3, VFail, Set())
+  pure val dS0Fail = DB::decideTaskDone(cS0, 1, 3, VFail)
   pure val dShort = DB::decideEvalStageReduce(dS0Fail.post, 1)
   pure val cAfterShort = dShort.post
 
@@ -646,8 +610,8 @@ module chuggy_test {
   /// "stages are recomputed per cycle, never resumed mid-sequence"): after
   /// the rework's work set passes, the next Evaluation spawns stage 0
   /// again — never stage 1.
-  pure val dReworkW1 = DB::decideTaskDone(cAfterShort, 1, 4, VPass, Set())
-  pure val dReworkW2 = DB::decideTaskDone(dReworkW1.post, 1, 5, VPass, Set())
+  pure val dReworkW1 = DB::decideTaskDone(cAfterShort, 1, 4, VPass)
+  pure val dReworkW2 = DB::decideTaskDone(dReworkW1.post, 1, 5, VPass)
   pure val dBackToEval = DB::decideWorkReduce(dReworkW2.post, 1)
 
   run reworkRestartsLowestStageTest = assert(and {
@@ -700,9 +664,9 @@ module chuggy_test {
   /// live (ids 4,5), a re-delivered completion for RETIRED stage-0 task 3
   /// — even with a contradicting verdict — no-ops by identity.
   run staleStageDuplicateNoopsTest = assert(and {
-    DB::decideTaskDone(cS1, 1, 3, VFail, Set()).post == cS1,
-    DB::decideTaskDone(cS1, 1, 3, VFail, Set()).rec.label == "task-done-duplicate",
-    mB(DB::decideTaskDone(cS1, 1, 3, VFail, Set()).post) == mB(cS1)
+    DB::decideTaskDone(cS1, 1, 3, VFail).post == cS1,
+    DB::decideTaskDone(cS1, 1, 3, VFail).rec.label == "task-done-duplicate",
+    mB(DB::decideTaskDone(cS1, 1, 3, VFail).post) == mB(cS1)
   })
 
   // === PROGRAM-AS-DATA at machine level (the PR 1 lesson generalized) ======
@@ -1172,293 +1136,6 @@ module chuggy_test {
     mB(dSettle2.post) == mB(cParked),              // desk revoke: flat, pinned
     dSettle2.post.tickets.get(3).phase == PEscalated, // 3 untouched, still covered
     hasOpenHumanTask(dSettle2.post.tickets.get(3))
-  })
-
-  // ==========================================================================
-  // === THE CITATIONS PR: scoped eval rework ================================
-  // ==========================================================================
-  // The note, verbatim (docs/chuggy-notes-triage.md, "recorded for a later
-  // PR"): "allow passing evaluators to cite code they care about to let
-  // them decide whether to rerun if evaluation must rerun." Region
-  // universe on DB: {1, 2} (N_REGIONS = 2 — the smallest universe where a
-  // passing evaluator's citation can be disjoint from a nonempty change).
-
-  /// A part-run flat-program ticket mid-Evaluation: the fanout-2 unanimous
-  /// stage holds one FAILED task (citing {2}) and one PASSED task citing
-  /// {1} — the shape every scoped-rework walk below reworks out of.
-  /// spawned = 2 so identity accounting stays exact along the walks.
-  pure val cCite: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
-    phase: PEvaluating, reworkLeft: 1, gasLeft: 2, spawned: 2,
-    tasks: Set(etc(1, 0, TFailed, Set(2)), etc(2, 0, TPassed, Set(1))) }) }
-
-  pure val dCiteRework = DB::decideEvalStageReduce(cCite, 1)
-
-  /// The rework itself is UNCHANGED by citations: pays exactly 1 rework +
-  /// 1 gas, retires the stage citations-intact, and respawns the FULL
-  /// work set — work tasks always respawn (only evaluators cite; the
-  /// work spawn sites still go through spawnOn).
-  run citeReworkFullWorkRespawnTest = assert(and {
-    dCiteRework.rec.label == "rework-started eval_failure",
-    dCiteRework.post.tickets.get(1).reworkLeft == 0,
-    dCiteRework.post.tickets.get(1).gasLeft == 1,
-    dCiteRework.post.tickets.get(1).tasks == Set(wr(3), wr(4)),
-    dCiteRework.post.tickets.get(1).record ==
-      [etc(1, 0, TFailed, Set(2)), etc(2, 0, TPassed, Set(1))],
-    mB(dCiteRework.post) < mB(cCite)
-  })
-
-  // --- DEGENERATION, pinned byte-for-byte (guardrail 1) --------------------
-  // The work attempt touches EVERYTHING ({1, 2} = the whole universe): the
-  // full-intersection adversary. The eval re-entry must be exactly the
-  // recompute-all machine's — same label, same transition, effects
-  // ["SpawnEvalTasks"] alone, the full fan-out spawned RUNNING at the next
-  // sequential ids. This is the compatibility story, the same move as
-  // PR 3's single-stage default program.
-
-  pure val dCiteFullW1 = DB::decideTaskDone(dCiteRework.post, 1, 3, VPass, Set(1, 2))
-  pure val dCiteFullW2 = DB::decideTaskDone(dCiteFullW1.post, 1, 4, VPass, Set(1, 2))
-  pure val dCiteFull = DB::decideWorkReduce(dCiteFullW2.post, 1)
-
-  run citeDegenerationByteForByteTest = assert(and {
-    dCiteFull.rec.label == "work-passed",
-    dCiteFull.rec.transitions == [{ ticket: 1, from: PWorking, to: PEvaluating }],
-    dCiteFull.rec.effects == ["SpawnEvalTasks"],
-    dCiteFull.post.tickets.get(1).tasks == Set(er(5, 0), er(6, 0)),
-    dCiteFull.post.tickets.get(1).record ==
-      [etc(1, 0, TFailed, Set(2)), etc(2, 0, TPassed, Set(1)),
-       wtc(3, TPassed, Set(1, 2)), wtc(4, TPassed, Set(1, 2))],
-    dCiteFull.post.tickets.get(1).spawned == 6,
-    mB(dCiteFull.post) < mB(dCiteFullW2.post)
-  })
-
-  // --- THE CARRY (guardrails 2 and 4) --------------------------------------
-  // The work attempt touches only {2}: the retained passer cited {1},
-  // disjoint — it is CARRIED (born TSCarried at the next sequential id,
-  // citation inherited); the failed position respawns. Fewer running
-  // tasks spawn, the measure still strictly descends, and the stage's
-  // outcome is the combinator over carried ∪ respawned — both arms.
-
-  pure val dCiteCw1 = DB::decideTaskDone(dCiteRework.post, 1, 3, VPass, Set(2))
-  pure val dCiteCw2 = DB::decideTaskDone(dCiteCw1.post, 1, 4, VPass, Set(2))
-  pure val dCarry = DB::decideWorkReduce(dCiteCw2.post, 1)
-
-  run citeCarryScopedRespawnTest = assert(and {
-    dCarry.rec.label == "work-passed",
-    dCarry.rec.transitions == [{ ticket: 1, from: PWorking, to: PEvaluating }],
-    // Both effects: something respawns AND something carries.
-    dCarry.rec.effects == ["SpawnEvalTasks", "CarryEvalVerdicts"],
-    // Position 1 (the failure that caused the rework) respawns RUNNING;
-    // position 2 (passed, {1} disjoint from {2}) is born carried.
-    dCarry.post.tickets.get(1).tasks == Set(er(5, 0), ec(6, 0, Set(1))),
-    runningCount(dCarry.post.tickets.get(1).tasks) == 1,   // FEWER spawns run
-    // Identity accounting holds verbatim over carried entries: the carry
-    // is a SPAWNED entry (guardrail 5).
-    dCarry.post.tickets.get(1).spawned == 6,
-    dCarry.post.tickets.get(1).spawned ==
-      dCarry.post.tickets.get(1).record.length() + dCarry.post.tickets.get(1).tasks.size(),
-    // Strict descent, with a SMALLER climb than the full respawn's
-    // (guardrail 4: fewer spawned tasks only shrink what the digit chain
-    // already dominates).
-    mB(dCarry.post) < mB(dCiteCw2.post),
-    mB(dCarry.post) < mB(dCiteFull.post)
-  })
-
-  /// A completion event naming the CARRIED id absorbs as the usual
-  /// duplicate — nobody is running to report; first-write-wins covers the
-  /// footprint too (a contradicting verdict AND citation change nothing).
-  run citeCarriedTaskAbsorbsDeliveryTest = assert(and {
-    DB::decideTaskDone(dCarry.post, 1, 6, VFail, Set(1, 2)).post == dCarry.post,
-    DB::decideTaskDone(dCarry.post, 1, 6, VFail, Set(1, 2)).rec.label
-      == "task-done-duplicate"
-  })
-
-  // Verdict soundness, PASS arm: the respawned position passes, and the
-  // stage's outcome IS the combinator over the union {resolved pass,
-  // carried pass} — the single-stage program lands.
-  pure val dCarryDone = DB::decideTaskDone(dCarry.post, 1, 5, VPass, Set(1))
-  pure val dCarryReduce = DB::decideEvalStageReduce(dCarryDone.post, 1)
-
-  run citeCarryOutcomeMatchesCombinatorTest = assert(and {
-    // The union the reduce sees, explicitly, and its combinator verdict:
-    dCarryDone.post.tickets.get(1).tasks ==
-      Set(etc(5, 0, TPassed, Set(1)), ec(6, 0, Set(1))),
-    combine(CUnanimousPass, dCarryDone.post.tickets.get(1).tasks),
-    // ... is exactly the outcome the machine takes:
-    dCarryReduce.rec.label == "eval-passed",
-    dCarryReduce.post.tickets.get(1).phase == PLanding,
-    // The carried verdict is IN THE RECORD, distinguishably (the replay
-    // mark): TSCarried with the inherited citation, beside the re-earned
-    // pass.
-    dCarryReduce.post.tickets.get(1).record ==
-      [etc(1, 0, TFailed, Set(2)), etc(2, 0, TPassed, Set(1)),
-       wtc(3, TPassed, Set(2)), wtc(4, TPassed, Set(2)),
-       etc(5, 0, TPassed, Set(1)), ec(6, 0, Set(1))],
-    dCarryReduce.post.tickets.get(1).spawned == 6,
-    mB(dCarryReduce.post) < mB(dCarryDone.post)
-  })
-
-  // Verdict soundness, FAIL arm: the respawned position fails — the
-  // carried pass does not outvote it under unanimity, and the
-  // short-circuit routes into the UNCHANGED economy (rework account
-  // empty, gas remains -> the existing budget wall; guardrail 3's
-  // skipped-stage rule is moot on a single-stage program, and the staged
-  // walk below covers it).
-  pure val dCarryFail = DB::decideTaskDone(dCarry.post, 1, 5, VFail, Set(1))
-  pure val dCarryFailReduce = DB::decideEvalStageReduce(dCarryFail.post, 1)
-
-  run citeCarryFailArmSoundTest = assert(and {
-    not(combine(CUnanimousPass, dCarryFail.post.tickets.get(1).tasks)),
-    dCarryFailReduce.rec.label == "ticket-escalated rework_budget_exhausted",
-    dCarryFailReduce.post.tickets.get(1).phase == PEscalated
-  })
-
-  // --- Conservative defaults, each pinned ----------------------------------
-
-  /// SILENCE IS NOT A FREE PASS (evaluator side): a passer that cited
-  /// NOTHING respawns even though the empty set is disjoint from every
-  /// change — the empty-footprint arm is load-bearing, not redundant
-  /// with disjointness.
-  pure val cCiteSilent: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
-    phase: PEvaluating, reworkLeft: 1, gasLeft: 2, spawned: 2,
-    tasks: Set(etc(1, 0, TFailed, Set(2)), et(2, 0, TPassed)) }) }
-  pure val dSilRework = DB::decideEvalStageReduce(cCiteSilent, 1)
-  pure val dSilW1 = DB::decideTaskDone(dSilRework.post, 1, 3, VPass, Set(2))
-  pure val dSilW2 = DB::decideTaskDone(dSilW1.post, 1, 4, VPass, Set(2))
-  pure val dSilent = DB::decideWorkReduce(dSilW2.post, 1)
-
-  run citeSilentEvaluatorRerunsTest = assert(and {
-    dSilent.rec.effects == ["SpawnEvalTasks"],
-    dSilent.post.tickets.get(1).tasks == Set(er(5, 0), er(6, 0))
-  })
-
-  /// SILENCE IS NOT A FREE PASS (work side): one silent work resolution
-  /// poisons the whole change to the universe — the {1}-citing passer
-  /// respawns although the attempt's only SPOKEN touch ({2}) is disjoint.
-  pure val dPoiW1 = DB::decideTaskDone(dCiteRework.post, 1, 3, VPass, Set())
-  pure val dPoiW2 = DB::decideTaskDone(dPoiW1.post, 1, 4, VPass, Set(2))
-  pure val dPoison = DB::decideWorkReduce(dPoiW2.post, 1)
-
-  run citeSilentWorkBlocksCarryTest = assert(and {
-    dPoison.rec.effects == ["SpawnEvalTasks"],
-    dPoison.post.tickets.get(1).tasks == Set(er(5, 0), er(6, 0))
-  })
-
-  /// THE FAILING EVALUATOR ALWAYS RESPAWNS: even when the FAILED
-  /// position's own citation ({1}) is disjoint from the change ({2}), a
-  /// carry requires a PASS — its disjointness buys nothing, while its
-  /// passing sibling (same citation) carries.
-  pure val cCiteFailDisj: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1),
-    phase: PEvaluating, reworkLeft: 1, gasLeft: 2, spawned: 2,
-    tasks: Set(etc(1, 0, TFailed, Set(1)), etc(2, 0, TPassed, Set(1))) }) }
-  pure val dFdRework = DB::decideEvalStageReduce(cCiteFailDisj, 1)
-  pure val dFdW1 = DB::decideTaskDone(dFdRework.post, 1, 3, VPass, Set(2))
-  pure val dFdW2 = DB::decideTaskDone(dFdW1.post, 1, 4, VPass, Set(2))
-  pure val dFailerRespawns = DB::decideWorkReduce(dFdW2.post, 1)
-
-  run citeFailingEvaluatorAlwaysRespawnsTest = assert(and {
-    dFailerRespawns.rec.effects == ["SpawnEvalTasks", "CarryEvalVerdicts"],
-    dFailerRespawns.post.tickets.get(1).tasks == Set(er(5, 0), ec(6, 0, Set(1)))
-  })
-
-  // --- The staged walk: all-carried entry, scoped advance (guardrail 3) ----
-  // progU22 = two fanout-2 unanimous stages. Cycle 1 runs everything
-  // (first-time entries, work citations notwithstanding); stage 1 fails.
-  // The rework touches {2}; both stage-0 passers cited {1} -> the stage-0
-  // re-entry carries EVERYTHING (zero running tasks, immediately
-  // reducible), and the advance re-enters stage 1 SCOPED: its passer
-  // carries, the failer respawns. Stages a short-circuit skipped stay
-  // recordless throughout — there is nothing to carry FROM, structurally.
-
-  pure val progU22: List[Stage] =
-    [{ fanout: 2, combinator: CUnanimousPass },
-     { fanout: 2, combinator: CUnanimousPass }]
-
-  pure val cCW: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU22, 1),
-    phase: PWorking, gasLeft: 3, spawned: 2,
-    tasks: Set(wtc(1, TPassed, Set(1)), wtc(2, TPassed, Set(1))) }) }
-
-  // Cycle 1: first-time entries run in full — lowest stage AND advance.
-  pure val dCwEnter = DB::decideWorkReduce(cCW, 1)
-  pure val dCwE01 = DB::decideTaskDone(dCwEnter.post, 1, 3, VPass, Set(1))
-  pure val dCwE02 = DB::decideTaskDone(dCwE01.post, 1, 4, VPass, Set(1))
-  pure val dCwAdv = DB::decideEvalStageReduce(dCwE02.post, 1)
-  pure val dCwE11 = DB::decideTaskDone(dCwAdv.post, 1, 5, VPass, Set(1))
-  pure val dCwE12 = DB::decideTaskDone(dCwE11.post, 1, 6, VFail, Set(2))
-  pure val dCwRework = DB::decideEvalStageReduce(dCwE12.post, 1)
-  // The rework attempt touches {2}.
-  pure val dCwW1 = DB::decideTaskDone(dCwRework.post, 1, 7, VPass, Set(2))
-  pure val dCwW2 = DB::decideTaskDone(dCwW1.post, 1, 8, VPass, Set(2))
-  // Cycle 2, stage-0 re-entry: ALL carried.
-  pure val dCwAllCarry = DB::decideWorkReduce(dCwW2.post, 1)
-  // Immediately reducible: the all-carried stage passes on carries alone,
-  // and the ADVANCE is scoped — stage 1's passer carries, its failer
-  // respawns.
-  pure val dCwAdv2 = DB::decideEvalStageReduce(dCwAllCarry.post, 1)
-  pure val dCwE12b = DB::decideTaskDone(dCwAdv2.post, 1, 12, VPass, Set(2))
-  pure val dCwLand = DB::decideEvalStageReduce(dCwE12b.post, 1)
-
-  run citeStagedFirstTimeEntriesRunFullTest = assert(and {
-    dCwEnter.rec.effects == ["SpawnEvalTasks"],
-    dCwEnter.post.tickets.get(1).tasks == Set(er(3, 0), er(4, 0)),
-    dCwAdv.rec.label == "eval-stage-passed",
-    dCwAdv.rec.effects == ["SpawnEvalTasks"],
-    dCwAdv.post.tickets.get(1).tasks == Set(er(5, 1), er(6, 1))
-  })
-
-  run citeAllCarriedEntryTest = assert(and {
-    dCwAllCarry.rec.label == "work-passed",
-    dCwAllCarry.rec.transitions == [{ ticket: 1, from: PWorking, to: PEvaluating }],
-    // NOTHING runs: the effect vocabulary says so — no SpawnEvalTasks at
-    // all, the carry alone.
-    dCwAllCarry.rec.effects == ["CarryEvalVerdicts"],
-    dCwAllCarry.post.tickets.get(1).tasks == Set(ec(9, 0, Set(1)), ec(10, 0, Set(1))),
-    runningCount(dCwAllCarry.post.tickets.get(1).tasks) == 0,
-    // Still a strict descent: rank 3 -> 2 dominates the reappearing stage
-    // digit with NO running-count climb at all (guardrail 4 at its
-    // extreme).
-    mB(dCwAllCarry.post) < mB(dCwW2.post),
-    dCwAllCarry.post.tickets.get(1).spawned == 10
-  })
-
-  run citeScopedAdvanceTest = assert(and {
-    dCwAdv2.rec.label == "eval-stage-passed",
-    dCwAdv2.rec.transitions == [{ ticket: 1, from: PEvaluating, to: PEvaluating }],
-    dCwAdv2.rec.effects == ["SpawnEvalTasks", "CarryEvalVerdicts"],
-    // Stage 1 scoped: position 5 (passed, {1} disjoint {2}) carries as id
-    // 11; position 6 (THE failer) respawns as id 12.
-    dCwAdv2.post.tickets.get(1).tasks == Set(ec(11, 1, Set(1)), er(12, 1)),
-    mB(dCwAdv2.post) < mB(dCwAllCarry.post)
-  })
-
-  run citeStagedWalkLandsTest = assert(and {
-    dCwLand.rec.label == "eval-passed",
-    dCwLand.post.tickets.get(1).phase == PLanding,
-    // The full retained anatomy, carries marked, ids sequential 1..12:
-    dCwLand.post.tickets.get(1).record ==
-      [wtc(1, TPassed, Set(1)), wtc(2, TPassed, Set(1)),
-       etc(3, 0, TPassed, Set(1)), etc(4, 0, TPassed, Set(1)),
-       etc(5, 1, TPassed, Set(1)), etc(6, 1, TFailed, Set(2)),
-       wtc(7, TPassed, Set(2)), wtc(8, TPassed, Set(2)),
-       ec(9, 0, Set(1)), ec(10, 0, Set(1)),
-       ec(11, 1, Set(1)), etc(12, 1, TPassed, Set(2))],
-    dCwLand.post.tickets.get(1).tasks == Set(),
-    dCwLand.post.tickets.get(1).spawned == 12,
-    // The whole cycle-2 evaluation cost ZERO evaluator reruns beyond the
-    // failer: exactly one running task ever spawned (id 12).
-    mB(dCwLand.post) < mB(dCwE12b.post)
-  })
-
-  /// Revoke retires a live carried task AS TSCarried — the mark (and its
-  /// citation) survives into the log, while the running sibling is
-  /// force-closed TCancelled. "Revoked runs nothing" ≠ "Revoked remembers
-  /// nothing", carried edition.
-  pure val jCarryLive: Ticket = { ...DB::freshTicket(Set(), progU2, 1),
-    phase: PEvaluating, spawned: 2, tasks: Set(ec(1, 0, Set(1)), er(2, 0)) }
-
-  run citeRevokeRetainsCarryMarkTest = assert(and {
-    revokeOne(jCarryLive).post.tickets.get(1).record ==
-      [ec(1, 0, Set(1)), et(2, 0, TCancelled)],
-    revokedShape(revokeOne(jCarryLive).post.tickets.get(1))
   })
 
   // ==========================================================================

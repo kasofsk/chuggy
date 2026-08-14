@@ -67,40 +67,6 @@
 /// machinery), authored — it arrives with the Draft, which is exactly why
 /// authoring came first; decideEvalStageReduce below is the interpreter.
 ///
-/// THE CITATIONS PR (docs/chuggy-notes-triage.md, "recorded for a later
-/// PR"; the note verbatim: "allow passing evaluators to cite code they
-/// care about to let them decide whether to rerun if evaluation must
-/// rerun") is IN. Both sides abstract to region sets over 1..N_REGIONS:
-/// a task's RESOLUTION carries a citation footprint (the completion event
-/// grew a `cited` argument, environment-chosen like the verdict — an
-/// evaluator's citation, or a work attempt's touch set), and the
-/// interpreter's two eval-entry sites (the work-passed lowest-stage entry
-/// and the stage advance) spawn SCOPED (measure.qnt spawnEvalScoped): a
-/// position whose most recent retired incarnation PASSED citing a
-/// nonempty footprint disjoint from the change since then is born
-/// TSCarried — verdict carried over, evaluator not rerun — and everything
-/// else respawns. The change footprint is DERIVED from the retained
-/// record's work entries (standing rule 3; work groups delimit cycles),
-/// never stored. Conservative defaults, each pinned in tests: silence is
-/// not a free pass on either side (an evaluator that cited nothing
-/// reruns; a work attempt that cited nothing blocks every carry), work
-/// tasks always respawn (only evaluators cite), the failing evaluator
-/// that caused a rework always respawns (a carry requires a PASS), and
-/// first-time stage entry runs everything. Operator resumes are NOT
-/// scoped — chuggernaut's own extracted Retry semantics is "a fresh eval
-/// fan-out" (spec.md §1.2), kept verbatim at decideOpRetry. Skipped-stage
-/// discipline stands: a short-circuit still leaves NO records for later
-/// stages, and scoping never resurrects them — a carry happens only at a
-/// spawn the interpreter performs anyway, reading only records that
-/// exist. Carried verdicts are trace-visible twice over: the record entry
-/// mark (TSCarried, citation intact) and the "CarryEvalVerdicts" effect
-/// beside "SpawnEvalTasks" (either may appear alone — all-carried entries
-/// spawn nothing running and reduce immediately). What is deliberately
-/// NOT modeled: real diffs, region granularity, and evaluator HONESTY
-/// about footprints — an evaluator that under-cites gets stale verdicts
-/// carried; footprint trust is an implementation/policy concern, flagged
-/// as an intake question (README).
-///
 /// THE MULTI-REPO PR (roadmap PR 4; gate: ISOLATION INVARIANTS.
 /// Provenance: `domain/firstclass`, both respondents picked multi-repo —
 /// option text "Multiple repos — one orchestrator, many targets" — rank #3
@@ -281,29 +247,14 @@ module chuggy_domain {
   /// approval gate sits at max+1) — the cap exists for the radix argument,
   /// not as domain vocabulary.
   const MAX_STAGES: int
-  /// Citations PR: the size of the abstract region universe citations
-  /// range over — real citations are code regions; the model bounds them
-  /// to opaque ids 1..N_REGIONS so footprints stay finite nondet choices
-  /// (small in mc instances: the citation draw multiplies task-completion
-  /// branching by 2^N_REGIONS). NOT a measure bound: no digit reads it
-  /// (measure.qnt, citations header). The no-citation world is expressed
-  /// by evaluators citing Set() (which means "rerun me"), not by an empty
-  /// universe — init requires the universe to exist.
-  const N_REGIONS: int
   /// Multi-repo PR: the size of the bounded repo universe a ticket's
   /// authored target is drawn from (small in mc instances: 2 — the
   /// smallest universe where "its OWN repo's branch moved" is
-  /// distinguishable from "some repo's branch moved"). Like N_REGIONS,
-  /// NOT a measure bound: no digit reads the repo (measure.qnt, multi-repo
+  /// distinguishable from "some repo's branch moved"). NOT a measure bound: no digit reads the repo (measure.qnt, multi-repo
   /// header note), and no account is per-repo. The single-repo world is
   /// N_REPOS = 1, under which every draw collapses and the machine is the
   /// pre-multi-repo machine with a constant attribution field.
   const N_REPOS: int
-
-  /// The citation universe (citations PR): every footprint — evaluator
-  /// citation or work touch set — is a subset of this
-  /// (citationsWellFormed).
-  pure val regions: Set[int] = 1.to(N_REGIONS)
 
   /// The repo universe (multi-repo PR): every ticket's authored target repo
   /// is a member (reposWellFormed); arrivals draw from exactly this set.
@@ -809,41 +760,14 @@ module chuggy_domain {
   /// verdict of a respawned same-id task; that argument is now needed for
   /// nothing). No phase transition either way — task records resolve
   /// inside the phase.
-  ///
-  /// CITATIONS PR: the resolution event carries the CITATION FOOTPRINT
-  /// beside the verdict — for an evaluator, the regions it cites (its
-  /// claim; whether to TRUST it is implementation policy, README); for a
-  /// work task, what the attempt touched. Environment-chosen like the
-  /// verdict, stamped on the resolved entry (resolveTask), Set() = cited
-  /// nothing (which scoping treats as citing/touching EVERYTHING — the
-  /// conservative default). First-write-wins covers the footprint too: a
-  /// duplicate with a different citation changes nothing, and a TSCarried
-  /// task has no running match, so deliveries naming a carried id absorb
-  /// here as duplicates (nobody is running to report).
-  pure def decideTaskDone(
-      c: Core, j: int, tid: int, v: Verdict, cited_: Set[int]): Decision =
+  pure def decideTaskDone(c: Core, j: int, tid: int, v: Verdict): Decision =
     if (c.tickets.get(j).tasks.exists(t => t.id == tid and t.state == TSRunning))
       { rec: { label: "task-done", transitions: [], effects: [], landing: LONone },
         post: withTicket(c, j, { ...c.tickets.get(j),
           tasks: resolveTask(c.tickets.get(j).tasks, tid,
-            match v { | VPass => TPassed | VFail => TFailed }, cited_) }) }
+            match v { | VPass => TPassed | VFail => TFailed }) }) }
     else
       noop(c, "task-done-duplicate")
-
-  /// The effects a scoped eval spawn records (citations PR), derived from
-  /// the spawn's RESULT so the deciders and the derivation cannot drift:
-  /// "SpawnEvalTasks" iff anything actually starts running,
-  /// "CarryEvalVerdicts" iff any position was born TSCarried. The full
-  /// respawn (every position running — every first-time entry, and every
-  /// scoped entry under a full-intersection change) yields exactly
-  /// ["SpawnEvalTasks"], byte-for-byte the pre-citations vocabulary — the
-  /// degeneration story at the trace grain. An all-carried entry yields
-  /// ["CarryEvalVerdicts"] alone: nothing runs, and the stage is
-  /// immediately reducible (reducibleEval counts running tasks).
-  pure def evalSpawnEffects(next_: Ticket, n: int): List[str] =
-    val nRun = runningCount(next_.tasks)
-    (if (nRun > 0) ["SpawnEvalTasks"] else [])
-      .concat(if (nRun < n) ["CarryEvalVerdicts"] else [])
 
   /// The Working task set fully resolved: reduce the phase, at CYCLE level
   /// only. Work's phase-outcome combinator is UNANIMOUS PASS — no longer a
@@ -851,19 +775,14 @@ module chuggy_domain {
   /// spec.md §1.2: Work runs ONE task per cycle whose success is the
   /// phase's success — unanimous over a singleton; under kasofsk's
   /// parallel task-set generalization, charter §2 ticket anatomy, the
-  /// faithful reading stays "every work task passed" — deliberately NOT
-  /// taskPassed: work tasks never carry, so a TSCarried work task must
-  /// never satisfy this reduce, structurally). A pass RETIRES the
+  /// faithful reading stays "every work task passed"). A pass RETIRES the
   /// work set into the record and spawns the eval program's LOWEST stage
   /// (spec.md §3.3: "creates one task per evaluator in the lowest stage
-  /// and fans them out in parallel") — SCOPED since the citations PR
-  /// (spawnEvalScoped): on a RE-entry (any earlier incarnation of stage 0
-  /// in the record — an eval rework, a gate rework, or a work respawn
-  /// after work_failed; the rule keys on the record, not on why the cycle
-  /// started, because cycle provenance is not stored — derive, don't
-  /// store), positions whose retained passing verdicts cite footprints
-  /// disjoint from everything the cycle's work attempts touched are
-  /// CARRIED instead of rerun; a first-time entry runs everything. A
+  /// and fans them out in parallel"). Every entry spawns the stage in
+  /// full — an evaluator is never skipped on the grounds that its subject
+  /// did not change, because deciding that soundly needs the evaluator to
+  /// declare its own footprint honestly, which is a property of the
+  /// evaluator and not of this machine. A
   /// failed task set is a failed CYCLE and escalates directly: the fabric
   /// has already retried each task below the cycle (trusted
   /// `backoffLimit`, charter §2 fabric row), and modeling attempts of our
@@ -873,10 +792,9 @@ module chuggy_domain {
     val retired = retireLive(jb)
     if (jb.tasks.forall(t => t.state == TSResolved(TPassed)))
       val fan = retired.program[0].fanout
-      val next_ = spawnEvalScoped(retired, 0, fan, regions)
       move(
-        withTicket(c, j, next_),
-        j, PEvaluating, "work-passed", evalSpawnEffects(next_, fan))
+        withTicket(c, j, spawnOn(retired, TKEval(0), fan)),
+        j, PEvaluating, "work-passed", ["SpawnEvalTasks"])
     else
       escalate(c, j, RWorking, RsWorkFailed, "ticket-escalated work_failed")
 
@@ -920,18 +838,10 @@ module chuggy_domain {
     val retired = retireLive(jb)
     if (combine(jb.program[s].combinator, jb.tasks))
       if (s + 1 < jb.program.length())
-        // Citations PR: the advance spawn is SCOPED like the work-passed
-        // entry — a re-entered stage (this cycle is recomputing stages an
-        // earlier cycle already ran) carries the positions whose retained
-        // passing verdicts are disjoint from the change; a stage the
-        // record has never seen (including every stage a short-circuit
-        // skipped: "skipped, not failed, so no task records exist for
-        // them" — nothing to carry FROM, by construction) runs in full.
         val fan = retired.program[s + 1].fanout
-        val next_ = spawnEvalScoped(retired, s + 1, fan, regions)
         move(
-          withTicket(c, j, next_),
-          j, PEvaluating, "eval-stage-passed", evalSpawnEffects(next_, fan))
+          withTicket(c, j, spawnOn(retired, TKEval(s + 1), fan)),
+          j, PEvaluating, "eval-stage-passed", ["SpawnEvalTasks"])
       else
         move(
           withTicket(c, j, retired),
@@ -1132,12 +1042,6 @@ module chuggy_domain {
   ///     against the intact branch ... with a fresh eval fan-out"; stages
   ///     are never resumed mid-sequence, §3.3). New ids: the retried tasks
   ///     are NEW records, the failed ones stay retired in the log.
-  ///     Deliberately NOT scoped by citations (spawnOn, not
-  ///     spawnEvalScoped): "a fresh eval fan-out" is the extracted
-  ///     vocabulary verbatim, and an operator resume models no new work
-  ///     attempt whose change could license a skip — recompute-all is the
-  ///     conservative superset (scoping this seam is a possible later
-  ///     refinement, gated on the intake eval/vocabulary confirmation).
   ///   RLanding: re-enqueue the landing.
   /// Under RetryFree the Evaluating/Landing resumes join the CHURN set —
   /// v1's livelock kept reproducible by configuration.
@@ -1314,7 +1218,6 @@ module chuggy_domain {
     N_TASKS >= 1,        // well-formedness: a phase carries a real task set
     N_TICKETS >= 1,         // the arrival bound must admit at least one ticket
     MAX_STAGES >= 1,     // PR 3: at least one authorable program must exist
-    N_REGIONS >= 1,      // citations PR: the region universe must exist
     N_REPOS >= 1,        // multi-repo PR: a ticket needs a repo to target
     reworkBudget(REWORK_POLICY) >= 0,
     gateBudget(GATE_PRICING) >= 0,
@@ -1417,21 +1320,12 @@ module chuggy_domain {
   /// it, and the revoke frees the slot by phase); the real revoke/merge
   /// race — the candidate already advancing when the revoke lands — is
   /// record-vs-effect atomicity, the §4 refinement layer (roadmap PR 6).
-  /// Citations PR: the completion event also carries a nondet CITATION
-  /// FOOTPRINT — any subset of the region universe, the environment's
-  /// choice exactly like the verdict (an evaluator's citation claim, or a
-  /// work attempt's touch report; Set() is the silent resolution both
-  /// conservative defaults key on). The adversary that always draws the
-  /// full universe (or always Set() on work tasks) is the degeneration
-  /// story: every spawn recomputes everything, pre-citations behavior
-  /// byte for byte.
   action taskDone = all {
     taskPhaseTickets.size() > 0,
     nondet j = taskPhaseTickets.oneOf()
     nondet tid = deliverableTaskIds(core, j).oneOf()
     nondet v = Set(VPass, VFail).oneOf()
-    nondet cited_ = regions.powerset().oneOf()
-    apply(decideTaskDone(core, j, tid, v, cited_))
+    apply(decideTaskDone(core, j, tid, v))
   }
 
   action workReduce = all {
@@ -1865,38 +1759,6 @@ module chuggy_domain {
       p.indices().forall(i => p[i].fanout >= 1 and p[i].fanout <= N_TASKS)
     })
 
-  /// CITATION DISCIPLINE (citations PR), live set and record together:
-  /// every footprint lives inside the region universe; a RUNNING task has
-  /// no footprint (the citation is part of the resolution event — nothing
-  /// is cited until something resolves); a WORK task is never TSCarried
-  /// (work tasks always respawn — only evaluators cite, made structural
-  /// here); and a TSCarried entry always carries the NONEMPTY citation
-  /// that earned it (a carry without a citation would be a skip that
-  /// silence bought — exactly what the conservative default forbids).
-  /// Together with recordMonotone (entries compared whole, `cited`
-  /// included, so a settled footprint is never rewritten) and idsAccounted
-  /// (carried tasks are SPAWNED entries — spawnEvalScoped bumps the ghost
-  /// by the full fan-out, so the equality holds verbatim over carries),
-  /// this extends the record invariants to carried entries without
-  /// weakening any of them.
-  val citationsWellFormed: bool = liveTickets.forall(j =>
-    val jb = tickets.get(j)
-    and {
-      jb.tasks.forall(t => and {
-        t.cited.subseteq(regions),
-        t.state == TSRunning implies t.cited == Set(),
-        t.kind == TKWork implies t.state != TSCarried,
-        t.state == TSCarried implies t.cited != Set()
-      }),
-      jb.record.indices().forall(i => and {
-        jb.record[i].cited.subseteq(regions),
-        jb.record[i].state == TSCarried implies and {
-          jb.record[i].kind != TKWork,
-          jb.record[i].cited != Set()
-        }
-      })
-    })
-
   /// Arrival's DAG-by-construction survives every step (deps are never
   /// rewritten): each dep points at a known, strictly smaller id.
   val depsAcyclic: bool = liveTickets.forall(j =>
@@ -2105,7 +1967,7 @@ module chuggy_domain {
   ///   init                  — every run's first step;
   ///   task-done-duplicate   — free module (the re-delivered completion);
   ///   land-duplicate        — stage module (the stale landing success);
-  ///   settled               — carry module (the quiet fleet's stutter);
+  ///   settled               — the quiet fleet's stutter;
   ///   operator-retry, RPending flavor
   ///                         — preWorkResumeClimbDeterministicTest;
   ///   operator-retry, RetryFree pipeline flavor
@@ -2207,24 +2069,6 @@ module chuggy_domain {
   val stageAdvanceNever: bool =
     not(lastStep.label == "eval-stage-passed")
 
-  /// ANTI-VACUITY WITNESS #4 (citations PR), not an invariant of the
-  /// machine: "no eval spawn ever carries a verdict". EXPECTED TO BE
-  /// VIOLATED (check.sh Stage 9b: deterministically by the gate-rework
-  /// carry machine trace in tests/chuggy_witness_test.qnt — whose twin
-  /// run also pins the intersecting footprint NOT carrying — plus the
-  /// demoted pinned-seed probe) — a reachable CarryEvalVerdicts effect is
-  /// the machine-level
-  /// proof that the scoped respawn actually skips an evaluator on machine
-  /// traces (a disjoint retained pass really is carried), so the green
-  /// invariant runs above — citationsWellFormed, idsAccounted,
-  /// measureDescends over carried spawns — are checked against traces
-  /// where a carry OCCURS, not vacuous: an adversary that always cited
-  /// the full universe (or nothing) would never take the carry branch.
-  /// The unit tests walk carries deterministically; this pins one as
-  /// REACHABLE.
-  val carryNever: bool =
-    not(lastStep.effects.foldl(false, (b, e) => b or e == "CarryEvalVerdicts"))
-
   /// All safety invariants, for `--invariant=allInvariants`.
   val allInvariants: bool = and {
     landingExclusive,
@@ -2243,7 +2087,6 @@ module chuggy_domain {
     recordMonotone,
     idsAccounted,
     programsWellFormed,
-    citationsWellFormed,
     depsAcyclic,
     idsDense,
     stuckSubsetCovered,
