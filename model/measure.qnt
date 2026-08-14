@@ -84,12 +84,8 @@
 ///            <= rankCeiling*rankWeight + (rankWeight - 1)
 ///             < radix(rankCeiling)*rankWeight.
 ///       Written as radix(rankCeiling) so the multiplier re-derives from
-///       Frozen removed compressed the ladder), AGAIN by the merge-queue
-///       PR (ceiling 5 -> 7, multiplier 6 -> 8: two new rungs, Gated below
-///       Landing and Batched above Pending) and AGAIN by the grouping
-///       removal (ceiling 7 -> 6, multiplier 8 -> 7) — each time
-///       written as radix(rankCeiling), so the multiplier re-derives from
-///       the ladder and can never silently drift from it.
+///       the ladder and can never silently drift from it: every change to
+///       the rung set moves the ceiling, and the weight follows.
 /// The domination chain above micro is unchanged in shape: micro <
 /// microBound, so one unit of reworkLeft outweighs any within-cycle climb
 /// (radix microBound), one unit of wrapUpLeft outweighs any reworkLeft refill
@@ -100,9 +96,8 @@
 /// DESCENT TABLE — which transitions descend, and by which account.
 /// (Deltas verified per-step by the machine's `stepDescends` invariant and
 /// by tests/chuggy_test.qnt; labels are domain.qnt's StepRecord labels.
-/// ticket-frozen and ticket-unfrozen are GONE — Frozen removed by the notes;
-/// stalled-retry is GONE as a label — the pre-work resume is an
-/// operator-retry flavor now, in the CHURN set below.)
+/// There is no stalled-retry label: the pre-work resume is an
+/// operator-retry flavor, in the CHURN set below.)
 ///
 ///   label                               descends via
 ///   ----------------------------------- ---------------------------------
@@ -134,7 +129,6 @@
 ///   eval-stage-passed (          stagesLeft -1 (dominates the next
 ///     a non-final stage passes;           stage's fan-out spawn:
 ///     Evaluating -> Evaluating,           -stageWeight + fanout <= -1;
-///     the predecessor's specification: line 832)
 ///                                         spawns r <= fanout running, so
 ///                                         -stageWeight + r <= -1 a
 ///                                         fortiori)
@@ -186,8 +180,8 @@
 ///   tolerated idempotently and change nothing):
 ///     task-done-duplicate (= 0), land-duplicate (= 0), settled (= 0).
 ///   the model task-done-duplicate's REACH, not its effect: task ids are
-///   unique across the ticket's whole history (sequential within ticket,
-///   the predecessor's specification: ), so a stale completion from an EARLIER
+///   unique across the ticket's whole history (sequential within the
+///   ticket), so a stale completion from an EARLIER
 ///   stage or incarnation no-ops BY IDENTITY — its id is already retired
 ///   into the record. Finitely many by fabric assumption; they cannot
 ///   cycle through distinct states, so termination is modulo this
@@ -207,11 +201,10 @@
 ///     operator-retry into Evaluating/Landing under RetryFree
 ///       (+<= rankEvaluating*rankWeight + maxStages*stageWeight + nTasks —
 ///        the Evaluating resume respawns the LOWEST stage's fan-out with
-///        the full stage digit, the predecessor's specification: escalation Retry: "a
-///        fresh eval fan-out")
+///        the full stage digit — a fresh eval fan-out)
 ///   Under the DEFAULT metering (RetryCharged) the churn set is the
-///   pre-work resume alone. RetryFree deliberately reproduces the predecessor's
-///   discovered operator-churn livelock as a
+///   pre-work resume alone. RetryFree deliberately reproduces a known
+///   operator-churn livelock as a
 ///   configuration, so the model can generate escalation traces under both
 ///   prices — the mc_chuggy_retryfree instance plus the model gate's
 ///   witness layer (the deterministic free-climb machine trace in
@@ -226,12 +219,10 @@
 ///                       bound — at most N_TICKETS arrivals ever. The arrival
 ///                       also fixes the ticket's eval PROGRAM, but a Draft's
 ///                       stage digit is 0, so the climb bound is unchanged.)
-///                       With Frozen and its unfreeze edit loop REMOVED
-///                       (the note: "Frozen removed. Draft -> Ready/
-///                       Blocked"), arrival is this set's ONLY climbing
-///                       member — the unbounded author edit loop left the
-///                       phase table entirely (content edits on a Draft are
-///                       below the table's grain).
+///                       Arrival is this set's ONLY climbing member: an
+///                       author's edit loop is not in the phase table at
+///                       all, because content edits on a Draft are below
+///                       its grain.)
 ///     ticket-revoked, desk-only (= 0: revoking an already-parked ticket —
 ///                       Escalated is rank 0, so nothing falls when no
 ///                       dependent gets parked by the cascade AND no member
@@ -256,9 +247,9 @@
 /// maximum runtime and a relaunch limit) and under default metering, any
 /// run with finitely many stutter and churn events performs FINITELY MANY
 /// ACTING STEPS PER TICKET: no ticket can be dispatched, reworked, evicted
-/// and resumed forever. That is exactly the class of defect the predecessor found and
-/// priced — the §5a gate-loop livelock and the §5b free-resume churn are
-/// both perpetual WORK, and the accounts are what kill them.
+/// and resumed forever. That is exactly the class of defect the accounts
+/// exist to kill: a gate-loop livelock and a free-resume churn are both
+/// perpetual WORK.
 ///
 /// THE FAIRNESS GAP — what this does NOT say, stated because the older
 /// wording did say it: descent bounds how many acting steps CAN happen; it
@@ -353,9 +344,8 @@ module chuggy_measure {
   /// job pays" for evaluator crashes — one account, no new machinery.
   /// TCancelled is the retirement
   /// mark for a task still RUNNING when its ticket is revoked mid-flight —
-  /// the model's lean form of the predecessor's specification: "Revoke closes
-  /// tasks" (revoke force-closes every pending task with a synthetic
-  /// resolution recording that the revoke, not a verdict, retired it).
+  /// revoke force-closes every pending task with a synthetic resolution
+  /// recording that the revoke, not a verdict, retired it.
   /// Only revoke produces it: every other retirement happens at a reduce,
   /// when the set is fully resolved.
   type TaskOutcome = TPassed | TFailed | TCancelled
@@ -395,16 +385,14 @@ module chuggy_measure {
   /// carries its own, because eval is data. The default, unanimous
   /// pass, is the default program's combinator
   /// (domain.qnt defaultProgram). CUnanimousPass is the
-  /// required-evaluator rule ("if every required evaluator in the stage
-  /// passed", the predecessor's specification) at chuggy's grain — the required/advisory split
-  /// is BELOW that grain (an advisory evaluator is one the stage's
-  /// combinator ignores), README notes the abstraction.
+  /// required-evaluator rule — every required evaluator in the stage
+  /// passed — at chuggy's grain. The required/advisory split is BELOW that
+  /// grain: an advisory evaluator is one the stage's combinator ignores.
   type Combinator = CUnanimousPass | CAnyPass
 
   /// One stage of a ticket's eval program: a task-set with its own
-  /// fan-out width and its own verdict combinator. Extracted from
-  /// the predecessor's specification: "the dispatcher creates one task per
-  /// evaluator in the lowest stage and fans them out in parallel" — a
+  /// fan-out width and its own verdict combinator: one task per evaluator
+  /// in the lowest stage, fanned out in parallel — a
   /// stage's width is its evaluator count, its combinator is the
   /// required-pass rule.
   type Stage = { fanout: int, combinator: Combinator }
@@ -429,23 +417,21 @@ module chuggy_measure {
   type ReworkPolicy = RWBudget(int)
 
   /// Operator-retry metering — configurable per deployment, default
-  /// charge. RetryFree reproduces the predecessor's discovered
-  /// livelock by configuration.
+  /// charge. RetryFree reproduces a known livelock by configuration.
   type RetryPricing = RetryCharged | RetryFree
 
   /// Where an operator Retry resumes a parked ticket. RNone when not parked —
   /// or parked with NO modeled resume: the dependency_revoked wall's only
   /// modeled exit is revoke (domain.qnt retryableIn), and stamping a
-  /// resume point on it would be a lie to the desk. RPending (
-  /// the Stalled merge) is the PRE-WORK resume flavor: back to the
+  /// resume point on it would be a lie to the desk. RPending is the
+  /// PRE-WORK resume flavor: back to the
   /// released waiting room (PPending, where Ready/Blocked re-derive),
   /// never to a pipeline phase — a pre-work park spent nothing and
   /// resumes to exactly where it left.
   type Resume = RNone | RPending | RWorking | REvaluating | RWrapUp
 
-  /// Why a ticket sits on the human desk. The wall VOCABULARY is carried from
-  /// the predecessor's explainer; the termination requirement names no
-  /// individual wall. The reason is
+  /// Why a ticket sits on the human desk. The termination requirement
+  /// names no individual wall; the reason is
   /// what distinguishes the parks: RsWorkFailed / RsReworkBudgetExhausted /
   /// RsWrapUpBudgetExhausted (Budgeted pricing only) / RsGasExhausted are
   /// the pipeline walls, and the PRE-WORK walls are RsRevalidationFailed
@@ -479,8 +465,7 @@ module chuggy_measure {
   ///     carries it structurally;
   ///   - `invalidated`: the environment's PER-ATTEMPT choice of whether
   ///     the target repo's default branch moved under the candidate — the
-  ///     ONLY reason a landing can fail (the predecessor's explainer; the predecessor's
-  ///     LConflictOrGateFail existed only while envActive). This is the
+  ///     ONLY reason a landing can fail. This is the
   ///     envActive standing rule honored: an explicitly NAMED nondet
   ///     event on the
   ///     trace, never a stored env flag — there is no per-repo "active"
@@ -566,8 +551,8 @@ module chuggy_measure {
     // across its whole history (nextTaskId below).
     tasks: Set[Task],
     // THE RETAINED TASK RECORD — the ticket's chronological task log
-    // (the predecessor's specification: "tasks form a chronological log ... never
-    // referencing each other; no task graph"), append-only: a task moves
+    // — tasks form a chronological log, never referencing each other, and
+    // there is no task graph. Append-only: a task moves
     // here, resolution settled, when its set retires (reduce, escalation,
     // or revoke — retireLive below), and once here it NEVER changes
     // (domain.qnt recordMonotone). This is "task records are first-class:
@@ -624,8 +609,8 @@ module chuggy_measure {
   /// Standing rule 3 (derive, don't store): the open-human-task flag IS a
   /// predicate over the phase — a desk task is open exactly while the ticket
   /// is parked on the desk, and PEscalated is THE parked phase.
-  /// (the predecessor stored the flag and proved the iff as an invariant; chuggy
-  /// derives it, so the invariant is by construction.) The trace-visible
+  /// (storing the flag would need the iff proved as an invariant; deriving
+  /// it makes the invariant hold by construction.) The trace-visible
   /// artifact is the "OpenHumanTask" effect string.
   ///
   /// PRevoked is deliberately NOT here: revocation is the author's
@@ -641,16 +626,14 @@ module chuggy_measure {
   /// (not a bare map) so the ticket-source shape stays open.  attached
   /// authoring here with no widening needed after all — tickets ARRIVE by
   /// growing the map's (dense, never-reused) id domain through the
-  /// `freshTicket` seam, and no  decider needed surgery; the record shape
-  /// stays open for later PRs. the model only the Ticket record (program,
-  /// record, task kinds), not Core.
+  /// `freshTicket` seam, and no decider needed surgery. The shape that
+  /// grew is the Ticket record (program, record, task kinds), not Core.
   type Core = { tickets: int -> Ticket }
 
   /// One observed ticket-phase transition, golden-trace shaped (standing rule
   /// 4: conformance from day one — the model emits, the implementation
   /// replays). from == to is a REAL row, not a degenerate one — the
-  /// stage advance is Evaluating -> Evaluating (the predecessor's specification:
-  /// line 832).
+  /// stage advance is Evaluating -> Evaluating.
   type Transition = { ticket: int, from: Phase, to: Phase }
 
   /// One decision's observable record, mirroring the golden-trace step
@@ -685,7 +668,7 @@ module chuggy_measure {
   // === The measure =========================================================
 
   /// The gate account's size under a pricing: Budgeted(n) grants n,
-  /// DeadlineOnly grants none (gas alone meters the gate loop — the predecessor's
+  /// DeadlineOnly grants none (gas alone meters the gate loop — the
   /// documented-livelock shape, kept as the branch to be priced on
   /// evidence).
   pure def wrapUpBudget(gp: WrapUpPricing): int =
@@ -721,9 +704,7 @@ module chuggy_measure {
   pure val rankWorking: int = rankEvaluating + 1
   /// The released waiting room (Ready/Blocked derive from it).
   pure val rankPending: int = rankWorking + 1
-  /// The ONLY authoring phase, the ladder's top — Frozen removed by the
-  /// notes ("Frozen removed. Draft -> Ready/Blocked"); release descends
-  /// 6 -> 5.
+  /// The ONLY authoring phase, the ladder's top; release descends 6 -> 5.
   pure val rankDraft: int = rankPending + 1
   /// The ladder's ceiling — the highest rank any phase takes (PDraft).
   /// microBound's multiplier is radix(rankCeiling): the
@@ -786,10 +767,8 @@ module chuggy_measure {
   /// Strict upper bound on micro:
   ///   micro <= rankCeiling*rankWeight + (rankWeight - 1)
   ///         < radix(rankCeiling)*rankWeight.
-  /// The multiplier is DERIVED from the ladder's ceiling — rankDraft = 5
-  /// removed Frozen (it was 6, multiplier 7, under
-  /// the taller ladder), and this definition re-derives rather than
-  /// restates it.
+  /// The multiplier is DERIVED from the ladder's ceiling rather than
+  /// restated, so a change to the rung set cannot leave it stale.
   pure def microBound(b: Bounds): int = radix(rankCeiling) * rankWeight(b)
 
   /// Within-cycle progress, lexicographic (rank, stagesLeft, runningCount).
@@ -848,8 +827,8 @@ module chuggy_measure {
   /// (tasksWellFormed keeps live ids contiguous above the record, so the
   /// appended run keeps record entry i at id firstTaskId + i). A task
   /// still RUNNING at retirement is force-closed as TSResolved(TCancelled)
-  /// — only revoke retires mid-flight sets (the predecessor's specification:
-  /// "Revoke closes tasks"); every reduce/escalation retirement is of a
+  /// — only revoke retires mid-flight sets; every reduce/escalation
+  /// retirement is of a
   /// fully-resolved set, so the TCancelled arm never fires there. A
   pure def retireLive(ticket: Ticket): Ticket =
     val start = firstTaskId + ticket.record.length()

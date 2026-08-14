@@ -115,7 +115,7 @@
 ///     merged twice (noDuplicateCycle violated) — while the domain
 ///     machine, which sees only the journaled history, stays green on
 ///     every invariant. The hazard is kept reproducible by
-///     CONFIGURATION of the step relation (the house pattern: the predecessor's
+///     CONFIGURATION of the step relation (the house pattern: the
 ///     livelock is a RetryFree instance; the double-spend is the
 ///     rstepHazard relation), with the deterministic expected-violation
 ///     runs in tests/chuggy_refinement_test.qnt as the gate.

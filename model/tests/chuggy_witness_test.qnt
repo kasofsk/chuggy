@@ -97,15 +97,15 @@
 ///     a guard-refusal pinned mid-trace (the second same-repo ticket's
 ///     dequeue REFUSED while the slot is held, enabled again the step the
 ///     slot frees) and BOTH success effects on one machine trace — the
-///     held WOk, then the direct completion (the
-///     §5e path rule, R3, witnessed) — plus the QUIET FAST-PATH as its
+///     held WOk, then the direct completion (the path rule, R3,
+///     witnessed) — plus the QUIET FAST-PATH as its
 ///     own witnessed run (direct-path reachability pinned against the
 ///     hoisted routing decider, the p3-mutant catcher);
 ///   - chuggy_witness_gate_deadline_test (deadline-only consts): the
 ///     eviction priced on the OTHER WrapUpPricing branch — two gate
 ///     failures metered by gas alone (wrapUpLeft identically 0) into the
-///     gas wall, the predecessor's §5a gate-loop shape reproduced on chuggy's machine
-///     with the deadline backstop doing exactly its job (R5);
+///     gas wall — the documented gate-loop shape reproduced on this
+///     machine, with the deadline backstop doing exactly its job (R5);
 /// (A ninth module, chuggy_witness_batch_test, witnessed the group half;
 /// the grouping removal deleted the machinery and this module with it.)
 /// Like the multi-repo module, none has a paired random probe: landing
@@ -825,8 +825,8 @@ module chuggy_witness_multirepo_test {
 /// candidate), the slot frees BY PHASE in the same step, and the second
 /// ticket dequeues QUIET into the fast-path direct squash (WOk) —
 /// BOTH success effects distinguished on one machine trace, each from its
-/// own path: the §5e divergence as a theorem, witnessed. The SECOND run
-/// (adversarial review, MAJOR 1) is the QUIET FAST-PATH as its own named
+/// own path: the divergence as a theorem, witnessed. The SECOND run is
+/// the QUIET FAST-PATH as its own named
 /// witnessed shape — direct-path reachability through decideDequeue's
 /// valid artifact on a solo trace where the lease NEVER opens: the
 /// deterministic catcher for a routing mutant (quiet re-routed into the
@@ -937,8 +937,8 @@ module chuggy_witness_gate_test {
         // THE WITNESSED REFUSAL (R4): while the slot is held, the second
         // same-repo ticket CANNOT draw the dequeue — including its
         // would-be-quiet fast-path (quietness is only checked AT the
-        // dequeue, the predecessor's specification: each dequeued job re-checks the
-        // fast-path). A doDequeue(2, _) here would disable the run.
+        // dequeue: each dequeued job re-checks the fast-path). A
+        // doDequeue(2, _) here would disable the run.
         not(wrapUpStartableIn(core, 2)),
         wrapUpStartable == Set(),
         not(leaseFreeIn(core, 1)),
@@ -1021,10 +1021,10 @@ module chuggy_witness_gate_test {
 /// mc_chuggy_deadline_only consts). The OTHER WrapUpPricing branch on a
 /// machine trace: two wrap-up failures metered by GAS ALONE (wrapUpLeft
 /// identically 0 — no gate account exists to spend) into the gas wall at
-/// the third — the predecessor's §5a gate-loop shape reproduced on chuggy's machine,
-/// with the required gas account doing exactly the backstop job the
-/// predecessor's finding said it must (the predecessor's explainer.2: without it, "the day
-/// never ends" and the queue behind the spinning ticket starves). Each
+/// the third — the documented gate-loop shape reproduced on this machine,
+/// with the required gas account doing exactly the backstop job it must:
+/// without it the day never ends, and the queue behind the spinning ticket
+/// starves. Each
 /// eviction is attributed {repo, invalidated: true}, and the final wall
 /// parks with resumeAt RWrapUp — re-ENQUEUE, not re-gate — unretryable
 /// at zero gas under RetryCharged (the permanently-parked corner, honest).
@@ -1121,7 +1121,7 @@ module chuggy_witness_gate_deadline_test {
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
-      // Gate failure #2: the loop spins on gas (1 -> 0) — the §5a shape.
+      // Gate failure #2: the loop spins on gas (1 -> 0).
       .then(doDequeue(1, true))
       .expect(allInvariants)
       .then(doGateResolve(1, WFailed))

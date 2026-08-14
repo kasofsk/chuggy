@@ -32,7 +32,7 @@ module mc_chuggy_budgeted {
   ).* from "../domain"
 }
 
-/// DeadlineOnly gate pricing: a landing failure costs gas alone — the predecessor's
+/// DeadlineOnly gate pricing: a landing failure costs gas alone — the
 /// unbudgeted gate loop, metered only by the (required) gas account.
 /// (The branch is named DeadlineOnly and means gas-only.)
 module mc_chuggy_deadline_only {
@@ -49,7 +49,7 @@ module mc_chuggy_deadline_only {
   ).* from "../domain"
 }
 
-/// RetryFree metering (the predecessor's the predecessor's findings operator churn, kept as a
+/// RetryFree metering (a documented operator churn, kept as a
 /// configuration): allInvariants must still HOLD here — free resumes are
 /// exactly the exempted CHURN arm of stepDescends — while the
 /// freeClimbNever witness must be VIOLATED (the model gate shows it via the

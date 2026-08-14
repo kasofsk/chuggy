@@ -12,16 +12,15 @@
 ///     climbers;
 ///   - effect-exclusivity at the landing boundary on a happy path AND a
 ///     duplicate-completion / duplicate-landing path;
-///   - every escalation wall carries its name (the predecessor-carried vocabulary), on
+///   - every escalation wall carries its name, on
 ///     both WrapUpPricing branches;
 ///   - both retry-metering branches.
 ///
 ///  additions (authoring lifecycle; gate: revoke cascades proved safe):
 ///   - arrival/release strictly descend where the descent table says, and
 ///     the AUTHORING climber (arrival) is pinned as a climber;
-///   - revoke from EVERY phase the transition table permits (
-///     47-48), with the desk-only flat cases pinned, and revocableIn false
-///     exactly on the absorbing terminals (lines 45-46);
+///   - revoke from EVERY live phase, with the desk-only flat cases
+///     pinned, and revocableIn false exactly on the absorbing terminals;
 ///   - the cascade end-to-end on a 3-ticket chain; unreleased deps block;
 ///     revoked never lands; revoke/cascade spend NOTHING.
 ///
@@ -46,18 +45,16 @@
 ///     IDENTITY (task ids are sequential within the ticket, never reused);
 ///   - task records are RETAINED: the per-ticket chronological log survives
 ///     reduces, escalations, and revoke (running tasks force-closed as
-///     TCancelled — the predecessor's specification "Revoke closes tasks");
-///   - PROGRAM-AS-DATA at machine level (the  combinator lesson
-///     generalized): two tickets in the SAME machine instance, identical but
+///     TCancelled, because a revoke closes tasks);
+///   - PROGRAM-AS-DATA at machine level: two tickets in the SAME machine
+///     instance, identical but
 ///     for their programs, decide differently — combinator and structure
 ///     both;
 ///   - validPrograms IS the arrival-refusal rule: the ill-formed programs
 ///     are not in it.
 ///
 /// Authoring-lifecycle coverage:
-///   - release goes Draft -> Pending directly; there are no freeze or
-///     unfreeze tests, because there is no Frozen phase (the deliberate
-///     deviation, recorded at decideRelease);
+///   - release goes Draft -> Pending directly;
 ///   - the revalidation park lands on PEscalated with reason + RPending
 ///     resume, and its operator resume — a
 ///     decideOpRetry flavor — is pinned FREE (both meterings) and CHURN;
@@ -68,16 +65,14 @@
 ///   - gas rename throughout (gasLeft, gas_exhausted, RsGasExhausted,
 ///     GAS; gasRequiredTest pins the required account);
 ///   - REWORK_POLICY = RWBudget(n) instantiates the rework policy;
-///   - the task lifecycle is the explicit TaskState sum: every  test
-///     survived with MECHANICAL updates only (wt/et build resolved states,
-///     wr/er build running ones) — the machine-behavior evidence that the
-///     notes' "task state machine" row changed structure, not behavior.
+///   - the task lifecycle is the explicit TaskState sum: wt/et build
+///     resolved states, wr/er build running ones.
 ///
 /// REPO ISOLATION (gate: the isolation invariants —
 /// design at domain.qnt's header):
 ///   - the wrapUpOutcomes draw rule pinned: a QUIET branch refuses
-///     WFailed (the structural refusal — the predecessor's "a valid artifact always
-///     lands cleanly" as the outcome set itself);
+///     WFailed (the structural refusal — a valid, uninvalidated artifact
+///     always commits cleanly, expressed as the outcome set itself);
 ///   - landing-boundary ATTRIBUTION pinned at decider grain, on a
 ///     repo-2 ticket so own-repo attribution is distinguishable from
 ///     repo-constant stamping: both successes, the wrap-up rework, and both
@@ -104,7 +99,7 @@
 /// WRAP-UP additions (the refinement layer — design, PROPOSED
 /// requirements R1-R7, and the severability map at domain.qnt's header and
 /// docs/reference/architecture.md):
-///   - THE PATH RULE pinned (R3, the §5e theorem at decider grain):
+///   - THE PATH RULE pinned (R3, at decider grain):
 ///     wrapUpOutcomes(false) is the WOk singleton (the skip
 ///     fast-path), wrapUpOutcomes(true) is {WOk, Failed} (the
 ///     gate ran) — quiet refuses failure AND the held promotion, moved
@@ -141,7 +136,7 @@ module chuggy_test {
     MAX_STAGES = 2, N_REPOS = 2
   ) as DD from "../domain"
 
-  // Free retry metering — the predecessor's the predecessor's findings churn, kept reproducible
+  // Free retry metering — a documented churn, kept reproducible
   // by configuration (machine-level coverage: mc_chuggy_retryfree).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
@@ -227,12 +222,12 @@ module chuggy_test {
 
   // === The happy path, decision by decision ================================
   // The path STARTS at authoring — the fleet is empty, ticket 1 arrives
-  // as a Draft (freshTicket seam) and is released (Draft -> Pending
-  // directly, no freeze step exists any more); ticket 2 arrives as a Draft
+  // as a Draft (freshTicket seam) and is released straight into Pending;
+  // ticket 2 arrives as a Draft
   // depending on 1 and stays unreleased throughout. ticket 1 carries
   // the DEFAULT program, and its task ids run 1..4 across the whole
-  // history (work 1,2 then eval-stage-0 3,4 — sequential within the ticket,
-  // the predecessor's specification: ).
+  // history (work 1,2 then eval-stage-0 3,4 — sequential within the
+  // ticket).
 
   pure val cEmpty: Core = { tickets: Map() }
   pure val dArr1 = DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 1, WExclusive(1))
@@ -303,8 +298,8 @@ module chuggy_test {
 
   /// RETAINED TASK RECORDS: at Done, ticket 1's chronological log holds
   /// its WHOLE anatomy — the work set then the eval stage, ids sequential,
-  /// outcomes settled and never overwritten (the predecessor's specification:
-  /// "tasks form a chronological log"). The single-stage default program's
+  /// outcomes settled and never overwritten — tasks form a chronological
+  /// log. The single-stage default program's
   /// history is byte-for-byte what the model would have produced
   /// had it retained anything — the compatibility story, now with
   /// provenance the golden traces can carry.
@@ -353,10 +348,9 @@ module chuggy_test {
   pure val cGated7 = dGateOpen7.post
   pure val dLandGated = DB::decideWrapUpResolve(cGated7, 1, WOk, true)
 
-  /// The two landing SUCCESS outcomes are distinct, named effects — the predecessor's
+  /// The two landing SUCCESS outcomes are distinct, named effects — the
   /// one conformance divergence, pinned from day one — and each comes
-  /// from ITS path and no
-  /// other (R3, the §5e theorem at decider grain): the held promotion
+  /// from ITS path and no other (R3, at decider grain): the held promotion
   /// advances the default ref onto the validated candidate; the quiet
   /// fast-path squash-merges directly. Same terminal, same exclusivity
   /// counter, different effect — determined by the path, not drawn.
@@ -500,7 +494,7 @@ module chuggy_test {
     mB(dEvalRework.post) < mB(cEvalFail)
   })
 
-  /// Budget wall (checked before the gas wall, the predecessor convention).
+  /// Budget wall, checked before the gas wall.
   pure val cReworkWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEvaluating, reworkLeft: 0, gasLeft: 2, tasks: oneFailedE0 }) }
   pure val dReworkWall = DB::decideEvalStageReduce(cReworkWall, 1)
@@ -522,9 +516,8 @@ module chuggy_test {
 
   // === : THE STAGED PROGRAM, walked stage by stage =====================
   // progStaged = [{1, unanimous}, {2, any}] on the reference instance. The
-  // walk mirrors the predecessor's specification: "Staged progression" edge by
-  // edge; the short-circuit mirrors the golden fixture
-  // the staged-eval short-circuit fixture (replayed by 
+  // walk mirrors staged progression edge by edge; the short-circuit
+  // mirrors the staged-eval short-circuit fixture (replayed by
   // tests/conformance/conformance_staged_eval_short_circuit_test.qnt,
   // whose header gates the staged content on exactly this model).
 
@@ -584,10 +577,10 @@ module chuggy_test {
   pure val dShort = DB::decideEvalStageReduce(dS0Fail.post, 1)
   pure val cAfterShort = dShort.post
 
-  /// SHORT-CIRCUIT ROUTES TO REWORK AND PAYS CORRECTLY (
-  /// the predecessor's specification: "the later stages are not created — they are skipped,
-  /// not failed, so no task records exist for them — and the eval reduce
-  /// proceeds immediately"): the failing stage buys a rework cycle at the
+  /// SHORT-CIRCUIT ROUTES TO REWORK AND PAYS CORRECTLY: the later stages
+  /// are not created — they are skipped, not failed, so no task records
+  /// exist for them, and the eval reduce proceeds immediately. The failing
+  /// stage buys a rework cycle at the
   /// SAME price as the flat case — exactly 1 rework + 1 gas, nothing else
   /// — and the record holds NO stage-1 task, ever.
   run shortCircuitRoutesToReworkTest = assert(and {
@@ -605,8 +598,8 @@ module chuggy_test {
     mB(cAfterShort) < mB(dS0Fail.post)
   })
 
-  /// The rework cycle RESTARTS FROM THE LOWEST STAGE (the predecessor's specification:
-  /// "stages are recomputed per cycle, never resumed mid-sequence"): after
+  /// The rework cycle RESTARTS FROM THE LOWEST STAGE — stages are
+  /// recomputed per cycle, never resumed mid-sequence. After
   /// the rework's work set passes, the next Evaluation spawns stage 0
   /// again — never stage 1.
   pure val dReworkW1 = DB::decideTaskDone(cAfterShort, 1, 4, VPass)
@@ -762,8 +755,8 @@ module chuggy_test {
     mB(dGateGasWall.post) < mB(cGateGasWall)
   })
 
-  /// DeadlineOnly branch: a landing failure spends gas alone (the predecessor's shape;
-  /// the required gas account is the only meter), and the gate-budget wall
+  /// DeadlineOnly branch: a landing failure spends gas alone (the required
+  /// gas account is the only meter), and the gate-budget wall
   /// can never be the reason.
   pure val cGateD: Core = { tickets: Map(1 -> { ...DD::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PWrapUpHolding, gasLeft: 2 }) }
@@ -796,9 +789,8 @@ module chuggy_test {
   pure val dPark = DB::decideRevalFail(cFresh, 1)
 
   /// … and its operator resume — decideOpRetry's
-  /// RPending flavor (the notes triage's resume-flavor row) — is the CHURN
-  /// set's canonical member: the measure CLIMBS and NOTHING is charged
-  /// (nothing was ever spent; the pricing survived the merge) — pinned
+  /// RPending flavor — is the CHURN set's canonical member: the measure
+  /// CLIMBS and NOTHING is charged, because nothing was ever spent — pinned
   /// here so the descent claim's exemption list stays honest.
   pure val dParkResume = DB::decideOpRetry(dPark.post, 1)
 
@@ -840,8 +832,9 @@ module chuggy_test {
   })
 
   /// Charged retry metering, the default: every PIPELINE resume
-  /// pays 1 gas, so those retries descend the measure — the predecessor's §5b livelock
-  /// priced away. (The pre-work RPending flavor stays free either way —
+  /// pays 1 gas, so those retries descend the measure — the free-resume
+  /// livelock priced away. (The pre-work RPending flavor stays free
+  /// either way —
   /// pinned above.)
   pure val escLanding: Ticket = { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEscalated, resumeAt: RWrapUp, reason: RsGasExhausted,
@@ -866,9 +859,8 @@ module chuggy_test {
   })
 
   /// The Evaluating resume is A FRESH FAN-OUT OF THE LOWEST STAGE
-  /// (the predecessor's specification: escalation Retry: "re-enter Evaluation ...
-  /// with a fresh eval fan-out"; §3.3: stages are never resumed
-  /// mid-sequence) — new task ids, the failed history untouched in the
+  /// — re-enter evaluation with a fresh eval fan-out, stages never resumed
+  /// mid-sequence — new task ids, the failed history untouched in the
   /// record.
   pure val escEval: Ticket = { ...DB::freshTicket(Set(), progStaged, 1, WExclusive(1)),
     phase: PEscalated, resumeAt: REvaluating, reason: RsReworkBudgetExhausted,
@@ -889,7 +881,7 @@ module chuggy_test {
   })
 
   /// Free retry metering: a resume into Landing charges nothing and the
-  /// measure CLIMBS — the CHURN set's other member, the predecessor's the predecessor's findings
+  /// measure CLIMBS — the CHURN set's other member, a documented churn
   /// kept reproducible by configuration; the Working resume still pays
   /// (entry to Working always meters — standing rule 2).
   pure val cEscF: Core = { tickets: Map(1 -> escLanding) }
@@ -931,13 +923,10 @@ module chuggy_test {
     mB(cA2) > mB(cA1)
   })
 
-  /// Release strictly descends (Draft -> Pending, rank 5 -> 4 — the
-  /// descent-table row for the predecessor's transition table), golden-trace shaped, and
-  /// the derived waiting room splits it correctly on landing.
-  /// there is no freeze/unfreeze pair to test any more — "Frozen removed.
-  /// Draft -> Ready/Blocked" (the deliberate deviation recorded at
-  /// decideRelease) — so release is authoring's only phase edge after
-  /// arrival, and arrival is the AUTHORING set's only climber (pinned in
+  /// Release strictly descends (Draft -> Pending, rank 5 -> 4), golden-trace
+  /// shaped, and the derived waiting room splits it correctly on landing.
+  /// Release is authoring's only phase edge after arrival, and arrival is
+  /// the AUTHORING set's only climber (pinned in
   /// arrivalTest).
   run releaseDescendsTest = assert(and {
     dRelease.rec.label == "ticket-released",
@@ -956,10 +945,10 @@ module chuggy_test {
     DB::isReadyIn(DB::decideRelease(c8, 2).post, 2)       // Done dep: Ready
   })
 
-  // === Revoke, from every phase the predecessor table permits ===============
-  // Table lines 47-48: `(_, Revoked) => true` — every non-terminal. Eight
+  // === Revoke, from every live phase =======================================
+  // Every non-terminal may be revoked. Eight
   // single-ticket fixtures: one per live phase (Draft, Pending, Working,
-  // Evaluating, Landing — Frozen is gone, the notes deviation) and all
+  // Evaluating, Landing) and all
   // THREE desk-reason flavors of the one parked phase (post-work wall,
   // pre-work revalidation, cascade wall) — the desk fixtures are the
   // measure-FLAT cases (AUTHORING set), every live-rank phase must
@@ -1025,10 +1014,10 @@ module chuggy_test {
 
   /// Revoke RETAINS the task record — "Revoked runs nothing" is
   /// about the live set, not the log. A mid-flight revoke force-closes the
-  /// still-running work tasks as TCancelled (the predecessor's specification:
-  /// "Revoke closes tasks": a synthetic resolution recording that the
-  /// revoke, not a verdict, retired them); already-resolved outcomes are
-  /// preserved verbatim (jEval's mixed stage). Provenance survives the
+  /// still-running work tasks as TCancelled — a synthetic resolution
+  /// recording that the revoke, not a verdict, retired them;
+  /// already-resolved outcomes are
+  /// preserved unchanged (jEval's mixed stage). Provenance survives the
   /// author's settlement.
   run revokeRetainsRecordTest = assert(and {
     revokeOne(jWork).post.tickets.get(1).record ==
@@ -1057,8 +1046,7 @@ module chuggy_test {
     mOneAfter(jParkDep) == mOne(jParkDep)
   })
 
-  /// Table lines 45-46, `(Done | Revoked, Revoked) => false`: the
-  /// absorbing terminals are exactly the unrevocable phases.
+  /// The absorbing terminals are exactly the unrevocable phases.
   run revocableExactlyNonTerminalTest = assert(and {
     DB::revocableIn({ tickets: Map(1 -> jDraft) }, 1),
     DB::revocableIn({ tickets: Map(1 -> jEsc) }, 1),
@@ -1147,8 +1135,8 @@ module chuggy_test {
 
   /// THE DEPTH-1 GUARD (R4): with repo 1's slot held, every same-repo
   /// dequeue is refused — including the would-be-quiet one (quietness is
-  /// only checked AT the dequeue, the predecessor's specification: "each dequeued job
-  /// re-checks the skip fast-path against the then-current HEAD") — while
+  /// only checked AT the dequeue: each dequeued job re-checks the
+  /// fast-path against the then-current state) — while
   /// repo 2's dequeue stays enabled: serialization is per-repo, gates are
   /// independent. The occupant itself is not enqueued (PWrapUpHolding is not
   /// PWrapUp), and a free repo's enqueued tickets are all dequeue-able
@@ -1216,10 +1204,9 @@ module chuggy_test {
 
   /// EVERY arm of decideWrapUpResolve stamps the attempt's attribution — the
   /// ticket's OWN repo (repo 2 here: a constant-stamping mutant would say
-  /// 1) plus the environment's invalidated choice — while the effect
-  /// vocabulary and pricing stay byte-identical to the pre-merge-queue
-  /// decider (the existing gate tests above still pin the account deltas
-  /// verbatim). Combos are the PATH-legal ones only (wrapUpOutcomes):
+  /// 1) plus the environment's invalidated choice, while the effect
+  /// vocabulary and pricing stay exactly as the gate tests above pin them.
+  /// Combos are the PATH-legal ones only (wrapUpOutcomes):
   /// quiet+WOk off the queue, moved+WOk/Failed out of
   /// the lease.
   /// NOTE: the gas-wall conjuncts below are THE guard for that landing

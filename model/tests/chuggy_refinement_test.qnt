@@ -422,10 +422,10 @@ module chuggy_refinement_hazard_test {
         allDomainInvariants
       })
 
-  /// THE REWORK DOUBLE-SPEND — the flows-analysis scenario, verbatim
-  /// shape: the rework decision's Job launches, the crash eats both the
-  /// journal write AND the charge (recovery finds the accounts full),
-  /// and the re-decided rework charges once for two Jobs in the world.
+  /// THE REWORK DOUBLE-SPEND: the rework decision's task fan-out launches,
+  /// the crash eats both the journal write AND the charge (recovery finds
+  /// the accounts full), and the re-decided rework charges once for two
+  /// fan-outs in the world.
   run hazardReworkDoubleSpendDeterministicTest =
     rinit
       .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
