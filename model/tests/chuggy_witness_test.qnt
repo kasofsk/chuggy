@@ -1,10 +1,10 @@
-/// DETERMINISTIC REACHABILITY WITNESSES (the witness-hardening PR) — the
+/// DETERMINISTIC REACHABILITY WITNESSES — the
 /// LOAD-BEARING layer of check.sh Stage 9b's two-layer witness policy.
 ///
 /// WHY THIS FILE EXISTS: Stage 9b's four expected-violation probes
 /// (freeClimbNever / cascadeParkNever / stageAdvanceNever)
 /// were pinned-seed random runs, and every PR that changes the machine's
-/// nondet structure kills the seeds — the citations PR was the FOURTH
+/// nondet structure kills the seeds was the FOURTH
 /// consecutive re-pin of the freeClimbNever seed, each dragging a paired
 /// allInvariants run that had to move in lock-step. Seeds prove trace-SPACE
 /// facts; the four shapes are trace facts, and a trace fact deserves a
@@ -64,7 +64,7 @@
 /// mirrors. (The count was stale at seven between the grouping removal,
 /// which deleted the batch module, and the accepted-wait module below.)
 ///
-/// THE MULTI-REPO PR (roadmap PR 4) extends THIS layer first, per its own
+/// THE MULTI-REPO PR extends THIS layer first, per its own
 /// convention: the machine's two NEW nondet draws — the authored repo pick
 /// at arrival and the environment's per-attempt invalidated choice at the
 /// landing — each get deterministic runs exercising BOTH branches
@@ -81,7 +81,7 @@
 /// dense — unlike the carry), so the deterministic runs alone carry the
 /// gate.
 ///
-/// THE WRAP-UP (roadmap PR 5) extends this layer first,
+/// THE WRAP-UP extends this layer first,
 /// per the convention: the landing surface RESTRUCTURED (the old one-step
 /// `land` became the dequeue `wrapUpStart` — quiet arm fast-pathing the
 /// direct completion, moved arm opening the depth-1 gate — plus the gated

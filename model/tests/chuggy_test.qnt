@@ -160,7 +160,7 @@ module chuggy_test {
   ) as DO from "../domain"
 
   // A GASLESS graph — invalid by charter §2 (economy/deadline; the
-  // account is named gas since the notes PR, the requirement unchanged).
+  // account is named gas, the requirement unchanged).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 0,
     WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
@@ -227,7 +227,7 @@ module chuggy_test {
   })
 
   // === The happy path, decision by decision ================================
-  // PR 2: the path STARTS at authoring — the fleet is empty, ticket 1 arrives
+  // The path STARTS at authoring — the fleet is empty, ticket 1 arrives
   // as a Draft (freshTicket seam) and is released (notes PR: Draft -> Pending
   // directly, no freeze step exists any more); ticket 2 arrives as a Draft
   // depending on 1 and stays unreleased throughout. PR 3: ticket 1 carries
@@ -257,7 +257,7 @@ module chuggy_test {
   pure val c6 = dEval2.post
   pure val dEvalReduce = DB::decideEvalStageReduce(c6, 1)  // final (only) stage passes
   pure val c7 = dEvalReduce.post
-  // The happy path lands QUIET (merge-queue PR): the solo ticket's branch
+  // The happy path lands QUIET: the solo ticket's branch
   // never moved, so the dequeue takes the skip fast-path — gate skipped,
   // direct completion, one step off the queue (wrapUpOutcomes(false)'s one
   // element; the held-lease completion path is walked in the lease suite
@@ -302,7 +302,7 @@ module chuggy_test {
     dEvalReduce.rec.effects == ["EnqueueWrapUp"]
   })
 
-  /// RETAINED TASK RECORDS (PR 3): at Done, ticket 1's chronological log holds
+  /// RETAINED TASK RECORDS: at Done, ticket 1's chronological log holds
   /// its WHOLE anatomy — the work set then the eval stage, ids sequential,
   /// outcomes settled and never overwritten (chuggernaut spec.md §1.2:
   /// "tasks form a chronological log"). The single-stage default program's
@@ -319,7 +319,7 @@ module chuggy_test {
     c4.tickets.get(1).tasks == Set(er(3, 0), er(4, 0))
   })
 
-  /// IDENTITY ACCOUNTING (PR 3 defense-in-depth, domain.qnt idsAccounted):
+  /// IDENTITY ACCOUNTING:
   /// along the fully decider-built happy path the ghost spawn counter
   /// tracks every fan-out and always equals retired + live — the equality
   /// a retirement-dropping mutant would break. (The machine invariant
@@ -356,7 +356,7 @@ module chuggy_test {
 
   /// The two landing SUCCESS outcomes are distinct, named effects — v1's
   /// one conformance divergence, pinned from day one (charter §2 landing
-  /// row) — and since the merge-queue PR each comes from ITS path and no
+  /// row) — and each comes from ITS path and no
   /// other (R3, the §5e theorem at decider grain): the held promotion
   /// advances the default ref onto the validated candidate; the quiet
   /// fast-path squash-merges directly. Same terminal, same exclusivity
@@ -421,7 +421,7 @@ module chuggy_test {
     mB(DB::decideTaskDone(c2, 1, 1, VFail).post) == mB(c2)
   })
 
-  /// STALE-STAGE / STALE-INCARNATION completions no-op BY IDENTITY (PR 3):
+  /// STALE-STAGE / STALE-INCARNATION completions no-op BY IDENTITY:
   /// ids are sequential within the ticket and never reused, so a completion
   /// for a task retired into the record — here work task 1 (an earlier
   /// incarnation) and eval task 3 delivered AFTER the eval stage retired —
@@ -458,7 +458,7 @@ module chuggy_test {
   /// no same-cycle retry branch to take: below-cycle retries are the
   /// fabric's trusted backoffLimit (charter §2 fabric row) and modeling
   /// them is a §2 non-goal ("no retry machinery below the cycle").
-  /// PR 3: the failed set is RETIRED, outcomes intact — the record shows
+  /// The failed set is RETIRED, outcomes intact — the record shows
   /// WHICH task failed, provenance the desk can read.
   pure val cWorkFail: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PWorking, gasLeft: 2, tasks: oneFailedW }) }
@@ -669,7 +669,7 @@ module chuggy_test {
     mB(DB::decideTaskDone(cS1, 1, 3, VFail).post) == mB(cS1)
   })
 
-  // === PROGRAM-AS-DATA at machine level (the PR 1 lesson generalized) ======
+  // === PROGRAM-AS-DATA at machine level ======
   // ONE machine instance (DB), two tickets identical but for the program on
   // their record: different decisions. PR 1-2 needed a separate machine
   // instantiation (a machine-wide combinator parameter) to show this; the
@@ -738,7 +738,7 @@ module chuggy_test {
     dGateRework.post.tickets.get(1).phase == PWorking,
     dGateRework.post.tickets.get(1).wrapUpLeft == 0,
     dGateRework.post.tickets.get(1).gasLeft == 1,
-    // PR 3: the wrap-up rework's work set is a fresh incarnation at fresh ids.
+    // The wrap-up rework's work set is a fresh incarnation at fresh ids.
     dGateRework.post.tickets.get(1).tasks == Set(wr(1), wr(2)),
     mB(dGateRework.post) < mB(cGateB)
   })
@@ -788,7 +788,7 @@ module chuggy_test {
   // === The human desk: parks, retries, and the metering parameter ==========
 
   /// Pre-work invalidation parks the ticket (rank 4 -> 0: descends, free) on
-  /// PEscalated — the notes PR's one parked phase — with the pre-work
+  /// PEscalated's one parked phase — with the pre-work
   /// wall's reason AND resume point (RPending: back to Pending, never to a
   /// pipeline phase, because nothing pipeline ever ran) …
   /// (PR 2: freshTicket births a Draft, so the RELEASED fixture overrides
@@ -866,7 +866,7 @@ module chuggy_test {
     mB(dRetryChargedWork.post) < mB({ tickets: Map(1 -> escWorking) })
   })
 
-  /// PR 3: the Evaluating resume is A FRESH FAN-OUT OF THE LOWEST STAGE
+  /// The Evaluating resume is A FRESH FAN-OUT OF THE LOWEST STAGE
   /// (chuggernaut spec.md §1.2 escalation Retry: "re-enter Evaluation ...
   /// with a fresh eval fan-out"; §3.3: stages are never resumed
   /// mid-sequence) — new task ids, the failed history untouched in the
@@ -910,7 +910,7 @@ module chuggy_test {
   // ==========================================================================
 
   /// Arrival through the freshTicket seam: dense ids, born a Draft with FULL
-  /// accounts, its authored PROGRAM on the record (PR 3) and an empty task
+  /// accounts, its authored PROGRAM on the record and an empty task
   /// log, CreateDraft effect, no phase transition (a birth, not an edge) —
   /// and the measure CLIMBS by the fresh Draft's whole ticketMeasure: the
   /// AUTHORING set's arrival member, pinned as a climber so the
@@ -992,7 +992,7 @@ module chuggy_test {
     tasks: spawnTasks(TKWork, 1, 2) }
   pure val jEval: Ticket = { ...jDraft, phase: PEvaluating, tasks: mixedE0 }
   pure val jLand: Ticket = { ...jDraft, phase: PWrapUp }
-  /// Merge-queue PR: revoke from the OCCUPIED GATE — the slot frees by
+  /// Revoke from the OCCUPIED GATE — the slot frees by
   /// phase (derive-don't-store: leaseFreeIn is true of the post-state with
   /// no cleanup step anywhere).
   pure val jGated: Ticket = { ...jDraft, phase: PWrapUpHolding }
@@ -1024,7 +1024,7 @@ module chuggy_test {
     DB::leaseFreeIn(revokeOne(jGated).post, 1)
   })
 
-  /// PR 3: revoke RETAINS the task record — "Revoked runs nothing" is
+  /// Revoke RETAINS the task record — "Revoked runs nothing" is
   /// about the live set, not the log. A mid-flight revoke force-closes the
   /// still-running work tasks as TCancelled (chuggernaut spec.md §1.2
   /// "Revoke closes tasks": a synthetic resolution recording that the
@@ -1077,7 +1077,7 @@ module chuggy_test {
     c8.tickets.get(1).completions == 1
   })
 
-  // === THE CASCADE, end-to-end on a 3-ticket chain (the PR 2 gate) ============
+  // === THE CASCADE, end-to-end on a 3-ticket chain ============
   // 1 <- 2 <- 3: ticket 1 released, ticket 2 released behind it, ticket 3 still a
   // Draft behind 2. Revoking 1 must — in ONE atomic decision — settle 1
   // (no task) and park BOTH transitive dependents with their own
@@ -1094,7 +1094,7 @@ module chuggy_test {
   run cascadeEndToEndTest = assert(and {
     dCascade.rec.label == "ticket-revoked",
     // One StepRecord, ascending: the revoke then both parks — atomic.
-    // Notes PR: the parks land on PEscalated, the one parked phase.
+    // The parks land on PEscalated, the one parked phase.
     dCascade.rec.transitions == [
       { ticket: 1, from: PPending, to: PRevoked },
       { ticket: 2, from: PPending, to: PEscalated },
@@ -1277,7 +1277,7 @@ module chuggy_test {
     dCascade.rec.landing == WONone,
     dWorkFail.rec.landing == WONone,
     dEvalGasWall.rec.landing == WONone,
-    // The gate OPEN resolves no attempt (merge-queue PR): the moved
+    // The gate OPEN resolves no attempt: the moved
     // choice it encoded surfaces on the RESOLUTION's attribution.
     dGateOpen7.rec.landing == WONone,
     DB::decideCompleteDuplicate(c8, 1).rec.landing == WONone

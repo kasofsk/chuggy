@@ -4,12 +4,12 @@
 /// RetryFree instance so the operator-churn exemption in stepDescends is
 /// exercised by a machine run, not just by pure unit tests.
 ///
-/// PR 2: every instance runs the AUTHORING actions — the fleet starts
+/// Every instance runs the AUTHORING actions — the fleet starts
 /// empty and tickets arrive as Drafts, with N_TICKETS read as the ARRIVAL BOUND
 /// (kept small so the grown state space stays small: arrivals and revoke
 /// multiply the branching).
 ///
-/// PR 3: every instance runs WITH PROGRAMS ENABLED — MAX_STAGES = 2, so
+/// Every instance runs WITH PROGRAMS ENABLED — MAX_STAGES = 2, so
 /// arrivals draw nondet from ALL well-formed eval programs (both lengths,
 /// both combinators, every fan-out in 1..N_TASKS: 20 programs at these
 /// bounds; each stage carries its own combinator — eval is data on the
@@ -29,9 +29,9 @@
 /// flavor), so the Stage 9b probe seeds were re-examined against the new
 /// nondet structure (forensics in scripts/check.sh).
 ///
-/// CITATIONS PR: every instance runs WITH CITATIONS ENABLED —
+/// Every instance runs WITH CITATIONS ENABLED —
 ///
-/// MULTI-REPO PR (roadmap PR 4): every instance runs WITH REPOS ENABLED —
+/// Every instance runs WITH REPOS ENABLED —
 /// N_REPOS = 2, the smallest universe where per-repo attribution is
 /// distinguishable from global attribution. Arrivals draw the ticket's
 /// target repo (a third authored nondet draw) and every landing attempt
@@ -41,10 +41,10 @@
 /// quietRepoLandsCleanly, and reposWellFormed. The two new draws changed
 /// the simulator's nondet structure YET AGAIN — every 9b-RND seed
 /// re-examined; forensics in scripts/check.sh (warn-only since the
-/// witness-hardening PR: the deterministic layer, including the new
+/// The deterministic layer, including the new
 /// multi-repo witness module, is the gate).
 ///
-/// MERGE-QUEUE + LANDING PR (roadmap PR 5): every instance runs WITH THE
+/// Every instance runs WITH THE
 /// GATE ENABLED — no new const (occupancy is a phase). The nondet surface
 /// changed AGAIN: the old `land` action (one draw of moved + one of
 /// outcome) became `wrapUpStart` (dequeue: a moved draw whose quiet arm
