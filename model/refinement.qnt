@@ -6,7 +6,7 @@
 /// discharged: the runtime shape is modeled AS a machine and proved to
 /// refine the domain machine it embeds.
 ///
-/// It also answers the one v1-review note the triage filed against this
+/// It also answers the one the predecessor-review note the triage filed against this
 /// PR (docs/chuggy-notes-triage.md, "already true" table, verbatim: "how
 /// do decision events flow to consumers / executors that apply their
 /// side effects"): decision events ARE journal entries. The actor's
@@ -121,7 +121,7 @@
 ///     merged twice (noDuplicateCycle violated) — while the domain
 ///     machine, which sees only the journaled history, stays green on
 ///     every invariant. The hazard is kept reproducible by
-///     CONFIGURATION of the step relation (the house pattern: v1's
+///     CONFIGURATION of the step relation (the house pattern: the predecessor's
 ///     livelock is a RetryFree instance; the double-spend is the
 ///     rstepHazard relation), with the deterministic expected-violation
 ///     runs in tests/chuggy_refinement_test.qnt as the gate.

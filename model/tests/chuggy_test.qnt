@@ -12,26 +12,26 @@
 ///     climbers;
 ///   - effect-exclusivity at the landing boundary on a happy path AND a
 ///     duplicate-completion / duplicate-landing path;
-///   - every escalation wall carries its name (v1-carried vocabulary), on
+///   - every escalation wall carries its name (the predecessor-carried vocabulary), on
 ///     both WrapUpPricing branches;
 ///   - both retry-metering branches (charter §2 op-retry row).
 ///
 ///  additions (authoring lifecycle; gate: revoke cascades proved safe):
 ///   - arrival/release strictly descend where the descent table says, and
 ///     the AUTHORING climber (arrival) is pinned as a climber;
-///   - revoke from EVERY phase the v1 table permits (table.qnt lines
+///   - revoke from EVERY phase the transition table permits (
 ///     47-48), with the desk-only flat cases pinned, and revocableIn false
 ///     exactly on the absorbing terminals (lines 45-46);
 ///   - the cascade end-to-end on a 3-ticket chain; unreleased deps block;
 ///     revoked never lands; revoke/cascade spend NOTHING.
 ///
 ///  additions (task-records depth; gate: phase-outcome combinators
-/// pinned by the eval vocabulary EXTRACTED from chuggernaut — spec.md §3.3
+/// pinned by the eval vocabulary
 /// staged evaluation, §1.2 task records, and the golden fixture
 /// staged_eval_short_circuit.yaml; standing in until the intake
 /// `eval/vocabulary` answer confirms or overrides it):
 ///   - a two-stage program walks stage-by-stage: the advance is an
-///     Evaluating -> Evaluating step (spec.md §2.1 line 832) that STRICTLY
+///     Evaluating -> Evaluating step that STRICTLY
 ///     DESCENDS (the new stage digit dominates the next fan-out);
 ///   - a failing stage SHORT-CIRCUITS into the existing rework economy —
 ///     pays exactly 1 rework + 1 gas, the later stage's tasks are NEVER
@@ -46,7 +46,7 @@
 ///     IDENTITY (task ids are sequential within the ticket, never reused);
 ///   - task records are RETAINED: the per-ticket chronological log survives
 ///     reduces, escalations, and revoke (running tasks force-closed as
-///     TCancelled — spec.md §1.2 "Revoke closes tasks");
+///     TCancelled — the predecessor's specification "Revoke closes tasks");
 ///   - PROGRAM-AS-DATA at machine level (the  combinator lesson
 ///     generalized): two tickets in the SAME machine instance, identical but
 ///     for their programs, decide differently — combinator and structure
@@ -76,7 +76,7 @@
 /// REPO ISOLATION (gate: the isolation invariants —
 /// design at domain.qnt's header):
 ///   - the wrapUpOutcomes draw rule pinned: a QUIET branch refuses
-///     WFailed (the structural refusal — v1's "a valid artifact always
+///     WFailed (the structural refusal — the predecessor's "a valid artifact always
 ///     lands cleanly" as the outcome set itself);
 ///   - landing-boundary ATTRIBUTION pinned at decider grain, on a
 ///     repo-2 ticket so own-repo attribution is distinguishable from
@@ -141,7 +141,7 @@ module chuggy_test {
     MAX_STAGES = 2, N_REPOS = 2
   ) as DD from "../domain"
 
-  // Free retry metering — v1's model-status §5b churn, kept reproducible
+  // Free retry metering — the predecessor's the predecessor's findings churn, kept reproducible
   // by configuration (machine-level coverage: mc_chuggy_retryfree).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
@@ -196,7 +196,7 @@ module chuggy_test {
 
   // Programs used throughout. progU2 is exactly DB::defaultProgram (the
   // charter's unanimous single-stage default — the  compatibility
-  // shape, chuggernaut spec.md §3.3: "a job whose evaluators all share one
+  // shape, the predecessor's specification: "a job whose evaluators all share one
   // stage (the default) is byte-for-byte the single-fan-out behavior").
   pure val progU2: List[Stage] = [{ fanout: 2, combinator: CUnanimousPass }]
   pure val progA2: List[Stage] = [{ fanout: 2, combinator: CAnyPass }]
@@ -233,7 +233,7 @@ module chuggy_test {
   // depending on 1 and stays unreleased throughout. ticket 1 carries
   // the DEFAULT program, and its task ids run 1..4 across the whole
   // history (work 1,2 then eval-stage-0 3,4 — sequential within the ticket,
-  // chuggernaut spec.md §1.2).
+  // the predecessor's specification: ).
 
   pure val cEmpty: Core = { tickets: Map() }
   pure val dArr1 = DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 1, WExclusive(1))
@@ -304,7 +304,7 @@ module chuggy_test {
 
   /// RETAINED TASK RECORDS: at Done, ticket 1's chronological log holds
   /// its WHOLE anatomy — the work set then the eval stage, ids sequential,
-  /// outcomes settled and never overwritten (chuggernaut spec.md §1.2:
+  /// outcomes settled and never overwritten (the predecessor's specification:
   /// "tasks form a chronological log"). The single-stage default program's
   /// history is byte-for-byte what the model would have produced
   /// had it retained anything — the compatibility story, now with
@@ -354,7 +354,7 @@ module chuggy_test {
   pure val cGated7 = dGateOpen7.post
   pure val dLandGated = DB::decideWrapUpResolve(cGated7, 1, WOk, true)
 
-  /// The two landing SUCCESS outcomes are distinct, named effects — v1's
+  /// The two landing SUCCESS outcomes are distinct, named effects — the predecessor's
   /// one conformance divergence, pinned from day one (charter §2 landing
   /// row) — and each comes from ITS path and no
   /// other (R3, the §5e theorem at decider grain): the held promotion
@@ -501,7 +501,7 @@ module chuggy_test {
     mB(dEvalRework.post) < mB(cEvalFail)
   })
 
-  /// Budget wall (checked before the gas wall, v1 convention).
+  /// Budget wall (checked before the gas wall, the predecessor convention).
   pure val cReworkWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEvaluating, reworkLeft: 0, gasLeft: 2, tasks: oneFailedE0 }) }
   pure val dReworkWall = DB::decideEvalStageReduce(cReworkWall, 1)
@@ -523,9 +523,9 @@ module chuggy_test {
 
   // === : THE STAGED PROGRAM, walked stage by stage =====================
   // progStaged = [{1, unanimous}, {2, any}] on the reference instance. The
-  // walk mirrors chuggernaut spec.md §3.3 "Staged progression" edge by
+  // walk mirrors the predecessor's specification: "Staged progression" edge by
   // edge; the short-circuit mirrors the golden fixture
-  // staged_eval_short_circuit.yaml (replayed for v1 by specs/chuggernaut/
+  // the staged-eval short-circuit fixture (replayed by 
   // tests/conformance/conformance_staged_eval_short_circuit_test.qnt,
   // whose header gates the staged content on exactly this model).
 
@@ -539,7 +539,7 @@ module chuggy_test {
   // Stage 0's one task passes.
   pure val dS0Done = DB::decideTaskDone(cS0, 1, 3, VPass)
   // THE ADVANCE: stage 0 passed, stage 1 remains -> Evaluating ->
-  // Evaluating (chuggernaut spec.md §2.1 line 832), next fan-out spawns.
+  // Evaluating, next fan-out spawns.
   pure val dAdvance = DB::decideEvalStageReduce(dS0Done.post, 1)
   pure val cS1 = dAdvance.post
   // Stage 1 (CAnyPass, fan-out 2): one pass, one fail -> stage passes.
@@ -585,8 +585,8 @@ module chuggy_test {
   pure val dShort = DB::decideEvalStageReduce(dS0Fail.post, 1)
   pure val cAfterShort = dShort.post
 
-  /// SHORT-CIRCUIT ROUTES TO REWORK AND PAYS CORRECTLY (chuggernaut
-  /// spec.md §3.3: "the later stages are not created — they are skipped,
+  /// SHORT-CIRCUIT ROUTES TO REWORK AND PAYS CORRECTLY (
+  /// the predecessor's specification: "the later stages are not created — they are skipped,
   /// not failed, so no task records exist for them — and the eval reduce
   /// proceeds immediately"): the failing stage buys a rework cycle at the
   /// SAME price as the flat case — exactly 1 rework + 1 gas, nothing else
@@ -606,7 +606,7 @@ module chuggy_test {
     mB(cAfterShort) < mB(dS0Fail.post)
   })
 
-  /// The rework cycle RESTARTS FROM THE LOWEST STAGE (spec.md §3.3:
+  /// The rework cycle RESTARTS FROM THE LOWEST STAGE (the predecessor's specification:
   /// "stages are recomputed per cycle, never resumed mid-sequence"): after
   /// the rework's work set passes, the next Evaluation spawns stage 0
   /// again — never stage 1.
@@ -648,7 +648,7 @@ module chuggy_test {
   /// eval/evaluator-failure): evaluator-infrastructure death is a TFailed
   /// INSIDE the stage — indistinguishable at the machine's grain from a
   /// failed verdict, deliberately (one account, no new machinery; the
-  /// chuggernaut distinction — infra failures escalate immediately, §3.3 —
+  /// distinction — infra failures escalating immediately —
   /// is a README-noted question for the intake confirmation, not silently
   /// adopted). The stage short-circuits and the TICKET's accounts drain:
   /// exactly 1 rework + 1 gas, same as any product failure.
@@ -763,7 +763,7 @@ module chuggy_test {
     mB(dGateGasWall.post) < mB(cGateGasWall)
   })
 
-  /// DeadlineOnly branch: a landing failure spends gas alone (v1's shape;
+  /// DeadlineOnly branch: a landing failure spends gas alone (the predecessor's shape;
   /// the required gas account is the only meter), and the gate-budget wall
   /// can never be the reason.
   pure val cGateD: Core = { tickets: Map(1 -> { ...DD::freshTicket(Set(), progU2, 1, WExclusive(1)),
@@ -841,7 +841,7 @@ module chuggy_test {
   })
 
   /// Charged retry metering (the charter default): every PIPELINE resume
-  /// pays 1 gas, so those retries descend the measure — v1's §5b livelock
+  /// pays 1 gas, so those retries descend the measure — the predecessor's §5b livelock
   /// priced away. (The pre-work RPending flavor stays free either way —
   /// pinned above.)
   pure val escLanding: Ticket = { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
@@ -867,7 +867,7 @@ module chuggy_test {
   })
 
   /// The Evaluating resume is A FRESH FAN-OUT OF THE LOWEST STAGE
-  /// (chuggernaut spec.md §1.2 escalation Retry: "re-enter Evaluation ...
+  /// (the predecessor's specification: escalation Retry: "re-enter Evaluation ...
   /// with a fresh eval fan-out"; §3.3: stages are never resumed
   /// mid-sequence) — new task ids, the failed history untouched in the
   /// record.
@@ -890,7 +890,7 @@ module chuggy_test {
   })
 
   /// Free retry metering: a resume into Landing charges nothing and the
-  /// measure CLIMBS — the CHURN set's other member, v1's model-status §5b
+  /// measure CLIMBS — the CHURN set's other member, the predecessor's the predecessor's findings
   /// kept reproducible by configuration; the Working resume still pays
   /// (entry to Working always meters — standing rule 2).
   pure val cEscF: Core = { tickets: Map(1 -> escLanding) }
@@ -933,7 +933,7 @@ module chuggy_test {
   })
 
   /// Release strictly descends (Draft -> Pending, rank 5 -> 4 — the
-  /// descent-table row for table.qnt line 21), golden-trace shaped, and
+  /// descent-table row for the predecessor's transition table), golden-trace shaped, and
   /// the derived waiting room splits it correctly on landing.
   /// there is no freeze/unfreeze pair to test any more — "Frozen removed.
   /// Draft -> Ready/Blocked" (the deliberate deviation recorded at
@@ -957,7 +957,7 @@ module chuggy_test {
     DB::isReadyIn(DB::decideRelease(c8, 2).post, 2)       // Done dep: Ready
   })
 
-  // === Revoke, from every phase the v1 table permits =======================
+  // === Revoke, from every phase the the predecessor table permits =======================
   // Table lines 47-48: `(_, Revoked) => true` — every non-terminal. Eight
   // single-ticket fixtures: one per live phase (Draft, Pending, Working,
   // Evaluating, Landing — Frozen is gone, the notes deviation) and all
@@ -1026,7 +1026,7 @@ module chuggy_test {
 
   /// Revoke RETAINS the task record — "Revoked runs nothing" is
   /// about the live set, not the log. A mid-flight revoke force-closes the
-  /// still-running work tasks as TCancelled (chuggernaut spec.md §1.2
+  /// still-running work tasks as TCancelled (the predecessor's specification:
   /// "Revoke closes tasks": a synthetic resolution recording that the
   /// revoke, not a verdict, retired them); already-resolved outcomes are
   /// preserved verbatim (jEval's mixed stage). Provenance survives the
@@ -1148,7 +1148,7 @@ module chuggy_test {
 
   /// THE DEPTH-1 GUARD (R4): with repo 1's slot held, every same-repo
   /// dequeue is refused — including the would-be-quiet one (quietness is
-  /// only checked AT the dequeue, chuggernaut §3.3: "each dequeued job
+  /// only checked AT the dequeue, the predecessor's specification: "each dequeued job
   /// re-checks the skip fast-path against the then-current HEAD") — while
   /// repo 2's dequeue stays enabled: serialization is per-repo, gates are
   /// independent. The occupant itself is not enqueued (PWrapUpHolding is not

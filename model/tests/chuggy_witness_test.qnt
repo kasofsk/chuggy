@@ -21,7 +21,7 @@
 /// MECHANISM (chosen by experiment; documented honestly): `quint test`
 /// cannot force the machine's own nondet actions — their `oneOf` picks
 /// belong to the simulator — but it CAN drive the machine deterministically
-/// through the conformance pattern (specs/chuggernaut/tests/conformance/):
+/// through the conformance pattern:
 /// `init.then(apply(decide*(core, <explicit choice>)))`. What upgrades
 /// these from decider chains (tests/chuggy_test.qnt's grain) to MACHINE
 /// traces is the driver actions in each module: every driver conjoins the
@@ -104,7 +104,7 @@
 ///   - chuggy_witness_gate_deadline_test (deadline-only consts): the
 ///     eviction priced on the OTHER WrapUpPricing branch — two gate
 ///     failures metered by gas alone (wrapUpLeft identically 0) into the
-///     gas wall, v1's §5a gate-loop shape reproduced on chuggy's machine
+///     gas wall, the predecessor's §5a gate-loop shape reproduced on chuggy's machine
 ///     with the deadline backstop doing exactly its job (R5);
 /// (A ninth module, chuggy_witness_batch_test, witnessed the group half;
 /// the grouping removal deleted the machinery and this module with it.)
@@ -407,8 +407,7 @@ module chuggy_witness_cascade_test {
 
 /// SHAPE 3 — THE STAGE ADVANCE (stageAdvanceNever, mc_chuggy_budgeted
 /// consts). A 2-stage program's stage-0 unanimous pass advancing to stage
-/// 1: the eval-stage-passed Evaluating -> Evaluating edge (chuggernaut
-/// spec.md §2.1 line 832) — the interpreter's advance and the measure's
+/// 1: the eval-stage-passed Evaluating -> Evaluating edge — the interpreter's advance and the measure's
 /// stage digit exercised on a machine trace, then run through to Done so
 /// the staged program's whole lifecycle closes.
 module chuggy_witness_stage_test {
@@ -939,7 +938,7 @@ module chuggy_witness_gate_test {
         // THE WITNESSED REFUSAL (R4): while the slot is held, the second
         // same-repo ticket CANNOT draw the dequeue — including its
         // would-be-quiet fast-path (quietness is only checked AT the
-        // dequeue, chuggernaut §3.3: each dequeued job re-checks the
+        // dequeue, the predecessor's specification: each dequeued job re-checks the
         // fast-path). A doDequeue(2, _) here would disable the run.
         not(wrapUpStartableIn(core, 2)),
         wrapUpStartable == Set(),
@@ -1023,9 +1022,9 @@ module chuggy_witness_gate_test {
 /// mc_chuggy_deadline_only consts). The OTHER WrapUpPricing branch on a
 /// machine trace: two wrap-up failures metered by GAS ALONE (wrapUpLeft
 /// identically 0 — no gate account exists to spend) into the gas wall at
-/// the third — v1's §5a gate-loop shape reproduced on chuggy's machine,
-/// with the charter's required gas doing exactly the backstop job the v1
-/// finding said it must (docs/chuggernaut.md §6.2: without it, "the day
+/// the third — the predecessor's §5a gate-loop shape reproduced on chuggy's machine,
+/// with the charter's required gas doing exactly the backstop job the the predecessor
+/// finding said it must (the predecessor's explainer.2: without it, "the day
 /// never ends" and the queue behind the spinning ticket starves). Each
 /// eviction is attributed {repo, invalidated: true}, and the final wall
 /// parks with resumeAt RWrapUp — re-ENQUEUE, not re-gate — unretryable

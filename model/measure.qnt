@@ -55,11 +55,9 @@
 /// same-cycle retry machinery is a charter non-goal (§2 non-goals row: "no
 /// retry machinery below the cycle") and container relaunches live in the
 /// trusted, unmodeled `backoffLimit` fabric axiom (§2 fabric row) — the
-/// model prices CYCLES, not container relaunches. the model this
-/// against the extracted vocabulary: chuggernaut's per-task `work_retries`/
-/// `eval_retries` (spec.md §1.2, attempt counters on the task record) are
-/// exactly the below-cycle machinery the non-goal excludes, so chuggy tasks
-/// carry no attempt counter and no per-task budget (README notes the skip).
+/// model prices CYCLES, not container relaunches. Per-task attempt counters
+/// and per-task retry budgets are exactly the below-cycle machinery that
+/// non-goal excludes, so a task carries neither.
 ///
 /// The retained task RECORD is NOT a measure
 /// input: it is append-only provenance, so it could only ever climb — the
@@ -136,7 +134,7 @@
 ///   eval-stage-passed (          stagesLeft -1 (dominates the next
 ///     a non-final stage passes;           stage's fan-out spawn:
 ///     Evaluating -> Evaluating,           -stageWeight + fanout <= -1;
-///     chuggernaut spec.md §2.1 line 832)
+///     the predecessor's specification: line 832)
 ///                                         spawns r <= fanout running, so
 ///                                         -stageWeight + r <= -1 a
 ///                                         fortiori)
@@ -189,7 +187,7 @@
 ///     task-done-duplicate (= 0), land-duplicate (= 0), settled (= 0).
 ///   the model task-done-duplicate's REACH, not its effect: task ids are
 ///   unique across the ticket's whole history (sequential within ticket,
-///   chuggernaut spec.md §1.2), so a stale completion from an EARLIER
+///   the predecessor's specification: ), so a stale completion from an EARLIER
 ///   stage or incarnation no-ops BY IDENTITY — its id is already retired
 ///   into the record. Finitely many by fabric assumption; they cannot
 ///   cycle through distinct states, so termination is modulo this
@@ -209,11 +207,11 @@
 ///     operator-retry into Evaluating/Landing under RetryFree
 ///       (+<= rankEvaluating*rankWeight + maxStages*stageWeight + nTasks —
 ///        the Evaluating resume respawns the LOWEST stage's fan-out with
-///        the full stage digit, chuggernaut §1.2 escalation Retry: "a
+///        the full stage digit, the predecessor's specification: escalation Retry: "a
 ///        fresh eval fan-out")
 ///   Under the DEFAULT metering (RetryCharged) the churn set is the
-///   pre-work resume alone. RetryFree deliberately reproduces v1's
-///   discovered operator-churn livelock (model-status §5b) as a
+///   pre-work resume alone. RetryFree deliberately reproduces the predecessor's
+///   discovered operator-churn livelock as a
 ///   configuration, so the model can generate escalation traces under both
 ///   prices — the mc_chuggy_retryfree instance plus check.sh Stage 9b's
 ///   witness layer (the deterministic free-climb machine trace in
@@ -258,7 +256,7 @@
 /// `activeDeadlineSeconds`/`backoffLimit`) and under default metering, any
 /// run with finitely many stutter and churn events performs FINITELY MANY
 /// ACTING STEPS PER TICKET: no ticket can be dispatched, reworked, evicted
-/// and resumed forever. That is exactly the class of defect v1 found and
+/// and resumed forever. That is exactly the class of defect the predecessor found and
 /// priced — the §5a gate-loop livelock and the §5b free-resume churn are
 /// both perpetual WORK, and the accounts are what kill them.
 ///
@@ -306,12 +304,12 @@ module chuggy_measure {
   /// is absorbing; PEscalated is the human desk.
   ///
   ///  (authoring, charter §2 first-class rank #1) added the phases
-  /// above the released pipeline, transcribed from v1's transition table
-  /// (specs/chuggernaut/table.qnt); the NOTES-RECONCILIATION PR then
+  /// above the released pipeline, transcribed from the predecessor's transition table
+  /// (the predecessor's transition table); the NOTES-RECONCILIATION PR then
   /// reshaped that transcription twice, both DELIBERATE DEVIATIONS from
-  /// the v1 table, provenance docs/chuggy-notes-triage.md:
+  /// the the predecessor table, provenance docs/chuggy-notes-triage.md:
   ///   - PDraft is the ONLY authoring phase — the note "Frozen removed.
-  ///     Draft -> Ready/Blocked" deletes PFrozen and with it the v1
+  ///     Draft -> Ready/Blocked" deletes PFrozen and with it the the predecessor
   ///     table's freeze/unfreeze/release-from-Frozen rows (table lines
   ///     22/24/26); release goes Draft -> PPending directly, Ready/Blocked
   ///     still derived exactly as in .
@@ -320,20 +318,20 @@ module chuggy_measure {
   ///     parked-with-open-human-task phase, with the `reason` field
   ///     carrying the pre-work walls (revalidation_failed,
   ///     dependency_revoked).
-  ///   - PRevoked: the OTHER settled terminal — table lines 45-48: every
+  ///   - PRevoked: the OTHER settled terminal — the predecessor's transition table: every
   ///     non-terminal state may go to Revoked, Done and Revoked are
   ///     absorbing. PRevoked is absorbing, runs nothing, never lands, and
   ///     opens NO human task (revocation is the author's settled choice —
   ///     see hasOpenHumanTask).
   /// the model NO phase: a stage advance is an
-  /// Evaluating -> Evaluating edge (chuggernaut spec.md §2.1 line 832) —
+  /// Evaluating -> Evaluating edge —
   /// within-phase progress lives in the stage digit, not in new phases.
   ///
   /// Two were added for the wrap-up path; grouping's removal deleted one of
   /// them (PBatched), leaving:
-  ///   - PWrapUpHolding — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
+  ///   - PWrapUpHolding — the lease held (
   ///     §3.3 Merge Gate item 3 + Serialization). PWrapUp is re-read as
-  ///     ENQUEUED (chuggernaut's WrapUp holds both queue and gate slot in
+  ///     ENQUEUED (an implementation may hold queue and slot in
   ///     ONE state, the split living in dispatcher memory — the model
   ///     lifts the slot into phase so depth-1 exclusivity is a predicate
   ///     over stored state, while the queue's ORDER stays deliberately
@@ -351,11 +349,11 @@ module chuggy_measure {
   /// "task records are first-class (they carry the anatomy)"):
   ///   TKWork     — a task of the Work phase's single task set (Work stays
   ///                ONE task-set phase per kasofsk's anatomy note; the
-  ///                extracted vocabulary agrees — chuggernaut spec.md §1.2
+  ///                extracted vocabulary agrees
   ///                task creation: "Job enters Work (new cycle): one work
   ///                task", i.e. Work is not staged).
   ///   TKEval(s)  — a task of eval stage s (0-based index into the ticket's
-  ///                authored program — chuggernaut spec.md §1.1 evaluator
+  ///                authored program
   ///                `stage:`, "default 0; non-negative; evaluators run in
   ///                ascending stage order; within a stage they fan out in
   ///                parallel"). The kind mark is what makes the CURRENT
@@ -369,7 +367,7 @@ module chuggy_measure {
   /// job pays" for evaluator crashes — one account, no new machinery
   /// (charter §2 eval/evaluator-failure). TCancelled is the retirement
   /// mark for a task still RUNNING when its ticket is revoked mid-flight —
-  /// the model's lean form of chuggernaut spec.md §1.2 "Revoke closes
+  /// the model's lean form of the predecessor's specification: "Revoke closes
   /// tasks" (revoke force-closes every pending task with a synthetic
   /// resolution recording that the revoke, not a verdict, retired it).
   /// Only revoke produces it: every other retirement happens at a reduce,
@@ -379,8 +377,7 @@ module chuggy_measure {
   /// THE EXPLICIT TASK LIFECYCLE (one
   /// small sum instead of implicit set-membership). A task is SPAWNED into
   /// existence running (spawnTasks below — there is no dormant pre-state:
-  /// creation and start are one step at this grain, chuggernaut spec.md
-  /// §3.3 "creates ... and fans them out"), RUNS, and RESOLVES exactly
+  /// creation and start are one step at this grain), RUNS, and RESOLVES exactly
   /// once — TSResolved carries the outcome, and the type now says what the
   /// old TRunning-in-TaskOutcome only implied: a running task CANNOT carry
   /// an outcome, and a resolved task MUST. First write wins (resolveTask);
@@ -390,12 +387,12 @@ module chuggy_measure {
 
   /// A first-class task record (charter §2 job anatomy): identity + kind +
   /// lifecycle state. `id` is SEQUENTIAL WITHIN THE TICKET, 1-indexed, across
-  /// the ticket's entire history — chuggernaut spec.md §1.2 (`id: u64,
+  /// the ticket's entire history
   /// sequential within job, 1-indexed`) — never reused across stages,
   /// cycles, or operator retries. That uniqueness is load-bearing: it is
   /// what lets a stale completion from an earlier stage/incarnation be
   /// absorbed BY IDENTITY (see the STUTTER note in the header).
-  /// Deliberately NOT carried from chuggernaut's Task: `attempt` and the
+  /// Deliberately absent: `attempt` and the
   /// per-task retry budgets (below-cycle machinery, charter §2 non-goal),
   /// `cycle` (derivable from the record's kind sequence — work groups
   /// delimit cycles), timestamps/results (implementation accounting, not
@@ -411,19 +408,19 @@ module chuggy_measure {
   /// machine-wide parameter — each STAGE of a ticket's authored program
   /// carries its own (eval is data, charter §2); the charter's default,
   /// unanimous pass, is the default program's combinator
-  /// (domain.qnt defaultProgram). CUnanimousPass is chuggernaut's
+  /// (domain.qnt defaultProgram). CUnanimousPass is the
   /// required-evaluator rule ("if every required evaluator in the stage
-  /// passed", spec.md §3.3) at chuggy's grain — the required/advisory split
+  /// passed", the predecessor's specification) at chuggy's grain — the required/advisory split
   /// is BELOW that grain (an advisory evaluator is one the stage's
   /// combinator ignores), README notes the abstraction.
   type Combinator = CUnanimousPass | CAnyPass
 
   /// One stage of a ticket's eval program: a task-set with its own
   /// fan-out width and its own verdict combinator. Extracted from
-  /// chuggernaut spec.md §3.3: "the dispatcher creates one task per
+  /// the predecessor's specification: "the dispatcher creates one task per
   /// evaluator in the lowest stage and fans them out in parallel" — a
   /// stage's width is its evaluator count, its combinator is the
-  /// required-pass rule. `fanout` is chuggernaut's own word.
+  /// required-pass rule.
   type Stage = { fanout: int, combinator: Combinator }
 
   /// Gate-rework pricing — a model parameter, not a constant (charter §2):
@@ -446,8 +443,8 @@ module chuggy_measure {
   type ReworkPolicy = RWBudget(int)
 
   /// Operator-retry metering — configurable per deployment, default charge
-  /// (charter §2 economy/op-retry). RetryFree reproduces v1's discovered
-  /// livelock (model-status §5b) by configuration.
+  /// (charter §2 economy/op-retry). RetryFree reproduces the predecessor's discovered
+  /// livelock by configuration.
   type RetryPricing = RetryCharged | RetryFree
 
   /// Where an operator Retry resumes a parked ticket. RNone when not parked —
@@ -461,7 +458,7 @@ module chuggy_measure {
   type Resume = RNone | RPending | RWorking | REvaluating | RWrapUp
 
   /// Why a ticket sits on the human desk. The wall VOCABULARY is carried from
-  /// v1's explainer (docs/chuggernaut.md §5) and constrained by the charter
+  /// the predecessor's explainer and constrained by the charter
   /// §2 termination row — the charter itself does not name individual
   /// walls. With Stalled merged into Escalated, the reason is
   /// what distinguishes the parks: RsWorkFailed / RsReworkBudgetExhausted /
@@ -497,7 +494,7 @@ module chuggy_measure {
   ///     carries it structurally;
   ///   - `invalidated`: the environment's PER-ATTEMPT choice of whether
   ///     the target repo's default branch moved under the candidate — the
-  ///     ONLY reason a landing can fail (docs/chuggernaut.md §4; v1's
+  ///     ONLY reason a landing can fail (the predecessor's explainer; the predecessor's
   ///     LConflictOrGateFail existed only while envActive). This is the
   ///     envActive standing rule (docs/chuggy-notes-triage.md, "already
   ///     true" row) honored: an explicitly NAMED nondet event on the
@@ -587,7 +584,7 @@ module chuggy_measure {
     // across its whole history (nextTaskId below).
     tasks: Set[Task],
     // THE RETAINED TASK RECORD — the ticket's chronological task log
-    // (chuggernaut spec.md §1.2: "tasks form a chronological log ... never
+    // (the predecessor's specification: "tasks form a chronological log ... never
     // referencing each other; no task graph"), append-only: a task moves
     // here, resolution settled, when its set retires (reduce, escalation,
     // or revoke — retireLive below), and once here it NEVER changes
@@ -645,7 +642,7 @@ module chuggy_measure {
   /// Standing rule 3 (derive, don't store): the open-human-task flag IS a
   /// predicate over the phase — a desk task is open exactly while the ticket
   /// is parked on the desk, and PEscalated is THE parked phase.
-  /// (v1 stored the flag and proved the iff as an invariant; chuggy
+  /// (the predecessor stored the flag and proved the iff as an invariant; chuggy
   /// derives it, so the invariant is by construction.) The trace-visible
   /// artifact is the "OpenHumanTask" effect string.
   ///
@@ -670,7 +667,7 @@ module chuggy_measure {
   /// One observed ticket-phase transition, golden-trace shaped (standing rule
   /// 4: conformance from day one — the model emits, the implementation
   /// replays). from == to is a REAL row, not a degenerate one — the
-  /// stage advance is Evaluating -> Evaluating (chuggernaut spec.md §2.1
+  /// stage advance is Evaluating -> Evaluating (the predecessor's specification:
   /// line 832).
   type Transition = { ticket: int, from: Phase, to: Phase }
 
@@ -706,7 +703,7 @@ module chuggy_measure {
   // === The measure =========================================================
 
   /// The gate account's size under a pricing: Budgeted(n) grants n,
-  /// DeadlineOnly grants none (gas alone meters the gate loop — v1's
+  /// DeadlineOnly grants none (gas alone meters the gate loop — the predecessor's
   /// documented-livelock shape, kept as the branch to be priced on
   /// evidence).
   pure def wrapUpBudget(gp: WrapUpPricing): int =
@@ -837,10 +834,9 @@ module chuggy_measure {
 
   // === Vocabulary helpers (task plumbing shared by machine and tests) ======
 
-  /// Task ids are 1-INDEXED, sequential within the ticket (chuggernaut
-  /// spec.md §1.2: "sequential within job, 1-indexed") — the base named
-  /// once so the id arithmetic below carries the convention, not a magic
-  /// numeral.
+  /// Task ids are 1-INDEXED and sequential within the ticket — the base is
+  /// named once so the id arithmetic below carries the convention rather
+  /// than a magic numeral.
   pure val firstTaskId: int = 1
 
   /// A fresh parallel task set of kind k: n tasks, all running (spawned
@@ -870,7 +866,7 @@ module chuggy_measure {
   /// (tasksWellFormed keeps live ids contiguous above the record, so the
   /// appended run keeps record entry i at id firstTaskId + i). A task
   /// still RUNNING at retirement is force-closed as TSResolved(TCancelled)
-  /// — only revoke retires mid-flight sets (chuggernaut spec.md §1.2
+  /// — only revoke retires mid-flight sets (the predecessor's specification:
   /// "Revoke closes tasks"); every reduce/escalation retirement is of a
   /// fully-resolved set, so the TCancelled arm never fires there. A
   pure def retireLive(ticket: Ticket): Ticket =
@@ -908,9 +904,8 @@ module chuggy_measure {
   /// The verdict combinator, interpreted per stage (the caller reads
   /// it off the ticket's program — eval is data, this is the interpreter's
   /// leaf). Callers guarantee every task is resolved.
-  /// CUnanimousPass is chuggernaut's "every required evaluator in the
-  /// stage passed" (spec.md §3.3) at this grain; TFailed and TCancelled
-  /// both fail it (taskPassed above).
+  /// CUnanimousPass is "every required evaluator in the stage passed" at
+  /// this grain; TFailed and TCancelled both fail it (taskPassed above).
   pure def combine(c: Combinator, tasks: Set[Task]): bool =
     match c {
       | CUnanimousPass => tasks.forall(t => taskPassed(t))
