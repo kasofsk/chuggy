@@ -71,15 +71,18 @@ Prefer editing a doc to adding one. A doc nobody can summarise in one line is a 
 | `doc-lint.sh` | every check, every commit | markdown well-formedness, relative links, design filename shape | **error** | — **live** |
 | `check-comments.sh` | every check, every commit | non-doc comments, the two-sentence cap | **error** | its own landing |
 | `check-doc-facts.sh` | every check; `--staged` in the hook | paths, restated constants, owned definitions, the catalogue, heading anchors | **error** | its own landing |
-| `check-duplication.sh` | every check | copy-paste, threshold 0 | **error** | the second gate script |
-| `check-shell-quoting.sh` | every check | the `${VAR:-word}` divergence | **error** | three shell scripts |
-| `check-gates.sh` | every check | every gate has a sibling suite | **error** | the suite runner |
+| `check-duplication.sh` | every check | copy-paste, threshold 0 | **error** | **fired at commit 2 — overdue** |
+| `check-shell-quoting.sh` | every check | the `${VAR:-word}` divergence | **error** | **fired — overdue** |
+| `check-gates.sh` | every check | every gate has a sibling suite | **error** | — **live** |
+| `check-model.sh` | every check | the model typechecks, its suites pass, its invariants hold | **error** | — **live** |
 | landed-slice resolution | — | `**Landed**` rows against history | **error**, when it can run | a slice table, and an index it can have — see below |
 | `doc-staleness.sh` | every check | has a file a doc names moved since the doc did | **advisory** | ~10 docs and ~4 weeks of history |
 | orphan check | — | a doc nothing links to | **advisory** | 15 tracked docs |
 | `check-molt.sh` | — | the accounting of a shedding | **error**, for that job type | a corpus to shed, and a job type |
 
 **The `Waiting on` column is the point of the table.** A deferral with no recorded trigger becomes permanent, and the difference between "not yet" and "never" is written down here or nowhere.
+
+It only works if a fired trigger is *acted on*, and two of them were not: the duplication gate's trigger fired at commit 2 and the shell-quoting gate's shortly after. They are marked **overdue** rather than re-dated, because a trigger that quietly slips is the same thing as no trigger. An audit of this table against the tree belongs in any change that adds a gate.
 
 Three of these are worth their reasoning:
 

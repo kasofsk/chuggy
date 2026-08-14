@@ -12,6 +12,15 @@ Every Tier 1 rule is tagged **live** or **pending**, and a pending rule names wh
 
 A pending rule still binds the author — it is the standard, and code that violates it will be rejected in review. What "pending" means is only that *no script enforces it yet*. Nothing here describes machinery that does not exist; that is the doc-claim rule (`docs.md`) applied to this file, and it is the failure this whole apparatus exists to prevent.
 
+**A fired trigger is a debt, and this table says which are owed.** Rules 4
+and 5 name triggers that fired and were not honoured — the second gate
+script arrived at commit 2 and the third shell script shortly after, and
+both gates are still unwritten. They are marked *overdue* rather than
+quietly re-dated, because the failure mode this whole scheme guards against
+is a `pending` that never converts. Rule 12's trigger was simply *wrong*:
+`package.json` arrived to pin the model checker, which has nothing to
+format, so the trigger is restated as the first TypeScript file.
+
 **Why so many rules are pending on day 1, and why that is the point.** This repo adopted its standards before it had code. In the predecessor the order was reversed, and the cost is measurable: its comment ban had to be retrofitted by a job that deleted every comment in the tree; its two-sentence cap is still a ratchet carrying ~500 grandfathered violations; and its module-boundary rule has sat `pending` since the day it was written, because the folder split it presupposes never happened. **A pending rule here converts to live when the thing it governs arrives, in the same commit** — never in the commit after.
 
 ---
@@ -23,15 +32,16 @@ A pending rule still binds the author — it is the standard, and code that viol
 | 1 | **No comments except doc comments; a doc comment is at most two sentences.** | pending — lands with `check-comments.sh` | `.chug/tasks/check-comments.sh` |
 | 2 | **Markdown is well-formed**: a heading needs a space after `#`, a fence must close, an intra-repo relative link must resolve, and a design filename is `{seq}-{slug}.md`. | **live** | `.chug/tasks/doc-lint.sh` |
 | 3 | **Every doc's factual claims about the tree resolve, or are marked.** | pending — lands with `check-doc-facts.sh` | `.chug/tasks/check-doc-facts.sh` |
-| 4 | **No duplicated code: zero clones.** | pending — lands with the second gate script | `.chug/tasks/check-duplication.sh` |
-| 5 | **No quote inside the word of a `${VAR:-word}` shell expansion.** | pending — lands at three shell scripts | `.chug/tasks/check-shell-quoting.sh` |
-| 6 | **Every gate script has a sibling `*.test.sh`.** | pending — lands with the suite runner | `.chug/tasks/check-gates.sh` |
+| 4 | **No duplicated code: zero clones.** | pending — **trigger fired, overdue** | `.chug/tasks/check-duplication.sh` |
+| 5 | **No quote inside the word of a `${VAR:-word}` shell expansion.** | pending — **trigger fired, overdue** | `.chug/tasks/check-shell-quoting.sh` |
+| 6 | **Every gate script has a sibling `*.test.sh`.** | **live** | `.chug/tasks/check-gates.sh` |
 | 7 | **`domain/` reaches no I/O, transitively.** | pending — **lands in the same commit as the folder split** | dependency-cruiser |
 | 8 | **`domain/` uses no ambient capability**: no `Date`, `Math.random`, `process`, `fetch`, `setTimeout`, `crypto`. | pending — same commit as rule 7 | eslint, scoped to `src/domain/**` |
 | 9 | **Every discriminated union is switched exhaustively**, with `assertNever` in the default arm. | pending — lands with the first union | eslint |
 | 10 | **No floating promises.** | pending — lands with the first `async` | eslint |
 | 11 | **A function is at most 70 lines**, blank and comment lines excluded. | pending — lands with the eslint config | eslint |
-| 12 | **Formatting is the formatter's defaults**, never argued. | pending — lands with `package.json` | prettier |
+| 12 | **Formatting is the formatter's defaults**, never argued. | pending — lands with the first TypeScript file | prettier |
+| 13 | **The model typechecks, its suites pass, and every instance's invariants hold.** | **live** | `.chug/tasks/check-model.sh` |
 
 ### Rule 1 — the comment ban
 
@@ -53,6 +63,14 @@ Two carve-outs. A **module header** — a file's first `/** */` block, stating w
 The allowlist matches the text immediately after the opener, so **a directive is one line**: a wrapped second line is an ordinary comment and the gate rejects it.
 
 *Refutation trigger:* if a legitimate directive form is being rejected more than about once a month, widen the allowlist deliberately — do not weaken the rule.
+
+### Rule 13 — the model is the specification
+
+`model/` is proved before the implementation exists and emits the golden traces the implementation replays. `check-model.sh` typechecks every module, runs the unit and witness suites and the refinement suites, and checks every instance's invariants under randomized exploration.
+
+*Why it is Tier 1 rather than an architecture note:* it is a machine check with a verdict, run by the same sequencer as every other gate. It is also the slowest by an order of magnitude (~50s against ~5s for everything else), which is why it is last in `ci.sh` and absent from the hook.
+
+*Refutation trigger:* if the model gate's runtime makes `just check` something people skip, split it — a fast subset in `just check` and the full run before a push — rather than letting the whole check become optional.
 
 ### Rule 7 — the boundary rule, and the sequencing that makes it real
 
