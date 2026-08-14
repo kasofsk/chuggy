@@ -622,6 +622,23 @@ module chuggy_measure {
   /// landingIsolation invariant (domain.qnt).
   type LandingObs = LONone | LOAttempt({ repo: int, branchMoved: bool })
 
+  /// WHAT A TICKET PRODUCED (design 002): an opaque identity for the thing
+  /// work built, that evaluation judged, and that wrap-up commits. Its only
+  /// modelled property is DISTINCTNESS — never content. A diff, a build
+  /// output and an evaluator's prose are all equally none of the machine's
+  /// business, and a content-shaped abstraction here would repeat the
+  /// citation-scoping mistake of depending on something outside the model.
+  ///
+  /// It exists chiefly so a dependent can NAME what its dependency produced,
+  /// which is unexpressible today: a dep is only a phase check. Reads across
+  /// tickets are safe by construction — terminalsAbsorbing forbids leaving
+  /// PDone, depsDoneIn requires every dep to be PDone, and only a completion
+  /// writes PDone, so a dependency's artifact is final before any dependent
+  /// can dispatch.
+  ///
+  /// NOT a measure input, like `repo` (measureArtifactBlindTest).
+  type ArtifactMark = ANone | ASome(int)
+
   /// One ticket's record. The measure below is a pure function of this.
   type Ticket = {
     phase: Phase,
@@ -632,6 +649,9 @@ module chuggy_measure {
     // orchestrator-level, and forbidding cross-repo edges would be new
     // machinery with no charter provenance).
     deps: Set[int],
+    // The artifact this ticket has produced, if it has passed work (design
+    // 002). Set at work-passed and superseded by each rework's product.
+    artifact: ArtifactMark,
     // THE TARGET REPO (multi-repo PR, roadmap PR 4 — charter §2
     // first-class order rank #3; `domain/firstclass`, both respondents:
     // "Multiple repos — one orchestrator, many targets"): a ticket targets

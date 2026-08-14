@@ -313,6 +313,7 @@ module chuggy_domain {
     phase: PDraft,
     deps: deps_,
     program: prog,
+    artifact: ANone,
     repo: repo_,
     tasks: Set(),
     record: [],
@@ -575,6 +576,13 @@ module chuggy_domain {
   /// future derived gate must move both or neither.
   pure def gateDeps(c: Core, j: int): Set[int] = c.tickets.get(j).deps
 
+  /// WHAT THIS TICKET'S DEPENDENCIES PRODUCED (design 002) — the read that
+  /// makes a release ticket expressible at all. Derived, never stored, and
+  /// stable: every dep is PDone before a dependent can dispatch, and PDone
+  /// is absorbing, so nothing here can change under a reader.
+  pure def depArtifacts(c: Core, j: int): Set[ArtifactMark] =
+    gateDeps(c, j).map(d => c.tickets.get(d).artifact)
+
   pure def depsDoneIn(c: Core, j: int): bool =
     gateDeps(c, j).forall(k => c.tickets.get(k).phase == PDone)
 
@@ -793,7 +801,8 @@ module chuggy_domain {
     if (jb.tasks.forall(t => t.state == TSResolved(TPassed)))
       val fan = retired.program[0].fanout
       move(
-        withTicket(c, j, spawnOn(retired, TKEval(0), fan)),
+        withTicket(c, j,
+          { ...spawnOn(retired, TKEval(0), fan), artifact: ASome(retired.spawned) }),
         j, PEvaluating, "work-passed", ["SpawnEvalTasks"])
     else
       escalate(c, j, RWorking, RsWorkFailed, "ticket-escalated work_failed")
@@ -1604,6 +1613,16 @@ module chuggy_domain {
       tickets.get(j).repo == r
     }).size() <= 1)
 
+  /// A COMPLETED TICKET PRODUCED SOMETHING (design 002). Deliberately the
+  /// weak form: an artifact exists by the time a ticket is Done. The
+  /// tempting stronger claim — that what was committed is what was
+  /// evaluated — would be TRUE BY CONSTRUCTION, since the phase machine
+  /// forbids work between eval-passed and wrap-up, and an invariant that
+  /// cannot fail is the stuckSubsetCovered defect written on purpose.
+  /// A Revoked ticket may hold ANone: it may never have run.
+  val artifactWellFormed: bool = liveTickets.forall(j =>
+    (tickets.get(j).phase == PDone) implies (tickets.get(j).artifact != ANone))
+
   /// Every live ticket targets a repo inside the bounded universe — the
   /// arrival-refusal claim made durable (the programsWellFormed shape):
   /// repos enter only through decideArrive, whose callers draw from
@@ -2077,6 +2096,7 @@ module chuggy_domain {
     quietRepoLandsCleanly,
     gatedPromotesDirectSquashes,
     gateDepthOne,
+    artifactWellFormed,
     reposWellFormed,
     terminalsAbsorbing,
     deskConsistent,

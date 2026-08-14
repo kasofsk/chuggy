@@ -1293,6 +1293,33 @@ module chuggy_test {
   /// account radices derive from machine-wide consts (GAS, GATE_PRICING,
   /// REWORK_POLICY — none per-repo), so budgets are repo-blind by type;
   /// this pins the measure function itself.
+  /// ARTIFACT-BLINDNESS (design 002), the same derivation as repo: no digit,
+  /// weight or account radix reads the mark, so tickets identical but for it
+  /// have EQUAL ticketMeasure. Pinned rather than argued, because a measure
+  /// that quietly read the artifact would make the descent table wrong in a
+  /// way only a mutation would show.
+  run measureArtifactBlindTest = assert(and {
+    ticketMeasure(bB, jPend) == ticketMeasure(bB, { ...jPend, artifact: ASome(3) }),
+    ticketMeasure(bB, jWork) == ticketMeasure(bB, { ...jWork, artifact: ASome(9) }),
+    ticketMeasure(bB, jEval) == ticketMeasure(bB, { ...jEval, artifact: ASome(1) }),
+    ticketMeasure(bB, jLand) == ticketMeasure(bB, { ...jLand, artifact: ASome(4) }),
+    ticketMeasure(bD, jWork) == ticketMeasure(bD, { ...jWork, artifact: ASome(2) }),
+    ticketMeasure(bB, { ...jEval, artifact: ASome(1) })
+      == ticketMeasure(bB, { ...jEval, artifact: ASome(99) })
+  })
+
+  /// WORK-PASSED STAMPS AN ARTIFACT, and a rework SUPERSEDES it. The second
+  /// half is what makes the mark an identity rather than a flag: two cycles
+  /// of the same ticket produced different things and the model can say so.
+  run artifactStampedAndSupersededTest = assert(and {
+    dDispatch.post.tickets.get(1).artifact == ANone,
+    dWorkReduce.post.tickets.get(1).artifact != ANone,
+    // The rework fixture walks a second cycle; its product differs from the
+    // first, which a stamp-once mutant would fail.
+    dBackToEval.post.tickets.get(1).artifact != ANone,
+    dBackToEval.post.tickets.get(1).artifact != dWorkReduce.post.tickets.get(1).artifact
+  })
+
   run measureRepoBlindTest = assert(and {
     ticketMeasure(bB, jDraft) == ticketMeasure(bB, { ...jDraft, repo: 2 }),
     ticketMeasure(bB, jPend) == ticketMeasure(bB, { ...jPend, repo: 2 }),
