@@ -1,0 +1,1136 @@
+/// THE MEASURE COMES FIRST (chuggy-charter.md §5, standing rule 1: "The
+/// termination measure is written before the machine"). This module was
+/// written before domain.qnt, and domain.qnt was designed to fit it — every
+/// transition the machine takes either strictly descends `ticketMeasure` or
+/// belongs to one of the three named non-descending sets at the bottom of
+/// this header (STUTTER and CHURN from PR 1; AUTHORING from PR 2; PR 3
+/// extended the micro digit here BEFORE domain.qnt grew stages; the
+/// NOTES-RECONCILIATION PR reworked the ranks and the radix chain here
+/// BEFORE the domain surgery — the rule held a fourth time).
+/// The record types live here too: the measure is a pure function of
+/// a single ticket's record (per-ticket — the committed half of the termination
+/// row, charter §2; the contested system-quiescence half, §4, is deferred),
+/// so the record shape is part of the measure's definition, not the
+/// machine's.
+///
+/// THE NOTES-RECONCILIATION PR (docs/chuggy-notes-triage.md, the "changed
+/// now" table) reshaped this file in five ways, each cited at its site:
+///   - "Frozen removed. Draft -> Ready/Blocked": PFrozen is gone, PDraft is
+///     the ONLY authoring phase, and the rank ladder compressed — the rank
+///     ceiling dropped from 6 to 5, so microBound's multiplier fell with it
+///     (re-derived at microBound below).
+///   - "stalled should be rolled into escalated": PStalled is gone;
+///     PEscalated is THE parked-with-open-human-task phase, one settled-tier
+///     member fewer. The `reason` field (already deliberate trace
+///     vocabulary) carries the distinction; `RPending` (new Resume flavor)
+///     carries where pre-work parks resume.
+///   - "task state machine": a task's lifecycle is an explicit sum —
+///     spawned into TSRunning, settled exactly once into
+///     TSResolved(outcome) — instead of TRunning posing as an outcome.
+///   - "rework budget ... into impl / middleware": the bound survives as a
+///     POLICY PARAMETER (ReworkPolicy, the GatePricing pattern); the
+///     account digit the measure needs is derived from it.
+///   - "what is deadline left": the required account is named what it is —
+///     GAS (`gasLeft`, wall `gas_exhausted`). The charter's §2
+///     economy/deadline row ("deadline REQUIRED") is unchanged in force:
+///     init still admits no gasless graph; only the wall-clock-implying
+///     name died.
+///
+/// THE CITATIONS PR (docs/chuggy-notes-triage.md, "recorded for a later
+/// PR": "allow passing evaluators to cite code they care about to let
+/// them decide whether to rerun if evaluation must rerun") touches NO
+/// digit and NO weight — standing rule 1 held a fifth time by PROOF
+/// rather than surgery: the measure needed no rework, only the argument
+/// that the change can only shrink what the digits already dominate.
+/// What changed is record VOCABULARY, which lives in this file: a task's
+/// RESOLUTION carries an abstract citation footprint (`cited` on Task —
+/// for an evaluator, the regions it says it cares about; for a work
+/// task, what the attempt touched: the change side of the same
+/// abstraction), and a scoped eval re-entry (spawnEvalScoped below) may
+/// CARRY a still-valid passing verdict as a born-settled TSCarried task
+/// instead of re-earning it. A carried task is not TSRunning, so scoping
+/// only ever SHRINKS the runningCount digit at the two spawn sites whose
+/// climbs the chain already dominates (work-passed, eval-stage-passed —
+/// both dominance bounds below are stated over the fan-out CEILING, so a
+/// smaller spawn needs no new argument; the re-derivation is annotated
+/// at both descent-table rows). Footprints are environment/adversary
+/// choices riding the resolved record entry, exactly like verdicts —
+/// never stored machine state (the change footprint of a cycle is
+/// DERIVED from the retained record's work entries, standing rule 3);
+/// the measure reads none of it.
+///
+/// THE MULTI-REPO PR (chuggy-charter.md §6 roadmap PR 4; provenance: both
+/// respondents picked multi-repo in `domain/firstclass` — the option text
+/// is "Multiple repos — one orchestrator, many targets" — and rank #3 of
+/// the §2 first-class order) touches NO digit and NO weight: standing
+/// rule 1 held a sixth time by PROOF rather than surgery. What changed is
+/// vocabulary, which lives in this file:
+///   - `Ticket.repo` — the ticket's TARGET REPO, an authored field like
+///     deps and the program (chosen at arrival, immutable after). The
+///     MEASURE NEVER READS IT — the repo-blindness theorem, by
+///     derivation: ticketMeasure reads gasLeft, gateLeft, reworkLeft,
+///     and micro (phase rank, stagesLeft over program+tasks,
+///     runningCount) — `repo` appears in none of them, and every account
+///     radix derives from machine-wide consts (GAS, GATE_PRICING,
+///     REWORK_POLICY), none per-repo. Two tickets identical but for
+///     `repo` have EQUAL ticketMeasure (pinned in tests/chuggy_test.qnt,
+///     measureRepoBlindTest). Per-repo budgets/policies would break this
+///     theorem and have NO charter provenance — deliberately not done
+///     (README).
+///   - `LandingObs` + the StepRecord's `landing` field — the
+///     landing-boundary attribution the golden traces need: WHICH repo a
+///     landing attempt targeted and whether the environment chose that
+///     repo's default branch to have MOVED under the candidate
+///     (docs/chuggernaut.md §4: the moving default branch is the ONLY
+///     reason a landing can fail). The choice is a PER-ATTEMPT nondet
+///     event named in the step record — never stored state (the
+///     envActive standing rule, docs/chuggy-notes-triage.md "already
+///     true": landing-failure conditions enter as explicitly named
+///     nondet events, never a stored mystery flag). The measure reads
+///     none of it.
+///
+/// THE MERGE-QUEUE + LANDING PR (chuggy-charter.md §6 roadmap PR 5 —
+/// deliberately LAST of the first-class four; gate: driven by
+/// `landing/requirements`, which was NEVER answered, so every requirement
+/// the mechanics serve is PROPOSED, derived from chuggernaut's own spec
+/// and v1's machine-checked findings, pending geoff/davemo88 confirmation
+/// — specs/chuggy/README.md, the proposed-requirements section) reworked
+/// this file FIRST, per standing rule 1 — the seventh time the rule held,
+/// and the first since PR 3 that it held by SURGERY rather than proof:
+/// the rank ladder grew twice.
+///   - PGated — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
+///     spec.md §3.3 Merge Gate, Serialization: "the gate is a merge queue
+///     of depth 1: at most one job per project is in the gate at a time";
+///     per-project becomes per-repo at chuggy's landing boundary). A NEW
+///     rank between Landing and settled: entering the gate descends, and
+///     every gate resolution (AdvanceDefault, the priced eviction, the
+///     walls) descends from there exactly as it used to from Landing.
+///     PLanding is re-read as the ENQUEUED state (chuggernaut's
+///     WrapUp-on-the-queue); the queue's ORDER is deliberately not
+///     modeled (a queue is a §2 non-goal; chuggernaut itself loses FIFO
+///     order across restarts — spec.md §3.6 step 3 rebuilds the queue
+///     from state, not from order).
+///   - microBound's multiplier re-derived, not edited: the ceiling is
+///     still rankDraft, now 6 (5 + the gate rung, the grouping rung
+///     removed), so the multiplier moved 6 -> 8 -> 7 through
+///     radix(rankCeiling) — the notes PR's magic-number audit paying rent.
+///
+/// The measure is LEXICOGRAPHIC over the bounded accounts, most significant
+/// first, flattened into one nonnegative integer by radix weighting (every
+/// digit is bounded by its radix, so the integer order IS the lexicographic
+/// order):
+///
+///   1. gasLeft        — gas (charter §2 economy/deadline: the REQUIRED
+///                       account; init admits no graph without it). Charged
+///                       on every entry to Working and on metered operator
+///                       retries; never refunded.
+///   2. gateLeft       — gate-rework budget, only under
+///                       GatePricing = Budgeted(n) (charter §2 gate-pricing
+///                       row; identically 0 under DeadlineOnly).
+///   3. reworkLeft     — eval-rework account, granted by the rework POLICY
+///                       (ReworkPolicy = RWBudget(n), notes PR).
+///   4. micro          — within-cycle progress, THREE sub-digits (PR 3),
+///                       lexicographic:
+///                       phaseRank   (Draft 6, the only authoring phase, the
+///                                    ceiling — Frozen removed by the notes,
+///                                    Batched by the grouping removal;
+///                                    Pending 5 > Working 4 > Evaluating 3 >
+///                                    Landing 2 (enqueued) >
+///                                    Gated 1 (the depth-1 merge gate,
+///                                    occupied — the merge-queue PR) >
+///                                    Done/Escalated/Revoked 0 — the settled
+///                                    tier, one member fewer since Stalled
+///                                    merged into Escalated)
+///                       then stagesLeft  (PR 3: how many stages of the
+///                                    ticket's authored eval program have not
+///                                    yet passed — nonzero only in
+///                                    Evaluating)
+///                       then runningCount (the parallel task set of the
+///                                    current phase/stage, charter §2 ticket
+///                                    anatomy).
+///
+/// THE PR 3 DIGIT-ORDER ARGUMENT (why stagesLeft sits BELOW phase rank and
+/// ABOVE — not beside — the running-task count):
+///   - BELOW rank: entering Evaluating (work-passed, rank 3->2) makes the
+///     stage digit APPEAR at its maximum (stagesLeft 0 -> L <= maxStages)
+///     while the stage-0 fan-out spawns (running 0 -> <= nTasks). The one
+///     rank step must dominate both at once, which forces
+///     rankWeight > maxStages*stageWeight + nTasks — the rankWeight
+///     definition below is exactly that bound plus one. Every EXIT from
+///     Evaluating (eval-passed, rework, walls, revoke) drops rank or an
+///     account, so the stage digit vanishing on exit never needs its own
+///     descent argument.
+///   - ABOVE the count: advancing a stage (eval-stage-passed) retires a
+///     fully-resolved task set (running 0) and spawns the next stage's
+///     fan-out — the running count JUMPS from 0 to <= nTasks in the same
+///     step. stagesLeft falls by exactly 1, so one stage step must outweigh
+///     the whole jump: stageWeight = radix(nTasks). Were the stage digit
+///     merely BESIDE the count (equal weight), stage advance over any
+///     fan-out > 1 would CLIMB the measure and the machine's cleanest
+///     progress step would need an exemption — the wrong shape for the one
+///     transition PR 3 exists to add.
+///
+/// There is deliberately NO attempt digit and no per-attempt account:
+/// same-cycle retry machinery is a charter non-goal (§2 non-goals row: "no
+/// retry machinery below the cycle") and container relaunches live in the
+/// trusted, unmodeled `backoffLimit` fabric axiom (§2 fabric row) — the
+/// model prices CYCLES, not container relaunches. PR 3 re-affirms this
+/// against the extracted vocabulary: chuggernaut's per-task `work_retries`/
+/// `eval_retries` (spec.md §1.2, attempt counters on the task record) are
+/// exactly the below-cycle machinery the non-goal excludes, so chuggy tasks
+/// carry no attempt counter and no per-task budget (README notes the skip).
+///
+/// The retained task RECORD (PR 3, Ticket.record below) is NOT a measure
+/// input: it is append-only provenance, so it could only ever climb — the
+/// measure reads phase, live tasks, program length, and the accounts. The
+/// program is immutable after arrival and enters only through stagesLeft.
+///
+/// WEIGHTS, re-derived (the notes PR's magic-number audit: every numeral
+/// here is a named value or derived from one, with its derivation adjacent;
+/// no bare rank, multiplier, or radix literal appears twice):
+///   radix(d) = d + 1
+///     — a digit bounded by d takes d+1 distinct values, so one unit of the
+///       next weight up must be worth exactly that many. Every "+ 1" in the
+///       weight chain is this one derivation, named once.
+///   stageWeight = radix(nTasks)
+///     — one stage step dominates any running count (<= nTasks).
+///   rankWeight  = radix(maxStages) * stageWeight
+///     — one rank step dominates the full stage digit plus any count:
+///       stagesLeft <= maxStages (programsWellFormed caps authored programs
+///       at MAX_STAGES), so
+///       stagesLeft*stageWeight + runningCount
+///         <= maxStages*stageWeight + nTasks < radix(maxStages)*stageWeight.
+///   microBound  = radix(rankCeiling) * rankWeight
+///     — micro = rank*rankWeight + stagesLeft*stageWeight + runningCount
+///            <= rankCeiling*rankWeight + (rankWeight - 1)
+///             < radix(rankCeiling)*rankWeight.
+///       CHANGED by the notes PR (ceiling 6 -> 5, multiplier 7 -> 6:
+///       Frozen removed compressed the ladder), AGAIN by the merge-queue
+///       PR (ceiling 5 -> 7, multiplier 6 -> 8: two new rungs, Gated below
+///       Landing and Batched above Pending) and AGAIN by the grouping
+///       removal (ceiling 7 -> 6, multiplier 8 -> 7) — each time
+///       written as radix(rankCeiling), so the multiplier re-derives from
+///       the ladder and can never silently drift from it.
+/// The domination chain above micro is unchanged in shape: micro <
+/// microBound, so one unit of reworkLeft outweighs any within-cycle climb
+/// (radix microBound), one unit of gateLeft outweighs any reworkLeft refill
+/// (radix reworkBudget), and one unit of gas outweighs everything below it
+/// (radix gateBudget). Every digit stays strictly below its radix, so the
+/// flattened integer order IS the lexicographic order.
+///
+/// DESCENT TABLE — which transitions descend, and by which account.
+/// (Deltas verified per-step by the machine's `stepDescends` invariant and
+/// by tests/chuggy_test.qnt; labels are domain.qnt's StepRecord labels.
+/// ticket-frozen and ticket-unfrozen are GONE — Frozen removed by the notes;
+/// stalled-retry is GONE as a label — the pre-work resume is an
+/// operator-retry flavor now, in the CHURN set below.)
+///
+///   label                               descends via
+///   ----------------------------------- ---------------------------------
+///   ticket-released                        rank 6->5 (authoring: release —
+///                                       Draft straight into the pipeline;
+///                                       Ready/Blocked stay derived)
+///   ticket-revoked (from any rank>0 phase) rank {6,5,4,3,2,1}->0, stage
+///                                       digit and live tasks cleared
+///                                       (retired to the record, which the
+///                                       measure does not read); every
+///                                       dependent the atomic cascade parks
+///                                       adds its own rank {6,5}->0 drop
+///                                       (see the AUTHORING set for the
+///                                       desk-only flat case)
+///   dispatch                            gas -1 (micro also falls:
+///                                       rank 5->4 dominates the spawn:
+///                                       −rankWeight + nTasks < 0)
+///   task-done (a running task resolves) task count -1
+///   work-passed                         rank 4->3 (dominates the stage
+///                                       digit appearing at L <= maxStages
+///                                       AND the stage-0 fan-out spawn —
+///                                       the rankWeight bound above.
+///                                       Citations PR: a scoped re-entry
+///                                       spawns r <= fanout RUNNING tasks
+///                                       — carried tasks are born settled
+///                                       — so the climb is r <= nTasks,
+///                                       within the same bound: fewer
+///                                       spawns only tighten it)
+///   eval-stage-passed (PR 3 —           stagesLeft -1 (dominates the next
+///     a non-final stage passes;           stage's fan-out spawn:
+///     Evaluating -> Evaluating,           -stageWeight + fanout <= -1;
+///     chuggernaut spec.md §2.1 line 832)  citations PR: a scoped advance
+///                                         spawns r <= fanout running, so
+///                                         -stageWeight + r <= -1 a
+///                                         fortiori)
+///   ticket-escalated work_failed           rank 4->0 (cycle-level resolution:
+///                                       the fabric already retried below
+///                                       the cycle via trusted backoffLimit)
+///   eval-passed (the FINAL stage        rank 3->2 AND stagesLeft 1->0 (the
+///     passes)                             ticket ENQUEUES for the gate —
+///                                         PLanding is the queued state)
+///   gate-opened (merge-queue PR: the    rank 2->1 (the dequeue: the ticket
+///     dequeue occupies the repo's         takes the repo's depth-1 slot;
+///     depth-1 gate — drawn only when      no account moves — the gate
+///     the branch MOVED; a quiet dequeue   charges nothing until it fails)
+///     lands directly in the same step,
+///     the fast-path ticket-done below)
+///   rework-started eval_failure         gas -1 AND reworkLeft -1 (the
+///     (a stage FAILS: the short-circuit   micro reset — rank 3->4, stage
+///     — later stages never spawn)         digit ->0, work respawn — is
+///                                         dominated by the account drop)
+///   ticket-escalated rework_budget_exhausted rank 3->0 (and stage digit ->0)
+///   ticket-escalated gas_exhausted         rank {3,2,1}->0
+///   ticket-done                            rank {2,1}->0 (2: the quiet
+///                                       fast-path SquashMerge straight off
+///                                       the queue; 1: the gated
+///                                       AdvanceDefault out of the gate —
+///                                       the §5e path rule)
+///   rework-started gate_failure         gas -1 (AND gateLeft -1 when
+///                                       Budgeted); from PGated since the
+///                                       merge-queue PR — the eviction
+///                                       frees the gate by phase (rank
+///                                       1->4 climb + respawn, dominated
+///                                       by the gas drop)
+///   ticket-escalated gate_budget_exhausted rank 1->0 (Budgeted only)
+///   ticket-escalated revalidation_failed   rank 5->0 (the pre-work park —
+///                                       Escalated is THE parked phase now;
+///                                       the wall name survives as the
+///                                       reason)
+///   operator-retry, whenever it charges gas -1 (dominates the rank climb
+///     gas (RWorking always — standing     back to 4/3/2 + respawn — for the
+///     rule 2; REvaluating/RLanding        REvaluating resume that includes
+///     under RetryCharged)                 the stage digit reappearing at L:
+///                                         the whole climb is < microBound,
+///                                         which gas outweighs; RLanding
+///                                         re-ENQUEUES — resumes to
+///                                         PLanding, never into the gate)
+///
+/// NAMED NON-DESCENDING SETS — everything else, isolated by name:
+///
+///   STUTTER (state-identical; at-least-once delivery noise — the fabric
+///   axioms row dropped no-double-pods, charter §2, so duplicates are
+///   tolerated idempotently and change nothing):
+///     task-done-duplicate (= 0), land-duplicate (= 0), settled (= 0).
+///   PR 3 widened task-done-duplicate's REACH, not its effect: task ids are
+///   unique across the ticket's whole history (sequential within ticket,
+///   chuggernaut spec.md §1.2), so a stale completion from an EARLIER
+///   stage or incarnation no-ops BY IDENTITY — its id is already retired
+///   into the record. Finitely many by fabric assumption; they cannot
+///   cycle through distinct states, so termination is modulo this
+///   stuttering.
+///
+///   CHURN (operator/environment re-entry; measure may CLIMB; every path
+///   back into active work is still metered at the Working boundary —
+///   standing rule 2, with operator paths governed by the §2 op-retry
+///   configurability row):
+///     operator-retry, the PRE-WORK resume (Escalated -> Pending, the
+///       RPending flavor — the notes PR's "stalled-retry becomes an
+///       operator resume flavor"): +rankPending*rankWeight. FREE under
+///       BOTH meterings, deliberately: nothing was ever spent on a
+///       pre-work park, and the Working boundary still meters any actual
+///       re-entry — the exact pricing the old stalled-retry had, kept
+///       honest here by name.
+///     operator-retry into Evaluating/Landing under RetryFree
+///       (+<= rankEvaluating*rankWeight + maxStages*stageWeight + nTasks —
+///        the Evaluating resume respawns the LOWEST stage's fan-out with
+///        the full stage digit, chuggernaut §1.2 escalation Retry: "a
+///        fresh eval fan-out")
+///   Under the DEFAULT metering (RetryCharged) the churn set is the
+///   pre-work resume alone. RetryFree deliberately reproduces v1's
+///   discovered operator-churn livelock (model-status §5b) as a
+///   configuration, so the model can generate escalation traces under both
+///   prices — the mc_chuggy_retryfree instance plus check.sh Stage 9b's
+///   witness layer (the deterministic free-climb machine trace in
+///   tests/chuggy_witness_test.qnt, plus the demoted pinned-seed probe)
+///   keep that exemption exercised, not dead.
+///
+///   AUTHORING (PR 2, reshaped by the notes PR — author churn above the
+///   released pipeline; each member is bounded by name):
+///     ticket-arrived      (+ the fresh Draft's whole ticketMeasure: a ticket enters
+///                       the fleet. Bounded by construction: ids are dense,
+///                       never reused, and capped by the N_TICKETS arrival
+///                       bound — at most N_TICKETS arrivals ever. The arrival
+///                       also fixes the ticket's eval PROGRAM, but a Draft's
+///                       stage digit is 0, so the climb bound is unchanged.)
+///                       With Frozen and its unfreeze edit loop REMOVED
+///                       (the note: "Frozen removed. Draft -> Ready/
+///                       Blocked"), arrival is this set's ONLY climbing
+///                       member — the unbounded author edit loop left the
+///                       phase table entirely (content edits on a Draft are
+///                       below the table's grain).
+///     ticket-revoked, desk-only (= 0: revoking an already-parked ticket —
+///                       Escalated is rank 0, so nothing falls when no
+///                       dependent gets parked by the cascade AND no member
+///                       gets released by the dissolution (either makes the
+///                       step strictly descend). Bounded: PRevoked is
+///                       absorbing, so each such step permanently settles
+///                       one ticket — at most N_TICKETS ever.)
+///
+/// PER-TICKET WORK-BOUNDEDNESS (roadmap PR 1 gate, extended by PR 2; PR 3
+/// changed digits, the notes PR changed the authoring boundary, the
+/// grouping removal deleted the BATCHING set — none changed the argument.
+/// RETITLED 2026-08-14 by davemo88, from "PER-TICKET LIVENESS, SKETCHED":
+/// the argument was always this one, and the old title claimed a
+/// conclusion it never reached. See THE FAIRNESS GAP below.)
+///
+/// THE THEOREM: ticketMeasure is a nonnegative integer, and every
+/// non-STUTTER non-CHURN non-AUTHORING step strictly decreases the sum of
+/// ticketMeasure over all tickets. Each CHURN step requires an operator
+/// acting on a ticket with an open desk task (domain.qnt `coveredSet`),
+/// and each AUTHORING step is bounded by the arrival cap. So, given the
+/// trusted fabric axioms (charter §2 — spawned tasks eventually resolve,
+/// `activeDeadlineSeconds`/`backoffLimit`) and under default metering, any
+/// run with finitely many stutter and churn events performs FINITELY MANY
+/// ACTING STEPS PER TICKET: no ticket can be dispatched, reworked, evicted
+/// and resumed forever. That is exactly the class of defect v1 found and
+/// priced — the §5a gate-loop livelock and the §5b free-resume churn are
+/// both perpetual WORK, and the accounts are what kill them.
+///
+/// THE FAIRNESS GAP — what this does NOT say, stated because the older
+/// wording did say it: descent bounds how many acting steps CAN happen; it
+/// does not force an enabled step to be TAKEN, so it does not put any
+/// particular ticket into a terminal. Closing that needs weak fairness in
+/// its per-ticket form — "a ticket that stays continuously Ready is
+/// eventually dispatched" — and chuggy does not have it: "no queue, no
+/// fairness" is a standing non-goal (charter §2; domain.qnt decideDispatch).
+/// Note the ordinary action-level reading would not suffice either: the
+/// `dispatch` action's nondet pick ranges over readyTickets, so a run in
+/// which the agentic dispatcher forever prefers other tickets takes
+/// `dispatch` infinitely often and still starves one. Accepted 2026-08-14
+/// (davemo88): "if there is always more pressing work, that's a real
+/// possibility." A ticket that stops being chosen sits FLAT — it does not
+/// churn — which is the whole of what is owed.
+///
+/// So: CHUGGY BOUNDS WORK, NOT WAITING (charter §2). Waiting on an author
+/// to release a Draft, on the dispatcher to pick, and on the gate to free
+/// its slot (proposed R6) are all unbounded BY DECISION. The unconditional
+/// system-quiescence theorem remains charter §4's contested half and is
+/// NOT claimed here.
+module chuggy_measure {
+
+  // === Vocabulary ==========================================================
+  // Sum-type constructors share one namespace per module, hence the
+  // prefixes (P/T/TK/TS/V/R/Rs/C/RW/Land). The two-branch parameter types
+  // keep bare descriptive constructor names — Budgeted/DeadlineOnly
+  // (GatePricing) and RetryCharged/RetryFree (RetryPricing) — documented
+  // here because they live in the same module-wide constructor namespace.
+  // PR 3 added TK (TaskKind); the notes PR adds TS (TaskState — the
+  // explicit task lifecycle) and RW (ReworkPolicy); the citations PR adds
+  // one TS constructor (TSCarried) and no new prefix; the multi-repo PR
+  // adds LO (LandingObs — the landing-boundary attribution); the
+  // merge-queue PR added B (BatchMark), deleted again with grouping.
+
+  /// STORED ticket phases. Deliberately few (charter standing rule 3, derive
+  /// don't store): Blocked and Ready are PREDICATES over deps + record in
+  /// domain.qnt, not phases — a ticket that has not started is PPending, and
+  /// the waiting-room split is derived. PPending must be stored (phase is
+  /// total and "never started" is not expressible as a predicate over the
+  /// other fields without overloading them). PWorking/PEvaluating carry the
+  /// parallel task set; PLanding is its own phase because its outcome is
+  /// the exclusivity boundary (charter §2, effect-only exclusivity); PDone
+  /// is absorbing; PEscalated is the human desk.
+  ///
+  /// PR 2 (authoring, charter §2 first-class rank #1) added the phases
+  /// above the released pipeline, transcribed from v1's transition table
+  /// (specs/chuggernaut/table.qnt); the NOTES-RECONCILIATION PR then
+  /// reshaped that transcription twice, both DELIBERATE DEVIATIONS from
+  /// the v1 table, provenance docs/chuggy-notes-triage.md:
+  ///   - PDraft is the ONLY authoring phase — the note "Frozen removed.
+  ///     Draft -> Ready/Blocked" deletes PFrozen and with it the v1
+  ///     table's freeze/unfreeze/release-from-Frozen rows (table lines
+  ///     22/24/26); release goes Draft -> PPending directly, Ready/Blocked
+  ///     still derived exactly as in PR 1.
+  ///   - PEscalated is THE parked phase — the note "stalled should be
+  ///     rolled into escalated" deletes PStalled: one
+  ///     parked-with-open-human-task phase, with the `reason` field
+  ///     carrying the pre-work walls (revalidation_failed,
+  ///     dependency_revoked) that used to be Stalled's.
+  ///   - PRevoked: the OTHER settled terminal — table lines 45-48: every
+  ///     non-terminal state may go to Revoked, Done and Revoked are
+  ///     absorbing. PRevoked is absorbing, runs nothing, never lands, and
+  ///     opens NO human task (revocation is the author's settled choice —
+  ///     see hasOpenHumanTask).
+  /// PR 3 deliberately added NO phase: a stage advance is an
+  /// Evaluating -> Evaluating edge (chuggernaut spec.md §2.1 line 832) —
+  /// within-phase progress lives in the stage digit, not in new phases.
+  ///
+  /// THE MERGE-QUEUE PR added two; the grouping removal deleted one of
+  /// them (PBatched), leaving:
+  ///   - PGated — the repo's DEPTH-1 MERGE GATE, occupied (chuggernaut
+  ///     §3.3 Merge Gate item 3 + Serialization). PLanding is re-read as
+  ///     ENQUEUED (chuggernaut's WrapUp holds both queue and gate slot in
+  ///     ONE state, the split living in dispatcher memory — the model
+  ///     lifts the slot into phase so depth-1 exclusivity is a predicate
+  ///     over stored state, while the queue's ORDER stays deliberately
+  ///     unmodeled). A ticket is PGated only when the environment chose
+  ///     its branch MOVED at the dequeue — a quiet dequeue lands directly
+  ///     (the fast-path) and never occupies the gate — so PGated ENCODES
+  ///     branchMoved = true with no stored flag (the envActive standing
+  ///     rule, derived-not-stored applied to the environment's choice).
+  type Phase =
+    PDraft |
+    PPending | PWorking | PEvaluating | PLanding | PGated |
+    PDone | PEscalated | PRevoked
+
+  /// What a task IS for (PR 3, task-records depth — charter §2 job anatomy:
+  /// "task records are first-class (they carry the anatomy)"):
+  ///   TKWork     — a task of the Work phase's single task set (Work stays
+  ///                ONE task-set phase per kasofsk's anatomy note; the
+  ///                extracted vocabulary agrees — chuggernaut spec.md §1.2
+  ///                task creation: "Job enters Work (new cycle): one work
+  ///                task", i.e. Work is not staged).
+  ///   TKEval(s)  — a task of eval stage s (0-based index into the ticket's
+  ///                authored program — chuggernaut spec.md §1.1 evaluator
+  ///                `stage:`, "default 0; non-negative; evaluators run in
+  ///                ascending stage order; within a stage they fan out in
+  ///                parallel"). The kind mark is what makes the CURRENT
+  ///                stage derivable from the live task set (evalStage
+  ///                below) instead of stored — standing rule 3.
+  type TaskKind = TKWork | TKEval(int)
+
+  /// A settled task's outcome — RESOLVED verdicts only (the notes PR: a
+  /// running task no longer poses as an outcome; see TaskState). TFailed
+  /// covers BOTH a failed verdict and evaluator-infrastructure death: "the
+  /// job pays" for evaluator crashes — one account, no new machinery
+  /// (charter §2 eval/evaluator-failure). TCancelled is the retirement
+  /// mark for a task still RUNNING when its ticket is revoked mid-flight —
+  /// the model's lean form of chuggernaut spec.md §1.2 "Revoke closes
+  /// tasks" (revoke force-closes every pending task with a synthetic
+  /// resolution recording that the revoke, not a verdict, retired it).
+  /// Only revoke produces it: every other retirement happens at a reduce,
+  /// when the set is fully resolved.
+  type TaskOutcome = TPassed | TFailed | TCancelled
+
+  /// THE EXPLICIT TASK LIFECYCLE (notes PR, "task state machine": one
+  /// small sum instead of implicit set-membership). A task is SPAWNED into
+  /// existence running (spawnTasks below — there is no dormant pre-state:
+  /// creation and start are one step at this grain, chuggernaut spec.md
+  /// §3.3 "creates ... and fans them out"), RUNS, and RESOLVES exactly
+  /// once — TSResolved carries the outcome, and the type now says what the
+  /// old TRunning-in-TaskOutcome only implied: a running task CANNOT carry
+  /// an outcome, and a resolved task MUST. First write wins (resolveTask);
+  /// resolution is final (recordMonotone makes that a theorem).
+  ///
+  /// TSCarried (citations PR): the THIRD state — a verdict CARRIED OVER
+  /// from this evaluator position's most recent retired incarnation
+  /// instead of re-earned. Born settled at a scoped eval re-entry
+  /// (spawnEvalScoped: the previous resolution PASSED, cited a nonempty
+  /// footprint, and that footprint is disjoint from the cycle's change),
+  /// never runs, receives no completion events (decideTaskDone finds no
+  /// running match — a delivery naming a carried id absorbs as the usual
+  /// duplicate), and always stands for a PASS: only passing resolutions
+  /// carry, so the combinator reads it as one (taskPassed below). It
+  /// inherits the citation that earned the carry on `cited` — which is
+  /// what lets a carry CHAIN soundly across cycles (each cycle re-checks
+  /// the same footprint against its own change). This constructor is the
+  /// trace-visible distinguishing mark the implementation replays: a
+  /// carried entry in the retained record is exactly "this evaluator was
+  /// skipped and its old verdict reused", never confusable with a
+  /// re-earned TSResolved(TPassed).
+  type TaskState = TSRunning | TSResolved(TaskOutcome) | TSCarried
+
+  /// A first-class task record (charter §2 job anatomy): identity + kind +
+  /// lifecycle state. `id` is SEQUENTIAL WITHIN THE TICKET, 1-indexed, across
+  /// the ticket's entire history — chuggernaut spec.md §1.2 (`id: u64,
+  /// sequential within job, 1-indexed`) — never reused across stages,
+  /// cycles, or operator retries. That uniqueness is load-bearing: it is
+  /// what lets a stale completion from an earlier stage/incarnation be
+  /// absorbed BY IDENTITY (see the STUTTER note in the header).
+  /// Deliberately NOT carried from chuggernaut's Task: `attempt` and the
+  /// per-task retry budgets (below-cycle machinery, charter §2 non-goal),
+  /// `cycle` (derivable from the record's kind sequence — work groups
+  /// delimit cycles), timestamps/results (implementation accounting, not
+  /// machine state).
+  ///
+  /// `cited` (citations PR): THE CITATION FOOTPRINT — the abstract region
+  /// set (a subset of the machine's 1..N_REGIONS universe; real citations
+  /// are code regions, abstracted to opaque ids) this task's RESOLUTION
+  /// carried. For an EVALUATOR: the code it says it cares about — what
+  /// lets a later rework skip re-running it. For a WORK task: what the
+  /// attempt touched — the CHANGE side of the same abstraction, which is
+  /// how a cycle's change footprint stays DERIVED from the record
+  /// (changeSince below) instead of stored. Stamped by resolveTask when
+  /// the completion event arrives — the footprint is part of the
+  /// resolution event, environment/adversary-chosen exactly like the
+  /// verdict — and Set() while running. Set() on a RESOLVED task means it
+  /// cited NOTHING, and silence is not a free pass: a silent evaluator is
+  /// treated as citing everything (must rerun), a silent work attempt as
+  /// touching everything (nothing may carry past it) — both conservative
+  /// defaults live in spawnEvalScoped/changeSince. A TSCarried task
+  /// inherits the citation that earned its carry (see TaskState).
+  type Task = { id: int, kind: TaskKind, state: TaskState, cited: Set[int] }
+
+  /// A task-completion event's verdict (the event, as distinct from the
+  /// stored resolution — duplicates of the event must be tolerated).
+  type Verdict = VPass | VFail
+
+  /// Verdict combinator over a resolved task set. PR 3: no longer a
+  /// machine-wide parameter — each STAGE of a ticket's authored program
+  /// carries its own (eval is data, charter §2); the charter's default,
+  /// unanimous pass, is the default program's combinator
+  /// (domain.qnt defaultProgram). CUnanimousPass is chuggernaut's
+  /// required-evaluator rule ("if every required evaluator in the stage
+  /// passed", spec.md §3.3) at chuggy's grain — the required/advisory split
+  /// is BELOW that grain (an advisory evaluator is one the stage's
+  /// combinator ignores), README notes the abstraction.
+  type Combinator = CUnanimousPass | CAnyPass
+
+  /// One stage of a ticket's eval program (PR 3): a task-set with its own
+  /// fan-out width and its own verdict combinator. Extracted from
+  /// chuggernaut spec.md §3.3: "the dispatcher creates one task per
+  /// evaluator in the lowest stage and fans them out in parallel" — a
+  /// stage's width is its evaluator count, its combinator is the
+  /// required-pass rule. `fanout` is chuggernaut's own word.
+  type Stage = { fanout: int, combinator: Combinator }
+
+  /// Gate-rework pricing — a model parameter, not a constant (charter §2):
+  /// the model generates escalation traces under both branches and the
+  /// choice is made on evidence.
+  type GatePricing = Budgeted(int) | DeadlineOnly
+
+  /// Eval-rework pricing (notes PR, "rework budget should be removed from
+  /// core job entity and into impl / middleware") — the GatePricing
+  /// pattern applied to the rework bound: the machine consults an abstract
+  /// policy, and RWBudget(n) grants a budget of n cycles. Deliberately the
+  /// ONLY branch for now: the triage row keeps the bound in the model
+  /// because removing it entirely would make per-ticket liveness conditional
+  /// on middleware behavior — an unbounded (or gas-only) branch is exactly
+  /// the removal that was rejected. If evidence ever argues for another
+  /// pricing, it lands as a new constructor here, instantiated alongside
+  /// (the GatePricing method). The per-ticket ACCOUNT the policy meters
+  /// (Ticket.reworkLeft) is policy state the middleware owns in the
+  /// implementation — see the field's note.
+  type ReworkPolicy = RWBudget(int)
+
+  /// Operator-retry metering — configurable per deployment, default charge
+  /// (charter §2 economy/op-retry). RetryFree reproduces v1's discovered
+  /// livelock (model-status §5b) by configuration.
+  type RetryPricing = RetryCharged | RetryFree
+
+  /// Where an operator Retry resumes a parked ticket. RNone when not parked —
+  /// or parked with NO modeled resume: the dependency_revoked wall's only
+  /// modeled exit is revoke (domain.qnt retryableIn), and stamping a
+  /// resume point on it would be a lie to the desk. RPending (notes PR,
+  /// the Stalled merge) is the PRE-WORK resume flavor: back to the
+  /// released waiting room (PPending, where Ready/Blocked re-derive),
+  /// never to a pipeline phase — a pre-work park spent nothing and
+  /// resumes to exactly where it left.
+  type Resume = RNone | RPending | RWorking | REvaluating | RLanding
+
+  /// Why a ticket sits on the human desk. The wall VOCABULARY is carried from
+  /// v1's explainer (docs/chuggernaut.md §5) and constrained by the charter
+  /// §2 termination row — the charter itself does not name individual
+  /// walls. With Stalled merged into Escalated (notes PR), the reason is
+  /// what distinguishes the parks: RsWorkFailed / RsReworkBudgetExhausted /
+  /// RsGateBudgetExhausted (Budgeted pricing only) / RsGasExhausted are
+  /// the pipeline walls, and the PRE-WORK walls are RsRevalidationFailed
+  /// (retryable — resumes to Pending, RPending) and RsDependencyRevoked
+  /// (PR 2's cascade wall, chuggy-NEW — NOT retryable, its only exit is
+  /// revoke). RsGasExhausted is the notes PR's rename of the deadline wall
+  /// (`gas_exhausted` on the trace); RsWorkFailed is the CYCLE-level work
+  /// wall (there is no retries wall: below-cycle retries are the fabric's
+  /// trusted backoffLimit, §2).
+  type Reason =
+    RsNone | RsWorkFailed | RsReworkBudgetExhausted |
+    RsGateBudgetExhausted | RsGasExhausted | RsRevalidationFailed |
+    RsDependencyRevoked
+
+  /// How a landing resolves. The two SUCCESS outcomes are deliberately
+  /// distinct from day one — v1's single conformance divergence was exactly
+  /// AdvanceDefault vs SquashMerge (charter §2 landing row) — and since
+  /// the merge-queue PR the model SAYS WHICH FIRES WHEN (the §5e
+  /// divergence as a theorem, not a footnote — model-status.md §5e:
+  /// "promotion happens by fast-forwarding the default branch onto the
+  /// validated squash candidate, and no SquashMerge effect exists"):
+  ///   - quiet branch  -> the gate is SKIPPED and the candidate
+  ///     squash-merges DIRECTLY (chuggernaut §3.3 Merge Gate item 1, the
+  ///     skip fast-path) — LandSquashMerge, the ONLY quiet outcome;
+  ///   - moved branch  -> the gate RUNS against the candidate merge
+  ///     commit, and a clean pass ADVANCES the default ref to the
+  ///     already-merged candidate (§3.3 item 4: "advance the default
+  ///     branch to the candidate commit — this IS the squash-merge; do
+  ///     not re-merge") — LandAdvanceDefault — while a failure is the
+  ///     priced eviction — LandFailed.
+  /// domain.qnt landOutcomes is the draw rule; landingIsolation +
+  /// gatedPromotesDirectSquashes make it durable on every reachable step.
+  /// PROPOSED-requirement provenance (R3, README): derived from
+  /// chuggernaut's spec + v1's replay finding, NOT from an intake answer —
+  /// pending geoff/davemo88 confirmation.
+  type LandOutcome = LandAdvanceDefault | LandSquashMerge | LandFailed
+
+  /// THE LANDING-BOUNDARY OBSERVATION (multi-repo PR — the roadmap PR 4
+  /// gate's attribution half): every step that RESOLVES a landing attempt
+  /// carries LOAttempt with
+  ///   - `repo`: the ticket's target repo — golden traces must be
+  ///     per-repo attributable, and the repo cannot ride the effect
+  ///     strings (no dynamic strings at this grain), so the step record
+  ///     carries it structurally;
+  ///   - `branchMoved`: the environment's PER-ATTEMPT choice of whether
+  ///     the target repo's default branch moved under the candidate — the
+  ///     ONLY reason a landing can fail (docs/chuggernaut.md §4; v1's
+  ///     LConflictOrGateFail existed only while envActive). This is the
+  ///     envActive standing rule (docs/chuggy-notes-triage.md, "already
+  ///     true" row) honored: an explicitly NAMED nondet event on the
+  ///     trace, never a stored env flag — there is no per-repo "active"
+  ///     variable anywhere, and quiet/moved is chosen fresh at every
+  ///     attempt (derive-don't-store applied to the environment).
+  /// Every other step — including eval-passed (which merely ENQUEUES the
+  /// landing) and land-duplicate (an absorbed re-delivery: no attempt
+  /// resolves, nothing is emitted) — carries LONone. The iff is the
+  /// landingIsolation invariant (domain.qnt).
+  type LandingObs = LONone | LOAttempt({ repo: int, branchMoved: bool })
+
+  /// One ticket's record. The measure below is a pure function of this.
+  type Ticket = {
+    phase: Phase,
+    // Upstream dependency ticket ids (acyclic by construction in domain.qnt).
+    // Multi-repo PR: deps may CROSS repos — the dep gate is Done-ness, not
+    // location (domain.qnt depsDoneIn reads phase alone; the lean reading
+    // of "one orchestrator, many targets": the DAG stays
+    // orchestrator-level, and forbidding cross-repo edges would be new
+    // machinery with no charter provenance).
+    deps: Set[int],
+    // THE TARGET REPO (multi-repo PR, roadmap PR 4 — charter §2
+    // first-class order rank #3; `domain/firstclass`, both respondents:
+    // "Multiple repos — one orchestrator, many targets"): a ticket targets
+    // EXACTLY ONE repo, an AUTHORED field like deps and the program —
+    // chosen at arrival from the bounded universe 1..N_REPOS (domain.qnt
+    // repos; reposWellFormed) and immutable after. NOT a measure input:
+    // no digit, weight, or account radix reads it (the repo-blindness
+    // theorem — derivation in this file's multi-repo header note), and no
+    // budget is per-repo (deliberately: no charter provenance — README).
+    repo: int,
+    // PR 3: THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
+    // arrives with the Draft (which is exactly why authoring came first,
+    // first-class order charter §2) and is immutable after arrival, like
+    // deps. This is the charter's "eval is data, not machinery" made
+    // literal: the program is data on the ticket record; domain.qnt's
+    // decideEvalStageReduce is the interpreter. Well-formedness (non-empty,
+    // length <= MAX_STAGES, every fanout in 1..N_TASKS) is an ARRIVAL
+    // validity condition — domain.qnt programsWellFormed.
+    program: List[Stage],
+    // The LIVE task set of the current Working phase or Evaluating stage;
+    // empty in every other phase. Task ids are sequential within the ticket
+    // across its whole history (nextTaskId below).
+    tasks: Set[Task],
+    // PR 3: THE RETAINED TASK RECORD — the ticket's chronological task log
+    // (chuggernaut spec.md §1.2: "tasks form a chronological log ... never
+    // referencing each other; no task graph"), append-only: a task moves
+    // here, resolution settled, when its set retires (reduce, escalation,
+    // or revoke — retireLive below), and once here it NEVER changes
+    // (domain.qnt recordMonotone). This is "task records are first-class:
+    // they carry the anatomy" (charter §2) — outcomes are retained history
+    // the golden traces can carry as provenance, not overwritten scratch
+    // state. Entry i has id firstTaskId + i (ids sequential, retirement in
+    // id order). NOT a measure input (append-only: it could only climb).
+    // GROWTH BOUND: under RetryCharged every spawn burst rides a charged
+    // gas unit, so record length <= GAS * (nTasks + maxStages * nTasks);
+    // under RetryFree it is unbounded across free-resume churn — the same
+    // conditionality as the liveness sketch above.
+    record: List[Task],
+    // GHOST (PR 3, accounting only — NOT a measure input, exactly like
+    // record; ticketMeasure never reads it): how many tasks this ticket has EVER
+    // spawned. Every spawn site bumps it by its fan-out (spawnOn below),
+    // so the machine invariant `spawned == record.length + tasks.size`
+    // (domain.qnt idsAccounted) makes history-unique sequential identity a
+    // checked theorem rather than a test-pinned convention: a decider that
+    // DROPPED a task set instead of retiring it would break the equality
+    // in the very next state.
+    spawned: int,
+    // POLICY STATE (notes PR): the eval-rework account REMAINING, granted
+    // by ReworkPolicy (RWBudget(n) grants n; counts down — the measure
+    // wants remaining, not spent). In the IMPLEMENTATION this account
+    // belongs to the middleware, not to the core ticket entity — the note's
+    // demand — and it stays on the model's Ticket record for the same reason
+    // the ghost fields do their tickets: the termination measure needs its
+    // bounded digit (the model's concern), while ownership of the counter
+    // is the implementation's (documented, like `landings`, rather than
+    // modeled).
+    reworkLeft: int,
+    // Gate-rework budget remaining; identically 0 under DeadlineOnly.
+    gateLeft: int,
+    // GAS remaining — the REQUIRED account (charter §2 economy/deadline,
+    // renamed by the notes PR: the bound is a spend meter, not a clock).
+    gasLeft: int,
+    // Operator-resume point (RNone unless Escalated with a modeled
+    // resume — the dependency_revoked wall has none; see Resume).
+    resumeAt: Resume,
+    // Desk reason (RsNone unless Escalated). Deliberately FIRST-CLASS
+    // stored trace vocabulary, not derived from phase — and the notes PR's
+    // Stalled merge leans on exactly that: with one parked phase, only the
+    // reason distinguishes a retryable pre-work park
+    // (RsRevalidationFailed) from the cascade wall (RsDependencyRevoked,
+    // not retryable) and from the pipeline walls, which no phase predicate
+    // could.
+    reason: Reason,
+    // GHOST: landing effects ever emitted for this ticket — the counter the
+    // effect-exclusivity invariant (charter §2: exactly one landing) reads.
+    // Not implementation state.
+    landings: int
+  }
+
+  /// Standing rule 3 (derive, don't store): the open-human-task flag IS a
+  /// predicate over the phase — a desk task is open exactly while the ticket
+  /// is parked on the desk, and (notes PR) PEscalated is THE parked phase.
+  /// (v1 stored the flag and proved the iff as an invariant; chuggy
+  /// derives it, so the invariant is by construction.) The trace-visible
+  /// artifact is the "OpenHumanTask" effect string.
+  ///
+  /// PRevoked is deliberately NOT here (PR 2): revocation is the author's
+  /// settled choice — the desk owes a revoked ticket nothing, exactly like
+  /// PDone. This is precisely why the revoke cascade needs its own
+  /// coverage: a dependent stuck behind a Revoked dep gets no visibility
+  /// through its dep, so the cascade parks it with a task of its OWN
+  /// (RsDependencyRevoked; domain.qnt `cascadeSafety`).
+  pure def hasOpenHumanTask(ticket: Ticket): bool =
+    ticket.phase == PEscalated
+
+  /// The machine's observed state, as the pure deciders see it. A record
+  /// (not a bare map) so the ticket-source shape stays open. PR 2 attached
+  /// authoring here with no widening needed after all — tickets ARRIVE by
+  /// growing the map's (dense, never-reused) id domain through the
+  /// `freshTicket` seam, and no PR 1 decider needed surgery; the record shape
+  /// stays open for later PRs. PR 3 widened only the Ticket record (program,
+  /// record, task kinds), not Core.
+  type Core = { tickets: int -> Ticket }
+
+  /// One observed ticket-phase transition, golden-trace shaped (standing rule
+  /// 4: conformance from day one — the model emits, the implementation
+  /// replays). PR 3: from == to is a REAL row, not a degenerate one — the
+  /// stage advance is Evaluating -> Evaluating (chuggernaut spec.md §2.1
+  /// line 832).
+  type Transition = { ticket: int, from: Phase, to: Phase }
+
+  /// One decision's observable record, mirroring the golden-trace step
+  /// schema {event, transitions, effects} — extended by the multi-repo PR
+  /// with the landing-boundary attribution field (`landing`, LONone on
+  /// every non-landing step; see LandingObs): the minimal StepRecord
+  /// extension that keeps golden traces per-repo attributable at the one
+  /// boundary where the repo matters.
+  type StepRecord = {
+    label: str,
+    transitions: List[Transition],
+    effects: List[str],
+    landing: LandingObs
+  }
+
+  /// What a pure decider returns: record performed + post-state.
+  type Decision = { rec: StepRecord, post: Core }
+
+  /// The bounds the measure is parameterized by — passed explicitly so this
+  /// module needs no consts and the measure stays a pure function usable
+  /// from tests with any bounds. PR 3 added maxStages (the stage digit's
+  /// radix); the notes PR carries the rework POLICY, not a bare budget —
+  /// the digit's radix is derived from it (reworkBudget below), same as
+  /// gate pricing.
+  type Bounds = {
+    reworkPolicy: ReworkPolicy,
+    nTasks: int,
+    maxStages: int,
+    gatePricing: GatePricing
+  }
+
+  // === The measure =========================================================
+
+  /// The gate account's size under a pricing: Budgeted(n) grants n,
+  /// DeadlineOnly grants none (gas alone meters the gate loop — v1's
+  /// documented-livelock shape, kept as the branch to be priced on
+  /// evidence).
+  pure def gateBudget(gp: GatePricing): int =
+    match gp {
+      | Budgeted(n) => n
+      | DeadlineOnly => 0
+    }
+
+  /// The rework account's size under a policy (the GatePricing pattern —
+  /// see ReworkPolicy for why RWBudget is the only branch for now).
+  pure def reworkBudget(rw: ReworkPolicy): int =
+    match rw {
+      | RWBudget(n) => n
+    }
+
+  // --- Named rank ladder (the notes PR's magic-number audit) ---------------
+  // Each rank is the successor of the one it must strictly dominate — the
+  // ladder IS the derivation, so no bare rank numeral is written twice
+  // (phaseRank reads these; the descent table in the header cites them).
+
+  /// The settled tier: Done, Escalated, Revoked — one member fewer since
+  /// Stalled merged into Escalated (notes PR). Nothing is below settled.
+  pure val rankSettled: int = 0
+  /// The occupied depth-1 merge gate sits directly above settled
+  /// (merge-queue PR): every gate resolution — the gated AdvanceDefault,
+  /// the priced eviction, the walls — settles or reworks in one step.
+  pure val rankGated: int = rankSettled + 1
+  /// PLanding — ENQUEUED for the gate since the merge-queue PR: the
+  /// dequeue (gate-opened) descends into the gate, the quiet fast-path
+  /// descends straight to Done.
+  pure val rankLanding: int = rankGated + 1
+  pure val rankEvaluating: int = rankLanding + 1
+  pure val rankWorking: int = rankEvaluating + 1
+  /// The released waiting room (Ready/Blocked derive from it).
+  pure val rankPending: int = rankWorking + 1
+  /// The ONLY authoring phase, the ladder's top — Frozen removed by the
+  /// notes ("Frozen removed. Draft -> Ready/Blocked"); release descends
+  /// 6 -> 5.
+  pure val rankDraft: int = rankPending + 1
+  /// The ladder's ceiling — the highest rank any phase takes (PDraft).
+  /// microBound's multiplier is radix(rankCeiling): the notes PR's
+  /// compression (6 -> 5), the merge-queue PR's two new rungs (5 -> 7) and
+  /// the grouping removal (7 -> 6) each propagated to the multiplier
+  /// (7 -> 6 -> 8 -> 7) by derivation, not by editing a literal.
+  pure val rankCeiling: int = rankDraft
+
+  /// How far from settled a ticket's lifecycle position is. The wildcard is
+  /// the settled tier: PDone, PEscalated, and PRevoked all take
+  /// rankSettled — revoke and every wall drop any live rank straight to
+  /// settled.
+  pure def phaseRank(p: Phase): int =
+    match p {
+      | PDraft => rankDraft
+      | PPending => rankPending
+      | PWorking => rankWorking
+      | PEvaluating => rankEvaluating
+      | PLanding => rankLanding
+      | PGated => rankGated
+      | _ => rankSettled
+    }
+
+  pure def runningCount(tasks: Set[Task]): int =
+    tasks.filter(t => t.state == TSRunning).size()
+
+  /// The CURRENT eval stage, DERIVED from the live task set's kind marks
+  /// (standing rule 3: no stored stage index) — meaningful only while the
+  /// set is a stage's fan-out (PEvaluating; tasksWellFormed pins the set
+  /// uniformly TKEval(s), so the fold's pick order is irrelevant). 0 on an
+  /// empty or work set (the fold's base: no eval mark, no stage).
+  pure def evalStage(tasks: Set[Task]): int =
+    tasks.fold(0, (acc, t) => match t.kind { | TKWork => acc | TKEval(s) => s })
+
+  /// The stage digit: how many stages of the authored program have not yet
+  /// passed — L - s while Evaluating stage s (so in 1..L there), 0 in every
+  /// other phase (the digit APPEARS on work-passed and VANISHES on every
+  /// exit, both dominated per the header's digit-order argument).
+  pure def stagesLeft(ticket: Ticket): int =
+    if (ticket.phase == PEvaluating) ticket.program.length() - evalStage(ticket.tasks)
+    else 0
+
+  /// THE radix derivation, named once (the magic-number audit): a digit
+  /// bounded by maxDigit takes maxDigit + 1 distinct values, so the next
+  /// weight up must be worth exactly that many units of this one. Every
+  /// weight and every account radix below is built from this — the "+ 1"
+  /// appears here and nowhere else in the weight chain.
+  pure def radix(maxDigit: int): int = maxDigit + 1
+
+  /// Weight of one unit of stage progress: strictly dominates the
+  /// running-task count (<= nTasks) — the ABOVE-the-count half of the PR 3
+  /// digit-order argument.
+  pure def stageWeight(b: Bounds): int = radix(b.nTasks)
+
+  /// Weight of one unit of phase rank: strictly dominates the full stage
+  /// digit plus any running count (stagesLeft <= maxStages, count <=
+  /// nTasks < stageWeight) — the BELOW-rank half of the argument.
+  pure def rankWeight(b: Bounds): int = radix(b.maxStages) * stageWeight(b)
+
+  /// Strict upper bound on micro:
+  ///   micro <= rankCeiling*rankWeight + (rankWeight - 1)
+  ///         < radix(rankCeiling)*rankWeight.
+  /// The multiplier is DERIVED from the ladder's ceiling — rankDraft = 5
+  /// since the notes PR removed Frozen (it was 6, multiplier 7, under
+  /// PR 2's taller ladder), and this definition re-derives rather than
+  /// restates it.
+  pure def microBound(b: Bounds): int = radix(rankCeiling) * rankWeight(b)
+
+  /// Within-cycle progress, lexicographic (rank, stagesLeft, runningCount).
+  pure def micro(b: Bounds, ticket: Ticket): int =
+    phaseRank(ticket.phase) * rankWeight(b)
+      + stagesLeft(ticket) * stageWeight(b)
+      + runningCount(ticket.tasks)
+
+  /// THE per-ticket termination measure: lexicographic
+  /// (gasLeft, gateLeft, reworkLeft, micro), radix-flattened — each
+  /// account's radix is one more than its grant (radix again), so every
+  /// digit stays strictly below its radix. Nonnegative whenever the
+  /// accounts are (domain.qnt's accountsBounded keeps them so).
+  pure def ticketMeasure(b: Bounds, ticket: Ticket): int =
+    ((ticket.gasLeft * radix(gateBudget(b.gatePricing)) + ticket.gateLeft)
+        * radix(reworkBudget(b.reworkPolicy))
+      + ticket.reworkLeft) * microBound(b)
+    + micro(b, ticket)
+
+  /// Sum over the fleet — steps touch one ticket, so per-step descent of the
+  /// sum IS per-ticket descent. Order-independent fold (+ commutes).
+  pure def sysMeasure(b: Bounds, tickets: int -> Ticket): int =
+    tickets.keys().fold(0, (acc, j) => acc + ticketMeasure(b, tickets.get(j)))
+
+  // === Vocabulary helpers (task plumbing shared by machine and tests) ======
+
+  /// Task ids are 1-INDEXED, sequential within the ticket (chuggernaut
+  /// spec.md §1.2: "sequential within job, 1-indexed") — the base named
+  /// once so the id arithmetic below carries the convention, not a magic
+  /// numeral.
+  pure val firstTaskId: int = 1
+
+  /// A fresh parallel task set of kind k: n tasks, all running (spawned
+  /// and started in one step — see TaskState), ids start..start+n-1 — the
+  /// caller passes nextTaskId so identity stays sequential within the ticket
+  /// across the whole history.
+  pure def spawnTasks(k: TaskKind, start: int, n: int): Set[Task] =
+    start.to(start + n - 1).map(i =>
+      { id: i, kind: k, state: TSRunning, cited: Set() })
+
+  /// The next task id this ticket would spawn: every id ever issued is either
+  /// retired (record) or live (tasks), and ids are dense from firstTaskId.
+  pure def nextTaskId(ticket: Ticket): int =
+    firstTaskId + ticket.record.length() + ticket.tasks.size()
+
+  /// THE spawn site (PR 3): install a fresh fan-out of kind k on the ticket —
+  /// ids continue the ticket's sequential history — and bump the ghost
+  /// `spawned` counter by the same n, which is what keeps the idsAccounted
+  /// equality (domain.qnt) checkable. Callers guarantee the previous set
+  /// is already retired (tasks empty), which every spawn site satisfies:
+  /// dispatch/land-rework/opRetry spawn from task-free phases, and the
+  /// reduces spawn on the retireLive'd ticket.
+  pure def spawnOn(ticket: Ticket, k: TaskKind, n: int): Ticket =
+    { ...ticket, tasks: spawnTasks(k, nextTaskId(ticket), n), spawned: ticket.spawned + n }
+
+  // --- Citation scoping (the citations PR) ---------------------------------
+  // The triage note, verbatim: "allow passing evaluators to cite code they
+  // care about to let them decide whether to rerun if evaluation must
+  // rerun." Both sides are abstracted: an evaluator's citation and a work
+  // attempt's touch set are opaque region sets over 1..N_REGIONS (the
+  // domain's bound), riding the resolved record entries (Task.cited).
+  // Everything below is DERIVED from the retained record — no cycle
+  // bookkeeping, no stored change set (standing rule 3): the record's work
+  // groups already delimit cycles, so "what changed since this evaluator
+  // last ran" is a fold over the record.
+
+  /// The largest record index holding a stage-s eval entry, or -1 when
+  /// stage s has never retired an incarnation (first-time entry). Every
+  /// retirement of a stage-s set is a full contiguous fanout-sized run
+  /// (the live set always carries the stage's declared width —
+  /// tasksWellFormed), so the most recent incarnation occupies exactly
+  /// the fanout indices ending here, position k at index
+  /// (lastEvalIndex - fanout + 1 + k) — entry order is id order is
+  /// position order (spawnTasks issues ids ascending).
+  pure def lastEvalIndex(record: List[Task], s: int): int =
+    record.indices().fold(-1, (acc, i) =>
+      if (record[i].kind == TKEval(s) and i > acc) i else acc)
+
+  /// THE CHANGE FOOTPRINT since record index `after`: the union of what
+  /// every LATER work attempt touched — every attempt, including failed
+  /// and force-closed ones, conservatively: anything that ran between the
+  /// old verdict and now may have touched code. CONSERVATIVE DEFAULT,
+  /// work side: a work entry that cited NOTHING is counted as the whole
+  /// universe — a silent attempt is treated as touching everything, so
+  /// nothing carries past it (the mirror of the evaluator-silence rule in
+  /// spawnEvalScoped; silence is never a free pass in either direction).
+  pure def changeSince(record: List[Task], after: int, universe: Set[int]): Set[int] =
+    record.indices().fold(Set(), (acc, i) =>
+      if (i > after and record[i].kind == TKWork)
+        acc.union(if (record[i].cited == Set()) universe else record[i].cited)
+      else acc)
+
+  /// THE SCOPED EVAL SPAWN (citations PR) — the footprint-aware
+  /// counterpart of spawnOn for the interpreter's two eval-entry sites
+  /// (work-passed's lowest-stage entry and the stage advance). Spawns
+  /// stage s's full fan-out of n tasks at the ticket's next sequential ids
+  /// (identity accounting is UNCHANGED: n tasks spawn, spawned += n,
+  /// idsAccounted holds verbatim over carried entries), but position k is
+  /// born TSCarried — verdict carried over, evaluator NOT rerun — exactly
+  /// when, in the most recent retired incarnation of stage s:
+  ///   - position k PASSED (taskPassed: an earned pass or a chained
+  ///     carry — a carried entry retains its citation, so re-checking IT
+  ///     against each new cycle's change keeps the chain sound), AND
+  ///   - it cited a NONEMPTY footprint (conservative default, evaluator
+  ///     side: citing nothing = citing everything = must rerun; note the
+  ///     disjointness test alone would pass an empty set, which is
+  ///     precisely why silence needs its own arm), AND
+  ///   - that footprint is DISJOINT from the change footprint since that
+  ///     incarnation (changeSince — every work attempt in between).
+  /// Everything else respawns fresh (TSRunning): failed positions — so
+  /// THE FAILING EVALUATOR THAT CAUSED A REWORK ALWAYS RESPAWNS, it
+  /// cannot satisfy taskPassed — cancelled positions, silent citers, and
+  /// intersecting footprints. A FIRST-TIME stage entry (no retired
+  /// incarnation) spawns everything running — scoping never skips a
+  /// verdict that was never earned. Work fan-outs never come through
+  /// here: WORK TASKS ALWAYS RESPAWN (only evaluators cite; the work
+  /// spawn sites keep spawnOn).
+  ///
+  /// DEGENERATION (the compatibility story): when the change intersects
+  /// everything — the adversary touches all regions, or any work entry is
+  /// silent — no position carries and this IS spawnOn(ticket, TKEval(s), n),
+  /// byte for byte; pinned in tests/chuggy_test.qnt.
+  pure def spawnEvalScoped(ticket: Ticket, s: int, n: int, universe: Set[int]): Ticket =
+    val iLast = lastEvalIndex(ticket.record, s)
+    if (iLast == -1) spawnOn(ticket, TKEval(s), n)
+    else
+      val change = changeSince(ticket.record, iLast, universe)
+      val start = nextTaskId(ticket)
+      { ...ticket,
+        tasks: 0.to(n - 1).map(k =>
+          val prev = ticket.record[iLast - n + 1 + k]
+          if (taskPassed(prev) and prev.cited != Set() and
+              prev.cited.intersect(change) == Set())
+            { id: start + k, kind: TKEval(s), state: TSCarried, cited: prev.cited }
+          else
+            { id: start + k, kind: TKEval(s), state: TSRunning, cited: Set() }),
+        spawned: ticket.spawned + n }
+
+  /// Retire the live task set into the retained record, in id order
+  /// (tasksWellFormed keeps live ids contiguous above the record, so the
+  /// appended run keeps record entry i at id firstTaskId + i). A task
+  /// still RUNNING at retirement is force-closed as TSResolved(TCancelled)
+  /// — only revoke retires mid-flight sets (chuggernaut spec.md §1.2
+  /// "Revoke closes tasks"); every reduce/escalation retirement is of a
+  /// fully-resolved set, so the TCancelled arm never fires there. A
+  /// TSCarried task retires AS TSCarried, citation intact (citations PR):
+  /// the mark survives into the log — that is both the replay vocabulary
+  /// and what lets the NEXT cycle's carry check chain off it.
+  pure def retireLive(ticket: Ticket): Ticket =
+    val start = firstTaskId + ticket.record.length()
+    { ...ticket,
+      tasks: Set(),
+      record: range(start, start + ticket.tasks.size()).foldl(ticket.record, (r, i) =>
+        r.append(ticket.tasks.fold(
+          { id: i, kind: TKWork, state: TSResolved(TCancelled), cited: Set() },
+          (acc, t) =>
+          if (t.id == i)
+            { ...t, state: if (t.state == TSRunning) TSResolved(TCancelled) else t.state }
+          else acc))) }
+
+  /// First write wins: resolve task `tid` if it is still running; the
+  /// caller (decideTaskDone) treats an already-resolved task as a duplicate
+  /// delivery and changes nothing — the idempotence the dropped
+  /// no-double-pods axiom demands (charter §2 fabric row). The explicit
+  /// lifecycle makes the finality structural: TSRunning -> TSResolved(out)
+  /// is the only edge, and nothing maps a TSResolved (or TSCarried) back.
+  /// Citations PR: the resolution event carries the footprint alongside
+  /// the verdict, and first-write-wins covers BOTH — a duplicate delivery
+  /// with a different citation changes nothing, and a carried task
+  /// (born settled, no running match) absorbs deliveries the same way.
+  pure def resolveTask(
+      tasks: Set[Task], tid: int, out: TaskOutcome, cited_: Set[int]): Set[Task] =
+    tasks.map(t =>
+      if (t.id == tid and t.state == TSRunning)
+        { ...t, state: TSResolved(out), cited: cited_ }
+      else t)
+
+  /// What counts as a PASS to the combinator (citations PR): a verdict
+  /// earned this incarnation (TSResolved(TPassed)) or one carried over
+  /// from the last (TSCarried — only passing resolutions carry, so the
+  /// reading is faithful, and it is exactly what makes VERDICT SOUNDNESS
+  /// a construction: the combinator runs over carried ∪ respawned in one
+  /// set, so a scoped stage's outcome IS the combinator's outcome over
+  /// the union, never a separate code path).
+  pure def taskPassed(t: Task): bool =
+    t.state == TSResolved(TPassed) or t.state == TSCarried
+
+  /// The verdict combinator, interpreted per stage (PR 3: the caller reads
+  /// it off the ticket's program — eval is data, this is the interpreter's
+  /// leaf). Callers guarantee all tasks are settled (resolved or carried).
+  /// CUnanimousPass is chuggernaut's "every required evaluator in the
+  /// stage passed" (spec.md §3.3) at this grain; TFailed and TCancelled
+  /// both fail it, TSCarried passes it (taskPassed above).
+  pure def combine(c: Combinator, tasks: Set[Task]): bool =
+    match c {
+      | CUnanimousPass => tasks.forall(t => taskPassed(t))
+      | CAnyPass => tasks.exists(t => taskPassed(t))
+    }
+}

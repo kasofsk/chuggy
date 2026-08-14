@@ -2,7 +2,7 @@
 
 A job orchestrator: tickets form a DAG, a single journaled actor drives each through authoring → work → evaluation → landing, and Nomad runs the work and decides nothing.
 
-**This repo is unusual in one way that matters before you read anything else: the formal model leads the implementation.** A Quint model of the machine already exists and is proved; it emits golden traces, and this implementation grows up against them. When the model and the code disagree, the code is wrong. That inverts the normal arrangement, and it is charter standing rule 4.
+**This repo is unusual in one way that matters before you read anything else: the formal model leads the implementation.** A Quint model of the machine already exists and is proved; it emits golden traces, and this implementation grows up against them. When the model and the code disagree, the code is wrong. That inverts the normal arrangement, and it is standing rule 4.
 
 ## Read these; don't re-derive them
 
@@ -13,11 +13,16 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 
 This file is an **index and a set of conventions**. It deliberately does not restate any rule from the pages above — a second copy of a rule is what drifts, and keeping the rules in exactly one place is why they can be trusted.
 
+- **[docs/reference/architecture.md](./docs/reference/architecture.md)** — how chuggy is built, and what the model proves. Read it before touching the core.
+- **[docs/design/001-what-chuggy-is-not.md](./docs/design/001-what-chuggy-is-not.md)** — the absences and rejected alternatives. Read it before proposing something that sounds obviously missing; it is probably in there with the argument that removed it.
+
 ## Provenance
 
-The charter, the intake answers and the Quint model live in `davemo88/swarm-spec` <!-- intent --> until the monorepo migration lands. The charter's §5 standing rules and §2 decided rows govern this implementation, and `docs/reference/architecture.md` <!-- intent --> will reconcile them with the reimplementation-facing material carried over from the predecessor.
+The model lives here, in `model/`. It was developed as `chuggy-model` in a separate repo alongside a model of the predecessor, and only the chuggy half came across.
 
-Much of the apparatus here — the gates, the doc policy, the tier structure — is ported from **chuggernaut**, the predecessor this replaces. It is ported deliberately and selectively: `style.md` records what was carried forward but is not yet in force, and what was deliberately not carried over at all. If you find yourself about to add a rule because chuggernaut had it, check that its motivating failure can actually occur here.
+The founding charter did **not** come across, and that is deliberate rather than an oversight. Most of its decided rows were prose statements of things the model now implements and proves, so keeping both would be keeping a second, unchecked copy of a checked fact. What it held that the model structurally cannot — the absences, the rejected alternatives and their arguments — was carried into the design doc above. What it held that was spent — a completed roadmap, an identity table, a two-round questionnaire's provenance — was not.
+
+Much of the apparatus here — the gates, the doc policy, the tier structure — is ported from **chuggernaut**, the predecessor this replaces. Ported deliberately and selectively: `style.md` records what was carried forward but is not yet in force, and what was not carried over at all. If you find yourself about to add a rule because chuggernaut had it, check that its motivating failure can actually occur here.
 
 ## Checks
 

@@ -88,13 +88,13 @@ There is no automated reviewer yet — the platform that would run one is what t
 
 ## Tier 3 — principles
 
-These are the standing commitments. Four of them are the charter's, and `architecture.md` holds their statement and argument — named here so a reviewer can cite them, defined there so there is one copy.
+These are the standing commitments. The first four are stated and argued in [architecture.md](./architecture.md) — named here so a reviewer can cite them, defined there so there is one copy.
 
-- **The measure comes first** — charter standing rule 1.
-- **No free re-entry** — charter standing rule 2.
-- **Derive, don't store** — charter standing rule 3.
-- **Conformance from day one, direction reversed** — charter standing rule 4. The model leads; the implementation grows up against its traces.
-- **Single writer.** One journaled actor decides; nothing else writes. See `architecture.md`.
+- **The measure comes first** — standing rule 1.
+- **No free re-entry** — standing rule 2.
+- **Derive, don't store** — standing rule 3.
+- **Conformance from day one, direction reversed** — standing rule 4. The model leads; the implementation grows up against its traces.
+- **Single writer.** One journaled actor decides; nothing else writes. See [architecture.md](./architecture.md).
 - **Simplicity over performance.** Take the simple shape until a measurement says otherwise. A measurement, not an intuition.
 - **Zero technical debt.** Fix it in the change that found it, or file it as work. "Later" is neither.
 - **A control that reports success and does nothing is worse than no control.** An unverified control is believed, and a believed control is not checked again. In the predecessor a rule of exactly this shape was false on the one node it mattered for, and stayed believed for eleven days until something measured it.
