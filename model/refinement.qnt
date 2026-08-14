@@ -1,46 +1,40 @@
-/// THE REFINEMENT LAYER — the journaled actor (chuggy-charter.md §6,
-/// the refinement layer; the §4 fork RESOLVED offline 2026-08-12: **service +
-/// dumb K8s Jobs** — "one journaled single-writer actor keeps all state
-/// and makes every decision; Kubernetes runs things and decides
-/// nothing"). This module is the SERVICE SHAPE's refinement obligation
-/// discharged: the runtime shape is modeled AS a machine and proved to
-/// refine the domain machine it embeds.
+/// THE REFINEMENT LAYER — the journaled actor as a machine that refines
+/// the domain machine.
 ///
-/// It also answers the one the predecessor-review note the triage filed against this
-/// PR (docs/chuggy-notes-triage.md, "already true" table, verbatim: "how
-/// do decision events flow to consumers / executors that apply their
-/// side effects"): decision events ARE journal entries. The actor's
-/// every decision appends (seq, decision-event, StepRecord) to a durable
-/// journal; the EXECUTOR is a cursor (`applied`) consuming that journal
-/// in order and emitting each entry's effects toward the world; crash
-/// recovery replays the journal into a fresh in-memory state and resumes
-/// the cursor. Decisions flow decide -> journal -> cursor -> world, and
-/// the seam between recording a decision and effecting it is exactly the
-/// atomicity this PR proves safe (journal-then-effect) and demonstrates
-/// unsafe the other way around (effect-then-journal: the double-spend
-/// the §4 flows analysis named).
+/// The runtime shape is one single-writer actor holding all state and
+/// making every decision, over a fabric that runs things and decides
+/// nothing. This module models that shape AS a machine and proves it
+/// refines the domain machine it embeds.
 ///
-/// PLATFORM CAPTURE, the formal guard made concrete (charter §4, the
-/// standing answer to kasofsk's fear): the domain machine
+/// HOW A DECISION REACHES THE WORLD. Decision events ARE journal
+/// entries. Every decision appends (seq, decision-event, StepRecord) to
+/// a durable journal; the EXECUTOR is a cursor (`applied`) consuming
+/// that journal in order and emitting each entry's effects toward the
+/// world; crash recovery replays the journal into a fresh in-memory
+/// state and resumes the cursor. Decisions flow decide -> journal ->
+/// cursor -> world. The seam between recording a decision and effecting
+/// it is the atomicity this module proves safe in one order
+/// (journal-then-effect) and demonstrates unsafe in the other
+/// (effect-then-journal, which double-spends).
+///
+/// PLATFORM CAPTURE, the formal guard made concrete: the domain machine
 /// (domain.qnt/measure.qnt) contains NO vocabulary from this file — no
-/// journal, no cursor, no crash, no Kubernetes — and this PR moved no
-/// decider (domain.qnt's only edits are referentially transparent
-/// exports: the Core-parameterized enablement forms and the installCore
-/// seam, each a hoist with its val rewired to reference it). Every
-/// runtime shape must refine the SAME machine: a later CRD/controller
-/// migration writes a SIBLING of this module — its own state, its own
-/// seams — and re-proves these same obligations (its history projects to
-/// legal domain traces; no double-spend across its crash seams) against
-/// the byte-identical domain machine. The domain machine does not move;
-/// only the refinement module is replaced.
+/// journal, no cursor, no crash, and no fabric. Every runtime shape must
+/// refine the SAME machine: a controller/CRD shape, or a second fabric,
+/// writes a SIBLING of this module — its own state, its own seams — and
+/// re-proves these same obligations (its history projects to legal
+/// domain traces; no double-spend across its crash seams) against the
+/// byte-identical domain machine. The domain machine does not move; only
+/// the refinement module is replaced. That is what lets the fabric be a
+/// deployment choice rather than a core one
+/// (docs/design/001-what-chuggy-is-not.md).
 ///
-/// SEVERABILITY (the §4 promise, verbatim shape: a severable module that
-/// "constrains nothing if abandoned"): this file is layered ON the
-/// domain — nothing in model/{measure,domain}.qnt, the mc
-/// instances, or stages 1-9 of check.sh reads it. Deleting refinement.qnt,
-/// its tests, and check.sh Stage 10 restores the pre-PR-6 tree except
-/// for domain.qnt's pure exports (which the witness drivers may keep —
-/// they are the m6 discipline either way).
+/// SEVERABILITY: this file is layered ON the domain — nothing in
+/// model/{measure,domain}.qnt or the mc instances reads it, and no
+/// earlier stage of the model gate does. Deleting refinement.qnt and its
+/// tests leaves the rest of the model standing, except that domain.qnt
+/// keeps its pure exports (the Core-parameterized enablement forms and
+/// the installCore seam), which the witness drivers use either way.
 ///
 /// ==========================================================================
 /// THE MACHINE
@@ -75,8 +69,8 @@
 ///                  identity (journal seq). A set, deliberately: emitting
 ///                  seq s twice is absorbed (union) — this is the model's
 ///                  form of "every effect is idempotent, keyed by its
-///                  decision" (charter §2 fabric row, no-double-pods
-///                  dropped). Re-emission is REAL in the traces (the
+///                  decision" — the one thing the fabric is trusted to
+///                  honour, given a key. Re-emission is REAL in the traces (the
 ///                  cursor re-covers ground); the set records that the
 ///                  world cannot be made to act twice on the SAME
 ///                  decision — only on distinct ones.
@@ -172,8 +166,8 @@
 ///      every reachable state, so every prefix of every run is covered
 ///      (each state's journal is that prefix, and the invariant holds
 ///      there). Determinism of replay is by PURITY: the deciders are
-///      pure functions of (Core, picks) — charter §4's "both shapes
-///      reuse the deciders" is precisely what makes the journal a
+///      pure functions of (Core, picks), and every runtime shape reuses
+///      those same deciders, which is precisely what makes the journal a
 ///      sufficient basis for recovery — and the incremental/batch
 ///      agreement (replaying n+1 entries == stepping the n-entry replay
 ///      once) is pinned as a unit test (replayAppendAgreesTest).
@@ -181,8 +175,8 @@
 ///      chuggy_refinement_hazard_test): under effect-first, a crash
 ///      between effect and journal double-spends on recovery —
 ///      deterministic machine traces pin the dispatch double-spend (two
-///      world Jobs, one journaled gas charge), the REWORK double-spend
-///      (the flows-analysis scenario: the rework Job launches, the
+///      world task fan-outs, one journaled gas charge), the REWORK
+///      double-spend (the rework fan-out launches, the
 ///      charge is lost with the crash, the re-decided rework charges
 ///      once for two Jobs), and the duplicate cycle (the same candidate
 ///      squash-merged twice, the journal showing one clean landing) —
@@ -199,9 +193,8 @@
 /// than once and the executor may re-emit after cursor loss — both are
 /// the SAME at-least-once, and both are absorbed because every emitted
 /// effect is keyed by its decision's journal seq (worldEffects' set
-/// semantics IS that assumption, stated as a model primitive; it is the
-/// charter §2 fabric row — no-double-pods dropped, "every effect is
-/// idempotent" — given its key). Inbound (world -> actor): completions
+/// semantics IS that assumption, stated as a model primitive: "every
+/// effect is idempotent", given its key). Inbound (world -> actor): completions
 /// and landing confirmations arrive at-least-once too, and the DOMAIN
 /// machine already absorbs them — duplicate task completions no-op by
 /// identity, duplicate landing deliveries no-op at the boundary
@@ -411,7 +404,7 @@ module chuggy_refinement {
   // ==========================================================================
   // What the world DOES with an emission is trusted fabric; what the
   // theorems need is arithmetic over which DECISIONS reached it. A
-  // "spawn" emission runs a paid K8s Job fan-out (the SpawnWorkTasks
+  // "spawn" emission runs a paid task fan-out (the SpawnWorkTasks
   // effect — dispatch, both rework arms, the RWorking resume: every one
   // rides a charged account per the domain's descent table); a "landing"
   // emission merges the ticket's diff (the ticket-done success step).
@@ -764,7 +757,7 @@ module chuggy_refinement {
   /// The full journal-then-effect gate: the core plus the three
   /// world-facing theorems. Green under rstep; the expected violations
   /// under rstepHazard (tests/chuggy_refinement_test.qnt, deterministic;
-  /// check.sh Stage 10's pinned-seed probe is the trace-space side).
+  /// the model gate's pinned-seed probe is the trace-space side).
   val refinementInvariants: bool = and {
     refinementCore,
     journalCoversWorld,

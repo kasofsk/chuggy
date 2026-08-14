@@ -1,6 +1,6 @@
 # chuggy — working notes
 
-A job orchestrator: tickets form a DAG, a single journaled actor drives each through authoring → work → evaluation → landing, and Nomad runs the work and decides nothing.
+A job orchestrator: tickets form a DAG, a single journaled actor drives each through authoring → work → evaluation → landing, and the fabric runs the work and decides nothing.
 
 **This repo is unusual in one way that matters before you read anything else: the formal model leads the implementation.** A Quint model of the machine already exists and is proved; it emits golden traces, and this implementation grows up against them. When the model and the code disagree, the code is wrong. That inverts the normal arrangement, and it is standing rule 4.
 

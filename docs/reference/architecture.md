@@ -98,7 +98,9 @@ A port is named after its **contract**, not after the first thing that implement
 
 Each port documents what it promises, where it is allowed to fail, and its ordering and idempotence. Two failure classes that must not be conflated: a refusal to serve *this work now* is a decision input, not an error; a precondition for serving a *kind* of work at all is refused at boot.
 
-The fabric is Nomad, and it decides nothing. It runs what the actor tells it to run. Its guarantees are trusted and unmodeled — restart and reschedule policy, the scheduler's placement and quota, blocking queries for watch delivery. **One is not supplied and must be built:** a maximum task runtime has no Nomad equivalent, so it is a deliberate line of the adapter rather than an axiom inherited from a fabric that provided it.
+**The fabric is a port, and it decides nothing.** It runs what the actor tells it to run. Which fabric that is — Nomad, Kubernetes, a bare daemon — is a deployment choice, not a chuggy one, and more than one adapter may exist at once: an on-prem fleet with macOS nodes and a cloud cluster need not agree. The core names none, so no fabric's vocabulary reaches the domain machine.
+
+What the port asks for is the same either way: run this task, tell me when it ends, stop it when I say. Restart and reschedule policy, placement, quota and watch delivery are trusted and unmodeled. Each adapter states its own guarantees and, more importantly, **the ones it must supply itself** — Nomad has no maximum-task-runtime equivalent, so under that adapter the deadline is a deliberate line of code rather than an axiom inherited from the fabric. A different fabric moves that line without moving anything above the port.
 
 ## Language and shape
 

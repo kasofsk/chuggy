@@ -119,7 +119,7 @@ These are the standing commitments. The first four are stated and argued in [arc
 
 ## Carried forward, not yet in force
 
-These are the predecessor's rules whose motivating failures belong to machinery this repo does not have yet. They are recorded so they are not re-derived from scratch when the Nomad adapter arrives, and they are **not** in force — stating them as live would be the exact over-claim Tier 3 forbids.
+These are the predecessor's rules whose motivating failures belong to machinery this repo does not have yet. They are recorded so they are not re-derived from scratch when the first fabric adapter arrives, and they are **not** in force — stating them as live would be the exact over-claim Tier 3 forbids.
 
 - **Re-derive every host fact inside the namespace that will use it.** Existence, identity and provenance are three separate questions, and reachability-by-uid and which-kernel-execs-it are two more.
 - **A tool's outcome measures the tool, not your claim.** A denial with no control identifies no mechanism.
