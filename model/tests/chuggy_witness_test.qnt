@@ -1,5 +1,5 @@
 /// DETERMINISTIC REACHABILITY WITNESSES — the
-/// LOAD-BEARING layer of check.sh Stage 9b's two-layer witness policy.
+/// LOAD-BEARING layer of the model gate's two-layer witness policy.
 ///
 /// WHY THIS FILE EXISTS: Stage 9b's four expected-violation probes
 /// (freeClimbNever / cascadeParkNever / stageAdvanceNever)
@@ -58,8 +58,8 @@
 /// One module per instance (Quint 0.32: a run must assign every var in its
 /// module, so instances cannot share a module); each module's consts are
 /// byte-identical to the mc/mc_chuggy.qnt instance the random layer samples,
-/// so the deterministic trace speaks about the same machine. check.sh Stage
-/// 9b runs all EIGHT via `quint test --main=<module>`; `just chuggy`
+/// so the deterministic trace speaks about the same machine. The model
+/// gate runs all EIGHT via `quint test --main=<module>`; `just chuggy`
 /// mirrors. (The count was stale at seven between the grouping removal,
 /// which deleted the batch module, and the accepted-wait module below.)
 ///
@@ -546,9 +546,8 @@ module chuggy_witness_stage_test {
       })
 }
 
-/// SHAPE 5 — THE MULTI-REPO ISOLATION SHAPES (the the refinement layer gate's
-/// witness half; mc_chuggy_budgeted consts + N_REPOS = 2). Three runs, one
-/// per branch of the PR's new nondet surface:
+/// SHAPE 5 — THE MULTI-REPO ISOLATION SHAPES (mc_chuggy_budgeted consts
+/// + N_REPOS = 2). Three runs, one per branch of the repo nondet surface:
 ///   - QUIET: a repo-2 ticket (the repo pick exercised off-default) whose
 ///     landing attempt the environment chose quiet — the landing MUST
 ///     succeed (wrapUpOutcomes refuses a quiet failure) and the ticket-done
@@ -1023,8 +1022,8 @@ module chuggy_witness_gate_test {
 /// machine trace: two wrap-up failures metered by GAS ALONE (wrapUpLeft
 /// identically 0 — no gate account exists to spend) into the gas wall at
 /// the third — the predecessor's §5a gate-loop shape reproduced on chuggy's machine,
-/// with the charter's required gas doing exactly the backstop job the the predecessor
-/// finding said it must (the predecessor's explainer.2: without it, "the day
+/// with the required gas account doing exactly the backstop job the
+/// predecessor's finding said it must (the predecessor's explainer.2: without it, "the day
 /// never ends" and the queue behind the spinning ticket starves). Each
 /// eviction is attributed {repo, invalidated: true}, and the final wall
 /// parks with resumeAt RWrapUp — re-ENQUEUE, not re-gate — unretryable
@@ -1173,9 +1172,9 @@ module chuggy_witness_gate_deadline_test {
 /// NO machine action — only by an author (release 1, or revoke either).
 /// It holds no desk task, and nothing in its dep chain holds one, so it is
 /// in neither `stuckSet` nor `coveredSet` and `stuckSubsetCovered` passes
-/// VACUOUSLY over it. That is the charter's bounds-work-not-waiting row
-/// made concrete: the ticket is not churning, it is waiting, and waiting
-/// is unbounded by decision.
+/// VACUOUSLY over it. That is bounds-work-not-waiting made concrete: the
+/// ticket is not churning, it is waiting, and waiting is unbounded by
+/// decision.
 ///
 /// It also pins the OTHER half — that the accepted class is not swept up
 /// by the deadlock net. `noStructuralDeadlock` stays GREEN here, because a

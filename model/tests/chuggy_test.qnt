@@ -1,5 +1,5 @@
 /// Unit tests over the chuggy deciders and the termination measure
-/// (chuggy-charter.md, roadmap PRs 1-3). Everything here is PURE: cores are
+/// Everything here is PURE: cores are
 /// built by hand, deciders are applied as functions, and the measure is
 /// recomputed with explicit Bounds — no init/step machinery, so the tests
 /// pin decider behavior independently of the machine's nondet choices.
@@ -14,7 +14,7 @@
 ///     duplicate-completion / duplicate-landing path;
 ///   - every escalation wall carries its name (the predecessor-carried vocabulary), on
 ///     both WrapUpPricing branches;
-///   - both retry-metering branches (charter §2 op-retry row).
+///   - both retry-metering branches.
 ///
 ///  additions (authoring lifecycle; gate: revoke cascades proved safe):
 ///   - arrival/release strictly descend where the descent table says, and
@@ -41,7 +41,7 @@
 ///     walls (the golden fixture's exact shape: stage-0 fails, stage 1
 ///     never launched, escalate);
 ///   - evaluator crash = a TFailed inside the stage = THE TICKET PAYS, exact
-///     account deltas (charter §2 eval/evaluator-failure);
+///     account deltas;
 ///   - stale completions from an earlier stage/incarnation NO-OP BY
 ///     IDENTITY (task ids are sequential within the ticket, never reused);
 ///   - task records are RETAINED: the per-ticket chronological log survives
@@ -54,10 +54,10 @@
 ///   - validPrograms IS the arrival-refusal rule: the ill-formed programs
 ///     are not in it.
 ///
-/// NOTES-RECONCILIATION PR additions/reworks (docs/chuggy-notes-triage.md):
-///   - release goes Draft -> Pending directly; the freeze/unfreeze tests
-///     died with the Frozen phase (the deliberate table-line deviation,
-///     recorded at decideRelease);
+/// Authoring-lifecycle coverage:
+///   - release goes Draft -> Pending directly; there are no freeze or
+///     unfreeze tests, because there is no Frozen phase (the deliberate
+///     deviation, recorded at decideRelease);
 ///   - the revalidation park lands on PEscalated with reason + RPending
 ///     resume, and its operator resume — a
 ///     decideOpRetry flavor — is pinned FREE (both meterings) and CHURN;
@@ -66,7 +66,7 @@
 ///   - the revoke suite covers all THREE desk-reason flavors of the one
 ///     parked phase (post-work wall, pre-work revalidation, cascade wall);
 ///   - gas rename throughout (gasLeft, gas_exhausted, RsGasExhausted,
-///     GAS; gasRequiredTest is the charter's required-deadline row);
+///     GAS; gasRequiredTest pins the required account);
 ///   - REWORK_POLICY = RWBudget(n) instantiates the rework policy;
 ///   - the task lifecycle is the explicit TaskState sum: every  test
 ///     survived with MECHANICAL updates only (wt/et build resolved states,
@@ -123,8 +123,8 @@
 module chuggy_test {
   import chuggy_measure.* from "../measure"
 
-  // Reference instance: Budgeted(1) gate pricing, charged retries (the
-  // charter defaults where the charter names a default). programs up
+  // Reference instance: Budgeted(1) gate pricing, charged retries — the
+  // defaults. Programs up
   // to 2 stages — combinators are data on each ticket's program, so the
   // program-as-data tests below get both combinators from ONE instance
   // (which is the point).
@@ -159,16 +159,15 @@ module chuggy_test {
     MAX_STAGES = 2, N_REPOS = 1
   ) as DO from "../domain"
 
-  // A GASLESS graph — invalid by charter §2 (economy/deadline; the
-  // account is named gas, the requirement unchanged).
+  // A GASLESS graph — invalid: the gas account is required.
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 0,
     WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2, N_REPOS = 2
   ) as DZ from "../domain"
 
-  /// Charter §2, economy/deadline row under its honest name: a gasless
-  /// graph is INVALID — the model admits no initial state for it at all.
+  /// The required-account rule: a gasless graph is INVALID — the model
+  /// admits no initial state for it at all.
   run gasRequiredTest = DZ::init.fail()
 
   // The same bounds the instances above carry, for measure recomputation.
@@ -194,17 +193,17 @@ module chuggy_test {
   pure def er(i: int, s: int): Task =
     { id: i, kind: TKEval(s), state: TSRunning }
 
-  // Programs used throughout. progU2 is exactly DB::defaultProgram (the
-  // charter's unanimous single-stage default — the  compatibility
-  // shape, the predecessor's specification: "a job whose evaluators all share one
-  // stage (the default) is byte-for-byte the single-fan-out behavior").
+  // Programs used throughout. progU2 is exactly DB::defaultProgram — the
+  // unanimous single-stage default, which is the compatibility shape: a
+  // ticket whose evaluators all share one stage behaves byte-for-byte like
+  // a single fan-out.
   pure val progU2: List[Stage] = [{ fanout: 2, combinator: CUnanimousPass }]
   pure val progA2: List[Stage] = [{ fanout: 2, combinator: CAnyPass }]
   pure val progStaged: List[Stage] =
     [{ fanout: 1, combinator: CUnanimousPass },
      { fanout: 2, combinator: CAnyPass }]
 
-  run defaultProgramIsTheCharterDefaultTest = assert(and {
+  run defaultProgramIsUnanimousSingleStageTest = assert(and {
     DB::defaultProgram == progU2,
     DB::validPrograms.contains(DB::defaultProgram)
   })
@@ -339,7 +338,7 @@ module chuggy_test {
     accounted(c8)
   })
 
-  /// EFFECT EXCLUSIVITY, happy path (charter §2, effect-only exclusivity):
+  /// EFFECT EXCLUSIVITY, happy path (effect-only):
   /// exactly one landing effect, exactly at Done — the quiet fast-path's
   /// direct squash (the path rule: WOk is the QUIET effect).
   run effectExclusivityHappyPathTest = assert(and {
@@ -355,8 +354,8 @@ module chuggy_test {
   pure val dLandGated = DB::decideWrapUpResolve(cGated7, 1, WOk, true)
 
   /// The two landing SUCCESS outcomes are distinct, named effects — the predecessor's
-  /// one conformance divergence, pinned from day one (charter §2 landing
-  /// row) — and each comes from ITS path and no
+  /// one conformance divergence, pinned from day one — and each comes
+  /// from ITS path and no
   /// other (R3, the §5e theorem at decider grain): the held promotion
   /// advances the default ref onto the validated candidate; the quiet
   /// fast-path squash-merges directly. Same terminal, same exclusivity
@@ -412,8 +411,8 @@ module chuggy_test {
 
   /// A duplicate completion for an already-resolved LIVE task (even with a
   /// CONTRADICTING verdict — first write wins) changes nothing: no state,
-  /// no effects, no measure movement. The dropped no-double-pods axiom,
-  /// honored idempotently (charter §2 fabric row).
+  /// no effects, no measure movement — an at-least-once delivery
+  /// honored idempotently.
   run duplicateTaskDoneIdempotentTest = assert(and {
     DB::decideTaskDone(c2, 1, 1, VFail).post == c2,
     DB::decideTaskDone(c2, 1, 1, VFail).rec.label == "task-done-duplicate",
@@ -456,8 +455,8 @@ module chuggy_test {
 
   /// A failed Work task set escalates DIRECTLY at cycle level — there is
   /// no same-cycle retry branch to take: below-cycle retries are the
-  /// fabric's trusted backoffLimit (charter §2 fabric row) and modeling
-  /// them is a §2 non-goal ("no retry machinery below the cycle").
+  /// fabric's trusted relaunch limit, and modeling them is a standing
+  /// non-goal — no retry machinery below the cycle.
   /// The failed set is RETIRED, outcomes intact — the record shows
   /// WHICH task failed, provenance the desk can read.
   pure val cWorkFail: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
@@ -484,7 +483,7 @@ module chuggy_test {
   /// short-circuit and the reduce coincide; the staged case is below):
   /// 1 rework budget + 1 gas buy a new cycle; both accounts (and the
   /// measure) descend. TFailed here also covers evaluator-infra death —
-  /// the ticket pays, one account (charter §2 eval/evaluator-failure).
+  /// the ticket pays, one account.
   pure val cEvalFail: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEvaluating, reworkLeft: 1, gasLeft: 2, tasks: oneFailedE0 }) }
   pure val dEvalRework = DB::decideEvalStageReduce(cEvalFail, 1)
@@ -644,8 +643,8 @@ module chuggy_test {
     mB(dStagedWall.post) < mB(cStagedNoBudget)
   })
 
-  /// EVALUATOR CRASH IN A STAGE = THE TICKET PAYS (charter §2
-  /// eval/evaluator-failure): evaluator-infrastructure death is a TFailed
+  /// EVALUATOR CRASH IN A STAGE = THE TICKET PAYS:
+  /// evaluator-infrastructure death is a TFailed
   /// INSIDE the stage — indistinguishable at the machine's grain from a
   /// failed verdict, deliberately (one account, no new machinery; the
   /// distinction — infra failures escalating immediately —
@@ -673,7 +672,7 @@ module chuggy_test {
   // ONE machine instance (DB), two tickets identical but for the program on
   // their record: different decisions.  needed a separate machine
   // instantiation (a machine-wide combinator parameter) to show this; the
-  // program made it what the charter said it is — data.
+  // program makes eval what it is meant to be — data.
 
   pure val mixedE0: Set[Task] = Set(et(1, 0, TPassed), et(2, 0, TFailed))
   pure val allFailedE0: Set[Task] = Set(et(1, 0, TFailed), et(2, 0, TFailed))
@@ -706,7 +705,7 @@ module chuggy_test {
   })
 
   /// Both branches of the combinator vocabulary are semantically distinct
-  /// (charter §2: unanimous pass is only the DEFAULT), at the pure grain.
+  /// (unanimous pass is only the DEFAULT), at the pure grain.
   run combinatorBranchesTest = assert(and {
     combine(CUnanimousPass, Set(et(1, 0, TPassed), et(2, 0, TPassed))),
     not(combine(CUnanimousPass, mixedE0)),
@@ -722,7 +721,7 @@ module chuggy_test {
   run anyPassNotAlwaysPassTest = assert(
     DB::decideEvalStageReduce(cFailAny, 1).rec.label == "rework-started eval_failure")
 
-  // === The outer loop, priced per WrapUpPricing (charter §2) =================
+  // === The outer loop, priced per WrapUpPricing ==============================
   // R5: failures fire from the held lease (PWrapUpHolding — the
   // only phase a moved attempt resolves out of), so these fixtures sit in
   // the occupied slot; every account delta below is byte-identical to the
@@ -840,7 +839,7 @@ module chuggy_test {
     not(DB::retryableIn({ tickets: Map(1 -> { ...escLanding, gasLeft: 0 }) }, 1))
   })
 
-  /// Charged retry metering (the charter default): every PIPELINE resume
+  /// Charged retry metering, the default: every PIPELINE resume
   /// pays 1 gas, so those retries descend the measure — the predecessor's §5b livelock
   /// priced away. (The pre-work RPending flavor stays free either way —
   /// pinned above.)
@@ -957,7 +956,7 @@ module chuggy_test {
     DB::isReadyIn(DB::decideRelease(c8, 2).post, 2)       // Done dep: Ready
   })
 
-  // === Revoke, from every phase the the predecessor table permits =======================
+  // === Revoke, from every phase the predecessor table permits ===============
   // Table lines 47-48: `(_, Revoked) => true` — every non-terminal. Eight
   // single-ticket fixtures: one per live phase (Draft, Pending, Working,
   // Evaluating, Landing — Frozen is gone, the notes deviation) and all

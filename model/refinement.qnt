@@ -643,7 +643,7 @@ module chuggy_refinement {
   // fast-path squash, the gated promotion). An orphaned bookkeeping
   // effect (CreateDraft, OpenHumanTask, ...) is the same shape with
   // nothing priced riding it — journalCoversWorld still flags it; the
-  // demonstration keeps to the shapes the roadmap gate names.
+  // demonstration keeps to the shapes the theorems name.
 
   action hazardDispatch = all {
     readyTickets.size() > 0,

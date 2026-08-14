@@ -1,6 +1,6 @@
 /// REFINEMENT-LAYER TESTS (the refinement layer — model/refinement.qnt;
 /// design, theorems, and the seam model at that file's header). Three
-/// modules, run by check.sh Stage 10 and `just chuggy`:
+/// modules, run by the model gate and `just chuggy`:
 ///
 ///   - chuggy_refinement_unit_test — PURE: journals built by hand,
 ///     replay/legality/world-count arithmetic pinned as functions
@@ -17,9 +17,8 @@
 ///   - chuggy_refinement_hazard_test — the EXPECTED-VIOLATION traces
 ///     (theorem 4): the effect-then-journal seam double-spending on
 ///     recovery — the dispatch double-spend, the duplicate landing, and
-///     the REWORK double-spend (the §4 flows-analysis scenario named by
-///     the charter: "the service must journal decisions or
-///     double-spend") — each violated conjunct asserted at the exact
+///     the REWORK double-spend (the service must journal decisions or
+///     double-spend) — each violated conjunct asserted at the exact
 ///     step it falls, WITH allDomainInvariants still green on the same
 ///     step: the domain machine cannot see the hazard, which is the
 ///     refinement layer's reason to exist.
@@ -341,8 +340,8 @@ module chuggy_refinement_hazard_test {
   pure val progFlat: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
 
   /// The dispatch double-spend and the duplicate landing, one trace:
-  /// the two shapes the roadmap gate names ("no double-spent budget, no
-  /// duplicate cycle"), each produced by one effect-first crash.
+  /// the two shapes the theorems name (no double-spent budget, no
+  /// duplicate cycle), each produced by one effect-first crash.
   run hazardDoubleSpendDeterministicTest =
     rinit
       .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))

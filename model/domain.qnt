@@ -67,11 +67,10 @@ module chuggy_domain {
   /// the static graph into bounded arrivals — small in mc instances so the
   /// state space stays small.)
   const N_TICKETS: int
-  /// Task fan-out ceiling: the Work phase's single
-  /// task-set width, AND the per-stage fan-out cap an authored eval program
-  /// may declare (charter §2 ticket anatomy: a SET of possibly-parallel
-  /// tasks). Stages made
-  /// widths per-stage data, so the const became their bound — the measure's
+  /// Task fan-out ceiling: the Work phase's single task-set width, AND the
+  /// per-stage fan-out cap an authored eval program may declare, since a
+  /// ticket carries a SET of possibly-parallel tasks. Stage widths are
+  /// per-stage data, so this const is their bound — the measure's
   /// stageWeight radix needs exactly this cap.
   const N_TASKS: int
   /// Eval-rework pricing (the bound is a POLICY PARAMETER on the
@@ -80,15 +79,14 @@ module chuggy_domain {
   /// it grants is middleware-owned policy state, documented at
   /// Ticket.reworkLeft).
   const REWORK_POLICY: ReworkPolicy
-  /// Gas per ticket — the charter's REQUIRED account (§2 economy/deadline),
-  /// ("what is deadline left": a spend meter, not
-  /// a clock). REQUIRED >= 1: a gasless graph is invalid — init admits no
-  /// state otherwise; the charter row's force is unchanged.
+  /// Gas per ticket — the REQUIRED account, a spend meter rather than a
+  /// clock. It must be >= 1: a gasless graph is invalid, and init admits no
+  /// state otherwise.
   const GAS: int
-  /// Gate-rework pricing (charter §2: a parameter, not a constant; both
+  /// Gate-rework pricing (a parameter, not a constant; both
   /// branches instantiated in mc/mc_chuggy.qnt).
   const WRAPUP_PRICING: WrapUpPricing
-  /// Operator-retry metering (charter §2: configurable per deployment,
+  /// Operator-retry metering (configurable per deployment,
   /// default charge — mc instantiates RetryCharged, plus a RetryFree
   /// instance so the free-resume churn path stays exercised).
   const OP_RETRY_PRICING: RetryPricing
@@ -143,17 +141,12 @@ module chuggy_domain {
       acc.union(acc.map(p => stageChoices.map(s => p.append(s))).flatten()))
       .filter(p => p.length() >= 1)
 
-  /// THE DEFAULT PROGRAM (charter §2 evaluation row: "default combinator:
-  /// unanimous pass"; the predecessor's specification: every evaluator defaults to
-  /// stage 0, and "a job whose evaluators all share one stage (the
-  /// default) is byte-for-byte the single-fan-out behavior, and that is
-  /// the compatibility story"): ONE stage, full fan-out, unanimous. A ticket
-  /// carrying this program behaves exactly like the model —
-  /// pinned in tests/chuggy_test.qnt. The model retired the machine-wide
-  /// combinator parameter in this program's favor: that const was the
-  /// stand-in for eval-as-data; now that the combinator is data on the
-  /// ticket record, a const would be exactly the "machinery" the charter row
-  /// says eval is not.
+  /// THE DEFAULT PROGRAM: ONE stage, full fan-out, unanimous pass. Every
+  /// evaluator defaults to stage 0, so a ticket whose evaluators all share
+  /// one stage behaves exactly like a single fan-out — pinned in
+  /// tests/chuggy_test.qnt. There is deliberately no machine-wide
+  /// combinator const: the combinator is data on the ticket record, and a
+  /// const would be exactly the machinery that eval-is-data rules out.
   pure val defaultProgram: List[Stage] =
     [{ fanout: N_TASKS, combinator: CUnanimousPass }]
 
@@ -210,8 +203,8 @@ module chuggy_domain {
       post: withTicket(c, j, { ...c.tickets.get(j), phase: to_ }) }
 
   /// A decision that changes nothing — the idempotent answer to duplicate
-  /// deliveries (at-least-once fabric, charter §2: no-double-pods dropped,
-  /// every effect idempotent). No landing attempt resolves here (a
+  /// deliveries (an at-least-once fabric, every effect idempotent). No
+  /// landing attempt resolves here (a
   /// duplicate landing delivery absorbs with nothing emitted), so the
   /// attribution field stays WONone.
   pure def noop(c: Core, label: str): Decision =
@@ -236,7 +229,7 @@ module chuggy_domain {
   /// A ticket ARRIVES as a Draft — the environment (an author) creates it.
   /// NOT a table edge: the predecessor's table starts at Draft and has no birth row (its
   /// tickets exist statically); the arrival action is chuggy-new, forced by
-  /// authoring being the ticket source now (charter §2 first-class rank #1).
+  /// authoring being the ticket source.
   /// Ids are dense and never reused (next id = fleet size + 1), which keeps
   /// every ascending-id fold below correct. Dependencies may point at ANY
   /// live ticket, released or not (Draft deps block exactly like
@@ -256,7 +249,7 @@ module chuggy_domain {
   /// (programsWellFormed), rather than the interpreter defending against
   /// one mid-flight. The program is immutable after arrival, like deps.
   ///
-  /// Dynamic-DAG boundary (charter §3): arrivals are AUTHOR actions — only
+  /// Dynamic-DAG boundary: arrivals are AUTHOR actions — only
   /// the environment action `arrive` calls this decider, and no ticket-event
   /// decider creates tickets, so the ticket set grows only by authoring, never by
   /// tickets spawning tickets. Author commands (release/revoke) are also guarded
@@ -286,13 +279,11 @@ module chuggy_domain {
   /// phase lands. Descends (rank 5 -> 4). Charges nothing: the Working
   /// boundary still meters actual work entry (standing rule 2).
   ///
-  /// DELIBERATE DEVIATION from the predecessor's table ("Frozen
-  /// removed. Draft -> Ready/Blocked"): the the predecessor table's Frozen rows — line
-  /// 22 `(Draft, Frozen)` (freeze), line 24 `(Frozen, Draft)` (the
-  /// unfreeze edit loop), line 26 `(Frozen, Ready | Blocked)` (release
-  /// from Frozen) — are NOT transcribed. the model all three; the note
-  /// deletes the phase, so release now leaves from Draft alone and the
-  /// content-pinning freeze step is below the model's grain (an
+  /// DELIBERATE DEVIATION from the predecessor's table: it carries a
+  /// Frozen phase with freeze, unfreeze and release-from-Frozen edges, and
+  /// none of the three is transcribed. There is no Frozen phase here, so
+  /// release leaves from Draft alone and the content-pinning freeze step is
+  /// below the model's grain (an
   /// implementation concern of the authoring surface, like Draft content
   /// edits always were). Consequence for the liveness sketch: the unfreeze
   /// loop was the AUTHORING churn set's only unbounded climber, so its
@@ -323,8 +314,8 @@ module chuggy_domain {
   /// semantics —
   ///   (a) transitive cascade-REVOKE: dependents are revoked too;
   ///   (b) PARK: dependents wait on the desk behind a named wall —
-  /// chuggy picks (b), ATOMICALLY in this decision, for two charter
-  /// reasons. First, revocation is a per-ticket authorial choice: (a) would
+  /// chuggy picks (b), ATOMICALLY in this decision, for two reasons.
+  /// First, revocation is a per-ticket authorial choice: (a) would
   /// let one author's revocation silently destroy OTHER tickets with no human
   /// decision and no desk trace (a cascade-revoked ticket opens no task — the
   /// exact invisibility the §2 visibility row forbids). Second, parking
@@ -399,9 +390,9 @@ module chuggy_domain {
   ///                 (standing rule 2). CHURN in the measure.
   ///   RWorking    — 1 always: entry to Working always meters (standing
   ///                 rule 2), even under RetryFree.
-  ///   REvaluating/RWrapUp — per OP_RETRY_PRICING (charter §2:
-  ///                 configurable, default charge); RetryFree makes these
-  ///                 the reproducible the predecessor livelock.
+  ///   REvaluating/RWrapUp — per OP_RETRY_PRICING (configurable, default
+  ///                 charge); RetryFree makes these the reproducible
+  ///                 predecessor livelock.
   /// RNone falls through the wildcard but is unreachable: retryableIn
   /// refuses it and decideOpRetry's RNone arm is a guarded no-op.
   pure def resumeCharge(at: Resume): int =
@@ -579,8 +570,9 @@ module chuggy_domain {
   }
 
   /// Park a ticket on the human desk, naming the wall (vocabulary carried
-  /// from the predecessor; the charter §2 termination row commits the terminal, not the
-  /// names) and where Retry resumes. The open desk task is DERIVED from
+  /// from the predecessor; the termination requirement commits the
+  /// terminal, not the names) and where Retry resumes. The open desk task
+  /// is DERIVED from
   /// the phase (hasOpenHumanTask, standing rule 3); "OpenHumanTask" is its
   /// trace-visible effect. this is THE park — the pre-work
   /// revalidation wall comes through here too (decideRevalFail, resume
@@ -604,7 +596,7 @@ module chuggy_domain {
   /// FIFO)"): this decider is the dispatch decision made first-class — j
   /// is the CHOICE, and the chooser is the `dispatch` action's nondet pick
   /// among readyTickets. That pick is not incidental scheduler noise to be
-  /// refined away: chuggy's dispatcher is itself agentic (the the predecessor note:
+  /// refined away: chuggy's dispatcher is itself agentic (the predecessor note:
   /// "the dispatcher working with the ready q is not pure fifo popping,
   /// it's nondet outcome because the dispatcher is also agentic"), so ANY
   /// Ready ticket may be chosen next, and the `dispatch` StepRecord in the
@@ -614,8 +606,7 @@ module chuggy_domain {
   /// policy-hook parameter is introduced: with exactly one honest default
   /// (unrestricted nondet) a WrapUpPricing-style const would have one
   /// branch and nothing to compare — it enters only when a real competing
-  /// policy needs modeling. No queue, no fairness — non-goals unchanged
-  /// (charter §2).
+  /// policy needs modeling. No queue, no fairness — standing non-goals.
   pure def decideDispatch(c: Core, j: int): Decision =
     val jb = c.tickets.get(j)
     move(
@@ -648,7 +639,7 @@ module chuggy_domain {
   /// only. Work's phase-outcome combinator is UNANIMOUS PASS — not a
   /// placeholder: Work runs ONE task per cycle whose success is the
   /// phase's success — unanimous over a singleton; under the
-  /// parallel task-set generalization, charter §2 ticket anatomy, the
+  /// parallel task-set generalization, the
   /// faithful reading stays "every work task passed"). A pass RETIRES the
   /// work set into the record and spawns the eval program's LOWEST stage
   /// (the predecessor's specification: "creates one task per evaluator in the lowest stage
@@ -659,8 +650,8 @@ module chuggy_domain {
   /// evaluator and not of this machine. A
   /// failed task set is a failed CYCLE and escalates directly: the fabric
   /// has already retried each task below the cycle (trusted
-  /// `backoffLimit`, charter §2 fabric row), and modeling attempts of our
-  /// own is a §2 non-goal.
+  /// relaunch limit), and modeling attempts of our own is a standing
+  /// non-goal.
   pure def decideWorkReduce(c: Core, j: int): Decision =
     val jb = c.tickets.get(j)
     val retired = retireLive(jb)
@@ -699,13 +690,13 @@ module chuggy_domain {
   ///     gas wall, the predecessor convention). No new wall, no new account.
   ///
   /// Evaluator-infrastructure death is a TFailed INSIDE the stage — THE
-  /// TICKET PAYS from the same accounts, no new machinery (charter §2
-  /// eval/evaluator-failure). Deliberate abstraction from the extracted
+  /// TICKET PAYS from the same accounts, no new machinery. Deliberate
+  /// abstraction from the extracted
   /// vocabulary, README-noted: the predecessor's specification: escalates required INFRA
   /// failures immediately (skipping rework) and distinguishes abort
   /// verdicts; chuggy folds all three into TFailed-fails-the-stage because
-  /// the charter row prices them identically — flagged as a question for
-  /// the intake confirmation, not silently adopted.
+  /// they are priced identically — flagged as an open question rather
+  /// than silently adopted.
   pure def decideEvalStageReduce(c: Core, j: int): Decision =
     val jb = c.tickets.get(j)
     val s = evalStage(jb.tasks)
@@ -814,9 +805,8 @@ module chuggy_domain {
         { ...c.tickets.get(j), phase: PDone,
           completions: c.tickets.get(j).completions + 1 }) }
 
-  /// The landing resolves —, at the END of a
-  /// concrete path (R1/R3/R5; the outcome names are charter §2's, the path
-  /// rule is wrapUpOutcomes'):
+  /// The wrap-up resolves at the END of a concrete path (R1/R3/R5; the
+  /// path rule is wrapUpOutcomes'):
   ///   - QUIET fast-path: called from PWrapUp at the dequeue with
   ///     (WOk, false) — the gate skipped, the direct squash.
   ///   - GATED: called from PWrapUpHolding with moved = true — WOk
@@ -878,8 +868,7 @@ module chuggy_domain {
   /// A duplicate landing event for an already-Done ticket (at-least-once: a
   /// stale executor re-delivers). NO landing effect is emitted — this
   /// no-op IS the exactly-once-at-the-landing-boundary claim; the
-  /// completionExclusive invariant checks it (charter §2 exclusivity +
-  /// fabric rows).
+  /// completionExclusive invariant checks it.
   pure def decideCompleteDuplicate(c: Core, j: int): Decision =
     noop(c, "complete-duplicate")
 
@@ -898,9 +887,8 @@ module chuggy_domain {
       "ticket-escalated revalidation_failed")
 
   /// Operator Retry on a parked ticket: resume at the point the wall stamped,
-  /// metered by resumeCharge (charter §2: configurable, default charge —
-  /// see the pricing table there). with Stalled merged into
-  /// Escalated this is THE operator resume — one decider, four flavors,
+  /// metered by resumeCharge (configurable, default charge). This is THE
+  /// operator resume — one decider, four flavors,
   /// one trace label ("operator-retry"; the flavor is visible in the
   /// transition's target):
   ///   RPending (the pre-work resume flavor per the
@@ -908,7 +896,7 @@ module chuggy_domain {
   ///     nothing under either metering (nothing was ever spent; the
   ///     Working boundary still meters actual re-entry). CHURN in the
   ///     measure, exactly as before the merge.
-  ///   RWorking: respawn the work set; always pays gas — the the predecessor lesson
+  ///   RWorking: respawn the work set; always pays gas — the predecessor lesson
   /// priced in.
   ///   REvaluating: A FRESH FAN-OUT OF THE LOWEST STAGE (—
   ///     the predecessor's specification: escalation Retry: "re-enter Evaluation
@@ -1079,15 +1067,14 @@ module chuggy_domain {
   /// the fleet one Draft at a time through the freshTicket seam (deps still
   /// acyclic by construction: they may only point at already-arrived,
   /// strictly smaller ids).
-  /// The `GAS >= 1` conjunct is the charter's REQUIRED-deadline row (§2
-  /// economy/deadline — the gas account) as a
+  /// The `GAS >= 1` conjunct is the required-account rule as a
   /// validity condition: a gasless instantiation has NO initial state —
   /// the graph is invalid, not merely unmetered (every arrival funds a
   /// ticket from this grant, so checking it here still gates every ticket ever
   /// created). the model `MAX_STAGES >= 1`: a machine that admits no
   /// well-formed eval program admits no tickets either.
   action init = all {
-    GAS >= 1,            // charter §2 economy/deadline: required, now named gas
+    GAS >= 1,            // the required account
     N_TASKS >= 1,        // well-formedness: a phase carries a real task set
     N_TICKETS >= 1,         // the arrival bound must admit at least one ticket
     MAX_STAGES >= 1,     // at least one authorable program must exist
@@ -1149,8 +1136,8 @@ module chuggy_domain {
   /// selection among Ready tickets is a real decision, not scheduler noise
   /// (see decideDispatch's header for the full agency note); the recorded
   /// `dispatch` step is its decision event in the golden trace.
-  /// Scheduling/quota below the pick stays trusted fabric (charter §2
-  /// non-goals: no bespoke scheduler) — no slot count, no queue order, no
+  /// Scheduling/quota below the pick stays trusted fabric (no bespoke
+  /// scheduler) — no slot count, no queue order, no
   /// fairness. Pending tickets have never spent gas (arrival grants the full
   /// GAS and authoring charges nothing), so gas >= 1 here whenever init
   /// accepted the configuration; the guard keeps it structural — stated
@@ -1311,8 +1298,8 @@ module chuggy_domain {
   // instantiated vars — the predecessor's hard-won structure), re-exposed to --main
   // scope through each mc instance's wildcard import.
 
-  /// THE charter headline (§2 exclusivity, effect-only): exactly one
-  /// landing per cycle, proved at the landing boundary and nowhere else —
+  /// THE headline property, effect-only: exactly one completion per
+  /// cycle, proved at the completion boundary and nowhere else —
   /// any number of task executions may duplicate (at-least-once fabric),
   /// but the landing effect is emitted exactly once per ticket, exactly when
   /// it is Done. "Per cycle" collapses to "per ticket" because a landing
@@ -1519,7 +1506,7 @@ module chuggy_domain {
   })
 
   /// The gate-budget wall exists only under Budgeted pricing (the wall
-  /// vocabulary is the predecessor-carried; the pricing parameter is charter §2's).
+  /// vocabulary is predecessor-carried; the pricing is a parameter).
   val wrapUpWallNamed: bool = match WRAPUP_PRICING {
     | Budgeted(_) => true
     | DeadlineOnly => liveTickets.forall(j => tickets.get(j).reason != RsWrapUpBudgetExhausted)
@@ -1649,7 +1636,7 @@ module chuggy_domain {
     liveTickets.size() <= N_TICKETS
   }
 
-  // --- Visibility (charter §2 humans/invariant) -----------------------------
+  // --- Visibility -----------------------------------------------------------
 
   /// THE VISIBILITY EDGES: the walk's edge relation is the DEPENDENCY
   /// edges, and only those. A withdrawn revision added the group's
@@ -1671,13 +1658,11 @@ module chuggy_domain {
   /// ticket. A healthy-Blocked ticket is deliberately NOT stuck — its
   /// measure sits flat while its deps run, but it progresses VICARIOUSLY.
   ///
-  /// CONTESTED DEFINITION (charter §4 "Progressing"): "non-progressing" is
-  /// defined here via measure-descent (geoff, humans/progressing =
-  /// measure-descent — the termination measure doing double duty); kasofsk
-  /// answered report-only. The invariant is STATED and checked with the
-  /// measure-descent reading so it is at least a theorem candidate; whether
-  /// it stays a checked theorem or becomes a dashboard report is the open
-  /// §4 conversation.
+  /// CONTESTED DEFINITION: "non-progressing" is defined here via
+  /// measure-descent, the termination measure doing double duty. The
+  /// invariant is stated and checked under that reading so it is at least a
+  /// theorem candidate; whether it stays a checked theorem or becomes a
+  /// dashboard report is open.
   val stuckSet: Set[int] =
     range(1, liveTickets.size() + 1).foldl(Set(), (st, _) =>
       liveTickets.filter(j => or {
@@ -1710,8 +1695,8 @@ module chuggy_domain {
       }))
 
   /// THE TWO WALKS AGREE — and that is ALL this says. Renamed from
-  /// `deskVisibility` because that name claimed
-  /// charter §2's visibility row and this predicate cannot deliver it.
+  /// `deskVisibility` because that name claimed a visibility guarantee
+  /// this predicate cannot deliver.
   ///
   /// It is a TAUTOLOGY over the definitions, not a theorem about the
   /// machine. `stuckSet`'s base case is `PEscalated`; `coveredSet`'s base
@@ -1734,10 +1719,9 @@ module chuggy_domain {
   /// group edges were, and why that PR had to add them to both. It guards
   /// the definitions; it does not guard the machine.
   ///
-  /// The machine-checked half of charter §2's row is
-  /// `noStructuralDeadlock` below. The half no state predicate can carry —
-  /// unbounded WAITING — is accepted by name in the charter's
-  /// bounds-work-not-waiting row.
+  /// The machine-checked half is `noStructuralDeadlock` below. The half no
+  /// state predicate can carry — unbounded WAITING — is accepted by name
+  /// under bounds-work-not-waiting.
   val stuckSubsetCovered: bool = stuckSet.subseteq(coveredSet)
 
   // --- Cascade safety (THE  gate) ---------------------------------------
@@ -1778,12 +1762,12 @@ module chuggy_domain {
 
   /// NO STRUCTURAL DEADLOCK: every live ticket can still reach Done, or was
   /// settled by its author (PRevoked), or holds an open desk task a human
-  /// can act on. This is the half of charter §2's visibility row that IS a
+  /// can act on. This is the half of the visibility question that IS a
   /// state theorem — a ticket with no continuation at all is a defect in
   /// every reading, whatever anyone accepts about WAITING (an abandoned
   /// Draft, an unpicked dispatch, an unwon dequeue all still have
-  /// continuations, so none of them is flagged here — see the charter's
-  /// bounds-work-not-waiting row).
+  /// continuations, so none of them is flagged here — see
+  /// bounds-work-not-waiting).
   ///
   /// Unlike stuckSubsetCovered this is NOT definitional: canFinishSet
   /// recurses on gate deps and Done-ness, coverage recurses on
@@ -1800,13 +1784,13 @@ module chuggy_domain {
   /// transitively stuck behind a Revoked dep is parked with its own open
   /// human task (PEscalated, wall dependency_revoked — hasOpenHumanTask
   /// derives the task) or is itself revoked (its author settled it too).
-  /// The roadmap gate's "eventually parked" strengthens to ALWAYS-parked
+  /// "Eventually parked" strengthens to ALWAYS-parked
   /// because the cascade is atomic with the revoke (decideRevoke): there
   /// is no reachable in-between state where a doomed ticket waits invisibly.
   /// No ticket may wait invisibly forever behind a revoked dep — and since
   /// PRevoked opens no task (the author's settled choice), this invariant
   /// is the coverage the walks cannot provide through the dep itself.
-  /// NON-VACUITY: check.sh Stage 9b pins a machine trace where the
+  /// NON-VACUITY: the model gate pins a machine trace where the
   /// cascade actually parks dependents (cascadeParkNever — deterministic
   ///, tests/chuggy_witness_test.qnt), and
   /// tests/chuggy_test.qnt walks a 3-ticket chain end-to-end.
@@ -1898,7 +1882,7 @@ module chuggy_domain {
   /// ANTI-VACUITY WITNESS, not an invariant of the machine: "no
   /// operator-retry into a PIPELINE phase (Evaluating/Landing) ever climbs
   /// the measure". EXPECTED TO BE VIOLATED on the RetryFree instance
-  /// (check.sh Stage 9b: deterministically by the free-climb machine
+  /// (the model gate proves it deterministically by the free-climb machine
   /// trace in tests/chuggy_witness_test.qnt, plus the demoted pinned-seed
   /// probe) — the violation is the
   /// machine-level proof that free pipeline resumes really do climb and
@@ -1932,8 +1916,8 @@ module chuggy_domain {
     not(lastStep.label == "ticket-revoked" and lastStep.transitions.length() > 1)
 
   /// ANTI-VACUITY WITNESS #3, not an invariant of the machine: "no
-  /// eval stage ever advances". EXPECTED TO BE VIOLATED (check.sh Stage
-  /// 9b: deterministically by the stage-advance machine trace in
+  /// eval stage ever advances". EXPECTED TO BE VIOLATED (the model gate
+  /// shows it deterministically by the stage-advance machine trace in
   /// tests/chuggy_witness_test.qnt, plus the demoted pinned-seed probe)
   /// — a reachable
   /// eval-stage-passed step is the machine-level proof that multi-stage

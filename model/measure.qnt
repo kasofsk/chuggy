@@ -52,9 +52,9 @@
 ///     transition  exists to add.
 ///
 /// There is deliberately NO attempt digit and no per-attempt account:
-/// same-cycle retry machinery is a charter non-goal (§2 non-goals row: "no
-/// retry machinery below the cycle") and container relaunches live in the
-/// trusted, unmodeled `backoffLimit` fabric axiom (§2 fabric row) — the
+/// same-cycle retry machinery is a standing non-goal — no retry machinery
+/// below the cycle — and container relaunches live in the trusted,
+/// unmodeled relaunch-limit fabric axiom — the
 /// model prices CYCLES, not container relaunches. Per-task attempt counters
 /// and per-task retry budgets are exactly the below-cycle machinery that
 /// non-goal excludes, so a task carries neither.
@@ -182,7 +182,7 @@
 /// NAMED NON-DESCENDING SETS — everything else, isolated by name:
 ///
 ///   STUTTER (state-identical; at-least-once delivery noise — the fabric
-///   axioms row dropped no-double-pods, charter §2, so duplicates are
+///   axioms do not promise exactly-once, so duplicates are
 ///   tolerated idempotently and change nothing):
 ///     task-done-duplicate (= 0), land-duplicate (= 0), settled (= 0).
 ///   the model task-done-duplicate's REACH, not its effect: task ids are
@@ -213,7 +213,7 @@
 ///   pre-work resume alone. RetryFree deliberately reproduces the predecessor's
 ///   discovered operator-churn livelock as a
 ///   configuration, so the model can generate escalation traces under both
-///   prices — the mc_chuggy_retryfree instance plus check.sh Stage 9b's
+///   prices — the mc_chuggy_retryfree instance plus the model gate's
 ///   witness layer (the deterministic free-climb machine trace in
 ///   tests/chuggy_witness_test.qnt, plus the demoted pinned-seed probe)
 ///   keep that exemption exercised, not dead.
@@ -252,8 +252,8 @@
 /// ticketMeasure over all tickets. Each CHURN step requires an operator
 /// acting on a ticket with an open desk task (domain.qnt `coveredSet`),
 /// and each AUTHORING step is bounded by the arrival cap. So, given the
-/// trusted fabric axioms (charter §2 — spawned tasks eventually resolve,
-/// `activeDeadlineSeconds`/`backoffLimit`) and under default metering, any
+/// trusted fabric axioms (spawned tasks eventually resolve, under a
+/// maximum runtime and a relaunch limit) and under default metering, any
 /// run with finitely many stutter and churn events performs FINITELY MANY
 /// ACTING STEPS PER TICKET: no ticket can be dispatched, reworked, evicted
 /// and resumed forever. That is exactly the class of defect the predecessor found and
@@ -266,7 +266,7 @@
 /// particular ticket into a terminal. Closing that needs weak fairness in
 /// its per-ticket form — "a ticket that stays continuously Ready is
 /// eventually dispatched" — and chuggy does not have it: "no queue, no
-/// fairness" is a standing non-goal (charter §2; domain.qnt decideDispatch).
+/// fairness" is a standing non-goal (domain.qnt decideDispatch).
 /// Note the ordinary action-level reading would not suffice either: the
 /// `dispatch` action's nondet pick ranges over readyTickets, so a run in
 /// which the agentic dispatcher forever prefers other tickets takes
@@ -275,11 +275,11 @@
 /// possibility." A ticket that stops being chosen sits FLAT — it does not
 /// churn — which is the whole of what is owed.
 ///
-/// So: CHUGGY BOUNDS WORK, NOT WAITING (charter §2). Waiting on an author
+/// So: CHUGGY BOUNDS WORK, NOT WAITING. Waiting on an author
 /// to release a Draft, on the dispatcher to pick, and on the gate to free
 /// its slot (proposed R6) are all unbounded BY DECISION. The unconditional
-/// system-quiescence theorem remains charter §4's contested half and is
-/// NOT claimed here.
+/// system-quiescence theorem is a strictly stronger claim and is NOT
+/// made here.
 module chuggy_measure {
 
   // === Vocabulary ==========================================================
@@ -293,60 +293,46 @@ module chuggy_measure {
   // adds LO (WrapUpObs — the landing-boundary attribution); the
   // B (BatchMark) was added for grouping and deleted with it.
 
-  /// STORED ticket phases. Deliberately few (charter standing rule 3, derive
-  /// don't store): Blocked and Ready are PREDICATES over deps + record in
+  /// STORED ticket phases, deliberately few (standing rule 3, derive don't
+  /// store). Blocked and Ready are PREDICATES over deps + record in
   /// domain.qnt, not phases — a ticket that has not started is PPending, and
   /// the waiting-room split is derived. PPending must be stored (phase is
   /// total and "never started" is not expressible as a predicate over the
   /// other fields without overloading them). PWorking/PEvaluating carry the
-  /// parallel task set; PWrapUp is its own phase because its outcome is
-  /// the exclusivity boundary (charter §2, effect-only exclusivity); PDone
-  /// is absorbing; PEscalated is the human desk.
+  /// parallel task set; PWrapUp is its own phase because its outcome is the
+  /// exclusivity boundary; PDone is absorbing; PEscalated is the human desk.
   ///
-  ///  (authoring, charter §2 first-class rank #1) added the phases
-  /// above the released pipeline, transcribed from the predecessor's transition table
-  /// (the predecessor's transition table); the NOTES-RECONCILIATION PR then
-  /// reshaped that transcription twice, both DELIBERATE DEVIATIONS from
-  /// the the predecessor table, provenance docs/chuggy-notes-triage.md:
-  ///   - PDraft is the ONLY authoring phase — the note "Frozen removed.
-  ///     Draft -> Ready/Blocked" deletes PFrozen and with it the the predecessor
-  ///     table's freeze/unfreeze/release-from-Frozen rows (table lines
-  ///     22/24/26); release goes Draft -> PPending directly, Ready/Blocked
-  ///     still derived exactly as in .
-  ///   - PEscalated is THE parked phase — the note "stalled should be
-  ///     rolled into escalated" deletes PStalled: one
-  ///     parked-with-open-human-task phase, with the `reason` field
-  ///     carrying the pre-work walls (revalidation_failed,
-  ///     dependency_revoked).
-  ///   - PRevoked: the OTHER settled terminal — the predecessor's transition table: every
-  ///     non-terminal state may go to Revoked, Done and Revoked are
-  ///     absorbing. PRevoked is absorbing, runs nothing, never lands, and
-  ///     opens NO human task (revocation is the author's settled choice —
-  ///     see hasOpenHumanTask).
-  /// the model NO phase: a stage advance is an
-  /// Evaluating -> Evaluating edge —
-  /// within-phase progress lives in the stage digit, not in new phases.
+  /// PDraft is the ONLY authoring phase: release goes PDraft -> PPending
+  /// directly, with Ready and Blocked derived.
   ///
-  /// Two were added for the wrap-up path; grouping's removal deleted one of
-  /// them (PBatched), leaving:
-  ///   - PWrapUpHolding — the lease held (
-  ///     §3.3 Merge Gate item 3 + Serialization). PWrapUp is re-read as
-  ///     ENQUEUED (an implementation may hold queue and slot in
-  ///     ONE state, the split living in dispatcher memory — the model
-  ///     lifts the slot into phase so depth-1 exclusivity is a predicate
-  ///     over stored state, while the queue's ORDER stays deliberately
-  ///     unmodeled). A ticket is PWrapUpHolding only when the environment chose
-  ///     its branch MOVED at the dequeue — a quiet dequeue lands directly
-  ///     (the fast-path) and never occupies the gate — so PWrapUpHolding ENCODES
-  ///     invalidated = true with no stored flag (the envActive standing
-  ///     rule, derived-not-stored applied to the environment's choice).
+  /// PEscalated is THE parked phase — one parked-with-an-open-human-task
+  /// phase, with the `reason` field carrying the pre-work walls
+  /// (revalidation_failed, dependency_revoked).
+  ///
+  /// PRevoked is the other settled terminal: absorbing, runs nothing, never
+  /// completes, and opens NO human task, because revocation is the author's
+  /// settled choice (see hasOpenHumanTask).
+  ///
+  /// An eval stage advance gets NO phase — it is an Evaluating ->
+  /// Evaluating edge, because within-phase progress lives in the stage
+  /// digit rather than in new phases.
+  ///
+  /// PWrapUpHolding is the lease held; PWrapUp is ENQUEUED. An
+  /// implementation may keep queue and slot in ONE state with the split
+  /// living in memory; the model lifts the slot into phase so depth-1
+  /// exclusivity is a predicate over stored state, while the queue's ORDER
+  /// stays deliberately unmodeled. A ticket is PWrapUpHolding only when the
+  /// environment invalidated its artifact at the dequeue — a quiet dequeue
+  /// completes directly and never occupies the gate — so PWrapUpHolding
+  /// ENCODES invalidated = true with no stored flag, derive-don't-store
+  /// applied to the environment's choice.
   type Phase =
     PDraft |
     PPending | PWorking | PEvaluating | PWrapUp | PWrapUpHolding |
     PDone | PEscalated | PRevoked
 
-  /// What a task IS for (task-records depth — charter §2 job anatomy:
-  /// "task records are first-class (they carry the anatomy)"):
+  /// What a task IS for (task records are first-class — they carry the
+  /// anatomy):
   ///   TKWork     — a task of the Work phase's single task set (Work stays
   ///                ONE task-set phase per kasofsk's anatomy note; the
   ///                extracted vocabulary agrees
@@ -364,8 +350,8 @@ module chuggy_measure {
   /// A settled task's outcome — RESOLVED verdicts only; a running task
   /// cannot carry one (see TaskState). TFailed
   /// covers BOTH a failed verdict and evaluator-infrastructure death: "the
-  /// job pays" for evaluator crashes — one account, no new machinery
-  /// (charter §2 eval/evaluator-failure). TCancelled is the retirement
+  /// job pays" for evaluator crashes — one account, no new machinery.
+  /// TCancelled is the retirement
   /// mark for a task still RUNNING when its ticket is revoked mid-flight —
   /// the model's lean form of the predecessor's specification: "Revoke closes
   /// tasks" (revoke force-closes every pending task with a synthetic
@@ -385,7 +371,7 @@ module chuggy_measure {
 
   type TaskState = TSRunning | TSResolved(TaskOutcome)
 
-  /// A first-class task record (charter §2 job anatomy): identity + kind +
+  /// A first-class task record: identity + kind +
   /// lifecycle state. `id` is SEQUENTIAL WITHIN THE TICKET, 1-indexed, across
   /// the ticket's entire history
   /// sequential within job, 1-indexed`) — never reused across stages,
@@ -393,7 +379,7 @@ module chuggy_measure {
   /// what lets a stale completion from an earlier stage/incarnation be
   /// absorbed BY IDENTITY (see the STUTTER note in the header).
   /// Deliberately absent: `attempt` and the
-  /// per-task retry budgets (below-cycle machinery, charter §2 non-goal),
+  /// per-task retry budgets (below-cycle machinery, a standing non-goal),
   /// `cycle` (derivable from the record's kind sequence — work groups
   /// delimit cycles), timestamps/results (implementation accounting, not
   /// machine state).
@@ -406,8 +392,8 @@ module chuggy_measure {
 
   /// Verdict combinator over a resolved task set. Not a
   /// machine-wide parameter — each STAGE of a ticket's authored program
-  /// carries its own (eval is data, charter §2); the charter's default,
-  /// unanimous pass, is the default program's combinator
+  /// carries its own, because eval is data. The default, unanimous
+  /// pass, is the default program's combinator
   /// (domain.qnt defaultProgram). CUnanimousPass is the
   /// required-evaluator rule ("if every required evaluator in the stage
   /// passed", the predecessor's specification) at chuggy's grain — the required/advisory split
@@ -423,7 +409,7 @@ module chuggy_measure {
   /// required-pass rule.
   type Stage = { fanout: int, combinator: Combinator }
 
-  /// Gate-rework pricing — a model parameter, not a constant (charter §2):
+  /// Gate-rework pricing — a model parameter, not a constant:
   /// the model generates escalation traces under both branches and the
   /// choice is made on evidence.
   type WrapUpPricing = Budgeted(int) | DeadlineOnly
@@ -442,8 +428,8 @@ module chuggy_measure {
   /// implementation — see the field's note.
   type ReworkPolicy = RWBudget(int)
 
-  /// Operator-retry metering — configurable per deployment, default charge
-  /// (charter §2 economy/op-retry). RetryFree reproduces the predecessor's discovered
+  /// Operator-retry metering — configurable per deployment, default
+  /// charge. RetryFree reproduces the predecessor's discovered
   /// livelock by configuration.
   type RetryPricing = RetryCharged | RetryFree
 
@@ -458,9 +444,8 @@ module chuggy_measure {
   type Resume = RNone | RPending | RWorking | REvaluating | RWrapUp
 
   /// Why a ticket sits on the human desk. The wall VOCABULARY is carried from
-  /// the predecessor's explainer and constrained by the charter
-  /// §2 termination row — the charter itself does not name individual
-  /// walls. With Stalled merged into Escalated, the reason is
+  /// the predecessor's explainer; the termination requirement names no
+  /// individual wall. The reason is
   /// what distinguishes the parks: RsWorkFailed / RsReworkBudgetExhausted /
   /// RsWrapUpBudgetExhausted (Budgeted pricing only) / RsGasExhausted are
   /// the pipeline walls, and the PRE-WORK walls are RsRevalidationFailed
@@ -496,8 +481,8 @@ module chuggy_measure {
   ///     the target repo's default branch moved under the candidate — the
   ///     ONLY reason a landing can fail (the predecessor's explainer; the predecessor's
   ///     LConflictOrGateFail existed only while envActive). This is the
-  ///     envActive standing rule (docs/chuggy-notes-triage.md, "already
-  ///     true" row) honored: an explicitly NAMED nondet event on the
+  ///     envActive standing rule honored: an explicitly NAMED nondet
+  ///     event on the
   ///     trace, never a stored env flag — there is no per-repo "active"
   ///     variable anywhere, and quiet/moved is chosen fresh at every
   ///     attempt (derive-don't-store applied to the environment).
@@ -551,7 +536,7 @@ module chuggy_measure {
     // location (domain.qnt depsDoneIn reads phase alone; the lean reading
     // of "one orchestrator, many targets": the DAG stays
     // orchestrator-level, and forbidding cross-repo edges would be new
-    // machinery with no charter provenance).
+    // machinery nothing has asked for).
     deps: Set[int],
     // How this ticket finishes (design 002): authored, immutable after
     // arrival, and what decides whether it takes a lease or completes at
@@ -560,20 +545,17 @@ module chuggy_measure {
     // The artifact this ticket has produced, if it has passed work (design
     // 002). Set at work-passed and superseded by each rework's product.
     artifact: ArtifactMark,
-    // THE TARGET REPO (charter §2
-    // first-class order rank #3; `domain/firstclass`, both respondents:
-    // "Multiple repos — one orchestrator, many targets"): a ticket targets
+    // THE TARGET REPO — one orchestrator, many targets: a ticket targets
     // EXACTLY ONE repo, an AUTHORED field like deps and the program —
     // chosen at arrival from the bounded universe 1..N_REPOS (domain.qnt
     // repos; reposWellFormed) and immutable after. NOT a measure input:
     // no digit, weight, or account radix reads it (the repo-blindness
     // theorem — derivation in this file's multi-repo header note), and no
-    // budget is per-repo (deliberately: no charter provenance — README).
+    // budget is per-repo, deliberately.
     repo: int,
     // THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
-    // arrives with the Draft (which is exactly why authoring came first,
-    // first-class order charter §2) and is immutable after arrival, like
-    // deps. This is the charter's "eval is data, not machinery" made
+    // arrives with the Draft and is immutable after arrival, like
+    // deps. This is "eval is data, not machinery" made
     // literal: the program is data on the ticket record; domain.qnt's
     // decideEvalStageReduce is the interpreter. Well-formedness (non-empty,
     // length <= MAX_STAGES, every fanout in 1..N_TASKS) is an ARRIVAL
@@ -589,7 +571,7 @@ module chuggy_measure {
     // here, resolution settled, when its set retires (reduce, escalation,
     // or revoke — retireLive below), and once here it NEVER changes
     // (domain.qnt recordMonotone). This is "task records are first-class:
-    // they carry the anatomy" (charter §2) — outcomes are retained history
+    // they carry the anatomy" — outcomes are retained history
     // the golden traces can carry as provenance, not overwritten scratch
     // state. Entry i has id firstTaskId + i (ids sequential, retirement in
     // id order). NOT a measure input (append-only: it could only climb).
@@ -619,8 +601,8 @@ module chuggy_measure {
     reworkLeft: int,
     // Gate-rework budget remaining; identically 0 under DeadlineOnly.
     wrapUpLeft: int,
-    // GAS remaining — the REQUIRED account (charter §2 economy/deadline,
-    // the bound is a spend meter, not a clock).
+    // GAS remaining — the REQUIRED account (the bound is a spend meter,
+    // not a clock).
     gasLeft: int,
     // Operator-resume point (RNone unless Escalated with a modeled
     // resume — the dependency_revoked wall has none; see Resume).
@@ -634,7 +616,7 @@ module chuggy_measure {
     // could.
     reason: Reason,
     // GHOST: landing effects ever emitted for this ticket — the counter the
-    // effect-exclusivity invariant (charter §2: exactly one landing) reads.
+    // effect-exclusivity invariant (exactly one completion) reads.
     // Not implementation state.
     completions: int
   }
@@ -883,8 +865,8 @@ module chuggy_measure {
 
   /// First write wins: resolve task `tid` if it is still running; the
   /// caller (decideTaskDone) treats an already-resolved task as a duplicate
-  /// delivery and changes nothing — the idempotence the dropped
-  /// no-double-pods axiom demands (charter §2 fabric row). The explicit
+  /// delivery and changes nothing — the idempotence an at-least-once
+  /// fabric demands. The explicit
   /// lifecycle makes the finality structural: TSRunning -> TSResolved(out)
   /// is the only edge, and nothing maps a TSResolved back.
   /// The resolution event carries the footprint alongside
