@@ -6,81 +6,122 @@
 
 **What crosses a phase boundary?** Nothing does. `decideWorkReduce` on success retires the work set and calls `spawnOn(retired, TKEval(0), fan)`; the eval-failure arm calls `spawnOn(retired, TKWork, N_TASKS)`. Fresh tasks, no payload, either way. A `Ticket` carries `phase deps repo program tasks record spawned reason landings` — **there is no artifact**. The thing work produces, eval judges and landing lands does not exist as a value anywhere in the model.
 
-**What happens at the end?** Exactly one thing: a merge. The only path to `PDone` is `landSuccess`, reachable only from `PLanding` (the quiet fast-path) or `PGated`. The outcome vocabulary is `LandAdvanceDefault | LandSquashMerge | LandFailed` — all merge verbs. Every ticket merges.
+**What happens at the end?** Exactly one thing: a merge. The only path to `PDone` is `landSuccess`, reachable only from `PLanding` or `PGated`, and the outcome vocabulary is `LandAdvanceDefault | LandSquashMerge | LandFailed` — all merge verbs. Every ticket merges.
 
-These are the same question. A ticket produces something; the thing it produces is what wrap-up commits to the world. The model is silent on the first and hardcodes one answer to the second.
+These are the same question, and — the point of this document — **answering the first is what lets us delete most of the machinery behind the second.**
 
-## Why hardcoding the merge is wrong, not merely narrow
+## The central claim: the artifact pays for the simplification
 
-A ticket that builds an artifact or deploys to an environment merges nothing and has no branch worth landing. Under the current model such a ticket cannot finish at all, and three things break rather than one:
+R1 is the model's headline requirement: *no commit reaches the default branch without every required evaluator passing against the exact tree that lands.*
 
-**It consumes a merge-gate slot it does not need.** `gateDepthOne` serializes one occupant per repo. A deploy would queue behind, and block, real merges — a correctness-shaped cost, not an inelegance.
+The model proves it **by proxy**, as an argument about paths. On a quiet branch the evaluated tree *is* the landing tree; on a moved branch only the gate-validated candidate may land. Everything merge-shaped in the domain exists to make that path argument work:
 
-**Its failure taxonomy is actively false.** `landOutcomes(false) = { LandSquashMerge }`: a quiet branch *always* lands cleanly, because the moving default branch is the only reason a merge can fail. For a deploy that is simply untrue — a deploy fails on its own terms, with nothing upstream having moved. The model would be unable to express the failure that actually happens, and would insist on a success that did not.
+| Machinery | Exists to |
+|---|---|
+| `branchMoved`, the per-attempt draw | distinguish the two paths |
+| `landOutcomes(moved)` | make the wrong outcome undrawable on each path |
+| `LandAdvanceDefault` vs `LandSquashMerge` | name which promotion each path uses |
+| `gatedPromotesDirectSquashes` | check the effect matches the path |
+| `quietRepoLandsCleanly` | check a quiet attempt cannot fail |
+| `landingIsolation`'s path-iff and failure-implies-moved conjuncts | check the phase matches the path |
 
-**The trace lies.** Every completion records a merge effect for work that merged nothing.
+Give the produced thing an identity and R1 stops needing a proxy. It becomes what it actually is, checkable directly on every reachable step:
 
-## The predecessor already decided this
+> **the artifact that was committed is the artifact that was evaluated.**
 
-This is the part that settles it. Chuggernaut has a `wrap_up` block on the job type, defaulting to `{ type: merge }`, with a `none` variant described as: *"`merge` (default) squash-merges the job branch through the merge queue/gate; `none` goes straight to Done — for jobs whose effect is external (deploys, reports) and whose branch is scratch."*
+That single invariant is strictly stronger than the path argument — it holds for wrap-up kinds that have no branch at all — and **every row in that table becomes unnecessary in the domain.** The artifact is not an addition to pay for; it is what buys the deletion.
 
-Its state table carries both edges — `Evaluation → WrapUp` when `wrap_up: merge`, and `Evaluation → Done` when `wrap_up: none` — and its spec ships a worked deploy example:
+## What the domain keeps
+
+Wrap-up genericity is not "add a variant beside merge". It is: the domain models the *shape* of finishing, and merge becomes one implementation of it, living in an adapter.
+
+Five things are genuinely domain-level, and each survives because it is a statement about the machine rather than about git:
+
+1. **A completion happens exactly once per ticket.** `landingExclusive` generalizes to `completionExclusive` — same force, wider vocabulary.
+2. **What is committed is what was evaluated.** The new invariant above. Replaces the path rule.
+3. **Some wrap-up kinds need exclusive access to a shared resource; at most one holder at a time.** `gateDepthOne` generalizes to a lease.
+4. **A failure is priced and parks at a named wall.** Unchanged in shape; `GatePricing` becomes wrap-up pricing.
+5. **It never wedges** — every occupancy has an enabled resolution that frees the resource in the same step.
+
+**Why the lease stays in the domain, when the merge does not.** Deciding that ticket A holds a resource and therefore ticket B may not *reads state belonging to another ticket* — which is exactly the authority split's test for a global decision. Only the actor may make it; pushing it to an adapter would create a second writer, which the charter forbids. So mutual exclusion is domain. **Git is not.**
+
+And generalizing it buys something real rather than just abstracting: two deploys to the same environment should not run at once either. The resource is a parameter, not always "the repo".
+
+## What leaves the domain
+
+- `branchMoved` and the quiet/moved draw, in both actions
+- `landOutcomes`' path rule; the two success outcomes collapse to one
+- `quietRepoLandsCleanly` and `gatedPromotesDirectSquashes`, deleted
+- `landingIsolation`'s path-iff and failure-implies-moved conjuncts
+- `decideDequeue`'s routing composition
+
+A side benefit worth naming: removing a binary environment draw from every attempt **roughly doubles the density of completed wrap-ups in random exploration**. The model's own notes record that landing attempts are currently rare enough on multi-repo instances that landing mutants are caught by the deterministic layer rather than the random one. This makes the random layer more useful, for free.
+
+## What is lost, named rather than glossed
+
+**The §5e theorem** — that a gated promotion advances the default ref while a quiet one squash-merges directly. This was v1's single conformance divergence, split deliberately in R3. It goes, and that is correct: *which* promotion mechanism fires is a property of the merge implementation, not of the machine. The merge adapter can hold it, and its own conformance can pin it. R3 was PROPOSED and unconfirmed, so nothing decided is being overturned.
+
+**"A quiet branch always lands cleanly"** — v1's §4 insight. Also merge-specific truth, and it moves with the merge.
+
+Both are real content and neither belongs in a domain that must also describe a deploy.
+
+## Why merge-only is wrong, not merely narrow
+
+Kept from the first draft because it is the case for doing this at all.
+
+A ticket that builds an artifact or deploys an environment merges nothing and has no branch worth landing. Under the current model it cannot finish, and three things break:
+
+**It consumes a lease it does not need.** `gateDepthOne` serializes one occupant per repo, so a deploy would queue behind and block real merges.
+
+**Its failure taxonomy is actively false.** `landOutcomes(false) = { LandSquashMerge }` — a quiet branch *always* lands cleanly, because a moving default branch is the only reason a **merge** can fail. A deploy fails on its own terms with nothing upstream moved. The model could neither express the failure nor withhold the success.
+
+**The trace lies**, recording a merge effect for work that merged nothing.
+
+### The predecessor already decided this
+
+Chuggernaut carries `wrap_up` on the job type, defaulting to `{ type: merge }`, with `none` described as *"for jobs whose effect is external (deploys, reports) and whose branch is scratch"*. Its state table has both `Evaluation → WrapUp` and `Evaluation → Done`, and its spec ships a worked deploy example:
 
 ```yaml
 wrap_up:
   type: none                   # the deploy's effect is external; nothing to merge
 ```
 
-It also separates the merge from the publish: `wrap_up.run` is a post-merge command, and a wrap-up failure *"re-run[s] only the `wrap_up.run` publish command at a fresh attempt; the squash has already landed, so the merge is never redone."*
-
-So wrap-up genericity is not a new idea to be weighed. It is **decided behaviour in the system chuggy replaces**, and chuggy's model collapsed it to merge-only. This is a regression to repair, not a feature to justify.
-
-## The artifact: why identity, and why it earns its place
-
-The case for naming what a ticket produces is not that typed interfaces are tidy. It is that **the model's headline requirement is currently proved by proxy.**
-
-R1 says: *no commit reaches the default branch without every required evaluator passing against the exact tree that lands.* The model gets there **structurally** — on a quiet branch the evaluated tree is the landing tree; on a moved branch only the gate-validated candidate may land. That is an argument about **paths**. Give the produced thing an identity and R1 becomes what it actually is, checkable on every reachable step:
-
-> **the artifact that was committed is the artifact that was evaluated.**
-
-Two further properties are unstatable today and fall out for free:
-
-- **Evaluation never judges another cycle's output.** A rework respawns work, then eval. Nothing prevents a model where eval judges the wrong cycle's product, because there is no product to be wrong about.
-- **A completion commits something that was built.** `landings` counts effects, not subjects.
-
-And it connects to a decision already taken elsewhere: the Nomad design's **D6** (*"the evaluation task installs the work task's artifact; it never rebuilds it"*) is a work→eval artifact-flow requirement the model has no vocabulary for, and its **D7** (*"the artifact directory is keyed by the decision sequence number, and a complete directory is the record that the effect already happened"*) is an idempotency mechanism keyed on artifact identity — refinement-layer material, in the layer that exists to prove no double-spend.
-
-**Identity, never content.** The model has no more business representing a diff or a build output than it has representing an evaluator's prose. An opaque token — the decision sequence number is the obvious candidate, which aligns with D7 — proves *same artifact* without knowing anything about what is in it. This distinction is load-bearing: the citation-scoping mechanism was a content-shaped abstraction and it was removed for depending on evaluator honesty, a property outside the model. An identity depends on nothing outside the model.
+So this is **a regression to repair, not a feature to justify.**
 
 ## Proposed shape
 
-**A ticket produces an artifact.** `Ticket.artifact: Option[ArtifactId]`, an opaque token. Set at `work-passed`, read at eval spawn and at wrap-up, superseded when a rework produces a new one. **Not a measure input** — the same treatment `repo` gets and `batch` got before it was removed, pinnable in one test.
+**The artifact.** `Ticket.artifact: Option[ArtifactId]`, an opaque token — the decision sequence number is the obvious candidate, which aligns with the Nomad design's D7 keying. Set at `work-passed`, read at eval spawn and at wrap-up, superseded when a rework produces a new one. **Not a measure input**, the same treatment `repo` gets.
 
-**Wrap-up is a declared kind, not a fixed step.** The ticket carries its wrap-up kind as authored data, exactly as it carries its eval program — this is the charter's *eval is data* applied one seam later. Two kinds to start, matching the predecessor:
+**Identity, never content.** The model has no more business representing a diff or a build output than an evaluator's prose. This distinction is load-bearing: citation scoping was a content-shaped abstraction and it was removed for depending on evaluator honesty, a property outside the model. An identity depends on nothing outside the model, and *same-artifact* is provable without knowing what is in it.
+
+**The wrap-up kind**, authored data on the ticket exactly like the eval program — the charter's *eval is data* applied one seam later:
 
 | Kind | Meaning |
 |---|---|
-| `Merge` | today's path: enqueue, dequeue, the depth-1 gate, the branch-moved draw, the two promotion effects |
-| `None` | the artifact's effect is external; evaluation passing completes the ticket directly |
+| `WNone` | the effect was external and already happened; evaluation passing completes the ticket |
+| `WShared` | there is a wrap-up step, and it needs no exclusive resource |
+| `WExclusive(resource)` | the step needs a lease on a named resource — merge takes the repo; a deploy takes the environment |
 
-The merge path keeps every property it has now — depth-1 serialization, the path rule, the priced eviction, `landingExclusive`. What changes is that those become properties **of the merge kind**, not of every ticket. `gateDepthOne` should quantify over gated tickets, which a `None` ticket never becomes.
+**Phases.** `PLanding`/`PGated` become generic: *wants to wrap up* and *holds the lease*. Two phases rather than one because occupancy stays **derived from phase** — storing a lease elsewhere would violate derive-don't-store. A `WNone` ticket enters neither.
 
-**Exclusivity generalizes rather than weakens.** `landingExclusive` currently reads *exactly one landing effect per ticket, iff Done*. The honest generalization is *exactly one **completion** effect per ticket, iff Done* — where a merge kind's completion effect is the promotion and a none kind's is whatever names the external effect. The invariant keeps its force; only the vocabulary widens.
+**Outcomes.** `WrapUpOk | WrapUpFailed`. Two, not three.
 
 ## What this costs at three settled points
 
-**Standing rule 1 — the measure comes first.** A new field means `measure.qnt` is reworked before the machine, even though the answer is expected to be "blind to it". Adding a wrap-up kind may add or remove rank ladder rungs: a `None` ticket skips `PLanding` and `PGated` entirely, so the descent table needs re-deriving and `rankCeiling` may move.
+**Standing rule 1 — the measure comes first.** `measure.qnt` is reworked before the machine. The two rungs stay but are renamed; a `WNone` ticket drops from Evaluating straight to settled, skipping both, so the descent table needs re-deriving even though `rankCeiling` should not move.
 
-**The charter's task-records row.** *Task records are first-class (they carry the anatomy)*. An artifact is not a task record, so this arguably widens what "the anatomy" means. Worth an explicit decision rather than an assumption.
+**The charter's task-records row.** *Task records are first-class (they carry the anatomy)*. An artifact is not a task record, so this arguably widens what "the anatomy" means — worth an explicit decision rather than an assumption.
 
-**The refinement layer.** D7 keys idempotency on artifact identity. If the artifact enters the domain, the refinement layer's double-spend argument should be re-examined to see whether it strengthens — a complete artifact directory being *the record that the effect already happened* is a stronger claim than the journal-seq keying alone.
+**The refinement layer.** D7 keys idempotency on artifact identity and treats a complete artifact directory as the record that the effect already happened. If the artifact enters the domain, the double-spend argument should be re-examined — it may **strengthen**.
 
-## Deliberately out of scope here
+## Deliberately out of scope
 
-Artifact **content**, artifact **storage**, retention, and the `wrap_up.run` post-merge publish command — a third thing that runs after a successful merge, distinct from both the merge and the evaluation. It is real in the predecessor and it should be modelled, but it is a separate seam and folding it in here would make one change into three.
+Artifact **content**, **storage** and retention; and the post-merge **publish command** — a third thing that runs after a successful merge, real in the predecessor, and its own seam. Folding it in would make one change into three.
 
 ## Open
 
-**Should a failed wrap-up be priced like a failed gate?** The predecessor escalates on a non-zero wrap-up exit without undoing the merge. Under a generic wrap-up the question is whether a `None` ticket's external effect failing draws on gas, on gate budget, or on an account of its own.
+**Is `WShared` earning its place on day one?** Three kinds may be one more than the evidence supports. The alternative is `WNone | WExclusive(resource)` and letting the first no-lease wrap-up add the third.
 
-**Is `None` the right second kind, or is it the absence of a kind?** Modelling it as a variant keeps wrap-up total and makes the trace explicit. Modelling it as `Option` makes the common case smaller. The variant is proposed here because a trace that says *this ticket completed with no external effect* is worth more than one that says nothing.
+**How is a failed wrap-up priced?** The predecessor escalates on a non-zero exit without undoing the merge. Whether a `WNone` or `WShared` failure draws on gas, on the wrap-up account, or on one of its own is undecided.
+
+**Does the lease need a queue discipline?** Today the dequeue is an unrestricted nondet pick and R6 accepts unbounded queue wait. That acceptance was written about the merge gate; it should be restated about leases generally, or narrowed.
