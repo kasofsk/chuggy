@@ -15,9 +15,10 @@
 # purity rule learns nothing from also formatting the fixture. Two cases run
 # every stage on purpose: one to show a clean tree is clean, and one to show
 # that a finding in an early stage does not stop a later one from reporting its
-# own. The suite is ~12.5s in total (measured 2026-08-15, twenty-seven fixture
+# own. The suite is ~13.1s in total (measured 2026-08-15, twenty-six fixture
 # trees); it is the slowest thing `.chug/tasks/ci.sh` runs before the model, so
-# a new case should earn its second.
+# a new case should earn its second — which is why the eleven roster
+# assertions share one run rather than scaffolding eleven times.
 #
 # THE POSITIVE CONTROL IS A CASE, NOT A COMMENT. `Date.now()` in
 # `src/adapters/` must stay clean while the identical call in `src/domain/` is
@@ -118,7 +119,41 @@ check "a clock in src/domain is a finding" 1 "$RC" 'may not reach `Date`'
 check "randomness in src/domain is a finding" 1 "$RC" 'may not reach `Math.random`'
 check "an ambient process in src/domain is a finding" 1 "$RC" 'may not reach `process`'
 
-# 3. The module-graph half: a direct import of a node builtin.
+# 3. The roster is enumerated, so every NAME on it gets its own assertion —
+#    otherwise deleting one entry leaves the suite green, which is how `Intl`
+#    and `AbortSignal` were absent from it in the first place. One run, one
+#    reference each, one needle each. A name added to the roster without a line
+#    here is a name nothing defends.
+scaffold
+cat >>"$R/src/domain/pure.ts" <<'TS'
+
+export const zone = (): string =>
+  Intl.DateTimeFormat().resolvedOptions().timeZone;
+export const deadline = (): unknown => AbortSignal.timeout(1);
+export const canceller = (): unknown => new AbortController();
+export const bus = (): unknown => new BroadcastChannel("x");
+export const pipe = (): unknown => new MessageChannel();
+export const port = (): unknown => MessagePort;
+export const watcher = (): unknown => PerformanceObserver;
+export const timings = (): unknown => Performance;
+export const agent = (): unknown => Navigator;
+export const cipher = (): unknown => Crypto;
+export const bytecode = (): unknown => WebAssembly.Module;
+TS
+run purity
+check "Intl is rostered (a wall clock and a host time zone)" 1 "$RC" 'may not reach `Intl`'
+check "AbortSignal is rostered (a timer by another name)" 1 "$RC" 'may not reach `AbortSignal`'
+check "AbortController is rostered" 1 "$RC" 'may not reach `AbortController`'
+check "BroadcastChannel is rostered" 1 "$RC" 'may not reach `BroadcastChannel`'
+check "MessageChannel is rostered" 1 "$RC" 'may not reach `MessageChannel`'
+check "MessagePort is rostered" 1 "$RC" 'may not reach `MessagePort`'
+check "PerformanceObserver is rostered" 1 "$RC" 'may not reach `PerformanceObserver`'
+check "Performance is rostered" 1 "$RC" 'may not reach `Performance`'
+check "Navigator is rostered" 1 "$RC" 'may not reach `Navigator`'
+check "Crypto is rostered" 1 "$RC" 'may not reach `Crypto`'
+check "WebAssembly is rostered" 1 "$RC" 'may not reach `WebAssembly`'
+
+# 4. The module-graph half: a direct import of a node builtin.
 scaffold
 cat >>"$R/src/domain/pure.ts" <<'TS'
 
@@ -127,7 +162,7 @@ TS
 run purity
 check "node:fs in src/domain is a finding" 1 "$RC" "domain-is-pure"
 
-# 4. The breach three hops down. Nothing in `pure.ts` looks impure; it imports
+# 5. The breach three hops down. Nothing in `pure.ts` looks impure; it imports
 #    a neighbour that imports a neighbour.
 #
 #    THE ASSERTION IS ON THE CHAIN'S ORIGIN, and the earlier version of this
@@ -153,7 +188,7 @@ run purity
 check "a transitive path out of src/domain names its origin" 1 "$RC" \
 	"domain-is-pure: src/domain/pure.ts → fs"
 
-# 5. A/B on the file extension, and the reason this case exists: a byte-identical
+# 6. A/B on the file extension, and the reason this case exists: a byte-identical
 #    clock was a finding in `pure.ts` and clean in `pure.mts`, because both lint
 #    configs globbed `*.ts` and tsc's include did too. The A half is case 2; this
 #    is the B half, and it fails if either glob narrows back.
@@ -166,7 +201,7 @@ TS
 run purity
 check "a clock in a .mts domain file is a finding too" 1 "$RC" 'may not reach `Date`'
 
-# 6. The floor beneath both globs. A file under `src/domain/` that no purity
+# 7. The floor beneath both globs. A file under `src/domain/` that no purity
 #    configuration matches must be a FINDING and not a silence — which is the
 #    property that makes the next extension loud without anyone remembering to
 #    widen a glob for it. Handed a directory, eslint would never have seen this
@@ -177,7 +212,17 @@ run purity
 check "a file no purity config matches is a finding" 1 "$RC" \
 	"File ignored because no matching configuration was supplied"
 
-# 7. The compensating control for the graph half's `.test.ts` exemption: domain
+# 8. The matching floor under the types stage: `src/` holds TypeScript and
+#    nothing else. A `.js` file there would be outside the program
+#    `tsconfig.json` describes, so `strict` would not apply to it while every
+#    module around it could still import it — lint coverage would not fix that,
+#    which is why it may not be there at all rather than be covered.
+scaffold
+printf 'export const untyped = 1;\n' >"$R/src/domain/sneak.js"
+run types
+check "JavaScript under src/ is a finding" 1 "$RC" "src/domain/sneak.js"
+
+# 9. The compensating control for the graph half's `.test.ts` exemption: domain
 #    tests are exempt from the module-graph `from` set, so the ambient roster
 #    has to cover them. Narrowing the purity glob to exclude `.test.ts` turns
 #    this red and nothing else.
@@ -191,7 +236,7 @@ TS
 run purity
 check "the ambient roster covers domain tests" 1 "$RC" 'may not reach `Date`'
 
-# 8. The positive control. The same call one directory across is legal, so the
+# 10. The positive control. The same call one directory across is legal, so the
 #    rule is scoped to the directory it names rather than to the tree.
 scaffold
 cat >"$R/src/adapters/clock.ts" <<'TS'
@@ -202,7 +247,7 @@ TS
 run purity
 check "Date.now in src/adapters is clean" 0 "$RC" "purity clean"
 
-# 9. Hiding the impure module behind a test name inside the directory does not
+# 11. Hiding the impure module behind a test name inside the directory does not
 #    work either — and `domain-is-pure` is what stops it, not the rule about
 #    test imports: whatever the test file reaches is reachable from the source
 #    that imported it, so the node builtin is outside `src/domain/` however
@@ -218,7 +263,7 @@ TS
 run purity
 check "a test file is no shelter for an impure import" 1 "$RC" "domain-is-pure"
 
-# 10. The rule about test imports, pinned where nothing else can fire: an inert
+# 12. The rule about test imports, pinned where nothing else can fire: an inert
 #    domain test, reaching nothing at all, imported by domain source. Only
 #    `domain-not-through-its-tests` has anything to say here, so downgrading or
 #    deleting it turns this case red and no other.
@@ -233,7 +278,7 @@ TS
 run purity
 check "domain source may not import a domain test" 1 "$RC" "domain-not-through-its-tests"
 
-# 11. Types.
+# 13. Types.
 scaffold
 cat >>"$R/src/domain/pure.ts" <<'TS'
 
@@ -242,7 +287,7 @@ TS
 run types
 check "a type error is a finding" 1 "$RC" "is not assignable to type"
 
-# 12. Lint, on the rule that mechanizes the engineering bar rather than a
+# 14. Lint, on the rule that mechanizes the engineering bar rather than a
 #    stylistic one: a union switched without every arm.
 scaffold
 cat >>"$R/src/domain/pure.ts" <<'TS'
@@ -260,13 +305,13 @@ TS
 run lint
 check "a non-exhaustive switch is a finding" 1 "$RC" "Switch is not exhaustive"
 
-# 13. Format.
+# 15. Format.
 scaffold
 printf 'export const spaced   =    1\n' >"$R/src/domain/ugly.ts"
 run format
 check "an unformatted file is a finding" 1 "$RC" "src/domain/ugly.ts"
 
-# 14. A failing test is a finding, not an error.
+# 16. A failing test is a finding, not an error.
 scaffold
 cat >"$R/src/domain/broken.test.ts" <<'TS'
 import assert from "node:assert/strict";
@@ -279,7 +324,7 @@ TS
 run test
 check "a failing test is a finding" 1 "$RC" "check-ts: FINDING — test"
 
-# 15. No test files at all exits 2, not 0. A test runner handed a glob that
+# 17. No test files at all exits 2, not 0. A test runner handed a glob that
 #     matches nothing exits clean with zero tests, which is the one way this
 #     stage could pass while checking nothing.
 scaffold
@@ -287,7 +332,7 @@ rm "$R/src/domain/pure.test.ts"
 run test
 check "no tests found exits 2, not 0" 2 "$RC" "matched nothing"
 
-# 16. Every selected stage runs. Two defects in different stages, one run, both
+# 18. Every selected stage runs. Two defects in different stages, one run, both
 #     reported — a gate that stopped at the first would hide the second.
 scaffold
 printf 'export const spaced   =    1\n' >"$R/src/domain/ugly.ts"
@@ -311,13 +356,13 @@ grep -qF "check-ts: FINDING — format" "$OUT" || {
 # 2 gets a case, because the branch that answers 2 is the one that runs on the
 # day nobody is watching.
 
-# 17. No toolchain installed.
+# 19. No toolchain installed.
 scaffold
 rm "$R/node_modules"
 run
 check "a missing node_modules exits 2, not 0" 2 "$RC" "npm ci"
 
-# 18. A stage whose tool could not run at all, as opposed to one that ran and
+# 20. A stage whose tool could not run at all, as opposed to one that ran and
 #     disagreed. eslint reserves exit 2 for a configuration it cannot load;
 #     turning that arm into a finding would report a linter that never linted
 #     as a linter that found something.
@@ -326,7 +371,7 @@ printf 'export default [ this is not javascript\n' >"$R/eslint.config.js"
 run lint
 check "an unloadable lint config exits 2, not 1" 2 "$RC" "could not run"
 
-# 19. depcruise printing no verdict. Its exit code is a violation count, so a
+# 21. depcruise printing no verdict. Its exit code is a violation count, so a
 #     crash and a finding are the same number; the printed line is the only
 #     thing that separates them, and this is the guard that reads it.
 scaffold
@@ -334,7 +379,7 @@ rm "$R/.dependency-cruiser.mjs"
 run purity
 check "depcruise with no verdict exits 2, not 1" 2 "$RC" "produced no verdict"
 
-# 20. And the other direction: depcruise hands its violation COUNT to
+# 22. And the other direction: depcruise hands its violation COUNT to
 #     `process.exit`, so a shell reads 256 violations as status 0. Measured,
 #     not theorised — 256 domain files each importing `node:fs` exits 0 and
 #     prints `256 errors`. A gate that trusted the code would call the dirtiest
@@ -350,7 +395,7 @@ run purity
 check "256 violations wrap the exit code to 0 and are still a finding" 1 "$RC" \
 	"256 errors"
 
-# 21. A node that cannot run TypeScript. Simulated faithfully rather than
+# 23. A node that cannot run TypeScript. Simulated faithfully rather than
 #     mocked: the shim is the real binary with type stripping switched off, so
 #     both the probe and the test run behave exactly as they would on a host
 #     below the version `package.json` requires. Without the probe this reads
@@ -371,7 +416,7 @@ set -e
 check "a node that cannot strip types exits 2, not 1" 2 "$RC" \
 	"cannot run TypeScript directly"
 
-# 22. The types stage's own could-not-run: the project file is absent. tsc
+# 24. The types stage's own could-not-run: the project file is absent. tsc
 #     answers a MALFORMED tsconfig with the same code it uses for a type
 #     error, so that case is a finding by design and stated as such in the
 #     gate; an absent one is genuinely could-not-run and is guarded before tsc
@@ -381,7 +426,7 @@ rm "$R/tsconfig.json"
 run types
 check "a missing tsconfig.json exits 2, not 1" 2 "$RC" "tsconfig.json is missing"
 
-# 23. An empty domain is not a pure one. If the ambient half is handed no
+# 25. An empty domain is not a pure one. If the ambient half is handed no
 #     files it has checked nothing, and printing "purity clean" for that is the
 #     same lie as a test glob that matched nothing.
 scaffold
@@ -390,11 +435,11 @@ mkdir -p "$R/src/domain"
 run purity
 check "an empty src/domain exits 2, not 0" 2 "$RC" "checked nothing"
 
-# 24. Outside a git checkout there is no tree to judge.
+# 26. Outside a git checkout there is no tree to judge.
 run_in "$BARE"
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
 
-# 25. An unknown stage is a caller error, not a silent full run.
+# 27. An unknown stage is a caller error, not a silent full run.
 scaffold
 run nosuchstage
 check "an unknown stage exits 2" 2 "$RC" "unknown stage nosuchstage"

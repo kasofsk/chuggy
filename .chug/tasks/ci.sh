@@ -83,8 +83,8 @@ fi
 # After every pure-shell gate, because a scripts-only change breaks those and
 # should not wait on a toolchain to hear so; before the shell suites, because
 # it is cheaper than they now are. Measured 2026-08-15 on this tree: the
-# pure-shell gates total 0.5s, check-ts 2.2s, the suites 14.0s — 12.5s of it
-# check-ts's own, which drives the real toolchain over twenty-seven fixture
+# pure-shell gates total 0.5s, check-ts 2.2s, the suites 14.5s — 13.1s of it
+# check-ts's own, which drives the real toolchain over twenty-six fixture
 # trees — and check-model 50s. Cheapest first, all the way down.
 #
 # Guarded like the gates above rather than called unconditionally, and the
