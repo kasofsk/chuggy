@@ -461,7 +461,7 @@ module chuggy_witness_stage_test {
     wrapUpOutcomes(true).contains(out),
     apply(decideWrapUpResolve(core, j, out, true))
   }
-  action doLandDuplicate(j: int): bool = all {
+  action doCompleteDuplicate(j: int): bool = all {
     doneTickets.contains(j),
     apply(decideCompleteDuplicate(core, j))
   }
@@ -536,7 +536,7 @@ module chuggy_witness_stage_test {
       // absorbed with NO landing effect (completionExclusive's boundary; the
       // complete-duplicate STUTTER arm of stepDescends fired on a machine
       // trace — the convention roster).
-      .then(doLandDuplicate(1))
+      .then(doCompleteDuplicate(1))
       .expect(and {
         lastStep.label == "complete-duplicate",
         lastStep.effects == [],

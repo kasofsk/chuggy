@@ -108,7 +108,7 @@ module chuggy_refinement_unit_test {
 
   /// Tamper 3 — a forged record: the entry's rec must be EXACTLY what
   /// the domain decider produces at the replayed state (a journal
-  /// claiming a landing that the deciders would not have decided is
+  /// claiming a completion that the deciders would not have decided is
   /// illegal — the refinement claim at row grain).
   run journalRefusesForgedRecordTest = assert(and {
     not(journalLegalOn([e1, { ...e2, rec: { ...e2.rec, label: "ticket-done" } }])),
@@ -125,7 +125,7 @@ module chuggy_refinement_unit_test {
     worldSpawnsOn(goodJ, Set(1, 2, 3), [], 1) == 1,
     worldSpawnsOn(goodJ, Set(1, 2, 3), [d3.rec], 1) == 2,
     worldSpawnsOn(goodJ, Set(1, 2, 3), [d3.rec], 1) > journalSpawnsOn(goodJ, 1),
-    journalLandingsOn(goodJ, 1) == 0
+    journalCompletionsOn(goodJ, 1) == 0
   })
 
   /// No-op decisions journal like any others and replay through: a
@@ -286,8 +286,8 @@ module chuggy_refinement_witness_test {
       .expect(and {
         obs.label == "ticket-done",
         memCore.tickets.get(1).phase == PDone,
-        journalLandings(1) == 1,
-        worldLandings(1) == 0,
+        journalCompletions(1) == 1,
+        worldCompletions(1) == 0,
         allDomainInvariants, refinementInvariants
       })
       // CRASH at the landing seam: the landing DECISION is durable
@@ -297,19 +297,19 @@ module chuggy_refinement_witness_test {
       .expect(and {
         memCore.tickets.get(1).phase == PDone,
         memCore.tickets.get(1).completions == 1,
-        worldLandings(1) == 0,
+        worldCompletions(1) == 0,
         allDomainInvariants, refinementInvariants
       })
       .then(emitNext)
       .expect(and {
-        worldLandings(1) == 1,
+        worldCompletions(1) == 1,
         allDomainInvariants, refinementInvariants
       })
       // A stale landing confirmation re-delivers; the domain absorbs it
       // and the actor journals the no-op (entry 14) — the world's
-      // landing count does not move.
-      .then(stepEmit(JLandDuplicate(1), "complete-duplicate"))
-      .expect(and { worldLandings(1) == 1, allDomainInvariants, refinementInvariants })
+      // completion count does not move.
+      .then(stepEmit(JCompleteDuplicate(1), "complete-duplicate"))
+      .expect(and { worldCompletions(1) == 1, allDomainInvariants, refinementInvariants })
       // Final full-loss recovery: replay of the complete journal
       // reconstructs the settled fleet exactly — the actor can die at
       // rest and lose nothing.
@@ -318,7 +318,7 @@ module chuggy_refinement_witness_test {
         memCore.tickets.get(1).phase == PDone,
         memCore.tickets.get(1).gasLeft == 1,
         journal.length() == 14,
-        worldLandings(1) == 1,
+        worldCompletions(1) == 1,
         worldSpawns(1) == 2,
         allDomainInvariants, refinementInvariants
       })
@@ -400,7 +400,7 @@ module chuggy_refinement_hazard_test {
       .then(effectCrash(JDequeue({ ticket: 1, moved: false })))
       .expect(and {
         orphans.length() == 2,
-        worldLandings(1) == 1,
+        worldCompletions(1) == 1,
         memCore.tickets.get(1).phase == PWrapUp,
         memCore.tickets.get(1).completions == 0,
         journalLegal,
@@ -409,13 +409,13 @@ module chuggy_refinement_hazard_test {
       })
       // The recovered actor re-lands the enqueued ticket: the SAME
       // diff merges a second time — the duplicate cycle — while the
-      // journal records exactly one clean landing and the domain's
+      // journal records exactly one clean completion and the domain's
       // completionExclusive stays green throughout.
       .then(journalStep(JDequeue({ ticket: 1, moved: false })))
       .then(emitNext)
       .expect(and {
-        worldLandings(1) == 2,
-        journalLandings(1) == 1,
+        worldCompletions(1) == 2,
+        journalCompletions(1) == 1,
         memCore.tickets.get(1).completions == 1,
         not(noDuplicateCycle),
         refinementCore,
