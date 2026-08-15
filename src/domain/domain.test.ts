@@ -20,6 +20,15 @@
  * hand-built fixture for the same shape, and the divergence is noted at the
  * test.
  *
+ * THE LOOSENING DIRECTION IS PART OF THE BAR HERE, not only the narrowing
+ * one. A guard written as an equality on a phase agrees with a loosened
+ * inequality on every fixture that has only two phases in play, so several
+ * tests below exist to hold a THIRD state against a predicate: a terminal
+ * beside a Ready ticket, a Draft beside a Pending one, a held gate slot beside
+ * a Working one, a fan-in dependent beside a linear chain, a dependency set
+ * whose members disagree. Round 1's panel found seven guards that survived
+ * being widened; those are their fixtures.
+ *
  * THE EXPECTED VALUES ARE THE MODEL'S OWN. Structural expectations (labels,
  * transitions, effects, records, phases, accounts) are copied from the run
  * that pins them. Enablement-set values the model computes but does not pin in
@@ -36,7 +45,32 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { AssertionError } from "./assert.ts";
-import { er, et, progStaged, progU2, solo, wr, wt } from "./fixtures.test.ts";
+import {
+  cfgBudgeted,
+  cfgDeadlineOnly,
+  core,
+  draft,
+  er,
+  et,
+  jDone,
+  jDraft,
+  jEsc,
+  jEval,
+  jGated,
+  jLand,
+  jParkDep,
+  jParkPre,
+  jPend,
+  jWork,
+  progStaged,
+  progU2,
+  revokeOne,
+  solo,
+  wr,
+  wt,
+  wx1,
+  wx2,
+} from "./fixtures.test.ts";
 import {
   boundsOf,
   canArriveIn,
@@ -75,7 +109,6 @@ import {
   type Config,
 } from "./domain.ts";
 import {
-  firstTaskId,
   hasOpenHumanTask,
   spawnTasks,
   sysMeasure,
@@ -83,36 +116,20 @@ import {
   type ArtifactMark,
   type Bounds,
   type Core,
-  type Decision,
-  type Stage,
-  type Task,
   type Ticket,
-  type WrapUp,
 } from "./measure.ts";
 
 // === The suite's instances =================================================
-// `chuggy_test` imports `chuggy_domain` five times. Three of those five are
-// read here; the other two (DD, the DeadlineOnly pricing, and DF, the free
-// retry metering) parameterize only s2b's deciders, and a config no test reads
-// is a claim no test makes.
-
-/** `chuggy_test`'s DB — the reference instance: Budgeted(1), charged retries. */
-const cfgDB: Config = {
-  nTickets: 2,
-  nTasks: 2,
-  reworkPolicy: { tag: "RWBudget", budget: 1 },
-  gas: 3,
-  wrapUpPricing: { tag: "Budgeted", budget: 1 },
-  opRetryPricing: "RetryCharged",
-  maxStages: 2,
-  nRepos: 2,
-};
+// The reference instance (`chuggy_test`'s DB) and the DeadlineOnly one (its
+// DD) live in `fixtures.test.ts`, which both suites read; the two below are
+// this suite's alone. DF — the free retry metering — parameterizes only s2b's
+// deciders, and a config no test reads is a claim no test makes.
 
 /** `chuggy_test`'s DO — the single-repo degeneration. */
-const cfgDO: Config = { ...cfgDB, nTickets: 1, nRepos: 1 };
+const cfgDO: Config = { ...cfgBudgeted, nTickets: 1, nRepos: 1 };
 
 /** `chuggy_test`'s DZ — the GASLESS graph, which has no initial state at all. */
-const cfgDZ: Config = { ...cfgDB, nTickets: 1, gas: 0 };
+const cfgDZ: Config = { ...cfgBudgeted, nTickets: 1, gas: 0 };
 
 /** `chuggy_test`'s bB, which is exactly DB's bounds. */
 const bB: Bounds = {
@@ -131,30 +148,6 @@ function mB(c: Core): number {
 // The builders and programs `chuggy_test` shares with the measure suite live
 // in `fixtures.test.ts`; what is local below is what only this suite reads.
 
-const wx1: WrapUp = { tag: "WExclusive", resource: 1 };
-const wx2: WrapUp = { tag: "WExclusive", resource: 2 };
-
-/**
- * `DB::freshTicket(Set(), progU2, 1, WExclusive(1))`, the model's most-used
- * fixture, with its four arguments defaulted to the ones it passes most.
- */
-function fresh(
-  program: readonly Stage[] = progU2,
-  repo = 1,
-  resource = 1,
-  deps: ReadonlySet<number> = new Set(),
-): Ticket {
-  return freshTicket(cfgDB, deps, program, repo, {
-    tag: "WExclusive",
-    resource,
-  });
-}
-
-/** A Core over the given ids, in the model's `Map(...)` order. */
-function core(entries: readonly (readonly [number, Ticket])[]): Core {
-  return { tickets: new Map(entries) };
-}
-
 // === The happy path, decision by decision ==================================
 // `chuggy_test`'s own chain, verbatim as far as this slice's deciders reach:
 // two arrivals, a release, the dispatch, both work completions, the work
@@ -163,26 +156,26 @@ function core(entries: readonly (readonly [number, Ticket])[]): Core {
 
 const cEmpty: Core = { tickets: new Map() };
 const dArr1 = decideArrive(
-  cfgDB,
+  cfgBudgeted,
   cEmpty,
   new Set(),
-  defaultProgram(cfgDB),
+  defaultProgram(cfgBudgeted),
   1,
   wx1,
 );
 const cA1 = dArr1.post;
 const dArr2 = decideArrive(
-  cfgDB,
+  cfgBudgeted,
   cA1,
   new Set([1]),
-  defaultProgram(cfgDB),
+  defaultProgram(cfgBudgeted),
   1,
   wx1,
 );
 const cA2 = dArr2.post;
 const dRelease = decideRelease(cA2, 1);
 const c0 = dRelease.post;
-const dDispatch = decideDispatch(cfgDB, c0, 1);
+const dDispatch = decideDispatch(cfgBudgeted, c0, 1);
 const c1 = dDispatch.post;
 const dWork1 = decideTaskDone(c1, 1, 1, "VPass");
 const c2 = dWork1.post;
@@ -273,6 +266,20 @@ test("staleStageCompletionNoopsTest: a completion for a RETIRED id no-ops by ide
   assert.equal(mB(stale.post), mB(c4));
 });
 
+test("decideTaskDone writes the EVENT's verdict into the stored resolution", () => {
+  // Both directions of the model's `match v { VPass => TPassed | VFail =>
+  // TFailed }`, on a LIVE running task — the only place the mapping is
+  // observable. Every other completion in this suite either passes or hits the
+  // absorbing arm, where the verdict is discarded by design; read from the
+  // model, whose post-state for the failing call is
+  // `Set({1, TKWork, TSResolved(TFailed)}, {2, TKWork, TSRunning})`.
+  const failed = decideTaskDone(c1, 1, 1, "VFail");
+  assert.equal(failed.rec.label, "task-done");
+  assert.deepEqual(ticketAt(failed.post, 1).tasks, [wt(1, "TFailed"), wr(2)]);
+  const passed = decideTaskDone(c1, 1, 1, "VPass");
+  assert.deepEqual(ticketAt(passed.post, 1).tasks, [wt(1, "TPassed"), wr(2)]);
+});
+
 test("noop is state-identical, not merely state-equal", () => {
   // The idempotent answer to a duplicate delivery returns the observed Core
   // itself. Equality would be enough for the model; identity is what makes a
@@ -290,7 +297,7 @@ test("noop is state-identical, not merely state-equal", () => {
 // === The work wall: cycle-level, no below-cycle retries =====================
 
 const cWorkFail: Core = solo({
-  ...fresh(),
+  ...draft(cfgBudgeted),
   phase: "PWorking",
   gasLeft: 2,
   tasks: [wt(1, "TFailed"), wt(2, "TPassed")],
@@ -315,13 +322,13 @@ test("workFailedWallTest: a failed work set escalates DIRECTLY at cycle level", 
 // === PROGRAM-AS-DATA at machine level =======================================
 
 const cStagedWork: Core = solo({
-  ...fresh(progStaged),
+  ...draft(cfgBudgeted, progStaged),
   phase: "PWorking",
   gasLeft: 2,
   tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
 });
 const cFlatWork: Core = solo({
-  ...fresh(),
+  ...draft(cfgBudgeted),
   phase: "PWorking",
   gasLeft: 2,
   tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
@@ -351,13 +358,13 @@ test("gasRequiredTest: a gasless graph is INVALID — the machine admits no init
   );
   // The other four well-formedness conjuncts, each alone. A configuration
   // failing any one of them has no initial state either.
-  assert.equal(configAdmitsInit(cfgDB), true);
+  assert.equal(configAdmitsInit(cfgBudgeted), true);
   for (const broken of [
-    { ...cfgDB, gas: 0 },
-    { ...cfgDB, nTasks: 0 },
-    { ...cfgDB, nTickets: 0 },
-    { ...cfgDB, maxStages: 0 },
-    { ...cfgDB, nRepos: 0 },
+    { ...cfgBudgeted, gas: 0 },
+    { ...cfgBudgeted, nTasks: 0 },
+    { ...cfgBudgeted, nTickets: 0 },
+    { ...cfgBudgeted, maxStages: 0 },
+    { ...cfgBudgeted, nRepos: 0 },
   ]) {
     assert.equal(
       configAdmitsInit(broken),
@@ -367,46 +374,89 @@ test("gasRequiredTest: a gasless graph is INVALID — the machine admits no init
   }
 });
 
+test("freshTicket grants each account from ITS OWN const, at a split-grant instance", () => {
+  // DB grants 1 and 1, so its Draft cannot tell the two budgets apart. DD is
+  // the instance where they differ — `wrapUpBudget(DeadlineOnly)` is 0 while
+  // `reworkBudget(RWBudget(1))` is 1 — and the model's own answer there is
+  // gasLeft 3, reworkLeft 1, wrapUpLeft 0.
+  const born = draft(cfgDeadlineOnly);
+  assert.deepEqual([born.gasLeft, born.reworkLeft, born.wrapUpLeft], [3, 1, 0]);
+  const budgeted = draft(cfgBudgeted);
+  assert.deepEqual(
+    [budgeted.gasLeft, budgeted.reworkLeft, budgeted.wrapUpLeft],
+    [3, 1, 1],
+  );
+  // And the rest of the seam: a Draft with no history, its authored fields
+  // riding the arrival.
+  assert.deepEqual(
+    [born.phase, born.resumeAt, born.reason, born.completions, born.spawned],
+    ["PDraft", "RNone", "RsNone", 0, 0],
+  );
+});
+
+test("configAdmitsInit refuses a negative grant louder than `false`", () => {
+  // The model's conjuncts are `reworkBudget(...) >= 0` and
+  // `wrapUpBudget(...) >= 0`. s1 made a negative grant an assertion at the
+  // reader rather than a boolean, so the refusal arrives as a throw — which
+  // this pins, because a documented behaviour nothing exercises is a comment.
+  assert.throws(
+    () =>
+      configAdmitsInit({
+        ...cfgBudgeted,
+        reworkPolicy: { tag: "RWBudget", budget: -1 },
+      }),
+    AssertionError,
+  );
+  assert.throws(
+    () =>
+      configAdmitsInit({
+        ...cfgBudgeted,
+        wrapUpPricing: { tag: "Budgeted", budget: -1 },
+      }),
+    AssertionError,
+  );
+});
+
 test("the authoring universes are the model's, and `bounds` is DB's", () => {
   // repos and the two draw universes, read out of chuggy_domain at DB's
   // consts. The model pins `repos` twice in runs (wrapUpOutcomesDrawRuleTest,
   // oneRepoDegenerationTest); the other two are the arrival's draw sets.
-  assert.deepEqual(repos(cfgDB), new Set([1, 2]));
+  assert.deepEqual(repos(cfgBudgeted), new Set([1, 2]));
   assert.deepEqual(repos(cfgDO), new Set([1]));
-  assert.deepEqual(wrapUpChoices(cfgDB), [{ tag: "WNone" }, wx1, wx2]);
+  assert.deepEqual(wrapUpChoices(cfgBudgeted), [{ tag: "WNone" }, wx1, wx2]);
   assert.deepEqual(wrapUpChoices(cfgDO), [{ tag: "WNone" }, wx1]);
-  assert.deepEqual(stageChoices(cfgDB), [
+  assert.deepEqual(stageChoices(cfgBudgeted), [
     { fanout: 1, combinator: "CUnanimousPass" },
     { fanout: 1, combinator: "CAnyPass" },
     { fanout: 2, combinator: "CUnanimousPass" },
     { fanout: 2, combinator: "CAnyPass" },
   ]);
-  assert.deepEqual(boundsOf(cfgDB), bB);
+  assert.deepEqual(boundsOf(cfgBudgeted), bB);
   // DB's two widths are both 2, so the equality above cannot tell them apart.
   // A config where they differ can.
-  assert.deepEqual(boundsOf({ ...cfgDB, maxStages: 3 }), {
+  assert.deepEqual(boundsOf({ ...cfgBudgeted, maxStages: 3 }), {
     ...bB,
     maxStages: 3,
   });
 });
 
 test("defaultProgramIsUnanimousSingleStageTest: ONE stage, full fan-out, unanimous", () => {
-  assert.deepEqual(defaultProgram(cfgDB), progU2);
-  assert.ok(isValidProgram(cfgDB, defaultProgram(cfgDB)));
+  assert.deepEqual(defaultProgram(cfgBudgeted), progU2);
+  assert.ok(isValidProgram(cfgBudgeted, defaultProgram(cfgBudgeted)));
 });
 
 test("validProgramsRefusalTest: the set IS the arrival-refusal rule", () => {
-  assert.ok(isValidProgram(cfgDB, progU2));
-  assert.ok(isValidProgram(cfgDB, progStaged));
-  assert.ok(!isValidProgram(cfgDB, [])); // empty program
+  assert.ok(isValidProgram(cfgBudgeted, progU2));
+  assert.ok(isValidProgram(cfgBudgeted, progStaged));
+  assert.ok(!isValidProgram(cfgBudgeted, [])); // empty program
   assert.ok(
-    !isValidProgram(cfgDB, [{ fanout: 0, combinator: "CUnanimousPass" }]),
+    !isValidProgram(cfgBudgeted, [{ fanout: 0, combinator: "CUnanimousPass" }]),
   ); // zero fan-out
   assert.ok(
-    !isValidProgram(cfgDB, [{ fanout: 3, combinator: "CUnanimousPass" }]),
+    !isValidProgram(cfgBudgeted, [{ fanout: 3, combinator: "CUnanimousPass" }]),
   ); // fan-out > N_TASKS
   assert.ok(
-    !isValidProgram(cfgDB, [
+    !isValidProgram(cfgBudgeted, [
       { fanout: 1, combinator: "CUnanimousPass" },
       { fanout: 1, combinator: "CUnanimousPass" },
       { fanout: 1, combinator: "CUnanimousPass" },
@@ -415,14 +465,14 @@ test("validProgramsRefusalTest: the set IS the arrival-refusal rule", () => {
   // At N_TASKS = 2, MAX_STAGES = 2 there are exactly 4 stage choices, hence
   // 4 + 16 = 20 programs. The length is the SET's size only because the
   // enumeration holds no duplicate, which is checked here rather than assumed.
-  assert.equal(validPrograms(cfgDB).length, 20);
+  assert.equal(validPrograms(cfgBudgeted).length, 20);
   assert.equal(
-    new Set(validPrograms(cfgDB).map((p) => JSON.stringify(p))).size,
+    new Set(validPrograms(cfgBudgeted).map((p) => JSON.stringify(p))).size,
     20,
   );
   // And the refusal is durable: an arrival cannot carry one.
   assert.throws(
-    () => decideArrive(cfgDB, cEmpty, new Set(), [], 1, wx1),
+    () => decideArrive(cfgBudgeted, cEmpty, new Set(), [], 1, wx1),
     AssertionError,
   );
 });
@@ -437,7 +487,7 @@ test("arrivalTest: the freshTicket seam — dense ids, full accounts, authored p
   assert.equal(born.gasLeft, 3); // full grant, nothing spent
   assert.equal(born.reworkLeft, 1);
   assert.equal(born.wrapUpLeft, 1);
-  assert.deepEqual(born.program, defaultProgram(cfgDB)); // eval is data, authored
+  assert.deepEqual(born.program, defaultProgram(cfgBudgeted)); // eval is data, authored
   assert.deepEqual(born.record, []); // no history yet
   assert.deepEqual([...cA2.tickets.keys()], [1, 2]); // dense: next id = size + 1
   assert.deepEqual(ticketAt(cA2, 2).deps, new Set([1])); // a dep on an UNRELEASED ticket is legal
@@ -448,10 +498,10 @@ test("arrivalTest: the freshTicket seam — dense ids, full accounts, authored p
 test("arrivalCarriesRepoTest: the authored target repo rides the arrival", () => {
   assert.equal(ticketAt(cA1, 1).repo, 1);
   const elsewhere = decideArrive(
-    cfgDB,
+    cfgBudgeted,
     cEmpty,
     new Set(),
-    defaultProgram(cfgDB),
+    defaultProgram(cfgBudgeted),
     2,
     wx2,
   );
@@ -460,7 +510,15 @@ test("arrivalCarriesRepoTest: the authored target repo rides the arrival", () =>
   // Out of the universe is refused at authoring time, like an ill-formed
   // program (`reposWellFormed` makes the refusal durable).
   assert.throws(
-    () => decideArrive(cfgDB, cEmpty, new Set(), defaultProgram(cfgDB), 3, wx1),
+    () =>
+      decideArrive(
+        cfgBudgeted,
+        cEmpty,
+        new Set(),
+        defaultProgram(cfgBudgeted),
+        3,
+        wx1,
+      ),
     AssertionError,
   );
   assert.throws(
@@ -472,11 +530,19 @@ test("arrivalCarriesRepoTest: the authored target repo rides the arrival", () =>
 
 test("canArriveIn: the arrival bound, and the refusal at it", () => {
   // N_TICKETS = 2 on DB, so the fleet closes at cA2 — read from the model.
-  assert.equal(canArriveIn(cfgDB, cEmpty), true);
-  assert.equal(canArriveIn(cfgDB, cA1), true);
-  assert.equal(canArriveIn(cfgDB, cA2), false);
+  assert.equal(canArriveIn(cfgBudgeted, cEmpty), true);
+  assert.equal(canArriveIn(cfgBudgeted, cA1), true);
+  assert.equal(canArriveIn(cfgBudgeted, cA2), false);
   assert.throws(
-    () => decideArrive(cfgDB, cA2, new Set(), defaultProgram(cfgDB), 1, wx1),
+    () =>
+      decideArrive(
+        cfgBudgeted,
+        cA2,
+        new Set(),
+        defaultProgram(cfgBudgeted),
+        1,
+        wx1,
+      ),
     AssertionError,
   );
 });
@@ -504,50 +570,9 @@ test("unreleasedDepBlocksTest: a dependency on an UNRELEASED ticket blocks", () 
 });
 
 // === Revoke, from every live phase ==========================================
-// The model's eight single-ticket fixtures: one per live phase and all THREE
-// desk-reason flavors of the one parked phase. Accounts are deliberately
-// part-spent so the no-leakage equality is not vacuously "full grant == full
-// grant".
-
-function spent(j: Ticket): Ticket {
-  return { ...j, gasLeft: 2, reworkLeft: 0, wrapUpLeft: 1 };
-}
-
-const jDraft: Ticket = spent(fresh());
-const jPend: Ticket = { ...jDraft, phase: "PPending" };
-const jWork: Ticket = {
-  ...jDraft,
-  phase: "PWorking",
-  tasks: spawnTasks({ tag: "TKWork" }, firstTaskId, 2),
-};
-const mixedE0: readonly Task[] = [et(1, 0, "TPassed"), et(2, 0, "TFailed")];
-const jEval: Ticket = { ...jDraft, phase: "PEvaluating", tasks: mixedE0 };
-const jLand: Ticket = { ...jDraft, phase: "PWrapUp" };
-const jGated: Ticket = { ...jDraft, phase: "PWrapUpHolding" };
-const jEsc: Ticket = {
-  ...jDraft,
-  phase: "PEscalated",
-  resumeAt: "REvaluating",
-  reason: "RsReworkBudgetExhausted",
-};
-const jParkPre: Ticket = {
-  ...jDraft,
-  phase: "PEscalated",
-  resumeAt: "RPending",
-  reason: "RsRevalidationFailed",
-};
-/** resumeAt stays RNone: the cascade wall stamps no modeled resume. */
-const jParkDep: Ticket = {
-  ...jDraft,
-  phase: "PEscalated",
-  reason: "RsDependencyRevoked",
-};
-/** The model's cXDepDone ticket 1 — a landed ticket, hand-built. */
-const jDone: Ticket = { ...fresh(), phase: "PDone", completions: 1 };
-
-function revokeOne(j: Ticket): Decision {
-  return decideRevoke(solo(j), 1);
-}
+// The model's eight single-ticket fixtures — one per live phase and all THREE
+// desk-reason flavors of the one parked phase — plus its hand-built landed
+// ticket, all from `fixtures.test.ts`, which both suites read.
 
 test("revokeFromEachPhaseTest: every non-terminal revokes, settles, and opens no desk task", () => {
   const live = [jDraft, jPend, jWork, jEval, jLand, jGated];
@@ -632,9 +657,9 @@ test("revokedNeverCompletesTest: revoking a ticket ON the landing strip emits no
 // Draft behind 2.
 
 const cChain: Core = core([
-  [1, { ...fresh(), phase: "PPending" }],
-  [2, { ...fresh(progU2, 1, 1, new Set([1])), phase: "PPending" }],
-  [3, fresh(progU2, 1, 1, new Set([2]))],
+  [1, { ...draft(cfgBudgeted), phase: "PPending" }],
+  [2, { ...draft(cfgBudgeted, progU2, 1, 1, new Set([1])), phase: "PPending" }],
+  [3, draft(cfgBudgeted, progU2, 1, 1, new Set([2]))],
 ]);
 const dCascade = decideRevoke(cChain, 1);
 const cParked = dCascade.post;
@@ -686,6 +711,60 @@ test("cascadeSettleByRevokeTest: a human settles a parked dependent by revoking 
   // reads `retryableIn`: s2b's.
 });
 
+test("the cascade reaches a FAN-IN dependent: one doomed dep is enough", () => {
+  // cChain is a straight line, and a straight line cannot tell "some dep is
+  // doomed" from "every dep is doomed". This is the model's shape that can:
+  // 1 <- 2, 3 independent, and 4 waiting on BOTH 2 and 3. Revoking 1 parks 2
+  // (direct) and 4 (transitive, through one of its two deps) and leaves 3
+  // alone — the model's own transitions and effects, read from it.
+  const pending = (deps: ReadonlySet<number>): Ticket => ({
+    ...draft(cfgBudgeted, progU2, 1, 1, deps),
+    phase: "PPending",
+  });
+  const cFanIn: Core = core([
+    [1, pending(new Set())],
+    [2, pending(new Set([1]))],
+    [3, pending(new Set())],
+    [4, draft(cfgBudgeted, progU2, 1, 1, new Set([2, 3]))],
+  ]);
+  const d = decideRevoke(cFanIn, 1);
+  assert.deepEqual(d.rec.transitions, [
+    { ticket: 1, from: "PPending", to: "PRevoked" },
+    { ticket: 2, from: "PPending", to: "PEscalated" },
+    { ticket: 4, from: "PDraft", to: "PEscalated" },
+  ]);
+  assert.deepEqual(d.rec.effects, ["Revoke", "OpenHumanTask", "OpenHumanTask"]);
+  assert.equal(ticketAt(d.post, 4).reason, "RsDependencyRevoked");
+  // The undoomed sibling is untouched — no phase, no reason, no desk task.
+  assert.deepEqual(ticketAt(d.post, 3), ticketAt(cFanIn, 3));
+});
+
+test("the cascade parks the PRE-FLIGHT dependents and only those", () => {
+  // The model's filter is `PDraft or PPending`, and its header argues the two
+  // are exhaustive on reachable states — a transitive dependent of a
+  // non-Done ticket can never have dispatched. The decider is still total over
+  // the state that argument excludes, so this pins what it does there: a
+  // mid-flight dependent is NOT parked, its live tasks are NOT retired, and no
+  // desk task opens for it. Read from the model.
+  const cMidFlight: Core = core([
+    [1, { ...draft(cfgBudgeted), phase: "PPending" }],
+    [
+      2,
+      {
+        ...draft(cfgBudgeted, progU2, 1, 1, new Set([1])),
+        phase: "PWorking",
+        tasks: [wr(1), wr(2)],
+      },
+    ],
+  ]);
+  const d = decideRevoke(cMidFlight, 1);
+  assert.deepEqual(d.rec.transitions, [
+    { ticket: 1, from: "PPending", to: "PRevoked" },
+  ]);
+  assert.deepEqual(d.rec.effects, ["Revoke"]);
+  assert.deepEqual(ticketAt(d.post, 2), ticketAt(cMidFlight, 2));
+});
+
 test("dependableIn: an arrival may not depend on a tombstone", () => {
   // Read from the model: every live ticket is dependable before the cascade,
   // and none of the three is after it (the revoked ticket and both
@@ -702,10 +781,10 @@ test("dependableIn: an arrival may not depend on a tombstone", () => {
     assert.throws(
       () =>
         decideArrive(
-          cfgDB,
+          cfgBudgeted,
           solo(tombstone),
           new Set([1]),
-          defaultProgram(cfgDB),
+          defaultProgram(cfgBudgeted),
           1,
           wx1,
         ),
@@ -718,12 +797,12 @@ test("dependableIn: an arrival may not depend on a tombstone", () => {
 // === The derived waiting room and the enablement sets =======================
 
 const cXDepPre: Core = core([
-  [1, { ...fresh(), phase: "PWrapUp" }],
-  [2, { ...fresh(progU2, 2, 2, new Set([1])), phase: "PPending" }],
+  [1, { ...draft(cfgBudgeted), phase: "PWrapUp" }],
+  [2, { ...draft(cfgBudgeted, progU2, 2, 2, new Set([1])), phase: "PPending" }],
 ]);
 const cXDepDone: Core = core([
-  [1, { ...fresh(), phase: "PDone", completions: 1 }],
-  [2, { ...fresh(progU2, 2, 2, new Set([1])), phase: "PPending" }],
+  [1, { ...draft(cfgBudgeted), phase: "PDone", completions: 1 }],
+  [2, { ...draft(cfgBudgeted, progU2, 2, 2, new Set([1])), phase: "PPending" }],
 ]);
 
 test("crossRepoDepGateLocationBlindTest: the dep gate reads Done-ness, never location", () => {
@@ -735,6 +814,64 @@ test("crossRepoDepGateLocationBlindTest: the dep gate reads Done-ness, never loc
   // above rather than agreeing by accident.
   assert.equal(ticketAt(cXDepDone, 1).repo, 1);
   assert.equal(ticketAt(cXDepDone, 2).repo, 2);
+});
+
+test("a ticket waiting on MIXED dependencies is Blocked: every dep, not some dep", () => {
+  // No fixture in the model's suite has a ticket whose deps disagree, and a
+  // uniform dep set cannot tell `forall` from `exists`. This one can: dep 1 is
+  // Done, dep 2 is Pending. Read from the model — depsDoneIn false, isReadyIn
+  // false, isBlockedIn true, and the ready room holds the DEP, not the
+  // dependent.
+  const cMixedDeps: Core = core([
+    [1, jDone],
+    [2, { ...draft(cfgBudgeted), phase: "PPending" }],
+    [
+      3,
+      {
+        ...draft(cfgBudgeted, progU2, 1, 1, new Set([1, 2])),
+        phase: "PPending",
+      },
+    ],
+  ]);
+  assert.equal(depsDoneIn(cMixedDeps, 3), false);
+  assert.equal(isReadyIn(cMixedDeps, 3), false);
+  assert.equal(isBlockedIn(cMixedDeps, 3), true);
+  assert.deepEqual(readiesIn(cMixedDeps), new Set([2]));
+  assert.throws(
+    () => decideDispatch(cfgBudgeted, cMixedDeps, 3),
+    AssertionError,
+  );
+});
+
+test("Ready, Blocked and releasable are each inside ONE phase, not outside another", () => {
+  // Every predicate below is an equality on its phase in the model, and a
+  // loosened inequality would agree with it on the fixtures that have only two
+  // phases in play. These are the states that tell them apart; every value was
+  // read from the model.
+  //
+  // A terminal is not Ready, however finished its (absent) dependencies are:
+  assert.deepEqual(readiesIn(cXDepDone), new Set([2]));
+  assert.equal(isReadyIn(cXDepDone, 1), false);
+  // A Draft is neither Ready nor Blocked — the waiting room is inside Pending:
+  assert.equal(isReadyIn(cA2, 2), false);
+  assert.equal(isBlockedIn(cA2, 2), false);
+  // Releasable is Draft, not merely not-Pending: ticket 1 is Working at c1.
+  assert.deepEqual(draftsIn(c1), new Set([2]));
+  // A held gate slot is not a task phase, however much it looks like one:
+  assert.deepEqual(
+    taskPhaseIn(
+      core([
+        [1, jGated],
+        [2, jWork],
+      ]),
+    ),
+    new Set([2]),
+  );
+  assert.deepEqual(taskPhaseIn(solo(jEval)), new Set([1]));
+  // And the work reduce is Working's, not any fully-resolved phase's: jEval is
+  // fully resolved and Evaluating, which is s2b's reduce, not this one.
+  assert.deepEqual(reducibleWorkIn(solo(jEval)), new Set());
+  assert.throws(() => decideWorkReduce(solo(jEval), 1), AssertionError);
 });
 
 test("waitsOn and depsDoneIn: one definition of what a ticket waits on", () => {
@@ -751,12 +888,46 @@ test("depArtifacts: what this ticket's dependencies produced, derived and set-va
   assert.deepEqual(depArtifacts(c4, 2), [{ tag: "ASome", id: 2 }]);
   assert.deepEqual(depArtifacts(cA2, 2), [{ tag: "ANone" }]);
   assert.deepEqual(depArtifacts(cA2, 1), []);
+  // THE ORDER IS THE SET'S, NOT THE DEPENDENCIES'. Two Cores whose model
+  // answers are the same set — same marks, different deps producing them —
+  // must answer with the same array here, or s2b's release read compares two
+  // equal sets and disagrees with the model. Read from the model: both are
+  // `Set(ASome(2), ASome(5))`, and the model calls them `==`.
+  const withMark = (id: number): Ticket => ({
+    ...jDone,
+    artifact: { tag: "ASome", id },
+  });
+  const dependent: Ticket = {
+    ...draft(cfgBudgeted, progU2, 1, 1, new Set([1, 2])),
+    phase: "PPending",
+  };
+  const marksAB: Core = core([
+    [1, withMark(5)],
+    [2, withMark(2)],
+    [3, dependent],
+  ]);
+  const marksBA: Core = core([
+    [1, withMark(2)],
+    [2, withMark(5)],
+    [3, dependent],
+  ]);
+  assert.deepEqual(depArtifacts(marksAB, 3), depArtifacts(marksBA, 3));
+  assert.deepEqual(depArtifacts(marksAB, 3), [
+    { tag: "ASome", id: 2 },
+    { tag: "ASome", id: 5 },
+  ]);
   // Two dependencies carrying the SAME mark collapse to one element, because
   // the model's read is a set-valued map. Read from the model: Set(ANone).
   const cTwoDeps: Core = core([
     [1, jDone],
     [2, jDone],
-    [3, { ...fresh(progU2, 1, 1, new Set([1, 2])), phase: "PPending" }],
+    [
+      3,
+      {
+        ...draft(cfgBudgeted, progU2, 1, 1, new Set([1, 2])),
+        phase: "PPending",
+      },
+    ],
   ]);
   const marks: readonly ArtifactMark[] = depArtifacts(cTwoDeps, 3);
   assert.deepEqual(marks, [{ tag: "ANone" }]);
@@ -790,12 +961,31 @@ test("the enablement sets are the model's, on the model's fixtures", () => {
 test("dispatchableIn: Ready with gas to charge, and the gas conjunct bites", () => {
   assert.ok(dispatchableIn(c0, 1));
   assert.ok(!dispatchableIn(cRel2, 2)); // Blocked
-  const cNoGas: Core = solo({ ...fresh(), phase: "PPending", gasLeft: 0 });
+  const cNoGas: Core = solo({
+    ...draft(cfgBudgeted),
+    phase: "PPending",
+    gasLeft: 0,
+  });
   // Read from the model: Ready, in readiesIn, and NOT dispatchable.
   assert.ok(isReadyIn(cNoGas, 1));
   assert.deepEqual(readiesIn(cNoGas), new Set([1]));
   assert.ok(!dispatchableIn(cNoGas, 1));
-  assert.throws(() => decideDispatch(cfgDB, cNoGas, 1), AssertionError);
+  assert.throws(() => decideDispatch(cfgBudgeted, cNoGas, 1), AssertionError);
+  // The threshold is ONE unit, not two: a ticket holding the last gas in its
+  // account dispatches, and spends it. Every other fixture asks with a full
+  // account, where `> 0` and `> 1` agree; `configAdmitsInit` admits GAS = 1,
+  // so this is a configuration the machine can really be given. Read from the
+  // model: dispatchable, and gasLeft 0 afterwards.
+  const cGasOne: Core = solo({
+    ...draft(cfgBudgeted),
+    phase: "PPending",
+    gasLeft: 1,
+  });
+  assert.ok(dispatchableIn(cGasOne, 1));
+  assert.equal(
+    ticketAt(decideDispatch(cfgBudgeted, cGasOne, 1).post, 1).gasLeft,
+    0,
+  );
 });
 
 test("deliverableTaskIds: the delivery range an at-least-once fabric may name", () => {
@@ -873,7 +1063,7 @@ test("escalate retires the live set, names the wall, and opens the desk task", (
   // `retireLive`'s, and every reachable escalation reaches it fully resolved.
   const d = escalate(
     solo({
-      ...fresh(),
+      ...draft(cfgBudgeted),
       phase: "PWorking",
       tasks: spawnTasks({ tag: "TKWork" }, 1, 2),
     }),
@@ -901,28 +1091,37 @@ test("what the model's types forbid is checked here, where TypeScript's do not",
   // express and this implementation therefore has to refuse.
   assert.throws(
     () =>
-      isValidProgram(cfgDB, [{ fanout: 1.5, combinator: "CUnanimousPass" }]),
+      isValidProgram(cfgBudgeted, [
+        { fanout: 1.5, combinator: "CUnanimousPass" },
+      ]),
     AssertionError,
     "a fractional fan-out was keyed",
   );
   assert.throws(
     () =>
-      decideArrive(cfgDB, cEmpty, new Set(), defaultProgram(cfgDB), 1, {
-        tag: "WExclusive",
-        resource: 1.5,
-      }),
+      decideArrive(
+        cfgBudgeted,
+        cEmpty,
+        new Set(),
+        defaultProgram(cfgBudgeted),
+        1,
+        {
+          tag: "WExclusive",
+          resource: 1.5,
+        },
+      ),
     AssertionError,
     "a fractional resource was keyed",
   );
   assert.throws(
-    () => repos({ ...cfgDB, nRepos: 1.5 }),
+    () => repos({ ...cfgBudgeted, nRepos: 1.5 }),
     AssertionError,
     "a fractional universe size named a range",
   );
   // `programsWellFormed` keeps every program non-empty, so `program[0]` is the
   // lowest stage rather than a possibility — asserted where it is indexed.
   const emptyProgram: Core = solo({
-    ...fresh(),
+    ...draft(cfgBudgeted),
     program: [],
     phase: "PWorking",
     gasLeft: 2,
@@ -934,10 +1133,10 @@ test("what the model's types forbid is checked here, where TypeScript's do not",
   assert.throws(
     () =>
       decideArrive(
-        cfgDB,
+        cfgBudgeted,
         core([[2, jDraft]]),
         new Set(),
-        defaultProgram(cfgDB),
+        defaultProgram(cfgBudgeted),
         1,
         wx1,
       ),
@@ -950,8 +1149,11 @@ test("ticketAt is total: a fleet with a hole fails loudly, it does not skip", ()
   // decideRevoke walks 1..size and reads every id, which is sound only because
   // ids are dense. A hole there would silently drop a doomed dependent.
   const holed: Core = core([
-    [1, { ...fresh(), phase: "PPending" }],
-    [3, { ...fresh(progU2, 1, 1, new Set([1])), phase: "PPending" }],
+    [1, { ...draft(cfgBudgeted), phase: "PPending" }],
+    [
+      3,
+      { ...draft(cfgBudgeted, progU2, 1, 1, new Set([1])), phase: "PPending" },
+    ],
   ]);
   assert.throws(() => ticketAt(holed, 2), AssertionError);
   assert.throws(() => decideRevoke(holed, 1), AssertionError);

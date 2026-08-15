@@ -26,8 +26,31 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { AssertionError } from "./assert.ts";
-import { decideRevoke, escalate, ticketAt } from "./domain.ts";
-import { er, et, progStaged, progU2, solo, wr, wt } from "./fixtures.test.ts";
+import { ticketAt } from "./domain.ts";
+import {
+  cfgBudgeted,
+  cfgDeadlineOnly,
+  cfgRetryFree,
+  draft,
+  er,
+  escalated,
+  et,
+  jDraft,
+  jEsc,
+  jEval,
+  jGated,
+  jLand,
+  jParkDep,
+  jParkPre,
+  jPend,
+  jWork,
+  mixedE0,
+  progStaged,
+  progU2,
+  revokeOne,
+  wr,
+  wt,
+} from "./fixtures.test.ts";
 import {
   accountDigitsInRange,
   combine,
@@ -123,81 +146,28 @@ test("the retryfree instance's Bounds are the deadline-only instance's, exactly"
   assert.deepEqual(bRetryFree, bDeadlineOnly);
 });
 
-/** The account GRANTS each instance starts a ticket with (GAS, and the two budgets). */
-const grants = {
-  budgeted: { gas: 3, wrapUp: 1, rework: 1 },
-  deadlineOnly: { gas: 3, wrapUp: 0, rework: 1 },
-  retryFree: { gas: 2, wrapUp: 0, rework: 1 },
-} as const;
+/**
+ * The account GRANTS each instance starts a ticket with are no longer written
+ * here at all: they are its CONSTS, and `draft` builds the Draft through
+ * `freshTicket`, which reads them. `fixtures.test.ts` holds the three configs.
+ */
 
 // === Fixture vocabulary ====================================================
 // `chuggy_test`'s four task builders and its two programs are shared with the
 // domain suite, and live in `fixtures.test.ts`.
 
 /**
- * The shape `freshTicket` (`model/domain.qnt`) produces at an instance's
- * consts: a Draft with full accounts, no history, its authored program on the
- * record. The decider is s2a's; this is only its output, so the measure has
- * something the model's fixtures can be compared against.
- */
-function draft(
-  granted: { gas: number; wrapUp: number; rework: number },
-  program: readonly Stage[] = progU2,
-): Ticket {
-  return {
-    phase: "PDraft",
-    deps: new Set<number>(),
-    wrapUp: { tag: "WExclusive", resource: 1 },
-    artifact: { tag: "ANone" },
-    repo: 1,
-    program,
-    tasks: [],
-    record: [],
-    spawned: 0,
-    reworkLeft: granted.rework,
-    wrapUpLeft: granted.wrapUp,
-    gasLeft: granted.gas,
-    resumeAt: "RNone",
-    reason: "RsNone",
-    completions: 0,
-  };
-}
-
-/**
- * THE PARKED TICKET `model/domain.qnt`'s `escalate` PRODUCES — through the real
- * decider plumbing (`src/domain/domain.ts`), not through a copy of it.
- *
- * The three builders below hand-built their post-states while s2a's deciders
- * did not exist; issue #13 records why that had to end the moment they landed
- * (a divergent reimplementation of shipped logic, with the pinned integers
- * still passing against the stale copy). Two of the three are rewired here.
- * `reworkedInto` cannot be: the rework re-entry is `decideEvalStageReduce`'s
- * and `decideWrapUpResolve`'s, and both are s2b's — its rewiring lands there.
- *
- * The `label` argument is the model's own label for the wall being built. The
- * measure tests assert no label, by design; naming it is what makes each
- * fixture cite the decision it stands for.
- */
-function escalated(
-  j: Ticket,
-  reason: Reason,
-  resumeAt: Resume,
-  label: string,
-): Ticket {
-  return ticketAt(escalate(solo(j), 1, resumeAt, reason, label).post, 1);
-}
-
-/** `model/domain.qnt` decideRevoke's per-ticket step, through the decider. */
-function revoked(j: Ticket): Ticket {
-  return ticketAt(decideRevoke(solo(j), 1).post, 1);
-}
-
-/**
  * `model/domain.qnt`'s rework re-entry: retire the failed set, respawn a fresh
  * work fan-out at the next ids, and charge the accounts the pricing says.
  *
- * Still hand-built, and the one of the three that must stay so until s2b: see
- * `escalated` above.
+ * THE LAST HAND-BUILT POST-STATE IN THIS FILE, and the one that must stay so
+ * until s2b. Issue #13 records why the others could not: once the decider that
+ * defines a state ships, a hand-built copy of it is a divergent
+ * reimplementation, and these pinned integers would go on passing against the
+ * copy while the decider moved. `escalated`, `revoked` and `draft` are now the
+ * real `escalate`, `decideRevoke` and `freshTicket` (`fixtures.test.ts`); the
+ * rework re-entry belongs to `decideEvalStageReduce` and
+ * `decideWrapUpResolve`, which are s2b's, so it is rewired there.
  */
 function reworkedInto(b: Bounds, j: Ticket, charged: Partial<Ticket>): Ticket {
   return {
@@ -205,6 +175,11 @@ function reworkedInto(b: Bounds, j: Ticket, charged: Partial<Ticket>): Ticket {
     phase: "PWorking",
     ...charged,
   };
+}
+
+/** The ticket `decideRevoke` leaves behind, read out of the Decision. */
+function revoked(j: Ticket): Ticket {
+  return ticketAt(revokeOne(j).post, 1);
 }
 
 function measuresAt(b: Bounds, tickets: readonly Ticket[]): readonly number[] {
@@ -360,7 +335,7 @@ test("the vocabulary is the model's, constructor for constructor", () => {
     kind: { tag: "TKWork" },
     state: { tag: "TSRunning" },
   };
-  const ticket: Ticket = draft(grants.budgeted);
+  const ticket: Ticket = draft(cfgBudgeted);
   const core: Core = { tickets: new Map([[1, ticket]]) };
   const transition: Transition = { ticket: 1, from: "PDraft", to: "PPending" };
   const rec: StepRecord = {
@@ -477,7 +452,7 @@ test("hasOpenHumanTask is the parked phase and nothing else", () => {
   // downstream (`model/domain.qnt` coveredSet; the CHURN set's boundedness
   // rests on every churn step needing an open desk task), so a widened
   // predicate would quietly widen that argument too.
-  const j = draft(grants.budgeted);
+  const j = draft(cfgBudgeted);
   for (const phase of PHASES) {
     assert.equal(
       hasOpenHumanTask({ ...j, phase }),
@@ -511,7 +486,7 @@ test("evalStage derives the current stage from the live set's kind marks", () =>
 });
 
 test("stagesLeft is the stage digit: L - s while Evaluating, 0 everywhere else", () => {
-  const j = draft(grants.budgeted, progStaged);
+  const j = draft(cfgBudgeted, progStaged);
   // Evaluating stage 0 of a two-stage program: two stages have not passed.
   assert.equal(
     stagesLeft({ ...j, phase: "PEvaluating", tasks: [er(1, 0)] }),
@@ -522,7 +497,7 @@ test("stagesLeft is the stage digit: L - s while Evaluating, 0 everywhere else",
     1,
   );
   // The single-stage default program: the digit appears at 1.
-  const flat = draft(grants.budgeted);
+  const flat = draft(cfgBudgeted);
   assert.equal(
     stagesLeft({ ...flat, phase: "PEvaluating", tasks: [er(1, 0), er(2, 0)] }),
     1,
@@ -551,15 +526,15 @@ test("stagesLeft is the stage digit: L - s while Evaluating, 0 everywhere else",
 
 test("a fresh Draft's whole measure, at each instance's grants", () => {
   // Budgeted: ((3*2 + 1)*2 + 1) * 63 + 6*9 = 15*63 + 54 = 999.
-  assert.equal(ticketMeasure(bBudgeted, draft(grants.budgeted)), 999);
+  assert.equal(ticketMeasure(bBudgeted, draft(cfgBudgeted)), 999);
   // DeadlineOnly: the gate account's radix collapses to 1.
-  assert.equal(ticketMeasure(bDeadlineOnly, draft(grants.deadlineOnly)), 495);
+  assert.equal(ticketMeasure(bDeadlineOnly, draft(cfgDeadlineOnly)), 495);
   // RetryFree: same bounds as deadline-only, two gas rather than three.
-  assert.equal(ticketMeasure(bRetryFree, draft(grants.retryFree)), 369);
+  assert.equal(ticketMeasure(bRetryFree, draft(cfgRetryFree)), 369);
 });
 
 test("sysMeasure sums the fleet, order-independently", () => {
-  const one = draft(grants.budgeted);
+  const one = draft(cfgBudgeted);
   const two: Ticket = { ...one, deps: new Set([1]) };
   assert.equal(sysMeasure(bBudgeted, new Map()), 0);
   assert.equal(
@@ -590,50 +565,8 @@ test("sysMeasure sums the fleet, order-independently", () => {
 });
 
 // === The blindness pins ====================================================
-// The revoke suite's part-spent fixtures, verbatim from chuggy_test: accounts
-// deliberately part-spent so an equality below is not vacuously
-// "full grant == full grant".
-
-const jDraft: Ticket = {
-  ...draft(grants.budgeted),
-  gasLeft: 2,
-  reworkLeft: 0,
-  wrapUpLeft: 1,
-};
-const jPend: Ticket = { ...jDraft, phase: "PPending" };
-const jWork: Ticket = {
-  ...jDraft,
-  phase: "PWorking",
-  tasks: spawnTasks({ tag: "TKWork" }, firstTaskId, 2),
-};
-const mixedE0: TaskSet = [et(1, 0, "TPassed"), et(2, 0, "TFailed")];
-const jEval: Ticket = { ...jDraft, phase: "PEvaluating", tasks: mixedE0 };
-const jLand: Ticket = { ...jDraft, phase: "PWrapUp" };
-const jGated: Ticket = { ...jDraft, phase: "PWrapUpHolding" };
-const jEsc: Ticket = escalated(
-  jDraft,
-  "RsReworkBudgetExhausted",
-  "REvaluating",
-  "ticket-escalated rework_budget_exhausted",
-);
-const jParkPre: Ticket = escalated(
-  jDraft,
-  "RsRevalidationFailed",
-  "RPending",
-  "ticket-escalated revalidation_failed",
-);
-/**
- * NOT an `escalate`: the cascade parks a doomed dependent inside
- * `decideRevoke` itself, stamping no resume and retiring nothing, and the
- * model writes this fixture as a record literal for exactly that reason. Its
- * equality with the cascade's own post-state is pinned in `domain.test.ts`
- * (cascadeEndToEndTest), where the cascade is.
- */
-const jParkDep: Ticket = {
-  ...jDraft,
-  phase: "PEscalated",
-  reason: "RsDependencyRevoked",
-};
+// The revoke suite's part-spent fixtures come from `fixtures.test.ts` — the
+// model has one `jDraft` and so does this tree.
 
 test("the revoke fixtures' measures, phase by phase (the ladder, flattened)", () => {
   // Read from the model. The account digits are the same across all seven, so
@@ -687,7 +620,7 @@ test("measureArtifactBlindTest: the artifact mark is vocabulary, not a digit", (
 test("measureRepoBlindTest: no digit, weight or account radix reads the repo", () => {
   const elsewhere = (j: Ticket): Ticket => ({ ...j, repo: 2 });
   const escLanding = escalated(
-    { ...draft(grants.budgeted), gasLeft: 2 },
+    { ...draft(cfgBudgeted), gasLeft: 2 },
     "RsGasExhausted",
     "RWrapUp",
     "ticket-escalated gas_exhausted",
@@ -728,7 +661,7 @@ test("the accounts of a Budgeted ticket escape their radix under DeadlineOnly bo
   // says so out loud rather than the code assuming it.
   assert.ok(accountDigitsInRange(bBudgeted, jWork));
   assert.ok(!accountDigitsInRange(bDeadlineOnly, jWork));
-  assert.ok(accountDigitsInRange(bDeadlineOnly, draft(grants.deadlineOnly)));
+  assert.ok(accountDigitsInRange(bDeadlineOnly, draft(cfgDeadlineOnly)));
   // Gas has a lower bound only: it is the top digit and Bounds carries no
   // grant for it.
   assert.ok(accountDigitsInRange(bBudgeted, { ...jWork, gasLeft: 99 }));
@@ -762,7 +695,7 @@ test("the accounts of a Budgeted ticket escape their radix under DeadlineOnly bo
 // `chuggy_test` run whose measure conjunct it mirrors.
 
 test("happyPathMeasureDescendsTest: every step of the happy path descends", () => {
-  const cA = draft(grants.budgeted);
+  const cA = draft(cfgBudgeted);
   const cP: Ticket = { ...cA, phase: "PPending" };
   const cW: Ticket = {
     ...spawnOn(cP, { tag: "TKWork" }, 2),
@@ -822,7 +755,7 @@ test("happyPathMeasureDescendsTest: every step of the happy path descends", () =
 });
 
 test("workFailedWallTest / evalWallsNamedTest: every wall descends by rank", () => {
-  const base = draft(grants.budgeted);
+  const base = draft(cfgBudgeted);
   const workFail: Ticket = {
     ...base,
     phase: "PWorking",
@@ -884,7 +817,7 @@ test("gateWallsNamedTest: both gate walls descend out of the held lease", () => 
   // The budget wall is the one PLAN.md records as unreachable by trace
   // sampling (`ticket-escalated wrapup_budget_exhausted`), which makes a unit
   // pin on it worth more than the usual, not less.
-  const base = draft(grants.budgeted);
+  const base = draft(cfgBudgeted);
   const budgetWall: Ticket = {
     ...base,
     phase: "PWrapUpHolding",
@@ -924,7 +857,7 @@ test("stagedProgramPassesTest: the FINAL stage passing lands the program", () =>
   // eval-passed reached from a STAGED program rather than the flat one the
   // happy path walks: rank 3 -> 2 AND the stage digit 1 -> 0 together.
   const finalStage: Ticket = {
-    ...draft(grants.budgeted, progStaged),
+    ...draft(cfgBudgeted, progStaged),
     phase: "PEvaluating",
     gasLeft: 2,
     record: [wt(1, "TPassed"), wt(2, "TPassed"), et(3, 0, "TPassed")],
@@ -952,7 +885,7 @@ test("evalReworkDescendsTest: the eval rework's account drop dominates its micro
   // rank 3->4, the stage digit to 0 and a fresh work fan-out all CLIMB micro;
   // one rework plus one gas outweigh the lot.
   const pre: Ticket = {
-    ...draft(grants.budgeted),
+    ...draft(cfgBudgeted),
     phase: "PEvaluating",
     reworkLeft: 1,
     gasLeft: 2,
@@ -968,7 +901,7 @@ test("evalReworkDescendsTest: the eval rework's account drop dominates its micro
 
 test("gateReworkBudgetedDescendsTest / gateReworkDeadlineOnlyTest: the eviction is priced by gas either way", () => {
   const budgeted: Ticket = {
-    ...draft(grants.budgeted),
+    ...draft(cfgBudgeted),
     phase: "PWrapUpHolding",
     wrapUpLeft: 1,
     gasLeft: 2,
@@ -982,7 +915,7 @@ test("gateReworkBudgetedDescendsTest / gateReworkDeadlineOnlyTest: the eviction 
   );
   // DeadlineOnly: no gate account to spend, so gas alone meters the loop.
   const deadlineOnly: Ticket = {
-    ...draft(grants.deadlineOnly),
+    ...draft(cfgDeadlineOnly),
     phase: "PWrapUpHolding",
     gasLeft: 2,
   };
@@ -996,7 +929,7 @@ test("gateReworkBudgetedDescendsTest / gateReworkDeadlineOnlyTest: the eviction 
 });
 
 test("gateOpenClassifiedTest: the dequeue and the landing each descend by rank alone", () => {
-  const enqueued: Ticket = { ...draft(grants.budgeted), phase: "PWrapUp" };
+  const enqueued: Ticket = { ...draft(cfgBudgeted), phase: "PWrapUp" };
   const held: Ticket = { ...enqueued, phase: "PWrapUpHolding" };
   const done: Ticket = { ...held, phase: "PDone", completions: 1 };
   // No account moves at the gate: it charges nothing until it fails.
@@ -1031,7 +964,7 @@ test("revokeMeasureClassifiedTest: revoke descends from every live rank and is f
 });
 
 test("releaseDescendsTest / arrivalTest: authoring's one descent and its one climb", () => {
-  const arrived = draft(grants.budgeted);
+  const arrived = draft(cfgBudgeted);
   const released: Ticket = { ...arrived, phase: "PPending" };
   assert.ok(descends(bBudgeted, arrived, released));
   // AUTHORING: arrival climbs by the fresh Draft's WHOLE ticketMeasure, which
@@ -1066,7 +999,7 @@ test("STUTTER: a duplicate or stale completion leaves the measure exactly unchan
   assert.deepEqual(retired, live);
 
   const working: Ticket = {
-    ...draft(grants.budgeted),
+    ...draft(cfgBudgeted),
     phase: "PWorking",
     tasks: live,
   };
@@ -1081,7 +1014,7 @@ test("CHURN: the pre-work resume is free and climbs; a charged resume descends",
   // preWorkParkAndResumeClassifiedTest: the park descends (rank 5->0, free),
   // and the RPending resume climbs back by exactly the same rank — nothing was
   // ever spent on a pre-work park.
-  const pending: Ticket = { ...draft(grants.budgeted), phase: "PPending" };
+  const pending: Ticket = { ...draft(cfgBudgeted), phase: "PPending" };
   const parked = escalated(
     pending,
     "RsRevalidationFailed",
@@ -1107,7 +1040,7 @@ test("CHURN: the pre-work resume is free and climbs; a charged resume descends",
   // opRetryChargedDescendsTest: under the default metering a pipeline resume
   // pays one gas, and the gas drop dominates the rank climb back.
   const escLanding = escalated(
-    { ...draft(grants.budgeted), gasLeft: 2 },
+    { ...draft(cfgBudgeted), gasLeft: 2 },
     "RsGasExhausted",
     "RWrapUp",
     "ticket-escalated gas_exhausted",
@@ -1131,7 +1064,7 @@ test("opRetryFreeClassifiedTest: under RetryFree the pipeline resume CLIMBS", ()
   // bounds are the deadline-only ones — nothing about the measure changed; the
   // resume simply charged nothing.
   const escLanding = escalated(
-    { ...draft(grants.retryFree), gasLeft: 2 },
+    { ...draft(cfgRetryFree), gasLeft: 2 },
     "RsGasExhausted",
     "RWrapUp",
     "ticket-escalated gas_exhausted",
@@ -1170,7 +1103,7 @@ test("stageAdvanceDescendsTest: one stage step outweighs the whole next fan-out"
   // own weight the step would CLIMB and the machine's cleanest progress step
   // would need an exemption.
   const staged: Ticket = {
-    ...draft(grants.budgeted, progStaged),
+    ...draft(cfgBudgeted, progStaged),
     phase: "PEvaluating",
     gasLeft: 2,
     record: [wt(1, "TPassed"), wt(2, "TPassed")],
@@ -1215,7 +1148,7 @@ test("work-passed: one rank step outweighs the stage digit APPEARING and the fan
   // stagesLeft from 0 to L <= maxStages while running goes 0 -> fanout, and
   // the single rank step 4 -> 3 must dominate both together.
   const worked: Ticket = {
-    ...draft(grants.budgeted, progStaged),
+    ...draft(cfgBudgeted, progStaged),
     phase: "PWorking",
     gasLeft: 2,
     tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
@@ -1249,7 +1182,7 @@ test("one unit of any account outweighs the whole of micro", () => {
   // pair: the largest micro a ticket can carry, against one more unit of the
   // account above it.
   const topMicro: Ticket = {
-    ...draft(grants.budgeted),
+    ...draft(cfgBudgeted),
     phase: "PDraft",
     reworkLeft: 0,
     wrapUpLeft: 0,
@@ -1339,7 +1272,7 @@ test("the flattened integer order IS the lexicographic order, exhaustively at th
 
   const b = bBudgeted;
   const space: { ticket: Ticket; digits: readonly number[] }[] = [];
-  for (let gas = 0; gas <= grants.budgeted.gas; gas += 1) {
+  for (let gas = 0; gas <= cfgBudgeted.gas; gas += 1) {
     for (let wrapUp = 0; wrapUp <= wrapUpBudget(b.wrapUpPricing); wrapUp += 1) {
       for (
         let rework = 0;
@@ -1348,7 +1281,7 @@ test("the flattened integer order IS the lexicographic order, exhaustively at th
       ) {
         for (const shape of shapes) {
           const ticket: Ticket = {
-            ...draft(grants.budgeted, shape.program),
+            ...draft(cfgBudgeted, shape.program),
             phase: shape.phase,
             tasks: shape.tasks,
             gasLeft: gas,
@@ -1424,7 +1357,7 @@ test("the flattened integer order IS the lexicographic order, exhaustively at th
 
 test("spawnTasks / nextTaskId / spawnOn keep identity sequential across the whole history", () => {
   assert.equal(firstTaskId, 1);
-  const fresh = draft(grants.budgeted);
+  const fresh = draft(cfgBudgeted);
   assert.equal(nextTaskId(fresh), 1);
   const dispatched = spawnOn(fresh, { tag: "TKWork" }, 2);
   assert.deepEqual(dispatched.tasks, [wr(1), wr(2)]);
@@ -1453,7 +1386,7 @@ test("opRetryEvalFreshFanoutTest: a resume spawns above the retired history", ()
   // The Evaluating resume re-enters with a FRESH fan-out of the LOWEST stage,
   // at new ids, leaving the failed history untouched in the record.
   const parked: Ticket = {
-    ...draft(grants.budgeted, progStaged),
+    ...draft(cfgBudgeted, progStaged),
     phase: "PEscalated",
     resumeAt: "REvaluating",
     reason: "RsReworkBudgetExhausted",
@@ -1576,20 +1509,20 @@ test("combinatorBranchesTest: both branches of the combinator vocabulary are dis
 test("the digit bounds are checked, not assumed", () => {
   const b = bBudgeted;
   const overFanned: Ticket = {
-    ...draft(grants.budgeted),
+    ...draft(cfgBudgeted),
     phase: "PWorking",
     tasks: [wr(1), wr(2), wr(3)],
   };
   assert.throws(() => micro(b, overFanned), AssertionError);
   const overStaged: Ticket = {
-    ...draft(grants.budgeted, [...progStaged, ...progStaged]),
+    ...draft(cfgBudgeted, [...progStaged, ...progStaged]),
     phase: "PEvaluating",
     tasks: [er(1, 0)],
   };
   assert.throws(() => micro(b, overStaged), AssertionError);
   // A stage mark past the end of the program leaves the digit negative.
   const pastEnd: Ticket = {
-    ...draft(grants.budgeted),
+    ...draft(cfgBudgeted),
     phase: "PEvaluating",
     tasks: [er(1, 5)],
   };
@@ -1597,7 +1530,7 @@ test("the digit bounds are checked, not assumed", () => {
 });
 
 test("the accounts are checked for the lower bound the measure needs", () => {
-  const j = draft(grants.budgeted);
+  const j = draft(cfgBudgeted);
   for (const broken of [
     { ...j, gasLeft: -1 },
     { ...j, wrapUpLeft: -1 },
@@ -1704,14 +1637,14 @@ test("the arithmetic is refused rather than silently rounded past 2^53", () => {
   // assertion is decorative: a gas grant is a machine const, so nothing about
   // the type system stops one arriving large enough.
   const huge: Ticket = {
-    ...draft(grants.budgeted),
+    ...draft(cfgBudgeted),
     gasLeft: Number.MAX_SAFE_INTEGER,
   };
   assert.throws(() => ticketMeasure(bBudgeted, huge), AssertionError);
   // The fleet sum overflows where no single ticket does: each of these is a
   // fine measure on its own.
   const large: Ticket = {
-    ...draft(grants.budgeted),
+    ...draft(cfgBudgeted),
     gasLeft: Math.floor(Number.MAX_SAFE_INTEGER / 300),
   };
   assert.ok(Number.isSafeInteger(ticketMeasure(bBudgeted, large)));

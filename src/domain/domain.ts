@@ -195,6 +195,15 @@ export type Config = {
   readonly nRepos: number;
 };
 
+/**
+ * `model/domain.qnt`'s dense-id convention, named once on `measure.ts`'s
+ * `firstTaskId` precedent: ticket ids run from 1, are dense to the fleet's
+ * size, and are never reused. Two places below are load-bearing on it —
+ * `decideArrive` mints `size + 1`, and `decideRevoke` walks `1..size` reading
+ * every id — and a bare numeral in either is the convention stated twice.
+ */
+export const firstTicketId = 1;
+
 /** A const that must admit at least one of whatever it bounds. */
 function atLeastOne(n: number): boolean {
   return Number.isSafeInteger(n) && n >= 1;
@@ -282,8 +291,15 @@ export function stageChoices(cfg: Config): readonly Stage[] {
  * cannot collide, so the keyed accumulator below is a set in the model's sense
  * and its length is that set's size — which `validProgramsRefusalTest` pins.
  *
- * Its cost is the model's: `|stageChoices| ** maxStages` programs, the loop
- * bounded by `maxStages`. Both are consts, small in every mc instance.
+ * IT IS REBUILT ON EVERY CALL, WHICH THE MODEL IS NOT: a Quint `pure val` is
+ * evaluated once per instance, and this is a function of the config because
+ * TypeScript has no instances. The enumeration is `sum(|stageChoices| ** k)`
+ * over `k` in `1..maxStages`, and it is not free at every shape — measured on
+ * this tree (node 22.18.0, 2026-08-15): 20 programs / 0.035 ms at DB's consts,
+ * 258 / 0.14 ms at 3 tasks and 3 stages, 37448 / 21 ms at 4 and 5. The machine
+ * asks once per ARRIVAL (`decideArrive` through `isValidProgram`) and never per
+ * step, so one enumeration per authored ticket is the bill; a caller asking in
+ * a loop should hold the result rather than the config.
  */
 export function validPrograms(cfg: Config): readonly (readonly Stage[])[] {
   const choices = stageChoices(cfg);
@@ -466,7 +482,7 @@ export function decideArrive(
     `decideArrive: ${kind} is not an authorable wrap-up kind`,
   );
 
-  const id = c.tickets.size + 1;
+  const id = c.tickets.size + firstTicketId;
   invariant(
     !c.tickets.has(id),
     `decideArrive: id ${String(id)} is taken, so the fleet's ids are not dense`,
@@ -515,7 +531,7 @@ export function decideRevoke(c: Core, j: number): Decision {
   const n = c.tickets.size;
   const doomed = new Set<number>();
   const parkedList: number[] = [];
-  for (let k = 1; k <= n; k += 1) {
+  for (let k = firstTicketId; k < firstTicketId + n; k += 1) {
     const jb = ticketAt(c, k);
     if (jb.deps.has(j) || setsIntersect(jb.deps, doomed)) {
       doomed.add(k);
@@ -598,17 +614,24 @@ export function waitsOn(c: Core, j: number): ReadonlySet<number> {
  * `model/domain.qnt` depArtifacts — WHAT THIS TICKET'S DEPENDENCIES PRODUCED.
  * Derived, never stored.
  *
- * The model's `Set[ArtifactMark]`, canonically ordered so it is comparable:
- * ascending by dependency id, with a mark two dependencies share appearing
- * once — which is the set-valued `map` the model writes.
+ * The model's `Set[ArtifactMark]`, ordered BY THE KEY THAT DEDUPLICATES IT, so
+ * that the array is a function of the set it denotes and nothing else. That is
+ * the whole requirement, and it is stricter than it looks: ordering by
+ * dependency id would order by WHICH dep carried which mark, so two Cores the
+ * model calls equal here — same marks, different dependencies producing them —
+ * would answer with unequal arrays, and s2b's release read would compare them
+ * and disagree with the model. `measure.ts`'s `TaskSet` makes the same choice
+ * for the same reason; there the key is the task id.
  */
 export function depArtifacts(c: Core, j: number): readonly ArtifactMark[] {
   const seen = new Map<string, ArtifactMark>();
-  for (const d of [...waitsOn(c, j)].sort((x, y) => x - y)) {
+  for (const d of waitsOn(c, j)) {
     const mark = ticketAt(c, d).artifact;
     seen.set(artifactKey(mark), mark);
   }
-  return [...seen.values()];
+  return [...seen.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([, mark]) => mark);
 }
 
 /** `model/domain.qnt` depsDoneIn — location-blind: Done-ness, never repo. */
