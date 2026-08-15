@@ -178,7 +178,7 @@
 ///   STUTTER (state-identical; at-least-once delivery noise — the fabric
 ///   axioms do not promise exactly-once, so duplicates are
 ///   tolerated idempotently and change nothing):
-///     task-done-duplicate (= 0), land-duplicate (= 0), settled (= 0).
+///     task-done-duplicate (= 0), complete-duplicate (= 0), settled (= 0).
 ///   the model task-done-duplicate's REACH, not its effect: task ids are
 ///   unique across the ticket's whole history (sequential within the
 ///   ticket), so a stale completion from an EARLIER
@@ -472,7 +472,7 @@ module chuggy_measure {
   ///     variable anywhere, and quiet/moved is chosen fresh at every
   ///     attempt (derive-don't-store applied to the environment).
   /// Every other step — including eval-passed (which merely ENQUEUES the
-  /// landing) and land-duplicate (an absorbed re-delivery: no attempt
+  /// landing) and complete-duplicate (an absorbed re-delivery: no attempt
   /// resolves, nothing is emitted) — carries WONone. The iff is the
   /// wrapUpIsolation invariant (domain.qnt).
   type WrapUpObs = WONone | WOAttempt({ repo: int, invalidated: bool })

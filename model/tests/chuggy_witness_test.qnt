@@ -534,7 +534,7 @@ module chuggy_witness_stage_test {
       })
       // At-least-once: a stale landing success re-delivers after Done —
       // absorbed with NO landing effect (completionExclusive's boundary; the
-      // land-duplicate STUTTER arm of stepDescends fired on a machine
+      // complete-duplicate STUTTER arm of stepDescends fired on a machine
       // trace — the convention roster).
       .then(doLandDuplicate(1))
       .expect(and {

@@ -83,7 +83,7 @@
 ///     "ticket-escalated gas_exhausted" label from the EVAL side (the
 ///     attribution, not the label string, marks the landing boundary),
 ///     eval-passed (which merely enqueues), and the absorbed
-///     land-duplicate;
+///     complete-duplicate;
 ///   - REPO-BLINDNESS as a machine check, not just a comment theorem:
 ///     tickets identical but for `repo` have EQUAL ticketMeasure, phase
 ///     by phase, under both pricings (the measure.qnt derivation pinned);
@@ -1249,7 +1249,7 @@ module chuggy_test {
   /// landing gas wall: the attribution field, not the label, marks the
   /// boundary), eval-passed (which only ENQUEUES the landing — the
   /// attempt resolves later, under a choice not yet made), and the
-  /// absorbed land-duplicate (no attempt resolves, nothing is emitted).
+  /// absorbed complete-duplicate (no attempt resolves, nothing is emitted).
   run nonLandingStepsCarryNoAttributionTest = assert(and {
     dArr1.rec.landing == WONone,
     dRelease.rec.landing == WONone,

@@ -1335,7 +1335,7 @@ module chuggy_domain {
   ///     off-record. ("ticket-escalated gas_exhausted" is shared with the
   ///     eval side, so it is legitimately WONone there — pinned in
   ///     tests/chuggy_test.qnt, nonLandingStepsCarryNoAttributionTest;
-  ///     land-duplicate absorbs with nothing emitted and is not an
+  ///     complete-duplicate absorbs with nothing emitted and is not an
   ///     attempt; gate-opened OPENS an attempt but resolves none — the
   ///     resolution's attribution carries the choice the open encoded.)
   ///   - the PATH iff (R3/R4): a MOVED attempt resolves
@@ -1801,7 +1801,7 @@ module chuggy_domain {
   /// to exempt exactly the climb it names). Current roster:
   ///   init                  — every run's first step;
   ///   task-done-duplicate   — free module (the re-delivered completion);
-  ///   land-duplicate        — stage module (the stale landing success);
+  ///   complete-duplicate    — stage module (the stale landing success);
   ///   settled               — the quiet fleet's stutter;
   ///   operator-retry, RPending flavor
   ///                         — preWorkResumeClimbDeterministicTest;
