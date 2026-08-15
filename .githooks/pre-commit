@@ -43,12 +43,13 @@ done
 started="$(date +%s)"
 rejected=0
 
-run_gate() { # <label> <script>
+run_gate() { # <label> <script> [<arg>...]
 	label="$1"
 	script="$2"
+	shift 2
 	[ -x "$script" ] || return 0
 	set +e
-	out="$("$script" 2>&1)"
+	out="$("$script" "$@" 2>&1)"
 	rc=$?
 	set -e
 	case "$rc" in
@@ -71,6 +72,21 @@ run_gate() { # <label> <script>
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
 run_gate "check-gates" ./.chug/tasks/check-gates.sh
+
+# check-paths is whole-tree in `just check` and staged-only here. It resolves
+# against the whole tracked set either way, so the narrowing changes what is
+# scanned and not what counts as a claim — which keeps this the weaker of the
+# two runs, never the stricter one.
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+if [ -n "$staged" ]; then
+	set -f
+	IFS='
+'
+	set -- $staged
+	unset IFS
+	set +f
+	run_gate "check-paths" ./.chug/tasks/check-paths.sh "$@"
+fi
 
 elapsed=$(( $(date +%s) - started ))
 if [ "$rejected" -gt 0 ]; then

@@ -6,7 +6,7 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 
 ## Where the knowledge is
 
-**`model/` is the specification.** There is no `docs/` tree; the written standards that used to sit beside the model were removed rather than maintained alongside it. So the tree states what is true of itself in exactly two places, and both are checkable:
+**`model/` is the specification.** There is no `docs/` tree; the written standards that used to sit beside the model were removed rather than maintained alongside it. <!-- absent --> So the tree states what is true of itself in exactly two places, and both are checkable:
 
 - **`model/`** — the machine, its measure, its refinement and its suites. What it proves, it proves; nothing restates a proved property in prose.
 - **each gate's own header** — every script in `.chug/tasks/` opens by stating the rule it enforces and why. The rule and its enforcement cannot drift apart, because they are the same file.
