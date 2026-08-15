@@ -26,6 +26,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { AssertionError } from "./assert.ts";
+import { er, et, progStaged, progU2, wr, wt } from "./fixtures.test.ts";
 import {
   accountDigitsInRange,
   combine,
@@ -129,37 +130,8 @@ const grants = {
 } as const;
 
 // === Fixture vocabulary ====================================================
-// `wt`/`et` build RESOLVED work and eval tasks, `wr`/`er` build RUNNING ones —
-// the same four builders `model/tests/chuggy_test.qnt` defines, under the same
-// names, so a fixture can be read across.
-
-function wt(id: number, outcome: TaskOutcome): Task {
-  return { id, kind: { tag: "TKWork" }, state: { tag: "TSResolved", outcome } };
-}
-
-function et(id: number, stage: number, outcome: TaskOutcome): Task {
-  return {
-    id,
-    kind: { tag: "TKEval", stage },
-    state: { tag: "TSResolved", outcome },
-  };
-}
-
-function wr(id: number): Task {
-  return { id, kind: { tag: "TKWork" }, state: { tag: "TSRunning" } };
-}
-
-function er(id: number, stage: number): Task {
-  return { id, kind: { tag: "TKEval", stage }, state: { tag: "TSRunning" } };
-}
-
-/** `chuggy_test`'s `progU2` — exactly `defaultProgram`: one unanimous stage, fan-out 2. */
-const progU2: readonly Stage[] = [{ fanout: 2, combinator: "CUnanimousPass" }];
-/** `chuggy_test`'s `progStaged` — two stages, so a program can ADVANCE rather than only pass. */
-const progStaged: readonly Stage[] = [
-  { fanout: 1, combinator: "CUnanimousPass" },
-  { fanout: 2, combinator: "CAnyPass" },
-];
+// `chuggy_test`'s four task builders and its two programs are shared with the
+// domain suite, and live in `fixtures.test.ts`.
 
 /**
  * The shape `freshTicket` (`model/domain.qnt`) produces at an instance's
