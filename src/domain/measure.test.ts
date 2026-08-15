@@ -26,7 +26,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { AssertionError } from "./assert.ts";
-import { er, et, progStaged, progU2, wr, wt } from "./fixtures.test.ts";
+import { decideRevoke, escalate, ticketAt } from "./domain.ts";
+import { er, et, progStaged, progU2, solo, wr, wt } from "./fixtures.test.ts";
 import {
   accountDigitsInRange,
   combine,
@@ -162,24 +163,41 @@ function draft(
   };
 }
 
-/** `model/domain.qnt` escalate: retire the live set, then name the wall and the resume point. */
-function escalated(j: Ticket, reason: Reason, resumeAt: Resume): Ticket {
-  return { ...retireLive(j), phase: "PEscalated", reason, resumeAt };
+/**
+ * THE PARKED TICKET `model/domain.qnt`'s `escalate` PRODUCES — through the real
+ * decider plumbing (`src/domain/domain.ts`), not through a copy of it.
+ *
+ * The three builders below hand-built their post-states while s2a's deciders
+ * did not exist; issue #13 records why that had to end the moment they landed
+ * (a divergent reimplementation of shipped logic, with the pinned integers
+ * still passing against the stale copy). Two of the three are rewired here.
+ * `reworkedInto` cannot be: the rework re-entry is `decideEvalStageReduce`'s
+ * and `decideWrapUpResolve`'s, and both are s2b's — its rewiring lands there.
+ *
+ * The `label` argument is the model's own label for the wall being built. The
+ * measure tests assert no label, by design; naming it is what makes each
+ * fixture cite the decision it stands for.
+ */
+function escalated(
+  j: Ticket,
+  reason: Reason,
+  resumeAt: Resume,
+  label: string,
+): Ticket {
+  return ticketAt(escalate(solo(j), 1, resumeAt, reason, label).post, 1);
 }
 
-/** `model/domain.qnt` decideRevoke's per-ticket step: retire, settle, open no desk task. */
+/** `model/domain.qnt` decideRevoke's per-ticket step, through the decider. */
 function revoked(j: Ticket): Ticket {
-  return {
-    ...retireLive(j),
-    phase: "PRevoked",
-    resumeAt: "RNone",
-    reason: "RsNone",
-  };
+  return ticketAt(decideRevoke(solo(j), 1).post, 1);
 }
 
 /**
  * `model/domain.qnt`'s rework re-entry: retire the failed set, respawn a fresh
  * work fan-out at the next ids, and charge the accounts the pricing says.
+ *
+ * Still hand-built, and the one of the three that must stay so until s2b: see
+ * `escalated` above.
  */
 function reworkedInto(b: Bounds, j: Ticket, charged: Partial<Ticket>): Ticket {
   return {
@@ -596,9 +614,26 @@ const jEsc: Ticket = escalated(
   jDraft,
   "RsReworkBudgetExhausted",
   "REvaluating",
+  "ticket-escalated rework_budget_exhausted",
 );
-const jParkPre: Ticket = escalated(jDraft, "RsRevalidationFailed", "RPending");
-const jParkDep: Ticket = escalated(jDraft, "RsDependencyRevoked", "RNone");
+const jParkPre: Ticket = escalated(
+  jDraft,
+  "RsRevalidationFailed",
+  "RPending",
+  "ticket-escalated revalidation_failed",
+);
+/**
+ * NOT an `escalate`: the cascade parks a doomed dependent inside
+ * `decideRevoke` itself, stamping no resume and retiring nothing, and the
+ * model writes this fixture as a record literal for exactly that reason. Its
+ * equality with the cascade's own post-state is pinned in `domain.test.ts`
+ * (cascadeEndToEndTest), where the cascade is.
+ */
+const jParkDep: Ticket = {
+  ...jDraft,
+  phase: "PEscalated",
+  reason: "RsDependencyRevoked",
+};
 
 test("the revoke fixtures' measures, phase by phase (the ladder, flattened)", () => {
   // Read from the model. The account digits are the same across all seven, so
@@ -655,6 +690,7 @@ test("measureRepoBlindTest: no digit, weight or account radix reads the repo", (
     { ...draft(grants.budgeted), gasLeft: 2 },
     "RsGasExhausted",
     "RWrapUp",
+    "ticket-escalated gas_exhausted",
   );
   for (const j of [jDraft, jPend, jWork, jEval, jLand, jGated, escLanding]) {
     assert.equal(
@@ -796,7 +832,12 @@ test("workFailedWallTest / evalWallsNamedTest: every wall descends by rank", () 
   assert.deepEqual(
     measuresAt(bBudgeted, [
       workFail,
-      escalated(workFail, "RsWorkFailed", "RWorking"),
+      escalated(
+        workFail,
+        "RsWorkFailed",
+        "RWorking",
+        "ticket-escalated work_failed",
+      ),
     ]),
     [729, 693],
   );
@@ -812,7 +853,12 @@ test("workFailedWallTest / evalWallsNamedTest: every wall descends by rank", () 
   assert.deepEqual(
     measuresAt(bBudgeted, [
       reworkWall,
-      escalated(reworkWall, "RsReworkBudgetExhausted", "REvaluating"),
+      escalated(
+        reworkWall,
+        "RsReworkBudgetExhausted",
+        "REvaluating",
+        "ticket-escalated rework_budget_exhausted",
+      ),
     ]),
     [660, 630],
   );
@@ -821,7 +867,12 @@ test("workFailedWallTest / evalWallsNamedTest: every wall descends by rank", () 
   assert.deepEqual(
     measuresAt(bBudgeted, [
       gasWall,
-      escalated(gasWall, "RsGasExhausted", "REvaluating"),
+      escalated(
+        gasWall,
+        "RsGasExhausted",
+        "REvaluating",
+        "ticket-escalated gas_exhausted",
+      ),
     ]),
     [219, 189],
   );
@@ -843,7 +894,12 @@ test("gateWallsNamedTest: both gate walls descend out of the held lease", () => 
   assert.deepEqual(
     measuresAt(bBudgeted, [
       budgetWall,
-      escalated(budgetWall, "RsWrapUpBudgetExhausted", "RWrapUp"),
+      escalated(
+        budgetWall,
+        "RsWrapUpBudgetExhausted",
+        "RWrapUp",
+        "ticket-escalated wrapup_budget_exhausted",
+      ),
     ]),
     [576, 567],
   );
@@ -853,7 +909,12 @@ test("gateWallsNamedTest: both gate walls descend out of the held lease", () => 
   assert.deepEqual(
     measuresAt(bBudgeted, [
       gasWall,
-      escalated(gasWall, "RsGasExhausted", "RWrapUp"),
+      escalated(
+        gasWall,
+        "RsGasExhausted",
+        "RWrapUp",
+        "ticket-escalated gas_exhausted",
+      ),
     ]),
     [198, 189],
   );
@@ -1021,7 +1082,12 @@ test("CHURN: the pre-work resume is free and climbs; a charged resume descends",
   // and the RPending resume climbs back by exactly the same rank — nothing was
   // ever spent on a pre-work park.
   const pending: Ticket = { ...draft(grants.budgeted), phase: "PPending" };
-  const parked = escalated(pending, "RsRevalidationFailed", "RPending");
+  const parked = escalated(
+    pending,
+    "RsRevalidationFailed",
+    "RPending",
+    "ticket-escalated revalidation_failed",
+  );
   const resumed: Ticket = {
     ...parked,
     phase: "PPending",
@@ -1044,6 +1110,7 @@ test("CHURN: the pre-work resume is free and climbs; a charged resume descends",
     { ...draft(grants.budgeted), gasLeft: 2 },
     "RsGasExhausted",
     "RWrapUp",
+    "ticket-escalated gas_exhausted",
   );
   const chargedResume: Ticket = {
     ...escLanding,
@@ -1067,6 +1134,7 @@ test("opRetryFreeClassifiedTest: under RetryFree the pipeline resume CLIMBS", ()
     { ...draft(grants.retryFree), gasLeft: 2 },
     "RsGasExhausted",
     "RWrapUp",
+    "ticket-escalated gas_exhausted",
   );
   const freeResume: Ticket = {
     ...escLanding,
