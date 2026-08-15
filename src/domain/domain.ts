@@ -620,8 +620,16 @@ export function waitsOn(c: Core, j: number): ReadonlySet<number> {
  * dependency id would order by WHICH dep carried which mark, so two Cores the
  * model calls equal here — same marks, different dependencies producing them —
  * would answer with unequal arrays, and s2b's release read would compare them
- * and disagree with the model. `measure.ts`'s `TaskSet` makes the same choice
- * for the same reason; there the key is the task id.
+ * and disagree with the model.
+ *
+ * THE ORDER IS LEXICOGRAPHIC ON THAT KEY, DELIBERATELY NOT NUMERIC ON THE
+ * MARK: `ASome:10` sorts before `ASome:2`. Canonicity asks for an order that
+ * is a function of the contents, not for a pretty one, and a numeric sort
+ * would need a second comparison rule per constructor to stay total. Anything
+ * that canonicalizes a decoded set to compare against this — s3's replayer —
+ * must sort by the same key, not by the id. `measure.ts`'s `TaskSet` makes the
+ * same kind of choice for the same reason; there the key is the task id, and
+ * there it happens to be numeric.
  */
 export function depArtifacts(c: Core, j: number): readonly ArtifactMark[] {
   const seen = new Map<string, ArtifactMark>();

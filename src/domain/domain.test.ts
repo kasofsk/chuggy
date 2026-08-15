@@ -20,14 +20,18 @@
  * hand-built fixture for the same shape, and the divergence is noted at the
  * test.
  *
- * THE LOOSENING DIRECTION IS PART OF THE BAR HERE, not only the narrowing
- * one. A guard written as an equality on a phase agrees with a loosened
- * inequality on every fixture that has only two phases in play, so several
- * tests below exist to hold a THIRD state against a predicate: a terminal
- * beside a Ready ticket, a Draft beside a Pending one, a held gate slot beside
- * a Working one, a fan-in dependent beside a linear chain, a dependency set
- * whose members disagree. Round 1's panel found seven guards that survived
- * being widened; those are their fixtures.
+ * THE RULE THIS SUITE LEAVES BEHIND, learned twice at review: AN EQUALITY
+ * GUARD IS PINNED BY AN EXACT SET OVER ITS WHOLE DOMAIN, NEVER BY
+ * COUNTER-EXAMPLES. A guard written as an equality on a phase agrees with a
+ * widened inequality on every fixture that does not happen to hold the phase
+ * the widening admits — and there are nine phases, so a counter-example
+ * closes one of eight doors. Round 1 answered seven such findings with a
+ * counter-example each and left five widenings alive; round 2 answered them
+ * with `cAllPhases` and `cBehindADraft` below — one ticket per phase, and the
+ * SET the guard answers with — which closes all of them at once and stays
+ * closed when a tenth phase arrives. The same rule is why the fan-in cascade
+ * and the mixed dependency set are here: a `forall` over dependencies needs a
+ * dependency set whose members disagree, not one more uniform one.
  *
  * THE EXPECTED VALUES ARE THE MODEL'S OWN. Structural expectations (labels,
  * transitions, effects, records, phases, accounts) are copied from the run
@@ -62,6 +66,7 @@ import {
   jParkPre,
   jPend,
   jWork,
+  mixedE0,
   progStaged,
   progU2,
   revokeOne,
@@ -756,13 +761,21 @@ test("the cascade parks the PRE-FLIGHT dependents and only those", () => {
         tasks: [wr(1), wr(2)],
       },
     ],
+    [3, draft(cfgBudgeted, progU2, 1, 1, new Set([2]))],
   ]);
   const d = decideRevoke(cMidFlight, 1);
+  // THE FILTER AND THE BREADTH ARE DIFFERENT CLAIMS, and ticket 3 is what
+  // separates them: the doom set reaches it THROUGH the mid-flight ticket,
+  // which is doomed and unparked. A filter that also parked ticket 2 would
+  // fail the first assertion; a doom set that stopped at the unparked ticket
+  // would fail the second.
   assert.deepEqual(d.rec.transitions, [
     { ticket: 1, from: "PPending", to: "PRevoked" },
+    { ticket: 3, from: "PDraft", to: "PEscalated" },
   ]);
-  assert.deepEqual(d.rec.effects, ["Revoke"]);
+  assert.deepEqual(d.rec.effects, ["Revoke", "OpenHumanTask"]);
   assert.deepEqual(ticketAt(d.post, 2), ticketAt(cMidFlight, 2));
+  assert.equal(ticketAt(d.post, 3).reason, "RsDependencyRevoked");
 });
 
 test("dependableIn: an arrival may not depend on a tombstone", () => {
@@ -916,6 +929,21 @@ test("depArtifacts: what this ticket's dependencies produced, derived and set-va
     { tag: "ASome", id: 2 },
     { tag: "ASome", id: 5 },
   ]);
+  // The order is LEXICOGRAPHIC ON THE KEY, which is not numeric order on the
+  // mark, and this is the case where the two visibly disagree: `ASome:10`
+  // sorts before `ASome:2`. Deliberate — canonicity needs the order to be a
+  // function of the set's contents, and it does not need to be pretty. The
+  // model's answer is the SET `Set(ASome(2), ASome(10))`, which is the same
+  // set either way.
+  const marksWide: Core = core([
+    [1, withMark(10)],
+    [2, withMark(2)],
+    [3, dependent],
+  ]);
+  assert.deepEqual(depArtifacts(marksWide, 3), [
+    { tag: "ASome", id: 10 },
+    { tag: "ASome", id: 2 },
+  ]);
   // Two dependencies carrying the SAME mark collapse to one element, because
   // the model's read is a set-valued map. Read from the model: Set(ANone).
   const cTwoDeps: Core = core([
@@ -956,6 +984,136 @@ test("the enablement sets are the model's, on the model's fixtures", () => {
   // mid-flight has a decision to make about its tasks, not about its phase.
   assert.throws(() => decideWorkReduce(c1, 1), AssertionError);
   assert.throws(() => decideWorkReduce(c4, 1), AssertionError);
+});
+
+// === Every phase, at once ===================================================
+// THE GUARD-PINNING RULE THIS SUITE LEAVES BEHIND: a guard that is an EQUALITY
+// over the nine phases is pinned by an EXACT SET over its whole domain, never
+// by counter-examples. A counter-example excludes one wrong phase; the guard
+// has eight wrong phases, and round 1 shipped a fixture per guard that
+// excluded exactly one of them — after which four widenings still survived on
+// states the suite already held. One Core with one ticket per phase, and the
+// set the guard answers with, closes all eight at once and stays closed when a
+// tenth phase arrives.
+
+/** One ticket per phase, no dependencies: the enablement sets' whole domain. */
+const cAllPhases: Core = core([
+  [1, draft(cfgBudgeted)],
+  [2, { ...draft(cfgBudgeted), phase: "PPending" }],
+  [
+    3,
+    {
+      ...draft(cfgBudgeted),
+      phase: "PWorking",
+      tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
+    },
+  ],
+  [4, { ...draft(cfgBudgeted), phase: "PEvaluating", tasks: mixedE0 }],
+  [5, { ...draft(cfgBudgeted), phase: "PWrapUp" }],
+  [6, { ...draft(cfgBudgeted), phase: "PWrapUpHolding" }],
+  [7, { ...draft(cfgBudgeted), phase: "PDone", completions: 1 }],
+  [
+    8,
+    {
+      ...draft(cfgBudgeted),
+      phase: "PEscalated",
+      reason: "RsDependencyRevoked",
+    },
+  ],
+  [9, { ...draft(cfgBudgeted), phase: "PRevoked" }],
+]);
+
+test("every phase-shaped guard, as an EXACT SET over all nine phases", () => {
+  // Ids are the phase ladder in order: 1 Draft, 2 Pending, 3 Working,
+  // 4 Evaluating, 5 WrapUp, 6 WrapUpHolding, 7 Done, 8 Escalated (the cascade
+  // wall), 9 Revoked. Tickets 3 and 4 carry FULLY RESOLVED sets, so the two
+  // reduce-shaped guards are separated by their phase conjunct alone. Every
+  // set below was read out of the model against this same Core.
+  assert.deepEqual(draftsIn(cAllPhases), new Set([1]));
+  assert.deepEqual(readiesIn(cAllPhases), new Set([2]));
+  assert.deepEqual(taskPhaseIn(cAllPhases), new Set([3, 4]));
+  assert.deepEqual(reducibleWorkIn(cAllPhases), new Set([3]));
+  assert.deepEqual(revocablesIn(cAllPhases), new Set([1, 2, 3, 4, 5, 6, 8]));
+  assert.deepEqual(dependableIn(cAllPhases), new Set([1, 2, 3, 4, 5, 6, 7]));
+  // The three per-ticket predicates, as the same kind of exact set.
+  const where = (p: (j: number) => boolean): ReadonlySet<number> =>
+    new Set([...cAllPhases.tickets.keys()].filter(p));
+  assert.deepEqual(
+    where((j) => isReadyIn(cAllPhases, j)),
+    new Set([2]),
+  );
+  assert.deepEqual(
+    where((j) => isBlockedIn(cAllPhases, j)),
+    new Set(),
+  );
+  assert.deepEqual(
+    where((j) => dispatchableIn(cAllPhases, j)),
+    new Set([2]),
+  );
+  assert.deepEqual(
+    where((j) => revocableIn(cAllPhases, j)),
+    new Set([1, 2, 3, 4, 5, 6, 8]),
+  );
+});
+
+/**
+ * The same nine phases, each waiting on an unfinished Draft (id 1). Blocked is
+ * the one guard whose SECOND conjunct hides the first: on a fleet with no
+ * dependencies, `isBlockedIn` answers empty for every phase, so admitting a
+ * wrong phase changes nothing and the exact set above proves nothing about it.
+ * Here every ticket's deps are unfinished, so the set IS the phase test.
+ */
+const cBehindADraft: Core = core([
+  [1, draft(cfgBudgeted)],
+  ...(
+    [
+      "PDraft",
+      "PPending",
+      "PWorking",
+      "PEvaluating",
+      "PWrapUp",
+      "PWrapUpHolding",
+      "PDone",
+      "PEscalated",
+      "PRevoked",
+    ] as const
+  ).map((phase, i): readonly [number, Ticket] => [
+    i + 2,
+    { ...draft(cfgBudgeted, progU2, 1, 1, new Set([1])), phase },
+  ]),
+]);
+
+test("Blocked is the Pending ones, over a fleet where everything waits", () => {
+  // Read from the model: only the Pending ticket (id 3) is Blocked, nobody is
+  // Ready, and the only ticket whose dependencies are done is the one with
+  // none. A widened Blocked admits its phase's ticket here and nowhere else.
+  const where = (p: (j: number) => boolean): ReadonlySet<number> =>
+    new Set([...cBehindADraft.tickets.keys()].filter(p));
+  assert.deepEqual(
+    where((j) => isBlockedIn(cBehindADraft, j)),
+    new Set([3]),
+  );
+  assert.deepEqual(
+    where((j) => isReadyIn(cBehindADraft, j)),
+    new Set(),
+  );
+  assert.deepEqual(
+    where((j) => depsDoneIn(cBehindADraft, j)),
+    new Set([1]),
+  );
+  assert.deepEqual(readiesIn(cBehindADraft), new Set());
+  assert.deepEqual(draftsIn(cBehindADraft), new Set([1, 2]));
+});
+
+test("the parked and the revoked are outside the waiting room, not inside it", () => {
+  // cParked is the cascade's own post-state: ticket 1 Revoked, tickets 2 and 3
+  // parked behind it. A Revoked dependency is NOT Done — unobservable through
+  // any consumer today, because cascadeSafety keeps the dependent parked, but
+  // wrong on a state the machine really reaches. And a parked ticket is
+  // neither Ready nor Blocked: the waiting room is inside Pending.
+  assert.equal(depsDoneIn(cParked, 2), false);
+  assert.equal(isBlockedIn(cParked, 2), false);
+  assert.equal(isReadyIn(cParked, 2), false);
 });
 
 test("dispatchableIn: Ready with gas to charge, and the gas conjunct bites", () => {
