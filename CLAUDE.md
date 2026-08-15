@@ -13,13 +13,17 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 
 This file is the third: an entry point and a set of conventions, holding what neither of those two can hold.
 
+**The general standards came back as skills the tree declares rather than holds.** `.claude/settings.json` enables the eight `blessed-practices` plugins — `layering` and `domain-modelling` among them, the two that left with `docs/` <!-- absent -->. They are invoked through the Skill tool rather than read, so a reviewer cites one by name and an author is given the same file. The trade is worth stating: their content is versioned in `kasofsk/blessed-practices` and can move without a commit here, which a gate header cannot. That is the cost of not maintaining a second copy, and it is why the two places above still carry everything that must be true of *this* tree — a skill states what good code looks like anywhere, never what is true here.
+
 ## Checks
 
 ```sh
 just check          # everything
 ```
 
-The pre-commit hook runs the fast subset and is installed with `git config core.hooksPath .githooks` — **a fresh clone needs that once**.
+The pre-commit hook runs the fast subset and is installed with `git config core.hooksPath .githooks` — **a fresh clone needs that once**, because git config is not tracked and nothing in a checkout can set it for you.
+
+The skills need no such step, and the difference is the reason `.claude/settings.json` is tracked at all: a clone and a `git worktree` both come up with the eight already enabled, where an untracked settings file would leave a worktree silently without them. A machine that has never seen the `blessed-practices` marketplace fetches it on first use.
 
 Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
 slowest by far is `check-model.sh` (~50s against ~5s for everything else),
