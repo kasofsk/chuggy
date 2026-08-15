@@ -1149,7 +1149,7 @@ module chuggy_domain {
   /// same-id completion was indistinguishable from a fresh nondet verdict
   /// on the respawned set) — staleness is now absorbed structurally, and
   /// the only remaining first-write-wins case is a duplicate delivery for
-  /// a LIVE resolved task. A stale COMPLETION still implies a success
+  /// a LIVE resolved task. A stale TICKET COMPLETION still implies a success
   /// occurred, and PDone is absorbing (completeDuplicate). The observed/actual
   /// split that would make mid-rework duplicates dangerous — a decider
   /// acting on a stale VIEW — is exactly the deferred §4 refinement layer

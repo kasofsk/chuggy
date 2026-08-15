@@ -817,7 +817,7 @@ module chuggy_measure {
   /// `spawned` counter by the same n, which is what keeps the idsAccounted
   /// equality (domain.qnt) checkable. Callers guarantee the previous set
   /// is already retired (tasks empty), which every spawn site satisfies:
-  /// dispatch/land-rework/opRetry spawn from task-free phases, and the
+  /// dispatch/wrapup-rework/opRetry spawn from task-free phases, and the
   /// reduces spawn on the retireLive'd ticket.
   pure def spawnOn(ticket: Ticket, k: TaskKind, n: int): Ticket =
     { ...ticket, tasks: spawnTasks(k, nextTaskId(ticket), n), spawned: ticket.spawned + n }
