@@ -697,11 +697,17 @@ test("measureRepoBlindTest: no digit, weight or account radix reads the repo", (
     ticketMeasure(bDeadlineOnly, elsewhere(jWork)),
   );
   // The model's own figure for that cross-instance evaluation. LOAD-BEARING,
-  // not a restatement of the equality above it: it is the only assertion in
-  // the file that pins an absolute measure under DeadlineOnly bounds, and so
-  // the only one that catches the two account radices being swapped — every
-  // blindness equality compares two sides that would move together. Do not
-  // delete it as redundant.
+  // and precisely: `jWork` under these bounds is the only fixture in the file
+  // with a NON-ZERO wrapUpLeft measured under bounds whose two account radices
+  // DIFFER — `radix(wrapUpBudget(DeadlineOnly))` is 1 against
+  // `radix(reworkBudget(RWBudget(1)))` of 2. That combination is what catches
+  // the two radices being swapped, because the swap changes the flattening by
+  // `wrapUpLeft * (rework radix - wrapUp radix)` and nothing else: with the
+  // middle digit 0 the two multiplications commute, and under Budgeted bounds
+  // the radices are equal, so every other absolute pin in the file (495, 324,
+  // 227, 315, 333, 369 included) survives the swap unchanged. Verified: the
+  // swap reddens this one line, 416 against 353, and nothing else in 44 tests.
+  // Do not delete it as redundant.
   assert.equal(ticketMeasure(bDeadlineOnly, jWork), 416);
 });
 
@@ -1338,10 +1344,15 @@ test("the flattened integer order IS the lexicographic order, exhaustively at th
     for (let i = 0; i < x.length; i += 1) {
       const a = x[i];
       const c = y[i];
-      assert.ok(
-        a !== undefined && c !== undefined,
-        `digit tuples are the same width; index ${String(i)} is missing from one of [${x.join(",")}] / [${y.join(",")}]`,
-      );
+      // Guarded, not `assert.ok(cond, msg)` — the same eager-message shape the
+      // outer loop already avoids, and it landed here in the round-1 fix. This
+      // is the INNER loop: two `Array.join`s per digit index per pair, so the
+      // message that never prints was the most expensive thing in the test.
+      if (a === undefined || c === undefined) {
+        assert.fail(
+          `digit tuples are the same width; index ${String(i)} is missing from one of [${x.join(",")}] / [${y.join(",")}]`,
+        );
+      }
       if (a !== c) {
         return a < c ? -1 : 1;
       }
@@ -1572,6 +1583,15 @@ test("a task set that is not a set is refused", () => {
   assert.throws(() => runningCount([wr(2), wr(1)]), AssertionError);
   assert.throws(() => runningCount([wr(1), wr(1)]), AssertionError);
   assert.throws(() => runningCount([wr(0)]), AssertionError);
+  // An id that ORDERS correctly but is not an integer, and one past 2^53 where
+  // `+ 1` stops moving. Both slip through the ascending check — 1.5 > 0 — so
+  // the count conjunct is the only thing catching them, and an id that cannot
+  // be incremented exactly is one `nextTaskId` would mint a collision from.
+  assert.throws(() => runningCount([{ ...wr(1), id: 1.5 }]), AssertionError);
+  assert.throws(
+    () => runningCount([{ ...wr(1), id: 2 ** 60 }]),
+    AssertionError,
+  );
   assert.throws(
     () => spawnTasks({ tag: "TKWork" }, firstTaskId - 1, 1),
     AssertionError,
@@ -1580,6 +1600,41 @@ test("a task set that is not a set is refused", () => {
     () => spawnTasks({ tag: "TKWork" }, firstTaskId, -1),
     AssertionError,
   );
+});
+
+test("every reader of a task set checks the canonical form, by name", () => {
+  // ONE CASE PER CALL SITE. `assertTaskSet`'s docstring claims every reader
+  // calls it — including the ones that only count — and until this test
+  // existed five of the six calls could be deleted with the suite green, which
+  // made the F4 fix (`nextTaskId`'s call) a silent no-op the moment it landed.
+  // Each case asserts the `where` label, so deleting one call reddens exactly
+  // its own line rather than some distant equality.
+  const scrambled: TaskSet = [wr(2), wr(1)];
+  const ticketWith = (tasks: TaskSet): Ticket => ({ ...jDraft, tasks });
+  assert.throws(() => runningCount(scrambled), {
+    name: "AssertionError",
+    message: /^runningCount: a task set is ascending/,
+  });
+  assert.throws(() => evalStage([er(2, 0), er(1, 0)]), {
+    name: "AssertionError",
+    message: /^evalStage: a task set is ascending/,
+  });
+  assert.throws(() => resolveTask(scrambled, 1, "TPassed"), {
+    name: "AssertionError",
+    message: /^resolveTask: a task set is ascending/,
+  });
+  assert.throws(
+    () => combine("CUnanimousPass", [wt(2, "TPassed"), wt(1, "TPassed")]),
+    { name: "AssertionError", message: /^combine: a task set is ascending/ },
+  );
+  assert.throws(() => nextTaskId(ticketWith(scrambled)), {
+    name: "AssertionError",
+    message: /^nextTaskId: a task set is ascending/,
+  });
+  assert.throws(() => retireLive(ticketWith(scrambled)), {
+    name: "AssertionError",
+    message: /^retireLive: a task set is ascending/,
+  });
 });
 
 test("the caller guarantees the model states in prose are enforced here", () => {
