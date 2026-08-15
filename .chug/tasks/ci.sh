@@ -63,6 +63,10 @@ run_gate() { # <label> <script> [args...]
 
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 
+if [ -x ./.chug/tasks/check-paths.sh ]; then
+	run_gate "check-paths" ./.chug/tasks/check-paths.sh
+fi
+
 if [ -x ./.chug/tasks/check-shell-quoting.sh ]; then
 	run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
 fi
