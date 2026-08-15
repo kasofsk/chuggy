@@ -300,10 +300,13 @@ check "a dangling symlink in src/domain is loud, not silent" 1 "$RC" \
 # 13. The compensating control for the graph half's `.test.ts` exemption: domain
 #     tests are exempt from the module-graph `from` set, so the ambient roster
 #     has to cover them. This case is the one that asserts the property by
-#     name; narrowing the purity glob to exclude `.test.ts` also reddens two
-#     others, because case 7's file-list floor then reports every fixture's own
-#     `pure.test.ts` as unmatched. That is defence in depth rather than a
-#     second copy of this check.
+#     name; narrowing the purity glob to exclude `.test.ts` also reddens every
+#     other case that expects a clean tree, because case 7's file-list floor
+#     then reports each fixture's own `pure.test.ts` as unmatched. That is
+#     defence in depth rather than a second copy of this check. Written as a
+#     mechanism rather than a count on purpose: the count was already wrong in
+#     the commit that introduced it, which had added another clean-tree fixture
+#     of its own a few lines up.
 scaffold
 cat >>"$R/src/domain/pure.test.ts" <<'TS'
 
