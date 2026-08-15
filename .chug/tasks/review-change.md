@@ -14,8 +14,8 @@ Run this in a fresh session with no memory of the authoring.
 2. Read the files it touches **in full**, not just the hunks. A hunk cannot
    show you what it broke three functions down.
 3. Then judge. The priorities under **What you judge** are in order — stop at
-   the first that applies. The standing rules and commitments below are what
-   you cite from, not a further tier to work through.
+   the first that applies. The house rules, standing rules and commitments
+   below are what you cite from, not further tiers to work through.
 
 ## What you judge
 
@@ -27,21 +27,27 @@ its own commit, with the suites re-run.
 
 **Each gate states its own rule in its own header.** Cite the header: name the
 gate and the sentence in it that the change violates. Where no gate covers it,
-cite a standing rule below by its number, or a commitment by its name. A rule
-you cannot point at in one of those three places is not a rule you can reject
-over — say it as an opinion instead, and let the author take it or leave it.
+cite a house rule by its number, a standing rule by its number and the model
+header that states it, or a commitment by its name. A rule you cannot point at
+in one of those places is not a rule you can reject over — say it as an opinion
+instead, and let the author take it or leave it.
 
 **Correctness before anything else**, then whether the change does what it set
 out to do, then whether it does anything it did not set out to do. An
 unrelated improvement in the same diff is worth naming; it is rarely worth
 blocking.
 
-## The standing rules
+## The house rules
 
 The rules no gate enforces, because no script can decide them. They bind the
 author, and the reviewer rejects by number.
 
-**The numbering starts at 7, and that is not a gap.** Rules 1 through 6 are the
+**They are HOUSE rules, and the model's own STANDING rules are a different list
+with a different numbering.** `model/` numbers its four and cites them by number
+at the definitions they govern — see the next section. Calling both "rule 3" in
+one review is how a finding stops being answerable.
+
+**The numbering starts at 7, and that is not a gap.** House rules 1 through 6 are the
 mechanical ones — comment quantity, the domain layer reaching no I/O and no
 ambient capability, exhaustive switching, no floating promises, a function
 length cap, and formatter defaults. Each arrives as a gate or a lint config
@@ -75,16 +81,29 @@ inside a year, which is the whole reason this repo has no standards document.
     it cannot be expressed that way then the contract does not exist yet, and
     writing it is the first commit of the work.
 
+## The standing rules — the model's, numbered 1 to 4
+
+**This is an index, not a copy.** The model states these in its own headers, at
+the definitions they govern, and cites them by number throughout. Read them
+there. Where this list and a model header disagree, the model is right, the same
+as everywhere else.
+
+1. **The measure comes first** — `model/measure.qnt` opens on it. When the
+   machine changes, the measure is reworked before anything else: not
+   afterwards, and not in the same breath.
+2. **No free re-entry** — no step returns to a prior state without spending
+   measure. `model/domain.qnt` cites it at every metering site.
+3. **Derive, don't store** — a stored duplicate of a derivable fact is a
+   finding. The most-cited of the four.
+4. **Golden traces from day one, direction reversed** — the model emits them and
+   the implementation grows up against them.
+
 ## The standing commitments
 
-Positions this repo has taken and has not reopened. Cite one by name. A change
-that needs one of them to be false is an **ESCALATE**, not a finding.
+Positions this repo has taken and has not reopened, and which the model does not
+number. Cite one by name. A change that needs one of them to be false is an
+**ESCALATE**, not a finding.
 
-- **The measure comes first.** When the machine changes, `measure.qnt` is
-  reworked before anything else.
-- **No free re-entry.** No step returns to a prior state without spending
-  measure.
-- **Derive, don't store.** A stored duplicate of a derivable fact is a finding.
 - **Single writer.** One journaled actor decides; nothing else writes.
 - **Simplicity over performance.** Take the simple shape until a measurement,
   not an intuition, says otherwise.
