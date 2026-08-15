@@ -18,6 +18,17 @@
 # `eslint.purity.config.js` for the ambient globals — and each of those files
 # states in its own header what it catches and what it cannot.
 #
+# AND A THIRD THING, WHICH IS NOT A HALF BUT A FLOOR: every file under
+# `src/domain/` is handed to eslint BY NAME, under `--max-warnings=0`, so a
+# file no configuration matches is a finding instead of a silence. Both halves
+# above are only as wide as the globs that select their inputs, and a glob is
+# the one part of a rule that fails without saying anything — a `.mts` file
+# under a `*.ts` glob was neither typechecked nor linted while this gate
+# printed clean on all five stages. Widening the globs fixed that file;
+# passing the files explicitly is what makes the next extension loud. The
+# types stage carries the matching floor: `src/` holds TypeScript and nothing
+# else, so no file there can sit outside the program `tsconfig.json` describes.
+#
 # WHY ONE GATE AND NOT FIVE. `.chug/tasks/check-gates.sh` requires a sibling
 # suite per gate, so five gates over one toolchain would be five suites sharing
 # one fixture builder — the duplication `.chug/tasks/_suite.sh` exists to stop
@@ -36,8 +47,8 @@
 # stating because `.chug/tasks/ci.sh` orders GATES by cost and this file does
 # not order its stages that way. Every selected stage runs regardless, so cost
 # cannot be saved by going first — and it does not discriminate anyway:
-# measured on this tree, 2026-08-15, 8 source files, format 0.15s, types 0.27s,
-# lint 0.70s, purity 0.59s, test 0.11s, 1.8s for the lot. What the fixed order
+# measured on this tree, 2026-08-15, 8 source files, format 0.16s, types 0.59s,
+# lint 0.72s, purity 0.61s, test 0.11s, 2.2s for the lot. What the fixed order
 # buys is that the same tree always reports the same way, coarsest question
 # first: is it written the way this repo writes things, does it typecheck, does
 # it lint, is the domain pure, do the tests pass. Where the gate as a whole
@@ -138,25 +149,60 @@ stage_format() {
 }
 
 stage_types() {
-	# tsc: 0 clean; 1 and 2 both mean diagnostics were present (they differ
-	# only in whether output was written, and --noEmit writes none); 3 and up
-	# mean the project itself could not be read.
+	verdict=0
+
+	if [ ! -f tsconfig.json ]; then
+		echo "check-ts: LINTER ERROR — tsconfig.json is missing" >"$OUT"
+		verdict=2
+		return
+	fi
+
+	# SRC/ IS TYPESCRIPT, and this is checked here rather than left to the
+	# linter because it is a statement about the typechecker's reach. A `.js`
+	# or `.mjs` file under `src/` is outside the program `tsconfig.json`
+	# describes, so `strict` — the whole first clause of this slice's contract
+	# — quietly would not apply to it, and it would still be importable by
+	# everything around it. Rather than lint it and leave it type-invisible,
+	# it may not be there. `tsconfig.json` includes `src/**` and lets tsc
+	# expand the extension list, so this check and that include cannot drift
+	# into disagreeing about what a TypeScript file is.
+	strays="$(find src -type f ! -name '*.ts' ! -name '*.mts' ! -name '*.cts' 2>/dev/null || true)"
+	if [ -n "$strays" ]; then
+		{
+			echo "check-ts: src/ holds files that are not TypeScript, so tsc never sees them:"
+			printf '%s\n' "$strays" | sed 's/^/    /'
+		} >"$OUT"
+		verdict=1
+		return
+	fi
+
+	# tsc's exit codes, MEASURED (2026-08-15, typescript 5.9.3) rather than
+	# taken from the enum's names: 0 clean; 1 diagnostics present; 2 also
+	# diagnostics present — a malformed tsconfig.json lands on 2, not on some
+	# higher could-not-run code, so this gate reports a broken project as a
+	# finding and says so here rather than claiming a 2-path it does not have.
+	# That is the honest answer anyway: a tsconfig that does not parse is a
+	# defect in the tree, and the guard above already covers the one case that
+	# genuinely is could-not-run, the file being absent.
 	set +e
 	"$TSC" --noEmit -p tsconfig.json >"$OUT" 2>&1
 	rc=$?
 	set -e
-	case "$rc" in
-	0) verdict=0 ;;
-	1 | 2) verdict=1 ;;
-	*) verdict=2 ;;
-	esac
+	if [ "$rc" -ne 0 ]; then
+		verdict=1
+	fi
 }
 
 stage_lint() {
 	# eslint: 0 clean, 1 lint errors (a parse error is one of these), 2 a
 	# problem with the configuration or the invocation.
+	#
+	# `--max-warnings=0` because this tree configures no rule at warning
+	# severity, so the only warnings eslint can emit are its own — and the one
+	# that matters is "File ignored because no matching configuration was
+	# supplied", which is how an unlinted file reads as a linted one.
 	set +e
-	"$ESLINT" . >"$OUT" 2>&1
+	"$ESLINT" --max-warnings=0 . >"$OUT" 2>&1
 	rc=$?
 	set -e
 	case "$rc" in
@@ -169,34 +215,72 @@ stage_lint() {
 stage_purity() {
 	verdict=0
 
-	# The module graph. depcruise exits with the NUMBER of error-severity
-	# violations, so the exit code alone cannot separate "three findings" from
-	# "crashed with code three" — the verdict line is what distinguishes them,
-	# the same way `.chug/tasks/check-duplication.sh` refuses to read a fetch
-	# failure as "no duplication". Once a verdict has been printed the code is
-	# trustworthy and it is the only thing read, because it counts errors while
-	# the printed line counts violations of every severity. Every rule in
-	# `.dependency-cruiser.mjs` is severity `error` for exactly that reason: a
-	# rule that could be violated without reddening this gate is a rule this
-	# gate does not enforce.
+	# The module graph. NEITHER depcruise's exit code NOR its verdict line is
+	# trustworthy alone, and the two fail in opposite directions.
+	#
+	# The exit code is a raw violation count handed to `process.exit`, so it
+	# cannot separate "three findings" from "crashed with code three" — and, at
+	# 256 violations, it wraps to 0 and a catastrophically dirty graph reports
+	# clean. The printed line cannot stand alone either: it counts violations
+	# of EVERY severity, so an `info` note would read as a finding.
+	#
+	# So the count of ERRORS is read out of the printed line, and the exit code
+	# is kept only as a corroborator — non-zero with no errors reported is a
+	# disagreement this gate does not get to resolve, and says so. The line's
+	# absence is still could-not-run, the same way
+	# `.chug/tasks/check-duplication.sh` refuses to read a fetch failure as
+	# "no duplication". Every rule in `.dependency-cruiser.mjs` is severity
+	# `error`, because a rule that could be violated without reddening this
+	# gate is a rule this gate does not enforce.
 	set +e
 	"$DEPCRUISE" src --config .dependency-cruiser.mjs >"$OUT" 2>&1
 	rc=$?
 	set -e
-	if ! grep -qF "dependency violation" "$OUT"; then
+	if grep -qF "no dependency violations found" "$OUT"; then
+		errors=0
+	else
+		errors="$(sed -n 's/^x [0-9][0-9]* dependency violations (\([0-9][0-9]*\) errors.*/\1/p' "$OUT" | tail -1)"
+	fi
+	if [ -z "$errors" ]; then
 		echo "check-ts: depcruise produced no verdict (rc=$rc)" >>"$OUT"
 		verdict=2
-	elif [ "$rc" -ne 0 ]; then
+	elif [ "$errors" -gt 0 ]; then
 		verdict=1
+	elif [ "$rc" -ne 0 ]; then
+		echo "check-ts: depcruise reported 0 errors but exited $rc" >>"$OUT"
+		verdict=2
 	fi
 
 	# The ambient capabilities. A second, syntax-only eslint run over
 	# `src/domain/` alone: it needs no type information, so it costs
 	# milliseconds, and it means the purity rule is one stage a developer can
 	# run rather than a property spread across two.
+	#
+	# THE FILES ARE PASSED EXPLICITLY, not as the directory, and that is the
+	# structural half of this fix rather than a style choice. Handed a
+	# directory, eslint enumerates only what its config's `files` patterns
+	# already match, so a file no pattern covers is not skipped loudly — it is
+	# not seen at all, and the stage prints "purity clean" for a tree it never
+	# read. That is exactly how a `.mts` file reached `Date.now()` under a
+	# `*.ts` glob. Handed the files, eslint says "File ignored because no
+	# matching configuration was supplied" for each one it cannot place, and
+	# `--max-warnings=0` turns that into the finding it is. The globs were
+	# widened too, but only this makes the NEXT extension loud instead of
+	# silent.
+	set -f
+	IFS='
+'
+	set -- $(find src/domain -type f 2>/dev/null || true)
+	unset IFS
+	set +f
+	if [ "$#" -eq 0 ]; then
+		echo "check-ts: no files under src/domain — the ambient half checked nothing" >>"$OUT"
+		verdict=2
+		return
+	fi
 	set +e
-	"$ESLINT" --no-config-lookup --config eslint.purity.config.js src/domain \
-		>>"$OUT" 2>&1
+	"$ESLINT" --max-warnings=0 --no-config-lookup \
+		--config eslint.purity.config.js "$@" >>"$OUT" 2>&1
 	rc=$?
 	set -e
 	case "$rc" in

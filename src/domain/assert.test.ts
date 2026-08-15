@@ -42,9 +42,36 @@ test("assertNever names the value that reached the default arm", () => {
   });
 });
 
-test("assertNever survives a value JSON cannot render", () => {
-  const unrenderable = (() => undefined) as unknown as never;
-  assert.throws(() => assertNever(unrenderable, "unhandled"), {
-    message: "unhandled: undefined",
+test("assertNever survives a value JSON declines to render", () => {
+  const declined = (() => undefined) as unknown as never;
+  assert.throws(() => assertNever(declined, "unhandled"), {
+    message: /^unhandled: \(\) => undefined$/,
   });
+});
+
+// The three ways rendering can THROW rather than decline. Each would otherwise
+// replace the caller's message with a TypeError about rendering — reporting a
+// defect in assertNever instead of the defect that reached it.
+
+test("assertNever survives a bigint, which a decoded ITF trace produces", () => {
+  assert.throws(() => assertNever(42n as unknown as never, "unhandled tag"), {
+    name: "AssertionError",
+    message: "unhandled tag: 42",
+  });
+});
+
+test("assertNever survives a circular structure", () => {
+  const loop: Record<string, unknown> = {};
+  loop["self"] = loop;
+  assert.throws(() => assertNever(loop as unknown as never, "unhandled"), {
+    name: "AssertionError",
+    message: "unhandled: [object Object]",
+  });
+});
+
+test("assertNever survives a symbol, which neither renderer accepts", () => {
+  assert.throws(
+    () => assertNever(Symbol("tag") as unknown as never, "unhandled"),
+    { name: "AssertionError", message: "unhandled: Symbol(tag)" },
+  );
 });

@@ -45,7 +45,39 @@ export function invariant(
  * TypeScript's knowledge.
  */
 export function assertNever(value: never, message: string): never {
-  throw new AssertionError(`${message}: ${render(value) ?? "undefined"}`);
+  throw new AssertionError(`${message}: ${render(value)}`);
+}
+
+/**
+ * Describe a value that the types said could not exist, without ever throwing
+ * while doing it.
+ *
+ * That last clause is the whole requirement. This runs on the failure path of
+ * an assertion, so an exception raised here replaces the caller's message —
+ * the one naming what went wrong — with a `TypeError` about rendering, and the
+ * defect that reached `assertNever` is reported as a defect in `assertNever`.
+ *
+ * Both fallbacks are reachable rather than defensive. `JSON.stringify` throws
+ * on a BigInt and on a circular structure, and a decoded golden trace produces
+ * the first: ITF serializes integers as `{#bigint}`, so the values arriving
+ * from the corpus in s3 are bigints. `String` throws on a symbol.
+ */
+function render(value: unknown): string {
+  try {
+    const json = stringify(value);
+    if (json !== undefined) {
+      return json;
+    }
+  } catch {
+    // Fall through to the string coercion, which renders a bigint as its
+    // digits and a circular object as `[object Object]` — both of which say
+    // more than nothing.
+  }
+  try {
+    return String(value);
+  } catch {
+    return "<unrenderable>";
+  }
 }
 
 /**
@@ -55,6 +87,6 @@ export function assertNever(value: never, message: string): never {
  * `assertNever` is by definition one the declared types were wrong about, so
  * this is the one place that overload cannot be taken at its word.
  */
-function render(value: unknown): string | undefined {
+function stringify(value: unknown): string | undefined {
   return JSON.stringify(value);
 }

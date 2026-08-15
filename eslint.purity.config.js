@@ -7,29 +7,76 @@
  * cannot see a three-hop path into `node:fs`, because it reads one file at a
  * time. Neither half is redundant and neither alone is the rule.
  *
+ * THIS HALF IS A ROSTER, AND `.dependency-cruiser.mjs` ARGUES AGAINST ROSTERS.
+ * The contradiction is real and worth stating rather than leaving to be found.
+ * The graph half can be spelled as a closed predicate — nothing reachable from
+ * the domain lies outside it — because "outside the domain" is decidable from
+ * a path. Ambient capability has no such predicate: the set of globals a
+ * JavaScript host offers is open, it grows with the runtime, and nothing about
+ * the shape of `Intl` distinguishes it from `Map` except knowing what it does.
+ * So this half is enumerated, which means it is exactly as complete as its
+ * last sweep — and the sweep is therefore dated. A roster with a date is
+ * honest; a roster presented as a closed rule is not.
+ *
+ * SWEPT 2026-08-15 against all 172 own properties of `globalThis` under node
+ * 22.18.0. Rostered everything that reads the world or introduces
+ * nondeterminism. Deliberately NOT rostered, with the reason: `structuredClone`,
+ * `atob`/`btoa`, `TextEncoder`/`TextDecoder` (pure, total, no ambient read);
+ * `URL`/`URLSearchParams` (parsers); `Request`/`Response`/`Headers`/`FormData`/
+ * `Blob`/`File` and the stream constructors (inert data types — they carry no
+ * capability until an adapter hands them one, and the graph half is what keeps
+ * that adapter out); `Proxy`/`Reflect` (metaprogramming whose only route to a
+ * capability runs through a name this roster already holds). Also checked and
+ * found NOT to be a hole: the builtin module names — `fs`, `child_process`,
+ * `net` and the rest — are own properties of `globalThis` under `node -e` and
+ * in the REPL, but `undefined` inside a loaded module, so a bare `fs.…` in a
+ * source file is a ReferenceError rather than an escape.
+ *
  * This file is a standalone flat config so the purity stage of
  * `.chug/tasks/check-ts.sh` can run it by itself, in milliseconds, without the
  * type information the full lint needs. `eslint.config.js` spreads the same
  * array in, so the rules have one definition and the whole-tree lint enforces
  * them too.
  *
- * WHAT IT CATCHES: any lexical reference to a named ambient global, any
+ * WHAT IT CATCHES: any lexical reference to a rostered ambient global, any
  * `Math.random()` or `Date.now()` property access, `eval`, `new Function`, a
- * dynamic `import()`, `require()`, and `import.meta`.
+ * dynamic `import()`, and `import.meta` — across every file extension the
+ * `DOMAIN_FILES` glob below admits.
  *
- * WHAT IT CANNOT CATCH, stated rather than hoped: a capability reached by
- * computed name (`globalThis["Da" + "te"]` — though `globalThis` itself is
- * restricted, which closes the readable spellings), and a capability handed in
- * as an argument by an impure caller. The second is not a hole but the design:
- * a decider is pure with respect to what it is given, and the model's own
- * `Core` is exactly that argument. What forbids a *port* from reaching the
- * domain is the module-graph half, not this one.
+ * WHAT IT CANNOT CATCH, stated rather than hoped:
+ *
+ *   1. A capability that is not on the roster. See the dated sweep. The
+ *      compensating control is not a promise to remember: the purity stage
+ *      hands `src/domain/` files to eslint EXPLICITLY under `--max-warnings=0`,
+ *      so a file this config does not match is a finding rather than a silent
+ *      skip. That gap is how a `.mts` file reached `Date.now()` and the whole
+ *      gate still printed clean.
+ *   2. A capability reached by computed name — `globalThis["Da" + "te"]`.
+ *      `globalThis`, `global`, `eval`, `new Function` and `WebAssembly` are all
+ *      rostered, which closes the readable spellings; obfuscation gets through.
+ *   3. A capability handed in as an argument by an impure caller. Not a hole
+ *      but the design: a decider is pure with respect to what it is given, and
+ *      the model's own `Core` is exactly that argument. What forbids a *port*
+ *      from reaching the domain is the module-graph half, not this one.
  */
 
 import tseslint from "typescript-eslint";
 
-/** The directory this file exists to govern. */
-export const DOMAIN_FILES = ["src/domain/**/*.ts"];
+/**
+ * The files this config governs. Every TypeScript extension rather than `.ts`
+ * alone: `.mts` and `.cts` are TypeScript that `tsc` compiles and that a
+ * `*.ts` glob silently declines to lint. `.d.ts` matches too, and costs
+ * nothing.
+ *
+ * Plain JavaScript is absent on purpose rather than by oversight. It is not
+ * permitted under `src/` at all — `.chug/tasks/check-ts.sh` fails its types
+ * stage on any file there that is not one of these three — because a `.js`
+ * file sits outside the typechecker's program, so "TypeScript strict" would
+ * quietly not apply to it. Rostering it here would have bought lint coverage
+ * for a file that is still type-invisible, which is the worse of the two
+ * answers.
+ */
+export const DOMAIN_FILES = ["src/domain/**/*.{ts,mts,cts}"];
 
 const why = (capability, reason) => ({
   name: capability,
@@ -39,13 +86,23 @@ const why = (capability, reason) => ({
 const NONDETERMINISM = "a replayed decision must produce the same record twice";
 const AMBIENT_IO = "the domain decides; it never performs";
 const HOST_COUPLING = "the domain runs identically wherever it is replayed";
+const SHARED_STATE =
+  "shared mutable state has no place below the single writer";
 
 const restrictedGlobals = [
   why("Date", NONDETERMINISM),
   why("performance", NONDETERMINISM),
+  why("Performance", NONDETERMINISM),
+  why("PerformanceObserver", NONDETERMINISM),
   why("WeakRef", NONDETERMINISM),
   why("FinalizationRegistry", NONDETERMINISM),
   why("crypto", NONDETERMINISM),
+  why("Crypto", NONDETERMINISM),
+  // Formats and resolves against the host's clock, calendar and time zone.
+  // `new Intl.DateTimeFormat("en-CA").format()` is a wall-clock read with no
+  // import and no clock anywhere in the expression, and
+  // `.resolvedOptions().timeZone` answers differently on a different machine.
+  why("Intl", NONDETERMINISM),
 
   why("process", AMBIENT_IO),
   why("console", AMBIENT_IO),
@@ -54,9 +111,13 @@ const restrictedGlobals = [
   why("WebSocket", AMBIENT_IO),
   why("EventSource", AMBIENT_IO),
   why("navigator", AMBIENT_IO),
+  why("Navigator", AMBIENT_IO),
   why("localStorage", AMBIENT_IO),
   why("sessionStorage", AMBIENT_IO),
   why("indexedDB", AMBIENT_IO),
+  why("BroadcastChannel", AMBIENT_IO),
+  why("MessageChannel", AMBIENT_IO),
+  why("MessagePort", AMBIENT_IO),
 
   why("setTimeout", AMBIENT_IO),
   why("setInterval", AMBIENT_IO),
@@ -65,6 +126,10 @@ const restrictedGlobals = [
   why("clearInterval", AMBIENT_IO),
   why("clearImmediate", AMBIENT_IO),
   why("queueMicrotask", AMBIENT_IO),
+  // `AbortSignal.timeout()` is a timer wearing another name, and cancellation
+  // is fabric vocabulary the machine deliberately does not know.
+  why("AbortSignal", AMBIENT_IO),
+  why("AbortController", AMBIENT_IO),
 
   why("globalThis", HOST_COUPLING),
   why("global", HOST_COUPLING),
@@ -76,12 +141,12 @@ const restrictedGlobals = [
   why("exports", HOST_COUPLING),
   why("__dirname", HOST_COUPLING),
   why("__filename", HOST_COUPLING),
+  // The remaining way to run code the typechecker never saw, alongside `eval`
+  // and `new Function` below.
+  why("WebAssembly", HOST_COUPLING),
 
-  why("Atomics", "shared mutable state has no place below the single writer"),
-  why(
-    "SharedArrayBuffer",
-    "shared mutable state has no place below the single writer",
-  ),
+  why("Atomics", SHARED_STATE),
+  why("SharedArrayBuffer", SHARED_STATE),
 ];
 
 export default [

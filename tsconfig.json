@@ -22,8 +22,7 @@
     "noEmit": true,
     "verbatimModuleSyntax": true,
 
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*"]
 }

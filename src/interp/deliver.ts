@@ -1,6 +1,7 @@
 /**
- * The interpretation layer's structural promise, on its own: each keyed effect
- * reaches its handler at most once, in issue order, within an explicit bound.
+ * The interpretation layer's structural promise, on its own: within one call,
+ * each keyed effect reaches its handler at most once, in issue order, within
+ * an explicit bound.
  *
  * Three engineering-bar items meet here and nowhere else. Effects "absorb on
  * redelivery" — so a sequence number already handled is skipped rather than
@@ -10,6 +11,15 @@
  * And issue order is checked rather than assumed, because a fresh effect
  * arriving behind one already handled means the caller reordered a journal,
  * which nothing downstream can detect.
+ *
+ * THE SCOPE OF "AT MOST ONCE" IS ONE CALL, and claiming more would be a
+ * promise this function is in no position to keep. The set of handled sequence
+ * numbers is built per call and discarded with it, so a redelivery arriving in
+ * a LATER batch is handled again — and the order check has no memory of the
+ * previous batch's high-water mark either. Absorption ACROSS calls needs a
+ * cursor that outlives them; that cursor is the executor's, and it is s5's.
+ * What is here is the within-batch half, which is the half that does not
+ * depend on a journal existing yet.
  *
  * It is generic in both the effect and the handler's result. The effect
  * vocabulary, the ports, and the interpreter that names them arrive in a later

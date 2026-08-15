@@ -83,9 +83,9 @@ fi
 # After every pure-shell gate, because a scripts-only change breaks those and
 # should not wait on a toolchain to hear so; before the shell suites, because
 # it is cheaper than they now are. Measured 2026-08-15 on this tree: the
-# pure-shell gates total 0.4s, check-ts 1.8s, the suites 8.7s — 7.3s of it
-# check-ts's own, which drives the real toolchain over fixture trees — and
-# check-model 50s. Cheapest first, all the way down.
+# pure-shell gates total 0.5s, check-ts 2.2s, the suites 14.0s — 12.5s of it
+# check-ts's own, which drives the real toolchain over twenty-seven fixture
+# trees — and check-model 50s. Cheapest first, all the way down.
 #
 # Guarded like the gates above rather than called unconditionally, and the
 # reason is worth writing down because the opposite reading is tempting: a
@@ -184,9 +184,12 @@ else
 fi
 
 # --- The model ---------------------------------------------------------------
-# Last because it is by far the slowest (~50s against ~5s for everything
-# above), and a fast gate that runs after a slow one is a fast gate nobody
-# benefits from.
+# Last because it is by far the slowest — ~50s against ~17s for everything
+# above, measured 2026-08-15, the toolchain gate and its fixture suite being
+# ~15s of that. The figure moves whenever a stage does, which is why it carries
+# a date rather than an approximation; the ORDERING rests on the ratio, and
+# that survives an order of magnitude of growth above. A fast gate that runs
+# after a slow one is a fast gate nobody benefits from.
 
 if [ -x ./.chug/tasks/check-model.sh ]; then
 	run_gate "check-model" ./.chug/tasks/check-model.sh

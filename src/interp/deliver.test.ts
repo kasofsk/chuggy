@@ -65,6 +65,18 @@ test("refuses a bound that is not a non-negative safe integer", () => {
   });
 });
 
+test("absorption is scoped to one call, exactly as the header claims", () => {
+  // Pinning the limit rather than the capability. The handled set is built per
+  // call and discarded with it, so the same effect handed to a second call is
+  // handled again; absorbing across calls needs a cursor that outlives them,
+  // which is s5's executor. If this ever reads `[0]`, the promise grew and the
+  // header went stale in the same moment.
+  const { handle, seen } = record();
+  deliverOnce([keyed(0, "a")], handle, 8);
+  deliverOnce([keyed(0, "a")], handle, 8);
+  assert.deepEqual(seen, [0, 0]);
+});
+
 test("delivers nothing when there is nothing to deliver", () => {
   const { handle, seen } = record();
   assert.deepEqual(deliverOnce([], handle, 0), []);

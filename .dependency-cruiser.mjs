@@ -9,16 +9,38 @@
  * roster would have to be edited every time the ecosystem grew a new way to
  * touch a disk, and the edit nobody makes is the hole.
  *
- * It is transitive by construction — `reachable` walks the graph — so the
- * three-hop path through two innocent-looking domain modules is caught exactly
- * as the direct import is.
+ * The anti-roster argument does NOT carry across to the other half, and
+ * `eslint.purity.config.js` is exactly the roster this paragraph disparages.
+ * Its header states the contradiction and why it is unavoidable there: "not
+ * under src/domain/" is decidable from a path, while "is an ambient
+ * capability" is not decidable from anything, so that half is enumerated and
+ * dated and this half is not. Two halves, two shapes, one rule.
+ *
+ * It is transitive by construction — `reachable` walks the graph. What that
+ * buys over the direct form is narrower than it looks and worth writing down,
+ * because a test case once claimed the wrong credit for it: a chain of
+ * ordinary domain modules ending outside the domain is caught by the direct
+ * form too, since every hop's SOURCE is itself a domain file in the `from`
+ * set. `reachable` earns its place on the paths the `from` set excludes —
+ * through a `.test.ts` file — and on reporting the chain's origin rather than
+ * only its last hop.
  *
  * WHAT IT CATCHES: any import, static or type-only, from a `src/domain/`
  * module to anything not under `src/domain/`, at any depth.
  *
- * WHAT IT CANNOT CATCH: a capability reached without an import — that is the
- * lint half's job — and a capability passed in as a function argument, which
- * is not a breach but the design.
+ * WHAT IT CANNOT CATCH:
+ *
+ *   1. A capability reached without an import. That is the lint half's job,
+ *      and neither half covers for the other.
+ *   2. A capability passed in as a function argument — not a breach but the
+ *      design.
+ *   3. Anything a `.test.ts` reaches on its own account. Domain tests are
+ *      excluded from every `from` set below, because a domain test must be
+ *      able to import `node:test`. The exemption is compensated twice over:
+ *      `domain-not-through-its-tests` stops domain source depending on a test
+ *      file at all, and `eslint.purity.config.js` covers `src/domain/` tests
+ *      with the full ambient roster, so the exempted files are unpoliced only
+ *      with respect to imports and only while nothing ships them.
  */
 
 /** @type {import("dependency-cruiser").IConfiguration} */
@@ -29,7 +51,7 @@ export default {
       severity: "error",
       comment:
         "src/domain/ must reach nothing outside itself: no node builtin, no package, no sibling layer, at any depth.",
-      from: { path: "^src/domain/", pathNot: "[.]test[.]ts$" },
+      from: { path: "^src/domain/", pathNot: "[.]test[.](ts|mts|cts)$" },
       to: { reachable: true, pathNot: "^src/domain/" },
     },
     {
@@ -37,15 +59,15 @@ export default {
       severity: "error",
       comment:
         "Domain source may not import a domain test. This is not the purity rule wearing a second hat: `domain-is-pure` already catches an impure test file, because whatever that file reaches is reachable from the source that imported it. What this catches is the case that one cannot — a domain module depending on a fixture that exists only for the suite, and so is not part of what the domain ships.",
-      from: { path: "^src/domain/", pathNot: "[.]test[.]ts$" },
-      to: { reachable: true, path: "[.]test[.]ts$" },
+      from: { path: "^src/domain/", pathNot: "[.]test[.](ts|mts|cts)$" },
+      to: { reachable: true, path: "[.]test[.](ts|mts|cts)$" },
     },
     {
       name: "effects-reach-only-domain",
       severity: "error",
       comment:
         "An effect is data describing a request to the world, so the effect vocabulary may reach the domain and nothing above it. This adds no protection to the domain, which cannot import upward anyway; it protects the meaning of the effects layer.",
-      from: { path: "^src/effects/", pathNot: "[.]test[.]ts$" },
+      from: { path: "^src/effects/", pathNot: "[.]test[.](ts|mts|cts)$" },
       to: { reachable: true, pathNot: "^src/(effects|domain)/" },
     },
     {

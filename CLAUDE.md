@@ -22,7 +22,10 @@ just check          # everything
 The pre-commit hook runs the fast subset and is installed with `git config core.hooksPath .githooks` — **a fresh clone needs that once**.
 
 Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
-slowest by far is `check-model.sh` (~50s against ~5s for everything else),
+slowest by far is `check-model.sh` (~50s against ~17s for everything else,
+measured 2026-08-15 — the figure moves whenever a stage is added, so re-measure
+rather than rounding, and `.chug/tasks/ci.sh` carries the same pair beside the
+ordering it justifies),
 which is why it runs last and never in the hook. Every gate exits 0 clean, 1 on a finding, **2 when it could not run** — and 2 is not a pass. The sequencing lives in `.chug/tasks/ci.sh`; the justfile is a thin wrapper, and the hook calls the scripts directly because `just` may not be installed.
 
 That path is not a placeholder. When this repo is eventually orchestrated by the platform it implements, `.chug/tasks/ci.sh` becomes the command evaluator every job runs, unchanged.
