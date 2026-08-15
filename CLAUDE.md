@@ -22,7 +22,7 @@ just check          # everything
 The pre-commit hook runs the fast subset and is installed with `git config core.hooksPath .githooks` — **a fresh clone needs that once**.
 
 Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
-slowest by far is `check-model.sh` (~50s against ~17s for everything else,
+slowest by far is `check-model.sh` (~50s against ~19s for everything else,
 measured 2026-08-15 — the figure moves whenever a stage is added, so re-measure
 rather than rounding, and `.chug/tasks/ci.sh` carries the same pair beside the
 ordering it justifies),

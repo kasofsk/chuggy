@@ -49,14 +49,36 @@ test("assertNever survives a value JSON declines to render", () => {
   });
 });
 
-// The three ways rendering can THROW rather than decline. Each would otherwise
+test("assertNever renders a symbol through the string coercion", () => {
+  // JSON.stringify DECLINES a symbol (returns undefined) rather than throwing;
+  // `String` renders it. Both halves matter, because the docblock used to
+  // claim `String` throws here and it does not.
+  assert.throws(
+    () => assertNever(Symbol("tag") as unknown as never, "unhandled"),
+    { name: "AssertionError", message: "unhandled: Symbol(tag)" },
+  );
+});
+
+// Rendering that THROWS rather than declines. Each of these would otherwise
 // replace the caller's message with a TypeError about rendering — reporting a
 // defect in assertNever instead of the defect that reached it.
 
-test("assertNever survives a bigint, which a decoded ITF trace produces", () => {
+test("assertNever survives a bare bigint", () => {
   assert.throws(() => assertNever(42n as unknown as never, "unhandled tag"), {
     name: "AssertionError",
-    message: "unhandled tag: 42",
+    message: 'unhandled tag: "42n"',
+  });
+});
+
+test("assertNever keeps the tag of a record carrying bigint fields", () => {
+  // The shape s3 will actually decode: ITF serializes integers as bigints, so
+  // the unhandled value is a RECORD with bigint fields. Without the replacer
+  // JSON.stringify throws on the whole record and the string coercion renders
+  // it `[object Object]` — losing the one field that names the unhandled case.
+  const decoded = { tag: "operator-retry", seq: 7n } as unknown as never;
+  assert.throws(() => assertNever(decoded, "unhandled step"), {
+    name: "AssertionError",
+    message: 'unhandled step: {"tag":"operator-retry","seq":"7n"}',
   });
 });
 
@@ -69,9 +91,16 @@ test("assertNever survives a circular structure", () => {
   });
 });
 
-test("assertNever survives a symbol, which neither renderer accepts", () => {
-  assert.throws(
-    () => assertNever(Symbol("tag") as unknown as never, "unhandled"),
-    { name: "AssertionError", message: "unhandled: Symbol(tag)" },
-  );
+test("assertNever survives a value neither renderer can touch", () => {
+  // The last branch takes a value that defeats both: a null-prototype object
+  // (no `toString`, so `String` throws) inside a cycle (so JSON throws too).
+  const opaque: Record<string, unknown> = Object.create(null) as Record<
+    string,
+    unknown
+  >;
+  opaque["self"] = opaque;
+  assert.throws(() => assertNever(opaque as unknown as never, "unhandled"), {
+    name: "AssertionError",
+    message: "unhandled: <unrenderable>",
+  });
 });

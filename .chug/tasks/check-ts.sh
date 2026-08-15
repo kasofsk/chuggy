@@ -23,11 +23,22 @@
 # file no configuration matches is a finding instead of a silence. Both halves
 # above are only as wide as the globs that select their inputs, and a glob is
 # the one part of a rule that fails without saying anything — a `.mts` file
-# under a `*.ts` glob was neither typechecked nor linted while this gate
-# printed clean on all five stages. Widening the globs fixed that file;
-# passing the files explicitly is what makes the next extension loud. The
-# types stage carries the matching floor: `src/` holds TypeScript and nothing
-# else, so no file there can sit outside the program `tsconfig.json` describes.
+# under a `*.ts` glob went UNLINTED while this gate printed clean on all five
+# stages, and `Date.now()` inside it was therefore invisible to the ambient
+# roster. It was still typechecked, as long as something imported it: an
+# import pulls a file into the program whatever the `include` glob says, so
+# tsc reported type errors inside that same file while eslint never opened it.
+# Only the linting was missing, and the ambient half is entirely lint.
+# Widening the globs fixed that file; passing the files explicitly is what
+# makes the next extension loud.
+#
+# THAT FLOOR DOES NOT COVER JAVASCRIPT, and the types stage is what does.
+# ESLint always has a configuration for `.js`, `.mjs` and `.cjs`, so no
+# "ignored" warning ever fires for them and `--max-warnings=0` has nothing to
+# escalate. What keeps them out is the stray check below: `src/` holds
+# TypeScript and nothing else, so no file there can sit outside the program
+# `tsconfig.json` describes. Two floors, two file classes, neither covering
+# for the other.
 #
 # WHY ONE GATE AND NOT FIVE. `.chug/tasks/check-gates.sh` requires a sibling
 # suite per gate, so five gates over one toolchain would be five suites sharing
@@ -166,7 +177,12 @@ stage_types() {
 	# it may not be there. `tsconfig.json` includes `src/**` and lets tsc
 	# expand the extension list, so this check and that include cannot drift
 	# into disagreeing about what a TypeScript file is.
-	strays="$(find src -type f ! -name '*.ts' ! -name '*.mts' ! -name '*.cts' 2>/dev/null || true)"
+	#
+	# `-L` because plain `find -type f` does not match a symlink at all, so a
+	# symlinked stray would walk past a check whose whole job is to notice
+	# strays. The same flag, for the same reason, builds the purity stage's
+	# file list.
+	strays="$(find -L src -type f ! -name '*.ts' ! -name '*.mts' ! -name '*.cts' 2>/dev/null || true)"
 	if [ -n "$strays" ]; then
 		{
 			echo "check-ts: src/ holds files that are not TypeScript, so tsc never sees them:"
@@ -267,10 +283,33 @@ stage_purity() {
 	# `--max-warnings=0` turns that into the finding it is. The globs were
 	# widened too, but only this makes the NEXT extension loud instead of
 	# silent.
+	#
+	# THAT SAME EXPLICIT LIST IS ALSO WHERE THE STAGE CAN GO BLIND, which is
+	# the price of building it here rather than letting eslint walk the tree.
+	# `find -type f` does not match a symlink, so a symlinked domain module was
+	# dropped from the list and this stage printed clean over a file it never
+	# opened — on the path the package scripts advertise for every save. `-L`
+	# resolves them. A BROKEN symlink resolves to nothing and so cannot be
+	# linted at all: under `-L` it stops being `-type f` and becomes `-type l`,
+	# which is precisely the shape that would vanish from the list in silence,
+	# so it is looked for by name and reported. Could-not-run would be the
+	# wrong verdict for it — nothing about the toolchain failed; a file in the
+	# tree points at nothing, which is a defect in the tree, the same class as
+	# the stray `.js` the types stage rejects.
+	dangling="$(find -L src/domain -type l 2>/dev/null || true)"
+	if [ -n "$dangling" ]; then
+		{
+			echo "check-ts: src/domain holds symlinks that resolve to nothing, so the"
+			echo "check-ts: ambient half cannot read them:"
+			printf '%s\n' "$dangling" | sed 's/^/    /'
+		} >>"$OUT"
+		verdict=1
+	fi
+
 	set -f
 	IFS='
 '
-	set -- $(find src/domain -type f 2>/dev/null || true)
+	set -- $(find -L src/domain -type f 2>/dev/null || true)
 	unset IFS
 	set +f
 	if [ "$#" -eq 0 ]; then

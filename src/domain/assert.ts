@@ -57,10 +57,23 @@ export function assertNever(value: never, message: string): never {
  * the one naming what went wrong — with a `TypeError` about rendering, and the
  * defect that reached `assertNever` is reported as a defect in `assertNever`.
  *
- * Both fallbacks are reachable rather than defensive. `JSON.stringify` throws
- * on a BigInt and on a circular structure, and a decoded golden trace produces
- * the first: ITF serializes integers as `{#bigint}`, so the values arriving
- * from the corpus in s3 are bigints. `String` throws on a symbol.
+ * Every branch is reachable rather than defensive, and each is reached by a
+ * different kind of value:
+ *
+ *   - `JSON.stringify` RETURNS UNDEFINED for a function, a bare `undefined`
+ *     and a symbol. Those fall to the string coercion, which renders all
+ *     three.
+ *   - It THROWS on a circular structure — and would throw on a bigint, which
+ *     is why the replacer below exists. A decoded golden trace is the reason
+ *     to care: ITF serializes integers as `{#bigint}`, so what arrives from
+ *     the corpus in s3 is a record with bigint FIELDS, and coercing that whole
+ *     record with `String` would render it `[object Object]` and lose the very
+ *     tag that names the unhandled case. The replacer keeps the record
+ *     renderable as a record.
+ *   - `String` throws on an object with a null prototype, which has no
+ *     `toString` to call. Reaching the last branch therefore takes a value
+ *     that defeats both — a null-prototype object inside a cycle is the
+ *     smallest one, and it is what the test uses.
  */
 function render(value: unknown): string {
   try {
@@ -69,9 +82,7 @@ function render(value: unknown): string {
       return json;
     }
   } catch {
-    // Fall through to the string coercion, which renders a bigint as its
-    // digits and a circular object as `[object Object]` — both of which say
-    // more than nothing.
+    // Fall through to the string coercion.
   }
   try {
     return String(value);
@@ -81,12 +92,23 @@ function render(value: unknown): string {
 }
 
 /**
+ * Renders a bigint as its digits with an `n` suffix, so a record carrying one
+ * survives `JSON.stringify` instead of throwing the whole record away. The
+ * suffix is deliberate: it keeps the rendering unambiguous against a string
+ * field that happened to hold digits.
+ */
+function bigintsAsDigits(_key: string, value: unknown): unknown {
+  return typeof value === "bigint" ? `${value.toString()}n` : value;
+}
+
+/**
  * `JSON.stringify` at the return type it actually has. The standard library
  * declares the one-argument overload as returning `string`, and it returns
- * `undefined` for a function or a bare `undefined` — and the value that reaches
- * `assertNever` is by definition one the declared types were wrong about, so
- * this is the one place that overload cannot be taken at its word.
+ * `undefined` for a function, a bare `undefined` and a symbol — and the value
+ * that reaches `assertNever` is by definition one the declared types were
+ * wrong about, so this is the one place that overload cannot be taken at its
+ * word.
  */
 function stringify(value: unknown): string | undefined {
-  return JSON.stringify(value);
+  return JSON.stringify(value, bigintsAsDigits);
 }

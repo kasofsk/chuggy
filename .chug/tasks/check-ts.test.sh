@@ -15,10 +15,10 @@
 # purity rule learns nothing from also formatting the fixture. Two cases run
 # every stage on purpose: one to show a clean tree is clean, and one to show
 # that a finding in an early stage does not stop a later one from reporting its
-# own. The suite is ~13.1s in total (measured 2026-08-15, twenty-six fixture
+# own. The suite is ~14.6s in total (measured 2026-08-15, twenty-nine fixture
 # trees); it is the slowest thing `.chug/tasks/ci.sh` runs before the model, so
-# a new case should earn its second — which is why the eleven roster
-# assertions share one run rather than scaffolding eleven times.
+# a new case should earn its second — which is why the seventeen roster
+# assertions share one run rather than scaffolding seventeen times.
 #
 # THE POSITIVE CONTROL IS A CASE, NOT A COMMENT. `Date.now()` in
 # `src/adapters/` must stay clean while the identical call in `src/domain/` is
@@ -139,6 +139,12 @@ export const timings = (): unknown => Performance;
 export const agent = (): unknown => Navigator;
 export const cipher = (): unknown => Crypto;
 export const bytecode = (): unknown => WebAssembly.Module;
+export const stamped = (): unknown => new File(["b"], "n").lastModified;
+export const ticked = (): unknown => new Event("tick").timeStamp;
+export const custom = (): unknown => new CustomEvent("c").timeStamp;
+export const posted = (): unknown => new MessageEvent("m").timeStamp;
+export const mark = (): unknown => PerformanceMark;
+export const measure = (): unknown => PerformanceMeasure;
 TS
 run purity
 check "Intl is rostered (a wall clock and a host time zone)" 1 "$RC" 'may not reach `Intl`'
@@ -152,8 +158,31 @@ check "Performance is rostered" 1 "$RC" 'may not reach `Performance`'
 check "Navigator is rostered" 1 "$RC" 'may not reach `Navigator`'
 check "Crypto is rostered" 1 "$RC" 'may not reach `Crypto`'
 check "WebAssembly is rostered" 1 "$RC" 'may not reach `WebAssembly`'
+# `File` stamps lastModified from the wall clock; `Blob`, the other half of the
+# pair, has no such property and stays off the roster. The pair is why the
+# roster turns on what instances return rather than on what a constructor is
+# for, so both directions are asserted — the decline is checked in case 4.
+check "File is rostered (lastModified is the wall clock)" 1 "$RC" 'may not reach `File`'
+check "Event is rostered (timeStamp is a monotonic clock)" 1 "$RC" 'may not reach `Event`'
+check "CustomEvent is rostered" 1 "$RC" 'may not reach `CustomEvent`'
+check "MessageEvent is rostered" 1 "$RC" 'may not reach `MessageEvent`'
+check "PerformanceMark is rostered" 1 "$RC" 'may not reach `PerformanceMark`'
+check "PerformanceMeasure is rostered" 1 "$RC" 'may not reach `PerformanceMeasure`'
 
-# 4. The module-graph half: a direct import of a node builtin.
+# 4. The other direction, and the only case in this suite that asserts a name is
+#    DECLINED. `Blob` was declined by the same reasoning that wrongly declined
+#    `File`, so the decline needs a pin of its own: if a later sweep rosters
+#    `Blob` for symmetry, this turns red and the sweep has to say why on the
+#    evidence rather than on the family resemblance.
+scaffold
+cat >>"$R/src/domain/pure.ts" <<'TS'
+
+export const inert = (): unknown => new Blob(["b"]).size;
+TS
+run purity
+check "Blob stays declined, having no clock to read" 0 "$RC" "purity clean"
+
+# 5. The module-graph half: a direct import of a node builtin.
 scaffold
 cat >>"$R/src/domain/pure.ts" <<'TS'
 
@@ -162,7 +191,7 @@ TS
 run purity
 check "node:fs in src/domain is a finding" 1 "$RC" "domain-is-pure"
 
-# 5. The breach three hops down. Nothing in `pure.ts` looks impure; it imports
+# 6. The breach three hops down. Nothing in `pure.ts` looks impure; it imports
 #    a neighbour that imports a neighbour.
 #
 #    THE ASSERTION IS ON THE CHAIN'S ORIGIN, and the earlier version of this
@@ -188,10 +217,13 @@ run purity
 check "a transitive path out of src/domain names its origin" 1 "$RC" \
 	"domain-is-pure: src/domain/pure.ts → fs"
 
-# 6. A/B on the file extension, and the reason this case exists: a byte-identical
+# 7. A/B on the file extension, and the reason this case exists: a byte-identical
 #    clock was a finding in `pure.ts` and clean in `pure.mts`, because both lint
-#    configs globbed `*.ts` and tsc's include did too. The A half is case 2; this
-#    is the B half, and it fails if either glob narrows back.
+#    configs globbed `*.ts`. The A half is case 2; this is the B half, and it
+#    fails if either glob narrows back. (`tsc` still SAW the `.mts` file
+#    whenever something imported it — an import pulls a file into the program
+#    whatever `include` says — so what was missing was the lint, which is the
+#    whole of the ambient half.)
 scaffold
 cat >"$R/src/domain/clock.mts" <<'TS'
 export function stamp(): number {
@@ -201,7 +233,7 @@ TS
 run purity
 check "a clock in a .mts domain file is a finding too" 1 "$RC" 'may not reach `Date`'
 
-# 7. The floor beneath both globs. A file under `src/domain/` that no purity
+# 8. The floor beneath both globs. A file under `src/domain/` that no purity
 #    configuration matches must be a FINDING and not a silence — which is the
 #    property that makes the next extension loud without anyone remembering to
 #    widen a glob for it. Handed a directory, eslint would never have seen this
@@ -212,20 +244,53 @@ run purity
 check "a file no purity config matches is a finding" 1 "$RC" \
 	"File ignored because no matching configuration was supplied"
 
-# 8. The matching floor under the types stage: `src/` holds TypeScript and
+# 9. The matching floor under the types stage: `src/` holds TypeScript and
 #    nothing else. A `.js` file there would be outside the program
 #    `tsconfig.json` describes, so `strict` would not apply to it while every
 #    module around it could still import it — lint coverage would not fix that,
 #    which is why it may not be there at all rather than be covered.
+#
+#    This floor and case 7's are not interchangeable: eslint always has a
+#    configuration for `.js`, so no "ignored" warning fires for one and
+#    `--max-warnings=0` has nothing to escalate. JavaScript is caught here or
+#    not at all.
 scaffold
 printf 'export const untyped = 1;\n' >"$R/src/domain/sneak.js"
 run types
 check "JavaScript under src/ is a finding" 1 "$RC" "src/domain/sneak.js"
 
-# 9. The compensating control for the graph half's `.test.ts` exemption: domain
-#    tests are exempt from the module-graph `from` set, so the ambient roster
-#    has to cover them. Narrowing the purity glob to exclude `.test.ts` turns
-#    this red and nothing else.
+# 10. A symlinked domain module. `find -type f` does not match a symlink, so
+#     building the purity stage's file list without `-L` dropped this file
+#     silently — and this is the stage the package scripts advertise for every
+#     save, so silence here is the expensive kind.
+scaffold
+mkdir -p "$R/vendor"
+cat >"$R/vendor/clock.ts" <<'TS'
+export function stamp(): number {
+  return Date.now();
+}
+TS
+ln -s ../../vendor/clock.ts "$R/src/domain/clock.ts"
+run purity
+check "a symlinked domain module is read, not skipped" 1 "$RC" 'may not reach `Date`'
+
+# 11. And a symlink resolving to nothing. Under `-L` it stops being a file and
+#     would drop out of the list exactly as the unresolved case above did, so
+#     it is looked for by name. A finding rather than could-not-run: nothing
+#     about the toolchain failed, a file in the tree points at nothing.
+scaffold
+ln -s ../../vendor/missing.ts "$R/src/domain/dangling.ts"
+run purity
+check "a dangling symlink in src/domain is loud, not silent" 1 "$RC" \
+	"resolve to nothing"
+
+# 12. The compensating control for the graph half's `.test.ts` exemption: domain
+#     tests are exempt from the module-graph `from` set, so the ambient roster
+#     has to cover them. This case is the one that asserts the property by
+#     name; narrowing the purity glob to exclude `.test.ts` also reddens two
+#     others, because case 7's file-list floor then reports every fixture's own
+#     `pure.test.ts` as unmatched. That is defence in depth rather than a
+#     second copy of this check.
 scaffold
 cat >>"$R/src/domain/pure.test.ts" <<'TS'
 
@@ -236,7 +301,7 @@ TS
 run purity
 check "the ambient roster covers domain tests" 1 "$RC" 'may not reach `Date`'
 
-# 10. The positive control. The same call one directory across is legal, so the
+# 13. The positive control. The same call one directory across is legal, so the
 #    rule is scoped to the directory it names rather than to the tree.
 scaffold
 cat >"$R/src/adapters/clock.ts" <<'TS'
@@ -247,7 +312,7 @@ TS
 run purity
 check "Date.now in src/adapters is clean" 0 "$RC" "purity clean"
 
-# 11. Hiding the impure module behind a test name inside the directory does not
+# 14. Hiding the impure module behind a test name inside the directory does not
 #    work either — and `domain-is-pure` is what stops it, not the rule about
 #    test imports: whatever the test file reaches is reachable from the source
 #    that imported it, so the node builtin is outside `src/domain/` however
@@ -263,7 +328,7 @@ TS
 run purity
 check "a test file is no shelter for an impure import" 1 "$RC" "domain-is-pure"
 
-# 12. The rule about test imports, pinned where nothing else can fire: an inert
+# 15. The rule about test imports, pinned where nothing else can fire: an inert
 #    domain test, reaching nothing at all, imported by domain source. Only
 #    `domain-not-through-its-tests` has anything to say here, so downgrading or
 #    deleting it turns this case red and no other.
@@ -278,7 +343,7 @@ TS
 run purity
 check "domain source may not import a domain test" 1 "$RC" "domain-not-through-its-tests"
 
-# 13. Types.
+# 16. Types.
 scaffold
 cat >>"$R/src/domain/pure.ts" <<'TS'
 
@@ -287,7 +352,7 @@ TS
 run types
 check "a type error is a finding" 1 "$RC" "is not assignable to type"
 
-# 14. Lint, on the rule that mechanizes the engineering bar rather than a
+# 17. Lint, on the rule that mechanizes the engineering bar rather than a
 #    stylistic one: a union switched without every arm.
 scaffold
 cat >>"$R/src/domain/pure.ts" <<'TS'
@@ -305,13 +370,13 @@ TS
 run lint
 check "a non-exhaustive switch is a finding" 1 "$RC" "Switch is not exhaustive"
 
-# 15. Format.
+# 18. Format.
 scaffold
 printf 'export const spaced   =    1\n' >"$R/src/domain/ugly.ts"
 run format
 check "an unformatted file is a finding" 1 "$RC" "src/domain/ugly.ts"
 
-# 16. A failing test is a finding, not an error.
+# 19. A failing test is a finding, not an error.
 scaffold
 cat >"$R/src/domain/broken.test.ts" <<'TS'
 import assert from "node:assert/strict";
@@ -324,7 +389,7 @@ TS
 run test
 check "a failing test is a finding" 1 "$RC" "check-ts: FINDING — test"
 
-# 17. No test files at all exits 2, not 0. A test runner handed a glob that
+# 20. No test files at all exits 2, not 0. A test runner handed a glob that
 #     matches nothing exits clean with zero tests, which is the one way this
 #     stage could pass while checking nothing.
 scaffold
@@ -332,7 +397,7 @@ rm "$R/src/domain/pure.test.ts"
 run test
 check "no tests found exits 2, not 0" 2 "$RC" "matched nothing"
 
-# 18. Every selected stage runs. Two defects in different stages, one run, both
+# 21. Every selected stage runs. Two defects in different stages, one run, both
 #     reported — a gate that stopped at the first would hide the second.
 scaffold
 printf 'export const spaced   =    1\n' >"$R/src/domain/ugly.ts"
@@ -356,13 +421,13 @@ grep -qF "check-ts: FINDING — format" "$OUT" || {
 # 2 gets a case, because the branch that answers 2 is the one that runs on the
 # day nobody is watching.
 
-# 19. No toolchain installed.
+# 22. No toolchain installed.
 scaffold
 rm "$R/node_modules"
 run
 check "a missing node_modules exits 2, not 0" 2 "$RC" "npm ci"
 
-# 20. A stage whose tool could not run at all, as opposed to one that ran and
+# 23. A stage whose tool could not run at all, as opposed to one that ran and
 #     disagreed. eslint reserves exit 2 for a configuration it cannot load;
 #     turning that arm into a finding would report a linter that never linted
 #     as a linter that found something.
@@ -371,7 +436,7 @@ printf 'export default [ this is not javascript\n' >"$R/eslint.config.js"
 run lint
 check "an unloadable lint config exits 2, not 1" 2 "$RC" "could not run"
 
-# 21. depcruise printing no verdict. Its exit code is a violation count, so a
+# 24. depcruise printing no verdict. Its exit code is a violation count, so a
 #     crash and a finding are the same number; the printed line is the only
 #     thing that separates them, and this is the guard that reads it.
 scaffold
@@ -379,7 +444,7 @@ rm "$R/.dependency-cruiser.mjs"
 run purity
 check "depcruise with no verdict exits 2, not 1" 2 "$RC" "produced no verdict"
 
-# 22. And the other direction: depcruise hands its violation COUNT to
+# 25. And the other direction: depcruise hands its violation COUNT to
 #     `process.exit`, so a shell reads 256 violations as status 0. Measured,
 #     not theorised — 256 domain files each importing `node:fs` exits 0 and
 #     prints `256 errors`. A gate that trusted the code would call the dirtiest
@@ -395,7 +460,7 @@ run purity
 check "256 violations wrap the exit code to 0 and are still a finding" 1 "$RC" \
 	"256 errors"
 
-# 23. A node that cannot run TypeScript. Simulated faithfully rather than
+# 26. A node that cannot run TypeScript. Simulated faithfully rather than
 #     mocked: the shim is the real binary with type stripping switched off, so
 #     both the probe and the test run behave exactly as they would on a host
 #     below the version `package.json` requires. Without the probe this reads
@@ -416,7 +481,7 @@ set -e
 check "a node that cannot strip types exits 2, not 1" 2 "$RC" \
 	"cannot run TypeScript directly"
 
-# 24. The types stage's own could-not-run: the project file is absent. tsc
+# 27. The types stage's own could-not-run: the project file is absent. tsc
 #     answers a MALFORMED tsconfig with the same code it uses for a type
 #     error, so that case is a finding by design and stated as such in the
 #     gate; an absent one is genuinely could-not-run and is guarded before tsc
@@ -426,7 +491,7 @@ rm "$R/tsconfig.json"
 run types
 check "a missing tsconfig.json exits 2, not 1" 2 "$RC" "tsconfig.json is missing"
 
-# 25. An empty domain is not a pure one. If the ambient half is handed no
+# 28. An empty domain is not a pure one. If the ambient half is handed no
 #     files it has checked nothing, and printing "purity clean" for that is the
 #     same lie as a test glob that matched nothing.
 scaffold
@@ -435,11 +500,11 @@ mkdir -p "$R/src/domain"
 run purity
 check "an empty src/domain exits 2, not 0" 2 "$RC" "checked nothing"
 
-# 26. Outside a git checkout there is no tree to judge.
+# 29. Outside a git checkout there is no tree to judge.
 run_in "$BARE"
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
 
-# 27. An unknown stage is a caller error, not a silent full run.
+# 30. An unknown stage is a caller error, not a silent full run.
 scaffold
 run nosuchstage
 check "an unknown stage exits 2" 2 "$RC" "unknown stage nosuchstage"
