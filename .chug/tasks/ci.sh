@@ -79,6 +79,30 @@ if [ -x ./.chug/tasks/check-gates.sh ]; then
 	run_gate "check-gates" ./.chug/tasks/check-gates.sh
 fi
 
+# --- The TypeScript toolchain ------------------------------------------------
+# After every pure-shell gate, because a scripts-only change breaks those and
+# should not wait on a toolchain to hear so; before the shell suites, because
+# it is cheaper than they now are. Measured 2026-08-15 on this tree: the
+# pure-shell gates total 0.4s, check-ts 1.8s, the suites 8.7s — 7.3s of it
+# check-ts's own, which drives the real toolchain over fixture trees — and
+# check-model 50s. Cheapest first, all the way down.
+#
+# Guarded like the gates above rather than called unconditionally, and the
+# reason is worth writing down because the opposite reading is tempting: a
+# purity gate that quietly vanished would read exactly like a passing one.
+# Three things make the guard the better answer anyway. The `-x` form is what
+# every gate but the first uses. The fixtures in `.chug/tasks/ci.test.sh`
+# exercise the sequencer, not the roster, and requiring each to stub every gate
+# would give this file the list-to-update that the suite stage's discovery glob
+# exists to avoid. And the failure the unconditional form would catch is caught
+# already, one stage down: `.chug/tasks/check-ts.test.sh` invokes the script
+# directly and fails loudly when it is missing or not executable, and
+# `.chug/tasks/check-gates.sh` is what keeps that suite from going missing too.
+
+if [ -x ./.chug/tasks/check-ts.sh ]; then
+	run_gate "check-ts" ./.chug/tasks/check-ts.sh
+fi
+
 # --- Shell suites ------------------------------------------------------------
 # The gates' own tests. Discovery is a glob over tracked files, so adding a
 # suite is enough — there is no list to update. A glob matching nothing is a

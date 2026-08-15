@@ -1,0 +1,18 @@
+# Prettier governs the TypeScript sources and the JavaScript configuration
+# files. Everything below is owned by something else, and two formatters over
+# one file is the same disagreement as two copies of a rule.
+
+node_modules/
+dist/
+coverage/
+
+# `.chug/tasks/doc-lint.sh` owns the markdown, and prose is the one thing a
+# code formatter reflows destructively — it would rewrite PLAN.md's tables.
+*.md
+
+# npm writes these, and it rewrites them on every install.
+package-lock.json
+
+# Quint sources. Prettier has no parser for them and `model/` is not ours to
+# reformat.
+model/

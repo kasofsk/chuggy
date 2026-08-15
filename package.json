@@ -1,7 +1,26 @@
 {
   "name": "chuggy",
   "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "check": "./.chug/tasks/check-ts.sh",
+    "format": "./node_modules/.bin/prettier --write .",
+    "lint": "./.chug/tasks/check-ts.sh lint",
+    "purity": "./.chug/tasks/check-ts.sh purity",
+    "test": "./.chug/tasks/check-ts.sh test",
+    "typecheck": "./.chug/tasks/check-ts.sh types"
+  },
   "devDependencies": {
-    "@informalsystems/quint": "0.32.0"
+    "@eslint/js": "10.0.1",
+    "@informalsystems/quint": "0.32.0",
+    "@types/node": "22.20.1",
+    "dependency-cruiser": "18.2.0",
+    "eslint": "10.8.1",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0"
   }
 }
