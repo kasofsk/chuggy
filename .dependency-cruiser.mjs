@@ -36,7 +36,7 @@ export default {
       name: "domain-not-through-its-tests",
       severity: "error",
       comment:
-        "A domain test may import node:test; domain source may not import a domain test. Without this, `domain-is-pure` would be satisfiable by hiding the impure module behind a `.test.ts` name inside the directory it governs.",
+        "Domain source may not import a domain test. This is not the purity rule wearing a second hat: `domain-is-pure` already catches an impure test file, because whatever that file reaches is reachable from the source that imported it. What this catches is the case that one cannot — a domain module depending on a fixture that exists only for the suite, and so is not part of what the domain ships.",
       from: { path: "^src/domain/", pathNot: "[.]test[.]ts$" },
       to: { reachable: true, path: "[.]test[.]ts$" },
     },

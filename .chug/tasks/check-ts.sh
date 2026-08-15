@@ -169,22 +169,25 @@ stage_lint() {
 stage_purity() {
 	verdict=0
 
-	# The module graph. depcruise exits with the NUMBER of violations, so the
-	# exit code alone cannot separate "three findings" from "crashed with code
-	# three" — the verdict line is what distinguishes them, the same way
-	# `.chug/tasks/check-duplication.sh` refuses to read a fetch failure as
-	# "no duplication".
+	# The module graph. depcruise exits with the NUMBER of error-severity
+	# violations, so the exit code alone cannot separate "three findings" from
+	# "crashed with code three" — the verdict line is what distinguishes them,
+	# the same way `.chug/tasks/check-duplication.sh` refuses to read a fetch
+	# failure as "no duplication". Once a verdict has been printed the code is
+	# trustworthy and it is the only thing read, because it counts errors while
+	# the printed line counts violations of every severity. Every rule in
+	# `.dependency-cruiser.mjs` is severity `error` for exactly that reason: a
+	# rule that could be violated without reddening this gate is a rule this
+	# gate does not enforce.
 	set +e
 	"$DEPCRUISE" src --config .dependency-cruiser.mjs >"$OUT" 2>&1
 	rc=$?
 	set -e
-	if grep -qF "no dependency violations found" "$OUT"; then
-		[ "$rc" -eq 0 ] || verdict=2
-	elif grep -qE "dependency violations|dependency violation" "$OUT"; then
-		verdict=1
-	else
+	if ! grep -qF "dependency violation" "$OUT"; then
 		echo "check-ts: depcruise produced no verdict (rc=$rc)" >>"$OUT"
 		verdict=2
+	elif [ "$rc" -ne 0 ]; then
+		verdict=1
 	fi
 
 	# The ambient capabilities. A second, syntax-only eslint run over
