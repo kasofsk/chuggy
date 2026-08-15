@@ -275,14 +275,13 @@ module chuggy_measure {
 
   // === Vocabulary ==========================================================
   // Sum-type constructors share one namespace per module, hence the
-  // prefixes (P/T/TK/TS/V/R/Rs/C/RW/Land). The two-branch parameter types
+  // prefixes (P/T/TK/TS/V/R/Rs/C/RW/W/WO/A). The two-branch parameter types
   // keep bare descriptive constructor names — Budgeted/DeadlineOnly
   // (WrapUpPricing) and RetryCharged/RetryFree (RetryPricing) — documented
   // here because they live in the same module-wide constructor namespace.
-  // TK (TaskKind), TS (TaskState — the explicit task lifecycle), and RW
-  // (ReworkPolicy).
-  // adds LO (WrapUpObs — the landing-boundary attribution); the
-  // B (BatchMark) was added for grouping and deleted with it.
+  // TK (TaskKind), TS (TaskState — the explicit task lifecycle), RW
+  // (ReworkPolicy), W (WrapUpOutcome and WrapUp, which share it), WO
+  // (WrapUpObs — the landing-boundary attribution) and A (ArtifactMark).
 
   /// STORED ticket phases, deliberately few (standing rule 3, derive don't
   /// store). Blocked and Ready are PREDICATES over deps + record in
@@ -600,7 +599,7 @@ module chuggy_measure {
     // not retryable) and from the pipeline walls, which no phase predicate
     // could.
     reason: Reason,
-    // GHOST: landing effects ever emitted for this ticket — the counter the
+    // GHOST: completion effects ever emitted for this ticket — the counter the
     // effect-exclusivity invariant (exactly one completion) reads.
     // Not implementation state.
     completions: int

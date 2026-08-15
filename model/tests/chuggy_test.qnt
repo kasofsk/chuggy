@@ -11,7 +11,7 @@
 ///     unchanged, and the CHURN-set transitions are pinned as the only
 ///     climbers;
 ///   - effect-exclusivity at the landing boundary on a happy path AND a
-///     duplicate-completion / duplicate-landing path;
+///     task-done-duplicate / complete-duplicate path;
 ///   - every escalation wall carries its name, on
 ///     both WrapUpPricing branches;
 ///   - both retry-metering branches.
@@ -22,7 +22,7 @@
 ///   - revoke from EVERY live phase, with the desk-only flat cases
 ///     pinned, and revocableIn false exactly on the absorbing terminals;
 ///   - the cascade end-to-end on a 3-ticket chain; unreleased deps block;
-///     revoked never lands; revoke/cascade spend NOTHING.
+///     revoked never completes; revoke/cascade spend NOTHING.
 ///
 ///  additions (task-records depth; gate: phase-outcome combinators
 /// pinned by the eval vocabulary
@@ -333,7 +333,7 @@ module chuggy_test {
   })
 
   /// EFFECT EXCLUSIVITY, happy path (effect-only):
-  /// exactly one landing effect, exactly at Done — the quiet fast-path's
+  /// exactly one completion effect, exactly at Done — the quiet fast-path's
   /// direct squash (the path rule: WOk is the QUIET effect).
   run effectExclusivityHappyPathTest = assert(and {
     c8.tickets.get(1).phase == PDone,
@@ -431,7 +431,7 @@ module chuggy_test {
     mB(DB::decideTaskDone(c4, 1, 1, VFail).post) == mB(c4)
   })
 
-  /// EFFECT EXCLUSIVITY, duplicate-landing path: a re-delivered landing
+  /// EFFECT EXCLUSIVITY, complete-duplicate path: a re-delivered completion
   /// event for a Done ticket emits NOTHING — exactly-once is proved at the
   /// landing boundary and nowhere else.
   run completeDuplicateExclusiveTest = assert(and {
@@ -1053,10 +1053,10 @@ module chuggy_test {
     not(DB::revocableIn(revokeOne(jDraft).post, 1))               // Revoked
   })
 
-  /// REVOKED NEVER LANDS (the exclusivity extension): revoking a ticket
-  /// parked ON the landing strip emits no landing effect and leaves the
-  /// landing counter at zero — contrast with the landed ticket (c8), whose
-  /// counter is 1 and which is beyond revoke's reach (previous test).
+  /// REVOKED NEVER COMPLETES (the exclusivity extension): revoking a ticket
+  /// parked ON the landing strip emits no completion effect and leaves the
+  /// completion counter at zero — contrast with the completed ticket (c8),
+  /// whose counter is 1 and which is beyond revoke's reach (previous test).
   run revokedNeverCompletesTest = assert(and {
     revokeOne(jLand).post.tickets.get(1).completions == 0,
     revokeOne(jLand).rec.effects == ["Revoke"],

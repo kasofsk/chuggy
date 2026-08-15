@@ -196,7 +196,7 @@
 /// effect is idempotent", given its key). Inbound (world -> actor): completions
 /// and landing confirmations arrive at-least-once too, and the DOMAIN
 /// machine already absorbs them — duplicate task completions no-op by
-/// identity, duplicate landing deliveries no-op at the boundary
+/// identity, duplicate ticket-completion deliveries no-op at the boundary
 /// (decideTaskDone/decideCompleteDuplicate, proved since /) — so the
 /// actor journals the absorbing no-op decisions like any others and
 /// replay reproduces them. The composition: at-least-once OUT is
@@ -282,7 +282,7 @@ module chuggy_refinement {
   // ==========================================================================
   // One constructor namespace per module: the J prefix (Journal) marks
   // the decision-event constructors; the imported vocabulary already
-  // holds P/T/TK/TS/V/R/Rs/C/RW/Land/LO/B.
+  // holds P/T/TK/TS/V/R/Rs/C/RW/W/WO/A.
 
   /// THE DECISION EVENT: which decider, at which named picks — one
   /// constructor per domain action, payload exactly the action's nondet

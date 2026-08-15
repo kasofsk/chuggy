@@ -280,7 +280,7 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(JWorkReduce(1), "work-passed"))
       .then(stepEmit(JTaskDone({ ticket: 1, tid: 4, verdict: VPass }), "task-done"))
       .then(stepEmit(JEvalReduce(1), "eval-passed"))
-      // The valid-artifact dequeue lands the ticket (entry 13, WOk) —
+      // The valid-artifact dequeue completes the ticket (entry 13, WOk) —
       // journaled, not yet emitted: the merge has NOT happened yet.
       .then(journalStep(JDequeue({ ticket: 1, moved: false })))
       .expect(and {
@@ -305,7 +305,7 @@ module chuggy_refinement_witness_test {
         worldCompletions(1) == 1,
         allDomainInvariants, refinementInvariants
       })
-      // A stale landing confirmation re-delivers; the domain absorbs it
+      // A stale completion confirmation re-delivers; the domain absorbs it
       // and the actor journals the no-op (entry 14) — the world's
       // completion count does not move.
       .then(stepEmit(JCompleteDuplicate(1), "complete-duplicate"))

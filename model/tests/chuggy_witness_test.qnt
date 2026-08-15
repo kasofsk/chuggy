@@ -532,8 +532,8 @@ module chuggy_witness_stage_test {
         tickets.get(1).completions == 1,
         allInvariants
       })
-      // At-least-once: a stale landing success re-delivers after Done —
-      // absorbed with NO landing effect (completionExclusive's boundary; the
+      // At-least-once: a stale completion re-delivers after Done — absorbed
+      // with NO completion effect (completionExclusive's boundary; the
       // complete-duplicate STUTTER arm of stepDescends fired on a machine
       // trace — the convention roster).
       .then(doCompleteDuplicate(1))
@@ -629,9 +629,9 @@ module chuggy_witness_multirepo_test {
 
   /// THE QUIET LANDING: the environment chooses the target repo's branch
   /// quiet for the attempt — the landing succeeds, attributed. (A quiet
-  /// FAILURE is not merely unobserved here: doLand's wrapUpOutcomes guard —
-  /// the machine's own draw rule — makes the step undrivable, so this run
-  /// also documents the refusal structurally.)
+  /// FAILURE is not merely unobserved here: doGateResolve's wrapUpOutcomes
+  /// guard — the machine's own draw rule — makes the step undrivable, so
+  /// this run also documents the refusal structurally.)
   run quietLandDeterministicTest =
     init
       .then(doArrive(Set(), progFlat1, 2))         // the ticket targets repo 2
