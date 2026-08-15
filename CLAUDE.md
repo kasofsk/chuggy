@@ -2,19 +2,16 @@
 
 A job orchestrator: tickets form a DAG, a single journaled actor drives each through authoring → work → evaluation → landing, and the fabric runs the work and decides nothing.
 
-**This repo is unusual in one way that matters before you read anything else: the formal model leads the implementation.** A Quint model of the machine already exists and is proved; it emits golden traces, and this implementation grows up against them. When the model and the code disagree, the code is wrong. That inverts the normal arrangement, and it is standing rule 4.
+**This repo is unusual in one way that matters before you read anything else: the formal model leads the implementation.** A Quint model of the machine already exists and is proved; it emits golden traces, and this implementation grows up against them. When the model and the code disagree, the code is wrong.
 
-## Read these; don't re-derive them
+## Where the knowledge is
 
-- **[docs/reference/style.md](./docs/reference/style.md)** — the blessed practices, in three tiers. Read it before writing anything. Tier 1 is machine-checked, Tier 2 is rejected by rule name, and every Tier 1 rule carries a **live** or **pending** tag saying whether a script enforces it yet. A pending rule still binds you.
-- **[docs/reference/docs.md](./docs/reference/docs.md)** — the doc policy. Which of the two kinds of doc you are editing determines whether you rewrite it in place or append to it, and they are opposite. Also the claim markers, which you need from your first doc.
-- **[docs/concepts.md](./docs/concepts.md)** — which doc owns each term's definition. A routing table: follow the row rather than restating the term.
-- **[docs/README.md](./docs/README.md)** — the catalogue. Adding a doc means adding its row in the same commit.
+**`model/` is the specification.** There is no `docs/` tree; the written standards that used to sit beside the model were removed rather than maintained alongside it. So the tree states what is true of itself in exactly two places, and both are checkable:
 
-This file is an **index and a set of conventions**. It deliberately does not restate any rule from the pages above — a second copy of a rule is what drifts, and keeping the rules in exactly one place is why they can be trusted.
+- **`model/`** — the machine, its measure, its refinement and its suites. What it proves, it proves; nothing restates a proved property in prose.
+- **each gate's own header** — every script in `.chug/tasks/` opens by stating the rule it enforces and why. The rule and its enforcement cannot drift apart, because they are the same file.
 
-- **[docs/reference/architecture.md](./docs/reference/architecture.md)** — how chuggy is built, and what the model proves. Read it before touching the core.
-- **[docs/design/001-what-chuggy-is-not.md](./docs/design/001-what-chuggy-is-not.md)** — the absences and rejected alternatives. Read it before proposing something that sounds obviously missing; it is probably in there with the argument that removed it.
+This file is the third: an entry point and a set of conventions, holding what neither of those two can hold.
 
 ## Checks
 

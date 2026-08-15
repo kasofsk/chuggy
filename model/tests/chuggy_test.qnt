@@ -97,8 +97,7 @@
 ///     can draw).
 ///
 /// WRAP-UP additions (the refinement layer — design, PROPOSED
-/// requirements R1-R7, and the severability map at domain.qnt's header and
-/// docs/reference/architecture.md):
+/// requirements R1-R7, and the severability map at domain.qnt's header):
 ///   - THE PATH RULE pinned (R3, at decider grain):
 ///     wrapUpOutcomes(false) is the WOk singleton (the skip
 ///     fast-path), wrapUpOutcomes(true) is {WOk, Failed} (the
@@ -1129,9 +1128,8 @@ module chuggy_test {
   // === THE WRAP-UP: the depth-1 gate ======================
   // ==========================================================================
   // Design, PROPOSED requirements R1-R7, and provenance at domain.qnt's
-  // header and docs/reference/architecture.md (landing/requirements was never
-  // answered — everything these mechanics serve is derived and pending
-  // confirmation).
+  // header (landing/requirements was never answered — everything these
+  // mechanics serve is derived and pending confirmation).
 
   /// THE DEPTH-1 GUARD (R4): with repo 1's slot held, every same-repo
   /// dequeue is refused — including the would-be-quiet one (quietness is

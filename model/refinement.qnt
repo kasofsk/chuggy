@@ -26,8 +26,7 @@
 /// domain traces; no double-spend across its crash seams) against the
 /// byte-identical domain machine. The domain machine does not move; only
 /// the refinement module is replaced. That is what lets the fabric be a
-/// deployment choice rather than a core one
-/// (docs/design/001-what-chuggy-is-not.md).
+/// deployment choice rather than a core one.
 ///
 /// SEVERABILITY: this file is layered ON the domain — nothing in
 /// model/{measure,domain}.qnt or the mc instances reads it, and no

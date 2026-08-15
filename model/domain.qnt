@@ -45,7 +45,7 @@
 ///     does not own git.
 ///   - Scheduling and capacity. No slot count, no queue order, no fairness:
 ///     the fabric owns placement and quota, and waiting is unbounded by
-///     decision (docs/design/001-what-chuggy-is-not.md).
+///     decision.
 ///   - Retry below the cycle. No attempt counter, no per-task budget. The
 ///     fabric relaunches a failed task; this machine prices cycles.
 ///   - The runtime shape. No journal, no cursor, no crash, no fabric
@@ -53,11 +53,10 @@
 ///     machine and severable. Every shape must refine THIS machine, and this
 ///     file never learns which one runs it.
 ///   - Ticket batching in any form, and cross-repo atomic landings. Both
-///     rejected with their arguments in docs/design/001-what-chuggy-is-not.md.
+///     are deliberately absent, and nothing here can express either.
 ///
-/// The arguments behind the shapes above live in docs/reference/architecture.md
-/// and the design docs. This header describes the machine; it does not narrate
-/// how the machine came to be.
+/// This header describes the machine; it does not narrate how the machine
+/// came to be.
 module chuggy_domain {
   import chuggy_measure.* from "./measure"
 
@@ -1749,8 +1748,7 @@ module chuggy_domain {
   /// Unlike stuckSubsetCovered this is NOT definitional: canFinishSet
   /// recurses on gate deps and Done-ness, coverage recurses on
   /// escalations, so the containment is a claim about the machine. Its
-  /// teeth are demonstrated against a real defect rather than argued —
-  /// see the validation note in docs/reference/architecture.md.
+  /// teeth are demonstrated against a real defect rather than argued.
   val noStructuralDeadlock: bool = liveTickets.forall(j => or {
     canFinishSet.contains(j),
     tickets.get(j).phase == PRevoked,
