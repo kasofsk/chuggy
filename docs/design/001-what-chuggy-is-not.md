@@ -42,9 +42,9 @@ Three capabilities were never ruled out and are admitted by nothing built so far
 
 ## Open, and known to be open
 
-**The eval vocabulary.** The interpreter runs an authored program of stages under per-stage verdict combinators, and that shape was extracted from the predecessor's own specification rather than decided here. It stands in until one real eval program is written for one real job type. Two distinctions it currently flattens and should not flatten forever: an abort verdict that skips remaining rework, and an infrastructure failure that escalates immediately rather than reworking.
+**The eval vocabulary.** The interpreter runs an authored program of stages under per-stage verdict combinators, and that shape was taken from an inherited specification rather than decided here. It stands in until one real eval program is written for one real job type. Two distinctions it currently flattens and should not flatten forever: an abort verdict that skips remaining rework, and an infrastructure failure that escalates immediately rather than reworking.
 
-**Landing requirements.** The merge gate, its depth-1 serialization, the path rule determining which promotion effect fires, and the eviction pricing are all built against **derived** requirements — the modeller's best reading of the predecessor's specification and its machine-checked findings, not a stated requirement. They are marked proposed in the model's own commentary and each mechanic names the requirement that forces it, so a torn-up requirement maps to deletable code rather than archaeology.
+**Landing requirements.** The merge gate, its depth-1 serialization, the path rule determining which promotion effect fires, and the eviction pricing are all built against **derived** requirements — the modeller's best reading of an inherited specification and its machine-checked findings, not a stated requirement. They are marked proposed in the model's own commentary and each mechanic names the requirement that forces it, so a torn-up requirement maps to deletable code rather than archaeology.
 
 **The wrap-up resource namespace.** `WExclusive` carries a bare resource token, so a repo lease and an environment lease share one namespace and can collide. A single namespace is simpler and a collision is an authoring error; if those turn out to be common, giving the resource a kind is the fix.
 

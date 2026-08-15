@@ -1,9 +1,9 @@
 #!/bin/sh
 # Every gate script has a sibling `*.test.sh`.
 #
-# The predecessor enforced this by habit, and habit is not a gate: it reached
-# seventeen suites that nothing executed, one of them red for weeks. This is
-# the check that makes the convention a rule, and it is fifteen lines.
+# Habit is not a gate. "Every gate has a suite" holds right up until the commit
+# where it doesn't, and a suite nothing runs is indistinguishable from one that
+# passes. This is the check that makes the convention a rule, in fifteen lines.
 #
 # It also asserts the discovery glob matched something. A glob that matches
 # nothing is the failure mode this whole file exists to prevent, so it must not

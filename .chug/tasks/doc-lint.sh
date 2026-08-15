@@ -18,11 +18,11 @@
 #      them. Same reason LC_ALL=C is pinned below — the verdict must be the
 #      same on every host.
 #
-# WHOLE-TREE, NOT DIFF-AWARE, and that is a deliberate difference from the
-# script this is ported from. Its diff selection needed `BASE_BRANCH` and a
-# `git fetch`; under this repo's local-only CI that variable is never set, so
-# every run would take the fall-back path and print a degradation notice about
-# a degradation that is simply the normal case. Whole-tree over a corpus this
+# WHOLE-TREE, NOT DIFF-AWARE, deliberately. Diff selection needs a base ref and
+# a `git fetch` to resolve it; under this repo's local-only CI there is no base
+# ref to read, so every run would take the fall-back path and print a
+# degradation notice about a degradation that is simply the normal case — and a
+# notice that prints every time is read by nobody. Whole-tree over a corpus this
 # size costs milliseconds, needs no network, and cannot report a stale verdict.
 # Re-introduce diff scoping when the corpus makes it worth the machinery, not
 # before.

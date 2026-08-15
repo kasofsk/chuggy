@@ -16,14 +16,6 @@ This file is an **index and a set of conventions**. It deliberately does not res
 - **[docs/reference/architecture.md](./docs/reference/architecture.md)** — how chuggy is built, and what the model proves. Read it before touching the core.
 - **[docs/design/001-what-chuggy-is-not.md](./docs/design/001-what-chuggy-is-not.md)** — the absences and rejected alternatives. Read it before proposing something that sounds obviously missing; it is probably in there with the argument that removed it.
 
-## Provenance
-
-The model lives here, in `model/`. It was developed as `chuggy-model` in a separate repo alongside a model of the predecessor, and only the chuggy half came across.
-
-The founding charter did **not** come across, and that is deliberate rather than an oversight. Most of its decided rows were prose statements of things the model now implements and proves, so keeping both would be keeping a second, unchecked copy of a checked fact. What it held that the model structurally cannot — the absences, the rejected alternatives and their arguments — was carried into the design doc above. What it held that was spent — a completed roadmap, an identity table, a two-round questionnaire's provenance — was not.
-
-Much of the apparatus here — the gates, the doc policy, the tier structure — is ported from **chuggernaut**, the predecessor this replaces. Ported deliberately and selectively: `style.md` records what was carried forward but is not yet in force, and what was not carried over at all. If you find yourself about to add a rule because chuggernaut had it, check that its motivating failure can actually occur here.
-
 ## Checks
 
 ```sh
@@ -42,5 +34,6 @@ That path is not a placeholder. When this repo is eventually orchestrated by the
 
 - **There is no CI but the local gates.** No Actions, no PR checks, no server. `just check` and the hook are the whole of it, which means a gate that is slow or noisy is a gate that gets bypassed — and then it enforces nothing.
 - **`--no-verify` bypasses every gate at once**, including the ones you were not trying to skip. Legitimate when the alternative is leaving work uncommitted; run `just check` before you push either way.
-- **A figure written into a doc carries its measurement date.** Timings, counts and thresholds go stale silently. The predecessor's CI header still claims a suite count it outgrew, inside a comment instructing re-measurement on every addition.
+- **A figure written into a doc carries its measurement date.** Timings, counts and thresholds go stale silently, and a count written into a comment goes stale even when the comment beside it asks for re-measurement. Prefer a figure a script derives at run time to one a reader has to trust.
+- **A rule needs a failure it can prevent here.** Before adding one, name the thing that goes wrong in *this* tree if it is absent. A rule adopted because it sounds right is a rule nobody can apply a refutation trigger to.
 - **Don't run destructive commands** — deploys, restarts, data resets — without asking first.

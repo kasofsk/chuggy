@@ -4,7 +4,7 @@ Three tiers, strictest first. Rules are numeric and mechanical wherever possible
 
 Keep this document short. It is written to be injected verbatim into a work agent's system prompt, and reviewers reject Tier 1 and Tier 2 violations **by naming the rule**. That contract runs both ways: a rule is a fair rejection only because the author was given this same file.
 
-Adapted from chuggernaut's `docs/reference/style.md`, which is adapted from TigerBeetle's TIGER_STYLE. What is not carried over is recorded at the bottom rather than silently dropped.
+Adapted from TigerBeetle's TIGER_STYLE. Rules that are standing but not yet enforceable are recorded at the bottom rather than silently dropped.
 
 ## How to read the status tags
 
@@ -16,7 +16,7 @@ A pending rule still binds the author — it is the standard, and code that viol
 pin the model checker, which has nothing to format, so the trigger is
 restated as the first TypeScript file.
 
-**Why so many rules are pending on day 1, and why that is the point.** This repo adopted its standards before it had code. In the predecessor the order was reversed, and the cost is measurable: its comment ban had to be retrofitted by a job that deleted every comment in the tree; its two-sentence cap is still a ratchet carrying ~500 grandfathered violations; and its module-boundary rule has sat `pending` since the day it was written, because the folder split it presupposes never happened. **A pending rule here converts to live when the thing it governs arrives, in the same commit** — never in the commit after.
+**Why so many rules are pending on day 1, and why that is the point.** This repo adopted its standards before it had code, which is the only moment a standard is free. A rule adopted *after* the thing it governs exists is paid for twice: once to retrofit the tree, and again forever as a ratchet that judges new lines by a rule the old ones are exempt from. The failure mode on the other side is a rule that stays pending because the thing it presupposes never arrives, and the rule quietly becomes decoration. **A pending rule here converts to live when the thing it governs arrives, in the same commit** — never in the commit after.
 
 ---
 
@@ -24,9 +24,9 @@ restated as the first TypeScript file.
 
 | # | Rule | Status | Enforced by |
 |---|---|---|---|
-| 1 | **No comments except doc comments; a doc comment is at most two sentences.** | pending — lands with `check-comments.sh` | `.chug/tasks/check-comments.sh` |
+| 1 | **No comments except doc comments; a doc comment is at most two sentences.** | pending — lands with `check-comments.sh` | `.chug/tasks/check-comments.sh`  <!-- intent --> |
 | 2 | **Markdown is well-formed**: a heading needs a space after `#`, a fence must close, an intra-repo relative link must resolve, and a design filename is `{seq}-{slug}.md`. | **live** | `.chug/tasks/doc-lint.sh` |
-| 3 | **Every doc's factual claims about the tree resolve, or are marked.** | pending — lands with `check-doc-facts.sh` | `.chug/tasks/check-doc-facts.sh` |
+| 3 | **Every doc's factual claims about the tree resolve, or are marked.** | pending — lands with `check-doc-facts.sh` | `.chug/tasks/check-doc-facts.sh`  <!-- intent --> |
 | 4 | **No duplicated code: zero clones**, tests included. | **live** | `.chug/tasks/check-duplication.sh` |
 | 5 | **No quote inside the word of a `${VAR:-word}` shell expansion.** | **live** | `.chug/tasks/check-shell-quoting.sh` |
 | 6 | **Every gate script has a sibling `*.test.sh`.** | **live** | `.chug/tasks/check-gates.sh` |
@@ -44,6 +44,8 @@ restated as the first TypeScript file.
 
 *Why:* comments are scattered by construction — nobody reviews them as a body of knowledge, they drift out of step with the code they annotate, and an agent reading the tree cannot tell a current one from a stale one. **Every comment this rule rejects is a sentence that belongs in a doc.**
 
+The cap is **absolute, not a ratchet**. A cap that judges only the lines a diff adds is what a tree with grandfathered violations is forced into; this tree has none, so there is nothing to exempt and the rule is simpler as well as stricter.
+
 `///` and `//!` are **not** doc comments in TypeScript. They are Rust syntax; no TS tool reads them, so a `///` block is prose that renders nowhere and the gate rejects it as an ordinary comment.
 
 Two carve-outs. A **module header** — a file's first `/** */` block, stating what the module accepts, emits and guarantees — is exempt from the two-sentence cap; it is registered in the module registry and is structurally unable to scatter. **Machine-read directives** are allowed, and the allowlist is deliberately narrow:
@@ -53,7 +55,7 @@ Two carve-outs. A **module header** — a file's first `/** */` block, stating w
 - `@ts-expect-error`, with a description of at least ten characters. **`@ts-ignore` is rejected** — it silences an error that may later become a different error.
 - `eslint-disable-next-line` naming a rule **from the allowlist in `check-comments.sh`**. A disable naming a boundary, purity or exhaustiveness rule is rejected outright.
 
-*Why the disable allowlist, which the predecessor does not have:* this tree is written almost entirely by agents, and an agent that cannot satisfy a boundary rule will disable it. A Tier 1 whose disables are unlimited is not a Tier 1.
+*Why the allowlist is narrow rather than open:* this tree is written almost entirely by agents, and an agent that cannot satisfy a boundary rule will disable it. A Tier 1 whose disables are unlimited is not a Tier 1.
 
 The allowlist matches the text immediately after the opener, so **a directive is one line**: a wrapped second line is an ordinary comment and the gate rejects it.
 
@@ -71,9 +73,9 @@ The allowlist matches the text immediately after the opener, so **a directive is
 
 ### Rule 7 — the boundary rule, and the sequencing that makes it real
 
-`src/domain/` must not reach `src/adapters/`, `src/interpret.ts` or any Node builtin **by any path in the module graph**, not merely by direct import. A `domain/util/paths.ts` that imports `node:path` and is used by a decider satisfies every per-file check and violates the invariant, which is why this is a graph rule and not a lint rule.
+`src/domain/` must not reach `src/adapters/`, `src/interpret.ts` or any Node builtin **by any path in the module graph**, not merely by direct import. A `domain/util/paths.ts` that imports `node:path` and is used by a decider satisfies every per-file check and violates the invariant, which is why this is a graph rule and not a lint rule. <!-- intent -->
 
-*Why it is stated now and enforced later:* the predecessor specified this exact rule and never built it, because the split it names never arrived. **The rule that prevents the repeat is a sequencing rule**: the gate lands in the same commit as the directories, with one real file in each. Not the commit after.
+*Why it is stated now and enforced later:* a boundary rule whose enforcement waits on a folder split waits forever if the split keeps not arriving, and a rule that has been pending long enough stops being read as a rule. **What prevents that is a sequencing rule**: the gate lands in the same commit as the directories, with one real file in each. Not the commit after.
 
 ---
 
@@ -112,21 +114,15 @@ These are the standing commitments. The first four are stated and argued in [arc
 - **Single writer.** One journaled actor decides; nothing else writes. See [architecture.md](./architecture.md).
 - **Simplicity over performance.** Take the simple shape until a measurement says otherwise. A measurement, not an intuition.
 - **Zero technical debt.** Fix it in the change that found it, or file it as work. "Later" is neither.
-- **A control that reports success and does nothing is worse than no control.** An unverified control is believed, and a believed control is not checked again. In the predecessor a rule of exactly this shape was false on the one node it mattered for, and stayed believed for eleven days until something measured it.
+- **A control that reports success and does nothing is worse than no control.** An unverified control is believed, and a believed control is not checked again — so it can be false for as long as nobody thinks to measure it. This is why every gate distinguishes *clean* from *could not run*, and why a new check is run against a tree carrying the defect it names before it is trusted.
 - **Dependencies need a stated justification.** Each one is a supply chain, an upgrade obligation and a surface. The `domain/` allowlist is deliberately short, and extending it takes an argument in the commit message.
 
 ---
 
-## Carried forward, not yet in force
+## Recorded now, in force when the machinery arrives
 
-These are the predecessor's rules whose motivating failures belong to machinery this repo does not have yet. They are recorded so they are not re-derived from scratch when the first fabric adapter arrives, and they are **not** in force — stating them as live would be the exact over-claim Tier 3 forbids.
+Rules whose motivating failures belong to machinery this repo does not have yet — the first fabric adapter, and the operator-facing config that arrives with it. They are written down so they are not re-derived from scratch under time pressure, and they are **not** in force: stating them as live would be the exact over-claim Tier 3 forbids.
 
 - **Re-derive every host fact inside the namespace that will use it.** Existence, identity and provenance are three separate questions, and reachability-by-uid and which-kernel-execs-it are two more.
 - **A tool's outcome measures the tool, not your claim.** A denial with no control identifies no mechanism.
 - **A content hash never enters operator-typed config.**
-
-## Deliberately not carried over
-
-- **Performance rules.** The source's ancestor is a database; this is an orchestrator whose latency budget is dominated by the work it launches.
-- **`SAFETY:` comment directives.** No `unsafe` in TypeScript.
-- **The two-sentence ratchet.** The source grandfathers ~500 over-long doc comments by judging only lines a diff adds. This tree has none, so the cap is absolute — simpler *and* stricter.

@@ -6,7 +6,7 @@ How chuggy is built. Present tense, and where the model proves something this pa
 
 A Quint model of the machine exists, is proved, and emits the golden traces the implementation replays. **When the implementation and the model disagree, the implementation is wrong.**
 
-That is the inverse of the usual arrangement and it is deliberate. The predecessor's model chased an implementation and caught it; catching is expensive and only ever tells you what already shipped. Here the machine is specified and its safety properties are established before there is code to argue with.
+That is the inverse of the usual arrangement and it is deliberate. A model written to chase an implementation can catch it, but catching is expensive and only ever tells you what already shipped. Here the machine is specified and its safety properties are established before there is code to argue with.
 
 `model/` holds it:
 
@@ -21,9 +21,9 @@ That is the inverse of the usual arrangement and it is deliberate. The predecess
 
 1. **The termination measure is written before the machine.** Every transition either descends it or belongs to a named, separately-bounded set. A change to the machine reworks `measure.qnt` first — not afterwards, and not in the same breath.
 
-2. **No free re-entry.** Every path back into active work is metered. An unmetered re-entry is a loop with no bound on it, and the predecessor found two the expensive way: a gate-failure loop and an operator-retry loop, each of which spun forever because the path back cost nothing.
+2. **No free re-entry.** Every path back into active work is metered. An unmetered re-entry is a loop with no bound on it, and this machine has two of them by shape — the gate-failure path and the operator-retry path — each of which spins forever if the way back costs nothing.
 
-3. **Derive, don't store.** Any state expressible as a predicate over other state is a predicate. Stored duplicates of derivable facts are two things that can disagree, and the machinery that keeps them agreeing is machinery that can be wrong — the predecessor stored the ready/blocked split and had to model an unblock cascade to maintain it. Here they derive, and the cascade does not exist.
+3. **Derive, don't store.** Any state expressible as a predicate over other state is a predicate. Stored duplicates of derivable facts are two things that can disagree, and the machinery that keeps them agreeing is machinery that can be wrong: storing the ready/blocked split buys an unblock cascade to maintain it. Here they derive, and the cascade does not exist.
 
 4. **Conformance from day one, direction reversed.** The model emits; the implementation replays.
 
@@ -108,7 +108,7 @@ TypeScript. The contract vocabulary is ADT-shaped — messages, effects, phases 
 
 Wire types are schema-first: the schema is written once and the static type is derived from it, never written twice.
 
-The tree is in its target shape from the first commit — a pure domain, an effect vocabulary, one interpreter where effects meet adapters, and the adapters themselves. No layout is ported from anywhere. The boundary is enforced by a graph rule over transitive reachability rather than a per-file lint, because the leak that matters is a helper three imports deep, and it lands in the same commit as the directories it governs.
+The tree is in its target shape from the first commit — a pure domain, an effect vocabulary, one interpreter where effects meet adapters, and the adapters themselves. The boundary is enforced by a graph rule over transitive reachability rather than a per-file lint, because the leak that matters is a helper three imports deep, and it lands in the same commit as the directories it governs.
 
 ## Contract-first change
 

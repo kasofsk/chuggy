@@ -13,19 +13,23 @@
 #     bash: the apostrophe OPENS a quoted run that swallows the following lines
 #           until the next one, binding them into whatever block the line sits in
 #
-# Why a gate and not just the one fix: the divergence is invisible to
+# Why a gate and not just care: the divergence is invisible to
 # everything this repo already runs. A POSIX shell always accepts the file, so no
 # `sh -n` sweep can see it, and whether BASH rejects it depends only on what
-# happens to follow — in the instance that motivated this, a later apostrophe
-# closed the run, so
-# `bash -n` passed too and the file was valid in both shells while binding
-# different lines in each. CI's /bin/sh is
-# dash, and `.chug/tasks/ci.sh` drives every `*.test.sh` suite as `sh "$suite"`,
-# so a suite exercising the exact failing input stays green. Production is the
-# other shell: here the developer's macOS machine is the whole of CI, and on
-# macOS /bin/sh IS bash. The instance this gate was written for, in the
-# predecessor, silently moved a whole pre-flight block inside the `if` above
-# it, so the guard ran only when its own check FAILED.
+# happens to follow — a later apostrophe closes the run, and then
+# `bash -n` passes too and the file is valid in both shells while binding
+# different lines in each.
+#
+# WHICH SHELL READS A SCRIPT HERE IS A PROPERTY OF THE HOST. `.chug/tasks/ci.sh`
+# drives every `*.test.sh` suite as `sh "$suite"`: on the developer's macOS
+# machine — which is the whole of CI — /bin/sh IS bash, while on a Linux host it
+# is usually dash. So the same tree binds different code on two machines, and a
+# suite exercising the exact failing input stays green on whichever of them
+# reads it the way the author meant.
+#
+# The damage is worse than a wrong string. The swallowed run carries whatever
+# follows it into the quoted text, so a pre-flight guard can end up inside the
+# `if` above it and run only when its own check FAILS.
 #
 # WHICH EXPANSIONS. Every form whose word bash reads: the operator may be any of
 # `-` `=` `+` `?`, with or without the leading colon (`${V:-w}` and `${V-w}`
@@ -48,8 +52,7 @@
 # So the gate flags the first two rows and stays silent on the last two. The
 # unquoted row is the one worth spelling out, because it is the row a purely
 # lexical scan would flag by accident: there, POSIX has the word expanded like
-# any other word, so `env ${3:+GOOGLE_APPLICATION_CREDENTIALS="$3"} …` —
-# `.chug/tasks/gcp-proof.test.sh` really carries it — means the same thing in
+# any other word, so `env ${2:+QUINT_SEED="$2"} quint test …` means the same in
 # both shells, and an unbalanced quote is a loud syntax error in dash as well as
 # bash. Nothing silent survives there, so flagging it would be noise. A command
 # substitution is excluded for the same reason: `$(…)` and backticks open a

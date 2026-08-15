@@ -4,12 +4,12 @@
 #   . "$(cd "$(dirname "$0")" && pwd)/_suite.sh"
 #
 # WHY THIS EXISTS RATHER THAN A COPY PER SUITE. The duplication gate runs at
-# threshold 0 and, unlike the script it is ported from, it does NOT exempt test
-# files. Exempting them was defensible where the argument is "a test should read
-# top to bottom as the scenario it is" — but that argument protects a test's
-# SCENARIO, and what the suites were sharing is HARNESS: a `check` helper, a
-# temp dir, a trap, two counters. None of it is the thing a reader of a case
-# needs in front of them, and it grew by twenty-five lines with every gate.
+# threshold 0 and does NOT exempt test files. The usual argument for exempting
+# them — "a test should read top to bottom as the scenario it is" — protects a
+# test's SCENARIO, and what the suites were sharing is HARNESS: a `check`
+# helper, a temp dir, a trap, two counters. None of it is the thing a reader of
+# a case needs in front of them, and it grew by twenty-five lines with every
+# gate.
 #
 # What stays in each suite is everything that makes its cases different — the
 # fixtures, the drivers, the assertions. A case still reads top to bottom.

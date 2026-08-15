@@ -86,7 +86,7 @@ It only works if a fired trigger is *acted on*. Two slipped once — the duplica
 
 Three of these are worth their reasoning:
 
-**Why the staleness ledger reports and does not block.** It answers "is this doc *suspect*", and suspect is not wrong. A check whose output reads as a verdict is a check everyone learns to scroll past — and the predecessor measured that exactly: a path check with a 2% true-positive rate trained every reader, human and agent, to ignore the one line that mattered. It also blocks nothing at the commit, because a staged doc still carries its old commit, so no edit could clear it and the only escape would be `--no-verify`.
+**Why the staleness ledger reports and does not block.** It answers "is this doc *suspect*", and suspect is not wrong. A check whose output reads as a verdict but is mostly noise is a check everyone learns to scroll past, and once a reader — human or agent — has learned that, the one line that mattered is scrolled past with the rest. It also blocks nothing at the commit, because a staged doc still carries its old commit, so no edit could clear it and the only escape would be `--no-verify`.
 
 **Why the orphan check waits for fifteen docs.** On a corpus of six, nearly everything reads as an orphan. A near-always-true finding burns the ledger's credibility before it has earned any.
 

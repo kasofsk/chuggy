@@ -90,9 +90,9 @@ else
 	# Probe FUNCTIONALLY — `command -v` says a binary exists, not that it runs.
 	# macOS ships no GNU `timeout`; `gtimeout` arrives with coreutils.
 	#
-	# WHY A MISSING CAP WARNS RATHER THAN ERRORS, unlike the container-hosted
-	# script this is ported from. That one runs on Debian, where `timeout`
-	# always exists, so its absence is a real anomaly. Here the developer's
+	# WHY A MISSING CAP WARNS RATHER THAN ERRORS. On a Linux container host
+	# `timeout` always exists, so its absence there would be a real anomaly
+	# worth erroring on. Here the developer's macOS
 	# machine is the whole of CI, and erroring would make `just check`
 	# permanently red on stock macOS — and a gate that is always red is a gate
 	# that gets bypassed, which is how a suite stage stops running at all. What

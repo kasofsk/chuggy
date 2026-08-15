@@ -1421,9 +1421,9 @@ module chuggy_domain {
   /// satisfies this by design, and the cross-resource dequeue staying
   /// enabled is pinned at guard grain.
   ///
-  /// Provenance: generalized from chuggernaut's per-project depth-1 merge
-  /// queue. What made it per-repo there was that the resource happened to
-  /// be a repo; here the resource is whatever the wrap-up kind names.
+  /// The resource is whatever the wrap-up kind names, never a repo by
+  /// definition: a per-repo merge queue is one instance of this lease, and
+  /// reading the general form off that instance is how it gets narrowed.
   val leaseExclusive: bool = repos.forall(r =>
     liveTickets.filter(j => and {
       tickets.get(j).phase == PWrapUpHolding,
