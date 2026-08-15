@@ -89,16 +89,31 @@ scaffold
 run
 check "a clean tree is clean" 0 "$RC" "check-ts: clean"
 
-# 2. The ambient-capability half of the purity rule: a clock in the domain.
+# 2. The ambient-capability half of the purity rule. Three capabilities in one
+#    run, and each is asserted by the name it is forbidden under rather than by
+#    the shared "may not reach" prefix. The generic needle passed while `Date`
+#    was deleted from the restricted list, because `Date.now` is also a
+#    restricted PROPERTY and the two mechanisms cover each other — defence in
+#    depth is fine, a test that cannot tell them apart is not.
 scaffold
 cat >>"$R/src/domain/pure.ts" <<'TS'
 
 export function stamp(): number {
   return Date.now();
 }
+
+export function coin(): number {
+  return Math.random();
+}
+
+export function home(): string | undefined {
+  return process.env["HOME"];
+}
 TS
 run purity
-check "Date.now in src/domain is a finding" 1 "$RC" "may not reach"
+check "a clock in src/domain is a finding" 1 "$RC" 'may not reach `Date`'
+check "randomness in src/domain is a finding" 1 "$RC" 'may not reach `Math.random`'
+check "an ambient process in src/domain is a finding" 1 "$RC" 'may not reach `process`'
 
 # 3. The module-graph half: a direct import of a node builtin.
 scaffold
