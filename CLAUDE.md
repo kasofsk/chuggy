@@ -14,7 +14,9 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 This file is an **index and a set of conventions**. It deliberately does not restate any rule from the pages above — a second copy of a rule is what drifts, and keeping the rules in exactly one place is why they can be trusted.
 
 - **[docs/reference/architecture.md](./docs/reference/architecture.md)** — how chuggy is built, and what the model proves. Read it before touching the core.
+- **[docs/reference/layering.md](./docs/reference/layering.md)** and **[docs/reference/domain-modelling.md](./docs/reference/domain-modelling.md)** — the generic practice the architecture is an instance of: which way dependencies point and what may cross a boundary, then what the core is made of. Read them before adding a module, a port or a domain type.
 - **[docs/design/001-what-chuggy-is-not.md](./docs/design/001-what-chuggy-is-not.md)** — the absences and rejected alternatives. Read it before proposing something that sounds obviously missing; it is probably in there with the argument that removed it.
+- **[docs/design/003-layering-and-domain-canon.md](./docs/design/003-layering-and-domain-canon.md)** — the same service for the patterns: which of the DDD catalogue is declined here, and what would revive it. Read it before adding a repository, a DTO tier or an event bus because a book says so.
 
 ## Provenance
 

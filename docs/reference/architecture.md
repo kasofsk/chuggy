@@ -2,6 +2,8 @@
 
 How chuggy is built. Present tense, and where the model proves something this page points at the module rather than restating it — a proved statement and a prose copy of it will diverge, and only one of them is checked.
 
+This page is the specific arrangement. The generic practice it is an instance of is [layering.md](./layering.md) — which way dependencies point, and what may cross a boundary — and [domain-modelling.md](./domain-modelling.md), what the core is made of.
+
 ## The model leads
 
 A Quint model of the machine exists, is proved, and emits the golden traces the implementation replays. **When the implementation and the model disagree, the implementation is wrong.**

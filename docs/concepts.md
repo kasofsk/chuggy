@@ -29,7 +29,7 @@ The registry is meant to stay around a dozen rows. A hundred rows would be the g
 
 ## The registry
 
-*Empty by design.* The corpus is four documents, and no term yet has a second explainer — so no term yet meets the criterion. Rows arrive as the corpus does.
+*Empty by design.* No term has met both halves of the criterion yet: where one doc needs a term another owns, it links to the owner rather than re-explaining it. Rows arrive as the corpus does.
 
 | Concept | Defined in | Heading |
 |---|---|---|
