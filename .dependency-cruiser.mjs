@@ -36,11 +36,13 @@
  *      design.
  *   3. Anything a `.test.ts` reaches on its own account. Domain tests are
  *      excluded from every `from` set below, because a domain test must be
- *      able to import `node:test`. The exemption is compensated twice over:
- *      `domain-not-through-its-tests` stops domain source depending on a test
- *      file at all, and `eslint.purity.config.js` covers `src/domain/` tests
- *      with the full ambient roster, so the exempted files are unpoliced only
- *      with respect to imports and only while nothing ships them.
+ *      able to import `node:test`. The exemption is compensated three times
+ *      over: `domain-not-through-its-tests` stops domain source depending on a
+ *      test file at all, `no-shipped-test-fixtures` stops ANY shipped module
+ *      anywhere from doing so, and `eslint.purity.config.js` covers
+ *      `src/domain/` tests with the full ambient roster — so the exempted
+ *      files are unpoliced only with respect to imports, and only while
+ *      nothing ships them, which is now a rule rather than an observation.
  */
 
 /** @type {import("dependency-cruiser").IConfiguration} */
@@ -61,6 +63,14 @@ export default {
         "Domain source may not import a domain test. This is not the purity rule wearing a second hat: `domain-is-pure` already catches an impure test file, because whatever that file reaches is reachable from the source that imported it. What this catches is the case that one cannot — a domain module depending on a fixture that exists only for the suite, and so is not part of what the domain ships.",
       from: { path: "^src/domain/", pathNot: "[.]test[.](ts|mts|cts)$" },
       to: { reachable: true, path: "[.]test[.](ts|mts|cts)$" },
+    },
+    {
+      name: "no-shipped-test-fixtures",
+      severity: "error",
+      comment:
+        "No shipped module, anywhere in the tree, may import a test file. `domain-not-through-its-tests` says this for src/domain/ and says it transitively; this says it tree-wide and directly, because the `.test.ts` suffix is what this repo means by 'exists only for the suite' — a suite-only fixture module is a real thing to have, and it stops being one the moment something that ships imports it. Added when a fixture module was extracted for two suites to share and the claim its header made — that the suffix is the file class for suite-only code — turned out to be enforced from src/domain/ alone.",
+      from: { pathNot: "[.]test[.](ts|mts|cts)$" },
+      to: { path: "[.]test[.](ts|mts|cts)$" },
     },
     {
       name: "effects-reach-only-domain",
