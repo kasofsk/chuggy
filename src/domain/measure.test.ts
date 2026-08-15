@@ -307,7 +307,11 @@ test("the vocabulary is the model's, constructor for constructor", () => {
     REASONS,
     WRAPUP_OUTCOMES,
   ]) {
-    assert.equal(new Set(roster).size, roster.length);
+    assert.equal(
+      new Set(roster).size,
+      roster.length,
+      `constructor names repeat in [${roster.join(", ")}]`,
+    );
   }
   assert.deepEqual(
     [
@@ -391,10 +395,15 @@ test("the weights derive to the model's values at the mc consts", () => {
   // Read from the model: stageWeight 3, rankWeight 9, microBound 63 at
   // nTasks = 2, maxStages = 2, and identically on all three instances because
   // those two consts are identical across them.
-  for (const b of [bBudgeted, bDeadlineOnly, bRetryFree]) {
+  for (const [name, b] of [
+    ["budgeted", bBudgeted],
+    ["deadline_only", bDeadlineOnly],
+    ["retryfree", bRetryFree],
+  ] as const) {
     assert.deepEqual(
       [stageWeight(b), rankWeight(b), microBound(b)],
       [3, 9, 63],
+      `the weight chain at mc_chuggy_${name}`,
     );
   }
   assert.equal(rankCeiling, 6);
@@ -408,13 +417,18 @@ test("the weights are DERIVED, so they move with the bounds they are built from"
   for (let nTasks = 0; nTasks <= 4; nTasks += 1) {
     for (let maxStages = 0; maxStages <= 4; maxStages += 1) {
       const b: Bounds = { ...bBudgeted, nTasks, maxStages };
+      const at = `at nTasks=${String(nTasks)}, maxStages=${String(maxStages)}`;
       // stageWeight strictly dominates any running count.
-      assert.ok(stageWeight(b) > nTasks);
+      assert.ok(stageWeight(b) > nTasks, `stageWeight over the count ${at}`);
       // rankWeight strictly dominates the full stage digit plus any count.
-      assert.ok(rankWeight(b) > maxStages * stageWeight(b) + nTasks);
+      assert.ok(
+        rankWeight(b) > maxStages * stageWeight(b) + nTasks,
+        `rankWeight over stage digit + count ${at}`,
+      );
       // microBound strictly dominates the largest micro the ladder allows.
       assert.ok(
         microBound(b) > rankCeiling * rankWeight(b) + rankWeight(b) - 1,
+        `microBound over the ladder's largest micro ${at}`,
       );
     }
   }
@@ -466,15 +480,25 @@ test("the ladder is a strict chain and every phase takes its rung", () => {
 });
 
 test("hasOpenHumanTask is the parked phase and nothing else", () => {
+  // THE WHOLE ROSTER, not a sample. The predicate is an iff over the nine
+  // phases — PEscalated is THE parked phase — and asking only the four that
+  // seemed interesting left it WIDENABLE: `=== "PEscalated" ||
+  // === "PWrapUpHolding"` passed the suite unchanged. It is load-bearing
+  // downstream (`model/domain.qnt` coveredSet; the CHURN set's boundedness
+  // rests on every churn step needing an open desk task), so a widened
+  // predicate would quietly widen that argument too.
   const j = draft(grants.budgeted);
-  const parked: Ticket = { ...j, phase: "PEscalated" };
-  assert.ok(hasOpenHumanTask(parked));
-  // PRevoked is deliberately not here: revocation is the author's settled
-  // choice, so the desk owes a revoked ticket nothing (chuggy_test
-  // revokeFromEachPhaseTest's `revokedShape`).
+  for (const phase of PHASES) {
+    assert.equal(
+      hasOpenHumanTask({ ...j, phase }),
+      phase === "PEscalated",
+      `hasOpenHumanTask is an iff over the roster; ${phase} disagrees`,
+    );
+  }
+  // PRevoked is the one a reader expects to be here and deliberately is not:
+  // revocation is the author's settled choice, so the desk owes a revoked
+  // ticket nothing (chuggy_test revokeFromEachPhaseTest's `revokedShape`).
   assert.ok(!hasOpenHumanTask({ ...j, phase: "PRevoked" }));
-  assert.ok(!hasOpenHumanTask({ ...j, phase: "PDone" }));
-  assert.ok(!hasOpenHumanTask(j));
 });
 
 // === The digit functions ===================================================
@@ -525,7 +549,11 @@ test("stagesLeft is the stage digit: L - s while Evaluating, 0 everywhere else",
     "PEscalated",
     "PRevoked",
   ] satisfies Phase[]) {
-    assert.equal(stagesLeft({ ...j, phase, tasks: [er(1, 0)] }), 0);
+    assert.equal(
+      stagesLeft({ ...j, phase, tasks: [er(1, 0)] }),
+      0,
+      `the stage digit is 0 outside Evaluating; ${phase} disagrees`,
+    );
   }
 });
 
@@ -660,6 +688,7 @@ test("measureRepoBlindTest: no digit, weight or account radix reads the repo", (
     assert.equal(
       ticketMeasure(bBudgeted, j),
       ticketMeasure(bBudgeted, elsewhere(j)),
+      `the measure reads the repo from ${j.phase}`,
     );
   }
   // And under the other gate pricing, where the account radices differ.
@@ -667,7 +696,12 @@ test("measureRepoBlindTest: no digit, weight or account radix reads the repo", (
     ticketMeasure(bDeadlineOnly, jWork),
     ticketMeasure(bDeadlineOnly, elsewhere(jWork)),
   );
-  // The model's own figure for that cross-instance evaluation.
+  // The model's own figure for that cross-instance evaluation. LOAD-BEARING,
+  // not a restatement of the equality above it: it is the only assertion in
+  // the file that pins an absolute measure under DeadlineOnly bounds, and so
+  // the only one that catches the two account radices being swapped — every
+  // blindness equality compares two sides that would move together. Do not
+  // delete it as redundant.
   assert.equal(ticketMeasure(bDeadlineOnly, jWork), 416);
 });
 
@@ -685,6 +719,28 @@ test("the accounts of a Budgeted ticket escape their radix under DeadlineOnly bo
   // grant for it.
   assert.ok(accountDigitsInRange(bBudgeted, { ...jWork, gasLeft: 99 }));
   assert.ok(!accountDigitsInRange(bBudgeted, { ...jWork, gasLeft: -1 }));
+  // ONE CONJUNCT PER LINE, all five. Three of them — both reworkLeft bounds
+  // and wrapUpLeft's lower one — could be deleted with the suite still green
+  // when only the other two were pinned. s2a/s2b are the callers that will
+  // rely on this predicate to know when the flattening may be read
+  // lexicographically, so an unpinned conjunct is a promise nothing keeps.
+  assert.ok(!accountDigitsInRange(bBudgeted, { ...jWork, wrapUpLeft: -1 }));
+  assert.ok(!accountDigitsInRange(bBudgeted, { ...jWork, reworkLeft: -1 }));
+  assert.ok(
+    !accountDigitsInRange(bBudgeted, {
+      ...jWork,
+      reworkLeft: reworkBudget(bBudgeted.reworkPolicy) + 1,
+    }),
+  );
+  // And the boundary itself is IN range on both accounts — a `<` written for
+  // a `<=` would pass every negative case above.
+  assert.ok(
+    accountDigitsInRange(bBudgeted, {
+      ...jWork,
+      wrapUpLeft: wrapUpBudget(bBudgeted.wrapUpPricing),
+      reworkLeft: reworkBudget(bBudgeted.reworkPolicy),
+    }),
+  );
 });
 
 // === The descent table, row by row, at measure grain =======================
@@ -743,7 +799,11 @@ test("happyPathMeasureDescendsTest: every step of the happy path descends", () =
     [0, 2, 4, 4],
   );
   for (const c of [cA, cW, cE, cD]) {
-    assert.equal(c.spawned, c.record.length + c.tasks.length);
+    assert.equal(
+      c.spawned,
+      c.record.length + c.tasks.length,
+      `spawned != retired + live at ${c.phase}`,
+    );
   }
 });
 
@@ -787,6 +847,66 @@ test("workFailedWallTest / evalWallsNamedTest: every wall descends by rank", () 
     ]),
     [219, 189],
   );
+});
+
+test("gateWallsNamedTest: both gate walls descend out of the held lease", () => {
+  // The eval-side walls are pinned above; these are the LANDING-side pair, and
+  // they were claimed as mirrored in round 0 without actually being written.
+  // The budget wall is the one PLAN.md records as unreachable by trace
+  // sampling (`ticket-escalated wrapup_budget_exhausted`), which makes a unit
+  // pin on it worth more than the usual, not less.
+  const base = draft(grants.budgeted);
+  const budgetWall: Ticket = {
+    ...base,
+    phase: "PWrapUpHolding",
+    wrapUpLeft: 0,
+    gasLeft: 2,
+  };
+  assert.deepEqual(
+    measuresAt(bBudgeted, [
+      budgetWall,
+      escalated(budgetWall, "RsWrapUpBudgetExhausted", "RWrapUp"),
+    ]),
+    [576, 567],
+  );
+  // Budgeted, gas wall: the gate account remains and the gas is gone. Rank
+  // 1 -> 0 with every account still, so the descent is the rank's alone.
+  const gasWall: Ticket = { ...budgetWall, wrapUpLeft: 1, gasLeft: 0 };
+  assert.deepEqual(
+    measuresAt(bBudgeted, [
+      gasWall,
+      escalated(gasWall, "RsGasExhausted", "RWrapUp"),
+    ]),
+    [198, 189],
+  );
+});
+
+test("stagedProgramPassesTest: the FINAL stage passing lands the program", () => {
+  // eval-passed reached from a STAGED program rather than the flat one the
+  // happy path walks: rank 3 -> 2 AND the stage digit 1 -> 0 together.
+  const finalStage: Ticket = {
+    ...draft(grants.budgeted, progStaged),
+    phase: "PEvaluating",
+    gasLeft: 2,
+    record: [wt(1, "TPassed"), wt(2, "TPassed"), et(3, 0, "TPassed")],
+    spawned: 5,
+    tasks: [et(4, 1, "TPassed"), et(5, 1, "TFailed")],
+    artifact: { tag: "ASome", id: 2 },
+  };
+  const landed: Ticket = { ...retireLive(finalStage), phase: "PWrapUp" };
+  assert.ok(descends(bBudgeted, finalStage, landed));
+  assert.deepEqual(measuresAt(bBudgeted, [finalStage, landed]), [723, 711]);
+  // The whole anatomy is in the log, per-stage combinators applied — stage 1's
+  // CAnyPass passed on a mixed set, and the mixed set is retained as it fell.
+  assert.deepEqual(landed.record, [
+    wt(1, "TPassed"),
+    wt(2, "TPassed"),
+    et(3, 0, "TPassed"),
+    et(4, 1, "TPassed"),
+    et(5, 1, "TFailed"),
+  ]);
+  assert.ok(combine("CAnyPass", finalStage.tasks));
+  assert.ok(!combine("CUnanimousPass", finalStage.tasks));
 });
 
 test("evalReworkDescendsTest: the eval rework's account drop dominates its micro reset", () => {
@@ -859,6 +979,7 @@ test("revokeMeasureClassifiedTest: revoke descends from every live rank and is f
     assert.equal(
       ticketMeasure(bBudgeted, revoked(j)),
       ticketMeasure(bBudgeted, j),
+      `the desk-only revoke is not flat for reason ${j.reason}`,
     );
   }
   // Revoke charges nothing, account by account (chuggy_test
@@ -1189,6 +1310,7 @@ test("the flattened integer order IS the lexicographic order, exhaustively at th
             reworkLeft: rework,
           };
           // The declaration IS the oracle, so it is checked first.
+          const where = `${ticket.phase} with ${String(ticket.tasks.length)} task(s) over a ${String(ticket.program.length)}-stage program, accounts (${String(gas)}, ${String(wrapUp)}, ${String(rework)})`;
           assert.deepEqual(
             [
               phaseRank(ticket.phase),
@@ -1196,8 +1318,12 @@ test("the flattened integer order IS the lexicographic order, exhaustively at th
               runningCount(ticket.tasks),
             ],
             [...shape.digits],
+            `the shape's declared digits disagree with the derivations: ${where}`,
           );
-          assert.ok(accountDigitsInRange(b, ticket));
+          assert.ok(
+            accountDigitsInRange(b, ticket),
+            `the enumerated space must stay inside the radices: ${where}`,
+          );
           space.push({
             ticket,
             digits: [gas, wrapUp, rework, ...shape.digits],
@@ -1212,7 +1338,10 @@ test("the flattened integer order IS the lexicographic order, exhaustively at th
     for (let i = 0; i < x.length; i += 1) {
       const a = x[i];
       const c = y[i];
-      assert.ok(a !== undefined && c !== undefined);
+      assert.ok(
+        a !== undefined && c !== undefined,
+        `digit tuples are the same width; index ${String(i)} is missing from one of [${x.join(",")}] / [${y.join(",")}]`,
+      );
       if (a !== c) {
         return a < c ? -1 : 1;
       }
@@ -1221,12 +1350,21 @@ test("the flattened integer order IS the lexicographic order, exhaustively at th
   };
   for (const left of space) {
     for (const right of space) {
-      assert.equal(
-        Math.sign(
-          ticketMeasure(b, left.ticket) - ticketMeasure(b, right.ticket),
-        ),
-        lexCompare(left.digits, right.digits),
+      // The failing case is NAMED — with 65,536 pairs a bare `1 !== -1` is a
+      // failure the reader then has to re-derive the inputs for — but the
+      // message is built only when the comparison actually disagrees. An
+      // `assert.equal(a, b, msg)` here would interpolate two tuples and two
+      // extra measures on every one of the 65,536 passes, which is the same
+      // eager-message cost this slice just hoisted out of `stagesLeft`.
+      const got = Math.sign(
+        ticketMeasure(b, left.ticket) - ticketMeasure(b, right.ticket),
       );
+      const want = lexCompare(left.digits, right.digits);
+      if (got !== want) {
+        assert.fail(
+          `integer order and lexicographic order disagree: digits [${left.digits.join(",")}] (measure ${String(ticketMeasure(b, left.ticket))}) vs [${right.digits.join(",")}] (measure ${String(ticketMeasure(b, right.ticket))}) — got ${String(got)}, want ${String(want)}`,
+        );
+      }
     }
   }
 });
@@ -1274,10 +1412,25 @@ test("opRetryEvalFreshFanoutTest: a resume spawns above the retired history", ()
     spawned: 3,
   };
   assert.equal(nextTaskId(parked), 4);
-  const resumed = spawnOn(parked, { tag: "TKEval", stage: 0 }, 1);
+  const resumed: Ticket = {
+    ...spawnOn(parked, { tag: "TKEval", stage: 0 }, 1),
+    phase: "PEvaluating",
+    gasLeft: parked.gasLeft - 1,
+    reason: "RsNone",
+    resumeAt: "RNone",
+  };
   assert.deepEqual(resumed.tasks, [er(4, 0)]);
   assert.deepEqual(resumed.record, parked.record);
   assert.equal(resumed.spawned, 4);
+  // AND IT DESCENDS. This is the descent table's operator-retry row at its
+  // WORST case — the one `model/measure.qnt`'s header calls out by name: the
+  // REvaluating resume climbs rank 0 -> 3 AND brings the stage digit back at
+  // its maximum L AND respawns a fan-out, all in one step, and the single gas
+  // unit still outweighs the lot. Leaving it unpinned left the header's
+  // hardest domination claim resting on the two easier ones.
+  assert.ok(descends(bBudgeted, parked, resumed));
+  assert.deepEqual(measuresAt(bBudgeted, [parked, resumed]), [630, 412]);
+  assert.deepEqual([stagesLeft(resumed), runningCount(resumed.tasks)], [2, 1]);
 });
 
 test("revokeRetainsRecordTest: retireLive force-closes the running and preserves the resolved", () => {
@@ -1295,7 +1448,11 @@ test("revokeRetainsRecordTest: retireLive force-closes the running and preserves
   assert.deepEqual(revoked(jDraft).record, []);
   // The live set is empty afterwards in every case: Revoked runs nothing.
   for (const j of [jWork, jEval, jDraft]) {
-    assert.deepEqual(revoked(j).tasks, []);
+    assert.deepEqual(
+      revoked(j).tasks,
+      [],
+      `Revoked runs nothing, but the live set survived from ${j.phase}`,
+    );
   }
   // Retirement appends in id order, so record entry i keeps id firstTaskId + i.
   const twice = retireLive({
@@ -1348,8 +1505,22 @@ test("combinatorBranchesTest: both branches of the combinator vocabulary are dis
 });
 
 // === The negative space ====================================================
-// Every assertion this module carries, shown firing. An assertion nothing can
-// trip is a comment with a stack trace attached.
+// Every assertion this module carries, shown firing, WITH ONE STATED
+// EXCEPTION. An assertion nothing can trip is a comment with a stack trace
+// attached — so the roster is walked here rather than sampled, and the one
+// assertion that cannot be tripped through the public API is named below
+// instead of being quietly counted as covered.
+//
+// THE EXCEPTION is `micro`'s postcondition, `0 <= value < microBound(b)`. It
+// is not an independent check but the CONCLUSION of the two preconditions
+// asserted immediately above it plus `phaseRank <= rankCeiling`, which holds
+// for every `Phase` by the ladder's construction: with the stage digit at most
+// `maxStages` and the count at most `nTasks`, `micro <= rankCeiling*rankWeight
+// + maxStages*stageWeight + nTasks < radix(rankCeiling)*rankWeight`. Reaching
+// it therefore means one of the three has already fired. It is kept because it
+// is the claim the whole flattening rests on and it costs a comparison, and it
+// is named here because "shown firing" would otherwise be a false claim about
+// it.
 
 test("the digit bounds are checked, not assumed", () => {
   const b = bBudgeted;
@@ -1419,9 +1590,73 @@ test("the caller guarantees the model states in prose are enforced here", () => 
   assert.throws(() => spawnOn(jWork, { tag: "TKWork" }, 2), AssertionError);
   // combine: the caller reduces a fully-resolved set.
   assert.throws(() => combine("CUnanimousPass", [wr(1)]), AssertionError);
+  // evalStage: a stage index is a count, so a negative or fractional mark is
+  // refused before it can become a negative stage digit.
+  assert.throws(() => evalStage([er(1, -1)]), AssertionError);
+  assert.throws(() => evalStage([er(1, 0.5)]), AssertionError);
   // retireLive: live ids are contiguous above the record.
   assert.throws(
     () => retireLive({ ...jDraft, tasks: [wr(4)] }),
     AssertionError,
   );
+});
+
+test("the arithmetic is refused rather than silently rounded past 2^53", () => {
+  // `ticketMeasure` and `sysMeasure` both claim their result is a count. The
+  // model's ints are unbounded; JavaScript's stop being integers at 2^53, and
+  // past that a measure comparison starts answering `equal` for states that
+  // are not — which would make a descent proof read as a stutter. Neither
+  // assertion is decorative: a gas grant is a machine const, so nothing about
+  // the type system stops one arriving large enough.
+  const huge: Ticket = {
+    ...draft(grants.budgeted),
+    gasLeft: Number.MAX_SAFE_INTEGER,
+  };
+  assert.throws(() => ticketMeasure(bBudgeted, huge), AssertionError);
+  // The fleet sum overflows where no single ticket does: each of these is a
+  // fine measure on its own.
+  const large: Ticket = {
+    ...draft(grants.budgeted),
+    gasLeft: Math.floor(Number.MAX_SAFE_INTEGER / 300),
+  };
+  assert.ok(Number.isSafeInteger(ticketMeasure(bBudgeted, large)));
+  assert.throws(
+    () =>
+      sysMeasure(
+        bBudgeted,
+        new Map([
+          [1, large],
+          [2, large],
+          [3, large],
+        ]),
+      ),
+    AssertionError,
+  );
+});
+
+test("the assertNever arms name a tag TypeScript proved could not arrive", () => {
+  // These are the arms a DECODED GOLDEN TRACE can reach in s3: its tags come
+  // from outside TypeScript's knowledge, so the casts below are the shape of
+  // the real hazard rather than a contrivance — the same argument
+  // `assert.ts`'s own suite makes for `assertNever`.
+  const rogueKind = { tag: "TKNonsense" } as unknown as TaskKind;
+  assert.throws(
+    () => evalStage([{ id: 1, kind: rogueKind, state: { tag: "TSRunning" } }]),
+    AssertionError,
+  );
+  assert.throws(
+    () => wrapUpBudget({ tag: "Metered" } as unknown as WrapUpPricing),
+    AssertionError,
+  );
+  assert.throws(() => phaseRank("PParked" as Phase), AssertionError);
+  assert.throws(
+    () => combine("CMajorityPass" as Combinator, []),
+    AssertionError,
+  );
+  // The message carries the tag that arrived, which is the whole point of the
+  // arm: a replay failure has to say WHICH constructor the corpus held.
+  assert.throws(() => phaseRank("PParked" as Phase), {
+    name: "AssertionError",
+    message: 'unhandled Phase: "PParked"',
+  });
 });

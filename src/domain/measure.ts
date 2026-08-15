@@ -113,6 +113,14 @@ export type TaskSet = readonly Task[];
  * The canonical form, checked wherever a task set is read: ascending ids, no
  * duplicates, every id a real one. Cheap by construction — a live set is a
  * single phase's fan-out, so it holds at most `nTasks` entries.
+ *
+ * "Wherever it is read" is meant literally, and `nextTaskId` is the reason to
+ * say so: it reads only `.length`, which looks like it needs no canonical form
+ * until a duplicate id makes the length disagree with the count of distinct
+ * ids — and `nextTaskId` is precisely where that disagreement would mint a
+ * colliding id, breaking the history-uniqueness that lets a stale completion
+ * no-op by identity. Every reader calls this, including the ones that only
+ * count.
  */
 function assertTaskSet(tasks: TaskSet, where: string): void {
   let previous = firstTaskId - 1;
@@ -422,10 +430,17 @@ export function stagesLeft(ticket: Ticket): number {
   if (ticket.phase !== "PEvaluating") {
     return 0;
   }
-  const left = ticket.program.length - evalStage(ticket.tasks);
+  // `evalStage` is walked ONCE and the result reused in the message. It used
+  // to be called again to build a string that a passing call throws away —
+  // about half this function's work, on what becomes the replay hot path, in
+  // service of a failure that does not happen. `assert.ts` keeps its messages
+  // eager on purpose; that policy is only affordable if the message
+  // interpolates what is already in hand.
+  const stage = evalStage(ticket.tasks);
+  const left = ticket.program.length - stage;
   invariant(
     left >= 0,
-    `stagesLeft: the live stage indexes into the program, got stage ${String(evalStage(ticket.tasks))} of ${String(ticket.program.length)}`,
+    `stagesLeft: the live stage indexes into the program, got stage ${String(stage)} of ${String(ticket.program.length)}`,
   );
   return left;
 }
@@ -481,11 +496,12 @@ export function micro(b: Bounds, ticket: Ticket): number {
     running <= b.nTasks,
     `micro: the running count stays within its radix, got ${String(running)} of at most ${String(b.nTasks)}`,
   );
+  const bound = microBound(b);
   const value =
     phaseRank(ticket.phase) * rankWeight(b) + stages * stageWeight(b) + running;
   invariant(
-    value >= 0 && value < microBound(b),
-    `micro: ${String(value)} escapes its bound ${String(microBound(b))}`,
+    value >= 0 && value < bound,
+    `micro: ${String(value)} escapes its bound ${String(bound)}`,
   );
   return value;
 }
@@ -613,6 +629,7 @@ export function spawnTasks(k: TaskKind, start: number, n: number): TaskSet {
  * (record) or live (tasks), and ids are dense from `firstTaskId`.
  */
 export function nextTaskId(ticket: Ticket): number {
+  assertTaskSet(ticket.tasks, "nextTaskId");
   return firstTaskId + ticket.record.length + ticket.tasks.length;
 }
 
@@ -654,10 +671,16 @@ export function retireLive(ticket: Ticket): Ticket {
   assertTaskSet(ticket.tasks, "retireLive");
   const start = firstTaskId + ticket.record.length;
   const retired: Task[] = [];
-  for (let id = start; id < start + ticket.tasks.length; id += 1) {
-    const live = ticket.tasks.find((t) => t.id === id);
+  for (let offset = 0; offset < ticket.tasks.length; offset += 1) {
+    const id = start + offset;
+    // INDEXED, not searched. `assertTaskSet` has already established that the
+    // set is ascending by id with no repeats, so the entry that must carry
+    // `id` — if the contiguity below holds at all — is the one at `offset`.
+    // Scanning for it would re-establish by search what the canonical form
+    // already bought, and it is the only quadratic shape the file had.
+    const live = ticket.tasks[offset];
     invariant(
-      live !== undefined,
+      live !== undefined && live.id === id,
       `retireLive: live ids are contiguous above the record, found no task ${String(id)}`,
     );
     retired.push(
