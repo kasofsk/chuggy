@@ -29,9 +29,17 @@
  * counter-example each and left five widenings alive; round 2 answered them
  * with `cAllPhases` and `cBehindADraft` below — one ticket per phase, and the
  * SET the guard answers with — which closes all of them at once and stays
- * closed when a tenth phase arrives. The same rule is why the fan-in cascade
- * and the mixed dependency set are here: a `forall` over dependencies needs a
- * dependency set whose members disagree, not one more uniform one.
+ * closed when a tenth phase arrives.
+ *
+ * AND ITS TRANSPOSITION, learned the round after: AN EQUALITY GUARD OVER A
+ * RELATION IS PINNED BY EXACT SETS OVER BOTH ENDS' DOMAINS. `depsDoneIn`
+ * reads the DEPENDENCY's phase, so a fleet that varies the dependent's phase
+ * pins nothing about it — `cAllPhases` has no dependencies and
+ * `cBehindADraft` gives every ticket the same one, and between them four
+ * dependency-phase widenings survived. `cAheadOfEach` is that fixture
+ * transposed, and the same rule is why the fan-in cascade and the mixed
+ * dependency set are here: a `forall` over a relation needs members that
+ * disagree, not one more uniform set.
  *
  * THE EXPECTED VALUES ARE THE MODEL'S OWN. Structural expectations (labels,
  * transitions, effects, records, phases, accounts) are copied from the run
@@ -1103,6 +1111,51 @@ test("Blocked is the Pending ones, over a fleet where everything waits", () => {
   );
   assert.deepEqual(readiesIn(cBehindADraft), new Set());
   assert.deepEqual(draftsIn(cBehindADraft), new Set([1, 2]));
+});
+
+/**
+ * The TRANSPOSE of `cBehindADraft`: `cAllPhases` with one Pending dependent
+ * behind each of the nine phases (ids 10..18 waiting on 1..9 in order).
+ *
+ * `depsDoneIn` is an equality on the DEPENDENCY's phase, and neither fleet
+ * above varies it — `cAllPhases` has no dependencies at all, and every
+ * `cBehindADraft` ticket waits on the same Draft. So both pin the DEPENDENT's
+ * end of the relation and neither pins the other, which left four "this
+ * dependency counts as Done" widenings alive: a dependent whose dependency is
+ * still Working or Evaluating, holding the gate, or parked on the desk would
+ * have gone Ready and dispatchable while the thing it waits on had produced
+ * nothing — `depArtifacts` reading `ANone` for an artifact that does not
+ * exist yet.
+ */
+const cAheadOfEach: Core = core([
+  ...cAllPhases.tickets,
+  ...[...cAllPhases.tickets.keys()].map((d): readonly [number, Ticket] => [
+    d + cAllPhases.tickets.size,
+    { ...draft(cfgBudgeted, progU2, 1, 1, new Set([d])), phase: "PPending" },
+  ]),
+]);
+
+test("Done is the only dependency phase that unblocks, over all nine of them", () => {
+  const where = (p: (j: number) => boolean): ReadonlySet<number> =>
+    new Set([...cAheadOfEach.tickets.keys()].filter(p));
+  // Read from the model. The nine leaders have no dependencies, so their deps
+  // are vacuously done; of the nine dependents only 16 — the one behind the
+  // PDone ticket — joins them.
+  assert.deepEqual(
+    where((j) => depsDoneIn(cAheadOfEach, j)),
+    new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 16]),
+  );
+  assert.deepEqual(readiesIn(cAheadOfEach), new Set([2, 16]));
+  assert.deepEqual(
+    where((j) => isBlockedIn(cAheadOfEach, j)),
+    new Set([10, 11, 12, 13, 14, 15, 17, 18]),
+  );
+  // And what the guard is FOR: nothing waiting on an unfinished dependency is
+  // dispatchable, whatever phase that dependency is in.
+  assert.deepEqual(
+    where((j) => dispatchableIn(cAheadOfEach, j)),
+    new Set([2, 16]),
+  );
 });
 
 test("the parked and the revoked are outside the waiting room, not inside it", () => {
