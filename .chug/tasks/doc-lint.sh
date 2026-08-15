@@ -7,12 +7,12 @@
 #   2. Intra-repo links resolve — every relative markdown link `](path)` points
 #      at something that exists. Anchors, `http(s)://` and `mailto:` targets are
 #      skipped. A dangling relative link is an ERROR.
-#   3. Design filenames — a `.md` directly under `docs/design/` is named <!-- absent -->
+#   3. Design filenames — each `docs/design/*.md` is named
 #      `{seq}-{slug}.md`: leading digits, a hyphen, then a lowercase-kebab slug.
 #      The directory does not exist today and this rule is what will be waiting
 #      when it does.
 #      ERROR. The match anchors on the repo-relative path, so a path merely
-#      *ending* in `docs/design/x.md` is some other repo's file, and a nested <!-- absent -->
+#      *ending* in `docs/design/*.md` is some other repo's file, and a nested
 #      subdirectory is out of scope. Its character classes are spelled out
 #      rather than written as `a-z` ranges: range membership in shell patterns
 #      follows the locale's collation order, so under en_US.UTF-8 `a-z` also

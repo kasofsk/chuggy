@@ -6,14 +6,14 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 
 ## Where the knowledge is
 
-**`model/` is the specification.** There is no `docs/` tree; the written standards that used to sit beside the model were removed rather than maintained alongside it. <!-- absent --> So the tree states what is true of itself in exactly two places, and both are checkable:
+**`model/` is the specification.** There is no `docs` tree; the written standards that used to sit beside the model were removed rather than maintained alongside it. So the tree states what is true of itself in exactly two places, and both are checkable:
 
 - **`model/`** — the machine, its measure, its refinement and its suites. What it proves, it proves; nothing restates a proved property in prose.
 - **each gate's own header** — every script in `.chug/tasks/` opens by stating the rule it enforces and why. The rule and its enforcement cannot drift apart, because they are the same file.
 
 This file is the third: an entry point and a set of conventions, holding what neither of those two can hold.
 
-**The general standards came back as skills the tree declares rather than holds.** `.claude/settings.json` enables the eight `blessed-practices` plugins — `layering` and `domain-modelling` among them, the two that left with `docs/` <!-- absent -->. They are invoked through the Skill tool rather than read, so a reviewer cites one by name and an author is given the same file. The trade is worth stating: their content is versioned in `kasofsk/blessed-practices` and can move without a commit here, which a gate header cannot. That is the cost of not maintaining a second copy, and it is why the two places above still carry everything that must be true of *this* tree — a skill states what good code looks like anywhere, never what is true here.
+**The general standards came back as skills the tree declares rather than holds.** `.claude/settings.json` enables the eight `blessed-practices` plugins — `layering` and `domain-modelling` among them, the two that left with `docs`. They are invoked through the Skill tool rather than read, so a reviewer cites one by name and an author is given the same file. The trade is worth stating: their content is versioned in `kasofsk/blessed-practices` and can move without a commit here, which a gate header cannot. That is the cost of not maintaining a second copy, and it is why the two places above still carry everything that must be true of *this* tree — a skill states what good code looks like anywhere, never what is true here.
 
 ## Checks
 
