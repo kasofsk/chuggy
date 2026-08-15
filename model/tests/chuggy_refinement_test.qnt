@@ -115,6 +115,27 @@ module chuggy_refinement_unit_test {
     not(journalLegalOn([e1, { ...e2, rec: { ...e2.rec, effects: ["WOk"] } }]))
   })
 
+  /// Tamper 4 — an out-of-universe PAYLOAD: an arrival's wrap-up lease
+  /// must come from `wrapUpChoices`, exactly as its prog and repo come
+  /// from validPrograms and repos (the `arrive` action's fourth draw,
+  /// and wrapUpChoices IS the refusal rule). The row is otherwise
+  /// impeccable — dense seq, and its rec is the one the decider itself
+  /// produces — so only the draw-set conjunct can refuse it; without
+  /// that conjunct the replay materializes a ticket holding a lease on
+  /// a resource the universe does not contain. N_REPOS = 1 here, so
+  /// WExclusive(2) is out of universe too: the refusal is membership,
+  /// not a range sniff.
+  run journalRefusesOutOfUniversePayloadTest =
+    val phantom: Cmd =
+      JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(99) })
+    val ePhantom: Entry = { seq: 1, cmd: phantom, rec: execCmd(genesis, phantom).rec }
+    assert(and {
+      not(cmdEnabled(genesis, phantom)),
+      not(journalLegalOn([ePhantom])),
+      not(cmdEnabled(genesis,
+        JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(2) })))
+    })
+
   /// The world/journal arithmetic of theorem 2, on concrete data: an
   /// unemitted spawn counts on the book only; emission closes the gap
   /// to equality; an ORPHAN (the same decision's record with no seq)

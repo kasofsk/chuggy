@@ -353,7 +353,8 @@ module chuggy_refinement {
         canArriveIn(c),
         a.deps.subseteq(dependableIn(c)),
         validPrograms.contains(a.prog),
-        repos.contains(a.repo)
+        repos.contains(a.repo),
+        wrapUpChoices.contains(a.wrapUp)
       }
     | JRelease(j) => draftsIn(c).contains(j)
     | JRevoke(j) => revocablesIn(c).contains(j)

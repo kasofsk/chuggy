@@ -40,10 +40,18 @@
 # neither is nor ever was ours. A `package.json` dependency spelled with a
 # scope is skipped by that last one and needs no rule of its own.
 #
-# THE ESCAPE IS ONE MARKER, `<!-- absent -->`, anywhere on the line, covering
-# that line only. It reads naturally in markdown and survives inside a comment
-# in every other file type, so there is one spelling to learn rather than one
-# per language. A path that is simply stale is an edit, not a marker.
+# THERE IS NO ESCAPE, and that is the whole of the policy. A line this gate
+# rejects is fixed by editing the sentence, because every rejection so far has
+# had a rewrite that reads better than the original: a directory is named
+# without its trailing slash, a rule about files is stated as the glob it
+# actually matches, and both are skipped above without needing an exemption.
+# A suppression marker was tried and removed — it went unused, and its only
+# effect was to teach readers a convention that prevented nothing.
+#
+# What this forbids is naming a *specific* deleted file exactly, since neither
+# skip above applies to one. If that sentence ever genuinely needs writing,
+# re-add the escape with that sentence as its motivating case rather than
+# reaching for `--no-verify`, which bypasses every gate at once.
 #
 # Usage:
 #   .chug/tasks/check-paths.sh [<file>...]
@@ -119,7 +127,6 @@ FNR == 1 { comments_only = (FILENAME ~ /\.test\.sh$/) }
 	# recompiled per call: on this tree it is the difference between 3s and
 	# well under 1s, nearly all of it in the model.
 	if (index($0, "/") == 0) next
-	if (index($0, "<!-- absent -->") > 0) next
 	if (comments_only && $0 !~ /^[ \t]*#/) next
 	s = $0
 	while (match(s, "[A-Za-z0-9_.@-]+/[A-Za-z0-9_.@/-]*")) {

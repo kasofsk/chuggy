@@ -6,12 +6,14 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 
 ## Where the knowledge is
 
-**`model/` is the specification.** There is no `docs/` tree; the written standards that used to sit beside the model were removed rather than maintained alongside it. <!-- absent --> So the tree states what is true of itself in exactly two places, and both are checkable:
+**`model/` is the specification.** There is no `docs` tree; the written standards that used to sit beside the model were removed rather than maintained alongside it. So the tree states what is true of itself in exactly two places, and both are checkable:
 
 - **`model/`** — the machine, its measure, its refinement and its suites. What it proves, it proves; nothing restates a proved property in prose.
-- **each gate's own header** — every script in `.chug/tasks/` opens by stating the rule it enforces and why. The rule and its enforcement cannot drift apart, because they are the same file.
+- **each gate's own header** — every script in `.chug/tasks/` opens by stating the rule it enforces and why. The rule and its enforcement cannot drift apart, because they are the same file. `.chug/tasks/review-change.md` is the same arrangement for the rules no script can decide: a reviewer is what enforces them, so they are written in the reviewer's own brief.
 
 This file is the third: an entry point and a set of conventions, holding what neither of those two can hold.
+
+**The general standards came back as skills the tree declares rather than holds.** `.claude/settings.json` enables the eight `blessed-practices` plugins — `layering` and `domain-modelling` among them, the two that left with `docs`. They are invoked through the Skill tool rather than read, so a reviewer cites one by name and an author is given the same file. The trade is worth stating: their content is versioned in `kasofsk/blessed-practices` and can move without a commit here, which a gate header cannot. That is the cost of not maintaining a second copy, and it is why the two places above still carry everything that must be true of *this* tree — a skill states what good code looks like anywhere, never what is true here.
 
 ## Checks
 
@@ -19,7 +21,9 @@ This file is the third: an entry point and a set of conventions, holding what ne
 just check          # everything
 ```
 
-The pre-commit hook runs the fast subset and is installed with `git config core.hooksPath .githooks` — **a fresh clone needs that once**.
+The pre-commit hook runs the fast subset and is installed with `git config core.hooksPath .githooks` — **a fresh clone needs that once**, because git config is not tracked and nothing in a checkout can set it for you.
+
+The skills need no such step, and the difference is the reason `.claude/settings.json` is tracked at all: a clone and a `git worktree` both come up with the eight already enabled, where an untracked settings file would leave a worktree silently without them. A machine that has never seen the `blessed-practices` marketplace fetches it on first use.
 
 Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
 slowest by far is `check-model.sh` (~50s against ~19s for everything else,
@@ -36,5 +40,5 @@ That path is not a placeholder. When this repo is eventually orchestrated by the
 - **`--no-verify` bypasses every gate at once**, including the ones you were not trying to skip. Legitimate when the alternative is leaving work uncommitted; run `just check` before you push either way.
 - **A figure written into a doc carries its measurement date.** Timings, counts and thresholds go stale silently, and a count written into a comment goes stale even when the comment beside it asks for re-measurement. Prefer a figure a script derives at run time to one a reader has to trust.
 - **A rule needs a failure it can prevent here.** Before adding one, name the thing that goes wrong in *this* tree if it is absent. A rule adopted because it sounds right is a rule nobody can apply a refutation trigger to.
-- **Nothing reviews its own work.** `.chug/tasks/review-change.md` is the reviewer's brief, and it is written to be run in a **fresh session** that did not author the change — an agent handed its own diff re-reads its intentions instead of the code, and agrees with itself. Until there is a platform to run it as an evaluation task, run it by hand before anything lands.
+- **Nothing reviews its own work.** `.chug/tasks/review-change.md` is the reviewer's brief, and it is written to be run in a **fresh session** that did not author the change — an agent handed its own diff re-reads its intentions instead of the code, and agrees with itself. Until there is a platform to run it as an evaluation task, run it by hand before anything lands. It is also where the standing rules and commitments are written, so **an author is bound by it too** — read it before writing, not only before reviewing.
 - **Don't run destructive commands** — deploys, restarts, data resets — without asking first.

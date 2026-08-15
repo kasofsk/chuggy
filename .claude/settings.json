@@ -1,0 +1,20 @@
+{
+  "enabledPlugins": {
+    "comments-describe-the-code@blessed-practices": true,
+    "dependencies@blessed-practices": true,
+    "domain-modelling@blessed-practices": true,
+    "fix-the-assumption-not-the-hack@blessed-practices": true,
+    "idiomatic-by-default@blessed-practices": true,
+    "layering@blessed-practices": true,
+    "modular-and-layered-code@blessed-practices": true,
+    "push-back-and-verify-assumptions@blessed-practices": true
+  },
+  "extraKnownMarketplaces": {
+    "blessed-practices": {
+      "source": {
+        "source": "github",
+        "repo": "kasofsk/blessed-practices"
+      }
+    }
+  }
+}
