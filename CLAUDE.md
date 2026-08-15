@@ -9,7 +9,7 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 **`model/` is the specification.** There is no `docs` tree; the written standards that used to sit beside the model were removed rather than maintained alongside it. So the tree states what is true of itself in exactly two places, and both are checkable:
 
 - **`model/`** — the machine, its measure, its refinement and its suites. What it proves, it proves; nothing restates a proved property in prose.
-- **each gate's own header** — every script in `.chug/tasks/` opens by stating the rule it enforces and why. The rule and its enforcement cannot drift apart, because they are the same file.
+- **each gate's own header** — every script in `.chug/tasks/` opens by stating the rule it enforces and why. The rule and its enforcement cannot drift apart, because they are the same file. `.chug/tasks/review-change.md` is the same arrangement for the rules no script can decide: a reviewer is what enforces them, so they are written in the reviewer's own brief.
 
 This file is the third: an entry point and a set of conventions, holding what neither of those two can hold.
 
@@ -37,5 +37,5 @@ That path is not a placeholder. When this repo is eventually orchestrated by the
 - **`--no-verify` bypasses every gate at once**, including the ones you were not trying to skip. Legitimate when the alternative is leaving work uncommitted; run `just check` before you push either way.
 - **A figure written into a doc carries its measurement date.** Timings, counts and thresholds go stale silently, and a count written into a comment goes stale even when the comment beside it asks for re-measurement. Prefer a figure a script derives at run time to one a reader has to trust.
 - **A rule needs a failure it can prevent here.** Before adding one, name the thing that goes wrong in *this* tree if it is absent. A rule adopted because it sounds right is a rule nobody can apply a refutation trigger to.
-- **Nothing reviews its own work.** `.chug/tasks/review-change.md` is the reviewer's brief, and it is written to be run in a **fresh session** that did not author the change — an agent handed its own diff re-reads its intentions instead of the code, and agrees with itself. Until there is a platform to run it as an evaluation task, run it by hand before anything lands.
+- **Nothing reviews its own work.** `.chug/tasks/review-change.md` is the reviewer's brief, and it is written to be run in a **fresh session** that did not author the change — an agent handed its own diff re-reads its intentions instead of the code, and agrees with itself. Until there is a platform to run it as an evaluation task, run it by hand before anything lands. It is also where the standing rules and commitments are written, so **an author is bound by it too** — read it before writing, not only before reviewing.
 - **Don't run destructive commands** — deploys, restarts, data resets — without asking first.

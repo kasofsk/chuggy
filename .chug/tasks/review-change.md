@@ -13,7 +13,9 @@ Run this in a fresh session with no memory of the authoring.
    for the branch.
 2. Read the files it touches **in full**, not just the hunks. A hunk cannot
    show you what it broke three functions down.
-3. Then judge, in the order below. Stop at the first heading that applies.
+3. Then judge. The priorities under **What you judge** are in order — stop at
+   the first that applies. The standing rules and commitments below are what
+   you cite from, not a further tier to work through.
 
 ## What you judge
 
@@ -23,16 +25,77 @@ disagree, the code is wrong — including when the code looks more sensible. A
 change that needs the model to be different is a change to the model first, in
 its own commit, with the suites re-run.
 
-**Each gate states its own rule in its own header.** There is no separate
-standards document to cite, so cite the header: name the gate and the sentence
-in it that the change violates. A rule you cannot point at in the tree is not a
-rule you can reject over — say it as an opinion instead, and let the author
-take it or leave it.
+**Each gate states its own rule in its own header.** Cite the header: name the
+gate and the sentence in it that the change violates. Where no gate covers it,
+cite a standing rule below by its number, or a commitment by its name. A rule
+you cannot point at in one of those three places is not a rule you can reject
+over — say it as an opinion instead, and let the author take it or leave it.
 
 **Correctness before anything else**, then whether the change does what it set
 out to do, then whether it does anything it did not set out to do. An
 unrelated improvement in the same diff is worth naming; it is rarely worth
 blocking.
+
+## The standing rules
+
+The rules no gate enforces, because no script can decide them. They bind the
+author, and the reviewer rejects by number.
+
+**The numbering starts at 7, and that is not a gap.** Rules 1 through 6 are the
+mechanical ones — comment quantity, the domain layer reaching no I/O and no
+ambient capability, exhaustive switching, no floating promises, a function
+length cap, and formatter defaults. Each arrives as a gate or a lint config
+with the toolchain that can enforce it, and is then stated in the thing that
+enforces it and never here. A rule with two homes has two versions of itself
+inside a year, which is the whole reason this repo has no standards document.
+
+7. **Deciders return effects; they never perform them.** A decider is a pure
+   function of an observed view and an event, returning transitions and a list
+   of effects. This is what lets the core replay against golden traces without
+   stubbing the world.
+8. **Reads are not effects.** A value a decision needs is gathered into the
+   view before the decider runs. Getting this backwards is the commonest way a
+   decider/effect split stops being testable: the decider acquires an `await`,
+   and then a mock.
+9. **Everything is bounded.** Every loop, queue, retry, buffer and recursion
+   has an explicit limit.
+10. **Assert liberally in domain code** — arguments, postconditions, and the
+    invariants a function claims to preserve. Assert the negative space too:
+    that the thing which must not happen did not.
+11. **Units and qualifiers are suffixes in descending significance** —
+    `timeoutSecsMax`, not `maxTimeoutSecs`. No abbreviations in identifiers,
+    and a helper is prefixed with its caller's name, so the call tree reads
+    from the names alone. Agent-written code is navigated by grep, and
+    predictable names are the index.
+12. **The commit message carries the why** — why this change, now: the
+    reasoning that would otherwise have been a comment.
+13. **New behaviour lands with a test at the lowest tier that can express it**,
+    and every fix lands with a regression test.
+14. **Contract-first.** A change to the core names the contract it changes. If
+    it cannot be expressed that way then the contract does not exist yet, and
+    writing it is the first commit of the work.
+
+## The standing commitments
+
+Positions this repo has taken and has not reopened. Cite one by name. A change
+that needs one of them to be false is an **ESCALATE**, not a finding.
+
+- **The measure comes first.** When the machine changes, `measure.qnt` is
+  reworked before anything else.
+- **No free re-entry.** No step returns to a prior state without spending
+  measure.
+- **Derive, don't store.** A stored duplicate of a derivable fact is a finding.
+- **Single writer.** One journaled actor decides; nothing else writes.
+- **Simplicity over performance.** Take the simple shape until a measurement,
+  not an intuition, says otherwise.
+- **Zero technical debt.** Fix it in the change that found it, or file it as
+  work. "Later" is neither of those.
+- **An unverified control is worse than none**, because a control that reports
+  success is believed and then never checked again. This is why every gate
+  separates clean from could-not-run, and why a new check is run against a tree
+  carrying the defect it names before it is trusted.
+- **A dependency needs its justification in the commit message.** Each one is a
+  supply chain, an upgrade obligation and a surface.
 
 ## The discipline that makes this useful
 
