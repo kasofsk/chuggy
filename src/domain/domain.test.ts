@@ -1913,8 +1913,21 @@ const cXDepPre: Core = core([
   [1, { ...draft(cfgBudgeted), phase: "PWrapUp" }],
   [2, { ...draft(cfgBudgeted, progU2, 2, 2, new Set([1])), phase: "PPending" }],
 ]);
+// Ticket 1 carries `ASome(2)` on `jDone`'s reasoning: the model's own
+// cXDepDone left `freshTicket`'s `ANone` on a Done ticket, which
+// `artifactWellFormed` forbids, and kasofsk PR #31 is the one-field fix this
+// mirrors. Nothing below reads the mark — the gate reads Done-ness — so the
+// correction changes no answer this test pins.
 const cXDepDone: Core = core([
-  [1, { ...draft(cfgBudgeted), phase: "PDone", completions: 1 }],
+  [
+    1,
+    {
+      ...draft(cfgBudgeted),
+      phase: "PDone",
+      artifact: { tag: "ASome", id: 2 },
+      completions: 1,
+    },
+  ],
   [2, { ...draft(cfgBudgeted, progU2, 2, 2, new Set([1])), phase: "PPending" }],
 ]);
 
@@ -2048,7 +2061,11 @@ test("depArtifacts: what this ticket's dependencies produced, derived and set-va
     { tag: "ASome", id: 2 },
   ]);
   // Two dependencies carrying the SAME mark collapse to one element, because
-  // the model's read is a set-valued map. Read from the model: Set(ANone).
+  // the model's read is a set-valued map. Read from the model: the singleton
+  // set holding `jDone`'s own mark, whichever it is — the claim is the
+  // collapse, and it is stated against the fixture rather than against a
+  // literal so that #31's correction to that fixture cannot silently make this
+  // a test of two different marks.
   const cTwoDeps: Core = core([
     [1, jDone],
     [2, jDone],
@@ -2061,7 +2078,8 @@ test("depArtifacts: what this ticket's dependencies produced, derived and set-va
     ],
   ]);
   const marks: readonly ArtifactMark[] = depArtifacts(cTwoDeps, 3);
-  assert.deepEqual(marks, [{ tag: "ANone" }]);
+  assert.deepEqual(marks, [jDone.artifact]);
+  assert.equal(marks.length, 1);
   assert.ok(isReadyIn(cTwoDeps, 3));
 });
 

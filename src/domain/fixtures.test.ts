@@ -252,9 +252,26 @@ export const jParkDep: Ticket = {
   phase: "PEscalated",
   reason: "RsDependencyRevoked",
 };
-/** `chuggy_test`'s cXDepDone ticket 1 — a landed ticket, hand-built there too. */
+/**
+ * `chuggy_test`'s cXDepDone ticket 1 — a landed ticket, hand-built there too.
+ *
+ * THE ARTIFACT MARK IS PART OF THE FIXTURE, and it is `ASome(2)` because a Done
+ * ticket with `ANone` is a state `artifactWellFormed` forbids: the model's own
+ * fixture carried `freshTicket`'s `ANone` through to `PDone` and is corrected
+ * to `ASome(2)` in kasofsk PR #31, whose one-field fix this mirrors. The value
+ * is the model's: at these consts the work fan-out is 2, and `decideWorkReduce`
+ * stamps `ASome(retired.spawned)`.
+ *
+ * It is still a shape no trace produces — the mark names a spawn history the
+ * fixture does not carry, and no invariant says so, because the artifact's
+ * identity is opaque to every one of them. That is the honest limit of the
+ * correction: it buys the fixture the invariant it was breaking, and the
+ * fixture goes on standing for a LANDED ticket the dependency gate can read
+ * rather than for a step of a trace.
+ */
 export const jDone: Ticket = {
   ...draft(cfgBudgeted),
   phase: "PDone",
+  artifact: { tag: "ASome", id: 2 },
   completions: 1,
 };
