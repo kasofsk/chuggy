@@ -227,6 +227,10 @@ echo x >>"$root/attempts"
 attempts="$(grep -c . "$root/attempts")"
 case "$(cat "$root/mode")" in
 segv) kill -SEGV $$ ;;
+segv-noisy)
+	echo "quint: partial output before dying"
+	kill -SEGV $$
+	;;
 segv-then-ok)
 	if [ "$attempts" -lt 3 ]; then kill -SEGV $$; fi
 	cp "$root/canned1.itf.json" "$out"
@@ -282,6 +286,24 @@ grep -qF "retrying (ledger #12)" "$OUT" || {
 	echo "FAIL - the retry was not reported"
 	fail=$((fail + 1))
 }
+
+# THE SAME SIGNAL, WITH OUTPUT. Not the flake: ledger #12's signature is
+# SIGSEGV *and nothing written*, and a crash that got far enough to say
+# something got far enough to be worth reading. Removing the output half of
+# that guard leaves every other case here green — the run still ends in a 2 —
+# and only the REASON changes, from "was killed" to "produced no verdict after
+# every retry", which is the failure class the flake fix exists to keep apart.
+emit_repo segv-noisy 0.32.0
+run_emit
+check "a segfault that printed something is not the flake" 2 "$RC" \
+	"was killed by SIGSEGV"
+if grep -qF "retrying (ledger #12)" "$OUT"; then
+	echo "FAIL - a segfault with output was retried as the flake"
+	fail=$((fail + 1))
+else
+	echo "ok   - a segfault with output is refused rather than retried"
+	pass=$((pass + 1))
+fi
 
 # ANY OTHER SIGNAL. Something killed quint; this tool does not get to decide it
 # was harmless, and it is not the flake.

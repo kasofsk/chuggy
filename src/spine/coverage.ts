@@ -206,8 +206,16 @@ export class CoverageBuilder {
  * reaches.
  *
  * The three trace-observable rosters and no more: an instance is a manifest
- * field rather than something a trace says, and it is checked as its own
- * obligation.
+ * field rather than something a trace says, and a binder is vetted at decode —
+ * both are checked as their own obligations instead.
+ *
+ * IT IS A UNION, SO A FEW NAMES ARE AMBIGUOUS BY CONSTRUCTION: `init`,
+ * `task-done-duplicate`, `complete-duplicate`, `settled` and `ticket-arrived`
+ * are each both a step label and an exemption arm, and a pin naming one cannot
+ * say which of the two claims it makes. Nothing is lost — the fixture must
+ * reach the entry under either reading, and the two readings coincide on every
+ * one of them, since the arm is what the label's own step fires. Splitting the
+ * namespace would buy precision no obligation is asking for.
  */
 export const pinnableEntries: readonly string[] = [
   ...shippedDeciders,
@@ -240,10 +248,16 @@ export type CoverageGap = {
  * reported too, because it means this tree's roster and the machine's have
  * drifted and the corpus is the evidence.
  *
- * THE INSTANCE OBLIGATION IS CHECKED ONE-WAY, and only that one: an instance
- * name is not observed from a trace but read from the manifest, where the
- * loader has already refused any name outside this roster. The other three are
- * observed from the traces themselves, where nothing has vetted them.
+ * TWO OBLIGATIONS ARE CHECKED ONE-WAY, and each for the same reason: the entry
+ * has already been vetted before it could be observed, so the unexpected
+ * direction has nothing to report. An INSTANCE name is not observed from a
+ * trace at all — it is read from the manifest, where the loader refuses any
+ * name outside this roster. A NONDET BINDER is observed from a trace, but only
+ * through `decodePicks`, whose `fieldsExactly` demands the decoder's own binder
+ * table exactly: a binder the machine gained is a decode failure naming it
+ * rather than a coverage entry nobody rostered. The other three — deciders,
+ * step labels, exemption arms — are read off the traces themselves, where
+ * nothing has vetted them, so those are the three checked in both directions.
  */
 export function coverageGaps(coverage: Coverage): readonly CoverageGap[] {
   return [

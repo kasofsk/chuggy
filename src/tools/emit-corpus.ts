@@ -124,9 +124,13 @@ function runQuint(args: readonly string[]): Run {
         `quint was killed by ${String(result.signal)}: ${args.join(" ")}`,
       );
     }
-    console.log(
-      `  quint died with no verdict on attempt ${String(attempt)} of ${String(segfaultAttempts)}; retrying (ledger #12)`,
-    );
+    // Announced only while another attempt follows: the last one retries
+    // nothing, and the line after it is the refusal.
+    if (attempt < segfaultAttempts) {
+      console.log(
+        `  quint died with no verdict on attempt ${String(attempt)} of ${String(segfaultAttempts)}; retrying (ledger #12)`,
+      );
+    }
   }
   throw new CorpusError(
     `quint produced no verdict after every retry: ${args.join(" ")}`,

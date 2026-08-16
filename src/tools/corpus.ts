@@ -29,9 +29,12 @@
  *      binder roster is a fourth obligation the gate now checks by name. It is
  *      not implied by the other three: `out` — the gate resolution's outcome
  *      draw — is bound by exactly two fixtures, and dropping both leaves that
- *      decode arm covered by nothing while every other roster stays complete.
- *      That is measured, and the check that keeps it measured is in
- *      `coverageGaps`.
+ *      decode arm covered by nothing while every decider, label and exemption
+ *      arm stays covered. (Not every roster: one of the two is the only
+ *      tier-1 entry on the DeadlineOnly instance, so the instance obligation
+ *      reds as well — which is also what makes the droppable set exactly six
+ *      rather than larger. The binder roster is the one that has no other
+ *      guardian.) That is measured, and `coverageGaps` is what keeps it so.
  *   2. IT IS THE GROUND TRUTH FOR THE TIER-2 RECONSTRUCTION.
  *      `src/spine/decode.test.ts` reconstructs every tier-1 trace with its
  *      decision events hidden and requires the same commands back. That case
