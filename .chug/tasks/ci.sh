@@ -185,6 +185,16 @@ if [ -x ./.chug/tasks/check-source.sh ]; then
 	run_gate "check-source" ./.chug/tasks/check-source.sh
 fi
 
+# --- The corpus --------------------------------------------------------------
+# After check-source because it replays TypeScript: a tree that does not
+# typecheck should be told so under that heading rather than as a conformance
+# run that could not start. Before check-model for the reason below — it reads
+# a committed corpus where that one runs the model itself.
+
+if [ -x ./.chug/tasks/check-conformance.sh ]; then
+	run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
+fi
+
 # --- The model ---------------------------------------------------------------
 # Last because it is by far the slowest, and a fast gate that runs after a slow
 # one is a fast gate nobody benefits from.

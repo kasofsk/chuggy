@@ -15,6 +15,14 @@
  * AN UNKNOWN ACTION THROWS. A trace names its action, and falling through to a
  * neighbouring decider would replay something the model never took while
  * reporting agreement.
+ *
+ * `replayActions` IS THE TABLE'S DOMAIN, WRITTEN DOWN SO IT CAN BE CHECKED. A
+ * switch cannot be enumerated at run time, so the roster is a value beside it
+ * and `dispatch.test.ts` binds it at both ends: to `model/domain.qnt`'s own
+ * `step` roster, and to this switch, which must route every name in it and
+ * refuse every name outside it. Read off by eye, an action added to the model
+ * costs nothing here until a golden happens to fire it; read against the
+ * model, it is a failure the moment the model moves.
  */
 
 import type { Config } from "../../src/domain/config.ts";
@@ -47,6 +55,29 @@ import {
   decodeTicketId,
   decodeWrapUp,
 } from "../itf/vocabulary.ts";
+
+/**
+ * Every action name this table routes, in the order `model/domain.qnt`'s `step`
+ * lists them. It is checked against that roster rather than trusted.
+ */
+export const replayActions: readonly string[] = [
+  "arrive",
+  "release",
+  "revoke",
+  "dispatch",
+  "taskDone",
+  "workReduce",
+  "evalReduce",
+  "wrapUpStart",
+  "wrapUpResolve",
+  "completeDuplicate",
+  "revalFail",
+  "opRetry",
+  "settle",
+];
+
+/** What `replayStep` throws when a trace names an action this table has no arm for. */
+export const unknownActionMessage = "is not an action of this machine";
 
 /**
  * One step's draws, under the names `mbt::nondetPicks` records them by. Each is
@@ -145,6 +176,6 @@ export function replayStep(
     case "settle":
       return { rec: settledRecord(), post: pre };
     default:
-      throw new Error(`replay: ${action} is not an action of this machine`);
+      throw new Error(`replay: ${action} ${unknownActionMessage}`);
   }
 }
