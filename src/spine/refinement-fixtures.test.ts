@@ -90,13 +90,20 @@ export const evalReduce: Cmd = { tag: "JEvalReduce", ticket: 1 };
 /**
  * The valid-artifact dequeue: the wrap-up resolves in this same step, no gate.
  *
- * "Quiet land" is the model's own name for this route, so the name here is
- * the model's rather than this file's: `quietLandDeterministicTest` is the
+ * "Quiet wrap-up" is the model's own name for this route, so the name here is
+ * the model's rather than this file's: `quietWrapUpDeterministicTest` is the
  * witness run that spells it, pinning the environment's choice quiet and the
  * wrap-up succeeding. `quietProjectLandsCleanly` is the same claim as a state
  * theorem and spells it differently, which is why the run is the citation.
+ *
+ * IT USED TO SAY "QUIET LAND", and the correction is the whole of this slice.
+ * The run was `quietLandDeterministicTest` until upstream PR #57 renamed it,
+ * and this paragraph was the argument for keeping the old spelling — a
+ * citation that stopped resolving the moment the thing it cited moved. The
+ * name that survived the rename is the verb inside `quietProjectLandsCleanly`,
+ * which is why that sentence is still true and this one had to be rewritten.
  */
-export const quietLand: Cmd = { tag: "JDequeue", ticket: 1, moved: false };
+export const quietWrapUp: Cmd = { tag: "JDequeue", ticket: 1, moved: false };
 /** The moved dequeue: into the gate, which a resolution then promotes. */
 export const enterGate: Cmd = { tag: "JDequeue", ticket: 1, moved: true };
 export const resolveGate: Cmd = { tag: "JGateResolve", ticket: 1, out: "WOk" };
@@ -135,10 +142,10 @@ export function driveEmitted(cmds: readonly Cmd[]): DurableState {
 }
 
 /**
- * The quiet-land walk, end to end: a ticket that arrives with a lease, works,
- * evaluates, lands on the fast path and absorbs a stale confirmation.
+ * The quiet-wrap-up walk, end to end: a ticket that arrives with a lease,
+ * works, evaluates, lands on the fast path and absorbs a stale confirmation.
  */
-export const quietLandWalk: readonly Cmd[] = [
+export const quietWrapUpWalk: readonly Cmd[] = [
   arrive,
   release,
   dispatch,
@@ -146,7 +153,7 @@ export const quietLandWalk: readonly Cmd[] = [
   workReduce,
   done(2, "VPass"),
   evalReduce,
-  quietLand,
+  quietWrapUp,
   completeAgain,
 ];
 

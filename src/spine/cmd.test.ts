@@ -66,7 +66,7 @@ import {
   jEsc,
   jEval,
   jGated,
-  jLand,
+  jWrapUp,
   jParkDep,
   jParkPre,
   jPend,
@@ -147,7 +147,7 @@ const fleet: Core = core([
   [ids.working, jWork],
   [ids.workingDone, jWorkDone],
   [ids.evaluating, jEvalDone],
-  [ids.enqueued, jLand],
+  [ids.enqueued, jWrapUp],
   // The held slot is on the OTHER resource, so the enqueued ticket above is
   // dequeue-able: two tickets holding one resource is the depth-1 refusal, and
   // it would disable half these rows for a reason none of them is about.

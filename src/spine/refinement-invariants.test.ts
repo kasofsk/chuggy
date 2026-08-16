@@ -45,7 +45,7 @@ import {
   cfgRefinement,
   dispatch,
   driveEmitted,
-  quietLandWalk,
+  quietWrapUpWalk,
   release,
 } from "./refinement-fixtures.test.ts";
 
@@ -55,7 +55,7 @@ const cfg = cfgRefinement;
 const honest: ActorState = driveEmitted([arrive, release, dispatch]);
 
 /** The same ticket walked all the way to a completion, and a stale confirmation absorbed. */
-const settled: ActorState = driveEmitted(quietLandWalk);
+const settled: ActorState = driveEmitted(quietWrapUpWalk);
 
 /** The dispatch's record: a paid task fan-out, attributable to ticket 1. */
 const spawnRec: StepRecord = recordLabelled(honest, "dispatch");

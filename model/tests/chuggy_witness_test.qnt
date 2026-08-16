@@ -626,7 +626,7 @@ module chuggy_witness_multiproject_test {
   /// decideDequeue fixes WOk, the one element of wrapUpOutcomes(false) —
   /// and doGateResolve, the only driver taking an outcome, needs
   /// PWrapUpHolding, which only a moved dequeue enters.)
-  run quietLandDeterministicTest =
+  run quietWrapUpDeterministicTest =
     init
       .then(doArrive(Set(), progFlat1, 2))         // the ticket targets project 2
       .expect(and { tickets.get(1).project == 2, allInvariants })

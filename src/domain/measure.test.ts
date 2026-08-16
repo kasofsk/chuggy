@@ -66,7 +66,7 @@ import {
   jEsc,
   jEval,
   jGated,
-  jLand,
+  jWrapUp,
   jParkDep,
   jParkPre,
   jPend,
@@ -617,11 +617,11 @@ test("the revoke fixtures' measures, phase by phase (the ladder, flattened)", ()
   // the spread between them IS the rank ladder times rankWeight, plus jWork's
   // two running tasks and jEval's stage digit.
   assert.deepEqual(
-    measuresAt(bBudgeted, [jDraft, jPend, jWork, jEval, jLand, jGated, jEsc]),
+    measuresAt(bBudgeted, [jDraft, jPend, jWork, jEval, jWrapUp, jGated, jEsc]),
     [684, 675, 668, 660, 648, 639, 630],
   );
   assert.deepEqual(
-    [jDraft, jPend, jWork, jEval, jLand, jGated, jEsc].map((j) =>
+    [jDraft, jPend, jWork, jEval, jWrapUp, jGated, jEsc].map((j) =>
       micro(bBudgeted, j),
     ),
     [54, 45, 38, 30, 18, 9, 0],
@@ -646,8 +646,8 @@ test("measureArtifactBlindTest: the artifact mark is vocabulary, not a digit", (
     ticketMeasure(bBudgeted, withMark(jEval, 1)),
   );
   assert.equal(
-    ticketMeasure(bBudgeted, jLand),
-    ticketMeasure(bBudgeted, withMark(jLand, 4)),
+    ticketMeasure(bBudgeted, jWrapUp),
+    ticketMeasure(bBudgeted, withMark(jWrapUp, 4)),
   );
   assert.equal(
     ticketMeasure(bDeadlineOnly, jWork),
@@ -663,13 +663,13 @@ test("measureArtifactBlindTest: the artifact mark is vocabulary, not a digit", (
 
 test("measureProjectBlindTest: no digit, weight or account radix reads the project", () => {
   const elsewhere = (j: Ticket): Ticket => ({ ...j, project: 2 });
-  const escLanding = escalated(
+  const escWrapUp = escalated(
     { ...draft(cfgBudgeted), gasLeft: 2 },
     "RsGasExhausted",
     "RWrapUp",
     "ticket-escalated gas_exhausted",
   );
-  for (const j of [jDraft, jPend, jWork, jEval, jLand, jGated, escLanding]) {
+  for (const j of [jDraft, jPend, jWork, jEval, jWrapUp, jGated, escWrapUp]) {
     assert.equal(
       ticketMeasure(bBudgeted, j),
       ticketMeasure(bBudgeted, elsewhere(j)),
@@ -991,7 +991,7 @@ test("gateOpenClassifiedTest: the gate open and the resolution each descend by r
 });
 
 test("revokeMeasureClassifiedTest: revoke descends from every live rank and is flat from the desk", () => {
-  for (const j of [jDraft, jPend, jWork, jEval, jLand, jGated]) {
+  for (const j of [jDraft, jPend, jWork, jEval, jWrapUp, jGated]) {
     assert.ok(descends(bBudgeted, j, revoked(j)), `revoke from ${j.phase}`);
   }
   // The desk flavors are rank 0 already: revoking a parked ticket with nobody
@@ -1091,40 +1091,37 @@ test("CHURN: the pre-work resume is free and climbs; a charged resume descends",
 
   // opRetryChargedDescendsTest: under the default metering a pipeline resume
   // pays one gas, and the gas drop dominates the rank climb back.
-  const escLanding = escalated(
+  const escWrapUp = escalated(
     { ...draft(cfgBudgeted), gasLeft: 2 },
     "RsGasExhausted",
     "RWrapUp",
     "ticket-escalated gas_exhausted",
   );
-  const chargedResume = resumedBy(cfgBudgeted, escLanding);
+  const chargedResume = resumedBy(cfgBudgeted, escWrapUp);
   assert.deepEqual(
-    measuresAt(bBudgeted, [escLanding, chargedResume]),
+    measuresAt(bBudgeted, [escWrapUp, chargedResume]),
     [693, 459],
   );
-  assert.equal(chargedResume.gasLeft, escLanding.gasLeft - 1);
-  assert.ok(descends(bBudgeted, escLanding, chargedResume));
+  assert.equal(chargedResume.gasLeft, escWrapUp.gasLeft - 1);
+  assert.ok(descends(bBudgeted, escWrapUp, chargedResume));
 });
 
 test("opRetryFreeClassifiedTest: under RetryFree the pipeline resume CLIMBS", () => {
   // The exemption arm the retryfree instance exists to keep exercised. The
   // bounds are the deadline-only ones — nothing about the measure changed; the
   // resume simply charged nothing.
-  const escLanding = escalated(
+  const escWrapUp = escalated(
     { ...draft(cfgRetryFree), gasLeft: 2 },
     "RsGasExhausted",
     "RWrapUp",
     "ticket-escalated gas_exhausted",
   );
-  const freeResume = resumedBy(cfgRetryFree, escLanding);
-  assert.deepEqual(
-    measuresAt(bRetryFree, [escLanding, freeResume]),
-    [315, 333],
-  );
-  assert.equal(freeResume.gasLeft, escLanding.gasLeft); // NOT charged
+  const freeResume = resumedBy(cfgRetryFree, escWrapUp);
+  assert.deepEqual(measuresAt(bRetryFree, [escWrapUp, freeResume]), [315, 333]);
+  assert.equal(freeResume.gasLeft, escWrapUp.gasLeft); // NOT charged
   assert.ok(
     ticketMeasure(bRetryFree, freeResume) >
-      ticketMeasure(bRetryFree, escLanding),
+      ticketMeasure(bRetryFree, escWrapUp),
   );
   // Charged, the same resume descends — which is the whole of the difference
   // between the two meterings, priced in gas rather than in bounds. The config
@@ -1132,10 +1129,10 @@ test("opRetryFreeClassifiedTest: under RetryFree the pipeline resume CLIMBS", ()
   // the comparison isolates exactly that parameter.
   const chargedResume = resumedBy(
     { ...cfgRetryFree, opRetryPricing: "RetryCharged" },
-    escLanding,
+    escWrapUp,
   );
   assert.equal(chargedResume.gasLeft, freeResume.gasLeft - 1);
-  assert.ok(descends(bRetryFree, escLanding, chargedResume));
+  assert.ok(descends(bRetryFree, escWrapUp, chargedResume));
 });
 
 // === The digit-order argument ==============================================

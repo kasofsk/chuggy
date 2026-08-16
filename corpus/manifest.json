@@ -339,9 +339,9 @@
       "states": 14
     },
     {
-      "name": "witness-quiet-land",
+      "name": "witness-quiet-wrapup",
       "module": "chuggy_witness_multiproject_test",
-      "run": "quietLandDeterministicTest",
+      "run": "quietWrapUpDeterministicTest",
       "pins": [
         "decideDequeue",
         "ticket-done"

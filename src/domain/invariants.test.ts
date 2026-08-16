@@ -111,7 +111,7 @@ import {
   jEsc,
   jEval,
   jGated,
-  jLand,
+  jWrapUp,
   jParkDep,
   jParkPre,
   jPend,
@@ -315,7 +315,7 @@ const landedFleet: readonly (readonly [string, Ticket])[] = [
   ["jPend", jPend],
   ["jWork", jWork],
   ["jEval", jEval],
-  ["jLand", jLand],
+  ["jWrapUp", jWrapUp],
   ["jGated", jGated],
   ["jEsc", jEsc],
   ["jParkPre", jParkPre],
@@ -510,13 +510,13 @@ const redProofs: readonly RedProof[] = [
     // An attempt the environment chose QUIET that resolved as anything but the
     // success. The model calls this a corollary of `wrapUpIsolation`'s
     // failure-implies-moved conjunct, so both go red on the one tree.
-    broken: stepped(cfgBudgeted, solo(jLand), {
+    broken: stepped(cfgBudgeted, solo(jWrapUp), {
       label: "rework-started wrapup_failure",
       transitions: [{ ticket: 1, from: "PWrapUp", to: "PWorking" }],
       effects: ["SpawnWorkTasks"],
       attempt: { tag: "WOAttempt", project: 1, invalidated: false },
     }),
-    fixed: stepped(cfgBudgeted, solo(jLand), {
+    fixed: stepped(cfgBudgeted, solo(jWrapUp), {
       label: "rework-started wrapup_failure",
       transitions: [{ ticket: 1, from: "PWrapUpHolding", to: "PWorking" }],
       effects: ["SpawnWorkTasks"],
@@ -551,7 +551,7 @@ const redProofs: readonly RedProof[] = [
     name: "noLeaseWithoutAKind",
     holds: (s) => noLeaseWithoutAKind(s.core),
     // A kindless ticket enqueued for a gate it has no stake in.
-    ...oneTicket({ ...jLand, wrapUp: { tag: "WNone" } }, jLand),
+    ...oneTicket({ ...jWrapUp, wrapUp: { tag: "WNone" } }, jWrapUp),
     reds: ["noLeaseWithoutAKind"],
   },
   {
@@ -1063,7 +1063,7 @@ test("accountsBounded holds every account at both ends, one account at a time", 
 // === wrapUpIsolation, conjunct by conjunct =================================
 
 test("wrapUpIsolation: every conjunct of both arms, each with the step that breaks it", () => {
-  const onQueue = solo(jLand);
+  const onQueue = solo(jWrapUp);
   const done = solo(jDone);
   // --- The WONone arm: a wrap-up is never resolved off-record.
   // A completion carrying no attribution is legitimate for a WNone ticket and

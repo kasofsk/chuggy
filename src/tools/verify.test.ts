@@ -182,7 +182,7 @@ test("verifyCorpus: a committed file the manifest names no fixture for is a find
     );
     writeFileSync(
       `${repo}/corpus/tier2/${stray}`,
-      fixtureText("witness-quiet-land", 2),
+      fixtureText("witness-quiet-wrapup", 2),
     );
   });
   // The strays replay perfectly well — they are copies of committed fixtures —
@@ -474,14 +474,17 @@ test("verifyCorpus: a fixture that is not JSON stops the walk and keeps what it 
       `${repo}/corpus/tier1/${stray}`,
       fixtureText("retryfree-settled", 1),
     );
-    writeFileSync(`${repo}/corpus/tier2/witness-quiet-land.itf.json`, "{oh no");
+    writeFileSync(
+      `${repo}/corpus/tier2/witness-quiet-wrapup.itf.json`,
+      "{oh no",
+    );
   });
   assert.deepEqual(verification.findings, [
     `corpus: corpus/tier1/${stray} is committed and the manifest names no fixture for it (tier 1)`,
   ]);
   assert.match(
     verification.errors[0] ?? "",
-    /^corpus\/tier2\/witness-quiet-land\.itf\.json is not JSON: /,
+    /^corpus\/tier2\/witness-quiet-wrapup\.itf\.json is not JSON: /,
   );
   // The walk stopped where it stopped: tier 1 replayed, tier 2 did not finish.
   assert.ok(verification.replayed.includes("retryfree-settled"));
