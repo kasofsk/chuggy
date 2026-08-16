@@ -23,7 +23,11 @@ import type { Config } from "../domain/domain.ts";
 import { bundleConjunctNames } from "../domain/invariants.ts";
 import { effectVocabulary } from "../effects/effect.ts";
 import { shippedDeciders } from "../spine/cmd.ts";
-import { shippedCmdTags } from "../spine/entry.ts";
+import {
+  entryFieldNames,
+  shippedCmdTags,
+  stepRecordFieldNames,
+} from "../spine/entry.ts";
 import {
   refinementBundleConjuncts,
   refinementCoreConjuncts,
@@ -31,6 +35,7 @@ import {
 import {
   CoverageBuilder,
   coverageGaps,
+  effectGaps,
   exemptionArms,
   mcInstances,
   pinsMissed,
@@ -41,7 +46,12 @@ import {
   guardedUnreachableStepLabel,
   reachableStepLabels,
 } from "../spine/decode.ts";
-import { DecodeError, decodeTrace, nondetBinders } from "../spine/itf.ts";
+import {
+  DecodeError,
+  decodedRecordFields,
+  decodeTrace,
+  nondetBinders,
+} from "../spine/itf.ts";
 import { replayTrace } from "../spine/replay.ts";
 import {
   CorpusError,
@@ -53,10 +63,12 @@ import {
   readJson,
   readModelRosters,
   readModuleConsts,
+  readWitnessRuns,
   tier1Dir,
   tier2Dir,
   witnessSource,
   type Manifest,
+  type ModelRecordName,
 } from "./corpus.ts";
 
 export type Verification = {
@@ -90,11 +102,16 @@ export function verifyCorpus(): Verification {
     // module it cannot find is a could-not-run, which would stop the walk
     // before the roster finding that explains it had been recorded.
     findings.push(...staleRosters());
+    findings.push(...staleWitnessRuns(manifest));
     findings.push(...staleConsts(manifest));
     for (const fixture of manifest.tier1) {
-      coverage.observeInstance(fixture.instance);
       findings.push(
-        ...replayFixture(fixture, fixturePath(fixture, 1), coverage),
+        ...replayFixture(
+          fixture,
+          fixturePath(fixture, 1),
+          coverage,
+          fixture.instance,
+        ),
       );
       replayed.push(fixture.name);
     }
@@ -110,7 +127,7 @@ export function verifyCorpus(): Verification {
 
   const taken = coverage.taken();
   findings.push(
-    ...coverageGaps(taken).map(
+    ...[...coverageGaps(taken), ...effectGaps(effectVocabulary, taken)].map(
       (gap) => `coverage: ${gap.obligation} ${gap.missing}`,
     ),
   );
@@ -138,15 +155,26 @@ function errorOnly(error: unknown, coverage: CoverageBuilder): Verification {
  * which is the whole of what makes a pin checkable: against a corpus-wide
  * accumulator every pin would be satisfied as long as SOME fixture reached the
  * entry, which is exactly the claim a pin is not making.
+ *
+ * AND THE INSTANCE IS TAKEN FROM A REPLAY THAT WENT CLEAN, which is the one
+ * obligation this walk cannot observe from a trace at all: an mc instance is a
+ * manifest field, so it used to be counted before the fixture was opened and
+ * was satisfiable by DECLARATION — a corpus whose only DeadlineOnly fixture no
+ * longer replayed still reported the instance covered, and the reader saw one
+ * finding where there were two obligations in trouble. Counting it only when
+ * the fixture came back clean makes the claim "this instance is exercised"
+ * rather than "this instance is mentioned".
  */
 function replayFixture(
   fixture: {
     readonly name: string;
     readonly consts: Config;
+    readonly states: number;
     readonly pins: readonly string[];
   },
   path: string,
   corpus: CoverageBuilder,
+  instance?: string,
 ): readonly string[] {
   const trace = decodeTrace(readJson(path), fixture.name);
   const plans = decodeSteps(trace, fixture.name);
@@ -154,7 +182,8 @@ function replayFixture(
   const report = replayTrace(fixture.consts, trace, plans, own, fixture.name);
   const taken = own.taken();
   corpus.absorb(taken);
-  return [
+  const problems = [
+    ...truncated(fixture, trace.states.length),
     ...report.findings.map(
       (finding) =>
         `${fixture.name}: state ${String(finding.state)}: ${finding.detail}`,
@@ -163,6 +192,36 @@ function replayFixture(
       (pin) =>
         `${fixture.name}: the manifest pins ${pin} to this fixture, and it reaches no such step`,
     ),
+  ];
+  if (instance !== undefined && problems.length === 0) {
+    corpus.observeInstance(instance);
+  }
+  return problems;
+}
+
+/**
+ * The fixture's length against the manifest's — the one corruption the trace
+ * cannot report about itself.
+ *
+ * `itf.ts` checks every state's `#meta.index` against its position, so a state
+ * removed from the MIDDLE of a fixture is a decode failure naming the state.
+ * A state removed from the END leaves a dense, ascending, perfectly readable
+ * shorter trace, and replay has nothing to say about the steps that are no
+ * longer there: the committed corpus holds fixtures whose `pins` are all
+ * reached before their last state, so truncating one of those was measured to
+ * pass the whole gate at exit 0. The manifest's count is the second statement that makes the
+ * loss visible — written by the emitter, checked here, and in a different file
+ * from the one a hand truncation edits.
+ */
+function truncated(
+  fixture: { readonly name: string; readonly states: number },
+  found: number,
+): readonly string[] {
+  if (found === fixture.states) {
+    return [];
+  }
+  return [
+    `${fixture.name}: the manifest says the trace holds ${String(fixture.states)} state(s) and it holds ${String(found)}`,
   ];
 }
 
@@ -198,6 +257,28 @@ function orphanFixtures(manifest: Manifest): readonly string[] {
     }
   }
   return findings;
+}
+
+/**
+ * The witness suite's runs against the tier-2 corpus, as an exact set in both
+ * directions.
+ *
+ * TIER 2 IS SUPPOSED TO BE THE MODEL'S OWN WITNESS RUNS — that is the trace
+ * mechanism's whole argument for it: the model already maintains those pins
+ * under its no-arm-without-a-witness rule, and the implementation inherits
+ * them. Nothing checked that inheritance. A run the model ADDS is a
+ * deterministic obligation this tree does not replay, and it arrives with no
+ * fixture, so every roster stays complete and `coverageGaps` reports nothing —
+ * the roster alarm's own failure mode, one file further out. A run the manifest
+ * names and the module does not declare is a fixture nobody can regenerate,
+ * which today is discovered by running the emitter and not by any gate.
+ */
+function staleWitnessRuns(manifest: Manifest): readonly string[] {
+  return rosterDisagrees(
+    "witness run",
+    manifest.tier2.map((fixture) => fixture.run),
+    readWitnessRuns(),
+  );
 }
 
 /**
@@ -263,6 +344,17 @@ function staleConsts(manifest: Manifest): readonly string[] {
  * gate at exit 0. Two of them also mean this walk reads `refinement.qnt`, which
  * `staleConsts` never opens.
  *
+ * AND THE RECORD SCHEMAS ARE THE ONES NO ROSTER OF NAMES COULD SEE AT ALL,
+ * which is why they arrived last and cost the most. Every roster above is a set
+ * of NAMES; a record is the VOCABULARY those names are written in, and it goes
+ * stale a FIELD at a time. `measure.qnt`'s `StepRecord` and everything it is
+ * made of, plus `refinement.qnt`'s journal row, are copied into `itf.ts`'s
+ * exact-field decodes and `entry.ts`'s schema — and the only thing that had
+ * ever compared either copy to the model was regenerating the corpus, which no
+ * gate does and which is run by hand. A field rename upstream therefore crossed
+ * a whole release with both bundles green; `shippedRecordFields` below is what
+ * makes that a finding on every run.
+ *
  * EXACT SETS, BOTH DIRECTIONS, ORDER IGNORED. A roster entry the model has and
  * this tree does not is an obligation nobody owes; one this tree has and the
  * model does not is an obligation nothing can ever cover, which would red
@@ -270,6 +362,23 @@ function staleConsts(manifest: Manifest): readonly string[] {
  * not compared: `decode.ts`'s roster is the union's declaration order and the
  * model's literal order is where its deciders happen to write them, and a
  * gate that argued about sequence would be a gate somebody turns off.
+ *
+ * ONE MODEL ROSTER IS COMPARED SOMEWHERE ELSE, and it is named here so the
+ * list below reads as complete rather than as everything anybody thought of.
+ * `model/domain.qnt`'s three ANTI-VACUITY WITNESSES are mirrored by
+ * `src/spine/walk.test.ts`'s `witnessNames` — a `.test.ts` file, because the
+ * witnesses are the randomized layer's and a shipped predicate with no shipped
+ * caller is a shape this tree has declined before. `no-shipped-test-fixtures`
+ * forbids this module from importing one, so the comparison is a case in
+ * `src/spine/randomized.test.ts`, on `readAntiVacuityWitnesses` and on the
+ * `rosterDisagrees` below. Same reader, same rule, a different suite.
+ *
+ * ONE THING IS LOST IN THE MOVE AND IT IS WORTH THE SENTENCE. This walk keeps
+ * a finding and a could-not-run apart all the way out to an exit code — 1 and
+ * 2, and 2 is not a pass. A suite has one failing exit, so over there "the
+ * rosters disagree" and "the reader can no longer see the model" both arrive as
+ * exit 1. The thrown message still says which, and a `CorpusError` is still
+ * what the parse-honesty cases assert; what cannot say it is the EXIT.
  *
  * THE ONE ENTRY THAT NEEDS SAYING OUT LOUD is
  * `operator-retry-unreachable`. The model emits it and `reachableStepLabels`
@@ -315,6 +424,13 @@ function staleRosters(): readonly string[] {
       refinementBundleConjuncts,
       model.refinementBundleConjuncts,
     ),
+    ...shippedRecordFields.flatMap(({ type, twin, fields }) =>
+      rosterDisagrees(
+        `${type} field (${twin})`,
+        fields,
+        model.recordFields[type],
+      ),
+    ),
     ...model.unclassified.map(
       (text) =>
         `model: string literal ${JSON.stringify(text)} — the model's code holds it and it is spelled as neither an effect nor a step label`,
@@ -322,8 +438,75 @@ function staleRosters(): readonly string[] {
   ];
 }
 
-/** One roster, compared as an exact set in both directions. */
-function rosterDisagrees(
+/**
+ * THE RECORD SCHEMAS THIS TREE SHIPS, and where each is written.
+ *
+ * The twelfth roster, and the one every roster above it is expressed in. A decider,
+ * a label and an effect are NAMES: a comparison of them catches the model
+ * gaining or losing one. A record is a VOCABULARY, and the way it goes stale is
+ * a FIELD — which no name roster can see. Both shipped copies of the model's
+ * record types are hand-typed (`itf.ts` decodes against an exact field set,
+ * `entry.ts` states the journal row's schema), and the only thing that ever
+ * compared either to `model/` was regenerating the corpus, which no gate does.
+ * That is how the `landing` → `attempt` rename crossed a release with every
+ * gate green.
+ *
+ * `StepRecord` APPEARS TWICE ON PURPOSE. Two files copy it — the decoder and
+ * the journal schema — and they can drift from the model independently, so a
+ * finding names the file as well as the field. The alternative, comparing one
+ * of them and trusting the other to follow, is the arrangement this whole
+ * section exists to refuse.
+ */
+const shippedRecordFields: readonly {
+  readonly type: ModelRecordName;
+  readonly twin: string;
+  readonly fields: readonly string[];
+}[] = [
+  { type: "Task", twin: "src/spine/itf.ts", fields: decodedRecordFields.Task },
+  {
+    type: "Stage",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.Stage,
+  },
+  {
+    type: "WOAttempt",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.WOAttempt,
+  },
+  {
+    type: "Ticket",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.Ticket,
+  },
+  {
+    type: "Transition",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.Transition,
+  },
+  {
+    type: "StepRecord",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.StepRecord,
+  },
+  {
+    type: "StepRecord",
+    twin: "src/spine/entry.ts",
+    fields: stepRecordFieldNames,
+  },
+  { type: "Entry", twin: "src/spine/entry.ts", fields: entryFieldNames },
+];
+
+/**
+ * One roster, compared as an exact set in both directions.
+ *
+ * IT IS EXPORTED FOR THE ONE ROSTER THIS WALK CANNOT HOLD. The anti-vacuity
+ * witnesses' shipped side is `src/spine/walk.test.ts`'s `witnessNames`, and
+ * `.dependency-cruiser.mjs`'s `no-shipped-test-fixtures` forbids any shipped
+ * module — this one included — from importing a `.test.ts`. So that comparison
+ * lives in `src/spine/randomized.test.ts`, where both sides are reachable, and
+ * it uses this function rather than a second copy of the both-directions rule.
+ */
+export function rosterDisagrees(
   what: string,
   shipped: readonly string[],
   model: readonly string[],

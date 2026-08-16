@@ -38,12 +38,23 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { Config } from "../domain/domain.ts";
+import type { Core } from "../domain/measure.ts";
 import { jDone, solo } from "../domain/fixtures.test.ts";
-import type { Stage } from "../domain/measure.ts";
-import { configOf, mcSource, readModuleConsts } from "../tools/corpus.ts";
-import type { Cmd } from "./cmd.ts";
+import type { Stage, WrapUp } from "../domain/measure.ts";
+import {
+  CorpusError,
+  configOf,
+  mcSource,
+  readAntiVacuityWitnesses,
+  readModuleConsts,
+} from "../tools/corpus.ts";
+import { rosterDisagrees } from "../tools/verify.ts";
+import { cmdEnabled, type Cmd } from "./cmd.ts";
 import {
   CoverageBuilder,
   mcInstances,
@@ -52,13 +63,28 @@ import {
   type McInstance,
 } from "./coverage.ts";
 import type { StepLabel } from "./decode.ts";
-import { initStepRecord, initialState, type MachineState } from "./machine.ts";
 import {
+  currentMeasure,
+  initStepRecord,
+  initialState,
+  stepWith,
+  type MachineState,
+} from "./machine.ts";
+import {
+  availableActions,
   driveTrace,
   hex,
   observeOnce,
+  draw,
+  showCmd,
+  subsetsOf,
+  taskIds,
+  stepOnce,
   walkOnce,
   walkSeeds,
+  witnessNames,
+  witnessesOnce,
+  type Available,
   type RunResult,
 } from "./walk.test.ts";
 
@@ -466,21 +492,97 @@ const stageAdvanceScript: readonly Cmd[] = [
 function arrive(
   program: readonly Stage[],
   deps: ReadonlySet<number> = new Set(),
+  wrapUp: WrapUp = { tag: "WExclusive", resource: 1 },
 ): Cmd {
-  return {
-    tag: "JArrive",
-    deps,
-    program,
-    project: 1,
-    wrapUp: { tag: "WExclusive", resource: 1 },
-  };
+  return { tag: "JArrive", deps, program, project: 1, wrapUp };
 }
+
+/**
+ * THE WRAP-UP RESUME, at `mc_chuggy_retryfree`: a ticket that reaches the
+ * wrap-up queue, fails the gate until gas runs out, parks on the
+ * `gas_exhausted` wall with `resumeAt = RWrapUp`, and is resumed FREE — back
+ * into the queue, re-enqueued.
+ *
+ * IT IS HERE BECAUSE THE CORPUS CANNOT HOLD IT, and that is a fact about the
+ * two tiers rather than about the machine. Tier 1 is a uniform sampled search
+ * and this is a long chain of correctly-drawn steps; tier 2 exports the
+ * model's own witness runs, and none of them drives an operator retry off a
+ * wrap-up wall. `coverage.ts` declares the arm beyond the corpus with that
+ * argument and a refutation trigger; this is what exercises it meanwhile, at
+ * the highest tier this tree can reach without a model PR — the shipped
+ * deciders, step by step, with the whole domain bundle after every one.
+ *
+ * WHAT IT PROVES THAT NO ROSTER CAN. Deleting the `EnqueueWrapUp` effect from
+ * `decideOpRetry`'s `RWrapUp` arm was measured to leave the entire tree green
+ * but one hand-written assertion: every label, decider and exemption arm stays
+ * covered, because an effect list is not a roster entry. The final record is
+ * asserted below for exactly that reason.
+ */
+const wrapUpResumeScript: readonly Cmd[] = [
+  arrive(progFlat1),
+  { tag: "JRelease", ticket: 1 },
+  { tag: "JDispatch", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" },
+  { tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 3, verdict: "VPass" },
+  // The program passes: the ticket takes its lease and joins the queue.
+  { tag: "JEvalReduce", ticket: 1 },
+  // The environment moved under the candidate, so the gate opens.
+  { tag: "JDequeue", ticket: 1, moved: true },
+  // The eviction, priced under DeadlineOnly: gas alone, and there is gas left.
+  { tag: "JGateResolve", ticket: 1, out: "WFailed" },
+  { tag: "JTaskDone", ticket: 1, tid: 4, verdict: "VPass" },
+  { tag: "JTaskDone", ticket: 1, tid: 5, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 6, verdict: "VPass" },
+  { tag: "JEvalReduce", ticket: 1 },
+  { tag: "JDequeue", ticket: 1, moved: true },
+  // The second eviction with gas at zero: the wall, stamping resumeAt RWrapUp.
+  { tag: "JGateResolve", ticket: 1, out: "WFailed" },
+  // THE ARM UNDER TEST.
+  { tag: "JOpRetry", ticket: 1 },
+];
+
+/**
+ * The pre-work resume at the same consts, and it is the DISCRIMINATING half of
+ * the free-climb witness rather than a second example of it.
+ *
+ * `freeClimbNever` deliberately excludes the `RPending` flavor: that resume
+ * climbs for free under BOTH meterings, so admitting it would let a charged
+ * instance violate the witness without ever exercising the `RetryFree` arm the
+ * witness exists to prove alive. The exclusion is a claim, and a claim with no
+ * probe is `cascadeParkNever`'s transitions conjunct before its own pair was
+ * written: this trace climbs, at RetryFree, on an `operator-retry` step, and
+ * the witness must NOT fire.
+ */
+const preWorkResumeScript: readonly Cmd[] = [
+  arrive(progFlat1),
+  { tag: "JRelease", ticket: 1 },
+  // The world changed under the ticket before it ever ran: the pre-work park.
+  { tag: "JRevalFail", ticket: 1 },
+  { tag: "JOpRetry", ticket: 1 },
+];
 
 const freeClimb = driveTrace(
   configs.retryfree,
   "retryfree",
   "free-climb (deterministic)",
   freeClimbScript,
+);
+
+const wrapUpResume = driveTrace(
+  configs.retryfree,
+  "retryfree",
+  "wrap-up resume (deterministic)",
+  wrapUpResumeScript,
+);
+
+const preWorkResume = driveTrace(
+  configs.retryfree,
+  "retryfree",
+  "pre-work resume (deterministic)",
+  preWorkResumeScript,
 );
 
 const stageAdvance = driveTrace(
@@ -510,6 +612,84 @@ test("freeClimbNever is violated on the free-climb trace, and no other witness i
     freeClimb.coverage.arms.has("operator-retry, RetryFree pipeline flavor"),
     "the RetryFree pipeline exemption arm did not fire on the free climb",
   );
+});
+
+test("the RWrapUp resume re-enqueues the wrap-up, and the free climb fires on its own disjunct", () => {
+  assert.deepEqual(wrapUpResume.findings, []);
+  assert.equal(wrapUpResume.steps, wrapUpResumeScript.length);
+
+  // THE RECORD THE ARM PRODUCED, which is the model's own text for it: back to
+  // PWrapUp from the desk, re-enqueuing. `EnqueueWrapUp` is the whole of what
+  // distinguishes this arm from the RPending one, and no roster in this tree
+  // can ask for it.
+  assert.deepEqual(wrapUpResume.final.lastStep, {
+    label: "operator-retry",
+    transitions: [{ ticket: 1, from: "PEscalated", to: "PWrapUp" }],
+    effects: ["EnqueueWrapUp"],
+    attempt: { tag: "WONone" },
+  });
+  // The resume point is spent: `resumeAt` is RNone again and the desk reason
+  // with it, which is what makes the arm a resume rather than a second park.
+  const resumed = wrapUpResume.final.core.tickets.get(1);
+  assert.ok(resumed !== undefined, "the fleet still holds the resumed ticket");
+  assert.equal(resumed.resumeAt, "RNone");
+  assert.equal(resumed.reason, "RsNone");
+  // AND IT COST NOTHING, which is the RetryFree pricing: the wall it resumes
+  // from is the gas wall, so a charged resume could not have been taken at all.
+  assert.equal(resumed.gasLeft, 0);
+
+  // THE WITNESS FIRES ON THE `PWrapUp` DISJUNCT — the half of `freeClimbNever`
+  // that was dead: the model writes the free churn set as the Evaluating AND
+  // WrapUp resumes, and until this trace existed only the first was ever
+  // exercised, in this file and in the corpus alike.
+  assert.deepEqual(
+    wrapUpResume.firings.map((f) => [f.witness, f.step, f.label]),
+    [["freeClimbNever", wrapUpResumeScript.length, "operator-retry"]],
+  );
+  // And the exemption that lets the climb be legal is the RetryFree pipeline
+  // arm, in its wrap-up flavor: the pairing IS the witness's content, exactly
+  // as on the free-climb trace above.
+  assert.ok(
+    wrapUpResume.coverage.arms.has("operator-retry, RetryFree pipeline flavor"),
+    "the RetryFree pipeline exemption arm did not fire on the wrap-up resume",
+  );
+  // The resume roster records which arm of `decideOpRetry` was taken, which is
+  // the obligation `coverage.ts` declares beyond the corpus.
+  assert.ok(wrapUpResume.coverage.resumes.has("RWrapUp"));
+});
+
+test("freeClimbNever discriminates: the pre-work resume climbs at RetryFree and does not fire it", () => {
+  // WHAT THE FREE-CLIMB TRACE ALONE CANNOT SAY, and `cascadeParkNever` has had
+  // the same pair since it was written. `freeClimbNever` excludes the RPending
+  // flavor deliberately — that resume is free under BOTH meterings, so a
+  // witness admitting it would fire on a charged instance and prove nothing
+  // about the RetryFree arm. Drop the phase conjunct and this trace starts
+  // firing it; the exclusion is what this short script holds in place.
+  assert.deepEqual(preWorkResume.findings, []);
+  assert.equal(preWorkResume.steps, preWorkResumeScript.length);
+  assert.deepEqual(preWorkResume.final.lastStep, {
+    label: "operator-retry",
+    transitions: [{ ticket: 1, from: "PEscalated", to: "PPending" }],
+    effects: [],
+    attempt: { tag: "WONone" },
+  });
+  // THE CLIMB IS REAL, which is what makes the non-firing a discrimination
+  // rather than a trace that never got near the witness: the measure is higher
+  // after the resume than the step before it, at RetryFree, on an
+  // `operator-retry` step — every conjunct of the witness but the phase one.
+  assert.ok(
+    currentMeasure(configs.retryfree, preWorkResume.final.core) >
+      preWorkResume.final.prevMeasure,
+    "the pre-work resume did not climb, so the exclusion is undriven",
+  );
+  assert.deepEqual(preWorkResume.firings, []);
+  // And the arm it fired is the RPending one, told apart from the free flavor
+  // by the pricing probe rather than by the label they share.
+  assert.ok(
+    preWorkResume.coverage.arms.has("operator-retry, RPending flavor"),
+    "the RPending exemption arm did not fire on the pre-work resume",
+  );
+  assert.ok(preWorkResume.coverage.resumes.has("RPending"));
 });
 
 test("stageAdvanceNever is violated on the stage-advance trace, and no other witness is", () => {
@@ -569,16 +749,350 @@ test("a seed prints as the model's own --seed spelling", () => {
   assert.equal(hex(-1), "0xffffffff");
 });
 
+// === The enumeration's own properties ======================================
+//
+// THE PROPERTIES THE WALKER'S HEADERS CALL LOAD-BEARING, each with the case
+// that makes the word true. Every one of them was measured to survive its own
+// mutation: the walker would have gone on reporting the same rosters, the same
+// witnesses and the same reproductions over a narrower exploration, which is
+// the `offered` alarm's failure one level down — a control nobody has checked.
+// A walk cannot report any of them, because a walk only ever takes what the
+// enumeration hands it.
+
+/** The state a command list leaves the machine in, each step required to be taken. */
+function driveTo(cfg: Config, script: readonly Cmd[]): MachineState {
+  let state = initialState(cfg);
+  for (const [k, cmd] of script.entries()) {
+    const stepped = stepWith(cfg, state, cmd);
+    assert.ok(stepped !== undefined, `step ${String(k + 1)}: ${cmd.tag}`);
+    state = stepped;
+  }
+  return state;
+}
+
+test("the enumeration offers the never-issued task id, and cmdEnabled refuses it", () => {
+  // `taskIds` runs to `spawned + 1`, and that extra id is the whole of what
+  // makes the walker's `cmdEnabled` exercise a REFUSAL rather than a series of
+  // admissions. Drop it and the walker asks only about ids the ticket really
+  // issued — a smaller question, asked at the same scale, with nothing to say
+  // so.
+  const dispatched = driveTo(configs.budgeted, [
+    arrive(progFlat1),
+    { tag: "JRelease", ticket: 1 },
+    { tag: "JDispatch", ticket: 1 },
+  ]);
+  const jb = dispatched.core.tickets.get(1);
+  assert.ok(jb !== undefined);
+  assert.ok(jb.spawned > 0, "the ticket has issued task ids");
+  const ids = taskIds(dispatched.core, 1);
+  assert.ok(ids.includes(jb.spawned + 1), "the never-issued id is enumerated");
+  // AND IT IS REFUSED, which is the promise the enumeration is exercising.
+  assert.equal(
+    cmdEnabled(configs.budgeted, dispatched.core, {
+      tag: "JTaskDone",
+      ticket: 1,
+      tid: jb.spawned + 1,
+      verdict: "VPass",
+    }),
+    false,
+  );
+});
+
+test("subsetsOf is the powerset, not a sample of it", () => {
+  // The model draws an arrival's deps from `powerset(dependableIn(c))`, so a
+  // narrower enumeration explores a narrower arrival space — and nothing else
+  // in this file would notice, because every roster it asserts is reached by
+  // arrivals with no deps at all.
+  const subsets = subsetsOf(new Set([1, 2])).map((set) =>
+    [...set].sort((a, b) => a - b),
+  );
+  assert.deepEqual(subsets.map((ids) => ids.join(",")).sort(), [
+    "",
+    "1",
+    "1,2",
+    "2",
+  ]);
+});
+
+/**
+ * A fleet driven all the way to a dead end: one ticket landed, the other
+ * revoked, the id space full — so nothing but a self-loop is enabled and
+ * `quiet` is true. The last two commands are the same absorbed duplicate: the
+ * run takes one and declines the other.
+ */
+const quietFleetScript: readonly Cmd[] = [
+  arrive(progFlat1, new Set(), { tag: "WNone" }),
+  { tag: "JRelease", ticket: 1 },
+  { tag: "JDispatch", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" },
+  { tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 3, verdict: "VPass" },
+  // A `WNone` ticket lands straight off the passing evaluation: no lease, no
+  // queue, no gate.
+  { tag: "JEvalReduce", ticket: 1 },
+  arrive(progFlat1, new Set(), { tag: "WNone" }),
+  { tag: "JRevoke", ticket: 2 },
+  { tag: "JCompleteDuplicate", ticket: 1 },
+  { tag: "JCompleteDuplicate", ticket: 1 },
+];
+
+test("a script that runs past a quiet fleet is cut one step after it", () => {
+  // `ended = quiet(...)` is read BEFORE the step, so a run takes exactly one
+  // step out of a dead end and stops: every action a quiet fleet enables is a
+  // self-loop, and the one step is kept because the `settled` and
+  // `complete-duplicate` exemption arms are reachable nowhere else. The
+  // stage-advance script ends on the first of those steps and fits exactly;
+  // one duplicate MORE is the step the run declines to take.
+  const run = driveTrace(
+    configs.retryfree,
+    "retryfree",
+    "past quiet",
+    quietFleetScript,
+  );
+  const upToTheDeadEnd = quietFleetScript.length - 1;
+  assert.equal(run.steps, upToTheDeadEnd);
+  assert.deepEqual(run.findings, [
+    `past quiet: the run took ${String(upToTheDeadEnd)} of the ${String(quietFleetScript.length)} scripted steps`,
+  ]);
+  // The step it DID take is the representative one, and the exemption arm it
+  // fires is reachable nowhere else — which is why the dead end costs a step
+  // rather than none.
+  assert.ok(run.coverage.arms.has("complete-duplicate"));
+});
+
+test("showCmd is canonical in both orderings, so two equal decisions print alike", () => {
+  // `offered` compares commands by this string, so an ordering that leaked
+  // through would make the enumeration's own command and a script's hand-built
+  // twin read as different decisions — the alarm firing on a gap that is not
+  // there, which is how an alarm gets muted.
+  //
+  // THE SET, built in two insertion orders.
+  assert.equal(
+    showCmd(arrive(progFlat1, new Set([2, 1]))),
+    showCmd(arrive(progFlat1, new Set([1, 2]))),
+  );
+  // THE RECORD'S KEYS, declared in two orders. `Object.entries` follows
+  // declaration order, so this is the sort and nothing else.
+  const byOneOrder: Cmd = {
+    tag: "JTaskDone",
+    ticket: 1,
+    tid: 2,
+    verdict: "VPass",
+  };
+  const byAnother: Cmd = {
+    tag: "JTaskDone",
+    verdict: "VPass",
+    tid: 2,
+    ticket: 1,
+  };
+  assert.equal(showCmd(byOneOrder), showCmd(byAnother));
+  // ...and the canonical form still tells two DIFFERENT decisions apart, which
+  // is the other half of what `offered` needs from it.
+  assert.notEqual(
+    showCmd(byOneOrder),
+    showCmd({ tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VFail" }),
+  );
+});
+
+test("walkSeeds splits rather than stepping, so no two walks are one sliding window", () => {
+  // THE SUBSTITUTION THE DOC ARGUES AGAINST, driven. Seeding walk `k` with the
+  // `k`-th STATE of the root generator would make walk `k + 1`'s draws walk
+  // `k`'s offset by one — a run of walks reporting the coverage of many and
+  // exploring roughly one, with every probe in this file green over it.
+  const seeds = walkSeeds(walkRoots.budgeted, 2);
+  const [first, second] = seeds;
+  assert.ok(first !== undefined && second !== undefined);
+  const streamFrom = (seed: number, n: number): readonly number[] => {
+    let gen = seed;
+    const values: number[] = [];
+    for (let k = 0; k < n; k += 1) {
+      const drawn = draw(gen);
+      gen = drawn.gen;
+      values.push(drawn.value);
+    }
+    return values;
+  };
+  assert.notDeepEqual(streamFrom(second, 4), streamFrom(first, 5).slice(1));
+  // The control: the two streams are not equal either, so the assertion above
+  // is about the OFFSET rather than about the seeds merely differing.
+  assert.notDeepEqual(streamFrom(second, 4), streamFrom(first, 4));
+});
+
+// === The model's anti-vacuity witnesses ====================================
+
+/**
+ * A model fragment holding the witnesses named, in the model's own shape: a
+ * marker comment, the header prose it opens, and the `val` under it.
+ *
+ * IT IS A FIXTURE FILE AND NOT AN EDIT OF `model/`, which is the rule this
+ * whole tree runs on — the spec is read, never written. `corpus.test.ts` builds
+ * the same kind of fragment for `readModuleConsts`' module bound, and for the
+ * same reason: the reader's refusals need shapes the real model does not have.
+ */
+function witnessFixture(body: string): string {
+  const path = join(mkdtempSync(join(tmpdir(), "chuggy-witness-")), "w.qnt");
+  writeFileSync(path, body, "utf8");
+  return path;
+}
+
+function witnessVal(name: string): string {
+  return [
+    `  /// ANTI-VACUITY WITNESS, not an invariant of the machine: the model`,
+    `  /// states each of these as a numbered series under this marker.`,
+    `  val ${name}: bool =`,
+    `    not(lastStep.label == "x")`,
+    "",
+  ].join("\n");
+}
+
+/** The disagreement between the model's witnesses and this tree's, both ways. */
+function witnessesDisagree(path?: string): readonly string[] {
+  return rosterDisagrees(
+    "anti-vacuity witness",
+    witnessNames,
+    readAntiVacuityWitnesses(path),
+  );
+}
+
+test("the anti-vacuity witnesses are the model's own, in both directions", () => {
+  // THE ROSTER NO OTHER ALARM COULD SEE. A witness is not a decider, not a code
+  // literal, not a conjunct of any bundle and not an arm of any sum type — it
+  // is a plain `val` the model expects to be VIOLATED — so every reader in
+  // `corpus.ts` passed over all three, and `witnessNames` beside them was a
+  // hand-typed copy nothing held to the model. A fourth witness added upstream
+  // arrives with no fixture and no obligation, so nothing anywhere reds: the
+  // roster alarm's own failure mode, on the surface that says which green
+  // invariants are vacuous.
+  assert.deepEqual(witnessesDisagree(), []);
+  // ...and the read is a real read of the real model rather than a constant
+  // this file could satisfy by agreeing with itself.
+  assert.deepEqual([...readAntiVacuityWitnesses()], [...witnessNames]);
+});
+
+const witnessRosterCases: readonly {
+  readonly case: string;
+  readonly body: string;
+  readonly findings: readonly string[];
+}[] = [
+  {
+    // The mutation a model PR actually makes, and it reds both halves of one
+    // exact-set comparison from one edit.
+    case: "a witness the model renamed",
+    body: [
+      witnessVal("freeClimbNever"),
+      witnessVal("cascadeParksNever"),
+      witnessVal("stageAdvanceNever"),
+    ].join("\n"),
+    findings: [
+      "model: anti-vacuity witness cascadeParksNever — the model has it and this tree's roster does not",
+      "model: anti-vacuity witness cascadeParkNever — this tree's roster has it and the model does not",
+    ],
+  },
+  {
+    // THE LIVE DIRECTION, in the packet's own words: a FOURTH witness, added
+    // under the model's no-arm-without-a-witness rule, that this tree neither
+    // mirrors nor probes.
+    case: "a witness the model gained",
+    body: [
+      witnessVal("freeClimbNever"),
+      witnessVal("cascadeParkNever"),
+      witnessVal("stageAdvanceNever"),
+      witnessVal("leaseTakenNever"),
+    ].join("\n"),
+    findings: [
+      "model: anti-vacuity witness leaseTakenNever — the model has it and this tree's roster does not",
+    ],
+  },
+  {
+    case: "a witness the model dropped",
+    body: [witnessVal("freeClimbNever"), witnessVal("stageAdvanceNever")].join(
+      "\n",
+    ),
+    findings: [
+      "model: anti-vacuity witness cascadeParkNever — this tree's roster has it and the model does not",
+    ],
+  },
+];
+
+for (const witness of witnessRosterCases) {
+  test(`the anti-vacuity witness roster reds on ${witness.case}`, () => {
+    assert.deepEqual(
+      witnessesDisagree(witnessFixture(witness.body)),
+      witness.findings,
+    );
+  });
+}
+
+test("a witness roster the parse cannot see is could-not-run, never an empty roster", () => {
+  // `readModuleConsts`' rule, on the reader this roster needed. An empty answer
+  // would red all three at once and blame the tree for a defect in the reader;
+  // a marker that has drifted away from its `val` would roster whatever came
+  // next.
+  assert.throws(
+    () =>
+      witnessesDisagree(witnessFixture("  val freeClimbNever: bool = true\n")),
+    (error: unknown) =>
+      error instanceof CorpusError &&
+      /no ANTI-VACUITY WITNESS comment$/.test(error.message),
+  );
+  assert.throws(
+    () =>
+      witnessesDisagree(
+        witnessFixture(
+          "  /// ANTI-VACUITY WITNESS, and then nothing of the kind:\n  pure def notAVal(c: Core): bool = true\n",
+        ),
+      ),
+    (error: unknown) =>
+      error instanceof CorpusError &&
+      /is followed by no bool val$/.test(error.message),
+  );
+});
+
 // === The walker's own alarms ===============================================
 //
 // EVERY PROBE ABOVE ASSERTS THAT A RUN FOUND NOTHING, so nothing above would
-// notice a run that could not report. `a run refuses an illegal command` covers
-// the refusal path; the guarded regions of `observe` are the rest, and none of
-// them can fire from a walk at all — every state a run reaches is a shipped
-// decider's own output, so a correct roster, a correct measure and a correct
-// bundle are true over all of them. That is the replayer's situation one layer
-// up, and it has the same answer: hand the observer a state no decider would
-// produce. One case per region, because muting any of them leaves a walk green.
+// notice a run that could not report. The regions that can report are these,
+// and the enumeration is meant to be exhaustive rather than representative:
+//
+//   - `observe`'s three guarded regions: the unrostered label, the exemption
+//     arm's attribution, the bundle and the roster that names its failure;
+//   - `takeStep`'s decider-threw catch, and its refusal — whose two arms say
+//     OPPOSITE things, so both are cased;
+//   - `witnessesAt`'s witness-threw catch;
+//   - `driveTrace`'s enumeration-completeness alarm, the one region outside a
+//     run's own step.
+//
+// The last three were unnamed here until round 3 and cased by nothing, which is
+// the shape this section exists against: two of them are guarded for exactly
+// `observe`'s reason, in their own words, and muting either left the whole gate
+// green.
+//
+// FOUR MORE `report` CALLS IN `walk.test.ts` ARE OUTSIDE THAT LIST AND OWE NO
+// CASE, which the enumeration has to say out loud to be exhaustive rather than
+// merely long: `settle` refusing a fleet the loop has just called quiet, an
+// action draw landing outside the roster it was bounded by, a payload draw
+// landing outside the picks it was bounded by, and a script running out inside
+// its own length. Each is an IMPOSSIBILITY GUARD against the harness
+// contradicting itself in the same breath — `drawIndex` takes the length it
+// indexes, `driveTrace` sets the budget from the script it reads — so the state
+// that fires one is not a state of the MACHINE but a harness this tree cannot
+// produce, and a case would have to build that harness rather than drive this
+// one. They stay because a total function answers rather than indexing past the
+// end of an array, which is `actor.ts`'s treatment of its subsumed cursor bound
+// and is written down here for the same reason: an undriven guard nobody
+// declared reads exactly like one nobody noticed.
+//
+// NONE OF THEM CAN FIRE FROM A CORRECT TREE, which is why each needs a case
+// built rather than a walk run. Every state a run reaches is a shipped
+// decider's own output, so a correct roster, a correct measure, a correct
+// bundle and a defined measure are true over all of them; `stepWith` re-asks
+// `cmdEnabled`, so no drawn command is refused and no decider is reached that
+// throws; and every command a script names is one a correct enumeration
+// offered. That is the replayer's situation one layer up, and it has the same
+// answers: hand the OBSERVER, the STEP or the WITNESSES a state no decider
+// would produce, and hand a RUN an enumeration that is deliberately short. One
+// case per region, because muting any of them leaves a walk green.
 
 test("the walker's unrostered-label alarm fires, and names the label it could not place", () => {
   // A LABEL THE MACHINE COULD ONLY EMIT BY GROWING ONE. `stepLabel` throws on
@@ -625,6 +1139,140 @@ test("the walker's bundle alarm fires, and names the conjuncts that went red", (
   assert.deepEqual(observeOnce(configs.budgeted, doubled), [
     "probe step 0 after init: allInvariants is false; red conjuncts: completionExclusive",
   ]);
+});
+
+test("the walker's enumeration-completeness alarm fires, and names the command that was withheld", () => {
+  // THE REGION OUTSIDE `observe`, and the one with the widest blast radius:
+  // `offered` is
+  // the sole guardian of the sampled walks' PAYLOAD SPACE. Every other probe in
+  // this file asks what a walk REACHED, and a walk only ever takes what the
+  // enumeration hands it — so an enumeration that quietly stopped offering the
+  // dequeue's quiet arm, or a lease-taking arrival, would explore less than it
+  // claims with every roster still complete and every witness still firing.
+  //
+  // A correct enumeration never fires it, which is why the enumeration is a
+  // parameter of `driveTrace`: the alarm is driven by handing one run a short
+  // enumeration, exactly as the three regions above are driven by handing the
+  // observer a state no decider would produce.
+  const withoutQuietDequeue = (cfg: Config, c: Core): readonly Available[] =>
+    availableActions(cfg, c).flatMap((option) => {
+      if (option.kind !== "cmd" || option.tag !== "JDequeue") {
+        return [option];
+      }
+      const picks = option.picks.filter(
+        (pick) => pick.tag === "JDequeue" && pick.moved,
+      );
+      return picks.length === 0 ? [] : [{ ...option, picks }];
+    });
+  const withheld = driveTrace(
+    configs.budgeted,
+    "budgeted",
+    "withheld dequeue",
+    stageAdvanceScript,
+    withoutQuietDequeue,
+  );
+  assert.deepEqual(withheld.findings, [
+    "withheld dequeue: step 12: JDequeue moved=false ticket=1 is enabled here and the enumeration did not offer it",
+    "withheld dequeue: the run took 12 of the 13 scripted steps",
+  ]);
+  // The control: the SAME script under the real enumeration says nothing, so
+  // the finding is attributable to the withheld row and not to the script.
+  assert.deepEqual(stageAdvance.findings, []);
+});
+
+test("the walker's decider-threw alarm fires, and carries what the decider said", () => {
+  // THE ALARM ON THE OTHER SIDE OF THE STEP, and the same shape as the three
+  // above: `stepWith` re-asks `cmdEnabled` before running a decider, so a
+  // correct tree never reaches a decider that throws and no walk can make this
+  // fire. Muted, the assertion escapes the run, escapes the module scope the
+  // runs are built at, and takes every test in this file down carrying no seed,
+  // no step and no command — which is the found-a-defect-and-threw-away-the-
+  // only-copy failure the walker's header names.
+  const spent: MachineState = {
+    ...initialState(configs.budgeted),
+    core: solo({ ...jDone, gasLeft: -1 }),
+  };
+  assert.deepEqual(
+    stepOnce(configs.budgeted, spent, {
+      kind: "cmd",
+      cmd: { tag: "JCompleteDuplicate", ticket: 1 },
+      from: "enumeration",
+    }),
+    [
+      "probe: step 1: JCompleteDuplicate ticket=1 threw ticketMeasure: gasLeft is a non-negative safe integer, got -1 — a command cmdEnabled admits and its decider refuses",
+    ],
+  );
+});
+
+test("the walker's refusal names WHICH side disagreed, and the two sides say opposite things", () => {
+  // THE DISCRIMINATION, taken rather than declined. A DRAWN command that
+  // `stepWith` refuses is `cmdEnabled` contradicting itself about one state —
+  // the model-conformance alarm this layer exists to raise. A SCRIPTED one is a
+  // script naming a step the machine does not offer, which is a defect in the
+  // script. One message for both would be a lie on one of them, and the case
+  // that covered this covered the scripted arm alone.
+  const empty = initialState(configs.budgeted);
+  const release: Cmd = { tag: "JRelease", ticket: 1 };
+  assert.deepEqual(
+    stepOnce(configs.budgeted, empty, {
+      kind: "cmd",
+      cmd: release,
+      from: "enumeration",
+    }),
+    [
+      "probe: step 1: JRelease ticket=1 was enumerated as enabled and then refused by stepWith — cmdEnabled disagreeing with itself about one state",
+    ],
+  );
+  assert.deepEqual(
+    stepOnce(configs.budgeted, empty, {
+      kind: "cmd",
+      cmd: release,
+      from: "script",
+    }),
+    [
+      "probe: step 1: JRelease ticket=1 is scripted here and cmdEnabled does not admit it",
+    ],
+  );
+});
+
+test("the walker's witness-threw alarm fires, and carries the assertion that stopped it", () => {
+  // THE REGION AFTER THE STEP, guarded for the observer's reason and unable to
+  // fire for it too: `freeClimbNever` reads `currentMeasure`, so every account
+  // assertion in `measure.ts` is one call from that line — and no state a run
+  // reaches can reach it, because every one of them is a decider's own output.
+  // The witness's own conjuncts are what put the measure in the path, so the
+  // state has to satisfy them before the account can go bad.
+  const climbing: MachineState = {
+    ...initialState(configs.budgeted),
+    core: solo({ ...jDone, gasLeft: -1 }),
+    lastStep: {
+      label: "operator-retry",
+      transitions: [{ ticket: 1, from: "PEscalated", to: "PWrapUp" }],
+      effects: ["EnqueueWrapUp"],
+      attempt: { tag: "WONone" },
+    },
+  };
+  assert.deepEqual(witnessesOnce(configs.budgeted, climbing), {
+    firings: [],
+    findings: [
+      "probe: step 0 after init: a witness threw: ticketMeasure: gasLeft is a non-negative safe integer, got -1",
+    ],
+  });
+
+  // THE CONTROL, and it is what makes the finding attributable to the account
+  // rather than to the probe: the same shape with an honest account records the
+  // firing instead, which is the witness doing its job.
+  const honest: MachineState = {
+    ...climbing,
+    core: solo({ ...jDone, gasLeft: 1 }),
+    prevMeasure: 0,
+  };
+  const fired = witnessesOnce(configs.budgeted, honest);
+  assert.deepEqual(fired.findings, []);
+  assert.deepEqual(
+    fired.firings.map((f) => [f.witness, f.label]),
+    [["freeClimbNever", "operator-retry"]],
+  );
 });
 
 test("the walker's observer is silent on a state the machine really reaches", () => {

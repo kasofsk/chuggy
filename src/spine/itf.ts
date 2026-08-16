@@ -36,6 +36,7 @@
  * compared as a set.
  */
 
+import { assertNever } from "../domain/assert.ts";
 import { canonicalTaskSet } from "../domain/measure.ts";
 import type {
   ArtifactMark,
@@ -104,6 +105,50 @@ function fieldsExactly(
     fail(where, `fields are [${want.join(", ")}], got [${got.join(", ")}]`);
   }
 }
+
+/**
+ * THE RECORD FIELD SETS THIS DECODER READS `model/measure.qnt`'s TYPES AT, one
+ * entry per record a trace carries, under the model's own name for it.
+ *
+ * IT IS A TABLE BECAUSE IT IS A ROSTER. Every list below is a second statement
+ * of a `type … = { … }` the model declares, and while they were literals at the
+ * call sites nothing could hold them against the declaration: the exact-field
+ * check catches a field the model gained only when a trace emitted from the
+ * MOVED model is decoded, and no gate emits — `src/tools/emit-corpus.ts` is
+ * run by hand. So a rename upstream left this file and `entry.ts` spelling the
+ * old name with every gate green. `src/tools/verify.ts` now reads the model's
+ * own declarations and compares these sets in both directions, on every run of
+ * the conformance gate.
+ *
+ * THE CALL SITES INDEX IT RATHER THAN REPEATING IT, which is the whole of what
+ * makes the comparison worth anything: what the gate holds against the model
+ * and what this decoder demands of a document are one list, so a roster kept
+ * current while the decode stayed stale is not a state this file can be in.
+ */
+export const decodedRecordFields = {
+  Task: ["id", "kind", "state"],
+  Stage: ["fanout", "combinator"],
+  WOAttempt: ["project", "invalidated"],
+  Ticket: [
+    "phase",
+    "deps",
+    "wrapUp",
+    "artifact",
+    "project",
+    "program",
+    "tasks",
+    "record",
+    "spawned",
+    "reworkLeft",
+    "wrapUpLeft",
+    "gasLeft",
+    "resumeAt",
+    "reason",
+    "completions",
+  ],
+  Transition: ["ticket", "from", "to"],
+  StepRecord: ["label", "transitions", "effects", "attempt"],
+} as const satisfies Readonly<Record<string, readonly string[]>>;
 
 function field(
   raw: Record<string, unknown>,
@@ -287,7 +332,7 @@ function decodeTaskState(v: unknown, where: string): TaskState {
 
 function decodeTask(v: unknown, where: string): Task {
   const raw = asObject(v, where);
-  fieldsExactly(raw, ["id", "kind", "state"], where);
+  fieldsExactly(raw, decodedRecordFields.Task, where);
   return {
     id: itfInt(field(raw, "id", where), `${where}.id`),
     kind: decodeTaskKind(field(raw, "kind", where), `${where}.kind`),
@@ -332,7 +377,7 @@ function decodeVerdict(v: unknown, where: string): Verdict {
 
 function decodeStage(v: unknown, where: string): Stage {
   const raw = asObject(v, where);
-  fieldsExactly(raw, ["fanout", "combinator"], where);
+  fieldsExactly(raw, decodedRecordFields.Stage, where);
   return {
     fanout: itfInt(field(raw, "fanout", where), `${where}.fanout`),
     combinator: itfEnum(
@@ -385,7 +430,7 @@ function decodeWrapUpObs(v: unknown, where: string): WrapUpObs {
       return { tag: "WONone" };
     case "WOAttempt": {
       const raw = asObject(value, where);
-      fieldsExactly(raw, ["project", "invalidated"], where);
+      fieldsExactly(raw, decodedRecordFields.WOAttempt, where);
       return {
         tag: "WOAttempt",
         project: itfInt(field(raw, "project", where), `${where}.project`),
@@ -439,27 +484,7 @@ function decodeIntSet(v: unknown, where: string): ReadonlySet<number> {
 
 function decodeTicket(v: unknown, where: string): Ticket {
   const raw = asObject(v, where);
-  fieldsExactly(
-    raw,
-    [
-      "phase",
-      "deps",
-      "wrapUp",
-      "artifact",
-      "project",
-      "program",
-      "tasks",
-      "record",
-      "spawned",
-      "reworkLeft",
-      "wrapUpLeft",
-      "gasLeft",
-      "resumeAt",
-      "reason",
-      "completions",
-    ],
-    where,
-  );
+  fieldsExactly(raw, decodedRecordFields.Ticket, where);
   return {
     phase: decodePhase(field(raw, "phase", where), `${where}.phase`),
     deps: decodeIntSet(field(raw, "deps", where), `${where}.deps`),
@@ -500,7 +525,7 @@ function decodeCore(v: unknown, where: string): Core {
 
 function decodeTransition(v: unknown, where: string): Transition {
   const raw = asObject(v, where);
-  fieldsExactly(raw, ["ticket", "from", "to"], where);
+  fieldsExactly(raw, decodedRecordFields.Transition, where);
   return {
     ticket: itfInt(field(raw, "ticket", where), `${where}.ticket`),
     from: decodePhase(field(raw, "from", where), `${where}.from`),
@@ -510,7 +535,7 @@ function decodeTransition(v: unknown, where: string): Transition {
 
 function decodeStepRecord(v: unknown, where: string): StepRecord {
   const raw = asObject(v, where);
-  fieldsExactly(raw, ["label", "transitions", "effects", "attempt"], where);
+  fieldsExactly(raw, decodedRecordFields.StepRecord, where);
   return {
     label: itfString(field(raw, "label", where), `${where}.label`),
     transitions: itfList(
@@ -674,8 +699,14 @@ function decodePicks(v: unknown, where: string): Picks {
       case "out":
         picks.out = decodeWrapUpOutcome(value, at);
         break;
+      // THE EXHAUSTIVE ARM, and it is `assertNever` rather than a decode
+      // failure on purpose. `as` ranges over `nondetBinders`' own second
+      // elements, so reaching here means a binder was added to that table and
+      // not to this switch — a defect in THIS FILE, not a document this
+      // decoder cannot read. Reporting it as a `DecodeError` would tell a gate
+      // the corpus was unreadable and send a reader to the fixture.
       default:
-        fail(at, "unhandled binder");
+        return assertNever(as, `${at}: unhandled binder`);
     }
   }
   return picks;

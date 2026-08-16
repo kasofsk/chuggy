@@ -343,6 +343,72 @@ test("decodeTrace: the nondet binder roster is exact", () => {
   );
 });
 
+test("decodeTrace: a var name two keys end in is refused, because nothing could attribute it", () => {
+  // `varKey` resolves the machine's vars through the namespace the main module
+  // and the domain instance put in front of them, and it requires EXACTLY one
+  // match. Two would be two domain instances in one trace: the fleet a step
+  // moved could belong to either, and a replay would compare this tree's
+  // machine against a state assembled from both.
+  const second = "n::chuggy_domain::tickets";
+  assert.throws(
+    () =>
+      decodeTrace(
+        document({
+          vars: [...vars, second],
+          states: [
+            state(0, { [second]: { "#map": [] } }),
+            state(1, { [second]: { "#map": [] } }),
+          ],
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof DecodeError &&
+      /expected exactly one var named tickets, got 2/.test(error.message),
+  );
+});
+
+test("decodeTrace: a document declaring half the mbt vars is refused, not read as the other tier", () => {
+  // THE TIER IS DECIDED BY BOTH `mbt::` VARS BEING DECLARED, and the case that
+  // matters is the half-declared one: an emitter that wrote the action and
+  // dropped the picks would otherwise be read as a tier-2 document, and the
+  // reconstruction would silently replace decision events the trace HAS with
+  // ones this tree derived. What actually happens is the var-roster equality
+  // refusing the state, which is the check that makes the tier a fact about the
+  // document rather than a guess.
+  assert.throws(
+    () =>
+      decodeTrace(
+        document({ vars: vars.filter((v) => v !== "mbt::nondetPicks") }),
+      ),
+    (error: unknown) =>
+      error instanceof DecodeError &&
+      /the state's vars are/.test(error.message),
+  );
+  // ...and a document declaring NEITHER is the honest tier-2 shape, so it
+  // decodes — which is what makes the refusal above about the half, not about
+  // the absence.
+  const witness = decodeTrace(
+    document({
+      vars: vars.filter((v) => !v.startsWith("mbt::")),
+      states: [tierTwo(0), tierTwo(1)],
+    }),
+  );
+  assert.equal(witness.hasDecisionEvents, false);
+  assert.equal(witness.states[1]?.action, undefined);
+});
+
+/** One state with the two `mbt::` keys removed — a `quint test` export's shape. */
+function tierTwo(index: number): unknown {
+  const {
+    "mbt::actionTaken": _action,
+    "mbt::nondetPicks": _picks,
+    ...rest
+  } = state(index) as Record<string, unknown>;
+  void _action;
+  void _picks;
+  return rest;
+}
+
 test("decodeTrace: the state index must be the state's position", () => {
   assert.throws(
     () => decodeTrace(document({ states: [state(0), state(5)] })),

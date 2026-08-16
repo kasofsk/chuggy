@@ -43,11 +43,21 @@
  *     desk tasks for two parked tickets, and a world that collapsed them would
  *     leave one ticket parked with nobody looking at it.
  *
- * A KEY THAT CHANGES ITS EFFECT IS REFUSED. Two deliveries agreeing on seq and
- * ordinal but disagreeing on the effect mean an executor that reordered or
- * rewrote a row between emissions, which nothing downstream can detect and
- * which would make the ledger a record of something that never happened. It is
- * refused here because this is the last place it is cheap to refuse.
+ * A KEY THAT CHANGES ITS EFFECT — OR ITS SUBJECT — IS REFUSED. Two deliveries
+ * agreeing on seq and ordinal but disagreeing on the effect mean an executor
+ * that reordered or rewrote a row between emissions, which nothing downstream
+ * can detect and which would make the ledger a record of something that never
+ * happened. It is refused here because this is the last place it is cheap to
+ * refuse.
+ *
+ * THE SUBJECT IS PART OF THAT, and it was missing until sweep 2: the record
+ * this ledger stores carries the TICKET the step moved, and the guard compared
+ * everything about a redelivery except the field the entry actually keeps. So
+ * the same effect at the same key for a DIFFERENT ticket absorbed in silence
+ * and the ledger went on naming the first one — a spawn attributed to the wrong
+ * ticket, in the component whose whole job is to record faithfully what it was
+ * asked to do. What a redelivery must be is the SAME delivery, and the subject
+ * is the third thing that makes it one.
  *
  * IT HOLDS NO CLOCK AND NO AMBIENT CAPABILITY, for the store's reason: a walk
  * driven through it twice gives the same ledger twice, which is what makes it
@@ -122,8 +132,10 @@ export function createRecordingWorld(): RecordingWorld {
     const held = accepted.get(key);
     if (held !== undefined) {
       invariant(
-        held.effect === delivery.effect && held.call === call,
-        `recording world: key ${key} was ${held.call}/${held.effect} and has come back as ${call}/${delivery.effect}`,
+        held.effect === delivery.effect &&
+          held.call === call &&
+          held.ticket === subjectOf(delivery.rec),
+        `recording world: key ${key} was ${held.call}/${held.effect} for ticket ${String(held.ticket)} and has come back as ${call}/${delivery.effect} for ticket ${String(subjectOf(delivery.rec))}`,
       );
       return;
     }

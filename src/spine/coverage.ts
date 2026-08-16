@@ -1,9 +1,17 @@
 /**
  * THE CORPUS'S COVERAGE OBLIGATIONS: which deciders, which step labels, which
- * `stepDescends` exemption arms and which instances the committed traces
- * actually reach. The emitter refuses to write a corpus that misses one and the
- * gate re-checks the same rosters, so an obligation is a property of the tree
- * rather than a claim in a description.
+ * `stepDescends` exemption arms, which `decideOpRetry` resume arms and which
+ * instances the committed traces actually reach. The emitter refuses to write a
+ * corpus that misses one and the gate re-checks the same rosters, so an
+ * obligation is a property of the tree rather than a claim in a description.
+ *
+ * A DECIDER IS NOT ALWAYS THE RIGHT GRAIN, which is why the resume arms are
+ * here. `decideOpRetry` matches on the ticket's `resumeAt` and does something
+ * structurally different in each of its arms, so "the corpus reaches
+ * `decideOpRetry`" is satisfied by any one of them and silent about the rest — and
+ * that silence was measured, not supposed. The roster below is the arms; the
+ * one the corpus cannot reach is declared with its argument rather than left
+ * to be discovered as an absence.
  *
  * THE ARM ATTRIBUTION DOES NOT RESTATE THE PREDICATE — it interrogates the
  * shipped one, which is the whole difficulty of this file. `stepDescends`
@@ -36,7 +44,7 @@
 
 import { stepDescends } from "../domain/invariants.ts";
 import type { Config } from "../domain/domain.ts";
-import type { Core, StepRecord } from "../domain/measure.ts";
+import type { Core, Resume, StepRecord } from "../domain/measure.ts";
 import { currentMeasure } from "./machine.ts";
 import { decidersReached, shippedDeciders, type Cmd } from "./cmd.ts";
 import { reachableStepLabels, type StepLabel } from "./decode.ts";
@@ -70,6 +78,64 @@ export type ExemptionArm = (typeof exemptionArms)[number];
 export const mcInstances = ["budgeted", "deadline_only", "retryfree"] as const;
 
 export type McInstance = (typeof mcInstances)[number];
+
+/**
+ * `model/domain.qnt`'s `decideOpRetry` RESUME POINTS — the arms of the one
+ * decider whose arms no roster in this file could see.
+ *
+ * WHY A DECIDER ROSTER IS NOT ENOUGH HERE, and it is the only decider this is
+ * true of. Every other one answers a single shape; `decideOpRetry` matches on
+ * the ticket's `resumeAt` and does something structurally different in each
+ * arm — re-derive at Pending, respawn work, fresh eval fan-out, re-enqueue the
+ * wrap-up — so "the corpus reaches `decideOpRetry`" is satisfied by any one of
+ * them and says nothing about the rest. Deleting the `EnqueueWrapUp`
+ * effect from the `RWrapUp` arm was measured to leave the whole tree green
+ * except one hand-written unit assertion, with `decideOpRetry` reported
+ * covered throughout.
+ *
+ * `RNone` IS NOT AN ARM HERE, for `operator-retry-unreachable`'s reason:
+ * `retryableIn` refuses a ticket with no modeled resume, so the model's own
+ * `RNone` arm is guarded-unreachable and a corpus can never owe it.
+ *
+ * THE ROSTER IS THE UNION MINUS THAT ONE, held by the compiler: the table
+ * below is a `Record<ResumeArm, true>`, so a `Resume` constructor added to
+ * `measure.ts` is a compile error in this file rather than an arm nothing
+ * counts. What no compiler can do is notice `model/measure.qnt` growing one,
+ * which is `src/tools/verify.ts`'s business.
+ */
+export type ResumeArm = Exclude<Resume, "RNone">;
+
+const resumeArmRoster: Readonly<Record<ResumeArm, true>> = {
+  RPending: true,
+  RWorking: true,
+  REvaluating: true,
+  RWrapUp: true,
+};
+
+export const resumeArms = Object.keys(resumeArmRoster) as readonly ResumeArm[];
+
+/**
+ * THE RESUME ARMS NEITHER TIER OF THE CORPUS CAN REACH — declared, argued, and
+ * checked in the one direction a declaration can be checked in.
+ *
+ * `RWrapUp` is stamped by the three wrap-up walls and resumed by an operator
+ * afterwards, which is a long chain of correctly-drawn steps. Tier 1
+ * is a uniform sampled search and does not come close — PLAN.md records the
+ * same negative for two shallower targets, at budgets to 200000 samples — and
+ * tier 2 exports the model's OWN witness runs, and none of them drives an
+ * operator retry off a wrap-up wall. So the arm is reachable in
+ * the machine, exercised in this tree by a deterministic script through the
+ * shipped deciders (`randomized.test.ts`), and absent from the corpus for a
+ * reason that is not the corpus's to fix: PLAN.md's own fallback names it —
+ * an obligation neither tier reaches is first a hole in the model's witness
+ * discipline, and the fix is a model PR adding the run.
+ *
+ * THE DECLARATION IS REFUTABLE, which is the whole of what makes it a control
+ * rather than an excuse: a fixture that DOES reach `RWrapUp` reds
+ * `coverageGaps` naming it, so the day the model grows that witness this list
+ * must shrink in the same change.
+ */
+export const resumeArmsBeyondTheCorpus: readonly ResumeArm[] = ["RWrapUp"];
 
 /**
  * Is this step exempt from descent? Asked by handing `stepDescends` a previous
@@ -126,6 +192,10 @@ export type Coverage = {
   readonly instances: ReadonlySet<string>;
   /** The model's nondet binders a decision event was decoded from. */
   readonly binders: ReadonlySet<string>;
+  /** The `decideOpRetry` resume points an operator retry was taken at. */
+  readonly resumes: ReadonlySet<ResumeArm>;
+  /** The effect strings a replayed step actually asked the world for. */
+  readonly effects: ReadonlySet<string>;
 };
 
 /** A mutable accumulator, so a corpus walk needs no set unions per step. */
@@ -135,14 +205,35 @@ export class CoverageBuilder {
   private readonly arms = new Set<ExemptionArm>();
   private readonly instances = new Set<string>();
   private readonly binders = new Set<string>();
+  private readonly resumes = new Set<ResumeArm>();
+  private readonly effects = new Set<string>();
 
   observeLabel(label: StepLabel): void {
     this.labels.add(label);
   }
 
-  observeCmd(cmd: Cmd): void {
+  /**
+   * The deciders this decision event reaches, and — for an operator retry —
+   * the arm of `decideOpRetry` it will take.
+   *
+   * THE ARM IS READ OFF THE PRE-STATE TICKET, not off the step it produced.
+   * `resumeAt` is the model's own field and the decider's own match subject, so
+   * reading it is asking the machine which arm this is; reading the transition
+   * the step LANDED on would be a second copy of the decider's match, and a
+   * second copy of a decider is what `domain.ts` and `invariants.ts` both
+   * forbid. That is also why this takes the state the decision departed from:
+   * the arm's whole point is that `resumeAt` is `RNone` again afterwards.
+   */
+  observeCmd(before: Core, cmd: Cmd): void {
     for (const decider of decidersReached(cmd)) {
       this.deciders.add(decider);
+    }
+    if (cmd.tag !== "JOpRetry") {
+      return;
+    }
+    const resumeAt = before.tickets.get(cmd.ticket)?.resumeAt;
+    if (resumeAt !== undefined && resumeAt !== "RNone") {
+      this.resumes.add(resumeAt);
     }
   }
 
@@ -155,6 +246,23 @@ export class CoverageBuilder {
 
   observeInstance(instance: string): void {
     this.instances.add(instance);
+  }
+
+  /**
+   * The effects a step asked the world for.
+   *
+   * IT IS A REACH CHECK AND THE ROSTER COMPARISON IS NOT, which is the whole
+   * reason it exists. `src/tools/verify.ts` holds `effectVocabulary` against
+   * the model's own code literals as an exact set — a check that the two
+   * SPELLINGS agree, satisfied by a vocabulary nothing ever emits. An effect
+   * the model can produce and the corpus never carries is a wire the
+   * interpreter routes and no golden trace exercises, which is exactly the
+   * shape the coverage obligations exist to refuse everywhere else.
+   */
+  observeEffects(effects: readonly string[]): void {
+    for (const effect of effects) {
+      this.effects.add(effect);
+    }
   }
 
   /**
@@ -187,6 +295,12 @@ export class CoverageBuilder {
     for (const binder of other.binders) {
       this.binders.add(binder);
     }
+    for (const resume of other.resumes) {
+      this.resumes.add(resume);
+    }
+    for (const effect of other.effects) {
+      this.effects.add(effect);
+    }
   }
 
   taken(): Coverage {
@@ -196,6 +310,8 @@ export class CoverageBuilder {
       arms: this.arms,
       instances: this.instances,
       binders: this.binders,
+      resumes: this.resumes,
+      effects: this.effects,
     };
   }
 }
@@ -221,6 +337,7 @@ export const pinnableEntries: readonly string[] = [
   ...shippedDeciders,
   ...reachableStepLabels,
   ...exemptionArms,
+  ...resumeArms,
 ];
 
 /** The pins this fixture claims and does not reach. */
@@ -232,6 +349,7 @@ export function pinsMissed(
     ...reached.deciders,
     ...reached.labels,
     ...reached.arms,
+    ...reached.resumes,
   ]);
   return pins.filter((pin) => !covered.has(pin));
 }
@@ -255,10 +373,37 @@ export type CoverageGap = {
  * name outside this roster. A NONDET BINDER is observed from a trace, but only
  * through `decodePicks`, whose `fieldsExactly` demands the decoder's own binder
  * table exactly: a binder the machine gained is a decode failure naming it
- * rather than a coverage entry nobody rostered. The other three — deciders,
- * step labels, exemption arms — are read off the traces themselves, where
- * nothing has vetted them, so those are the three checked in both directions.
+ * rather than a coverage entry nobody rostered. The rest — deciders,
+ * step labels, exemption arms, resume arms — are read off the traces
+ * themselves, where nothing has vetted them, so those are the ones checked in
+ * both directions.
+ *
+ * THE EFFECT ROSTER IS NOT HERE, and the reason is the purity rule rather than
+ * a judgement about the obligation: `effectVocabulary` lives in
+ * `src/effects/`, which `src/spine/` may not reach at any depth. So the reach
+ * check is `effectGaps` below, which takes the roster as an argument, and
+ * `src/tools/verify.ts` is where the two meet — the same file that already
+ * holds `effectVocabulary` against the model's own literals. That comparison is
+ * a check that the two SPELLINGS agree and is satisfied by a vocabulary nothing
+ * emits; this one asks whether the corpus ever asked the world for it.
+ *
+ * THE RESUME ARMS ARE CHECKED THREE WAYS, because one of them is declared
+ * unreachable by this corpus. What the corpus owes is the roster minus that
+ * declaration; what no roster names is reported as usual; and the declared arm
+ * gets its own check in the opposite direction — reaching it is the finding,
+ * because the declaration has then outlived its reason and must go in the same
+ * change as the fixture that refuted it.
  */
+export function effectGaps(
+  vocabulary: readonly string[],
+  coverage: Coverage,
+): readonly CoverageGap[] {
+  return [
+    ...missing("effect", vocabulary, coverage.effects),
+    ...unexpected("effect", vocabulary, coverage.effects),
+  ];
+}
+
 export function coverageGaps(coverage: Coverage): readonly CoverageGap[] {
   return [
     ...missing("decider", shippedDeciders, coverage.deciders),
@@ -266,9 +411,24 @@ export function coverageGaps(coverage: Coverage): readonly CoverageGap[] {
     ...missing("stepDescends exemption arm", exemptionArms, coverage.arms),
     ...missing("mc instance", mcInstances, coverage.instances),
     ...missing("nondet binder", boundBinderNames, coverage.binders),
+    // THE DECLARED ARM IS SUBTRACTED FROM WHAT THE CORPUS OWES, and added back
+    // as its own check below: `resumeArmsBeyondTheCorpus` says why, and the
+    // check is what stops the declaration from outliving its reason.
+    ...missing(
+      "decideOpRetry resume arm",
+      resumeArms.filter((arm) => !resumeArmsBeyondTheCorpus.includes(arm)),
+      coverage.resumes,
+    ),
     ...unexpected("decider", shippedDeciders, coverage.deciders),
     ...unexpected("step label", reachableStepLabels, coverage.labels),
     ...unexpected("stepDescends exemption arm", exemptionArms, coverage.arms),
+    ...unexpected("decideOpRetry resume arm", resumeArms, coverage.resumes),
+    ...resumeArmsBeyondTheCorpus
+      .filter((arm) => coverage.resumes.has(arm))
+      .map((arm) => ({
+        obligation: "decideOpRetry resume arm",
+        missing: `${arm} — declared beyond both tiers of the corpus, and a fixture reaches it`,
+      })),
   ];
 }
 

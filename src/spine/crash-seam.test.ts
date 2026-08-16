@@ -26,9 +26,16 @@
  * WHAT THE DURABLE HALF ADDS. `crashRecoverTo` is the model's crash and it
  * keeps three of the four machine vars by fiat. A process that really died kept
  * nothing, so each sweep also rebuilds the actor from the STORE's rows alone —
- * through the port, through the schema's gate, through the legality fold — and
- * requires the same state. That is the claim the model cannot make and the one
- * a real deployment needs. The hazard sweep rebuilds too, and requires the
+ * through the port, through the schema's gate, through the legality fold, at
+ * every cursor the crash could come back with — and requires the same state.
+ * THAT is the claim the model cannot make and the one a real deployment needs.
+ *
+ * THE CURSOR IN THAT CLAUSE IS NEWER THAN THE SENTENCE AROUND IT. The durable
+ * rebuild used to be taken at cursor 0 alone, which made this half a PAIR where
+ * the paragraph above claims a triple, and left `recoverFrom`'s ledger gate
+ * vacuous on it: an empty emitted prefix is evidenced by any ledger at all.
+ *
+ * The hazard sweep rebuilds too, and requires the
  * OPPOSITE: an orphan is in the world, not in the journal, so recovery must
  * carry it and `journalCoversWorld` must still be red on the recovered state.
  * A recovery that dropped the world's ledger would erase the hazard on exactly
@@ -336,8 +343,8 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
   assert.equal(memTicket(s, 1).gasLeft, 3);
   assert.equal(worldSpawns(s, 1), 1);
   assert.equal(journalSpawns(s, 1), 0);
-  assert.equal(journalCoversWorld(s), false);
-  assert.equal(noDoubleSpentBudget(s), false);
+  assert.equal(journalCoversWorld(cfg, s), false);
+  assert.equal(noDoubleSpentBudget(cfg, s), false);
   assert.ok(refinementCore(cfg, s), "the journal and the replay are untouched");
   assert.ok(invariantsHold(cfg, s.mem), "the domain machine is blind to this");
 
@@ -347,7 +354,7 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
   assert.equal(memTicket(s, 1).gasLeft, 2);
   assert.equal(worldSpawns(s, 1), 2);
   assert.equal(journalSpawns(s, 1), 1);
-  assert.equal(noDoubleSpentBudget(s), false);
+  assert.equal(noDoubleSpentBudget(cfg, s), false);
   assert.ok(refinementCore(cfg, s));
   assert.ok(invariantsHold(cfg, s.mem));
 
@@ -377,7 +384,7 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
   assert.equal(worldCompletions(s, 1), 2);
   assert.equal(journalCompletions(s, 1), 1);
   assert.equal(memTicket(s, 1).completions, 1);
-  assert.equal(noDuplicateCycle(s), false);
+  assert.equal(noDuplicateCycle(cfg, s), false);
   assert.ok(refinementCore(cfg, s));
   assert.ok(invariantsHold(cfg, s.mem));
 });
@@ -409,7 +416,7 @@ test("hazardReworkDoubleSpendDeterministicTest: the rework's charge dies with th
   assert.equal(memTicket(s, 1).reworkLeft, 1);
   assert.equal(worldSpawns(s, 1), 2);
   assert.equal(journalSpawns(s, 1), 1);
-  assert.equal(noDoubleSpentBudget(s), false);
+  assert.equal(noDoubleSpentBudget(cfg, s), false);
   assert.ok(refinementCore(cfg, s));
   assert.ok(invariantsHold(cfg, s.mem));
 
@@ -421,7 +428,7 @@ test("hazardReworkDoubleSpendDeterministicTest: the rework's charge dies with th
   assert.equal(memTicket(s, 1).reworkLeft, 0);
   assert.equal(worldSpawns(s, 1), 3);
   assert.equal(journalSpawns(s, 1), 2);
-  assert.equal(noDoubleSpentBudget(s), false);
+  assert.equal(noDoubleSpentBudget(cfg, s), false);
   assert.ok(refinementCore(cfg, s));
   assert.ok(invariantsHold(cfg, s.mem));
 });
@@ -522,22 +529,37 @@ test("the disciplined sweep: a crash at every seam, at every surviving cursor, r
           const caughtUp = emitTimes(crashed, emitted - cursor);
           assert.deepEqual(caughtUp.worldEffects, live.worldEffects);
           expectSteady(caughtUp);
-        }
 
-        // THE DURABLE CRASH at the same seam: keep nothing at all, and rebuild
-        // from the store's rows through the port, the schema's gate and the
-        // legality fold. The harshest cursor (total loss) is the one taken,
-        // because it is the one that re-emits the most.
-        const rebuilt = must(
-          recoverFrom(cfg, rows, 0, {
-            worldEffects: live.worldEffects,
-            orphans: live.orphans,
-          }),
-          `${name}: durable rebuild at ${String(k)}/${String(emitted)}`,
-        );
-        assert.deepEqual(rebuilt.mem, live.mem);
-        assert.deepEqual(rebuilt.journal, live.journal);
-        expectSteady(rebuilt);
+          // THE DURABLE CRASH AT THE SAME SEAM AND THE SAME CURSOR: keep
+          // nothing at all, and rebuild from the store's rows through the port,
+          // the schema's gate and the legality fold.
+          //
+          // IT SWEEPS THE CURSOR TOO, which it did not until sweep 2. The
+          // rebuild used to be taken at cursor 0 alone — "the harshest, because
+          // it re-emits the most" — which made this half of the sweep a PAIR
+          // where the header claims a triple, and left `recoverFrom`'s ledger
+          // gate vacuous on the one path a real process takes: an empty prefix
+          // is evidenced by any ledger at all. Inside the cursor loop it is the
+          // triple the header describes, and every checkpoint the crash could
+          // honestly come back with is one the ledger has to corroborate.
+          const rebuilt = must(
+            recoverFrom(cfg, store, cursor, {
+              worldEffects: live.worldEffects,
+              orphans: live.orphans,
+            }),
+            `${name}: durable rebuild at ${String(k)}/${String(emitted)}/${String(cursor)}`,
+          );
+          assert.equal(rebuilt.applied, cursor);
+          assert.deepEqual(rebuilt.mem, live.mem);
+          assert.deepEqual(rebuilt.journal, live.journal);
+          expectSteady(rebuilt);
+          // ...and it catches up to the same world, from the same distance as
+          // the model's crash did above.
+          assert.deepEqual(
+            emitTimes(rebuilt, emitted - cursor).worldEffects,
+            live.worldEffects,
+          );
+        }
       }
 
       const next = walk[k];
@@ -562,7 +584,7 @@ test("the hazard sweep: an effect-first crash at every decision of every walk is
       const hazard = must(effectCrash(cfg, s, cmd), where);
       assert.equal(hazard.orphans.length, 1, where);
       // The coverage half falls at every seam without exception...
-      assert.equal(journalCoversWorld(hazard), false, where);
+      assert.equal(journalCoversWorld(cfg, hazard), false, where);
       assert.equal(refinementInvariants(cfg, hazard), false, where);
       // ...while the journal, the replay and the ledger bridge stay sound, and
       // the domain machine reports nothing at all. That blindness is the
@@ -583,14 +605,14 @@ test("the hazard sweep: an effect-first crash at every decision of every walk is
       // world that had already been paid for twice — the hazard erased on
       // exactly the path that matters.
       const rebuilt = must(
-        recoverFrom(cfg, store.readAll(), hazard.applied, {
+        recoverFrom(cfg, store, hazard.applied, {
           worldEffects: hazard.worldEffects,
           orphans: hazard.orphans,
         }),
         `${where}: durable rebuild`,
       );
       assert.deepEqual(rebuilt.orphans, hazard.orphans, where);
-      assert.equal(journalCoversWorld(rebuilt), false, where);
+      assert.equal(journalCoversWorld(cfg, rebuilt), false, where);
       assert.equal(refinementInvariants(cfg, rebuilt), false, where);
       assert.ok(refinementCore(cfg, rebuilt), where);
       assert.ok(invariantsHold(cfg, rebuilt.mem), where);
@@ -676,7 +698,7 @@ test("the hazard sweep: every orphaned PAID decision, re-decided, double-spends"
         worldCompletions(orphaned, 1) > before.completions,
       `${what}: the orphan cost the world nothing`,
     );
-    assert.equal(journalCoversWorld(orphaned), false, what);
+    assert.equal(journalCoversWorld(cfg, orphaned), false, what);
     assert.ok(
       invariantsHold(cfg, orphaned.mem),
       `${what}: the domain is blind`,
@@ -691,7 +713,7 @@ test("the hazard sweep: every orphaned PAID decision, re-decided, double-spends"
       `${what}: the re-decision did not double-spend`,
     );
     assert.ok(
-      !noDoubleSpentBudget(redecided) || !noDuplicateCycle(redecided),
+      !noDoubleSpentBudget(cfg, redecided) || !noDuplicateCycle(cfg, redecided),
       `${what}: neither theorem priced the double spend`,
     );
     assert.ok(refinementCore(cfg, redecided), `${what}: the journal is sound`);

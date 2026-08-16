@@ -118,7 +118,34 @@ test("a key that comes back carrying a different effect is refused", () => {
     },
     {
       name: "AssertionError",
-      message: /key 8:1 was openTask\/OpenHumanTask and has come back/,
+      message:
+        /key 8:1 was openTask\/OpenHumanTask for ticket \d+ and has come back/,
+    },
+  );
+});
+
+test("a key that comes back for a different TICKET is refused too", () => {
+  // THE THIRD THING THAT MAKES A REDELIVERY THE SAME DELIVERY, and the one this
+  // guard was missing. The ledger entry keeps the ticket the step moved, so an
+  // absorbed redelivery under a key held for another ticket leaves the ledger
+  // naming the first one — a request attributed to the wrong subject, in the
+  // component whose whole job is to record faithfully what it was asked to do.
+  // Same call, same effect, same key: only the subject differs.
+  const world = createRecordingWorld();
+  world.ports.desk.openTask(parkedFirst);
+  assert.throws(
+    () => {
+      world.ports.desk.openTask({
+        ...parkedFirst,
+        rec: {
+          ...parkedFirst.rec,
+          transitions: [{ ticket: 3, from: "PPending", to: "PEscalated" }],
+        },
+      });
+    },
+    {
+      name: "AssertionError",
+      message: /and has come back as openTask\/OpenHumanTask for ticket 3/,
     },
   );
 });

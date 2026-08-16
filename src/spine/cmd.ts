@@ -246,8 +246,14 @@ export function cmdEnabled(cfg: Config, c: Core, cmd: Cmd): boolean {
 /**
  * Every decider `execCmd` reaches for this command.
  *
- * A PROJECTION OF THE DISPATCH ABOVE, and the only place in the tree that names
- * a decider as data. It exists for one obligation — the golden corpus must
+ * A PROJECTION OF THE DISPATCH ABOVE, and the only place in SHIPPED code that
+ * names a decider as data — the qualifier matters, because two suites and a
+ * gate name them too, and a claim a `grep` refutes is a claim a reader stops
+ * believing. `src/tools/verify.ts` holds `shippedDeciders` against the model's
+ * own `pure def decide*`, and `cmd.test.ts` pins this table tag by tag; both
+ * are checking layers, which is the class this exclusivity is stated against.
+ * What the claim is FOR is that nothing else in the machine dispatches on a
+ * decider's name, so a decider renamed is a rename here and nowhere else. It exists for one obligation — the golden corpus must
  * cover every shipped decider, and a corpus step names a `Cmd` rather than the
  * function it called — so what it must get right is exactly what `execCmd`
  * does, including that `JDequeue` reaches `decideDequeue` AND the route that

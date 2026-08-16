@@ -24,9 +24,12 @@ import type { Core, Phase, StepRecord } from "../domain/measure.ts";
 import {
   CoverageBuilder,
   coverageGaps,
+  effectGaps,
   exemptionArms,
   exemptionArmOf,
   mcInstances,
+  resumeArms,
+  resumeArmsBeyondTheCorpus,
   type ExemptionArm,
 } from "./coverage.ts";
 import { reachableStepLabels, type StepLabel } from "./decode.ts";
@@ -144,25 +147,37 @@ test("coverageGaps: a full corpus has none, and each roster is checked both ways
   for (const [, cfg, lastStep] of armRows) {
     full.observeArm(cfg, c, lastStep);
   }
-  full.observeCmd({
+  full.observeCmd(c, {
     tag: "JArrive",
     deps: new Set(),
     program: [],
     project: 1,
     wrapUp: { tag: "WNone" },
   });
-  full.observeCmd({ tag: "JRelease", ticket: 1 });
-  full.observeCmd({ tag: "JRevoke", ticket: 1 });
-  full.observeCmd({ tag: "JDispatch", ticket: 1 });
-  full.observeCmd({ tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" });
-  full.observeCmd({ tag: "JWorkReduce", ticket: 1 });
-  full.observeCmd({ tag: "JEvalReduce", ticket: 1 });
-  full.observeCmd({ tag: "JDequeue", ticket: 1, moved: true });
-  full.observeCmd({ tag: "JDequeue", ticket: 1, moved: false });
-  full.observeCmd({ tag: "JGateResolve", ticket: 1, out: "WOk" });
-  full.observeCmd({ tag: "JCompleteDuplicate", ticket: 1 });
-  full.observeCmd({ tag: "JRevalFail", ticket: 1 });
-  full.observeCmd({ tag: "JOpRetry", ticket: 1 });
+  full.observeCmd(c, { tag: "JRelease", ticket: 1 });
+  full.observeCmd(c, { tag: "JRevoke", ticket: 1 });
+  full.observeCmd(c, { tag: "JDispatch", ticket: 1 });
+  full.observeCmd(c, { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" });
+  full.observeCmd(c, { tag: "JWorkReduce", ticket: 1 });
+  full.observeCmd(c, { tag: "JEvalReduce", ticket: 1 });
+  full.observeCmd(c, { tag: "JDequeue", ticket: 1, moved: true });
+  full.observeCmd(c, { tag: "JDequeue", ticket: 1, moved: false });
+  full.observeCmd(c, { tag: "JGateResolve", ticket: 1, out: "WOk" });
+  full.observeCmd(c, { tag: "JCompleteDuplicate", ticket: 1 });
+  full.observeCmd(c, { tag: "JRevalFail", ticket: 1 });
+  // THE RESUME ARMS, one operator retry per resume point — the obligation a
+  // decider roster could not state. The arm is read off the PRE-state ticket's
+  // `resumeAt`, so the fixture varies the field the decider matches on rather
+  // than the step it produced.
+  for (const arm of resumeArms) {
+    if (resumeArmsBeyondTheCorpus.includes(arm)) {
+      continue;
+    }
+    full.observeCmd(solo({ ...jDraft, resumeAt: arm }), {
+      tag: "JOpRetry",
+      ticket: 1,
+    });
+  }
   // Every nondet draw the machine's actions make, which is the fourth
   // obligation: a tier-1 trace is the only place a pick is decoded at all.
   full.observePicks({
@@ -190,6 +205,7 @@ test("coverageGaps: a full corpus has none, and each roster is checked both ways
       "stepDescends exemption arm",
       "mc instance",
       "nondet binder",
+      "decideOpRetry resume arm",
     ]),
   );
 
@@ -202,6 +218,94 @@ test("coverageGaps: a full corpus has none, and each roster is checked both ways
       gap.missing.includes("ticket-teleported"),
     ),
   );
+});
+
+test("effectGaps: an effect the vocabulary names and no step emits is a gap, both ways", () => {
+  // A REACH CHECK, WHICH THE ROSTER COMPARISON IS NOT. `src/tools/verify.ts`
+  // holds the shipped effect vocabulary against the model's own code literals
+  // as an exact set — two SPELLINGS agreeing, which a vocabulary nothing ever
+  // emits satisfies perfectly. This asks the other question: did any replayed
+  // step actually ask the world for it. An effect the interpreter routes and no
+  // golden trace carries is a wire nothing exercises.
+  const vocabulary = ["CreateDraft", "Complete"];
+  const partial = new CoverageBuilder();
+  partial.observeEffects(["CreateDraft", "CreateDraft"]);
+  assert.deepEqual(effectGaps(vocabulary, partial.taken()), [
+    { obligation: "effect", missing: "Complete — no fixture reaches it" },
+  ]);
+
+  // And the other direction: a step emitting a string no roster names is this
+  // tree's vocabulary and the machine's having drifted, with the corpus as the
+  // evidence.
+  const strange = new CoverageBuilder();
+  strange.observeEffects(["CreateDraft", "Complete", "OpenTheGate"]);
+  assert.deepEqual(effectGaps(vocabulary, strange.taken()), [
+    {
+      obligation: "effect",
+      missing: "OpenTheGate — reached, and the roster does not name it",
+    },
+  ]);
+});
+
+test("coverageGaps: the resume arm declared beyond the corpus reds when a fixture reaches it", () => {
+  // THE DECLARATION'S OWN REFUTATION TRIGGER, and it is what makes
+  // `resumeArmsBeyondTheCorpus` a control rather than an excuse. The arm is
+  // subtracted from what the corpus owes because neither tier can reach it —
+  // a sampled search does not come near a chain that long and the model
+  // ships no witness run for one — so the day either changes, the corpus
+  // reaches the arm and this finding says the declaration has outlived its
+  // reason.
+  assert.deepEqual(resumeArmsBeyondTheCorpus, ["RWrapUp"]);
+  const reached = new CoverageBuilder();
+  reached.observeCmd(solo({ ...jDraft, resumeAt: "RWrapUp" }), {
+    tag: "JOpRetry",
+    ticket: 1,
+  });
+  assert.deepEqual(
+    coverageGaps(reached.taken()).filter((gap) =>
+      gap.missing.startsWith("RWrapUp"),
+    ),
+    [
+      {
+        obligation: "decideOpRetry resume arm",
+        missing:
+          "RWrapUp — declared beyond both tiers of the corpus, and a fixture reaches it",
+      },
+    ],
+  );
+});
+
+test("observeCmd: the resume arm is read off the pre-state, and a retry is the only command that carries one", () => {
+  // THE ARM IS THE TICKET'S `resumeAt` BEFORE THE STEP — the decider's own
+  // match subject. Reading the transition the step landed on would be a second
+  // copy of `decideOpRetry`'s match, which is the duplication this whole file
+  // avoids for the exemption arms too.
+  const parked = new CoverageBuilder();
+  parked.observeCmd(solo({ ...jDraft, resumeAt: "REvaluating" }), {
+    tag: "JOpRetry",
+    ticket: 1,
+  });
+  assert.deepEqual(parked.taken().resumes, new Set(["REvaluating"]));
+
+  // A ticket with no modeled resume contributes nothing: `retryableIn` refuses
+  // it, so the model's `RNone` arm is the guarded-unreachable one and a corpus
+  // can never owe it.
+  const none = new CoverageBuilder();
+  none.observeCmd(solo({ ...jDraft, resumeAt: "RNone" }), {
+    tag: "JOpRetry",
+    ticket: 1,
+  });
+  // And no other command carries a resume at all, nor does a ticket the fleet
+  // does not hold.
+  none.observeCmd(solo({ ...jDraft, resumeAt: "RWorking" }), {
+    tag: "JRelease",
+    ticket: 1,
+  });
+  none.observeCmd(solo({ ...jDraft, resumeAt: "RWorking" }), {
+    tag: "JOpRetry",
+    ticket: 2,
+  });
+  assert.deepEqual(none.taken().resumes, new Set());
 });
 
 test("observePicks: the binder roster is the decoder's own table", () => {

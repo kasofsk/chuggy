@@ -59,6 +59,27 @@ const cfg = cfgRefinement;
 const noWorld = { worldEffects: new Set<number>(), orphans: [] };
 
 /**
+ * A store that hands back exactly these rows, whatever they are.
+ *
+ * IT IS WHAT A TAMPERED LOG LOOKS LIKE FROM ABOVE THE PORT, and it is the only
+ * way to build one now that `recoverFrom` takes the store rather than an array:
+ * a real store refuses a malformed row at `append`, so the rows a recovering
+ * process has to refuse are ones that were durable before this process existed
+ * — bytes on a medium, read back through a codec. `append` throws here because
+ * nothing in these cases writes: a stub that silently accepted would be a
+ * second implementation of the port with a different promise.
+ */
+function storeHolding(rows: readonly unknown[]): JournalStore {
+  return {
+    append: () => {
+      throw new Error("storeHolding: these cases only ever read");
+    },
+    readAll: () => rows,
+    length: () => rows.length,
+  };
+}
+
+/**
  * Commit these decisions in order, then emit `emitted` of the rows.
  *
  * It goes through `commit` rather than `journalStep` because everything past
@@ -325,7 +346,7 @@ test("commit: a lost acknowledgement leaves the store ahead, and recovery believ
   // happened; nothing was emitted for it, so the cursor is where the actor left
   // it and the row goes out for the first time.
   const recovered = must(
-    recoverFrom(cfg, store.readAll(), s.applied, {
+    recoverFrom(cfg, store, s.applied, {
       worldEffects: s.worldEffects,
       orphans: s.orphans,
     }),
@@ -360,6 +381,41 @@ test("commit: a store written by somebody else is caught where the fence cannot 
   );
 });
 
+test("the durability token: recovering from a decided-but-unstored journal does not compile", () => {
+  // THE LAUNDER THIS SIGNATURE CLOSES. `recoverFrom` used to take
+  // `readonly unknown[]`, and an `ActorState` structurally satisfies
+  // `WorldLedger` — so the line below was cast-free, typechecked, and minted a
+  // `DurableState` over rows no store had ever accepted. From there `emitNext`
+  // is entitled to run, and the effects of a decision the log does not hold
+  // reach the world: the double-spend `recoverFrom`'s own header forbids,
+  // reached through `recoverFrom`.
+  const decided = must(
+    journalStep(cfg, actorInit(cfg), arrive),
+    "the decision",
+  );
+
+  // IT IS NEVER CALLED, and that is not squeamishness: the refusal being proved
+  // is the COMPILER's, and the call it refuses now throws at run time because
+  // an array has no `readAll`. A thrown TypeError would be a weaker claim
+  // wearing a stronger one's clothes — it would still pass with the signature
+  // widened back, as long as somebody passed the wrong shape.
+  const launder = (): DurableState | undefined =>
+    // @ts-expect-error recoverFrom takes the JournalStore and reads the rows
+    // itself, so a journal that is only DECIDED is not an argument it will
+    // accept. THIS DIRECTIVE IS THE RED PROOF, on the token case's precedent
+    // above: if the signature ever widens back to an array, tsc reports the
+    // directive as unused and the types stage goes red.
+    recoverFrom(cfg, decided.journal, 0, decided);
+  assert.equal(typeof launder, "function");
+
+  // And the old runtime could not have told: `decided.journal` is a perfectly
+  // legal history and `decided` carries both ledger fields, so every gate
+  // inside `recoverFrom` passed. The store is the only thing that knows whether
+  // a row was ever made durable, which is why it is now the argument.
+  assert.equal(decided.journal.length, 1);
+  assert.deepEqual(decided.worldEffects, new Set());
+});
+
 test("recoverFrom: a process that kept nothing rebuilds all four machine vars", () => {
   const store = createInMemoryJournalStore();
   let live = actorInit(cfg);
@@ -370,7 +426,7 @@ test("recoverFrom: a process that kept nothing rebuilds all four machine vars", 
   live = must(emitNext(live), "emitNext");
 
   const recovered = must(
-    recoverFrom(cfg, store.readAll(), live.applied, {
+    recoverFrom(cfg, store, live.applied, {
       worldEffects: live.worldEffects,
       orphans: live.orphans,
     }),
@@ -395,27 +451,38 @@ test("recoverFrom: an unreadable log is REFUSED, because a recovering process is
   assert.ok(first !== undefined && second !== undefined);
 
   assert.equal(
-    recoverFrom(cfg, [...rows, { seq: 4, cmd: "nonsense" }], 0, noWorld),
+    recoverFrom(
+      cfg,
+      storeHolding([...rows, { seq: 4, cmd: "nonsense" }]),
+      0,
+      noWorld,
+    ),
     undefined,
     "a row that is not a row",
   );
   assert.equal(
-    recoverFrom(cfg, [{ ...second, seq: 1 }], 0, noWorld),
+    recoverFrom(cfg, storeHolding([{ ...second, seq: 1 }]), 0, noWorld),
     undefined,
     "a log whose first row was never enabled at genesis",
   );
   assert.equal(
-    recoverFrom(cfg, [first, { ...second, seq: 3 }], 0, noWorld),
+    recoverFrom(cfg, storeHolding([first, { ...second, seq: 3 }]), 0, noWorld),
     undefined,
     "a sequence gap",
   );
+  // A cursor past the log. It is refused HERE, before the ledger is consulted
+  // — and for an honest ledger the fourth gate would refuse it too, since a
+  // disciplined actor's `worldEffects` is a prefix of the log's own seqs. The
+  // empty world this case passes is exactly such a ledger, so what this pins is
+  // that the gate answers rather than that it is the only one that could;
+  // `actor.ts` says which case makes the two differ.
   assert.equal(
-    recoverFrom(cfg, rows, rows.length + 1, noWorld),
+    recoverFrom(cfg, store, rows.length + 1, noWorld),
     undefined,
     "a cursor past the log",
   );
   assert.equal(
-    recoverFrom(cfg, rows, -1, noWorld),
+    recoverFrom(cfg, store, -1, noWorld),
     undefined,
     "a cursor below zero",
   );
@@ -423,7 +490,7 @@ test("recoverFrom: an unreadable log is REFUSED, because a recovering process is
   // are attributable to the tampering. The OTHER end of the range is no longer
   // a case for this world: an empty ledger evidences no emission, so
   // `rows.length` here is the over-reporting checkpoint the next test is about.
-  assert.ok(recoverFrom(cfg, rows, 0, noWorld) !== undefined);
+  assert.ok(recoverFrom(cfg, store, 0, noWorld) !== undefined);
 });
 
 test("recoverFrom: a cursor the world's ledger cannot support is REFUSED", () => {
@@ -434,7 +501,6 @@ test("recoverFrom: a cursor the world's ledger cannot support is REFUSED", () =>
   // entry point that can be HANDED one, because the checkpoint and the ledger
   // arrive from two different places and only one of them is the journal.
   const { store, s } = drive([arrive, release, dispatch], 2);
-  const rows = store.readAll();
   const honest = { worldEffects: s.worldEffects, orphans: s.orphans };
   assert.deepEqual(honest.worldEffects, new Set([1, 2]), "the premise");
 
@@ -443,27 +509,27 @@ test("recoverFrom: a cursor the world's ledger cannot support is REFUSED", () =>
   // received recovers, and so does every checkpoint BELOW it — a cursor that
   // lagged is the ordinary crash, and its suffix re-emits.
   const rebuilt = must(
-    recoverFrom(cfg, rows, 2, honest),
+    recoverFrom(cfg, store, 2, honest),
     "the honest checkpoint",
   );
   assert.equal(rebuilt.applied, 2);
   assert.deepEqual(rebuilt.worldEffects, honest.worldEffects);
   assert.ok(
-    recoverFrom(cfg, rows, 1, honest) !== undefined,
+    recoverFrom(cfg, store, 1, honest) !== undefined,
     "a lagging cursor",
   );
-  assert.ok(recoverFrom(cfg, rows, 0, honest) !== undefined, "total loss");
+  assert.ok(recoverFrom(cfg, store, 0, honest) !== undefined, "total loss");
 
   // AND THE REFUSAL. Seq 3 was journaled and never emitted, so a checkpoint
   // claiming three is a checkpoint the world cannot corroborate. Accepting it
   // would drop that row's effects for good: the cursor starts past them, no
   // later drain reaches back, and the fabric is never told to run the task set
   // the actor's own memory believes is running.
-  assert.equal(recoverFrom(cfg, rows, 3, honest), undefined);
+  assert.equal(recoverFrom(cfg, store, 3, honest), undefined);
   // The same claim from the other side — a ledger with a HOLE in it. The cursor
   // is one the actor could have held, and seq 1 alone does not evidence it.
   assert.equal(
-    recoverFrom(cfg, rows, 2, { worldEffects: new Set([1, 3]), orphans: [] }),
+    recoverFrom(cfg, store, 2, { worldEffects: new Set([1, 3]), orphans: [] }),
     undefined,
     "a ledger that skipped a seq",
   );
@@ -475,7 +541,7 @@ test("recoverFrom: a cursor the world's ledger cannot support is REFUSED", () =>
   // owns is green over it, in both bundles, which is the measurement that makes
   // the gate load-bearing: nothing downstream would ever report the loss.
   const swallowed = {
-    ...must(recoverFrom(cfg, rows, 0, honest), "the base"),
+    ...must(recoverFrom(cfg, store, 0, honest), "the base"),
     applied: 3,
   } as DurableState;
   assert.ok(refinementInvariants(cfg, swallowed), "the refinement bundle");
@@ -500,7 +566,7 @@ test("recoverFrom: the durable rebuild lands where the model's crash action land
 
   const modelWay = must(crashRecoverTo(cfg, live, 0), "crashRecoverTo(0)");
   const durableWay = must(
-    recoverFrom(cfg, store.readAll(), 0, {
+    recoverFrom(cfg, store, 0, {
       worldEffects: live.worldEffects,
       orphans: live.orphans,
     }),

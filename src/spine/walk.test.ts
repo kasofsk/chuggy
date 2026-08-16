@@ -138,6 +138,13 @@ export function draw(g: Gen): { readonly value: number; readonly gen: Gen } {
  * same stream as walk `k`'s, offset by one draw — a run of walks that looked
  * independent and was one walk read through a sliding window. The mixer is what
  * separates them, and it is exactly what the mixer is for.
+ *
+ * AND THE SLIDING WINDOW IS WHAT THE CASE ASSERTS, rather than the paragraph
+ * asserting it alone: `randomized.test.ts`'s `walkSeeds splits rather than
+ * stepping` drives the two streams and requires them NOT to be one shifted by
+ * the other. Substituting the successive state was measured to leave every
+ * probe in this tree green — a run of walks reporting the coverage of many and
+ * exploring roughly one.
  */
 export function walkSeeds(root: Gen, count: number): readonly number[] {
   const seeds: number[] = [];
@@ -275,8 +282,15 @@ function ticketIds(cfg: Config): readonly number[] {
  * history without asking `deliverableTaskIds` — which is the set `cmdEnabled`
  * itself filters by, and drawing from it would make the filter tautological.
  * The extra id is the never-issued one, refused.
+ *
+ * THAT LAST SENTENCE IS HELD BY A CASE and it was not: `randomized.test.ts`'s
+ * `the enumeration offers the never-issued task id, and cmdEnabled refuses it`
+ * is what makes the `+ 1` load-bearing. Without it, dropping the extra id left
+ * every probe in this tree green — the walker would simply have stopped asking
+ * `cmdEnabled` the one question the sentence says it is here to ask, and
+ * nothing would have said so. It is exported for that case alone.
  */
-function taskIds(c: Core, ticket: number): readonly number[] {
+export function taskIds(c: Core, ticket: number): readonly number[] {
   const jb = c.tickets.get(ticket);
   const ceiling = jb === undefined ? 1 : jb.spawned + 1;
   const ids: number[] = [];
@@ -286,8 +300,18 @@ function taskIds(c: Core, ticket: number): readonly number[] {
   return ids;
 }
 
-/** Every subset of a bounded set of ids — the model's `powerset().oneOf()`. */
-function subsetsOf(xs: ReadonlySet<number>): readonly ReadonlySet<number>[] {
+/**
+ * Every subset of a bounded set of ids — the model's `powerset().oneOf()`.
+ *
+ * "EVERY" IS THE CLAIM AND IT HAS A CASE, in `randomized.test.ts`: an
+ * enumeration that offered only the singletons, or only the empty set, would
+ * explore a narrower arrival space with every roster still complete and every
+ * witness still firing, because a walk only ever takes what it is handed.
+ * Exported for that case.
+ */
+export function subsetsOf(
+  xs: ReadonlySet<number>,
+): readonly ReadonlySet<number>[] {
   let subsets: ReadonlySet<number>[] = [new Set()];
   for (const x of xs) {
     subsets = [...subsets, ...subsets.map((s) => new Set([...s, x]))];
@@ -408,6 +432,17 @@ export type MoveSource = "enumeration" | "script";
  * `report` is how a chooser states a finding of its own; returning nothing ends
  * the run.
  */
+/**
+ * WHERE A RUN'S OPTIONS COME FROM. It is `availableActions` for every run in
+ * this tree, and it is a parameter for exactly one reason: the alarm below
+ * fires when a scripted command is enabled and the enumeration did not offer
+ * it, and on a CORRECT enumeration that never happens — so the only way to
+ * drive the alarm is to hand a run an enumeration that is deliberately short.
+ * A control nothing can make fire is a control nobody has checked, which is
+ * this tree's standing commitment and the reason this seam exists.
+ */
+type Enumeration = (cfg: Config, c: Core) => readonly Available[];
+
 type Chooser = (
   options: readonly Available[],
   state: MachineState,
@@ -443,6 +478,19 @@ export type RunResult = {
   readonly coverage: Coverage;
   readonly firings: readonly WitnessFiring[];
   readonly findings: readonly string[];
+  /**
+   * The state the run stopped at — `lastStep` included, which is the whole
+   * reason it is here.
+   *
+   * A ROSTER SAYS WHICH ARM FIRED AND NEVER WHAT IT EMITTED. `coverage` carries
+   * labels, deciders and exemption arms; `firings` carries a witness, a step
+   * and a label. None of them can see a decider's EFFECT list, so deleting an
+   * effect from one arm of one decider was measured to leave every probe in
+   * this file green. A deterministic script that ends on the arm under test can
+   * assert the record that arm produced — which is the model's own text, step
+   * for step — and that needs the state, not a summary of it.
+   */
+  readonly final: MachineState;
 };
 
 /**
@@ -474,6 +522,7 @@ function runMachine(
   where: string,
   budget: number,
   choose: Chooser,
+  enumerate: Enumeration = availableActions,
 ): RunResult {
   const coverage = new CoverageBuilder();
   coverage.observeInstance(instance);
@@ -489,7 +538,7 @@ function runMachine(
   let step = 0;
   let ended = false;
   while (step < budget && findings.length === 0 && !ended) {
-    const options = availableActions(cfg, state.core);
+    const options = enumerate(cfg, state.core);
     if (options.length === 0) {
       break;
     }
@@ -502,7 +551,13 @@ function runMachine(
     // `settled` and `complete-duplicate` exemption arms are reachable nowhere
     // else, which is the corpus emitter's rule for the same run of steps:
     // truncate it, and keep a representative.
+    //
+    // `randomized.test.ts`'s `a script that runs past a quiet fleet is cut one
+    // step after it` is what holds this line: with the flag never set, a run
+    // would spend its whole budget redrawing one state and report a length it
+    // had not explored, and every probe in this file would stay green.
     ended = quiet(cfg, state.core);
+    const before = state;
     step += 1;
     const move = choose(options, state, step, report);
     if (move === undefined) {
@@ -520,27 +575,13 @@ function runMachine(
     const taken = showMove(move);
     trace.push(taken);
     if (move.kind === "cmd") {
-      coverage.observeCmd(move.cmd);
+      // THE STATE THE DECISION DEPARTED FROM, not the one it produced: the
+      // `decideOpRetry` resume arm is the ticket's `resumeAt` BEFORE the step,
+      // and the step is what clears it.
+      coverage.observeCmd(before.core, move.cmd);
     }
     observe(coverage, cfg, state, step, findings, where, taken);
-    // GUARDED FOR `observe`'s REASON, and it is the same hazard: `freeClimbNever`
-    // reads `currentMeasure`, so `measure.ts`'s assertions are reachable from a
-    // witness too. A witness that cannot be evaluated is a finding here rather
-    // than an exception thrown past the run.
-    try {
-      for (const witness of witnessNames) {
-        if (
-          !witnesses[witness](cfg, state) &&
-          !firings.some((f) => f.witness === witness)
-        ) {
-          firings.push({ witness, step, label: state.lastStep.label });
-        }
-      }
-    } catch (error) {
-      report(
-        `step ${String(step)} after ${taken}: a witness threw: ${messageOf(error)}`,
-      );
-    }
+    witnessesAt(cfg, state, step, taken, firings, report);
   }
   return {
     where,
@@ -549,7 +590,48 @@ function runMachine(
     coverage: coverage.taken(),
     firings,
     findings,
+    final: state,
   };
+}
+
+/**
+ * The three witnesses at the state a step just produced, recorded once each.
+ *
+ * GUARDED FOR `observe`'s REASON, and it is the same hazard: `freeClimbNever`
+ * reads `currentMeasure`, so `measure.ts`'s assertions are reachable from a
+ * witness too. A witness that cannot be evaluated is a finding here rather than
+ * an exception thrown past the run — which would escape the module scope the
+ * runs are built at and take every test in the file down with it, carrying no
+ * seed, no step and no command.
+ *
+ * IT IS A FUNCTION RATHER THAN A BLOCK IN THE LOOP so that `witnessesOnce` can
+ * hand it a state no decider would produce, which is the only way its catch can
+ * be made to fire: every state a run reaches is a shipped decider's own output,
+ * so a correct measure is defined over all of them. That is `observeOnce`'s
+ * argument, on the region beside it.
+ */
+function witnessesAt(
+  cfg: Config,
+  state: MachineState,
+  step: number,
+  taken: string,
+  firings: WitnessFiring[],
+  report: (detail: string) => void,
+): void {
+  try {
+    for (const witness of witnessNames) {
+      if (
+        !witnesses[witness](cfg, state) &&
+        !firings.some((f) => f.witness === witness)
+      ) {
+        firings.push({ witness, step, label: state.lastStep.label });
+      }
+    }
+  } catch (error) {
+    report(
+      `step ${String(step)} after ${taken}: a witness threw: ${messageOf(error)}`,
+    );
+  }
 }
 
 /**
@@ -669,6 +751,7 @@ export function driveTrace(
   instance: string,
   label: string,
   script: readonly Cmd[],
+  enumerate?: Enumeration,
 ): RunResult {
   const run = runMachine(
     cfg,
@@ -688,6 +771,7 @@ export function driveTrace(
       }
       return { kind: "cmd", cmd, from: "script" };
     },
+    enumerate,
   );
   return run.steps === script.length
     ? run
@@ -814,6 +898,46 @@ export function observeOnce(
   return findings;
 }
 
+/**
+ * ONE MOVE, TAKEN — `observeOnce` for the region on the other side of the step.
+ *
+ * `takeStep`'s two reports are alarms a run cannot raise for the same reason
+ * the observer's cannot: the enumeration filters every candidate through
+ * `cmdEnabled` and `stepWith` asks it again, so a correct tree never disagrees
+ * with itself and never reaches a decider that throws. Both arms of the refusal
+ * are here too, because they say OPPOSITE things — a drawn command refused is
+ * `cmdEnabled` contradicting itself about one state, a scripted one refused is
+ * a script naming a step the machine does not offer — and one message for both
+ * would be a lie on one of them.
+ */
+export function stepOnce(
+  cfg: Config,
+  state: MachineState,
+  move: Move,
+): readonly string[] {
+  const findings: string[] = [];
+  takeStep(cfg, state, move, 1, (detail) => {
+    findings.push(`probe: ${detail}`);
+  });
+  return findings;
+}
+
+/** One state's witnesses — `observeOnce` for the region after it. */
+export function witnessesOnce(
+  cfg: Config,
+  state: MachineState,
+): {
+  readonly firings: readonly WitnessFiring[];
+  readonly findings: readonly string[];
+} {
+  const firings: WitnessFiring[] = [];
+  const findings: string[] = [];
+  witnessesAt(cfg, state, 0, "init", firings, (detail) => {
+    findings.push(`probe: ${detail}`);
+  });
+  return { firings, findings };
+}
+
 // === Reporting =============================================================
 
 /** A move as one line: the stutter has no payload, a decision is its command. */
@@ -833,6 +957,12 @@ function showMove(move: Move): string {
  * order and an object's own keys enumerate in declaration order; sorting closes
  * both, and the whole reason a printed form is the comparison at all is that
  * `Cmd` ships no structural equality to reuse.
+ *
+ * ONE CASE PER ORDERING, in `randomized.test.ts`, because "load-bearing" is a
+ * claim about what fails without it: drop either sort and two equal decisions
+ * built in different orders print differently, which makes `offered` report an
+ * enumeration gap that is not there — the alarm crying wolf, which is how an
+ * alarm gets muted.
  */
 export function showCmd(cmd: Cmd): string {
   if (cmd.tag === "JArrive") {

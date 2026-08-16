@@ -24,7 +24,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 15
     },
     {
       "name": "budgeted-dequeue-to-gate",
@@ -39,7 +40,7 @@
         "wrapup-started",
         "eval-passed"
       ],
-      "rationale": "the dequeue's moved arm \u2014 the depth-1 gate opening \u2014 and the enqueue that precedes it",
+      "rationale": "the dequeue's moved arm — the depth-1 gate opening — and the enqueue that precedes it",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -49,7 +50,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 22
     },
     {
       "name": "budgeted-landing-duplicate",
@@ -73,7 +75,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 20
     },
     {
       "name": "budgeted-gated-completion",
@@ -97,7 +100,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 19
     },
     {
       "name": "budgeted-eval-stage-advance",
@@ -121,7 +125,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 20
     },
     {
       "name": "budgeted-work-failed",
@@ -145,7 +150,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 16
     },
     {
       "name": "deadline-only-gate-rework",
@@ -168,7 +174,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 24
     },
     {
       "name": "retryfree-settled",
@@ -191,7 +198,8 @@
         "OP_RETRY_PRICING": "RetryFree",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 6
     },
     {
       "name": "budgeted-desk-only-revoke",
@@ -204,7 +212,7 @@
       "pins": [
         "ticket-revoked, desk-only flat"
       ],
-      "rationale": "a revoke that leaves only settled ranks \u2014 the flat desk-only exemption arm",
+      "rationale": "a revoke that leaves only settled ranks — the flat desk-only exemption arm",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -214,7 +222,33 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 10
+    },
+    {
+      "name": "budgeted-work-resume",
+      "instance": "budgeted",
+      "seed": "0x2a",
+      "maxSamples": 500,
+      "maxSteps": 30,
+      "invariant": "not(and { lastStep.label == \"operator-retry\", lastStep.transitions.foldl(false, (b, t) => b or t.to == PWorking) })",
+      "expect": "violation",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      },
+      "states": 13,
+      "pins": [
+        "decideOpRetry",
+        "RWorking"
+      ],
+      "rationale": "the operator resume off the work-failed wall — decideOpRetry's RWorking arm, which no other fixture takes and which a decider roster cannot ask for"
     }
   ],
   "tier2": [
@@ -227,7 +261,7 @@
         "ticket-escalated rework_budget_exhausted",
         "rework-started eval_failure"
       ],
-      "rationale": "the RetryFree pipeline resume \u2014 the exemption arm violation search does not reach",
+      "rationale": "the RetryFree pipeline resume — the exemption arm violation search does not reach",
       "consts": {
         "N_TICKETS": "2",
         "N_TASKS": "2",
@@ -237,7 +271,8 @@
         "OP_RETRY_PRICING": "RetryFree",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 16
     },
     {
       "name": "witness-pre-work-resume",
@@ -258,7 +293,8 @@
         "OP_RETRY_PRICING": "RetryFree",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 6
     },
     {
       "name": "witness-cascade-park",
@@ -278,7 +314,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 7
     },
     {
       "name": "witness-stage-advance",
@@ -298,7 +335,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 14
     },
     {
       "name": "witness-quiet-land",
@@ -318,7 +356,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 10
     },
     {
       "name": "witness-moved-rework",
@@ -329,7 +368,7 @@
         "rework-started wrapup_failure",
         "wrapup-started"
       ],
-      "rationale": "the gate rework and the wrap-up budget wall \u2014 the label violation search does not reach",
+      "rationale": "the gate rework and the wrap-up budget wall — the label violation search does not reach",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -339,7 +378,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 18
     },
     {
       "name": "witness-cross-project-dep",
@@ -359,7 +399,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 20
     },
     {
       "name": "witness-lease-exclusive",
@@ -380,7 +421,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 20
     },
     {
       "name": "witness-quiet-fast-path",
@@ -400,7 +442,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 10
     },
     {
       "name": "witness-gate-eviction-deadline",
@@ -420,7 +463,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "2",
         "N_PROJECTS": "2"
-      }
+      },
+      "states": 25
     },
     {
       "name": "witness-draft-wait",
@@ -440,7 +484,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "1",
         "N_PROJECTS": "1"
-      }
+      },
+      "states": 4
     },
     {
       "name": "witness-wrapup-none",
@@ -460,7 +505,8 @@
         "OP_RETRY_PRICING": "RetryCharged",
         "MAX_STAGES": "1",
         "N_PROJECTS": "1"
-      }
+      },
+      "states": 8
     }
   ]
 }

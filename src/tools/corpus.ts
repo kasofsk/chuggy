@@ -14,10 +14,35 @@
  *
  * THE MANIFEST IS THE PROVENANCE, one entry per committed fixture: the command
  * that regenerates it (an instance and a seeded search for tier 1, a module and
- * a run for tier 2) and the consts the machine it speaks about was
- * instantiated at. Nothing derived lives there — no counts, no coverage claims
- * — because a derived figure in a hand-edited file is a figure that goes stale
- * without anything noticing.
+ * a run for tier 2), the consts the machine it speaks about was instantiated
+ * at, and how many states the emitted trace has.
+ *
+ * THAT LAST FIELD IS DERIVED, WHICH THIS HEADER USED TO FORBID OUTRIGHT, and
+ * the rule it broke is worth restating before the exception: a derived figure
+ * in a hand-edited file is a figure that goes stale without anything noticing.
+ * `states` is the one figure that cannot, because it is compared against the
+ * decoded trace on every replay — the emitter WRITES it, the gate CHECKS it,
+ * and a disagreement is a finding naming the fixture.
+ *
+ * WHAT IT IS AND IS NOT, SAID EXACTLY, because the difference is easy to
+ * mis-read as strength it does not have. It is a TWO-FILE CONSISTENCY check,
+ * not integrity against the model: a fixture truncated and its count edited to
+ * match passes green, and correctly so — nothing here can tell that pair from a
+ * regeneration whose search found a shorter trace, and only re-running the
+ * emitter could. What the pin buys is that the corruption stops being a
+ * ONE-FILE edit, which is the shape a hand truncation actually has and the
+ * shape the trace itself cannot report (`itf.ts` checks each state's
+ * `#meta.index`, so only the LAST state can go without a decode failure).
+ * `.chug/tasks/check-conformance.sh` carries the same sentence in its list of
+ * what it cannot see. What it buys is the one
+ * corruption the trace itself cannot report: `itf.ts` checks each state's
+ * `#meta.index` against its position, so a state removed from the MIDDLE is a
+ * decode failure, and a state removed from the END leaves a dense, ascending,
+ * perfectly readable shorter trace. The committed corpus holds fixtures whose
+ * `pins` are all reached before their last state, so truncating one of those was
+ * measured to pass the whole gate at exit 0. No coverage claim has joined it: a claim about what
+ * a fixture REACHES is `pins`, checked against the replay, and a count of
+ * states is not one.
  *
  * WHY THE TIER-1 HALF IS NOT ROSTER-MINIMAL, measured rather than assumed. Six
  * of its fixtures could be dropped with every decider, label and exemption arm
@@ -56,7 +81,7 @@
  * rather than guessed at.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import { messageOf } from "../domain/assert.ts";
 import type { Config } from "../domain/domain.ts";
@@ -74,7 +99,26 @@ export class CorpusError extends Error {
   }
 }
 
-/** A tier-1 fixture: a seeded, budgeted search on one mc instance, under `--mbt`. */
+/**
+ * A tier-1 fixture: a seeded, budgeted search on one mc instance, under `--mbt`.
+ *
+ * EVERY ONE OF THEM IS A VIOLATION SEARCH TODAY, and the vocabulary below is
+ * wider than the corpus. `expect` admits `"ok"` — a plain walk that finds
+ * nothing, which is the sampled-walk modality the trace mechanism describes —
+ * and no committed fixture uses it, so that arm of the emitter's exit-code
+ * comparison is exercised by nothing and the modality has no representative
+ * here. That is a consequence of what a fixture is FOR rather than an
+ * oversight: a corpus entry earns its place by REACHING something (`pins` is
+ * the checked claim), and a search that found nothing reaches nothing to pin —
+ * the trace it writes is the prefix the search happened to stop at. The
+ * sampled-walk modality is covered instead by `src/spine/randomized.test.ts`,
+ * which walks the same instances at the same consts and asserts the bundle
+ * after every step, which is what an `"ok"` run is a weaker form of.
+ *
+ * The vocabulary keeps the arm because the EMITTER needs it: `expect` is the
+ * exit code a regeneration must see, and an entry that expected `"ok"` and got
+ * a violation is a finding whether or not this corpus holds one.
+ */
 export type Tier1Fixture = {
   readonly name: string;
   readonly instance: McInstance;
@@ -85,6 +129,8 @@ export type Tier1Fixture = {
   /** What the search must report: a targeted search finds a violation, a plain walk does not. */
   readonly expect: "violation" | "ok";
   readonly consts: Config;
+  /** How many states the emitted trace holds — the truncation pin. */
+  readonly states: number;
   readonly pins: readonly string[];
   readonly rationale: string;
 };
@@ -95,6 +141,8 @@ export type Tier2Fixture = {
   readonly module: string;
   readonly run: string;
   readonly consts: Config;
+  /** How many states the emitted trace holds — the truncation pin. */
+  readonly states: number;
   readonly pins: readonly string[];
   readonly rationale: string;
 };
@@ -183,6 +231,7 @@ function tier1Fixture(raw: unknown, at: string): Tier1Fixture {
     invariant: str(entry["invariant"], `${at}.invariant`),
     expect,
     consts: consts(entry["consts"], `${at}.consts`),
+    states: count(entry["states"], `${at}.states`),
     pins: pins(entry["pins"], `${at}.pins`),
     rationale: str(entry["rationale"], `${at}.rationale`),
   };
@@ -195,6 +244,7 @@ function tier2Fixture(raw: unknown, at: string): Tier2Fixture {
     module: str(entry["module"], `${at}.module`),
     run: str(entry["run"], `${at}.run`),
     consts: consts(entry["consts"], `${at}.consts`),
+    states: count(entry["states"], `${at}.states`),
     pins: pins(entry["pins"], `${at}.pins`),
     rationale: str(entry["rationale"], `${at}.rationale`),
   };
@@ -231,6 +281,52 @@ function pins(raw: unknown, at: string): readonly string[] {
     }
   }
   return entries;
+}
+
+/**
+ * Write each fixture's emitted state count back into the manifest — the
+ * emitter's half of the truncation pin.
+ *
+ * IT IS THE ONLY WRITE THIS TREE MAKES TO THE MANIFEST, and it is deliberately
+ * a field update rather than a re-authoring: the document is parsed, the named
+ * fixtures' `states` are set in place, and everything else is written back as
+ * it was read. A fixture the manifest does not name is refused rather than
+ * added, because the manifest is where a human declares what the corpus is FOR
+ * and this function has no opinion about that.
+ *
+ * `regenerate, then read the diff` IS STILL THE WORKFLOW. A count that moved
+ * shows up in the same diff as the trace that moved, which is the pairing a
+ * reader needs: a fixture whose search found a longer trace and a fixture
+ * somebody truncated by hand look identical in the corpus and completely
+ * different here.
+ */
+export function writeManifestStateCounts(
+  counts: ReadonlyMap<string, number>,
+): void {
+  const doc = object(readJson(manifestPath), manifestPath);
+  const written = new Set<string>();
+  for (const tier of ["tier1", "tier2"] as const) {
+    for (const raw of array(doc[tier], `${manifestPath}.${tier}`)) {
+      const entry = object(raw, `${manifestPath}.${tier}`);
+      const named = str(entry["name"], `${manifestPath}.${tier}[].name`);
+      const found = counts.get(named);
+      if (found === undefined) {
+        throw new CorpusError(
+          `${manifestPath}: ${named} was not emitted, so its state count is unknown`,
+        );
+      }
+      entry["states"] = found;
+      written.add(named);
+    }
+  }
+  for (const named of counts.keys()) {
+    if (!written.has(named)) {
+      throw new CorpusError(
+        `${manifestPath}: ${named} was emitted and the manifest names no fixture for it`,
+      );
+    }
+  }
+  writeFileSync(manifestPath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
 }
 
 /** A fixture name is its file name, so it may hold nothing a path would read. */
@@ -399,19 +495,38 @@ export function readModuleConsts(path: string, module: string): ModelConsts {
  * last one.
  */
 function balanced(source: string, from: number, at: string): string {
+  return balancedIn(source, from, "(", ")", `${at}: the const block's`);
+}
+
+/**
+ * The text between an opening bracket and the one that closes it, counting
+ * depth. `balanced` is this over parentheses; the record readers below want it
+ * over braces, and a second copy of a depth counter is a second place for an
+ * off-by-one to live. `what` names the thing that did not close, because the
+ * caller is the only one that knows.
+ */
+function balancedIn(
+  source: string,
+  from: number,
+  open: string,
+  close: string,
+  what: string,
+): string {
   let depth = 1;
   for (let i = from; i < source.length; i += 1) {
     const ch = source[i];
-    if (ch === "(") {
+    if (ch === open) {
       depth += 1;
-    } else if (ch === ")") {
+    } else if (ch === close) {
       depth -= 1;
       if (depth === 0) {
         return source.slice(from, i);
       }
     }
   }
-  throw new CorpusError(`${at}: the const block's parentheses do not close`);
+  throw new CorpusError(
+    `${what} ${open === "(" ? "parentheses" : "braces"} do not close`,
+  );
 }
 
 /** The first const the manifest and the model disagree about, if any. */
@@ -466,12 +581,16 @@ function count(raw: unknown, at: string): number {
 // The rosters here are typed out by hand from the model's own sources — the
 // deciders, the reachable step labels, the `stepDescends` exemption arms, the
 // effect strings, the mc instances, the nondet binder names, the const names,
-// the conjuncts of `allInvariants` and of the two refinement bundles, and the
-// `Cmd` constructors — and every one of them is a second statement of something
-// the model already says. The corpus does not catch a roster going stale: a
-// model PR that adds a decider adds no fixture either, so `coverageGaps` finds
-// every rostered entry covered and reports nothing, and the whole gate stays
-// green over a machine this tree does not describe.
+// the conjuncts of `allInvariants` and of the two refinement bundles, the `Cmd`
+// constructors, and the FIELD LISTS of the records a trace is written in — and
+// every one of them is a second statement of something the model already says.
+// The corpus does not catch a roster going stale: a model PR that adds a
+// decider adds no fixture either, so `coverageGaps` finds every rostered entry
+// covered and reports nothing, and the whole gate stays green over a machine
+// this tree does not describe. The record schemas are the one surface where the
+// corpus WOULD have caught it — a regenerated trace carries the moved field and
+// the exact-field decode refuses it — and that is no help at all, because
+// regeneration is a developer's command and no gate runs it.
 //
 // WHAT MAKES A SECOND STATEMENT LEGITIMATE, in this tree, is that something
 // maintains it. Where the compiler can, it does — `effect.ts`'s `vocabulary`
@@ -495,6 +614,20 @@ function count(raw: unknown, at: string): number {
 export const domainSource = "model/domain.qnt";
 
 /**
+ * The module the machine's VOCABULARY lives in: the record and sum declarations
+ * every other roster is written in terms of.
+ *
+ * IT IS READ BECAUSE THE FIELD LISTS ARE COPIED HERE and nothing held them
+ * against the declaration. `itf.ts` decodes each record against an exact field
+ * set and `entry.ts` states the journal row's schema, both hand-typed from this
+ * file; a model-side field rename left both spelling the old name with every
+ * gate green, which is how the `landing` → `attempt` rename crossed a whole
+ * release. Regenerating the corpus would have caught it — and no gate
+ * regenerates, by design.
+ */
+export const measureSource = "model/measure.qnt";
+
+/**
  * The module the journaled actor lives in: the decision-event vocabulary the
  * spine replays and this layer's own invariants.
  *
@@ -503,6 +636,35 @@ export const domainSource = "model/domain.qnt";
  * and a model-side addition to either passed every gate.
  */
 export const refinementSource = "model/refinement.qnt";
+
+/**
+ * THE RECORD DECLARATIONS THIS TREE DECODES, by the model's own name for each.
+ *
+ * It is `StepRecord` and everything a `StepRecord` is made of — the trace
+ * vocabulary the whole conformance argument is expressed in — plus the fleet
+ * record a trace state carries and `refinement.qnt`'s journal row. `WOAttempt`
+ * is the one entry that is not a `type` of its own: it is `WrapUpObs`'s payload
+ * arm, read from the arm because that is where the model declares its fields.
+ *
+ * WHAT IS DELIBERATELY ABSENT, so the omission is a decision rather than a gap.
+ * `Core`, `Decision` and `Bounds` are records the model declares and this tree
+ * does not decode field-wise: `Core` arrives as a map and is read as one,
+ * `Decision` is a decider's return value that no trace carries, and `Bounds` is
+ * the measure's parameter record, whose fields `measure.ts` reads through a
+ * `Config` this file already compares const by const. A roster entry for any of
+ * them would compare a model declaration against nothing.
+ */
+export const modelRecordNames = [
+  "Task",
+  "Stage",
+  "WOAttempt",
+  "Ticket",
+  "Transition",
+  "StepRecord",
+  "Entry",
+] as const;
+
+export type ModelRecordName = (typeof modelRecordNames)[number];
 
 /** The hand-maintained rosters, as `model/` actually spells them. */
 export type ModelRosters = {
@@ -529,6 +691,17 @@ export type ModelRosters = {
   /** `val refinementInvariants`' conjuncts, in `model/refinement.qnt`. */
   readonly refinementBundleConjuncts: readonly string[];
   /**
+   * The FIELD LIST of every record declaration this tree decodes, in the
+   * model's own declaration order.
+   *
+   * The twelfth roster, and the one every roster above it is written in:
+   * a decider, a label and an effect are all names, while a record is a
+   * VOCABULARY, and every hand-typed copy of one in this tree — `itf.ts`'s
+   * exact-field decodes, `entry.ts`'s journal schema — was held against
+   * nothing at gate time.
+   */
+  readonly recordFields: Readonly<Record<ModelRecordName, readonly string[]>>;
+  /**
    * Code literals neither spelling rule classified, module paths aside.
    *
    * It exists so that the two spelling rules below are a PARTITION rather than
@@ -543,6 +716,7 @@ export function readModelRosters(): ModelRosters {
   const domainText = readSource(domainSource);
   const domainCode = withoutComments(domainText);
   const refinementCode = withoutComments(readSource(refinementSource));
+  const measureCode = withoutComments(readSource(measureSource));
   const literals = codeLiterals(domainCode);
   return {
     deciders: matchesOf(domainCode, /\bpure def (decide[A-Za-z]*)\s*\(/g, {
@@ -592,7 +766,114 @@ export function readModelRosters(): ModelRosters {
       "refinementInvariants",
       refinementSource,
     ),
+    recordFields: {
+      Task: recordTypeFields(measureCode, "Task", measureSource),
+      Stage: recordTypeFields(measureCode, "Stage", measureSource),
+      WOAttempt: armRecordFields(measureCode, "WOAttempt", measureSource),
+      Ticket: recordTypeFields(measureCode, "Ticket", measureSource),
+      Transition: recordTypeFields(measureCode, "Transition", measureSource),
+      StepRecord: recordTypeFields(measureCode, "StepRecord", measureSource),
+      Entry: recordTypeFields(refinementCode, "Entry", refinementSource),
+    },
   };
+}
+
+/**
+ * The model's three ANTI-VACUITY WITNESSES, by name.
+ *
+ * THEY ARE NOT INVARIANTS AND THEY ARE NOT IN A BUNDLE, which is why no roster
+ * above can see them: `model/domain.qnt` declares each as a plain `val` that is
+ * EXPECTED TO BE VIOLATED, so a read of `pure def`s, of code literals, of the
+ * safety bundle's conjuncts or of a sum type's arms passes over all three. The
+ * tree mirrors them in `src/spine/walk.test.ts` as `witnessNames`, hand-typed,
+ * and a fourth witness the model adds under its own no-arm-without-a-witness
+ * discipline arrives with nothing to notice it — the roster alarm's own failure
+ * mode, on the one surface that says which green invariants are vacuous.
+ *
+ * READ FROM THE MARKER COMMENT, on `exemptionRoster`'s argument and for its
+ * reason. The model states them as a numbered series — each `val` is introduced
+ * by an `ANTI-VACUITY WITNESS` header saying so — and the code has nothing that
+ * distinguishes them from any other `val … : bool`. A NAME PATTERN FAILS IN
+ * BOTH DIRECTIONS, which is the reason worth having: `revokedNeverCompletes` is
+ * a bundle conjunct spelled exactly like a witness, so a `*Never` read rosters
+ * something that is not one; and a witness the model names WITHOUT that suffix
+ * — nothing requires it, the suffix is how the three happen to read — is missed
+ * by every pattern of any shape, which is the silent half and the one this
+ * roster exists for. The marker is the model's own declaration of what these
+ * are, and it is the only thing in the file that is.
+ *
+ * A MARKER WITH NO `val` UNDER IT IS A COULD-NOT-RUN naming the marker, and so
+ * is a file with no marker at all — the `readModuleConsts` rule, again: "no
+ * witnesses" and "witnesses this parse cannot see" must not report the same.
+ *
+ * `path` IS A PARAMETER so the suite that owns the comparison can hand this a
+ * fixture, which is `readModuleConsts`' arrangement: the shipped side of this
+ * roster lives in a `.test.ts` file, so the comparison cannot live in
+ * `verify.ts` and its red proofs need model fragments of their own.
+ */
+export function readAntiVacuityWitnesses(
+  path: string = domainSource,
+): readonly string[] {
+  const marker = "ANTI-VACUITY WITNESS";
+  const lines = readSource(path).split("\n");
+  const names: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!(lines[i] ?? "").includes(marker)) {
+      continue;
+    }
+    const declared = witnessValUnder(lines, i);
+    if (declared === undefined) {
+      throw new CorpusError(
+        `${path}: the ${marker} comment at line ${String(i + 1)} is followed by no bool val`,
+      );
+    }
+    names.push(declared);
+  }
+  if (names.length === 0) {
+    throw new CorpusError(`${path}: no ${marker} comment`);
+  }
+  return names;
+}
+
+/**
+ * The name of the first `val <name>: bool =` under a marker line, skipping the
+ * rest of the comment it opens — and answering nothing if any other declaration
+ * gets there first, because a marker that has drifted away from its `val` is a
+ * parse this reader must not guess at.
+ */
+function witnessValUnder(
+  lines: readonly string[],
+  from: number,
+): string | undefined {
+  for (let i = from + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    const text = line.trimStart();
+    if (text.startsWith("//") || text.length === 0) {
+      continue;
+    }
+    return /^\s*val ([A-Za-z][A-Za-z0-9_]*)\s*:\s*bool\s*=/.exec(line)?.[1];
+  }
+  return undefined;
+}
+
+/**
+ * Every `run` the witness suite declares, by name.
+ *
+ * THE TIER-2 CORPUS IS SUPPOSED TO BE THAT LIST, and until sweep 2 nothing said
+ * so in either direction. A run the model added under its own
+ * no-arm-without-a-witness rule and this corpus never exported is a
+ * deterministic pin the implementation does not replay — which is exactly the
+ * shape of the obligation the model keeps witnesses FOR; and a manifest entry
+ * naming a run the module does not declare is a fixture nobody can regenerate,
+ * discoverable today only by running the emitter.
+ *
+ * It is `matchesOf`'s rule again: a suite with no runs at all is this parse
+ * having stopped seeing them, not a suite that pins nothing.
+ */
+export function readWitnessRuns(): readonly string[] {
+  return matchesOf(readSource(witnessSource), /^\s*run ([A-Za-z0-9_]+)\s*=/gm, {
+    at: `${witnessSource}: run declarations`,
+  });
 }
 
 function readSource(path: string): string {
@@ -716,14 +997,24 @@ function conjunctsOf(
  * `type Cmd`, the decision-event vocabulary this tree mirrors as a union.
  *
  * THE ARMS ARE READ LINE BY LINE, one arm per line, which is how the model
- * writes them and what bounds the read: the list ends at the first line that
- * holds no arm. A payload may hold commas and brackets and is not read at all —
+ * writes them. A payload may hold commas and brackets and is not read at all —
  * `entry.ts` is where a payload's fields are checked, against the union rather
  * than against the model — so what this compares is the constructor roster.
  *
+ * WHAT BOUNDS THE READ IS INDENTATION, AND IT USED TO BE THE FIRST EMPTY LINE.
+ * That was a truncation with no alarm on it: `withoutComments` rewrites a `//`
+ * line to whitespace, so a model author's ordinary note beside a new arm ended
+ * the list, and every arm below it left this roster in silence while the
+ * exact-set comparison went on reporting agreement. A blank line inside the
+ * list did the same. So an interior blank — comment or otherwise — is SKIPPED,
+ * and the declaration ends where Quint's own layout ends it: at the first
+ * non-blank line indented no deeper than the `type` line itself, which is the
+ * next declaration or the module's own close.
+ *
  * A DECLARATION WHOSE ARMS DO NOT START ON THE NEXT LINE IS REFUSED, rather
- * than answered with the arms this reader can see. The same rule as everywhere
- * in this section: a shape the parse no longer recognizes is a could-not-run.
+ * than answered with the arms this reader can see, and so is one whose arm list
+ * comes out empty. The same rule as everywhere in this section: a shape the
+ * parse no longer recognizes is a could-not-run.
  */
 function sumTypeArms(
   code: string,
@@ -743,8 +1034,12 @@ function sumTypeArms(
     );
   }
   const arms: string[] = [];
+  const declaredAt = declarationIndent(code, opened);
   for (const line of lines) {
     if (line.trim().length === 0) {
+      continue;
+    }
+    if (indentOf(line) <= declaredAt) {
       break;
     }
     for (const piece of line.split("|")) {
@@ -765,6 +1060,129 @@ function sumTypeArms(
     throw new CorpusError(`${at}: this parse matched nothing`);
   }
   return arms;
+}
+
+/** How many spaces a line opens with — Quint's own nesting, read as a number. */
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+/** The indentation of the line a declaration starts on. */
+function declarationIndent(code: string, opened: number): number {
+  const lineStart = code.lastIndexOf("\n", opened) + 1;
+  return indentOf(code.slice(lineStart, opened + 1));
+}
+
+/**
+ * The fields a `type <name> = { … }` declares, in the model's own order.
+ *
+ * THIS IS THE ROSTER EVERY OTHER ONE IS WRITTEN IN. A decider, an effect and
+ * a label are names this tree copies; a record is the vocabulary a golden trace
+ * is expressed in, copied into `itf.ts`'s exact-field decodes and into
+ * `entry.ts`'s journal schema, and until this reader existed both copies were
+ * held against nothing at gate time. The comparison is `src/tools/verify.ts`'s
+ * and it is an exact set in both directions, like every other.
+ *
+ * COMMENTS AND BLANK LINES INSIDE THE BLOCK ARE NOT A BOUNDARY, which the sum
+ * reader above learned the hard way: the model documents `Ticket` field by
+ * field, so a reader that stopped at the first blank line would see the first
+ * field and none of the rest. The block is bounded by its own braces instead, counted by depth,
+ * and split on top-level commas — `deps: Set[int]` and `program: List[Stage]`
+ * are why the split cannot be a plain `,`.
+ *
+ * EVERY ENTRY MUST BE `name: type`. Anything else is reported as could-not-run
+ * rather than rostered as whatever the text between two commas happened to be —
+ * `readModuleConsts`'s rule, and `conjunctsOf`'s.
+ */
+function recordTypeFields(
+  code: string,
+  type: string,
+  source: string,
+): readonly string[] {
+  return recordFieldsAt(
+    code,
+    `type ${type} = {`,
+    `${source}: type ${type}`,
+    "declaration",
+  );
+}
+
+/**
+ * The fields a sum type's record-payload ARM declares — `WrapUpObs`'s
+ * `WOAttempt({ … })`, the wrap-up attribution the golden traces carry.
+ *
+ * It is read from the arm rather than from a `type` of its own because that is
+ * where the model declares it: the payload is anonymous, so there is no
+ * declaration for `recordTypeFields` to find, and leaving it unrostered would
+ * leave the one record whose fields moved most recently the only one nothing
+ * compares.
+ */
+function armRecordFields(
+  code: string,
+  arm: string,
+  source: string,
+): readonly string[] {
+  return recordFieldsAt(code, `${arm}({`, `${source}: ${arm}`, "arm");
+}
+
+function recordFieldsAt(
+  code: string,
+  marker: string,
+  at: string,
+  what: string,
+): readonly string[] {
+  const opened = code.indexOf(marker);
+  if (opened < 0) {
+    throw new CorpusError(`${at}: no ${JSON.stringify(marker)} ${what}`);
+  }
+  const block = balancedIn(
+    code,
+    opened + marker.length,
+    "{",
+    "}",
+    `${at}: the record's`,
+  );
+  const fields = splitTopLevel(block)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => {
+      const name = /^([a-z][A-Za-z0-9_]*)\s*:/.exec(entry)?.[1];
+      if (name === undefined) {
+        throw new CorpusError(
+          `${at}: ${JSON.stringify(entry)} is not a field declaration`,
+        );
+      }
+      return name;
+    });
+  if (fields.length === 0) {
+    throw new CorpusError(`${at}: this parse matched nothing`);
+  }
+  return fields;
+}
+
+/**
+ * A comma-separated list, split at depth zero only. A field's type may itself
+ * carry commas — a nested record, a `Set[…]` of one — and a plain `split(",")`
+ * would turn one field into several unreadable halves and report the parse as
+ * broken rather than the model as changed.
+ */
+function splitTopLevel(block: string): readonly string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < block.length; i += 1) {
+    const ch = block[i];
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth += 1;
+    } else if (ch === ")" || ch === "]" || ch === "}") {
+      depth -= 1;
+    } else if (ch === "," && depth === 0) {
+      parts.push(block.slice(from, i));
+      from = i + 1;
+    }
+  }
+  parts.push(block.slice(from));
+  return parts;
 }
 
 /**

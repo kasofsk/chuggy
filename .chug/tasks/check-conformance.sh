@@ -30,27 +30,45 @@
 #      here. The rosters this tree types out by hand — the deciders, the step
 #      labels, the exemption arms, the effect strings, the mc instances, the
 #      nondet binders, the const names, the safety bundle's conjuncts, the
-#      decision-event constructors and the two refinement bundles' conjuncts —
-#      are compared against the model's own declarations as exact sets in both
-#      directions, so a decider the model gained is a finding rather than an
+#      decision-event constructors, the two refinement bundles' conjuncts and
+#      the FIELD LISTS of the records a trace is written in — are compared
+#      against the model's own declarations as exact sets in both directions,
+#      so a decider the model gained is a finding rather than an
 #      obligation nobody owes. A surface stated as a `val ... = and { ... }` or
 #      as a sum type is read by its own reader, in `src/tools/corpus.ts`,
 #      because a read of `pure def`s and code literals cannot see one: while
 #      two of them were unread, a conjunct added to `allInvariants` and an arm
-#      added to `type Cmd` both passed every gate at exit 0. What
-#      remains is a decider whose BODY moved with its NAME and its ROSTERS
+#      added to `type Cmd` both passed every gate at exit 0. The record
+#      schemas joined last and for the sharpest reason: every other roster is a
+#      set of NAMES, a record is the VOCABULARY those names are written in, and
+#      a FIELD moving under `src/spine/itf.ts`'s exact-field decodes and
+#      `src/spine/entry.ts`'s journal schema was caught by regenerating the
+#      corpus alone — which is a developer's command and not a gate, so the
+#      `landing` to `attempt` rename crossed a release with this gate green.
+#      What remains is a decider whose BODY moved with its NAME and its ROSTERS
 #      intact, and that remainder is narrowed rather than closed:
 #      `check-model.sh` runs the model's own suites in the same `just check`,
 #      which catches a body change the model's own theorems refuse — and stays
 #      green on one they do not, while the stale corpus replays green beside
 #      it. Regenerating the corpus is what closes it, and the diff that leaves
 #      is the thing to read.
-#   2. AN ENABLEMENT ARM WIDENED. `cmdEnabled` refusing less than the machine
+#   2. A FIXTURE AND ITS MANIFEST ENTRY EDITED TOGETHER. The manifest carries
+#      each fixture's state count, so a trace with its last state cut off is a
+#      finding here — that is the one corruption a trace cannot report about
+#      itself, since every state carries its own index and only the LAST one
+#      can go without a decode failure. What the count is, exactly, is a
+#      TWO-FILE CONSISTENCY check and not integrity against the model: truncate
+#      the trace AND edit the count and this gate is green, correctly, because
+#      nothing here can tell that pair from a regeneration whose search found a
+#      shorter trace. Only re-running the emitter can, and the diff it leaves is
+#      the thing to read. What the pin buys is that the corruption stops being
+#      a one-file edit.
+#   3. AN ENABLEMENT ARM WIDENED. `cmdEnabled` refusing less than the machine
 #      does is invisible to replay — every fixture holds decisions the machine
 #      TOOK, and a widened guard still admits those. What covers it is
 #      `src/spine/cmd.test.ts`, which pins each arm as an exact set over a
 #      fleet holding one ticket per phase.
-#   3. A DECIDER-ATTRIBUTION ROW SWAPPED. `decidersReached` feeds the coverage
+#   4. A DECIDER-ATTRIBUTION ROW SWAPPED. `decidersReached` feeds the coverage
 #      roster and nothing else, so swapping two single-decider rows leaves
 #      every fixture replaying and every roster complete. What covers it is the
 #      per-tag table in the same suite, and the swap was watched to red there

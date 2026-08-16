@@ -3,8 +3,13 @@
  * journaled, hands each row's whole effect list to the ports, and advances the
  * cursor behind it.
  *
- * IT IS THE ONLY THING IN THIS TREE THAT PERFORMS, and it decides nothing to do
- * it. There is no second decision path here: the actor decides (`commit`), the
+ * IT IS THE ONLY THING IN THIS TREE THAT PERFORMS ON THE ACTOR'S BEHALF, and it
+ * decides nothing to do it. The qualifier is the honest form of a claim a
+ * `grep` would otherwise refute: `src/adapters/` performs too — that is what an
+ * adapter is — and the suites drive ports directly. What is exclusive is the
+ * ROUTE: every effect the machine's decisions ask for reaches the world through
+ * this file's table and this file's loop, so there is no second path from a
+ * journal row to a port. There is no second decision path here: the actor decides (`commit`), the
  * journal is the record, and this file is a total routing table plus a loop. It
  * never asks whether an effect is wanted, never derives a fact a decider could
  * have derived, and never consults the world.

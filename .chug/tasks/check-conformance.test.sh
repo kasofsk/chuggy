@@ -141,6 +141,26 @@ run_in_repo
 check "a fixture dropped from the manifest is reported as an orphan" 1 "$RC" \
 	"corpus/tier1/budgeted-desk-only-revoke.itf.json is committed and the manifest names no fixture for it"
 
+# A FIXTURE WITH ITS LAST STATE CUT OFF, which is the one corruption the trace
+# cannot report about itself: every state carries its own `#meta.index` and the
+# decoder checks it, so a state removed from the MIDDLE is a decode failure —
+# but taking the last one leaves a dense, ascending, perfectly readable shorter
+# trace. This fixture's pins are all reached before its end, so before the
+# manifest carried a length the whole gate passed over it at exit 0.
+# `src/tools/verify.test.ts` asserts the same finding as an exact list; this is
+# the half that shows it reaches the gate's exit code.
+real_repo
+node -e '
+const fs = require("node:fs");
+const path = process.argv[1];
+const doc = JSON.parse(fs.readFileSync(path, "utf8"));
+doc.states.pop();
+fs.writeFileSync(path, JSON.stringify(doc));
+' "$R/corpus/tier2/witness-lease-exclusive.itf.json"
+run_in_repo
+check "a fixture with its last state cut off is a finding" 1 "$RC" \
+	"witness-lease-exclusive: the manifest says the trace holds"
+
 # THE PER-STEP INVARIANT BUNDLE, RED-PROVED. Spine layer 1 is exact equality
 # AND the whole domain bundle after every step, and the second half is the one
 # a healthy tree can never make fire: the replayer evaluates the bundle over the
@@ -194,6 +214,12 @@ check "a missing corpus exits 2, not 0" 2 "$RC" "LINTER ERROR"
 # The canned trace is a REAL committed fixture, so what the emitter writes is
 # something the replayer can then read: a fake trace would test the file copy
 # and nothing else.
+#
+# THE `states` FIELDS ARE THE CANNED TRACES' OWN LENGTHS, and they are seeds
+# rather than assertions: the manifest reader refuses an entry without one, and
+# the emitter rewrites every one of them from what it actually wrote before the
+# replay that follows reads them. A case that changes a canned trace's length —
+# the truncation case at the bottom does — therefore needs nothing changed here.
 
 EMIT_MANIFEST='{
   "tier1": [
@@ -205,6 +231,7 @@ EMIT_MANIFEST='{
       "maxSteps": 60,
       "invariant": "lastStep.label != \"settled\"",
       "expect": "violation",
+      "states": 6,
       "pins": ["settled"],
       "rationale": "a fake run, driven by the suite",
       "consts": {
@@ -224,6 +251,7 @@ EMIT_MANIFEST='{
       "name": "witness-draft-wait",
       "module": "chuggy_witness_draft_wait_test",
       "run": "draftWaitAcceptedDeterministicTest",
+      "states": 4,
       "pins": ["decideRelease", "ticket-released"],
       "rationale": "the committed witness, re-emitted by the fake",
       "consts": {

@@ -16,8 +16,31 @@ import { test } from "node:test";
 
 import { AssertionError } from "../domain/assert.ts";
 import type { Entry } from "../spine/entry.ts";
+import type { JournalStore } from "../spine/journal-store.ts";
 import { e1, e2, e3, goodJ } from "../spine/refinement-fixtures.test.ts";
 import { createInMemoryJournalStore } from "./in-memory-journal-store.ts";
+
+test("the port is a record of PROPERTIES, so a substitute may not narrow what it accepts", () => {
+  // THE PROMISE THE SPELLING KEEPS, and it is the promise this port cares most
+  // about: a store DECIDES NOTHING, so it may not accept only the rows it
+  // happens to understand. Written with method syntax — as this port was until
+  // sweep 2 — a parameter is checked BIVARIANTLY and the substitute below
+  // typechecks, which is `src/interp/ports.ts`'s argument for every port it
+  // declares, reaching the one port that sits outside that file.
+  type ArriveOnly = Entry & { readonly cmd: { readonly tag: "JArrive" } };
+  const narrowed: JournalStore = {
+    // @ts-expect-error a property's parameters are checked contravariantly, so
+    // a store that takes less than `Entry` is refused. THIS DIRECTIVE IS THE
+    // RED PROOF: spell the port with methods again and tsc reports the
+    // directive as unused, which reds the types stage.
+    append: (entry: ArriveOnly): void => {
+      assert.equal(entry.cmd.tag, "JArrive");
+    },
+    readAll: () => [],
+    length: () => 0,
+  };
+  assert.equal(narrowed.length(), 0);
+});
 
 test("append then read: every row, oldest first, exactly as it was appended", () => {
   const store = createInMemoryJournalStore();

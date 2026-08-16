@@ -12,8 +12,14 @@
  * checks the corpus against.
  */
 
+import { effectVocabulary } from "../effects/effect.ts";
 import { shippedDeciders } from "../spine/cmd.ts";
-import { exemptionArms, mcInstances } from "../spine/coverage.ts";
+import {
+  exemptionArms,
+  mcInstances,
+  resumeArms,
+  resumeArmsBeyondTheCorpus,
+} from "../spine/coverage.ts";
 import { reachableStepLabels } from "../spine/decode.ts";
 import { nondetBinders } from "../spine/itf.ts";
 import { verifyCorpus } from "./verify.ts";
@@ -32,6 +38,17 @@ function main(): number {
   report("exemption arm", exemptionArms, verification.coverage.arms);
   report("mc instance", mcInstances, verification.coverage.instances);
   report("nondet binder", boundBinderNames, verification.coverage.binders);
+  report("effect", effectVocabulary, verification.coverage.effects);
+  // THE DECLARED ARM IS MARKED AS DECLARED rather than as missing, because a
+  // roster line that reads `- RWrapUp` beside a clean verdict is a reader
+  // wondering which of the two is wrong. `coverage.ts` carries the argument and
+  // the refutation trigger; this line carries the fact.
+  report(
+    "decideOpRetry resume arm",
+    resumeArms,
+    verification.coverage.resumes,
+    resumeArmsBeyondTheCorpus,
+  );
 
   for (const finding of verification.findings) {
     console.log(`ERROR ${finding}`);
@@ -61,14 +78,26 @@ function report(
   obligation: string,
   roster: readonly string[],
   reached: ReadonlySet<string>,
+  declared: readonly string[] = [],
 ): void {
   // JOINED ON A SEPARATOR NO ENTRY CONTAINS. Two exemption arms hold a comma
   // and a space in their own names, so a comma-joined line cannot be read back
   // into the roster it prints.
   const marked = roster.map(
-    (entry) => `${reached.has(entry) ? "+" : "-"} ${entry}`,
+    (entry) => `${mark(entry, reached, declared)} ${entry}`,
   );
   console.log(`  ${obligation}: ${marked.join(" · ")}`);
+}
+
+function mark(
+  entry: string,
+  reached: ReadonlySet<string>,
+  declared: readonly string[],
+): string {
+  if (reached.has(entry)) {
+    return "+";
+  }
+  return declared.includes(entry) ? "!" : "-";
 }
 
 process.exitCode = main();
