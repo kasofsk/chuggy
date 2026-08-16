@@ -76,31 +76,68 @@ export type StepLabel =
   | "operator-retry"
   | "settled";
 
-/** The same roster as data, for the corpus's coverage obligation. */
-export const reachableStepLabels: readonly StepLabel[] = [
-  "init",
-  "ticket-arrived",
-  "ticket-released",
-  "ticket-revoked",
-  "dispatch",
-  "task-done",
-  "task-done-duplicate",
-  "work-passed",
-  "eval-stage-passed",
-  "eval-passed",
-  "rework-started eval_failure",
-  "rework-started wrapup_failure",
-  "wrapup-started",
-  "ticket-done",
-  "ticket-escalated work_failed",
-  "ticket-escalated rework_budget_exhausted",
-  "ticket-escalated wrapup_budget_exhausted",
-  "ticket-escalated gas_exhausted",
-  "ticket-escalated revalidation_failed",
-  "complete-duplicate",
-  "operator-retry",
-  "settled",
-];
+/**
+ * The same roster as data, for the corpus's coverage obligation.
+ *
+ * THE COMPILER MAINTAINS THIS COPY, which is what makes a second statement of
+ * the union legitimate — `effect.ts`'s argument for `vocabulary`, applied to
+ * the other roster the spine ships. The `satisfies` clause is an identity
+ * mapped type over `StepLabel`, so a label added to the union without a row
+ * here is a compile error, a row here that is not in the union is a compile
+ * error, and a row whose value is any string but its own key is a compile
+ * error. Written as a plain array, a union member missing from it silently
+ * SHRANK the conformance obligation: the corpus would owe no fixture for the
+ * label, `coverageGaps` would report no gap, and the gate would stay green over
+ * a label nothing replays.
+ */
+const labels = {
+  init: "init",
+  "ticket-arrived": "ticket-arrived",
+  "ticket-released": "ticket-released",
+  "ticket-revoked": "ticket-revoked",
+  dispatch: "dispatch",
+  "task-done": "task-done",
+  "task-done-duplicate": "task-done-duplicate",
+  "work-passed": "work-passed",
+  "eval-stage-passed": "eval-stage-passed",
+  "eval-passed": "eval-passed",
+  "rework-started eval_failure": "rework-started eval_failure",
+  "rework-started wrapup_failure": "rework-started wrapup_failure",
+  "wrapup-started": "wrapup-started",
+  "ticket-done": "ticket-done",
+  "ticket-escalated work_failed": "ticket-escalated work_failed",
+  "ticket-escalated rework_budget_exhausted":
+    "ticket-escalated rework_budget_exhausted",
+  "ticket-escalated wrapup_budget_exhausted":
+    "ticket-escalated wrapup_budget_exhausted",
+  "ticket-escalated gas_exhausted": "ticket-escalated gas_exhausted",
+  "ticket-escalated revalidation_failed":
+    "ticket-escalated revalidation_failed",
+  "complete-duplicate": "complete-duplicate",
+  "operator-retry": "operator-retry",
+  settled: "settled",
+} as const satisfies { readonly [L in StepLabel]: L };
+
+/**
+ * `model/domain.qnt`'s reachable step labels, in the model's own order.
+ *
+ * The order is the union's, which is the model's: `Object.values` enumerates a
+ * record's own string keys in declaration order, so the array and the type
+ * cannot disagree about membership OR about sequence.
+ */
+export const reachableStepLabels: readonly StepLabel[] = Object.values(labels);
+
+/**
+ * The label the model emits that this roster deliberately excludes:
+ * `operator-retry-unreachable`, the guarded no-op `retryableIn` refuses.
+ *
+ * It is named here as data rather than only in prose because the corpus's
+ * staleness alarm compares this file's roster against the labels
+ * `model/domain.qnt` actually writes, and the model writes this one — so the
+ * exclusion has to be stated somewhere the comparison can read it, or the alarm
+ * would report the model's own guarded arm as drift on every run.
+ */
+export const guardedUnreachableStepLabel = "operator-retry-unreachable";
 
 /** What the replayer does with one step of a trace. */
 export type StepPlan =

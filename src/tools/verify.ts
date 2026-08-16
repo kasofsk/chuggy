@@ -20,22 +20,32 @@ import { readdirSync } from "node:fs";
 
 import { messageOf } from "../domain/assert.ts";
 import type { Config } from "../domain/domain.ts";
+import { effectVocabulary } from "../effects/effect.ts";
+import { shippedDeciders } from "../spine/cmd.ts";
 import {
   CoverageBuilder,
   coverageGaps,
+  exemptionArms,
+  mcInstances,
   pinsMissed,
   type Coverage,
 } from "../spine/coverage.ts";
-import { decodeSteps } from "../spine/decode.ts";
-import { DecodeError, decodeTrace } from "../spine/itf.ts";
+import {
+  decodeSteps,
+  guardedUnreachableStepLabel,
+  reachableStepLabels,
+} from "../spine/decode.ts";
+import { DecodeError, decodeTrace, nondetBinders } from "../spine/itf.ts";
 import { replayTrace } from "../spine/replay.ts";
 import {
   CorpusError,
+  constNames,
   constsDisagree,
   fixturePath,
   loadManifest,
   mcSource,
   readJson,
+  readModelRosters,
   readModuleConsts,
   tier1Dir,
   tier2Dir,
@@ -68,6 +78,12 @@ export function verifyCorpus(): Verification {
 
   try {
     findings.push(...orphanFixtures(manifest));
+    // THE ROSTERS BEFORE THE CONSTS, because the coarser alarm goes first. If
+    // the model's SURFACE has moved, the const comparison's own module lookups
+    // are reading a file whose shape this tree no longer describes — and a
+    // module it cannot find is a could-not-run, which would stop the walk
+    // before the roster finding that explains it had been recorded.
+    findings.push(...staleRosters());
     findings.push(...staleConsts(manifest));
     for (const fixture of manifest.tier1) {
       coverage.observeInstance(fixture.instance);
@@ -207,4 +223,91 @@ function staleConsts(manifest: Manifest): readonly string[] {
     }
   }
   return findings;
+}
+
+/**
+ * The rosters this tree types out by hand, against the ones `model/` states.
+ *
+ * THE CONST ALARM'S ARGUMENT, ONE LEVEL UP. `staleConsts` catches an instance
+ * moving under the corpus; this catches the MACHINE'S SURFACE moving under the
+ * rosters that describe it. Neither is caught by replay, and the roster case is
+ * the quieter of the two: a model PR that adds a fourteenth decider adds no
+ * fixture either, so every entry `shippedDeciders` names is still covered,
+ * `coverageGaps` reports nothing, and the whole gate stays green over an
+ * obligation nobody now owes. There is no drift today, and there was no alarm
+ * either — which is the shape of control this repo refuses.
+ *
+ * SEVEN ROSTERS, AND THE COMPILER MAINTAINS NONE OF THEM, which is what
+ * separates them from the second statements this tree is happy to keep.
+ * `effect.ts`'s `vocabulary`, `decode.ts`'s `labels` and `entry.ts`'s field
+ * tables are copies the TYPE CHECKER holds to their unions; these seven are
+ * copies of something written in another language, and nothing in TypeScript
+ * can reach across that boundary. `corpus.ts`'s reader is what reaches, and
+ * this is where the two sides meet.
+ *
+ * EXACT SETS, BOTH DIRECTIONS, ORDER IGNORED. A roster entry the model has and
+ * this tree does not is an obligation nobody owes; one this tree has and the
+ * model does not is an obligation nothing can ever cover, which would red
+ * `coverageGaps` eventually and blame the corpus for it. Order is deliberately
+ * not compared: `decode.ts`'s roster is the union's declaration order and the
+ * model's literal order is where its deciders happen to write them, and a
+ * gate that argued about sequence would be a gate somebody turns off.
+ *
+ * THE ONE ENTRY THAT NEEDS SAYING OUT LOUD is
+ * `operator-retry-unreachable`. The model emits it and `reachableStepLabels`
+ * deliberately excludes it, so the comparison adds it back by name — from
+ * `decode.ts`'s own constant rather than from a literal here, because an
+ * exclusion spelled twice is an exclusion that drifts.
+ */
+function staleRosters(): readonly string[] {
+  const model = readModelRosters();
+  return [
+    ...rosterDisagrees("decider", shippedDeciders, model.deciders),
+    ...rosterDisagrees("effect", effectVocabulary, model.effects),
+    ...rosterDisagrees(
+      "step label",
+      [...reachableStepLabels, guardedUnreachableStepLabel],
+      model.stepLabels,
+    ),
+    ...rosterDisagrees(
+      "stepDescends exemption arm",
+      exemptionArms,
+      model.exemptionArms,
+    ),
+    ...rosterDisagrees("mc instance", mcInstances, model.instances),
+    ...rosterDisagrees(
+      "nondet binder",
+      nondetBinders.map(([bound]) => bound),
+      model.binders,
+    ),
+    ...rosterDisagrees("model const", constNames, model.consts),
+    ...model.unclassified.map(
+      (text) =>
+        `model: string literal ${JSON.stringify(text)} — the model's code holds it and it is spelled as neither an effect nor a step label`,
+    ),
+  ];
+}
+
+/** One roster, compared as an exact set in both directions. */
+function rosterDisagrees(
+  what: string,
+  shipped: readonly string[],
+  model: readonly string[],
+): readonly string[] {
+  const held = new Set(shipped);
+  const stated = new Set(model);
+  return [
+    ...model
+      .filter((entry) => !held.has(entry))
+      .map(
+        (entry) =>
+          `model: ${what} ${entry} — the model has it and this tree's roster does not`,
+      ),
+    ...shipped
+      .filter((entry) => !stated.has(entry))
+      .map(
+        (entry) =>
+          `model: ${what} ${entry} — this tree's roster has it and the model does not`,
+      ),
+  ];
 }

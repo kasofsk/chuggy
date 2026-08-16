@@ -22,13 +22,19 @@
 # reasoned — each entry below was verified by making the change and watching
 # this gate stay green.
 #
-#   1. THE MODEL MOVING UNDER THE CORPUS. A new decider with no fixture reddens
-#      the coverage roster, but a CHANGED decider whose traces were never
-#      regenerated replays green against the machine it was emitted from. Two
-#      things narrow it: the manifest's consts are compared against the model's
-#      own const blocks on every run, so an instance moving under the corpus is
-#      a finding here; and `check-model.sh` runs the model's own suites in the
-#      same `just check`.
+#   1. THE MODEL MOVING UNDER THE CORPUS. A CHANGED decider whose traces were
+#      never regenerated replays green against the machine it was emitted from.
+#      Three things narrow it, and the first two are alarms this gate raises
+#      itself. The manifest's consts are compared against the model's own const
+#      blocks on every run, so an instance moving under the corpus is a finding
+#      here. The rosters this tree types out by hand — the deciders, the step
+#      labels, the exemption arms, the effect strings, the mc instances, the
+#      nondet binders and the const names — are compared against the model's
+#      own declarations as exact sets in both directions, so a decider the
+#      model gained is a finding rather than an obligation nobody owes. What
+#      remains is a decider whose BODY moved with its name intact, and that is
+#      `check-model.sh` running the model's own suites in the same `just
+#      check`.
 #   2. AN ENABLEMENT ARM WIDENED. `cmdEnabled` refusing less than the machine
 #      does is invisible to replay — every fixture holds decisions the machine
 #      TOOK, and a widened guard still admits those. What covers it is

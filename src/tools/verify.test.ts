@@ -44,7 +44,12 @@ import {
 import { tmpdir } from "node:os";
 
 import { verifyCorpus, type Verification } from "./verify.ts";
-import { manifestPath, mcSource, witnessSource } from "./corpus.ts";
+import {
+  domainSource,
+  manifestPath,
+  mcSource,
+  witnessSource,
+} from "./corpus.ts";
 
 /** The checkout, captured before any case moves out of it. */
 const checkout = process.cwd();
@@ -388,5 +393,152 @@ test("verifyCorpus: a manifest that cannot be believed is an error before any fi
   assert.deepEqual(verification.replayed, []);
   assert.deepEqual(verification.errors, [
     "corpus/manifest.json.tier1[0].pins: decideNothing is not a decider, a step label or an exemption arm",
+  ]);
+});
+
+// === staleRosters: the model's surface against the hand-typed rosters ======
+
+/**
+ * Replace every occurrence of `from` in a fixture repo's model source, and
+ * refuse to pass silently if there was none.
+ *
+ * It is a whole-file replace rather than `editModule`'s module-scoped one
+ * because a roster is a property of the file: what these cases move is a
+ * declaration, and each anchor below is verified unique against the committed
+ * source by the assertion that follows the replace.
+ */
+function editModelText(
+  repo: string,
+  source: string,
+  from: string,
+  to: string,
+): void {
+  const path = `${repo}/${source}`;
+  const text = readFileSync(path, "utf8");
+  assert.ok(text.includes(from), `${source}: ${from} is not there to rename`);
+  writeFileSync(path, text.split(from).join(to));
+}
+
+/**
+ * ONE RENAME PER ROSTER, WHICH REDS BOTH DIRECTIONS AT ONCE — the entry the
+ * model gained and the entry this tree's roster kept. A rename is the mutation
+ * a model PR actually makes, and asking both halves of one exact-set comparison
+ * from one edit is what keeps these cases as short as the claim they carry.
+ */
+const rosterRenames: readonly {
+  readonly what: string;
+  readonly from: string;
+  readonly to: string;
+  readonly was: string;
+  readonly now: string;
+}[] = [
+  {
+    what: "decider",
+    from: "pure def decideOpRetry(",
+    to: "pure def decideOperatorRetry(",
+    was: "decideOpRetry",
+    now: "decideOperatorRetry",
+  },
+  {
+    what: "effect",
+    from: '"OpenGate"',
+    to: '"OpenTheGate"',
+    was: "OpenGate",
+    now: "OpenTheGate",
+  },
+  {
+    what: "step label",
+    from: '"wrapup-started"',
+    to: '"wrapup-begun"',
+    was: "wrapup-started",
+    now: "wrapup-begun",
+  },
+  {
+    // The one roster the model states in prose: its two-line entries name a
+    // flavor the code has no separate name for, so the roster comment is where
+    // the eight live and where a ninth would be added.
+    what: "stepDescends exemption arm",
+    from: "Current roster:\n  ///   init",
+    to: "Current roster:\n  ///   genesis",
+    was: "init",
+    now: "genesis",
+  },
+  {
+    what: "nondet binder",
+    from: "nondet moved =",
+    to: "nondet movedFlag =",
+    was: "moved",
+    now: "movedFlag",
+  },
+  {
+    what: "model const",
+    from: "const MAX_STAGES:",
+    to: "const MAX_TIERS:",
+    was: "MAX_STAGES",
+    now: "MAX_TIERS",
+  },
+];
+
+for (const rename of rosterRenames) {
+  test(`staleRosters: a renamed ${rename.what} reds from both sides`, () => {
+    const verification = verifying((repo) => {
+      editModelText(repo, domainSource, rename.from, rename.to);
+    });
+    assert.deepEqual(verification.findings, [
+      `model: ${rename.what} ${rename.now} — the model has it and this tree's roster does not`,
+      `model: ${rename.what} ${rename.was} — this tree's roster has it and the model does not`,
+    ]);
+    assert.deepEqual(verification.errors, []);
+  });
+}
+
+test("staleRosters: a renamed mc instance reds from both sides, and the const alarm then cannot run", () => {
+  // THE ONE ROSTER WHOSE ENTRIES THE CONST ALARM ALSO LOOKS UP, which is why
+  // the surface is compared first: a module this tree cannot find is a
+  // could-not-run, and reporting it without the roster finding that explains it
+  // would leave a reader with an unreadable model and no reason for it.
+  const verification = verifying((repo) => {
+    editModelText(
+      repo,
+      mcSource,
+      "module mc_chuggy_retryfree {",
+      "module mc_chuggy_retry_free {",
+    );
+  });
+  assert.deepEqual(verification.findings, [
+    "model: mc instance retry_free — the model has it and this tree's roster does not",
+    "model: mc instance retryfree — this tree's roster has it and the model does not",
+  ]);
+  assert.match(verification.errors[0] ?? "", /no module mc_chuggy_retryfree$/);
+});
+
+test("staleRosters: a code literal spelled as neither an effect nor a step label is reported, never skipped", () => {
+  // THE PARTITION'S THIRD BUCKET. The two spelling rules are the model's own
+  // convention, and a literal obeying neither would otherwise be absent from
+  // both rosters in silence — which is the failure the whole alarm is against.
+  const verification = verifying((repo) => {
+    editModelText(
+      repo,
+      domainSource,
+      "  val measureDescends: bool =",
+      '  val strayLiteral: str = "9lives"\n\n  val measureDescends: bool =',
+    );
+  });
+  assert.deepEqual(verification.findings, [
+    'model: string literal "9lives" — the model\'s code holds it and it is spelled as neither an effect nor a step label',
+  ]);
+});
+
+test("staleRosters: a roster the parse can no longer see is could-not-run, never an empty roster", () => {
+  // `readModuleConsts`'s rule, applied to every roster reader: "no entries" and
+  // "entries this parse cannot see" must not report the same. Reporting the
+  // second as the first would red every entry of the roster at once and blame
+  // the tree for a defect in the reader.
+  const verification = verifying((repo) => {
+    editModelText(repo, domainSource, "Current roster:", "The arms:");
+  });
+  assert.deepEqual(verification.findings, []);
+  assert.deepEqual(verification.errors, [
+    'model/domain.qnt: no "Current roster:" comment before val stepDescends',
   ]);
 });
