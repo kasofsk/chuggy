@@ -41,6 +41,7 @@
  * the conjunct is one call away with them in hand.
  */
 
+import { messageOf } from "../domain/assert.ts";
 import type { Config } from "../domain/domain.ts";
 import type { Core, StepRecord } from "../domain/measure.ts";
 import {
@@ -399,8 +400,4 @@ function render(cmd: Cmd): string {
   return JSON.stringify(cmd, (_key, value: unknown) =>
     value instanceof Set ? [...value] : value,
   );
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

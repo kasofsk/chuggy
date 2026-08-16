@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { AssertionError, assertNever, invariant } from "./assert.ts";
+import { AssertionError, assertNever, invariant, messageOf } from "./assert.ts";
 
 test("invariant is silent when the condition holds", () => {
   assert.doesNotThrow(() => {
@@ -103,4 +103,17 @@ test("assertNever survives a value neither renderer can touch", () => {
     name: "AssertionError",
     message: "unhandled: <unrenderable>",
   });
+});
+
+test("messageOf reads an Error's own message, and anything else as itself", () => {
+  // The three callers all catch `unknown`, so the three shapes a `catch` can
+  // actually bind are what this covers: the tree's own assertion, a plain
+  // Error, and a thrown value that is neither.
+  assert.equal(
+    messageOf(new AssertionError("seq must be non-negative")),
+    "seq must be non-negative",
+  );
+  assert.equal(messageOf(new TypeError("not a function")), "not a function");
+  assert.equal(messageOf("a bare string"), "a bare string");
+  assert.equal(messageOf(undefined), "undefined");
 });

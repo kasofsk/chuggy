@@ -48,12 +48,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { messageOf } from "../domain/assert.ts";
 import { decodeTrace } from "../spine/itf.ts";
 import {
   CorpusError,
   fixturePath,
   loadManifest,
-  messageOf,
   readJson,
   tier1Dir,
   tier2Dir,

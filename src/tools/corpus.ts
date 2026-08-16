@@ -58,6 +58,7 @@
 
 import { readFileSync } from "node:fs";
 
+import { messageOf } from "../domain/assert.ts";
 import type { Config } from "../domain/domain.ts";
 import {
   mcInstances,
@@ -130,10 +131,6 @@ export function readJson(path: string): unknown {
   } catch (error) {
     throw new CorpusError(`${path} is not JSON: ${messageOf(error)}`);
   }
-}
-
-export function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 // === The manifest ==========================================================

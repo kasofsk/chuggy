@@ -18,6 +18,7 @@
 
 import { readdirSync } from "node:fs";
 
+import { messageOf } from "../domain/assert.ts";
 import type { Config } from "../domain/domain.ts";
 import {
   CoverageBuilder,
@@ -34,7 +35,6 @@ import {
   fixturePath,
   loadManifest,
   mcSource,
-  messageOf,
   readJson,
   readModuleConsts,
   tier1Dir,
