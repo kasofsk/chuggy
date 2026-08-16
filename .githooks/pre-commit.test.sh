@@ -88,26 +88,55 @@ check "outside a checkout the hook fails open" 0 "$RC" "skipping"
 #    — and the hook reports a clean commit having checked nothing.
 #
 #    So the case drives the REAL check-paths over a real staged set, with the
-#    claim in the LAST staged file: a split that collapsed would not reach it.
-#    check-paths itself is left unstaged, because a gate script full of true
-#    claims about the repo it ships in is full of false ones about a fixture.
-staged_repo() { # <notes.md body>
+#    claim in the file whose NAME is the thing under test: reach it and the
+#    split held, miss it and the hook says clean. check-paths itself is left
+#    unstaged, because a gate script full of true claims about the repo it
+#    ships in is full of false ones about a fixture.
+#
+#    THE SPLIT HAS TWO GUARDS AND EACH GETS ITS OWN NAME. `set -f` stops the
+#    staged words being glob-expanded and the newline `IFS` stops them being
+#    split on whitespace; drop either one and the other still looks like it is
+#    working. A filename with a space in it is what the IFS is for, and a
+#    filename spelled like a bracket glob — with the file it would expand to
+#    sitting beside it, clean — is what `set -f` is for. Both produce the same
+#    false clean, from opposite ends.
+#    The copy of check-paths goes in AFTER everything is staged, and it is the
+#    last thing this helper does for that reason: stage it and its own header's
+#    claims — true of the repo it ships in, false of a fixture — become the
+#    findings, and every case here would go red whatever the split did.
+staged_repo() { # <claim-carrying filename> <its body> [<extra clean file>]
 	stub_repo 0
 	printf 'placeholder\n' > "$R/README.md"
-	printf '%s\n' "$1" > "$R/notes.md"
+	printf '%s\n' "$2" > "$R/$1"
+	[ -z "${3:-}" ] || printf 'nothing is claimed here\n' > "$R/$3"
 	git -C "$R" add -A
 	cp "$HERE/../.chug/tasks/check-paths.sh" "$R/.chug/tasks/check-paths.sh"
 	chmod +x "$R/.chug/tasks/check-paths.sh"
 }
 
-staged_repo 'It is written in `.chug/tasks/nope.sh`.'
+BAD='It is written in `.chug/tasks/nope.sh`.'
+
+staged_repo notes.md "$BAD"
 run_hook
 check "a staged file with a bad path claim rejects" 1 "$RC" "REJECTED by check-paths"
 check "the staged file is reached, so the split held" 1 "$RC" ".chug/tasks/nope.sh"
 
-# The control. Same staged set, a claim that resolves — so the rejection above
-# is the claim's doing and not the branch's mere existence.
-staged_repo 'It is written in `.chug/tasks/doc-lint.sh`.'
+# The IFS. Split on the default whitespace and this name becomes two arguments,
+# neither of which is a file, and check-paths answers over an empty scan.
+staged_repo 'bad claim.md' "$BAD"
+run_hook
+check "a staged name with a space is one argument" 1 "$RC" "bad claim.md"
+
+# `set -f`. Dropped, the shell expands the staged word as a pattern and hands
+# over the clean file it matches instead of the one carrying the claim — which
+# is why `a.md` has to exist and be clean for the case to mean anything.
+staged_repo '[a].md' "$BAD" a.md
+run_hook
+check "a staged name spelled like a glob is not expanded" 1 "$RC" "[a].md"
+
+# The control. Same staged set, a claim that resolves — so the rejections above
+# are the claim's doing and not the branch's mere existence.
+staged_repo notes.md 'It is written in `.chug/tasks/doc-lint.sh`.'
 run_hook
 check "a staged file with a good path claim passes" 0 "$RC" "clean"
 

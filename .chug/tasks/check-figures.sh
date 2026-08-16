@@ -90,9 +90,9 @@
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass —
 # and that includes the tool being absent. The whole scan is one awk program,
 # so without awk the shell would exit on the missing command with a status this
-# header does not claim and `.chug/tasks/ci.sh` cannot classify. The guard is
-# the same one `.chug/tasks/check-shell-quoting.sh` carries, for the same
-# reason: an unrun gate is not a clean tree.
+# header does not claim. The guard is the same one
+# `.chug/tasks/check-shell-quoting.sh` carries, for the same reason: an unrun
+# gate is not a clean tree.
 set -eu
 export LC_ALL=C
 

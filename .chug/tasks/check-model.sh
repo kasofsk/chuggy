@@ -19,24 +19,42 @@
 # FALSE: it typechecks, it fails under `quint test --main=`, and because no loop
 # here named it the gate ran every module it did know about and printed a clean
 # tally. Discovery reads the module declarations out of the model source
-# instead, so a module the model gains is a module this gate runs. A scan that
-# matches NOTHING is a could-not-run, not a clean tree — a pattern that has
-# stopped finding modules reports exactly what a model with no modules would.
+# instead. A scan that matches NOTHING is a could-not-run, not a clean tree — a
+# pattern that has stopped finding modules reports exactly what a model with no
+# modules would.
+#
+# AND A NAME PATTERN IS ITSELF A LIST, so it is checked against the file rather
+# than trusted. `sed` reading `module NAME {` sees only one spelling of a
+# declaration: put the brace on the next line, or two spaces before the name,
+# and the module vanishes from the scan while remaining valid Quint that
+# typechecks and fails under `quint test` — the original attack again, wearing
+# different whitespace. So discovery counts the declarations in the file and
+# compares that against what its pattern matched, and any residue is a refusal
+# naming the modules it could not account for. That closes every spelling at
+# once, a mistyped module name, and a pattern narrowed until it drops half the
+# suite; it also means a module in one of these files that is deliberately not
+# a suite is a question for the author, because this gate will not guess which.
+#
+# The typecheck pass is NOT a backstop for any of that. It walks the tracked
+# `*.qnt` glob and asks only whether each file typechecks, which a module no
+# suite loop ever names does perfectly well.
 #
 # AND A SUITE THAT RAN NOTHING IS NOT A SUITE THAT PASSED. `quint test` exits 0
 # on a module with no `*Test` runs, so renaming a run's suffix empties a suite
-# in silence; every `quint test` here is required to report a tally of what it
-# ran. `.chug/tasks/check-ts.sh` holds the same guard over the TAP count, for
-# the same reason and with the same verdict.
+# in silence; every `quint test` here is required to report a tally with
+# something in it. `.chug/tasks/check-ts.sh` carries the counterpart guard over
+# the TAP count — it reads a total the runner always prints and refuses a zero,
+# where this reads a line quint omits entirely when nothing ran and refuses a
+# zero besides.
 #
 # WHAT IT CANNOT SEE, said plainly so nobody trusts it further than it goes.
 #
 #   - It runs what the model declares; it does not judge whether the model
 #     declares enough. A machine change with no witness module for it is
 #     invisible here, and `model/` is where that argument lives.
-#   - Discovery reads a module DECLARATION line. A module nested in a way that
-#     does not open at the left margin would be missed, and the typecheck pass
-#     is what keeps such a file from being silently unread.
+#   - It reads the suite files named below and no others. A module declared in
+#     some further file is not discovered, not run, and not counted in any
+#     residue — adding a suite file means adding it here.
 #   - The tally guard proves a run happened, not that the run was the right
 #     one. A module whose every run is trivially true still reports a passing
 #     tally, and that is the reviewer's, not this gate's.
@@ -94,7 +112,10 @@ trap 'rm -f "$run_out"' EXIT
 
 # Module names read out of the model source, into $MODULES. A scan that matches
 # nothing is a refusal: the loop that follows would otherwise run no module and
-# the tally would print the same as a clean model.
+# the tally would print the same as a clean model. A scan that matches SOME of
+# them is the same refusal — see the header; the residue is what a narrowed
+# pattern or an unusual declaration line looks like from in here, and neither
+# is a thing to guess about.
 MODULES=""
 discover() { # <label> <file> <name-pattern>
 	MODULES=""
@@ -107,6 +128,19 @@ discover() { # <label> <file> <name-pattern>
 	if [ -z "$MODULES" ]; then
 		echo "check-model: LINTER ERROR — no $1 modules declared in $2;"
 		echo "check-model:     the scan matched nothing, which is not a pass."
+		errored=$((errored + 1))
+		return 1
+	fi
+	# Every declaration in the file, by name and whatever the spacing, against
+	# what the name pattern above actually took.
+	_declared="$(sed -n 's/^module[ 	][ 	]*\([A-Za-z_0-9][A-Za-z_0-9]*\).*/\1/p' "$2")"
+	_residue="$(printf '%s\n' "$_declared" | grep -vxF "$MODULES" || true)"
+	if [ -n "$_residue" ]; then
+		echo "check-model: LINTER ERROR — $2 declares module(s) the $1 scan did not"
+		echo "check-model:     match, so nothing here would run them:"
+		printf '        %s\n' $_residue
+		echo "check-model:     Either the name pattern is too narrow or the declaration"
+		echo "check-model:     is spelled in a way the scan cannot read. Not guessing."
 		errored=$((errored + 1))
 		return 1
 	fi
@@ -130,7 +164,12 @@ run_test() { # <label> <file> [<main-module>]
 		failed=$((failed + 1))
 		return
 	fi
-	if ! grep -qE '^[[:space:]]*[0-9]+ (passing|failed)' "$run_out"; then
+	# A tally line with something in it. Quint omits the line entirely when no
+	# run matched, and the leading `[1-9]` refuses a tally of zero besides —
+	# the two ways "it passed" and "there was nothing to pass" print alike.
+	# Only the zero-exit path reaches here, so there is no `failed` spelling to
+	# admit: a suite with a failure has already been counted as one.
+	if ! grep -qE '^[[:space:]]*[1-9][0-9]* passing' "$run_out"; then
 		echo "check-model: LINTER ERROR — $_label reported no tests run."
 		echo "check-model:     A suite that ran nothing is not a suite that passed."
 		errored=$((errored + 1))

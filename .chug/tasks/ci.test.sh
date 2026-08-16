@@ -154,4 +154,26 @@ else
 	echo "skip - the per-suite cap (no working timeout or gtimeout on this host)"
 fi
 
+# 10. AND THE OTHER HALF OF THAT READING. The kill is recognised by an exit
+#     code, and an exit code is not proof of a kill: 124 is a byte any suite
+#     may return of its own accord. So the could-not-run reading is made only
+#     where a cap was actually applied, and this drives the case that pins it —
+#     the same 124, on a host with no `timeout` to have produced it, is a
+#     finding. Without the conjunct the stage would announce a cap it is not
+#     applying as the reason a suite it ran to completion did not finish.
+NOCAP="$WORK/nocap"
+tools_only "$NOCAP" git date sed sh
+stub_repo 0
+printf '#!/bin/sh\nexit 124\n' > "$R/.chug/tasks/onetwentyfour.test.sh"
+chmod +x "$R/.chug/tasks/onetwentyfour.test.sh"
+git -C "$R" add -A
+OUT="$WORK/.out"
+set +e
+(cd "$R" && env PATH="$NOCAP" CHUG_CI_SHELL_SUITES=1 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "that exit code without a cap applied is a finding" 1 "$RC" \
+	"FAILED — .chug/tasks/onetwentyfour.test.sh"
+check "and the stage says it was running uncapped" 1 "$RC" "UNCAPPED"
+
 done_ "ci.test.sh"

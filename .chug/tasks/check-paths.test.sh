@@ -143,12 +143,15 @@ check "no tracked files exits 2, not 0" 2 "$RC" "LINTER ERROR"
 
 # 12. NO AWK IS A BROKEN GATE, NOT A PASS. Both the token scan and the
 #     resolution pass are awk programs, and without the guard the shell exits
-#     on the missing command with a status this gate's header does not claim
-#     and the sequencer reads as neither a finding nor a refusal it can name.
-#     The PATH carries everything else the gate reaches for, so awk is the only
-#     thing missing and the exit status is about awk and nothing else. Strip
-#     git too and the gate refuses one step earlier, for a different reason,
-#     and the case would pass without the guard existing.
+#     on the missing command with a status this gate's header does not claim.
+#
+#     The PATH holds the rest of what the gate reaches for so the fixture is a
+#     degraded host rather than an empty one, but that is honesty and not
+#     discrimination: the awk guard sits above every other line in the gate, so
+#     an empty PATH would produce the same verdict. Which means this case
+#     cannot notice `tools_only` handing it a broken link either — the gate
+#     refuses before it needs any of the tools named. `_suite.sh` says what
+#     that costs and why it is worn rather than fixed.
 NOAWK="$WORK/noawk"
 tools_only "$NOAWK" git mktemp grep sort rm
 seeded_repo

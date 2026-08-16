@@ -39,9 +39,19 @@
 # deferred orphan check asks rule 2 "what does this doc link to" rather than
 # growing a second answer to the same question.
 #
-# Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
+# Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass —
+# and that includes the tool being absent. Every check above is an awk program,
+# so without awk the shell would exit on the missing command with a status this
+# header does not claim. Same guard as `.chug/tasks/check-shell-quoting.sh`,
+# `.chug/tasks/check-figures.sh` and `.chug/tasks/check-paths.sh`: every gate
+# here written in awk answers the same way when there is no awk to write in.
 set -eu
 export LC_ALL=C
+
+command -v awk > /dev/null 2>&1 || {
+	echo "doc-lint: LINTER ERROR — no \`awk\` on PATH, so nothing was linted."
+	exit 2
+}
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$root" ]; then

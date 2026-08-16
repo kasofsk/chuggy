@@ -121,7 +121,22 @@ git -C "$R" add -A
 run_in "$R"
 check "and is clean once it does" 0 "$RC" "0 gate(s) without a suite"
 
-# 9. Outside a git checkout -> could not run.
+# 9. A SUITE THAT IS TRACKED BUT NOT THERE IS A COULD-NOT-RUN, and the exit
+#    code is the assertion. The name check reads the working tree while the
+#    existence check reads the index, so a suite staged and then removed
+#    satisfies one and defeats the other — and a gate that answered "does not
+#    name its subject" there would be reporting on the checkout, not on the
+#    suite. Two is the verdict and one would be wrong: this slice exists to
+#    keep those apart, so the case pins the class and not just the message.
+gates_repo "$R"
+printf '#!/bin/sh\n' > "$R/.chug/tasks/epsilon.sh"
+suite_naming "$R/.chug/tasks/epsilon.test.sh" epsilon.sh
+git -C "$R" add -A
+rm -f "$R/.chug/tasks/epsilon.test.sh"
+run_in "$R"
+check "a tracked suite that is not there exits 2, not 1" 2 "$RC" "cannot be read"
+
+# 10. Outside a git checkout -> could not run.
 run_in "$BARE"
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
 

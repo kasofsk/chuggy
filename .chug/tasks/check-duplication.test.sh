@@ -46,15 +46,22 @@ stub_repo() { # <jscpd exit> <jscpd stdout>
 }
 
 # The console reporter's real shape: a summary line, a coloured table whose
-# header carries the escape the old parse tripped over, a per-format row and a
-# Total row, then the verdict. The box-drawing characters are written as pipes
-# — the gate reads the digits, never the frame.
-colored_report() { # <files-analyzed>
+# header carries the escape the old parse tripped over, a per-format row per
+# language and a Total row summing them, then the verdict. The box-drawing
+# characters are written as pipes — the gate reads the digits, never the frame.
+#
+# EVERY ROW CARRIES A DIFFERENT NUMBER, and that is what makes the assertion
+# about the Total row an assertion about the Total row. With one number
+# repeated down the column, a parse that landed on the first format row would
+# satisfy the case and report a fraction of the corpus on the real tree — the
+# same defect this gate was fixed for, one row up.
+colored_report() { # <bash files> <typescript files> — Total is their sum
 	cat <<REPORT
 ${esc}[90mNo duplicates found.${esc}[39m
 ${esc}[90m|${esc}[39m${esc}[31m Format     ${esc}[39m${esc}[90m|${esc}[39m${esc}[31m Files analyzed ${esc}[39m${esc}[90m|${esc}[39m${esc}[31m Total lines ${esc}[39m${esc}[90m|${esc}[39m
 ${esc}[90m|${esc}[39m bash       ${esc}[90m|${esc}[39m $1              ${esc}[90m|${esc}[39m 4175        ${esc}[90m|${esc}[39m
-${esc}[90m|${esc}[39m ${esc}[1mTotal:${esc}[22m     ${esc}[90m|${esc}[39m $1              ${esc}[90m|${esc}[39m 4175        ${esc}[90m|${esc}[39m
+${esc}[90m|${esc}[39m typescript ${esc}[90m|${esc}[39m $2              ${esc}[90m|${esc}[39m 27743       ${esc}[90m|${esc}[39m
+${esc}[90m|${esc}[39m ${esc}[1mTotal:${esc}[22m     ${esc}[90m|${esc}[39m $(( $1 + $2 ))              ${esc}[90m|${esc}[39m 31918       ${esc}[90m|${esc}[39m
 ${esc}[90mFound 0 clones.${esc}[39m
 REPORT
 }
@@ -70,7 +77,7 @@ run_in_repo() {
 #    The second assertion is the one the old scrape fails: it read the colour
 #    escape that follows the table header and printed the escape's digits, so a
 #    fixture without the colour codes would let it stay green.
-stub_repo 0 "$(colored_report 7)"
+stub_repo 0 "$(colored_report 3 4)"
 run_in_repo
 check "no clones exits 0" 0 "$RC" "no clones"
 check "the file count is read from the Total row" 0 "$RC" "no clones (7 files)"
@@ -98,7 +105,7 @@ check "a silent success exits 2, not 0" 2 "$RC" "produced no verdict"
 # 5. A report that analyzed nothing is a could-not-run. An `ignorePattern` that
 #    has narrowed the corpus to nothing says "no clones" perfectly truthfully
 #    and means nothing by it — which is the one reading this gate must refuse.
-stub_repo 0 "$(colored_report 0)"
+stub_repo 0 "$(colored_report 0 0)"
 run_in_repo
 check "a report over no files exits 2, not 0" 2 "$RC" "analyzed no files"
 

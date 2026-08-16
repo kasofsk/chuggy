@@ -16,12 +16,16 @@
 # one. A suite that names its gate and then asserts nothing about it still
 # passes, and so does one that names it in a comment; what this rules out is
 # the empty stub, which is the shape a suite reaches for when it is written to
-# satisfy this gate rather than to test something. Whether a suite EXERCISES
-# its gate is not a question a grep can answer, and the answer this tree gives
-# is `.chug/tasks/review-change.md` — a fresh reviewer, reading the diff.
-# Anything heavier here (counting cases, requiring an assertion per exit code)
-# would be a gate arguing about test design, which is how a gate acquires
-# exemptions and then stops being run.
+# satisfy this gate rather than to test something. It also passes the other
+# way: a suite that reaches its subject through a variable — the shared harness
+# here is sourced by a path built from `$0`, and a suite could drive its gate
+# the same way — satisfies the check by mentioning the name in its header and
+# nothing else. The check is a floor under the empty file, not a claim about
+# what runs. Whether a suite EXERCISES its gate is not a question a grep can
+# answer, and the answer this tree gives is `.chug/tasks/review-change.md` — a
+# fresh reviewer, reading the diff. Anything heavier here (counting cases,
+# requiring an assertion per exit code) would be a gate arguing about test
+# design, which is how a gate acquires exemptions and then stops being run.
 #
 # It also asserts the discovery glob matched something. A glob that matches
 # nothing is the failure mode this whole file exists to prevent, so it must not
