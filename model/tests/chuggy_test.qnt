@@ -392,7 +392,7 @@ module chuggy_test {
     dGateOpen7.rec.label == "wrapup-started",
     dGateOpen7.rec.transitions == [{ ticket: 1, from: PWrapUp, to: PWrapUpHolding }],
     dGateOpen7.rec.effects == ["OpenGate"],
-    dGateOpen7.rec.landing == WONone,
+    dGateOpen7.rec.attempt == WONone,
     cGated7.tickets.get(1).gasLeft == c7.tickets.get(1).gasLeft,
     cGated7.tickets.get(1).wrapUpLeft == c7.tickets.get(1).wrapUpLeft,
     mB(cGated7) < mB(c7),
@@ -417,7 +417,7 @@ module chuggy_test {
     DB::decideDequeue(c7, 1, false).post.tickets.get(1).phase == PDone,
     DB::decideDequeue(c7, 1, false).rec.label == "ticket-done",
     DB::decideDequeue(c7, 1, false).rec.effects == ["Complete"],
-    DB::decideDequeue(c7, 1, false).rec.landing
+    DB::decideDequeue(c7, 1, false).rec.attempt
       == WOAttempt({ project: 1, invalidated: false }),
     DB::decideDequeue(c7, 1, false).post.tickets.get(1).completions == 1
   })
@@ -1236,32 +1236,32 @@ module chuggy_test {
   run landingAttributionStampsOwnProjectTest = assert(and {
     // Success, quiet: the fast-path off the queue — attributed, effects
     // untouched.
-    DB::decideWrapUpResolve(onProject2(cQueueB), 1, WOk, false).rec.landing
+    DB::decideWrapUpResolve(onProject2(cQueueB), 1, WOk, false).rec.attempt
       == WOAttempt({ project: 2, invalidated: false }),
     DB::decideWrapUpResolve(onProject2(cQueueB), 1, WOk, false).rec.effects
       == ["Complete"],
     // Success under a MOVED branch is drawable and honestly attributed:
     // the move makes failure POSSIBLE, never certain — and its clean
     // landing is the GATED promotion (R3).
-    DB::decideWrapUpResolve(onProject2(cGateB), 1, WOk, true).rec.landing
+    DB::decideWrapUpResolve(onProject2(cGateB), 1, WOk, true).rec.attempt
       == WOAttempt({ project: 2, invalidated: true }),
     DB::decideWrapUpResolve(onProject2(cGateB), 1, WOk, true).rec.effects
       == ["Complete"],
     // Failure: the wrap-up rework carries the project AND the cause.
     DB::decideWrapUpResolve(onProject2(cGateB), 1, WFailed, true).rec.label
       == "rework-started wrapup_failure",
-    DB::decideWrapUpResolve(onProject2(cGateB), 1, WFailed, true).rec.landing
+    DB::decideWrapUpResolve(onProject2(cGateB), 1, WFailed, true).rec.attempt
       == WOAttempt({ project: 2, invalidated: true }),
     // Both landing walls carry it too — the attempt that PARKED the
     // ticket is attributable like the one that reworked it.
     DB::decideWrapUpResolve(onProject2(cGateWall), 1, WFailed, true).rec.label
       == "ticket-escalated wrapup_budget_exhausted",
-    DB::decideWrapUpResolve(onProject2(cGateWall), 1, WFailed, true).rec.landing
+    DB::decideWrapUpResolve(onProject2(cGateWall), 1, WFailed, true).rec.attempt
       == WOAttempt({ project: 2, invalidated: true }),
-    DB::decideWrapUpResolve(onProject2(cGateGasWall), 1, WFailed, true).rec.landing
+    DB::decideWrapUpResolve(onProject2(cGateGasWall), 1, WFailed, true).rec.attempt
       == WOAttempt({ project: 2, invalidated: true }),
     // DeadlineOnly's landing gas wall attributes the same way.
-    DD::decideWrapUpResolve(cGateDWall, 1, WFailed, true).rec.landing
+    DD::decideWrapUpResolve(cGateDWall, 1, WFailed, true).rec.attempt
       == WOAttempt({ project: 1, invalidated: true })
   })
 
@@ -1273,20 +1273,20 @@ module chuggy_test {
   /// attempt resolves later, under a choice not yet made), and the
   /// absorbed complete-duplicate (no attempt resolves, nothing is emitted).
   run nonLandingStepsCarryNoAttributionTest = assert(and {
-    dArr1.rec.landing == WONone,
-    dRelease.rec.landing == WONone,
-    dDispatch.rec.landing == WONone,
-    dWork1.rec.landing == WONone,
-    dWorkReduce.rec.landing == WONone,
-    dAdvance.rec.landing == WONone,
-    dEvalReduce.rec.landing == WONone,
-    dCascade.rec.landing == WONone,
-    dWorkFail.rec.landing == WONone,
-    dEvalGasWall.rec.landing == WONone,
+    dArr1.rec.attempt == WONone,
+    dRelease.rec.attempt == WONone,
+    dDispatch.rec.attempt == WONone,
+    dWork1.rec.attempt == WONone,
+    dWorkReduce.rec.attempt == WONone,
+    dAdvance.rec.attempt == WONone,
+    dEvalReduce.rec.attempt == WONone,
+    dCascade.rec.attempt == WONone,
+    dWorkFail.rec.attempt == WONone,
+    dEvalGasWall.rec.attempt == WONone,
     // The gate OPEN resolves no attempt: the moved
     // choice it encoded surfaces on the RESOLUTION's attribution.
-    dGateOpen7.rec.landing == WONone,
-    DB::decideCompleteDuplicate(c8, 1).rec.landing == WONone
+    dGateOpen7.rec.attempt == WONone,
+    DB::decideCompleteDuplicate(c8, 1).rec.attempt == WONone
   })
 
   /// PROJECT-BLINDNESS, machine-checked (the measure.qnt multi-project header
