@@ -11,6 +11,7 @@
  * field rather than setting one.
  */
 
+import { assertNever } from "./assertNever.ts";
 import type { ProjectId } from "./ids.ts";
 
 /** How a ticket finishes: externally during work, or by taking a lease on a resource. */
@@ -40,6 +41,18 @@ export const wNone: WrapUp = { wrapUp: "WNone" };
 /** A ticket that needs a lease on `resource` before its wrap-up may run. */
 export function wExclusive(resource: number): WrapUp {
   return { wrapUp: "WExclusive", resource };
+}
+
+/** Structural equality on a wrap-up kind, which membership in the authorable set is stated over. */
+export function wrapUpEquals(left: WrapUp, right: WrapUp): boolean {
+  switch (left.wrapUp) {
+    case "WNone":
+      return right.wrapUp === "WNone";
+    case "WExclusive":
+      return right.wrapUp === "WExclusive" && right.resource === left.resource;
+    default:
+      return assertNever(left);
+  }
 }
 
 export const aNone: ArtifactMark = { artifact: "ANone" };

@@ -119,6 +119,39 @@ export function nextTaskId(recordLength: number, liveCount: number): TaskId {
   return asTaskId(firstTaskId + recordLength + liveCount);
 }
 
+/** Structural equality on a task: its identity, what it was for, and how it settled. */
+export function taskEquals(left: Task, right: Task): boolean {
+  return (
+    left.id === right.id &&
+    taskEqualsKind(left.kind, right.kind) &&
+    taskEqualsState(left.state, right.state)
+  );
+}
+
+/** An eval task matches only at the same stage, which is what keeps history from re-labelling itself. */
+function taskEqualsKind(left: TaskKind, right: TaskKind): boolean {
+  switch (left.kind) {
+    case "TKWork":
+      return right.kind === "TKWork";
+    case "TKEval":
+      return right.kind === "TKEval" && right.stage === left.stage;
+    default:
+      return assertNever(left);
+  }
+}
+
+/** A resolved task matches only on the same outcome; running matches running. */
+function taskEqualsState(left: TaskState, right: TaskState): boolean {
+  switch (left.state) {
+    case "TSRunning":
+      return right.state === "TSRunning";
+    case "TSResolved":
+      return right.state === "TSResolved" && right.outcome === left.outcome;
+    default:
+      return assertNever(left);
+  }
+}
+
 /**
  * Retire a live set into the retained record, in id order. A task still
  * running at retirement is force-closed as cancelled, which only a revoke
