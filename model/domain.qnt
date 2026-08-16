@@ -259,6 +259,16 @@ module chuggy_domain {
   /// refusal durable). Deps are NOT constrained by repo: the DAG is
   /// orchestrator-level and dependencies may cross repos — the dep gate
   /// downstream (depsDoneIn) reads Done-ness, never location.
+  ///
+  /// The arrival carries the ticket's WRAP-UP CHOICE last — whether
+  /// completion needs a lease, and on which resource. Callers guarantee
+  /// wrapUp_ ∈ wrapUpChoices (the `arrive` action draws from exactly that
+  /// set), so a lease on a resource outside the universe is refused at
+  /// authoring time like an out-of-universe target (wrapUpWellFormed makes
+  /// the refusal durable). It is the draw that decides whether the ticket
+  /// ever reaches a wrap-up phase at all: WNone completes on its passing
+  /// evaluation and takes no lease (noLeaseWithoutAKind). Immutable after
+  /// arrival, like deps, the program and the repo.
   pure def decideArrive(
       c: Core, deps_: Set[int], prog: List[Stage], repo_: int,
       wrapUp_: WrapUp): Decision =
@@ -1085,7 +1095,11 @@ module chuggy_domain {
   /// PR: the author also picks the ticket's TARGET REPO from the bounded
   /// universe — the third authored draw, refused structurally the same
   /// way (repos is the rule) — and deps stay UNCONSTRAINED by it: the
-  /// author may depend across repos (decideArrive's doc). AUTHORING
+  /// author may depend across repos (decideArrive's doc). The FOURTH and
+  /// last draw is the WRAP-UP CHOICE, from wrapUpChoices: the same
+  /// refusal shape once more, and the one that decides whether this
+  /// ticket ever reaches a wrap-up phase — a WNone arrival completes on
+  /// its passing evaluation and takes no lease. AUTHORING
   /// set in the measure: climbs by the fresh Draft's whole ticketMeasure,
   /// bounded by N_TICKETS.
   action arrive = all {
@@ -1458,6 +1472,21 @@ module chuggy_domain {
   /// `repos`, and are never rewritten.
   val reposWellFormed: bool = liveTickets.forall(j =>
     repos.contains(tickets.get(j).repo))
+
+  /// Every live ticket's authored wrap-up choice is inside the bounded
+  /// universe — the arrival-refusal claim made durable (the
+  /// reposWellFormed shape): wrap-up choices enter only through
+  /// decideArrive, whose callers draw from `wrapUpChoices`, and are never
+  /// rewritten (the field is written once, in freshTicket).
+  ///
+  /// What it catches is the resource inside WExclusive(r). leaseExclusive
+  /// counts holders per member of `repos`, so a lease on a resource
+  /// OUTSIDE that universe is serialized against nothing and counted by
+  /// no one: two tickets could hold it at once and the depth-1 claim would
+  /// stay green. The refusal is what makes leaseExclusive's quantifier
+  /// cover every lease that exists.
+  val wrapUpWellFormed: bool = liveTickets.forall(j =>
+    wrapUpChoices.contains(tickets.get(j).wrapUp))
 
   /// The two absorbing terminals never transition OUT. Checked against the
   /// observed step record: no transition ever leaves PDone or PRevoked.
@@ -1916,6 +1945,7 @@ module chuggy_domain {
     noLeaseWithoutAKind,
     artifactWellFormed,
     reposWellFormed,
+    wrapUpWellFormed,
     terminalsAbsorbing,
     deskConsistent,
     wrapUpWallNamed,
