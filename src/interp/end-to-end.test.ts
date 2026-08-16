@@ -1,9 +1,8 @@
 /**
  * THE WALK: a ticket driven from arrival to completion through the real actor,
- * the
- * real journal store, the real interpreter and the stubbed world — with the
- * duplicates and the stale deliveries an at-least-once fabric is entitled to
- * send, and a crash in the middle.
+ * the real journal store, the real interpreter and the stubbed world — with
+ * the duplicates and the stale deliveries an at-least-once fabric is entitled
+ * to send, and a crash in the middle.
  *
  * WHAT MAKES IT AN END-TO-END WALK RATHER THAN A LONG UNIT TEST. Nothing here
  * is a double except the world. The decisions are `execCmd`'s, the enablement
@@ -15,13 +14,12 @@
  * ports, and that a crash anywhere in that chain costs the world nothing.
  *
  * BOTH WRAP-UP KINDS ARE WALKED, because they are two different routes to a
- * completion. A
- * `WExclusive` ticket queues for its project's lease, holds it while a gate
- * runs, and lands on the gate's verdict; a `WNone` ticket's effect already
- * happened during work, so passing evaluation completes it outright and no
- * gate ever opens. A slice that walked only the first would ship an
- * interpreter whose `EnqueueWrapUp` and `OpenGate` arms are the only ones a
- * completion has ever been seen through.
+ * completion. A `WExclusive` ticket queues for its project's lease, holds it
+ * while a gate runs, and lands on the gate's verdict; a `WNone` ticket's
+ * effect already happened during work, so passing evaluation completes it
+ * outright and no gate ever opens. A slice that walked only the first would
+ * ship an interpreter whose `EnqueueWrapUp` and `OpenGate` arms are the only
+ * ones a completion has ever been seen through.
  *
  * THERE ARE TWO CRASHES, and they are different crashes.
  *

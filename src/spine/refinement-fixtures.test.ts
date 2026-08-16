@@ -90,9 +90,11 @@ export const evalReduce: Cmd = { tag: "JEvalReduce", ticket: 1 };
 /**
  * The valid-artifact dequeue: the wrap-up resolves in this same step, no gate.
  *
- * "Quiet land" is the model's own name for this route — the witness run
- * `quietLandDeterministicTest` and the invariant `quietProjectLandsCleanly`
- * both spell it — so the name here is the model's rather than this file's.
+ * "Quiet land" is the model's own name for this route, so the name here is
+ * the model's rather than this file's: `quietLandDeterministicTest` is the
+ * witness run that spells it, pinning the environment's choice quiet and the
+ * wrap-up succeeding. `quietProjectLandsCleanly` is the same claim as a state
+ * theorem and spells it differently, which is why the run is the citation.
  */
 export const quietLand: Cmd = { tag: "JDequeue", ticket: 1, moved: false };
 /** The moved dequeue: into the gate, which a resolution then promotes. */

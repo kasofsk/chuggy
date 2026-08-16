@@ -719,9 +719,9 @@ test("stageAdvanceNever is violated on the stage-advance trace, and no other wit
   // needs a landed ticket AND the re-delivery drawn on it before the run ends,
   // and while the budgeted root's walks do land one, none of them goes on to
   // draw the duplicate — `walk.test.ts`'s `settle` note argues the same shape
-  // for the same arm. With this the two deterministic traces and the sampled walks
-  // together fire all eight arms of `stepDescends` — the roster PLAN.md's
-  // coverage obligation names.
+  // for the same arm. With this the two deterministic traces and the sampled
+  // walks together fire all eight arms of `stepDescends` — the roster
+  // PLAN.md's coverage obligation names.
   assert.ok(
     stageAdvance.coverage.arms.has("complete-duplicate"),
     "the complete-duplicate exemption arm did not fire on the absorbed duplicate",

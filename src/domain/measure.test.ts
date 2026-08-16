@@ -743,7 +743,7 @@ test("the accounts of a Budgeted ticket escape their radix under DeadlineOnly bo
 test("happyPathMeasureDescendsTest: every step of the happy path descends", () => {
   // THE WALK IS THE DECIDERS' OWN, one solo Core stepped through the model's
   // chain: release, dispatch, both work completions, the work reduce, both
-  // eval completions, the eval reduce, and the quiet land. What this file
+  // eval completions, the eval reduce, and the quiet wrap-up. What this file
   // adds is the measure at each state; what the state IS belongs to the
   // decider that produced it (issue #13).
   const cA = draft(cfgBudgeted);
