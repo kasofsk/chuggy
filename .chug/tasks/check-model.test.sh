@@ -178,22 +178,43 @@ for empty in \
 		"no ${empty%%:*} modules declared in ${empty#*:}"
 done
 
-# 9b. A DECLARATION THE PATTERN CANNOT READ IS A RESIDUE, NOT AN ABSENCE. The
-#     `module NAME {` shape the scan matches is one of several valid Quint
-#     spellings, and the original attack reproduces verbatim with the brace
-#     moved to the next line: the module typechecks, fails under `quint test`,
-#     and is invisible to a scan that reads the brace. The count of
-#     declarations in the file against the count the pattern took is what makes
-#     the difference visible, and it covers every other spelling and a narrowed
-#     character class along with it.
-model_repo 0.32.0 0
-printf 'module chuggy_witness_hidden_test\n{\n}\n' \
-	>> "$R/model/tests/chuggy_witness_test.qnt"
-git -C "$R" add -A
-run_in_repo STUB_FAIL=chuggy_witness_hidden_test
-check "a declaration the scan cannot read exits 2, not 0" 2 "$RC" \
-	"scan did not"
-check "the unmatched module is named" 2 "$RC" "chuggy_witness_hidden_test"
+# 9b. A DECLARATION THE PATTERN CANNOT READ IS A DISCREPANCY, NOT AN ABSENCE.
+#     `module NAME {` is one spelling among several that Quint accepts, that
+#     typecheck, and that `quint test --main=` finds and runs — so a module
+#     spelled any other way carries a real obligation while being invisible to
+#     the scan. The gate answers by counting the lines that OPEN a declaration
+#     against the number of names its pattern took.
+#
+#     THE SPELLINGS ARE DRIVEN INDIVIDUALLY, and the reason is the mistake the
+#     first version of this audit made: it compared the pattern against a
+#     second, slightly wider NAME pattern, which shared the first one's column
+#     anchor and its same-line-name assumption and therefore agreed with it
+#     about every spelling neither could read. Three spellings walked through
+#     both scans together. A case per spelling is what says the audit is not
+#     reading names any more — the last of them especially, because there is no
+#     name on the line at all for a name scan to find.
+hidden_spelling() { # <label> <declaration line(s)> <evidence in the refusal>
+	model_repo 0.32.0 0
+	printf '%b\n}\n' "$2" >> "$R/model/tests/chuggy_witness_test.qnt"
+	git -C "$R" add -A
+	run_in_repo STUB_FAIL=chuggy_witness_hidden_test
+	check "a declaration $1 exits 2, not 0" 2 "$RC" "module here is one nothing"
+	check "and the refusal shows the declaration $1" 2 "$RC" "$3"
+}
+hidden_spelling "with its brace on the next line" \
+	'module chuggy_witness_hidden_test\n{' chuggy_witness_hidden_test
+hidden_spelling "indented by spaces" \
+	'  module chuggy_witness_hidden_test {' chuggy_witness_hidden_test
+hidden_spelling "indented by a tab" \
+	'\tmodule chuggy_witness_hidden_test {' chuggy_witness_hidden_test
+# The last one asserts the COUNT rather than the name, because there is no name
+# on the declaration's own line for the refusal to quote — the reader gets the
+# discrepancy and a line number and goes and looks. That is the limit of a
+# check that reads the keyword instead of the name, and it is also the proof
+# that it does: no name scan reaches this module at all, and the gate refuses
+# anyway.
+hidden_spelling "with its name on the next line" \
+	'module\nchuggy_witness_hidden_test {' "opens 4 module declaration(s)"
 
 # 9c. A suite file that is not there at all. The cases above all have the file
 #     and empty it; this is the branch where discovery has nothing to open, and

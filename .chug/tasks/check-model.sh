@@ -24,16 +24,24 @@
 # modules would.
 #
 # AND A NAME PATTERN IS ITSELF A LIST, so it is checked against the file rather
-# than trusted. `sed` reading `module NAME {` sees only one spelling of a
-# declaration: put the brace on the next line, or two spaces before the name,
-# and the module vanishes from the scan while remaining valid Quint that
-# typechecks and fails under `quint test` — the original attack again, wearing
-# different whitespace. So discovery counts the declarations in the file and
-# compares that against what its pattern matched, and any residue is a refusal
-# naming the modules it could not account for. That closes every spelling at
-# once, a mistyped module name, and a pattern narrowed until it drops half the
-# suite; it also means a module in one of these files that is deliberately not
-# a suite is a question for the author, because this gate will not guess which.
+# than trusted. `sed` reading `module NAME {` sees one spelling of a
+# declaration: indent the line, put the brace on the next one, or the name
+# itself on the next one, and the module vanishes from the scan while remaining
+# valid Quint that typechecks and that `quint test` finds and runs — the
+# original attack again, wearing different whitespace.
+#
+# WHAT THE AUDIT COUNTS IS THE KEYWORD, NOT THE NAME, and that distinction is
+# the whole of it. A second name pattern — even a slightly wider one — shares
+# the assumptions of the first, so it agrees with it about every spelling it
+# cannot read and reports no discrepancy at all: that is what the first version
+# of this audit did, and three spellings walked through both scans together.
+# Counting the lines that OPEN a declaration asks a question the name pattern
+# cannot influence, because it does not read a name. The count of openers
+# against the count of names taken is the check, and any difference is a
+# refusal. That closes a declaration the name scan cannot read, a mistyped
+# module name, and a pattern narrowed until it drops half the suite; it also
+# means a module in one of these files that is deliberately not a suite is a
+# question for the author, because this gate will not guess which.
 #
 # The typecheck pass is NOT a backstop for any of that. It walks the tracked
 # `*.qnt` glob and asks only whether each file typechecks, which a module no
@@ -55,6 +63,14 @@
 #   - It reads the suite files named below and no others. A module declared in
 #     some further file is not discovered, not run, and not counted in any
 #     residue — adding a suite file means adding it here.
+#   - The opener count reads lines that BEGIN with the keyword, so a
+#     declaration that does not begin a line of its own is invisible to it and
+#     to the name scan alike, and the two agree about it in silence. Nothing
+#     here fixes that; a parser would, and this gate is not one.
+#   - It errs towards refusing. A line opening with the keyword inside a string
+#     or a block comment inflates the count and the gate stops — which is a
+#     could-not-run, so it is the safe direction to be wrong in, but it is a
+#     way this gate can be wrong.
 #   - The tally guard proves a run happened, not that the run was the right
 #     one. A module whose every run is trivially true still reports a passing
 #     tally, and that is the reviewer's, not this gate's.
@@ -131,15 +147,20 @@ discover() { # <label> <file> <name-pattern>
 		errored=$((errored + 1))
 		return 1
 	fi
-	# Every declaration in the file, by name and whatever the spacing, against
-	# what the name pattern above actually took.
-	_declared="$(sed -n 's/^module[ 	][ 	]*\([A-Za-z_0-9][A-Za-z_0-9]*\).*/\1/p' "$2")"
-	_residue="$(printf '%s\n' "$_declared" | grep -vxF "$MODULES" || true)"
-	if [ -n "$_residue" ]; then
-		echo "check-model: LINTER ERROR — $2 declares module(s) the $1 scan did not"
-		echo "check-model:     match, so nothing here would run them:"
-		printf '        %s\n' $_residue
-		echo "check-model:     Either the name pattern is too narrow or the declaration"
+	# The audit: how many declarations the file OPENS, against how many names
+	# the pattern above took. It reads the keyword and never a name, which is
+	# what keeps it from inheriting the pattern's blind spots — see the header.
+	_openers="$(grep -cE '^[[:space:]]*module([[:space:]]|$|\{)' "$2" || true)"
+	_taken="$(printf '%s\n' "$MODULES" | grep -c . || true)"
+	if [ "$_openers" -ne "$_taken" ]; then
+		echo "check-model: LINTER ERROR — $2 opens $_openers module declaration(s)"
+		echo "check-model:     and the $1 scan took $_taken name(s), so at least one"
+		echo "check-model:     module here is one nothing in this gate would run."
+		echo "check-model:     The declarations, by line:"
+		grep -nE '^[[:space:]]*module([[:space:]]|$|\{)' "$2" | sed 's/^/        /'
+		echo "check-model:     The names taken:"
+		printf '        %s\n' $MODULES
+		echo "check-model:     Either the name pattern is too narrow or a declaration"
 		echo "check-model:     is spelled in a way the scan cannot read. Not guessing."
 		errored=$((errored + 1))
 		return 1
