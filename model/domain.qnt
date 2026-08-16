@@ -259,6 +259,16 @@ module chuggy_domain {
   /// refusal durable). Deps are NOT constrained by repo: the DAG is
   /// orchestrator-level and dependencies may cross repos — the dep gate
   /// downstream (depsDoneIn) reads Done-ness, never location.
+  ///
+  /// The arrival carries the ticket's WRAP-UP CHOICE last — whether
+  /// completion needs a lease, and on which resource. Callers guarantee
+  /// wrapUp_ ∈ wrapUpChoices (the `arrive` action draws from exactly that
+  /// set), so a lease on a resource outside the universe is refused at
+  /// authoring time like an out-of-universe target (wrapUpWellFormed makes
+  /// the refusal durable). It is the draw that decides whether the ticket
+  /// ever reaches a wrap-up phase at all: WNone completes on its passing
+  /// evaluation and takes no lease (noLeaseWithoutAKind). Immutable after
+  /// arrival, like deps, the program and the repo.
   pure def decideArrive(
       c: Core, deps_: Set[int], prog: List[Stage], repo_: int,
       wrapUp_: WrapUp): Decision =
@@ -270,7 +280,7 @@ module chuggy_domain {
   /// Draft -> Pending: the ticket enters the released pipeline. There is
   /// one release target rather than a Ready/Blocked pair, because the split
   /// is DERIVED (standing rule 3) — it re-derives from deps the moment the
-  /// phase lands. Descends (rank 5 -> 4). Charges nothing: the Working
+  /// phase lands. Descends (rank 6 -> 5). Charges nothing: the Working
   /// boundary still meters actual work entry (standing rule 2).
   ///
   /// Release leaves from Draft alone. Pinning a Draft's content before
@@ -735,7 +745,8 @@ module chuggy_domain {
   /// candidate; for a registry push, someone else claiming the version.
   /// The domain models neither cause — only that the kind admits one.
   ///
-  /// Chosen PER ATTEMPT, never stored (the envActive standing rule). The
+  /// Chosen PER ATTEMPT, never stored (the named-nondet discipline,
+  /// stated at measure.qnt's landing-boundary observation). The
   /// `wrapUpStart`/`wrapUpResolve` actions draw from exactly these sets and
   /// the witness drivers reference them as guards, so wrapUpIsolation is
   /// what makes the refusal durable on every reachable step.
@@ -750,7 +761,7 @@ module chuggy_domain {
   /// (the gate prices only its failures, R5). Callers guarantee
   /// wrapUpStartableIn — the depth-1 refusal. PWrapUpHolding encodes the moved
   /// choice: wrapUpResolve needs no stored flag to know the attempt's cause
-  /// vocabulary (the envActive standing rule, one more time).
+  /// vocabulary (the named-nondet discipline, one more time).
   pure def decideWrapUpStart(c: Core, j: int): Decision =
     move(c, j, PWrapUpHolding, "wrapup-started", ["OpenGate"])
 
@@ -1085,7 +1096,11 @@ module chuggy_domain {
   /// PR: the author also picks the ticket's TARGET REPO from the bounded
   /// universe — the third authored draw, refused structurally the same
   /// way (repos is the rule) — and deps stay UNCONSTRAINED by it: the
-  /// author may depend across repos (decideArrive's doc). AUTHORING
+  /// author may depend across repos (decideArrive's doc). The FOURTH and
+  /// last draw is the WRAP-UP CHOICE, from wrapUpChoices: the same
+  /// refusal shape once more, and the one that decides whether this
+  /// ticket ever reaches a wrap-up phase — a WNone arrival completes on
+  /// its passing evaluation and takes no lease. AUTHORING
   /// set in the measure: climbs by the fresh Draft's whole ticketMeasure,
   /// bounded by N_TICKETS.
   action arrive = all {
@@ -1098,7 +1113,7 @@ module chuggy_domain {
   }
 
   /// Author releases a Draft into the pipeline; Ready/Blocked re-derive.
-  /// Descends: rank 5 -> 4. Release is authoring's only phase-level act
+  /// Descends: rank 6 -> 5. Release is authoring's only phase-level act
   /// after arrival.
   action release = all {
     draftTickets.size() > 0,
@@ -1190,7 +1205,7 @@ module chuggy_domain {
 
   /// THE DEQUEUE: a ticket whose repo's gate is
   /// free leaves the queue, and the environment draws — per attempt, fresh,
-  /// no stored flag (the envActive standing rule) — whether that repo's
+  /// no stored flag (the named-nondet discipline) — whether that repo's
   /// default branch MOVED under the candidate since evaluation:
   ///   - quiet: the skip fast-path — the gate never opens; the one outcome
   ///     wrapUpOutcomes(false) permits (WOk, the direct squash)
@@ -1339,7 +1354,7 @@ module chuggy_domain {
   ///     eval side, so it is legitimately WONone there — pinned in
   ///     tests/chuggy_test.qnt, nonLandingStepsCarryNoAttributionTest;
   ///     complete-duplicate absorbs with nothing emitted and is not an
-  ///     attempt; gate-opened OPENS an attempt but resolves none — the
+  ///     attempt; wrapup-started OPENS an attempt but resolves none — the
   ///     resolution's attribution carries the choice the open encoded.)
   ///   - the PATH iff (R3/R4): a MOVED attempt resolves
   ///     out of the GATE (transitions[0].from == PWrapUpHolding — the slot the
@@ -1392,7 +1407,7 @@ module chuggy_domain {
   /// QUIET REPO LANDS CLEANLY (the gate's other half), stated in its
   /// STRONGEST CHECKABLE FORM — and honestly about what that form is.
   /// "Quiet" is a PER-ATTEMPT environment choice, not stored repo state
-  /// (the envActive standing rule forbids the flag), so "repo R is quiet"
+  /// (the named-nondet discipline forbids the flag), so "repo R is quiet"
   /// is not a predicate over any reachable state and the naive reading
   /// ("a quiet repo's tickets never gate-fail") cannot be a state
   /// theorem AS QUANTIFIED OVER REPOS. What IS a state theorem — checked
@@ -1458,6 +1473,21 @@ module chuggy_domain {
   /// `repos`, and are never rewritten.
   val reposWellFormed: bool = liveTickets.forall(j =>
     repos.contains(tickets.get(j).repo))
+
+  /// Every live ticket's authored wrap-up choice is inside the bounded
+  /// universe — the arrival-refusal claim made durable (the
+  /// reposWellFormed shape): wrap-up choices enter only through
+  /// decideArrive, whose callers draw from `wrapUpChoices`, and are never
+  /// rewritten (the field is written once, in freshTicket).
+  ///
+  /// What it catches is the resource inside WExclusive(r). leaseExclusive
+  /// counts holders per member of `repos`, so a lease on a resource
+  /// OUTSIDE that universe is serialized against nothing and counted by
+  /// no one: two tickets could hold it at once and the depth-1 claim would
+  /// stay green. The refusal is what makes leaseExclusive's quantifier
+  /// cover every lease that exists.
+  val wrapUpWellFormed: bool = liveTickets.forall(j =>
+    wrapUpChoices.contains(tickets.get(j).wrapUp))
 
   /// The two absorbing terminals never transition OUT. Checked against the
   /// observed step record: no transition ever leaves PDone or PRevoked.
@@ -1916,6 +1946,7 @@ module chuggy_domain {
     noLeaseWithoutAKind,
     artifactWellFormed,
     reposWellFormed,
+    wrapUpWellFormed,
     terminalsAbsorbing,
     deskConsistent,
     wrapUpWallNamed,

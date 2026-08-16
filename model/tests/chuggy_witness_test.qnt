@@ -295,7 +295,7 @@ module chuggy_witness_free_test {
         allInvariants
       })
       // THE WITNESSED STEP: the free pre-work resume climbs back to
-      // Pending (rank 0 -> 4) charging nothing.
+      // Pending (rank 0 -> 5) charging nothing.
       .then(doOpRetry(1))
       .expect(and {
         lastStep.label == "operator-retry",
