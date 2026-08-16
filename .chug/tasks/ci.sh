@@ -85,6 +85,12 @@ if [ -x ./.chug/tasks/check-gates.sh ]; then
 	run_gate "check-gates" ./.chug/tasks/check-gates.sh
 fi
 
+# Last of the pure-shell gates because its corpus is the newest and smallest,
+# and every gate above reads more of the tree than it does.
+if [ -x ./.chug/tasks/check-comments.sh ]; then
+	run_gate "check-comments" ./.chug/tasks/check-comments.sh
+fi
+
 # --- Shell suites ------------------------------------------------------------
 # The gates' own tests. Discovery is a glob over tracked files, so adding a
 # suite is enough — there is no list to update. A glob matching nothing is a
@@ -163,6 +169,20 @@ else
 			failed=$((failed + 1))
 		fi
 	fi
+fi
+
+# --- The TypeScript toolchain ------------------------------------------------
+# After every pure-shell gate, because these are the first two that need
+# node_modules and a docs-only change should have had its verdict long before
+# reaching them. Boundaries first: it reads the module graph and nothing else,
+# where check-source runs a whole toolchain over the same files.
+
+if [ -x ./.chug/tasks/check-boundaries.sh ]; then
+	run_gate "check-boundaries" ./.chug/tasks/check-boundaries.sh
+fi
+
+if [ -x ./.chug/tasks/check-source.sh ]; then
+	run_gate "check-source" ./.chug/tasks/check-source.sh
 fi
 
 # --- The model ---------------------------------------------------------------

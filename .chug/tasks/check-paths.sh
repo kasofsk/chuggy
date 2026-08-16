@@ -46,18 +46,39 @@
 # neither is nor ever was ours. A `package.json` dependency spelled with a
 # scope is skipped by that last one and needs no rule of its own.
 #
-# THERE IS NO ESCAPE, and that is the whole of the policy. A line this gate
-# rejects is fixed by editing the sentence, because every rejection so far has
-# had a rewrite that reads better than the original: a directory is named
-# without its trailing slash, a rule about files is stated as the glob it
-# actually matches, and both are skipped above without needing an exemption.
-# A suppression marker was tried and removed — it went unused, and its only
-# effect was to teach readers a convention that prevented nothing.
+# THERE IS ONE EXEMPTION, IT COVERS ONE DIRECTORY, AND IT SUPPRESSES NOTHING.
+# Everywhere else a line this gate rejects is fixed by editing the sentence,
+# because every rejection so far has had a rewrite that reads better than the
+# original: a directory is named without its trailing slash, a rule about files
+# is stated as the glob it actually matches, and both are skipped above without
+# needing an exemption.
 #
-# What this forbids is naming a *specific* deleted file exactly, since neither
-# skip above applies to one. If that sentence ever genuinely needs writing,
-# re-add the escape with that sentence as its motivating case rather than
-# reaching for `--no-verify`, which bypasses every gate at once.
+# The exception is `docs/design/*.md`, on a line carrying one of CLAUDE.md's
+# claim markers — `<!-- intent -->`, `<!-- runtime -->`, `<!-- absent -->`. The
+# path is still resolved and still reported; it prints as `intent` rather than
+# `ERROR` and is counted separately in the tally. Nothing is hidden, so the
+# marker cannot rot into the unused suppression marker this gate tried once and
+# removed: a design doc naming a directory nobody ever built says so on every
+# run, in a line and a count a reviewer reads without asking for it.
+#
+# WHY IT WAS NEEDED, since the policy above was previously absolute. A design
+# doc is the one place in this tree that writes in the future tense, which is
+# why `check-figures.sh` already exempts exactly this directory for exactly
+# this reason — a doc arguing a decision has to be able to name what it is
+# proposing. That was invisible here for as long as the proposal was about
+# directories the gate could not see: it judges a token only when the token's
+# first segment is, or once was, tracked, so a plan for `src/` was outside its
+# scope while `src/` did not exist. The commit that created `src/domain/` put
+# every other row of that plan's target table inside it at once, and turned a
+# document arguing for a shape into a document making false claims. The
+# alternatives were worse in the ways this repo already rejects: a plan that
+# may only name what already exists is not a plan, and a directory tracked with
+# a placeholder so a path resolves is a tree lying to its own gate.
+#
+# What is still forbidden everywhere, this directory included, is an UNMARKED
+# claim — and naming a *specific* deleted file exactly, since neither skip
+# above applies to one. Reach for a marker rather than `--no-verify`, which
+# bypasses every gate at once.
 #
 # Usage:
 #   .chug/tasks/check-paths.sh [<file>...]
@@ -126,7 +147,10 @@ function junk(t,   i, c) {
 	c = substr(t, 1, 1)
 	return (c == "~" || c == "-")
 }
-FNR == 1 { comments_only = (FILENAME ~ /\.test\.sh$/) }
+FNR == 1 {
+	comments_only = (FILENAME ~ /\.test\.sh$/)
+	design = (FILENAME ~ /(^|\/)docs\/design\/[^\/]+\.md$/)
+}
 {
 	# A line with no slash cannot carry a path, and most lines have none. The
 	# test is one index() against a match loop whose dynamic pattern is
@@ -149,7 +173,12 @@ FNR == 1 { comments_only = (FILENAME ~ /\.test\.sh$/) }
 		}
 		if (index(t, "/") == 0) continue
 		if (junk(t)) continue
-		print FILENAME ":" FNR ":" t
+		# A design doc writes in the future tense, and a marked line says so.
+		# The verdict still runs; only its severity changes, and the tally
+		# below prints how many there are so an intent nobody acted on is
+		# visible rather than suppressed.
+		marked = (design && $0 ~ /<!-- *(intent|runtime|absent) *-->/)
+		print FILENAME ":" FNR ":" t ":" (marked ? "MARKED" : "PLAIN")
 	}
 }
 ' "$@" > "$work/candidates"
@@ -190,6 +219,7 @@ FILENAME == tf {
 {
 	loc = $1 ":" $2
 	tok = $3
+	marked = ($4 == "MARKED")
 	first = tok
 	sub(/\/.*$/, "", first)
 	bare = tok
@@ -200,12 +230,13 @@ FILENAME == tf {
 		next
 	}
 	if (tok in path || bare in path || (bare "/") in dir) { print "OK"; next }
-	print "MISS\t" loc "\t" tok "\t" first
+	print (marked ? "INTENT" : "MISS") "\t" loc "\t" tok "\t" first
 }
 ' "$work/deleted" "$work/tracked" "$work/candidates" > "$work/verdicts"
 
 findings=0
 claims=0
+intents=0
 while IFS="$(printf '\t')" read -r kind loc tok seg; do
 	case "$kind" in
 	OK)
@@ -226,8 +257,15 @@ while IFS="$(printf '\t')" read -r kind loc tok seg; do
 		echo "ERROR $loc: $tok — under \`$seg\`, which this tree deleted"
 		findings=$((findings + 1))
 		;;
+	INTENT)
+		claims=$((claims + 1))
+		intents=$((intents + 1))
+		echo "intent $loc: $tok — designed, not built"
+		;;
 	esac
 done < "$work/verdicts"
 
-echo "check-paths: $findings finding(s) across $claims path claim(s) in $(printf '%s' "$files" | grep -c .) file(s)"
+printf 'check-paths: %s finding(s)' "$findings"
+[ "$intents" -eq 0 ] || printf ', %s marked as intent' "$intents"
+printf ' across %s path claim(s) in %s file(s)\n' "$claims" "$(printf '%s' "$files" | grep -c .)"
 [ "$findings" -eq 0 ]

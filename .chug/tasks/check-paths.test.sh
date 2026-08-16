@@ -141,4 +141,49 @@ fresh_repo "$R"
 run_in "$R"
 check "no tracked files exits 2, not 0" 2 "$RC" "LINTER ERROR"
 
+
+
+# --- The design-doc exemption ------------------------------------------------
+#
+# It covers one directory, needs a marker, and suppresses nothing. Each half
+# gets a case, because an exemption with no negative case is how a narrow one
+# becomes a wide one.
+
+fresh_repo "$R"
+mkdir -p "$R/docs/design" "$R/src"
+printf '%s\n' 'x' > "$R/src/real.ts"
+printf '%s\n' 'The layer lives at src/actor/ <!-- intent -->' > "$R/docs/design/004-plan.md"
+git -C "$R" add -A
+run_in "$R"
+check "a marked design-doc claim is not a finding" 0 "$RC" "1 marked as intent"
+
+run_in "$R"
+check "a marked claim is still reported, never hidden" 0 "$RC" "designed, not built"
+
+fresh_repo "$R"
+mkdir -p "$R/docs/design" "$R/src"
+printf '%s\n' 'x' > "$R/src/real.ts"
+printf '%s\n' 'The layer lives at src/actor/' > "$R/docs/design/004-plan.md"
+git -C "$R" add -A
+run_in "$R"
+check "an unmarked design-doc claim is still a finding" 1 "$RC" "no such path"
+
+fresh_repo "$R"
+mkdir -p "$R/docs" "$R/src"
+printf '%s\n' 'x' > "$R/src/real.ts"
+printf '%s\n' 'The layer lives at src/actor/ <!-- intent -->' > "$R/docs/notes.md"
+git -C "$R" add -A
+run_in "$R"
+check "the marker works in no other directory" 1 "$RC" "no such path"
+
+fresh_repo "$R"
+mkdir -p "$R/docs/design" "$R/src"
+printf '%s\n' 'x' > "$R/src/real.ts"
+printf '%s\n' 'The gate is at .chug/tasks/nope.sh <!-- intent -->' > "$R/docs/design/004-plan.md"
+mkdir -p "$R/.chug/tasks"
+printf '%s\n' 'x' > "$R/.chug/tasks/real.sh"
+git -C "$R" add -A
+run_in "$R"
+check "a marked claim about any tracked top level is exempt too" 0 "$RC" "1 marked as intent"
+
 done_ "check-paths.test.sh"

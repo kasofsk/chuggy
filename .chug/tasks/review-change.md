@@ -47,13 +47,27 @@ with a different numbering.** `model/` numbers them and cites them by number
 at the definitions they govern — see the next section. Calling both "rule 3" in
 one review is how a finding stops being answerable.
 
-**The numbering starts at 7, and that is not a gap.** House rules 1 through 6 are the
-mechanical ones — comment quantity, the domain layer reaching no I/O and no
-ambient capability, exhaustive switching, no floating promises, a function
-length cap, and formatter defaults. Each arrives as a gate or a lint config
-with the toolchain that can enforce it, and is then stated in the thing that
-enforces it and never here. A rule with two homes has two versions of itself
-inside a year, which is the whole reason this repo has no standards document.
+**The numbering starts at 7, and that is not a gap.** House rules 1 through 6
+are the mechanical ones, and each is now stated in the thing that enforces it
+and nowhere else. A rule with two homes has two versions of itself inside a
+year, which is the whole reason this repo has no standards document — so what
+follows is a routing table, not a copy. Read each rule at its home; where this
+table and a home disagree, the home is right.
+
+| # | The rule, in short | Stated and enforced at |
+|---|---|---|
+| 1 | comment quantity | `.chug/tasks/check-comments.sh` |
+| 2 | the domain reaches no I/O and no ambient capability | `.chug/tasks/check-boundaries.sh` and `eslint.config.js` — the graph half and the ambient half, and each header says why one is not enough |
+| 3 | exhaustive switching | `eslint.config.js` |
+| 4 | no floating promises | `eslint.config.js` |
+| 5 | the function length cap | `eslint.config.js` |
+| 6 | the formatter's defaults, never argued | `.prettierrc.json`, whose emptiness is the rule, and `.prettierignore` for what counts as code |
+
+Rules 2 through 6 are proved to bite in `.chug/tasks/check-source.test.sh` and
+`.chug/tasks/check-boundaries.test.sh`, against fixture trees carrying the
+violation each one names. A configuration cannot demonstrate anything about
+itself: a rule misspelled, scoped to a path that does not exist, or dropped by
+a preset reads exactly like a rule that is working.
 
 7. **Deciders return effects; they never perform them.** A decider is a pure
    function of an observed view and an event, returning transitions and a list
