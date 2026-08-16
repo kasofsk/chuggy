@@ -85,12 +85,24 @@
  *      a one-hop launder: an adapter may import a tool, and the tool may then
  *      compute an import of anything. Forbidding the `adapters -> tools` edge
  *      would have closed that one consumer and left the next to be remembered,
- *      which is this file's own argument against rosters. With the ban
- *      tree-wide, every remaining edge is one this graph HAS — so
+ *      which is this file's own argument against rosters. Nor is a roster of
+ *      DIRECTORIES any better: a file at the `src/` root matched no glob and
+ *      dynamic-imported clean. The ban is now spelled as `src/**` minus the
+ *      pure core, which has no directory left to forget.
+ *
+ *      AND `import()` IS ONE OF THREE WAYS. `createRequire(import.meta.url)`
+ *      and a `Worker` given a `URL` fetch a module by name too, and both are an
+ *      ordinary import of an ordinary node builtin in exactly the layers this
+ *      file ALLOWS node builtins — measured live from an adapter into
+ *      `src/spine/actor.ts`. `eslint.purity.config.js` restricts `node:module`
+ *      and `node:worker_threads` there for the reason that fits in one line: an
+ *      adapter needs a medium, not a module loader.
+ *
+ *      WITH ALL THREE CLOSED, every remaining edge is one this graph HAS — so
  *      `adapters-decide-nothing`'s transitivity catches the static route
  *      through a tool, which it always promised and could not deliver while an
- *      invisible edge existed. The literal form stays this file's, and the ban
- *      makes the distinction moot anyway.
+ *      invisible edge existed. The literal `import()` stays this file's, and
+ *      the ban makes the distinction moot anyway.
  *   3. `adapters-decide-nothing` MOVING OUT FROM UNDER ITSELF. Alone among the
  *      rules here it is pinned to two PATHS rather than to a boundary, because
  *      `src/adapters/` is deliberately not reachability-bounded — so it names

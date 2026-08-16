@@ -581,24 +581,7 @@ function runMachine(
       coverage.observeCmd(before.core, move.cmd);
     }
     observe(coverage, cfg, state, step, findings, where, taken);
-    // GUARDED FOR `observe`'s REASON, and it is the same hazard: `freeClimbNever`
-    // reads `currentMeasure`, so `measure.ts`'s assertions are reachable from a
-    // witness too. A witness that cannot be evaluated is a finding here rather
-    // than an exception thrown past the run.
-    try {
-      for (const witness of witnessNames) {
-        if (
-          !witnesses[witness](cfg, state) &&
-          !firings.some((f) => f.witness === witness)
-        ) {
-          firings.push({ witness, step, label: state.lastStep.label });
-        }
-      }
-    } catch (error) {
-      report(
-        `step ${String(step)} after ${taken}: a witness threw: ${messageOf(error)}`,
-      );
-    }
+    witnessesAt(cfg, state, step, taken, firings, report);
   }
   return {
     where,
@@ -609,6 +592,46 @@ function runMachine(
     findings,
     final: state,
   };
+}
+
+/**
+ * The three witnesses at the state a step just produced, recorded once each.
+ *
+ * GUARDED FOR `observe`'s REASON, and it is the same hazard: `freeClimbNever`
+ * reads `currentMeasure`, so `measure.ts`'s assertions are reachable from a
+ * witness too. A witness that cannot be evaluated is a finding here rather than
+ * an exception thrown past the run — which would escape the module scope the
+ * runs are built at and take every test in the file down with it, carrying no
+ * seed, no step and no command.
+ *
+ * IT IS A FUNCTION RATHER THAN A BLOCK IN THE LOOP so that `witnessesOnce` can
+ * hand it a state no decider would produce, which is the only way its catch can
+ * be made to fire: every state a run reaches is a shipped decider's own output,
+ * so a correct measure is defined over all of them. That is `observeOnce`'s
+ * argument, on the region beside it.
+ */
+function witnessesAt(
+  cfg: Config,
+  state: MachineState,
+  step: number,
+  taken: string,
+  firings: WitnessFiring[],
+  report: (detail: string) => void,
+): void {
+  try {
+    for (const witness of witnessNames) {
+      if (
+        !witnesses[witness](cfg, state) &&
+        !firings.some((f) => f.witness === witness)
+      ) {
+        firings.push({ witness, step, label: state.lastStep.label });
+      }
+    }
+  } catch (error) {
+    report(
+      `step ${String(step)} after ${taken}: a witness threw: ${messageOf(error)}`,
+    );
+  }
 }
 
 /**
@@ -873,6 +896,46 @@ export function observeOnce(
   const findings: string[] = [];
   observe(new CoverageBuilder(), cfg, state, 0, findings, "probe");
   return findings;
+}
+
+/**
+ * ONE MOVE, TAKEN — `observeOnce` for the region on the other side of the step.
+ *
+ * `takeStep`'s two reports are alarms a run cannot raise for the same reason
+ * the observer's cannot: the enumeration filters every candidate through
+ * `cmdEnabled` and `stepWith` asks it again, so a correct tree never disagrees
+ * with itself and never reaches a decider that throws. Both arms of the refusal
+ * are here too, because they say OPPOSITE things — a drawn command refused is
+ * `cmdEnabled` contradicting itself about one state, a scripted one refused is
+ * a script naming a step the machine does not offer — and one message for both
+ * would be a lie on one of them.
+ */
+export function stepOnce(
+  cfg: Config,
+  state: MachineState,
+  move: Move,
+): readonly string[] {
+  const findings: string[] = [];
+  takeStep(cfg, state, move, 1, (detail) => {
+    findings.push(`probe: ${detail}`);
+  });
+  return findings;
+}
+
+/** One state's witnesses — `observeOnce` for the region after it. */
+export function witnessesOnce(
+  cfg: Config,
+  state: MachineState,
+): {
+  readonly firings: readonly WitnessFiring[];
+  readonly findings: readonly string[];
+} {
+  const firings: WitnessFiring[] = [];
+  const findings: string[] = [];
+  witnessesAt(cfg, state, 0, "init", firings, (detail) => {
+    findings.push(`probe: ${detail}`);
+  });
+  return { firings, findings };
 }
 
 // === Reporting =============================================================

@@ -793,10 +793,14 @@ export function readModelRosters(): ModelRosters {
  * READ FROM THE MARKER COMMENT, on `exemptionRoster`'s argument and for its
  * reason. The model states them as a numbered series — each `val` is introduced
  * by an `ANTI-VACUITY WITNESS` header saying so — and the code has nothing that
- * distinguishes them from any other `val … : bool`: `revokedNeverCompletes` is
- * a bundle conjunct with the same spelling, so a name pattern would roster the
- * wrong thing and call it agreement. The marker is the model's own declaration
- * of what these are.
+ * distinguishes them from any other `val … : bool`. A NAME PATTERN FAILS IN
+ * BOTH DIRECTIONS, which is the reason worth having: `revokedNeverCompletes` is
+ * a bundle conjunct spelled exactly like a witness, so a `*Never` read rosters
+ * something that is not one; and a witness the model names WITHOUT that suffix
+ * — nothing requires it, the suffix is how the three happen to read — is missed
+ * by every pattern of any shape, which is the silent half and the one this
+ * roster exists for. The marker is the model's own declaration of what these
+ * are, and it is the only thing in the file that is.
  *
  * A MARKER WITH NO `val` UNDER IT IS A COULD-NOT-RUN naming the marker, and so
  * is a file with no marker at all — the `readModuleConsts` rule, again: "no

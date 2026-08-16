@@ -373,6 +373,13 @@ function staleConsts(manifest: Manifest): readonly string[] {
  * `src/spine/randomized.test.ts`, on `readAntiVacuityWitnesses` and on the
  * `rosterDisagrees` below. Same reader, same rule, a different suite.
  *
+ * ONE THING IS LOST IN THE MOVE AND IT IS WORTH THE SENTENCE. This walk keeps
+ * a finding and a could-not-run apart all the way out to an exit code — 1 and
+ * 2, and 2 is not a pass. A suite has one failing exit, so over there "the
+ * rosters disagree" and "the reader can no longer see the model" both arrive as
+ * exit 1. The thrown message still says which, and a `CorpusError` is still
+ * what the parse-honesty cases assert; what cannot say it is the EXIT.
+ *
  * THE ONE ENTRY THAT NEEDS SAYING OUT LOUD is
  * `operator-retry-unreachable`. The model emits it and `reachableStepLabels`
  * deliberately excludes it, so the comparison adds it back by name — from

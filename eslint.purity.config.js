@@ -70,23 +70,25 @@
  * array in, so the rules have one definition and the whole-tree lint enforces
  * them too.
  *
- * IT ALSO CARRIES ONE RULE THAT IS NOT ABOUT PURITY AT ALL, and the misfit is
- * worth naming at the top rather than leaving to be found halfway down. The
- * dynamic-import ban is a claim about the MODULE GRAPH being complete, not
- * about ambient capability — and it is a claim about the TREE, not about a
- * layer: a graph with one unresolvable edge in it cannot answer a reachability
- * question anywhere. So a second block below applies that one rule, and
- * nothing else, to every TypeScript file under `src/` outside the pure core;
- * see `OUTSIDE_THE_PURE_CORE` for the argument, including why `src/tools/` is
- * in it despite being bounded by nothing. The alternative was a third config
- * file holding one selector, which would put the two spellings of the same ban
- * in two places.
+ * IT ALSO CARRIES TWO RULES THAT ARE NOT ABOUT PURITY AT ALL, and the misfit is
+ * worth naming at the top rather than leaving to be found halfway down. THE
+ * MODULE GRAPH IS COMPLETE ONLY IF NOTHING IN THIS TREE FETCHES A MODULE AT RUN
+ * TIME — a claim about the tree rather than about a layer, since a graph with
+ * one unresolvable edge in it cannot answer a reachability question anywhere —
+ * and there are three ways to break it: a computed `import()`, `createRequire`,
+ * and a worker given a URL. Each was measured live from `src/adapters/` into
+ * `src/spine/actor.ts`, the single writer, with depcruise, tsc and the whole
+ * lint green. So a second block below applies a dynamic-import ban and a
+ * module-loader import ban, and nothing else, to every TypeScript file under
+ * `src/` that the pure block does not already cover. The alternative was a
+ * third config file holding two rules, which would put the two spellings of the
+ * same claim in two places.
  *
  * WHAT IT CATCHES: any lexical reference to a rostered ambient global, any
  * `Math.random()` or `Date.now()` property access, `eval`, `new Function`, a
  * dynamic `import()`, and `import.meta` — across every file extension the
- * `PURE_FILES` glob below admits; and a dynamic `import()` alone everywhere
- * else under `src/`.
+ * `PURE_FILES` glob below admits; and a dynamic `import()` or an import of a
+ * module loader everywhere else under `src/`.
  *
  * WHAT IT CANNOT CATCH, stated rather than hoped:
  *
@@ -128,57 +130,25 @@ export const PURE_FILES = [
 ];
 
 /**
- * EVERY TypeScript FILE UNDER `src/` OUTSIDE THE PURE CORE. Together with
- * `PURE_FILES` this is the whole of `src/`, and the union is the point: the
- * MODULE GRAPH IS COMPLETE ONLY IF NO MODULE IN THIS TREE IS LOADED AT RUN
- * TIME, and that is a claim about the tree rather than about a layer.
+ * THE MODULE LOADERS. A dynamic `import()` is not the only way to fetch a module
+ * at run time, and the other two arrive as ordinary node builtins in exactly
+ * the layers that are allowed node builtins.
  *
- * THEY GET ONE RULE, AND IT IS NOT A PURITY CLAIM. These directories are
- * supposed to hold capabilities — a port arrives as an argument, an adapter
- * opens a medium, `src/tools/` spawns quint and reads the corpus — so the
- * ambient roster above would be wrong here. What none of them may have is an
- * import the graph cannot see: `const P = "../spine/actor.ts"; import(P)`
- * passes dependency-cruiser, tsc, the whole lint and every gate, and it is a
- * live edge from an adapter into the single writer. Dependency-cruiser resolves
- * a LITERAL dynamic import and walks it; it cannot resolve a computed one, so
- * the rule that closes it is the one the pure core already carries: ban the
- * expression.
+ * `createRequire(import.meta.url)("../spine/actor.ts")` executed against this
+ * tree returns `commit` and every other export of the single writer;
+ * `new Worker(new URL(…))` is the same class with a thread around it. Both
+ * passed depcruise, tsc and the whole lint (measured), because both are a legal
+ * import of a legal builtin followed by a call.
  *
- * IT COVERS `src/tools/` AND THAT IS THE HALF THAT NEEDED ARGUING, because this
- * list once stopped at the three layers `.dependency-cruiser.mjs` bounds by
- * direction and `src/tools/` is deliberately bounded by nothing. That left ONE
- * HOP: an adapter may import a tool — no rule forbids the edge — and the tool
- * may then compute an import of anything, which rebuilds the adapter-to-single-
- * writer route the ban was added to close, with depcruise, eslint and tsc all
- * green over it (measured on a two-file probe). Two fixes were available: forbid
- * the `adapters -> tools` edge in the graph, or close the launder wherever it
- * can be reached from. THE SECOND IS THE PREDICATE-SHAPED ONE and this file's
- * neighbour argues for exactly that shape: a forbidden edge has to be re-added
- * for every future consumer, and the edit nobody makes is the hole. With the
- * ban tree-wide, every remaining edge is one the graph can see — so
- * `adapters-decide-nothing` catches the static route through a tool
- * TRANSITIVELY, which it already promised to do and could not.
- *
- * WHY BAN RATHER THAN REQUIRE A LITERAL. A literal `import("…")` is already
- * caught by the graph, so permitting it and banning the rest would be a rule
- * with an exception, and the exception is the part a reader has to remember.
- * Nothing in this tree loads a module at run time at all; the day something
- * must, that is a change to this list with an argument attached, which is the
- * point of having it.
- *
- * THE TWO GLOBS MUST STAY DISJOINT, and it is a mechanical trap rather than a
- * taste: ESLint flat config resolves a rule by NAME, last match wins, so a
- * block matching a pure-core file and setting `no-restricted-syntax` would
- * REPLACE the pure block's — silently dropping the `import.meta` ban there.
- * The pure core gets its dynamic-import ban from its own block; this one covers
- * everything else.
+ * AN ADAPTER NEEDS A MEDIUM, NOT A MODULE LOADER, and that sentence is the
+ * whole rule. `src/adapters/` is deliberately not reachability-bounded — a
+ * medium is what an adapter is for — and `src/tools/` spawns quint and reads
+ * the corpus; `fs`, `child_process`, `os` and `path` are all legitimate in
+ * both. What neither has any use for is a way to fetch an arbitrary module by
+ * name, which is not a medium at all: it is the module graph's own job, done
+ * where the graph cannot see it.
  */
-export const OUTSIDE_THE_PURE_CORE = [
-  "src/effects/**/*.{ts,mts,cts}",
-  "src/interp/**/*.{ts,mts,cts}",
-  "src/adapters/**/*.{ts,mts,cts}",
-  "src/tools/**/*.{ts,mts,cts}",
-];
+const MODULE_LOADERS = ["node:module", "module", "node:worker_threads"];
 
 const NO_DYNAMIC_IMPORT =
   "the module graph must be statically checkable: a computed dynamic import is an edge `.dependency-cruiser.mjs` cannot see";
@@ -310,17 +280,68 @@ export default [
     },
   },
   {
-    // The one control everything outside the pure core shares with it, and the
-    // only one: see `OUTSIDE_THE_PURE_CORE` for why it is not the ambient
-    // roster, and why the two globs may not overlap.
-    files: OUTSIDE_THE_PURE_CORE,
+    /**
+     * EVERY TypeScript FILE UNDER `src/` THAT THE PURE BLOCK DOES NOT ALREADY
+     * COVER, spelled as the COMPLEMENT rather than as a list of directories.
+     *
+     * THE SPELLING IS THE RULE. This was a roster of the layers
+     * `.dependency-cruiser.mjs` bounds by direction, and a roster of
+     * directories is a roster somebody has to extend: a file at the `src/` root
+     * or in a new top-level directory matched neither glob and dynamic-imported
+     * with every stage of `.chug/tasks/check-ts.sh` clean (measured on two
+     * probes). `src/**` minus the pure core has no such gap — a directory
+     * nobody has invented yet is inside it — which is `.dependency-cruiser.mjs`'s
+     * own argument for reachability over a list of forbidden targets, applied
+     * to a glob.
+     *
+     * WHAT IT ENFORCES, EXACTLY: no file it matches may write a dynamic
+     * `import()`. That is narrower than "no module in this tree is loaded at
+     * run time", which is a property of the TREE and needs this rule, the pure
+     * block's own copy of it, and the module-loader restriction below —
+     * `createRequire` and `Worker` fetch modules without an `import()` anywhere.
+     * The message says what this rule stops and cites the property rather than
+     * claiming it.
+     *
+     * WHY BAN RATHER THAN REQUIRE A LITERAL. A literal `import("…")` is already
+     * resolved and walked by the graph, so permitting it and banning the rest
+     * would be a rule with an exception, and the exception is the part a reader
+     * has to remember. Nothing in this tree loads a module at run time at all;
+     * the day something must, that is a change here with an argument attached,
+     * which is the point of having it.
+     *
+     * `ignores` RATHER THAN A DISJOINT GLOB, and this is a mechanical trap
+     * rather than a taste. ESLint flat config resolves a rule by NAME with the
+     * last match winning, so a block matching a pure-core file and setting
+     * `no-restricted-syntax` would REPLACE the pure block's — silently dropping
+     * the `import.meta` ban there. That hazard was real while the two globs
+     * were maintained disjoint BY HAND; excluding `PURE_FILES` by name makes
+     * the disjointness structural, so the trap is no longer a thing to
+     * remember. The pure core keeps its own copy of this ban in its own block.
+     */
+    files: ["src/**/*.{ts,mts,cts}"],
+    ignores: PURE_FILES,
     languageOptions: { parser: tseslint.parser },
     rules: {
       "no-restricted-syntax": [
         "error",
         {
           selector: "ImportExpression",
-          message: `no module in this tree is loaded at run time: ${NO_DYNAMIC_IMPORT}`,
+          message: `this file may not use a dynamic import: ${NO_DYNAMIC_IMPORT}`,
+        },
+      ],
+      // THE OTHER TWO WAYS TO FETCH A MODULE, closed in the same block because
+      // they are the same claim: see `MODULE_LOADERS`. It is `no-restricted-
+      // imports` rather than a graph rule because what is wrong is HOLDING the
+      // loader, not reaching the module it would load — the graph cannot see
+      // the second, and by the time it could there would be nothing left to
+      // forbid.
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: MODULE_LOADERS.map((name) => ({
+            name,
+            message: `an adapter needs a medium, not a module loader: \`${name}\` fetches a module by name, which is the module graph's job done where the graph cannot see it`,
+          })),
         },
       ],
     },

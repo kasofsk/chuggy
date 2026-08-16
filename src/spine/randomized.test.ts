@@ -79,9 +79,11 @@ import {
   showCmd,
   subsetsOf,
   taskIds,
+  stepOnce,
   walkOnce,
   walkSeeds,
   witnessNames,
+  witnessesOnce,
   type Available,
   type RunResult,
 } from "./walk.test.ts";
@@ -1050,19 +1052,32 @@ test("a witness roster the parse cannot see is could-not-run, never an empty ros
 // === The walker's own alarms ===============================================
 //
 // EVERY PROBE ABOVE ASSERTS THAT A RUN FOUND NOTHING, so nothing above would
-// notice a run that could not report. `a run refuses an illegal command` covers
-// the refusal path. What remains is the guarded regions of `observe` — the
-// unrostered label, the arm attribution, the bundle — and, outside it,
-// `driveTrace`'s enumeration-completeness alarm.
+// notice a run that could not report. The regions that can report are these,
+// and the enumeration is meant to be exhaustive rather than representative:
+//
+//   - `observe`'s three guarded regions: the unrostered label, the exemption
+//     arm's attribution, the bundle and the roster that names its failure;
+//   - `takeStep`'s decider-threw catch, and its refusal — whose two arms say
+//     OPPOSITE things, so both are cased;
+//   - `witnessesAt`'s witness-threw catch;
+//   - `driveTrace`'s enumeration-completeness alarm, the one region outside a
+//     run's own step.
+//
+// The last three were unnamed here until round 3 and cased by nothing, which is
+// the shape this section exists against: two of them are guarded for exactly
+// `observe`'s reason, in their own words, and muting either left the whole gate
+// green.
 //
 // NONE OF THEM CAN FIRE FROM A CORRECT TREE, which is why each needs a case
 // built rather than a walk run. Every state a run reaches is a shipped
-// decider's own output, so a correct roster, a correct measure and a correct
-// bundle are true over all of them; and every command a script names is one a
-// correct enumeration offered. That is the replayer's situation one layer up,
-// and it has the same two answers: hand the OBSERVER a state no decider would
-// produce, and hand a RUN an enumeration that is deliberately short. One case
-// per region, because muting any of them leaves a walk green.
+// decider's own output, so a correct roster, a correct measure, a correct
+// bundle and a defined measure are true over all of them; `stepWith` re-asks
+// `cmdEnabled`, so no drawn command is refused and no decider is reached that
+// throws; and every command a script names is one a correct enumeration
+// offered. That is the replayer's situation one layer up, and it has the same
+// answers: hand the OBSERVER, the STEP or the WITNESSES a state no decider
+// would produce, and hand a RUN an enumeration that is deliberately short. One
+// case per region, because muting any of them leaves a walk green.
 
 test("the walker's unrostered-label alarm fires, and names the label it could not place", () => {
   // A LABEL THE MACHINE COULD ONLY EMIT BY GROWING ONE. `stepLabel` throws on
@@ -1148,6 +1163,101 @@ test("the walker's enumeration-completeness alarm fires, and names the command t
   // The control: the SAME script under the real enumeration says nothing, so
   // the finding is attributable to the withheld row and not to the script.
   assert.deepEqual(stageAdvance.findings, []);
+});
+
+test("the walker's decider-threw alarm fires, and carries what the decider said", () => {
+  // THE ALARM ON THE OTHER SIDE OF THE STEP, and the same shape as the three
+  // above: `stepWith` re-asks `cmdEnabled` before running a decider, so a
+  // correct tree never reaches a decider that throws and no walk can make this
+  // fire. Muted, the assertion escapes the run, escapes the module scope the
+  // runs are built at, and takes every test in this file down carrying no seed,
+  // no step and no command — which is the found-a-defect-and-threw-away-the-
+  // only-copy failure the walker's header names.
+  const spent: MachineState = {
+    ...initialState(configs.budgeted),
+    core: solo({ ...jDone, gasLeft: -1 }),
+  };
+  assert.deepEqual(
+    stepOnce(configs.budgeted, spent, {
+      kind: "cmd",
+      cmd: { tag: "JCompleteDuplicate", ticket: 1 },
+      from: "enumeration",
+    }),
+    [
+      "probe: step 1: JCompleteDuplicate ticket=1 threw ticketMeasure: gasLeft is a non-negative safe integer, got -1 — a command cmdEnabled admits and its decider refuses",
+    ],
+  );
+});
+
+test("the walker's refusal names WHICH side disagreed, and the two sides say opposite things", () => {
+  // THE DISCRIMINATION, taken rather than declined. A DRAWN command that
+  // `stepWith` refuses is `cmdEnabled` contradicting itself about one state —
+  // the model-conformance alarm this layer exists to raise. A SCRIPTED one is a
+  // script naming a step the machine does not offer, which is a defect in the
+  // script. One message for both would be a lie on one of them, and the case
+  // that covered this covered the scripted arm alone.
+  const empty = initialState(configs.budgeted);
+  const release: Cmd = { tag: "JRelease", ticket: 1 };
+  assert.deepEqual(
+    stepOnce(configs.budgeted, empty, {
+      kind: "cmd",
+      cmd: release,
+      from: "enumeration",
+    }),
+    [
+      "probe: step 1: JRelease ticket=1 was enumerated as enabled and then refused by stepWith — cmdEnabled disagreeing with itself about one state",
+    ],
+  );
+  assert.deepEqual(
+    stepOnce(configs.budgeted, empty, {
+      kind: "cmd",
+      cmd: release,
+      from: "script",
+    }),
+    [
+      "probe: step 1: JRelease ticket=1 is scripted here and cmdEnabled does not admit it",
+    ],
+  );
+});
+
+test("the walker's witness-threw alarm fires, and carries the assertion that stopped it", () => {
+  // THE REGION AFTER THE STEP, guarded for the observer's reason and unable to
+  // fire for it too: `freeClimbNever` reads `currentMeasure`, so every account
+  // assertion in `measure.ts` is one call from that line — and no state a run
+  // reaches can reach it, because every one of them is a decider's own output.
+  // The witness's own conjuncts are what put the measure in the path, so the
+  // state has to satisfy them before the account can go bad.
+  const climbing: MachineState = {
+    ...initialState(configs.budgeted),
+    core: solo({ ...jDone, gasLeft: -1 }),
+    lastStep: {
+      label: "operator-retry",
+      transitions: [{ ticket: 1, from: "PEscalated", to: "PWrapUp" }],
+      effects: ["EnqueueWrapUp"],
+      attempt: { tag: "WONone" },
+    },
+  };
+  assert.deepEqual(witnessesOnce(configs.budgeted, climbing), {
+    firings: [],
+    findings: [
+      "probe: step 0 after init: a witness threw: ticketMeasure: gasLeft is a non-negative safe integer, got -1",
+    ],
+  });
+
+  // THE CONTROL, and it is what makes the finding attributable to the account
+  // rather than to the probe: the same shape with an honest account records the
+  // firing instead, which is the witness doing its job.
+  const honest: MachineState = {
+    ...climbing,
+    core: solo({ ...jDone, gasLeft: 1 }),
+    prevMeasure: 0,
+  };
+  const fired = witnessesOnce(configs.budgeted, honest);
+  assert.deepEqual(fired.findings, []);
+  assert.deepEqual(
+    fired.firings.map((f) => [f.witness, f.label]),
+    [["freeClimbNever", "operator-retry"]],
+  );
 });
 
 test("the walker's observer is silent on a state the machine really reaches", () => {
