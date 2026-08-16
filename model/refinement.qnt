@@ -148,18 +148,18 @@
 ///      on decisions.
 ///   2. NO DOUBLE-SPENT BUDGET / NO DUPLICATE CYCLE ACROSS CRASHES
 ///      (noDoubleSpentBudget, noDuplicateCycle, journalCoversWorld;
-///      journalLandingsMatchLedger is the journal-side half): under
+///      journalCompletionsMatchLedger is the journal-side half): under
 ///      journal-then-effect, crash/recover at ANY seam never runs more
 ///      paid work in the world than the journal charged (per ticket:
 ///      distinct-decision spawn emissions <= journaled spawn decisions)
 ///      and never lands one ticket's diff twice (distinct-decision
-///      landing emissions <= 1). Effects between the journal position
+///      completion emissions <= 1). Effects between the journal position
 ///      and the applied cursor are re-emitted — at-least-once toward the
 ///      world — but re-emission carries the SAME decision seq and is
 ///      absorbed by identity; the JOURNAL never gains a duplicate
 ///      decision (seqs are dense and each entry re-checks as a fresh
 ///      legal step; the ledger's completions ghost, capped at 1 by the
-///      domain's completionExclusive, equals the journal's landing count).
+///      domain's completionExclusive, equals the journal's completion count).
 ///   3. RECOVERY COMPLETENESS (recoveryComplete): replay of the current
 ///      journal yields EXACTLY the domain state the actor holds — in
 ///      every reachable state, so every prefix of every run is covered
@@ -178,7 +178,7 @@
 ///      double-spend (the rework fan-out launches, the
 ///      charge is lost with the crash, the re-decided rework charges
 ///      once for two Jobs), and the duplicate cycle (the same candidate
-///      squash-merged twice, the journal showing one clean landing) —
+///      squash-merged twice, the journal showing one clean completion) —
 ///      each expected-violation step asserted alongside allInvariants,
 ///      because the domain machine CANNOT see the hazard: that blindness
 ///      is the argument that the refinement layer, not the domain, owns
@@ -196,7 +196,7 @@
 /// effect is idempotent", given its key). Inbound (world -> actor): completions
 /// and landing confirmations arrive at-least-once too, and the DOMAIN
 /// machine already absorbs them — duplicate task completions no-op by
-/// identity, duplicate landing deliveries no-op at the boundary
+/// identity, duplicate ticket-completion deliveries no-op at the boundary
 /// (decideTaskDone/decideCompleteDuplicate, proved since /) — so the
 /// actor journals the absorbing no-op decisions like any others and
 /// replay reproduces them. The composition: at-least-once OUT is
@@ -282,7 +282,7 @@ module chuggy_refinement {
   // ==========================================================================
   // One constructor namespace per module: the J prefix (Journal) marks
   // the decision-event constructors; the imported vocabulary already
-  // holds P/T/TK/TS/V/R/Rs/C/RW/Land/LO/B.
+  // holds P/T/TK/TS/V/R/Rs/C/RW/W/WO/A.
 
   /// THE DECISION EVENT: which decider, at which named picks — one
   /// constructor per domain action, payload exactly the action's nondet
@@ -300,7 +300,7 @@ module chuggy_refinement {
     | JEvalReduce(int)
     | JDequeue({ ticket: int, moved: bool })
     | JGateResolve({ ticket: int, out: WrapUpOutcome })
-    | JLandDuplicate(int)
+    | JCompleteDuplicate(int)
     | JRevalFail(int)
     | JOpRetry(int)
 
@@ -336,7 +336,7 @@ module chuggy_refinement {
     | JEvalReduce(j) => decideEvalStageReduce(c, j)
     | JDequeue(a) => decideDequeue(c, a.ticket, a.moved)
     | JGateResolve(a) => decideWrapUpResolve(c, a.ticket, a.out, true)
-    | JLandDuplicate(j) => decideCompleteDuplicate(c, j)
+    | JCompleteDuplicate(j) => decideCompleteDuplicate(c, j)
     | JRevalFail(j) => decideRevalFail(c, j)
     | JOpRetry(j) => decideOpRetry(c, j)
   }
@@ -370,7 +370,7 @@ module chuggy_refinement {
         holdingIn(c).contains(a.ticket),
         wrapUpOutcomes(true).contains(a.out)
       }
-    | JLandDuplicate(j) => doneIn(c).contains(j)
+    | JCompleteDuplicate(j) => doneIn(c).contains(j)
     | JRevalFail(j) => readiesIn(c).contains(j)
     | JOpRetry(j) => retryablesIn(c).contains(j)
   }
@@ -406,7 +406,7 @@ module chuggy_refinement {
   // theorems need is arithmetic over which DECISIONS reached it. A
   // "spawn" emission runs a paid task fan-out (the SpawnWorkTasks
   // effect — dispatch, both rework arms, the RWorking resume: every one
-  // rides a charged account per the domain's descent table); a "landing"
+  // rides a charged account per the domain's descent table); a "completion"
   // emission merges the ticket's diff (the ticket-done success step).
   // Attribution is transitions[0].ticket: every effect-bearing record's
   // head transition is the stepped ticket (domain.qnt move/completeTicket).
@@ -417,7 +417,7 @@ module chuggy_refinement {
     r.transitions.length() >= 1 and r.transitions[0].ticket == j
   pure def isSpawnFor(r: StepRecord, j: int): bool =
     hasEffect(r, "SpawnWorkTasks") and stepsTicket(r, j)
-  pure def isLandingFor(r: StepRecord, j: int): bool =
+  pure def isCompletionFor(r: StepRecord, j: int): bool =
     r.label == "ticket-done" and stepsTicket(r, j)
 
   /// Distinct-decision spawn emissions the world received for ticket j:
@@ -429,17 +429,17 @@ module chuggy_refinement {
     jl.indices().filter(i => we.contains(i + 1) and isSpawnFor(jl[i].rec, j)).size()
       + orph.indices().filter(i => isSpawnFor(orph[i], j)).size()
 
-  pure def worldLandingsOn(
+  pure def worldCompletionsOn(
       jl: List[Entry], we: Set[int], orph: List[StepRecord], j: int): int =
-    jl.indices().filter(i => we.contains(i + 1) and isLandingFor(jl[i].rec, j)).size()
-      + orph.indices().filter(i => isLandingFor(orph[i], j)).size()
+    jl.indices().filter(i => we.contains(i + 1) and isCompletionFor(jl[i].rec, j)).size()
+      + orph.indices().filter(i => isCompletionFor(orph[i], j)).size()
 
-  /// The journal-side counts: spawn/landing DECISIONS recorded (whether
+  /// The journal-side counts: spawn/completion DECISIONS recorded (whether
   /// emitted yet or not) — the book the world must never exceed.
   pure def journalSpawnsOn(jl: List[Entry], j: int): int =
     jl.indices().filter(i => isSpawnFor(jl[i].rec, j)).size()
-  pure def journalLandingsOn(jl: List[Entry], j: int): int =
-    jl.indices().filter(i => isLandingFor(jl[i].rec, j)).size()
+  pure def journalCompletionsOn(jl: List[Entry], j: int): int =
+    jl.indices().filter(i => isCompletionFor(jl[i].rec, j)).size()
 
   // ==========================================================================
   // === State ================================================================
@@ -453,9 +453,9 @@ module chuggy_refinement {
 
   // Per-ticket world/journal counts over the live vars (test-visible).
   def worldSpawns(j: int): int = worldSpawnsOn(journal, worldEffects, orphans, j)
-  def worldLandings(j: int): int = worldLandingsOn(journal, worldEffects, orphans, j)
+  def worldCompletions(j: int): int = worldCompletionsOn(journal, worldEffects, orphans, j)
   def journalSpawns(j: int): int = journalSpawnsOn(journal, j)
-  def journalLandings(j: int): int = journalLandingsOn(journal, j)
+  def journalCompletions(j: int): int = journalCompletionsOn(journal, j)
 
   // ==========================================================================
   // === Actions ==============================================================
@@ -619,10 +619,10 @@ module chuggy_refinement {
     nondet out = wrapUpOutcomes(true).oneOf()
     journalStep(JGateResolve({ ticket: j, out: out }))
   }
-  action actorLandDuplicate = all {
+  action actorCompleteDuplicate = all {
     doneTickets.size() > 0,
     nondet j = doneTickets.oneOf()
-    journalStep(JLandDuplicate(j))
+    journalStep(JCompleteDuplicate(j))
   }
   action actorRevalFail = all {
     readyTickets.size() > 0,
@@ -673,7 +673,7 @@ module chuggy_refinement {
   action rstep = any {
     actorArrive, actorRelease, actorRevoke, actorDispatch,
     actorTaskDone, actorWorkReduce, actorEvalReduce, actorGateEnter,
-    actorGateResolve, actorLandDuplicate, actorRevalFail, actorOpRetry,
+    actorGateResolve, actorCompleteDuplicate, actorRevalFail, actorOpRetry,
     emitNext, crashRecover
   }
 
@@ -730,20 +730,20 @@ module chuggy_refinement {
 
   /// THEOREM 2, cycle half — NO DUPLICATE CYCLE: the world lands a
   /// ticket's diff at most once, across crashes at any seam. (A group's
-  /// diff rides its lead's single landing emission — R2 — so per-lead
+  /// diff rides its lead's single completion emission — R2 — so per-lead
   /// counting covers the group.)
   val noDuplicateCycle: bool = liveTickets.forall(j =>
-    worldLandings(j) <= 1)
+    worldCompletions(j) <= 1)
 
   /// Theorem 2's journal half, stated as the ledger bridge: the
-  /// journal's landing count per ticket IS the domain's completions ghost —
+  /// journal's completion count per ticket IS the domain's completions ghost —
   /// which the domain's completionExclusive (checked live on the embedded
-  /// instance) caps at one. The journal cannot gain a duplicate landing
+  /// instance) caps at one. The journal cannot gain a duplicate completion
   /// decision without the ledger disagreeing. (State-wise a corollary of
   /// journalLegal + recoveryComplete — the same stated-corollary
   /// treatment as revokedNeverCompletes.)
-  val journalLandingsMatchLedger: bool = liveTickets.forall(j =>
-    journalLandings(j) == tickets.get(j).completions)
+  val journalCompletionsMatchLedger: bool = liveTickets.forall(j =>
+    journalCompletions(j) == tickets.get(j).completions)
 
   /// The discipline-INDEPENDENT core: holds under rstep AND rstepHazard
   /// (the hazard corrupts the world, never the journal or the replay).
@@ -751,7 +751,7 @@ module chuggy_refinement {
     journalLegal,
     recoveryComplete,
     executorSound,
-    journalLandingsMatchLedger
+    journalCompletionsMatchLedger
   }
 
   /// The full journal-then-effect gate: the core plus the three

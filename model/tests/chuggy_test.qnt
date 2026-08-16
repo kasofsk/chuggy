@@ -11,7 +11,7 @@
 ///     unchanged, and the CHURN-set transitions are pinned as the only
 ///     climbers;
 ///   - effect-exclusivity at the landing boundary on a happy path AND a
-///     duplicate-completion / duplicate-landing path;
+///     task-done-duplicate / complete-duplicate path;
 ///   - every escalation wall carries its name, on
 ///     both WrapUpPricing branches;
 ///   - both retry-metering branches.
@@ -22,7 +22,7 @@
 ///   - revoke from EVERY live phase, with the desk-only flat cases
 ///     pinned, and revocableIn false exactly on the absorbing terminals;
 ///   - the cascade end-to-end on a 3-ticket chain; unreleased deps block;
-///     revoked never lands; revoke/cascade spend NOTHING.
+///     revoked never completes; revoke/cascade spend NOTHING.
 ///
 ///  additions (task-records depth; gate: phase-outcome combinators
 /// pinned by the eval vocabulary
@@ -83,7 +83,7 @@
 ///     "ticket-escalated gas_exhausted" label from the EVAL side (the
 ///     attribution, not the label string, marks the landing boundary),
 ///     eval-passed (which merely enqueues), and the absorbed
-///     land-duplicate;
+///     complete-duplicate;
 ///   - REPO-BLINDNESS as a machine check, not just a comment theorem:
 ///     tickets identical but for `repo` have EQUAL ticketMeasure, phase
 ///     by phase, under both pricings (the measure.qnt derivation pinned);
@@ -255,8 +255,8 @@ module chuggy_test {
   // direct completion, one step off the queue (wrapUpOutcomes(false)'s one
   // element; the held-lease completion path is walked in the lease suite
   // below and in the witness gate module).
-  pure val dLand = DB::decideWrapUpResolve(c7, 1, WOk, false)
-  pure val c8 = dLand.post
+  pure val dComplete = DB::decideWrapUpResolve(c7, 1, WOk, false)
+  pure val c8 = dComplete.post
 
   /// Every decision on the happy path strictly descends the measure —
   /// dispatch (gas), task completions (task count), both phase reductions
@@ -283,8 +283,8 @@ module chuggy_test {
     dWorkReduce.rec.transitions == [{ ticket: 1, from: PWorking, to: PEvaluating }],
     dEvalReduce.rec.label == "eval-passed",
     dEvalReduce.rec.transitions == [{ ticket: 1, from: PEvaluating, to: PWrapUp }],
-    dLand.rec.label == "ticket-done",
-    dLand.rec.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }],
+    dComplete.rec.label == "ticket-done",
+    dComplete.rec.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }],
     // THE SPAWN EFFECTS, pinned here because nothing else pins them. The
     // citation-scoping removal took out the suite that used to, and a
     // spawn emitting no effect is a fan-out the world never hears about —
@@ -333,19 +333,19 @@ module chuggy_test {
   })
 
   /// EFFECT EXCLUSIVITY, happy path (effect-only):
-  /// exactly one landing effect, exactly at Done — the quiet fast-path's
+  /// exactly one completion effect, exactly at Done — the quiet fast-path's
   /// direct squash (the path rule: WOk is the QUIET effect).
   run effectExclusivityHappyPathTest = assert(and {
     c8.tickets.get(1).phase == PDone,
     c8.tickets.get(1).completions == 1,
-    dLand.rec.effects == ["Complete"]
+    dComplete.rec.effects == ["Complete"]
   })
 
   /// The held twin of c7's landing: the dequeue drew MOVED, the gate
   /// opened, and the resolution promotes by ADVANCING the default ref.
   pure val dGateOpen7 = DB::decideWrapUpStart(c7, 1)
   pure val cGated7 = dGateOpen7.post
-  pure val dLandGated = DB::decideWrapUpResolve(cGated7, 1, WOk, true)
+  pure val dCompleteGated = DB::decideWrapUpResolve(cGated7, 1, WOk, true)
 
   /// The two landing SUCCESS outcomes are distinct, named effects — the
   /// one conformance divergence, pinned from day one — and each comes
@@ -354,12 +354,12 @@ module chuggy_test {
   /// fast-path squash-merges directly. Same terminal, same exclusivity
   /// counter, different effect — determined by the path, not drawn.
   run landingOutcomesDistinctTest = assert(and {
-    dLandGated.rec.effects == ["Complete"],
-    dLandGated.rec.transitions == [{ ticket: 1, from: PWrapUpHolding, to: PDone }],
-    dLandGated.post.tickets.get(1).phase == PDone,
-    dLandGated.post.tickets.get(1).completions == 1,
-    dLand.rec.effects == ["Complete"],
-    dLand.rec.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }]
+    dCompleteGated.rec.effects == ["Complete"],
+    dCompleteGated.rec.transitions == [{ ticket: 1, from: PWrapUpHolding, to: PDone }],
+    dCompleteGated.post.tickets.get(1).phase == PDone,
+    dCompleteGated.post.tickets.get(1).completions == 1,
+    dComplete.rec.effects == ["Complete"],
+    dComplete.rec.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }]
   })
 
   /// The gate OPENS as its own recorded step (the dequeue's moved arm):
@@ -374,7 +374,7 @@ module chuggy_test {
     cGated7.tickets.get(1).gasLeft == c7.tickets.get(1).gasLeft,
     cGated7.tickets.get(1).wrapUpLeft == c7.tickets.get(1).wrapUpLeft,
     mB(cGated7) < mB(c7),
-    mB(dLandGated.post) < mB(cGated7)
+    mB(dCompleteGated.post) < mB(cGated7)
   })
 
   /// THE ROUTING DECIDER, both branches pinned (adversarial review,
@@ -431,10 +431,10 @@ module chuggy_test {
     mB(DB::decideTaskDone(c4, 1, 1, VFail).post) == mB(c4)
   })
 
-  /// EFFECT EXCLUSIVITY, duplicate-landing path: a re-delivered landing
+  /// EFFECT EXCLUSIVITY, complete-duplicate path: a re-delivered completion
   /// event for a Done ticket emits NOTHING — exactly-once is proved at the
   /// landing boundary and nowhere else.
-  run duplicateLandExclusiveTest = assert(and {
+  run completeDuplicateExclusiveTest = assert(and {
     DB::decideCompleteDuplicate(c8, 1).post == c8,
     DB::decideCompleteDuplicate(c8, 1).rec.label == "complete-duplicate",
     DB::decideCompleteDuplicate(c8, 1).rec.effects == [],
@@ -1053,10 +1053,10 @@ module chuggy_test {
     not(DB::revocableIn(revokeOne(jDraft).post, 1))               // Revoked
   })
 
-  /// REVOKED NEVER LANDS (the exclusivity extension): revoking a ticket
-  /// parked ON the landing strip emits no landing effect and leaves the
-  /// landing counter at zero — contrast with the landed ticket (c8), whose
-  /// counter is 1 and which is beyond revoke's reach (previous test).
+  /// REVOKED NEVER COMPLETES (the exclusivity extension): revoking a ticket
+  /// parked ON the landing strip emits no completion effect and leaves the
+  /// completion counter at zero — contrast with the completed ticket (c8),
+  /// whose counter is 1 and which is beyond revoke's reach (previous test).
   run revokedNeverCompletesTest = assert(and {
     revokeOne(jLand).post.tickets.get(1).completions == 0,
     revokeOne(jLand).rec.effects == ["Revoke"],
@@ -1249,7 +1249,7 @@ module chuggy_test {
   /// landing gas wall: the attribution field, not the label, marks the
   /// boundary), eval-passed (which only ENQUEUES the landing — the
   /// attempt resolves later, under a choice not yet made), and the
-  /// absorbed land-duplicate (no attempt resolves, nothing is emitted).
+  /// absorbed complete-duplicate (no attempt resolves, nothing is emitted).
   run nonLandingStepsCarryNoAttributionTest = assert(and {
     dArr1.rec.landing == WONone,
     dRelease.rec.landing == WONone,
