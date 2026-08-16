@@ -182,9 +182,9 @@ function oneTicket(c: Core): Ticket {
 }
 
 // === The revoke fixture family =============================================
-// `chuggy_test`'s eight single-ticket fixtures — one per live phase and all
-// THREE desk-reason flavors of the one parked phase — plus the landed ticket
-// its cross-project section hand-builds. Accounts are deliberately part-spent, so
+// `chuggy_test`'s single-ticket fixtures — one per live phase and all THREE
+// desk-reason flavors of the one parked phase — plus the landed ticket its
+// cross-project section hand-builds. Accounts are deliberately part-spent, so
 // an equality over them is not vacuously "full grant == full grant".
 
 /** `chuggy_test`'s `spent`. */
@@ -194,8 +194,9 @@ export function spent(j: Ticket): Ticket {
 
 /**
  * A HAND-BUILT FIXTURE STATES ITS OWN `spawned`, on both sides: the model's
- * thirteen were corrected under ledger #17's Path A ruling (#27). The ghost counter is bumped only by
- * `spawnOn`, and a literal task set or record never goes through it — so a
+ * fixtures were corrected under ledger #17's Path A ruling (#27), and this
+ * file's are written that way from the start. The ghost counter is bumped only
+ * by `spawnOn`, and a literal task set or record never goes through it — so a
  * fixture that hands itself either one and keeps `freshTicket`'s 0 breaks
  * `idsAccounted`, which makes it a state the machine cannot reach. That is not
  * cosmetic: `decideWorkReduce` READS the counter, stamping

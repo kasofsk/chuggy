@@ -1452,7 +1452,7 @@ test("unreleasedDepBlocksTest: a dependency on an UNRELEASED ticket blocks", () 
 });
 
 // === Revoke, from every live phase ==========================================
-// The model's eight single-ticket fixtures — one per live phase and all THREE
+// The model's single-ticket fixtures — one per live phase and all THREE
 // desk-reason flavors of the one parked phase — plus its hand-built landed
 // ticket, all from `fixtures.test.ts`, which both suites read.
 
@@ -2726,7 +2726,7 @@ function accountedTicket(j: Ticket): boolean {
 test("handBuiltFixturesAccountedTest: every named fixture states the ids it hands itself", () => {
   // Hand-built fixtures AND decider-derived ones, because the derived states
   // inherit any deficit below them — which is exactly how the model's own
-  // thirteen went unnoticed. A fourteenth cannot repeat it quietly.
+  // short fixtures went unnoticed. A new one cannot repeat it quietly.
   const fleets: readonly (readonly [string, Core])[] = [
     ["cEmpty", cEmpty],
     ["cA1", cA1],
