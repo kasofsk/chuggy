@@ -74,7 +74,7 @@ const step = (label: string): unknown => ({
   label,
   transitions: [],
   effects: [],
-  landing: tagged("WONone"),
+  attempt: tagged("WONone"),
 });
 
 function state(index: number, over: Record<string, unknown> = {}): unknown {

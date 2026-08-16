@@ -54,7 +54,7 @@ export function diffStepRecord(
       diffTransition,
     ) ??
     list(expected.effects, actual.effects, `${at}.effects`, scalar) ??
-    diffLanding(expected.landing, actual.landing, `${at}.landing`)
+    diffAttempt(expected.attempt, actual.attempt, `${at}.attempt`)
   );
 }
 
@@ -246,7 +246,7 @@ function diffArtifact(
   }
 }
 
-function diffLanding(
+function diffAttempt(
   expected: WrapUpObs,
   actual: WrapUpObs,
   at: string,

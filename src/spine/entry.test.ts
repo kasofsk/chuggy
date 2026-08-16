@@ -230,8 +230,8 @@ test("hasEntryShape: the record's shape is checked; its vocabulary is not", () =
     { ...rec, effects: "CreateDraft" },
     { ...rec, effects: [1] },
     { ...rec, label: 1 },
-    { ...rec, landing: { tag: "WOAttempt", project: 1 } },
-    { ...rec, landing: "WONone" },
+    { ...rec, attempt: { tag: "WOAttempt", project: 1 } },
+    { ...rec, attempt: "WONone" },
   ]) {
     assert.equal(
       hasEntryShape(rowWith("rec", bad)),
@@ -250,7 +250,7 @@ test("hasEntryShape: the record's shape is checked; its vocabulary is not", () =
     label: "no-such-label",
     transitions: [{ ticket: 1, from: "PNowhere", to: "PElsewhere" }] as never,
     effects: ["NoSuchEffect"],
-    landing: { tag: "WONone" },
+    attempt: { tag: "WONone" },
   };
   assert.ok(hasEntryShape(rowWith("rec", nonsense)));
 });

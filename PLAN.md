@@ -143,7 +143,7 @@ Tier-1 capability:
 
 - `quint run --out-itf` emits `{#meta, vars, states}`; every state carries the domain
   vars fully serialized — `tickets` (complete `Ticket` records), `lastStep` (the complete
-  `StepRecord`: label, transitions, effects, landing), `prevMeasure`, `prevRecords`. Sum
+  `StepRecord`: label, transitions, effects, attempt), `prevMeasure`, `prevRecords`. Sum
   types arrive as `{tag, value}`, ints as `{#bigint}`, sets as `{#set}`, maps as `{#map}`.
   Probe: `quint run model/mc/mc_chuggy.qnt --main=mc_chuggy_budgeted
   --invariant=allInvariants --max-steps=5 --seed=0x1 --mbt --out-itf=…`.

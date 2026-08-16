@@ -104,7 +104,7 @@ function recordCarrying(effects: readonly Effect[]): StepRecord {
     label: "a record built for a routing case",
     transitions: [],
     effects: [...effects],
-    landing: { tag: "WONone" },
+    attempt: { tag: "WONone" },
   };
 }
 

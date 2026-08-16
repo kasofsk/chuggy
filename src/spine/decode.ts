@@ -16,9 +16,9 @@
  * `moved` is the target phase, and a landing resolution's outcome is its label.
  * Where two routes share a label — `ticket-done` arrives from a passing
  * evaluation, a quiet dequeue or a gated resolution, and `gas_exhausted` from
- * either the eval interpreter or the gate — the landing observation separates
- * them, and the from-phase is checked against it so the two agree rather than
- * one being trusted.
+ * either the eval interpreter or the gate — the wrap-up attempt observation
+ * separates them, and the from-phase is checked against it so the two agree
+ * rather than one being trusted.
  *
  * A DECODE FAILURE IS NEVER A GUESS. Every arm that cannot determine its
  * command raises, because the alternative is a corpus that replays green
@@ -352,7 +352,7 @@ function reconstruct(
       return {
         kind: "decided",
         cmd:
-          rec.landing.tag === "WONone"
+          rec.attempt.tag === "WONone"
             ? { tag: "JEvalReduce", ticket: stepped(rec, where) }
             : gateFailure(rec, where),
       };
@@ -469,27 +469,27 @@ function verdictOf(outcome: TaskOutcome, where: string): Verdict {
 }
 
 /**
- * Which route landed the ticket. The landing observation is the discriminator —
- * `WONone` is the passing evaluation of a `WNone` ticket, an attempt the
- * environment left valid is the quiet dequeue, an invalidated one is the gated
- * resolution — and the from-phase is checked against it, so the two independent
- * carriers of the same fact must agree.
+ * Which route landed the ticket. The wrap-up attempt observation is the
+ * discriminator — `WONone` is the passing evaluation of a `WNone` ticket, an
+ * attempt the environment left valid is the quiet dequeue, an invalidated one
+ * is the gated resolution — and the from-phase is checked against it, so the
+ * two independent carriers of the same fact must agree.
  */
 function completionRoute(rec: StepRecord, where: string): Cmd {
   const ticket = stepped(rec, where);
-  switch (rec.landing.tag) {
+  switch (rec.attempt.tag) {
     case "WONone":
       expectFrom(rec, "PEvaluating", where);
       return { tag: "JEvalReduce", ticket };
     case "WOAttempt":
-      if (rec.landing.invalidated) {
+      if (rec.attempt.invalidated) {
         expectFrom(rec, "PWrapUpHolding", where);
         return { tag: "JGateResolve", ticket, out: "WOk" };
       }
       expectFrom(rec, "PWrapUp", where);
       return { tag: "JDequeue", ticket, moved: false };
     default:
-      return assertNever(rec.landing, `${where}: unhandled WrapUpObs`);
+      return assertNever(rec.attempt, `${where}: unhandled WrapUpObs`);
   }
 }
 
@@ -499,7 +499,7 @@ function completionRoute(rec: StepRecord, where: string): Cmd {
  * the invalidated flag and the from-phase are checked to say.
  */
 function gateFailure(rec: StepRecord, where: string): Cmd {
-  if (rec.landing.tag !== "WOAttempt" || !rec.landing.invalidated) {
+  if (rec.attempt.tag !== "WOAttempt" || !rec.attempt.invalidated) {
     throw new DecodeError(
       `${where}: a landing failure resolves an invalidated attempt, and this step records none`,
     );

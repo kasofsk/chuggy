@@ -24,7 +24,7 @@ const record: StepRecord = {
   label: "dispatch",
   transitions: [{ ticket: 1, from: "PPending", to: "PWorking" }],
   effects: ["SpawnWorkTasks"],
-  landing: { tag: "WOAttempt", project: 2, invalidated: true },
+  attempt: { tag: "WOAttempt", project: 2, invalidated: true },
 };
 
 test("diffStepRecord: identical records agree, and every field can disagree", () => {
@@ -54,19 +54,19 @@ test("diffStepRecord: identical records agree, and every field can disagree", ()
       },
     ],
     ["rec.effects[0]", { ...record, effects: ["Complete"] }],
-    ["rec.landing", { ...record, landing: { tag: "WONone" } }],
+    ["rec.attempt", { ...record, attempt: { tag: "WONone" } }],
     [
-      "rec.landing.project",
+      "rec.attempt.project",
       {
         ...record,
-        landing: { tag: "WOAttempt", project: 1, invalidated: true },
+        attempt: { tag: "WOAttempt", project: 1, invalidated: true },
       },
     ],
     [
-      "rec.landing.invalidated",
+      "rec.attempt.invalidated",
       {
         ...record,
-        landing: { tag: "WOAttempt", project: 2, invalidated: false },
+        attempt: { tag: "WOAttempt", project: 2, invalidated: false },
       },
     ],
   ];
