@@ -11,13 +11,13 @@
  * `cmdEnabled` plus `stepWith` below: an action is its guard, its draws and its
  * decider, and TypeScript splits those three where Quint writes them as one.
  *
- * `installCore` IS THE ONE PART DELIBERATELY LEFT FOR s5. It is the
- * refinement-layer seam — the model's own comment says so, and says it is not
- * in `step`'s roster because the domain machine cannot reach it — so it has no
- * caller until there is an executor cursor and a crash to install a replay
- * across. Landing it here would be a shipped function with no consumer and no
- * golden step, which is the one thing "tests land with the behavior they cover"
- * cannot be honoured for.
+ * `installCore` WAS THE ONE PART DELIBERATELY LEFT FOR s5, and s5 is what
+ * landed it. It is the refinement-layer seam — the model's own comment says so,
+ * and says it is not in `step`'s roster because the domain machine cannot reach
+ * it — so it had no caller until there was an executor cursor and a crash to
+ * install a replay across. Its callers are now `actor.ts`'s `emitNext`,
+ * `crashRecoverTo` and `effectCrash`, which is exactly the roster the model
+ * gives it.
  *
  * THE STATE IS ONE RECORD BECAUSE THE INVARIANTS ALREADY ASK FOR IT THAT WAY.
  * `invariants.ts` takes a `Core` plus a `StepHistory` of exactly `lastStep`,
@@ -151,6 +151,42 @@ export function applyDecision(
     lastStep: d.rec,
     prevMeasure: currentMeasure(cfg, state.core),
     prevRecords: currentRecords(state.core),
+  };
+}
+
+/**
+ * `model/domain.qnt` installCore — THE REFINEMENT-LAYER SEAM: install an
+ * externally reconstructed `Core` WITHOUT taking a domain step.
+ *
+ * BOTH GHOSTS STAY STALE, and that is the whole of what distinguishes this from
+ * `applyDecision`. The refinement layer's executor and crash actions are not
+ * domain steps — the domain trace has no row for them — so `prevMeasure` and
+ * `prevRecords` go on describing the last real decision, which keeps every
+ * ghost-reading invariant's verdict byte-identical across the refinement-layer
+ * step. Snapshotting them here would present a crash as a flat domain step and
+ * make `stepDescends` compare a measure against itself, which is the shape that
+ * is true forever and falsifiable never.
+ *
+ * `lastStep` ARRIVES AS AN ARGUMENT rather than being kept, because the model
+ * passes it: every call site in `model/refinement.qnt` passes the CURRENT
+ * `lastStep`, so the record does not move either — but the seam is written as
+ * the model writes it, since a seam that decided for itself which record to
+ * keep would be a second spelling of the caller's intent.
+ *
+ * THE DOMAIN MACHINE CANNOT REACH THIS. It is not in `step`'s roster in the
+ * model and it is not called by `stepWith` or `settle` here; only the
+ * refinement layer calls it, and only with a replay of its own journal.
+ */
+export function installCore(
+  state: MachineState,
+  c: Core,
+  rec: StepRecord,
+): MachineState {
+  return {
+    core: c,
+    lastStep: rec,
+    prevMeasure: state.prevMeasure,
+    prevRecords: state.prevRecords,
   };
 }
 
