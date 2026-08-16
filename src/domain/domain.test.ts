@@ -468,10 +468,10 @@ test("staleStageCompletionNoopsTest: a completion for a RETIRED id no-ops by ide
   // absorbed. Strictly stronger, and unreachable either way: no machine step
   // and no golden trace can deliver it, because the action draws j from
   // `taskPhaseTickets` — and `model/refinement.qnt`'s `cmdEnabled` states the
-  // same pair for `JTaskDone` (`taskPhaseIn` and `deliverableTaskIds`, lines
-  // 362-365), which is the citation that matters for s3: the replayer will
-  // refuse the command at the same two guards this refuses the call at, so the
-  // strictness costs no conformance. The absorb-by-identity claim itself is
+  // same pair on its `JTaskDone` arm (`taskPhaseIn` and `deliverableTaskIds`),
+  // which is the citation that matters for s3: the replayer will refuse the
+  // command at the same two guards this refuses the call at, so the strictness
+  // costs no conformance. The absorb-by-identity claim itself is
   // pinned above at c4, and inside the task phase at `cS1`
   // (staleStageDuplicateNoopsTest).
   assert.deepEqual(taskPhaseIn(c7), new Set());
@@ -2536,7 +2536,7 @@ test("artifactStampedAndSupersededTest: work-passed stamps the artifact it produ
   // THE SUPERSESSION HALF, which is what makes the mark an identity rather
   // than a flag: the staged chain walks a second cycle through the eval
   // rework, and its product differs from the first. A stamp-once mutant fails
-  // the last conjunct. Read from the model: ASome(3) against ASome(2).
+  // the last conjunct. Read from the model: ASome(5) against ASome(2).
   const second = ticketAt(dBackToEval.post, 1).artifact;
   assert.notDeepEqual(second, { tag: "ANone" });
   assert.notDeepEqual(second, ticketAt(dWorkReduce.post, 1).artifact);
