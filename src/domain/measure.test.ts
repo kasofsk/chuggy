@@ -7,13 +7,17 @@
  * descent table's rows, the named non-descending sets), and as pure
  * EQUALITIES over hand-built tickets (the two blindness runs, the combinator
  * run). The equalities are mirrored conjunct for conjunct. The orderings are
- * mirrored at MEASURE grain — the deciders themselves land in s2a/s2b, so each
- * post-state here is built from this slice's own plumbing exactly as
- * `model/domain.qnt` builds it (`escalate` is `retireLive` then reason+resume;
- * a revoke is `retireLive` then `PRevoked`; a rework is `spawnOn(retireLive)`
- * with the accounts charged), and the named model run is cited on every one.
- * Nothing here asserts a label, a transition, an effect or a guard: those are
- * the deciders' and are deliberately absent.
+ * mirrored at MEASURE grain — the named model run is cited on every one, and
+ * nothing here asserts a label, a transition, an effect or a guard: those are
+ * the deciders' own, pinned in `domain.test.ts`, and deliberately absent here.
+ *
+ * EVERY POST-STATE COMES OUT OF THE DECIDER THAT DEFINES IT (issue #13, closed
+ * at s2b). While the deciders were unwritten this file built them from s1's
+ * plumbing the way `model/domain.qnt` builds them; with all thirteen landed,
+ * that copy would be a divergent reimplementation whose pinned integers went on
+ * passing while the decider moved. What is still built by hand is what no
+ * decider defines: the measure vocabulary's own inputs, and the PRE-states the
+ * deciders are applied to.
  *
  * THE EXPECTED INTEGERS ARE THE MODEL'S OWN. Every number pinned below was
  * read out of `chuggy_measure` itself, by evaluating the same fixture in the
@@ -26,7 +30,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { AssertionError } from "./assert.ts";
-import { ticketAt } from "./domain.ts";
+import {
+  decideDispatch,
+  decideEvalStageReduce,
+  decideOpRetry,
+  decideRelease,
+  decideTaskDone,
+  decideWorkReduce,
+  decideWrapUpResolve,
+  decideWrapUpStart,
+  ticketAt,
+  type Config,
+} from "./domain.ts";
 import {
   cfgBudgeted,
   cfgDeadlineOnly,
@@ -48,6 +63,7 @@ import {
   progStaged,
   progU2,
   revokeOne,
+  solo,
   wr,
   wt,
 } from "./fixtures.test.ts";
@@ -157,29 +173,45 @@ test("the retryfree instance's Bounds are the deadline-only instance's, exactly"
 // domain suite, and live in `fixtures.test.ts`.
 
 /**
- * `model/domain.qnt`'s rework re-entry: retire the failed set, respawn a fresh
- * work fan-out at the next ids, and charge the accounts the pricing says.
+ * ISSUE #13, CLOSED. Every post-state below is read out of the Decision the
+ * decider that DEFINES it returns; none is hand-built any longer.
  *
- * THE LAST HAND-BUILT POST-STATE IN THIS FILE, and the one that must stay so
- * until s2b. Issue #13 records why the others could not: once the decider that
- * defines a state ships, a hand-built copy of it is a divergent
- * reimplementation, and these pinned integers would go on passing against the
- * copy while the decider moved. `escalated`, `revoked` and `draft` are now the
- * real `escalate`, `decideRevoke` and `freshTicket` (`fixtures.test.ts`); the
- * rework re-entry belongs to `decideEvalStageReduce` and
- * `decideWrapUpResolve`, which are s2b's, so it is rewired there.
+ * The rule, from the issue: once the decider that defines a state ships, a
+ * hand-built copy of it is a divergent reimplementation, and these pinned
+ * integers would go on passing against the copy while the decider moved.
+ * s2a rewired `escalated`, `revoked` and `draft` onto `escalate`,
+ * `decideRevoke` and `freshTicket`; the rework re-entry was left because it
+ * belongs to `decideEvalStageReduce` and `decideWrapUpResolve`, and with those
+ * landed it — and every other hand-built post-state in this file — is rewired
+ * here. NOT ONE PINNED INTEGER MOVED, which is the check that matters: a moved
+ * pin would have meant the copy and the decider already disagreed.
+ *
+ * What is still built by hand is what no decider defines: the measure
+ * vocabulary's own inputs (task sets, digit tables, account boundaries) and
+ * the PRE-states a decider is then applied to.
  */
-function reworkedInto(b: Bounds, j: Ticket, charged: Partial<Ticket>): Ticket {
-  return {
-    ...spawnOn(retireLive(j), { tag: "TKWork" }, b.nTasks),
-    phase: "PWorking",
-    ...charged,
-  };
+function stepped(d: Decision): Ticket {
+  return ticketAt(d.post, 1);
+}
+
+/** The eval rework's re-entry: `decideEvalStageReduce`'s short-circuit arm. */
+function reworkedFromEval(cfg: Config, j: Ticket): Ticket {
+  return stepped(decideEvalStageReduce(cfg, solo(j), 1));
+}
+
+/** The gate eviction's re-entry: `decideWrapUpResolve`'s failure arm. */
+function reworkedFromGate(cfg: Config, j: Ticket): Ticket {
+  return stepped(decideWrapUpResolve(cfg, solo(j), 1, "WFailed", true));
 }
 
 /** The ticket `decideRevoke` leaves behind, read out of the Decision. */
 function revoked(j: Ticket): Ticket {
   return ticketAt(revokeOne(j).post, 1);
+}
+
+/** The ticket an operator resume leaves behind, at a chosen metering. */
+function resumedBy(cfg: Config, j: Ticket): Ticket {
+  return stepped(decideOpRetry(cfg, solo(j), 1));
 }
 
 function measuresAt(b: Bounds, tickets: readonly Ticket[]): readonly number[] {
@@ -695,24 +727,23 @@ test("the accounts of a Budgeted ticket escape their radix under DeadlineOnly bo
 // `chuggy_test` run whose measure conjunct it mirrors.
 
 test("happyPathMeasureDescendsTest: every step of the happy path descends", () => {
+  // THE WALK IS THE DECIDERS' OWN, one solo Core stepped through the model's
+  // chain: release, dispatch, both work completions, the work reduce, both
+  // eval completions, the eval reduce, and the quiet landing. What this file
+  // adds is the measure at each state; what the state IS belongs to the
+  // decider that produced it (issue #13).
   const cA = draft(cfgBudgeted);
-  const cP: Ticket = { ...cA, phase: "PPending" };
-  const cW: Ticket = {
-    ...spawnOn(cP, { tag: "TKWork" }, 2),
-    phase: "PWorking",
-    gasLeft: cP.gasLeft - 1,
-  };
-  const cW1: Ticket = { ...cW, tasks: resolveTask(cW.tasks, 1, "TPassed") };
-  const cW2: Ticket = { ...cW1, tasks: resolveTask(cW1.tasks, 2, "TPassed") };
-  const cE: Ticket = {
-    ...spawnOn(retireLive(cW2), { tag: "TKEval", stage: 0 }, 2),
-    phase: "PEvaluating",
-    artifact: { tag: "ASome", id: 2 },
-  };
-  const cE1: Ticket = { ...cE, tasks: resolveTask(cE.tasks, 3, "TPassed") };
-  const cE2: Ticket = { ...cE1, tasks: resolveTask(cE1.tasks, 4, "TPassed") };
-  const cL: Ticket = { ...retireLive(cE2), phase: "PWrapUp" };
-  const cD: Ticket = { ...cL, phase: "PDone", completions: 1 };
+  const cP = stepped(decideRelease(solo(cA), 1));
+  const cW = stepped(decideDispatch(cfgBudgeted, solo(cP), 1));
+  const cW1 = stepped(decideTaskDone(solo(cW), 1, 1, "VPass"));
+  const cW2 = stepped(decideTaskDone(solo(cW1), 1, 2, "VPass"));
+  const cE = stepped(decideWorkReduce(solo(cW2), 1));
+  const cE1 = stepped(decideTaskDone(solo(cE), 1, 3, "VPass"));
+  const cE2 = stepped(decideTaskDone(solo(cE1), 1, 4, "VPass"));
+  const cL = stepped(decideEvalStageReduce(cfgBudgeted, solo(cE2), 1));
+  const cD = stepped(
+    decideWrapUpResolve(cfgBudgeted, solo(cL), 1, "WOk", false),
+  );
 
   // The model's own figures for the whole walk, in order.
   assert.deepEqual(
@@ -865,7 +896,9 @@ test("stagedProgramPassesTest: the FINAL stage passing lands the program", () =>
     tasks: [et(4, 1, "TPassed"), et(5, 1, "TFailed")],
     artifact: { tag: "ASome", id: 2 },
   };
-  const landed: Ticket = { ...retireLive(finalStage), phase: "PWrapUp" };
+  const landed = stepped(
+    decideEvalStageReduce(cfgBudgeted, solo(finalStage), 1),
+  );
   assert.ok(descends(bBudgeted, finalStage, landed));
   assert.deepEqual(measuresAt(bBudgeted, [finalStage, landed]), [723, 711]);
   // The whole anatomy is in the log, per-stage combinators applied — stage 1's
@@ -891,8 +924,10 @@ test("evalReworkDescendsTest: the eval rework's account drop dominates its micro
     gasLeft: 2,
     tasks: [et(1, 0, "TFailed"), et(2, 0, "TPassed")],
   };
-  const post = reworkedInto(bBudgeted, pre, { reworkLeft: 0, gasLeft: 1 });
+  const post = reworkedFromEval(cfgBudgeted, pre);
   assert.deepEqual(measuresAt(bBudgeted, [pre, post]), [723, 416]);
+  // The charge is the DECIDER's now, not this file's: one rework and one gas.
+  assert.deepEqual([post.reworkLeft, post.gasLeft], [0, 1]);
   // The rework cycle's work set spawns at the NEXT ids — new records, not
   // overwrites (evalReworkDescendsTest pins exactly this).
   assert.deepEqual(post.tasks, [wr(3), wr(4)]);
@@ -906,32 +941,29 @@ test("gateReworkBudgetedDescendsTest / gateReworkDeadlineOnlyTest: the eviction 
     wrapUpLeft: 1,
     gasLeft: 2,
   };
-  assert.deepEqual(
-    measuresAt(bBudgeted, [
-      budgeted,
-      reworkedInto(bBudgeted, budgeted, { wrapUpLeft: 0, gasLeft: 1 }),
-    ]),
-    [702, 353],
-  );
+  const evicted = reworkedFromGate(cfgBudgeted, budgeted);
+  assert.deepEqual(measuresAt(bBudgeted, [budgeted, evicted]), [702, 353]);
+  assert.deepEqual([evicted.wrapUpLeft, evicted.gasLeft], [0, 1]);
   // DeadlineOnly: no gate account to spend, so gas alone meters the loop.
   const deadlineOnly: Ticket = {
     ...draft(cfgDeadlineOnly),
     phase: "PWrapUpHolding",
     gasLeft: 2,
   };
+  const evictedFree = reworkedFromGate(cfgDeadlineOnly, deadlineOnly);
   assert.deepEqual(
-    measuresAt(bDeadlineOnly, [
-      deadlineOnly,
-      reworkedInto(bDeadlineOnly, deadlineOnly, { gasLeft: 1 }),
-    ]),
+    measuresAt(bDeadlineOnly, [deadlineOnly, evictedFree]),
     [324, 227],
   );
+  assert.equal(evictedFree.gasLeft, 1);
 });
 
 test("gateOpenClassifiedTest: the dequeue and the landing each descend by rank alone", () => {
   const enqueued: Ticket = { ...draft(cfgBudgeted), phase: "PWrapUp" };
-  const held: Ticket = { ...enqueued, phase: "PWrapUpHolding" };
-  const done: Ticket = { ...held, phase: "PDone", completions: 1 };
+  const held = stepped(decideWrapUpStart(solo(enqueued), 1));
+  const done = stepped(
+    decideWrapUpResolve(cfgBudgeted, solo(held), 1, "WOk", true),
+  );
   // No account moves at the gate: it charges nothing until it fails.
   assert.deepEqual(
     [held.gasLeft, held.wrapUpLeft],
@@ -1021,12 +1053,7 @@ test("CHURN: the pre-work resume is free and climbs; a charged resume descends",
     "RPending",
     "ticket-escalated revalidation_failed",
   );
-  const resumed: Ticket = {
-    ...parked,
-    phase: "PPending",
-    reason: "RsNone",
-    resumeAt: "RNone",
-  };
+  const resumed = resumedBy(cfgBudgeted, parked);
   assert.deepEqual(
     measuresAt(bBudgeted, [pending, parked, resumed]),
     [990, 945, 990],
@@ -1045,17 +1072,12 @@ test("CHURN: the pre-work resume is free and climbs; a charged resume descends",
     "RWrapUp",
     "ticket-escalated gas_exhausted",
   );
-  const chargedResume: Ticket = {
-    ...escLanding,
-    phase: "PWrapUp",
-    gasLeft: escLanding.gasLeft - 1,
-    reason: "RsNone",
-    resumeAt: "RNone",
-  };
+  const chargedResume = resumedBy(cfgBudgeted, escLanding);
   assert.deepEqual(
     measuresAt(bBudgeted, [escLanding, chargedResume]),
     [693, 459],
   );
+  assert.equal(chargedResume.gasLeft, escLanding.gasLeft - 1);
   assert.ok(descends(bBudgeted, escLanding, chargedResume));
 });
 
@@ -1069,26 +1091,25 @@ test("opRetryFreeClassifiedTest: under RetryFree the pipeline resume CLIMBS", ()
     "RWrapUp",
     "ticket-escalated gas_exhausted",
   );
-  const freeResume: Ticket = {
-    ...escLanding,
-    phase: "PWrapUp",
-    reason: "RsNone",
-    resumeAt: "RNone",
-  };
+  const freeResume = resumedBy(cfgRetryFree, escLanding);
   assert.deepEqual(
     measuresAt(bRetryFree, [escLanding, freeResume]),
     [315, 333],
   );
+  assert.equal(freeResume.gasLeft, escLanding.gasLeft); // NOT charged
   assert.ok(
     ticketMeasure(bRetryFree, freeResume) >
       ticketMeasure(bRetryFree, escLanding),
   );
   // Charged, the same resume descends — which is the whole of the difference
-  // between the two meterings, priced in gas rather than in bounds.
-  const chargedResume: Ticket = {
-    ...freeResume,
-    gasLeft: freeResume.gasLeft - 1,
-  };
+  // between the two meterings, priced in gas rather than in bounds. The config
+  // below differs from the free one in the retry pricing and nothing else, so
+  // the comparison isolates exactly that parameter.
+  const chargedResume = resumedBy(
+    { ...cfgRetryFree, opRetryPricing: "RetryCharged" },
+    escLanding,
+  );
+  assert.equal(chargedResume.gasLeft, freeResume.gasLeft - 1);
   assert.ok(descends(bRetryFree, escLanding, chargedResume));
 });
 
@@ -1111,11 +1132,7 @@ test("stageAdvanceDescendsTest: one stage step outweighs the whole next fan-out"
     tasks: [et(3, 0, "TPassed")],
     artifact: { tag: "ASome", id: 2 },
   };
-  const advanced: Ticket = spawnOn(
-    retireLive(staged),
-    { tag: "TKEval", stage: 1 },
-    2,
-  );
+  const advanced = stepped(decideEvalStageReduce(cfgBudgeted, solo(staged), 1));
   assert.deepEqual([stagesLeft(staged), runningCount(staged.tasks)], [2, 0]);
   assert.deepEqual(
     [stagesLeft(advanced), runningCount(advanced.tasks)],
@@ -1154,11 +1171,7 @@ test("work-passed: one rank step outweighs the stage digit APPEARING and the fan
     tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
     spawned: 2,
   };
-  const evaluating: Ticket = {
-    ...spawnOn(retireLive(worked), { tag: "TKEval", stage: 0 }, 1),
-    phase: "PEvaluating",
-    artifact: { tag: "ASome", id: 2 },
-  };
+  const evaluating = stepped(decideWorkReduce(solo(worked), 1));
   assert.deepEqual([stagesLeft(worked), runningCount(worked.tasks)], [0, 0]);
   assert.deepEqual(
     [stagesLeft(evaluating), runningCount(evaluating.tasks)],
@@ -1396,14 +1409,9 @@ test("opRetryEvalFreshFanoutTest: a resume spawns above the retired history", ()
     spawned: 3,
   };
   assert.equal(nextTaskId(parked), 4);
-  const resumed: Ticket = {
-    ...spawnOn(parked, { tag: "TKEval", stage: 0 }, 1),
-    phase: "PEvaluating",
-    gasLeft: parked.gasLeft - 1,
-    reason: "RsNone",
-    resumeAt: "RNone",
-  };
+  const resumed = resumedBy(cfgBudgeted, parked);
   assert.deepEqual(resumed.tasks, [er(4, 0)]);
+  assert.equal(resumed.gasLeft, parked.gasLeft - 1);
   assert.deepEqual(resumed.record, parked.record);
   assert.equal(resumed.spawned, 4);
   // AND IT DESCENDS. This is the descent table's operator-retry row at its
