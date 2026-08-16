@@ -140,6 +140,22 @@ else
 	fail=$((fail + 1))
 fi
 
+# --- The corpus lands formatted ----------------------------------------------
+#
+# `test/golden/` is in the formatter's scope and `check-source.sh` holds the
+# whole tree to `prettier --check`, so a regeneration that writes raw
+# `JSON.stringify` output leaves the tree red and says nothing about it. Checked
+# with the same binary the gate runs, so this case cannot pass against a shape
+# the gate would reject.
+
+if (cd "$ROOT" && ./node_modules/.bin/prettier --check --log-level warn "$WORK/det/probe.itf.json") > /dev/null 2>&1; then
+	echo "ok   - a regenerated golden is already in the formatter's shape"
+	pass=$((pass + 1))
+else
+	echo "FAIL - a regenerated golden does not survive the format stage"
+	fail=$((fail + 1))
+fi
+
 # --- An aimed row must hit its aim -------------------------------------------
 
 mkdir -p "$WORK/aimed"

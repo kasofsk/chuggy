@@ -15,6 +15,25 @@
 # `jscpd:ignore-start` and a reason on the directive line rather than widening
 # the ignore list.
 #
+# A NESTED CHECKOUT IS NOT A CLONE, and `**/.claude/worktrees/**` in the ignore
+# list is what says so. This repo's own tooling puts a git worktree there, and a
+# worktree is a second copy of the tree at a different commit: scanned, every
+# file pairs against its own copy and the gate reports each pair as duplication.
+# A verdict whose only remedy is deleting the checkout somebody is working in is
+# a verdict nobody can act on, and a gate that is red for a reason nobody can
+# act on is a gate that gets bypassed.
+#
+# THE ENTRY IS THAT PATH AND NOT `.claude/` ENTIRE, which is where this list
+# parts company with `.prettierignore`. The formatter skips the whole directory
+# because a harness config is not this tree's file to format, and that argument
+# does not reach here: a TRACKED file under `.claude/` is this tree's own, and a
+# clone of it is a finding like any other. Excluding the directory would exempt
+# code nobody has written yet, against a failure nobody can name. What is out of
+# scope is the copy, not the address.
+#
+# `.jscpd.json` is JSON and carries no comments, so its ignore list is argued
+# here or nowhere.
+#
 # THE VERSION IS PINNED EXACTLY, never `@5`. jscpd v5 is a Rust rewrite of v4
 # with different config semantics, and 5.0.4 -> 5.0.5 changed how ignorePattern
 # matches — a floating major silently changes what the gate can see. A local

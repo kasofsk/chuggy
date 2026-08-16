@@ -18,6 +18,19 @@
 # per-state `#meta` is a state index and is kept — it is derived from the trace
 # rather than from the clock.
 #
+# THE CORPUS IS IN THE FORMATTER'S SCOPE, so this script leaves it in the
+# formatter's shape rather than leaving that to whoever regenerates next.
+# `test/golden/` is not in `.prettierignore`, and `check-source.sh` holds the
+# whole tree to `prettier --check`; what `JSON.stringify` indents is not what
+# Prettier emits, so a regeneration used to leave the tree red until somebody
+# remembered to format by hand. A step nobody can forget beats a note nobody
+# reads, and the alternative — teaching this script to write what the formatter
+# would have written — is a second copy of the formatter with nothing keeping it
+# current. The binary is the local one this tree pins, resolving its
+# configuration the way the gate does so the two cannot reach different answers,
+# and its absence is a could-not-run: a corpus written into a shape the gate
+# rejects is worse than a corpus not written.
+#
 # EVERY GOLDEN IS REPRODUCIBLE FROM ITS MANIFEST ROW, which is what makes the
 # corpus reviewable rather than magic: instance, seed, sample budget, step
 # bound, and the invariant used to aim the search. `--n-threads=1` is pinned so
@@ -75,6 +88,12 @@ fi
 
 if ! command -v node >/dev/null 2>&1; then
 	echo "emit-goldens: LINTER ERROR — no node, so the manifest cannot be read"
+	exit 2
+fi
+
+if [ ! -x ./node_modules/.bin/prettier ]; then
+	echo "emit-goldens: LINTER ERROR — no local prettier. Install with \`npm ci\`."
+	echo "emit-goldens: writing the corpus unformatted would leave check-source red."
 	exit 2
 fi
 
@@ -177,6 +196,7 @@ const doc = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))
 process.stdout.write(String(doc.states.length - 1))
 ' "$target")"
 	echo "emit-goldens: $name — $steps_emitted step(s)"
+	printf '%s\n' "$target" >> "$work/targets"
 	emitted=$((emitted + 1))
 done < "$work/rows"
 
@@ -185,5 +205,24 @@ if [ "$emitted" -eq 0 ] && [ -n "$wanted" ]; then
 	exit 2
 fi
 
+# One pass over what this run actually wrote, rather than over the directory: a
+# row the caller did not name must not be rewritten behind their back, and a
+# spawn per row buys nothing.
+formatted=1
+if [ -s "$work/targets" ]; then
+	set -f
+	IFS='
+'
+	# shellcheck disable=SC2046 # the target list is newline-separated by construction
+	set -- $(cat "$work/targets")
+	unset IFS
+	set +f
+	if ! ./node_modules/.bin/prettier --write --log-level warn "$@" > "$work/fmt" 2>&1; then
+		echo "emit-goldens: FAILED — the corpus was written and the formatter refused it"
+		sed 's/^/    /' "$work/fmt"
+		formatted=0
+	fi
+fi
+
 echo "emit-goldens: $emitted golden(s) written, $failed failed"
-[ "$failed" -eq 0 ]
+[ "$failed" -eq 0 ] && [ "$formatted" -eq 1 ]

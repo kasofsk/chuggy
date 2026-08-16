@@ -13,6 +13,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/_suite.sh"
 SUT="$HERE/check-duplication.sh"
+ROOT="$(cd "$HERE/../.." && pwd)"
 
 R="$WORK/repo"
 BIN="$WORK/bin"
@@ -69,6 +70,60 @@ printf 'placeholder\n' > "$R/README.md"
 git -C "$R" add -A
 run_in_repo
 check "no jscpd and no npx exits 2" 2 "$RC" "no jscpd and no npx"
+
+# --- The ignore list, against the real tool ----------------------------------
+#
+# The cases above stub jscpd, which is right for the gate's own contract and
+# useless for its scope: what a stub ignores is whatever the stub was told to
+# ignore. `.jscpd.json` is a configuration, and a configuration demonstrates
+# nothing about itself — a pattern misspelled, or one the tool's own matcher
+# reads differently than its author did, reads exactly like a pattern that
+# works. So the pair below runs the real jscpd, and the fixture COPIES this
+# repo's config rather than inventing one, on check-source.test.sh's argument:
+# an invented config passes while this tree's is broken.
+#
+# It is a pair because the first half is the control. Scanned with no config the
+# nested copy IS a clone, which is what makes the second half mean something —
+# without it, an ignore list that excluded the whole tree would pass.
+#
+# The nested checkout is a plain directory rather than a real `git worktree`.
+# jscpd reads the filesystem and never asks git, so the copy is the whole of
+# what it sees, and a suite that had to add a worktree would have to remove one.
+# The gate itself runs before the suites and fetches jscpd if it must, so this
+# is a cached tool by the time it is reached.
+
+nested_repo() { # <dir>
+	fresh_repo "$1"
+	mkdir -p "$1/.chug/tasks" "$1/.claude/worktrees/w/.chug/tasks"
+	i=0
+	{
+		printf '%s\n' '#!/bin/sh'
+		while [ "$i" -lt 40 ]; do
+			printf 'printf "%%s\\n" "the shared harness, step %s"\n' "$i"
+			i=$((i + 1))
+		done
+	} > "$1/.chug/tasks/thing.sh"
+	# Untracked in the parent, which is what a checkout under it actually is.
+	git -C "$1" add .chug
+	cp "$1/.chug/tasks/thing.sh" "$1/.claude/worktrees/w/.chug/tasks/thing.sh"
+}
+
+# The ambient PATH, unlike the stub cases: the real tool has to be reachable.
+run_unstubbed() { # <dir>
+	set +e
+	(cd "$1" && "$SUT") > "$OUT" 2>&1
+	RC=$?
+	set -e
+}
+
+N="$WORK/nested"
+nested_repo "$N"
+run_unstubbed "$N"
+check "the control: a nested copy is a clone when nothing excludes it" 1 "$RC" "clones found"
+
+cp "$ROOT/.jscpd.json" "$N/.jscpd.json"
+run_unstubbed "$N"
+check "this tree's ignore list excludes a nested checkout" 0 "$RC" "no clones"
 
 # 6. Outside a git checkout -> could not run.
 set +e
