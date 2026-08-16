@@ -36,6 +36,15 @@
  * both absorbing classes as exact sets over a fleet holding one ticket per
  * phase.
  *
+ * THE DRIVE'S WIDTH IS NOT A CHECK, which is why no case below claims it.
+ * Narrowing the derived class to its first member — with the recorded pick
+ * still driven beside it — leaves this file, the corpus walk and the walker
+ * green: every member of a correct class returns the same noop and moves no
+ * state, so both checks answer identically over one member or over all of them.
+ * The width is the DOMAIN those two checks run over rather than a third check,
+ * and what it buys is a decider that absorbed for one pick and not for another
+ * — a shipped-file mutation again, and nothing hides behind the silence.
+ *
  * THE INVARIANT HOOK IS NOT REDDENED FROM HERE, AND IT CANNOT BE — a stronger
  * statement than the gap it replaces, and the reason its red proof lives
  * elsewhere rather than being owed here. Every state the bundle is asked of is

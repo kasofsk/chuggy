@@ -24,7 +24,8 @@ import type { Core, Stage, WrapUp } from "../domain/measure.ts";
 // means no rule governs the direction. What is imported is the refinement
 // instance's own consts, which the case below spreads rather than re-mints —
 // re-minting them here would make this file an independent statement of an
-// instance four suites read, and a `wrapUpPricing` that moved upstream would
+// instance every suite that walks the refinement machine reads, and a
+// `wrapUpPricing` that moved upstream would
 // leave it testing a machine nothing else runs. The direction is safe because
 // of what a `.test.ts` file is: `no-shipped-test-fixtures` stops anything that
 // ships from importing either file, so nothing but a suite ever takes this
@@ -226,7 +227,7 @@ test("parseEffect refuses a string outside the vocabulary", () => {
  * The refinement instance with room for the cascade, by spread — `s6`'s own
  * rule, which `harness.test.ts` states at `cfgInterp` and applies the same way:
  * the delta is the whole of what this case needs, and it is visible as one
- * line. Re-minting the eight fields here made the fixture a fourth
+ * line. Re-minting the instance's fields here made the fixture one more
  * independent statement of one instance, and a `wrapUpPricing` that moved
  * upstream would have left this file testing a machine no other suite runs.
  */
