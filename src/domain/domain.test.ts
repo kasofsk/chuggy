@@ -25,14 +25,19 @@
  * states is asserted, so the same call is refused. No machine step and no
  * golden trace can deliver one, because the action draws from `taskPhaseTickets`.
  *
- * THE FIXTURE QUIRK THIS SUITE INHERITS (ledger #17): several of the model's
- * hand-built fixtures carry live or retired tasks with the ghost `spawned`
- * counter left at its `freshTicket` zero, which `idsAccounted` would reject.
- * They are mirrored AS THE MODEL WRITES THEM — `jWork`, `cAllPhases`'s task
- * tickets, `cStagedWork`, the `evaluating(...)` family, `cStagedNoBudget` — and
- * that is load-bearing rather than tolerated: the artifact mark is
- * `ASome(spawned)`, so a fixture "corrected" here would answer a different mark
- * than the model does. s2c must not assert `idsAccounted` on them.
+ * EVERY FIXTURE ACCOUNTS FOR THE IDS IT HANDS ITSELF (ledger #17, resolved
+ * Path A; model PR #27). A literal task set or record never passes through
+ * `spawnOn`, the one site that bumps the ghost counter, so a hand-built fixture
+ * states its own `spawned` — `record.length + tasks.length` — and every fixture
+ * here does, the TypeScript-invented fleets included. It is not cosmetic:
+ * `decideWorkReduce` stamps `ASome(retired.spawned)`, so the corrections MOVE
+ * three artifact marks, exactly as the model's do (`dToEval`
+ * `ASome(0)`→`ASome(2)`, `dBackToEval` `ASome(3)`→`ASome(5)`,
+ * `decideWorkReduce(cFlatWork)` `ASome(0)`→`ASome(2)`). Those values were read
+ * in the REPL from model PR #27's corrected fixtures at `cd28f28`, so this
+ * suite anticipates that PR rather than the tree it sits on;
+ * `fixtureIdsAccountedTest` below keeps the next fixture honest, and s2c
+ * inherits fixtures its `idsAccounted` accepts.
  *
  * THE RULE THIS SUITE LEAVES BEHIND, learned twice at review: AN EQUALITY
  * GUARD IS PINNED BY AN EXACT SET OVER ITS WHOLE DOMAIN, NEVER BY
@@ -133,6 +138,7 @@ import {
   doneIn,
   draftsIn,
   escalate,
+  firstRepoId,
   freshTicket,
   holdingIn,
   isBlockedIn,
@@ -298,6 +304,9 @@ test("happyPathRecordsTest: the records are golden-trace shaped, with phase flip
   ]);
   assert.equal(dWork1.rec.label, "task-done");
   assert.deepEqual(dWork1.rec.transitions, []);
+  // A completion emits NOTHING: the task already ran: the record resolves
+  // inside the phase and the world is told nothing new.
+  assert.deepEqual(dWork1.rec.effects, []);
   assert.equal(dWorkReduce.rec.label, "work-passed");
   assert.deepEqual(dWorkReduce.rec.transitions, [
     { ticket: 1, from: "PWorking", to: "PEvaluating" },
@@ -448,8 +457,13 @@ test("staleStageCompletionNoopsTest: a completion for a RETIRED id no-ops by ide
   // model's own machine never leaves), so the event is REFUSED here rather than
   // absorbed. Strictly stronger, and unreachable either way: no machine step
   // and no golden trace can deliver it, because the action draws j from
-  // `taskPhaseTickets`. The absorb-by-identity claim itself is pinned above at
-  // c4, and inside the task phase at `cS1` (staleStageDuplicateNoopsTest).
+  // `taskPhaseTickets` — and `model/refinement.qnt`'s `cmdEnabled` states the
+  // same pair for `JTaskDone` (`taskPhaseIn` and `deliverableTaskIds`, lines
+  // 362-365), which is the citation that matters for s3: the replayer will
+  // refuse the command at the same two guards this refuses the call at, so the
+  // strictness costs no conformance. The absorb-by-identity claim itself is
+  // pinned above at c4, and inside the task phase at `cS1`
+  // (staleStageDuplicateNoopsTest).
   assert.deepEqual(taskPhaseIn(c7), new Set());
   assert.throws(() => decideTaskDone(c7, 1, 3, "VFail"), AssertionError);
 });
@@ -462,8 +476,15 @@ test("duplicateLandExclusiveTest: a re-delivered landing for a Done ticket emits
   assert.equal(ticketAt(dup.post, 1).completions, 1);
   assert.equal(mB(dup.post), mB(c8));
   // The absorber is the Done tickets' alone: a landing cannot be re-delivered
-  // for a ticket that never landed.
+  // for a ticket that never landed — pinned at the OTHER terminal as well as
+  // in the queue, because "not Done" and "not terminal" are different guards
+  // and only a Revoked ticket separates them.
   assert.throws(() => decideCompleteDuplicate(c7, 1), AssertionError);
+  assert.throws(
+    () => decideCompleteDuplicate(revokeOne(jLand).post, 1),
+    AssertionError,
+  );
+  assert.deepEqual(doneIn(revokeOne(jLand).post), new Set());
 });
 
 test("decideTaskDone writes the EVENT's verdict into the stored resolution", () => {
@@ -501,6 +522,7 @@ const cWorkFail: Core = solo({
   phase: "PWorking",
   gasLeft: 2,
   tasks: [wt(1, "TFailed"), wt(2, "TPassed")],
+  spawned: 2,
 });
 const dWorkFail = decideWorkReduce(cWorkFail, 1);
 
@@ -543,6 +565,7 @@ function evaluating(
     reworkLeft,
     gasLeft,
     tasks,
+    spawned: tasks.length,
   });
 }
 
@@ -587,6 +610,7 @@ test("the eval reduce indexes into the program the ticket really carries", () =>
     phase: "PEvaluating",
     gasLeft: 2,
     tasks: [et(1, 0, "TPassed")],
+    spawned: 1,
   });
   assert.deepEqual(reducibleEvalIn(cEmptyProgram), new Set([1]));
   assert.throws(
@@ -626,6 +650,7 @@ const cStagedWork: Core = solo({
   phase: "PWorking",
   gasLeft: 2,
   tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
+  spawned: 2,
 });
 const dToEval = decideWorkReduce(cStagedWork, 1);
 const cS0 = dToEval.post;
@@ -688,6 +713,7 @@ test("the WNone route: a kindless ticket completes at the eval pass, taking no l
     phase: "PEvaluating",
     gasLeft: 2,
     tasks: [et(1, 0, "TPassed"), et(2, 0, "TPassed")],
+    spawned: 2,
   });
   const d = decideEvalStageReduce(cfgBudgeted, cKindless, 1);
   assert.equal(d.rec.label, "ticket-done");
@@ -712,6 +738,39 @@ test("the WNone route: a kindless ticket completes at the eval pass, taking no l
   // collide with a real holder.
   assert.equal(leaseOf(ticketAt(cKindless, 1)), noResource);
   assert.ok(leaseFreeIn(d.post, noResource));
+});
+
+test("a stage FAILS above index 0: the short-circuit fires from the running stage", () => {
+  // Every failing-stage fixture in the model's suite and in this one fails at
+  // index 0, where "the running stage" and "the program's first stage" are the
+  // same list entry. Stage 1 is CAnyPass, so both of its tasks must fail — and
+  // then the same rework economy applies, from an index that tells the two
+  // readings apart. Read from the model.
+  const failed = decideTaskDone(
+    decideTaskDone(cS1, 1, 4, "VFail").post,
+    1,
+    5,
+    "VFail",
+  );
+  const d = decideEvalStageReduce(cfgBudgeted, failed.post, 1);
+  assert.equal(d.rec.label, "rework-started eval_failure");
+  assert.deepEqual(d.rec.transitions, [
+    { ticket: 1, from: "PEvaluating", to: "PWorking" },
+  ]);
+  const reworking = ticketAt(d.post, 1);
+  assert.equal(reworking.reworkLeft, 0); // the same price as a stage-0 failure
+  assert.equal(reworking.gasLeft, 1);
+  // The failed stage is retired UNDER its own index, and the rework's work set
+  // spawns above the whole history — ids 6 and 7, not 4 and 5.
+  assert.deepEqual(reworking.record, [
+    wt(1, "TPassed"),
+    wt(2, "TPassed"),
+    et(3, 0, "TPassed"),
+    et(4, 1, "TFailed"),
+    et(5, 1, "TFailed"),
+  ]);
+  assert.deepEqual(reworking.tasks, [wr(6), wr(7)]);
+  assert.equal(reworking.spawned, 7);
 });
 
 // --- The short-circuit: stage 0 fails, stage 1 is never created -------------
@@ -774,6 +833,7 @@ test("stagedShortCircuitEscalatesTest: the same short-circuit against an empty a
     gasLeft: 2,
     record: [wt(1, "TPassed"), wt(2, "TPassed")],
     tasks: [et(3, 0, "TFailed")],
+    spawned: 3,
   });
   const dStagedWall = decideEvalStageReduce(cfgBudgeted, cStagedNoBudget, 1);
   assert.equal(
@@ -825,6 +885,7 @@ const cFlatWork: Core = solo({
   phase: "PWorking",
   gasLeft: 2,
   tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
+  spawned: 2,
 });
 
 test("programAsDataStructureTest: the same passed work set spawns the program's own lowest stage", () => {
@@ -1013,6 +1074,10 @@ test("preWorkParkAndResumeClassifiedTest: the pre-work park and its free resume"
   assert.ok(hasOpenHumanTask(parked)); // derived, not stored
   assert.ok(mB(dPark.post) < mB(cFresh));
   assert.equal(dParkResume.rec.label, "operator-retry");
+  // THE PRE-WORK RESUME EMITS NOTHING — the one resume flavor with no effect,
+  // because nothing is respawned and nothing is enqueued. An empty list is a
+  // claim like any other, and only pinning it refuses a spurious effect.
+  assert.deepEqual(dParkResume.rec.effects, []);
   assert.deepEqual(dParkResume.rec.transitions, [
     { ticket: 1, from: "PEscalated", to: "PPending" },
   ]);
@@ -1066,6 +1131,7 @@ test("opRetryEvalFreshFanoutTest: the Evaluating resume is a FRESH fan-out of th
       gasLeft: 2,
       reworkLeft: 0,
       record: [wt(1, "TPassed"), wt(2, "TPassed"), et(3, 0, "TFailed")],
+      spawned: 3,
     },
     "RsReworkBudgetExhausted",
     "REvaluating",
@@ -1099,6 +1165,53 @@ test("opRetryFreeClassifiedTest: under RetryFree the pipeline resume CLIMBS", ()
   const working = decideOpRetry(cfgDF, cEscWorking, 1);
   assert.equal(ticketAt(working.post, 1).gasLeft, 1);
   assert.ok(mB(working.post) < mB(cEscWorking));
+});
+
+test("the metering parameter changes the price and NOTHING else", () => {
+  // THE CONFIG-DOMAIN TRANSPOSITION of the exact-set rule: the deciders take a
+  // `Config`, so a value leaking from the wrong field of it is a widening like
+  // any other — and it hides wherever an instance is asked only the questions
+  // its pricing already answers. DF is asked for the two respawns DB is asked
+  // for, and must answer the same SETS at a different price.
+  const working = decideOpRetry(cfgDF, cEscWorking, 1);
+  assert.deepEqual(ticketAt(working.post, 1).tasks, [wr(1), wr(2)]);
+  assert.deepEqual(working.rec.effects, ["SpawnWorkTasks"]);
+  const escEval: Ticket = escalated(
+    {
+      ...draft(cfgBudgeted, progStaged),
+      gasLeft: 2,
+      reworkLeft: 0,
+      record: [wt(1, "TPassed"), wt(2, "TPassed"), et(3, 0, "TFailed")],
+      spawned: 3,
+    },
+    "RsReworkBudgetExhausted",
+    "REvaluating",
+    "ticket-escalated rework_budget_exhausted",
+  );
+  const evaluating = decideOpRetry(cfgDF, solo(escEval), 1);
+  assert.deepEqual(ticketAt(evaluating.post, 1).tasks, [er(4, 0)]);
+  assert.equal(ticketAt(evaluating.post, 1).gasLeft, 2); // free, and the SAME fan-out
+  assert.deepEqual(evaluating.rec.effects, ["SpawnEvalTasks"]);
+});
+
+test("DeadlineOnly resolves a landing SUCCESS exactly as Budgeted does", () => {
+  // The gate pricing is asked only about FAILURES anywhere else, so a pricing
+  // leak into the success arm would sit in the half of the config domain
+  // nothing exercises. Read from the model: same label, same effect, same
+  // attribution, same counter.
+  const d = decideWrapUpResolve(cfgDeadlineOnly, cGateD, 1, "WOk", true);
+  assert.equal(d.rec.label, "ticket-done");
+  assert.deepEqual(d.rec.effects, ["Complete"]);
+  assert.deepEqual(d.rec.transitions, [
+    { ticket: 1, from: "PWrapUpHolding", to: "PDone" },
+  ]);
+  assert.deepEqual(d.rec.landing, {
+    tag: "WOAttempt",
+    repo: 1,
+    invalidated: true,
+  });
+  assert.equal(ticketAt(d.post, 1).completions, 1);
+  assert.ok(mD(d.post) < mD(cGateD));
 });
 
 // === The authoring lifecycle ================================================
@@ -1525,6 +1638,7 @@ test("the cascade parks the PRE-FLIGHT dependents and only those", () => {
         ...draft(cfgBudgeted, progU2, 1, 1, new Set([1])),
         phase: "PWorking",
         tasks: [wr(1), wr(2)],
+        spawned: 2,
       },
     ],
     [3, draft(cfgBudgeted, progU2, 1, 1, new Set([2]))],
@@ -1598,6 +1712,59 @@ test("leaseExclusiveGuardTest: an occupied gate refuses every SAME-repo dequeue"
   assert.throws(() => decideWrapUpStart(cGateOcc, 2), AssertionError);
   assert.throws(
     () => decideDequeue(cfgBudgeted, cGateOcc, 2, false),
+    AssertionError,
+  );
+});
+
+/**
+ * THE LEASE IS ON THE RESOURCE, NOT ON THE REPO, and this is the fleet that can
+ * tell them apart: the holder is repo 1 / resource 2, the queue head is repo 2 /
+ * resource 1, so `leaseOf` and `repo` disagree on BOTH ends. Every other gate
+ * fixture in this suite and in the model's authors `WExclusive(repo)`, where a
+ * guard reading the ticket's repo agrees with one reading its resource on every
+ * state — the model's own `leaseExclusive` comment names that narrowing ("the
+ * resource is whatever the wrap-up kind names, never a repo by definition"),
+ * and reading the general form off the per-repo instance is how it gets lost.
+ */
+const cCrossKind: Core = core([
+  [1, { ...draft(cfgBudgeted, progU2, 1, 2), phase: "PWrapUpHolding" }],
+  [2, { ...draft(cfgBudgeted, progU2, 2, 1), phase: "PWrapUp" }],
+  [3, { ...draft(cfgBudgeted, progU2, 1, 2), phase: "PWrapUp" }],
+]);
+
+test("the dequeue guard asks about the RESOURCE its kind names, not the repo", () => {
+  // Read from the model: the queue head whose resource is free is startable and
+  // the one whose resource is held is not — which is the exact reverse of what
+  // a repo-reading guard answers on this fleet.
+  assert.deepEqual(wrapUpStartablesIn(cCrossKind), new Set([2]));
+  assert.ok(wrapUpStartableIn(cCrossKind, 2));
+  assert.ok(!wrapUpStartableIn(cCrossKind, 3));
+  assert.deepEqual(
+    new Set([0, 1, 2, 3].filter((r) => !leaseFreeIn(cCrossKind, r))),
+    new Set([2]),
+  );
+  // The repos and the resources really do disagree, so the sets above cannot
+  // agree by accident.
+  assert.deepEqual(
+    [...cCrossKind.tickets.values()].map((jb) => [jb.repo, leaseOf(jb)]),
+    [
+      [1, 2],
+      [2, 1],
+      [1, 2],
+    ],
+  );
+  // And both decider sites that consume the guard read it the same way.
+  assert.equal(
+    ticketAt(decideWrapUpStart(cCrossKind, 2).post, 2).phase,
+    "PWrapUpHolding",
+  );
+  assert.throws(() => decideWrapUpStart(cCrossKind, 3), AssertionError);
+  assert.equal(
+    ticketAt(decideDequeue(cfgBudgeted, cCrossKind, 2, false).post, 2).phase,
+    "PDone",
+  );
+  assert.throws(
+    () => decideDequeue(cfgBudgeted, cCrossKind, 3, false),
     AssertionError,
   );
 });
@@ -1800,7 +1967,8 @@ test("Ready, Blocked and releasable are each inside ONE phase, not outside anoth
   );
   assert.deepEqual(taskPhaseIn(solo(jEval)), new Set([1]));
   // And the work reduce is Working's, not any fully-resolved phase's: jEval is
-  // fully resolved and Evaluating, which is s2b's reduce, not this one.
+  // fully resolved and Evaluating, which is the EVAL reduce's business, not
+  // this one's.
   assert.deepEqual(reducibleWorkIn(solo(jEval)), new Set());
   assert.throws(() => decideWorkReduce(solo(jEval), 1), AssertionError);
 });
@@ -1821,8 +1989,10 @@ test("depArtifacts: what this ticket's dependencies produced, derived and set-va
   assert.deepEqual(depArtifacts(cA2, 1), []);
   // THE ORDER IS THE SET'S, NOT THE DEPENDENCIES'. Two Cores whose model
   // answers are the same set — same marks, different deps producing them —
-  // must answer with the same array here, or s2b's release read compares two
-  // equal sets and disagrees with the model. Read from the model: both are
+  // must answer with the same array here, or a future consumer compares two
+  // equal sets and disagrees with the model — no decider reads `depArtifacts`
+  // yet, which is why this is pinned now rather than when one does. Read from
+  // the model: both are
   // `Set(ASome(2), ASome(5))`, and the model calls them `==`.
   const withMark = (id: number): Ticket => ({
     ...jDone,
@@ -1953,9 +2123,18 @@ const cAllPhases: Core = core([
       ...draft(cfgBudgeted),
       phase: "PWorking",
       tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
+      spawned: 2,
     },
   ],
-  [4, { ...draft(cfgBudgeted), phase: "PEvaluating", tasks: mixedE0 }],
+  [
+    4,
+    {
+      ...draft(cfgBudgeted),
+      phase: "PEvaluating",
+      tasks: mixedE0,
+      spawned: 2,
+    },
+  ],
   [5, { ...draft(cfgBudgeted), phase: "PWrapUp" }],
   [6, { ...draft(cfgBudgeted), phase: "PWrapUpHolding" }],
   [7, { ...draft(cfgBudgeted), phase: "PDone", completions: 1 }],
@@ -2063,7 +2242,13 @@ test("the lease is a relation over resources AND phases, pinned at both ends", (
   );
   assert.equal(leaseOf({ ...draft(cfgBudgeted), wrapUp: wx1 }), 1);
   assert.equal(leaseOf({ ...draft(cfgBudgeted), wrapUp: wx2 }), 2);
+  // THE PROPERTY IS THE FLOOR, NOT MEMBERSHIP AT ONE INSTANCE: a value merely
+  // outside DB's universe (3, say) is a real resource at `nRepos = 3`, which
+  // `configAdmitsInit` admits. What holds at every admissible instance is that
+  // the kindless answer sits below the universe's first id.
+  assert.ok(noResource < firstRepoId);
   assert.ok(!repos(cfgBudgeted).has(noResource));
+  assert.ok(!repos({ ...cfgBudgeted, nRepos: 9 }).has(noResource));
   // ONE WIDENING IN THIS FAMILY IS EQUIVALENT, and is recorded rather than
   // hunted: admitting `PWrapUpHolding` into `wrapUpStartableIn`'s phase
   // conjunct changes no answer, because a holding ticket holds its own
@@ -2345,7 +2530,7 @@ test("artifactStampedAndSupersededTest: work-passed stamps the artifact it produ
   const second = ticketAt(dBackToEval.post, 1).artifact;
   assert.notDeepEqual(second, { tag: "ANone" });
   assert.notDeepEqual(second, ticketAt(dWorkReduce.post, 1).artifact);
-  assert.deepEqual(second, { tag: "ASome", id: 3 });
+  assert.deepEqual(second, { tag: "ASome", id: 5 });
 });
 
 test("nonLandingStepsCarryNoAttributionTest: attribution appears at the landing boundary and nowhere else", () => {
@@ -2397,6 +2582,7 @@ test("escalate retires the live set, names the wall, and opens the desk task", (
       ...draft(cfgBudgeted),
       phase: "PWorking",
       tasks: spawnTasks({ tag: "TKWork" }, 1, 2),
+      spawned: 2,
     }),
     1,
     "RWorking",
@@ -2476,6 +2662,7 @@ test("what the model's types forbid is checked here, where TypeScript's do not",
     phase: "PWorking",
     gasLeft: 2,
     tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
+    spawned: 2,
   });
   assert.throws(() => decideWorkReduce(emptyProgram, 1), AssertionError);
   // Ids are dense and never reused, so the next one is the fleet's size + 1.
@@ -2507,4 +2694,108 @@ test("ticketAt is total: a fleet with a hole fails loudly, it does not skip", ()
   ]);
   assert.throws(() => ticketAt(holed, 2), AssertionError);
   assert.throws(() => decideRevoke(holed, 1), AssertionError);
+});
+
+// === Every hand-built fixture accounts for its own ids ======================
+
+/**
+ * `model/domain.qnt`'s `idsAccounted`, one ticket at a time — the same equality
+ * the machine invariant quantifies over the fleet, usable on a fixture the
+ * machine never produced. The invariant proper is s2c's; this is the fixture
+ * hygiene that keeps s2c's job possible, and it mirrors the guard model PR #27
+ * adds on its own side (`handBuiltFixturesAccountedTest`).
+ */
+function accountedTicket(j: Ticket): boolean {
+  return j.spawned === j.record.length + j.tasks.length;
+}
+
+test("fixtureIdsAccountedTest: every named fixture states the ids it hands itself", () => {
+  // Hand-built fixtures AND decider-derived ones, because the derived states
+  // inherit any deficit below them — which is exactly how the model's own
+  // thirteen went unnoticed. A fourteenth cannot repeat it quietly.
+  const fleets: readonly (readonly [string, Core])[] = [
+    ["cEmpty", cEmpty],
+    ["cA1", cA1],
+    ["cA2", cA2],
+    ["c0", c0],
+    ["c1", c1],
+    ["c2", c2],
+    ["c3", c3],
+    ["c4", c4],
+    ["c5", c5],
+    ["c6", c6],
+    ["c7", c7],
+    ["c8", c8],
+    ["cGated7", cGated7],
+    ["cWorkFail", cWorkFail],
+    ["dWorkFail.post", dWorkFail.post],
+    ["cEvalFail", cEvalFail],
+    ["dEvalRework.post", dEvalRework.post],
+    ["cReworkWall", cReworkWall],
+    ["dReworkWall.post", dReworkWall.post],
+    ["cEvalGasWall", cEvalGasWall],
+    ["dEvalGasWall.post", dEvalGasWall.post],
+    ["cStagedWork", cStagedWork],
+    ["cS0", cS0],
+    ["cS1", cS1],
+    ["dStagedFinal.post", dStagedFinal.post],
+    ["cAfterShort", cAfterShort],
+    ["dBackToEval.post", dBackToEval.post],
+    ["cFlatWork", cFlatWork],
+    ["cGateB", cGateB],
+    ["dGateRework.post", dGateRework.post],
+    ["cGateWall", cGateWall],
+    ["cGateGasWall", cGateGasWall],
+    ["cGateD", cGateD],
+    ["cGateDWall", cGateDWall],
+    ["cFresh", cFresh],
+    ["dPark.post", dPark.post],
+    ["dParkResume.post", dParkResume.post],
+    ["cEscB", cEscB],
+    ["cEscWorking", cEscWorking],
+    ["cRel2", cRel2],
+    ["cChain", cChain],
+    ["cParked", cParked],
+    ["cGateOcc", cGateOcc],
+    ["cQueueB", cQueueB],
+    ["cCrossKind", cCrossKind],
+    ["cXDepPre", cXDepPre],
+    ["cXDepDone", cXDepDone],
+    ["cAllPhases", cAllPhases],
+    ["cGateElsewhere", cGateElsewhere],
+    ["cAllResumable", cAllResumable],
+    ["cBehindADraft", cBehindADraft],
+    ["cAheadOfEach", cAheadOfEach],
+    ["resumeFleet(0)", resumeFleet(0)],
+    ["resumeFleet(2)", resumeFleet(2)],
+  ];
+  for (const [name, c] of fleets) {
+    for (const [j, jb] of c.tickets) {
+      assert.ok(
+        accountedTicket(jb),
+        `${name} ticket ${String(j)}: spawned ${String(jb.spawned)} against ${String(jb.record.length)} retired + ${String(jb.tasks.length)} live`,
+      );
+    }
+  }
+  // The single-ticket fixtures both suites share, and the two desk fixtures
+  // built here.
+  const solos: readonly (readonly [string, Ticket])[] = [
+    ["jDraft", jDraft],
+    ["jPend", jPend],
+    ["jWork", jWork],
+    ["jEval", jEval],
+    ["jLand", jLand],
+    ["jGated", jGated],
+    ["jEsc", jEsc],
+    ["jParkPre", jParkPre],
+    ["jParkDep", jParkDep],
+    ["jDone", jDone],
+    ["escLanding", escLanding],
+    ["escWorking", escWorking],
+  ];
+  for (const [name, jb] of solos) {
+    assert.ok(accountedTicket(jb), `${name} does not account for its ids`);
+  }
+  // And the guard bites: the defect it names is one field wide.
+  assert.ok(!accountedTicket({ ...jWork, spawned: 0 }));
 });

@@ -19,6 +19,18 @@
  * decider defines: the measure vocabulary's own inputs, and the PRE-states the
  * deciders are applied to.
  *
+ * TWO CLASSES OF FIXTURE, AND ONLY ONE OF THEM ACCOUNTS FOR ITS IDS. A fixture
+ * standing for a MACHINE STATE states its own `spawned` (`record.length +
+ * tasks.length`), per ledger #17's Path A and model PR #27 — every pre-state
+ * below does. The MEASURE-VOCABULARY probes deliberately do not, and are
+ * excluded by this label: they are inputs to a pure function of the fields they
+ * name (`stagesLeft`, `evalStage`, `runningCount`, `retireLive`, `spawnOn`,
+ * `combine`, the digit table's shapes), `spawned` is not among those fields,
+ * and several are malformed on purpose — a scrambled task set, a stage index
+ * past the program's end, an id 2^53 away — which is the whole of what they
+ * pin. Giving an unreachable-by-design probe an accounted counter would dress
+ * it as a state the machine could reach.
+ *
  * THE EXPECTED INTEGERS ARE THE MODEL'S OWN. Every number pinned below was
  * read out of `chuggy_measure` itself, by evaluating the same fixture in the
  * quint 0.32.0 REPL against `model/measure.qnt` — not computed by this
@@ -792,6 +804,7 @@ test("workFailedWallTest / evalWallsNamedTest: every wall descends by rank", () 
     phase: "PWorking",
     gasLeft: 2,
     tasks: [wt(1, "TFailed"), wt(2, "TPassed")],
+    spawned: 2,
   };
   assert.deepEqual(
     measuresAt(bBudgeted, [
@@ -813,6 +826,7 @@ test("workFailedWallTest / evalWallsNamedTest: every wall descends by rank", () 
     reworkLeft: 0,
     gasLeft: 2,
     tasks: oneFailedE0,
+    spawned: 2,
   };
   assert.deepEqual(
     measuresAt(bBudgeted, [
@@ -923,6 +937,7 @@ test("evalReworkDescendsTest: the eval rework's account drop dominates its micro
     reworkLeft: 1,
     gasLeft: 2,
     tasks: [et(1, 0, "TFailed"), et(2, 0, "TPassed")],
+    spawned: 2,
   };
   const post = reworkedFromEval(cfgBudgeted, pre);
   assert.deepEqual(measuresAt(bBudgeted, [pre, post]), [723, 416]);
@@ -997,7 +1012,7 @@ test("revokeMeasureClassifiedTest: revoke descends from every live rank and is f
 
 test("releaseDescendsTest / arrivalTest: authoring's one descent and its one climb", () => {
   const arrived = draft(cfgBudgeted);
-  const released: Ticket = { ...arrived, phase: "PPending" };
+  const released = stepped(decideRelease(solo(arrived), 1));
   assert.ok(descends(bBudgeted, arrived, released));
   // AUTHORING: arrival climbs by the fresh Draft's WHOLE ticketMeasure, which
   // is what makes it the set's only climbing member and why it is bounded by
@@ -1034,11 +1049,19 @@ test("STUTTER: a duplicate or stale completion leaves the measure exactly unchan
     ...draft(cfgBudgeted),
     phase: "PWorking",
     tasks: live,
+    spawned: live.length,
   };
   const after: Ticket = { ...working, tasks: contradicting };
   assert.equal(
     ticketMeasure(bBudgeted, after),
     ticketMeasure(bBudgeted, working),
+  );
+  // And through the decider that owns the absorption, where the claim is
+  // identity rather than equal measure: a re-delivered completion for a
+  // resolved task returns the observed ticket itself.
+  assert.deepEqual(
+    stepped(decideTaskDone(solo(working), 1, 1, "VFail")),
+    working,
   );
 });
 
@@ -1447,10 +1470,9 @@ test("revokeRetainsRecordTest: retireLive force-closes the running and preserves
     );
   }
   // Retirement appends in id order, so record entry i keeps id firstTaskId + i.
-  const twice = retireLive({
-    ...retireLive(jWork),
-    tasks: spawnTasks({ tag: "TKEval", stage: 0 }, 3, 2),
-  });
+  const twice = retireLive(
+    spawnOn(retireLive(jWork), { tag: "TKEval", stage: 0 }, 2),
+  );
   assert.deepEqual(
     twice.record.map((t) => t.id),
     [1, 2, 3, 4],

@@ -192,12 +192,27 @@ export function spent(j: Ticket): Ticket {
   return { ...j, gasLeft: 2, reworkLeft: 0, wrapUpLeft: 1 };
 }
 
+/**
+ * A HAND-BUILT FIXTURE STATES ITS OWN `spawned`, and the model's fixtures now
+ * do too (model PR #27, ledger #17). The ghost counter is bumped only by
+ * `spawnOn`, and a literal task set or record never goes through it — so a
+ * fixture that hands itself either one and keeps `freshTicket`'s 0 breaks
+ * `idsAccounted`, which makes it a state the machine cannot reach. That is not
+ * cosmetic: `decideWorkReduce` READS the counter, stamping
+ * `ASome(retired.spawned)` as the artifact identity, so a short counter
+ * answers a question the machine answers differently.
+ *
+ * Every fixture in this tree that gives itself a history therefore carries the
+ * accounted count, `record.length + tasks.length`; `freshTicket`'s 0 is already
+ * that count for a fixture with no history.
+ */
 export const jDraft: Ticket = spent(draft(cfgBudgeted));
 export const jPend: Ticket = { ...jDraft, phase: "PPending" };
 export const jWork: Ticket = {
   ...jDraft,
   phase: "PWorking",
   tasks: spawnTasks({ tag: "TKWork" }, firstTaskId, 2),
+  spawned: 2,
 };
 /** One passed, one failed — a stage `CAnyPass` passes and a unanimous one fails. */
 export const mixedE0: readonly Task[] = [
@@ -208,6 +223,7 @@ export const jEval: Ticket = {
   ...jDraft,
   phase: "PEvaluating",
   tasks: mixedE0,
+  spawned: 2,
 };
 export const jLand: Ticket = { ...jDraft, phase: "PWrapUp" };
 export const jGated: Ticket = { ...jDraft, phase: "PWrapUpHolding" };

@@ -258,9 +258,17 @@ export function wrapUpChoices(cfg: Config): readonly WrapUp[] {
   return choices;
 }
 
+/**
+ * The repo universe's floor, named on `firstTaskId`'s precedent: every
+ * admissible instance draws its repos from `firstRepoId..N_REPOS`, so this is
+ * the number `noResource` has to sit below to be safe at EVERY instance rather
+ * than at the ones this tree happens to configure.
+ */
+export const firstRepoId = 1;
+
 /** `model/domain.qnt` repos — the repo universe an arrival's target is drawn from. */
 export function repos(cfg: Config): ReadonlySet<number> {
-  return rangeSet(1, cfg.nRepos);
+  return rangeSet(firstRepoId, cfg.nRepos);
 }
 
 /** `model/domain.qnt` bounds — the measure's bounds, from this instance's consts. */
@@ -671,6 +679,17 @@ export function resumeCharge(cfg: Config, at: Resume): number {
 }
 
 /**
+ * Does a modeled resume EXIST for this ticket? `retryableIn`'s middle conjunct,
+ * named once because `decideOpRetry`'s guard needs the same question and a
+ * second spelling of it would be the restated guard this file forbids — the one
+ * wall without a resume is `dependency_revoked`, and it is exactly the arm the
+ * decider answers rather than refuses.
+ */
+function hasModeledResume(t: Ticket): boolean {
+  return t.resumeAt !== "RNone";
+}
+
+/**
  * `model/domain.qnt` retryableIn — may the operator Retry this parked ticket? A
  * resume must EXIST and be AFFORDABLE. The one wall with no modeled resume is
  * `dependency_revoked`, and the model's header has the argument for that
@@ -680,7 +699,7 @@ export function retryableIn(cfg: Config, c: Core, j: number): boolean {
   const jb = ticketAt(c, j);
   return (
     jb.phase === "PEscalated" &&
-    jb.resumeAt !== "RNone" &&
+    hasModeledResume(jb) &&
     resumeCharge(cfg, jb.resumeAt) <= jb.gasLeft
   );
 }
@@ -703,8 +722,10 @@ export function waitsOn(c: Core, j: number): ReadonlySet<number> {
  * the whole requirement, and it is stricter than it looks: ordering by
  * dependency id would order by WHICH dep carried which mark, so two Cores the
  * model calls equal here — same marks, different dependencies producing them —
- * would answer with unequal arrays, and s2b's release read would compare them
- * and disagree with the model.
+ * would answer with unequal arrays, and a future consumer comparing them would
+ * disagree with the model. No consumer exists yet — the model derives
+ * `depArtifacts` and no decider reads it, s2b's included — which is exactly why
+ * the canonicity has to be right before one arrives.
  *
  * THE ORDER IS LEXICOGRAPHIC ON THAT KEY, DELIBERATELY NOT NUMERIC ON THE
  * MARK: `ASome:10` sorts before `ASome:2`. Canonicity asks for an order that
@@ -854,11 +875,16 @@ export function deliverableTaskIds(c: Core, j: number): ReadonlySet<number> {
 
 /**
  * The answer `leaseOf` gives for a wrap-up kind that needs no lease. The model
- * writes it as a bare `0` and states the property that makes it safe — no
- * resource universe contains it — so it is named once here and that property is
- * checked where the universe is (`leaseOf` answers outside `repos`).
+ * writes it as a bare `0` and states the property that makes it safe: no
+ * resource universe contains it, so it can never collide with a real holder.
+ *
+ * THE PROPERTY IS BELOW THE FLOOR, NOT OUTSIDE ONE UNIVERSE. Any value outside
+ * `1..N_REPOS` passes a membership check at some given instance and collides at
+ * a larger one — `3` is safe at `nRepos = 2` and is a real resource at
+ * `nRepos = 3`. What makes this value safe at EVERY admissible instance is
+ * `noResource < firstRepoId`, and that is what the tests pin.
  */
-export const noResource = 0;
+export const noResource = firstRepoId - 1;
 
 /**
  * `model/domain.qnt` leaseOf — the resource this ticket's wrap-up needs a lease
@@ -1322,8 +1348,11 @@ function failWrapUp(cfg: Config, c: Core, j: number): Decision {
  * is what makes "a valid artifact cannot fail" structural rather than argued.
  * The PATH is the other two: a moved attempt resolves out of the gate, so its
  * ticket is in `holdingIn`; a quiet one resolves at the dequeue, whose guard is
- * `wrapUpStartableIn`. The model states the pair as prose at this decider and
- * checks it on every reachable step as `wrapUpIsolation`'s path iff.
+ * `wrapUpStartableIn`. The model states the pair as prose at this decider,
+ * checks it on every reachable step as `wrapUpIsolation`'s path iff, and names
+ * both halves as enablement in `model/refinement.qnt`'s `cmdEnabled` —
+ * `JDequeue` asks `wrapUpStartablesIn`, `JGateResolve` asks `holdingIn` and the
+ * same draw rule — so s3's replay checker re-checks exactly these.
  */
 export function decideWrapUpResolve(
   cfg: Config,
@@ -1393,19 +1422,21 @@ export function decideRevalFail(c: Core, j: number): Decision {
  * `model/domain.qnt` decideOpRetry — THE operator resume: one decider, four
  * flavors, one trace label, the flavor visible in the transition's target.
  *
- * THE GUARD IS `retryableIn` MINUS THE ARM THE MODEL WROTE. `retryableIn`
- * refuses two disjoint things: a park with NO modeled resume (`RNone` — the
- * `dependency_revoked` wall), and a park whose charging resume it cannot
- * afford. The model answers the first with the guarded no-op arm below, which
- * is total and which this file reproduces, so asserting it away here would
- * delete a documented arm; the second would overdraw gas, so it is refused.
+ * THE GUARD IS `retryableIn` MINUS THE ARM THE MODEL WROTE, and it is written
+ * as that subtraction rather than as a copy: `hasModeledResume` is the conjunct
+ * both definitions read. `retryableIn` refuses two disjoint things — a park
+ * with NO modeled resume (the `dependency_revoked` wall), and a park whose
+ * charging resume it cannot afford. The model answers the first with the
+ * guarded no-op arm below, which is total and which this file reproduces, so
+ * asserting it away here would delete a documented arm; the second would
+ * overdraw gas, so it is refused.
  * That leaves every arm that reads `resumed` holding `resumeCharge <= gasLeft`,
  * which is what keeps `accountsBounded` true of the post-state.
  */
 export function decideOpRetry(cfg: Config, c: Core, j: number): Decision {
   const jb = ticketAt(c, j);
   invariant(
-    jb.resumeAt === "RNone" || retryableIn(cfg, c, j),
+    !hasModeledResume(jb) || retryableIn(cfg, c, j),
     `decideOpRetry: ticket ${String(j)} is parked behind a resume it cannot afford, or is not parked at all`,
   );
   // Computed once, before the flavor, as the model computes it. The `RNone`
