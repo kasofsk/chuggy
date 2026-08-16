@@ -56,6 +56,7 @@ import {
   domainSource,
   manifestPath,
   mcSource,
+  measureSource,
   refinementSource,
   witnessSource,
 } from "./corpus.ts";
@@ -658,6 +659,15 @@ for (const removed of rosterRemovals) {
  * one at a time: an empty answer here would red every entry of the roster at
  * once and blame the tree for a defect in this file, while a roster built out
  * of an unparsed expression would report a disagreement nobody can act on.
+ *
+ * ONE ARM IS NOT DRIVEN FROM HERE, and it is named rather than left to be
+ * found: the bracket scan's "these do not close", shared by the const-block
+ * reader and the record readers. A Quint source is never short of a closing
+ * brace by the time this walk opens it — `check-model.sh` parses the same
+ * files in the same `just check` — and a source with one deleted does not
+ * reach that arm anyway: the scan stops at the next unmatched brace and the
+ * text it hands back trips a field refusal above instead. Driving it would
+ * mean building a source no reader in this tree can be given.
  */
 const parseHonesty: readonly {
   readonly case: string;
@@ -713,11 +723,49 @@ const parseHonesty: readonly {
       'model/refinement.qnt: type Cmd: "jOpRetry(int)" is not a constructor',
   },
   {
+    // The declaration ends where Quint's layout ends it — at the first
+    // non-blank line indented no deeper than the `type` — so an empty arm list
+    // is one whose next declaration follows immediately. It used to be spelled
+    // as a blank line under the `type`, which is now an INTERIOR blank and is
+    // skipped: that spelling was the truncation this reader had to lose.
     case: "the arm list is empty",
     source: refinementSource,
     from: "type Cmd =\n      JArrive(",
-    to: "type Cmd =\n\n      JArrive(",
+    to: "type Cmd =\n  type CmdTag = int\n      JArrive(",
     error: "model/refinement.qnt: type Cmd: this parse matched nothing",
+  },
+  {
+    case: "the record type's declaration is spelled another way",
+    source: measureSource,
+    from: "type StepRecord = {",
+    to: "type StepRecord = (",
+    error:
+      'model/measure.qnt: type StepRecord: no "type StepRecord = {" declaration',
+  },
+  {
+    case: "a record field is not a field declaration",
+    source: measureSource,
+    from: "type Transition = { ticket: int, from: Phase, to: Phase }",
+    to: "type Transition = { ticket int, from: Phase, to: Phase }",
+    error:
+      'model/measure.qnt: type Transition: "ticket int" is not a field declaration',
+  },
+  {
+    case: "a record declares no fields at all",
+    source: measureSource,
+    from: "type Task = { id: int, kind: TaskKind, state: TaskState }",
+    to: "type Task = {  }",
+    error: "model/measure.qnt: type Task: this parse matched nothing",
+  },
+  {
+    // The one entry read from an ARM rather than from a `type` of its own: a
+    // payload that stops being a record has no fields to compare, and saying
+    // "no fields" would red every one of them at once.
+    case: "the wrap-up attempt's payload stops being a record",
+    source: measureSource,
+    from: "WOAttempt({ project: int, invalidated: bool })",
+    to: "WOAttempt(int)",
+    error: 'model/measure.qnt: WOAttempt: no "WOAttempt({" arm',
   },
   {
     case: "the refinement bundle's declaration is spelled another way",
@@ -774,6 +822,190 @@ test("staleRosters: a code literal spelled as neither an effect nor a step label
   assert.deepEqual(verification.findings, [
     'model: string literal "9lives" — the model\'s code holds it and it is spelled as neither an effect nor a step label',
   ]);
+});
+
+// === staleRosters: the record schemas =====================================
+
+/**
+ * THE TWELFTH ROSTER, and the one the other eleven are written in terms of. A
+ * decider, a label and an effect are NAMES; a record is the VOCABULARY a golden
+ * trace is expressed in, and the way one goes stale is a FIELD, which no name
+ * roster can see. Both shipped copies are hand-typed — `itf.ts` decodes each
+ * record against an exact field set, `entry.ts` states the journal row's schema
+ * — and the only thing that ever held either against `model/` was regenerating
+ * the corpus, which no gate does. A rename upstream crossed a whole release
+ * that way.
+ *
+ * EACH CASE STATES ITS OWN FINDINGS RATHER THAN DERIVING THEM, because the
+ * count is part of the claim: `StepRecord` is copied in two files and reds
+ * four times from one rename, while `Ticket` is copied in one and reds once.
+ * A shared expectation builder would hide exactly that.
+ */
+const recordSchemaCases: readonly {
+  readonly case: string;
+  readonly source: string;
+  readonly from: string;
+  readonly to: string;
+  readonly findings: readonly string[];
+}[] = [
+  {
+    // THE LIVE CASE, and the one this roster was cut for: kasofsk PR #51
+    // renamed exactly this field, every gate stayed green, and the drift was
+    // found by a human reading two files side by side.
+    case: "the step record's attribution field is renamed",
+    source: measureSource,
+    from: "    attempt: WrapUpObs\n  }",
+    to: "    landing: WrapUpObs\n  }",
+    findings: [
+      "model: StepRecord field (src/spine/itf.ts) landing — the model has it and this tree's roster does not",
+      "model: StepRecord field (src/spine/itf.ts) attempt — this tree's roster has it and the model does not",
+      "model: StepRecord field (src/spine/entry.ts) landing — the model has it and this tree's roster does not",
+      "model: StepRecord field (src/spine/entry.ts) attempt — this tree's roster has it and the model does not",
+    ],
+  },
+  {
+    case: "the ticket record gains a field this tree does not decode",
+    source: measureSource,
+    from: "    completions: int\n  }",
+    to: "    completions: int,\n    leaseHeld: bool\n  }",
+    findings: [
+      "model: Ticket field (src/spine/itf.ts) leaseHeld — the model has it and this tree's roster does not",
+    ],
+  },
+  {
+    case: "the ticket record loses a field this tree still decodes",
+    source: measureSource,
+    from: "\n    spawned: int,",
+    to: "",
+    findings: [
+      "model: Ticket field (src/spine/itf.ts) spawned — this tree's roster has it and the model does not",
+    ],
+  },
+  {
+    case: "a task's identity field is renamed",
+    source: measureSource,
+    from: "type Task = { id: int, kind: TaskKind, state: TaskState }",
+    to: "type Task = { tid: int, kind: TaskKind, state: TaskState }",
+    findings: [
+      "model: Task field (src/spine/itf.ts) tid — the model has it and this tree's roster does not",
+      "model: Task field (src/spine/itf.ts) id — this tree's roster has it and the model does not",
+    ],
+  },
+  {
+    case: "an eval stage's fan-out is renamed",
+    source: measureSource,
+    from: "type Stage = { fanout: int, combinator: Combinator }",
+    to: "type Stage = { width: int, combinator: Combinator }",
+    findings: [
+      "model: Stage field (src/spine/itf.ts) width — the model has it and this tree's roster does not",
+      "model: Stage field (src/spine/itf.ts) fanout — this tree's roster has it and the model does not",
+    ],
+  },
+  {
+    case: "a transition's subject is renamed",
+    source: measureSource,
+    from: "type Transition = { ticket: int, from: Phase, to: Phase }",
+    to: "type Transition = { subject: int, from: Phase, to: Phase }",
+    findings: [
+      "model: Transition field (src/spine/itf.ts) subject — the model has it and this tree's roster does not",
+      "model: Transition field (src/spine/itf.ts) ticket — this tree's roster has it and the model does not",
+    ],
+  },
+  {
+    // The one read out of a sum ARM rather than a `type` of its own — the
+    // wrap-up attribution the golden traces carry per project.
+    case: "the wrap-up attempt's attribution is renamed",
+    source: measureSource,
+    from: "WOAttempt({ project: int, invalidated: bool })",
+    to: "WOAttempt({ target: int, invalidated: bool })",
+    findings: [
+      "model: WOAttempt field (src/spine/itf.ts) target — the model has it and this tree's roster does not",
+      "model: WOAttempt field (src/spine/itf.ts) project — this tree's roster has it and the model does not",
+    ],
+  },
+  {
+    // The journal row, which is `refinement.qnt`'s and which `entry.ts` states
+    // schema-first: the row shape outlives the process, so a field moving under
+    // it is the drift with the longest reach in this tree.
+    case: "the journal row's record field is renamed",
+    source: refinementSource,
+    from: "type Entry = { seq: int, cmd: Cmd, rec: StepRecord }",
+    to: "type Entry = { seq: int, cmd: Cmd, record: StepRecord }",
+    findings: [
+      "model: Entry field (src/spine/entry.ts) record — the model has it and this tree's roster does not",
+      "model: Entry field (src/spine/entry.ts) rec — this tree's roster has it and the model does not",
+    ],
+  },
+];
+
+for (const schema of recordSchemaCases) {
+  test(`staleRosters: ${schema.case} — the record schema reds, naming the field and the file`, () => {
+    const verification = verifying((repo) => {
+      editModelText(repo, schema.source, schema.from, schema.to);
+    });
+    assert.deepEqual(verification.findings, schema.findings);
+    assert.deepEqual(verification.errors, []);
+  });
+}
+
+// === The readers' tolerance of the model's own prose =======================
+
+test("sumTypeArms: a comment and a blank line INSIDE the arm list hide no arm", () => {
+  // THE TRUNCATION THIS READER USED TO HAVE. `withoutComments` rewrites a `//`
+  // line to whitespace, and the read ended at the first empty line — so an
+  // ordinary note beside a new `Cmd` arm dropped every arm below it from the
+  // roster, and the exact-set comparison went on reporting agreement over a
+  // vocabulary it could no longer see. Both spellings are in this one edit:
+  // the comment, and the blank line under it.
+  const verification = verifying((repo) => {
+    editModelText(
+      repo,
+      refinementSource,
+      "    | JGateResolve({ ticket: int, out: WrapUpOutcome })",
+      "    // the gate resolution, drawn with its outcome\n\n    | JGateResolve({ ticket: int, out: WrapUpOutcome })",
+    );
+  });
+  // Every arm below the note is still rostered, so nothing reds: with the
+  // truncation, the four arms from `JGateResolve` down each report as held by
+  // this tree and not by the model.
+  assert.deepEqual(verification.findings, []);
+  assert.deepEqual(verification.errors, []);
+});
+
+test("conjunctsOf: a comment and a blank line INSIDE a bundle hide no conjunct", () => {
+  // The sibling reader, audited for the same defect and found not to have it —
+  // it splits the whole block on commas and drops empty pieces, so a blanked
+  // comment line is nothing rather than a boundary. This is the case that keeps
+  // it that way: the bundle's own roster is what `staleRosters` compares, and a
+  // reader that started truncating would report agreement over half a bundle.
+  const verification = verifying((repo) => {
+    editModelText(
+      repo,
+      domainSource,
+      "\n    depsAcyclic,\n",
+      "\n    depsAcyclic,\n    // the dense-id pair below is the fleet's own\n\n",
+    );
+  });
+  assert.deepEqual(verification.findings, []);
+  assert.deepEqual(verification.errors, []);
+});
+
+test("recordTypeFields: the model's field-by-field prose hides no field", () => {
+  // `Ticket` is the record the model documents most heavily — a comment above
+  // nearly every field — so a reader bounded by blank lines or by comments
+  // would see one field of fifteen. The committed tree already exercises that;
+  // this adds a blank line INSIDE the block, which is the shape the sum reader
+  // above was truncating on.
+  const verification = verifying((repo) => {
+    editModelText(
+      repo,
+      measureSource,
+      "    spawned: int,",
+      "\n    // the ghost the accounting invariant reads\n\n    spawned: int,",
+    );
+  });
+  assert.deepEqual(verification.findings, []);
+  assert.deepEqual(verification.errors, []);
 });
 
 test("staleRosters: a roster the parse can no longer see is could-not-run, never an empty roster", () => {

@@ -363,13 +363,30 @@ function isCmd(value: unknown): boolean {
  * walks them as. The vocabulary inside them is deliberately not checked here;
  * see the header.
  */
+const stepRecordShape: readonly NamedCheck[] = [
+  ["label", isString],
+  ["transitions", (v) => Array.isArray(v) && v.every(isTransition)],
+  ["effects", (v) => Array.isArray(v) && v.every(isString)],
+  ["attempt", isWrapUpObs],
+];
+
+/**
+ * The step record's field names, DERIVED from the shape gate above.
+ *
+ * IT IS EXPORTED FOR THE CONFORMANCE GATE, which holds it against
+ * `model/measure.qnt`'s own `type StepRecord` as an exact set in both
+ * directions — `shippedCmdTags`' arrangement, on the record vocabulary rather
+ * than on the decision one. Nothing in TypeScript can keep this list level with
+ * the model: the four names are this file's to get right, and a rename upstream
+ * left them spelling the old one with every gate green until that comparison
+ * existed.
+ */
+export const stepRecordFieldNames: readonly string[] = stepRecordShape.map(
+  ([name]) => name,
+);
+
 function isStepRecordShaped(value: unknown): boolean {
-  return hasFields(value, [
-    ["label", isString],
-    ["transitions", (v) => Array.isArray(v) && v.every(isTransition)],
-    ["effects", (v) => Array.isArray(v) && v.every(isString)],
-    ["attempt", isWrapUpObs],
-  ]);
+  return hasFields(value, stepRecordShape);
 }
 
 /** Each field kind's runtime check — the other half of `FieldTypes`. */

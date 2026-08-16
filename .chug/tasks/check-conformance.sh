@@ -30,15 +30,22 @@
 #      here. The rosters this tree types out by hand — the deciders, the step
 #      labels, the exemption arms, the effect strings, the mc instances, the
 #      nondet binders, the const names, the safety bundle's conjuncts, the
-#      decision-event constructors and the two refinement bundles' conjuncts —
-#      are compared against the model's own declarations as exact sets in both
-#      directions, so a decider the model gained is a finding rather than an
+#      decision-event constructors, the two refinement bundles' conjuncts and
+#      the FIELD LISTS of the records a trace is written in — are compared
+#      against the model's own declarations as exact sets in both directions,
+#      so a decider the model gained is a finding rather than an
 #      obligation nobody owes. A surface stated as a `val ... = and { ... }` or
 #      as a sum type is read by its own reader, in `src/tools/corpus.ts`,
 #      because a read of `pure def`s and code literals cannot see one: while
 #      two of them were unread, a conjunct added to `allInvariants` and an arm
-#      added to `type Cmd` both passed every gate at exit 0. What
-#      remains is a decider whose BODY moved with its NAME and its ROSTERS
+#      added to `type Cmd` both passed every gate at exit 0. The record
+#      schemas joined last and for the sharpest reason: every other roster is a
+#      set of NAMES, a record is the VOCABULARY those names are written in, and
+#      a FIELD moving under `src/spine/itf.ts`'s exact-field decodes and
+#      `src/spine/entry.ts`'s journal schema was caught by regenerating the
+#      corpus alone — which is a developer's command and not a gate, so the
+#      `landing` to `attempt` rename crossed a release with this gate green.
+#      What remains is a decider whose BODY moved with its NAME and its ROSTERS
 #      intact, and that remainder is narrowed rather than closed:
 #      `check-model.sh` runs the model's own suites in the same `just check`,
 #      which catches a body change the model's own theorems refuse — and stays

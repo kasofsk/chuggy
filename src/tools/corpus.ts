@@ -399,19 +399,38 @@ export function readModuleConsts(path: string, module: string): ModelConsts {
  * last one.
  */
 function balanced(source: string, from: number, at: string): string {
+  return balancedIn(source, from, "(", ")", `${at}: the const block's`);
+}
+
+/**
+ * The text between an opening bracket and the one that closes it, counting
+ * depth. `balanced` is this over parentheses; the record readers below want it
+ * over braces, and a second copy of a depth counter is a second place for an
+ * off-by-one to live. `what` names the thing that did not close, because the
+ * caller is the only one that knows.
+ */
+function balancedIn(
+  source: string,
+  from: number,
+  open: string,
+  close: string,
+  what: string,
+): string {
   let depth = 1;
   for (let i = from; i < source.length; i += 1) {
     const ch = source[i];
-    if (ch === "(") {
+    if (ch === open) {
       depth += 1;
-    } else if (ch === ")") {
+    } else if (ch === close) {
       depth -= 1;
       if (depth === 0) {
         return source.slice(from, i);
       }
     }
   }
-  throw new CorpusError(`${at}: the const block's parentheses do not close`);
+  throw new CorpusError(
+    `${what} ${open === "(" ? "parentheses" : "braces"} do not close`,
+  );
 }
 
 /** The first const the manifest and the model disagree about, if any. */
@@ -466,12 +485,16 @@ function count(raw: unknown, at: string): number {
 // The rosters here are typed out by hand from the model's own sources — the
 // deciders, the reachable step labels, the `stepDescends` exemption arms, the
 // effect strings, the mc instances, the nondet binder names, the const names,
-// the conjuncts of `allInvariants` and of the two refinement bundles, and the
-// `Cmd` constructors — and every one of them is a second statement of something
-// the model already says. The corpus does not catch a roster going stale: a
-// model PR that adds a decider adds no fixture either, so `coverageGaps` finds
-// every rostered entry covered and reports nothing, and the whole gate stays
-// green over a machine this tree does not describe.
+// the conjuncts of `allInvariants` and of the two refinement bundles, the `Cmd`
+// constructors, and the FIELD LISTS of the records a trace is written in — and
+// every one of them is a second statement of something the model already says.
+// The corpus does not catch a roster going stale: a model PR that adds a
+// decider adds no fixture either, so `coverageGaps` finds every rostered entry
+// covered and reports nothing, and the whole gate stays green over a machine
+// this tree does not describe. The record schemas are the one surface where the
+// corpus WOULD have caught it — a regenerated trace carries the moved field and
+// the exact-field decode refuses it — and that is no help at all, because
+// regeneration is a developer's command and no gate runs it.
 //
 // WHAT MAKES A SECOND STATEMENT LEGITIMATE, in this tree, is that something
 // maintains it. Where the compiler can, it does — `effect.ts`'s `vocabulary`
@@ -495,6 +518,20 @@ function count(raw: unknown, at: string): number {
 export const domainSource = "model/domain.qnt";
 
 /**
+ * The module the machine's VOCABULARY lives in: the record and sum declarations
+ * every other roster is written in terms of.
+ *
+ * IT IS READ BECAUSE THE FIELD LISTS ARE COPIED HERE and nothing held them
+ * against the declaration. `itf.ts` decodes each record against an exact field
+ * set and `entry.ts` states the journal row's schema, both hand-typed from this
+ * file; a model-side field rename left both spelling the old name with every
+ * gate green, which is how the `landing` → `attempt` rename crossed a whole
+ * release. Regenerating the corpus would have caught it — and no gate
+ * regenerates, by design.
+ */
+export const measureSource = "model/measure.qnt";
+
+/**
  * The module the journaled actor lives in: the decision-event vocabulary the
  * spine replays and this layer's own invariants.
  *
@@ -503,6 +540,35 @@ export const domainSource = "model/domain.qnt";
  * and a model-side addition to either passed every gate.
  */
 export const refinementSource = "model/refinement.qnt";
+
+/**
+ * THE RECORD DECLARATIONS THIS TREE DECODES, by the model's own name for each.
+ *
+ * It is `StepRecord` and everything a `StepRecord` is made of — the trace
+ * vocabulary the whole conformance argument is expressed in — plus the fleet
+ * record a trace state carries and `refinement.qnt`'s journal row. `WOAttempt`
+ * is the one entry that is not a `type` of its own: it is `WrapUpObs`'s payload
+ * arm, read from the arm because that is where the model declares its fields.
+ *
+ * WHAT IS DELIBERATELY ABSENT, so the omission is a decision rather than a gap.
+ * `Core`, `Decision` and `Bounds` are records the model declares and this tree
+ * does not decode field-wise: `Core` arrives as a map and is read as one,
+ * `Decision` is a decider's return value that no trace carries, and `Bounds` is
+ * the measure's parameter record, whose fields `measure.ts` reads through a
+ * `Config` this file already compares const by const. A roster entry for any of
+ * them would compare a model declaration against nothing.
+ */
+export const modelRecordNames = [
+  "Task",
+  "Stage",
+  "WOAttempt",
+  "Ticket",
+  "Transition",
+  "StepRecord",
+  "Entry",
+] as const;
+
+export type ModelRecordName = (typeof modelRecordNames)[number];
 
 /** The hand-maintained rosters, as `model/` actually spells them. */
 export type ModelRosters = {
@@ -529,6 +595,17 @@ export type ModelRosters = {
   /** `val refinementInvariants`' conjuncts, in `model/refinement.qnt`. */
   readonly refinementBundleConjuncts: readonly string[];
   /**
+   * The FIELD LIST of every record declaration this tree decodes, in the
+   * model's own declaration order.
+   *
+   * The twelfth roster, and the one the other eleven are written in terms of:
+   * a decider, a label and an effect are all names, while a record is a
+   * VOCABULARY, and every hand-typed copy of one in this tree — `itf.ts`'s
+   * exact-field decodes, `entry.ts`'s journal schema — was held against
+   * nothing at gate time.
+   */
+  readonly recordFields: Readonly<Record<ModelRecordName, readonly string[]>>;
+  /**
    * Code literals neither spelling rule classified, module paths aside.
    *
    * It exists so that the two spelling rules below are a PARTITION rather than
@@ -543,6 +620,7 @@ export function readModelRosters(): ModelRosters {
   const domainText = readSource(domainSource);
   const domainCode = withoutComments(domainText);
   const refinementCode = withoutComments(readSource(refinementSource));
+  const measureCode = withoutComments(readSource(measureSource));
   const literals = codeLiterals(domainCode);
   return {
     deciders: matchesOf(domainCode, /\bpure def (decide[A-Za-z]*)\s*\(/g, {
@@ -592,6 +670,15 @@ export function readModelRosters(): ModelRosters {
       "refinementInvariants",
       refinementSource,
     ),
+    recordFields: {
+      Task: recordTypeFields(measureCode, "Task", measureSource),
+      Stage: recordTypeFields(measureCode, "Stage", measureSource),
+      WOAttempt: armRecordFields(measureCode, "WOAttempt", measureSource),
+      Ticket: recordTypeFields(measureCode, "Ticket", measureSource),
+      Transition: recordTypeFields(measureCode, "Transition", measureSource),
+      StepRecord: recordTypeFields(measureCode, "StepRecord", measureSource),
+      Entry: recordTypeFields(refinementCode, "Entry", refinementSource),
+    },
   };
 }
 
@@ -716,14 +803,24 @@ function conjunctsOf(
  * `type Cmd`, the decision-event vocabulary this tree mirrors as a union.
  *
  * THE ARMS ARE READ LINE BY LINE, one arm per line, which is how the model
- * writes them and what bounds the read: the list ends at the first line that
- * holds no arm. A payload may hold commas and brackets and is not read at all —
+ * writes them. A payload may hold commas and brackets and is not read at all —
  * `entry.ts` is where a payload's fields are checked, against the union rather
  * than against the model — so what this compares is the constructor roster.
  *
+ * WHAT BOUNDS THE READ IS INDENTATION, AND IT USED TO BE THE FIRST EMPTY LINE.
+ * That was a truncation with no alarm on it: `withoutComments` rewrites a `//`
+ * line to whitespace, so a model author's ordinary note beside a new arm ended
+ * the list, and every arm below it left this roster in silence while the
+ * exact-set comparison went on reporting agreement. A blank line inside the
+ * list did the same. So an interior blank — comment or otherwise — is SKIPPED,
+ * and the declaration ends where Quint's own layout ends it: at the first
+ * non-blank line indented no deeper than the `type` line itself, which is the
+ * next declaration or the module's own close.
+ *
  * A DECLARATION WHOSE ARMS DO NOT START ON THE NEXT LINE IS REFUSED, rather
- * than answered with the arms this reader can see. The same rule as everywhere
- * in this section: a shape the parse no longer recognizes is a could-not-run.
+ * than answered with the arms this reader can see, and so is one whose arm list
+ * comes out empty. The same rule as everywhere in this section: a shape the
+ * parse no longer recognizes is a could-not-run.
  */
 function sumTypeArms(
   code: string,
@@ -743,8 +840,12 @@ function sumTypeArms(
     );
   }
   const arms: string[] = [];
+  const declaredAt = declarationIndent(code, opened);
   for (const line of lines) {
     if (line.trim().length === 0) {
+      continue;
+    }
+    if (indentOf(line) <= declaredAt) {
       break;
     }
     for (const piece of line.split("|")) {
@@ -765,6 +866,129 @@ function sumTypeArms(
     throw new CorpusError(`${at}: this parse matched nothing`);
   }
   return arms;
+}
+
+/** How many spaces a line opens with — Quint's own nesting, read as a number. */
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+/** The indentation of the line a declaration starts on. */
+function declarationIndent(code: string, opened: number): number {
+  const lineStart = code.lastIndexOf("\n", opened) + 1;
+  return indentOf(code.slice(lineStart, opened + 1));
+}
+
+/**
+ * The fields a `type <name> = { … }` declares, in the model's own order.
+ *
+ * THIS IS THE ROSTER THE OTHER ELEVEN ARE WRITTEN IN. A decider, an effect and
+ * a label are names this tree copies; a record is the vocabulary a golden trace
+ * is expressed in, copied into `itf.ts`'s exact-field decodes and into
+ * `entry.ts`'s journal schema, and until this reader existed both copies were
+ * held against nothing at gate time. The comparison is `src/tools/verify.ts`'s
+ * and it is an exact set in both directions, like every other.
+ *
+ * COMMENTS AND BLANK LINES INSIDE THE BLOCK ARE NOT A BOUNDARY, which the sum
+ * reader above learned the hard way: the model documents `Ticket` field by
+ * field, so a reader that stopped at the first blank line would see one field
+ * of fifteen. The block is bounded by its own braces instead, counted by depth,
+ * and split on top-level commas — `deps: Set[int]` and `program: List[Stage]`
+ * are why the split cannot be a plain `,`.
+ *
+ * EVERY ENTRY MUST BE `name: type`. Anything else is reported as could-not-run
+ * rather than rostered as whatever the text between two commas happened to be —
+ * `readModuleConsts`'s rule, and `conjunctsOf`'s.
+ */
+function recordTypeFields(
+  code: string,
+  type: string,
+  source: string,
+): readonly string[] {
+  return recordFieldsAt(
+    code,
+    `type ${type} = {`,
+    `${source}: type ${type}`,
+    "declaration",
+  );
+}
+
+/**
+ * The fields a sum type's record-payload ARM declares — `WrapUpObs`'s
+ * `WOAttempt({ … })`, the wrap-up attribution the golden traces carry.
+ *
+ * It is read from the arm rather than from a `type` of its own because that is
+ * where the model declares it: the payload is anonymous, so there is no
+ * declaration for `recordTypeFields` to find, and leaving it unrostered would
+ * leave the one record whose fields moved most recently the only one nothing
+ * compares.
+ */
+function armRecordFields(
+  code: string,
+  arm: string,
+  source: string,
+): readonly string[] {
+  return recordFieldsAt(code, `${arm}({`, `${source}: ${arm}`, "arm");
+}
+
+function recordFieldsAt(
+  code: string,
+  marker: string,
+  at: string,
+  what: string,
+): readonly string[] {
+  const opened = code.indexOf(marker);
+  if (opened < 0) {
+    throw new CorpusError(`${at}: no ${JSON.stringify(marker)} ${what}`);
+  }
+  const block = balancedIn(
+    code,
+    opened + marker.length,
+    "{",
+    "}",
+    `${at}: the record's`,
+  );
+  const fields = splitTopLevel(block)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => {
+      const name = /^([a-z][A-Za-z0-9_]*)\s*:/.exec(entry)?.[1];
+      if (name === undefined) {
+        throw new CorpusError(
+          `${at}: ${JSON.stringify(entry)} is not a field declaration`,
+        );
+      }
+      return name;
+    });
+  if (fields.length === 0) {
+    throw new CorpusError(`${at}: this parse matched nothing`);
+  }
+  return fields;
+}
+
+/**
+ * A comma-separated list, split at depth zero only. A field's type may itself
+ * carry commas — a nested record, a `Set[…]` of one — and a plain `split(",")`
+ * would turn one field into several unreadable halves and report the parse as
+ * broken rather than the model as changed.
+ */
+function splitTopLevel(block: string): readonly string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < block.length; i += 1) {
+    const ch = block[i];
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth += 1;
+    } else if (ch === ")" || ch === "]" || ch === "}") {
+      depth -= 1;
+    } else if (ch === "," && depth === 0) {
+      parts.push(block.slice(from, i));
+      from = i + 1;
+    }
+  }
+  parts.push(block.slice(from));
+  return parts;
 }
 
 /**

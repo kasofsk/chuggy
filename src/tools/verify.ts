@@ -23,7 +23,11 @@ import type { Config } from "../domain/domain.ts";
 import { bundleConjunctNames } from "../domain/invariants.ts";
 import { effectVocabulary } from "../effects/effect.ts";
 import { shippedDeciders } from "../spine/cmd.ts";
-import { shippedCmdTags } from "../spine/entry.ts";
+import {
+  entryFieldNames,
+  shippedCmdTags,
+  stepRecordFieldNames,
+} from "../spine/entry.ts";
 import {
   refinementBundleConjuncts,
   refinementCoreConjuncts,
@@ -41,7 +45,12 @@ import {
   guardedUnreachableStepLabel,
   reachableStepLabels,
 } from "../spine/decode.ts";
-import { DecodeError, decodeTrace, nondetBinders } from "../spine/itf.ts";
+import {
+  DecodeError,
+  decodedRecordFields,
+  decodeTrace,
+  nondetBinders,
+} from "../spine/itf.ts";
 import { replayTrace } from "../spine/replay.ts";
 import {
   CorpusError,
@@ -57,6 +66,7 @@ import {
   tier2Dir,
   witnessSource,
   type Manifest,
+  type ModelRecordName,
 } from "./corpus.ts";
 
 export type Verification = {
@@ -263,6 +273,17 @@ function staleConsts(manifest: Manifest): readonly string[] {
  * gate at exit 0. Two of them also mean this walk reads `refinement.qnt`, which
  * `staleConsts` never opens.
  *
+ * AND THE RECORD SCHEMAS ARE THE ONES NO ROSTER OF NAMES COULD SEE AT ALL,
+ * which is why they arrived last and cost the most. Every roster above is a set
+ * of NAMES; a record is the VOCABULARY those names are written in, and it goes
+ * stale a FIELD at a time. `measure.qnt`'s `StepRecord` and everything it is
+ * made of, plus `refinement.qnt`'s journal row, are copied into `itf.ts`'s
+ * exact-field decodes and `entry.ts`'s schema — and the only thing that had
+ * ever compared either copy to the model was regenerating the corpus, which no
+ * gate does and which is run by hand. A field rename upstream therefore crossed
+ * a whole release with both bundles green; `shippedRecordFields` below is what
+ * makes that a finding on every run.
+ *
  * EXACT SETS, BOTH DIRECTIONS, ORDER IGNORED. A roster entry the model has and
  * this tree does not is an obligation nobody owes; one this tree has and the
  * model does not is an obligation nothing can ever cover, which would red
@@ -315,12 +336,77 @@ function staleRosters(): readonly string[] {
       refinementBundleConjuncts,
       model.refinementBundleConjuncts,
     ),
+    ...shippedRecordFields.flatMap(({ type, twin, fields }) =>
+      rosterDisagrees(
+        `${type} field (${twin})`,
+        fields,
+        model.recordFields[type],
+      ),
+    ),
     ...model.unclassified.map(
       (text) =>
         `model: string literal ${JSON.stringify(text)} — the model's code holds it and it is spelled as neither an effect nor a step label`,
     ),
   ];
 }
+
+/**
+ * THE RECORD SCHEMAS THIS TREE SHIPS, and where each is written.
+ *
+ * The twelfth roster, and the one the other eleven are expressed in. A decider,
+ * a label and an effect are NAMES: a comparison of them catches the model
+ * gaining or losing one. A record is a VOCABULARY, and the way it goes stale is
+ * a FIELD — which no name roster can see. Both shipped copies of the model's
+ * record types are hand-typed (`itf.ts` decodes against an exact field set,
+ * `entry.ts` states the journal row's schema), and the only thing that ever
+ * compared either to `model/` was regenerating the corpus, which no gate does.
+ * That is how the `landing` → `attempt` rename crossed a release with every
+ * gate green.
+ *
+ * `StepRecord` APPEARS TWICE ON PURPOSE. Two files copy it — the decoder and
+ * the journal schema — and they can drift from the model independently, so a
+ * finding names the file as well as the field. The alternative, comparing one
+ * of them and trusting the other to follow, is the arrangement this whole
+ * section exists to refuse.
+ */
+const shippedRecordFields: readonly {
+  readonly type: ModelRecordName;
+  readonly twin: string;
+  readonly fields: readonly string[];
+}[] = [
+  { type: "Task", twin: "src/spine/itf.ts", fields: decodedRecordFields.Task },
+  {
+    type: "Stage",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.Stage,
+  },
+  {
+    type: "WOAttempt",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.WOAttempt,
+  },
+  {
+    type: "Ticket",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.Ticket,
+  },
+  {
+    type: "Transition",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.Transition,
+  },
+  {
+    type: "StepRecord",
+    twin: "src/spine/itf.ts",
+    fields: decodedRecordFields.StepRecord,
+  },
+  {
+    type: "StepRecord",
+    twin: "src/spine/entry.ts",
+    fields: stepRecordFieldNames,
+  },
+  { type: "Entry", twin: "src/spine/entry.ts", fields: entryFieldNames },
+];
 
 /** One roster, compared as an exact set in both directions. */
 function rosterDisagrees(
