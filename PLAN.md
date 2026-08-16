@@ -128,9 +128,12 @@ identity plus the exact settled noop record.
 **Decision: a two-tier ITF corpus, both tiers emitted by the pinned quint 0.32.0, `model/`
 untouched.**
 
-- **Tier 1 — sampled walks and targeted violation search:** `quint run --out-itf --mbt`
-  with pinned seeds, on the three mc instances. Covers the bulk of the obligations, with
-  native decision events.
+- **Tier 1 — targeted violation search:** `quint run --out-itf --mbt` with pinned seeds,
+  on the three mc instances. Covers the bulk of the obligations, with native decision
+  events. Every committed tier-1 fixture is an `expect: violation` search; the plain
+  sampled-walk modality this row once also named has no committed representative, because
+  a walk that violates nothing pins nothing a violation search does not already pin —
+  recorded by sweep 2's critic, declared here rather than left implied.
 - **Tier 2 — deterministic witness exports:** `quint test --out-itf` on the model's
   *existing* witness modules (`model/tests/chuggy_witness_test.qnt`). Covers exactly the
   obligations sampling cannot reach — not a coincidence but the model's own design: the
