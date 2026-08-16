@@ -1339,7 +1339,7 @@ module chuggy_domain {
   ///     eval side, so it is legitimately WONone there — pinned in
   ///     tests/chuggy_test.qnt, nonLandingStepsCarryNoAttributionTest;
   ///     complete-duplicate absorbs with nothing emitted and is not an
-  ///     attempt; gate-opened OPENS an attempt but resolves none — the
+  ///     attempt; wrapup-started OPENS an attempt but resolves none — the
   ///     resolution's attribution carries the choice the open encoded.)
   ///   - the PATH iff (R3/R4): a MOVED attempt resolves
   ///     out of the GATE (transitions[0].from == PWrapUpHolding — the slot the
