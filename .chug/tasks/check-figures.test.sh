@@ -128,9 +128,9 @@ run_in "$R"
 check "a model line that is not a comment is not read" 0 "$RC" "0 finding(s)"
 
 # 13. A design doc may carry a measurement, dated and reproducible, so the
-#     directory is left alone. It does not exist yet; this is what will be
-#     waiting when it does. Naming one scans it: the only surface the corpus
-#     leaves out is still reachable without an option to remember.
+#     directory is left alone. Naming one scans it anyway: the only surface the
+#     corpus leaves out is still reachable without an option to remember, which
+#     is what keeps the exemption from being a place to hide a figure.
 fresh_repo "$R"
 mkdir -p "$R/docs/design"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$R/gate.sh"

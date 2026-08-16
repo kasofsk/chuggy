@@ -81,8 +81,9 @@
 # things it does not list is the defect. The one surface left alone is
 # `docs/design/*.md`, because a design doc argues a decision and has to be able
 # to cite the measurement that motivated it — dated, and with the command that
-# reproduces it. That directory does not exist yet and this is what will be
-# waiting when it does.
+# reproduces it. The exemption buys nothing without that second half: a figure
+# there is exempt from this gate and answerable to a reviewer instead, which is
+# a weaker control and is the reason it covers one directory and no other.
 #
 # Usage:
 #   .chug/tasks/check-figures.sh [<file>...]
