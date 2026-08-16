@@ -46,7 +46,7 @@ const eventsByTag = {
   OperatorRetried: { tag: "OperatorRetried", ticket: 1 },
   TaskEnded: { tag: "TaskEnded", ticket: 1, task: 2, verdict: "VFail" },
   GateResolved: { tag: "GateResolved", ticket: 1, outcome: "WFailed" },
-  LandingConfirmed: { tag: "LandingConfirmed", ticket: 1 },
+  CompletionConfirmed: { tag: "CompletionConfirmed", ticket: 1 },
 } as const satisfies {
   readonly [T in ExternalEvent["tag"]]: Extract<
     ExternalEvent,

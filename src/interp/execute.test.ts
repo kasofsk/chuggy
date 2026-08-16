@@ -59,9 +59,9 @@ const everyPortMethod = {
   "fabric.cancel": true,
   "desk.openTask": true,
   "authoring.createDraft": true,
-  "landing.enqueue": true,
-  "landing.openGate": true,
-  "landing.land": true,
+  "wrapUp.enqueue": true,
+  "wrapUp.openGate": true,
+  "wrapUp.land": true,
 } satisfies Record<QualifiedPortCall, true>;
 
 const portMethods: readonly string[] = Object.keys(everyPortMethod);
@@ -77,10 +77,10 @@ function spyPorts(calls: string[]): Ports {
     fabric: { spawn: note("fabric.spawn"), cancel: note("fabric.cancel") },
     desk: { openTask: note("desk.openTask") },
     authoring: { createDraft: note("authoring.createDraft") },
-    landing: {
-      enqueue: note("landing.enqueue"),
-      openGate: note("landing.openGate"),
-      land: note("landing.land"),
+    wrapUp: {
+      enqueue: note("wrapUp.enqueue"),
+      openGate: note("wrapUp.openGate"),
+      land: note("wrapUp.land"),
     },
   };
 }
@@ -117,9 +117,9 @@ test("every effect reaches the port its name says", () => {
       "desk.openTask(OpenHumanTask)",
       "fabric.spawn(SpawnWorkTasks)",
       "fabric.spawn(SpawnEvalTasks)",
-      "landing.enqueue(EnqueueWrapUp)",
-      "landing.openGate(OpenGate)",
-      "landing.land(Complete)",
+      "wrapUp.enqueue(EnqueueWrapUp)",
+      "wrapUp.openGate(OpenGate)",
+      "wrapUp.land(Complete)",
     ],
     "the effect-to-port mapping moved",
   );
@@ -350,15 +350,15 @@ test("a land that fails leaves the cursor, and the re-drain lands nothing twice"
     commitOf(rig, s, { tag: "JGateResolve", ticket: 1, out: "WOk" }),
     "commit the gate resolution",
   );
-  const failingLanding: Ports = {
+  const failingWrapUp: Ports = {
     ...rig.ports,
-    landing: {
-      ...rig.ports.landing,
-      land: recordThenFailOnce(rig.ports.landing.land, "the landing surface"),
+    wrapUp: {
+      ...rig.ports.wrapUp,
+      land: recordThenFailOnce(rig.ports.wrapUp.land, "the wrap-up surface"),
     },
   };
-  assert.throws(() => interpret(cfgInterp, journaled, failingLanding), {
-    message: "the landing surface went away",
+  assert.throws(() => interpret(cfgInterp, journaled, failingWrapUp), {
+    message: "the wrap-up surface went away",
   });
   assert.equal(rig.world.recorded("land").length, 1);
   assert.equal(journaled.applied, journaled.journal.length - 1);
@@ -367,7 +367,7 @@ test("a land that fails leaves the cursor, and the re-drain lands nothing twice"
   assert.equal(
     rig.world.recorded("land").length,
     1,
-    "the re-emitted landing was applied a second time",
+    "the re-emitted completion was applied a second time",
   );
   assert.equal(recovered.mem.core.tickets.get(1)?.completions, 1);
   expectRigSteady(rig, recovered);

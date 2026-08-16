@@ -162,10 +162,10 @@ export function watching(ports: Ports, seen: string[]): Ports {
     authoring: {
       createDraft: note("authoring.createDraft", ports.authoring.createDraft),
     },
-    landing: {
-      enqueue: note("landing.enqueue", ports.landing.enqueue),
-      openGate: note("landing.openGate", ports.landing.openGate),
-      land: note("landing.land", ports.landing.land),
+    wrapUp: {
+      enqueue: note("wrapUp.enqueue", ports.wrapUp.enqueue),
+      openGate: note("wrapUp.openGate", ports.wrapUp.openGate),
+      land: note("wrapUp.land", ports.wrapUp.land),
     },
   };
 }

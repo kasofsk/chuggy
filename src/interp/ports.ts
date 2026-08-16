@@ -11,10 +11,10 @@
  * WHY FOUR AND NOT ONE, and the line is the audience rather than the
  * convenience. A `FabricPort` runs and stops a ticket's task sets; a `DeskPort`
  * puts work in front of a person; an `AuthoringPort` shows an author a draft; a
- * `LandingPort` moves a ticket across the boundary onto its project. Those are
- * four different things to be wrong about, four different failure modes and
- * four different things a deployment substitutes independently. One port
- * carrying every method between them would have one contract paragraph
+ * `WrapUpPort` moves a ticket across the completion boundary onto its project.
+ * Those are four different things to be wrong about, four different failure
+ * modes and four different things a deployment substitutes independently. One
+ * port carrying every method between them would have one contract paragraph
  * covering all of them — which is to say none of them.
  *
  * EVERY PORT IS A RECORD OF FUNCTIONS, SPELLED AS PROPERTIES RATHER THAN AS
@@ -119,7 +119,7 @@
  *   - ACROSS DRAINS, NOTHING IS PROMISED, because the executor's cursor is
  *     durable only up to whatever checkpoint survived. A cursor that regressed
  *     re-sends rows the world already has, so a later drain can deliver seq 1
- *     after seq 3 has been in the world for some time — and, on the landing
+ *     after seq 3 has been in the world for some time — and, on the wrap-up
  *     port specifically, can re-send an `enqueue` after the `land` that ended
  *     the same ticket. Nothing is out of order in the journal; the JOURNAL is
  *     the order, and a drain is a window onto a prefix of it.
@@ -494,11 +494,20 @@ export type AuthoringPort = {
 };
 
 // ==========================================================================
-// === Landing ==============================================================
+// === Wrap-up ==============================================================
 // ==========================================================================
 
 /**
- * THE LANDING PORT — the boundary a ticket's work crosses onto its project.
+ * THE WRAP-UP PORT — the completion boundary a ticket's work crosses onto its
+ * project.
+ *
+ * IT IS NAMED FOR THE ROUTE THE MODEL NAMES. Its three methods are the three
+ * effects of `model/domain.qnt`'s wrap-up route, in the order that route takes
+ * them — `EnqueueWrapUp`, `OpenGate`, `Complete` — and there is no Landing
+ * phase, queue, route or boundary in the model for a port to be named after.
+ * What the model has is `PWrapUp`, `PWrapUpHolding` and the completion
+ * boundary `decideCompleteDuplicate` states, so those are the two words this
+ * whole section is written in.
  *
  * WHAT IT PROMISES.
  *
@@ -522,21 +531,21 @@ export type AuthoringPort = {
  *
  *   NONE OF THE THREE DECIDES. The port does not choose the queue's order, does
  *   not grant or release a lease, does not judge a gate's outcome, and does not
- *   decide whether a landing is wanted. The machine owns mutual exclusion — it
+ *   decide whether a wrap-up is wanted. The machine owns mutual exclusion — it
  *   is the one thing it owns about a project — and it does not own git.
  *
  * WHERE IT MAY FAIL. All three may fail and signal by throwing, and the row
  * re-emits. `land` is the one where the difference between a throw and a denial
- * is expensive: a landing that succeeded and lost its acknowledgement will be
- * re-delivered, and only the idempotence promise below keeps the diff from
+ * is expensive: a completion that succeeded and lost its acknowledgement will
+ * be re-delivered, and only the idempotence promise below keeps the diff from
  * being applied twice. An implementation whose medium cannot absorb a
- * re-delivered landing under its key must make itself absorbable — by the key
- * this port already carries — before it can claim to implement this port.
+ * re-delivered completion under its key must make itself absorbable — by the
+ * key this port already carries — before it can claim to implement this port.
  *
  * ORDERING, AND THIS PORT IS WHERE THE HEADER'S SECOND HALF BITES HARDEST.
  * Within a drain, `enqueue` precedes the `openGate` of the same ticket's
  * attempt and `land` follows whichever of them the route went through. ACROSS
- * DRAINS IT DOES NOT: a cursor that regressed past a landing re-sends that
+ * DRAINS IT DOES NOT: a cursor that regressed past a completion re-sends that
  * ticket's `enqueue` and `openGate` AFTER its `land`, so the sequence a real
  * adapter sees can end with a ticket being queued for a wrap-up it has already
  * completed. Nothing is wrong when that happens — the journal's order never
@@ -552,12 +561,23 @@ export type AuthoringPort = {
  * most once across crashes at any seam, and the crash seam it survives is
  * exactly a `land` whose row was re-emitted.
  */
-export type LandingPort = {
+export type WrapUpPort = {
   /** Announce that this ticket wants its wrap-up. */
   readonly enqueue: (delivery: Delivery) => void;
   /** Start the wrap-up step behind the lease the machine granted. */
   readonly openGate: (delivery: Delivery) => void;
-  /** Publish this ticket's completion. */
+  /**
+   * Publish this ticket's completion.
+   *
+   * THE ONE METHOD NOT SPELLED FROM ITS EFFECT — `enqueue` and `openGate` are
+   * `EnqueueWrapUp` and `OpenGate` with this port's own name factored out; this
+   * one answers `Complete` and is called `land`. The name is the model's rather
+   * than this file's: `model/refinement.qnt` states `noDuplicateCycle` as "the
+   * world LANDS a ticket's diff at most once, across crashes at any seam", and
+   * this method is the act that theorem quantifies over. What the model retired
+   * is `landing` as the name of a THING; the VERB it kept, and a reader who
+   * greps the model for this one arrives at the theorem it has to keep.
+   */
   readonly land: (delivery: Delivery) => void;
 };
 
@@ -572,7 +592,7 @@ export type Ports = {
   readonly fabric: FabricPort;
   readonly desk: DeskPort;
   readonly authoring: AuthoringPort;
-  readonly landing: LandingPort;
+  readonly wrapUp: WrapUpPort;
 };
 
 /**

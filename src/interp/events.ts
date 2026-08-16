@@ -33,8 +33,8 @@
  *     `decideTaskDone` answers a duplicate or stale task completion with a
  *     state-identical no-op (first write wins, and task ids are unique across a
  *     ticket's whole history), and `decideCompleteDuplicate` answers a
- *     re-delivered landing confirmation the same way. Both journal a row with
- *     no transitions and no effects, so nothing reaches the world a second time.
+ *     re-delivered completion confirmation the same way. Both journal a row
+ *     with no transitions and no effects, so nothing reaches the world twice.
  *
  * ==========================================================================
  * WHAT IS AN EVENT HERE, AND WHAT IS NOT
@@ -43,7 +43,7 @@
  * Seven of the twelve commands have a surface. Four come from the desk and the
  * authoring surface — a ticket arrives, its author releases it, somebody
  * revokes it, an operator retries a parked one — and three are the world
- * reporting that something it was running has ended: a task, a gate, a landing.
+ * reporting that something it was running has ended: a task, a gate, a wrap-up.
  *
  * THE OTHER FIVE HAVE NO EVENT, and each for its own reason rather than by
  * oversight:
@@ -112,14 +112,14 @@ export type ExternalEvent =
       readonly task: number;
       readonly verdict: Verdict;
     }
-  /** The landing surface: a wrap-up step has finished, with an outcome. */
+  /** The wrap-up surface: a wrap-up step has finished, with an outcome. */
   | {
       readonly tag: "GateResolved";
       readonly ticket: number;
       readonly outcome: WrapUpOutcome;
     }
-  /** The landing surface: a ticket's diff is landed. */
-  | { readonly tag: "LandingConfirmed"; readonly ticket: number };
+  /** The wrap-up surface: a ticket's diff is landed. */
+  | { readonly tag: "CompletionConfirmed"; readonly ticket: number };
 
 /**
  * The CANDIDATE command an event asks for — a translation and nothing else.
@@ -130,12 +130,12 @@ export type ExternalEvent =
  * it changes anything is the decider's. Nothing here is allowed to anticipate
  * either.
  *
- * `JCompleteDuplicate` is what a landing confirmation translates to, and the
- * name is the model's rather than this file's: the machine has one command for
- * "a landing I already performed has been confirmed again", because the only
- * confirmation the world can send is one the machine has already recorded — the
- * decision that landed the ticket is what asked for the landing in the first
- * place.
+ * `JCompleteDuplicate` is what a completion confirmation translates to, and the
+ * name is the model's rather than this file's: `decideCompleteDuplicate` calls
+ * it "a duplicate completion event for an already-Done ticket", because the
+ * only confirmation the world can send is one the machine has already recorded
+ * — the decision that landed the ticket is what asked for the completion in the
+ * first place.
  */
 export function commandFor(event: ExternalEvent): Cmd {
   switch (event.tag) {
@@ -162,7 +162,7 @@ export function commandFor(event: ExternalEvent): Cmd {
       };
     case "GateResolved":
       return { tag: "JGateResolve", ticket: event.ticket, out: event.outcome };
-    case "LandingConfirmed":
+    case "CompletionConfirmed":
       return { tag: "JCompleteDuplicate", ticket: event.ticket };
     default:
       return assertNever(event, "unhandled external event");
