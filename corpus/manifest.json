@@ -1,0 +1,378 @@
+{
+  "tier1": [
+    {
+      "name": "budgeted-cascade-park",
+      "instance": "budgeted",
+      "seed": "0x2a",
+      "maxSamples": 500,
+      "maxSteps": 30,
+      "invariant": "cascadeParkNever",
+      "expect": "violation",
+      "covers": "the atomic revoke cascade, the pre-work park and its free resume, and a duplicate task completion",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "budgeted-dequeue-to-gate",
+      "instance": "budgeted",
+      "seed": "0x2a",
+      "maxSamples": 20000,
+      "maxSteps": 60,
+      "invariant": "lastStep.label != \"wrapup-started\"",
+      "expect": "violation",
+      "covers": "the dequeue's moved arm \u2014 the depth-1 gate opening \u2014 and the enqueue that precedes it",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "budgeted-landing-duplicate",
+      "instance": "budgeted",
+      "seed": "0x2a",
+      "maxSamples": 20000,
+      "maxSteps": 60,
+      "invariant": "lastStep.label != \"complete-duplicate\"",
+      "expect": "violation",
+      "covers": "a re-delivered landing absorbed by an already-Done ticket",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "budgeted-gated-completion",
+      "instance": "budgeted",
+      "seed": "0x2a",
+      "maxSamples": 20000,
+      "maxSteps": 60,
+      "invariant": "not(and { lastStep.label == \"ticket-done\", lastStep.transitions.length() > 0, lastStep.transitions[0].from == PWrapUpHolding })",
+      "expect": "violation",
+      "covers": "the gated resolution completing out of the held slot",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "budgeted-eval-stage-advance",
+      "instance": "budgeted",
+      "seed": "0x1",
+      "maxSamples": 2000,
+      "maxSteps": 40,
+      "invariant": "lastStep.label != \"eval-stage-passed\"",
+      "expect": "violation",
+      "covers": "the eval interpreter advancing a staged program",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "budgeted-work-failed",
+      "instance": "budgeted",
+      "seed": "0x1",
+      "maxSamples": 2000,
+      "maxSteps": 40,
+      "invariant": "lastStep.label != \"ticket-escalated work_failed\"",
+      "expect": "violation",
+      "covers": "a failed work cycle escalating straight to the desk",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "deadline-only-gate-rework",
+      "instance": "deadline_only",
+      "seed": "0x2a",
+      "maxSamples": 20000,
+      "maxSteps": 60,
+      "invariant": "lastStep.label != \"rework-started wrapup_failure\"",
+      "expect": "violation",
+      "covers": "the gate eviction priced by gas alone, on the DeadlineOnly branch",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "DeadlineOnly",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "retryfree-settled",
+      "instance": "retryfree",
+      "seed": "0x2a",
+      "maxSamples": 20000,
+      "maxSteps": 60,
+      "invariant": "lastStep.label != \"settled\"",
+      "expect": "violation",
+      "covers": "the dead-end stutter on a fully-arrived, wholly-terminal fleet",
+      "consts": {
+        "N_TICKETS": "2",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "2",
+        "WRAPUP_PRICING": "DeadlineOnly",
+        "OP_RETRY_PRICING": "RetryFree",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "budgeted-desk-only-revoke",
+      "instance": "budgeted",
+      "seed": "0x2a",
+      "maxSamples": 20000,
+      "maxSteps": 60,
+      "invariant": "not(and { lastStep.label == \"ticket-revoked\", lastStep.transitions.foldl(true, (b, t) => b and t.from == PEscalated) })",
+      "expect": "violation",
+      "covers": "a revoke that leaves only settled ranks \u2014 the flat desk-only exemption arm",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    }
+  ],
+  "tier2": [
+    {
+      "name": "witness-free-climb",
+      "module": "chuggy_witness_free_test",
+      "run": "freeClimbDeterministicTest",
+      "covers": "the RetryFree pipeline resume \u2014 the exemption arm violation search does not reach",
+      "consts": {
+        "N_TICKETS": "2",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "2",
+        "WRAPUP_PRICING": "DeadlineOnly",
+        "OP_RETRY_PRICING": "RetryFree",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-pre-work-resume",
+      "module": "chuggy_witness_free_test",
+      "run": "preWorkResumeClimbDeterministicTest",
+      "covers": "the pre-work RPending resume, free under both meterings",
+      "consts": {
+        "N_TICKETS": "2",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "2",
+        "WRAPUP_PRICING": "DeadlineOnly",
+        "OP_RETRY_PRICING": "RetryFree",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-cascade-park",
+      "module": "chuggy_witness_cascade_test",
+      "run": "cascadeParkDeterministicTest",
+      "covers": "the revoke cascade parking a pre-flight dependent behind its own wall",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-stage-advance",
+      "module": "chuggy_witness_stage_test",
+      "run": "stageAdvanceDeterministicTest",
+      "covers": "a staged eval program advancing, and the landing that follows it",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-quiet-land",
+      "module": "chuggy_witness_multiproject_test",
+      "run": "quietLandDeterministicTest",
+      "covers": "the quiet fast path landing a ticket at its dequeue",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-moved-rework",
+      "module": "chuggy_witness_multiproject_test",
+      "run": "movedReworkAttributedTest",
+      "covers": "the gate rework and the wrap-up budget wall \u2014 the label violation search does not reach",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-cross-project-dep",
+      "module": "chuggy_witness_multiproject_test",
+      "run": "crossProjectDepDeterministicTest",
+      "covers": "a dependency chain across projects unblocking on Done-ness alone",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-lease-exclusive",
+      "module": "chuggy_witness_gate_test",
+      "run": "leaseExclusiveDeterministicTest",
+      "covers": "the depth-1 refusal mid-trace, and both landing paths on one machine trace",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-quiet-fast-path",
+      "module": "chuggy_witness_gate_test",
+      "run": "quietFastPathDeterministicTest",
+      "covers": "the routing decider's quiet arm, pinned against the hoisted route",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-gate-eviction-deadline",
+      "module": "chuggy_witness_gate_deadline_test",
+      "run": "gateEvictionDeadlineOnlyDeterministicTest",
+      "covers": "two gate failures metered by gas alone, into the gas wall",
+      "consts": {
+        "N_TICKETS": "3",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "DeadlineOnly",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    },
+    {
+      "name": "witness-draft-wait",
+      "module": "chuggy_witness_draft_wait_test",
+      "run": "draftWaitAcceptedDeterministicTest",
+      "covers": "an unreleased dependency blocking through the derived waiting room",
+      "consts": {
+        "N_TICKETS": "2",
+        "N_TASKS": "1",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "1",
+        "N_PROJECTS": "1"
+      }
+    },
+    {
+      "name": "witness-wrapup-none",
+      "module": "chuggy_witness_wrapup_none_test",
+      "run": "wrapUpNoneCompletesDeterministicTest",
+      "covers": "a WNone ticket completing on its passing evaluation, taking no lease",
+      "consts": {
+        "N_TICKETS": "2",
+        "N_TASKS": "1",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "1",
+        "N_PROJECTS": "1"
+      }
+    }
+  ]
+}

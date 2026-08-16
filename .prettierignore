@@ -16,3 +16,11 @@ package-lock.json
 # Quint sources. Prettier has no parser for them and `model/` is not ours to
 # reformat.
 model/
+
+# The golden corpus. `src/tools/emit-corpus.ts` owns these bytes: it writes one
+# line per trace state so that a regenerated corpus diffs at the grain the
+# replayer reports findings at, and it must be able to regenerate an unchanged
+# model to byte-identical files. A formatter with its own opinion about the
+# same lines would break that, and would be reformatting a golden artifact
+# rather than source.
+corpus/
