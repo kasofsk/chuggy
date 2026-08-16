@@ -45,7 +45,7 @@ import type {
 
 /**
  * `chuggy_test`'s DB — the reference instance: Budgeted(1) gate pricing,
- * charged retries, two arrivals, two repos.
+ * charged retries, two arrivals, two projects.
  */
 export const cfgBudgeted: Config = {
   nTickets: 2,
@@ -55,7 +55,7 @@ export const cfgBudgeted: Config = {
   wrapUpPricing: { tag: "Budgeted", budget: 1 },
   opRetryPricing: "RetryCharged",
   maxStages: 2,
-  nRepos: 2,
+  nProjects: 2,
 };
 
 /** `chuggy_test`'s DD — the DeadlineOnly branch: no gate account to spend. */
@@ -73,7 +73,7 @@ export const cfgRetryFree: Config = {
   opRetryPricing: "RetryFree",
 };
 
-/** The lease every fixture below authors, and its repo-2 twin. */
+/** The lease every fixture below authors, and its project-2 twin. */
 export const wx1: WrapUp = { tag: "WExclusive", resource: 1 };
 export const wx2: WrapUp = { tag: "WExclusive", resource: 2 };
 
@@ -142,11 +142,11 @@ export function solo(j: Ticket): Core {
 export function draft(
   cfg: Config,
   program: readonly Stage[] = progU2,
-  repo = 1,
+  project = 1,
   resource = 1,
   deps: ReadonlySet<number> = new Set(),
 ): Ticket {
-  return freshTicket(cfg, deps, program, repo, {
+  return freshTicket(cfg, deps, program, project, {
     tag: "WExclusive",
     resource,
   });
@@ -184,7 +184,7 @@ function oneTicket(c: Core): Ticket {
 // === The revoke fixture family =============================================
 // `chuggy_test`'s eight single-ticket fixtures — one per live phase and all
 // THREE desk-reason flavors of the one parked phase — plus the landed ticket
-// its cross-repo section hand-builds. Accounts are deliberately part-spent, so
+// its cross-project section hand-builds. Accounts are deliberately part-spent, so
 // an equality over them is not vacuously "full grant == full grant".
 
 /** `chuggy_test`'s `spent`. */

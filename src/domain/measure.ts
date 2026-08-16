@@ -192,7 +192,7 @@ export type WrapUpObs =
   | { readonly tag: "WONone" }
   | {
       readonly tag: "WOAttempt";
-      readonly repo: number;
+      readonly project: number;
       readonly invalidated: boolean;
     };
 
@@ -211,7 +211,7 @@ export type ArtifactMark =
  * in the measure module rather than the machine's.
  *
  * Every field's meaning, and every note about which fields the measure
- * deliberately does NOT read (`repo`, `artifact`, `record`, `spawned`,
+ * deliberately does NOT read (`project`, `artifact`, `record`, `spawned`,
  * `completions`, `wrapUp`), is on the model's own record. The two ghost fields
  * are accounting the model keeps for its invariants; they are carried here so
  * that a replayed state is comparable field for field.
@@ -221,7 +221,7 @@ export type Ticket = {
   readonly deps: ReadonlySet<number>;
   readonly wrapUp: WrapUp;
   readonly artifact: ArtifactMark;
-  readonly repo: number;
+  readonly project: number;
   readonly program: readonly Stage[];
   readonly tasks: TaskSet;
   readonly record: readonly Task[];
@@ -515,7 +515,7 @@ export function micro(b: Bounds, ticket: Ticket): number {
  * accounts are" — so that is a precondition. Their UPPER bounds are not,
  * even though the lexicographic claim needs them, because the model itself
  * evaluates this function at bounds a ticket did not come from:
- * `measureRepoBlindTest` and `measureArtifactBlindTest`
+ * `measureProjectBlindTest` and `measureArtifactBlindTest`
  * (`model/tests/chuggy_test.qnt`) both measure a `Budgeted(1)`-born ticket
  * under `DeadlineOnly` bounds, where `wrapUpLeft` is 1 and its radix is 1. The
  * blindness they pin holds regardless, because both sides climb identically;

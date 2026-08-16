@@ -115,7 +115,7 @@ function keysWhere(c: Core, keep: (j: number) => boolean): ReadonlySet<number> {
  * case `deliverableTaskIds` reaches on a ticket that has spawned nothing.
  *
  * The loop is bounded by `hi`, and every caller's `hi` is bounded by the
- * machine: a repo id by `N_REPOS`, a task id by the ticket's own spawn
+ * machine: a project id by `N_PROJECTS`, a task id by the ticket's own spawn
  * history. That is the same bound the model's ranges carry.
  */
 function rangeSet(lo: number, hi: number): ReadonlySet<number> {
@@ -200,7 +200,7 @@ export type Config = {
   readonly wrapUpPricing: WrapUpPricing;
   readonly opRetryPricing: RetryPricing;
   readonly maxStages: number;
-  readonly nRepos: number;
+  readonly nProjects: number;
 };
 
 /**
@@ -236,7 +236,7 @@ export function configAdmitsInit(cfg: Config): boolean {
     atLeastOne(cfg.nTasks) &&
     atLeastOne(cfg.nTickets) &&
     atLeastOne(cfg.maxStages) &&
-    atLeastOne(cfg.nRepos) &&
+    atLeastOne(cfg.nProjects) &&
     reworkBudget(cfg.reworkPolicy) >= 0 &&
     wrapUpBudget(cfg.wrapUpPricing) >= 0
   );
@@ -252,23 +252,23 @@ export function configAdmitsInit(cfg: Config): boolean {
  */
 export function wrapUpChoices(cfg: Config): readonly WrapUp[] {
   const choices: WrapUp[] = [{ tag: "WNone" }];
-  for (const r of repos(cfg)) {
+  for (const r of projects(cfg)) {
     choices.push({ tag: "WExclusive", resource: r });
   }
   return choices;
 }
 
 /**
- * The repo universe's floor, named on `firstTaskId`'s precedent: every
- * admissible instance draws its repos from `firstRepoId..N_REPOS`, so this is
+ * The project universe's floor, named on `firstTaskId`'s precedent: every
+ * admissible instance draws its projects from `firstProjectId..N_PROJECTS`, so this is
  * the number `noResource` has to sit below to be safe at EVERY instance rather
  * than at the ones this tree happens to configure.
  */
-export const firstRepoId = 1;
+export const firstProjectId = 1;
 
-/** `model/domain.qnt` repos — the repo universe an arrival's target is drawn from. */
-export function repos(cfg: Config): ReadonlySet<number> {
-  return rangeSet(firstRepoId, cfg.nRepos);
+/** `model/domain.qnt` projects — the project universe an arrival's target is drawn from. */
+export function projects(cfg: Config): ReadonlySet<number> {
+  return rangeSet(firstProjectId, cfg.nProjects);
 }
 
 /** `model/domain.qnt` bounds — the measure's bounds, from this instance's consts. */
@@ -370,7 +370,7 @@ export function freshTicket(
   cfg: Config,
   deps: ReadonlySet<number>,
   program: readonly Stage[],
-  repo: number,
+  project: number,
   wrapUp: WrapUp,
 ): Ticket {
   invariant(
@@ -383,7 +383,7 @@ export function freshTicket(
     program,
     wrapUp,
     artifact: { tag: "ANone" },
-    repo,
+    project,
     tasks: [],
     record: [],
     spawned: 0,
@@ -456,21 +456,24 @@ export function noop(c: Core, label: string): Decision {
 /**
  * `model/domain.qnt` withWrapUpObs — stamp the landing-boundary attribution on
  * a decision. `decideWrapUpResolve` routes EVERY arm through this, so each step
- * that resolves a landing attempt carries the target repo and the environment's
+ * that resolves a landing attempt carries the target project and the environment's
  * invalidated choice for that attempt.
  *
  * The post-state is passed through UNTOUCHED, which is the whole of what makes
  * this an observation rather than a decision: the attribution lives in the
- * `StepRecord` and in no ticket field, so nothing stores what repo an attempt
+ * `StepRecord` and in no ticket field, so nothing stores what project an attempt
  * was for.
  */
 export function withWrapUpObs(
   d: Decision,
-  repo: number,
+  project: number,
   moved: boolean,
 ): Decision {
   return {
-    rec: { ...d.rec, landing: { tag: "WOAttempt", repo, invalidated: moved } },
+    rec: {
+      ...d.rec,
+      landing: { tag: "WOAttempt", project, invalidated: moved },
+    },
     post: d.post,
   };
 }
@@ -483,7 +486,7 @@ export function withWrapUpObs(
  *
  * THE MODEL'S FOUR STATED CALLER GUARANTEES ARE ASSERTED, each by calling the
  * definition that states it: deps drawn from `dependableIn` (no tombstones),
- * the program from `validPrograms`, the repo from `repos`, the wrap-up kind
+ * the program from `validPrograms`, the project from `projects`, the wrap-up kind
  * from `wrapUpChoices`. The model's word for what they buy is
  * "structural refusal" — an ill-formed arrival cannot enter a reachable state
  * — and an unchecked TypeScript argument would let exactly that happen.
@@ -495,7 +498,7 @@ export function decideArrive(
   c: Core,
   deps: ReadonlySet<number>,
   program: readonly Stage[],
-  repo: number,
+  project: number,
   wrapUp: WrapUp,
 ): Decision {
   invariant(canArriveIn(cfg, c), "decideArrive: the arrival bound is reached");
@@ -511,8 +514,8 @@ export function decideArrive(
     "decideArrive: the authored program is not well-formed, so no arrival may carry it",
   );
   invariant(
-    repos(cfg).has(repo),
-    `decideArrive: repo ${String(repo)} is outside the repo universe`,
+    projects(cfg).has(project),
+    `decideArrive: project ${String(project)} is outside the project universe`,
   );
   const kind = wrapUpKey(wrapUp);
   invariant(
@@ -526,7 +529,7 @@ export function decideArrive(
     `decideArrive: id ${String(id)} is taken, so the fleet's ids are not dense`,
   );
   const tickets = new Map(c.tickets);
-  tickets.set(id, freshTicket(cfg, deps, program, repo, wrapUp));
+  tickets.set(id, freshTicket(cfg, deps, program, project, wrapUp));
   return {
     rec: {
       label: "ticket-arrived",
@@ -747,7 +750,7 @@ export function depArtifacts(c: Core, j: number): readonly ArtifactMark[] {
     .map(([, mark]) => mark);
 }
 
-/** `model/domain.qnt` depsDoneIn — location-blind: Done-ness, never repo. */
+/** `model/domain.qnt` depsDoneIn — location-blind: Done-ness, never project. */
 export function depsDoneIn(c: Core, j: number): boolean {
   for (const k of waitsOn(c, j)) {
     if (ticketAt(c, k).phase !== "PDone") {
@@ -822,7 +825,7 @@ export function reducibleEvalIn(c: Core): ReadonlySet<number> {
   });
 }
 
-/** `model/domain.qnt` wrapUpStartablesIn — enqueued tickets whose repo's gate is free. */
+/** `model/domain.qnt` wrapUpStartablesIn — enqueued tickets whose project's gate is free. */
 export function wrapUpStartablesIn(c: Core): ReadonlySet<number> {
   return keysWhere(c, (j) => wrapUpStartableIn(c, j));
 }
@@ -879,12 +882,12 @@ export function deliverableTaskIds(c: Core, j: number): ReadonlySet<number> {
  * resource universe contains it, so it can never collide with a real holder.
  *
  * THE PROPERTY IS BELOW THE FLOOR, NOT OUTSIDE ONE UNIVERSE. Any value outside
- * `1..N_REPOS` passes a membership check at some given instance and collides at
- * a larger one — `3` is safe at `nRepos = 2` and is a real resource at
- * `nRepos = 3`. What makes this value safe at EVERY admissible instance is
- * `noResource < firstRepoId`, and that is what the tests pin.
+ * `1..N_PROJECTS` passes a membership check at some given instance and collides at
+ * a larger one — `3` is safe at `nProjects = 2` and is a real resource at
+ * `nProjects = 3`. What makes this value safe at EVERY admissible instance is
+ * `noResource < firstProjectId`, and that is what the tests pin.
  */
-export const noResource = firstRepoId - 1;
+export const noResource = firstProjectId - 1;
 
 /**
  * `model/domain.qnt` leaseOf — the resource this ticket's wrap-up needs a lease
@@ -919,7 +922,7 @@ export function leaseFreeIn(c: Core, r: number): boolean {
 
 /**
  * `model/domain.qnt` wrapUpStartableIn — may ticket j be DEQUEUED? Enqueued,
- * and its target repo's gate free. THE DEPTH-1 REFUSAL LIVES HERE, and the
+ * and its target project's gate free. THE DEPTH-1 REFUSAL LIVES HERE, and the
  * model's header records the trace it is pinned on.
  */
 export function wrapUpStartableIn(c: Core, j: number): boolean {
@@ -1182,7 +1185,7 @@ export function wrapUpOutcomes(
 
 /**
  * `model/domain.qnt` decideWrapUpStart — THE DEQUEUE, MOVED ARM: the ticket
- * takes its repo's depth-1 slot while the candidate is built and validated.
+ * takes its project's depth-1 slot while the candidate is built and validated.
  * Charges nothing; the gate prices only its failures.
  */
 export function decideWrapUpStart(c: Core, j: number): Decision {
@@ -1383,7 +1386,7 @@ export function decideWrapUpResolve(
   }
   return withWrapUpObs(
     resolveWrapUp(cfg, c, j, out),
-    ticketAt(c, j).repo,
+    ticketAt(c, j).project,
     moved,
   );
 }
