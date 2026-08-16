@@ -577,6 +577,15 @@ export type WrapUpPort = {
    * this method is the act that theorem quantifies over. What the model retired
    * is `landing` as the name of a THING; the VERB it kept, and a reader who
    * greps the model for this one arrives at the theorem it has to keep.
+   *
+   * THE RETIREMENT WENT FURTHER AND THIS NAME STILL STANDS. Upstream PR #57
+   * then renamed the model's own land-family IDENTIFIERS — its fixtures and
+   * its witness runs — so `model/` no longer spells `land` in a name at all
+   * except inside `quietProjectLandsCleanly`, which is this same verb. Every
+   * other occurrence left in `model/` is prose about the act. That makes the
+   * grep test above sharper rather than weaker: it now lands on the theorem
+   * and on nothing else, and `noDuplicateCycle`'s sentence is unchanged by
+   * #57. Re-check it there, not here, before renaming this method.
    */
   readonly land: (delivery: Delivery) => void;
 };

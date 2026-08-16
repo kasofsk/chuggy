@@ -100,7 +100,7 @@ import {
   jEsc,
   jEval,
   jGated,
-  jLand,
+  jWrapUp,
   jParkDep,
   jParkPre,
   jPend,
@@ -494,10 +494,10 @@ test("completeDuplicateExclusiveTest: a re-delivered completion for a Done ticke
   // different guards and only a Revoked ticket separates them.
   assert.throws(() => decideCompleteDuplicate(c7, 1), AssertionError);
   assert.throws(
-    () => decideCompleteDuplicate(revokeOne(jLand).post, 1),
+    () => decideCompleteDuplicate(revokeOne(jWrapUp).post, 1),
     AssertionError,
   );
-  assert.deepEqual(doneIn(revokeOne(jLand).post), new Set());
+  assert.deepEqual(doneIn(revokeOne(jWrapUp).post), new Set());
 });
 
 test("decideTaskDone writes the EVENT's verdict into the stored resolution", () => {
@@ -1059,8 +1059,8 @@ const cFresh: Core = solo({ ...draft(cfgBudgeted), phase: "PPending" });
 const dPark = decideRevalFail(cFresh, 1);
 const dParkResume = decideOpRetry(cfgBudgeted, dPark.post, 1);
 
-/** `chuggy_test`'s escLanding and escWorking, through the real `escalate`. */
-const escLanding: Ticket = escalated(
+/** `chuggy_test`'s escWrapUp and escWorking, through the real `escalate`. */
+const escWrapUp: Ticket = escalated(
   { ...draft(cfgBudgeted), gasLeft: 2 },
   "RsGasExhausted",
   "RWrapUp",
@@ -1072,7 +1072,7 @@ const escWorking: Ticket = escalated(
   "RWorking",
   "ticket-escalated work_failed",
 );
-const cEscB: Core = solo(escLanding);
+const cEscB: Core = solo(escWrapUp);
 const cEscWorking: Core = solo(escWorking);
 
 test("preWorkParkAndResumeClassifiedTest: the pre-work park and its free resume", () => {
@@ -1115,7 +1115,7 @@ test("preWorkResumeFreeAtZeroGasTest: the pre-work resume is free under BOTH met
   assert.equal(ticketAt(resumed.post, 1).gasLeft, 0);
   // The contrast — the permanently-parked corner: a CHARGING resume at zero
   // gas is not retryable.
-  assert.ok(!retryableIn(cfgBudgeted, solo({ ...escLanding, gasLeft: 0 }), 1));
+  assert.ok(!retryableIn(cfgBudgeted, solo({ ...escWrapUp, gasLeft: 0 }), 1));
 });
 
 test("opRetryChargedDescendsTest: under the default metering every pipeline resume pays", () => {
@@ -1459,7 +1459,7 @@ test("unreleasedDepBlocksTest: a dependency on an UNRELEASED ticket blocks", () 
 // ticket, all from `fixtures.test.ts`, which both suites read.
 
 test("revokeFromEachPhaseTest: every non-terminal revokes, settles, and opens no desk task", () => {
-  const live = [jDraft, jPend, jWork, jEval, jLand, jGated];
+  const live = [jDraft, jPend, jWork, jEval, jWrapUp, jGated];
   const desk = [jEsc, jParkPre, jParkDep];
   for (const j of [...live, ...desk]) {
     const d = revokeOne(j);
@@ -1509,7 +1509,7 @@ test("revokeMeasureClassifiedTest: strict descent from every live rank, exactly 
   const mOne = (j: Ticket): number => ticketMeasure(bB, j);
   const mAfter = (j: Ticket): number =>
     ticketMeasure(bB, ticketAt(revokeOne(j).post, 1));
-  for (const j of [jDraft, jPend, jWork, jEval, jLand, jGated]) {
+  for (const j of [jDraft, jPend, jWork, jEval, jWrapUp, jGated]) {
     assert.ok(mAfter(j) < mOne(j), `revoke from ${j.phase} does not descend`);
   }
   for (const j of [jEsc, jParkPre, jParkDep]) {
@@ -1537,8 +1537,8 @@ test("revocableExactlyNonTerminalTest: the absorbing terminals are exactly the u
 });
 
 test("revokedNeverCompletesTest: revoking a ticket ON the wrap-up queue emits no completion effect", () => {
-  assert.equal(ticketAt(revokeOne(jLand).post, 1).completions, 0);
-  assert.deepEqual(revokeOne(jLand).rec.effects, ["Revoke"]);
+  assert.equal(ticketAt(revokeOne(jWrapUp).post, 1).completions, 0);
+  assert.deepEqual(revokeOne(jWrapUp).rec.effects, ["Revoke"]);
   // Its contrast, and what makes the zero above a claim rather than a default:
   // the landed ticket's counter is 1.
   assert.equal(ticketAt(c8, 1).completions, 1);
@@ -1816,7 +1816,7 @@ test("wrapUpOutcomesDrawRuleTest: the SET is the refusal", () => {
   );
 });
 
-test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own project", () => {
+test("wrapUpAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own project", () => {
   // Project 2 throughout, so a constant-stamping mutant would say 1. The combos
   // are the PATH-legal ones only: quiet+WOk off the queue, moved+WOk/WFailed
   // out of the lease.
@@ -2378,7 +2378,7 @@ test("decideOpRetry's guarded-unreachable arm answers as the model writes it", (
   }
   // What the guard DOES refuse: a park whose charging resume it cannot afford,
   // which would otherwise overdraw the gas account.
-  const broke: Core = solo({ ...escLanding, gasLeft: 0 });
+  const broke: Core = solo({ ...escWrapUp, gasLeft: 0 });
   assert.ok(!retryableIn(cfgBudgeted, broke, 1));
   assert.throws(() => decideOpRetry(cfgBudgeted, broke, 1), AssertionError);
   // Under the free metering the same park is affordable, and the same call
@@ -2567,7 +2567,7 @@ test("artifactStampedAndSupersededTest: work-passed stamps the artifact it produ
   assert.deepEqual(second, { tag: "ASome", id: 5 });
 });
 
-test("nonLandingStepsCarryNoAttributionTest: attribution appears at the wrap-up boundary and nowhere else", () => {
+test("nonWrapUpStepsCarryNoAttributionTest: attribution appears at the wrap-up boundary and nowhere else", () => {
   // All twelve of the model's conjuncts. Most pointedly: the eval-side
   // "ticket-escalated gas_exhausted" carries the SAME label string as the
   // wrap-up gas wall — the attribution field, not the label, marks the
@@ -2818,13 +2818,13 @@ test("handBuiltFixturesAccountedTest: every named fixture states the ids it hand
     ["jPend", jPend],
     ["jWork", jWork],
     ["jEval", jEval],
-    ["jLand", jLand],
+    ["jWrapUp", jWrapUp],
     ["jGated", jGated],
     ["jEsc", jEsc],
     ["jParkPre", jParkPre],
     ["jParkDep", jParkDep],
     ["jDone", jDone],
-    ["escLanding", escLanding],
+    ["escWrapUp", escWrapUp],
     ["escWorking", escWorking],
   ];
   for (const [name, jb] of solos) {

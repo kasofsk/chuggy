@@ -341,7 +341,7 @@
     {
       "name": "witness-quiet-land",
       "module": "chuggy_witness_multiproject_test",
-      "run": "quietLandDeterministicTest",
+      "run": "quietWrapUpDeterministicTest",
       "pins": [
         "decideDequeue",
         "ticket-done"

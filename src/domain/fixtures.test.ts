@@ -9,6 +9,20 @@
  * test's SCENARIO may repeat, its HARNESS is extracted. The model has ONE
  * `jDraft`; so does this tree.
  *
+ * THE NAMES ARE THE MODEL'S, AND NOTHING HERE ENFORCES THAT. Every fixture
+ * below is spelled as `chuggy_test.qnt` spells it, which is what lets a
+ * reviewer read a mirrored assertion beside the run it mirrors without a
+ * translation table. It is a mirror held by discipline: the roster alarms in
+ * `src/tools/verify.ts` compare the model's deciders, effects, step labels,
+ * exemption arms, binders, consts, bundle conjuncts, `Cmd` arms, record
+ * schemas and witness RUN names against this tree, and a test fixture's name
+ * is on none of those lists. When upstream renamed `jLand` to `jWrapUp` and
+ * `escLanding` to `escWrapUp` (PR #57), the only alarm that fired was the
+ * witness-run roster, and it fired because the corpus manifest names a run —
+ * not because anything looks at this file. So a model fixture rename lands
+ * here by a reader following it, and the shadow is written down rather than
+ * left to be rediscovered.
+ *
  * EVERY TICKET HERE COMES OUT OF A DECIDER, never out of a record literal that
  * happens to look like one — issue #13's rule, applied to the fixtures rather
  * than only to the helpers. `draft` is `freshTicket`, `escalated` is
@@ -226,7 +240,7 @@ export const jEval: Ticket = {
   tasks: mixedE0,
   spawned: 2,
 };
-export const jLand: Ticket = { ...jDraft, phase: "PWrapUp" };
+export const jWrapUp: Ticket = { ...jDraft, phase: "PWrapUp" };
 export const jGated: Ticket = { ...jDraft, phase: "PWrapUpHolding" };
 export const jEsc: Ticket = escalated(
   jDraft,

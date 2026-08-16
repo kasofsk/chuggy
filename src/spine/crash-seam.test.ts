@@ -105,7 +105,7 @@ import {
   journalThenEmit,
   memTicket,
   must,
-  quietLand,
+  quietWrapUp,
   release,
   resolveGate,
   stepEmit,
@@ -228,7 +228,7 @@ test("crashRecoverContinueDeterministicTest: journal-then-effect survives a cras
 
   // The valid-artifact dequeue completes the ticket (entry 13) — journaled, not
   // yet emitted: the merge has NOT happened yet.
-  s = must(commit(cfg, store, s, quietLand), "the quiet land");
+  s = must(commit(cfg, store, s, quietWrapUp), "the quiet wrap-up");
   assert.equal(s.mem.lastStep.label, "ticket-done");
   assert.equal(memTicket(s, 1).phase, "PDone");
   assert.equal(journalCompletions(s, 1), 1);
@@ -369,7 +369,7 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
   // THE SEAM AT THE COMPLETION: a valid-artifact dequeue squash-merges IN THE
   // WORLD, the crash eats the journal write — the book still shows the ticket
   // enqueued, completions 0.
-  s = must(effectCrash(cfg, s, quietLand), "the completion hazard seam");
+  s = must(effectCrash(cfg, s, quietWrapUp), "the completion hazard seam");
   assert.equal(s.orphans.length, 2);
   assert.equal(worldCompletions(s, 1), 1);
   assert.equal(memTicket(s, 1).phase, "PWrapUp");
@@ -380,7 +380,7 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
   // The recovered actor re-lands the enqueued ticket: the SAME diff merges a
   // second time — the duplicate cycle — while the journal records exactly one
   // clean completion and the domain's completionExclusive stays green.
-  s = journalThenEmit(store, s, quietLand);
+  s = journalThenEmit(store, s, quietWrapUp);
   assert.equal(worldCompletions(s, 1), 2);
   assert.equal(journalCompletions(s, 1), 1);
   assert.equal(memTicket(s, 1).completions, 1);
@@ -439,7 +439,7 @@ test("hazardReworkDoubleSpendDeterministicTest: the rework's charge dies with th
 
 /**
  * The three walks the sweeps run over: the model's own witness walk (a rework
- * and the quiet fast-path land), the GATED wrap-up (dequeue to the gate, then
+ * and the quiet fast-path wrap-up), the GATED wrap-up (dequeue to the gate, then
  * the promotion), and the lease-free route that reaches no wrap-up at all.
  *
  * Between them every decision the crash-seam obligations name appears at least
@@ -448,7 +448,7 @@ test("hazardReworkDoubleSpendDeterministicTest: the rework's charge dies with th
  */
 const walks: readonly (readonly [string, readonly Cmd[]])[] = [
   [
-    "the rework walk, quiet land",
+    "the rework walk, quiet wrap-up",
     [
       arrive,
       release,
@@ -462,7 +462,7 @@ const walks: readonly (readonly [string, readonly Cmd[]])[] = [
       workReduce,
       done(4, "VPass"),
       evalReduce,
-      quietLand,
+      quietWrapUp,
       completeAgain,
     ],
   ],
@@ -651,7 +651,7 @@ test("the hazard sweep: every orphaned PAID decision, re-decided, double-spends"
       evalReduce,
     ],
     [
-      "the quiet land",
+      "the quiet wrap-up",
       [
         arrive,
         release,
@@ -661,7 +661,7 @@ test("the hazard sweep: every orphaned PAID decision, re-decided, double-spends"
         done(2, "VPass"),
         evalReduce,
       ],
-      quietLand,
+      quietWrapUp,
     ],
     [
       "the gate promotion",
