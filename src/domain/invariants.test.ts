@@ -28,14 +28,21 @@
  *      dropped one, that conjunct's defect tree would be the one tree in the
  *      corpus where the bundle and the roster disagree — and the agreement test
  *      below checks exactly that, on every tree in the corpus.
- *   3. It RECORDS THE COROLLARIES the model states in prose. Three invariants
- *      cannot be broken alone, and the model says so at each of them:
- *      `revokedNeverCompletes` is a corollary of `completionExclusive`,
- *      `quietProjectLandsCleanly` of `wrapUpIsolation`'s
- *      failure-implies-moved conjunct, and a structural deadlock is reachable
- *      only behind a revoked dep (`cascadeSafety`) or around a dependency cycle
+ *   3. It RECORDS THE COROLLARIES the model states in prose, and it TESTS them
+ *      rather than believing them. Two invariants cannot be broken alone:
+ *      `quietProjectLandsCleanly` is `wrapUpIsolation`'s failure-implies-moved
+ *      conjunct in other words, and a structural deadlock is reachable only
+ *      behind a revoked dep (`cascadeSafety`) or around a dependency cycle
  *      (`depsAcyclic`). Their entries name the companion rather than claiming an
  *      isolation no tree can have.
+ *
+ *      THE THIRD COROLLARY TURNED OUT NOT TO BE ONE, which is the whole argument
+ *      for writing these sets down instead of reasoning about them.
+ *      `revokedNeverCompletes` reads as a corollary of `completionExclusive`,
+ *      and the derivation quietly needs `completions >= 0` — a floor no
+ *      invariant states — so a negative ghost counter reds it ALONE. It carries
+ *      both entries below: the companion tree the model's prose predicts, and
+ *      the isolating one the prose does not. Model-question kasofsk#39.
  *
  * ONE CONJUNCT HAS NO DEFECT TREE AT ALL, and the model is why:
  * `stuckSubsetCovered` is a tautology over its own two walks, so no machine and
@@ -57,9 +64,13 @@
  * landed fixture carries `freshTicket`'s `ANone` and a landing out of it would
  * produce a Done ticket `artifactWellFormed` forbids. That is the same
  * unreachable-fixture class kasofsk PR #31 corrects for `cXDepDone`. The model's
- * `cQueueB`, `cGateB`, `cGateWall`, `cGateGasWall`, `cGateD` and `cGateDWall`
- * are shaped the same way — `cGated7` is not, being machine-built — and all of
- * them are left exactly as the model writes them, because the model leads.
+ * `cQueueB`, `cGateB`, `cGateWall`, `cGateGasWall`, `cGateD`, `cGateDWall` and
+ * `cGateOcc` are shaped the same way — `cGated7` is not, being machine-built —
+ * and all of them are left exactly as the model writes them, because the model
+ * leads. `cGateOcc` is the sharpest of them: it hand-builds three wrap-up-phase
+ * tickets from `freshTicket`, and `leaseExclusiveGuardTest` lands its ticket 1
+ * out of the gate, so the run's own last conjunct reads a post-state holding a
+ * `PDone` ticket with `ANone`.
  *
  * A NOTE THE SPINE WILL WANT. The multi-ticket fleets in `domain.test.ts` red
  * `idsDense` at DB's consts, because `N_TICKETS` is 2 there and those fleets
@@ -79,6 +90,7 @@ import {
   decideDispatch,
   decideRelease,
   decideWrapUpResolve,
+  projects,
   type Config,
 } from "./domain.ts";
 import {
@@ -101,6 +113,7 @@ import {
   jPend,
   jWork,
   progStaged,
+  progU2,
   revokeOne,
   solo,
   wr,
@@ -1421,6 +1434,41 @@ test("tasksWellFormed: dead live-task state is refused in every phase but the tw
   assert.equal(tasksWellFormed(cfgBudgeted, solo(jEvalWide)), false);
   assert.equal(runningCount(jWorkWide.tasks), 0);
   assert.equal(runningCount(jEvalWide.tasks), 0);
+  // AND THE WIDTH IS SWEPT AS AN EXACT SET OVER ITS OWN DOMAIN, which is what
+  // this tree's rule asks for and what two fixtures either side of the const
+  // cannot give. Pinned at `nTasks - 1` and `nTasks + 1` alone, the equality
+  // agrees with any predicate that happens to admit those two — a modulo, or an
+  // equality widened by two. Swept from the empty set to `nTasks + 2`, the
+  // verdict is a set and there is nowhere left for such a reading to hide.
+  const widths = [0, 1, 2, 3, 4];
+  const acceptedWorkWidths = new Set(
+    widths.filter((w) =>
+      tasksWellFormed(
+        cfgBudgeted,
+        solo({
+          ...jWork,
+          tasks: Array.from({ length: w }, (_, i) => wt(i + 1, "TPassed")),
+          spawned: w,
+        }),
+      ),
+    ),
+  );
+  assert.deepEqual(acceptedWorkWidths, new Set([cfgBudgeted.nTasks]));
+  // The same sweep on the eval arm, where the width is the PROGRAM's rather
+  // than the const's — `progU2`'s only stage declares a fan-out of 2.
+  const acceptedEvalWidths = new Set(
+    widths.filter((w) =>
+      tasksWellFormed(
+        cfgBudgeted,
+        solo({
+          ...jEval,
+          tasks: Array.from({ length: w }, (_, i) => et(i + 1, 0, "TPassed")),
+          spawned: w,
+        }),
+      ),
+    ),
+  );
+  assert.deepEqual(acceptedEvalWidths, new Set([progU2[0]?.fanout]));
   // The width, the kind, the outcome and the id run, each alone.
   const badEvals: readonly (readonly [string, Ticket])[] = [
     [
@@ -1558,23 +1606,56 @@ test("leaseExclusive is a relation over resources AND phases, pinned at both end
   );
   // AND THE COLLISION ITSELF IS SWEPT OVER THE UNIVERSE, not pinned to the
   // first project. Every fixture above holds resource 1, so a walk that counted
-  // holders of resource 1 alone — or quantified over `[firstProjectId]` instead
-  // of over `projects` — would agree with all of them. A collision on EVERY
-  // member of the universe is what closes that.
-  for (const resource of [1, 2]) {
+  // holders of resource 1 alone would agree with all of them. THE SWEEP IS
+  // DERIVED FROM `projects` RATHER THAN WRITTEN OUT, because a literal `[1, 2]`
+  // is indistinguishable from the universe at every instance this suite
+  // configures — and a quantifier hard-coded to that same pair would pass a
+  // hard-coded sweep for the same reason.
+  const collideOn = (cfg: Config, resource: number): boolean => {
     const both: Ticket = { ...jGated, wrapUp: { tag: "WExclusive", resource } };
+    return leaseExclusive(
+      cfg,
+      core([
+        [1, both],
+        [2, both],
+      ]),
+    );
+  };
+  for (const resource of projects(cfgBudgeted)) {
     assert.equal(
-      leaseExclusive(
-        cfgBudgeted,
+      collideOn(cfgBudgeted, resource),
+      false,
+      `a collision on resource ${String(resource)} is not counted`,
+    );
+  }
+  // ...AND AT AN INSTANCE WHOSE UNIVERSE IS WIDER THAN THIS SUITE'S. Deriving
+  // the sweep is necessary and not sufficient: every config here has two
+  // projects, so `projects` and the literal pair enumerate the same values. A
+  // third project is what makes them different values, and a collision on it is
+  // counted only by a quantifier that really reads the instance.
+  const cfgThreeProjects: Config = { ...cfgBudgeted, nProjects: 3 };
+  const third = cfgThreeProjects.nProjects;
+  assert.ok(!projects(cfgBudgeted).has(third));
+  assert.ok(projects(cfgThreeProjects).has(third));
+  assert.equal(collideOn(cfgThreeProjects, third), false);
+  // The same fleet reds that conjunct and no other: a lease on the third
+  // resource is authorable at this instance, so nothing else objects to it.
+  const both: Ticket = {
+    ...jGated,
+    wrapUp: { tag: "WExclusive", resource: third },
+  };
+  assert.deepEqual(
+    redConjuncts(
+      quiet(
+        cfgThreeProjects,
         core([
           [1, both],
           [2, both],
         ]),
       ),
-      false,
-      `a collision on resource ${String(resource)} is not counted`,
-    );
-  }
+    ),
+    new Set(["leaseExclusive"]),
+  );
 });
 
 // === Dependencies that DISAGREE ============================================
@@ -1601,6 +1682,20 @@ const cMixedFinish: Core = core([
   [3, { ...jDraft, phase: "PPending", deps: new Set([1, 2]) }],
 ]);
 
+/**
+ * The same pair TRANSPOSED: the dep that never finishes comes first.
+ *
+ * "Second of two" is also "last of two", so `cMixedFinish` alone is satisfied by
+ * a walk that reads only the last dep exactly as a single-dep fleet is satisfied
+ * by one reading only the first. Both walks over a dep list are asked in both
+ * orders, and neither order is the one that happens to work.
+ */
+const cRevokedFirst: Core = core([
+  [1, { ...jDraft, phase: "PRevoked" }],
+  [2, jDone],
+  [3, { ...jDraft, phase: "PPending", deps: new Set([1, 2]) }],
+]);
+
 test("the visibility walks quantify with EXISTS over a dep set, and read it to the end", () => {
   // A dependent is stuck behind ONE parked dep, not only behind all of them —
   // and the parked dep is the second, so the walk has to get past a healthy one
@@ -1621,6 +1716,38 @@ test("the visibility walks quantify with EXISTS over a dep set, and read it to t
   assert.deepEqual(coveredSet(healthy), new Set());
 });
 
+test("the two walks differ by exactly one conjunct, and a dispatched dependent shows it", () => {
+  // THE ASYMMETRY `stuckSubsetCovered` IS KEPT TO GUARD, as a value rather than
+  // as a containment. `stuckSet`'s inductive arm is `coveredSet`'s plus the
+  // `PPending` conjunct, and every fleet whose dependents are all Pending
+  // answers the same with or without it. A dependent that has already
+  // DISPATCHED is the shape that separates them: its measure is descending on
+  // its own work, so it is not stuck — but it is still covered, because
+  // coverage propagates through every phase and deliberately has no phase guard.
+  const dispatched = core([
+    [1, jEsc],
+    [2, { ...jWork, deps: new Set([1]) }],
+  ]);
+  assert.deepEqual(stuckSet(dispatched), new Set([1]));
+  assert.deepEqual(coveredSet(dispatched), new Set([1, 2]));
+  // Containment still holds, and holds STRICTLY — which is the point: a
+  // containment assertion alone is satisfied by dropping the conjunct, and only
+  // the two values say which walk is which.
+  assert.ok(stuckSubsetCovered(dispatched));
+  assert.ok(stuckSet(dispatched).size < coveredSet(dispatched).size);
+  // The guard is on the PHASE and not on having-dependencies: the same
+  // dependent, Pending, is stuck.
+  assert.deepEqual(
+    stuckSet(
+      core([
+        [1, jEsc],
+        [2, { ...jDraft, phase: "PPending", deps: new Set([1]) }],
+      ]),
+    ),
+    new Set([1, 2]),
+  );
+});
+
 test("canFinishSet quantifies with FORALL over a dep set, and revokeDoomed reads it to the end", () => {
   // THE MACHINE THEOREM. A ticket can finish only when EVERY gate dep can — one
   // Done dep is not enough while another is Revoked, and swapping this forall
@@ -1635,6 +1762,18 @@ test("canFinishSet quantifies with FORALL over a dep set, and revokeDoomed reads
   // cascade, which is the pairing the model argues for and nothing else.
   assert.deepEqual(
     redConjuncts(quiet(cfgFleet, cMixedFinish)),
+    new Set(["cascadeSafety", "noStructuralDeadlock"]),
+  );
+  // TRANSPOSED: the same claims with the Revoked dep FIRST, so neither walk is
+  // pinned only at the last position it reads. `canFinishSet` still admits the
+  // Done dep and still refuses the dependent; `revokeDoomed` still finds the
+  // doom although an impeccable dep follows it.
+  assert.deepEqual(canFinishSet(cRevokedFirst), new Set([2]));
+  assert.equal(noStructuralDeadlock(cRevokedFirst), false);
+  assert.deepEqual(revokeDoomed(cRevokedFirst), new Set([3]));
+  assert.equal(cascadeSafety(cRevokedFirst), false);
+  assert.deepEqual(
+    redConjuncts(quiet(cfgFleet, cRevokedFirst)),
     new Set(["cascadeSafety", "noStructuralDeadlock"]),
   );
   // And the forall's other direction: EVERY dep Done puts the dependent back in
@@ -1701,6 +1840,21 @@ test("depsAcyclic reads the dep's existence AND its id order, over both ends", (
   // The same fleet with a good second dep is accepted, so the two assertions
   // above are about the dep and not about having two of them.
   assert.ok(depsAcyclic(secondDepIsBad(2)));
+  // AND THE BREACH IS PUT FIRST AS WELL AS LAST. "Second of two" is also "last
+  // of two", so the fixtures above are satisfied by a walk that reads only the
+  // LAST dep just as the single-dep fixtures were satisfied by one reading only
+  // the first. Transposing the dep set closes the remaining reading: here the
+  // breach is at position 0 and an impeccable dep follows it.
+  const firstDepIsBad = (bad: number): Core =>
+    core([
+      [1, jDraft],
+      [2, jDraft],
+      [3, { ...jDraft, deps: new Set([bad, 2]) }],
+      [4, jDraft],
+    ]);
+  assert.equal(depsAcyclic(firstDepIsBad(4)), false); // points upward
+  assert.equal(depsAcyclic(firstDepIsBad(9)), false); // names no ticket
+  assert.ok(depsAcyclic(firstDepIsBad(1)));
   // And a ticket with NO deps is accepted at every position.
   assert.ok(
     depsAcyclic(

@@ -316,11 +316,20 @@ export function wrapUpWallNamed(cfg: Config, c: Core): boolean {
  * file departs from definition-for-definition order on purpose. The model asks
  * each account's floor and ceiling as a pair, gas first; `accountDigitsInRange`
  * asks them in its own order and the gas ceiling arrives last. Nothing observes
- * the difference — all six are total comparisons on a record, none can error and
- * none narrows anything a later one reads, so the conjunction has the same value
- * under any permutation. Where reordering WOULD be observable, the order is kept
- * and pinned: see the bundle's own note on `measureNonNegative`. Referencing the
- * shipped derivation is the stronger rule of the two, and it wins here.
+ * the difference ON A CONFIG `configAdmitsInit` ACCEPTS: there the six are total
+ * comparisons on a record, none of them errors and none narrows what a later one
+ * reads, so the conjunction has the same value under any permutation.
+ *
+ * THE SCOPE IS NOT A FORMALITY. `accountDigitsInRange` reads its two grants
+ * through `reworkBudget` and `wrapUpBudget`, and both ASSERT on a negative grant
+ * rather than answering — so under a configuration with no initial state the
+ * order would decide which failure a caller sees. That configuration has no
+ * tickets for this invariant to quantify over, because `freshTicket` refuses it
+ * at the ticket-source seam; the permutation argument is therefore sound exactly
+ * where it is used, and it is stated no wider than that. Where reordering WOULD
+ * be observable on an admissible config, the order is kept and pinned: see the
+ * bundle's own note on `measureNonNegative`. Referencing the shipped derivation
+ * is the stronger rule of the two, and it wins here.
  */
 export function accountsBounded(cfg: Config, c: Core): boolean {
   const b = boundsOf(cfg);
