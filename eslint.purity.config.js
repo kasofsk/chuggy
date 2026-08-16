@@ -70,10 +70,21 @@
  * array in, so the rules have one definition and the whole-tree lint enforces
  * them too.
  *
+ * IT ALSO CARRIES ONE RULE THAT IS NOT ABOUT PURITY AT ALL, and the misfit is
+ * worth naming at the top rather than leaving to be found halfway down. The
+ * dynamic-import ban is a claim about the MODULE GRAPH being statically
+ * checkable, not about ambient capability — and every layer whose rule is a
+ * reachability rule needs it, not only the pure ones. So a second block below
+ * applies that one rule, and nothing else, to `src/effects/`, `src/interp/`
+ * and `src/adapters/`: see `REACHABILITY_FILES` for the argument. The
+ * alternative was a third config file holding one selector, which would put
+ * the two spellings of the same ban in two places.
+ *
  * WHAT IT CATCHES: any lexical reference to a rostered ambient global, any
  * `Math.random()` or `Date.now()` property access, `eval`, `new Function`, a
  * dynamic `import()`, and `import.meta` — across every file extension the
- * `PURE_FILES` glob below admits.
+ * `PURE_FILES` glob below admits; and a dynamic `import()` alone across
+ * `REACHABILITY_FILES`.
  *
  * WHAT IT CANNOT CATCH, stated rather than hoped:
  *
@@ -113,6 +124,41 @@ export const PURE_FILES = [
   "src/domain/**/*.{ts,mts,cts}",
   "src/spine/**/*.{ts,mts,cts}",
 ];
+
+/**
+ * THE LAYERS WHOSE RULES ARE REACHABILITY RULES — everything above the pure
+ * core that `.dependency-cruiser.mjs` governs by direction: `src/effects/`
+ * reaches the domain and nothing above it, `src/interp/` may not reach an
+ * adapter, `src/adapters/` may not reach the single writer or the event
+ * vocabulary. `src/tools/` is deliberately absent, for the reason it is absent
+ * from every rule in that file: it has no reachability bound to defeat.
+ *
+ * THEY GET ONE RULE, AND IT IS NOT A PURITY CLAIM. These layers are supposed
+ * to hold capabilities — a port arrives as an argument, an adapter opens a
+ * medium — so the ambient roster above would be wrong here. What they cannot
+ * afford is an import the MODULE GRAPH cannot see: `const P = "../spine/
+ * actor.ts"; import(P)` passes dependency-cruiser, tsc, the whole lint and
+ * every gate, and it is a live edge from an adapter into the single writer.
+ * Dependency-cruiser resolves a literal dynamic import and misses a computed
+ * one, so the rule that closes it is the one the pure core already carries:
+ * ban the expression outright, where a statically checkable graph is what the
+ * layer's rule rests on.
+ *
+ * WHY BAN RATHER THAN REQUIRE A LITERAL. A literal `import("…")` is already
+ * caught by the graph, so permitting it and banning the rest would be a rule
+ * with an exception, and the exception is the part a reader has to remember.
+ * Nothing in this tree loads a module at run time at all; the day something
+ * must, that is a change to this list with an argument attached, which is the
+ * point of having it.
+ */
+export const REACHABILITY_FILES = [
+  "src/effects/**/*.{ts,mts,cts}",
+  "src/interp/**/*.{ts,mts,cts}",
+  "src/adapters/**/*.{ts,mts,cts}",
+];
+
+const NO_DYNAMIC_IMPORT =
+  "the module graph must be statically checkable: a computed dynamic import is an edge `.dependency-cruiser.mjs` cannot see";
 
 const why = (capability, reason) => ({
   name: capability,
@@ -228,8 +274,7 @@ export default [
         "error",
         {
           selector: "ImportExpression",
-          message:
-            "the pure core may not use a dynamic import: the module graph must be statically checkable",
+          message: `the pure core may not use a dynamic import: ${NO_DYNAMIC_IMPORT}`,
         },
         {
           selector: "MetaProperty[meta.name='import']",
@@ -239,6 +284,21 @@ export default [
       "no-eval": "error",
       "no-implied-eval": "error",
       "no-new-func": "error",
+    },
+  },
+  {
+    // The one control the layers above the pure core share with it, and the
+    // only one: see `REACHABILITY_FILES` for why it is not the ambient roster.
+    files: REACHABILITY_FILES,
+    languageOptions: { parser: tseslint.parser },
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "ImportExpression",
+          message: `a layer with a reachability rule may not use a dynamic import: ${NO_DYNAMIC_IMPORT}`,
+        },
+      ],
     },
   },
 ];

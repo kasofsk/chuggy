@@ -529,7 +529,7 @@ test("the disciplined sweep: a crash at every seam, at every surviving cursor, r
         // legality fold. The harshest cursor (total loss) is the one taken,
         // because it is the one that re-emits the most.
         const rebuilt = must(
-          recoverFrom(cfg, rows, 0, {
+          recoverFrom(cfg, store, 0, {
             worldEffects: live.worldEffects,
             orphans: live.orphans,
           }),
@@ -583,7 +583,7 @@ test("the hazard sweep: an effect-first crash at every decision of every walk is
       // world that had already been paid for twice — the hazard erased on
       // exactly the path that matters.
       const rebuilt = must(
-        recoverFrom(cfg, store.readAll(), hazard.applied, {
+        recoverFrom(cfg, store, hazard.applied, {
           worldEffects: hazard.worldEffects,
           orphans: hazard.orphans,
         }),

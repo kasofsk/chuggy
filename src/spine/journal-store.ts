@@ -98,6 +98,18 @@
  * TWO SIGNATURE CHOICES WORTH THE ARGUMENT
  * ==========================================================================
  *
+ * IT IS A RECORD OF FUNCTIONS SPELLED AS PROPERTIES, which `src/interp/ports.ts`
+ * argues for every port it declares and which this one was not written in. The
+ * argument carries here unchanged and matters more, not less: a method's
+ * parameters are checked BIVARIANTLY, so a substitute store could declare
+ * `append` over a NARROWER row type than `Entry` and still typecheck — a store
+ * that accepts only the rows it happens to understand, which is the one thing
+ * the promises above forbid by name. A property's parameters are checked
+ * contravariantly, so the same substitution is a compile error. The second half
+ * of that file's argument applies too: these functions are lifted out of the
+ * record by tests that wrap one to make it fail, and no implementation may read
+ * `this`, because a store has no identity — it is what it does.
+ *
  * IT IS SYNCHRONOUS. The journal write is the single writer's critical section:
  * while an append is in flight, nothing may be decided and nothing may be
  * emitted, because both would be acting on a journal whose contents are not yet
@@ -145,14 +157,14 @@ export type JournalStore = {
    * throws if it could not be made durable, or if its seq is not exactly one
    * past the last durable row's.
    */
-  append(entry: Entry): void;
+  readonly append: (entry: Entry) => void;
 
   /**
    * Every durable row, oldest first. The rows are `unknown` because they
    * outlive the process that wrote them; `hasEntryShape` is the gate that turns
-   * them back into `Entry`.
+   * them back into `Entry`, and `recoverFrom` is where that happens.
    */
-  readAll(): readonly unknown[];
+  readonly readAll: () => readonly unknown[];
 
   /**
    * How many rows are durable — the seq of the last one, since seqs are dense
@@ -164,5 +176,5 @@ export type JournalStore = {
    * A real store answers this without paging the log in, which is why it is a
    * promise of its own rather than `readAll().length`.
    */
-  length(): number;
+  readonly length: () => number;
 };

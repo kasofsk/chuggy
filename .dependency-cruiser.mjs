@@ -67,6 +67,19 @@
  *      and neither half covers for the other.
  *   2. A capability passed in as a function argument — not a breach but the
  *      design.
+ *   2a. AN IMPORT WHOSE SPECIFIER IS NOT A LITERAL. A dynamic `import("…")`
+ *      with a string in it is resolved and walked like any other edge; one
+ *      whose argument is a binding or a template — `const P = "../spine/
+ *      actor.ts"; import(P)` — is an edge this graph does not have, so EVERY
+ *      rule above passes over it. That is not a narrow hole: it is a live
+ *      route from an adapter into the single writer, and it was measured
+ *      clean through depcruise, tsc, the whole lint and every gate. It is
+ *      closed OUTSIDE this file, because a graph cannot be asked about an edge
+ *      it cannot see: `eslint.purity.config.js` bans the expression outright
+ *      in the pure core and, since sweep 2, in `src/effects/`, `src/interp/`
+ *      and `src/adapters/` — every layer whose rule here is a reachability
+ *      rule. The literal form stays this file's, and the ban makes the
+ *      distinction moot anyway.
  *   3. `adapters-decide-nothing` MOVING OUT FROM UNDER ITSELF. Alone among the
  *      rules here it is pinned to two PATHS rather than to a boundary, because
  *      `src/adapters/` is deliberately not reachability-bounded — so it names

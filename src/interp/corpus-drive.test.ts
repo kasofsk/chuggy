@@ -168,7 +168,7 @@ function walk(cfg: Config, commands: readonly Cmd[]): Walked {
   // recovery starts at zero and the re-drain re-emits the whole journal. The
   // ledger is carried through because it was never the actor's to lose.
   const rebuilt = must(
-    recoverFrom(cfg, rig.store.readAll(), 0, {
+    recoverFrom(cfg, rig.store, 0, {
       worldEffects: drained.worldEffects,
       orphans: drained.orphans,
     }),

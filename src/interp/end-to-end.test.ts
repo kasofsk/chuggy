@@ -218,7 +218,7 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
 
   const askedBeforeRecovery = rig.world.ledger().length;
   const recovered = must(
-    recoverFrom(cfgInterp, rig.store.readAll(), 0, {
+    recoverFrom(cfgInterp, rig.store, 0, {
       worldEffects: journaled.worldEffects,
       orphans: journaled.orphans,
     }),
@@ -281,7 +281,7 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
 
   const askedBeforeSecond = rig.world.ledger().length;
   const afterCrash = must(
-    recoverFrom(cfgInterp, rig.store.readAll(), 0, {
+    recoverFrom(cfgInterp, rig.store, 0, {
       worldEffects: s.worldEffects,
       orphans: s.orphans,
     }),
@@ -352,7 +352,7 @@ test("across drains the landing port is re-sent a route it has already finished"
 
   const seen: string[] = [];
   const recovered = must(
-    recoverFrom(cfgInterp, rig.store.readAll(), 0, {
+    recoverFrom(cfgInterp, rig.store, 0, {
       worldEffects: s.worldEffects,
       orphans: s.orphans,
     }),

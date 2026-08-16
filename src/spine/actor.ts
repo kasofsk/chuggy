@@ -420,6 +420,31 @@ export function effectCrash(
  * state. Dropping it here would erase the hazard on exactly the path a real
  * process takes, which is the composition the hazard sweep drives.
  *
+ * IT TAKES THE STORE AND READS THE ROWS ITSELF, which is the precondition
+ * closed rather than documented. It used to take `readonly unknown[]`, and
+ * every caller in the tree passed `store.readAll()` — but the type admitted any
+ * array at all, and the one that matters is an actor's OWN journal: `ActorState`
+ * structurally satisfies `WorldLedger`, so
+ * `recoverFrom(cfg, decided.journal, 0, decided)` was one cast-free line that
+ * minted a `DurableState` over rows no store had ever accepted. That is the
+ * double-spend this file exists to forbid, reached through the function whose
+ * header forbids it. The store is where "durable" is decided, so the store is
+ * what mints the brand — `commit` has taken it since it was written, and
+ * `journal-store.ts` already says the rows are `unknown` BECAUSE they outlive
+ * the process that wrote them, which is a sentence about a store and not about
+ * an array.
+ *
+ * THE ROWS ARE STILL `unknown` AND THE GATE BELOW IS STILL THE ONE THAT KNOWS,
+ * so nothing moved into the port: a codec that turns bytes into rows belongs
+ * above the port, beside `entry.ts`'s schema, and this reads whatever the store
+ * returns exactly as before.
+ *
+ * A STORE THAT CANNOT BE READ IS NOT A LOG THAT CANNOT BE BELIEVED, and the two
+ * exits differ. `readAll` may throw — the medium is unreadable — and that throw
+ * is the caller's, because a process that cannot reach its log has a different
+ * problem from one holding a log it must refuse. Everything this function
+ * DECIDES is still answered rather than thrown.
+ *
  * IT REFUSES RATHER THAN CRASHING, at four gates, and the order is the same
  * order `journalLegalOn` uses and for the same reason. A row that is not
  * shaped like a journal row is refused by the schema's gate before anything
@@ -430,6 +455,20 @@ export function effectCrash(
  * over-reports. A recovering process is exactly the wrong place to throw: the
  * alternative to answering "this log is not readable" is dying again in the
  * same way.
+ *
+ * THE THIRD GATE'S UPPER HALF IS SUBSUMED FOR AN HONEST LEDGER, and saying so
+ * is what keeps it from being read as a control it is not. `cursor >
+ * journal.length` is refused before the ledger is consulted; but a disciplined
+ * actor's `worldEffects` is the dense prefix `1..appliedEver` and `appliedEver`
+ * never exceeds the log, so any cursor past the log fails the FOURTH gate too,
+ * and no case in this tree drives the third alone. What the third gate is
+ * genuinely for is the ledger that is not honest — one carrying seqs the log
+ * never held, which is what a checkpoint restored beside the WRONG log looks
+ * like — and there the two gates refuse different things. It stays, and the
+ * lower half (`cursor < 0`, a value no arithmetic here can produce) stays with
+ * it, because both are the caller-error refusals `crashRecoverTo` makes and a
+ * recovering process is the wrong place to discover an incoherent argument by
+ * indexing past the end of an array.
  *
  * THE FOURTH GATE IS THE ONE THE LEDGER IN HAND CAN ANSWER, and it is
  * `crashRecoverTo`'s caller-error refusal wearing the argument this function's
@@ -475,12 +514,12 @@ export function effectCrash(
  */
 export function recoverFrom(
   cfg: Config,
-  rows: readonly unknown[],
+  store: JournalStore,
   cursor: number,
   world: WorldLedger,
 ): DurableState | undefined {
   const journal: Entry[] = [];
-  for (const row of rows) {
+  for (const row of store.readAll()) {
     if (!hasEntryShape(row)) {
       return undefined;
     }
