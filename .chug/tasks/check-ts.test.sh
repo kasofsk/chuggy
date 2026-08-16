@@ -332,6 +332,14 @@ check "the ambient roster covers domain tests" 1 "$RC" 'may not reach `Date`'
 
 # 14. The positive control. The same call one directory across is legal, so the
 #    rule is scoped to the directory it names rather than to the tree.
+#
+#    AND THIS FIXTURE IS THE WHOLE OF IT, said here because a shipped module
+#    under `src/adapters/` once claimed the same role in its own header and
+#    could not have it. The purity stage hands eslint `$PURE_DIRS` — the two
+#    directories the rule names — so a file outside them is never given to that
+#    config at all, and a rule that has never been asked about a file has not
+#    been observed saying yes about it. Only a fixture written into a scaffolded
+#    repo and run on every gate is this control.
 scaffold
 cat >"$R/src/adapters/clock.ts" <<'TS'
 export function stamp(): number {
