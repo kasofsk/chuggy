@@ -15,6 +15,8 @@ import {
   asProjectId,
   asTaskId,
   asTicketId,
+  type ProjectId,
+  type TaskId,
   type TicketId,
 } from "../../src/domain/ids.ts";
 import type { Phase } from "../../src/domain/phase.ts";
@@ -170,6 +172,15 @@ function oneOf<T extends string>(
   return found;
 }
 
+/** A ticket id, wherever one is written: a map key, a transition, a dependency, a draw. */
+export const decodeTicketId = (v: ItfValue): TicketId => asTicketId(int(v));
+/** A task id, as a completion event names one. */
+export const decodeTaskId = (v: ItfValue): TaskId => asTaskId(int(v));
+/** A target project, as an arrival draws one. */
+export const decodeProjectId = (v: ItfValue): ProjectId => asProjectId(int(v));
+/** The environment's per-attempt choice: the draw at the dequeue and the field it is stamped into. */
+export const decodeInvalidated = (v: ItfValue): boolean => bool(v);
+
 export const decodePhase = (v: ItfValue): Phase =>
   oneOf(PHASES, variantTag(v), "phase");
 export const decodeResume = (v: ItfValue): Resume =>
@@ -201,7 +212,7 @@ export function decodeTaskState(value: ItfValue): TaskState {
 
 export function decodeTask(value: ItfValue): Task {
   return {
-    id: asTaskId(int(field(value, "id"))),
+    id: decodeTaskId(field(value, "id")),
     kind: decodeTaskKind(field(value, "kind")),
     state: decodeTaskState(field(value, "state")),
   };
@@ -216,6 +227,18 @@ export function decodeStage(value: ItfValue): Stage {
       "combinator",
     ),
   };
+}
+
+/** A dependency set, ascending: the model's set carries no order and every fold here does. */
+export function decodeDeps(value: ItfValue): readonly TicketId[] {
+  return setElements(value)
+    .map(decodeTicketId)
+    .sort((a, b) => a - b);
+}
+
+/** An authored eval program: stages in the order the interpreter walks them. */
+export function decodeProgram(value: ItfValue): readonly Stage[] {
+  return list(value).map(decodeStage);
 }
 
 export function decodeWrapUp(value: ItfValue): WrapUp {
@@ -238,8 +261,8 @@ export function decodeWrapUpObs(value: ItfValue): WrapUpObs {
   if (tag === "WOAttempt") {
     const payload = variantPayload(value);
     return woAttempt(
-      asProjectId(int(field(payload, "project"))),
-      bool(field(payload, "invalidated")),
+      decodeProjectId(field(payload, "project")),
+      decodeInvalidated(field(payload, "invalidated")),
     );
   }
   throw new Error(`vocabulary: ${tag} is not a landing observation`);
@@ -253,13 +276,11 @@ export function decodeWrapUpObs(value: ItfValue): WrapUpObs {
 export function decodeTicket(value: ItfValue): Ticket {
   const ticket: Ticket = {
     phase: decodePhase(field(value, "phase")),
-    deps: setElements(field(value, "deps"))
-      .map((d) => asTicketId(int(d)))
-      .sort((a, b) => a - b),
+    deps: decodeDeps(field(value, "deps")),
     wrapUp: decodeWrapUp(field(value, "wrapUp")),
     artifact: decodeArtifact(field(value, "artifact")),
-    project: asProjectId(int(field(value, "project"))),
-    program: list(field(value, "program")).map(decodeStage),
+    project: decodeProjectId(field(value, "project")),
+    program: decodeProgram(field(value, "program")),
     tasks: setElements(field(value, "tasks"))
       .map(decodeTask)
       .sort((a, b) => a.id - b.id),
@@ -284,14 +305,14 @@ export function decodeTicket(value: ItfValue): Ticket {
 export function decodeCore(value: ItfValue): Core {
   const tickets = new Map<TicketId, Ticket>();
   for (const [key, ticket] of mapEntries(value)) {
-    tickets.set(asTicketId(int(key)), decodeTicket(ticket));
+    tickets.set(decodeTicketId(key), decodeTicket(ticket));
   }
   return { tickets };
 }
 
 export function decodeTransition(value: ItfValue): Transition {
   return {
-    ticket: asTicketId(int(field(value, "ticket"))),
+    ticket: decodeTicketId(field(value, "ticket")),
     from: decodePhase(field(value, "from")),
     to: decodePhase(field(value, "to")),
   };

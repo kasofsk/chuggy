@@ -34,6 +34,8 @@ import {
   wrapUpBudget,
   type Bounds,
 } from "../../src/domain/pricing.ts";
+import { boundsOf } from "../../src/domain/config.ts";
+import { CONFIGS } from "./configs.ts";
 import {
   rankCeiling,
   rankDraft,
@@ -41,37 +43,23 @@ import {
   phaseRank,
 } from "../../src/domain/phase.ts";
 import { asProjectId } from "../../src/domain/ids.ts";
-import { aNone, wNone } from "../../src/domain/wrapUp.ts";
+import { aNone, aSome, wNone } from "../../src/domain/wrapUp.ts";
 import type { Ticket } from "../../src/domain/ticket.ts";
+import type { Phase } from "../../src/domain/phase.ts";
+import { budgetedInstance } from "./configs.ts";
+import { ticketOn, workRunning } from "./fixtures.ts";
 
 const GOLDEN_DIR = join(import.meta.dirname, "..", "golden");
 
 /**
- * The consts each instance is declared with, read off `model/mc/mc_chuggy.qnt`.
- * They are stated rather than parsed because a Quint instantiation is not a
- * declaration a grep reads reliably, and a wrong value here fails loudly
- * against `prevMeasure` on the first state of the first trace.
+ * What the measure needs, read off the one transcription of the model's
+ * instance constants. A second copy here would be a second version of
+ * `model/mc/mc_chuggy.qnt` inside a year.
  */
-const BOUNDS: Record<string, Bounds> = {
-  mc_chuggy_budgeted: {
-    reworkPolicy: reworkBudgetOf(1),
-    nTasks: 2,
-    maxStages: 2,
-    wrapUpPricing: budgeted(1),
-  },
-  mc_chuggy_deadline_only: {
-    reworkPolicy: reworkBudgetOf(1),
-    nTasks: 2,
-    maxStages: 2,
-    wrapUpPricing: deadlineOnly,
-  },
-  mc_chuggy_retryfree: {
-    reworkPolicy: reworkBudgetOf(1),
-    nTasks: 2,
-    maxStages: 2,
-    wrapUpPricing: deadlineOnly,
-  },
-};
+function boundsFor(instance: string): Bounds | undefined {
+  const config = CONFIGS[instance];
+  return config === undefined ? undefined : boundsOf(config);
+}
 
 interface Row {
   readonly name: string;
@@ -92,7 +80,7 @@ test("the corpus reproduces this implementation's sysMeasure at every step", () 
   assert.ok(rows.length > 0, "the manifest is empty");
   let compared = 0;
   for (const row of rows) {
-    const bounds = BOUNDS[row.instance];
+    const bounds = boundsFor(row.instance);
     assert.ok(bounds, `${row.instance} has no bounds declared here`);
     const trace = decodeTrace(
       JSON.parse(
@@ -140,7 +128,7 @@ test("radix is the one place the chain adds one", () => {
 });
 
 test("each weight is worth exactly a full digit of the one below it", () => {
-  const bounds = BOUNDS["mc_chuggy_budgeted"];
+  const bounds = boundsFor("mc_chuggy_budgeted");
   assert.ok(bounds);
   assert.equal(stageWeight(bounds), radix(bounds.nTasks));
   assert.equal(
@@ -151,7 +139,7 @@ test("each weight is worth exactly a full digit of the one below it", () => {
 });
 
 test("micro is bounded strictly below microBound, which is what makes the flattening work", () => {
-  const bounds = BOUNDS["mc_chuggy_budgeted"];
+  const bounds = boundsFor("mc_chuggy_budgeted");
   assert.ok(bounds);
   const worst: Ticket = {
     phase: "PDraft",
@@ -174,7 +162,7 @@ test("micro is bounded strictly below microBound, which is what makes the flatte
 });
 
 test("a settled ticket with empty accounts measures zero, which is the well-foundedness floor", () => {
-  const bounds = BOUNDS["mc_chuggy_budgeted"];
+  const bounds = boundsFor("mc_chuggy_budgeted");
   assert.ok(bounds);
   const settled: Ticket = {
     phase: "PDone",
@@ -194,6 +182,37 @@ test("a settled ticket with empty accounts measures zero, which is the well-foun
   };
   assert.equal(phaseRank(settled.phase), rankSettled);
   assert.equal(ticketMeasure(bounds, settled), 0);
+});
+
+test("no digit, weight or radix reads the project or the artifact", () => {
+  const bounds = boundsFor("mc_chuggy_budgeted");
+  assert.ok(bounds);
+  const phases: readonly Phase[] = [
+    "PDraft",
+    "PPending",
+    "PWorking",
+    "PEvaluating",
+    "PWrapUp",
+    "PWrapUpHolding",
+    "PEscalated",
+  ];
+  for (const phase of phases) {
+    const ticket = ticketOn(budgetedInstance, 1, {
+      phase,
+      tasks: [workRunning(1)],
+      spawned: 1,
+    });
+    assert.equal(
+      ticketMeasure(bounds, ticket),
+      ticketMeasure(bounds, { ...ticket, project: asProjectId(2) }),
+      `${phase}: the measure moved with the project`,
+    );
+    assert.equal(
+      ticketMeasure(bounds, ticket),
+      ticketMeasure(bounds, { ...ticket, artifact: aSome(9) }),
+      `${phase}: the measure moved with the artifact`,
+    );
+  }
 });
 
 test("the accounts' radices come from the policies, not from a literal", () => {
