@@ -32,7 +32,7 @@
 ///
 /// THE DIGIT-ORDER ARGUMENT (why stagesLeft sits BELOW phase rank and
 /// ABOVE — not beside — the running-task count):
-///   - BELOW rank: entering Evaluating (work-passed, rank 3->2) makes the
+///   - BELOW rank: entering Evaluating (work-passed, rank 4->3) makes the
 ///     stage digit APPEAR at its maximum (stagesLeft 0 -> L <= maxStages)
 ///     while the stage-0 fan-out spawns (running 0 -> <= nTasks). The one
 ///     rank step must dominate both at once, which forces
@@ -150,7 +150,10 @@
 ///                                         dominated by the account drop)
 ///   ticket-escalated rework_budget_exhausted rank 3->0 (and stage digit ->0)
 ///   ticket-escalated gas_exhausted         rank {3,2,1}->0
-///   ticket-done                            rank {2,1}->0 (2: the quiet
+///   ticket-done                            rank {3,2,1}->0 (3: a WNone
+///                                       ticket, whose passing evaluation IS
+///                                       its completion — it enters neither
+///                                       wrap-up phase; 2: the quiet
 ///                                       completing straight off the queue;
 ///                                       1: completing out of the lease)
 ///   rework-started wrapup_failure         gas -1 (AND wrapUpLeft -1 when
