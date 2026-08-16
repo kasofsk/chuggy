@@ -232,6 +232,15 @@ test("hasEntryShape: the record's shape is checked; its vocabulary is not", () =
     { ...rec, label: 1 },
     { ...rec, attempt: { tag: "WOAttempt", project: 1 } },
     { ...rec, attempt: "WONone" },
+    // The retired name, carried in the renamed field's place — a pre-rename
+    // row, or a writer that never followed the model. The roster is the whole
+    // of what refuses it, so the refusal is pinned here rather than assumed.
+    {
+      label: rec.label,
+      transitions: rec.transitions,
+      effects: rec.effects,
+      landing: rec.attempt,
+    },
   ]) {
     assert.equal(
       hasEntryShape(rowWith("rec", bad)),

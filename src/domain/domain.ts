@@ -505,10 +505,11 @@ export function noop(c: Core, label: string): Decision {
 }
 
 /**
- * `model/domain.qnt` withWrapUpObs — stamp the landing-boundary attribution on
+ * `model/domain.qnt` withWrapUpObs — stamp the wrap-up boundary's attribution on
  * a decision. `decideWrapUpResolve` routes EVERY arm through this, so each step
- * that resolves a landing attempt carries the target project and the environment's
- * invalidated choice for that attempt.
+ * that resolves a wrap-up attempt — both successes, the gate rework, and both
+ * wrap-up walls — carries the target project and the environment's invalidated
+ * choice for that attempt.
  *
  * The post-state is passed through UNTOUCHED, which is the whole of what makes
  * this an observation rather than a decision: the attribution lives in the
