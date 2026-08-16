@@ -20,6 +20,8 @@
 #   provides   $WORK   a temp dir, removed on exit
 #              $OUT    where a driver should write captured output
 #              check   assert an exit code and a substring of $OUT
+#              fresh_repo   a throwaway git checkout
+#              tools_only   a PATH holding only the tools named
 #              done_   print the tally and exit non-zero if anything failed
 #   expects    the suite to set $OUT before each check
 
@@ -52,6 +54,41 @@ fresh_repo() { # <dir>
 	git -C "$1" init -q -b main
 	git -C "$1" config user.email t@example.com
 	git -C "$1" config user.name t
+}
+
+# A directory to use as the whole of PATH, holding only the tools named. Gates
+# separate a clean tree from a tree they could not read, and the second half is
+# only reachable by taking a tool away — every suite that drives a could-not-run
+# path needs one of these, and what makes each case worth anything is which
+# tools it leaves IN: strip more than the one under test and the gate can
+# refuse for some other reason, and the case then passes without the guard it
+# names existing at all.
+#
+# DECLARED, BECAUSE IT IS THE ONE THING HERE WITH NO SUITE OF ITS OWN. This
+# file is harness: it has no verdict, so `.chug/tasks/check-gates.sh` rightly
+# does not ask it for a sibling, and the underscore prefix is what says so. The
+# cost is real and worth writing down rather than covering. If `tools_only`
+# silently degraded — `command -v` returning nothing for a tool, leaving a
+# broken link, or the directory not being made — the suites that use it would
+# mostly stay GREEN: a gate refusing because the tool it needs is missing and a
+# gate refusing because the whole PATH is empty print the same verdict, and
+# several of the guards these cases drive sit above every tool they name
+# anyway. So a case built on this helper proves the gate refuses, never that it
+# refused for the reason the case is about.
+#
+# What holds it instead: it is a handful of lines with no branch in it, read by
+# every suite that sources this file, and the alternative — a suite for the
+# harness, driven by a harness — is machinery this tree has no failure to point
+# at. If one ever appears, that is the refutation, and the answer is a case in
+# the suite it appeared in rather than a test of this file.
+tools_only() { # <dir> <tool>...
+	_dir="$1"
+	shift
+	rm -rf "$_dir"
+	mkdir -p "$_dir"
+	for _t in "$@"; do
+		ln -sf "$(command -v "$_t")" "$_dir/$_t"
+	done
 }
 
 done_() { # <suite name>

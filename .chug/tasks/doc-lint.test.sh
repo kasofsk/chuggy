@@ -17,7 +17,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/_suite.sh"
 SUT="$HERE/doc-lint.sh"
 BARE="$(mktemp -d)"
-trap 'rm -rf "$WORK" "$BARE"' EXIT
+EMPTY="$(mktemp -d)"
+trap 'rm -rf "$WORK" "$BARE" "$EMPTY"' EXIT
 
 git -C "$WORK" init -q -b main
 git -C "$WORK" config user.email t@example.com
@@ -141,5 +142,69 @@ set +e
 RC=$?
 set -e
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
+
+# A repo with commits and no markdown in them. Whole-tree mode DISCOVERED this
+# corpus, so an empty result is a glob that matched nothing rather than a tree
+# with nothing wrong with it — and the argument case above proves the two are
+# still told apart, because there the caller named the files.
+fresh_repo "$EMPTY"
+printf 'placeholder\n' > "$EMPTY/README.txt"
+git -C "$EMPTY" add -A
+OUT="$EMPTY/.out"
+set +e
+(cd "$EMPTY" && "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "an empty discovered corpus exits 2, not 0" 2 "$RC" "the glob matched nothing"
+
+# A FILTER THAT FAILED IS NOT A FILTER THAT MATCHED NOTHING. The blank-line
+# filter's status used to be discarded, so a grep that could not run at all
+# emptied the file list and the gate reported the whole corpus as absent — over
+# a tree that is full of markdown, as $WORK is here.
+BIN="$WORK/brokenbin"
+tools_only "$BIN" git awk
+printf '#!/bin/sh\nexit 2\n' > "$BIN/grep"
+chmod +x "$BIN/grep"
+OUT="$WORK/.out"
+set +e
+(cd "$WORK" && env PATH="$BIN" "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "a failed filter exits 2, not 0" 2 "$RC" "the file-list filter failed"
+
+# NO AWK IS A BROKEN GATE, NOT A PASS. Every check here is an awk program, and
+# without the guard the shell exits on the missing command with a status this
+# gate's header does not claim.
+#
+# The PATH holds the rest of what the gate reaches for so the fixture is a
+# degraded host rather than an empty one, but that is honesty and not
+# discrimination: the awk guard sits above every other line in the gate, so an
+# empty PATH would produce the same verdict — which means this case cannot
+# notice `tools_only` handing it a broken link either. `_suite.sh` says what
+# that costs.
+NOAWK="$WORK/noawk"
+tools_only "$NOAWK" git grep dirname
+OUT="$WORK/.out"
+set +e
+(cd "$WORK" && env PATH="$NOAWK" "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "no awk exits 2, not 127" 2 "$RC" "no \`awk\` on PATH"
+
+# THE DISCOVERY COMMAND ITSELF FAILING is its own refusal, distinct from the
+# glob coming back empty: one is a tree with no markdown in it and the other is
+# a question that was never answered. The stub git answers `rev-parse` so the
+# gate gets as far as reading the corpus, and refuses `ls-files`.
+BADGIT="$WORK/badgit"
+tools_only "$BADGIT" grep
+printf '#!/bin/sh\ncase "$1" in ls-files) exit 3 ;; esac\nexec %s "$@"\n' \
+	"$(command -v git)" > "$BADGIT/git"
+chmod +x "$BADGIT/git"
+OUT="$WORK/.out"
+set +e
+(cd "$WORK" && env PATH="$BADGIT:$PATH" "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "a failed git ls-files exits 2, not 0" 2 "$RC" "\`git ls-files\` failed"
 
 done_ "doc-lint.test.sh"

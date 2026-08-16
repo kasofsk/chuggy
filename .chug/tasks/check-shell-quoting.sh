@@ -97,7 +97,7 @@ if [ "$#" -gt 0 ]; then
 	# the whole-tree mode moves to the repo root the glob is relative to.
 	FILES="$*"
 else
-	cd "$(dirname "$0")/../.."
+	cd "$(dirname "$0")/../.." || exit 2
 	# Discovery is a glob over `git ls-files`, so a new shell file is picked up
 	# with nothing to register. `.githooks/pre-commit` is a shell file with no
 	# extension, and it is the other script an operator runs on a mac.
@@ -188,10 +188,12 @@ if [ -n "$FOUND" ]; then
 	echo "$FOUND"
 	echo "!!! check-shell-quoting: a quote inside the word of a \`\${VAR:-word}\` expansion,"
 	echo "!!!     which bash and dash parse differently — bash reads the quote, dash does"
-	echo "!!!     not, and both accept the file. CI runs dash; macOS /bin/sh is bash, so"
-	echo "!!!     this binds different lines in CI than in production. Rewrite the default"
-	echo "!!!     without the quote (plain prose), or move the quoted text outside the"
-	echo "!!!     expansion. Escaping it is not the fix."
+	echo "!!!     not, and both accept the file. Which of them reads a script here is a"
+	echo "!!!     property of the host: macOS /bin/sh is bash, a Linux one is usually"
+	echo "!!!     dash, so the same tree binds different lines on the two machines and"
+	echo "!!!     whichever you are on will look fine. Rewrite the default without the"
+	echo "!!!     quote (plain prose), or move the quoted text outside the expansion."
+	echo "!!!     Escaping it is not the fix."
 	exit 1
 fi
 

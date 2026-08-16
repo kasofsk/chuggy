@@ -39,9 +39,19 @@
 # deferred orphan check asks rule 2 "what does this doc link to" rather than
 # growing a second answer to the same question.
 #
-# Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
+# Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass —
+# and that includes the tool being absent. Every check above is an awk program,
+# so without awk the shell would exit on the missing command with a status this
+# header does not claim. Same guard as `.chug/tasks/check-shell-quoting.sh`,
+# `.chug/tasks/check-figures.sh` and `.chug/tasks/check-paths.sh`: every gate
+# here written in awk answers the same way when there is no awk to write in.
 set -eu
 export LC_ALL=C
+
+command -v awk > /dev/null 2>&1 || {
+	echo "doc-lint: LINTER ERROR — no \`awk\` on PATH, so nothing was linted."
+	exit 2
+}
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$root" ]; then
@@ -57,6 +67,18 @@ if [ "${1:-}" = "--emit-links" ]; then
 fi
 
 # --- Select the markdown files ----------------------------------------------
+#
+# THE TWO MODES ANSWER AN EMPTY RESULT DIFFERENTLY, and the difference is which
+# question was asked. With explicit arguments the caller named the files, so a
+# list that filters down to nothing means the caller named no markdown — the
+# hook passes it every staged path, most of which are not — and skipping them
+# is the right answer. With no arguments the gate DISCOVERED the corpus, and a
+# discovery that matched nothing is the shape every other gate here refuses:
+# `.chug/tasks/ci.sh`, `.chug/tasks/check-gates.sh`, `.chug/tasks/check-paths.sh`
+# and `.chug/tasks/check-figures.sh` all call an empty glob a could-not-run.
+# This one used to call it "nothing to lint" and exit 0, which is the same
+# sentence a tree with no defects gets.
+discovered=0
 files=""
 if [ "$#" -gt 0 ]; then
 	for f in "$@"; do
@@ -66,13 +88,35 @@ if [ "$#" -gt 0 ]; then
 		esac
 	done
 else
-	files="$(git ls-files '*.md' 2>/dev/null || true)
+	discovered=1
+	if ! files="$(git ls-files '*.md' 2>/dev/null)"; then
+		echo "doc-lint: LINTER ERROR — \`git ls-files\` failed, so no corpus was read"
+		exit 2
+	fi
+	files="$files
 "
 fi
 
-files="$(printf '%s' "$files" | grep -v '^$' || true)"
+# The blank-line filter, with its status read rather than discarded. grep exits
+# 1 for "no lines matched", which is a verdict; anything above that is grep
+# itself failing, and a failed filter that reads as an empty corpus is how this
+# gate would report a clean tree it never opened.
+set +e
+filtered="$(printf '%s' "$files" | grep -v '^$')"
+grep_rc=$?
+set -e
+if [ "$grep_rc" -gt 1 ]; then
+	echo "doc-lint: LINTER ERROR — the file-list filter failed (grep rc=$grep_rc)"
+	exit 2
+fi
+files="$filtered"
+
 if [ -z "$files" ]; then
-	[ "$emit_links" -eq 1 ] || echo "doc-lint: no tracked markdown — nothing to lint"
+	if [ "$discovered" -eq 1 ]; then
+		echo "doc-lint: LINTER ERROR — no tracked markdown; the glob matched nothing"
+		exit 2
+	fi
+	[ "$emit_links" -eq 1 ] || echo "doc-lint: no markdown among the arguments — nothing to lint"
 	exit 0
 fi
 

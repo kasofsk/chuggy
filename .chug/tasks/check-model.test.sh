@@ -7,6 +7,21 @@
 # gate's refusals — the paths where it must report could-not-run rather than
 # pass — and those are exactly the paths a real run never exercises.
 #
+# THE STUB SPEAKS QUINT'S TALLY, and that is not decoration. The gate reads the
+# `N passing` line as its evidence a suite ran at all, so a stub that printed
+# nothing would leave the guard unexercised — which is the shape of defect this
+# file is here to prevent, not to repeat. The stub is steered by environment
+# rather than by regenerating it per case: STUB_FAIL names modules it fails,
+# STUB_QUIET names modules it reports with no tally at all (quint's own
+# behaviour for a module with no matching runs), STUB_ZERO names modules it
+# reports as having run a tally of none.
+#
+# THE FIXTURE MODULE NAMES ARE NOT ALL ONE WORD, and that is load-bearing. The
+# gate discovers them through a character class, so a fixture whose every name
+# is a single lowercase word would stay green against a class narrowed to
+# `[a-z]` — which on the real model drops the modules whose names carry an
+# underscore or a digit. Each file below declares one of each.
+#
 # Run:  .chug/tasks/check-model.test.sh
 set -eu
 
@@ -22,8 +37,7 @@ R="$WORK/repo"
 # this the developer's real quint would satisfy the fallback and the
 # no-quint-anywhere case could never go red.
 GITBIN="$WORK/gitonly"
-mkdir -p "$GITBIN"
-ln -sf "$(command -v git)" "$GITBIN/git"
+tools_only "$GITBIN" git
 
 model_repo() { # <quint-version> <quint-exit>
 	rm -rf "$R"
@@ -32,21 +46,38 @@ model_repo() { # <quint-version> <quint-exit>
 	git -C "$R" config user.email t@example.com
 	git -C "$R" config user.name t
 	: > "$R/model/domain.qnt"
-	: > "$R/model/mc/mc_chuggy.qnt"
-	: > "$R/model/tests/chuggy_test.qnt"
+	printf 'module %s {\n}\n' mc_chuggy_budgeted mc_chuggy_deadline_only \
+		mc_chuggy_tier2 > "$R/model/mc/mc_chuggy.qnt"
+	printf 'module chuggy_test {\n}\n' > "$R/model/tests/chuggy_test.qnt"
+	printf 'module %s {\n}\n' chuggy_witness_free_test \
+		chuggy_witness_gate_deadline_test chuggy_witness_stage2_test \
+		> "$R/model/tests/chuggy_witness_test.qnt"
+	printf 'module %s {\n}\n' chuggy_refinement_unit_test \
+		chuggy_refinement_hazard_seam_test chuggy_refinement_tier2_test \
+		> "$R/model/tests/chuggy_refinement_test.qnt"
 	cat > "$R/node_modules/.bin/quint" <<STUB
 #!/bin/sh
 if [ "\$1" = "--version" ]; then echo "$1"; exit 0; fi
+main=""
+for a in "\$@"; do case "\$a" in --main=*) main=\${a#--main=} ;; esac; done
+[ -n "\$main" ] || main=unit
+printf '  %s\n' "\$main"
+case " \${STUB_QUIET:-} " in *" \$main "*) exit 0 ;; esac
+case " \${STUB_ZERO:-} " in *" \$main "*) printf '\n  0 passing (1ms)\n'; exit 0 ;; esac
+case " \${STUB_FAIL:-} " in
+*" \$main "*) printf '    1) aTest failed after 1 test(s)\n\n  1 failed\n'; exit 1 ;;
+esac
+printf '    ok aTest passed 1 test(s)\n\n  1 passing (1ms)\n'
 exit $2
 STUB
 	chmod +x "$R/node_modules/.bin/quint"
 	git -C "$R" add -A
 }
 
-run_in_repo() {
+run_in_repo() { # [<VAR=value>...] — env for the stub to read
 	OUT="$WORK/.out"
 	set +e
-	(cd "$R" && "$SUT") >"$OUT" 2>&1
+	(cd "$R" && env "$@" "$SUT") >"$OUT" 2>&1
 	RC=$?
 	set -e
 }
@@ -105,5 +136,108 @@ set +e
 RC=$?
 set -e
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
+
+# --- Discovery ---------------------------------------------------------------
+# The gate used to name its witness and refinement modules in `for` loops here,
+# and its mc instances in a third list. The cases below are the ones those
+# lists could not have: they move the model source and watch the gate follow
+# it, or refuse to.
+
+# 8. A MODULE THE MODEL GAINED IS A MODULE THE GATE RUNS. This is the finding:
+#    with a typed list, appending a witness module whose obligation is false ran
+#    it nowhere and the gate printed a clean tally. Driven at all THREE loops,
+#    because each is its own list and reverting any one of them alone is a
+#    change the other two cases would not notice — the instance loop reaching
+#    `quint run` rather than `quint test`, and reporting differently for it.
+appended_module() { # <model file> <module name> <expected finding>
+	model_repo 0.32.0 0
+	printf 'module %s {\n}\n' "$2" >> "$R/$1"
+	git -C "$R" add -A
+	run_in_repo STUB_FAIL="$2"
+	check "an appended module in $1 is run and its failure named" 1 "$RC" "$3"
+}
+appended_module model/tests/chuggy_witness_test.qnt chuggy_witness_appended_test \
+	"ERROR witness chuggy_witness_appended_test failed"
+appended_module model/tests/chuggy_refinement_test.qnt chuggy_refinement_appended_test \
+	"ERROR refinement chuggy_refinement_appended_test failed"
+appended_module model/mc/mc_chuggy.qnt mc_chuggy_appended \
+	"ERROR instance mc_chuggy_appended violated an invariant"
+
+# 9. Discovery matching nothing is a could-not-run, per source. Each loop reads
+#    a different file with a different pattern, so each refusal is driven; the
+#    message names the file so the reader knows which scan came up empty.
+for empty in \
+	"witness:model/tests/chuggy_witness_test.qnt" \
+	"refinement:model/tests/chuggy_refinement_test.qnt" \
+	"instance:model/mc/mc_chuggy.qnt"; do
+	model_repo 0.32.0 0
+	printf 'val notAModule = 1\n' > "$R/${empty#*:}"
+	git -C "$R" add -A
+	run_in_repo
+	check "no ${empty%%:*} modules exits 2, not 0" 2 "$RC" \
+		"no ${empty%%:*} modules declared in ${empty#*:}"
+done
+
+# 9b. A DECLARATION THE PATTERN CANNOT READ IS A DISCREPANCY, NOT AN ABSENCE.
+#     `module NAME {` is one spelling among several that Quint accepts, that
+#     typecheck, and that `quint test --main=` finds and runs — so a module
+#     spelled any other way carries a real obligation while being invisible to
+#     the scan. The gate answers by counting the lines that OPEN a declaration
+#     against the number of names its pattern took.
+#
+#     THE SPELLINGS ARE DRIVEN INDIVIDUALLY, and the reason is the mistake the
+#     first version of this audit made: it compared the pattern against a
+#     second, slightly wider NAME pattern, which shared the first one's column
+#     anchor and its same-line-name assumption and therefore agreed with it
+#     about every spelling neither could read. Three spellings walked through
+#     both scans together. A case per spelling is what says the audit is not
+#     reading names any more — the last of them especially, because there is no
+#     name on the line at all for a name scan to find.
+hidden_spelling() { # <label> <declaration line(s)> <evidence in the refusal>
+	model_repo 0.32.0 0
+	printf '%b\n}\n' "$2" >> "$R/model/tests/chuggy_witness_test.qnt"
+	git -C "$R" add -A
+	run_in_repo STUB_FAIL=chuggy_witness_hidden_test
+	check "a declaration $1 exits 2, not 0" 2 "$RC" "module here is one nothing"
+	check "and the refusal shows the declaration $1" 2 "$RC" "$3"
+}
+hidden_spelling "with its brace on the next line" \
+	'module chuggy_witness_hidden_test\n{' chuggy_witness_hidden_test
+hidden_spelling "indented by spaces" \
+	'  module chuggy_witness_hidden_test {' chuggy_witness_hidden_test
+hidden_spelling "indented by a tab" \
+	'\tmodule chuggy_witness_hidden_test {' chuggy_witness_hidden_test
+# The last one asserts the COUNT rather than the name, because there is no name
+# on the declaration's own line for the refusal to quote — the reader gets the
+# discrepancy and a line number and goes and looks. That is the limit of a
+# check that reads the keyword instead of the name, and it is also the proof
+# that it does: no name scan reaches this module at all, and the gate refuses
+# anyway.
+hidden_spelling "with its name on the next line" \
+	'module\nchuggy_witness_hidden_test {' "opens 4 module declaration(s)"
+
+# 9c. A suite file that is not there at all. The cases above all have the file
+#     and empty it; this is the branch where discovery has nothing to open, and
+#     it is a different refusal with a different message.
+model_repo 0.32.0 0
+rm -f "$R/model/tests/chuggy_refinement_test.qnt"
+run_in_repo
+check "an absent suite file exits 2, not 0" 2 "$RC" \
+	"no model/tests/chuggy_refinement_test.qnt to read refinement modules from"
+
+# 10. A SUITE THAT RAN NOTHING IS NOT A SUITE THAT PASSED. `quint test` exits 0
+#     on a module with no `*Test` runs, so a renamed run empties a suite in
+#     silence — the one way this gate could report clean having checked nothing.
+#     Both spellings of nothing: quint omitting the tally line, and a tally of
+#     zero, which is the reading a bare digit class would have let through.
+model_repo 0.32.0 0
+run_in_repo STUB_QUIET=chuggy_witness_free_test
+check "a suite reporting no tally exits 2, not 0" 2 "$RC" "reported no tests run"
+check "the empty suite is named" 2 "$RC" "witness chuggy_witness_free_test"
+
+model_repo 0.32.0 0
+run_in_repo STUB_ZERO=chuggy_refinement_unit_test
+check "a tally of zero exits 2, not 0" 2 "$RC" \
+	"refinement chuggy_refinement_unit_test reported no tests run"
 
 done_ "check-model.test.sh"
