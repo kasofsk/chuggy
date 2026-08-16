@@ -469,16 +469,28 @@ module chuggy_measure {
   ///     carries it structurally;
   ///   - `invalidated`: the environment's PER-ATTEMPT choice of whether
   ///     the target repo's default branch moved under the candidate — the
-  ///     ONLY reason a landing can fail. This is the
-  ///     envActive standing rule honored: an explicitly NAMED nondet
-  ///     event on the
-  ///     trace, never a stored env flag — there is no per-repo "active"
-  ///     variable anywhere, and quiet/moved is chosen fresh at every
-  ///     attempt (derive-don't-store applied to the environment).
+  ///     ONLY reason a landing can fail, and the record's one carrier of
+  ///     the discipline stated below.
   /// Every other step — including eval-passed (which merely ENQUEUES the
   /// landing) and complete-duplicate (an absorbed re-delivery: no attempt
   /// resolves, nothing is emitted) — carries WONone. The iff is the
   /// wrapUpIsolation invariant (domain.qnt).
+  ///
+  /// THE NAMED-NONDET DISCIPLINE, stated here because `invalidated` above
+  /// is where an environment choice reaches the observable record, and
+  /// cited by that name from the sites it governs: an environment choice
+  /// is an explicitly NAMED nondet event, drawn fresh at every attempt
+  /// and carried on the step record — never a flag stored on state.
+  /// There is no per-repo "active" variable anywhere. What enforces it is
+  /// the record types: neither Ticket nor Core has a field for one, so
+  /// storing a choice would mean ADDING a field rather than setting one,
+  /// and a choice reaches a decider as a PARAMETER or not at all.
+  ///
+  /// It is NOT one of the four numbered standing rules — those are a
+  /// closed list — and it is not rule 3 under another name: rule 3
+  /// refuses a stored duplicate of a DERIVABLE fact, and an environment
+  /// choice is derivable from nothing. They share only the conclusion,
+  /// that the flag does not exist.
   type WrapUpObs = WONone | WOAttempt({ repo: int, invalidated: bool })
 
   /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
