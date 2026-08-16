@@ -32,7 +32,7 @@
 ///
 /// THE DIGIT-ORDER ARGUMENT (why stagesLeft sits BELOW phase rank and
 /// ABOVE — not beside — the running-task count):
-///   - BELOW rank: entering Evaluating (work-passed, rank 3->2) makes the
+///   - BELOW rank: entering Evaluating (work-passed, rank 4->3) makes the
 ///     stage digit APPEAR at its maximum (stagesLeft 0 -> L <= maxStages)
 ///     while the stage-0 fan-out spawns (running 0 -> <= nTasks). The one
 ///     rank step must dominate both at once, which forces
@@ -133,8 +133,10 @@
 ///                                         -stageWeight + r <= -1 a
 ///                                         fortiori)
 ///   ticket-escalated work_failed           rank 4->0 (cycle-level resolution:
-///                                       the fabric already retried below
-///                                       the cycle via trusted backoffLimit)
+///                                       the fabric already retried the
+///                                       container below the cycle grain,
+///                                       which this model trusts rather
+///                                       than models)
 ///   eval-passed (the FINAL stage        rank 3->2 AND stagesLeft 1->0 (the
 ///     passes)                             ticket ENQUEUES for the gate —
 ///                                         PWrapUp is the queued state)
@@ -150,7 +152,10 @@
 ///                                         dominated by the account drop)
 ///   ticket-escalated rework_budget_exhausted rank 3->0 (and stage digit ->0)
 ///   ticket-escalated gas_exhausted         rank {3,2,1}->0
-///   ticket-done                            rank {2,1}->0 (2: the quiet
+///   ticket-done                            rank {3,2,1}->0 (3: a WNone
+///                                       ticket, whose passing evaluation IS
+///                                       its completion — it enters neither
+///                                       wrap-up phase; 2: the quiet
 ///                                       completing straight off the queue;
 ///                                       1: completing out of the lease)
 ///   rework-started wrapup_failure         gas -1 (AND wrapUpLeft -1 when
@@ -438,8 +443,8 @@ module chuggy_measure {
   /// (the cascade wall, chuggy-NEW — NOT retryable, its only exit is
   /// revoke). RsGasExhausted is the rename of the deadline wall
   /// (`gas_exhausted` on the trace); RsWorkFailed is the CYCLE-level work
-  /// wall (there is no retries wall: below-cycle retries are the fabric's
-  /// trusted backoffLimit, §2).
+  /// wall (there is no retries wall: retrying a failed container below the
+  /// cycle grain is the fabric's job, trusted here rather than modeled).
   type Reason =
     RsNone | RsWorkFailed | RsReworkBudgetExhausted |
     RsWrapUpBudgetExhausted | RsGasExhausted | RsRevalidationFailed |
@@ -464,16 +469,28 @@ module chuggy_measure {
   ///     carries it structurally;
   ///   - `invalidated`: the environment's PER-ATTEMPT choice of whether
   ///     the target repo's default branch moved under the candidate — the
-  ///     ONLY reason a landing can fail. This is the
-  ///     envActive standing rule honored: an explicitly NAMED nondet
-  ///     event on the
-  ///     trace, never a stored env flag — there is no per-repo "active"
-  ///     variable anywhere, and quiet/moved is chosen fresh at every
-  ///     attempt (derive-don't-store applied to the environment).
+  ///     ONLY reason a landing can fail, and the record's one carrier of
+  ///     the discipline stated below.
   /// Every other step — including eval-passed (which merely ENQUEUES the
   /// landing) and complete-duplicate (an absorbed re-delivery: no attempt
   /// resolves, nothing is emitted) — carries WONone. The iff is the
   /// wrapUpIsolation invariant (domain.qnt).
+  ///
+  /// THE NAMED-NONDET DISCIPLINE, stated here because `invalidated` above
+  /// is where an environment choice reaches the observable record, and
+  /// cited by that name from the sites it governs: an environment choice
+  /// is an explicitly NAMED nondet event, drawn fresh at every attempt
+  /// and carried on the step record — never a flag stored on state.
+  /// There is no per-repo "active" variable anywhere. What enforces it is
+  /// the record types: neither Ticket nor Core has a field for one, so
+  /// storing a choice would mean ADDING a field rather than setting one,
+  /// and a choice reaches a decider as a PARAMETER or not at all.
+  ///
+  /// It is NOT one of the four numbered standing rules — those are a
+  /// closed list — and it is not rule 3 under another name: rule 3
+  /// refuses a stored duplicate of a DERIVABLE fact, and an environment
+  /// choice is derivable from nothing. They share only the conclusion,
+  /// that the flag does not exist.
   type WrapUpObs = WONone | WOAttempt({ repo: int, invalidated: bool })
 
   /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
@@ -696,7 +713,7 @@ module chuggy_measure {
   /// step.
   pure val rankHolding: int = rankSettled + 1
   /// PWrapUp — ENQUEUED for the gate: the
-  /// dequeue (gate-opened) descends into the gate, the quiet fast-path
+  /// dequeue (wrapup-started) descends into the gate, the quiet fast-path
   /// descends straight to Done.
   pure val rankWrapUp: int = rankHolding + 1
   pure val rankEvaluating: int = rankWrapUp + 1

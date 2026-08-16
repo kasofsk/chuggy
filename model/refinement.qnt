@@ -572,8 +572,9 @@ module chuggy_refinement {
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
     nondet repo_ = repos.oneOf()
+    nondet wrapUp_ = wrapUpChoices.oneOf()
     journalStep(JArrive({ deps: deps_, prog: prog, repo: repo_,
-      wrapUp: WExclusive(repo_) }))
+      wrapUp: wrapUp_ }))
   }
   action actorRelease = all {
     draftTickets.size() > 0,
