@@ -18,7 +18,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 R="$WORK/repo"
 BIN="$WORK/bin"
 mkdir -p "$BIN"
-for t in git mktemp grep sed rm; do ln -sf "$(command -v "$t")" "$BIN/$t"; done
+for t in git mktemp grep sed rm awk; do ln -sf "$(command -v "$t")" "$BIN/$t"; done
 
 stub_repo() { # <jscpd exit> <jscpd stdout>
 	fresh_repo "$R"
@@ -86,26 +86,45 @@ check "no jscpd and no npx exits 2" 2 "$RC" "no jscpd and no npx"
 # nested copy IS a clone, which is what makes the second half mean something —
 # without it, an ignore list that excluded the whole tree would pass.
 #
+# THE COUNT ON THE CLEAN LINE IS ASSERTED HERE, off the same run, because it is
+# what tells those two apart: excluding the copy and excluding everything both
+# print "no clones", and only the figure beside it says which happened. The
+# fixture is built to a size this case knows and the parent holds half of it,
+# so an expression reading a directory rather than the scan gets the wrong
+# answer as surely as one reading the wrong cell. That figure went unasserted
+# once and printed the digits inside the reporter's colour escape for every
+# tree it ever saw, while the verdict beside it stayed right.
+#
+# The parts are distinct from each other and each clears jscpd's token floor,
+# which is what a file must do to be analyzed at all: a short one is not
+# counted, and a fixture of short files is a fixture of a size the tool
+# disagrees with.
+#
 # The nested checkout is a plain directory rather than a real `git worktree`.
 # jscpd reads the filesystem and never asks git, so the copy is the whole of
 # what it sees, and a suite that had to add a worktree would have to remove one.
 # The gate itself runs before the suites and fetches jscpd if it must, so this
 # is a cached tool by the time it is reached.
 
-nested_repo() { # <dir>
+nested_repo() { # <dir> <parts>
 	fresh_repo "$1"
 	mkdir -p "$1/.chug/tasks" "$1/.claude/worktrees/w/.chug/tasks"
-	i=0
-	{
-		printf '%s\n' '#!/bin/sh'
-		while [ "$i" -lt 40 ]; do
-			printf 'printf "%%s\\n" "the shared harness, step %s"\n' "$i"
-			i=$((i + 1))
-		done
-	} > "$1/.chug/tasks/thing.sh"
+	p=1
+	while [ "$p" -le "$2" ]; do
+		i=0
+		{
+			printf '%s\n' '#!/bin/sh'
+			while [ "$i" -lt 40 ]; do
+				printf 'printf "%%s\\n" "harness %s, step %s"\n' "$p" "$i"
+				i=$((i + 1))
+			done
+		} > "$1/.chug/tasks/thing$p.sh"
+		cp "$1/.chug/tasks/thing$p.sh" \
+			"$1/.claude/worktrees/w/.chug/tasks/thing$p.sh"
+		p=$((p + 1))
+	done
 	# Untracked in the parent, which is what a checkout under it actually is.
 	git -C "$1" add .chug
-	cp "$1/.chug/tasks/thing.sh" "$1/.claude/worktrees/w/.chug/tasks/thing.sh"
 }
 
 # The ambient PATH, unlike the stub cases: the real tool has to be reachable.
@@ -117,13 +136,14 @@ run_unstubbed() { # <dir>
 }
 
 N="$WORK/nested"
-nested_repo "$N"
+nested_repo "$N" 3
 run_unstubbed "$N"
 check "the control: a nested copy is a clone when nothing excludes it" 1 "$RC" "clones found"
 
 cp "$ROOT/.jscpd.json" "$N/.jscpd.json"
 run_unstubbed "$N"
 check "this tree's ignore list excludes a nested checkout" 0 "$RC" "no clones"
+check "the clean line counts the scan, not the directory" 0 "$RC" "no clones (3 files)"
 
 # 6. Outside a git checkout -> could not run.
 set +e

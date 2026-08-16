@@ -89,4 +89,24 @@ if [ "$rc" -ne 0 ]; then
 	exit 1
 fi
 
-echo "check-duplication: no clones ($(grep -oE 'Files analyzed[^0-9]*[0-9]+' "$out" | grep -oE '[0-9]+$' || echo '?') files)"
+# THE COUNT SAYS THE RUN MEASURED SOMETHING, which is the only reason a clean
+# line carries a figure at all: "no clones" over an empty scan and "no clones"
+# over the tree read identically without it, and an ignore list that matched
+# everything is a way this gate stops being one. So the figure is asserted —
+# `check-duplication.test.sh` scans a fixture of a known size and requires this
+# line to report it. It went unasserted once and printed the same wrong number
+# for every tree it ever saw, which is the shape the standing commitment names:
+# a success line believed once and never checked again.
+#
+# THE ESCAPES COME OFF FIRST. The console reporter colours its output
+# unconditionally — not being a TTY makes no difference, and neither does
+# NO_COLOR — so a pattern that skips non-digits to reach a number reaches the
+# digits inside the colour escape instead, and reports those. The figure is in
+# the `Total:` row: the header carries the column labels and no value, and the
+# colon is what separates that row from the `Total lines` and `Total tokens`
+# labels beside it. It counts what jscpd analyzed rather than what is on disk —
+# a file under the token floor is neither — and an unreadable table prints as
+# unknown rather than as a number nothing stands behind.
+scanned="$(awk '{ gsub(/\033\[[0-9;]*m/, "") }
+/Total:/ { sub(/^[^0-9]*/, ""); sub(/[^0-9].*$/, ""); print; exit }' "$out")"
+echo "check-duplication: no clones (${scanned:-?} files)"
