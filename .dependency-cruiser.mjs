@@ -67,7 +67,19 @@
  *      and neither half covers for the other.
  *   2. A capability passed in as a function argument — not a breach but the
  *      design.
- *   3. Anything a `.test.ts` reaches on its own account. Domain tests are
+ *   3. `adapters-decide-nothing` MOVING OUT FROM UNDER ITSELF. Alone among the
+ *      rules here it is pinned to two PATHS rather than to a boundary, because
+ *      `src/adapters/` is deliberately not reachability-bounded — so it names
+ *      `src/interp/events.ts` and `src/spine/actor.ts` as files. A re-export is
+ *      caught, transitively and at any depth; what is not caught is `commit`
+ *      MOVING to another module, which uncovers the edge in silence and with no
+ *      diff in this file to notice. The compensating control is that the two
+ *      names are load-bearing elsewhere too — the single writer and the event
+ *      vocabulary are what every header in `src/interp/` and `src/adapters/`
+ *      cites — so a move is a rename sweep rather than an ordinary edit. That
+ *      is a weaker control than a predicate and it is said here rather than
+ *      discovered later.
+ *   4. Anything a `.test.ts` reaches on its own account. Domain tests are
  *      excluded from every `from` set below, because a domain test must be
  *      able to import `node:test`. The exemption is compensated three times
  *      over: `domain-not-through-its-tests` stops domain source depending on a

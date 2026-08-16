@@ -150,8 +150,10 @@ export type Delivery = Keyed<Effect> & {
  * `model/refinement.qnt`'s attribution rule, in its projection form: every
  * effect-bearing record's head transition is the stepped ticket, which is what
  * `journal.ts`'s `stepsTicket` asks as a predicate and what an adapter needs as
- * a value. `ports.test.ts` pins the two together over every record the walks
- * produce, so the projection cannot drift from the predicate.
+ * a value. `ports.test.ts` pins the two together over every record of one walk
+ * — `ticket-arrived`, `ticket-released`, `dispatch` and `ticket-revoked`, which
+ * between them cover a record with no transition, a record with one, and the
+ * one record with several — so the projection cannot drift from the predicate.
  *
  * IT IS THE DECISION'S SUBJECT, AND AN EFFECT HAS NONE OF ITS OWN. A row's
  * effects are a list under one key and the model gives no per-element

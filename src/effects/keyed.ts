@@ -7,7 +7,7 @@
  * which decision emitted it; the key is what makes redelivery recognizable.
  *
  * It is generic in the effect, and writing the envelope separately from its
- * contents has since paid twice over. `effect.ts`'s eight constructors slotted
+ * contents has since paid three times over. `effect.ts`'s eight constructors slotted
  * in without this file moving; `src/interp/ports.ts`'s `Delivery` is this type
  * WIDENED rather than a second envelope beside it; and the interpreter keys a
  * whole journal ROW with it, because the grain of absorption is the row and a

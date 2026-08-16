@@ -370,12 +370,11 @@ test("across drains the landing port is re-sent a route it has already finished"
     "landing.openGate",
     "landing.land",
   ]);
-  // The sentence the unscoped promise made, falsified: an `enqueue` reached
-  // this port after a `land` for the same ticket had.
-  assert.ok(
-    seen.includes("landing.enqueue"),
-    "the landing port was re-sent an enqueue for a ticket it had already landed",
-  );
+  // The list above IS the falsification, and an assertion restating one of its
+  // elements would be an assertion-shaped comment: `landing.enqueue` sits in
+  // that sequence, and the world already held this ticket's `land` before the
+  // drain that produced it began. What is worth asserting separately is that
+  // the re-sent route landed nothing a second time.
   assert.equal(rig.world.recorded("land").length, 1);
   expectSteady(rig, s);
   expectWorldSettled(rig, s);

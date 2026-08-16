@@ -49,7 +49,7 @@
  * cross-reference rather than the qualification, because the second copy of a
  * rule is the one that drifts. A row's effects are not a
  * set — the cascade-park witness in the corpus carries two identical
- * `OpenHumanTask`s for two parked dependents — so per-element keying would
+ * `OpenHumanTask`s for two parked dependents — so per-VALUE keying would
  * collapse them and open one desk task for two tickets.
  *
  * THAT SEAM IS NOW DRIVEN ONE LAYER UP. `src/interp/execute.test.ts` crashes a

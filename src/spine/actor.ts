@@ -62,8 +62,9 @@
  *
  * AND THE GRAIN OF ABSORPTION IS THE ROW, WHICH IS THE OTHER HALF OF THE SAME
  * SENTENCE. `worldEffects: ReadonlySet<number>` says the unit is one seq
- * carrying one whole effect list — not one key per effect VALUE. A fabric that keyed
- * elements individually would deduplicate WITHIN a row, and a row's effect list
+ * carrying one whole effect list — not one key per effect VALUE. A fabric that
+ * keyed elements individually BY VALUE would deduplicate WITHIN a row, and a
+ * row's effect list
  * is not a set: `corpus/tier2/witness-cascade-park.itf.json`'s `ticket-revoked`
  * row carries `["Revoke", "OpenHumanTask", "OpenHumanTask"]`, two desk tasks for
  * two cascade-parked dependents, and collapsing them would open one desk task
