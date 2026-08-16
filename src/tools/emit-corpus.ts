@@ -69,23 +69,46 @@ const MC = "model/mc/mc_chuggy.qnt";
 /** How many times a run that produced no verdict at all is given again. */
 const segfaultRetries = 4;
 
-/** The signal-11 exit code a shell reports, which is the flake's whole signature. */
-const segfaultStatus = 139;
-
 type Run = {
   readonly status: number;
   readonly stdout: string;
   readonly stderr: string;
 };
 
+/**
+ * Run quint, retrying THE FLAKE AND ONLY THE FLAKE.
+ *
+ * Three outcomes are told apart here, and the reason to separate them is that
+ * they read identically from a distance — all three are "no verdict":
+ *
+ *   - THE BINARY IS NOT THERE. `spawnSync` reports an error and no status at
+ *     all. Retrying it would produce the same nothing four more times and then
+ *     blame the flake for a missing install, which is a message that sends a
+ *     reader to the wrong place.
+ *   - THE PROCESS WAS KILLED BY SIGSEGV WITH NO OUTPUT. That is ledger #12,
+ *     load-sensitive and intermittent, and the run produced no verdict — so it
+ *     is given again rather than recorded.
+ *   - ANY OTHER SIGNAL. Something killed quint; this tool does not get to
+ *     decide it was harmless.
+ */
 function runQuint(args: readonly string[]): Run {
   for (let attempt = 0; attempt <= segfaultRetries; attempt += 1) {
     const result = spawnSync(QUINT, [...args], { encoding: "utf8" });
-    const status = result.status ?? segfaultStatus;
+    if (result.error !== undefined) {
+      throw new CorpusError(
+        `${QUINT} could not be run: ${messageOf(result.error)}. Install with: npm ci`,
+      );
+    }
     const stdout = result.stdout || "";
     const stderr = result.stderr || "";
-    if (status !== segfaultStatus || stdout !== "" || stderr !== "") {
+    const status = result.status;
+    if (status !== null) {
       return { status, stdout, stderr };
+    }
+    if (result.signal !== "SIGSEGV" || stdout !== "" || stderr !== "") {
+      throw new CorpusError(
+        `quint was killed by ${String(result.signal)}: ${args.join(" ")}`,
+      );
     }
     console.log(`  quint died with no verdict; retrying (ledger #12)`);
   }
