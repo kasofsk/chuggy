@@ -124,8 +124,8 @@ FNR == 1 { comments_only = (FILENAME ~ /\.test\.sh$/) }
 {
 	# A line with no slash cannot carry a path, and most lines have none. The
 	# test is one index() against a match loop whose dynamic pattern is
-	# recompiled per call: on this tree it is the difference between 3s and
-	# well under 1s, nearly all of it in the model.
+	# recompiled per call, and dropping it measured far slower on this tree,
+	# nearly all of the difference in the model.
 	if (index($0, "/") == 0) next
 	if (comments_only && $0 !~ /^[ \t]*#/) next
 	s = $0
@@ -149,9 +149,9 @@ FNR == 1 { comments_only = (FILENAME ~ /\.test\.sh$/) }
 ' "$@" > "$work/candidates"
 
 # What this tree has deleted, asked ONCE. R2 needs "was this ever ours", and
-# asking git per token costs a process per token — three seconds on this tree,
-# nearly all of it spent proving that `and/or` and `read/write` are not paths.
-# One history dump answers every token in memory instead.
+# asking git per token costs a process per token, which measured far slower on
+# this tree — nearly all of it spent proving that `and/or` and `read/write` are
+# not paths. One history dump answers every token in memory instead.
 #
 # Refutation trigger: this walks the whole history, so it grows with the log
 # rather than the tree. If it ever dominates the gate, narrow it to the range
@@ -159,7 +159,7 @@ FNR == 1 { comments_only = (FILENAME ~ /\.test\.sh$/) }
 git log --diff-filter=D --name-only --format= 2>/dev/null | sort -u > "$work/deleted" || true
 
 # Resolution in one pass over the three lists, because a grep per token is a
-# process per token: the same work took eighteen seconds spelled that way.
+# process per token, and the same work measured slower still spelled that way.
 #   OK    — resolved, counted as a claim
 #   MISS  — first segment is ours and the path is not
 #   GONE  — first segment is not ours now, but this tree used to have it

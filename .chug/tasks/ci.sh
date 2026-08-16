@@ -160,9 +160,8 @@ else
 fi
 
 # --- The model ---------------------------------------------------------------
-# Last because it is by far the slowest (~50s against ~5s for everything
-# above), and a fast gate that runs after a slow one is a fast gate nobody
-# benefits from.
+# Last because it is by far the slowest, and a fast gate that runs after a slow
+# one is a fast gate nobody benefits from.
 
 if [ -x ./.chug/tasks/check-model.sh ]; then
 	run_gate "check-model" ./.chug/tasks/check-model.sh
