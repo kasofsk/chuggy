@@ -1629,10 +1629,12 @@ test("leaseExclusive is a relation over resources AND phases, pinned at both end
     );
   }
   // ...AND AT AN INSTANCE WHOSE UNIVERSE IS WIDER THAN THIS SUITE'S. Deriving
-  // the sweep is necessary and not sufficient: every config here has two
-  // projects, so `projects` and the literal pair enumerate the same values. A
-  // third project is what makes them different values, and a collision on it is
-  // counted only by a quantifier that really reads the instance.
+  // the sweep is not sufficient on its own, and the wider instance is what
+  // closes it: every config here has two projects, so `projects` and the literal
+  // pair enumerate the same values, and a collision on a THIRD is counted only
+  // by a quantifier that really reads the instance. The derived loop above stays
+  // as the right style — it is what tracks a universe that widens later — rather
+  // than as the thing that catches the hard-coded quantifier.
   const cfgThreeProjects: Config = { ...cfgBudgeted, nProjects: 3 };
   const third = cfgThreeProjects.nProjects;
   assert.ok(!projects(cfgBudgeted).has(third));
