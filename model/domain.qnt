@@ -203,7 +203,7 @@ module chuggy_domain {
   /// A decision that changes nothing — the idempotent answer to duplicate
   /// deliveries (an at-least-once fabric, every effect idempotent). No
   /// landing attempt resolves here (a
-  /// duplicate landing delivery absorbs with nothing emitted), so the
+  /// duplicate completion delivery absorbs with nothing emitted), so the
   /// attribution field stays WONone.
   pure def noop(c: Core, label: str): Decision =
     { rec: { label: label, transitions: [], effects: [], landing: WONone }, post: c }
@@ -703,7 +703,7 @@ module chuggy_domain {
           // retired when the ticket enqueued. Skipping the wrap-up phases
           // skips that retirement too, and a Done ticket holding live eval
           // tasks breaks tasksWellFormed. Caught by the random layer.
-          | WNone => completeTicket(withTicket(c, j, retired), j, "Complete")
+          | WNone => completeTicket(withTicket(c, j, retired), j)
           | WExclusive(_) =>
             move(
               withTicket(c, j, retired),
@@ -775,16 +775,19 @@ module chuggy_domain {
     if (moved) decideWrapUpStart(c, j)
     else decideWrapUpResolve(c, j, WOk, false)
 
-  /// A landing SUCCESS (either effect): the ticket lands, and that is the
-  /// whole of it — ONE transition, ONE landing effect. The merge-queue
-  /// PR's R2 fan-out (a lead's landing completing its group's members in
-  /// the same decision) went with the grouping removal, so what was the
+  /// THE COMPLETION: the ticket reaches PDone, and that is the whole of it —
+  /// ONE transition, ONE effect. Both routes in — a WOk wrap-up resolution
+  /// and a WNone ticket's passing evaluation — emit the same "Complete",
+  /// because the domain knows only that the step succeeded and never which
+  /// mechanism promoted anything (measure.qnt, WrapUpOutcome). The
+  /// merge-queue PR's R2 fan-out (one decision completing a lead and its
+  /// group's members) went with the grouping removal, so what was the
   /// memberless degeneration is now the only case.
-  pure def completeTicket(c: Core, j: int, eff: str): Decision =
+  pure def completeTicket(c: Core, j: int): Decision =
     { rec: {
         label: "ticket-done",
         transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: PDone }],
-        effects: [eff],
+        effects: ["Complete"],
         landing: WONone },
       post: withTicket(c, j,
         { ...c.tickets.get(j), phase: PDone,
@@ -797,8 +800,8 @@ module chuggy_domain {
   ///   - GATED: called from PWrapUpHolding with moved = true — WOk
   ///     (the validated candidate promoted by advancing the default ref)
   ///     or WFailed (the eviction).
-  /// A landing success is the ticket's single landing effect (completeTicket:
-  /// ghost `completions` counts it, one per ticket). A
+  /// A landing success is the ticket's single completion effect
+  /// (completeTicket: ghost `completions` counts it, one per ticket). A
   /// landing failure re-enters work priced per WRAPUP_PRICING exactly as
   /// Budgeted(n) spends the wrap-up account AND gas,
   /// DeadlineOnly spends gas alone (a documented gate-loop livelock is
@@ -813,8 +816,8 @@ module chuggy_domain {
   /// event carries `moved` — the environment's per-attempt choice of
   /// whether THIS ticket's target repo's default branch moved under the
   /// candidate (callers guarantee out ∈ wrapUpOutcomes(moved), so a failure
-  /// implies moved, and — R3 — the success EFFECT is determined by it) —
-  /// and EVERY arm stamps the step with the attempt's
+  /// implies moved — R3, the path rule) — and EVERY arm stamps the step with
+  /// the attempt's
   /// attribution (withWrapUpObs: the ticket's own repo + the choice), so
   /// the golden trace attributes each landing resolution, success or
   /// failure, to its repo and its cause. Accounts and pricing are
@@ -822,7 +825,7 @@ module chuggy_domain {
   /// each arm fires from (the path).
   pure def decideWrapUpResolve(c: Core, j: int, out: WrapUpOutcome, moved: bool): Decision =
     withWrapUpObs(match out {
-      | WOk => completeTicket(c, j, "Complete")
+      | WOk => completeTicket(c, j)
       | WFailed =>
         match WRAPUP_PRICING {
           | Budgeted(_) =>
@@ -850,8 +853,8 @@ module chuggy_domain {
         }
     }, c.tickets.get(j).repo, moved)
 
-  /// A duplicate landing event for an already-Done ticket (at-least-once: a
-  /// stale executor re-delivers). NO landing effect is emitted — this
+  /// A duplicate completion event for an already-Done ticket (at-least-once: a
+  /// stale executor re-delivers). NO completion effect is emitted — this
   /// no-op IS the exactly-once-at-the-landing-boundary claim; the
   /// completionExclusive invariant checks it.
   pure def decideCompleteDuplicate(c: Core, j: int): Decision =
@@ -1149,7 +1152,7 @@ module chuggy_domain {
   /// same-id completion was indistinguishable from a fresh nondet verdict
   /// on the respawned set) — staleness is now absorbed structurally, and
   /// the only remaining first-write-wins case is a duplicate delivery for
-  /// a LIVE resolved task. A stale landing SUCCESS still implies a success
+  /// a LIVE resolved task. A stale TICKET COMPLETION still implies a success
   /// occurred, and PDone is absorbing (completeDuplicate). The observed/actual
   /// split that would make mid-rework duplicates dangerous — a decider
   /// acting on a stale VIEW — is exactly the deferred §4 refinement layer
@@ -1221,7 +1224,7 @@ module chuggy_domain {
     apply(decideWrapUpResolve(core, j, out, true))
   }
 
-  /// At-least-once: a duplicate landing event for a Done ticket. Must emit
+  /// At-least-once: a duplicate completion event for a Done ticket. Must emit
   /// nothing (completionExclusive checks it).
   action completeDuplicate = all {
     doneTickets.size() > 0,
@@ -1282,25 +1285,25 @@ module chuggy_domain {
   /// THE headline property, effect-only: exactly one completion per
   /// cycle, proved at the completion boundary and nowhere else —
   /// any number of task executions may duplicate (at-least-once fabric),
-  /// but the landing effect is emitted exactly once per ticket, exactly when
-  /// it is Done. "Per cycle" collapses to "per ticket" because a landing
-  /// effect ends the ticket (PDone is absorbing) and failed completions emit no
-  /// landing effect. DELIBERATELY UNCHANGED — per-ticket
+  /// but the completion effect is emitted exactly once per ticket, exactly
+  /// when it is Done. "Per cycle" collapses to "per ticket" because a
+  /// completion effect ends the ticket (PDone is absorbing) and failed
+  /// completions emit no completion effect. DELIBERATELY UNCHANGED — per-ticket
   /// exclusivity is strictly stronger than any per-repo form (exactly one
-  /// landing per ticket implies at most one per ticket per repo), so the
+  /// completion per ticket implies at most one per ticket per repo), so the
   /// multi-repo gate needs nothing weaker and gets nothing weaker.
   /// A withdrawn extension covered groups — a marked Done ticket
-  /// having completed via its lead's landing, emitting nothing of its own.
+  /// having completed via its lead's completion, emitting nothing of its own.
   /// That extension is WITHDRAWN with the grouping removal, and the
-  /// invariant reverts to its plain form: Done iff exactly one landing
+  /// invariant reverts to its plain form: Done iff exactly one completion
   /// effect, with no mark conjunct to carve out.
   val completionExclusive: bool = liveTickets.forall(j => and {
     tickets.get(j).completions <= 1,
     (tickets.get(j).completions == 1) iff (tickets.get(j).phase == PDone)
   })
 
-  /// REVOKED NEVER LANDS: a revoked ticket
-  /// has emitted no landing effect — and never will: PRevoked is absorbing
+  /// REVOKED NEVER COMPLETES: a revoked ticket
+  /// has emitted no completion effect — and never will: PRevoked is absorbing
   /// (terminalsAbsorbing), no decider touches a revoked
   /// ticket's `completions`, and revoke from PWrapUp clears the ticket OUT of the
   /// landing boundary before any effect fires. Stated as its own named
@@ -1335,7 +1338,7 @@ module chuggy_domain {
   ///     off-record. ("ticket-escalated gas_exhausted" is shared with the
   ///     eval side, so it is legitimately WONone there — pinned in
   ///     tests/chuggy_test.qnt, nonLandingStepsCarryNoAttributionTest;
-  ///     land-duplicate absorbs with nothing emitted and is not an
+  ///     complete-duplicate absorbs with nothing emitted and is not an
   ///     attempt; gate-opened OPENS an attempt but resolves none — the
   ///     resolution's attribution carries the choice the open encoded.)
   ///   - the PATH iff (R3/R4): a MOVED attempt resolves
@@ -1801,7 +1804,7 @@ module chuggy_domain {
   /// to exempt exactly the climb it names). Current roster:
   ///   init                  — every run's first step;
   ///   task-done-duplicate   — free module (the re-delivered completion);
-  ///   land-duplicate        — stage module (the stale landing success);
+  ///   complete-duplicate    — stage module (the stale ticket completion);
   ///   settled               — the quiet fleet's stutter;
   ///   operator-retry, RPending flavor
   ///                         — preWorkResumeClimbDeterministicTest;

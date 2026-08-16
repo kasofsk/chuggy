@@ -80,23 +80,19 @@
 /// dense — unlike the carry), so the deterministic runs alone carry the
 /// gate.
 ///
-/// THE WRAP-UP extends this layer first,
-/// per the convention: the wrap-up surface is staged (rather than one-step
-/// `land` became the dequeue `wrapUpStart` — quiet arm fast-pathing the
-/// direct completion, moved arm opening the depth-1 gate — plus the gated
-/// `wrapUpResolve` drawing from wrapUpOutcomes(true)), so every landing driver
-/// here became the doDequeue/doGateResolve pair, referencing
-/// wrapUpStartableIn / holdingTickets / wrapUpOutcomes — and, per the
-/// adversarial review's MAJOR 1, doDequeue applies the HOISTED routing
-/// decider decideDequeue rather than re-composing the quiet/moved route
-/// inline (a copied route drifts exactly like a copied guard: the p3
-/// mutant re-routed quiet into the lease and shipped green against the
-/// drivers' copy; decideDequeue's header has the story). Nothing copied.
+/// THE WRAP-UP SURFACE IS STAGED, and its drivers are the
+/// doDequeue/doGateResolve pair. doDequeue guards on wrapUpStartableIn and
+/// applies the HOISTED routing decider decideDequeue — quiet arm
+/// fast-pathing the direct completion, moved arm opening the depth-1 gate —
+/// rather than re-composing that route inline; doGateResolve guards on
+/// holdingTickets and wrapUpOutcomes(true) for the gated resolve. The route
+/// has ONE definition, and decideDequeue's header carries why a copied one
+/// drifts. Nothing copied.
 /// Three NEW modules carry the PR's witness half:
 ///   - chuggy_witness_gate_test (budgeted consts): DEPTH-1 EXCLUSIVITY as
 ///     a guard-refusal pinned mid-trace (the second same-repo ticket's
 ///     dequeue REFUSED while the slot is held, enabled again the step the
-///     slot frees) and BOTH success effects on one machine trace — the
+///     slot frees) and BOTH success PATHS on one machine trace — the
 ///     held WOk, then the direct completion (the path rule, R3,
 ///     witnessed) — plus the QUIET FAST-PATH as its
 ///     own witnessed run (direct-path reachability pinned against the
@@ -461,7 +457,7 @@ module chuggy_witness_stage_test {
     wrapUpOutcomes(true).contains(out),
     apply(decideWrapUpResolve(core, j, out, true))
   }
-  action doLandDuplicate(j: int): bool = all {
+  action doCompleteDuplicate(j: int): bool = all {
     doneTickets.contains(j),
     apply(decideCompleteDuplicate(core, j))
   }
@@ -532,11 +528,11 @@ module chuggy_witness_stage_test {
         tickets.get(1).completions == 1,
         allInvariants
       })
-      // At-least-once: a stale landing success re-delivers after Done —
-      // absorbed with NO landing effect (completionExclusive's boundary; the
-      // land-duplicate STUTTER arm of stepDescends fired on a machine
+      // At-least-once: a stale completion re-delivers after Done — absorbed
+      // with NO completion effect (completionExclusive's boundary; the
+      // complete-duplicate STUTTER arm of stepDescends fired on a machine
       // trace — the convention roster).
-      .then(doLandDuplicate(1))
+      .then(doCompleteDuplicate(1))
       .expect(and {
         lastStep.label == "complete-duplicate",
         lastStep.effects == [],
@@ -629,9 +625,11 @@ module chuggy_witness_multirepo_test {
 
   /// THE QUIET LANDING: the environment chooses the target repo's branch
   /// quiet for the attempt — the landing succeeds, attributed. (A quiet
-  /// FAILURE is not merely unobserved here: doLand's wrapUpOutcomes guard —
-  /// the machine's own draw rule — makes the step undrivable, so this run
-  /// also documents the refusal structurally.)
+  /// FAILURE is undrivable, not merely unobserved, so this run documents
+  /// the refusal structurally: the quiet route draws no outcome —
+  /// decideDequeue fixes WOk, the one element of wrapUpOutcomes(false) —
+  /// and doGateResolve, the only driver taking an outcome, needs
+  /// PWrapUpHolding, which only a moved dequeue enters.)
   run quietLandDeterministicTest =
     init
       .then(doArrive(Set(), progFlat1, 2))         // the ticket targets repo 2
@@ -824,8 +822,8 @@ module chuggy_witness_multirepo_test {
 /// promotion (WOk — the default ref advanced onto the validated
 /// candidate), the slot frees BY PHASE in the same step, and the second
 /// ticket dequeues QUIET into the fast-path direct squash (WOk) —
-/// BOTH success effects distinguished on one machine trace, each from its
-/// own path: the divergence as a theorem, witnessed. The SECOND run is
+/// BOTH success PATHS on one machine trace, told apart by the phase each
+/// resolves from and by its attribution. The SECOND run is
 /// the QUIET FAST-PATH as its own named
 /// witnessed shape — direct-path reachability through decideDequeue's
 /// valid artifact on a solo trace where the lease NEVER opens: the
@@ -959,8 +957,8 @@ module chuggy_witness_gate_test {
       })
       // THE FAST-PATH (R3, the other half): ticket 2 dequeues QUIET —
       // the lease is skipped and the direct squash lands in one step.
-      // Both success effects now stand on this one trace, each from its
-      // own path.
+      // Both success paths now stand on this one trace — the same effect,
+      // told apart by their attribution.
       .then(doDequeue(2, false))
       .expect(and {
         lastStep.label == "ticket-done",
