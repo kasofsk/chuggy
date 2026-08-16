@@ -10,9 +10,31 @@
  *
  * ONE MUTATION PER CHECK the replayer makes, and each is checked to red for its
  * OWN reason — the record it compares, the fleet it compares, each step-history
- * ghost, the enablement it demands before running a decider, the absorbing
- * class a stutter step is driven across, and the two things a settled step
- * claims. The corpus is what proves they never fire in a healthy tree.
+ * ghost, the enablement it demands before running a decider, the empty
+ * absorbing class and the recorded pick driven beside it, and the three things
+ * a settled step claims. The corpus is what proves they never fire in a healthy
+ * tree.
+ *
+ * A FINDING IS MATCHED BY THE TEXT ONLY ITS OWN CHECK PRODUCES, which is not a
+ * style point. `compareState` compares all four vars after every step and
+ * prefixes its findings with the step's label, so a settled step's record
+ * disagreement is reported a second time, one line later, as `settled:
+ * lastStep…`. Two of the cases below matched that prefix and passed with the
+ * claim they name discarded — pinning the general comparison instead of the
+ * action's own claim. They now match `settled.rec` and `settled moved the
+ * fleet`.
+ *
+ * ONE CHECK IS PINNED INDIRECTLY, and saying which is the whole value of the
+ * sentence above. Inside the stutter loop, each member of the absorbing class is
+ * required to leave the fleet identical, and no trace this file can write reds
+ * that comparison: a pick that MOVED the fleet returns a record that is not the
+ * recorded noop, so `driveOne` reports the record difference and returns before
+ * the identity check is reached. What would falsify it is a decider that
+ * returned a noop record while moving state — a mutation of a shipped file, not
+ * of a fixture, which is the invariant hook's situation below at a smaller
+ * grain. The class itself is held to the machine by `cmd.test.ts`, which pins
+ * both absorbing classes as exact sets over a fleet holding one ticket per
+ * phase.
  *
  * THE INVARIANT HOOK IS NOT REDDENED FROM HERE, AND IT CANNOT BE — a stronger
  * statement than the gap it replaces, and the reason its red proof lives
@@ -240,6 +262,24 @@ test("a stutter step is driven across its whole absorbing class", () => {
   ];
   assert.deepEqual(replay(stutter, withStutter), []);
 
+  // THE RECORDED PICK IS DRIVEN BESIDE THE CLASS, which is the other half of
+  // `picks` and the half a tier-1 fixture uses. A recorded pick OUTSIDE the
+  // class — a task that is still live and running — is a real step rather than
+  // an absorbed one, so it comes back with a different record and the walk says
+  // so. Dropped from `picks`, this trace replays clean.
+  const foreign = replay(stutter, [
+    ...plans,
+    {
+      kind: "stutter",
+      label: "task-done-duplicate",
+      recorded: { tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VPass" },
+    },
+  ]);
+  assert.ok(
+    foreign.some((f) => f.includes("recorded a different step")),
+    foreign.join(" | "),
+  );
+
   // The same step where no pick could have absorbed: at the state before any
   // task resolved, every issued id is live and running, so the class is empty
   // and an empty class is itself the finding.
@@ -287,7 +327,11 @@ test("a settled step claims quiet, an unmoved fleet and the settled record — e
   const plans: readonly StepPlan[] = [...quietWalk.plans, { kind: "settled" }];
   assert.deepEqual(replay(withSettled(settled), plans), []);
 
-  // A settled step whose record is not the settled noop.
+  // A settled step whose record is not the settled noop. THE FINDING IS NAMED
+  // AT `settled.rec` AND NOT AT ITS `settled:` PREFIX, because the prefix is
+  // also what `compareState` puts in front of a `lastStep` disagreement at this
+  // step: matched loosely, this case passed with the claim discarded, pinning
+  // the comparison one line further on instead of the claim the action makes.
   const wrongRecord = replay(
     withSettled({
       ...settled,
@@ -295,7 +339,22 @@ test("a settled step claims quiet, an unmoved fleet and the settled record — e
     }),
     plans,
   );
-  assert.ok(wrongRecord.some((f) => f.includes("settled:")));
+  assert.ok(
+    wrongRecord.some((f) => f.includes("settled.rec")),
+    wrongRecord.join(" | "),
+  );
+
+  // A settled step the fleet moved across — the third claim, and the one the
+  // action makes about the machine rather than about its own record. Named the
+  // same way and for the same reason.
+  const movedFleet = replay(
+    withSettled({ ...settled, core: solo(jDone) }),
+    plans,
+  );
+  assert.ok(
+    movedFleet.some((f) => f.includes("settled moved the fleet")),
+    movedFleet.join(" | "),
+  );
 
   // And a settled step at a state the machine could still move from.
   const live = walk([arrive]);

@@ -573,11 +573,12 @@ test("a seed prints as the model's own --seed spelling", () => {
 //
 // EVERY PROBE ABOVE ASSERTS THAT A RUN FOUND NOTHING, so nothing above would
 // notice a run that could not report. `a run refuses an illegal command` covers
-// the refusal path; the three regions of `observe` are the rest, and two of
-// them cannot fire from a walk at all — every state a run reaches is a shipped
-// decider's own output, so a correct roster and a correct bundle are true over
-// all of them. That is the replayer's situation one layer up, and it has the
-// same answer: hand the observer a state no decider would produce.
+// the refusal path; the guarded regions of `observe` are the rest, and none of
+// them can fire from a walk at all — every state a run reaches is a shipped
+// decider's own output, so a correct roster, a correct measure and a correct
+// bundle are true over all of them. That is the replayer's situation one layer
+// up, and it has the same answer: hand the observer a state no decider would
+// produce. One case per region, because muting any of them leaves a walk green.
 
 test("the walker's unrostered-label alarm fires, and names the label it could not place", () => {
   // A LABEL THE MACHINE COULD ONLY EMIT BY GROWING ONE. `stepLabel` throws on
@@ -591,6 +592,23 @@ test("the walker's unrostered-label alarm fires, and names the label it could no
   };
   assert.deepEqual(observeOnce(configs.budgeted, teleported), [
     'probe step 0 after init: "ticket-teleported" is outside the reachable step-label roster',
+  ]);
+});
+
+test("the walker's arm-attribution alarm fires, and carries the assertion that stopped it", () => {
+  // THE REGION BETWEEN THE OTHER TWO, and the one with the most reachable
+  // assertions behind it: attributing the exemption arm asks `stepDescends`
+  // twice through `sysMeasure`, so every account precondition in `measure.ts`
+  // is one call from this line. A walker exists to reach states nobody wrote a
+  // precondition for, so an assertion firing here is the run's most valuable
+  // result — and muted, it is the result that takes the whole file down with it
+  // carrying no seed, no step and no command.
+  const spent: MachineState = {
+    ...initialState(configs.budgeted),
+    core: solo({ ...jDone, gasLeft: -1 }),
+  };
+  assert.deepEqual(observeOnce(configs.budgeted, spent), [
+    "probe step 0 after init: the exemption arm could not be read: ticketMeasure: gasLeft is a non-negative safe integer, got -1",
   ]);
 });
 
