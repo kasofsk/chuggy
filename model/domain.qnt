@@ -189,34 +189,34 @@ module chuggy_domain {
   /// transition (golden-trace shaped, standing rule 4). from == to is
   /// a real row now — the stage advance records
   /// Evaluating -> Evaluating.
-  /// `landing` is WONone here — only decideWrapUpResolve resolves a
-  /// landing attempt, and it stamps its own attribution over this default
+  /// `attempt` is WONone here — only decideWrapUpResolve resolves a
+  /// wrap-up attempt, and it stamps its own attribution over this default
   /// (withWrapUpObs).
   pure def move(c: Core, j: int, to_: Phase, label: str, effects_: List[str]): Decision =
     { rec: {
         label: label,
         transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: to_ }],
         effects: effects_,
-        landing: WONone },
+        attempt: WONone },
       post: withTicket(c, j, { ...c.tickets.get(j), phase: to_ }) }
 
   /// A decision that changes nothing — the idempotent answer to duplicate
   /// deliveries (an at-least-once fabric, every effect idempotent). No
-  /// landing attempt resolves here (a
+  /// wrap-up attempt resolves here (a
   /// duplicate completion delivery absorbs with nothing emitted), so the
   /// attribution field stays WONone.
   pure def noop(c: Core, label: str): Decision =
-    { rec: { label: label, transitions: [], effects: [], landing: WONone }, post: c }
+    { rec: { label: label, transitions: [], effects: [], attempt: WONone }, post: c }
 
-  /// Stamp the landing-boundary attribution on a decision:
+  /// Stamp the wrap-up boundary's attribution on a decision:
   /// decideWrapUpResolve routes EVERY arm through this, so each step that resolves
-  /// a landing attempt — both successes, the gate rework, and both
-  /// landing walls — carries the target project and the environment's
+  /// a wrap-up attempt — both successes, the gate rework, and both
+  /// wrap-up walls — carries the target project and the environment's
   /// invalidated choice for that attempt (wrapUpIsolation checks the
   /// iff; the trace consumer gets per-project attribution at exactly the
   /// boundary where the project matters).
   pure def withWrapUpObs(d: Decision, project_: int, moved: bool): Decision =
-    { rec: { ...d.rec, landing: WOAttempt({ project: project_, invalidated: moved }) },
+    { rec: { ...d.rec, attempt: WOAttempt({ project: project_, invalidated: moved }) },
       post: d.post }
 
   // --- Authoring: arrival, release, revoke ---------------------------------
@@ -274,7 +274,7 @@ module chuggy_domain {
       wrapUp_: WrapUp): Decision =
     val id = c.tickets.keys().size() + 1
     { rec: { label: "ticket-arrived", transitions: [], effects: ["CreateDraft"],
-        landing: WONone },
+        attempt: WONone },
       post: { ...c, tickets: c.tickets.put(id, freshTicket(deps_, prog, project_, wrapUp_)) } }
 
   /// Draft -> Pending: the ticket enters the released pipeline. There is
@@ -360,7 +360,7 @@ module chuggy_domain {
         // dependent — and NONE for the revoked ticket itself.
         effects: ["Revoke"]
           .concat(parkedList.foldl([], (l, k) => l.append("OpenHumanTask"))),
-        landing: WONone },
+        attempt: WONone },
       post: { ...c, tickets: c.tickets.keys().mapBy(k =>
         if (k == j)
           { ...retireLive(c.tickets.get(k)), phase: PRevoked,
@@ -551,7 +551,7 @@ module chuggy_domain {
     c.tickets.keys().forall(k =>
       not(c.tickets.get(k).phase == PWrapUpHolding and leaseOf(c.tickets.get(k)) == r))
 
-  /// May ticket j be DEQUEUED — leave the landing queue and take its
+  /// May ticket j be DEQUEUED — leave the wrap-up queue and take its
   /// project's gate slot (or fast-path out of it, if the environment draws
   /// the branch quiet)? Enqueued, and the target project's gate free. THE
   /// DEPTH-1 REFUSAL LIVES HERE: while any same-project ticket is PWrapUpHolding,
@@ -623,7 +623,7 @@ module chuggy_domain {
   /// inside the phase.
   pure def decideTaskDone(c: Core, j: int, tid: int, v: Verdict): Decision =
     if (c.tickets.get(j).tasks.exists(t => t.id == tid and t.state == TSRunning))
-      { rec: { label: "task-done", transitions: [], effects: [], landing: WONone },
+      { rec: { label: "task-done", transitions: [], effects: [], attempt: WONone },
         post: withTicket(c, j, { ...c.tickets.get(j),
           tasks: resolveTask(c.tickets.get(j).tasks, tid,
             match v { | VPass => TPassed | VFail => TFailed }) }) }
@@ -746,7 +746,7 @@ module chuggy_domain {
   /// The domain models neither cause — only that the kind admits one.
   ///
   /// Chosen PER ATTEMPT, never stored (the named-nondet discipline,
-  /// stated at measure.qnt's landing-boundary observation). The
+  /// stated at measure.qnt's wrap-up attempt observation). The
   /// `wrapUpStart`/`wrapUpResolve` actions draw from exactly these sets and
   /// the witness drivers reference them as guards, so wrapUpIsolation is
   /// what makes the refusal durable on every reachable step.
@@ -771,7 +771,7 @@ module chuggy_domain {
   /// so it lives in a DECIDER, not in an action's if/else composition —
   ///   moved  -> the gate opens (decideWrapUpStart: the depth-1 slot,
   ///             validated over a duration);
-  ///   quiet  -> the skip fast-path: the landing resolves in this same
+  ///   quiet  -> the skip fast-path: the wrap-up resolves in this same
   ///             step as the direct squash (decideWrapUpResolve with the ONE
   ///             element of wrapUpOutcomes(false)).
   /// Both the `wrapUpStart` action and the witness drivers REFERENCE this
@@ -799,7 +799,7 @@ module chuggy_domain {
         label: "ticket-done",
         transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: PDone }],
         effects: ["Complete"],
-        landing: WONone },
+        attempt: WONone },
       post: withTicket(c, j,
         { ...c.tickets.get(j), phase: PDone,
           completions: c.tickets.get(j).completions + 1 }) }
@@ -811,9 +811,9 @@ module chuggy_domain {
   ///   - GATED: called from PWrapUpHolding with moved = true — WOk
   ///     (the validated candidate promoted by advancing the default ref)
   ///     or WFailed (the eviction).
-  /// A landing success is the ticket's single completion effect
+  /// A wrap-up success is the ticket's single completion effect
   /// (completeTicket: ghost `completions` counts it, one per ticket). A
-  /// landing failure re-enters work priced per WRAPUP_PRICING exactly as
+  /// wrap-up failure re-enters work priced per WRAPUP_PRICING exactly as
   /// Budgeted(n) spends the wrap-up account AND gas,
   /// DeadlineOnly spends gas alone (a documented gate-loop livelock is
   /// exactly why the pricing exists, R5); either wall parks
@@ -830,7 +830,7 @@ module chuggy_domain {
   /// implies moved — R3, the path rule) — and EVERY arm stamps the step with
   /// the attempt's
   /// attribution (withWrapUpObs: the ticket's own project + the choice), so
-  /// the golden trace attributes each landing resolution, success or
+  /// the golden trace attributes each wrap-up resolution, success or
   /// failure, to its project and its cause. Accounts and pricing are
   /// byte-identical to the pre-merge-queue decider: what changed is WHERE
   /// each arm fires from (the path).
@@ -866,7 +866,7 @@ module chuggy_domain {
 
   /// A duplicate completion event for an already-Done ticket (at-least-once: a
   /// stale executor re-delivers). NO completion effect is emitted — this
-  /// no-op IS the exactly-once-at-the-landing-boundary claim; the
+  /// no-op IS the exactly-once-at-the-completion-boundary claim; the
   /// completionExclusive invariant checks it.
   pure def decideCompleteDuplicate(c: Core, j: int): Decision =
     noop(c, "complete-duplicate")
@@ -900,8 +900,8 @@ module chuggy_domain {
   ///     evaluation against the intact artifact with a fresh eval fan-out;
   ///     stages are never resumed mid-sequence. New ids: the retried tasks
   ///     are NEW records, the failed ones stay retired in the log.
-  ///   RWrapUp: re-enqueue the landing.
-  /// Under RetryFree the Evaluating/Landing resumes join the CHURN set —
+  ///   RWrapUp: re-enqueue the wrap-up.
+  /// Under RetryFree the Evaluating/WrapUp resumes join the CHURN set —
   /// a known livelock kept reproducible by configuration.
   pure def decideOpRetry(c: Core, j: int): Decision =
     val jb = c.tickets.get(j)
@@ -1028,7 +1028,7 @@ module chuggy_domain {
   val taskPhaseTickets: Set[int] = taskPhaseIn(core)
   val reducibleWork: Set[int] = reducibleWorkIn(core)
   val reducibleEval: Set[int] = reducibleEvalIn(core)
-  /// The landing QUEUE, derived: enqueued tickets whose
+  /// The wrap-up QUEUE, derived: enqueued tickets whose
   /// dequeue the gate serializes. Deliberately unordered — see wrapUpStart.
   val wrapUpTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == PWrapUp)
   /// Enqueued tickets whose project's gate is FREE — the dequeue-enabled set
@@ -1079,7 +1079,7 @@ module chuggy_domain {
     reworkBudget(REWORK_POLICY) >= 0,
     wrapUpBudget(WRAPUP_PRICING) >= 0,
     tickets' = Map(),
-    lastStep' = { label: "init", transitions: [], effects: [], landing: WONone },
+    lastStep' = { label: "init", transitions: [], effects: [], attempt: WONone },
     prevMeasure' = 0,
     prevRecords' = Map()
   }
@@ -1176,7 +1176,7 @@ module chuggy_domain {
   /// OUT of PWrapUp (enqueued) or PWrapUpHolding (the gate mid-validation) could
   /// race an in-flight merge in the real system — in-model
   /// revokedNeverCompletes holds structurally (a revoked ticket leaves
-  /// holdingTickets/wrapUpStartable, so neither landing action can resolve
+  /// holdingTickets/wrapUpStartable, so neither wrap-up action can resolve
   /// it, and the revoke frees the slot by phase); the real revoke/merge
   /// race — the candidate already advancing when the revoke lands — is
   /// record-vs-effect atomicity, the §4 refinement layer.
@@ -1209,7 +1209,7 @@ module chuggy_domain {
   /// default branch MOVED under the candidate since evaluation:
   ///   - quiet: the skip fast-path — the gate never opens; the one outcome
   ///     wrapUpOutcomes(false) permits (WOk, the direct squash)
-  ///     resolves the landing in this same step;
+  ///     resolves the wrap-up in this same step;
   ///   - moved: the gate OPENS (PWrapUpHolding) and holds its project's depth-1 slot
   ///     until wrapUpResolve.
   /// WHICH enqueued ticket dequeues is unrestricted nondet. A queue is a
@@ -1269,7 +1269,7 @@ module chuggy_domain {
   action settle = all {
     quiet,
     tickets' = tickets,
-    lastStep' = { label: "settled", transitions: [], effects: [], landing: WONone },
+    lastStep' = { label: "settled", transitions: [], effects: [], attempt: WONone },
     prevMeasure' = currentMeasure,
     prevRecords' = currentRecords
   }
@@ -1321,7 +1321,7 @@ module chuggy_domain {
   /// has emitted no completion effect — and never will: PRevoked is absorbing
   /// (terminalsAbsorbing), no decider touches a revoked
   /// ticket's `completions`, and revoke from PWrapUp clears the ticket OUT of the
-  /// landing boundary before any effect fires. Stated as its own named
+  /// wrap-up boundary before any effect fires. Stated as its own named
   /// invariant because it is the model's exclusivity half, though
   /// state-wise it is a corollary of completionExclusive (completions = 1 iff
   /// Done, completions <= 1, Revoked != Done ⇒ completions = 0) — same
@@ -1331,25 +1331,25 @@ module chuggy_domain {
 
   // --- Isolation invariants (the isolation gate) ----------------------
 
-  /// LANDING ISOLATION (the gate's attribution half) — a step-invariant
+  /// WRAP-UP ISOLATION (the gate's attribution half) — a step-invariant
   /// over lastStep, the stepDescends pattern. Reading it as an iff:
   ///
-  ///   - A step carrying a landing attempt (WOAttempt) is EXACTLY a step
-  ///     that resolves one: single ticket, one of the landing-resolution
-  ///     labels (ticket-done, the gate rework, the two landing walls),
+  ///   - A step carrying a wrap-up attempt (WOAttempt) is EXACTLY a step
+  ///     that resolves one: single ticket, one of the wrap-up-resolution
+  ///     labels (ticket-done, the gate rework, the two wrap-up walls),
   ///     the attribution naming the stepped ticket's OWN project (project
   ///     is immutable, so reading it from the post-state is reading the
   ///     authored field) from inside the project universe.
   ///   - THE ISOLATION CLAIM: a gate-FAILURE step (any attempt that is
   ///     not the ticket-done success) carries invalidated = true — a
-  ///     landing can fail ONLY via its own project's branch moving. There is
+  ///     wrap-up can fail ONLY via its own project's branch moving. There is
   ///     no cross-project path to a failure: the attempt's attribution IS
   ///     the ticket's project (the own-project conjunct), and no other project's
   ///     choice appears anywhere in the step (the environment draws
   ///     invalidated for the target project alone — nothing else exists to
   ///     leak in).
   ///   - Completeness: a step with NO attempt (WONone) carries none of
-  ///     the uniquely-landing labels — a landing is never resolved
+  ///     the labels unique to wrap-up — a wrap-up is never resolved
   ///     off-record. ("ticket-escalated gas_exhausted" is shared with the
   ///     eval side, so it is legitimately WONone there — pinned in
   ///     tests/chuggy_test.qnt, nonLandingStepsCarryNoAttributionTest;
@@ -1372,7 +1372,7 @@ module chuggy_domain {
   /// durable: the machine cannot DRAW a failure on an artifact the
   /// environment left valid, and this invariant checks that no reachable
   /// step RECORDS one.
-  val wrapUpIsolation: bool = match lastStep.landing {
+  val wrapUpIsolation: bool = match lastStep.attempt {
     | WONone => and {
         // A COMPLETION IS NOT ALWAYS AN ATTEMPT (design 002). A WNone
         // ticket's effect happened during work, so evaluation passing
@@ -1399,7 +1399,7 @@ module chuggy_domain {
         (lastStep.label != "ticket-done") implies a.invalidated,
         // The path iff: moved resolves from the gate, quiet from the queue.
         lastStep.transitions[0].from == (if (a.invalidated) PWrapUpHolding else PWrapUp),
-        // One landing attempt moves exactly one ticket.
+        // One wrap-up attempt moves exactly one ticket.
         lastStep.transitions.length() == 1
       }
   }
@@ -1420,10 +1420,10 @@ module chuggy_domain {
   /// cleanly / pin a move and the rework is attributed — is deliberately
   /// discharged as deterministic witness traces, not an invariant:
   /// tests/chuggy_witness_test.qnt quietLandDeterministicTest (the choice
-  /// pinned quiet, the landing succeeds) and movedReworkAttributedTest
+  /// pinned quiet, the wrap-up succeeds) and movedReworkAttributedTest
   /// (the choice pinned moved, the gate rework and the wall both carry
   /// the attribution).
-  val quietProjectLandsCleanly: bool = match lastStep.landing {
+  val quietProjectLandsCleanly: bool = match lastStep.attempt {
     | WONone => true
     | WOAttempt(a) => not(a.invalidated) implies lastStep.label == "ticket-done"
   }
@@ -1853,7 +1853,7 @@ module chuggy_domain {
       // CHURN: the uncharged operator-resume flavors (measure.qnt CHURN):
       // the PRE-WORK resume (Escalated -> Pending; free under BOTH
       // meterings — nothing was ever spent) and, under RetryFree only,
-      // the Evaluating/Landing resumes (the Working resume always pays).
+      // the Evaluating/WrapUp resumes (the Working resume always pays).
       and {
         lastStep.label == "operator-retry",
         or {
@@ -1886,7 +1886,7 @@ module chuggy_domain {
   val measureDescends: bool = and { measureNonNegative, stepDescends }
 
   /// ANTI-VACUITY WITNESS, not an invariant of the machine: "no
-  /// operator-retry into a PIPELINE phase (Evaluating/Landing) ever climbs
+  /// operator-retry into a PIPELINE phase (Evaluating/WrapUp) ever climbs
   /// the measure". EXPECTED TO BE VIOLATED on the RetryFree instance
   /// (the model gate proves it deterministically by the free-climb machine
   /// trace in tests/chuggy_witness_test.qnt, plus the demoted pinned-seed
