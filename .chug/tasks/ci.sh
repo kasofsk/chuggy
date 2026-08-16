@@ -108,6 +108,20 @@ if [ -x ./.chug/tasks/check-ts.sh ]; then
 	run_gate "check-ts" ./.chug/tasks/check-ts.sh
 fi
 
+# --- The conformance spine ---------------------------------------------------
+# Beside check-ts because it needs the same toolchain — node, though not the
+# installed packages — and after it because a tree whose TypeScript does not
+# typecheck is a tree whose replayer cannot be believed. Before the shell
+# suites and far ahead of check-model.sh: it replays committed fixtures and
+# runs no quint, which is what keeps it among the cheapest stages here.
+# `time ./.chug/tasks/check-conformance.sh` is how to see that rather than take
+# it on trust, and it is what to re-run if the corpus ever grows enough to move
+# this gate's place in the order.
+
+if [ -x ./.chug/tasks/check-conformance.sh ]; then
+	run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
+fi
+
 # --- Shell suites ------------------------------------------------------------
 # The gates' own tests. Discovery is a glob over tracked files, so adding a
 # suite is enough — there is no list to update. A glob matching nothing is a

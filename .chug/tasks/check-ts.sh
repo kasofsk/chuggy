@@ -2,7 +2,7 @@
 # The TypeScript gate. Its stages over `src/`, in the order they run: format,
 # types, lint, purity, test.
 #
-# THE RULE IT EXISTS FOR. `src/domain/` reaches no I/O and no ambient
+# THE RULE IT EXISTS FOR. THE PURE CORE reaches no I/O and no ambient
 # capability — no clock, no randomness, no process, no fetch, no timers, no
 # filesystem, no sockets — transitively. That is what makes a decider
 # replayable, and replay is the whole conformance argument: the same Core and
@@ -10,6 +10,16 @@
 # the golden traces the model emits prove nothing about this code. Convention
 # cannot hold it. The breach that matters is never the one somebody argued for;
 # it is the helper three imports down that started reading the clock.
+#
+# THE PURE CORE IS `$PURE_DIRS` BELOW: `src/domain/`, and `src/spine/` — the
+# decision-event vocabulary, the machine's own step and the replayer that
+# drives the golden corpus through them. The spine was claimed pure in its own
+# headers before any gate covered it, which is the shape of control this repo
+# refuses: a clock there voids replay exactly as a clock in a decider does, and
+# s5's recovery-by-replay folds over that code next. `src/tools/` is
+# deliberately outside the rule — the emitter spawns quint, the gate driver
+# reads the corpus — and what keeps that honest is direction rather than
+# naming: `.dependency-cruiser.mjs` forbids anything pure from reaching it.
 #
 # THE RULE HAS TWO HALVES AND NEEDS BOTH. A module graph cannot see
 # `Date.now()`, because a global is not an import. A lint rule cannot see a
@@ -84,6 +94,11 @@ set -eu
 export LC_ALL=C
 
 STAGES="format types lint purity test"
+
+# The directories the purity rule names. One list, read by the stage below;
+# `eslint.purity.config.js` globs the same set and `.dependency-cruiser.mjs`
+# carries a reachability rule per entry.
+PURE_DIRS="src/domain src/spine"
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$root" ]; then
@@ -268,8 +283,8 @@ stage_purity() {
 		verdict=2
 	fi
 
-	# The ambient capabilities. A second, syntax-only eslint run over
-	# `src/domain/` alone: it needs no type information, so it costs
+	# The ambient capabilities. A second, syntax-only eslint run over the PURE
+	# CORE alone: it needs no type information, so it costs
 	# milliseconds, and it means the purity rule is one stage a developer can
 	# run rather than a property spread across two.
 	#
@@ -287,7 +302,7 @@ stage_purity() {
 	#
 	# THAT SAME EXPLICIT LIST IS ALSO WHERE THE STAGE CAN GO BLIND, which is
 	# the price of building it here rather than letting eslint walk the tree.
-	# `find -type f` does not match a symlink, so a symlinked domain module was
+	# `find -type f` does not match a symlink, so a symlinked pure module was
 	# dropped from the list and this stage printed clean over a file it never
 	# opened — on the path the package scripts advertise for every save. `-L`
 	# resolves them. A BROKEN symlink resolves to nothing and so cannot be
@@ -297,24 +312,51 @@ stage_purity() {
 	# wrong verdict for it — nothing about the toolchain failed; a file in the
 	# tree points at nothing, which is a defect in the tree, the same class as
 	# the stray `.js` the types stage rejects.
-	dangling="$(find -L src/domain -type l 2>/dev/null || true)"
-	if [ -n "$dangling" ]; then
-		{
-			echo "check-ts: src/domain holds symlinks that resolve to nothing, so the"
-			echo "check-ts: ambient half cannot read them:"
-			printf '%s\n' "$dangling" | sed 's/^/    /'
-		} >>"$OUT"
-		verdict=1
-	fi
+	# EVERY PURE DIRECTORY, and each is required to EXIST and to hold at least
+	# one file. `$PURE_DIRS` is the same set `eslint.purity.config.js` globs and
+	# `.dependency-cruiser.mjs` writes a reachability rule for, and a directory
+	# named by the rule that this stage cannot find is a could-not-run: the
+	# alternative is a rule whose subject silently left the tree while the gate
+	# went on printing clean, which is the exact failure the explicit file list
+	# below exists to prevent one level down.
+	pure_files=""
+	for dir in $PURE_DIRS; do
+		if [ ! -d "$dir" ]; then
+			echo "check-ts: $dir is named by the purity rule and is not in this tree" >>"$OUT"
+			verdict=2
+			return
+		fi
+		dangling="$(find -L "$dir" -type l 2>/dev/null || true)"
+		if [ -n "$dangling" ]; then
+			{
+				echo "check-ts: $dir holds symlinks that resolve to nothing, so the"
+				echo "check-ts: ambient half cannot read them:"
+				printf '%s\n' "$dangling" | sed 's/^/    /'
+			} >>"$OUT"
+			verdict=1
+		fi
+		found="$(find -L "$dir" -type f 2>/dev/null || true)"
+		if [ -z "$found" ]; then
+			echo "check-ts: no files under $dir — the ambient half checked nothing" >>"$OUT"
+			verdict=2
+			return
+		fi
+		# Accumulated HERE, inside the loop that splits `$PURE_DIRS` on the
+		# default IFS. The list is split on newlines below, so a directory name
+		# reaching that split would arrive as one unsearchable path.
+		pure_files="$pure_files$found
+"
+	done
 
 	set -f
 	IFS='
 '
-	set -- $(find -L src/domain -type f 2>/dev/null || true)
+	# shellcheck disable=SC2086
+	set -- $pure_files
 	unset IFS
 	set +f
 	if [ "$#" -eq 0 ]; then
-		echo "check-ts: no files under src/domain — the ambient half checked nothing" >>"$OUT"
+		echo "check-ts: no files under $PURE_DIRS — the ambient half checked nothing" >>"$OUT"
 		verdict=2
 		return
 	fi
