@@ -486,7 +486,7 @@ module chuggy_measure {
   /// storing a choice would mean ADDING a field rather than setting one,
   /// and a choice reaches a decider as a PARAMETER or not at all.
   ///
-  /// It is NOT one of the four numbered standing rules — those are a
+  /// It is NOT one of the numbered standing rules — those are a
   /// closed list — and it is not rule 3 under another name: rule 3
   /// refuses a stored duplicate of a DERIVABLE fact, and an environment
   /// choice is derivable from nothing. They share only the conclusion,
