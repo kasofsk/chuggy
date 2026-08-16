@@ -84,7 +84,7 @@ export function noop(core: Core, label: string): Decision {
   };
 }
 
-/** Stamp the landing-boundary attribution. Every arm of the wrap-up resolution routes through this. */
+/** Stamp the wrap-up boundary's attribution. Every arm of the wrap-up resolution routes through this. */
 export function withWrapUpObs(
   decision: Decision,
   project: ProjectId,
@@ -521,7 +521,7 @@ function resolveArm(
 
 /**
  * A duplicate completion for an already-Done ticket. No completion effect is
- * emitted, and that no-op is the exactly-once claim at the landing boundary.
+ * emitted, and that no-op is the exactly-once claim at the completion boundary.
  */
 export function decideCompleteDuplicate(core: Core, id: TicketId): Decision {
   /** The precondition asserted rather than re-decided: a re-delivery names a ticket the fleet holds. */

@@ -6,7 +6,7 @@
  * IT. Every shape the corpus does reach is already pinned by exact equality on
  * the whole record and the whole post-state, so restating one here would be a
  * weaker assertion about the same step. What is left over is the arms no
- * committed trace fires — the gated promotion, both landing gas walls, the
+ * committed trace fires — the gated promotion, both wrap-up gas walls, the
  * gas-only gate pricing, the resume into the queue, the guarded unreachable
  * resume, a revoke out of either wrap-up phase, a cascade deeper than the
  * corpus happens to build — and the descent-set classification, which lives in
@@ -100,7 +100,7 @@ test("the dequeue's two branches are the two deciders, not a composition beside 
   );
 });
 
-test("each budgeted landing wall carries its own name and the attempt's attribution", () => {
+test("each budgeted wrap-up wall carries its own name and the attempt's attribution", () => {
   const spent = coreOf([
     ticketOn(config, 2, { phase: "PWrapUpHolding", wrapUpLeft: 0, gasLeft: 2 }),
   ]);
@@ -149,7 +149,7 @@ test("gas alone meters the gate loop under deadline-only pricing", () => {
   assert.deepEqual(wall.rec.attempt, woAttempt(asProjectId(1), true));
 });
 
-test("the landing resume re-enqueues, and its price is the whole of the metering parameter", () => {
+test("the wrap-up resume re-enqueues, and its price is the whole of the metering parameter", () => {
   const parked = coreOf([
     ticketOn(config, 1, {
       phase: "PEscalated",

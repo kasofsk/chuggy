@@ -18,7 +18,7 @@ import {
   reworkBudgetOf,
 } from "../../src/domain/pricing.ts";
 
-/** The gate account exists here, so a landing failure spends it alongside gas. */
+/** The gate account exists here, so a wrap-up failure spends it alongside gas. */
 export const budgetedInstance: Config = {
   nTickets: 3,
   nTasks: 2,

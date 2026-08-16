@@ -29,7 +29,7 @@
       "invariant": "lastStep.label != \"complete-duplicate\"",
       "steps": 18,
       "quintVersion": "0.32.0",
-      "purpose": "A ticket completes and the completion is delivered again. Carries the complete-duplicate exemption arm, which needs a landing to have happened first."
+      "purpose": "A ticket completes and the completion is delivered again. Carries the complete-duplicate exemption arm, which needs a completion to have happened first."
     },
     {
       "name": "budgeted-eval-stage-passed",
