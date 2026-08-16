@@ -55,16 +55,6 @@ All were closed and each closure verified by the lens that found it, red-proof b
 test. Sweep 2 runs on the repaired tree and its briefs carry the checker-checking class
 explicitly.
 
-**Sweep 2 fix work: landed** as PRs #54, #55 and #56, each
-through the full round protocol with every closure verified by the finder that filed it.
-Carried out of the fix rounds as recorded context, none blocking: `decideOpRetry`'s
-`RWrapUp` arm is held by a deterministic driveTrace script with two live red-proved
-refutation triggers, pending the model-side witness run that would let the corpus carry
-it (the model-question issue tracks it); one stale count-shaped comment survives at the
-`no-restricted-imports` heading in `eslint.purity.config.js` and the obfuscation-limit
-paragraph's reassurance clause is scoped to the pure core while the rules now reach
-further — both comment-level, both for sweep 3's record.
-
 **Sweep 2: complete; NOT clean.** The consolidated packet is issue #53; the work is the
 `sync-attempt-rename`, `sweep-2-gates` and `sweep-2-conformance` rows above. The machine
 again came up sound — decider-body mutations die, `cmdEnabled` matches the model conjunct
@@ -75,6 +65,16 @@ here was behind main's rename and nothing looked), gates holding hand-copied mod
 the model (fixture truncation slack, the un-rostered record schemas), and controls without
 red proofs (the walker's payload-space alarm, the manifest reader's refusals). Sweep 3
 runs after the three rows land.
+
+**Sweep 2 fix work: landed** as PRs #54, #55 and #56, each
+through the full round protocol with every closure verified by the finder that filed it.
+Carried out of the fix rounds as recorded context, none blocking: `decideOpRetry`'s
+`RWrapUp` arm is held by a deterministic driveTrace script with two live red-proved
+refutation triggers, pending the model-side witness run that would let the corpus carry
+it (the model-question issue tracks it); one stale count-shaped comment survives at the
+`no-restricted-imports` heading in `eslint.purity.config.js` and the obfuscation-limit
+paragraph's reassurance clause is scoped to the pure core while the rules now reach
+further — both comment-level, both for sweep 3's record.
 
 Recorded by sweep 1's verification, carried forward as context rather than opened as
 findings:
