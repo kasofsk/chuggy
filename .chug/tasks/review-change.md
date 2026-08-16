@@ -98,6 +98,14 @@ a preset reads exactly like a rule that is working.
     sibling `*.test.sh` requires the line to report a fixture whose size it
     knows. Where no honest figure exists, the line says what it did instead of
     counting something else.
+16. **A change states no lesson.** A new standard, convention or piece of
+    meta-commentary lands only in a change whose stated scope is that rule;
+    stating one as a side effect of other work is a finding, wherever it
+    appears — a comment, a doc, a header. What was learned en route belongs to
+    the change's own record — session, report, review verdict, commit
+    message — and an outer loop decides across tickets what becomes practice
+    (kasofsk/chuggy#58). The reviewer checks a change's additions against its
+    stated scope.
 
 ## The standing rules — the model's, numbered 1 to 4
 
