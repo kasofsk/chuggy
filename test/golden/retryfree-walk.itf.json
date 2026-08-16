@@ -78,14 +78,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "init",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "init",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -184,14 +184,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": ["CreateDraft"],
-        "label": "ticket-arrived",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["CreateDraft"],
+        "label": "ticket-arrived",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -366,14 +366,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": ["CreateDraft"],
-        "label": "ticket-arrived",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["CreateDraft"],
+        "label": "ticket-arrived",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -617,14 +617,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "ticket-released",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "ticket-released",
         "transitions": [
           {
             "from": {
@@ -892,14 +892,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": ["OpenHumanTask"],
-        "label": "ticket-escalated revalidation_failed",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["OpenHumanTask"],
+        "label": "ticket-escalated revalidation_failed",
         "transitions": [
           {
             "from": {
@@ -1167,14 +1167,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "ticket-released",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "ticket-released",
         "transitions": [
           {
             "from": {
@@ -1442,14 +1442,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": ["SpawnWorkTasks"],
-        "label": "dispatch",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["SpawnWorkTasks"],
+        "label": "dispatch",
         "transitions": [
           {
             "from": {
@@ -1755,14 +1755,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "task-done",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "task-done",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -2050,14 +2050,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "operator-retry",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "operator-retry",
         "transitions": [
           {
             "from": {
@@ -2366,14 +2366,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "task-done",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "task-done",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -2664,14 +2664,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": ["Revoke"],
-        "label": "ticket-revoked",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["Revoke"],
+        "label": "ticket-revoked",
         "transitions": [
           {
             "from": {
@@ -2980,14 +2980,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": ["SpawnEvalTasks"],
-        "label": "work-passed",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["SpawnEvalTasks"],
+        "label": "work-passed",
         "transitions": [
           {
             "from": {
@@ -3317,14 +3317,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "task-done-duplicate",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "task-done-duplicate",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -3677,14 +3677,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "task-done-duplicate",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "task-done-duplicate",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -4034,14 +4034,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": ["Revoke"],
-        "label": "ticket-revoked",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["Revoke"],
+        "label": "ticket-revoked",
         "transitions": [
           {
             "from": {
@@ -4411,14 +4411,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -4790,14 +4790,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -5169,14 +5169,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -5548,14 +5548,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -5927,14 +5927,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -6306,14 +6306,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -6685,14 +6685,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -7064,14 +7064,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -7443,14 +7443,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -7822,14 +7822,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -8201,14 +8201,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -8580,14 +8580,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -8959,14 +8959,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -9338,14 +9338,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -9717,14 +9717,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {
@@ -10096,14 +10096,14 @@
         }
       },
       "mc_chuggy_retryfree::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "settled",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "settled",
         "transitions": []
       },
       "mc_chuggy_retryfree::chuggy_domain::prevMeasure": {

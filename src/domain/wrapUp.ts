@@ -1,5 +1,5 @@
 /**
- * How a ticket finishes, what it produced, and what a resolved landing
+ * How a ticket finishes, what it produced, and what a resolved wrap-up
  * attempt records about itself.
  *
  * `WrapUpObs` is where an environment choice reaches the observable record,
@@ -23,14 +23,14 @@ export type ArtifactMark =
   | { readonly artifact: "ANone" }
   | { readonly artifact: "ASome"; readonly mark: number };
 
-/** How a landing attempt resolved. Failure is drawable only on an invalidated artifact. */
+/** How a wrap-up attempt resolved. Failure is drawable only on an invalidated artifact. */
 export type WrapUpOutcome = "WOk" | "WFailed";
 
-/** The landing-boundary observation: attribution and the environment's per-attempt choice. */
+/** The wrap-up attempt observation: attribution and the environment's per-attempt choice. */
 export type WrapUpObs =
-  | { readonly landing: "WONone" }
+  | { readonly attempt: "WONone" }
   | {
-      readonly landing: "WOAttempt";
+      readonly attempt: "WOAttempt";
       readonly project: ProjectId;
       readonly invalidated: boolean;
     };
@@ -49,9 +49,9 @@ export function aSome(mark: number): ArtifactMark {
   return { artifact: "ASome", mark };
 }
 
-export const woNone: WrapUpObs = { landing: "WONone" };
+export const woNone: WrapUpObs = { attempt: "WONone" };
 
-/** A step that resolved a landing attempt for `project`. */
+/** A step that resolved a wrap-up attempt for `project`. */
 export function woAttempt(project: ProjectId, invalidated: boolean): WrapUpObs {
-  return { landing: "WOAttempt", project, invalidated };
+  return { attempt: "WOAttempt", project, invalidated };
 }

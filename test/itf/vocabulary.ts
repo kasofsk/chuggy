@@ -265,7 +265,7 @@ export function decodeWrapUpObs(value: ItfValue): WrapUpObs {
       decodeInvalidated(field(payload, "invalidated")),
     );
   }
-  throw new Error(`vocabulary: ${tag} is not a landing observation`);
+  throw new Error(`vocabulary: ${tag} is not a wrap-up attempt observation`);
 }
 
 /**
@@ -336,7 +336,7 @@ export function decodeStepRecord(value: ItfValue): StepRecord {
       }
       return effectFromLabel(e);
     }),
-    landing: decodeWrapUpObs(field(value, "landing")),
+    attempt: decodeWrapUpObs(field(value, "attempt")),
   };
 }
 
@@ -419,15 +419,15 @@ export function encodeCore(core: Core): unknown {
 /** Re-encodes a step record, rendering each effect back to the string the model emits. */
 export function encodeStepRecord(record: StepRecord): unknown {
   return {
-    effects: record.effects.map(effectLabel),
-    label: record.label,
-    landing:
-      record.landing.landing === "WONone"
+    attempt:
+      record.attempt.attempt === "WONone"
         ? tagged("WONone")
         : tagged("WOAttempt", {
-            invalidated: record.landing.invalidated,
-            project: { "#bigint": String(record.landing.project) },
+            invalidated: record.attempt.invalidated,
+            project: { "#bigint": String(record.attempt.project) },
           }),
+    effects: record.effects.map(effectLabel),
+    label: record.label,
     transitions: record.transitions.map((t) => ({
       from: tagged(t.from),
       ticket: { "#bigint": String(t.ticket) },

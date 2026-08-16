@@ -70,7 +70,7 @@ export function move(
       label,
       transitions: [{ ticket: id, from: before.phase, to }],
       effects,
-      landing: woNone,
+      attempt: woNone,
     },
     post: withTicket(core, id, { ...before, phase: to }),
   };
@@ -79,19 +79,19 @@ export function move(
 /** A decision that changes nothing: the idempotent answer to a duplicate delivery. */
 export function noop(core: Core, label: string): Decision {
   return {
-    rec: { label, transitions: [], effects: [], landing: woNone },
+    rec: { label, transitions: [], effects: [], attempt: woNone },
     post: core,
   };
 }
 
-/** Stamp the landing attribution. Every arm of the wrap-up resolution routes through this. */
+/** Stamp the landing-boundary attribution. Every arm of the wrap-up resolution routes through this. */
 export function withWrapUpObs(
   decision: Decision,
   project: ProjectId,
   invalidated: boolean,
 ): Decision {
   return {
-    rec: { ...decision.rec, landing: woAttempt(project, invalidated) },
+    rec: { ...decision.rec, attempt: woAttempt(project, invalidated) },
     post: decision.post,
   };
 }
@@ -148,7 +148,7 @@ export function completeTicket(core: Core, id: TicketId): Decision {
       label: "ticket-done",
       transitions: [{ ticket: id, from: before.phase, to: "PDone" }],
       effects: ["Complete"],
-      landing: woNone,
+      attempt: woNone,
     },
     post: withTicket(core, id, { ...before, phase: "PDone" }),
   };
@@ -171,7 +171,7 @@ export function decideArrive(
       label: "ticket-arrived",
       transitions: [],
       effects: ["CreateDraft"],
-      landing: woNone,
+      attempt: woNone,
     },
     post: { tickets },
   };
@@ -238,7 +238,7 @@ export function decideRevoke(core: Core, id: TicketId): Decision {
   }
 
   return {
-    rec: { label: "ticket-revoked", transitions, effects, landing: woNone },
+    rec: { label: "ticket-revoked", transitions, effects, attempt: woNone },
     post: { tickets },
   };
 }
@@ -280,7 +280,7 @@ export function decideTaskDone(
   );
   if (!live) return noop(core, "task-done-duplicate");
   return {
-    rec: { label: "task-done", transitions: [], effects: [], landing: woNone },
+    rec: { label: "task-done", transitions: [], effects: [], attempt: woNone },
     post: withTicket(core, id, {
       ...ticket,
       tasks: resolveTask(
@@ -608,7 +608,7 @@ export function decideOpRetry(
 
 /** The quiesced fleet's stutter: nothing is enabled, and the state is identical. */
 export function settledRecord(): StepRecord {
-  return { label: "settled", transitions: [], effects: [], landing: woNone };
+  return { label: "settled", transitions: [], effects: [], attempt: woNone };
 }
 
 /** Which resource a ticket's wrap-up needs, re-exported so a caller reads one name. */

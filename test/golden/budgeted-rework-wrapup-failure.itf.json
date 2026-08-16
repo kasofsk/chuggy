@@ -78,14 +78,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "init",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "init",
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
@@ -173,14 +173,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["CreateDraft"],
-        "label": "ticket-arrived",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["CreateDraft"],
+        "label": "ticket-arrived",
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
@@ -344,14 +344,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["CreateDraft"],
-        "label": "ticket-arrived",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["CreateDraft"],
+        "label": "ticket-arrived",
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
@@ -584,14 +584,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "ticket-released",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "ticket-released",
         "transitions": [
           {
             "from": {
@@ -848,14 +848,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["SpawnWorkTasks"],
-        "label": "dispatch",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["SpawnWorkTasks"],
+        "label": "dispatch",
         "transitions": [
           {
             "from": {
@@ -1150,14 +1150,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "task-done",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "task-done",
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
@@ -1437,14 +1437,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "task-done",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "task-done",
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
@@ -1724,14 +1724,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["SpawnEvalTasks"],
-        "label": "work-passed",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["SpawnEvalTasks"],
+        "label": "work-passed",
         "transitions": [
           {
             "from": {
@@ -2064,14 +2064,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["Revoke"],
-        "label": "ticket-revoked",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["Revoke"],
+        "label": "ticket-revoked",
         "transitions": [
           {
             "from": {
@@ -2473,14 +2473,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["CreateDraft"],
-        "label": "ticket-arrived",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["CreateDraft"],
+        "label": "ticket-arrived",
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
@@ -2926,14 +2926,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "ticket-released",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "ticket-released",
         "transitions": [
           {
             "from": {
@@ -3406,14 +3406,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "task-done",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "task-done",
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
@@ -3871,14 +3871,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": [],
-        "label": "task-done",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": [],
+        "label": "task-done",
         "transitions": []
       },
       "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
@@ -4336,14 +4336,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["EnqueueWrapUp"],
-        "label": "eval-passed",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["EnqueueWrapUp"],
+        "label": "eval-passed",
         "transitions": [
           {
             "from": {
@@ -4818,14 +4818,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["Revoke"],
-        "label": "ticket-revoked",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["Revoke"],
+        "label": "ticket-revoked",
         "transitions": [
           {
             "from": {
@@ -5338,14 +5338,14 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["OpenGate"],
-        "label": "wrapup-started",
-        "landing": {
+        "attempt": {
           "tag": "WONone",
           "value": {
             "#tup": []
           }
         },
+        "effects": ["OpenGate"],
+        "label": "wrapup-started",
         "transitions": [
           {
             "from": {
@@ -5863,9 +5863,7 @@
         }
       },
       "mc_chuggy_budgeted::chuggy_domain::lastStep": {
-        "effects": ["SpawnWorkTasks"],
-        "label": "rework-started wrapup_failure",
-        "landing": {
+        "attempt": {
           "tag": "WOAttempt",
           "value": {
             "invalidated": true,
@@ -5874,6 +5872,8 @@
             }
           }
         },
+        "effects": ["SpawnWorkTasks"],
+        "label": "rework-started wrapup_failure",
         "transitions": [
           {
             "from": {

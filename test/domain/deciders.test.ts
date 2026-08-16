@@ -70,12 +70,12 @@ test("both wrap-up successes emit the one effect and differ only in the phase th
     { ticket: id(1), from: "PWrapUpHolding", to: "PDone" },
   ]);
   assert.deepEqual(held.rec.effects, ["Complete"]);
-  assert.deepEqual(held.rec.landing, woAttempt(asProjectId(2), true));
+  assert.deepEqual(held.rec.attempt, woAttempt(asProjectId(2), true));
   assert.deepEqual(quiet.rec.transitions, [
     { ticket: id(1), from: "PWrapUp", to: "PDone" },
   ]);
   assert.deepEqual(quiet.rec.effects, ["Complete"]);
-  assert.deepEqual(quiet.rec.landing, woAttempt(asProjectId(2), false));
+  assert.deepEqual(quiet.rec.attempt, woAttempt(asProjectId(2), false));
   assert.equal(completionsOf(ticketAt(held.post, id(1))), 1);
   assert.ok(measure(held.post) < measure(gated));
 });
@@ -92,7 +92,7 @@ test("the dequeue's two branches are the two deciders, not a composition beside 
   const opened = decideDequeue(config, queued, id(1), true);
   assert.equal(opened.rec.label, "wrapup-started");
   assert.deepEqual(opened.rec.effects, ["OpenGate"]);
-  assert.deepEqual(opened.rec.landing, woNone);
+  assert.deepEqual(opened.rec.attempt, woNone);
   assert.equal(ticketAt(opened.post, id(1)).gasLeft, 2);
   assert.equal(
     decideDequeue(config, queued, id(1), false).rec.label,
@@ -118,10 +118,10 @@ test("each budgeted landing wall carries its own name and the attempt's attribut
     "RsWrapUpBudgetExhausted",
   );
   assert.equal(ticketAt(budgetWall.post, id(1)).resumeAt, "RWrapUp");
-  assert.deepEqual(budgetWall.rec.landing, woAttempt(asProjectId(2), true));
+  assert.deepEqual(budgetWall.rec.attempt, woAttempt(asProjectId(2), true));
   assert.equal(gasWall.rec.label, "ticket-escalated gas_exhausted");
   assert.equal(ticketAt(gasWall.post, id(1)).reason, "RsGasExhausted");
-  assert.deepEqual(gasWall.rec.landing, woAttempt(asProjectId(2), true));
+  assert.deepEqual(gasWall.rec.attempt, woAttempt(asProjectId(2), true));
   assert.ok(measure(budgetWall.post) < measure(spent));
   assert.ok(measure(gasWall.post) < measure(dry));
 });
@@ -146,7 +146,7 @@ test("gas alone meters the gate loop under deadline-only pricing", () => {
   assert.deepEqual(rework.rec.effects, ["SpawnWorkTasks"]);
   const wall = decideWrapUpResolve(deadline, dry, id(1), "WFailed", true);
   assert.equal(wall.rec.label, "ticket-escalated gas_exhausted");
-  assert.deepEqual(wall.rec.landing, woAttempt(asProjectId(1), true));
+  assert.deepEqual(wall.rec.attempt, woAttempt(asProjectId(1), true));
 });
 
 test("the landing resume re-enqueues, and its price is the whole of the metering parameter", () => {

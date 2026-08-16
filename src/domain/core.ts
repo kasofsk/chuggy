@@ -35,7 +35,7 @@ export interface StepRecord {
   readonly label: string;
   readonly transitions: readonly Transition[];
   readonly effects: readonly Effect[];
-  readonly landing: WrapUpObs;
+  readonly attempt: WrapUpObs;
 }
 
 /** What a pure decider returns: the record performed, and the state after it. */
