@@ -14,13 +14,26 @@
  * class a stutter step is driven across, and the two things a settled step
  * claims. The corpus is what proves they never fire in a healthy tree.
  *
- * The invariant hook is not reddened from here, and the reason is worth stating
- * rather than leaving as a gap: the replayer reaches only states its own
- * deciders produced, so no trace this file can write makes a correct bundle
- * false. What that hook is wired to is pinned in `machine.test.ts`
- * (`invariantsHold` red on a state carrying a defect), and that it fires on the
- * real corpus is shown by mutating a shipped invariant in a scratch copy and
- * watching this gate red.
+ * THE INVARIANT HOOK IS NOT REDDENED FROM HERE, AND IT CANNOT BE — a stronger
+ * statement than the gap it replaces, and the reason its red proof lives
+ * elsewhere rather than being owed here. Every state the bundle is asked of is
+ * `applyDecision`'s output over a decision `execCmd` produced at the REPLAY's
+ * own consts, so it is consistent with those consts by construction: doctor a
+ * trace and the record or the fleet comparison reports the mismatch before the
+ * bundle is reached, and doctor the CONFIG and the deciders rebuild the state to
+ * match the doctored config, leaving a correct bundle true again. No trace and
+ * no config this file can write falsifies a CORRECT conjunct — which is exactly
+ * what makes discarding the verdict invisible. What falsifies one is a WRONG
+ * conjunct, and that is a mutation of a shipped file rather than of a fixture.
+ *
+ * SO THE RED PROOF IS A GATE CASE, automated rather than described:
+ * `.chug/tasks/check-conformance.test.sh` copies the tree, gives
+ * `wrapUpWallNamed`'s Budgeted arm the DeadlineOnly arm's body — false only for
+ * a ticket that has hit the wrap-up-budget wall, a state only the deterministic
+ * half of the corpus reaches — and requires the gate to report the bundle
+ * finding in its own words. Discard the verdict in `replay.ts` and that case
+ * goes red, and nothing else does. What the hook is wired TO is pinned in
+ * `machine.test.ts` (`invariantsHold` red on a state carrying a defect).
  */
 
 import assert from "node:assert/strict";
