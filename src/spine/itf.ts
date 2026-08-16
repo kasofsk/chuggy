@@ -124,7 +124,7 @@ function field(
  * this tree needs: `measure.ts` counts in `number`, and a value outside the
  * safe range would arrive as a different integer than the model wrote.
  */
-export function itfInt(v: unknown, where: string): number {
+function itfInt(v: unknown, where: string): number {
   if (typeof v === "number") {
     return safeInt(v, where);
   }
@@ -326,11 +326,11 @@ function decodeTaskList(v: unknown, where: string): readonly Task[] {
   );
 }
 
-export function decodeVerdict(v: unknown, where: string): Verdict {
+function decodeVerdict(v: unknown, where: string): Verdict {
   return itfEnum(v, ["VPass", "VFail"], where);
 }
 
-export function decodeStage(v: unknown, where: string): Stage {
+function decodeStage(v: unknown, where: string): Stage {
   const raw = asObject(v, where);
   fieldsExactly(raw, ["fanout", "combinator"], where);
   return {
@@ -343,7 +343,7 @@ export function decodeStage(v: unknown, where: string): Stage {
   };
 }
 
-export function decodeProgram(v: unknown, where: string): readonly Stage[] {
+function decodeProgram(v: unknown, where: string): readonly Stage[] {
   return itfList(v, where).map((s, i) =>
     decodeStage(s, `${where}[${String(i)}]`),
   );
@@ -373,7 +373,7 @@ function decodeReason(v: unknown, where: string): Reason {
   );
 }
 
-export function decodeWrapUpOutcome(v: unknown, where: string): WrapUpOutcome {
+function decodeWrapUpOutcome(v: unknown, where: string): WrapUpOutcome {
   return itfEnum(v, ["WOk", "WFailed"], where);
 }
 
@@ -400,7 +400,7 @@ function decodeWrapUpObs(v: unknown, where: string): WrapUpObs {
   }
 }
 
-export function decodeWrapUp(v: unknown, where: string): WrapUp {
+function decodeWrapUp(v: unknown, where: string): WrapUp {
   const [tag, value] = itfTagged(v, where);
   switch (tag) {
     case "WNone":
@@ -429,7 +429,7 @@ function decodeArtifactMark(v: unknown, where: string): ArtifactMark {
   }
 }
 
-export function decodeIntSet(v: unknown, where: string): ReadonlySet<number> {
+function decodeIntSet(v: unknown, where: string): ReadonlySet<number> {
   const out = new Set<number>();
   itfSet(v, where).forEach((x, i) => {
     out.add(itfInt(x, `${where}[${String(i)}]`));

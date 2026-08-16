@@ -30,7 +30,7 @@ import {
   expectWorldSettled,
   createRig,
   decide,
-  expectSteady,
+  expectRigSteady,
   must,
   progFlat,
   recordThenFailOnce,
@@ -216,7 +216,7 @@ test("a port that throws part-way through a list leaves the cursor where it was"
       .map((entry) => entry.ordinal),
     [0, 1],
   );
-  expectSteady(rig, journaled);
+  expectRigSteady(rig, journaled);
 
   // The next drain re-emits the WHOLE row. The two elements the world already
   // took are absorbed by key; the one it never took arrives.
@@ -235,7 +235,7 @@ test("a port that throws part-way through a list leaves the cursor where it was"
   );
   assert.equal(rig.world.recorded("cancel").length, 1);
   assert.equal(recovered.applied, 4);
-  expectSteady(rig, recovered);
+  expectRigSteady(rig, recovered);
 });
 
 test("a throw discards the cursor progress of the whole call, and the re-drain absorbs it", () => {
@@ -283,7 +283,7 @@ test("a throw discards the cursor progress of the whole call, and the re-drain a
     ],
     "the re-drain recorded a draft or a cancellation twice",
   );
-  expectSteady(rig, drained);
+  expectRigSteady(rig, drained);
 });
 
 // === The failure paths the port docs make the strongest claims about ========
@@ -334,7 +334,7 @@ test("a cancel that fails leaves the cursor, and the re-drain absorbs the row", 
   assert.equal(rig.world.recorded("cancel").length, 1);
   assert.equal(rig.world.recorded("openTask").length, 2);
   assert.equal(recovered.applied, 4);
-  expectSteady(rig, recovered);
+  expectRigSteady(rig, recovered);
 });
 
 test("a land that fails leaves the cursor, and the re-drain lands nothing twice", () => {
@@ -370,7 +370,7 @@ test("a land that fails leaves the cursor, and the re-drain lands nothing twice"
     "the re-emitted landing was applied a second time",
   );
   assert.equal(recovered.mem.core.tickets.get(1)?.completions, 1);
-  expectSteady(rig, recovered);
+  expectRigSteady(rig, recovered);
   expectWorldSettled(rig, recovered);
 });
 

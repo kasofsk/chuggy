@@ -61,6 +61,7 @@ import {
   draftsIn,
   holdingIn,
   isAuthorableWrapUp,
+  isSubsetOf,
   isValidProgram,
   projects,
   readiesIn,
@@ -240,19 +241,6 @@ export function cmdEnabled(cfg: Config, c: Core, cmd: Cmd): boolean {
     default:
       return assertNever(cmd, "unhandled Cmd");
   }
-}
-
-/** The model's `a.deps.subseteq(dependableIn(c))`, over two primitive sets. */
-function isSubsetOf(
-  smaller: ReadonlySet<number>,
-  larger: ReadonlySet<number>,
-): boolean {
-  for (const x of smaller) {
-    if (!larger.has(x)) {
-      return false;
-    }
-  }
-  return true;
 }
 
 /**

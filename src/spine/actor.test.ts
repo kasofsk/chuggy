@@ -448,7 +448,10 @@ test("recoverFrom: a cursor the world's ledger cannot support is REFUSED", () =>
   );
   assert.equal(rebuilt.applied, 2);
   assert.deepEqual(rebuilt.worldEffects, honest.worldEffects);
-  assert.ok(recoverFrom(cfg, rows, 1, honest) !== undefined, "a lagging cursor");
+  assert.ok(
+    recoverFrom(cfg, rows, 1, honest) !== undefined,
+    "a lagging cursor",
+  );
   assert.ok(recoverFrom(cfg, rows, 0, honest) !== undefined, "total loss");
 
   // AND THE REFUSAL. Seq 3 was journaled and never emitted, so a checkpoint
@@ -481,7 +484,10 @@ test("recoverFrom: a cursor the world's ledger cannot support is REFUSED", () =>
   // never received and the cursor has already walked past.
   assert.equal(swallowed.journal.length, 3);
   assert.equal(emitNext(swallowed), undefined, "nothing is left to emit");
-  assert.ok(!swallowed.worldEffects.has(3), "and seq 3 never reached the world");
+  assert.ok(
+    !swallowed.worldEffects.has(3),
+    "and seq 3 never reached the world",
+  );
 });
 
 test("recoverFrom: the durable rebuild lands where the model's crash action lands", () => {

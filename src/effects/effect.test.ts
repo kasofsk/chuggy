@@ -20,6 +20,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import { decideArrive, decideRevoke, type Config } from "../domain/domain.ts";
 import type { Core, Stage, WrapUp } from "../domain/measure.ts";
 import {
+  cfgRefinement,
+  progFlat,
+  wx1,
+} from "../spine/refinement-fixtures.test.ts";
+import {
   effectVocabulary,
   effectsOf,
   parseEffect,
@@ -206,18 +211,17 @@ test("parseEffect refuses a string outside the vocabulary", () => {
 
 // === A record's whole list ==================================================
 
-const cfg: Config = {
-  nTickets: 3,
-  nTasks: 1,
-  reworkPolicy: { tag: "RWBudget", budget: 1 },
-  gas: 3,
-  wrapUpPricing: { tag: "Budgeted", budget: 1 },
-  opRetryPricing: "RetryCharged",
-  maxStages: 1,
-  nProjects: 1,
-};
-const prog: readonly Stage[] = [{ fanout: 1, combinator: "CUnanimousPass" }];
-const wrapUp: WrapUp = { tag: "WExclusive", resource: 1 };
+/**
+ * The refinement instance with room for the cascade, by spread — `s6`'s own
+ * rule, which `harness.test.ts` states at `cfgInterp` and applies the same way:
+ * the delta is the whole of what this case needs, and it is visible as one
+ * line. Re-minting the eight fields here made the fixture a fourth
+ * independent statement of one instance, and a `wrapUpPricing` that moved
+ * upstream would have left this file testing a machine no other suite runs.
+ */
+const cfg: Config = { ...cfgRefinement, nTickets: 3 };
+const prog: readonly Stage[] = progFlat;
+const wrapUp: WrapUp = wx1;
 
 /** A fleet where two Drafts depend on ticket 1 — the cascade's shape. */
 function twoDependentsOnOne(): Core {

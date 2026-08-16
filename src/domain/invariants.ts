@@ -73,6 +73,7 @@ import { assertNever } from "./assert.ts";
 import {
   boundsOf,
   isAuthorableWrapUp,
+  isSubsetOf,
   firstTicketId,
   leaseOf,
   projects,
@@ -621,13 +622,7 @@ export function coveredSet(c: Core): ReadonlySet<number> {
 
 /** `model/domain.qnt` stuckSubsetCovered — the two walks agree, and that is all it says. */
 export function stuckSubsetCovered(c: Core): boolean {
-  const covered = coveredSet(c);
-  for (const j of stuckSet(c)) {
-    if (!covered.has(j)) {
-      return false;
-    }
-  }
-  return true;
+  return isSubsetOf(stuckSet(c), coveredSet(c));
 }
 
 // --- Cascade safety ---------------------------------------------------------
@@ -664,7 +659,7 @@ export function canFinishSet(c: Core): ReadonlySet<number> {
     for (const [j, jb] of c.tickets) {
       if (
         jb.phase === "PDone" ||
-        (jb.phase !== "PRevoked" && everyDepIn(waitsOn(c, j), canFinish))
+        (jb.phase !== "PRevoked" && isSubsetOf(waitsOn(c, j), canFinish))
       ) {
         next.add(j);
       }
@@ -672,19 +667,6 @@ export function canFinishSet(c: Core): ReadonlySet<number> {
     canFinish = next;
   }
   return canFinish;
-}
-
-/** The model's `waitsOn(core, j).forall(d => set.contains(d))`. */
-function everyDepIn(
-  deps: ReadonlySet<number>,
-  set: ReadonlySet<number>,
-): boolean {
-  for (const d of deps) {
-    if (!set.has(d)) {
-      return false;
-    }
-  }
-  return true;
 }
 
 /** `model/domain.qnt` noStructuralDeadlock — every live ticket can still reach Done, was settled by its author, or holds an open desk task. */

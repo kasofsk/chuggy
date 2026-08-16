@@ -60,7 +60,6 @@ import {
   recoverFrom,
   type DurableState,
 } from "../spine/actor.ts";
-import type { Cmd } from "../spine/cmd.ts";
 import type { ExternalEvent } from "./events.ts";
 import { interpret } from "./execute.ts";
 import {
@@ -69,12 +68,16 @@ import {
   cfgInterp,
   createRig,
   decide,
+  dispatch,
+  enterGate,
+  evalReduce,
   expectRefused,
-  expectSteady,
+  expectRigSteady,
   expectWorldSettled,
   must,
   report,
   watching,
+  workReduce,
   type Rig,
 } from "./harness.test.ts";
 import type { Ports } from "./ports.ts";
@@ -111,11 +114,6 @@ function ordinalsAt(rig: Rig, seq: number): readonly number[] {
     .filter((entry) => entry.seq === seq)
     .map((entry) => entry.ordinal);
 }
-
-const dispatch: Cmd = { tag: "JDispatch", ticket: 1 };
-const workReduce: Cmd = { tag: "JWorkReduce", ticket: 1 };
-const evalReduce: Cmd = { tag: "JEvalReduce", ticket: 1 };
-const enterGate: Cmd = { tag: "JDequeue", ticket: 1, moved: true };
 
 /**
  * Arrival through a passing evaluation — the prefix both routes share, and the
@@ -189,7 +187,7 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
     commit(cfgInterp, rig.store, s, enterGate),
     "commit the dequeue",
   );
-  expectSteady(rig, journaled);
+  expectRigSteady(rig, journaled);
 
   let gateFailures = 1;
   const dyingLanding: Ports = {
@@ -226,13 +224,13 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
     }),
     "rebuild the actor from the store",
   );
-  expectSteady(rig, recovered);
+  expectRigSteady(rig, recovered);
   assert.equal(recovered.applied, 0);
 
   // Every row of the walk so far is re-emitted, and the world takes NOTHING
   // twice: every delivery arrives under a key it already holds.
   s = interpret(cfgInterp, recovered, rig.ports);
-  expectSteady(rig, s);
+  expectRigSteady(rig, s);
   assert.equal(s.applied, s.journal.length);
   assert.equal(
     rig.world.ledger().length,
@@ -289,9 +287,9 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
     }),
     "rebuild the actor a second time",
   );
-  expectSteady(rig, afterCrash);
+  expectRigSteady(rig, afterCrash);
   s = interpret(cfgInterp, afterCrash, rig.ports);
-  expectSteady(rig, s);
+  expectRigSteady(rig, s);
   expectWorldSettled(rig, s);
   assert.equal(s.applied, s.journal.length);
 
@@ -376,7 +374,7 @@ test("across drains the landing port is re-sent a route it has already finished"
   // drain that produced it began. What is worth asserting separately is that
   // the re-sent route landed nothing a second time.
   assert.equal(rig.world.recorded("land").length, 1);
-  expectSteady(rig, s);
+  expectRigSteady(rig, s);
   expectWorldSettled(rig, s);
 });
 

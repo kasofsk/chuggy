@@ -122,7 +122,7 @@ import type { StepRecord } from "../domain/measure.ts";
  * deduplicates nothing within a row and deduplicates a re-emitted row exactly.
  * Project the ordinal away and what is left is `model/refinement.qnt`'s
  * `worldEffects: Set[int]` — this is that set refined, not replaced, and
- * `harness.test.ts`'s `expectSteady` asserts the projection at every state of
+ * `harness.test.ts`'s `expectRigSteady` asserts the projection at every state of
  * every walk rather than leaving it as an argument.
  *
  * HOW MUCH OF THE MACHINE THIS IS ABOUT, stated because it bounds the risk.

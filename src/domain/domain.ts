@@ -104,6 +104,36 @@ export function ticketAt(c: Core, j: number): Ticket {
   return jb;
 }
 
+/**
+ * The model's `a.subseteq(b)` over two primitive sets.
+ *
+ * NAMED ONCE FOR THIS SECTION'S OWN RULE, which is what the sweep found broken:
+ * the same loop was written three times over — `cmd.ts`'s `isSubsetOf` for
+ * `decideArrive`'s deps guard, `invariants.ts`'s `everyDepIn` for
+ * `canFinishSet`, and a third copy spelled inline inside `stuckSubsetCovered`.
+ * Quint says `subseteq` once and means one thing by it; three spellings of one
+ * operator are three chances for two of them to answer differently about the
+ * empty set, which is the case every one of them leans on.
+ *
+ * IT IS DELIBERATELY NOT `anyEdgeIn`'S SIBLING. That predicate is the dual —
+ * "some element is in" — and collapsing the two into one helper carrying a
+ * quantifier as an argument would be the cleverness this section's
+ * one-mechanism rule exists to prevent.
+ *
+ * Bounded by `smaller`, which every caller draws from the fleet.
+ */
+export function isSubsetOf(
+  smaller: ReadonlySet<number>,
+  larger: ReadonlySet<number>,
+): boolean {
+  for (const x of smaller) {
+    if (!larger.has(x)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** The model's `c.tickets.keys().filter(...)`, which six enablement sets are. */
 function keysWhere(c: Core, keep: (j: number) => boolean): ReadonlySet<number> {
   const out = new Set<number>();
