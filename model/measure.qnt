@@ -460,9 +460,9 @@ module chuggy_measure {
   ///              invalidated the artifact (domain.qnt wrapUpOutcomes).
   type WrapUpOutcome = WOk | WFailed
 
-  /// THE LANDING-BOUNDARY OBSERVATION (the isolation gate
-  /// gate's attribution half): every step that RESOLVES a landing attempt
-  /// carries WOAttempt with
+  /// THE WRAP-UP ATTEMPT OBSERVATION (the isolation gate's attribution
+  /// half): every step that RESOLVES a wrap-up attempt carries WOAttempt
+  /// with
   ///   - `project`: the ticket's target project — golden traces must be
   ///     per-project attributable, and the project cannot ride the effect
   ///     strings (no dynamic strings at this grain), so the step record
@@ -654,15 +654,24 @@ module chuggy_measure {
 
   /// One decision's observable record, mirroring the golden-trace step
   /// schema {event, transitions, effects} — extended
-  /// with the landing-boundary attribution field (`landing`, WONone on
-  /// every non-landing step; see WrapUpObs): the minimal StepRecord
-  /// extension that keeps golden traces per-project attributable at the one
-  /// boundary where the project matters.
+  /// with the wrap-up attribution field (`attempt`, WONone on every step
+  /// that resolves no wrap-up attempt; see WrapUpObs): the minimal
+  /// StepRecord extension that keeps golden traces per-project attributable
+  /// at the one boundary where the project matters.
+  ///
+  /// IT IS NAMED FOR WHAT IT RANGES OVER, which is the attempt and not the
+  /// completion. Most of the labels it carries a WOAttempt on are failures —
+  /// the gate rework and both wrap-up walls, against the one completion — so
+  /// naming it after the successful case would be wrong on the majority of
+  /// its own domain (wrapUpIsolation's WOAttempt arm lists them). It is not
+  /// named `wrapUp` either, because Ticket.wrapUp is the AUTHORED kind and a
+  /// reader meeting both in one decision should not have to ask which is
+  /// which.
   type StepRecord = {
     label: str,
     transitions: List[Transition],
     effects: List[str],
-    landing: WrapUpObs
+    attempt: WrapUpObs
   }
 
   /// What a pure decider returns: record performed + post-state.

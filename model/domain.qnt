@@ -189,15 +189,15 @@ module chuggy_domain {
   /// transition (golden-trace shaped, standing rule 4). from == to is
   /// a real row now — the stage advance records
   /// Evaluating -> Evaluating.
-  /// `landing` is WONone here — only decideWrapUpResolve resolves a
-  /// landing attempt, and it stamps its own attribution over this default
+  /// `attempt` is WONone here — only decideWrapUpResolve resolves a
+  /// wrap-up attempt, and it stamps its own attribution over this default
   /// (withWrapUpObs).
   pure def move(c: Core, j: int, to_: Phase, label: str, effects_: List[str]): Decision =
     { rec: {
         label: label,
         transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: to_ }],
         effects: effects_,
-        landing: WONone },
+        attempt: WONone },
       post: withTicket(c, j, { ...c.tickets.get(j), phase: to_ }) }
 
   /// A decision that changes nothing — the idempotent answer to duplicate
@@ -206,7 +206,7 @@ module chuggy_domain {
   /// duplicate completion delivery absorbs with nothing emitted), so the
   /// attribution field stays WONone.
   pure def noop(c: Core, label: str): Decision =
-    { rec: { label: label, transitions: [], effects: [], landing: WONone }, post: c }
+    { rec: { label: label, transitions: [], effects: [], attempt: WONone }, post: c }
 
   /// Stamp the landing-boundary attribution on a decision:
   /// decideWrapUpResolve routes EVERY arm through this, so each step that resolves
@@ -216,7 +216,7 @@ module chuggy_domain {
   /// iff; the trace consumer gets per-project attribution at exactly the
   /// boundary where the project matters).
   pure def withWrapUpObs(d: Decision, project_: int, moved: bool): Decision =
-    { rec: { ...d.rec, landing: WOAttempt({ project: project_, invalidated: moved }) },
+    { rec: { ...d.rec, attempt: WOAttempt({ project: project_, invalidated: moved }) },
       post: d.post }
 
   // --- Authoring: arrival, release, revoke ---------------------------------
@@ -274,7 +274,7 @@ module chuggy_domain {
       wrapUp_: WrapUp): Decision =
     val id = c.tickets.keys().size() + 1
     { rec: { label: "ticket-arrived", transitions: [], effects: ["CreateDraft"],
-        landing: WONone },
+        attempt: WONone },
       post: { ...c, tickets: c.tickets.put(id, freshTicket(deps_, prog, project_, wrapUp_)) } }
 
   /// Draft -> Pending: the ticket enters the released pipeline. There is
@@ -360,7 +360,7 @@ module chuggy_domain {
         // dependent — and NONE for the revoked ticket itself.
         effects: ["Revoke"]
           .concat(parkedList.foldl([], (l, k) => l.append("OpenHumanTask"))),
-        landing: WONone },
+        attempt: WONone },
       post: { ...c, tickets: c.tickets.keys().mapBy(k =>
         if (k == j)
           { ...retireLive(c.tickets.get(k)), phase: PRevoked,
@@ -623,7 +623,7 @@ module chuggy_domain {
   /// inside the phase.
   pure def decideTaskDone(c: Core, j: int, tid: int, v: Verdict): Decision =
     if (c.tickets.get(j).tasks.exists(t => t.id == tid and t.state == TSRunning))
-      { rec: { label: "task-done", transitions: [], effects: [], landing: WONone },
+      { rec: { label: "task-done", transitions: [], effects: [], attempt: WONone },
         post: withTicket(c, j, { ...c.tickets.get(j),
           tasks: resolveTask(c.tickets.get(j).tasks, tid,
             match v { | VPass => TPassed | VFail => TFailed }) }) }
@@ -799,7 +799,7 @@ module chuggy_domain {
         label: "ticket-done",
         transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: PDone }],
         effects: ["Complete"],
-        landing: WONone },
+        attempt: WONone },
       post: withTicket(c, j,
         { ...c.tickets.get(j), phase: PDone,
           completions: c.tickets.get(j).completions + 1 }) }
@@ -1079,7 +1079,7 @@ module chuggy_domain {
     reworkBudget(REWORK_POLICY) >= 0,
     wrapUpBudget(WRAPUP_PRICING) >= 0,
     tickets' = Map(),
-    lastStep' = { label: "init", transitions: [], effects: [], landing: WONone },
+    lastStep' = { label: "init", transitions: [], effects: [], attempt: WONone },
     prevMeasure' = 0,
     prevRecords' = Map()
   }
@@ -1269,7 +1269,7 @@ module chuggy_domain {
   action settle = all {
     quiet,
     tickets' = tickets,
-    lastStep' = { label: "settled", transitions: [], effects: [], landing: WONone },
+    lastStep' = { label: "settled", transitions: [], effects: [], attempt: WONone },
     prevMeasure' = currentMeasure,
     prevRecords' = currentRecords
   }
@@ -1372,7 +1372,7 @@ module chuggy_domain {
   /// durable: the machine cannot DRAW a failure on an artifact the
   /// environment left valid, and this invariant checks that no reachable
   /// step RECORDS one.
-  val wrapUpIsolation: bool = match lastStep.landing {
+  val wrapUpIsolation: bool = match lastStep.attempt {
     | WONone => and {
         // A COMPLETION IS NOT ALWAYS AN ATTEMPT (design 002). A WNone
         // ticket's effect happened during work, so evaluation passing
@@ -1423,7 +1423,7 @@ module chuggy_domain {
   /// pinned quiet, the landing succeeds) and movedReworkAttributedTest
   /// (the choice pinned moved, the gate rework and the wall both carry
   /// the attribution).
-  val quietProjectLandsCleanly: bool = match lastStep.landing {
+  val quietProjectLandsCleanly: bool = match lastStep.attempt {
     | WONone => true
     | WOAttempt(a) => not(a.invalidated) implies lastStep.label == "ticket-done"
   }

@@ -652,7 +652,7 @@ module chuggy_witness_multiproject_test {
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 2, invalidated: false }),
+        lastStep.attempt == WOAttempt({ project: 2, invalidated: false }),
         tickets.get(1).completions == 1,
         quietProjectLandsCleanly,                     // the state theorem, on the pinned-quiet step
         allInvariants
@@ -696,7 +696,7 @@ module chuggy_witness_multiproject_test {
       .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "rework-started wrapup_failure",
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).wrapUpLeft == 0,
         tickets.get(1).gasLeft == 1,
         leaseFreeIn(core, 1),
@@ -722,7 +722,7 @@ module chuggy_witness_multiproject_test {
       .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "ticket-escalated wrapup_budget_exhausted",
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).phase == PEscalated,
         tickets.get(1).reason == RsWrapUpBudgetExhausted,
         tickets.get(1).resumeAt == RWrapUp,
@@ -778,7 +778,7 @@ module chuggy_witness_multiproject_test {
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).phase == PDone,
         isReady(2),                                // THE cross-project unblock
         allInvariants
@@ -801,7 +801,7 @@ module chuggy_witness_multiproject_test {
       .then(doDequeue(2, false))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.landing == WOAttempt({ project: 2, invalidated: false }),
+        lastStep.attempt == WOAttempt({ project: 2, invalidated: false }),
         tickets.get(2).phase == PDone,
         tickets.get(1).completions == 1,
         tickets.get(2).completions == 1,
@@ -945,7 +945,7 @@ module chuggy_witness_gate_test {
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).completions == 1,
         leaseFreeIn(core, 1),
         wrapUpStartableIn(core, 2),                // the queue moves on
@@ -959,7 +959,7 @@ module chuggy_witness_gate_test {
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 1, invalidated: false }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: false }),
         tickets.get(2).completions == 1,
         allInvariants
       })
@@ -1002,7 +1002,7 @@ module chuggy_witness_gate_test {
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 1, invalidated: false }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: false }),
         lastStep.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }],
         tickets.get(1).phase == PDone,
         tickets.get(1).completions == 1,
@@ -1100,7 +1100,7 @@ module chuggy_witness_gate_deadline_test {
       .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "rework-started wrapup_failure",
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).wrapUpLeft == 0,              // identically zero: DeadlineOnly
         tickets.get(1).gasLeft == 1,
         allInvariants
@@ -1143,7 +1143,7 @@ module chuggy_witness_gate_deadline_test {
       .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "ticket-escalated gas_exhausted",
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).phase == PEscalated,
         tickets.get(1).reason == RsGasExhausted,
         tickets.get(1).resumeAt == RWrapUp,       // resume re-ENQUEUES
@@ -1320,7 +1320,7 @@ module chuggy_witness_wrapup_none_test {
         lastStep.effects == ["Complete"],
         // It resolved no wrap-up attempt, so it carries no attribution —
         // the completeness arm of wrapUpIsolation permits exactly this.
-        lastStep.landing == WONone,
+        lastStep.attempt == WONone,
         tickets.get(1).phase == PDone,
         tickets.get(1).completions == 1,
         // THE REGRESSION PIN: the eval set was retired on the way through.
