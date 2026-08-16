@@ -12,16 +12,24 @@
  * THE NAMES ARE THE MODEL'S, AND NOTHING HERE ENFORCES THAT. Every fixture
  * below is spelled as `chuggy_test.qnt` spells it, which is what lets a
  * reviewer read a mirrored assertion beside the run it mirrors without a
- * translation table. It is a mirror held by discipline: the roster alarms in
- * `src/tools/verify.ts` compare the model's deciders, effects, step labels,
- * exemption arms, binders, consts, bundle conjuncts, `Cmd` arms, record
- * schemas and witness RUN names against this tree, and a test fixture's name
- * is on none of those lists. When upstream renamed `jLand` to `jWrapUp` and
- * `escLanding` to `escWrapUp` (PR #57), the only alarm that fired was the
- * witness-run roster, and it fired because the corpus manifest names a run —
- * not because anything looks at this file. So a model fixture rename lands
- * here by a reader following it, and the shadow is written down rather than
- * left to be rediscovered.
+ * translation table. It is a mirror held by discipline. `src/tools/verify.ts`
+ * compares the model's deciders, effects, step labels, `stepDescends`
+ * exemption arms, mc instances, nondet binders, model consts, `allInvariants`
+ * conjuncts, `Cmd` arms, `refinementCore` conjuncts, `refinementInvariants`
+ * conjuncts and the record schemas against this tree, and separately the RUN
+ * names — but `readWitnessRuns` reads `chuggy_witness_test.qnt` and only that
+ * file.
+ *
+ * SO THE SHADOW HAS TWO HALVES, AND UPSTREAM PR #57 DEMONSTRATED BOTH AT
+ * ONCE. A fixture's name is on none of those lists: `jLand` and `escLanding`
+ * moved to `jWrapUp` and `escWrapUp` with nothing reporting it. Neither is a
+ * run name declared in `chuggy_test.qnt`, and `domain.test.ts` mirrors those
+ * as its test titles: the same rename moved two of them and left this tree's
+ * titles stale, and not one of the failures that run produced named either.
+ * What DID fire was the witness-run roster, and only because the corpus
+ * manifest happens to name a witness run. So a model rename on either half
+ * lands here by a reader following it, and the shadow is written down rather
+ * than left to be rediscovered.
  *
  * EVERY TICKET HERE COMES OUT OF A DECIDER, never out of a record literal that
  * happens to look like one — issue #13's rule, applied to the fixtures rather

@@ -13,6 +13,18 @@
  * `handBuiltFixturesAccountedTest`, which the model gained with the fixture
  * accounting (#27) and which this suite mirrors over its own fixtures.
  *
+ * "UNDER THE MODEL'S OWN RUN NAMES" IS A CLAIM NOTHING CHECKS, and this is
+ * where a reader following a run rename looks, so it is said here. The roster
+ * alarms in `src/tools/verify.ts` do compare run names — `readWitnessRuns`
+ * reads `model/tests/chuggy_witness_test.qnt`, and only that file. The runs
+ * mirrored as titles HERE are declared in `chuggy_test.qnt`, which no roster
+ * opens. Upstream PR #57 renamed two of them and every gate in this tree
+ * stayed silent about the stale titles; the alarm that did fire named a
+ * WITNESS run, through the corpus manifest. A title that opens with a model
+ * run name is therefore a citation held by a reader, and it is worth checking
+ * against `chuggy_test.qnt` whenever the model moves. The counterpart shadow
+ * over the FIXTURE names is stated in `fixtures.test.ts`'s header.
+ *
  * The suite was written in two slices. s2a mirrored the runs whose subject is
  * an authoring-or-work decider and deferred the rest rather than paraphrasing
  * them against hand-built stand-ins for deciders that had not landed — the

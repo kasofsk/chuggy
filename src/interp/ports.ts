@@ -582,10 +582,17 @@ export type WrapUpPort = {
    * then renamed the model's own land-family IDENTIFIERS — its fixtures and
    * its witness runs — so `model/` no longer spells `land` in a name at all
    * except inside `quietProjectLandsCleanly`, which is this same verb. Every
-   * other occurrence left in `model/` is prose about the act. That makes the
-   * grep test above sharper rather than weaker: it now lands on the theorem
-   * and on nothing else, and `noDuplicateCycle`'s sentence is unchanged by
-   * #57. Re-check it there, not here, before renaming this method.
+   * other occurrence left in `model/` is prose about the act — including
+   * `noDuplicateCycle`'s sentence, which #57 did not touch.
+   *
+   * SO SAY WHAT THE GREP ACTUALLY DOES, because the sentence above is the
+   * one a later reader will lean on. Searching `model/` for this word as an
+   * IDENTIFIER now lands on `quietProjectLandsCleanly` and nowhere else —
+   * and that is a state theorem in `domain.qnt`, not the theorem this method
+   * answers to. Searching for the word at all lands on every prose line that
+   * uses the verb. Neither search is a shortcut to `noDuplicateCycle`; the
+   * previous paragraph names it and `model/refinement.qnt` is where it is
+   * read. Re-check it there, not here, before renaming this method.
    */
   readonly land: (delivery: Delivery) => void;
 };
