@@ -410,14 +410,42 @@ export function effectCrash(
  * state. Dropping it here would erase the hazard on exactly the path a real
  * process takes, which is the composition the hazard sweep drives.
  *
- * IT REFUSES RATHER THAN CRASHING, at three gates, and the order is the same
+ * IT REFUSES RATHER THAN CRASHING, at four gates, and the order is the same
  * order `journalLegalOn` uses and for the same reason. A row that is not
  * shaped like a journal row is refused by the schema's gate before anything
  * reads it; a journal that is not a legal history is refused by the legality
  * fold before any decider is handed a state that refuses it; an incoherent
- * cursor is refused before it can index past the log. A recovering process is
- * exactly the wrong place to throw: the alternative to answering "this log is
- * not readable" is dying again in the same way.
+ * cursor is refused before it can index past the log; and a cursor the world's
+ * ledger cannot support is refused before it can silently swallow the rows it
+ * over-reports. A recovering process is exactly the wrong place to throw: the
+ * alternative to answering "this log is not readable" is dying again in the
+ * same way.
+ *
+ * THE FOURTH GATE IS THE ONE THE LEDGER IN HAND CAN ANSWER, and it is
+ * `crashRecoverTo`'s caller-error refusal wearing the argument this function's
+ * extra argument makes available. `crashRecoverTo` refuses `a > applied`
+ * because a cursor above the one being lost is not a crash; the same sentence
+ * here reads "a cursor above what the WORLD evidences", because a durable
+ * rebuild has no `applied` to compare against and the ledger is what survived
+ * instead. The relation is exact rather than approximate: `emitNext` unions the
+ * emitted row's seq into `worldEffects` whether or not the row carried any
+ * effect, and nothing else ever adds one, so a disciplined actor's ledger is
+ * always the dense prefix `1..appliedEver` — and every cursor a crash can
+ * honestly come back with lies inside it.
+ *
+ * WHAT IT COSTS TO OMIT, which is why the gate is here and not a comment. A
+ * checkpoint that over-reports mints `applied > |worldEffects|`, a state
+ * `model/refinement.qnt` cannot reach (`emitNext` advances the pair together,
+ * `crashRecoverTo` only regresses the cursor) — and the un-emitted suffix it
+ * skips is then dropped PERMANENTLY. Nothing in the tree sees it: every
+ * refinement invariant that reads the ledger reads it as an UPPER bound — the
+ * orphan count, and the two per-ticket counts that must not EXCEED what the
+ * journal charged — so a world that is too short satisfies all three more
+ * easily than an honest one, and `executorSound` measures the cursor against
+ * the journal's length rather than against the ledger. The observable outcome
+ * is a ticket working in the actor's memory whose task set the fabric was never
+ * told to run, with the whole domain bundle and the whole refinement bundle
+ * green over it.
  */
 export function recoverFrom(
   cfg: Config,
@@ -438,6 +466,9 @@ export function recoverFrom(
   if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > journal.length) {
     return undefined;
   }
+  if (!ledgerEvidences(world, cursor)) {
+    return undefined;
+  }
   const rebuilt: ActorState = {
     mem: replayMachine(cfg, journal),
     journal,
@@ -447,4 +478,23 @@ export function recoverFrom(
     rlabel: "crash-recover",
   };
   return rebuilt as DurableState;
+}
+
+/**
+ * Does the world's ledger evidence a cursor of `cursor` — is every seq the
+ * checkpoint claims to have emitted one the world actually received?
+ *
+ * THE PREFIX IS THE WHOLE QUESTION, and it is a membership scan rather than a
+ * size comparison for `executorSound`'s reason: `worldEffects` is a set that
+ * cannot be compared to a range literal, and its size alone would accept a
+ * ledger holding the wrong seqs. Bounded by `cursor`, which the caller has
+ * already established is no larger than the log.
+ */
+function ledgerEvidences(world: WorldLedger, cursor: number): boolean {
+  for (let seq = 1; seq <= cursor; seq += 1) {
+    if (!world.worldEffects.has(seq)) {
+      return false;
+    }
+  }
+  return true;
 }
