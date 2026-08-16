@@ -67,19 +67,30 @@
  *      and neither half covers for the other.
  *   2. A capability passed in as a function argument — not a breach but the
  *      design.
- *   2a. AN IMPORT WHOSE SPECIFIER IS NOT A LITERAL. A dynamic `import("…")`
+ *   2a. AN IMPORT WHOSE SPECIFIER IS NOT A LITERAL — CLOSED ELSEWHERE, AND
+ *      THE RULES HERE DEPEND ON ITS BEING CLOSED. A dynamic `import("…")`
  *      with a string in it is resolved and walked like any other edge; one
  *      whose argument is a binding or a template — `const P = "../spine/
  *      actor.ts"; import(P)` — is an edge this graph does not have, so EVERY
  *      rule above passes over it. That is not a narrow hole: it is a live
- *      route from an adapter into the single writer, and it was measured
- *      clean through depcruise, tsc, the whole lint and every gate. It is
- *      closed OUTSIDE this file, because a graph cannot be asked about an edge
- *      it cannot see: `eslint.purity.config.js` bans the expression outright
- *      in the pure core and, since sweep 2, in `src/effects/`, `src/interp/`
- *      and `src/adapters/` — every layer whose rule here is a reachability
- *      rule. The literal form stays this file's, and the ban makes the
- *      distinction moot anyway.
+ *      route from an adapter into the single writer, and it was measured clean
+ *      through depcruise, tsc, the whole lint and every gate. A graph cannot be
+ *      asked about an edge it cannot see, so `eslint.purity.config.js` bans the
+ *      expression across EVERY TypeScript file under `src/` — the pure core in
+ *      its own block, everything else in a second one.
+ *
+ *      TREE-WIDE RATHER THAN LAYER-BY-LAYER, and the reason is the rule
+ *      immediately below. The ban first covered only the layers bounded here by
+ *      direction, which left `src/tools/` — bounded by nothing, by design — as
+ *      a one-hop launder: an adapter may import a tool, and the tool may then
+ *      compute an import of anything. Forbidding the `adapters -> tools` edge
+ *      would have closed that one consumer and left the next to be remembered,
+ *      which is this file's own argument against rosters. With the ban
+ *      tree-wide, every remaining edge is one this graph HAS — so
+ *      `adapters-decide-nothing`'s transitivity catches the static route
+ *      through a tool, which it always promised and could not deliver while an
+ *      invisible edge existed. The literal form stays this file's, and the ban
+ *      makes the distinction moot anyway.
  *   3. `adapters-decide-nothing` MOVING OUT FROM UNDER ITSELF. Alone among the
  *      rules here it is pinned to two PATHS rather than to a boundary, because
  *      `src/adapters/` is deliberately not reachability-bounded — so it names

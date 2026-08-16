@@ -52,12 +52,23 @@
 #      green on one they do not, while the stale corpus replays green beside
 #      it. Regenerating the corpus is what closes it, and the diff that leaves
 #      is the thing to read.
-#   2. AN ENABLEMENT ARM WIDENED. `cmdEnabled` refusing less than the machine
+#   2. A FIXTURE AND ITS MANIFEST ENTRY EDITED TOGETHER. The manifest carries
+#      each fixture's state count, so a trace with its last state cut off is a
+#      finding here — that is the one corruption a trace cannot report about
+#      itself, since every state carries its own index and only the LAST one
+#      can go without a decode failure. What the count is, exactly, is a
+#      TWO-FILE CONSISTENCY check and not integrity against the model: truncate
+#      the trace AND edit the count and this gate is green, correctly, because
+#      nothing here can tell that pair from a regeneration whose search found a
+#      shorter trace. Only re-running the emitter can, and the diff it leaves is
+#      the thing to read. What the pin buys is that the corruption stops being
+#      a one-file edit.
+#   3. AN ENABLEMENT ARM WIDENED. `cmdEnabled` refusing less than the machine
 #      does is invisible to replay — every fixture holds decisions the machine
 #      TOOK, and a widened guard still admits those. What covers it is
 #      `src/spine/cmd.test.ts`, which pins each arm as an exact set over a
 #      fleet holding one ticket per phase.
-#   3. A DECIDER-ATTRIBUTION ROW SWAPPED. `decidersReached` feeds the coverage
+#   4. A DECIDER-ATTRIBUTION ROW SWAPPED. `decidersReached` feeds the coverage
 #      roster and nothing else, so swapping two single-decider rows leaves
 #      every fixture replaying and every roster complete. What covers it is the
 #      per-tag table in the same suite, and the swap was watched to red there

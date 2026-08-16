@@ -22,7 +22,19 @@
  * in a hand-edited file is a figure that goes stale without anything noticing.
  * `states` is the one figure that cannot, because it is compared against the
  * decoded trace on every replay — the emitter WRITES it, the gate CHECKS it,
- * and a disagreement is a finding naming the fixture. What it buys is the one
+ * and a disagreement is a finding naming the fixture.
+ *
+ * WHAT IT IS AND IS NOT, SAID EXACTLY, because the difference is easy to
+ * mis-read as strength it does not have. It is a TWO-FILE CONSISTENCY check,
+ * not integrity against the model: a fixture truncated and its count edited to
+ * match passes green, and correctly so — nothing here can tell that pair from a
+ * regeneration whose search found a shorter trace, and only re-running the
+ * emitter could. What the pin buys is that the corruption stops being a
+ * ONE-FILE edit, which is the shape a hand truncation actually has and the
+ * shape the trace itself cannot report (`itf.ts` checks each state's
+ * `#meta.index`, so only the LAST state can go without a decode failure).
+ * `.chug/tasks/check-conformance.sh` carries the same sentence in its list of
+ * what it cannot see. What it buys is the one
  * corruption the trace itself cannot report: `itf.ts` checks each state's
  * `#meta.index` against its position, so a state removed from the MIDDLE is a
  * decode failure, and a state removed from the END leaves a dense, ascending,
@@ -87,7 +99,26 @@ export class CorpusError extends Error {
   }
 }
 
-/** A tier-1 fixture: a seeded, budgeted search on one mc instance, under `--mbt`. */
+/**
+ * A tier-1 fixture: a seeded, budgeted search on one mc instance, under `--mbt`.
+ *
+ * EVERY ONE OF THEM IS A VIOLATION SEARCH TODAY, and the vocabulary below is
+ * wider than the corpus. `expect` admits `"ok"` — a plain walk that finds
+ * nothing, which is the sampled-walk modality the trace mechanism describes —
+ * and no committed fixture uses it, so that arm of the emitter's exit-code
+ * comparison is exercised by nothing and the modality has no representative
+ * here. That is a consequence of what a fixture is FOR rather than an
+ * oversight: a corpus entry earns its place by REACHING something (`pins` is
+ * the checked claim), and a search that found nothing reaches nothing to pin —
+ * the trace it writes is the prefix the search happened to stop at. The
+ * sampled-walk modality is covered instead by `src/spine/randomized.test.ts`,
+ * which walks the same instances at the same consts and asserts the bundle
+ * after every step, which is what an `"ok"` run is a weaker form of.
+ *
+ * The vocabulary keeps the arm because the EMITTER needs it: `expect` is the
+ * exit code a regeneration must see, and an entry that expected `"ok"` and got
+ * a violation is a finding whether or not this corpus holds one.
+ */
 export type Tier1Fixture = {
   readonly name: string;
   readonly instance: McInstance;
@@ -745,6 +776,80 @@ export function readModelRosters(): ModelRosters {
       Entry: recordTypeFields(refinementCode, "Entry", refinementSource),
     },
   };
+}
+
+/**
+ * The model's three ANTI-VACUITY WITNESSES, by name.
+ *
+ * THEY ARE NOT INVARIANTS AND THEY ARE NOT IN A BUNDLE, which is why no roster
+ * above can see them: `model/domain.qnt` declares each as a plain `val` that is
+ * EXPECTED TO BE VIOLATED, so a read of `pure def`s, of code literals, of the
+ * safety bundle's conjuncts or of a sum type's arms passes over all three. The
+ * tree mirrors them in `src/spine/walk.test.ts` as `witnessNames`, hand-typed,
+ * and a fourth witness the model adds under its own no-arm-without-a-witness
+ * discipline arrives with nothing to notice it — the roster alarm's own failure
+ * mode, on the one surface that says which green invariants are vacuous.
+ *
+ * READ FROM THE MARKER COMMENT, on `exemptionRoster`'s argument and for its
+ * reason. The model states them as a numbered series — each `val` is introduced
+ * by an `ANTI-VACUITY WITNESS` header saying so — and the code has nothing that
+ * distinguishes them from any other `val … : bool`: `revokedNeverCompletes` is
+ * a bundle conjunct with the same spelling, so a name pattern would roster the
+ * wrong thing and call it agreement. The marker is the model's own declaration
+ * of what these are.
+ *
+ * A MARKER WITH NO `val` UNDER IT IS A COULD-NOT-RUN naming the marker, and so
+ * is a file with no marker at all — the `readModuleConsts` rule, again: "no
+ * witnesses" and "witnesses this parse cannot see" must not report the same.
+ *
+ * `path` IS A PARAMETER so the suite that owns the comparison can hand this a
+ * fixture, which is `readModuleConsts`' arrangement: the shipped side of this
+ * roster lives in a `.test.ts` file, so the comparison cannot live in
+ * `verify.ts` and its red proofs need model fragments of their own.
+ */
+export function readAntiVacuityWitnesses(
+  path: string = domainSource,
+): readonly string[] {
+  const marker = "ANTI-VACUITY WITNESS";
+  const lines = readSource(path).split("\n");
+  const names: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!(lines[i] ?? "").includes(marker)) {
+      continue;
+    }
+    const declared = witnessValUnder(lines, i);
+    if (declared === undefined) {
+      throw new CorpusError(
+        `${path}: the ${marker} comment at line ${String(i + 1)} is followed by no bool val`,
+      );
+    }
+    names.push(declared);
+  }
+  if (names.length === 0) {
+    throw new CorpusError(`${path}: no ${marker} comment`);
+  }
+  return names;
+}
+
+/**
+ * The name of the first `val <name>: bool =` under a marker line, skipping the
+ * rest of the comment it opens — and answering nothing if any other declaration
+ * gets there first, because a marker that has drifted away from its `val` is a
+ * parse this reader must not guess at.
+ */
+function witnessValUnder(
+  lines: readonly string[],
+  from: number,
+): string | undefined {
+  for (let i = from + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    const text = line.trimStart();
+    if (text.startsWith("//") || text.length === 0) {
+      continue;
+    }
+    return /^\s*val ([A-Za-z][A-Za-z0-9_]*)\s*:\s*bool\s*=/.exec(line)?.[1];
+  }
+  return undefined;
 }
 
 /**

@@ -28,11 +28,14 @@
  * nothing, so each sweep also rebuilds the actor from the STORE's rows alone —
  * through the port, through the schema's gate, through the legality fold, at
  * every cursor the crash could come back with — and requires the same state.
- * That last clause is newer than the sentence around it: the durable rebuild
- * used to be taken at cursor 0 alone, which made this half a PAIR where the
- * paragraph above claims a triple and left `recoverFrom`'s ledger gate vacuous
- * on it, since an empty emitted prefix is evidenced by any ledger. That is the claim the model cannot make and the one
- * a real deployment needs. The hazard sweep rebuilds too, and requires the
+ * THAT is the claim the model cannot make and the one a real deployment needs.
+ *
+ * THE CURSOR IN THAT CLAUSE IS NEWER THAN THE SENTENCE AROUND IT. The durable
+ * rebuild used to be taken at cursor 0 alone, which made this half a PAIR where
+ * the paragraph above claims a triple, and left `recoverFrom`'s ledger gate
+ * vacuous on it: an empty emitted prefix is evidenced by any ledger at all.
+ *
+ * The hazard sweep rebuilds too, and requires the
  * OPPOSITE: an orphan is in the world, not in the journal, so recovery must
  * carry it and `journalCoversWorld` must still be red on the recovered state.
  * A recovery that dropped the world's ledger would erase the hazard on exactly

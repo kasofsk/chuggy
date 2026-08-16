@@ -363,6 +363,16 @@ function staleConsts(manifest: Manifest): readonly string[] {
  * model's literal order is where its deciders happen to write them, and a
  * gate that argued about sequence would be a gate somebody turns off.
  *
+ * ONE MODEL ROSTER IS COMPARED SOMEWHERE ELSE, and it is named here so the
+ * list below reads as complete rather than as everything anybody thought of.
+ * `model/domain.qnt`'s three ANTI-VACUITY WITNESSES are mirrored by
+ * `src/spine/walk.test.ts`'s `witnessNames` — a `.test.ts` file, because the
+ * witnesses are the randomized layer's and a shipped predicate with no shipped
+ * caller is a shape this tree has declined before. `no-shipped-test-fixtures`
+ * forbids this module from importing one, so the comparison is a case in
+ * `src/spine/randomized.test.ts`, on `readAntiVacuityWitnesses` and on the
+ * `rosterDisagrees` below. Same reader, same rule, a different suite.
+ *
  * THE ONE ENTRY THAT NEEDS SAYING OUT LOUD is
  * `operator-retry-unreachable`. The model emits it and `reachableStepLabels`
  * deliberately excludes it, so the comparison adds it back by name — from
@@ -479,8 +489,17 @@ const shippedRecordFields: readonly {
   { type: "Entry", twin: "src/spine/entry.ts", fields: entryFieldNames },
 ];
 
-/** One roster, compared as an exact set in both directions. */
-function rosterDisagrees(
+/**
+ * One roster, compared as an exact set in both directions.
+ *
+ * IT IS EXPORTED FOR THE ONE ROSTER THIS WALK CANNOT HOLD. The anti-vacuity
+ * witnesses' shipped side is `src/spine/walk.test.ts`'s `witnessNames`, and
+ * `.dependency-cruiser.mjs`'s `no-shipped-test-fixtures` forbids any shipped
+ * module — this one included — from importing a `.test.ts`. So that comparison
+ * lives in `src/spine/randomized.test.ts`, where both sides are reachable, and
+ * it uses this function rather than a second copy of the both-directions rule.
+ */
+export function rosterDisagrees(
   what: string,
   shipped: readonly string[],
   model: readonly string[],

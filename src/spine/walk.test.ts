@@ -138,6 +138,13 @@ export function draw(g: Gen): { readonly value: number; readonly gen: Gen } {
  * same stream as walk `k`'s, offset by one draw — a run of walks that looked
  * independent and was one walk read through a sliding window. The mixer is what
  * separates them, and it is exactly what the mixer is for.
+ *
+ * AND THE SLIDING WINDOW IS WHAT THE CASE ASSERTS, rather than the paragraph
+ * asserting it alone: `randomized.test.ts`'s `walkSeeds splits rather than
+ * stepping` drives the two streams and requires them NOT to be one shifted by
+ * the other. Substituting the successive state was measured to leave every
+ * probe in this tree green — a run of walks reporting the coverage of many and
+ * exploring roughly one.
  */
 export function walkSeeds(root: Gen, count: number): readonly number[] {
   const seeds: number[] = [];
@@ -275,8 +282,15 @@ function ticketIds(cfg: Config): readonly number[] {
  * history without asking `deliverableTaskIds` — which is the set `cmdEnabled`
  * itself filters by, and drawing from it would make the filter tautological.
  * The extra id is the never-issued one, refused.
+ *
+ * THAT LAST SENTENCE IS HELD BY A CASE and it was not: `randomized.test.ts`'s
+ * `the enumeration offers the never-issued task id, and cmdEnabled refuses it`
+ * is what makes the `+ 1` load-bearing. Without it, dropping the extra id left
+ * every probe in this tree green — the walker would simply have stopped asking
+ * `cmdEnabled` the one question the sentence says it is here to ask, and
+ * nothing would have said so. It is exported for that case alone.
  */
-function taskIds(c: Core, ticket: number): readonly number[] {
+export function taskIds(c: Core, ticket: number): readonly number[] {
   const jb = c.tickets.get(ticket);
   const ceiling = jb === undefined ? 1 : jb.spawned + 1;
   const ids: number[] = [];
@@ -286,8 +300,18 @@ function taskIds(c: Core, ticket: number): readonly number[] {
   return ids;
 }
 
-/** Every subset of a bounded set of ids — the model's `powerset().oneOf()`. */
-function subsetsOf(xs: ReadonlySet<number>): readonly ReadonlySet<number>[] {
+/**
+ * Every subset of a bounded set of ids — the model's `powerset().oneOf()`.
+ *
+ * "EVERY" IS THE CLAIM AND IT HAS A CASE, in `randomized.test.ts`: an
+ * enumeration that offered only the singletons, or only the empty set, would
+ * explore a narrower arrival space with every roster still complete and every
+ * witness still firing, because a walk only ever takes what it is handed.
+ * Exported for that case.
+ */
+export function subsetsOf(
+  xs: ReadonlySet<number>,
+): readonly ReadonlySet<number>[] {
   let subsets: ReadonlySet<number>[] = [new Set()];
   for (const x of xs) {
     subsets = [...subsets, ...subsets.map((s) => new Set([...s, x]))];
@@ -527,6 +551,11 @@ function runMachine(
     // `settled` and `complete-duplicate` exemption arms are reachable nowhere
     // else, which is the corpus emitter's rule for the same run of steps:
     // truncate it, and keep a representative.
+    //
+    // `randomized.test.ts`'s `a script that runs past a quiet fleet is cut one
+    // step after it` is what holds this line: with the flag never set, a run
+    // would spend its whole budget redrawing one state and report a length it
+    // had not explored, and every probe in this file would stay green.
     ended = quiet(cfg, state.core);
     const before = state;
     step += 1;
@@ -865,6 +894,12 @@ function showMove(move: Move): string {
  * order and an object's own keys enumerate in declaration order; sorting closes
  * both, and the whole reason a printed form is the comparison at all is that
  * `Cmd` ships no structural equality to reuse.
+ *
+ * ONE CASE PER ORDERING, in `randomized.test.ts`, because "load-bearing" is a
+ * claim about what fails without it: drop either sort and two equal decisions
+ * built in different orders print differently, which makes `offered` report an
+ * enumeration gap that is not there — the alarm crying wolf, which is how an
+ * alarm gets muted.
  */
 export function showCmd(cmd: Cmd): string {
   if (cmd.tag === "JArrive") {

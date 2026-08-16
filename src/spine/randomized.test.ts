@@ -38,13 +38,23 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { Config } from "../domain/domain.ts";
 import type { Core } from "../domain/measure.ts";
 import { jDone, solo } from "../domain/fixtures.test.ts";
-import type { Stage } from "../domain/measure.ts";
-import { configOf, mcSource, readModuleConsts } from "../tools/corpus.ts";
-import type { Cmd } from "./cmd.ts";
+import type { Stage, WrapUp } from "../domain/measure.ts";
+import {
+  CorpusError,
+  configOf,
+  mcSource,
+  readAntiVacuityWitnesses,
+  readModuleConsts,
+} from "../tools/corpus.ts";
+import { rosterDisagrees } from "../tools/verify.ts";
+import { cmdEnabled, type Cmd } from "./cmd.ts";
 import {
   CoverageBuilder,
   mcInstances,
@@ -57,6 +67,7 @@ import {
   currentMeasure,
   initStepRecord,
   initialState,
+  stepWith,
   type MachineState,
 } from "./machine.ts";
 import {
@@ -64,8 +75,13 @@ import {
   driveTrace,
   hex,
   observeOnce,
+  draw,
+  showCmd,
+  subsetsOf,
+  taskIds,
   walkOnce,
   walkSeeds,
+  witnessNames,
   type Available,
   type RunResult,
 } from "./walk.test.ts";
@@ -474,14 +490,9 @@ const stageAdvanceScript: readonly Cmd[] = [
 function arrive(
   program: readonly Stage[],
   deps: ReadonlySet<number> = new Set(),
+  wrapUp: WrapUp = { tag: "WExclusive", resource: 1 },
 ): Cmd {
-  return {
-    tag: "JArrive",
-    deps,
-    program,
-    project: 1,
-    wrapUp: { tag: "WExclusive", resource: 1 },
-  };
+  return { tag: "JArrive", deps, program, project: 1, wrapUp };
 }
 
 /**
@@ -736,16 +747,322 @@ test("a seed prints as the model's own --seed spelling", () => {
   assert.equal(hex(-1), "0xffffffff");
 });
 
+// === The enumeration's own properties ======================================
+//
+// THE PROPERTIES THE WALKER'S HEADERS CALL LOAD-BEARING, each with the case
+// that makes the word true. Every one of them was measured to survive its own
+// mutation: the walker would have gone on reporting the same rosters, the same
+// witnesses and the same reproductions over a narrower exploration, which is
+// the `offered` alarm's failure one level down — a control nobody has checked.
+// A walk cannot report any of them, because a walk only ever takes what the
+// enumeration hands it.
+
+/** The state a command list leaves the machine in, each step required to be taken. */
+function driveTo(cfg: Config, script: readonly Cmd[]): MachineState {
+  let state = initialState(cfg);
+  for (const [k, cmd] of script.entries()) {
+    const stepped = stepWith(cfg, state, cmd);
+    assert.ok(stepped !== undefined, `step ${String(k + 1)}: ${cmd.tag}`);
+    state = stepped;
+  }
+  return state;
+}
+
+test("the enumeration offers the never-issued task id, and cmdEnabled refuses it", () => {
+  // `taskIds` runs to `spawned + 1`, and that extra id is the whole of what
+  // makes the walker's `cmdEnabled` exercise a REFUSAL rather than a series of
+  // admissions. Drop it and the walker asks only about ids the ticket really
+  // issued — a smaller question, asked at the same scale, with nothing to say
+  // so.
+  const dispatched = driveTo(configs.budgeted, [
+    arrive(progFlat1),
+    { tag: "JRelease", ticket: 1 },
+    { tag: "JDispatch", ticket: 1 },
+  ]);
+  const jb = dispatched.core.tickets.get(1);
+  assert.ok(jb !== undefined);
+  assert.ok(jb.spawned > 0, "the ticket has issued task ids");
+  const ids = taskIds(dispatched.core, 1);
+  assert.ok(ids.includes(jb.spawned + 1), "the never-issued id is enumerated");
+  // AND IT IS REFUSED, which is the promise the enumeration is exercising.
+  assert.equal(
+    cmdEnabled(configs.budgeted, dispatched.core, {
+      tag: "JTaskDone",
+      ticket: 1,
+      tid: jb.spawned + 1,
+      verdict: "VPass",
+    }),
+    false,
+  );
+});
+
+test("subsetsOf is the powerset, not a sample of it", () => {
+  // The model draws an arrival's deps from `powerset(dependableIn(c))`, so a
+  // narrower enumeration explores a narrower arrival space — and nothing else
+  // in this file would notice, because every roster it asserts is reached by
+  // arrivals with no deps at all.
+  const subsets = subsetsOf(new Set([1, 2])).map((set) =>
+    [...set].sort((a, b) => a - b),
+  );
+  assert.deepEqual(subsets.map((ids) => ids.join(",")).sort(), [
+    "",
+    "1",
+    "1,2",
+    "2",
+  ]);
+});
+
+/**
+ * A fleet driven all the way to a dead end: one ticket landed, the other
+ * revoked, the id space full — so nothing but a self-loop is enabled and
+ * `quiet` is true. The last two commands are the same absorbed duplicate: the
+ * run takes one and declines the other.
+ */
+const quietFleetScript: readonly Cmd[] = [
+  arrive(progFlat1, new Set(), { tag: "WNone" }),
+  { tag: "JRelease", ticket: 1 },
+  { tag: "JDispatch", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" },
+  { tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 3, verdict: "VPass" },
+  // A `WNone` ticket lands straight off the passing evaluation: no lease, no
+  // queue, no gate.
+  { tag: "JEvalReduce", ticket: 1 },
+  arrive(progFlat1, new Set(), { tag: "WNone" }),
+  { tag: "JRevoke", ticket: 2 },
+  { tag: "JCompleteDuplicate", ticket: 1 },
+  { tag: "JCompleteDuplicate", ticket: 1 },
+];
+
+test("a script that runs past a quiet fleet is cut one step after it", () => {
+  // `ended = quiet(...)` is read BEFORE the step, so a run takes exactly one
+  // step out of a dead end and stops: every action a quiet fleet enables is a
+  // self-loop, and the one step is kept because the `settled` and
+  // `complete-duplicate` exemption arms are reachable nowhere else. The
+  // stage-advance script ends on the first of those steps and fits exactly;
+  // one duplicate MORE is the step the run declines to take.
+  const run = driveTrace(
+    configs.retryfree,
+    "retryfree",
+    "past quiet",
+    quietFleetScript,
+  );
+  const upToTheDeadEnd = quietFleetScript.length - 1;
+  assert.equal(run.steps, upToTheDeadEnd);
+  assert.deepEqual(run.findings, [
+    `past quiet: the run took ${String(upToTheDeadEnd)} of the ${String(quietFleetScript.length)} scripted steps`,
+  ]);
+  // The step it DID take is the representative one, and the exemption arm it
+  // fires is reachable nowhere else — which is why the dead end costs a step
+  // rather than none.
+  assert.ok(run.coverage.arms.has("complete-duplicate"));
+});
+
+test("showCmd is canonical in both orderings, so two equal decisions print alike", () => {
+  // `offered` compares commands by this string, so an ordering that leaked
+  // through would make the enumeration's own command and a script's hand-built
+  // twin read as different decisions — the alarm firing on a gap that is not
+  // there, which is how an alarm gets muted.
+  //
+  // THE SET, built in two insertion orders.
+  assert.equal(
+    showCmd(arrive(progFlat1, new Set([2, 1]))),
+    showCmd(arrive(progFlat1, new Set([1, 2]))),
+  );
+  // THE RECORD'S KEYS, declared in two orders. `Object.entries` follows
+  // declaration order, so this is the sort and nothing else.
+  const byOneOrder: Cmd = {
+    tag: "JTaskDone",
+    ticket: 1,
+    tid: 2,
+    verdict: "VPass",
+  };
+  const byAnother: Cmd = {
+    tag: "JTaskDone",
+    verdict: "VPass",
+    tid: 2,
+    ticket: 1,
+  };
+  assert.equal(showCmd(byOneOrder), showCmd(byAnother));
+  // ...and the canonical form still tells two DIFFERENT decisions apart, which
+  // is the other half of what `offered` needs from it.
+  assert.notEqual(
+    showCmd(byOneOrder),
+    showCmd({ tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VFail" }),
+  );
+});
+
+test("walkSeeds splits rather than stepping, so no two walks are one sliding window", () => {
+  // THE SUBSTITUTION THE DOC ARGUES AGAINST, driven. Seeding walk `k` with the
+  // `k`-th STATE of the root generator would make walk `k + 1`'s draws walk
+  // `k`'s offset by one — a run of walks reporting the coverage of many and
+  // exploring roughly one, with every probe in this file green over it.
+  const seeds = walkSeeds(walkRoots.budgeted, 2);
+  const [first, second] = seeds;
+  assert.ok(first !== undefined && second !== undefined);
+  const streamFrom = (seed: number, n: number): readonly number[] => {
+    let gen = seed;
+    const values: number[] = [];
+    for (let k = 0; k < n; k += 1) {
+      const drawn = draw(gen);
+      gen = drawn.gen;
+      values.push(drawn.value);
+    }
+    return values;
+  };
+  assert.notDeepEqual(streamFrom(second, 4), streamFrom(first, 5).slice(1));
+  // The control: the two streams are not equal either, so the assertion above
+  // is about the OFFSET rather than about the seeds merely differing.
+  assert.notDeepEqual(streamFrom(second, 4), streamFrom(first, 4));
+});
+
+// === The model's anti-vacuity witnesses ====================================
+
+/**
+ * A model fragment holding the witnesses named, in the model's own shape: a
+ * marker comment, the header prose it opens, and the `val` under it.
+ *
+ * IT IS A FIXTURE FILE AND NOT AN EDIT OF `model/`, which is the rule this
+ * whole tree runs on — the spec is read, never written. `corpus.test.ts` builds
+ * the same kind of fragment for `readModuleConsts`' module bound, and for the
+ * same reason: the reader's refusals need shapes the real model does not have.
+ */
+function witnessFixture(body: string): string {
+  const path = join(mkdtempSync(join(tmpdir(), "chuggy-witness-")), "w.qnt");
+  writeFileSync(path, body, "utf8");
+  return path;
+}
+
+function witnessVal(name: string): string {
+  return [
+    `  /// ANTI-VACUITY WITNESS, not an invariant of the machine: the model`,
+    `  /// states each of these as a numbered series under this marker.`,
+    `  val ${name}: bool =`,
+    `    not(lastStep.label == "x")`,
+    "",
+  ].join("\n");
+}
+
+/** The disagreement between the model's witnesses and this tree's, both ways. */
+function witnessesDisagree(path?: string): readonly string[] {
+  return rosterDisagrees(
+    "anti-vacuity witness",
+    witnessNames,
+    readAntiVacuityWitnesses(path),
+  );
+}
+
+test("the anti-vacuity witnesses are the model's own, in both directions", () => {
+  // THE ROSTER NO OTHER ALARM COULD SEE. A witness is not a decider, not a code
+  // literal, not a conjunct of any bundle and not an arm of any sum type — it
+  // is a plain `val` the model expects to be VIOLATED — so every reader in
+  // `corpus.ts` passed over all three, and `witnessNames` beside them was a
+  // hand-typed copy nothing held to the model. A fourth witness added upstream
+  // arrives with no fixture and no obligation, so nothing anywhere reds: the
+  // roster alarm's own failure mode, on the surface that says which green
+  // invariants are vacuous.
+  assert.deepEqual(witnessesDisagree(), []);
+  // ...and the read is a real read of the real model rather than a constant
+  // this file could satisfy by agreeing with itself.
+  assert.deepEqual([...readAntiVacuityWitnesses()], [...witnessNames]);
+});
+
+const witnessRosterCases: readonly {
+  readonly case: string;
+  readonly body: string;
+  readonly findings: readonly string[];
+}[] = [
+  {
+    // The mutation a model PR actually makes, and it reds both halves of one
+    // exact-set comparison from one edit.
+    case: "a witness the model renamed",
+    body: [
+      witnessVal("freeClimbNever"),
+      witnessVal("cascadeParksNever"),
+      witnessVal("stageAdvanceNever"),
+    ].join("\n"),
+    findings: [
+      "model: anti-vacuity witness cascadeParksNever — the model has it and this tree's roster does not",
+      "model: anti-vacuity witness cascadeParkNever — this tree's roster has it and the model does not",
+    ],
+  },
+  {
+    // THE LIVE DIRECTION, in the packet's own words: a FOURTH witness, added
+    // under the model's no-arm-without-a-witness rule, that this tree neither
+    // mirrors nor probes.
+    case: "a witness the model gained",
+    body: [
+      witnessVal("freeClimbNever"),
+      witnessVal("cascadeParkNever"),
+      witnessVal("stageAdvanceNever"),
+      witnessVal("leaseTakenNever"),
+    ].join("\n"),
+    findings: [
+      "model: anti-vacuity witness leaseTakenNever — the model has it and this tree's roster does not",
+    ],
+  },
+  {
+    case: "a witness the model dropped",
+    body: [witnessVal("freeClimbNever"), witnessVal("stageAdvanceNever")].join(
+      "\n",
+    ),
+    findings: [
+      "model: anti-vacuity witness cascadeParkNever — this tree's roster has it and the model does not",
+    ],
+  },
+];
+
+for (const witness of witnessRosterCases) {
+  test(`the anti-vacuity witness roster reds on ${witness.case}`, () => {
+    assert.deepEqual(
+      witnessesDisagree(witnessFixture(witness.body)),
+      witness.findings,
+    );
+  });
+}
+
+test("a witness roster the parse cannot see is could-not-run, never an empty roster", () => {
+  // `readModuleConsts`' rule, on the reader this roster needed. An empty answer
+  // would red all three at once and blame the tree for a defect in the reader;
+  // a marker that has drifted away from its `val` would roster whatever came
+  // next.
+  assert.throws(
+    () =>
+      witnessesDisagree(witnessFixture("  val freeClimbNever: bool = true\n")),
+    (error: unknown) =>
+      error instanceof CorpusError &&
+      /no ANTI-VACUITY WITNESS comment$/.test(error.message),
+  );
+  assert.throws(
+    () =>
+      witnessesDisagree(
+        witnessFixture(
+          "  /// ANTI-VACUITY WITNESS, and then nothing of the kind:\n  pure def notAVal(c: Core): bool = true\n",
+        ),
+      ),
+    (error: unknown) =>
+      error instanceof CorpusError &&
+      /is followed by no bool val$/.test(error.message),
+  );
+});
+
 // === The walker's own alarms ===============================================
 //
 // EVERY PROBE ABOVE ASSERTS THAT A RUN FOUND NOTHING, so nothing above would
 // notice a run that could not report. `a run refuses an illegal command` covers
-// the refusal path; the guarded regions of `observe` are the rest, and none of
-// them can fire from a walk at all — every state a run reaches is a shipped
+// the refusal path. What remains is the guarded regions of `observe` — the
+// unrostered label, the arm attribution, the bundle — and, outside it,
+// `driveTrace`'s enumeration-completeness alarm.
+//
+// NONE OF THEM CAN FIRE FROM A CORRECT TREE, which is why each needs a case
+// built rather than a walk run. Every state a run reaches is a shipped
 // decider's own output, so a correct roster, a correct measure and a correct
-// bundle are true over all of them. That is the replayer's situation one layer
-// up, and it has the same answer: hand the observer a state no decider would
-// produce. One case per region, because muting any of them leaves a walk green.
+// bundle are true over all of them; and every command a script names is one a
+// correct enumeration offered. That is the replayer's situation one layer up,
+// and it has the same two answers: hand the OBSERVER a state no decider would
+// produce, and hand a RUN an enumeration that is deliberately short. One case
+// per region, because muting any of them leaves a walk green.
 
 test("the walker's unrostered-label alarm fires, and names the label it could not place", () => {
   // A LABEL THE MACHINE COULD ONLY EMIT BY GROWING ONE. `stepLabel` throws on
@@ -795,7 +1112,8 @@ test("the walker's bundle alarm fires, and names the conjuncts that went red", (
 });
 
 test("the walker's enumeration-completeness alarm fires, and names the command that was withheld", () => {
-  // THE FOURTH REGION, and the one with the widest blast radius: `offered` is
+  // THE REGION OUTSIDE `observe`, and the one with the widest blast radius:
+  // `offered` is
   // the sole guardian of the sampled walks' PAYLOAD SPACE. Every other probe in
   // this file asks what a walk REACHED, and a walk only ever takes what the
   // enumeration hands it — so an enumeration that quietly stopped offering the

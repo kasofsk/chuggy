@@ -72,19 +72,21 @@
  *
  * IT ALSO CARRIES ONE RULE THAT IS NOT ABOUT PURITY AT ALL, and the misfit is
  * worth naming at the top rather than leaving to be found halfway down. The
- * dynamic-import ban is a claim about the MODULE GRAPH being statically
- * checkable, not about ambient capability — and every layer whose rule is a
- * reachability rule needs it, not only the pure ones. So a second block below
- * applies that one rule, and nothing else, to `src/effects/`, `src/interp/`
- * and `src/adapters/`: see `REACHABILITY_FILES` for the argument. The
- * alternative was a third config file holding one selector, which would put
- * the two spellings of the same ban in two places.
+ * dynamic-import ban is a claim about the MODULE GRAPH being complete, not
+ * about ambient capability — and it is a claim about the TREE, not about a
+ * layer: a graph with one unresolvable edge in it cannot answer a reachability
+ * question anywhere. So a second block below applies that one rule, and
+ * nothing else, to every TypeScript file under `src/` outside the pure core;
+ * see `OUTSIDE_THE_PURE_CORE` for the argument, including why `src/tools/` is
+ * in it despite being bounded by nothing. The alternative was a third config
+ * file holding one selector, which would put the two spellings of the same ban
+ * in two places.
  *
  * WHAT IT CATCHES: any lexical reference to a rostered ambient global, any
  * `Math.random()` or `Date.now()` property access, `eval`, `new Function`, a
  * dynamic `import()`, and `import.meta` — across every file extension the
- * `PURE_FILES` glob below admits; and a dynamic `import()` alone across
- * `REACHABILITY_FILES`.
+ * `PURE_FILES` glob below admits; and a dynamic `import()` alone everywhere
+ * else under `src/`.
  *
  * WHAT IT CANNOT CATCH, stated rather than hoped:
  *
@@ -126,23 +128,36 @@ export const PURE_FILES = [
 ];
 
 /**
- * THE LAYERS WHOSE RULES ARE REACHABILITY RULES — everything above the pure
- * core that `.dependency-cruiser.mjs` governs by direction: `src/effects/`
- * reaches the domain and nothing above it, `src/interp/` may not reach an
- * adapter, `src/adapters/` may not reach the single writer or the event
- * vocabulary. `src/tools/` is deliberately absent, for the reason it is absent
- * from every rule in that file: it has no reachability bound to defeat.
+ * EVERY TypeScript FILE UNDER `src/` OUTSIDE THE PURE CORE. Together with
+ * `PURE_FILES` this is the whole of `src/`, and the union is the point: the
+ * MODULE GRAPH IS COMPLETE ONLY IF NO MODULE IN THIS TREE IS LOADED AT RUN
+ * TIME, and that is a claim about the tree rather than about a layer.
  *
- * THEY GET ONE RULE, AND IT IS NOT A PURITY CLAIM. These layers are supposed
- * to hold capabilities — a port arrives as an argument, an adapter opens a
- * medium — so the ambient roster above would be wrong here. What they cannot
- * afford is an import the MODULE GRAPH cannot see: `const P = "../spine/
- * actor.ts"; import(P)` passes dependency-cruiser, tsc, the whole lint and
- * every gate, and it is a live edge from an adapter into the single writer.
- * Dependency-cruiser resolves a literal dynamic import and misses a computed
- * one, so the rule that closes it is the one the pure core already carries:
- * ban the expression outright, where a statically checkable graph is what the
- * layer's rule rests on.
+ * THEY GET ONE RULE, AND IT IS NOT A PURITY CLAIM. These directories are
+ * supposed to hold capabilities — a port arrives as an argument, an adapter
+ * opens a medium, `src/tools/` spawns quint and reads the corpus — so the
+ * ambient roster above would be wrong here. What none of them may have is an
+ * import the graph cannot see: `const P = "../spine/actor.ts"; import(P)`
+ * passes dependency-cruiser, tsc, the whole lint and every gate, and it is a
+ * live edge from an adapter into the single writer. Dependency-cruiser resolves
+ * a LITERAL dynamic import and walks it; it cannot resolve a computed one, so
+ * the rule that closes it is the one the pure core already carries: ban the
+ * expression.
+ *
+ * IT COVERS `src/tools/` AND THAT IS THE HALF THAT NEEDED ARGUING, because this
+ * list once stopped at the three layers `.dependency-cruiser.mjs` bounds by
+ * direction and `src/tools/` is deliberately bounded by nothing. That left ONE
+ * HOP: an adapter may import a tool — no rule forbids the edge — and the tool
+ * may then compute an import of anything, which rebuilds the adapter-to-single-
+ * writer route the ban was added to close, with depcruise, eslint and tsc all
+ * green over it (measured on a two-file probe). Two fixes were available: forbid
+ * the `adapters -> tools` edge in the graph, or close the launder wherever it
+ * can be reached from. THE SECOND IS THE PREDICATE-SHAPED ONE and this file's
+ * neighbour argues for exactly that shape: a forbidden edge has to be re-added
+ * for every future consumer, and the edit nobody makes is the hole. With the
+ * ban tree-wide, every remaining edge is one the graph can see — so
+ * `adapters-decide-nothing` catches the static route through a tool
+ * TRANSITIVELY, which it already promised to do and could not.
  *
  * WHY BAN RATHER THAN REQUIRE A LITERAL. A literal `import("…")` is already
  * caught by the graph, so permitting it and banning the rest would be a rule
@@ -150,11 +165,19 @@ export const PURE_FILES = [
  * Nothing in this tree loads a module at run time at all; the day something
  * must, that is a change to this list with an argument attached, which is the
  * point of having it.
+ *
+ * THE TWO GLOBS MUST STAY DISJOINT, and it is a mechanical trap rather than a
+ * taste: ESLint flat config resolves a rule by NAME, last match wins, so a
+ * block matching a pure-core file and setting `no-restricted-syntax` would
+ * REPLACE the pure block's — silently dropping the `import.meta` ban there.
+ * The pure core gets its dynamic-import ban from its own block; this one covers
+ * everything else.
  */
-export const REACHABILITY_FILES = [
+export const OUTSIDE_THE_PURE_CORE = [
   "src/effects/**/*.{ts,mts,cts}",
   "src/interp/**/*.{ts,mts,cts}",
   "src/adapters/**/*.{ts,mts,cts}",
+  "src/tools/**/*.{ts,mts,cts}",
 ];
 
 const NO_DYNAMIC_IMPORT =
@@ -287,16 +310,17 @@ export default [
     },
   },
   {
-    // The one control the layers above the pure core share with it, and the
-    // only one: see `REACHABILITY_FILES` for why it is not the ambient roster.
-    files: REACHABILITY_FILES,
+    // The one control everything outside the pure core shares with it, and the
+    // only one: see `OUTSIDE_THE_PURE_CORE` for why it is not the ambient
+    // roster, and why the two globs may not overlap.
+    files: OUTSIDE_THE_PURE_CORE,
     languageOptions: { parser: tseslint.parser },
     rules: {
       "no-restricted-syntax": [
         "error",
         {
           selector: "ImportExpression",
-          message: `a layer with a reachability rule may not use a dynamic import: ${NO_DYNAMIC_IMPORT}`,
+          message: `no module in this tree is loaded at run time: ${NO_DYNAMIC_IMPORT}`,
         },
       ],
     },
