@@ -88,10 +88,9 @@ fi
 # --- The TypeScript toolchain ------------------------------------------------
 # After every pure-shell gate, because a scripts-only change breaks those and
 # should not wait on a toolchain to hear so; before the shell suites, because
-# it is cheaper than they now are. Measured 2026-08-15 on this tree: the
-# pure-shell gates total 0.5s, check-ts 2.1s, the suites 16.1s — 14.6s of it
-# check-ts's own, which drives the real toolchain over twenty-nine fixture
-# trees — and check-model 50s. Cheapest first, all the way down.
+# it is cheaper than they now are — its own suite scaffolds a git checkout per
+# case and drives the real toolchain over each, which is what makes that stage
+# the dearer of the two. Cheapest first, all the way down.
 #
 # Guarded like the gates above rather than called unconditionally, and the
 # reason is worth writing down because the opposite reading is tempting: a
