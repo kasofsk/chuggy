@@ -21,8 +21,8 @@
  *
  * TWO CLASSES OF FIXTURE, AND ONLY ONE OF THEM ACCOUNTS FOR ITS IDS. A fixture
  * standing for a MACHINE STATE states its own `spawned` (`record.length +
- * tasks.length`), per ledger #17's Path A and model PR #27 — every pre-state
- * below does. The MEASURE-VOCABULARY probes deliberately do not, and are
+ * tasks.length`), as the model's own fixtures do since ledger #17's Path A
+ * ruling — every pre-state below does. The MEASURE-VOCABULARY probes deliberately do not, and are
  * excluded by this label: they are inputs to a pure function of the fields they
  * name (`stagesLeft`, `evalStage`, `runningCount`, `retireLive`, `spawnOn`,
  * `combine`, the digit table's shapes), `spawned` is not among those fields,

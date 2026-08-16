@@ -2,14 +2,16 @@
  * `model/domain.qnt`'s decision layer, pinned against
  * `model/tests/chuggy_test.qnt` at the consts of that suite's own instances.
  *
- * WHAT IS BEING MIRRORED, AND HOW. All 56 of the model's runs, CONJUNCT FOR
+ * WHAT IS BEING MIRRORED, AND HOW. All 57 of the model's runs, CONJUNCT FOR
  * CONJUNCT, under the model's own run names, against fixtures built the way the
  * model builds them — by chaining the deciders where it chains them, and by
  * hand where it hands them (`chuggy_test` writes `cWorkFail`, `cChain`,
  * `cGateOcc` and the revoke fixtures as Core literals, and so does this file).
- * Three of the 56 are `measure.ts`'s and are mirrored in its suite
+ * Three of the 57 are `measure.ts`'s and are mirrored in its suite
  * (`combinatorBranchesTest`, `measureArtifactBlindTest`,
- * `measureRepoBlindTest`); the other 53 are here.
+ * `measureRepoBlindTest`); the other 54 are here — the 57th being
+ * `handBuiltFixturesAccountedTest`, which the model gained with the fixture
+ * accounting (#27) and which this suite mirrors over its own fixtures.
  *
  * The suite was written in two slices. s2a mirrored the runs whose subject is
  * an authoring-or-work decider and deferred the rest rather than paraphrasing
@@ -26,18 +28,18 @@
  * golden trace can deliver one, because the action draws from `taskPhaseTickets`.
  *
  * EVERY FIXTURE ACCOUNTS FOR THE IDS IT HANDS ITSELF (ledger #17, resolved
- * Path A; model PR #27). A literal task set or record never passes through
+ * Path A, landed in the model as #27). A literal task set or record never
+ * passes through
  * `spawnOn`, the one site that bumps the ghost counter, so a hand-built fixture
  * states its own `spawned` — `record.length + tasks.length` — and every fixture
  * here does, the TypeScript-invented fleets included. It is not cosmetic:
- * `decideWorkReduce` stamps `ASome(retired.spawned)`, so the corrections MOVE
- * three artifact marks, exactly as the model's do (`dToEval`
+ * `decideWorkReduce` stamps `ASome(retired.spawned)`, so the corrections MOVED
+ * three artifact marks on both sides together (`dToEval`
  * `ASome(0)`→`ASome(2)`, `dBackToEval` `ASome(3)`→`ASome(5)`,
- * `decideWorkReduce(cFlatWork)` `ASome(0)`→`ASome(2)`). Those values were read
- * in the REPL from model PR #27's corrected fixtures at `cd28f28`, so this
- * suite anticipates that PR rather than the tree it sits on;
- * `fixtureIdsAccountedTest` below keeps the next fixture honest, and s2c
- * inherits fixtures its `idsAccounted` accepts.
+ * `decideWorkReduce(cFlatWork)` `ASome(0)`→`ASome(2)`). The model's fixtures
+ * carry the correction as of #27, so every value here is read from the model in
+ * this tree; `handBuiltFixturesAccountedTest` below keeps the next fixture
+ * honest, and s2c inherits fixtures its `idsAccounted` accepts.
  *
  * THE RULE THIS SUITE LEAVES BEHIND, learned twice at review: AN EQUALITY
  * GUARD IS PINNED BY AN EXACT SET OVER ITS WHOLE DOMAIN, NEVER BY
@@ -267,8 +269,8 @@ const dEval2 = decideTaskDone(c5, 1, 4, "VPass");
 const c6 = dEval2.post;
 const dEvalReduce = decideEvalStageReduce(cfgBudgeted, c6, 1);
 const c7 = dEvalReduce.post;
-const dLand = decideWrapUpResolve(cfgBudgeted, c7, 1, "WOk", false);
-const c8 = dLand.post;
+const dComplete = decideWrapUpResolve(cfgBudgeted, c7, 1, "WOk", false);
+const c8 = dComplete.post;
 
 /**
  * The HELD twin of c7's landing: the same enqueued ticket, dequeued with the
@@ -278,7 +280,13 @@ const c8 = dLand.post;
  */
 const dGateOpen7 = decideWrapUpStart(c7, 1);
 const cGated7 = dGateOpen7.post;
-const dLandGated = decideWrapUpResolve(cfgBudgeted, cGated7, 1, "WOk", true);
+const dCompleteGated = decideWrapUpResolve(
+  cfgBudgeted,
+  cGated7,
+  1,
+  "WOk",
+  true,
+);
 
 test("happyPathMeasureDescendsTest: every decision on the path strictly descends", () => {
   // The model's eight conjuncts, whole.
@@ -315,8 +323,8 @@ test("happyPathRecordsTest: the records are golden-trace shaped, with phase flip
   assert.deepEqual(dEvalReduce.rec.transitions, [
     { ticket: 1, from: "PEvaluating", to: "PWrapUp" },
   ]);
-  assert.equal(dLand.rec.label, "ticket-done");
-  assert.deepEqual(dLand.rec.transitions, [
+  assert.equal(dComplete.rec.label, "ticket-done");
+  assert.deepEqual(dComplete.rec.transitions, [
     { ticket: 1, from: "PWrapUp", to: "PDone" },
   ]);
   // THE SPAWN EFFECTS. The model pins these because nothing else does, and
@@ -358,24 +366,26 @@ test("happyPathIdsAccountedTest: the ghost spawn counter equals retired + live a
   assert.ok(accounted(c8));
 });
 
-test("effectExclusivityHappyPathTest: exactly one landing effect, exactly at Done", () => {
+test("effectExclusivityHappyPathTest: exactly one completion effect, exactly at Done", () => {
   assert.equal(ticketAt(c8, 1).phase, "PDone");
   assert.equal(ticketAt(c8, 1).completions, 1);
-  assert.deepEqual(dLand.rec.effects, ["Complete"]);
+  assert.deepEqual(dComplete.rec.effects, ["Complete"]);
 });
 
-test("landingOutcomesDistinctTest: each landing success comes from ITS path and no other", () => {
-  // Same terminal, same exclusivity counter, different FROM-phase: the held
-  // promotion advances the default ref out of the slot, the quiet fast-path
-  // squashes directly off the queue. Determined by the path, not drawn.
-  assert.deepEqual(dLandGated.rec.effects, ["Complete"]);
-  assert.deepEqual(dLandGated.rec.transitions, [
+test("wrapUpSuccessPathsEmitOneEffectTest: both routes in emit the one effect", () => {
+  // Same terminal, same exclusivity counter, same single `Complete` — and a
+  // different FROM-phase, which is the whole of what distinguishes the held
+  // promotion from the quiet fast-path. The domain knows only that the step
+  // succeeded and never which mechanism promoted anything, so the effect is
+  // not drawn and not parameterised; the PATH is what the record carries.
+  assert.deepEqual(dCompleteGated.rec.effects, ["Complete"]);
+  assert.deepEqual(dCompleteGated.rec.transitions, [
     { ticket: 1, from: "PWrapUpHolding", to: "PDone" },
   ]);
-  assert.equal(ticketAt(dLandGated.post, 1).phase, "PDone");
-  assert.equal(ticketAt(dLandGated.post, 1).completions, 1);
-  assert.deepEqual(dLand.rec.effects, ["Complete"]);
-  assert.deepEqual(dLand.rec.transitions, [
+  assert.equal(ticketAt(dCompleteGated.post, 1).phase, "PDone");
+  assert.equal(ticketAt(dCompleteGated.post, 1).completions, 1);
+  assert.deepEqual(dComplete.rec.effects, ["Complete"]);
+  assert.deepEqual(dComplete.rec.transitions, [
     { ticket: 1, from: "PWrapUp", to: "PDone" },
   ]);
   // "AND NO OTHER", as a refusal rather than an observation: the path iff
@@ -403,7 +413,7 @@ test("gateOpenClassifiedTest: the gate OPENS as its own recorded step, charging 
   assert.equal(ticketAt(cGated7, 1).gasLeft, ticketAt(c7, 1).gasLeft);
   assert.equal(ticketAt(cGated7, 1).wrapUpLeft, ticketAt(c7, 1).wrapUpLeft);
   assert.ok(mB(cGated7) < mB(c7));
-  assert.ok(mB(dLandGated.post) < mB(cGated7));
+  assert.ok(mB(dCompleteGated.post) < mB(cGated7));
 });
 
 test("dequeueRoutesBothBranchesTest: the routing decider IS the quiet/moved route", () => {
@@ -468,7 +478,7 @@ test("staleStageCompletionNoopsTest: a completion for a RETIRED id no-ops by ide
   assert.throws(() => decideTaskDone(c7, 1, 3, "VFail"), AssertionError);
 });
 
-test("duplicateLandExclusiveTest: a re-delivered landing for a Done ticket emits NOTHING", () => {
+test("completeDuplicateExclusiveTest: a re-delivered completion for a Done ticket emits NOTHING", () => {
   const dup = decideCompleteDuplicate(c8, 1);
   assert.deepEqual(dup.post, c8);
   assert.equal(dup.rec.label, "complete-duplicate");
@@ -1523,7 +1533,7 @@ test("revocableExactlyNonTerminalTest: the absorbing terminals are exactly the u
   assert.throws(() => decideRevoke(c8, 1), AssertionError);
 });
 
-test("revokedNeverCompletesTest: revoking a ticket ON the landing strip emits no landing effect", () => {
+test("revokedNeverCompletesTest: revoking a ticket ON the landing strip emits no completion effect", () => {
   assert.equal(ticketAt(revokeOne(jLand).post, 1).completions, 0);
   assert.deepEqual(revokeOne(jLand).rec.effects, ["Revoke"]);
   // Its contrast, and what makes the zero above a claim rather than a default:
@@ -2538,7 +2548,7 @@ test("nonLandingStepsCarryNoAttributionTest: attribution appears at the landing 
   // "ticket-escalated gas_exhausted" carries the SAME label string as the
   // landing gas wall — the attribution field, not the label, marks the
   // boundary — eval-passed only ENQUEUES the landing, the gate OPEN resolves
-  // no attempt, and the absorbed landing duplicate emits nothing at all.
+  // no attempt, and the absorbed complete-duplicate emits nothing at all.
   for (const d of [
     dArr1,
     dRelease,
@@ -2606,7 +2616,7 @@ test("withWrapUpObs stamps the record and passes the post-state through untouche
   // The attribution is an OBSERVATION: it lives in the StepRecord and in no
   // ticket field, so the decision it wraps keeps its post-state — identically,
   // not merely equally, which is what says the stamp rebuilt nothing.
-  const inner = completeTicket(cQueueB, 1, "Complete");
+  const inner = completeTicket(cQueueB, 1);
   const stamped = withWrapUpObs(inner, 2, true);
   assert.equal(stamped.post, inner.post);
   assert.deepEqual(stamped.rec.landing, {
@@ -2702,14 +2712,14 @@ test("ticketAt is total: a fleet with a hole fails loudly, it does not skip", ()
  * `model/domain.qnt`'s `idsAccounted`, one ticket at a time — the same equality
  * the machine invariant quantifies over the fleet, usable on a fixture the
  * machine never produced. The invariant proper is s2c's; this is the fixture
- * hygiene that keeps s2c's job possible, and it mirrors the guard model PR #27
- * adds on its own side (`handBuiltFixturesAccountedTest`).
+ * hygiene that keeps s2c's job possible, and it mirrors the guard the model
+ * carries on its own side under the same name.
  */
 function accountedTicket(j: Ticket): boolean {
   return j.spawned === j.record.length + j.tasks.length;
 }
 
-test("fixtureIdsAccountedTest: every named fixture states the ids it hands itself", () => {
+test("handBuiltFixturesAccountedTest: every named fixture states the ids it hands itself", () => {
   // Hand-built fixtures AND decider-derived ones, because the derived states
   // inherit any deficit below them — which is exactly how the model's own
   // thirteen went unnoticed. A fourteenth cannot repeat it quietly.

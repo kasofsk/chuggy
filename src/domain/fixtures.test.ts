@@ -193,8 +193,8 @@ export function spent(j: Ticket): Ticket {
 }
 
 /**
- * A HAND-BUILT FIXTURE STATES ITS OWN `spawned`, and the model's fixtures now
- * do too (model PR #27, ledger #17). The ghost counter is bumped only by
+ * A HAND-BUILT FIXTURE STATES ITS OWN `spawned`, on both sides: the model's
+ * thirteen were corrected under ledger #17's Path A ruling (#27). The ghost counter is bumped only by
  * `spawnOn`, and a literal task set or record never goes through it — so a
  * fixture that hands itself either one and keeps `freshTicket`'s 0 breaks
  * `idsAccounted`, which makes it a state the machine cannot reach. That is not

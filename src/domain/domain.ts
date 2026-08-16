@@ -1124,7 +1124,7 @@ export function decideEvalStageReduce(
     // they would have done.
     switch (jb.wrapUp.tag) {
       case "WNone":
-        return completeTicket(withTicket(c, j, retired), j, "Complete");
+        return completeTicket(withTicket(c, j, retired), j);
       case "WExclusive":
         return move(withTicket(c, j, retired), j, "PWrapUp", "eval-passed", [
           "EnqueueWrapUp",
@@ -1215,17 +1215,22 @@ export function decideDequeue(
 }
 
 /**
- * `model/domain.qnt` completeTicket — a landing SUCCESS: the ticket lands, and
- * that is the whole of it. One transition, one landing effect, and the ghost
- * `completions` counter bumped once.
+ * `model/domain.qnt` completeTicket — THE COMPLETION: the ticket reaches
+ * `PDone`, and that is the whole of it. One transition, one effect, and the
+ * ghost `completions` counter bumped once.
+ *
+ * The effect is not a parameter, because both routes in — a `WOk` wrap-up
+ * resolution and a `WNone` ticket's passing evaluation — emit the same
+ * `Complete`: the domain knows only that the step succeeded and never which
+ * mechanism promoted anything.
  */
-export function completeTicket(c: Core, j: number, eff: string): Decision {
+export function completeTicket(c: Core, j: number): Decision {
   const jb = ticketAt(c, j);
   return {
     rec: {
       label: "ticket-done",
       transitions: [{ ticket: j, from: jb.phase, to: "PDone" }],
-      effects: [eff],
+      effects: ["Complete"],
       landing: { tag: "WONone" },
     },
     post: withTicket(c, j, {
@@ -1276,7 +1281,7 @@ function resolveWrapUp(
 ): Decision {
   switch (out) {
     case "WOk":
-      return completeTicket(c, j, "Complete");
+      return completeTicket(c, j);
     case "WFailed":
       return failWrapUp(cfg, c, j);
     default:
@@ -1385,7 +1390,7 @@ export function decideWrapUpResolve(
 
 /**
  * `model/domain.qnt` decideCompleteDuplicate — a duplicate landing event for an
- * already-Done ticket. NO landing effect is emitted, and that no-op IS the
+ * already-Done ticket. NO completion effect is emitted, and that no-op IS the
  * exactly-once-at-the-landing-boundary claim.
  */
 export function decideCompleteDuplicate(c: Core, j: number): Decision {
