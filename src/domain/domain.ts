@@ -351,6 +351,22 @@ export function isValidProgram(
 }
 
 /**
+ * Membership in `wrapUpChoices`, which is the only question the model asks of
+ * that set — `isValidProgram`'s precedent, for the other authoring universe
+ * whose members are records rather than primitives.
+ *
+ * It scans the set under the canonical key rather than testing a resource
+ * against the project universe, for `isValidProgram`'s reason: the SET is the
+ * rule. The two questions agree only while `wrapUpChoices` is built from
+ * `projects`, and a restatement would go on answering the old way if it stopped
+ * being.
+ */
+export function isAuthorableWrapUp(cfg: Config, w: WrapUp): boolean {
+  const kind = wrapUpKey(w);
+  return wrapUpChoices(cfg).some((choice) => wrapUpKey(choice) === kind);
+}
+
+/**
  * `model/domain.qnt` defaultProgram — ONE stage, full fan-out, unanimous pass.
  * There is deliberately no machine-wide combinator const; the combinator is
  * data on the ticket.
@@ -519,10 +535,9 @@ export function decideArrive(
     projects(cfg).has(project),
     `decideArrive: project ${String(project)} is outside the project universe`,
   );
-  const kind = wrapUpKey(wrapUp);
   invariant(
-    wrapUpChoices(cfg).some((w) => wrapUpKey(w) === kind),
-    `decideArrive: ${kind} is not an authorable wrap-up kind`,
+    isAuthorableWrapUp(cfg, wrapUp),
+    `decideArrive: ${wrapUpKey(wrapUp)} is not an authorable wrap-up kind`,
   );
 
   const id = c.tickets.size + firstTicketId;
