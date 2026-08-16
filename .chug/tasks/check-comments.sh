@@ -49,7 +49,10 @@
 # abbreviation with a period in it reads as a sentence boundary and a
 # semicolon-joined pair reads as one sentence. Both errors point the same way —
 # toward shorter comments — which is why neither gets a special case. A string
-# literal containing `//` is not a comment and is skipped by tracking quotes.
+# literal containing `//` is not a comment, and neither is a regex literal
+# matching one; both are tracked. The regex case is decided by the character
+# BEFORE the slash, because a slash after a value is division and a slash
+# after an operator opens a pattern, and no lexer-free rule does better.
 #
 # SCOPE: tracked `*.ts`. The gates are shell and the model is Quint; each has
 # its own comment culture and its own header stating it.
@@ -116,6 +119,8 @@ FNR == 1 {
 	in_block = 0		# inside a /* ... */ of any kind
 	is_doc = 0		# ... and it opened as /**
 	seen_header = 0		# the first /** */ block has been closed
+	in_regex = 0		# inside a /.../ literal
+	in_class = 0		# ... and inside a [...] within it
 	doc_text = ""
 	doc_start = 0
 }
@@ -125,6 +130,7 @@ FNR == 1 {
 	i = 1
 	n = length(line)
 	in_string = ""
+	prev = ""
 
 	while (i <= n) {
 		c = substr(line, i, 1)
@@ -150,7 +156,30 @@ FNR == 1 {
 			continue
 		}
 
+		if (in_regex) {
+			if (c == "\\") { i += 2; continue }
+			if (c == "[") in_class = 1
+			else if (c == "]") in_class = 0
+			else if (c == "/" && !in_class) in_regex = 0
+			i++
+			continue
+		}
+
 		if (c == "\"" || c == "\047" || c == "`") { in_string = c; i++; continue }
+
+		# A REGEX LITERAL IS NOT A COMMENT, and `/^\/\//` is the shape that
+		# proves it: a pattern matching a comment marker reads as one. The
+		# ambiguity with division is settled by what precedes the slash —
+		# after an operator or an opening bracket a regex may start, after a
+		# value only division can. Getting this wrong the other way would let
+		# a comment hide inside what looks like a pattern, so the test is on
+		# the PREVIOUS character rather than on anything after.
+		if (c == "/" && two != "//" && two != "/*" && index("(,=:[!&|?{};+-~^<>%*", prev) > 0) {
+			in_regex = 1
+			in_class = 0
+			i++
+			continue
+		}
 
 		if (two == "//") {
 			rest = substr(line, i + 2)
@@ -173,6 +202,7 @@ FNR == 1 {
 			continue
 		}
 
+		if (c != " " && c != "\t") prev = c
 		i++
 	}
 }

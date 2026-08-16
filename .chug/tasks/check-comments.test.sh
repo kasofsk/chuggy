@@ -197,4 +197,22 @@ git -C "$R" add -A
 run_in "$R"
 check "a path with a space is scanned" 1 "$RC" "a line comment"
 
+# 19. A REGEX LITERAL IS NOT A COMMENT. This is the case that found the bug:
+#     a gate whose own corpus is full of patterns matching comment markers
+#     reads every one of them as the thing it is looking for.
+source_saying 'export const isDoc = /^\s*\/\/\//;'
+check "a regex matching a comment marker is not a comment" 0 "$RC" "0 finding(s)"
+
+source_saying 'export const found = "x".match(/a\/\/b/);'
+check "a regex passed as an argument is not a comment" 0 "$RC" "0 finding(s)"
+
+source_saying 'export const cls = /[/]/;'
+check "a slash inside a character class does not end the pattern" 0 "$RC" "0 finding(s)"
+
+# 20. Division is not a regex, so a comment after one is still a comment. Get
+#     this wrong and the exemption swallows the rest of the file.
+source_saying 'export const half = 10 / 2;' '// a note'
+check "a comment after a division is still a comment" 1 "$RC" "a line comment"
+
+
 done_ "check-comments.test.sh"

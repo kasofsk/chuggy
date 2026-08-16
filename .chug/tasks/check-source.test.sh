@@ -14,10 +14,10 @@
 # by being the only thing standing between "the rules are configured" and "the
 # rules are enforced".
 #
-# THE VIOLATIONS SHARE ONE FIXTURE, deliberately. A file per rule would be
-# clearer to read and would multiply the linter runs by the number of rules;
-# the gate reports every finding it has, so one file carrying all of them lets
-# each case assert its own rule name against one run.
+# THE VIOLATIONS SHARE TWO FIXTURES, deliberately, and the argument is in the
+# body beside them. A fixture per rule reads more clearly and multiplies the
+# toolchain runs by the number of rules, which is what put this suite over the
+# sequencer's cap once already.
 #
 # node_modules is symlinked rather than installed, on
 # check-boundaries.test.sh's argument: the toolchain under test must be the one
@@ -114,11 +114,18 @@ clean_source
 seal
 check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
 
-# --- House rule 2: the domain reaches no ambient capability ------------------
+# --- The house rules ---------------------------------------------------------
+#
+# TWO FIXTURES, NOT ONE PER RULE. Every stage of the gate runs whatever the
+# earlier ones did, so one tree carrying several violations reports all of
+# them in a single pass, and each case below greps the output for its own rule
+# name. A rule silently dropped from the config still fails its own case and
+# no other, which is the property a fixture-per-rule was buying — at several
+# seconds a run, and this suite has a cap to stay inside.
+#
+# The split is by stage rather than by rule: the lint fixture must typecheck
+# and must be formatted, or the case would pass on a finding it did not mean.
 
-# One fixture, every violation, one linter run. Each case below asserts its own
-# rule against it, so a rule silently dropped from the config fails its case
-# and no other.
 fixture
 clean_source
 {
@@ -126,26 +133,11 @@ clean_source
 	printf '%s\n' 'export const drawn = Math.random();'
 	printf '%s\n' 'export const home = process.env.HOME;'
 	printf '%s\n' 'export const later = setTimeout(() => undefined, 1);'
-} > "$R/src/domain/impure.ts"
-seal
-check "house rule 2: the domain may not read a clock" 1 "$RC" "the domain takes time as an argument"
-check "house rule 2: the domain may not draw randomness" 1 "$RC" "the domain takes its draws as arguments"
-check "house rule 2: the domain may not read the environment" 1 "$RC" "the domain reads no environment"
-check "house rule 2: the domain may not schedule" 1 "$RC" "the domain schedules nothing"
-
-fixture
-clean_source
+} > "$R/src/domain/ambient.ts"
 {
 	printf '%s\n' 'import { join } from "node:path";'
 	printf '%s\n' 'export const p = join("a", "b");'
 } > "$R/src/domain/imports.ts"
-seal
-check "house rule 2: the domain may not import a platform module" 1 "$RC" "imports no platform module"
-
-# --- House rule 3: exhaustive switching --------------------------------------
-
-fixture
-clean_source
 {
 	printf '%s\n' 'type Kind = { k: "a" } | { k: "b" };'
 	printf '%s\n' 'export function pick(v: Kind): string {'
@@ -156,13 +148,6 @@ clean_source
 	printf '%s\n' '  return "?";'
 	printf '%s\n' '}'
 } > "$R/src/domain/partial.ts"
-seal
-check "house rule 3: a non-total switch is a finding" 1 "$RC" "Switch is not exhaustive"
-
-# --- House rule 4: no floating promises --------------------------------------
-
-fixture
-clean_source
 {
 	printf '%s\n' 'export async function work(): Promise<void> {'
 	printf '%s\n' '  return Promise.resolve();'
@@ -171,19 +156,6 @@ clean_source
 	printf '%s\n' '  work();'
 	printf '%s\n' '}'
 } > "$R/src/domain/floating.ts"
-seal
-check "house rule 4: a floating promise is a finding" 1 "$RC" "Promises must be awaited"
-
-# The exemption is narrow: node:test's own functions and nothing else. If it
-# ever widens to the whole suite tree, this case still passes and the one
-# above stops meaning anything — so the clean fixture's suite, which calls
-# `test` without awaiting it, is the case that pins the exemption's existence
-# and the case above pins its width.
-
-# --- House rule 5: the function length cap -----------------------------------
-
-fixture
-clean_source
 {
 	printf '%s\n' 'export function long(): number {'
 	printf '%s\n' '  let n = 0;'
@@ -196,26 +168,27 @@ clean_source
 	printf '%s\n' '}'
 } > "$R/src/domain/long.ts"
 seal
+
+check "house rule 2: the domain may not read a clock" 1 "$RC" "the domain takes time as an argument"
+check "house rule 2: the domain may not draw randomness" 1 "$RC" "the domain takes its draws as arguments"
+check "house rule 2: the domain may not read the environment" 1 "$RC" "the domain reads no environment"
+check "house rule 2: the domain may not schedule" 1 "$RC" "the domain schedules nothing"
+check "house rule 2: the domain may not import a platform module" 1 "$RC" "imports no platform module"
+check "house rule 3: a non-total switch is a finding" 1 "$RC" "Switch is not exhaustive"
+check "house rule 4: a floating promise is a finding" 1 "$RC" "Promises must be awaited"
 check "house rule 5: a function over the cap is a finding" 1 "$RC" "Maximum allowed is 70"
 
-# --- House rule 6: the formatter's output, never argued ----------------------
+# The floating-promise exemption is narrow: node:test's own functions and
+# nothing else. The clean fixture's suite calls `test` without awaiting it, so
+# "a clean tree passes every stage" is what pins the exemption's existence and
+# the case above pins its width.
+
+# --- The stages that are not the linter's ------------------------------------
 
 fixture
 clean_source
 printf '%s\n' 'export const  spaced   =    1;' > "$R/src/domain/ugly.ts"
-seal
-check "house rule 6: unformatted source is a finding" 1 "$RC" "Code style issues found"
-
-# --- The two stages that are not house rules ---------------------------------
-
-fixture
-clean_source
 printf '%s\n' 'export const wrong: number = "a string";' > "$R/src/domain/mistyped.ts"
-seal
-check "a type error is a finding" 1 "$RC" "not assignable"
-
-fixture
-clean_source
 {
 	printf '%s\n' 'import { test } from "node:test";'
 	printf '%s\n' 'import assert from "node:assert/strict";'
@@ -225,6 +198,10 @@ clean_source
 	printf '%s\n' '});'
 } > "$R/test/domain/failing.test.ts"
 seal
-check "a failing unit test is a finding" 1 "$RC" "1 stage(s) failed"
+
+check "house rule 6: unformatted source is a finding" 1 "$RC" "Code style issues found"
+check "a type error is a finding" 1 "$RC" "not assignable"
+check "a failing unit test is a finding" 1 "$RC" "this one is meant to fail"
+check "each stage reports independently of the others" 1 "$RC" "3 stage(s) failed"
 
 done_ "check-source.test.sh"

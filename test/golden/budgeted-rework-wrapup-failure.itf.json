@@ -1,0 +1,6365 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "format-description": "https://apalache-mc.org/docs/adr/015adr-trace.html",
+    "source": "model/mc/mc_chuggy.qnt",
+    "status": "violation"
+  },
+  "vars": [
+    "mbt::actionTaken",
+    "mbt::nondetPicks",
+    "mc_chuggy_budgeted::chuggy_domain::lastStep",
+    "mc_chuggy_budgeted::chuggy_domain::prevMeasure",
+    "mc_chuggy_budgeted::chuggy_domain::prevRecords",
+    "mc_chuggy_budgeted::chuggy_domain::tickets",
+    "mbt::actionTaken",
+    "mbt::nondetPicks"
+  ],
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "mbt::actionTaken": "init",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": [],
+        "label": "init",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "0"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "mbt::actionTaken": "arrive",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "Some",
+          "value": {
+            "#set": []
+          }
+        },
+        "j": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "Some",
+          "value": [
+            {
+              "combinator": {
+                "tag": "CAnyPass",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "fanout": {
+                "#bigint": "2"
+              }
+            }
+          ]
+        },
+        "project_": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "2"
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "Some",
+          "value": {
+            "tag": "WExclusive",
+            "value": {
+              "#bigint": "1"
+            }
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["CreateDraft"],
+        "label": "ticket-arrived",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "0"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PDraft",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "mbt::actionTaken": "arrive",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "Some",
+          "value": {
+            "#set": []
+          }
+        },
+        "j": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "Some",
+          "value": [
+            {
+              "combinator": {
+                "tag": "CAnyPass",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "fanout": {
+                "#bigint": "2"
+              }
+            }
+          ]
+        },
+        "project_": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "2"
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "Some",
+          "value": {
+            "tag": "WExclusive",
+            "value": {
+              "#bigint": "1"
+            }
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["CreateDraft"],
+        "label": "ticket-arrived",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "999"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PDraft",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PDraft",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "mbt::actionTaken": "release",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": [],
+        "label": "ticket-released",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": [
+          {
+            "from": {
+              "tag": "PDraft",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "1"
+            },
+            "to": {
+              "tag": "PPending",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1998"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PPending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PDraft",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "mbt::actionTaken": "dispatch",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["SpawnWorkTasks"],
+        "label": "dispatch",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": [
+          {
+            "from": {
+              "tag": "PPending",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "1"
+            },
+            "to": {
+              "tag": "PWorking",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1989"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PWorking",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "2"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "1"
+                    },
+                    "kind": {
+                      "tag": "TKWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "2"
+                    },
+                    "kind": {
+                      "tag": "TKWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PDraft",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "mbt::actionTaken": "taskDone",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "2"
+          }
+        },
+        "v": {
+          "tag": "Some",
+          "value": {
+            "tag": "VPass",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": [],
+        "label": "task-done",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1730"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PWorking",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "2"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "1"
+                    },
+                    "kind": {
+                      "tag": "TKWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "2"
+                    },
+                    "kind": {
+                      "tag": "TKWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "TSResolved",
+                      "value": {
+                        "tag": "TPassed",
+                        "value": {
+                          "#tup": []
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PDraft",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "mbt::actionTaken": "taskDone",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "v": {
+          "tag": "Some",
+          "value": {
+            "tag": "VPass",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": [],
+        "label": "task-done",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1729"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PWorking",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "2"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "1"
+                    },
+                    "kind": {
+                      "tag": "TKWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "TSResolved",
+                      "value": {
+                        "tag": "TPassed",
+                        "value": {
+                          "#tup": []
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "2"
+                    },
+                    "kind": {
+                      "tag": "TKWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "TSResolved",
+                      "value": {
+                        "tag": "TPassed",
+                        "value": {
+                          "#tup": []
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PDraft",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "mbt::actionTaken": "workReduce",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["SpawnEvalTasks"],
+        "label": "work-passed",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": [
+          {
+            "from": {
+              "tag": "PWorking",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "1"
+            },
+            "to": {
+              "tag": "PEvaluating",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1728"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PEvaluating",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "4"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "3"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "4"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PDraft",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "mbt::actionTaken": "revoke",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "2"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["Revoke"],
+        "label": "ticket-revoked",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": [
+          {
+            "from": {
+              "tag": "PDraft",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "2"
+            },
+            "to": {
+              "tag": "PRevoked",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1724"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PEvaluating",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "4"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "3"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "4"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "mbt::actionTaken": "arrive",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "Some",
+          "value": {
+            "#set": [
+              {
+                "#bigint": "1"
+              }
+            ]
+          }
+        },
+        "j": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "Some",
+          "value": [
+            {
+              "combinator": {
+                "tag": "CAnyPass",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "fanout": {
+                "#bigint": "1"
+              }
+            },
+            {
+              "combinator": {
+                "tag": "CAnyPass",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "fanout": {
+                "#bigint": "2"
+              }
+            }
+          ]
+        },
+        "project_": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "Some",
+          "value": {
+            "tag": "WNone",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["CreateDraft"],
+        "label": "ticket-arrived",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "1670"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PEvaluating",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "4"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "3"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "4"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": [
+                  {
+                    "#bigint": "1"
+                  }
+                ]
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PDraft",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "1"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "mbt::actionTaken": "release",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "3"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": [],
+        "label": "ticket-released",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": [
+          {
+            "from": {
+              "tag": "PDraft",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "3"
+            },
+            "to": {
+              "tag": "PPending",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "2669"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PEvaluating",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "4"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "3"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "4"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": [
+                  {
+                    "#bigint": "1"
+                  }
+                ]
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PPending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "1"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "mbt::actionTaken": "taskDone",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "4"
+          }
+        },
+        "v": {
+          "tag": "Some",
+          "value": {
+            "tag": "VPass",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": [],
+        "label": "task-done",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "2660"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PEvaluating",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "4"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "3"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "4"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSResolved",
+                      "value": {
+                        "tag": "TPassed",
+                        "value": {
+                          "#tup": []
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": [
+                  {
+                    "#bigint": "1"
+                  }
+                ]
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PPending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "1"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "mbt::actionTaken": "taskDone",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "3"
+          }
+        },
+        "v": {
+          "tag": "Some",
+          "value": {
+            "tag": "VPass",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": [],
+        "label": "task-done",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": []
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "2659"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PEvaluating",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "4"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "3"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSResolved",
+                      "value": {
+                        "tag": "TPassed",
+                        "value": {
+                          "#tup": []
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "4"
+                    },
+                    "kind": {
+                      "tag": "TKEval",
+                      "value": {
+                        "#bigint": "0"
+                      }
+                    },
+                    "state": {
+                      "tag": "TSResolved",
+                      "value": {
+                        "tag": "TPassed",
+                        "value": {
+                          "#tup": []
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": [
+                  {
+                    "#bigint": "1"
+                  }
+                ]
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PPending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "1"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "mbt::actionTaken": "evalReduce",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["EnqueueWrapUp"],
+        "label": "eval-passed",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": [
+          {
+            "from": {
+              "tag": "PEvaluating",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "1"
+            },
+            "to": {
+              "tag": "PWrapUp",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "2658"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PWrapUp",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "3"
+                  },
+                  "kind": {
+                    "tag": "TKEval",
+                    "value": {
+                      "#bigint": "0"
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "4"
+                  },
+                  "kind": {
+                    "tag": "TKEval",
+                    "value": {
+                      "#bigint": "0"
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "4"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": [
+                  {
+                    "#bigint": "1"
+                  }
+                ]
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PPending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "1"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "mbt::actionTaken": "revoke",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "3"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["Revoke"],
+        "label": "ticket-revoked",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": [
+          {
+            "from": {
+              "tag": "PPending",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "3"
+            },
+            "to": {
+              "tag": "PRevoked",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "2646"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "3"
+                },
+                "kind": {
+                  "tag": "TKEval",
+                  "value": {
+                    "#bigint": "0"
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "4"
+                },
+                "kind": {
+                  "tag": "TKEval",
+                  "value": {
+                    "#bigint": "0"
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PWrapUp",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "3"
+                  },
+                  "kind": {
+                    "tag": "TKEval",
+                    "value": {
+                      "#bigint": "0"
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "4"
+                  },
+                  "kind": {
+                    "tag": "TKEval",
+                    "value": {
+                      "#bigint": "0"
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "4"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": [
+                  {
+                    "#bigint": "1"
+                  }
+                ]
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "1"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "mbt::actionTaken": "wrapUpStart",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "Some",
+          "value": true
+        },
+        "out": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["OpenGate"],
+        "label": "wrapup-started",
+        "landing": {
+          "tag": "WONone",
+          "value": {
+            "#tup": []
+          }
+        },
+        "transitions": [
+          {
+            "from": {
+              "tag": "PWrapUp",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "1"
+            },
+            "to": {
+              "tag": "PWrapUpHolding",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "2601"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "3"
+                },
+                "kind": {
+                  "tag": "TKEval",
+                  "value": {
+                    "#bigint": "0"
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "4"
+                },
+                "kind": {
+                  "tag": "TKEval",
+                  "value": {
+                    "#bigint": "0"
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "2"
+              },
+              "phase": {
+                "tag": "PWrapUpHolding",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "3"
+                  },
+                  "kind": {
+                    "tag": "TKEval",
+                    "value": {
+                      "#bigint": "0"
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "4"
+                  },
+                  "kind": {
+                    "tag": "TKEval",
+                    "value": {
+                      "#bigint": "0"
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "4"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": [
+                  {
+                    "#bigint": "1"
+                  }
+                ]
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "1"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "mbt::actionTaken": "wrapUpResolve",
+      "mbt::nondetPicks": {
+        "deps_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "moved": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "out": {
+          "tag": "Some",
+          "value": {
+            "tag": "WFailed",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "prog": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "project_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "tid": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "v": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "wrapUp_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy_budgeted::chuggy_domain::lastStep": {
+        "effects": ["SpawnWorkTasks"],
+        "label": "rework-started wrapup_failure",
+        "landing": {
+          "tag": "WOAttempt",
+          "value": {
+            "invalidated": true,
+            "project": {
+              "#bigint": "2"
+            }
+          }
+        },
+        "transitions": [
+          {
+            "from": {
+              "tag": "PWrapUpHolding",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "1"
+            },
+            "to": {
+              "tag": "PWorking",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevMeasure": {
+        "#bigint": "2592"
+      },
+      "mc_chuggy_budgeted::chuggy_domain::prevRecords": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            [
+              {
+                "id": {
+                  "#bigint": "1"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "2"
+                },
+                "kind": {
+                  "tag": "TKWork",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "3"
+                },
+                "kind": {
+                  "tag": "TKEval",
+                  "value": {
+                    "#bigint": "0"
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              },
+              {
+                "id": {
+                  "#bigint": "4"
+                },
+                "kind": {
+                  "tag": "TKEval",
+                  "value": {
+                    "#bigint": "0"
+                  }
+                },
+                "state": {
+                  "tag": "TSResolved",
+                  "value": {
+                    "tag": "TPassed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            []
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            []
+          ]
+        ]
+      },
+      "mc_chuggy_budgeted::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "artifact": {
+                "tag": "ASome",
+                "value": {
+                  "#bigint": "2"
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "1"
+              },
+              "phase": {
+                "tag": "PWorking",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [
+                {
+                  "id": {
+                    "#bigint": "1"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "2"
+                  },
+                  "kind": {
+                    "tag": "TKWork",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "3"
+                  },
+                  "kind": {
+                    "tag": "TKEval",
+                    "value": {
+                      "#bigint": "0"
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": {
+                    "#bigint": "4"
+                  },
+                  "kind": {
+                    "tag": "TKEval",
+                    "value": {
+                      "#bigint": "0"
+                    }
+                  },
+                  "state": {
+                    "tag": "TSResolved",
+                    "value": {
+                      "tag": "TPassed",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "6"
+              },
+              "tasks": {
+                "#set": [
+                  {
+                    "id": {
+                      "#bigint": "5"
+                    },
+                    "kind": {
+                      "tag": "TKWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  },
+                  {
+                    "id": {
+                      "#bigint": "6"
+                    },
+                    "kind": {
+                      "tag": "TKWork",
+                      "value": {
+                        "#tup": []
+                      }
+                    },
+                    "state": {
+                      "tag": "TSRunning",
+                      "value": {
+                        "#tup": []
+                      }
+                    }
+                  }
+                ]
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": []
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "2"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WExclusive",
+                "value": {
+                  "#bigint": "1"
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "3"
+            },
+            {
+              "artifact": {
+                "tag": "ANone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "completions": {
+                "#bigint": "0"
+              },
+              "deps": {
+                "#set": [
+                  {
+                    "#bigint": "1"
+                  }
+                ]
+              },
+              "gasLeft": {
+                "#bigint": "3"
+              },
+              "phase": {
+                "tag": "PRevoked",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "program": [
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "1"
+                  }
+                },
+                {
+                  "combinator": {
+                    "tag": "CAnyPass",
+                    "value": {
+                      "#tup": []
+                    }
+                  },
+                  "fanout": {
+                    "#bigint": "2"
+                  }
+                }
+              ],
+              "project": {
+                "#bigint": "1"
+              },
+              "reason": {
+                "tag": "RsNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "record": [],
+              "resumeAt": {
+                "tag": "RNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "reworkLeft": {
+                "#bigint": "1"
+              },
+              "spawned": {
+                "#bigint": "0"
+              },
+              "tasks": {
+                "#set": []
+              },
+              "wrapUp": {
+                "tag": "WNone",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "wrapUpLeft": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        ]
+      }
+    }
+  ]
+}
