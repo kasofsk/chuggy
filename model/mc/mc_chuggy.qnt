@@ -32,7 +32,7 @@ module mc_chuggy_budgeted {
   ).* from "../domain"
 }
 
-/// DeadlineOnly gate pricing: a landing failure costs gas alone — the
+/// DeadlineOnly gate pricing: a wrap-up failure costs gas alone — the
 /// unbudgeted gate loop, metered only by the (required) gas account.
 /// (The branch is named DeadlineOnly and means gas-only.)
 module mc_chuggy_deadline_only {
