@@ -1,8 +1,8 @@
 /**
- * THE WALK: a ticket driven from arrival to landing through the real actor, the
- * real journal store, the real interpreter and the stubbed world — with the
- * duplicates and the stale deliveries an at-least-once fabric is entitled to
- * send, and a crash in the middle.
+ * THE WALK: a ticket driven from arrival to completion through the real actor,
+ * the real journal store, the real interpreter and the stubbed world — with
+ * the duplicates and the stale deliveries an at-least-once fabric is entitled
+ * to send, and a crash in the middle.
  *
  * WHAT MAKES IT AN END-TO-END WALK RATHER THAN A LONG UNIT TEST. Nothing here
  * is a double except the world. The decisions are `execCmd`'s, the enablement
@@ -13,18 +13,18 @@
  * that the command becomes a durable row, that the row becomes effects at four
  * ports, and that a crash anywhere in that chain costs the world nothing.
  *
- * BOTH WRAP-UP KINDS ARE WALKED, because they are two different landings. A
- * `WExclusive` ticket queues for its project's lease, holds it while a gate
- * runs, and lands on the gate's verdict; a `WNone` ticket's effect already
- * happened during work, so passing evaluation completes it outright and no
- * gate ever opens. A slice that walked only the first would ship an
- * interpreter whose `EnqueueWrapUp` and `OpenGate` arms are the only ones a
- * completion has ever been seen through.
+ * BOTH WRAP-UP KINDS ARE WALKED, because they are two different routes to a
+ * completion. A `WExclusive` ticket queues for its project's lease, holds it
+ * while a gate runs, and lands on the gate's verdict; a `WNone` ticket's
+ * effect already happened during work, so passing evaluation completes it
+ * outright and no gate ever opens. A slice that walked only the first would
+ * ship an interpreter whose `EnqueueWrapUp` and `OpenGate` arms are the only
+ * ones a completion has ever been seen through.
  *
  * THERE ARE TWO CRASHES, and they are different crashes.
  *
  * THE FIRST is at the gate, the seam that costs the most: the gate row is
- * durable, the landing surface TAKES the gate and then dies before
+ * durable, the wrap-up surface TAKES the gate and then dies before
  * acknowledging it, the executor's cursor never advances — and then the process
  * itself dies, so the actor is rebuilt from the store's rows with the cursor
  * regressed all the way to zero. The re-drain re-emits every row of the walk so
@@ -33,11 +33,12 @@
  * THE SECOND IS AFTER THE TICKET HAS LANDED, and it is there for two claims
  * that nothing else in this tree drives.
  *
- *   - THE RE-EMITTED `land`. `ports.ts` calls absorbing a re-delivered landing
- *     "load-bearing rather than tidy", because `noDuplicateCycle` says the
- *     world lands a ticket's diff at most once across crashes at any seam —
- *     and the crash seam it survives is exactly a `land` whose row was
- *     re-emitted. A walk that crashed only BEFORE the landing never drives it.
+ *   - THE RE-EMITTED `land`. `ports.ts` calls absorbing a re-delivered
+ *     completion "load-bearing rather than tidy", because `noDuplicateCycle`
+ *     says the world lands a ticket's diff at most once across crashes at any
+ *     seam — and the crash seam it survives is exactly a `land` whose row was
+ *     re-emitted. A walk that crashed only BEFORE the completion never drives
+ *     it.
  *   - ELEMENT-WISE ABSORPTION ACROSS A DURABLE RECOVERY. Every delivery on a
  *     single ticket's route sits at ordinal zero, because `decideRevoke` is the
  *     one decider in the machine whose list is longer than one. So the walk
@@ -85,7 +86,7 @@ import type { Ports } from "./ports.ts";
 // === The vocabulary the walks are written in ===============================
 
 const released: ExternalEvent = { tag: "TicketReleased", ticket: 1 };
-const landed: ExternalEvent = { tag: "LandingConfirmed", ticket: 1 };
+const landed: ExternalEvent = { tag: "CompletionConfirmed", ticket: 1 };
 const gatePassed: ExternalEvent = {
   tag: "GateResolved",
   ticket: 1,
@@ -173,7 +174,7 @@ function spawningRowSeqs(s: DurableState): readonly number[] {
 
 // === The gated route, with the crash =======================================
 
-test("a WExclusive ticket walks arrival to landing, through a crash at the gate", () => {
+test("a WExclusive ticket walks arrival to completion, through a crash at the gate", () => {
   const rig = createRig();
   let s = throughEvaluation(rig, authored);
 
@@ -190,24 +191,24 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
   expectRigSteady(rig, journaled);
 
   let gateFailures = 1;
-  const dyingLanding: Ports = {
+  const dyingWrapUp: Ports = {
     ...rig.ports,
-    landing: {
-      ...rig.ports.landing,
+    wrapUp: {
+      ...rig.ports.wrapUp,
       openGate: (delivery) => {
         // The gate IS opened, and the acknowledgement is what is lost. That is
         // the expensive half of at-least-once: the cheap failure, where nothing
         // happened, needs no idempotence to be safe.
-        rig.ports.landing.openGate(delivery);
+        rig.ports.wrapUp.openGate(delivery);
         if (gateFailures > 0) {
           gateFailures -= 1;
-          throw new Error("the landing surface went away");
+          throw new Error("the wrap-up surface went away");
         }
       },
     },
   };
-  assert.throws(() => interpret(cfgInterp, journaled, dyingLanding), {
-    message: "the landing surface went away",
+  assert.throws(() => interpret(cfgInterp, journaled, dyingWrapUp), {
+    message: "the wrap-up surface went away",
   });
   assert.equal(journaled.applied, journaled.journal.length - 1);
 
@@ -245,9 +246,9 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
   assert.equal(rig.world.recorded("land").length, 1);
   assert.equal(s.mem.core.tickets.get(1)?.phase, "PDone");
 
-  // A re-delivered landing confirmation. Enabled — a landed ticket absorbs one
-  // — and answered with a state-identical no-op, so nothing lands twice.
-  s = report(rig, s, landed, "the landing is confirmed again");
+  // A re-delivered completion confirmation. Enabled — a landed ticket absorbs
+  // one — and answered with a state-identical no-op, so nothing lands twice.
+  s = report(rig, s, landed, "the completion is confirmed again");
   assert.equal(s.mem.lastStep.label, "complete-duplicate");
   assert.equal(rig.world.recorded("land").length, 1);
   assert.equal(s.mem.core.tickets.get(1)?.completions, 1);
@@ -277,7 +278,7 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
   assert.equal(rig.world.recorded("cancel").length, 1);
   assert.equal(rig.world.recorded("openTask").length, 2);
 
-  // --- The process dies again, with a landing and a cascade behind it -------
+  // --- The process dies again, with a completion and a cascade behind it ----
 
   const askedBeforeSecond = rig.world.ledger().length;
   const afterCrash = must(
@@ -296,7 +297,7 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
   assert.equal(
     rig.world.ledger().length,
     askedBeforeSecond,
-    "the re-drain past a landing and a cascade asked for something twice",
+    "the re-drain past a completion and a cascade asked for something twice",
   );
   // The two claims this second crash exists for, named separately so a failure
   // says which one broke.
@@ -334,11 +335,11 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
 
 // === The ordering promise, and the half of it that is not true =============
 
-test("across drains the landing port is re-sent a route it has already finished", () => {
+test("across drains the wrap-up port is re-sent a route it has already finished", () => {
   // THE EVIDENCE FOR THE SCOPED PROMISE. `ports.ts` says ordering holds within
   // one drain and not across drains, and this is the case that would falsify
   // the unscoped version: the world holds this ticket's `land`, the process
-  // dies, and the next drain hands the landing port that same ticket's
+  // dies, and the next drain hands the wrap-up port that same ticket's
   // `enqueue` and `openGate` again — a ticket being queued for a wrap-up it
   // has already completed. Nothing is wrong when it happens; the journal's
   // order never moved, and every one of those deliveries is a redelivery under
@@ -364,12 +365,12 @@ test("across drains the landing port is re-sent a route it has already finished"
     "authoring.createDraft",
     "fabric.spawn",
     "fabric.spawn",
-    "landing.enqueue",
-    "landing.openGate",
-    "landing.land",
+    "wrapUp.enqueue",
+    "wrapUp.openGate",
+    "wrapUp.land",
   ]);
   // The list above IS the falsification, and an assertion restating one of its
-  // elements would be an assertion-shaped comment: `landing.enqueue` sits in
+  // elements would be an assertion-shaped comment: `wrapUp.enqueue` sits in
   // that sequence, and the world already held this ticket's `land` before the
   // drain that produced it began. What is worth asserting separately is that
   // the re-sent route landed nothing a second time.
@@ -390,7 +391,7 @@ test("a WNone ticket completes on its evaluation, with no gate anywhere", () => 
   assert.equal(s.mem.core.tickets.get(1)?.phase, "PDone");
   assert.equal(rig.world.recorded("land").length, 1);
 
-  s = report(rig, s, landed, "the landing is confirmed again");
+  s = report(rig, s, landed, "the completion is confirmed again");
   assert.equal(rig.world.recorded("land").length, 1);
   assert.equal(s.mem.core.tickets.get(1)?.completions, 1);
 

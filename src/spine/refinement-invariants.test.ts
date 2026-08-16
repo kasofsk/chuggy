@@ -45,7 +45,7 @@ import {
   cfgRefinement,
   dispatch,
   driveEmitted,
-  landingWalk,
+  quietLandWalk,
   release,
 } from "./refinement-fixtures.test.ts";
 
@@ -54,13 +54,13 @@ const cfg = cfgRefinement;
 /** Arrive, release, dispatch — all three emitted. The world is level with the book. */
 const honest: ActorState = driveEmitted([arrive, release, dispatch]);
 
-/** The same ticket walked all the way to a landing, and a stale confirmation absorbed. */
-const settled: ActorState = driveEmitted(landingWalk);
+/** The same ticket walked all the way to a completion, and a stale confirmation absorbed. */
+const settled: ActorState = driveEmitted(quietLandWalk);
 
 /** The dispatch's record: a paid task fan-out, attributable to ticket 1. */
 const spawnRec: StepRecord = recordLabelled(honest, "dispatch");
 
-/** The landing's record: the emission that merges the diff. */
+/** The completion's record: the emission that merges the diff. */
 const completionRec: StepRecord = recordLabelled(settled, "ticket-done");
 
 /**

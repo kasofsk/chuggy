@@ -171,7 +171,7 @@ export function createRecordingWorld(): RecordingWorld {
           record("createDraft", delivery);
         },
       },
-      landing: {
+      wrapUp: {
         enqueue: (delivery) => {
           record("enqueue", delivery);
         },

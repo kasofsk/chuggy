@@ -134,10 +134,10 @@ export type CmdTag = Cmd["tag"];
  *
  * THE `JDequeue` ARM ROUTES THROUGH `decideDequeue`, which is what makes the
  * dispatch total onto thirteen deciders from twelve constructors: the routing
- * rule — moved to the gate, quiet straight to the landing — is machine
- * semantics the model hoists into a decider of its own, and its header records
- * the mutant that made the hoist necessary. Naming either route here instead
- * would be that copied route.
+ * rule — moved to the gate, quiet straight to the wrap-up's resolution — is
+ * machine semantics the model hoists into a decider of its own, and its header
+ * records the mutant that made the hoist necessary. Naming either route here
+ * instead would be that copied route.
  *
  * IT TAKES THE CONFIG THE MODEL TAKES AS MODULE CONSTS. Quint instantiates
  * `chuggy_domain` per const assignment and `execCmd` reads the instance's
@@ -352,10 +352,10 @@ export function taskDoneAbsorbingClass(c: Core): readonly Cmd[] {
 }
 
 /**
- * The absorbing pick class for a duplicate landing delivery: every Done ticket.
- * `taskDoneAbsorbingClass`'s argument, for the other stutter label — and here
- * the class is the decider's whole enablement set, since every landed ticket
- * absorbs a re-delivered landing.
+ * The absorbing pick class for a duplicate completion delivery: every Done
+ * ticket. `taskDoneAbsorbingClass`'s argument, for the other stutter label —
+ * and here the class is the decider's whole enablement set, since every landed
+ * ticket absorbs a re-delivered completion.
  */
 export function completeDuplicateAbsorbingClass(c: Core): readonly Cmd[] {
   const picks: Cmd[] = [];

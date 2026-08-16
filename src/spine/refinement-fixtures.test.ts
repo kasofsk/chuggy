@@ -87,7 +87,15 @@ export const release: Cmd = { tag: "JRelease", ticket: 1 };
 export const dispatch: Cmd = { tag: "JDispatch", ticket: 1 };
 export const workReduce: Cmd = { tag: "JWorkReduce", ticket: 1 };
 export const evalReduce: Cmd = { tag: "JEvalReduce", ticket: 1 };
-/** The valid-artifact dequeue: straight to the landing, no gate. */
+/**
+ * The valid-artifact dequeue: the wrap-up resolves in this same step, no gate.
+ *
+ * "Quiet land" is the model's own name for this route, so the name here is
+ * the model's rather than this file's: `quietLandDeterministicTest` is the
+ * witness run that spells it, pinning the environment's choice quiet and the
+ * wrap-up succeeding. `quietProjectLandsCleanly` is the same claim as a state
+ * theorem and spells it differently, which is why the run is the citation.
+ */
 export const quietLand: Cmd = { tag: "JDequeue", ticket: 1, moved: false };
 /** The moved dequeue: into the gate, which a resolution then promotes. */
 export const enterGate: Cmd = { tag: "JDequeue", ticket: 1, moved: true };
@@ -127,10 +135,10 @@ export function driveEmitted(cmds: readonly Cmd[]): DurableState {
 }
 
 /**
- * The quiet-landing walk, end to end: a ticket that arrives with a lease,
- * works, evaluates, lands on the fast path and absorbs a stale confirmation.
+ * The quiet-land walk, end to end: a ticket that arrives with a lease, works,
+ * evaluates, lands on the fast path and absorbs a stale confirmation.
  */
-export const landingWalk: readonly Cmd[] = [
+export const quietLandWalk: readonly Cmd[] = [
   arrive,
   release,
   dispatch,

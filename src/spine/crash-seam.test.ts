@@ -20,8 +20,8 @@
  * budget, so the disciplined sweep crashes at every reachable combination of
  * (rows journaled, rows emitted, cursor recovered) over three walks, and the
  * hazard sweep drops an effect-first crash at every decision of the same walks.
- * The walks between them cover both landing routes — the quiet fast path and
- * the gate — and the lease-free route that reaches no landing at all.
+ * The walks between them cover both wrap-up routes — the quiet fast path and
+ * the gate — and the lease-free route that reaches no wrap-up at all.
  *
  * WHAT THE DURABLE HALF ADDS. `crashRecoverTo` is the model's crash and it
  * keeps three of the four machine vars by fiat. A process that really died kept
@@ -220,7 +220,7 @@ test("crashRecoverContinueDeterministicTest: journal-then-effect survives a cras
   expectSteady(s);
 
   // The rework cycle passes work and eval (the failed evaluator respawns — id
-  // 4), and the ticket enqueues for landing.
+  // 4), and the ticket enqueues for its wrap-up.
   s = stepEmit(store, s, done(3, "VPass"), "task-done");
   s = stepEmit(store, s, workReduce, "work-passed");
   s = stepEmit(store, s, done(4, "VPass"), "task-done");
@@ -228,22 +228,22 @@ test("crashRecoverContinueDeterministicTest: journal-then-effect survives a cras
 
   // The valid-artifact dequeue completes the ticket (entry 13) — journaled, not
   // yet emitted: the merge has NOT happened yet.
-  s = must(commit(cfg, store, s, quietLand), "the landing");
+  s = must(commit(cfg, store, s, quietLand), "the quiet land");
   assert.equal(s.mem.lastStep.label, "ticket-done");
   assert.equal(memTicket(s, 1).phase, "PDone");
   assert.equal(journalCompletions(s, 1), 1);
   assert.equal(worldCompletions(s, 1), 0);
   expectSteady(s);
 
-  // CRASH at the landing seam: the landing DECISION is durable, and the world
-  // has still merged nothing — and will merge exactly once.
-  s = must(crashRecoverTo(cfg, s, 12), "crash at the landing seam");
+  // CRASH at the completion seam: the completion DECISION is durable, and the
+  // world has still merged nothing — and will merge exactly once.
+  s = must(crashRecoverTo(cfg, s, 12), "crash at the completion seam");
   assert.equal(memTicket(s, 1).phase, "PDone");
   assert.equal(memTicket(s, 1).completions, 1);
   assert.equal(worldCompletions(s, 1), 0);
   expectSteady(s);
 
-  s = must(emitNext(s), "emit the landing");
+  s = must(emitNext(s), "emit the completion");
   assert.equal(worldCompletions(s, 1), 1);
   expectSteady(s);
 
@@ -358,7 +358,7 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
   assert.ok(refinementCore(cfg, s));
   assert.ok(invariantsHold(cfg, s.mem));
 
-  // Walk the (journaled) cycle to the landing queue.
+  // Walk the (journaled) cycle to the wrap-up queue.
   s = journalThenEmit(store, s, done(1, "VPass"));
   s = journalThenEmit(store, s, workReduce);
   s = journalThenEmit(store, s, done(2, "VPass"));
@@ -366,10 +366,10 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
   assert.equal(memTicket(s, 1).phase, "PWrapUp");
   assert.ok(invariantsHold(cfg, s.mem));
 
-  // THE SEAM AT THE LANDING: a valid-artifact dequeue squash-merges IN THE
+  // THE SEAM AT THE COMPLETION: a valid-artifact dequeue squash-merges IN THE
   // WORLD, the crash eats the journal write — the book still shows the ticket
   // enqueued, completions 0.
-  s = must(effectCrash(cfg, s, quietLand), "the landing hazard seam");
+  s = must(effectCrash(cfg, s, quietLand), "the completion hazard seam");
   assert.equal(s.orphans.length, 2);
   assert.equal(worldCompletions(s, 1), 1);
   assert.equal(memTicket(s, 1).phase, "PWrapUp");
@@ -439,16 +439,16 @@ test("hazardReworkDoubleSpendDeterministicTest: the rework's charge dies with th
 
 /**
  * The three walks the sweeps run over: the model's own witness walk (a rework
- * and the quiet fast-path landing), the GATED landing (dequeue to the gate,
- * then the promotion), and the lease-free route that reaches no landing at all.
+ * and the quiet fast-path land), the GATED wrap-up (dequeue to the gate, then
+ * the promotion), and the lease-free route that reaches no wrap-up at all.
  *
  * Between them every decision the crash-seam obligations name appears at least
- * once — the paid spawns, both landing routes, both stutters — so a sweep over
+ * once — the paid spawns, both wrap-up routes, both stutters — so a sweep over
  * all three is a sweep over every seam a decision of that kind can sit at.
  */
 const walks: readonly (readonly [string, readonly Cmd[]])[] = [
   [
-    "the rework walk, quiet landing",
+    "the rework walk, quiet land",
     [
       arrive,
       release,
@@ -626,7 +626,7 @@ test("the hazard sweep: an effect-first crash at every decision of every walk is
 test("the hazard sweep: every orphaned PAID decision, re-decided, double-spends", () => {
   // The sweep above is over every decision; this is over the ones the theorems
   // PRICE — the model's own hazard roster, which is the paid spawns and the two
-  // landing resolutions. A bookkeeping effect orphans just as readily and
+  // wrap-up resolutions. A bookkeeping effect orphans just as readily and
   // `journalCoversWorld` flags it; only these move the arithmetic.
   //
   // AND THE ARITHMETIC MOVES ON THE RE-DECISION, NOT ON THE ORPHAN. One orphan
@@ -651,7 +651,7 @@ test("the hazard sweep: every orphaned PAID decision, re-decided, double-spends"
       evalReduce,
     ],
     [
-      "the quiet landing",
+      "the quiet land",
       [
         arrive,
         release,

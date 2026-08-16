@@ -161,7 +161,7 @@ export function revokedNeverCompletes(c: Core): boolean {
 // --- Isolation invariants ---------------------------------------------------
 
 /**
- * `model/domain.qnt` wrapUpIsolation — LANDING ISOLATION, the gate's
+ * `model/domain.qnt` wrapUpIsolation — WRAP-UP ISOLATION, the gate's
  * attribution half, over the observed step record.
  *
  * The project universe is what makes the attribution checkable at all, so this
@@ -748,7 +748,7 @@ export function stepDescends(
     lastStep.label === "complete-duplicate" ||
     lastStep.label === "settled" ||
     // CHURN: the uncharged operator-resume flavors — the PRE-WORK resume, and
-    // under RetryFree only, the Evaluating/Landing resumes.
+    // under RetryFree only, the Evaluating/WrapUp resumes.
     (lastStep.label === "operator-retry" &&
       (lastStep.transitions.some((t) => t.to === "PPending") ||
         (cfg.opRetryPricing === "RetryFree" &&

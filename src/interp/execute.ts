@@ -89,7 +89,7 @@ import type { Delivery, Ports } from "./ports.ts";
  *
  * THE TWO ARMS WORTH THE ARGUMENT. `CreateDraft` reaches the authoring
  * surface, `OpenHumanTask` the desk, `SpawnWorkTasks` and `SpawnEvalTasks` the
- * fabric's `spawn`, `EnqueueWrapUp` and `Complete` the landing port: each of
+ * fabric's `spawn`, `EnqueueWrapUp` and `Complete` the wrap-up port: each of
  * those routes where its name says. These do not:
  *
  *   `Revoke` REACHES THE FABRIC'S `cancel`. Revoking retires the ticket's live
@@ -98,7 +98,7 @@ import type { Delivery, Ports } from "./ports.ts";
  *   makes it. It reaches `cancel` even when the ticket never ran anything,
  *   which the port promises to succeed at; the cascade revokes Drafts routinely.
  *
- *   `OpenGate` REACHES THE LANDING PORT, NOT THE FABRIC. A gate is a run in the
+ *   `OpenGate` REACHES THE WRAP-UP PORT, NOT THE FABRIC. A gate is a run in the
  *   loose sense, but it carries no task id, appears in no task set, and its
  *   outcome comes back as a wrap-up verdict against a project rather than as a
  *   task completion. Routing it to a port whose `spawn` starts a ticket's task
@@ -120,13 +120,13 @@ export function deliverEffect(ports: Ports, delivery: Delivery): void {
       ports.fabric.spawn(delivery);
       return;
     case "EnqueueWrapUp":
-      ports.landing.enqueue(delivery);
+      ports.wrapUp.enqueue(delivery);
       return;
     case "OpenGate":
-      ports.landing.openGate(delivery);
+      ports.wrapUp.openGate(delivery);
       return;
     case "Complete":
-      ports.landing.land(delivery);
+      ports.wrapUp.land(delivery);
       return;
     default:
       return assertNever(delivery.effect, "unhandled effect");

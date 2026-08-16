@@ -1467,9 +1467,9 @@ export function decideWrapUpResolve(
 }
 
 /**
- * `model/domain.qnt` decideCompleteDuplicate — a duplicate landing event for an
- * already-Done ticket. NO completion effect is emitted, and that no-op IS the
- * exactly-once-at-the-landing-boundary claim.
+ * `model/domain.qnt` decideCompleteDuplicate — a duplicate completion event for
+ * an already-Done ticket. NO completion effect is emitted, and that no-op IS
+ * the exactly-once-at-the-completion-boundary claim.
  *
  * THE SECOND OF THE TWO DECIDERS THAT ASSERT WHERE THE MODEL IS TOTAL, on
  * `decideTaskDone`'s argument and for its reason: the model's definition is
@@ -1483,7 +1483,7 @@ export function decideWrapUpResolve(
 export function decideCompleteDuplicate(c: Core, j: number): Decision {
   invariant(
     doneIn(c).has(j),
-    `decideCompleteDuplicate: ticket ${String(j)} has not landed, so no landing of it can be re-delivered`,
+    `decideCompleteDuplicate: ticket ${String(j)} has not landed, so no completion of it can be re-delivered`,
   );
   return noop(c, "complete-duplicate");
 }

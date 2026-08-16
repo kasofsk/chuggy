@@ -64,8 +64,8 @@
  * defect tree below is one field off one of its tickets. The one extension made
  * here is named where it is made: a wrap-up-phase ticket is given the artifact
  * mark a trace would have stamped before it reached the queue, because the
- * landed fixture carries `freshTicket`'s `ANone` and a landing out of it would
- * produce a Done ticket `artifactWellFormed` forbids. That is the same
+ * committed fixture carries `freshTicket`'s `ANone` and a wrap-up out of it
+ * would produce a Done ticket `artifactWellFormed` forbids. That is the same
  * unreachable-fixture class kasofsk PR #31 corrects for `cXDepDone`. The model's
  * `cQueueB`, `cGateB`, `cGateWall`, `cGateGasWall`, `cGateD`, `cGateDWall` and
  * `cGateOcc` are shaped the same way — `cGated7` is not, being machine-built —
@@ -244,9 +244,9 @@ function taken(cfg: Config, pre: Core, d: Decision): Subject {
 /**
  * The mark a trace has stamped by the time a ticket reaches the queue —
  * `decideWorkReduce` writes `ASome(retired.spawned)`, and at these consts the
- * work fan-out is 2. The landed wrap-up fixtures carry `freshTicket`'s `ANone`,
- * which is fine while nothing lands them and is a state `artifactWellFormed`
- * forbids the moment something does.
+ * work fan-out is 2. The committed wrap-up fixtures carry `freshTicket`'s
+ * `ANone`, which is fine while nothing lands them and is a state
+ * `artifactWellFormed` forbids the moment something does.
  */
 const runMark: ArtifactMark = { tag: "ASome", id: 2 };
 
@@ -348,7 +348,7 @@ test("the bundle is green on real pre/post pairs, not only on hand-built states"
   // hands the bundle after every replayed step.
   const beforeRelease = solo(jDraft);
   const beforeDispatch = solo(jPend);
-  const beforeLanding = solo(jGatedRun);
+  const beforeWrapUpResolve = solo(jGatedRun);
   const pairs: readonly (readonly [string, Subject])[] = [
     [
       "ticket-released",
@@ -366,8 +366,8 @@ test("the bundle is green on real pre/post pairs, not only on hand-built states"
       "ticket-done",
       taken(
         cfgBudgeted,
-        beforeLanding,
-        decideWrapUpResolve(cfgBudgeted, beforeLanding, 1, "WOk", true),
+        beforeWrapUpResolve,
+        decideWrapUpResolve(cfgBudgeted, beforeWrapUpResolve, 1, "WOk", true),
       ),
     ],
     ["ticket-revoked", taken(cfgBudgeted, solo(jPend), revokeOne(jPend))],
@@ -432,8 +432,8 @@ function behindARevoke(dependent: Ticket): Core {
   ]);
 }
 
-/** A landing step record, at whatever attribution and path the caller is probing. */
-function landingStep(
+/** A wrap-up resolution record, at whatever attribution and path the caller is probing. */
+function wrapUpStep(
   label: string,
   from: Phase,
   project: number,
@@ -495,12 +495,12 @@ const redProofs: readonly RedProof[] = [
     broken: stepped(
       cfgBudgeted,
       solo(jDone),
-      landingStep("ticket-done", "PWrapUp", 2, false),
+      wrapUpStep("ticket-done", "PWrapUp", 2, false),
     ),
     fixed: stepped(
       cfgBudgeted,
       solo(jDone),
-      landingStep("ticket-done", "PWrapUp", 1, false),
+      wrapUpStep("ticket-done", "PWrapUp", 1, false),
     ),
     reds: ["wrapUpIsolation"],
   },
@@ -1065,7 +1065,7 @@ test("accountsBounded holds every account at both ends, one account at a time", 
 test("wrapUpIsolation: every conjunct of both arms, each with the step that breaks it", () => {
   const onQueue = solo(jLand);
   const done = solo(jDone);
-  // --- The WONone arm: a landing is never resolved off-record.
+  // --- The WONone arm: a wrap-up is never resolved off-record.
   // A completion carrying no attribution is legitimate for a WNone ticket and
   // for no other — the one `ticket-done` that resolves no attempt at all.
   const doneOffRecord: StepRecord = {
@@ -1093,7 +1093,7 @@ test("wrapUpIsolation: every conjunct of both arms, each with the step that brea
     }),
     false,
   );
-  // The two uniquely-landing labels may not appear without an attempt at all.
+  // The two labels unique to wrap-up may not appear without an attempt at all.
   for (const label of [
     "rework-started wrapup_failure",
     "ticket-escalated wrapup_budget_exhausted",
@@ -1124,7 +1124,7 @@ test("wrapUpIsolation: every conjunct of both arms, each with the step that brea
       wrapUpIsolation(
         cfgBudgeted,
         solo({ ...jDone, project }),
-        landingStep("ticket-done", "PWrapUp", project, false),
+        wrapUpStep("ticket-done", "PWrapUp", project, false),
       ),
       false,
       `project ${String(project)} is accepted as an attribution`,
@@ -1135,7 +1135,7 @@ test("wrapUpIsolation: every conjunct of both arms, each with the step that brea
       wrapUpIsolation(
         cfgBudgeted,
         done,
-        landingStep("ticket-done", "PWrapUp", project, false),
+        wrapUpStep("ticket-done", "PWrapUp", project, false),
       ),
       false,
     );
@@ -1143,14 +1143,14 @@ test("wrapUpIsolation: every conjunct of both arms, each with the step that brea
   // An attempt moves at least one ticket, and exactly one.
   assert.equal(
     wrapUpIsolation(cfgBudgeted, done, {
-      ...landingStep("ticket-done", "PWrapUp", 1, false),
+      ...wrapUpStep("ticket-done", "PWrapUp", 1, false),
       transitions: [],
     }),
     false,
   );
   assert.equal(
     wrapUpIsolation(cfgBudgeted, done, {
-      ...landingStep("ticket-done", "PWrapUp", 1, false),
+      ...wrapUpStep("ticket-done", "PWrapUp", 1, false),
       transitions: [
         { ticket: 1, from: "PWrapUp", to: "PDone" },
         { ticket: 1, from: "PWrapUp", to: "PDone" },
@@ -1163,7 +1163,7 @@ test("wrapUpIsolation: every conjunct of both arms, each with the step that brea
     wrapUpIsolation(
       cfgBudgeted,
       done,
-      landingStep("ticket-released", "PWrapUp", 1, false),
+      wrapUpStep("ticket-released", "PWrapUp", 1, false),
     ),
     false,
   );
@@ -1172,7 +1172,7 @@ test("wrapUpIsolation: every conjunct of both arms, each with the step that brea
     wrapUpIsolation(
       cfgBudgeted,
       done,
-      landingStep("ticket-escalated gas_exhausted", "PWrapUp", 1, false),
+      wrapUpStep("ticket-escalated gas_exhausted", "PWrapUp", 1, false),
     ),
     false,
   );
@@ -1182,14 +1182,14 @@ test("wrapUpIsolation: every conjunct of both arms, each with the step that brea
     wrapUpIsolation(
       cfgBudgeted,
       done,
-      landingStep("ticket-done", "PWrapUpHolding", 1, true),
+      wrapUpStep("ticket-done", "PWrapUpHolding", 1, true),
     ),
   );
   assert.equal(
     wrapUpIsolation(
       cfgBudgeted,
       done,
-      landingStep("ticket-done", "PWrapUp", 1, true),
+      wrapUpStep("ticket-done", "PWrapUp", 1, true),
     ),
     false,
   );
@@ -1197,7 +1197,7 @@ test("wrapUpIsolation: every conjunct of both arms, each with the step that brea
     wrapUpIsolation(
       cfgBudgeted,
       done,
-      landingStep("ticket-done", "PWrapUpHolding", 1, false),
+      wrapUpStep("ticket-done", "PWrapUpHolding", 1, false),
     ),
     false,
   );
