@@ -13,7 +13,7 @@
  * step record and the two states already say: the head transition carries the
  * stepped ticket, an arrival's authored data rides the new ticket record, a
  * task completion is the one running task that became resolved, a dequeue's
- * `moved` is the target phase, and a landing resolution's outcome is its label.
+ * `moved` is the target phase, and a wrap-up resolution's outcome is its label.
  * Where two routes share a label — `ticket-done` arrives from a passing
  * evaluation, a quiet dequeue or a gated resolution, and `gas_exhausted` from
  * either the eval interpreter or the gate — the wrap-up attempt observation
@@ -469,7 +469,7 @@ function verdictOf(outcome: TaskOutcome, where: string): Verdict {
 }
 
 /**
- * Which route landed the ticket. The wrap-up attempt observation is the
+ * Which route completed the ticket. The wrap-up attempt observation is the
  * discriminator — `WONone` is the passing evaluation of a `WNone` ticket, an
  * attempt the environment left valid is the quiet dequeue, an invalidated one
  * is the gated resolution — and the from-phase is checked against it, so the
@@ -494,14 +494,14 @@ function completionRoute(rec: StepRecord, where: string): Cmd {
 }
 
 /**
- * A landing that failed. `wrapUpOutcomes` makes `WFailed` undrawable on a quiet
- * attempt, so every failing landing resolved out of the gate — which is what
+ * A wrap-up that failed. `wrapUpOutcomes` makes `WFailed` undrawable on a quiet
+ * attempt, so every failing wrap-up resolved out of the gate — which is what
  * the invalidated flag and the from-phase are checked to say.
  */
 function gateFailure(rec: StepRecord, where: string): Cmd {
   if (rec.attempt.tag !== "WOAttempt" || !rec.attempt.invalidated) {
     throw new DecodeError(
-      `${where}: a landing failure resolves an invalidated attempt, and this step records none`,
+      `${where}: a wrap-up failure resolves an invalidated attempt, and this step records none`,
     );
   }
   expectFrom(rec, "PWrapUpHolding", where);
