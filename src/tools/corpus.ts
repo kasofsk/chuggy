@@ -19,6 +19,30 @@
  * — because a derived figure in a hand-edited file is a figure that goes stale
  * without anything noticing.
  *
+ * WHY THE TIER-1 HALF IS NOT ROSTER-MINIMAL, measured rather than assumed. Six
+ * of its fixtures could be dropped with every decider, label and exemption arm
+ * still covered — the panel measured exactly that — and they are kept, because
+ * those three rosters are not the only thing a tier-1 trace carries:
+ *
+ *   1. IT CARRIES THE DECISION EVENT. Tier 2 has no picks at all, so the
+ *      `--mbt` decode path is exercised by tier-1 fixtures alone, and its
+ *      binder roster is a fourth obligation the gate now checks by name. It is
+ *      not implied by the other three: `out` — the gate resolution's outcome
+ *      draw — is bound by exactly two fixtures, and dropping both leaves that
+ *      decode arm covered by nothing while every other roster stays complete.
+ *      That is measured, and the check that keeps it measured is in
+ *      `coverageGaps`.
+ *   2. IT IS THE GROUND TRUTH FOR THE TIER-2 RECONSTRUCTION.
+ *      `src/spine/decode.test.ts` reconstructs every tier-1 trace with its
+ *      decision events hidden and requires the same commands back. That case
+ *      is only as wide as the tier-1 corpus, so each fixture dropped is a
+ *      label whose reconstruction is checked by replay alone.
+ *
+ * The trade is bytes against those two, and the corpus is small enough that
+ * the bytes are not the constraint. A fixture whose only claim is a roster
+ * entry another fixture already covers, and whose picks and labels are covered
+ * too, has no argument for staying — which is what `pins` makes visible.
+ *
  * THE CONSTS ARE CHECKED AGAINST THE MODEL, not taken on trust, and that check
  * is the corpus's staleness alarm. A committed trace is a trace of the machine
  * `model/` described WHEN IT WAS EMITTED; if an instance's consts move
@@ -32,7 +56,11 @@
 import { readFileSync } from "node:fs";
 
 import type { Config } from "../domain/domain.ts";
-import { mcInstances, type McInstance } from "../spine/coverage.ts";
+import {
+  mcInstances,
+  pinnableEntries,
+  type McInstance,
+} from "../spine/coverage.ts";
 
 /** Raised when the corpus cannot be read or believed — a could-not-run, never a finding. */
 export class CorpusError extends Error {
@@ -53,7 +81,8 @@ export type Tier1Fixture = {
   /** What the search must report: a targeted search finds a violation, a plain walk does not. */
   readonly expect: "violation" | "ok";
   readonly consts: Config;
-  readonly covers: string;
+  readonly pins: readonly string[];
+  readonly rationale: string;
 };
 
 /** A tier-2 fixture: one deterministic witness run, exported by `quint test`. */
@@ -62,7 +91,8 @@ export type Tier2Fixture = {
   readonly module: string;
   readonly run: string;
   readonly consts: Config;
-  readonly covers: string;
+  readonly pins: readonly string[];
+  readonly rationale: string;
 };
 
 export type Manifest = {
@@ -153,7 +183,8 @@ function tier1Fixture(raw: unknown, at: string): Tier1Fixture {
     invariant: str(entry["invariant"], `${at}.invariant`),
     expect,
     consts: consts(entry["consts"], `${at}.consts`),
-    covers: str(entry["covers"], `${at}.covers`),
+    pins: pins(entry["pins"], `${at}.pins`),
+    rationale: str(entry["rationale"], `${at}.rationale`),
   };
 }
 
@@ -164,8 +195,42 @@ function tier2Fixture(raw: unknown, at: string): Tier2Fixture {
     module: str(entry["module"], `${at}.module`),
     run: str(entry["run"], `${at}.run`),
     consts: consts(entry["consts"], `${at}.consts`),
-    covers: str(entry["covers"], `${at}.covers`),
+    pins: pins(entry["pins"], `${at}.pins`),
+    rationale: str(entry["rationale"], `${at}.rationale`),
   };
+}
+
+/**
+ * THE FIXTURE'S CHECKED CLAIM about what it is in the corpus for: roster
+ * entries it must be observed to reach, verified against its own replay rather
+ * than believed.
+ *
+ * It replaces a prose `covers` field, which was the wrong shape for the same
+ * sentence: nothing read it, so it could say anything, and a fixture reseeded
+ * into no longer reaching the label it was added for would go on claiming it in
+ * a file nobody re-reads. `rationale` beside it is still prose and is still
+ * read by nothing — which is why it is named for what it is.
+ *
+ * An entry outside the three trace-observable rosters is refused here, so a
+ * pin cannot be satisfied by a typo nothing could ever cover.
+ */
+function pins(raw: unknown, at: string): readonly string[] {
+  const entries = array(raw, at).map((entry, i) =>
+    str(entry, `${at}[${String(i)}]`),
+  );
+  if (entries.length === 0) {
+    throw new CorpusError(
+      `${at}: a fixture states what it is in the corpus for`,
+    );
+  }
+  for (const entry of entries) {
+    if (!pinnableEntries.includes(entry)) {
+      throw new CorpusError(
+        `${at}: ${entry} is not a decider, a step label or an exemption arm`,
+      );
+    }
+  }
+  return entries;
 }
 
 /** A fixture name is its file name, so it may hold nothing a path would read. */
@@ -279,6 +344,12 @@ function retryPricing(raw: string, at: string): Config["opRetryPricing"] {
  * module, and this reads exactly that — a module whose block it cannot find is
  * an error rather than an empty answer, because "no consts" and "consts this
  * parse cannot see" must not report the same.
+ *
+ * THE SEARCH IS BOUNDED BY THE MODULE IT NAMES. Without that bound there is a
+ * fourth outcome the header does not admit and the suite could not see: a
+ * module with no instantiation of its own answers with the next module's, and
+ * every fixture naming it is then checked against a machine it does not name.
+ * The bound is what makes the promise true.
  */
 export function readModuleConsts(path: string, module: string): ModelConsts {
   let source;
@@ -291,10 +362,19 @@ export function readModuleConsts(path: string, module: string): ModelConsts {
   if (start < 0) {
     throw new CorpusError(`${path}: no module ${module}`);
   }
+  // BOUNDED AT THE NEXT MODULE, which is what makes the missing case the third
+  // outcome this function's header promises rather than a silently wrong
+  // answer: a module carrying no instantiation of its own would otherwise find
+  // the NEXT module's, and the manifest would be checked against consts
+  // belonging to a machine it does not name — the staleness alarm reporting
+  // green off another instance's numbers. A file's last module has no next
+  // one, so the bound is the end of the source.
+  const next = source.indexOf("\nmodule ", start);
+  const ends = next < 0 ? source.length : next;
   const opened = source.indexOf("import chuggy_domain(", start);
-  if (opened < 0) {
+  if (opened < 0 || opened > ends) {
     throw new CorpusError(
-      `${path}: module ${module} has no chuggy_domain instantiation`,
+      `${path}: module ${module} has no chuggy_domain instantiation of its own`,
     );
   }
   const block = balanced(

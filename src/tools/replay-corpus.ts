@@ -15,7 +15,12 @@
 import { shippedDeciders } from "../spine/cmd.ts";
 import { exemptionArms, mcInstances } from "../spine/coverage.ts";
 import { reachableStepLabels } from "../spine/decode.ts";
+import { nondetBinders } from "../spine/itf.ts";
 import { verifyCorpus } from "./verify.ts";
+
+const boundBinderNames: readonly string[] = nondetBinders.map(
+  ([bound]) => bound,
+);
 
 function main(): number {
   const verification = verifyCorpus();
@@ -26,6 +31,7 @@ function main(): number {
   report("step label", reachableStepLabels, verification.coverage.labels);
   report("exemption arm", exemptionArms, verification.coverage.arms);
   report("mc instance", mcInstances, verification.coverage.instances);
+  report("nondet binder", boundBinderNames, verification.coverage.binders);
 
   for (const finding of verification.findings) {
     console.log(`ERROR ${finding}`);
@@ -56,10 +62,13 @@ function report(
   roster: readonly string[],
   reached: ReadonlySet<string>,
 ): void {
+  // JOINED ON A SEPARATOR NO ENTRY CONTAINS. Two exemption arms hold a comma
+  // and a space in their own names, so a comma-joined line cannot be read back
+  // into the roster it prints.
   const marked = roster.map(
     (entry) => `${reached.has(entry) ? "+" : "-"} ${entry}`,
   );
-  console.log(`  ${obligation}: ${marked.join(", ")}`);
+  console.log(`  ${obligation}: ${marked.join(" · ")}`);
 }
 
 process.exitCode = main();

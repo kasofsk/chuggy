@@ -4,9 +4,12 @@
  * predicates, and all thirteen deciders.
  *
  * WHAT IS NOT HERE, and where it goes instead: the model's state-and-actions
- * section (the four vars, `init`, the thirteen actions, `installCore`) is the
- * machine's rather than a decider's — its TypeScript home is the spine, s3 —
- * and the conjuncts of `allInvariants` are s2c's — named rather than counted,
+ * section (the four vars, `init`, the thirteen actions) is the machine's
+ * rather than a decider's — its TypeScript home is the spine, s3, and
+ * `src/spine/machine.ts` is where it landed. `installCore` is the exception
+ * and belongs to s5: the model marks it the refinement-layer seam, keeps it
+ * out of `step`'s roster, and only an executor cursor or a crash has any use
+ * for it. The conjuncts of `allInvariants` are s2c's — named rather than counted,
  * because the bundle has already gained one since this line was written. This
  * file is exactly the part of `chuggy_domain` that is a pure function of a
  * `Core`.

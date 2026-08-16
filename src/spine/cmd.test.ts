@@ -98,6 +98,27 @@ import {
  */
 const cfg: Config = { ...cfgBudgeted, nTickets: 12 };
 
+/**
+ * Every `Cmd` tag, so a roster below is taken over the whole type rather than
+ * over the rows somebody remembered to write. `CmdTag` is a union of literals,
+ * so a constructor added to `cmd.ts` and not to this list stops the file
+ * compiling at the annotation.
+ */
+const everyCmdTag: readonly CmdTag[] = [
+  "JArrive",
+  "JRelease",
+  "JRevoke",
+  "JDispatch",
+  "JTaskDone",
+  "JWorkReduce",
+  "JEvalReduce",
+  "JDequeue",
+  "JGateResolve",
+  "JCompleteDuplicate",
+  "JRevalFail",
+  "JOpRetry",
+];
+
 /** A Working ticket whose set is fully resolved, so a reduce is enabled. */
 const jWorkDone: Ticket = {
   ...jWork,
@@ -208,22 +229,7 @@ test("execCmd: every constructor reaches the decider the model names", () => {
   }
   // EVERY CONSTRUCTOR, and the roster is taken from the type rather than
   // counted: a thirteenth constructor with no row here fails this line.
-  const covered = new Set(rows.map(([cmd]) => cmd.tag));
-  const declared: readonly CmdTag[] = [
-    "JArrive",
-    "JRelease",
-    "JRevoke",
-    "JDispatch",
-    "JTaskDone",
-    "JWorkReduce",
-    "JEvalReduce",
-    "JDequeue",
-    "JGateResolve",
-    "JCompleteDuplicate",
-    "JRevalFail",
-    "JOpRetry",
-  ];
-  assert.deepEqual(covered, new Set(declared));
+  assert.deepEqual(new Set(rows.map(([cmd]) => cmd.tag)), new Set(everyCmdTag));
 });
 
 test("execCmd: the dequeue's two arms reach the two routes the model hoists", () => {
@@ -461,6 +467,53 @@ test("cmdEnabled: an id the fleet does not hold is refused, never thrown on", ()
 });
 
 // === The decider roster ====================================================
+
+test("decidersReached: each tag names the decider execCmd dispatches it to", () => {
+  // PER TAG, because the union alone rests on nothing: swap two single-decider
+  // rows — JRevoke's for JRevalFail's — and the union is unchanged, the roster
+  // is still complete, and the corpus still replays, because coverage is the
+  // only consumer. The expected column here is read off `model/refinement.qnt`'s
+  // `execCmd`, arm for arm, which is the same place `execCmd` itself is read
+  // off; the pin is that the two readings agree.
+  const rows: readonly (readonly [Cmd, readonly string[]])[] = [
+    [
+      {
+        tag: "JArrive",
+        deps: new Set(),
+        program: progU2,
+        project: 1,
+        wrapUp: wx1,
+      },
+      ["decideArrive"],
+    ],
+    [{ tag: "JRelease", ticket: 1 }, ["decideRelease"]],
+    [{ tag: "JRevoke", ticket: 1 }, ["decideRevoke"]],
+    [{ tag: "JDispatch", ticket: 1 }, ["decideDispatch"]],
+    [
+      { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" },
+      ["decideTaskDone"],
+    ],
+    [{ tag: "JWorkReduce", ticket: 1 }, ["decideWorkReduce"]],
+    [{ tag: "JEvalReduce", ticket: 1 }, ["decideEvalStageReduce"]],
+    [
+      { tag: "JDequeue", ticket: 1, moved: true },
+      ["decideDequeue", "decideWrapUpStart"],
+    ],
+    [
+      { tag: "JDequeue", ticket: 1, moved: false },
+      ["decideDequeue", "decideWrapUpResolve"],
+    ],
+    [{ tag: "JGateResolve", ticket: 1, out: "WOk" }, ["decideWrapUpResolve"]],
+    [{ tag: "JCompleteDuplicate", ticket: 1 }, ["decideCompleteDuplicate"]],
+    [{ tag: "JRevalFail", ticket: 1 }, ["decideRevalFail"]],
+    [{ tag: "JOpRetry", ticket: 1 }, ["decideOpRetry"]],
+  ];
+  for (const [cmd, expected] of rows) {
+    assert.deepEqual(decidersReached(cmd), expected, cmd.tag);
+  }
+  // Every tag has a row, taken from the type rather than counted.
+  assert.deepEqual(new Set(rows.map(([cmd]) => cmd.tag)), new Set(everyCmdTag));
+});
 
 test("decidersReached: the union over the whole Cmd type is the shipped roster", () => {
   const reached = new Set<string>();

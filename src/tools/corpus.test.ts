@@ -19,6 +19,11 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { mcInstances } from "../spine/coverage.ts";
 
 import {
   CorpusError,
@@ -155,8 +160,42 @@ test("loadManifest: the committed manifest loads, and names nothing twice", () =
   // Every tier-1 entry names an mc instance, which is what the instance
   // obligation is counted from.
   for (const fixture of manifest.tier1) {
-    assert.ok(
-      ["budgeted", "deadline_only", "retryfree"].includes(fixture.instance),
-    );
+    assert.ok(mcInstances.includes(fixture.instance), fixture.instance);
   }
+});
+
+test("readModuleConsts: a module with no instantiation does not inherit the next one's", () => {
+  // THE BOUND, red-proved. Without it the search runs past the named module and
+  // finds the next module's block, so a module that instantiates nothing
+  // answers with consts belonging to a machine it does not name — and the
+  // manifest is then checked against those. The header promises an error for
+  // that case; this is what makes the promise true.
+  const path = join(mkdtempSync(join(tmpdir(), "chuggy-consts-")), "two.qnt");
+  writeFileSync(
+    path,
+    [
+      "module a_test {",
+      '  import chuggy_measure.* from "../measure"',
+      "}",
+      "",
+      "module b_test {",
+      "  import chuggy_domain(",
+      "    N_TICKETS = 9, N_TASKS = 9, REWORK_POLICY = RWBudget(9), GAS = 9,",
+      "    WRAPUP_PRICING = Budgeted(9), OP_RETRY_PRICING = RetryFree,",
+      "    MAX_STAGES = 9, N_PROJECTS = 9",
+      '  ).* from "../domain"',
+      "}",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  assert.throws(
+    () => readModuleConsts(path, "a_test"),
+    (error: unknown) =>
+      error instanceof CorpusError &&
+      /instantiation of its own/.test(error.message),
+  );
+  // The module that does carry one still reads, so the bound narrowed nothing
+  // it should not have.
+  assert.equal(readModuleConsts(path, "b_test").GAS, "9");
 });

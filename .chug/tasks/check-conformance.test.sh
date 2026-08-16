@@ -138,4 +138,195 @@ rm -rf "$R/corpus"
 run_in_repo
 check "a missing corpus exits 2, not 0" 2 "$RC" "LINTER ERROR"
 
+
+# --- The emitter, over a fake quint -----------------------------------------
+# `src/tools/emit-corpus.ts` is not in `ci.sh` — it regenerates, which is the
+# one thing the gate must never do — so nothing ran it until here. What needs
+# covering is its refusals: the three ways a run can produce NO VERDICT read
+# identically from a distance, and only one of them may be retried. A real
+# quint cannot be made to segfault on demand, so the cases below drive a fake
+# one whose behaviour is a file the case writes.
+#
+# The canned trace is a REAL committed fixture, so what the emitter writes is
+# something the replayer can then read: a fake trace would test the file copy
+# and nothing else.
+
+EMIT_MANIFEST='{
+  "tier1": [
+    {
+      "name": "faked",
+      "instance": "retryfree",
+      "seed": "0x2a",
+      "maxSamples": 20000,
+      "maxSteps": 60,
+      "invariant": "lastStep.label != \"settled\"",
+      "expect": "violation",
+      "pins": ["settled"],
+      "rationale": "a fake run, driven by the suite",
+      "consts": {
+        "N_TICKETS": "2",
+        "N_TASKS": "2",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "2",
+        "WRAPUP_PRICING": "DeadlineOnly",
+        "OP_RETRY_PRICING": "RetryFree",
+        "MAX_STAGES": "2",
+        "N_PROJECTS": "2"
+      }
+    }
+  ],
+  "tier2": [
+    {
+      "name": "witness-draft-wait",
+      "module": "chuggy_witness_draft_wait_test",
+      "run": "draftWaitAcceptedDeterministicTest",
+      "pins": ["decideRelease", "ticket-released"],
+      "rationale": "the committed witness, re-emitted by the fake",
+      "consts": {
+        "N_TICKETS": "2",
+        "N_TASKS": "1",
+        "REWORK_POLICY": "RWBudget(1)",
+        "GAS": "3",
+        "WRAPUP_PRICING": "Budgeted(1)",
+        "OP_RETRY_PRICING": "RetryCharged",
+        "MAX_STAGES": "1",
+        "N_PROJECTS": "1"
+      }
+    }
+  ]
+}'
+
+# The fake. `$R/mode` selects what a `run` invocation does; `--version` answers
+# from `$R/version`; `test` always writes the canned tier-2 trace. Attempts are
+# counted in `$R/attempts` so a case can make the flake stop.
+emit_repo() { # <mode> <version>
+	fresh_repo "$R"
+	cp -R "$ROOT/src" "$ROOT/model" "$R/"
+	mkdir -p "$R/corpus/tier1" "$R/corpus/tier2" "$R/node_modules/.bin"
+	printf '%s\n' "$EMIT_MANIFEST" >"$R/corpus/manifest.json"
+	cp "$ROOT/corpus/tier1/retryfree-settled.itf.json" "$R/canned1.itf.json"
+	cp "$ROOT/corpus/tier2/witness-draft-wait.itf.json" "$R/canned2.itf.json"
+	printf '%s\n' "$1" >"$R/mode"
+	printf '%s\n' "$2" >"$R/version"
+	: >"$R/attempts"
+	cat >"$R/node_modules/.bin/quint" <<'FAKE'
+#!/bin/sh
+# A fake quint, driven by files in the checkout it is run from.
+root="$(pwd)"
+if [ "$1" = "--version" ]; then cat "$root/version"; exit 0; fi
+out=""
+for arg in "$@"; do
+	case "$arg" in --out-itf=*) out="${arg#--out-itf=}" ;; esac
+done
+if [ "$1" = "test" ]; then
+	cp "$root/canned2.itf.json" \
+		"$(echo "$out" | sed 's/{test}/draftWaitAcceptedDeterministicTest/; s/{seq}/0/')"
+	exit 0
+fi
+echo x >>"$root/attempts"
+attempts="$(grep -c . "$root/attempts")"
+case "$(cat "$root/mode")" in
+segv) kill -SEGV $$ ;;
+segv-then-ok)
+	if [ "$attempts" -lt 3 ]; then kill -SEGV $$; fi
+	cp "$root/canned1.itf.json" "$out"
+	exit 1
+	;;
+term) kill -TERM $$ ;;
+no-violation) exit 0 ;;
+violation)
+	cp "$root/canned1.itf.json" "$out"
+	exit 1
+	;;
+esac
+FAKE
+	chmod +x "$R/node_modules/.bin/quint"
+}
+
+run_emit() {
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && node src/tools/emit-corpus.ts) >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+
+# The binary missing altogether reads as "no verdict" too, and retrying it
+# would blame the flake for a missing install.
+emit_repo violation 0.32.0
+rm "$R/node_modules/.bin/quint"
+run_emit
+check "the emitter names a missing quint, and says npm ci" 2 "$RC" "could not be run"
+
+# The pin. A corpus emitted by an unpinned tool cannot be regenerated to the
+# same bytes, and `--mbt` is experimental, so the version is checked before
+# anything is written.
+emit_repo violation 0.31.0
+run_emit
+check "the emitter refuses an unpinned quint" 2 "$RC" "expected 0.32.0"
+
+# THE FLAKE (ledger #12): SIGSEGV with no output, every time. Retried, and then
+# reported as could-not-run — never recorded as a fixture.
+emit_repo segv 0.32.0
+run_emit
+check "a persistent segfault is could-not-run, not a fixture" 2 "$RC" \
+	"produced no verdict after every retry"
+
+# The same signal, twice, and then a verdict: the run is given again and the
+# emission proceeds. This is the case the retry exists for.
+emit_repo segv-then-ok 0.32.0
+run_emit
+check "a segfault that stops is retried and the run continues" 1 "$RC" \
+	"wrote corpus/tier1/faked.itf.json"
+grep -qF "retrying (ledger #12)" "$OUT" || {
+	echo "FAIL - the retry was not reported"
+	fail=$((fail + 1))
+}
+
+# ANY OTHER SIGNAL. Something killed quint; this tool does not get to decide it
+# was harmless, and it is not the flake.
+emit_repo term 0.32.0
+run_emit
+check "a kill by another signal is not treated as the flake" 2 "$RC" \
+	"was killed by SIGTERM"
+
+# A search that reports the wrong thing. The manifest says the seed finds a
+# violation; a run that reports none has not reproduced the fixture, whatever
+# it wrote.
+emit_repo no-violation 0.32.0
+run_emit
+check "a search that does not report what the manifest says is refused" 2 "$RC" \
+	"the search was to report violation"
+
+# TRAILING SETTLED TRUNCATION, which is one of the two ways a committed fixture
+# differs from raw quint output. The fake writes a trace whose settled run is
+# several states long; the committed form keeps exactly one, and keeping NONE
+# would drop the label and the exemption arm the corpus owes a step.
+emit_repo violation 0.32.0
+node -e '
+const fs = require("node:fs");
+const doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const last = doc.states[doc.states.length - 1];
+for (let i = 1; i <= 3; i += 1) {
+  const copy = JSON.parse(JSON.stringify(last));
+  copy["#meta"].index = doc.states.length;
+  doc.states.push(copy);
+}
+fs.writeFileSync(process.argv[1], JSON.stringify(doc));
+' "$R/canned1.itf.json"
+run_emit
+OUT="$WORK/.out"
+set +e
+node -e '
+const fs = require("node:fs");
+const doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const settled = doc.states.filter((s) =>
+  JSON.stringify(s).includes("\"label\":\"settled\""),
+).length;
+console.log(`settled states: ${settled}`);
+' "$R/corpus/tier1/faked.itf.json" >"$OUT" 2>&1
+RC=$?
+set -e
+check "a trailing settled run is truncated to one state" 0 "$RC" "settled states: 1"
+
 done_ "check-conformance.test.sh"

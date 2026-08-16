@@ -274,6 +274,18 @@ test("decodeTrace: a task set is canonicalized, and a repeated id is refused", (
       ),
     DecodeError,
   );
+  // THE FLOOR, which the canonical form owns and a hand-rolled sort here would
+  // not have: ids start at `firstTaskId`, so a task numbered below it is a set
+  // the representation cannot hold — and it is the value `nextTaskId` would
+  // then mis-mint from.
+  assert.throws(
+    () =>
+      decodeTrace(
+        withTicket({ ...working, tasks: { "#set": [task(0), task(1)] } }),
+      ),
+    (error: unknown) =>
+      error instanceof DecodeError && /ascending by id/.test(error.message),
+  );
 });
 
 test("decodeTrace: the nondet binder roster is exact", () => {

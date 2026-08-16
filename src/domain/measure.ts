@@ -133,6 +133,31 @@ function assertTaskSet(tasks: TaskSet, where: string): void {
   }
 }
 
+/**
+ * A task set in its canonical form, BUILT rather than assumed: sorted by id,
+ * then checked to be strictly ascending from `firstTaskId`.
+ *
+ * It exists for the one caller that receives a task set from outside this tree
+ * — the golden-corpus decoder, reading the model's `Set[Task]`, which carries
+ * no order at all. That caller has to impose the order this representation
+ * means, and imposing it by hand is how a second, subtly different canonical
+ * form gets written: a sort with no floor check accepts id 0, and a sort with
+ * no strictness check accepts a repeat, which is precisely the value
+ * `nextTaskId` would then mis-mint from. The representation's rules belong to
+ * the file that states them.
+ *
+ * `assertTaskSet` is the same check every reader already runs; this adds the
+ * sort in front of it, so the two cannot disagree about what canonical means.
+ */
+export function canonicalTaskSet(
+  tasks: readonly Task[],
+  where: string,
+): TaskSet {
+  const sorted = [...tasks].sort((a, b) => a.id - b.id);
+  assertTaskSet(sorted, where);
+  return sorted;
+}
+
 /** `model/measure.qnt` Verdict — the completion EVENT's verdict, as distinct from the stored resolution. */
 export type Verdict = "VPass" | "VFail";
 

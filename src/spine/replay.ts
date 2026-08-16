@@ -34,7 +34,7 @@
  * is the settled noop exactly.
  *
  * WHY A FAILING BUNDLE IS REPORTED WITHOUT NAMING THE CONJUNCT. `invariants.ts`
- * ships the bundle as a plain conjunction and its twenty-four conjuncts
+ * ships `allInvariants` as a plain conjunction and every conjunct of it
  * individually; asking each of them here to label the failure would put a
  * second copy of that roster in this file, which is the drift the checking
  * layer exists to catch. The fixture and the step index are in the finding, and
@@ -387,6 +387,9 @@ function observe(
       stepLabel(state.lastStep, `${where}.states[${String(index)}]`),
     );
     coverage.observeArm(cfg, state.core, state.lastStep);
+    if (state.picks !== undefined) {
+      coverage.observePicks(state.picks);
+    }
   } catch (error) {
     findings.push({ state: index, detail: `coverage: ${messageOf(error)}` });
   }

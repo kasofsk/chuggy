@@ -5,11 +5,21 @@
  * WHY NOT A DEEP-EQUALITY HELPER. Two reasons, and the second is the one that
  * decided it. A deep equality over a `Map` or a `Set` is a promise about the
  * comparer's treatment of insertion order, and the ITF documents these values
- * are compared against carry no order at all — sets and maps are compared as
- * sets and maps here, elementwise only where the model's own type is a `List`.
- * And a boolean answer is not a gate's output: when a replay disagrees with the
- * model, the useful sentence names the field, so every function below returns
- * the FIRST difference as a path and the two values at it, or nothing.
+ * are compared against carry no order at all. And a boolean answer is not a
+ * gate's output: when a replay disagrees with the model, the useful sentence
+ * names the field, so every function below returns the FIRST difference as a
+ * path and the two values at it, or nothing.
+ *
+ * WHAT IS COMPARED AS A SET, AND WHAT ELEMENTWISE. `Set[int]` — a ticket's
+ * deps — is compared as a set, and the fleet map by key. Everything else is
+ * walked in order, INCLUDING the two fields the model declares as sets of
+ * tasks, and that is not an inconsistency: `measure.ts` represents a task set
+ * as a canonical ascending-id array precisely so that structural equality
+ * means set equality, `canonicalTaskSet` is what both sides went through, and
+ * two canonical arrays are equal exactly when the sets they denote are. The
+ * model's `List` fields — the program, the transitions, the effects, the
+ * retained record — carry order as meaning and are compared as they are
+ * written.
  *
  * THE PATHS ARE THE MODEL'S FIELD NAMES, so a finding can be read straight
  * against `model/measure.qnt`'s records.

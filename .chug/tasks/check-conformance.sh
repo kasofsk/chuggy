@@ -18,14 +18,27 @@
 # release installed. Regeneration is `src/tools/emit-corpus.ts`, run by hand
 # when the model moves; the diff it leaves is the thing to read.
 #
-# WHAT IT CANNOT SEE, said plainly. It cannot tell that the model has changed
-# in a way the corpus does not cover — a new decider with no fixture reddens
-# the coverage roster, but a changed decider whose traces were never
-# regenerated replays green against the machine it was emitted from. Two things
-# narrow that: the manifest's consts are compared against the model's own const
-# blocks on every run, so an instance moving under the corpus is a finding
-# here; and `check-model.sh` runs the model's own suites, so the specification
-# is checked on its own terms in the same `just check`.
+# WHAT IT CANNOT SEE, said plainly, and the list is measured rather than
+# reasoned — each entry below was verified by making the change and watching
+# this gate stay green.
+#
+#   1. THE MODEL MOVING UNDER THE CORPUS. A new decider with no fixture reddens
+#      the coverage roster, but a CHANGED decider whose traces were never
+#      regenerated replays green against the machine it was emitted from. Two
+#      things narrow it: the manifest's consts are compared against the model's
+#      own const blocks on every run, so an instance moving under the corpus is
+#      a finding here; and `check-model.sh` runs the model's own suites in the
+#      same `just check`.
+#   2. AN ENABLEMENT ARM WIDENED. `cmdEnabled` refusing less than the machine
+#      does is invisible to replay — every fixture holds decisions the machine
+#      TOOK, and a widened guard still admits those. What covers it is
+#      `src/spine/cmd.test.ts`, which pins each arm as an exact set over a
+#      fleet holding one ticket per phase.
+#   3. A DECIDER-ATTRIBUTION ROW SWAPPED. `decidersReached` feeds the coverage
+#      roster and nothing else, so swapping two single-decider rows leaves
+#      every fixture replaying and every roster complete. What covers it is the
+#      per-tag table in the same suite, and the swap was watched to red there
+#      and nowhere else.
 #
 # WHY THE WORK IS IN TypeScript AND NOT IN THIS FILE. Decoding an ITF document
 # into the domain vocabulary and driving the deciders needs the domain

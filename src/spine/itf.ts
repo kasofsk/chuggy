@@ -23,14 +23,20 @@
  * finding: it means the corpus and this decoder disagree about what a trace IS,
  * which the emitter must resolve and a gate must report as could-not-run.
  *
- * IT READS `#meta` FOR NOTHING. Both `timestamp` and `description` embed the
- * generation time, so a comparison that looked at them would fail on
- * regeneration alone; the block is skipped wholesale rather than partially,
- * which is also why the emitter is free to drop its volatile half from a
- * committed fixture. The `vars` array lists the two `mbt::` entries twice — a
- * 0.32.0 quirk — so the roster is compared as a set.
+ * IT READS `#meta` FOR ONE THING, AND THE EXCEPTION IS WORTH NAMING. Nothing
+ * in the document-level block is read: `timestamp` and `description` embed the
+ * generation time, so a comparison that looked at either would fail on
+ * regeneration alone, and the rest of it describes the format rather than the
+ * machine — which is also why the emitter is free to drop the volatile half
+ * from a committed fixture. What IS read is the per-state `#meta.index`,
+ * checked to equal the state's own position, because that is a claim about the
+ * TRACE rather than about the writer: a fixture with a state removed would
+ * otherwise decode as a shorter run of a different machine. The `vars` array
+ * lists the two `mbt::` entries twice — a 0.32.0 quirk — so the roster is
+ * compared as a set.
  */
 
+import { canonicalTaskSet } from "../domain/measure.ts";
 import type {
   ArtifactMark,
   Core,
@@ -292,24 +298,26 @@ function decodeTask(v: unknown, where: string): Task {
 /**
  * The model's `Set[Task]` into `measure.ts`'s canonical ascending-id array.
  *
- * THE SORT IS THE ENCODING, AND THE STRICTNESS AFTER IT IS THE CHECK. An ITF
+ * THE CANONICAL FORM IS `measure.ts`'s, called rather than re-derived. An ITF
  * set carries no order, so a decoder must impose one to produce the
- * representation this tree compares structurally; ascending id is the order
- * `measure.ts` argues for. Two ids the same would make the sort ambiguous and
- * the length a lie, and it is precisely what `nextTaskId` would then mis-mint,
- * so it is refused here rather than absorbed.
+ * representation this tree compares structurally — and the rules of that
+ * representation (ascending, strict, floored at `firstTaskId`) belong to the
+ * file that declares it. Re-deriving them here is how a second canonical form
+ * with a missing check gets written; a repeated id would make the length a lie
+ * and is exactly the value `nextTaskId` would then mis-mint from.
  */
 function decodeTaskSet(v: unknown, where: string): readonly Task[] {
-  const tasks = itfSet(v, where)
-    .map((t, i) => decodeTask(t, `${where}[${String(i)}]`))
-    .sort((a, b) => a.id - b.id);
-  tasks.forEach((t, i) => {
-    const previous = tasks[i - 1];
-    if (previous !== undefined && previous.id === t.id) {
-      fail(where, `two tasks share id ${String(t.id)}`);
-    }
-  });
-  return tasks;
+  const tasks = itfSet(v, where).map((t, i) =>
+    decodeTask(t, `${where}[${String(i)}]`),
+  );
+  try {
+    return canonicalTaskSet(tasks, where);
+  } catch (error) {
+    // `measure.ts` owns the representation and refuses a bad one by throwing;
+    // this layer owes a DECODE failure, because what arrived is a document
+    // this tree cannot read rather than a value it built wrong.
+    return fail(where, error instanceof Error ? error.message : String(error));
+  }
 }
 
 function decodeTaskList(v: unknown, where: string): readonly Task[] {
@@ -539,8 +547,13 @@ function decodeRecordsGhost(
  * becomes here. The roster is `model/domain.qnt`'s thirteen actions' draws,
  * and it is asked as an equality: a binder this tree does not know is a draw
  * the machine gained, which is a decision event this vocabulary cannot carry.
+ *
+ * It is exported because it is also a COVERAGE roster. A tier-1 trace is the
+ * only place a pick is decoded at all, so a corpus that stopped binding one —
+ * by reseeding a search away from the only fixture that drew it — would leave
+ * that decode arm exercised by nothing, and every roster still complete.
  */
-const binders = [
+export const nondetBinders = [
   ["deps_", "deps"],
   ["prog", "program"],
   ["project_", "project"],
@@ -609,7 +622,7 @@ function decodePicks(v: unknown, where: string): Picks {
   const raw = asObject(v, where);
   fieldsExactly(
     raw,
-    binders.map(([bound]) => bound),
+    nondetBinders.map(([bound]) => bound),
     where,
   );
   const picks: {
@@ -623,7 +636,7 @@ function decodePicks(v: unknown, where: string): Picks {
     moved?: boolean;
     out?: WrapUpOutcome;
   } = {};
-  for (const [bound, as] of binders) {
+  for (const [bound, as] of nondetBinders) {
     const at = `${where}.${bound}`;
     const [tag, value] = itfTagged(field(raw, bound, where), at);
     if (tag === "None") {

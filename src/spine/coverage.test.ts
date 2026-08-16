@@ -21,7 +21,6 @@ import {
   solo,
 } from "../domain/fixtures.test.ts";
 import type { Core, Phase, StepRecord } from "../domain/measure.ts";
-import { shippedDeciders } from "./cmd.ts";
 import {
   CoverageBuilder,
   coverageGaps,
@@ -132,7 +131,9 @@ test("exemptionArmOf: a step under no arm is attributed to none", () => {
 
 test("coverageGaps: a full corpus has none, and each roster is checked both ways", () => {
   // Observed through the real accumulator rather than a hand-built set: what
-  // the gate reports is what this builder holds.
+  // the gate reports is what this builder holds. Every decider is reached by
+  // observing every command, which is `cmd.test.ts`'s pin rather than a second
+  // roster here.
   const full = new CoverageBuilder();
   for (const label of reachableStepLabels) {
     full.observeLabel(label);
@@ -162,11 +163,24 @@ test("coverageGaps: a full corpus has none, and each roster is checked both ways
   full.observeCmd({ tag: "JCompleteDuplicate", ticket: 1 });
   full.observeCmd({ tag: "JRevalFail", ticket: 1 });
   full.observeCmd({ tag: "JOpRetry", ticket: 1 });
-  assert.deepEqual(coverageGaps(full.taken(), shippedDeciders), []);
+  // Every nondet draw the machine's actions make, which is the fourth
+  // obligation: a tier-1 trace is the only place a pick is decoded at all.
+  full.observePicks({
+    deps: new Set(),
+    program: [],
+    project: 1,
+    wrapUp: { tag: "WNone" },
+    ticket: 1,
+    tid: 1,
+    verdict: "VPass",
+    moved: true,
+    out: "WOk",
+  });
+  assert.deepEqual(coverageGaps(full.taken()), []);
 
   // One entry short of each roster, and the gap names it.
   const short = new CoverageBuilder();
-  const missing = coverageGaps(short.taken(), shippedDeciders);
+  const missing = coverageGaps(short.taken());
   const obligations = new Set(missing.map((gap) => gap.obligation));
   assert.deepEqual(
     obligations,
@@ -175,14 +189,8 @@ test("coverageGaps: a full corpus has none, and each roster is checked both ways
       "step label",
       "stepDescends exemption arm",
       "mc instance",
+      "nondet binder",
     ]),
-  );
-  assert.equal(
-    missing.length,
-    shippedDeciders.length +
-      reachableStepLabels.length +
-      exemptionArms.length +
-      mcInstances.length,
   );
 
   // And a roster entry reached that no roster names is reported too — the
@@ -190,8 +198,28 @@ test("coverageGaps: a full corpus has none, and each roster is checked both ways
   const strange = new CoverageBuilder();
   strange.observeLabel("ticket-teleported" as StepLabel);
   assert.ok(
-    coverageGaps(strange.taken(), shippedDeciders).some((gap) =>
+    coverageGaps(strange.taken()).some((gap) =>
       gap.missing.includes("ticket-teleported"),
     ),
+  );
+});
+
+test("observePicks: the binder roster is the decoder's own table", () => {
+  // A tier-1 trace is the only place a pick is decoded, so the binders it
+  // bound are a coverage roster in their own right — and the names come from
+  // `itf.ts`'s table rather than from a second list, so the roster the gate
+  // reports and the roster the decoder demands cannot drift apart.
+  const builder = new CoverageBuilder();
+  builder.observePicks({ ticket: 1, moved: true });
+  assert.deepEqual(builder.taken().binders, new Set(["j", "moved"]));
+
+  // The obligation is stated over the whole table: a corpus that stopped
+  // binding one draw is a decode arm nothing exercises.
+  const gaps = coverageGaps(builder.taken()).filter(
+    (gap) => gap.obligation === "nondet binder",
+  );
+  assert.deepEqual(
+    new Set(gaps.map((gap) => gap.missing.split(" ")[0])),
+    new Set(["deps_", "prog", "project_", "wrapUp_", "tid", "v", "out"]),
   );
 });

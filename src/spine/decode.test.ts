@@ -31,18 +31,19 @@ import {
 } from "./decode.ts";
 import { DecodeError, decodeTrace, type DecodedTrace } from "./itf.ts";
 
-/** The committed tier-1 fixtures, which are the ones carrying decision events. */
-const tier1: readonly string[] = [
-  "budgeted-cascade-park",
-  "budgeted-dequeue-to-gate",
-  "budgeted-landing-duplicate",
-  "budgeted-gated-completion",
-  "budgeted-eval-stage-advance",
-  "budgeted-work-failed",
-  "budgeted-desk-only-revoke",
-  "deadline-only-gate-rework",
-  "retryfree-settled",
-];
+/**
+ * The committed tier-1 fixtures, DERIVED from the manifest rather than copied
+ * out of it: a hand-kept list is one a new fixture can be added without, and
+ * the case below would then quietly cross-validate a smaller corpus than the
+ * one that ships. The manifest is read as data here rather than through
+ * `src/tools/`, which would be the spine's suite reaching for the layer above
+ * it to learn its own inputs.
+ */
+const tier1: readonly string[] = (
+  JSON.parse(readFileSync("corpus/manifest.json", "utf8")) as {
+    tier1: readonly { name: string }[];
+  }
+).tier1.map((fixture) => fixture.name);
 
 function load(name: string): DecodedTrace {
   return decodeTrace(

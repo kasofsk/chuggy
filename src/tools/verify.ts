@@ -19,10 +19,10 @@
 import { readdirSync } from "node:fs";
 
 import type { Config } from "../domain/domain.ts";
-import { shippedDeciders } from "../spine/cmd.ts";
 import {
   CoverageBuilder,
   coverageGaps,
+  pinsMissed,
   type Coverage,
 } from "../spine/coverage.ts";
 import { decodeSteps } from "../spine/decode.ts";
@@ -88,7 +88,7 @@ export function verifyCorpus(): Verification {
 
   const taken = coverage.taken();
   findings.push(
-    ...coverageGaps(taken, shippedDeciders).map(
+    ...coverageGaps(taken).map(
       (gap) => `coverage: ${gap.obligation} ${gap.missing}`,
     ),
   );
@@ -107,24 +107,41 @@ function errorOnly(error: unknown, coverage: CoverageBuilder): Verification {
   throw error;
 }
 
+/**
+ * Replay one fixture at its own consts, then check the two claims it makes:
+ * that it replays, and that it reaches what the manifest says it is in the
+ * corpus for.
+ *
+ * ITS COVERAGE IS TAKEN ON ITS OWN FIRST and folded into the corpus's after,
+ * which is the whole of what makes a pin checkable: against a corpus-wide
+ * accumulator every pin would be satisfied as long as SOME fixture reached the
+ * entry, which is exactly the claim a pin is not making.
+ */
 function replayFixture(
-  fixture: { readonly name: string; readonly consts: Config },
+  fixture: {
+    readonly name: string;
+    readonly consts: Config;
+    readonly pins: readonly string[];
+  },
   path: string,
-  coverage: CoverageBuilder,
+  corpus: CoverageBuilder,
 ): readonly string[] {
   const trace = decodeTrace(readJson(path), fixture.name);
   const plans = decodeSteps(trace, fixture.name);
-  const report = replayTrace(
-    fixture.consts,
-    trace,
-    plans,
-    coverage,
-    fixture.name,
-  );
-  return report.findings.map(
-    (finding) =>
-      `${fixture.name}: state ${String(finding.state)}: ${finding.detail}`,
-  );
+  const own = new CoverageBuilder();
+  const report = replayTrace(fixture.consts, trace, plans, own, fixture.name);
+  const taken = own.taken();
+  corpus.absorb(taken);
+  return [
+    ...report.findings.map(
+      (finding) =>
+        `${fixture.name}: state ${String(finding.state)}: ${finding.detail}`,
+    ),
+    ...pinsMissed(fixture.pins, taken).map(
+      (pin) =>
+        `${fixture.name}: the manifest pins ${pin} to this fixture, and it reaches no such step`,
+    ),
+  ];
 }
 
 /**

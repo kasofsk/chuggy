@@ -38,8 +38,14 @@ import { stepDescends } from "../domain/invariants.ts";
 import type { Config } from "../domain/domain.ts";
 import type { Core, StepRecord } from "../domain/measure.ts";
 import { currentMeasure } from "./machine.ts";
-import { decidersReached, type Cmd } from "./cmd.ts";
+import { decidersReached, shippedDeciders, type Cmd } from "./cmd.ts";
 import { reachableStepLabels, type StepLabel } from "./decode.ts";
+import { nondetBinders, type Picks } from "./itf.ts";
+
+/** The binder names the model's actions draw, as a roster the corpus owes. */
+const boundBinderNames: readonly string[] = nondetBinders.map(
+  ([bound]) => bound,
+);
 
 /**
  * `model/domain.qnt`'s eight `stepDescends` exemption arms, in the order the
@@ -118,6 +124,8 @@ export type Coverage = {
   readonly labels: ReadonlySet<StepLabel>;
   readonly arms: ReadonlySet<ExemptionArm>;
   readonly instances: ReadonlySet<string>;
+  /** The model's nondet binders a decision event was decoded from. */
+  readonly binders: ReadonlySet<string>;
 };
 
 /** A mutable accumulator, so a corpus walk needs no set unions per step. */
@@ -126,6 +134,7 @@ export class CoverageBuilder {
   private readonly labels = new Set<StepLabel>();
   private readonly arms = new Set<ExemptionArm>();
   private readonly instances = new Set<string>();
+  private readonly binders = new Set<string>();
 
   observeLabel(label: StepLabel): void {
     this.labels.add(label);
@@ -148,14 +157,75 @@ export class CoverageBuilder {
     this.instances.add(instance);
   }
 
+  /**
+   * Which of the machine's nondet draws this decision event carried. The
+   * mapping is `itf.ts`'s own binder table rather than a second list of names,
+   * so the roster this reports and the roster the decoder demands are one.
+   */
+  observePicks(picks: Picks): void {
+    for (const [bound, as] of nondetBinders) {
+      if (picks[as] !== undefined) {
+        this.binders.add(bound);
+      }
+    }
+  }
+
+  /** Fold another walk's coverage in — the corpus is the union of its fixtures. */
+  absorb(other: Coverage): void {
+    for (const decider of other.deciders) {
+      this.deciders.add(decider);
+    }
+    for (const label of other.labels) {
+      this.labels.add(label);
+    }
+    for (const arm of other.arms) {
+      this.arms.add(arm);
+    }
+    for (const instance of other.instances) {
+      this.instances.add(instance);
+    }
+    for (const binder of other.binders) {
+      this.binders.add(binder);
+    }
+  }
+
   taken(): Coverage {
     return {
       deciders: this.deciders,
       labels: this.labels,
       arms: this.arms,
       instances: this.instances,
+      binders: this.binders,
     };
   }
+}
+
+/**
+ * Every roster entry a fixture may PIN — the manifest's per-fixture claim about
+ * what that fixture is in the corpus for, checked against what it actually
+ * reaches.
+ *
+ * The three trace-observable rosters and no more: an instance is a manifest
+ * field rather than something a trace says, and it is checked as its own
+ * obligation.
+ */
+export const pinnableEntries: readonly string[] = [
+  ...shippedDeciders,
+  ...reachableStepLabels,
+  ...exemptionArms,
+];
+
+/** The pins this fixture claims and does not reach. */
+export function pinsMissed(
+  pins: readonly string[],
+  reached: Coverage,
+): readonly string[] {
+  const covered = new Set<string>([
+    ...reached.deciders,
+    ...reached.labels,
+    ...reached.arms,
+  ]);
+  return pins.filter((pin) => !covered.has(pin));
 }
 
 /** One unmet obligation, named as the roster entry nothing covered. */
@@ -175,15 +245,13 @@ export type CoverageGap = {
  * loader has already refused any name outside this roster. The other three are
  * observed from the traces themselves, where nothing has vetted them.
  */
-export function coverageGaps(
-  coverage: Coverage,
-  shippedDeciders: readonly string[],
-): readonly CoverageGap[] {
+export function coverageGaps(coverage: Coverage): readonly CoverageGap[] {
   return [
     ...missing("decider", shippedDeciders, coverage.deciders),
     ...missing("step label", reachableStepLabels, coverage.labels),
     ...missing("stepDescends exemption arm", exemptionArms, coverage.arms),
     ...missing("mc instance", mcInstances, coverage.instances),
+    ...missing("nondet binder", boundBinderNames, coverage.binders),
     ...unexpected("decider", shippedDeciders, coverage.deciders),
     ...unexpected("step label", reachableStepLabels, coverage.labels),
     ...unexpected("stepDescends exemption arm", exemptionArms, coverage.arms),

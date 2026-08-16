@@ -19,9 +19,9 @@
  *      generation time, so keeping them would make every regeneration a diff.
  *      Nothing reads them — the decoder ignores `#meta` wholesale — and what
  *      they would have told a reader (which command, which seed, which module)
- *      is in the manifest, checkable. The rest of the block is kept: `format`,
- *      `source` and `status` are facts about the document rather than about
- *      when it was written.
+ *      is in the manifest, checkable. The rest of the block is kept as quint
+ *      wrote it — `format`, `format-description`, `source` and `status` are
+ *      facts about the document rather than about when it was written.
  *   2. A TRAILING RUN OF `settled` STATES IS TRUNCATED TO ONE. `settle` is the
  *      dead-end stutter and it dominates a walk that reaches a quiet fleet
  *      early, so a search budget spent there would commit hundreds of
@@ -66,8 +66,22 @@ import { verifyCorpus } from "./verify.ts";
 const QUINT = "./node_modules/.bin/quint";
 const MC = "model/mc/mc_chuggy.qnt";
 
-/** How many times a run that produced no verdict at all is given again. */
-const segfaultRetries = 4;
+/**
+ * The pinned release, read the way `.chug/tasks/check-model.sh` reads it and
+ * for its reason: a different release can change what a trace looks like, and
+ * a corpus emitted by an unpinned tool is a corpus nobody can regenerate to
+ * the same bytes. `--mbt` is experimental, which makes the pin matter more
+ * here than anywhere else in this tree.
+ */
+const QUINT_VERSION = "0.32.0";
+
+/**
+ * How many times a run is ATTEMPTED when it keeps producing no verdict at all.
+ * Stated as attempts rather than as retries: the loop below reads this as its
+ * bound, and "retries" would make the bound one more than the number, which is
+ * the kind of arithmetic a reader has to redo every time.
+ */
+const segfaultAttempts = 5;
 
 type Run = {
   readonly status: number;
@@ -92,7 +106,7 @@ type Run = {
  *     decide it was harmless.
  */
 function runQuint(args: readonly string[]): Run {
-  for (let attempt = 0; attempt <= segfaultRetries; attempt += 1) {
+  for (let attempt = 1; attempt <= segfaultAttempts; attempt += 1) {
     const result = spawnSync(QUINT, [...args], { encoding: "utf8" });
     if (result.error !== undefined) {
       throw new CorpusError(
@@ -110,7 +124,9 @@ function runQuint(args: readonly string[]): Run {
         `quint was killed by ${String(result.signal)}: ${args.join(" ")}`,
       );
     }
-    console.log(`  quint died with no verdict; retrying (ledger #12)`);
+    console.log(
+      `  quint died with no verdict on attempt ${String(attempt)} of ${String(segfaultAttempts)}; retrying (ledger #12)`,
+    );
   }
   throw new CorpusError(
     `quint produced no verdict after every retry: ${args.join(" ")}`,
@@ -247,9 +263,29 @@ function emitTier2(
 
 // === The run ===============================================================
 
+/**
+ * Refuse to emit with an unpinned quint, before anything is written.
+ *
+ * `check-model.sh` states the argument this borrows: a different release can
+ * change what typechecks, and here it can change what a trace CONTAINS — every
+ * committed fixture would then be a document emitted by a tool no other
+ * checkout has. The version is asked of the binary rather than of
+ * `package.json`, because what matters is the one that will run.
+ */
+function requirePinnedQuint(): void {
+  const run = runQuint(["--version"]);
+  const version = run.stdout.trim();
+  if (run.status !== 0 || version !== QUINT_VERSION) {
+    throw new CorpusError(
+      `quint ${version || "(no version)"}, expected ${QUINT_VERSION}; a corpus emitted by an unpinned tool cannot be regenerated`,
+    );
+  }
+}
+
 function main(): number {
   const scratch = mkdtempSync(join(tmpdir(), "chuggy-corpus-"));
   try {
+    requirePinnedQuint();
     const manifest = loadManifest();
     mkdirSync(tier1Dir, { recursive: true });
     mkdirSync(tier2Dir, { recursive: true });

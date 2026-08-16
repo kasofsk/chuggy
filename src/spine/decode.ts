@@ -35,6 +35,7 @@
  */
 
 import { assertNever } from "../domain/assert.ts";
+import { firstTicketId } from "../domain/domain.ts";
 import type {
   Core,
   Phase,
@@ -355,7 +356,7 @@ function stepped(rec: StepRecord, where: string): number {
  * not densely extend the fleet fails here rather than in the comparison.
  */
 function arrivalOf(previous: Core, next: Core, where: string): Cmd {
-  const id = previous.tickets.size + 1;
+  const id = previous.tickets.size + firstTicketId;
   if (previous.tickets.has(id)) {
     throw new DecodeError(
       `${where}: ticket ${String(id)} predates its own arrival`,

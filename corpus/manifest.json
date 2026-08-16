@@ -8,7 +8,13 @@
       "maxSteps": 30,
       "invariant": "cascadeParkNever",
       "expect": "violation",
-      "covers": "the atomic revoke cascade, the pre-work park and its free resume, and a duplicate task completion",
+      "pins": [
+        "decideRevoke",
+        "ticket-revoked",
+        "task-done-duplicate",
+        "operator-retry, RPending flavor"
+      ],
+      "rationale": "the atomic revoke cascade, the pre-work park and its free resume, and a duplicate task completion",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -28,7 +34,12 @@
       "maxSteps": 60,
       "invariant": "lastStep.label != \"wrapup-started\"",
       "expect": "violation",
-      "covers": "the dequeue's moved arm \u2014 the depth-1 gate opening \u2014 and the enqueue that precedes it",
+      "pins": [
+        "decideWrapUpStart",
+        "wrapup-started",
+        "eval-passed"
+      ],
+      "rationale": "the dequeue's moved arm \u2014 the depth-1 gate opening \u2014 and the enqueue that precedes it",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -48,7 +59,11 @@
       "maxSteps": 60,
       "invariant": "lastStep.label != \"complete-duplicate\"",
       "expect": "violation",
-      "covers": "a re-delivered landing absorbed by an already-Done ticket",
+      "pins": [
+        "decideCompleteDuplicate",
+        "complete-duplicate"
+      ],
+      "rationale": "a re-delivered landing absorbed by an already-Done ticket",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -68,7 +83,11 @@
       "maxSteps": 60,
       "invariant": "not(and { lastStep.label == \"ticket-done\", lastStep.transitions.length() > 0, lastStep.transitions[0].from == PWrapUpHolding })",
       "expect": "violation",
-      "covers": "the gated resolution completing out of the held slot",
+      "pins": [
+        "decideWrapUpResolve",
+        "ticket-done"
+      ],
+      "rationale": "the gated resolution completing out of the held slot",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -88,7 +107,11 @@
       "maxSteps": 40,
       "invariant": "lastStep.label != \"eval-stage-passed\"",
       "expect": "violation",
-      "covers": "the eval interpreter advancing a staged program",
+      "pins": [
+        "decideEvalStageReduce",
+        "eval-stage-passed"
+      ],
+      "rationale": "the eval interpreter advancing a staged program",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -108,7 +131,11 @@
       "maxSteps": 40,
       "invariant": "lastStep.label != \"ticket-escalated work_failed\"",
       "expect": "violation",
-      "covers": "a failed work cycle escalating straight to the desk",
+      "pins": [
+        "decideWorkReduce",
+        "ticket-escalated work_failed"
+      ],
+      "rationale": "a failed work cycle escalating straight to the desk",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -128,7 +155,10 @@
       "maxSteps": 60,
       "invariant": "lastStep.label != \"rework-started wrapup_failure\"",
       "expect": "violation",
-      "covers": "the gate eviction priced by gas alone, on the DeadlineOnly branch",
+      "pins": [
+        "rework-started wrapup_failure"
+      ],
+      "rationale": "the gate eviction priced by gas alone, on the DeadlineOnly branch",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -148,7 +178,10 @@
       "maxSteps": 60,
       "invariant": "lastStep.label != \"settled\"",
       "expect": "violation",
-      "covers": "the dead-end stutter on a fully-arrived, wholly-terminal fleet",
+      "pins": [
+        "settled"
+      ],
+      "rationale": "the dead-end stutter on a fully-arrived, wholly-terminal fleet",
       "consts": {
         "N_TICKETS": "2",
         "N_TASKS": "2",
@@ -168,7 +201,10 @@
       "maxSteps": 60,
       "invariant": "not(and { lastStep.label == \"ticket-revoked\", lastStep.transitions.foldl(true, (b, t) => b and t.from == PEscalated) })",
       "expect": "violation",
-      "covers": "a revoke that leaves only settled ranks \u2014 the flat desk-only exemption arm",
+      "pins": [
+        "ticket-revoked, desk-only flat"
+      ],
+      "rationale": "a revoke that leaves only settled ranks \u2014 the flat desk-only exemption arm",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -186,7 +222,12 @@
       "name": "witness-free-climb",
       "module": "chuggy_witness_free_test",
       "run": "freeClimbDeterministicTest",
-      "covers": "the RetryFree pipeline resume \u2014 the exemption arm violation search does not reach",
+      "pins": [
+        "operator-retry, RetryFree pipeline flavor",
+        "ticket-escalated rework_budget_exhausted",
+        "rework-started eval_failure"
+      ],
+      "rationale": "the RetryFree pipeline resume \u2014 the exemption arm violation search does not reach",
       "consts": {
         "N_TICKETS": "2",
         "N_TASKS": "2",
@@ -202,7 +243,12 @@
       "name": "witness-pre-work-resume",
       "module": "chuggy_witness_free_test",
       "run": "preWorkResumeClimbDeterministicTest",
-      "covers": "the pre-work RPending resume, free under both meterings",
+      "pins": [
+        "decideRevalFail",
+        "ticket-escalated revalidation_failed",
+        "operator-retry, RPending flavor"
+      ],
+      "rationale": "the pre-work RPending resume, free under both meterings",
       "consts": {
         "N_TICKETS": "2",
         "N_TASKS": "2",
@@ -218,7 +264,11 @@
       "name": "witness-cascade-park",
       "module": "chuggy_witness_cascade_test",
       "run": "cascadeParkDeterministicTest",
-      "covers": "the revoke cascade parking a pre-flight dependent behind its own wall",
+      "pins": [
+        "decideRevoke",
+        "ticket-revoked, desk-only flat"
+      ],
+      "rationale": "the revoke cascade parking a pre-flight dependent behind its own wall",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -234,7 +284,11 @@
       "name": "witness-stage-advance",
       "module": "chuggy_witness_stage_test",
       "run": "stageAdvanceDeterministicTest",
-      "covers": "a staged eval program advancing, and the landing that follows it",
+      "pins": [
+        "eval-stage-passed",
+        "complete-duplicate"
+      ],
+      "rationale": "a staged eval program advancing, and the landing that follows it",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -250,7 +304,11 @@
       "name": "witness-quiet-land",
       "module": "chuggy_witness_multiproject_test",
       "run": "quietLandDeterministicTest",
-      "covers": "the quiet fast path landing a ticket at its dequeue",
+      "pins": [
+        "decideDequeue",
+        "ticket-done"
+      ],
+      "rationale": "the quiet fast path landing a ticket at its dequeue",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -266,7 +324,12 @@
       "name": "witness-moved-rework",
       "module": "chuggy_witness_multiproject_test",
       "run": "movedReworkAttributedTest",
-      "covers": "the gate rework and the wrap-up budget wall \u2014 the label violation search does not reach",
+      "pins": [
+        "ticket-escalated wrapup_budget_exhausted",
+        "rework-started wrapup_failure",
+        "wrapup-started"
+      ],
+      "rationale": "the gate rework and the wrap-up budget wall \u2014 the label violation search does not reach",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -282,7 +345,11 @@
       "name": "witness-cross-project-dep",
       "module": "chuggy_witness_multiproject_test",
       "run": "crossProjectDepDeterministicTest",
-      "covers": "a dependency chain across projects unblocking on Done-ness alone",
+      "pins": [
+        "decideDispatch",
+        "ticket-done"
+      ],
+      "rationale": "a dependency chain across projects unblocking on Done-ness alone",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -298,7 +365,12 @@
       "name": "witness-lease-exclusive",
       "module": "chuggy_witness_gate_test",
       "run": "leaseExclusiveDeterministicTest",
-      "covers": "the depth-1 refusal mid-trace, and both landing paths on one machine trace",
+      "pins": [
+        "decideWrapUpStart",
+        "decideWrapUpResolve",
+        "ticket-done"
+      ],
+      "rationale": "the depth-1 refusal mid-trace, and both landing paths on one machine trace",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -314,7 +386,11 @@
       "name": "witness-quiet-fast-path",
       "module": "chuggy_witness_gate_test",
       "run": "quietFastPathDeterministicTest",
-      "covers": "the routing decider's quiet arm, pinned against the hoisted route",
+      "pins": [
+        "decideDequeue",
+        "ticket-done"
+      ],
+      "rationale": "the routing decider's quiet arm, pinned against the hoisted route",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -330,7 +406,11 @@
       "name": "witness-gate-eviction-deadline",
       "module": "chuggy_witness_gate_deadline_test",
       "run": "gateEvictionDeadlineOnlyDeterministicTest",
-      "covers": "two gate failures metered by gas alone, into the gas wall",
+      "pins": [
+        "ticket-escalated gas_exhausted",
+        "rework-started wrapup_failure"
+      ],
+      "rationale": "two gate failures metered by gas alone, into the gas wall",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -346,7 +426,11 @@
       "name": "witness-draft-wait",
       "module": "chuggy_witness_draft_wait_test",
       "run": "draftWaitAcceptedDeterministicTest",
-      "covers": "an unreleased dependency blocking through the derived waiting room",
+      "pins": [
+        "decideRelease",
+        "ticket-released"
+      ],
+      "rationale": "an unreleased dependency blocking through the derived waiting room",
       "consts": {
         "N_TICKETS": "2",
         "N_TASKS": "1",
@@ -362,7 +446,11 @@
       "name": "witness-wrapup-none",
       "module": "chuggy_witness_wrapup_none_test",
       "run": "wrapUpNoneCompletesDeterministicTest",
-      "covers": "a WNone ticket completing on its passing evaluation, taking no lease",
+      "pins": [
+        "decideEvalStageReduce",
+        "ticket-done"
+      ],
+      "rationale": "a WNone ticket completing on its passing evaluation, taking no lease",
       "consts": {
         "N_TICKETS": "2",
         "N_TASKS": "1",
