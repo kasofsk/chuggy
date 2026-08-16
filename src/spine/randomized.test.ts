@@ -47,8 +47,10 @@ import {
   CoverageBuilder,
   mcInstances,
   type Coverage,
+  type ExemptionArm,
   type McInstance,
 } from "./coverage.ts";
+import type { StepLabel } from "./decode.ts";
 import {
   driveTrace,
   hex,
@@ -73,13 +75,26 @@ import {
  * enumeration: the cost per step is dominated by filtering the arrival's
  * payload product through `cmdEnabled`, which is the largest single thing this
  * suite does.
+ *
+ * NOTHING CAPS THIS STAGE, so the budget is a judgement and not a limit obeyed,
+ * and it is worth being exact about which ceiling is which. The per-suite cap
+ * in `.chug/tasks/ci.sh` governs the SHELL-suite stage; the TypeScript tests
+ * run uncapped inside `check-ts.sh`. What actually bounds the budget is `just
+ * check` as a whole, and the comparison there is this: node runs the test files
+ * in parallel, so this one file is now the wall clock of the test stage —
+ * every other suite in the tree finishes inside it — while the stage as a whole
+ * stays a fraction of `check-model.sh`, which remains by a wide margin the
+ * slowest gate. `time ./.chug/tasks/check-ts.sh test` and `time
+ * ./.chug/tasks/check-model.sh` are the two commands that check that ordering
+ * has not changed.
  */
 export const walkBudget = { walks: 300, steps: 40 } as const;
 
 /**
  * ONE ROOT SEED PER INSTANCE, and the three are the pinned seeds this tree
- * already carries rather than new ones: `0x2a` is what every sampled fixture in
- * `corpus/manifest.json` was emitted at, and `0xb1` and `0xf1` are the two
+ * already carries rather than new ones: `0x2a` is the seed most of
+ * `corpus/manifest.json`'s sampled fixtures were emitted at (two of them carry
+ * `0x1` — the manifest is the roster), and `0xb1` and `0xf1` are the two
  * resistance probes PLAN.md records. Which instance draws which is arbitrary —
  * a root is a starting point, not a property of a machine — and reusing them
  * keeps one set of pinned seeds in the tree instead of two.
@@ -135,7 +150,26 @@ function runInstance(instance: McInstance): InstanceRun {
   return { instance, walks, ...fold(walks) };
 }
 
-/** The union of a set of runs — rosters unioned, findings concatenated. */
+/**
+ * The union of a run of walks — rosters unioned, witnesses kept at their first
+ * firing, and the findings folded to ONE COUNTEREXAMPLE IN FULL.
+ *
+ * THE FOLD IS WHERE A CONCATENATION WOULD BE WRONG. A defect in a decider is
+ * not found by one walk, it is found by a third of them, and every one of those
+ * findings is the same defect wearing a different seed — so concatenating them
+ * puts hundreds of lines in front of a reader who needs one, and buries the
+ * seed that reproduces it in the middle. What is kept is the shape this file
+ * argues for one level down: the first finding whole, and then the count of
+ * walks that also found something, which is what separates "a defect on one
+ * exotic path" from "a defect on every path". Every one of those walks is
+ * reproducible from its own seed, which is why none of them has to be printed.
+ *
+ * A COUNT AND NOT A ROSTER, and the distinction is the one this tree draws
+ * elsewhere: a roster is owed where the entries are the EVIDENCE — which
+ * decider, which label, which arm — and a list of two hundred seeds that all
+ * reproduce the same step is not evidence, it is the same evidence two hundred
+ * times.
+ */
 function fold(results: readonly RunResult[]): {
   readonly coverage: Coverage;
   readonly firings: ReadonlyMap<string, string>;
@@ -144,12 +178,20 @@ function fold(results: readonly RunResult[]): {
 } {
   const coverage = new CoverageBuilder();
   const firings = new Map<string, string>();
-  const findings: string[] = [];
+  let first: string | undefined = undefined;
+  let alsoFound = 0;
   let steps = 0;
   for (const result of results) {
     coverage.absorb(result.coverage);
     steps += result.steps;
-    findings.push(...result.findings);
+    const [finding] = result.findings;
+    if (finding !== undefined) {
+      if (first === undefined) {
+        first = finding;
+      } else {
+        alsoFound += 1;
+      }
+    }
     for (const firing of result.firings) {
       if (!firings.has(firing.witness)) {
         firings.set(
@@ -159,6 +201,15 @@ function fold(results: readonly RunResult[]): {
       }
     }
   }
+  const findings =
+    first === undefined
+      ? []
+      : alsoFound === 0
+        ? [first]
+        : [
+            first,
+            `and ${String(alsoFound)} of the run\u2019s other ${String(results.length - 1)} walks found something too, each reproducible from its own seed`,
+          ];
   return { coverage: coverage.taken(), firings, findings, steps };
 }
 
@@ -166,10 +217,10 @@ function fold(results: readonly RunResult[]): {
 
 test("the seeded walks hold allInvariants at every step, on all three mc instances", () => {
   for (const run of runs) {
-    // THE WHOLE FINDING, never a count and never the first one. A finding
-    // carries its seed, its step index, the command taken and the conjuncts
-    // that went red, and this is the assertion that puts all of that in front
-    // of whoever reads the failure.
+    // ONE WHOLE FINDING, never a bare count: what `fold` keeps is the first
+    // walk's finding entire — its seed, its step index, the command taken and
+    // the conjuncts that went red — and this is the assertion that puts it in
+    // front of whoever reads the failure.
     assert.deepEqual(
       run.findings,
       [],
@@ -179,20 +230,24 @@ test("the seeded walks hold allInvariants at every step, on all three mc instanc
   }
 });
 
-test("every walk is reproducible from its seed alone", () => {
+test("every walk is reproducible from its seed alone, and two seeds are two walks", () => {
   // THE POINT OF THE SEEDED GENERATOR, asserted rather than assumed: a defect
   // this layer reports is worth reporting only if the walk that found it can be
-  // re-run. Same seed, same walk — steps, rosters and witness firings alike;
-  // a different seed is a different walk, which is what keeps the run from
-  // being one trace repeated.
+  // re-run. Same seed, same walk — the whole result, trace and rosters and
+  // witness firings alike.
   const cfg = configs.budgeted;
   const [first, second] = walkSeeds(0x2a, 2);
   assert.ok(first !== undefined && second !== undefined);
   const once = walkOnce(cfg, "budgeted", first, walkBudget.steps);
   const again = walkOnce(cfg, "budgeted", first, walkBudget.steps);
   assert.deepEqual(again, once);
+  // AND THE OTHER HALF, ASKED OF THE TRACE RATHER THAN THE COVERAGE. Two
+  // different walks routinely reach the same label set — the shallow region is
+  // small — so a coverage comparison here would be asking whether two runs
+  // COLLIDED in a lossy signature, and would pass or fail on how coarse that
+  // signature happens to be. The step sequence is the run itself.
   const other = walkOnce(cfg, "budgeted", second, walkBudget.steps);
-  assert.notDeepEqual(other.coverage, once.coverage);
+  assert.notDeepEqual(other.trace, once.trace);
 });
 
 test("each instance's walk reaches the roster it is stated to reach", () => {
@@ -208,12 +263,12 @@ test("each instance's walk reaches the roster it is stated to reach", () => {
       `${run.instance}: the walk stopped reaching a decider it used to`,
     );
     assert.deepEqual(
-      sampledLabels.filter((l) => !hasEntry(run.coverage.labels, l)),
+      sampledLabels.filter((l) => !run.coverage.labels.has(l)),
       [],
       `${run.instance}: the walk stopped reaching a step label it used to`,
     );
     assert.deepEqual(
-      sampledArms.filter((a) => !hasEntry(run.coverage.arms, a)),
+      sampledArms.filter((a) => !run.coverage.arms.has(a)),
       [],
       `${run.instance}: the walk stopped firing an exemption arm it used to`,
     );
@@ -222,11 +277,27 @@ test("each instance's walk reaches the roster it is stated to reach", () => {
 
 /**
  * WHAT UNIFORM SAMPLING REACHES AT THESE CONSTS, on EVERY one of the three
- * instances — the intersection, measured at the budget and roots above. Two of
- * the runs reach more than this (the budgeted root's walks also pass an
- * evaluation and land a ticket outright), and the floor deliberately does not
- * say so: an entry only one run reaches is a claim about one seed rather than
- * about the exploration.
+ * instances — the intersection, measured at the budget and roots above. The
+ * budgeted root reaches more than this (its walks also pass an evaluation stage
+ * and land a ticket outright), and the floor deliberately does not say so: an
+ * entry one run reaches and the others do not is a claim about one seed rather
+ * than about the exploration.
+ *
+ * THE FLOORS ARE INSTANCE-BLIND BY CONSTRUCTION — one shared list checked
+ * against all three runs — and that is a decision rather than an omission. What
+ * distinguishes the three instances is gate pricing and retry pricing, and
+ * neither is visible in the region uniform sampling reaches; the per-instance
+ * facts are held by the PROBES instead, which is where they belong. The
+ * `RetryFree` churn arm is the case in point: it is an arm only the retryfree
+ * instance has, no floor names it, and what keeps it live is the free-climb
+ * probe below, which reds when the arm stops firing.
+ *
+ * A FLOOR ENTRY CAN BE THIN, and one is: `work-passed` is reached by a single
+ * one of the retryfree run's walks. That is fine while the roots are pinned —
+ * the run is deterministic — but it means these floors are DERIVED FROM the
+ * roots above rather than independent of them. Changing a root, the budget or
+ * the enumeration obliges re-deriving them, by running the suite and reading
+ * what the assertion reports missing.
  *
  * The deep half of the machine — the wrap-up phases, the rework economy's walls
  * — is not here at all, and the file header says why: this is the model's own
@@ -244,7 +315,7 @@ const sampledDeciders: readonly string[] = [
   "decideOpRetry",
 ];
 
-const sampledLabels: readonly string[] = [
+const sampledLabels: readonly StepLabel[] = [
   "init",
   "ticket-arrived",
   "ticket-released",
@@ -259,7 +330,7 @@ const sampledLabels: readonly string[] = [
   "settled",
 ];
 
-const sampledArms: readonly string[] = [
+const sampledArms: readonly ExemptionArm[] = [
   "init",
   "task-done-duplicate",
   "settled",
@@ -268,20 +339,19 @@ const sampledArms: readonly string[] = [
   "ticket-revoked, desk-only flat",
 ];
 
-/** Membership in a roster set whose entries are narrower types than `string`. */
-function hasEntry(reached: ReadonlySet<string>, entry: string): boolean {
-  return reached.has(entry);
-}
-
 // === The anti-vacuity witnesses ============================================
 
 test("cascadeParkNever is violated by sampling, on every instance", () => {
   // THE EXPECTED VIOLATION, and the probe fails when it stops happening: a
   // revoke that parks no dependent would make `cascadeSafety` vacuously true
   // wherever `revokeDoomed` stayed empty, and every green walk above would go
-  // on passing. This one witness IS reachable by sampling — comfortably, on
-  // roughly a quarter of the walks — so it is asserted where the model would
-  // rather have it, on machine traces nobody wrote down.
+  // on passing. This one witness IS reachable by sampling, and comfortably so
+  // on all three instances, though not equally: the rate runs from about a
+  // twelfth of the retryfree walks — where a two-ticket fleet is the whole
+  // supply of dependents — to better than a quarter of the other two. Re-read
+  // the rate by counting `firings` per walk rather than folding them; the probe
+  // itself asks only that the shape occurred, which is the claim the witness
+  // makes.
   for (const run of runs) {
     assert.ok(
       run.firings.has("cascadeParkNever"),
@@ -299,10 +369,12 @@ test("cascadeParkNever is violated by sampling, on every instance", () => {
 // be fired by a deterministic run, and both shapes below sit behind chains of
 // correctly-drawn steps that uniform sampling does not find. PLAN.md records
 // the search that established it for the free climb — not reached across
-// roughly 240000 model traces, at budgets to 200000 samples of 100 steps — and
-// the walks above reach a stage advance about once in three hundred walks,
-// which is a probe that would go quiet under a seed change rather than under a
-// defect.
+// roughly 240000 model traces, at budgets to 200000 samples of 100 steps. The
+// stage advance is the same story one order of magnitude in: the runs above
+// reach it zero times, and so does a thirtyfold extension of them from the same
+// roots (raise `walkBudget.walks` and count the `stageAdvanceNever` firings to
+// re-measure). A sampled probe for it would be a probe that goes quiet under a
+// reseed rather than under a defect.
 //
 // Each script is the model's `run` with its `do*` drivers read as the `Cmd`s
 // they are, at the same consts, step for step.
@@ -435,11 +507,23 @@ test("stageAdvanceNever is violated on the stage-advance trace, and no other wit
   // The trace closes the lifecycle the sampled walks never reach, and the
   // roster is the evidence: the two labels past evaluation, the landing that
   // resolves without opening a gate, and the absorbed duplicate.
+  const closingLabels: readonly StepLabel[] = [
+    "eval-passed",
+    "ticket-done",
+    "complete-duplicate",
+  ];
   assert.deepEqual(
-    ["eval-passed", "ticket-done", "complete-duplicate"].filter(
-      (l) => !hasEntry(stageAdvance.coverage.labels, l),
-    ),
+    closingLabels.filter((l) => !stageAdvance.coverage.labels.has(l)),
     [],
+  );
+  // AND THE EIGHTH EXEMPTION ARM, which is reachable on no other run in this
+  // file: `complete-duplicate` needs a landed ticket to re-deliver a completion
+  // to, and the sampled walks do not land one. With this the two deterministic
+  // traces and the sampled walks together fire all eight arms of
+  // `stepDescends` — the roster PLAN.md's coverage obligation names.
+  assert.ok(
+    stageAdvance.coverage.arms.has("complete-duplicate"),
+    "the complete-duplicate exemption arm did not fire on the absorbed duplicate",
   );
 });
 

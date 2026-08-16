@@ -112,3 +112,21 @@ function bigintsAsDigits(_key: string, value: unknown): unknown {
 function stringify(value: unknown): string | undefined {
   return JSON.stringify(value, bigintsAsDigits);
 }
+
+/**
+ * An error's message, for a `catch` that has to report one.
+ *
+ * IT IS HERE BECAUSE THREE LAYERS CATCH, and each was carrying its own copy:
+ * the replayer, the corpus reader, and the randomized walker. `catch` binds
+ * `unknown`, so every one of them needs the same two lines — and a helper that
+ * is written once per layer is a helper the next layer writes a fourth time.
+ * The domain is where it goes for the reason the two assertions above are here:
+ * it is pure, total, and the deepest layer, so every layer above can import it
+ * and none of them has to reach sideways for it.
+ *
+ * `AssertionError` needs no clause of its own: it extends `Error`, so the copy
+ * that named it separately was testing the same thing twice.
+ */
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

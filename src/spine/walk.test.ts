@@ -26,10 +26,24 @@
  * it never issued. Drawing the id out of the enablement set would make the
  * filter tautological — the walker would be asking `cmdEnabled` about commands
  * `cmdEnabled`'s own definitions had just produced, and a defect in either would
- * agree with itself. Only the AUTHORING universes are drawn from the model's
- * sets (`dependableIn`, `validPrograms`, `projects`, `wrapUpChoices`), because
- * there the model's action draws from exactly those sets too: the refusal rule
- * IS the set, and there is no wider bounded space to draw from.
+ * agree with itself.
+ *
+ * Two kinds of draw are the exception, and they are exceptions for two
+ * different reasons. The AUTHORING universes — `dependableIn`,
+ * `validPrograms`, `projects`, `wrapUpChoices` — are taken from the model's own
+ * sets because there the refusal rule IS the set: the model's action draws from
+ * exactly those, and there is no wider bounded space to draw from. The two
+ * CLOSED payloads — a verdict and the dequeue's `moved` — are written out here
+ * as the model writes them, `Set(VPass, VFail)` and `Set(true, false)`, because
+ * a two-element universe has no set to consult.
+ *
+ * That leaves ONE draw taken from a set `cmdEnabled` then filters by:
+ * `wrapUpOutcomes(true)`, the gate resolution's outcome. It is the tautological
+ * shape this paragraph warns about, and it is harmless here rather than
+ * defended: the set is the model's refusal rule for that draw exactly as the
+ * authoring universes are, and enumerating a wider space would mean inventing
+ * an outcome the type does not have. It is named because a reader counting the
+ * exceptions should find the count already made.
  *
  * THE ACTION IS DRAWN IN TWO STAGES — a tag, then a payload — because that is
  * the shape of the model's own `step`: `any { arrive, release, … }` picks among
@@ -39,10 +53,17 @@
  * four draws outnumbers every other constructor's picks together, so a flat
  * walk would spend its budget authoring tickets and never reach a gate.
  *
- * `settle` IS ONE OF THE OPTIONS, not a fallback. It is in the model's `step`
- * roster, its guard is `quiet`, and its own exemption arm is a coverage
- * obligation — a walker that only settled when nothing else was enabled would
- * never take it, because a quiet fleet still has `complete-duplicate`.
+ * `settle` IS ONE OF THE OPTIONS, not a fallback, because it is one of the
+ * disjuncts of the model's `step` — a step of the domain machine that happens
+ * to have no decider, rather than something the walker does when it runs out of
+ * ideas. A walker that took it only when nothing else was enabled would be
+ * walking a machine whose `step` roster has twelve entries instead of
+ * thirteen. (The tempting second reason — that a quiet fleet still enables
+ * `complete-duplicate`, so a fallback would never fire — does not survive
+ * measurement: that arm needs a LANDED ticket, and landing is so rare under
+ * uniform choice that `randomized.test.ts`'s shared floor cannot name
+ * `ticket-done` at all. The decision stands on the model's roster, which is
+ * why the roster is the reason given.)
  *
  * WHAT THIS FILE IS NOT. It declares no test: it is the harness
  * `randomized.test.ts` drives, on `fixtures.test.ts`'s precedent — the `.test.ts`
@@ -52,7 +73,7 @@
  * is a pure function of an integer.
  */
 
-import { AssertionError } from "../domain/assert.ts";
+import { messageOf } from "../domain/assert.ts";
 import {
   dependableIn,
   projects,
@@ -407,6 +428,18 @@ type Chooser = (
 export type RunResult = {
   readonly where: string;
   readonly steps: number;
+  /**
+   * The moves taken, in order — the run itself, not a summary of it.
+   *
+   * It is kept because two different things need a run's IDENTITY and neither
+   * can get it from the rosters: the reproducibility probe, which must be able
+   * to say that two seeds walked DIFFERENT machines rather than that they
+   * happened to reach different label sets, and a reader chasing a finding,
+   * for whom the steps before the one that failed are the counterexample. A
+   * roster is lossy about both — two walks that reach the same labels in a
+   * different order are the same coverage and different runs.
+   */
+  readonly trace: readonly string[];
   readonly coverage: Coverage;
   readonly firings: readonly WitnessFiring[];
   readonly findings: readonly string[];
@@ -446,6 +479,7 @@ function runMachine(
   coverage.observeInstance(instance);
   const firings: WitnessFiring[] = [];
   const findings: string[] = [];
+  const trace: string[] = [];
   const report = (detail: string): void => {
     findings.push(`${where}: ${detail}`);
   };
@@ -483,20 +517,39 @@ function runMachine(
       break;
     }
     state = stepped;
+    const taken = showMove(move);
+    trace.push(taken);
     if (move.kind === "cmd") {
       coverage.observeCmd(move.cmd);
     }
-    observe(coverage, cfg, state, step, findings, where, showMove(move));
-    for (const witness of witnessNames) {
-      if (
-        !witnesses[witness](cfg, state) &&
-        !firings.some((f) => f.witness === witness)
-      ) {
-        firings.push({ witness, step, label: state.lastStep.label });
+    observe(coverage, cfg, state, step, findings, where, taken);
+    // GUARDED FOR `observe`'s REASON, and it is the same hazard: `freeClimbNever`
+    // reads `currentMeasure`, so `measure.ts`'s assertions are reachable from a
+    // witness too. A witness that cannot be evaluated is a finding here rather
+    // than an exception thrown past the run.
+    try {
+      for (const witness of witnessNames) {
+        if (
+          !witnesses[witness](cfg, state) &&
+          !firings.some((f) => f.witness === witness)
+        ) {
+          firings.push({ witness, step, label: state.lastStep.label });
+        }
       }
+    } catch (error) {
+      report(
+        `step ${String(step)} after ${taken}: a witness threw: ${messageOf(error)}`,
+      );
     }
   }
-  return { where, steps: step, coverage: coverage.taken(), firings, findings };
+  return {
+    where,
+    steps: step,
+    trace,
+    coverage: coverage.taken(),
+    firings,
+    findings,
+  };
 }
 
 /**
@@ -669,6 +722,18 @@ function offered(options: readonly Available[], cmd: Cmd): boolean {
  * describe a failure, and a bundle that goes red while the roster finds nothing
  * is itself reported: that pair disagreeing is a defect in the checking layer
  * rather than in the machine.
+ *
+ * NOTHING IN HERE MAY THROW PAST THIS FUNCTION, and that is the whole reason
+ * the body is three guarded regions rather than four lines. Every call below
+ * reaches `measure.ts`, whose helpers assert their preconditions liberally and
+ * are RIGHT to — but a walker exists precisely to reach states nobody wrote a
+ * precondition for, so an assertion firing here is this layer's most valuable
+ * result, not its accident. Unguarded it escapes the run, escapes the module
+ * scope the runs are built at, and takes every test in the file down with it
+ * carrying no seed, no step and no command: the found-a-defect-and-threw-away-
+ * the-only-copy failure this file's own header names. Guarded it is a finding
+ * in the same shape as every other, and the eight probes go on reporting
+ * independently.
  */
 function observe(
   coverage: CoverageBuilder,
@@ -691,14 +756,32 @@ function observe(
     findings.push(`${at}: ${messageOf(error)}`);
     return;
   }
-  coverage.observeArm(cfg, state.core, state.lastStep);
-  if (invariantsHold(cfg, state)) {
+  // THE ARM ATTRIBUTION ASKS `stepDescends` TWICE, THROUGH `sysMeasure`, so
+  // every account assertion in `measure.ts` is reachable from this one line.
+  try {
+    coverage.observeArm(cfg, state.core, state.lastStep);
+  } catch (error) {
+    findings.push(
+      `${at}: the exemption arm could not be read: ${messageOf(error)}`,
+    );
     return;
   }
-  const red = [...redConjuncts({ cfg, core: state.core, history: state })];
-  findings.push(
-    `${at}: allInvariants is false; red conjuncts: ${red.length === 0 ? "none — the bundle and the roster disagree" : red.join(", ")}`,
-  );
+  // THE BUNDLE, AND THE ROSTER THAT NAMES ITS FAILURE — one region, because a
+  // state that makes the bundle throw makes the roster throw on the same
+  // conjunct, and a reader wants the state named once. `measureNonNegative`'s
+  // own header says this is how a negative account arrives: louder than the
+  // model's `false`, as a thrown assertion.
+  try {
+    if (invariantsHold(cfg, state)) {
+      return;
+    }
+    const red = [...redConjuncts({ cfg, core: state.core, history: state })];
+    findings.push(
+      `${at}: allInvariants is false; red conjuncts: ${red.length === 0 ? "none — the bundle and the roster disagree" : red.join(", ")}`,
+    );
+  } catch (error) {
+    findings.push(`${at}: allInvariants threw: ${messageOf(error)}`);
+  }
 }
 
 // === Reporting =============================================================
@@ -709,10 +792,17 @@ function showMove(move: Move): string {
 }
 
 /**
- * A command as one line, with its one set spelled as the ids it holds, in
- * ascending order — the printed form is what `offered` compares two commands
- * by, so an id order that depended on how the set was built would make two
- * equal decisions read as different ones.
+ * A command as one line, in a CANONICAL form: its one set spelled as the ids it
+ * holds in ascending order, and its remaining fields in a fixed key order.
+ *
+ * BOTH ORDERINGS ARE LOAD-BEARING, not cosmetic. `offered` compares two
+ * commands by this string, so anything about it that depended on how the record
+ * was BUILT rather than on what it SAYS would make two equal decisions read as
+ * different ones — and the enumeration builds its commands here while a
+ * deterministic script builds its own by hand. A set iterates in insertion
+ * order and an object's own keys enumerate in declaration order; sorting closes
+ * both, and the whole reason a printed form is the comparison at all is that
+ * `Cmd` ships no structural equality to reuse.
  */
 export function showCmd(cmd: Cmd): string {
   if (cmd.tag === "JArrive") {
@@ -720,6 +810,7 @@ export function showCmd(cmd: Cmd): string {
   }
   const rest = Object.entries(cmd)
     .filter(([key]) => key !== "tag")
+    .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
   return `${cmd.tag} ${rest}`;
@@ -728,10 +819,4 @@ export function showCmd(cmd: Cmd): string {
 /** A seed as the model's own `--seed` spelling. */
 export function hex(seed: number): string {
   return `0x${(seed >>> 0).toString(16)}`;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof AssertionError || error instanceof Error
-    ? error.message
-    : String(error);
 }
