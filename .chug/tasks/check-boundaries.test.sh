@@ -104,6 +104,30 @@ printf '%s\n' 'import { port } from "../interpreter/port.ts"' 'export const x = 
 seal
 check "the domain may not reach outward" 1 "$RC" "domain-is-pure"
 
+# --- actor-sees-domain-only --------------------------------------------------
+
+# The actor importing the domain is the allowed direction, so the rule's clean
+# side is proved before its bite: a red here would mean the rule over-fires on
+# the one edge the layer exists to take.
+fixture
+mkdir -p "$R/src/actor"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const y = x' > "$R/src/actor/b.ts"
+printf '%s\n' 'import { y } from "../src/actor/b.ts"' 'export const z = y' > "$R/test/a.test.ts"
+seal
+check "the actor importing the domain is clean" 0 "$RC" "graph clean"
+check "the clean actor graph counts every module cruised" 0 "$RC" "across 3 module(s)"
+
+# The same tree with one platform import added: the domain edge stays innocent,
+# so only the actor's own rule can catch it.
+fixture
+mkdir -p "$R/src/actor"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../domain/a.ts"' 'import { join } from "node:path"' 'export const y = join("a", String(x))' > "$R/src/actor/b.ts"
+printf '%s\n' 'import { y } from "../src/actor/b.ts"' 'export const z = y' > "$R/test/a.test.ts"
+seal
+check "the actor may not reach past the domain" 1 "$RC" "actor-sees-domain-only"
+
 # --- The layer boundaries ----------------------------------------------------
 
 # The suites are downstream of every part of src/. From the domain the broader

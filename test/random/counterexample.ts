@@ -21,8 +21,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Config } from "../../src/domain/config.ts";
+import { initRecord } from "../../src/domain/core.ts";
 import { encodeCore, encodeStepRecord } from "../itf/vocabulary.ts";
-import { initRecord } from "../domain/fixtures.ts";
 import { drawnWire, type Drawn } from "./draws.ts";
 import { shrinkSteps } from "./shrink.ts";
 import {
