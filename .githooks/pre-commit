@@ -76,6 +76,7 @@ run_gate "check-figures" ./.chug/tasks/check-figures.sh
 run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
 run_gate "check-gates" ./.chug/tasks/check-gates.sh
 run_gate "check-comments" ./.chug/tasks/check-comments.sh
+run_gate "check-knowledge" ./.chug/tasks/check-knowledge.sh
 
 # check-paths is whole-tree in `just check` and staged-only here. It resolves
 # against the whole tracked set either way, so the narrowing changes what is

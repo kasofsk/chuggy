@@ -85,10 +85,15 @@ if [ -x ./.chug/tasks/check-gates.sh ]; then
 	run_gate "check-gates" ./.chug/tasks/check-gates.sh
 fi
 
-# Last of the pure-shell gates because its corpus is the newest and smallest,
-# and every gate above reads more of the tree than it does.
+# The last of the pure-shell gates, on the same rule that orders the rest: each
+# reads less of the tree than anything above it. check-comments has the newest
+# corpus and check-knowledge reads one directory.
 if [ -x ./.chug/tasks/check-comments.sh ]; then
 	run_gate "check-comments" ./.chug/tasks/check-comments.sh
+fi
+
+if [ -x ./.chug/tasks/check-knowledge.sh ]; then
+	run_gate "check-knowledge" ./.chug/tasks/check-knowledge.sh
 fi
 
 # --- Shell suites ------------------------------------------------------------
