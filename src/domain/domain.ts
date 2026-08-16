@@ -1,7 +1,13 @@
 /**
- * `model/domain.qnt`'s AUTHORING-AND-WORK HALF in TypeScript: the machine's
- * consts, the authoring universes, the decision plumbing, twelve of the twenty
- * `*In` enablement predicates, and six of the thirteen deciders.
+ * `model/domain.qnt`'s DECISION LAYER in TypeScript: the machine's consts, the
+ * authoring universes, the decision plumbing, all twenty `*In` enablement
+ * predicates, and all thirteen deciders.
+ *
+ * WHAT IS NOT HERE, and where it goes instead: the model's state-and-actions
+ * section (the four vars, `init`, the thirteen actions, `installCore`) is the
+ * machine's rather than a decider's — its TypeScript home is the spine, s3 —
+ * and the twenty-three invariants are s2c's. This file is exactly the part of
+ * `chuggy_domain` that is a pure function of a `Core`.
  *
  * THE MODEL IS THE SPEC AND ITS HEADER IS THE ARGUMENT. Why a ticket's life has
  * the shape it has, why the cascade parks rather than cascade-revokes, why
@@ -12,12 +18,11 @@
  * cannot state: how its constructs are spelled in TypeScript, and which of its
  * prose caller-guarantees became runtime assertions.
  *
- * DEFINITION ORDER IS THE MODEL'S, so the two files read side by side. The gaps
- * are the other half's — the eval/gate/desk predicates and deciders
- * (`reducibleEvalIn`, `wrapUpStartableIn`, `leaseFreeIn`, `holdingIn`,
- * `doneIn`, `retryablesIn`, `retryableIn`, `wrapUpOutcomes`, `resumeCharge`,
- * `leaseOf`, `withWrapUpObs`, `completeTicket`, and the seven remaining
- * deciders) land in the same order in the same file, in their model positions.
+ * DEFINITION ORDER IS THE MODEL'S, definition for definition, so the two files
+ * read side by side. The file was written in two slices and the order is the
+ * model's rather than either slice's: the eval, gate and desk half landed in
+ * its model positions, interleaved with the authoring-and-work half, not
+ * appended to it.
  *
  * THE ENCODING, beyond `measure.ts`'s four decisions, which this file inherits:
  *
@@ -45,6 +50,8 @@
 
 import { assertNever, invariant } from "./assert.ts";
 import {
+  combine,
+  evalStage,
   firstTaskId,
   nextTaskId,
   resolveTask,
@@ -68,6 +75,7 @@ import {
   type Ticket,
   type Verdict,
   type WrapUp,
+  type WrapUpOutcome,
   type WrapUpPricing,
 } from "./measure.ts";
 
@@ -250,9 +258,17 @@ export function wrapUpChoices(cfg: Config): readonly WrapUp[] {
   return choices;
 }
 
+/**
+ * The repo universe's floor, named on `firstTaskId`'s precedent: every
+ * admissible instance draws its repos from `firstRepoId..N_REPOS`, so this is
+ * the number `noResource` has to sit below to be safe at EVERY instance rather
+ * than at the ones this tree happens to configure.
+ */
+export const firstRepoId = 1;
+
 /** `model/domain.qnt` repos — the repo universe an arrival's target is drawn from. */
 export function repos(cfg: Config): ReadonlySet<number> {
-  return rangeSet(1, cfg.nRepos);
+  return rangeSet(firstRepoId, cfg.nRepos);
 }
 
 /** `model/domain.qnt` bounds — the measure's bounds, from this instance's consts. */
@@ -437,6 +453,28 @@ export function noop(c: Core, label: string): Decision {
   };
 }
 
+/**
+ * `model/domain.qnt` withWrapUpObs — stamp the landing-boundary attribution on
+ * a decision. `decideWrapUpResolve` routes EVERY arm through this, so each step
+ * that resolves a landing attempt carries the target repo and the environment's
+ * invalidated choice for that attempt.
+ *
+ * The post-state is passed through UNTOUCHED, which is the whole of what makes
+ * this an observation rather than a decision: the attribution lives in the
+ * `StepRecord` and in no ticket field, so nothing stores what repo an attempt
+ * was for.
+ */
+export function withWrapUpObs(
+  d: Decision,
+  repo: number,
+  moved: boolean,
+): Decision {
+  return {
+    rec: { ...d.rec, landing: { tag: "WOAttempt", repo, invalidated: moved } },
+    post: d.post,
+  };
+}
+
 // --- Authoring: arrival, release, revoke -----------------------------------
 
 /**
@@ -601,6 +639,71 @@ export function revocableIn(c: Core, j: number): boolean {
   return p !== "PDone" && p !== "PRevoked";
 }
 
+/** The model's inline `match OP_RETRY_PRICING { RetryCharged => 1 | RetryFree => 0 }`. */
+function meteredResume(pricing: RetryPricing): number {
+  switch (pricing) {
+    case "RetryCharged":
+      return 1;
+    case "RetryFree":
+      return 0;
+    default:
+      return assertNever(pricing, "unhandled RetryPricing");
+  }
+}
+
+/**
+ * `model/domain.qnt` resumeCharge — what one operator resume costs, by flavor.
+ * The pricing table and the argument for each row are the model's.
+ *
+ * The model's third row is a WILDCARD arm; its three members are written out
+ * here on `measure.ts`'s `phaseRank` precedent — an exhaustive switch is what
+ * makes a future `Resume` constructor a compile error rather than a silent
+ * charge. `RNone` is one of those three, and it is charged rather than refused
+ * for the model's stated reason: `retryableIn` refuses it, so the row is
+ * unreachable through the machine, and `decideOpRetry`'s `RNone` arm is a
+ * guarded no-op that never reads the price.
+ */
+export function resumeCharge(cfg: Config, at: Resume): number {
+  switch (at) {
+    case "RPending":
+      return 0;
+    case "RWorking":
+      return 1;
+    case "REvaluating":
+    case "RWrapUp":
+    case "RNone":
+      return meteredResume(cfg.opRetryPricing);
+    default:
+      return assertNever(at, "unhandled Resume");
+  }
+}
+
+/**
+ * Does a modeled resume EXIST for this ticket? `retryableIn`'s middle conjunct,
+ * named once because `decideOpRetry`'s guard needs the same question and a
+ * second spelling of it would be the restated guard this file forbids — the one
+ * wall without a resume is `dependency_revoked`, and it is exactly the arm the
+ * decider answers rather than refuses.
+ */
+function hasModeledResume(t: Ticket): boolean {
+  return t.resumeAt !== "RNone";
+}
+
+/**
+ * `model/domain.qnt` retryableIn — may the operator Retry this parked ticket? A
+ * resume must EXIST and be AFFORDABLE. The one wall with no modeled resume is
+ * `dependency_revoked`, and the model's header has the argument for that
+ * deliberate restriction.
+ */
+export function retryableIn(cfg: Config, c: Core, j: number): boolean {
+  const jb = ticketAt(c, j);
+  return (
+    jb.phase === "PEscalated" &&
+    hasModeledResume(jb) &&
+    resumeCharge(cfg, jb.resumeAt) <= jb.gasLeft
+  );
+}
+
 /**
  * `model/domain.qnt` waitsOn — WHAT A TICKET WAITS ON before it may run, the
  * single definition read by the readiness check, the structural-deadlock check
@@ -619,8 +722,10 @@ export function waitsOn(c: Core, j: number): ReadonlySet<number> {
  * the whole requirement, and it is stricter than it looks: ordering by
  * dependency id would order by WHICH dep carried which mark, so two Cores the
  * model calls equal here — same marks, different dependencies producing them —
- * would answer with unequal arrays, and s2b's release read would compare them
- * and disagree with the model.
+ * would answer with unequal arrays, and a future consumer comparing them would
+ * disagree with the model. No consumer exists yet — the model derives
+ * `depArtifacts` and no decider reads it, s2b's included — which is exactly why
+ * the canonicity has to be right before one arrives.
  *
  * THE ORDER IS LEXICOGRAPHIC ON THAT KEY, DELIBERATELY NOT NUMERIC ON THE
  * MARK: `ASome:10` sorts before `ASome:2`. Canonicity asks for an order that
@@ -706,6 +811,38 @@ export function reducibleWorkIn(c: Core): ReadonlySet<number> {
 }
 
 /**
+ * `model/domain.qnt` reducibleEvalIn — an Evaluating ticket whose CURRENT
+ * stage's task set is fully resolved. Its twin above differs in the phase
+ * conjunct alone, and that difference is the whole of which reduce fires.
+ */
+export function reducibleEvalIn(c: Core): ReadonlySet<number> {
+  return keysWhere(c, (j) => {
+    const jb = ticketAt(c, j);
+    return jb.phase === "PEvaluating" && runningCount(jb.tasks) === 0;
+  });
+}
+
+/** `model/domain.qnt` wrapUpStartablesIn — enqueued tickets whose repo's gate is free. */
+export function wrapUpStartablesIn(c: Core): ReadonlySet<number> {
+  return keysWhere(c, (j) => wrapUpStartableIn(c, j));
+}
+
+/** `model/domain.qnt` holdingIn — the occupied gate slots. */
+export function holdingIn(c: Core): ReadonlySet<number> {
+  return keysWhere(c, (j) => ticketAt(c, j).phase === "PWrapUpHolding");
+}
+
+/** `model/domain.qnt` doneIn — the landed tickets. */
+export function doneIn(c: Core): ReadonlySet<number> {
+  return keysWhere(c, (j) => ticketAt(c, j).phase === "PDone");
+}
+
+/** `model/domain.qnt` retryablesIn — parked tickets the operator may Retry. */
+export function retryablesIn(cfg: Config, c: Core): ReadonlySet<number> {
+  return keysWhere(c, (j) => retryableIn(cfg, c, j));
+}
+
+/**
  * `model/domain.qnt` isReadyIn — the derived waiting room: a dep that is not
  * Done blocks, including an UNRELEASED one.
  */
@@ -732,6 +869,62 @@ export function dispatchableIn(c: Core, j: number): boolean {
  */
 export function deliverableTaskIds(c: Core, j: number): ReadonlySet<number> {
   return rangeSet(firstTaskId, nextTaskId(ticketAt(c, j)) - 1);
+}
+
+// --- The lease guards ------------------------------------------------------
+
+/**
+ * The answer `leaseOf` gives for a wrap-up kind that needs no lease. The model
+ * writes it as a bare `0` and states the property that makes it safe: no
+ * resource universe contains it, so it can never collide with a real holder.
+ *
+ * THE PROPERTY IS BELOW THE FLOOR, NOT OUTSIDE ONE UNIVERSE. Any value outside
+ * `1..N_REPOS` passes a membership check at some given instance and collides at
+ * a larger one — `3` is safe at `nRepos = 2` and is a real resource at
+ * `nRepos = 3`. What makes this value safe at EVERY admissible instance is
+ * `noResource < firstRepoId`, and that is what the tests pin.
+ */
+export const noResource = firstRepoId - 1;
+
+/**
+ * `model/domain.qnt` leaseOf — the resource this ticket's wrap-up needs a lease
+ * on.
+ */
+export function leaseOf(t: Ticket): number {
+  switch (t.wrapUp.tag) {
+    case "WNone":
+      return noResource;
+    case "WExclusive":
+      return t.wrapUp.resource;
+    default:
+      return assertNever(t.wrapUp, "unhandled WrapUp");
+  }
+}
+
+/**
+ * `model/domain.qnt` leaseFreeIn — is resource `r` unheld? Occupancy is a
+ * DERIVED predicate over phase, so nothing tracks it and nothing cleans up.
+ *
+ * The loop is bounded by the fleet, which the arrival bound bounds.
+ */
+export function leaseFreeIn(c: Core, r: number): boolean {
+  for (const k of c.tickets.keys()) {
+    const jb = ticketAt(c, k);
+    if (jb.phase === "PWrapUpHolding" && leaseOf(jb) === r) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * `model/domain.qnt` wrapUpStartableIn — may ticket j be DEQUEUED? Enqueued,
+ * and its target repo's gate free. THE DEPTH-1 REFUSAL LIVES HERE, and the
+ * model's header records the trace it is pinned on.
+ */
+export function wrapUpStartableIn(c: Core, j: number): boolean {
+  const jb = ticketAt(c, j);
+  return jb.phase === "PWrapUp" && leaseFreeIn(c, leaseOf(jb));
 }
 
 /**
@@ -875,4 +1068,434 @@ export function decideWorkReduce(c: Core, j: number): Decision {
     "RsWorkFailed",
     "ticket-escalated work_failed",
   );
+}
+
+/**
+ * `model/domain.qnt` decideEvalStageReduce — THE EVAL-PROGRAM INTERPRETER. The
+ * machinery is here; the program is data on the ticket. Three edges out of a
+ * fully-resolved stage — advance, pass, short-circuit — and the model's header
+ * argues each, including why a skipped stage leaves no task records and why an
+ * evaluator's own death is priced as a failed verdict.
+ *
+ * TWO ENCODINGS, both forced by TypeScript and neither changing an answer:
+ *
+ *   - The model's `s + 1 < jb.program.length()` becomes the indexed lookup
+ *     being defined. Over a dense list they are the same question, and only
+ *     the lookup narrows the value the next branch needs.
+ *   - `program[s]` is read off the LIVE ticket and `program[s + 1]` off the
+ *     retired one, exactly as the model writes it. `retireLive` does not touch
+ *     the program, so the two reads see one list.
+ */
+export function decideEvalStageReduce(
+  cfg: Config,
+  c: Core,
+  j: number,
+): Decision {
+  invariant(
+    reducibleEvalIn(c).has(j),
+    `decideEvalStageReduce: ticket ${String(j)} is not an Evaluating ticket with a fully-resolved stage`,
+  );
+  const jb = ticketAt(c, j);
+  const s = evalStage(jb.tasks);
+  const retired = retireLive(jb);
+  const current = jb.program[s];
+  invariant(
+    current !== undefined,
+    `decideEvalStageReduce: stage ${String(s)} indexes into ticket ${String(j)}'s program of ${String(jb.program.length)}`,
+  );
+  if (combine(current.combinator, jb.tasks)) {
+    const next = retired.program[s + 1];
+    if (next !== undefined) {
+      return move(
+        withTicket(
+          c,
+          j,
+          spawnOn(retired, { tag: "TKEval", stage: s + 1 }, next.fanout),
+        ),
+        j,
+        "PEvaluating",
+        "eval-stage-passed",
+        ["SpawnEvalTasks"],
+      );
+    }
+    // THE WRAP-UP ROUTE. A `WNone` ticket's effect already happened during
+    // work, so evaluation passing IS its completion — and it completes on the
+    // RETIRED ticket, because skipping the wrap-up phases skips the retirement
+    // they would have done.
+    switch (jb.wrapUp.tag) {
+      case "WNone":
+        return completeTicket(withTicket(c, j, retired), j);
+      case "WExclusive":
+        return move(withTicket(c, j, retired), j, "PWrapUp", "eval-passed", [
+          "EnqueueWrapUp",
+        ]);
+      default:
+        return assertNever(jb.wrapUp, "unhandled WrapUp");
+    }
+  }
+  if (jb.reworkLeft > 0 && jb.gasLeft > 0) {
+    return move(
+      withTicket(c, j, {
+        ...spawnOn(retired, { tag: "TKWork" }, cfg.nTasks),
+        reworkLeft: jb.reworkLeft - 1,
+        gasLeft: jb.gasLeft - 1,
+      }),
+      j,
+      "PWorking",
+      "rework-started eval_failure",
+      ["SpawnWorkTasks"],
+    );
+  }
+  if (jb.reworkLeft === 0) {
+    return escalate(
+      c,
+      j,
+      "REvaluating",
+      "RsReworkBudgetExhausted",
+      "ticket-escalated rework_budget_exhausted",
+    );
+  }
+  return escalate(
+    c,
+    j,
+    "REvaluating",
+    "RsGasExhausted",
+    "ticket-escalated gas_exhausted",
+  );
+}
+
+/**
+ * `model/domain.qnt` wrapUpOutcomes — the outcomes the environment may DRAW for
+ * a wrap-up attempt, given its invalidation choice. THE SET IS THE REFUSAL, on
+ * `validPrograms`'s shape: a valid artifact has no failure to draw.
+ *
+ * A `Set` of primitives, so this one really is the model's set — it contains
+ * and compares structurally, and no canonical order has to be invented for it.
+ */
+export function wrapUpOutcomes(
+  invalidated: boolean,
+): ReadonlySet<WrapUpOutcome> {
+  return invalidated
+    ? new Set<WrapUpOutcome>(["WOk", "WFailed"])
+    : new Set<WrapUpOutcome>(["WOk"]);
+}
+
+/**
+ * `model/domain.qnt` decideWrapUpStart — THE DEQUEUE, MOVED ARM: the ticket
+ * takes its repo's depth-1 slot while the candidate is built and validated.
+ * Charges nothing; the gate prices only its failures.
+ */
+export function decideWrapUpStart(c: Core, j: number): Decision {
+  invariant(
+    wrapUpStartableIn(c, j),
+    `decideWrapUpStart: ticket ${String(j)} is not dequeue-able — the depth-1 refusal`,
+  );
+  return move(c, j, "PWrapUpHolding", "wrapup-started", ["OpenGate"]);
+}
+
+/**
+ * `model/domain.qnt` decideDequeue — THE ROUTING RULE, hoisted: how a dequeue
+ * routes on the environment's invalidated choice is machine semantics, so it
+ * lives in a decider rather than in an action's if/else. The model's header
+ * records the mutant that made the hoist necessary.
+ *
+ * It asserts nothing of its own: both arms assert `wrapUpStartableIn`, which is
+ * this decider's whole caller guarantee, and a third copy of it here would be
+ * the restatement the hoist exists to prevent.
+ */
+export function decideDequeue(
+  cfg: Config,
+  c: Core,
+  j: number,
+  moved: boolean,
+): Decision {
+  return moved
+    ? decideWrapUpStart(c, j)
+    : decideWrapUpResolve(cfg, c, j, "WOk", false);
+}
+
+/**
+ * `model/domain.qnt` completeTicket — THE COMPLETION: the ticket reaches
+ * `PDone`, and that is the whole of it. One transition, one effect, and the
+ * ghost `completions` counter bumped once.
+ *
+ * The effect is not a parameter, because both routes in — a `WOk` wrap-up
+ * resolution and a `WNone` ticket's passing evaluation — emit the same
+ * `Complete`: the domain knows only that the step succeeded and never which
+ * mechanism promoted anything.
+ */
+export function completeTicket(c: Core, j: number): Decision {
+  const jb = ticketAt(c, j);
+  return {
+    rec: {
+      label: "ticket-done",
+      transitions: [{ ticket: j, from: jb.phase, to: "PDone" }],
+      effects: ["Complete"],
+      landing: { tag: "WONone" },
+    },
+    post: withTicket(c, j, {
+      ...jb,
+      phase: "PDone",
+      completions: jb.completions + 1,
+    }),
+  };
+}
+
+/**
+ * The gate rework's re-entry, shared by the two pricings exactly as they share
+ * it in the model: respawn the work set, charge what the pricing says.
+ *
+ * Nothing is retired here, and the model says why at `completeTicket`'s sibling
+ * comment: on the lease path the eval set was already retired when the ticket
+ * enqueued, so a `retireLive` at this point would retire an empty set and
+ * `spawnOn`'s own precondition already holds.
+ */
+function wrapUpRework(
+  cfg: Config,
+  c: Core,
+  j: number,
+  spend: Pick<Ticket, "wrapUpLeft" | "gasLeft">,
+): Decision {
+  return move(
+    withTicket(c, j, {
+      ...spawnOn(ticketAt(c, j), { tag: "TKWork" }, cfg.nTasks),
+      ...spend,
+    }),
+    j,
+    "PWorking",
+    "rework-started wrapup_failure",
+    ["SpawnWorkTasks"],
+  );
+}
+
+/**
+ * The model's `match out { WOk => … | WFailed => … }`, as its own definition so
+ * that it is a switch with an `assertNever` arm rather than a two-way test on a
+ * union that may one day have three constructors.
+ */
+function resolveWrapUp(
+  cfg: Config,
+  c: Core,
+  j: number,
+  out: WrapUpOutcome,
+): Decision {
+  switch (out) {
+    case "WOk":
+      return completeTicket(c, j);
+    case "WFailed":
+      return failWrapUp(cfg, c, j);
+    default:
+      return assertNever(out, "unhandled WrapUpOutcome");
+  }
+}
+
+/**
+ * The `WFailed` arm of `model/domain.qnt` decideWrapUpResolve, priced per
+ * `WRAPUP_PRICING`: `Budgeted(n)` spends the wrap-up account AND gas,
+ * `DeadlineOnly` spends gas alone. Either wall parks the ticket with its own
+ * name and `resumeAt` `RWrapUp` — re-ENQUEUING, never back into the gate.
+ *
+ * `DeadlineOnly` passes `wrapUpLeft` through unchanged, which is what its arm
+ * not naming the field means: there is no gate account to spend.
+ */
+function failWrapUp(cfg: Config, c: Core, j: number): Decision {
+  const jb = ticketAt(c, j);
+  switch (cfg.wrapUpPricing.tag) {
+    case "Budgeted":
+      if (jb.wrapUpLeft > 0 && jb.gasLeft > 0) {
+        return wrapUpRework(cfg, c, j, {
+          wrapUpLeft: jb.wrapUpLeft - 1,
+          gasLeft: jb.gasLeft - 1,
+        });
+      }
+      if (jb.wrapUpLeft === 0) {
+        return escalate(
+          c,
+          j,
+          "RWrapUp",
+          "RsWrapUpBudgetExhausted",
+          "ticket-escalated wrapup_budget_exhausted",
+        );
+      }
+      return escalate(
+        c,
+        j,
+        "RWrapUp",
+        "RsGasExhausted",
+        "ticket-escalated gas_exhausted",
+      );
+    case "DeadlineOnly":
+      if (jb.gasLeft > 0) {
+        return wrapUpRework(cfg, c, j, {
+          wrapUpLeft: jb.wrapUpLeft,
+          gasLeft: jb.gasLeft - 1,
+        });
+      }
+      return escalate(
+        c,
+        j,
+        "RWrapUp",
+        "RsGasExhausted",
+        "ticket-escalated gas_exhausted",
+      );
+    default:
+      return assertNever(cfg.wrapUpPricing, "unhandled WrapUpPricing");
+  }
+}
+
+/**
+ * `model/domain.qnt` decideWrapUpResolve — the wrap-up resolves at the END of a
+ * concrete path: the QUIET fast-path straight off the queue, or the GATED
+ * resolution out of the held slot. EVERY arm stamps the attempt's attribution.
+ *
+ * THREE CALLER GUARANTEES, each asserted by calling the definition that states
+ * it. The outcome is drawn from `wrapUpOutcomes(moved)` — the draw rule, which
+ * is what makes "a valid artifact cannot fail" structural rather than argued.
+ * The PATH is the other two: a moved attempt resolves out of the gate, so its
+ * ticket is in `holdingIn`; a quiet one resolves at the dequeue, whose guard is
+ * `wrapUpStartableIn`. The model states the pair as prose at this decider,
+ * checks it on every reachable step as `wrapUpIsolation`'s path iff, and names
+ * both halves as enablement in `model/refinement.qnt`'s `cmdEnabled` —
+ * `JDequeue` asks `wrapUpStartablesIn`, `JGateResolve` asks `holdingIn` and the
+ * same draw rule — so s3's replay checker re-checks exactly these.
+ */
+export function decideWrapUpResolve(
+  cfg: Config,
+  c: Core,
+  j: number,
+  out: WrapUpOutcome,
+  moved: boolean,
+): Decision {
+  invariant(
+    wrapUpOutcomes(moved).has(out),
+    `decideWrapUpResolve: ${out} is not drawable for an attempt the environment left ${moved ? "invalidated" : "valid"}`,
+  );
+  if (moved) {
+    invariant(
+      holdingIn(c).has(j),
+      `decideWrapUpResolve: ticket ${String(j)} holds no gate slot, and a moved attempt resolves out of the gate`,
+    );
+  } else {
+    invariant(
+      wrapUpStartableIn(c, j),
+      `decideWrapUpResolve: ticket ${String(j)} is not dequeue-able, and a quiet attempt resolves at the dequeue`,
+    );
+  }
+  return withWrapUpObs(
+    resolveWrapUp(cfg, c, j, out),
+    ticketAt(c, j).repo,
+    moved,
+  );
+}
+
+/**
+ * `model/domain.qnt` decideCompleteDuplicate — a duplicate landing event for an
+ * already-Done ticket. NO completion effect is emitted, and that no-op IS the
+ * exactly-once-at-the-landing-boundary claim.
+ */
+export function decideCompleteDuplicate(c: Core, j: number): Decision {
+  invariant(
+    doneIn(c).has(j),
+    `decideCompleteDuplicate: ticket ${String(j)} has not landed, so no landing of it can be re-delivered`,
+  );
+  return noop(c, "complete-duplicate");
+}
+
+/**
+ * `model/domain.qnt` decideRevalFail — the world changed under a ticket before
+ * it ever ran. Free, and the desk opens; the resume is the pre-work one.
+ *
+ * Guarded by `isReadyIn` and NOT by `dispatchableIn`: the model's `revalFail`
+ * action draws from the same set as `dispatch` but does not conjoin the gas
+ * check, and it is right not to — this park spends nothing.
+ */
+export function decideRevalFail(c: Core, j: number): Decision {
+  invariant(
+    isReadyIn(c, j),
+    `decideRevalFail: ticket ${String(j)} is not Ready — revalidation fails at the moment a ticket would start`,
+  );
+  return escalate(
+    c,
+    j,
+    "RPending",
+    "RsRevalidationFailed",
+    "ticket-escalated revalidation_failed",
+  );
+}
+
+/**
+ * `model/domain.qnt` decideOpRetry — THE operator resume: one decider, four
+ * flavors, one trace label, the flavor visible in the transition's target.
+ *
+ * THE GUARD IS `retryableIn` MINUS THE ARM THE MODEL WROTE, and it is written
+ * as that subtraction rather than as a copy: `hasModeledResume` is the conjunct
+ * both definitions read. `retryableIn` refuses two disjoint things — a park
+ * with NO modeled resume (the `dependency_revoked` wall), and a park whose
+ * charging resume it cannot afford. The model answers the first with the
+ * guarded no-op arm below, which is total and which this file reproduces, so
+ * asserting it away here would delete a documented arm; the second would
+ * overdraw gas, so it is refused.
+ * That leaves every arm that reads `resumed` holding `resumeCharge <= gasLeft`,
+ * which is what keeps `accountsBounded` true of the post-state.
+ */
+export function decideOpRetry(cfg: Config, c: Core, j: number): Decision {
+  const jb = ticketAt(c, j);
+  invariant(
+    !hasModeledResume(jb) || retryableIn(cfg, c, j),
+    `decideOpRetry: ticket ${String(j)} is parked behind a resume it cannot afford, or is not parked at all`,
+  );
+  // Computed once, before the flavor, as the model computes it. The `RNone`
+  // arm never reads it.
+  const resumed: Ticket = {
+    ...jb,
+    reason: "RsNone",
+    resumeAt: "RNone",
+    gasLeft: jb.gasLeft - resumeCharge(cfg, jb.resumeAt),
+  };
+  switch (jb.resumeAt) {
+    case "RPending":
+      return move(
+        withTicket(c, j, resumed),
+        j,
+        "PPending",
+        "operator-retry",
+        [],
+      );
+    case "RWorking":
+      return move(
+        withTicket(c, j, spawnOn(resumed, { tag: "TKWork" }, cfg.nTasks)),
+        j,
+        "PWorking",
+        "operator-retry",
+        ["SpawnWorkTasks"],
+      );
+    case "REvaluating": {
+      const lowest = jb.program[0];
+      invariant(
+        lowest !== undefined,
+        `decideOpRetry: ticket ${String(j)} carries an empty program, which no arrival can author`,
+      );
+      return move(
+        withTicket(
+          c,
+          j,
+          spawnOn(resumed, { tag: "TKEval", stage: 0 }, lowest.fanout),
+        ),
+        j,
+        "PEvaluating",
+        "operator-retry",
+        ["SpawnEvalTasks"],
+      );
+    }
+    case "RWrapUp":
+      return move(withTicket(c, j, resumed), j, "PWrapUp", "operator-retry", [
+        "EnqueueWrapUp",
+      ]);
+    case "RNone":
+      // Unreachable through the machine: `retryableIn` refuses a ticket with no
+      // modeled resume, whose only exit is revoke.
+      return noop(c, "operator-retry-unreachable");
+    default:
+      return assertNever(jb.resumeAt, "unhandled Resume");
+  }
 }
