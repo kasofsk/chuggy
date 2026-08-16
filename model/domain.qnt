@@ -745,7 +745,8 @@ module chuggy_domain {
   /// candidate; for a registry push, someone else claiming the version.
   /// The domain models neither cause — only that the kind admits one.
   ///
-  /// Chosen PER ATTEMPT, never stored (the envActive standing rule). The
+  /// Chosen PER ATTEMPT, never stored (the named-nondet discipline,
+  /// stated at measure.qnt's landing-boundary observation). The
   /// `wrapUpStart`/`wrapUpResolve` actions draw from exactly these sets and
   /// the witness drivers reference them as guards, so wrapUpIsolation is
   /// what makes the refusal durable on every reachable step.
@@ -760,7 +761,7 @@ module chuggy_domain {
   /// (the gate prices only its failures, R5). Callers guarantee
   /// wrapUpStartableIn — the depth-1 refusal. PWrapUpHolding encodes the moved
   /// choice: wrapUpResolve needs no stored flag to know the attempt's cause
-  /// vocabulary (the envActive standing rule, one more time).
+  /// vocabulary (the named-nondet discipline, one more time).
   pure def decideWrapUpStart(c: Core, j: int): Decision =
     move(c, j, PWrapUpHolding, "wrapup-started", ["OpenGate"])
 
@@ -1204,7 +1205,7 @@ module chuggy_domain {
 
   /// THE DEQUEUE: a ticket whose repo's gate is
   /// free leaves the queue, and the environment draws — per attempt, fresh,
-  /// no stored flag (the envActive standing rule) — whether that repo's
+  /// no stored flag (the named-nondet discipline) — whether that repo's
   /// default branch MOVED under the candidate since evaluation:
   ///   - quiet: the skip fast-path — the gate never opens; the one outcome
   ///     wrapUpOutcomes(false) permits (WOk, the direct squash)
@@ -1406,7 +1407,7 @@ module chuggy_domain {
   /// QUIET REPO LANDS CLEANLY (the gate's other half), stated in its
   /// STRONGEST CHECKABLE FORM — and honestly about what that form is.
   /// "Quiet" is a PER-ATTEMPT environment choice, not stored repo state
-  /// (the envActive standing rule forbids the flag), so "repo R is quiet"
+  /// (the named-nondet discipline forbids the flag), so "repo R is quiet"
   /// is not a predicate over any reachable state and the naive reading
   /// ("a quiet repo's tickets never gate-fail") cannot be a state
   /// theorem AS QUANTIFIED OVER REPOS. What IS a state theorem — checked

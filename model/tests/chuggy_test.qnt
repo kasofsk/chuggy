@@ -1184,7 +1184,7 @@ module chuggy_test {
   // ==========================================================================
   // Design + provenance at domain.qnt's header (the refinement layer, gate:
   // isolation invariants; `domain/firstclass` "one orchestrator, many
-  // targets"; the envActive standing rule). Repo universe on DB: {1, 2} —
+  // targets"; the named-nondet discipline). Repo universe on DB: {1, 2} —
   // N_REPOS = 2, the smallest universe where own-repo attribution is
   // distinguishable from a constant stamp.
 
