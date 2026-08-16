@@ -11,8 +11,10 @@
 # It calls the gate scripts directly rather than going through `just`, because
 # `just` may not be installed and a hook that depends on it fails open.
 #
-# The shell suites are deliberately absent — they are the slowest stage and
-# they belong in `just check`.
+# THE FAST SUBSET ONLY. Both slow stages sit this out — the shell suites and
+# the model gate — and belong in `just check`. This file prints its own elapsed
+# time on every run, so what admitting another gate costs is measured here
+# rather than asserted in a comment that nothing re-checks.
 #
 # `git commit --no-verify` bypasses this, and bypasses every gate at once
 # rather than the one that was in the way. Legitimate when the alternative is

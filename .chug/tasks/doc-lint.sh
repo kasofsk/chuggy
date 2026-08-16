@@ -9,8 +9,9 @@
 #      skipped. A dangling relative link is an ERROR.
 #   3. Design filenames — each `docs/design/*.md` is named
 #      `{seq}-{slug}.md`: leading digits, a hyphen, then a lowercase-kebab slug.
-#      The directory does not exist today and this rule is what will be waiting
-#      when it does.
+#      The sequence orders the series and makes a doc citable; the slug makes it
+#      greppable. Numbers are spent rather than reused, and this rule judges
+#      shape alone — which number is free is a question for the log.
 #      ERROR. The match anchors on the repo-relative path, so a path merely
 #      *ending* in `docs/design/*.md` is some other repo's file, and a nested
 #      subdirectory is out of scope. Its character classes are spelled out

@@ -8,7 +8,7 @@ Start at [CLAUDE.md](./CLAUDE.md) — it is the entry point for humans and agent
 
 ## Status
 
-Pre-implementation. What exists today is the proved model and the gates that run over this tree, landed **before** any code, because a standard is cheap to adopt on an empty tree and expensive to retrofit onto a full one. The written standards that accompanied them have been removed; each gate now carries its own rule in its own header, which is the one arrangement where a rule cannot drift from its enforcement.
+Pre-implementation. What exists today is the proved model, the gates that run over this tree, and the design docs that sequence the work — the first two landed **before** any code, because a standard is cheap to adopt on an empty tree and expensive to retrofit onto a full one. The written standards that accompanied them have been removed; each gate now carries its own rule in its own header, which is where a rule cannot drift from its enforcement. `CLAUDE.md` names the three places this tree states what is true of itself.
 
 ```sh
 just hooks    # once per clone

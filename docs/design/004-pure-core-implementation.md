@@ -1,0 +1,263 @@
+# The pure-core implementation
+
+**Status: PROPOSED** — no row has landed. Nothing described here exists in the tree yet except this document.
+
+This is a plan: a design doc with a slice table. Its head — this line down to the end of *Open questions* — is rewritten freely as rows land. Its body is appended to, never edited. A line naming a path, gate, command or constant this tree does not have carries the marker CLAUDE.md defines for it.
+
+## What is being built
+
+A pure, exhaustively tested TypeScript implementation of the machine the model proves: the record vocabulary and termination measure of `model/measure.qnt`, the deciders, enablement predicates and safety invariants of `model/domain.qnt`, the journaled actor of `model/refinement.qnt`, and one interpreter where effects meet adapters. Nothing real is launched. The fabric is a recording stub.
+
+The deliverable is the core a later real fabric adapter plugs into without the core moving — which is the property `model/refinement.qnt` exists to guarantee, stated in its own header under PLATFORM CAPTURE.
+
+**The standing non-goals are in the model, not here.** They are stated at `model/domain.qnt`'s "WHAT THIS FILE DELIBERATELY DOES NOT KNOW" and in `model/measure.qnt`'s header. A copy of them in this file would drift the moment either moved, which is the argument that removed this tree's reference pages and does not stop applying to a design doc.
+
+## The slice table
+
+Every row is one PR-sized deliverable, adversarially reviewed in a fresh session against `.chug/tasks/review-change.md` before it lands. A row flips to **Landed** with its commit, and each landing commit carries a `Slice: 004-pure-core-implementation <row>` trailer so the mapping is readable from `git log` with no platform to ask.
+
+| # | Label | Contract | Depends on | Status |
+|---|---|---|---|---|
+| S0 | Toolchain and tree shape | The four source directories exist with one real file each; formatter, linter, module-graph checker and test runner are configured and sequenced into `.chug/tasks/ci.sh`; each of house rules 1–6 acquires the gate or config that enforces it, and the graph rule lands in the same commit as the folder split. | — | Proposed |
+| S1 | The golden corpus | One regeneration script produces every committed trace deterministically from the pinned quint; the corpus, its manifest and an ITF decoder are committed; a coverage check derives the label and exemption-arm rosters from the model and proves the corpus fires every one, per instance. | S0 | Proposed |
+| S2 | The measure and the vocabulary | `model/measure.qnt`'s 23 types, the effect vocabulary as an ADT, the task plumbing, `ticketMeasure`/`sysMeasure` with every radix derived in code the way the model derives it, and the parameterised vocabulary both deciders and invariants read. Every golden state's ticket map decodes into `Ticket` and re-encodes identically. | S1 | Proposed |
+| S3 | The deciders and the enablement predicates | All 13 `decide*` functions and all 20 `*In` definitions, exhaustively switched, with unit tests mirroring what `model/tests/chuggy_test.qnt` pins. | S2 | Proposed |
+| S4 | The invariants | All 25 leaf safety predicates behind one signature, the five derived sets that three of them are stated over, and the three anti-vacuity witnesses fenced off as their own kind. Each lands with a make-it-red demonstration against a tree carrying the defect it names, and the bundle's membership is checked against `model/domain.qnt` at run time. | S2 | Proposed |
+| S5 | The replayer and the conformance gate | Each golden step replays through the implementation's own deciders, reproducing the StepRecord and the post-Core exactly and evaluating the whole invariant bundle after every step; a new gate runs the replay and never regenerates. | S1, S3, S4 | Proposed |
+| S6 | The randomized layer | The model's own action roster and draw sets, seeded, at all three mc instances, asserting the full bundle plus the per-ticket completion-emission accumulator after every step, and shrinking a counterexample into the corpus format so the replayer can consume it. | S5 | Proposed |
+| S7 | The journaled actor | `model/refinement.qnt` as pure code — Cmd, Entry, `execCmd`, `cmdEnabled`, `replayCore`, `journalLegalOn`, the executor cursor, recovery by replay, and the carry rule `installCore` states — its seven obligations in the model's own two bundles, and the crash-seam suite in which `refinementCore` stays green while the other three go red under the hazard. | S3, S4 | Proposed |
+| S8 | The interpreter, the ports and the walk | The effect interpreter over `(Entry, post-Core)`; the three ports — fabric, journal store, desk — with their promises stated where they are declared; the stub adapters; the journal entry's wire schema and the parse at the store boundary; and one ticket driven from arrival to completion against stubs with journal-before-effect structural and duplicate deliveries injected and absorbed. | S7 | Proposed |
+
+**Which rows may overlap.** After S2, S3 and S4 may run concurrently: the invariants read only the vocabulary, the measure and a handful of derived readers, all of which S2 lands, and they touch no file a decider touches. After S4, S5 and S7 may run concurrently; after S5, S6 and S7 may. Nowhere does this plan want three builders at once — the chain is sequential because each layer's tests consume the layer below, and saying otherwise would be manufacturing parallelism the dependencies do not have.
+
+**The Depends column is consumption; S5 is separately a merge gate.** A row's dependencies are what its code and its suites read. S7 reads the deciders and the invariant bundle and reads nothing of the corpus, the decoder or the replayer, so its edge is S7 ← {S3, S4}. Independently of that graph, once S5 has landed no later row merges without the conformance replay green. That is a rule about landing rather than an edge in the build order, and it is written here rather than in the column because a reader cannot tell the two apart from a table.
+
+**Four ordering decisions worth their argument**, because each reads wrong at first glance.
+
+- **The corpus precedes the first line of implementation code.** Emitting it needs no TypeScript at all, and landing it first makes the target concrete: the ITF encoding of a `Ticket` is what the vocabulary must decode, and knowing that shape before writing the vocabulary beats discovering it after two slices are written against a guess. Standing rule 1 is not touched. It governs the model's edit order — when the machine changes, `model/measure.qnt` is reworked before anything else — and this plan changes no machine. Within the implementation the measure is still the first code written; what precedes it is the specification's own output, which is standing rule 4 read literally.
+- **The invariants precede the harness rather than following it**, because the harness's own contract is to evaluate every invariant after every step, so it consumes them. They are also different work with a different review shape: a decider lands with unit tests, an invariant lands with a demonstration that it goes red.
+- **The journaled actor's slice is pure, and the ports are not in it.** The argument is in the body below.
+- **The harness is two slices — S1 emits, S5 replays.** Same reason the gate never regenerates: emission and verdict are different jobs, and a job that can rewrite its own expected output is not a check.
+
+## The target tree
+
+Four source directories, each with an enforced inward-pointing boundary, plus one composition root. A boundary nothing checks forbids nothing, so the split is by what may reach the world rather than by noun, and every row's last column is a rule the module-graph checker holds.
+
+| Path | Holds | Model source | Purity | May import |
+|---|---|---|---|---|
+| `src/domain/` <!-- intent --> | the record vocabulary, the effect ADT, the measure, the deciders, the enablement predicates, the invariants | `model/measure.qnt`, `model/domain.qnt` | pure; zero runtime dependencies | nothing outside itself |
+| `src/actor/` <!-- intent --> | Cmd, Entry, `execCmd`, `cmdEnabled`, `replayCore`, `journalLegalOn`, the cursor arithmetic, the seven refinement obligations | `model/refinement.qnt` | pure | `src/domain/` |
+| `src/interpreter/` <!-- intent --> | the ports it declares, the effect interpreter, the executor loop | none — the model has no noun for this layer, because both of its modules are pure | impure | `src/domain/`, `src/actor/` |
+| `src/adapters/` <!-- intent --> | one stub per port | none | impure | `src/domain/`, `src/actor/`, `src/interpreter/`; never another adapter |
+| `src/compose.ts` <!-- intent --> | the single wiring site, and the only file that constructs an adapter | none | impure | everything |
+| `test/` <!-- intent --> | every suite, mirroring `src/`, plus the ITF decoder, the replayer and the committed corpus | the model's suites | impure | everything |
+
+None of those six paths is a claim `check-paths.sh` can judge: `src` and `test` have never been tracked in this branch's ancestry, so the gate skips them in silence as some other repo's paths. That is what the markers are covering for, and it is why the marker sits on every row rather than on the paragraph.
+
+`interpreter/` is the one name here the model does not supply, because `model/domain.qnt` and `model/refinement.qnt` are both pure and neither describes the layer where an effect becomes a call. It is named for what it does — it interprets the effect vocabulary into port calls — and every other directory takes its noun from the model, so the translation table between the two stays one row long.
+
+**Why the suites are not colocated.** <!-- intent --> The graph rule is enforced over `src/domain/**`, and a `*.test.ts` carve-out inside that glob is exactly the escape hatch that makes a graph rule stop meaning anything — a test may legitimately read a file, and once the pattern admits one exception it admits the utility that gets imported by a decider. Colocation is the more common idiom and this is the articulable reason to leave it. Refutation trigger: if navigating between a module and its suite becomes the friction, colocate and pay for the narrow exclusion instead.
+
+**Iteration order is never incidental, and neither is iteration count.** The order-dependent folds are already ascending in the model: `decideRevoke`'s `doomedByJ` and `parkedList` passes, `revokeDoomed`, and `retireLive`'s append run. Three others — `stuckSet`, `coveredSet`, `canFinishSet` — are *bounded sweeps*: the outer fold's index is discarded, and what it supplies is a repeat count of `liveTickets.size()`, which is the whole of the termination argument for a monotone fixpoint over a finite lattice. `model/domain.qnt` warns in its own words that the sweep shape is kept over the cheaper single fold deliberately, so a future edge kind pointing upward needs no rewrite; an implementer who reads only a summary writes the fold and silently drops that. House rule 9 lands on the sweeps directly: the explicit bound is the whole construction. The implementation sorts explicitly rather than inheriting JavaScript's map insertion order — which is stable, which is why relying on it would pass every test until the day a ticket map is rebuilt from a different source.
+
+## Coverage of the model
+
+Every count below was derived from the model in this tree on **2026-08-16**, and none was carried in from anywhere. Four are one command each, and a reader who doubts one should run it rather than trust this list:
+
+```sh
+grep -c '^  type ' model/measure.qnt                                          # 23 types
+grep -c '^  pure def decide' model/domain.qnt                                 # 13 deciders
+grep -cE '^  pure def [A-Za-z]+In\(' model/domain.qnt                         # 20 enablement
+sed -n '/^  val allInvariants/,/^  }/p' model/domain.qnt | grep -cE '^    [a-z]'  # 24 conjuncts
+```
+
+The rest were read rather than counted by machine, which is why they carry the date. S1 and S4 are where they stop being figures: S1's coverage check derives the step-label roster from the model at run time, and S4's bundle checks its own membership against `model/domain.qnt`. A count this document asks a reader to trust is a count that goes stale silently, and those two rows are the plan for retiring these.
+
+**Record vocabulary — 23 types**, all declared in `model/measure.qnt`: `Phase`, `TaskKind`, `TaskOutcome`, `TaskState`, `Task`, `Verdict`, `Combinator`, `Stage`, `WrapUpPricing`, `ReworkPolicy`, `RetryPricing`, `Resume`, `Reason`, `WrapUpOutcome`, `WrapUpObs`, `WrapUp`, `ArtifactMark`, `Ticket`, `Core`, `Transition`, `StepRecord`, `Decision`, `Bounds`. All in S2. Every one that is a sum becomes a discriminated union switched exhaustively; every one that carries an invariant about a value — a task id, a project, a stage index — becomes a branded value type, because in a structurally typed language two aliases of `number` are the same type and the distinction has to be branded to exist at all.
+
+**The two ghost fields are not one decision.** `model/measure.qnt` marks both `spawned` and `completions` GHOST, and says something about only one of them: `completions` carries the flat sentence "Not implementation state", and `spawned` carries no such line.
+
+- **`spawned` is stored.** It is a stored duplicate of a derivable fact — `idsAccounted` is exactly the derivation — and the model made that trade on purpose: the equality is what catches a decider that dropped a task set instead of retiring it, and a derived counter cannot catch anything.
+- **`completions` is not stored.** `completionExclusive` proves `completions == 1 iff phase == PDone` and `completions <= 1` in every reachable state, so it is exactly `phase === PDone ? 1 : 0`, and standing rule 3 applies at full strength. `journalCompletionsMatchLedger` says the same thing from the other side: the model has already established that the journal is where the implementation's completion count lives. The `Ticket` type therefore has no such field, and the golden comparison reconstructs it at the encode boundary.
+- **What that costs, and where each half lands.** `completionExclusive` becomes structurally true, and `model/domain.qnt` warns by name that an invariant which cannot fail is a defect written on purpose. Its iff splits. The forward half — Done implies exactly one completion — is carried in S5 by per-step record equality: a mutant reaching `PDone` without emitting `ticket-done` diverges from the golden on that step. The `<= 1` half needs a layer with no golden to subsume it, so it is an **S6** obligation: a per-ticket completion-emission accumulator over a random run, asserting at most one and exactly one once Done. It is *not* an S5 obligation — there, exact equality already forces the count, so an accumulator could only go red where equality had gone red first, and a check that cannot fail is the thing this bullet exists to avoid. In S7 the same property is `noDuplicateCycle`, over the world rather than over a record.
+
+**`reworkLeft` stays on the record, and its ownership does not.** `model/measure.qnt` says the account belongs to middleware in the implementation rather than to the core ticket entity, and keeps it on the model's record anyway because `ticketMeasure` needs its bounded digit. Both halves survive here: S2 carries the field, because dropping it breaks the measure and the measure is what the model puts first; and the *policy* that grants and prices it — `ReworkPolicy`, `resumeCharge`, the pricing constants — arrives as configuration at the boundary rather than as a constant baked into the core, which is what "ownership is the implementation's" buys.
+
+**The effect vocabulary — 8 strings**, becoming 8 typed constructors: `CreateDraft`, `Revoke`, `OpenHumanTask`, `SpawnWorkTasks`, `SpawnEvalTasks`, `EnqueueWrapUp`, `OpenGate`, `Complete`. They are **nullary**, and deliberately: `model/measure.qnt` says the project cannot ride the effect strings because there are no dynamic strings at this grain, which is why the step record carries the attribution structurally instead. A total `effectLabel` renders each constructor back to the model's string, and that function is the only place the trace comparison meets the ADT.
+
+**Nullary decides S8's interpreter signature, and the model declines to decide it for us.** An effect names what to do and carries no payload, so no port call can be formed from the effect list alone. `model/refinement.qnt` sidesteps this by abstracting a whole emission to its decision identity — a journal seq — which is enough for its theorems and not enough for an adapter. Of the two resolutions, this plan takes the one that needs no model change: **the interpreter's argument is `(Entry, post-Core)`**, and it reads each effect's subject off the record positionally — **`effects[i]` belongs to `transitions[i]`**, with `ticket-arrived` the sole exception, one effect against no transition, whose subject is the id the arrival appended and which `idsDense` makes the largest key. The positional rule is what `decideRevoke` builds by construction — `["Revoke"] ++ OpenHumanTask per parked dependent` against `[revoked] ++ the parked list`, in the same order — and it is why `transitions[0].ticket` is the wrong generalisation: it is a special case of the rule that happens to hold for the single-transition steps the refinement layer's own arithmetic needs, and it would open the revoked ticket's desk task *n* times on the one decision that fans out. The alternative — giving the effect constructors payloads — is a change to the domain vocabulary and to `StepRecord`, so it is a model commit first and not something this plan may take on its own. Consequences worth stating: the interpreter routes to two of the three ports, since a bookkeeping effect goes to the desk and a work effect to the fabric, while the journal store is reached by the executor loop before any emission rather than by the interpreter at all; and the routing is a total function over 8 constructors, exhaustively switched, not a partition into three.
+
+**Step labels — 23 declared, 22 reachable, and the expected set differs by instance.** `operator-retry-unreachable` is the guarded `RNone` arm `retryableIn` refuses, and is asserted unreachable rather than exercised. `ticket-escalated wrapup_budget_exhausted` is reachable under `Budgeted` pricing alone — `wrapUpWallNamed` forbids the reason under `DeadlineOnly` — so 22 is what the corpus owes and not what every instance owes.
+
+**Deciders — 13**, all in `model/domain.qnt`: `decideArrive`, `decideRelease`, `decideRevoke`, `decideDispatch`, `decideTaskDone`, `decideWorkReduce`, `decideEvalStageReduce`, `decideWrapUpStart`, `decideDequeue`, `decideWrapUpResolve`, `decideCompleteDuplicate`, `decideRevalFail`, `decideOpRetry`. Plus the shared constructors every decider routes through — `withTicket`, `move`, `noop`, `withWrapUpObs`, `escalate`, `completeTicket`, `freshTicket`. All in S3.
+
+**A decider is partial, and its guard lives outside it.** `model/refinement.qnt` states this where it matters most — the replay checker checks enablement *first* and short-circuits without executing the decider, because "deciders assume their guards" and running one on a state that refuses it is a lookup error rather than a boolean. So each `decide*` keeps the model's `(Core, picks) => Decision` shape with a caller-guarantees precondition, asserted per house rule 10 and never re-derived: a decider that restated its own enablement would be the copied guard the model hoisted `dispatchableIn` to kill.
+
+**Enablement — 20 `*In` definitions**: `revocableIn`, `retryableIn`, `depsDoneIn`, `canArriveIn`, `dependableIn`, `draftsIn`, `revocablesIn`, `readiesIn`, `taskPhaseIn`, `reducibleWorkIn`, `reducibleEvalIn`, `wrapUpStartablesIn`, `holdingIn`, `doneIn`, `retryablesIn`, `isReadyIn`, `isBlockedIn`, `dispatchableIn`, `leaseFreeIn`, `wrapUpStartableIn`. All in S3. They are hoisted over an explicit `Core` in the model for one reason — the replay checker must re-check enablement at a replayed prefix state, and a copied guard drifts — so the implementation has exactly one definition of each and both the actor and the replayer reference it.
+
+**Safety invariants — 24 conjuncts in `allInvariants`, 25 leaf predicates.** Counted by reading `model/domain.qnt`'s `allInvariants` bundle, then expanding the one conjunct that is itself a named conjunction: `measureDescends` is `measureNonNegative and stepDescends`. The 25 leaves are `completionExclusive`, `revokedNeverCompletes`, `wrapUpIsolation`, `quietProjectLandsCleanly`, `leaseExclusive`, `noLeaseWithoutAKind`, `artifactWellFormed`, `projectsWellFormed`, `wrapUpWellFormed`, `terminalsAbsorbing`, `deskConsistent`, `wrapUpWallNamed`, `accountsBounded`, `tasksWellFormed`, `recordWellFormed`, `recordMonotone`, `idsAccounted`, `programsWellFormed`, `depsAcyclic`, `idsDense`, `stuckSubsetCovered`, `cascadeSafety`, `noStructuralDeadlock`, `measureNonNegative`, `stepDescends`. Both numbers are right about different things and neither is a substitute for the other: 24 is what a run checks, 25 is what a reviewer must find implemented.
+
+`wrapUpWellFormed` is the one whose reason for existing is easiest to lose, and its own header states it: `leaseExclusive` counts holders per member of `projects`, so a lease on a resource outside that universe is serialized against nothing and counted by nobody. It is what makes `leaseExclusive`'s quantifier cover every lease that exists, which is why implementing it as a spot check on the field's shape implements nothing.
+
+**Three of the 25 are one-liners over five derived sets that must be implemented with them**, and are the part of S4 easiest to under-deliver: `visEdges`, `stuckSet` and `coveredSet` beneath `stuckSubsetCovered`; `revokeDoomed` beneath `cascadeSafety`; `canFinishSet` beneath `noStructuralDeadlock`. Their shape is load-bearing, not incidental — see the iteration-order paragraph above. `stuckSubsetCovered` in particular is a tautology over its two definitions and the model says so at length: it guards the two walks against each other, not the machine, and it goes red only if a future edit gives one walk a base case or an edge kind the other lacks. Implementing it as anything that could not catch that is implementing nothing.
+
+Three further predicates in the same file are **not** invariants and must not be added to the bundle: `freeClimbNever`, `cascadeParkNever` and `stageAdvanceNever` are anti-vacuity witnesses the model expects to be **violated**, and each is a make-it-red obligation of its own — a run that reports them green is a run that proved nothing.
+
+**One signature for all 25, and what `pre` means.** Four of them read the step record rather than only the state — `wrapUpIsolation`, `quietProjectLandsCleanly`, `terminalsAbsorbing`, `stepDescends`. Two need the previous state — `recordMonotone` and `stepDescends`, which is the only one reading both. So the contract is a single `(pre: Core, rec: StepRecord, post: Core) => boolean` and never a mixture, because a bundle whose members take different arguments is a bundle nobody can iterate, and the bundle returns the names of the members that came back false rather than one collapsed answer. The return type is deliberately not called a verdict: `Verdict` is the model's noun for a task-completion event's `VPass`/`VFail`, and one noun means one thing.
+
+**`pre` is the Core before the last domain *decision*, and `rec` is that decision's record — not the state one step ago.** The distinction is the whole of `installCore`, and getting it wrong breaks `stepDescends` at exactly the seam S7 exists to test: `model/domain.qnt`'s `installCore` writes `prevMeasure' = prevMeasure` and `prevRecords' = prevRecords`, deliberately declining to re-snapshot, and every refinement-layer step routes through it. So `(pre, rec)` is *carried unchanged* across emit, crash-recover and the hazard step, and advances only when the actor journals a decision. With that, "neither ghost is stored" survives — one carried `Core` supplies both `prevMeasure` and `prevRecords` by computation — and standing rule 3 is honoured where the model could not honour it, because a Quint invariant is a predicate over one state and had no `pre` to be handed. The worked case is in the body below.
+
+**Refinement obligations — 7 invariants in two bundles, and the split is the point.** `refinementCore` is the discipline-*independent* four — `journalLegal`, `recoveryComplete`, `executorSound`, `journalCompletionsMatchLedger` — which hold under both step relations, because the hazard corrupts the world and never the journal or the replay. `refinementInvariants` adds the three world-facing ones — `journalCoversWorld`, `noDoubleSpentBudget`, `noDuplicateCycle` — which are green under `rstep` and are the **expected violations** under `rstepHazard`. Implementing the seven as one flat list loses the demonstration: it is the 4/3 boundary that makes the hazard run mean something, exactly as the three domain witnesses do on the other side. Both relations are implemented too, since the delta between them *is* the discipline. Plus the machinery they read: `Cmd` (12 constructors), `Entry`, `genesis`, `execCmd`, `cmdEnabled`, `replayCore`, `journalLegalOn`, and the world arithmetic `hasEffect`, `stepsTicket`, `isSpawnFor`, `isCompletionFor`, `worldSpawnsOn`, `worldCompletionsOn`, `journalSpawnsOn`, `journalCompletionsOn`. All in S7.
+
+Note the arity gap that will bite whoever writes the replayer: `execCmd` has 12 arms because `settle` is not a decision, while the domain's `step` has 13 actions and a golden trace does carry `settled` rows. The replayer's dispatch has 13 arms, the thirteenth asserting state-identity and the `settled` label.
+
+## The conformance spine
+
+Five layers, none optional.
+
+**1. Golden trace replay** (S1 emits, S5 replays). The model emits; the implementation replays each step through its own deciders and must reproduce the StepRecord and the post-Core exactly, evaluating every invariant after every step. Reproduction is exact equality on the whole `Core` at the encode boundary, not a spot check — a spot check is how a dropped field survives.
+
+**2. Invariants as executable pure predicates** — **two bundles, one per layer** (S4 and S7). The domain's 24 sit behind `(pre, rec, post) => boolean`. The refinement layer's 7 cannot: they read the actor's own state, not the domain's — `journalLegal` folds the journal, `recoveryComplete` compares `replayCore(journal)` against the live Core, `executorSound` reads the cursor and the world set — so theirs is `(ActorState) => boolean`, where the actor state embeds the domain Core. That is the same argument as the one signature, applied honestly: a bundle whose members take different arguments is a bundle nobody can iterate, and forcing these seven into the domain's signature would be inventing arguments they do not use. Both bundles are usable by any test layer and by runtime assertions; house rule 10 asks for liberal assertion in domain code, and these are what it asserts.
+
+**3. A seeded randomized layer** (S6), mirroring the model's own: the same action roster, drawing from the same enablement sets, at all three mc instances, asserting the full bundle after every step — plus the completion-emission accumulator, which has no golden here to subsume it and is the only layer where it can go red. A counterexample shrinks into the corpus format, so a failure becomes a committed regression fixture the replayer already knows how to read, rather than a seed somebody has to re-run.
+
+**4. Make-it-red** (S4, S7). Every new invariant is shown failing against a tree carrying the defect it names before it is trusted — the standing commitment that an unverified control is worse than none. Every decider lands with at least one mutation check: a deliberately wrong variant that the suite must reject. The model supplies the mutants worth starting from, named in its own headers: the routing hoisted out of `wrapUpStart` because an inline copy let a valid artifact take the lease and every isolation conjunct stayed self-consistently wrong; the `escalate` that clears tasks without retiring them, invisible to `tasksWellFormed` and caught by `idsAccounted`; the copied guard that drifts from `dispatchableIn`.
+
+**5. The crash-seam suite** (S7). Crash the actor at every observable seam — after the journal append and before emission, mid-emission with the cursor regressed to any prior value, and at rest — and prove recovery-by-replay and re-emission absorbed by journal seq. Then demonstrate the hazard: the effect-before-journal ordering visibly double-spending, as `model/tests/chuggy_refinement_test.qnt` does. The assertion is precise, and imprecision here would hide the result. On the crash step itself, every domain invariant stays green, `refinementCore`'s four stay green, and **two** of the three fall: `journalCoversWorld`, because the orphan exists, and `noDoubleSpentBudget`, because the orphan *is* a spawn the book never charged — `effectCrash` appends it and `worldSpawnsOn` counts orphans, while the journal side does not move. `noDuplicateCycle` is the one that waits: one orphaned completion is still one completion, so it survives the crash and falls only on the re-decision, when the same diff lands twice. Both shapes are pinned deterministically in `model/tests/chuggy_refinement_test.qnt`, at the dispatch seam and again at the rework seam. That the domain machine cannot see any of it is the argument that the refinement layer owns this obligation.
+
+### The corpus
+
+**The emitter is `quint run --mbt --out-itf --seed`.** A model-side trace driver is not the primary path. At the pinned 0.32.0, `--mbt` adds `mbt::actionTaken` and `mbt::nondetPicks` to every ITF state, and `nondetPicks` is what turns an observable trace into a replayable one: the picks are the inputs the replayer feeds its own deciders. The state also carries the `lastStep` record — which is the StepRecord to reproduce — plus the ghosts and the ticket map.
+
+Regeneration is deterministic and the corpus is committed. Rules the emitter's own suite pins:
+
+- **The top-level `#meta` is replaced with its deterministic fields only.** It otherwise carries a wall-clock timestamp and a description containing the run date, so every regeneration would be a spurious diff and the goldens would become noise nobody reads. Per-state `#meta` is a state index and is kept.
+- **`--n-threads=1`.** Determinism holds at the default, and the emitter runs once per regeneration, so the wall-clock cost of pinning it is irrelevant against removing an entire class of argument about whether a reproduction was luck. Refutation trigger: if regeneration time becomes a friction, raise it and re-verify byte-identity across two runs at the higher setting.
+- **Two consecutive regenerations produce byte-identical files.** That is the suite's central case, because it is the property everything else here rests on.
+- **A manifest records, per golden: the instance, the seed, every flag, the step count, and the quint version.** The gate checks the manifest against the files present, in both directions — a golden with no row and a row naming no golden are equally a finding. Without that, the manifest is a control that reports success and does nothing.
+
+**The corpus must fire every exemption arm** in `stepDescends`, or an arm is dead code or an unreviewed weakening. Verified against `model/measure.qnt`'s named non-descending sets and the roster in `stepDescends`' own header, the arms are:
+
+| Set | Arm | Where it is reachable |
+|---|---|---|
+| — | `init` | every trace's first state |
+| STUTTER | `task-done-duplicate` | any instance |
+| STUTTER | `complete-duplicate` | any instance, after a completion |
+| STUTTER | `settled` | a fully quiesced fleet |
+| CHURN | `operator-retry` with a transition to `PPending` — the pre-work resume | any instance; free under both meterings |
+| CHURN | `operator-retry` into Evaluating or Landing under RetryFree | `mc_chuggy_retryfree` only |
+| AUTHORING | `ticket-arrived` | every trace |
+| AUTHORING | `ticket-revoked` where every transition leaves a settled-rank phase — the desk-only flat revoke | any instance |
+
+**Coverage is per instance, not corpus-wide, and that is what makes spanning all three mean something.** Seven of the eight arms and all 22 labels are reachable on the budgeted instance alone, so a corpus-wide check would pass on budgeted traces while the other two went unsampled. Each of the three therefore owes what only it can produce:
+
+| Instance | What only it contributes |
+|---|---|
+| `mc_chuggy_budgeted` | the `Budgeted` gate-rework arm, spending `wrapUpLeft` alongside gas, and `ticket-escalated wrapup_budget_exhausted` — the one label no other instance can reach |
+| `mc_chuggy_deadline_only` | `wrapUpWallNamed`'s non-trivial arm and the gas-only gate rework, under charged retries and a three-ticket fleet |
+| `mc_chuggy_retryfree` | the RetryFree CHURN arm, and `freeClimbNever` violated — the model's own proof that the arm is exercised rather than dead |
+
+The coverage check is part of S1 and it fails the corpus rather than merely reporting. What it derives from the model is the *declared* rosters — the step labels and the `stepDescends` arms — because a grep can read a declaration. Which of them each instance can reach is not derivable that way, so the per-instance expected sets come from the table above and are maintained by hand; that is the part of this check a reader should distrust first, and the refutation trigger is a corpus that goes green while an instance contributes nothing the others do not.
+
+**The fallback, named so it stays bounded.** If a stated seed budget across the three instances leaves an arm unfired, that arm gets a directed emitter module under `model/` — a deterministic driver in the shape the witness modules already use — run through the same `--mbt --out-itf` pipeline so the corpus keeps one format and one reader. This is the model-side trace driver, built only for the arms that need it and only after the sweep has failed to reach them. It is not the primary path and this plan does not schedule it.
+
+### The gates this plan lands
+
+New gates follow the house style already in `.chug/tasks/`: a sibling `*.test.sh`, three-valued exit — 0 clean, 1 finding, 2 could-not-run, and 2 is not a pass — and a header that opens by stating the rule it enforces and why.
+
+Sequencing follows `.chug/tasks/ci.sh`'s own rule, both halves of it: pure-shell gates first and cheapest-first, *before* anything that needs a toolchain — because a docs-only or scripts-only change is exactly what breaks them and exactly what would exit early from a language-scoped stage. That clause decides three of the four rows below. The hook is governed separately, by the two rules `.githooks/pre-commit` states for itself: it may reject only what `ci.sh` runs unconditionally, and it holds the fast subset only. It sets no time budget — it prints its own elapsed time instead, which is the measurement a new hook gate is judged against.
+
+| Gate | Enforces | Shell-only | Slice | Hook candidate |
+|---|---|---|---|---|
+| `check-comments.sh` <!-- intent --> | house rule 1 | yes — sequences with the pure-shell gates | S0 | yes, if the hook's printed elapsed time still reads as fast with it in |
+| `check-boundaries.sh` <!-- intent --> | house rule 2, wrapping the module-graph checker so its verdict is three-valued like every other gate | no — needs the toolchain, so it sequences after the shell stage | S0 | no |
+| `emit-goldens.sh` <!-- intent --> | not a gate — the one regeneration script, unsequenced; it carries a suite because `check-gates.sh` asks every script in that directory for one, and because the `#meta` normalisation is the thing that goes wrong | no | S1 | no |
+| `check-conformance.sh` <!-- intent --> | the replay verdict over the committed corpus; it never regenerates | no — needs the toolchain | S5 | no |
+
+House rules 3 through 6 acquire lint configuration rather than a gate of their own: each is something the linter or the formatter already decides, and a shell gate re-deciding one would be a second answer to a settled question.
+
+**A rule stated in two places after S0 is a finding against S0.** House rules 1–6 have no home in this tree today, and `.chug/tasks/review-change.md` says why: they are the mechanical ones, and each arrives with the toolchain that can enforce it, stated in the thing that enforces it and never in the reviewer's brief. S0 lands that toolchain, and each rule's text lands with it — in one place, removed from wherever it was held in the meantime. This document names them by number only, and quotes none of them, because a reviewer may reject only by a rule they can point at in the tree, and text that exists only here is text nobody wrote.
+
+### Dependencies
+
+Every dependency lands through the package manager, never by hand-editing `package.json`, and takes its justification in the commit message. `src/domain/` targets zero runtime dependencies and the graph rule enforces it <!-- intent -->; everything below is a dev dependency unless the row says otherwise.
+
+| Need | Presumptive choice | Why | Slice |
+|---|---|---|---|
+| types | TypeScript | there is no second answer | S0 |
+| formatting | Prettier, defaults only | house rule 6; adopting the defaults leaves no configuration to disagree about | S0 |
+| linting | ESLint with typescript-eslint | the only typed-lint path; house rules 3, 4 and 5 are rules it already ships | S0 |
+| module graph | dependency-cruiser | house rule 2 is a reachability property, and a per-file import check passes on the path utility that reaches the filesystem and is called by a decider | S0 |
+| test runner | the ecosystem default that runs TypeScript without a build step | the tie-breaker is idiom, and this is not a question worth escalating | S0 |
+| property testing | the ecosystem default that integrates with the chosen runner | S6's randomized layer and the shrinking it needs | S6 |
+| schema <!-- intent --> | a schema-first library, runtime dependency of `src/interpreter/` and outward | the first thing that needs a wire `Entry` is the journal store's adapter; S7 has an in-memory journal and serializes nothing, and the model puts the parse at the boundary where a tampered journal arrives | S8 |
+
+Each still argues its case in the commit that lands it. Naming a presumptive choice here is not the argument; it is a note that the question was looked at and found already answered.
+
+## Where a skill and this repo meet at an angle
+
+Three, and the repo wins each time.
+
+**domain-modelling says a repository over an in-memory structure, or over a log the core already folds, is an abstraction with nothing on the far side.** The journal store port is nonetheless required, and not for indirection's sake: the refinement obligation is exactly that a real durable store substitutes without the core moving, and a port with no second side today is what makes that substitution a compile-time fact rather than a promise. This reason belongs in the port's own declaration, where somebody deleting it will read it, and not only here.
+
+**idiomatic-by-default says do not escalate what the idiom settles.** It does not license settling a question the model answers. Where an idiom and the model disagree about behaviour, the model wins and there is nothing to weigh. Two concrete cases. The idiomatic dequeue is a FIFO array, and the model leaves queue order deliberately unmodeled with the dequeue an unrestricted choice — an implementation may impose FIFO as a refinement, but FIFO may not leak into a decider or into a replayed comparison. And the idiomatic response to an invalid input is to throw, where the model refuses *structurally* and one layer out: an arrival's program, project and deps are refused by set membership — `validPrograms`, `projects`, `dependableIn` — so no reachable state holds an ill-formed one and no decider defends against one mid-flight. So the returned refusal the compiler insists a caller handle belongs at the boundary parse, which is where illegal values actually arrive; the deciders stay total-shaped functions of `(Core, picks)` with their guards outside them, and asserting a precondition is not the same as re-deciding it.
+
+**The schema-first rule meets the zero-domain-dependency rule at the journal entry.** The model stores both the command and the record it produced, and proves them consistent, so `journalLegal` has teeth against a tampered journal — the model says an implementation may store either, and storing only the command would make its third check vacuous. That means the wire schema must describe a `StepRecord`, whose type is a domain type that must stay dependency-free. The resolution: the schema lives in `src/interpreter/` <!-- intent -->, beside the store port whose boundary the parse defends, and the domain type stays the truth, with a compile-time assertion pinning the inferred type and the domain type mutually assignable. The shape is written twice and the compiler checks the second writing, which is the difference between a duplicate and a mirror.
+
+## Open questions
+
+- **Whether `docs/` should carry a catalogue again.** It had one before the reference pages were removed. One design doc does not need an index, and a rule needs a failure it can prevent here; the question is worth reopening at the point a second document lands.
+- **The seed budget for the coverage sweep is not fixed here**, because it is a measurement and this document should not carry one. S1 fixes it, records it in the manifest, and states what it cost.
+
+---
+
+## The argument
+
+*Appended sections only from here. The head above is the current position.*
+
+### Why the actor's slice is pure, and the ports are not in it
+
+The obvious cut puts the journaled actor and its ports together, because "the actor talks to the world" is how the runtime reads. `model/refinement.qnt` says otherwise, and it is worth being precise about how much of it is pure: the journal is a `List[Entry]`, the executor cursor is an `int`, the world is a `Set[int]` of decision identities, and every action — journal, emit, crash, recover — is a total function from one of those to another. There is no clock, no I/O and no fabric vocabulary anywhere in it. Its own header calls this severability and states the property it buys: a second fabric writes a sibling of that module and re-proves the same obligations against a byte-identical domain machine.
+
+An implementation that mixes the cursor arithmetic with an `await` loses that property quietly. The crash-seam suite is the tell: crashing at every observable seam and asserting recovery is trivially exhaustive over a pure state machine and is a scheduling problem over an async one. So S7 is pure and its suite is exhaustive, and S8 adds exactly one impure loop that drains the cursor and calls the interpreter.
+
+This also settles where the ports go. The layer that calls out is the interpreter, so the interpreter declares them and the adapters implement them; a port declared in a directory of its own is declared away from both sides and is a header file with a folder around it.
+
+### Why the corpus fires every arm, and what happens when it does not
+
+`stepDescends` is where the termination argument admits its exceptions. Every arm in it is a step the measure is allowed not to descend on, and the model already states the rule for its own witnesses: no exemption arm without a deterministic run that fires it, because an arm nothing exercises is either dead code or an unreviewed weakening, and the missing run is the review hook that makes either visible.
+
+A corpus drawn by random search inherits that rule and cannot inherit the guarantee. Two of the eight arms are structurally hard to reach by drawing: the RetryFree pipeline resume exists on one instance only, and the desk-only flat revoke needs an already-parked ticket revoked with no dependent left to park. So the coverage check fails the corpus rather than reporting on it, and the fallback is bounded in advance — a directed driver for the arms the sweep misses, in the shape the witness modules already use, emitted through the same pipeline. What this refuses is the third option: a corpus that quietly covers seven arms and a reviewer who cannot tell.
+
+### What would refute the shape of this plan
+
+- **The four-directory split fails** if a fifth home appears that is none of domain, actor, interpreter or adapter. The symptom is a directory named after a technology.
+- **The pure-actor cut fails** if an obligation turns out to need a real clock or real concurrency to state — a lease timeout would be the likely one. The symptom is a crash-seam case that cannot be written as a function.
+- **The emitter path fails** if a golden turns out not to determine its own replay: an action whose picks `--mbt` does not record, or a state field the ITF cannot round-trip. The symptom is a replay that needs a heuristic to choose between two deciders. That is the wall which would justify the model-side trace driver as the primary path, and it is the only thing that would.
+- **The committed-corpus discipline fails** if the corpus grows past what a reviewer will read. The symptom is a regeneration diff nobody opens. The answer then is fewer, longer traces with a stated purpose each, not a bigger ignore list.
+
+## Correction — 2026-08-15 (what "pure" claims about the actor, and the seam it hid)
+
+The section above calls every refinement action "a total function from one of those to another". That is loose in a way that mattered, and adversarial review found the defect it was hiding. Two corrections; the decision the section argues for — S7 is pure, the ports are S8's — is unchanged, and was independently attacked and held.
+
+**First: the actions are guarded, not total.** `crashRecoverTo` requires its cursor argument in `0..applied`; `journalStep` and `effectCrash` require `cmdEnabled`; the deciders underneath assume their guards, which `model/refinement.qnt` states outright at `journalLegalOn`. The property the section was reaching for is that they are *deterministic pure functions of their arguments with preconditions checked outside them*, which is what makes crash enumeration exhaustive rather than scheduled. "Total" was the wrong word and it propagated into the head, where it implied each decider returns its own refusal — which would re-copy every guard the model hoisted out of the actions precisely so no copy could drift. The head now says partial-with-an-external-guard, and puts the returned refusal at the boundary parse where illegal values actually arrive.
+
+**Second, and the real defect: a pure actor still has to carry `(pre, rec)` across its own non-decision steps.** The head originally said the implementation is handed `pre` and computes `prevMeasure` and `prevRecords` from it, without saying what `pre` is. Read as "the state one step ago" — the obvious reading — it breaks `stepDescends` on the emit step, and it breaks it exactly where this section claims the most.
+
+The worked case. Journal a `dispatch`: the measure falls from M0 to M1, `lastStep.label` is `dispatch`, which no arm of `stepDescends` exempts, and `M1 < M0` holds, so the invariant is green. Now emit. In the model, `installCore` writes `prevMeasure' = prevMeasure` and `prevRecords' = prevRecords` and leaves `tickets` and `lastStep` alone, so on re-evaluation `stepDescends` still compares M1 against M0 and is still green — and `model/domain.qnt` says why in its header: the executor and crash steps are not domain steps, so the ghosts stay stale on purpose, and `apply` would re-snapshot them and falsely present a crash as a flat domain step. An implementation reading `pre` as the immediately preceding state computes `prevMeasure = M1` against a post of M1, finds no exemption for `dispatch`, and returns false. The crash-seam suite would then report a broken invariant on a step the model proves harmless — the worst possible failure, because the honest reading is that the discipline is unsound rather than that the harness is.
+
+So `pre` is the Core before the last domain *decision* and `rec` is that decision's record, carried unchanged across emit, crash-recover and the hazard step, advancing only when the actor journals. That is `installCore`'s semantics restated as a data-structure obligation, and it is now a named part of S7's contract rather than an implication of a signature. The "neither ghost is stored" claim survives intact, and is in fact strengthened: one carried `Core` replaces two ghost variables, and computes both.
+
+This is what the section's own refutation test was for — an obligation that cannot be written as a function of the actor's state would refute the pure cut. This one can, once the state is the right state.
+
+## Correction — 2026-08-16 (the model moved while this document sat unlanded)
+
+This plan was written, reviewed twice and then left unlanded for twenty-three commits, in which the model it specifies changed underneath it. The head has been rewritten to the model as it now stands — which is what a mutable head is for — and the changes are recorded here because a count that moves silently is the failure this document's own coverage section is built to prevent.
+
+**The ticket's namespace is a project, not a repo.** `quietRepoLandsCleanly` is now `quietProjectLandsCleanly`, `reposWellFormed` is `projectsWellFormed`, the universe constant is `projects`, and `WrapUpObs`'s attempt record carries `project`. Nothing about the machine changed; the noun did, and every sentence here that named the old one named something the tree no longer has.
+
+**There is a twenty-fifth leaf, and it is not a bookkeeping addition.** `wrapUpWellFormed` refuses a `WExclusive(r)` whose resource sits outside `projects`. Its own header states the hole it closes: `leaseExclusive` quantifies over members of `projects`, so a lease held outside that universe is serialized against nothing and counted by nobody, and two tickets could hold it at once with the depth-1 claim still green. So the counts are 24 conjuncts and 25 leaves, and S4's contract grew by one predicate whose make-it-red demonstration is a lease on an out-of-universe resource.
+
+**The completion-event naming is settled, and the open question that recorded the drift is struck.** The model chose `complete-duplicate` for the label and `completion` for the event throughout: `JCompleteDuplicate`, `journalCompletionsMatchLedger`, `isCompletionFor`, `worldCompletionsOn`, `journalCompletionsOn`, and `measure.qnt`'s STUTTER set now names the label a trace actually carries. The question asked which of two names the implementation should mirror; there is now one name, so there is nothing to mirror it against. The instruction that survives is the one the question was protecting — the implementation mirrors the model's identifiers — and it now costs no commentary.
+
+What did not change: the 23 record types, the 13 deciders, the 20 enablement predicates, the 12 `Cmd` constructors, the 23 declared step labels with 22 reachable, and the 4/3 split of the refinement bundles. Each was re-derived rather than assumed, by the commands in *Coverage of the model* above.
