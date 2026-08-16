@@ -16,7 +16,7 @@ import type { Effect } from "./effect.ts";
 import type { TicketId } from "./ids.ts";
 import type { Phase } from "./phase.ts";
 import type { Ticket } from "./ticket.ts";
-import type { WrapUpObs } from "./wrapUp.ts";
+import { woNone, type WrapUpObs } from "./wrapUp.ts";
 
 /** The observed state, as the pure deciders see it. */
 export interface Core {
@@ -43,6 +43,14 @@ export interface Decision {
   readonly rec: StepRecord;
   readonly post: Core;
 }
+
+/** The record the model's `init` writes: what is observed at a state no decision has reached. */
+export const initRecord: StepRecord = {
+  label: "init",
+  transitions: [],
+  effects: [],
+  attempt: woNone,
+};
 
 /** The ticket ids of a core, ascending. Every fold over the fleet reads this. */
 export function ticketIds(core: Core): readonly TicketId[] {

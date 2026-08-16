@@ -15,7 +15,7 @@
 
 import type { Config } from "../../src/domain/config.ts";
 import { defaultProgram } from "../../src/domain/config.ts";
-import type { Core, StepRecord } from "../../src/domain/core.ts";
+import { initRecord, type Core } from "../../src/domain/core.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
 import {
   asProjectId,
@@ -33,7 +33,7 @@ import {
   type TaskOutcome,
 } from "../../src/domain/task.ts";
 import type { Ticket } from "../../src/domain/ticket.ts";
-import { aSome, wExclusive, woNone } from "../../src/domain/wrapUp.ts";
+import { aSome, wExclusive } from "../../src/domain/wrapUp.ts";
 
 /** A ticket id, so a fixture reads the way the model's numbering does. */
 export const id = (value: number): TicketId => asTicketId(value);
@@ -95,14 +95,6 @@ export function coreOf(tickets: readonly Ticket[]): Core {
   tickets.forEach((ticket, index) => map.set(id(index + 1), ticket));
   return { tickets: map };
 }
-
-/** The record an invariant reads at an initial state, where no decision has landed yet. */
-export const initRecord: StepRecord = {
-  label: "init",
-  transitions: [],
-  effects: [],
-  attempt: woNone,
-};
 
 /**
  * The view of a state no decision has reached. The previous Core is the empty

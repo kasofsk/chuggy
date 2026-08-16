@@ -46,6 +46,23 @@ module.exports = {
       },
     },
     {
+      name: "actor-sees-domain-only",
+      comment:
+        "The actor is the journaled decision layer: it reads the domain and " +
+        "nothing else, transitively, by any path in the module graph. What " +
+        "that buys is the crash-seam demonstration — every actor step is a " +
+        "pure function of its state and picks, so crashing at every " +
+        "observable seam is exhaustive. This rule is the graph half of that " +
+        "and the ambient half is `eslint.config.js`, because a step that " +
+        "reads a clock takes no path anywhere for a graph rule to find.",
+      severity: "error",
+      from: { path: "^src/actor/" },
+      to: {
+        reachable: true,
+        path: "^(?!src/(domain|actor)/)",
+      },
+    },
+    {
       name: "no-source-reaches-a-suite",
       comment:
         "The suites mirror src/ and are downstream of every part of it. They " +
