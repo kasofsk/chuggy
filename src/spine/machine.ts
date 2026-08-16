@@ -55,7 +55,7 @@ export const initStepRecord: StepRecord = {
   label: "init",
   transitions: [],
   effects: [],
-  landing: { tag: "WONone" },
+  attempt: { tag: "WONone" },
 };
 
 /** `model/domain.qnt` settle's `lastStep'` — the dead-end stutter's record. */
@@ -63,7 +63,7 @@ export const settledStepRecord: StepRecord = {
   label: "settled",
   transitions: [],
   effects: [],
-  landing: { tag: "WONone" },
+  attempt: { tag: "WONone" },
 };
 
 /** `model/domain.qnt` currentMeasure — `sysMeasure` at this instance's bounds. */

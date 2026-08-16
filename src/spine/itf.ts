@@ -510,7 +510,7 @@ function decodeTransition(v: unknown, where: string): Transition {
 
 function decodeStepRecord(v: unknown, where: string): StepRecord {
   const raw = asObject(v, where);
-  fieldsExactly(raw, ["label", "transitions", "effects", "landing"], where);
+  fieldsExactly(raw, ["label", "transitions", "effects", "attempt"], where);
   return {
     label: itfString(field(raw, "label", where), `${where}.label`),
     transitions: itfList(
@@ -520,7 +520,7 @@ function decodeStepRecord(v: unknown, where: string): StepRecord {
     effects: itfList(field(raw, "effects", where), `${where}.effects`).map(
       (e, i) => itfString(e, `${where}.effects[${String(i)}]`),
     ),
-    landing: decodeWrapUpObs(field(raw, "landing", where), `${where}.landing`),
+    attempt: decodeWrapUpObs(field(raw, "attempt", where), `${where}.attempt`),
   };
 }
 

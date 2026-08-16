@@ -190,7 +190,7 @@ const settledStep: StepRecord = {
   label: "settled",
   transitions: [],
   effects: [],
-  landing: { tag: "WONone" },
+  attempt: { tag: "WONone" },
 };
 
 /**
@@ -443,7 +443,7 @@ function landingStep(
     label,
     transitions: [{ ticket: 1, from, to: "PDone" }],
     effects: ["Complete"],
-    landing: { tag: "WOAttempt", project, invalidated },
+    attempt: { tag: "WOAttempt", project, invalidated },
   };
 }
 
@@ -514,13 +514,13 @@ const redProofs: readonly RedProof[] = [
       label: "rework-started wrapup_failure",
       transitions: [{ ticket: 1, from: "PWrapUp", to: "PWorking" }],
       effects: ["SpawnWorkTasks"],
-      landing: { tag: "WOAttempt", project: 1, invalidated: false },
+      attempt: { tag: "WOAttempt", project: 1, invalidated: false },
     }),
     fixed: stepped(cfgBudgeted, solo(jLand), {
       label: "rework-started wrapup_failure",
       transitions: [{ ticket: 1, from: "PWrapUpHolding", to: "PWorking" }],
       effects: ["SpawnWorkTasks"],
-      landing: { tag: "WOAttempt", project: 1, invalidated: true },
+      attempt: { tag: "WOAttempt", project: 1, invalidated: true },
     }),
     reds: ["wrapUpIsolation", "quietProjectLandsCleanly"],
   },
@@ -596,13 +596,13 @@ const redProofs: readonly RedProof[] = [
       label: "ticket-released",
       transitions: [{ ticket: 1, from: "PDone", to: "PPending" }],
       effects: [],
-      landing: { tag: "WONone" },
+      attempt: { tag: "WONone" },
     }),
     fixed: stepped(cfgBudgeted, solo(jDraft), {
       label: "ticket-released",
       transitions: [{ ticket: 1, from: "PDraft", to: "PPending" }],
       effects: [],
-      landing: { tag: "WONone" },
+      attempt: { tag: "WONone" },
     }),
     reds: ["terminalsAbsorbing"],
   },
@@ -825,7 +825,7 @@ const redProofs: readonly RedProof[] = [
         label: "dispatch",
         transitions: [{ ticket: 1, from: "PPending", to: "PWorking" }],
         effects: ["SpawnWorkTasks"],
-        landing: { tag: "WONone" },
+        attempt: { tag: "WONone" },
       },
       sysMeasure(boundsOf(cfgBudgeted), solo(jWork).tickets),
     ),
@@ -836,7 +836,7 @@ const redProofs: readonly RedProof[] = [
         label: "dispatch",
         transitions: [{ ticket: 1, from: "PPending", to: "PWorking" }],
         effects: ["SpawnWorkTasks"],
-        landing: { tag: "WONone" },
+        attempt: { tag: "WONone" },
       },
       sysMeasure(boundsOf(cfgBudgeted), solo(jWork).tickets) + 1,
     ),
@@ -1072,7 +1072,7 @@ test("wrapUpIsolation: every conjunct of both arms, each with the step that brea
     label: "ticket-done",
     transitions: [{ ticket: 1, from: "PEvaluating", to: "PDone" }],
     effects: ["Complete"],
-    landing: { tag: "WONone" },
+    attempt: { tag: "WONone" },
   };
   assert.equal(wrapUpIsolation(cfgBudgeted, done, doneOffRecord), false);
   assert.ok(
@@ -2203,7 +2203,7 @@ function movingStep(label: string, from: Phase, to: Phase): StepRecord {
     label,
     transitions: [{ ticket: 1, from, to }],
     effects: [],
-    landing: { tag: "WONone" },
+    attempt: { tag: "WONone" },
   };
 }
 

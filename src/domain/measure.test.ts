@@ -386,7 +386,7 @@ test("the vocabulary is the model's, constructor for constructor", () => {
     label: "ticket-released",
     transitions: [transition],
     effects: [],
-    landing: { tag: "WONone" },
+    attempt: { tag: "WONone" },
   };
   const decision: Decision = { rec, post: core };
   const bounds: Bounds = bBudgeted;
@@ -395,7 +395,7 @@ test("the vocabulary is the model's, constructor for constructor", () => {
     [2, 1, 3, 1, 2],
   );
   assert.equal(decision.rec.transitions.length, 1);
-  assert.equal(decision.rec.landing.tag, "WONone");
+  assert.equal(decision.rec.attempt.tag, "WONone");
 });
 
 // === The weight chain, derived rather than chosen ==========================

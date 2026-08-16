@@ -8,19 +8,19 @@
 ///     replay-append agreement that is theorem 3's mechanism).
 ///   - chuggy_refinement_witness_test — the DISCIPLINED machine trace:
 ///     one ticket walked arrive -> dispatch -> eval-fail -> REWORK ->
-///     eval-pass -> quiet landing, with crash/recover injected at every
+///     eval-pass -> quiet wrap-up, with crash/recover injected at every
 ///     observable seam (post-journal pre-emission at the dispatch, the
-///     rework, and the landing; total cursor loss with re-emission
+///     rework, and the wrap-up; total cursor loss with re-emission
 ///     absorbed; final full-journal recovery), asserting
 ///     `allDomainInvariants and refinementInvariants` after EVERY step —
 ///     the crash-recover-continue gate run. Plus the LEASE-FREE route,
-///     which reaches no landing at all: a WNone ticket completing
+///     which reaches no wrap-up at all: a WNone ticket completing
 ///     straight out of PEvaluating, crashed at its completion seam, so
 ///     the same obligations are carried on a ticket that never takes a
 ///     lease.
 ///   - chuggy_refinement_hazard_test — the EXPECTED-VIOLATION traces
 ///     (theorem 4): the effect-then-journal seam double-spending on
-///     recovery — the dispatch double-spend, the duplicate landing, and
+///     recovery — the dispatch double-spend, the duplicate wrap-up, and
 ///     the REWORK double-spend (the service must journal decisions or
 ///     double-spend) — each violated conjunct asserted at the exact
 ///     step it falls, WITH allDomainInvariants still green on the same
@@ -300,7 +300,7 @@ module chuggy_refinement_witness_test {
         allDomainInvariants, refinementInvariants
       })
       // The rework cycle passes work and eval (the failed evaluator
-      // respawns — id 4), and the ticket enqueues for landing.
+      // respawns — id 4), and the ticket enqueues for wrap-up.
       .then(stepEmit(JTaskDone({ ticket: 1, tid: 3, verdict: VPass }), "task-done"))
       .then(stepEmit(JWorkReduce(1), "work-passed"))
       .then(stepEmit(JTaskDone({ ticket: 1, tid: 4, verdict: VPass }), "task-done"))
@@ -315,7 +315,7 @@ module chuggy_refinement_witness_test {
         worldCompletions(1) == 0,
         allDomainInvariants, refinementInvariants
       })
-      // CRASH at the landing seam: the landing DECISION is durable
+      // CRASH at the wrap-up seam: the wrap-up DECISION is durable
       // (recovery rebuilds Done from the journal); the world has still
       // merged nothing — and will merge exactly once.
       .then(crashRecoverTo(12))
@@ -383,7 +383,7 @@ module chuggy_refinement_witness_test {
       .expect(and {
         obs.label == "ticket-done",
         obs.transitions == [{ ticket: 1, from: PEvaluating, to: PDone }],
-        obs.landing == WONone,          // no attempt, so nothing to attribute
+        obs.attempt == WONone,          // no attempt, so nothing to attribute
         memCore.tickets.get(1).phase == PDone,
         journalCompletions(1) == 1,
         worldCompletions(1) == 0,
@@ -433,7 +433,7 @@ module chuggy_refinement_hazard_test {
 
   pure val progFlat: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
 
-  /// The dispatch double-spend and the duplicate landing, one trace:
+  /// The dispatch double-spend and the duplicate wrap-up, one trace:
   /// the two shapes the theorems name (no double-spent budget, no
   /// duplicate cycle), each produced by one effect-first crash.
   run hazardDoubleSpendDeterministicTest =
@@ -475,7 +475,7 @@ module chuggy_refinement_hazard_test {
         refinementCore,
         allDomainInvariants
       })
-      // Walk the (journaled) cycle to the landing queue.
+      // Walk the (journaled) cycle to the wrap-up queue.
       .then(journalStep(JTaskDone({ ticket: 1, tid: 1, verdict: VPass })))
       .then(emitNext)
       .then(journalStep(JWorkReduce(1)))
@@ -488,7 +488,7 @@ module chuggy_refinement_hazard_test {
         memCore.tickets.get(1).phase == PWrapUp,
         allDomainInvariants
       })
-      // THE SEAM AT THE LANDING: a valid-artifact dequeue squash-merges IN THE
+      // THE SEAM AT THE WRAP-UP: a valid-artifact dequeue squash-merges IN THE
       // WORLD, the crash eats the journal write — the book still shows
       // the ticket enqueued, completions 0.
       .then(effectCrash(JDequeue({ ticket: 1, moved: false })))

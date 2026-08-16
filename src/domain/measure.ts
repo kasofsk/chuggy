@@ -208,7 +208,7 @@ export type Reason =
 export type WrapUpOutcome = "WOk" | "WFailed";
 
 /**
- * `model/measure.qnt` WrapUpObs — the landing-boundary observation.
+ * `model/measure.qnt` WrapUpObs — the wrap-up attempt observation.
  *
  * The model's `WOAttempt` carries one record; its two fields ride the
  * constructor directly here, under the model's own names, because a nested
@@ -284,12 +284,18 @@ export type Transition = {
  * are strings; the typed effect vocabulary is `src/effects/effect.ts`'s, whose
  * constructors ARE these strings — so it types this field's contents without
  * changing one stored byte of it.
+ *
+ * `attempt` IS NAMED FOR WHAT IT RANGES OVER, which is the wrap-up attempt and
+ * not the completion: most of the labels it carries a `WOAttempt` on are
+ * failures. It is not named `wrapUp` either, because `Ticket.wrapUp` is the
+ * AUTHORED kind and a reader meeting both in one decision should not have to
+ * ask which is which. The model states this at its own `StepRecord`.
  */
 export type StepRecord = {
   readonly label: string;
   readonly transitions: readonly Transition[];
   readonly effects: readonly string[];
-  readonly landing: WrapUpObs;
+  readonly attempt: WrapUpObs;
 };
 
 /** `model/measure.qnt` Decision — what a pure decider returns: record performed + post-state. */

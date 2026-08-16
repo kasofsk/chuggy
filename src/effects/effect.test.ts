@@ -264,7 +264,7 @@ test("effectsOf answers the empty list for a record that asks nothing of the wor
       label: "task-done-duplicate",
       transitions: [],
       effects: [],
-      landing: { tag: "WONone" },
+      attempt: { tag: "WONone" },
     }),
     [],
   );
@@ -277,7 +277,7 @@ test("effectsOf refuses a record carrying an effect this build does not know", (
         label: "ticket-arrived",
         transitions: [],
         effects: ["CreateDraft", "RunTheJob"],
-        landing: { tag: "WONone" },
+        attempt: { tag: "WONone" },
       }),
     {
       name: "AssertionError",
@@ -296,7 +296,7 @@ test("every effect the vocabulary holds types a record of its own", () => {
       label: "not a real record",
       transitions: [],
       effects: every.map(printEffect),
-      landing: { tag: "WONone" },
+      attempt: { tag: "WONone" },
     }),
     every,
   );

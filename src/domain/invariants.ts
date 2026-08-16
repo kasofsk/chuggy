@@ -176,7 +176,7 @@ export function wrapUpIsolation(
   lastStep: StepRecord,
 ): boolean {
   const [first] = lastStep.transitions;
-  switch (lastStep.landing.tag) {
+  switch (lastStep.attempt.tag) {
     case "WONone":
       return (
         (lastStep.label !== "ticket-done" ||
@@ -187,7 +187,7 @@ export function wrapUpIsolation(
         lastStep.label !== "ticket-escalated wrapup_budget_exhausted"
       );
     case "WOAttempt": {
-      const attempt = lastStep.landing;
+      const attempt = lastStep.attempt;
       return (
         projects(cfg).has(attempt.project) &&
         first !== undefined &&
@@ -202,7 +202,7 @@ export function wrapUpIsolation(
       );
     }
     default:
-      return assertNever(lastStep.landing, "unhandled WrapUpObs");
+      return assertNever(lastStep.attempt, "unhandled WrapUpObs");
   }
 }
 
@@ -213,13 +213,13 @@ export function wrapUpIsolation(
  * state" means: there is no Core to consult.
  */
 export function quietProjectLandsCleanly(lastStep: StepRecord): boolean {
-  switch (lastStep.landing.tag) {
+  switch (lastStep.attempt.tag) {
     case "WONone":
       return true;
     case "WOAttempt":
-      return lastStep.landing.invalidated || lastStep.label === "ticket-done";
+      return lastStep.attempt.invalidated || lastStep.label === "ticket-done";
     default:
-      return assertNever(lastStep.landing, "unhandled WrapUpObs");
+      return assertNever(lastStep.attempt, "unhandled WrapUpObs");
   }
 }
 

@@ -64,17 +64,17 @@
 /// New nondet extends THIS layer first, per its own
 /// convention: the machine's two NEW nondet draws — the authored project pick
 /// at arrival and the environment's per-attempt invalidated choice at the
-/// landing — each get deterministic runs exercising BOTH branches
+/// wrap-up — each get deterministic runs exercising BOTH branches
 /// (chuggy_witness_multiproject_test: the choice pinned MOVED with the gate
-/// rework and the landing wall attributed; pinned QUIET with the landing
+/// rework and the wrap-up wall attributed; pinned QUIET with the wrap-up
 /// succeeding; and the project pick exercised off-default with a cross-project
 /// dep chain unblocking). Every other module authors project 1 at arrival,
-/// and every landing driver names its invalidated
+/// and every wrap-up driver names its invalidated
 /// choice with the outcome guarded by the machine's own wrapUpOutcomes draw
 /// rule (a quiet failure is not drawable — the drivers reference the same
-/// definition the landing actions draw from, per the guard discipline
+/// definition the wrap-up actions draw from, per the guard discipline
 /// above). The multi-project module has NO paired random probe: its shapes are
-/// exercised by every unseeded allInvariants run (landing attempts are
+/// exercised by every unseeded allInvariants run (wrap-up attempts are
 /// dense — unlike the carry), so the deterministic runs alone carry the
 /// gate.
 ///
@@ -100,7 +100,7 @@
 ///     failures metered by gas alone (wrapUpLeft identically 0) into the
 ///     gas wall — the documented gate-loop shape reproduced on this
 ///     machine, with the deadline backstop doing exactly its job (R5).
-/// Like the multi-project module, neither has a paired random probe: landing
+/// Like the multi-project module, neither has a paired random probe: wrap-up
 /// attempts are dense in random exploration; the unseeded Stage 9 runs are
 /// the random side.
 
@@ -515,7 +515,7 @@ module chuggy_witness_stage_test {
         allInvariants
       })
       // The dequeue draws QUIET: the skip fast-path — gate never opened,
-      // the direct squash resolves the landing in one step (the path
+      // the direct squash resolves the wrap-up in one step (the path
       // rule's quiet arm; the held arm is the lease module's).
       .then(doDequeue(1, false))
       .expect(and {
@@ -541,7 +541,7 @@ module chuggy_witness_stage_test {
 /// SHAPE 5 — THE MULTI-PROJECT ISOLATION SHAPES (mc_chuggy_budgeted consts
 /// + N_PROJECTS = 2). Three runs, one per branch of the project nondet surface:
 ///   - QUIET: a project-2 ticket (the project pick exercised off-default) whose
-///     landing attempt the environment chose quiet — the landing MUST
+///     wrap-up attempt the environment chose quiet — the wrap-up MUST
 ///     succeed (wrapUpOutcomes refuses a quiet failure) and the ticket-done
 ///     step carries the quiet attribution. This run is the trace-pinned
 ///     half of quietProjectLandsCleanly (the invariant's header is explicit
@@ -552,15 +552,15 @@ module chuggy_witness_stage_test {
 ///     gate-budget wall each carry {project, invalidated: true}: the rework
 ///     is attributed to the project whose branch moved, and to nothing else.
 ///   - CROSS-PROJECT DEP: a project-2 ticket dependent on a project-1 ticket —
-///     blocked while the dep is unlanded, READY the moment project 1's
-///     landing makes it Done (the dep gate read Done-ness, not location),
+///     blocked while the dep has not wrapped up, READY the moment project 1's
+///     wrap-up makes it Done (the dep gate read Done-ness, not location),
 ///     then landing cleanly itself; project 1's success is drawn under a
 ///     MOVED branch, pinning at machine level that a move makes failure
-///     possible, never certain. Each landing resolution is attributed to
+///     possible, never certain. Each wrap-up resolution is attributed to
 ///     its own project in one trace with both projects live.
 /// allInvariants — now carrying wrapUpIsolation, quietProjectLandsCleanly,
 /// and projectsWellFormed — is asserted after EVERY step of all three runs.
-/// NO paired random probe (file header): landing attempts are dense in
+/// NO paired random probe (file header): wrap-up attempts are dense in
 /// random exploration, so the unseeded Stage 9 runs cover the random side;
 /// these deterministic traces alone are the lease.
 module chuggy_witness_multiproject_test {
@@ -615,12 +615,12 @@ module chuggy_witness_multiproject_test {
     apply(decideWrapUpResolve(core, j, out, true))
   }
 
-  /// Single-stage single-evaluator program: these shapes need the landing
+  /// Single-stage single-evaluator program: these shapes need the wrap-up
   /// boundary, not staging (the stage witness owns staging).
   pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
 
-  /// THE QUIET LANDING: the environment chooses the target project's branch
-  /// quiet for the attempt — the landing succeeds, attributed. (A quiet
+  /// THE QUIET WRAP-UP: the environment chooses the target project's branch
+  /// quiet for the attempt — the wrap-up succeeds, attributed. (A quiet
   /// FAILURE is undrivable, not merely unobserved, so this run documents
   /// the refusal structurally: the quiet route draws no outcome —
   /// decideDequeue fixes WOk, the one element of wrapUpOutcomes(false) —
@@ -645,14 +645,14 @@ module chuggy_witness_multiproject_test {
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // THE WITNESSED STEP: the attempt's invalidated choice is QUIET —
-      // the dequeue fast-paths (the lease is never taken), the landing
+      // the dequeue fast-paths (the lease is never taken), the wrap-up
       // succeeds, and the step is attributed to the ticket's own project
       // with the quiet cause on record.
       .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 2, invalidated: false }),
+        lastStep.attempt == WOAttempt({ project: 2, invalidated: false }),
         tickets.get(1).completions == 1,
         quietProjectLandsCleanly,                     // the state theorem, on the pinned-quiet step
         allInvariants
@@ -661,7 +661,7 @@ module chuggy_witness_multiproject_test {
   /// THE MOVED REWORK, ATTRIBUTED: the environment chooses the branch
   /// MOVED at both attempts — the first failure buys the Budgeted gate
   /// rework, the second parks at the gate-budget wall, and BOTH steps
-  /// carry {project: 1, invalidated: true}: a landing failed only via its
+  /// carry {project: 1, invalidated: true}: a wrap-up failed only via its
   /// own project's branch moving, and the trace says so each time.
   run movedReworkAttributedTest =
     init
@@ -696,7 +696,7 @@ module chuggy_witness_multiproject_test {
       .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "rework-started wrapup_failure",
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).wrapUpLeft == 0,
         tickets.get(1).gasLeft == 1,
         leaseFreeIn(core, 1),
@@ -722,7 +722,7 @@ module chuggy_witness_multiproject_test {
       .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "ticket-escalated wrapup_budget_exhausted",
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).phase == PEscalated,
         tickets.get(1).reason == RsWrapUpBudgetExhausted,
         tickets.get(1).resumeAt == RWrapUp,
@@ -731,10 +731,10 @@ module chuggy_witness_multiproject_test {
 
   /// THE CROSS-PROJECT DEP CHAIN: ticket 1 targets project 1, ticket 2 targets
   /// project 2 and depends on 1 — the dep gate is LOCATION-BLIND: 2 is
-  /// Blocked exactly while 1 is not Done, and project 1's landing unblocks
+  /// Blocked exactly while 1 is not Done, and project 1's wrap-up unblocks
   /// it with the projects never consulted. Project 1's success is drawn under
   /// a MOVED branch (failure is possible there, not certain); project 2
-  /// lands quiet. One trace, both projects, each landing attributed to its
+  /// lands quiet. One trace, both projects, each wrap-up attributed to its
   /// own.
   run crossProjectDepDeterministicTest =
     init
@@ -778,7 +778,7 @@ module chuggy_witness_multiproject_test {
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).phase == PDone,
         isReady(2),                                // THE cross-project unblock
         allInvariants
@@ -801,7 +801,7 @@ module chuggy_witness_multiproject_test {
       .then(doDequeue(2, false))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.landing == WOAttempt({ project: 2, invalidated: false }),
+        lastStep.attempt == WOAttempt({ project: 2, invalidated: false }),
         tickets.get(2).phase == PDone,
         tickets.get(1).completions == 1,
         tickets.get(2).completions == 1,
@@ -882,7 +882,7 @@ module chuggy_witness_gate_test {
 
   run leaseExclusiveDeterministicTest =
     init
-      // Two same-project tickets, walked to the landing queue one after the
+      // Two same-project tickets, walked to the wrap-up queue one after the
       // other (each: dispatch gas 3 -> 2, work ids 1-2, eval id 3).
       .then(doArrive(Set(), progFlat1, 1))
       .expect(allInvariants)
@@ -945,7 +945,7 @@ module chuggy_witness_gate_test {
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).completions == 1,
         leaseFreeIn(core, 1),
         wrapUpStartableIn(core, 2),                // the queue moves on
@@ -959,7 +959,7 @@ module chuggy_witness_gate_test {
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 1, invalidated: false }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: false }),
         tickets.get(2).completions == 1,
         allInvariants
       })
@@ -967,7 +967,7 @@ module chuggy_witness_gate_test {
   /// THE QUIET FAST-PATH, witnessed as its own shape (adversarial review,
   /// MAJOR 1 — direct-path reachability pinned against the ROUTING rule):
   /// a solo ticket walked to the queue and dequeued QUIET resolves its
-  /// landing IN THE DEQUEUE STEP — ticket-done, the direct squash, quiet
+  /// wrap-up IN THE DEQUEUE STEP — ticket-done, the direct squash, quiet
   /// attribution, and the lease NEVER opens anywhere on the trace. A
   /// decideDequeue mutant that re-routed quiet into the lease (the
   /// review's p3, which the pre-hoisting composition let ship green)
@@ -997,12 +997,12 @@ module chuggy_witness_gate_test {
         leaseFreeIn(core, 1),
         allInvariants
       })
-      // THE WITNESSED STEP: valid-artifact dequeue = same-step landing.
+      // THE WITNESSED STEP: valid-artifact dequeue = same-step wrap-up.
       .then(doDequeue(1, false))
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
-        lastStep.landing == WOAttempt({ project: 1, invalidated: false }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: false }),
         lastStep.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }],
         tickets.get(1).phase == PDone,
         tickets.get(1).completions == 1,
@@ -1100,7 +1100,7 @@ module chuggy_witness_gate_deadline_test {
       .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "rework-started wrapup_failure",
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).wrapUpLeft == 0,              // identically zero: DeadlineOnly
         tickets.get(1).gasLeft == 1,
         allInvariants
@@ -1143,7 +1143,7 @@ module chuggy_witness_gate_deadline_test {
       .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "ticket-escalated gas_exhausted",
-        lastStep.landing == WOAttempt({ project: 1, invalidated: true }),
+        lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
         tickets.get(1).phase == PEscalated,
         tickets.get(1).reason == RsGasExhausted,
         tickets.get(1).resumeAt == RWrapUp,       // resume re-ENQUEUES
@@ -1320,7 +1320,7 @@ module chuggy_witness_wrapup_none_test {
         lastStep.effects == ["Complete"],
         // It resolved no wrap-up attempt, so it carries no attribution —
         // the completeness arm of wrapUpIsolation permits exactly this.
-        lastStep.landing == WONone,
+        lastStep.attempt == WONone,
         tickets.get(1).phase == PDone,
         tickets.get(1).completions == 1,
         // THE REGRESSION PIN: the eval set was retired on the way through.

@@ -230,8 +230,17 @@ test("hasEntryShape: the record's shape is checked; its vocabulary is not", () =
     { ...rec, effects: "CreateDraft" },
     { ...rec, effects: [1] },
     { ...rec, label: 1 },
-    { ...rec, landing: { tag: "WOAttempt", project: 1 } },
-    { ...rec, landing: "WONone" },
+    { ...rec, attempt: { tag: "WOAttempt", project: 1 } },
+    { ...rec, attempt: "WONone" },
+    // The retired name, carried in the renamed field's place — a pre-rename
+    // row, or a writer that never followed the model. The roster is the whole
+    // of what refuses it, so the refusal is pinned here rather than assumed.
+    {
+      label: rec.label,
+      transitions: rec.transitions,
+      effects: rec.effects,
+      landing: rec.attempt,
+    },
   ]) {
     assert.equal(
       hasEntryShape(rowWith("rec", bad)),
@@ -250,7 +259,7 @@ test("hasEntryShape: the record's shape is checked; its vocabulary is not", () =
     label: "no-such-label",
     transitions: [{ ticket: 1, from: "PNowhere", to: "PElsewhere" }] as never,
     effects: ["NoSuchEffect"],
-    landing: { tag: "WONone" },
+    attempt: { tag: "WONone" },
   };
   assert.ok(hasEntryShape(rowWith("rec", nonsense)));
 });

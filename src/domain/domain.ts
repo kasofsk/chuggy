@@ -486,7 +486,7 @@ export function move(
       label,
       transitions: [{ ticket: j, from: jb.phase, to }],
       effects,
-      landing: { tag: "WONone" },
+      attempt: { tag: "WONone" },
     },
     post: withTicket(c, j, { ...jb, phase: to }),
   };
@@ -499,16 +499,17 @@ export function move(
  */
 export function noop(c: Core, label: string): Decision {
   return {
-    rec: { label, transitions: [], effects: [], landing: { tag: "WONone" } },
+    rec: { label, transitions: [], effects: [], attempt: { tag: "WONone" } },
     post: c,
   };
 }
 
 /**
- * `model/domain.qnt` withWrapUpObs — stamp the landing-boundary attribution on
+ * `model/domain.qnt` withWrapUpObs — stamp the wrap-up boundary's attribution on
  * a decision. `decideWrapUpResolve` routes EVERY arm through this, so each step
- * that resolves a landing attempt carries the target project and the environment's
- * invalidated choice for that attempt.
+ * that resolves a wrap-up attempt — both successes, the gate rework, and both
+ * wrap-up walls — carries the target project and the environment's invalidated
+ * choice for that attempt.
  *
  * The post-state is passed through UNTOUCHED, which is the whole of what makes
  * this an observation rather than a decision: the attribution lives in the
@@ -523,7 +524,7 @@ export function withWrapUpObs(
   return {
     rec: {
       ...d.rec,
-      landing: { tag: "WOAttempt", project, invalidated: moved },
+      attempt: { tag: "WOAttempt", project, invalidated: moved },
     },
     post: d.post,
   };
@@ -585,7 +586,7 @@ export function decideArrive(
       label: "ticket-arrived",
       transitions: [],
       effects: ["CreateDraft"],
-      landing: { tag: "WONone" },
+      attempt: { tag: "WONone" },
     },
     post: { tickets },
   };
@@ -665,7 +666,7 @@ export function decideRevoke(c: Core, j: number): Decision {
         })),
       ],
       effects: ["Revoke", ...parkedList.map(() => "OpenHumanTask")],
-      landing: { tag: "WONone" },
+      attempt: { tag: "WONone" },
     },
     post: { tickets },
   };
@@ -1092,7 +1093,7 @@ export function decideTaskDone(
         label: "task-done",
         transitions: [],
         effects: [],
-        landing: { tag: "WONone" },
+        attempt: { tag: "WONone" },
       },
       post: withTicket(c, j, {
         ...jb,
@@ -1308,7 +1309,7 @@ export function completeTicket(c: Core, j: number): Decision {
       label: "ticket-done",
       transitions: [{ ticket: j, from: jb.phase, to: "PDone" }],
       effects: ["Complete"],
-      landing: { tag: "WONone" },
+      attempt: { tag: "WONone" },
     },
     post: withTicket(c, j, {
       ...jb,

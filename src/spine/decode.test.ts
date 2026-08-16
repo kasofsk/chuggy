@@ -92,7 +92,7 @@ test("reconstruction agrees with the model's own decision events, fixture for fi
     assert.ok(
       reachableStepLabels.includes(
         stepLabel(
-          { label, transitions: [], effects: [], landing: { tag: "WONone" } },
+          { label, transitions: [], effects: [], attempt: { tag: "WONone" } },
           "roster",
         ),
       ),
@@ -139,7 +139,7 @@ const genesis = {
     label: "init",
     transitions: [],
     effects: [],
-    landing: { tag: "WONone" as const },
+    attempt: { tag: "WONone" as const },
   },
   prevMeasure: 0,
   prevRecords: new Map(),
@@ -233,7 +233,7 @@ test("a landing route whose observation and from-phase disagree is a decode fail
             label: "ticket-done",
             transitions: [{ ticket: 1, from: "PWrapUp", to: "PDone" }],
             effects: ["Complete"],
-            landing: { tag: "WOAttempt", project: 1, invalidated: true },
+            attempt: { tag: "WOAttempt", project: 1, invalidated: true },
           },
         }),
         "t",
@@ -256,7 +256,7 @@ test("a landing failure that records no invalidated attempt is a decode failure"
               { ticket: 1, from: "PWrapUpHolding", to: "PWorking" },
             ],
             effects: ["SpawnWorkTasks"],
-            landing: { tag: "WOAttempt", project: 1, invalidated: false },
+            attempt: { tag: "WOAttempt", project: 1, invalidated: false },
           },
         }),
         "t",

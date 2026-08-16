@@ -74,7 +74,7 @@ const step = (label: string): unknown => ({
   label,
   transitions: [],
   effects: [],
-  landing: tagged("WONone"),
+  attempt: tagged("WONone"),
 });
 
 function state(index: number, over: Record<string, unknown> = {}): unknown {
@@ -167,7 +167,32 @@ test("decodeTrace: a record's field set is exact, in both directions", () => {
     (error: unknown) =>
       error instanceof DecodeError && /promoted/.test(error.message),
   );
+  // The STEP RECORD is held to the same exactness, and the RETIRED NAME is the
+  // case that matters here: the model renamed this field, and a decoder that
+  // took the old one would replay a trace the model can no longer emit. That
+  // is how the drift this branch absorbed stayed invisible — every gate was
+  // green against a model the mirror could not decode.
+  const shortStep = { ...(step("init") as Record<string, unknown>) };
+  delete shortStep["attempt"];
+  assert.throws(
+    () => decodeTrace(withStep(shortStep)),
+    (error: unknown) =>
+      error instanceof DecodeError &&
+      /got \[effects, label, transitions\]/.test(error.message),
+  );
+  assert.throws(
+    () => decodeTrace(withStep({ ...shortStep, landing: tagged("WONone") })),
+    (error: unknown) =>
+      error instanceof DecodeError &&
+      /got \[effects, label, landing, transitions\]/.test(error.message),
+  );
 });
+
+function withStep(rec: unknown): unknown {
+  return document({
+    states: [state(0), state(1, { "m::chuggy_domain::lastStep": rec })],
+  });
+}
 
 function withTicket(jb: unknown): unknown {
   return document({

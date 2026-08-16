@@ -273,7 +273,7 @@ function isTransition(value: unknown): boolean {
   ]);
 }
 
-/** `model/measure.qnt` WrapUpObs — the landing-boundary observation. */
+/** `model/measure.qnt` WrapUpObs — the wrap-up attempt observation. */
 function isWrapUpObs(value: unknown): boolean {
   return taggedOneOf(value, [
     ["WONone", []],
@@ -368,7 +368,7 @@ function isStepRecordShaped(value: unknown): boolean {
     ["label", isString],
     ["transitions", (v) => Array.isArray(v) && v.every(isTransition)],
     ["effects", (v) => Array.isArray(v) && v.every(isString)],
-    ["landing", isWrapUpObs],
+    ["attempt", isWrapUpObs],
   ]);
 }
 

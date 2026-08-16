@@ -183,10 +183,10 @@ test("a recorded StepRecord one field off reds, at the step that recorded it", (
     ["label", { ...original, label: "task-done-duplicate" }],
     ["effects", { ...original, effects: ["Complete"] }],
     [
-      "landing",
+      "attempt",
       {
         ...original,
-        landing: { tag: "WOAttempt", project: 1, invalidated: false },
+        attempt: { tag: "WOAttempt", project: 1, invalidated: false },
       },
     ],
   ];
@@ -256,7 +256,7 @@ test("a stutter step is driven across its whole absorbing class", () => {
       label: "task-done-duplicate",
       transitions: [],
       effects: [],
-      landing: { tag: "WONone" },
+      attempt: { tag: "WONone" },
     },
     prevMeasure: currentMeasure(cfg, state.core),
     prevRecords: currentRecords(state.core),

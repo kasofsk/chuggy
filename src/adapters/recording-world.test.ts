@@ -28,7 +28,7 @@ const cascade: StepRecord = {
     { ticket: 3, from: "PDraft", to: "PEscalated" },
   ],
   effects: ["Revoke", "OpenHumanTask", "OpenHumanTask"],
-  landing: { tag: "WONone" },
+  attempt: { tag: "WONone" },
 };
 
 /** An arrival's record: one effect, and no transition to attribute it to. */
@@ -36,7 +36,7 @@ const arrival: StepRecord = {
   label: "ticket-arrived",
   transitions: [],
   effects: ["CreateDraft"],
-  landing: { tag: "WONone" },
+  attempt: { tag: "WONone" },
 };
 
 function delivery(

@@ -412,7 +412,7 @@ test("gateOpenClassifiedTest: the gate OPENS as its own recorded step, charging 
   assert.deepEqual(dGateOpen7.rec.effects, ["OpenGate"]);
   // No attempt is RESOLVED by the open: the choice it encoded surfaces on the
   // resolution's attribution, and the open itself carries none.
-  assert.deepEqual(dGateOpen7.rec.landing, { tag: "WONone" });
+  assert.deepEqual(dGateOpen7.rec.attempt, { tag: "WONone" });
   assert.equal(ticketAt(cGated7, 1).gasLeft, ticketAt(c7, 1).gasLeft);
   assert.equal(ticketAt(cGated7, 1).wrapUpLeft, ticketAt(c7, 1).wrapUpLeft);
   assert.ok(mB(cGated7) < mB(c7));
@@ -435,7 +435,7 @@ test("dequeueRoutesBothBranchesTest: the routing decider IS the quiet/moved rout
   assert.equal(ticketAt(quiet.post, 1).phase, "PDone");
   assert.equal(quiet.rec.label, "ticket-done");
   assert.deepEqual(quiet.rec.effects, ["Complete"]);
-  assert.deepEqual(quiet.rec.landing, {
+  assert.deepEqual(quiet.rec.attempt, {
     tag: "WOAttempt",
     project: 1,
     invalidated: false,
@@ -524,7 +524,7 @@ test("noop is state-identical, not merely state-equal", () => {
     label: "task-done-duplicate",
     transitions: [],
     effects: [],
-    landing: { tag: "WONone" },
+    attempt: { tag: "WONone" },
   });
 });
 
@@ -736,7 +736,7 @@ test("the WNone route: a kindless ticket completes at the eval pass, taking no l
   assert.deepEqual(d.rec.effects, ["Complete"]);
   // A COMPLETION IS NOT ALWAYS AN ATTEMPT: this is the one ticket-done that
   // legitimately carries no attribution, because no landing attempt resolved.
-  assert.deepEqual(d.rec.landing, { tag: "WONone" });
+  assert.deepEqual(d.rec.attempt, { tag: "WONone" });
   const landed = ticketAt(d.post, 1);
   assert.equal(landed.phase, "PDone");
   assert.equal(landed.completions, 1);
@@ -1218,7 +1218,7 @@ test("DeadlineOnly resolves a landing SUCCESS exactly as Budgeted does", () => {
   assert.deepEqual(d.rec.transitions, [
     { ticket: 1, from: "PWrapUpHolding", to: "PDone" },
   ]);
-  assert.deepEqual(d.rec.landing, {
+  assert.deepEqual(d.rec.attempt, {
     tag: "WOAttempt",
     project: 1,
     invalidated: true,
@@ -1832,7 +1832,7 @@ test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own
     "WOk",
     false,
   );
-  assert.deepEqual(quietOk.rec.landing, attempt(2, false));
+  assert.deepEqual(quietOk.rec.attempt, attempt(2, false));
   assert.deepEqual(quietOk.rec.effects, ["Complete"]);
   // Success under a MOVED branch is drawable and honestly attributed: the move
   // makes failure POSSIBLE, never certain.
@@ -1843,7 +1843,7 @@ test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own
     "WOk",
     true,
   );
-  assert.deepEqual(movedOk.rec.landing, attempt(2, true));
+  assert.deepEqual(movedOk.rec.attempt, attempt(2, true));
   assert.deepEqual(movedOk.rec.effects, ["Complete"]);
   // Failure: the wrap-up rework carries the project AND the cause.
   const reworked = decideWrapUpResolve(
@@ -1854,7 +1854,7 @@ test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own
     true,
   );
   assert.equal(reworked.rec.label, "rework-started wrapup_failure");
-  assert.deepEqual(reworked.rec.landing, attempt(2, true));
+  assert.deepEqual(reworked.rec.attempt, attempt(2, true));
   // Both landing walls carry it too — the attempt that PARKED the ticket is
   // attributable like the one that reworked it, and the gas wall is the one
   // `wrapUpIsolation`'s completeness cannot reach (it shares its label with
@@ -1870,7 +1870,7 @@ test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own
     budgetWall.rec.label,
     "ticket-escalated wrapup_budget_exhausted",
   );
-  assert.deepEqual(budgetWall.rec.landing, attempt(2, true));
+  assert.deepEqual(budgetWall.rec.attempt, attempt(2, true));
   const gasWall = decideWrapUpResolve(
     cfgBudgeted,
     onProject2(cGateGasWall),
@@ -1878,7 +1878,7 @@ test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own
     "WFailed",
     true,
   );
-  assert.deepEqual(gasWall.rec.landing, attempt(2, true));
+  assert.deepEqual(gasWall.rec.attempt, attempt(2, true));
   // DeadlineOnly's landing gas wall attributes the same way, on project 1.
   const deadlineWall = decideWrapUpResolve(
     cfgDeadlineOnly,
@@ -1887,7 +1887,7 @@ test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own
     "WFailed",
     true,
   );
-  assert.deepEqual(deadlineWall.rec.landing, attempt(1, true));
+  assert.deepEqual(deadlineWall.rec.attempt, attempt(1, true));
 });
 
 test("oneProjectDegenerationTest: the collapsed universe and the intact draw rule", () => {
@@ -2588,7 +2588,7 @@ test("nonLandingStepsCarryNoAttributionTest: attribution appears at the landing 
     decideCompleteDuplicate(c8, 1),
   ]) {
     assert.deepEqual(
-      d.rec.landing,
+      d.rec.attempt,
       { tag: "WONone" },
       `${d.rec.label} carries a landing attribution`,
     );
@@ -2627,7 +2627,7 @@ test("escalate retires the live set, names the wall, and opens the desk task", (
     { ticket: 1, from: "PWorking", to: "PEscalated" },
   ]);
   assert.deepEqual(d.rec.effects, ["OpenHumanTask"]);
-  assert.deepEqual(d.rec.landing, { tag: "WONone" });
+  assert.deepEqual(d.rec.attempt, { tag: "WONone" });
   const parked = ticketAt(d.post, 1);
   assert.deepEqual(parked.tasks, []);
   assert.deepEqual(parked.record, [wt(1, "TCancelled"), wt(2, "TCancelled")]);
@@ -2643,7 +2643,7 @@ test("withWrapUpObs stamps the record and passes the post-state through untouche
   const inner = completeTicket(cQueueB, 1);
   const stamped = withWrapUpObs(inner, 2, true);
   assert.equal(stamped.post, inner.post);
-  assert.deepEqual(stamped.rec.landing, {
+  assert.deepEqual(stamped.rec.attempt, {
     tag: "WOAttempt",
     project: 2,
     invalidated: true,

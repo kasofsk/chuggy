@@ -261,7 +261,7 @@ test("the world's counters read the record, and a record with no transitions att
     label: "ticket-done",
     transitions: [],
     effects: ["SpawnWorkTasks"],
-    landing: { tag: "WONone" },
+    attempt: { tag: "WONone" },
   };
   // `stepsTicket` is the model's `transitions.length() >= 1 and
   // transitions[0].ticket == j`, and both halves matter: a record with no head

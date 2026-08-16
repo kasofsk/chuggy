@@ -52,10 +52,10 @@
  *
  * WHAT A `Delivery` CARRIES IS THE DECISION, NOT THE WORK. The key, the effect
  * and the record — and a `StepRecord` is `model/measure.qnt`'s: a label, a list
- * of phase transitions, the effect list and the landing observation. It carries
- * NO task ids, no fan-out width, no evaluator stage and no program. So a real
- * fabric adapter, told `SpawnEvalTasks` for a ticket, is not told which runs to
- * start.
+ * of phase transitions, the effect list and the wrap-up attempt observation. It
+ * carries NO task ids, no fan-out width, no evaluator stage and no program. So
+ * a real fabric adapter, told `SpawnEvalTasks` for a ticket, is not told which
+ * runs to start.
  *
  * THE ANSWER IS A READ MODEL, AND IT IS THE ADAPTER'S OWN COMPONENT — not this
  * layer's, not a fifth port, and not a field on `Delivery`. The moment an effect

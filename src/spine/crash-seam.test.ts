@@ -284,7 +284,7 @@ test("leaseFreeArrivalRecoversAndCompletesDeterministicTest: the route that take
   assert.deepEqual(s.mem.lastStep.transitions, [
     { ticket: 1, from: "PEvaluating", to: "PDone" },
   ]);
-  assert.deepEqual(s.mem.lastStep.landing, { tag: "WONone" });
+  assert.deepEqual(s.mem.lastStep.attempt, { tag: "WONone" });
   assert.equal(memTicket(s, 1).phase, "PDone");
   assert.equal(journalCompletions(s, 1), 1);
   assert.equal(worldCompletions(s, 1), 0);

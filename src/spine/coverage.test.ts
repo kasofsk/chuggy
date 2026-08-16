@@ -35,7 +35,7 @@ const flat = (label: string): StepRecord => ({
   label,
   transitions: [],
   effects: [],
-  landing: { tag: "WONone" },
+  attempt: { tag: "WONone" },
 });
 
 const moving = (label: string, from: Phase, to: Phase): StepRecord => ({
