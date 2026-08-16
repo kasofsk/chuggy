@@ -187,6 +187,19 @@ module chuggy_test {
   pure def er(i: int, s: int): Task =
     { id: i, kind: TKEval(s), state: TSRunning }
 
+  // A HAND-BUILT FIXTURE STATES ITS OWN `spawned`. The ghost counter
+  // (measure.qnt Ticket.spawned) is bumped ONLY by spawnOn, and the literals
+  // above build live sets and records directly — so a fixture that hands
+  // itself a task set or a record and leaves freshTicket's 0 in place breaks
+  // domain.qnt's idsAccounted (spawned == record.length + tasks.size), which
+  // makes it a state the machine cannot reach. That is not cosmetic: the
+  // work-passed decider READS the counter, stamping ASome(retired.spawned) as
+  // the artifact identity, so a short counter answers a question the machine
+  // would answer differently. freshTicket's 0 is right for a fixture with no
+  // history; every fixture below that gives itself one carries the matching
+  // count, and handBuiltFixturesAccountedTest (bottom of this file) is what
+  // keeps the next one honest.
+
   // Programs used throughout. progU2 is exactly DB::defaultProgram — the
   // unanimous single-stage default, which is the compatibility shape: a
   // ticket whose evaluators all share one stage behaves byte-for-byte like
@@ -312,16 +325,23 @@ module chuggy_test {
     c4.tickets.get(1).tasks == Set(er(3, 0), er(4, 0))
   })
 
+  /// domain.qnt's idsAccounted, one ticket at a time — the same equality the
+  /// machine invariant quantifies over liveTickets, usable on a fixture the
+  /// machine never produced.
+  pure def accountedTicket(j: Ticket): bool =
+    j.spawned == j.record.length() + j.tasks.size()
+
+  /// The same, over a whole core — every ticket, not just ticket 1: a
+  /// multi-ticket fixture accounts for all of its ids or none of them.
+  pure def accounted(c: Core): bool =
+    c.tickets.keys().forall(j => accountedTicket(c.tickets.get(j)))
+
   /// IDENTITY ACCOUNTING:
   /// along the fully decider-built happy path the ghost spawn counter
   /// tracks every fan-out and always equals retired + live — the equality
   /// a retirement-dropping mutant would break. (The machine invariant
   /// checks it on every reachable state; this pins the counter's exact
   /// values.)
-  pure def accounted(c: Core): bool =
-    c.tickets.get(1).spawned ==
-      c.tickets.get(1).record.length() + c.tickets.get(1).tasks.size()
-
   run happyPathIdsAccountedTest = assert(and {
     cA1.tickets.get(1).spawned == 0,          // a Draft has spawned nothing
     c1.tickets.get(1).spawned == 2,           // the work fan-out
@@ -453,7 +473,7 @@ module chuggy_test {
   /// The failed set is RETIRED, outcomes intact — the record shows
   /// WHICH task failed, provenance the desk can read.
   pure val cWorkFail: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
-    phase: PWorking, gasLeft: 2, tasks: oneFailedW }) }
+    phase: PWorking, gasLeft: 2, tasks: oneFailedW, spawned: 2 }) }
   pure val dWorkFail = DB::decideWorkReduce(cWorkFail, 1)
 
   run workFailedWallTest = assert(and {
@@ -478,7 +498,7 @@ module chuggy_test {
   /// measure) descend. TFailed here also covers evaluator-infra death —
   /// the ticket pays, one account.
   pure val cEvalFail: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
-    phase: PEvaluating, reworkLeft: 1, gasLeft: 2, tasks: oneFailedE0 }) }
+    phase: PEvaluating, reworkLeft: 1, gasLeft: 2, tasks: oneFailedE0, spawned: 2 }) }
   pure val dEvalRework = DB::decideEvalStageReduce(cEvalFail, 1)
 
   run evalReworkDescendsTest = assert(and {
@@ -495,12 +515,12 @@ module chuggy_test {
 
   /// Budget wall, checked before the gas wall.
   pure val cReworkWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
-    phase: PEvaluating, reworkLeft: 0, gasLeft: 2, tasks: oneFailedE0 }) }
+    phase: PEvaluating, reworkLeft: 0, gasLeft: 2, tasks: oneFailedE0, spawned: 2 }) }
   pure val dReworkWall = DB::decideEvalStageReduce(cReworkWall, 1)
 
   /// Deadline wall: budget remains but the gas is gone.
   pure val cEvalGasWall: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
-    phase: PEvaluating, reworkLeft: 1, gasLeft: 0, tasks: oneFailedE0 }) }
+    phase: PEvaluating, reworkLeft: 1, gasLeft: 0, tasks: oneFailedE0, spawned: 2 }) }
   pure val dEvalGasWall = DB::decideEvalStageReduce(cEvalGasWall, 1)
 
   run evalWallsNamedTest = assert(and {
@@ -523,7 +543,7 @@ module chuggy_test {
   pure def allPassedW: Set[Task] = Set(wt(1, TPassed), wt(2, TPassed))
 
   pure val cStagedWork: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progStaged, 1, WExclusive(1)),
-    phase: PWorking, gasLeft: 2, tasks: allPassedW }) }
+    phase: PWorking, gasLeft: 2, tasks: allPassedW, spawned: 2 }) }
   // Work passes -> spawn the LOWEST stage: fan-out 1, id 3.
   pure val dToEval = DB::decideWorkReduce(cStagedWork, 1)
   pure val cS0 = dToEval.post
@@ -621,7 +641,7 @@ module chuggy_test {
   pure val cStagedNoBudget: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progStaged, 1, WExclusive(1)),
     phase: PEvaluating, reworkLeft: 0, gasLeft: 2,
     record: [wt(1, TPassed), wt(2, TPassed)],
-    tasks: Set(et(3, 0, TFailed)) }) }
+    tasks: Set(et(3, 0, TFailed)), spawned: 3 }) }
   pure val dStagedWall = DB::decideEvalStageReduce(cStagedNoBudget, 1)
 
   run stagedShortCircuitEscalatesTest = assert(and {
@@ -670,9 +690,9 @@ module chuggy_test {
   pure val allFailedE0: Set[Task] = Set(et(1, 0, TFailed), et(2, 0, TFailed))
 
   pure val cMixedAny: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progA2, 1, WExclusive(1)),
-    phase: PEvaluating, tasks: mixedE0, gasLeft: 2 }) }
+    phase: PEvaluating, tasks: mixedE0, gasLeft: 2, spawned: 2 }) }
   pure val cMixedUna: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
-    phase: PEvaluating, tasks: mixedE0, gasLeft: 2 }) }
+    phase: PEvaluating, tasks: mixedE0, gasLeft: 2, spawned: 2 }) }
 
   run programAsDataCombinatorTest = assert(and {
     DB::decideEvalStageReduce(cMixedAny, 1).rec.label == "eval-passed",
@@ -687,7 +707,7 @@ module chuggy_test {
   /// under the staged program — the machine's very next task anatomy is
   /// decided by the program on the record.
   pure val cFlatWork: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
-    phase: PWorking, gasLeft: 2, tasks: allPassedW }) }
+    phase: PWorking, gasLeft: 2, tasks: allPassedW, spawned: 2 }) }
 
   run programAsDataStructureTest = assert(and {
     DB::decideWorkReduce(cFlatWork, 1).post.tickets.get(1).tasks ==
@@ -708,7 +728,7 @@ module chuggy_test {
   /// All-failed still walls under CAnyPass (a program is not "always
   /// pass"): the rework path is taken.
   pure val cFailAny: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progA2, 1, WExclusive(1)),
-    phase: PEvaluating, tasks: allFailedE0, gasLeft: 2 }) }
+    phase: PEvaluating, tasks: allFailedE0, gasLeft: 2, spawned: 2 }) }
 
   run anyPassNotAlwaysPassTest = assert(
     DB::decideEvalStageReduce(cFailAny, 1).rec.label == "rework-started eval_failure")
@@ -864,7 +884,7 @@ module chuggy_test {
   pure val escEval: Ticket = { ...DB::freshTicket(Set(), progStaged, 1, WExclusive(1)),
     phase: PEscalated, resumeAt: REvaluating, reason: RsReworkBudgetExhausted,
     gasLeft: 2, reworkLeft: 0,
-    record: [wt(1, TPassed), wt(2, TPassed), et(3, 0, TFailed)] }
+    record: [wt(1, TPassed), wt(2, TPassed), et(3, 0, TFailed)], spawned: 3 }
   pure val dRetryEval = DB::decideOpRetry({ tickets: Map(1 -> escEval) }, 1)
 
   run opRetryEvalFreshFanoutTest = assert(and {
@@ -976,8 +996,8 @@ module chuggy_test {
   pure val jDraft: Ticket = spent(DB::freshTicket(Set(), progU2, 1, WExclusive(1)))
   pure val jPend: Ticket = { ...jDraft, phase: PPending }
   pure val jWork: Ticket = { ...jDraft, phase: PWorking,
-    tasks: spawnTasks(TKWork, 1, 2) }
-  pure val jEval: Ticket = { ...jDraft, phase: PEvaluating, tasks: mixedE0 }
+    tasks: spawnTasks(TKWork, 1, 2), spawned: 2 }
+  pure val jEval: Ticket = { ...jDraft, phase: PEvaluating, tasks: mixedE0, spawned: 2 }
   pure val jLand: Ticket = { ...jDraft, phase: PWrapUp }
   /// Revoke from the OCCUPIED GATE — the slot frees by
   /// phase (derive-don't-store: leaseFreeIn is true of the post-state with
@@ -1354,5 +1374,34 @@ module chuggy_test {
     DO::repos == Set(1),
     DO::wrapUpOutcomes(false) == Set(WOk),
     DO::wrapUpOutcomes(true) == Set(WOk, WFailed)
+  })
+
+  /// EVERY HAND-BUILT FIXTURE IN THIS FILE IS A SHAPE THE MACHINE COULD HAVE
+  /// REACHED. idsAccounted is a machine invariant, so the randomized runs and
+  /// the witness suites check it after every step the machine takes — and on
+  /// nothing this file writes by hand. That gap is the one the fixtures fell
+  /// into: thirteen of them carried a live task set or a record while leaving
+  /// freshTicket's spawned at 0, which is not a state any trace reaches, and
+  /// work-passed's ASome(retired.spawned) stamp read the short counter. The
+  /// deciders below cannot repair it — nothing recomputes `spawned` from the
+  /// record — so the equality has to be asserted where the state is written.
+  /// This is that assertion, and the reason a fourteenth fixture cannot
+  /// repeat the mistake quietly.
+  run handBuiltFixturesAccountedTest = assert(and {
+    accounted(cWorkFail), accounted(cEvalFail),
+    accounted(cReworkWall), accounted(cEvalGasWall),
+    accounted(cStagedWork), accounted(cStagedNoBudget),
+    accounted(cMixedAny), accounted(cMixedUna),
+    accounted(cFlatWork), accounted(cFailAny),
+    accounted(cGateB), accounted(cGateWall), accounted(cGateGasWall),
+    accounted(cGateD), accounted(cGateDWall),
+    accounted(cFresh), accounted(cParkNoGas), accounted(cQueueB),
+    accounted(cChain), accounted(cGateOcc),
+    accounted(cXDepPre), accounted(cXDepDone),
+    accountedTicket(escLanding), accountedTicket(escWorking),
+    accountedTicket(escEval),
+    accountedTicket(jDraft), accountedTicket(jPend), accountedTicket(jWork),
+    accountedTicket(jEval), accountedTicket(jLand), accountedTicket(jGated),
+    accountedTicket(jEsc), accountedTicket(jParkPre), accountedTicket(jParkDep)
   })
 }
