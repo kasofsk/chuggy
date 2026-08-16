@@ -50,7 +50,7 @@ module chuggy_refinement_unit_test {
   // A three-decision history built BY the deciders (arrive, release,
   // dispatch), entry records taken from the decisions themselves — the
   // journal an honest actor would write.
-  pure val cmd1: Cmd = JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })
+  pure val cmd1: Cmd = JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })
   pure val d1: Decision = execCmd(genesis, cmd1)
   pure val e1: Entry = { seq: 1, cmd: cmd1, rec: d1.rec }
   pure val cmd2: Cmd = JRelease(1)
@@ -120,24 +120,24 @@ module chuggy_refinement_unit_test {
   })
 
   /// Tamper 4 — an out-of-universe PAYLOAD: an arrival's wrap-up lease
-  /// must come from `wrapUpChoices`, exactly as its prog and repo come
-  /// from validPrograms and repos (the `arrive` action's fourth draw,
+  /// must come from `wrapUpChoices`, exactly as its prog and project come
+  /// from validPrograms and projects (the `arrive` action's fourth draw,
   /// and wrapUpChoices IS the refusal rule). The row is otherwise
   /// impeccable — dense seq, and its rec is the one the decider itself
   /// produces — so only the draw-set conjunct can refuse it; without
   /// that conjunct the replay materializes a ticket holding a lease on
-  /// a resource the universe does not contain. N_REPOS = 1 here, so
+  /// a resource the universe does not contain. N_PROJECTS = 1 here, so
   /// WExclusive(2) is out of universe too: the refusal is membership,
   /// not a range sniff.
   run journalRefusesOutOfUniversePayloadTest =
     val phantom: Cmd =
-      JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(99) })
+      JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(99) })
     val ePhantom: Entry = { seq: 1, cmd: phantom, rec: execCmd(genesis, phantom).rec }
     assert(and {
       not(cmdEnabled(genesis, phantom)),
       not(journalLegalOn([ePhantom])),
       not(cmdEnabled(genesis,
-        JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(2) })))
+        JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(2) })))
     })
 
   /// The world/journal arithmetic of theorem 2, on concrete data: an
@@ -203,7 +203,7 @@ module chuggy_refinement_witness_test {
   run crashRecoverContinueDeterministicTest =
     rinit
       // The Draft arrives and is journaled (entry 1)...
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
       .expect(and { journal.length() == 1, allDomainInvariants, refinementInvariants })
       // ...and the actor dies BEFORE emitting it. Recovery replays: the
       // Draft is in memory again — the decision was durable the instant
@@ -363,7 +363,7 @@ module chuggy_refinement_witness_test {
   /// Done ticket from a journal whose last entry is JEvalReduce.
   run leaseFreeArrivalRecoversAndCompletesDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WNone })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WNone })))
       .expect(and {
         memCore.tickets.get(1).wrapUp == WNone,
         journal.length() == 1,
@@ -438,7 +438,7 @@ module chuggy_refinement_hazard_test {
   /// duplicate cycle), each produced by one effect-first crash.
   run hazardDoubleSpendDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
       .then(emitNext)
       .then(journalStep(JRelease(1)))
       .then(emitNext)
@@ -522,7 +522,7 @@ module chuggy_refinement_hazard_test {
   /// fan-outs in the world.
   run hazardReworkDoubleSpendDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
       .then(emitNext)
       .then(journalStep(JRelease(1)))
       .then(emitNext)

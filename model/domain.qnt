@@ -52,7 +52,7 @@
 ///     vocabulary at all — that is model/refinement.qnt, layered on this
 ///     machine and severable. Every shape must refine THIS machine, and this
 ///     file never learns which one runs it.
-///   - Ticket batching in any form, and cross-repo atomic landings. Both
+///   - Ticket batching in any form, and cross-project atomic landings. Both
 ///     are deliberately absent, and nothing here can express either.
 ///
 /// This header describes the machine; it does not narrate how the machine
@@ -94,25 +94,25 @@ module chuggy_domain {
   /// short by construction (stages are declared per evaluator) — the cap exists for the radix argument,
   /// not as domain vocabulary.
   const MAX_STAGES: int
-  /// The size of the bounded repo universe a ticket's
+  /// The size of the bounded project universe a ticket's
   /// authored target is drawn from (small in mc instances: 2 — the
-  /// smallest universe where "its OWN repo's branch moved" is
-  /// distinguishable from "some repo's branch moved"). NOT a measure bound: no digit reads the repo (measure.qnt, multi-repo
-  /// header note), and no account is per-repo. The single-repo world is
-  /// N_REPOS = 1, under which every draw collapses and the machine is the
-  /// pre-multi-repo machine with a constant attribution field.
-  const N_REPOS: int
+  /// smallest universe where "its OWN project's branch moved" is
+  /// distinguishable from "some project's branch moved"). NOT a measure bound: no digit reads the project (measure.qnt, multi-project
+  /// header note), and no account is per-project. The single-project world is
+  /// N_PROJECTS = 1, under which every draw collapses and the machine is the
+  /// pre-multi-project machine with a constant attribution field.
+  const N_PROJECTS: int
 
   /// Every AUTHORABLE wrap-up kind (design 002), the structural-refusal
-  /// shape validPrograms and repos already have: an arrival draws from
+  /// shape validPrograms and projects already have: an arrival draws from
   /// exactly this set, so a lease on a resource outside the universe cannot
   /// enter a reachable state.
   pure val wrapUpChoices: Set[WrapUp] =
-    Set(WNone).union(1.to(N_REPOS).map(r => WExclusive(r)))
+    Set(WNone).union(1.to(N_PROJECTS).map(r => WExclusive(r)))
 
-  /// The repo universe: every ticket's authored target repo
-  /// is a member (reposWellFormed); arrivals draw from exactly this set.
-  pure val repos: Set[int] = 1.to(N_REPOS)
+  /// The project universe: every ticket's authored target project
+  /// is a member (projectsWellFormed); arrivals draw from exactly this set.
+  pure val projects: Set[int] = 1.to(N_PROJECTS)
 
   /// The measure's bounds, from this instance's consts.
   pure val bounds: Bounds = {
@@ -155,16 +155,16 @@ module chuggy_domain {
   /// reaches the released pipeline only through decideRelease. The author's
   /// eval PROGRAM arrives with the Draft (eval is data; authoring came
   /// first precisely so programs would have an arrival to ride).
-  /// The TARGET REPO arrives the same way — authored data
+  /// The TARGET PROJECT arrives the same way — authored data
   /// riding the arrival, immutable after, like deps and the program.
   pure def freshTicket(
-      deps_: Set[int], prog: List[Stage], repo_: int, wrapUp_: WrapUp): Ticket = {
+      deps_: Set[int], prog: List[Stage], project_: int, wrapUp_: WrapUp): Ticket = {
     phase: PDraft,
     deps: deps_,
     program: prog,
     wrapUp: wrapUp_,
     artifact: ANone,
-    repo: repo_,
+    project: project_,
     tasks: Set(),
     record: [],
     spawned: 0,
@@ -211,12 +211,12 @@ module chuggy_domain {
   /// Stamp the landing-boundary attribution on a decision:
   /// decideWrapUpResolve routes EVERY arm through this, so each step that resolves
   /// a landing attempt — both successes, the gate rework, and both
-  /// landing walls — carries the target repo and the environment's
+  /// landing walls — carries the target project and the environment's
   /// invalidated choice for that attempt (wrapUpIsolation checks the
-  /// iff; the trace consumer gets per-repo attribution at exactly the
-  /// boundary where the repo matters).
-  pure def withWrapUpObs(d: Decision, repo_: int, moved: bool): Decision =
-    { rec: { ...d.rec, landing: WOAttempt({ repo: repo_, invalidated: moved }) },
+  /// iff; the trace consumer gets per-project attribution at exactly the
+  /// boundary where the project matters).
+  pure def withWrapUpObs(d: Decision, project_: int, moved: bool): Decision =
+    { rec: { ...d.rec, landing: WOAttempt({ project: project_, invalidated: moved }) },
       post: d.post }
 
   // --- Authoring: arrival, release, revoke ---------------------------------
@@ -252,12 +252,12 @@ module chuggy_domain {
   /// sources, not the at-least-once fabric — only fabric events get
   /// idempotent stutter deciders.
   ///
-  /// The arrival also carries the ticket's TARGET REPO —
-  /// callers guarantee repo_ ∈ repos (the `arrive` action draws from
+  /// The arrival also carries the ticket's TARGET PROJECT —
+  /// callers guarantee project_ ∈ projects (the `arrive` action draws from
   /// exactly that set), so an out-of-universe target is refused at
-  /// authoring time like an ill-formed program (reposWellFormed makes the
-  /// refusal durable). Deps are NOT constrained by repo: the DAG is
-  /// orchestrator-level and dependencies may cross repos — the dep gate
+  /// authoring time like an ill-formed program (projectsWellFormed makes the
+  /// refusal durable). Deps are NOT constrained by project: the DAG is
+  /// orchestrator-level and dependencies may cross projects — the dep gate
   /// downstream (depsDoneIn) reads Done-ness, never location.
   ///
   /// The arrival carries the ticket's WRAP-UP CHOICE last — whether
@@ -268,14 +268,14 @@ module chuggy_domain {
   /// the refusal durable). It is the draw that decides whether the ticket
   /// ever reaches a wrap-up phase at all: WNone completes on its passing
   /// evaluation and takes no lease (noLeaseWithoutAKind). Immutable after
-  /// arrival, like deps, the program and the repo.
+  /// arrival, like deps, the program and the project.
   pure def decideArrive(
-      c: Core, deps_: Set[int], prog: List[Stage], repo_: int,
+      c: Core, deps_: Set[int], prog: List[Stage], project_: int,
       wrapUp_: WrapUp): Decision =
     val id = c.tickets.keys().size() + 1
     { rec: { label: "ticket-arrived", transitions: [], effects: ["CreateDraft"],
         landing: WONone },
-      post: { ...c, tickets: c.tickets.put(id, freshTicket(deps_, prog, repo_, wrapUp_)) } }
+      post: { ...c, tickets: c.tickets.put(id, freshTicket(deps_, prog, project_, wrapUp_)) } }
 
   /// Draft -> Pending: the ticket enters the released pipeline. There is
   /// one release target rather than a Ready/Blocked pair, because the split
@@ -482,7 +482,7 @@ module chuggy_domain {
     c.tickets.keys().filter(j =>
       c.tickets.get(j).phase == PEvaluating and runningCount(c.tickets.get(j).tasks) == 0)
 
-  /// Enqueued tickets whose repo's gate is free (the depth-1 refusal).
+  /// Enqueued tickets whose project's gate is free (the depth-1 refusal).
   pure def wrapUpStartablesIn(c: Core): Set[int] =
     c.tickets.keys().filter(j => wrapUpStartableIn(c, j))
 
@@ -501,7 +501,7 @@ module chuggy_domain {
   /// Core so tests can pin them: a dep that is not Done blocks — including
   /// UNRELEASED deps (Draft, ) and, transiently impossible but
   /// definitionally covered, revoked ones. Location-blind — Done-ness,
-  /// never repo.
+  /// never project.
   pure def isReadyIn(c: Core, j: int): bool =
     c.tickets.get(j).phase == PPending and depsDoneIn(c, j)
 
@@ -552,10 +552,10 @@ module chuggy_domain {
       not(c.tickets.get(k).phase == PWrapUpHolding and leaseOf(c.tickets.get(k)) == r))
 
   /// May ticket j be DEQUEUED — leave the landing queue and take its
-  /// repo's gate slot (or fast-path out of it, if the environment draws
-  /// the branch quiet)? Enqueued, and the target repo's gate free. THE
-  /// DEPTH-1 REFUSAL LIVES HERE: while any same-repo ticket is PWrapUpHolding,
-  /// this guard refuses every other dequeue for that repo — pinned as a
+  /// project's gate slot (or fast-path out of it, if the environment draws
+  /// the branch quiet)? Enqueued, and the target project's gate free. THE
+  /// DEPTH-1 REFUSAL LIVES HERE: while any same-project ticket is PWrapUpHolding,
+  /// this guard refuses every other dequeue for that project — pinned as a
   /// guard-refusal on a deterministic machine trace
   /// (tests/chuggy_witness_test.qnt, gate module). Shared by the
   /// `wrapUpStart` action and the witness drivers (guards are referenced,
@@ -756,7 +756,7 @@ module chuggy_domain {
 
   /// THE DEQUEUE, MOVED ARM: the environment chose
   /// the branch MOVED at this dequeue, so the gate must RUN — the ticket
-  /// takes its repo's depth-1 slot (PWrapUp -> PWrapUpHolding) while the
+  /// takes its project's depth-1 slot (PWrapUp -> PWrapUpHolding) while the
   /// candidate is built and validated over a duration. Charges nothing
   /// (the gate prices only its failures, R5). Callers guarantee
   /// wrapUpStartableIn — the depth-1 refusal. PWrapUpHolding encodes the moved
@@ -823,15 +823,15 @@ module chuggy_domain {
   /// failure classes, a fix-and-retry path — stay below this grain: the step
   /// is one abstract verdict.
   ///
-  /// The attempt's cause vocabulary is per-repo. The
+  /// The attempt's cause vocabulary is per-project. The
   /// event carries `moved` — the environment's per-attempt choice of
-  /// whether THIS ticket's target repo's default branch moved under the
+  /// whether THIS ticket's target project's default branch moved under the
   /// candidate (callers guarantee out ∈ wrapUpOutcomes(moved), so a failure
   /// implies moved — R3, the path rule) — and EVERY arm stamps the step with
   /// the attempt's
-  /// attribution (withWrapUpObs: the ticket's own repo + the choice), so
+  /// attribution (withWrapUpObs: the ticket's own project + the choice), so
   /// the golden trace attributes each landing resolution, success or
-  /// failure, to its repo and its cause. Accounts and pricing are
+  /// failure, to its project and its cause. Accounts and pricing are
   /// byte-identical to the pre-merge-queue decider: what changed is WHERE
   /// each arm fires from (the path).
   pure def decideWrapUpResolve(c: Core, j: int, out: WrapUpOutcome, moved: bool): Decision =
@@ -862,7 +862,7 @@ module chuggy_domain {
               escalate(c, j, RWrapUp, RsGasExhausted,
                 "ticket-escalated gas_exhausted")
         }
-    }, c.tickets.get(j).repo, moved)
+    }, c.tickets.get(j).project, moved)
 
   /// A duplicate completion event for an already-Done ticket (at-least-once: a
   /// stale executor re-delivers). NO completion effect is emitted — this
@@ -1031,10 +1031,10 @@ module chuggy_domain {
   /// The landing QUEUE, derived: enqueued tickets whose
   /// dequeue the gate serializes. Deliberately unordered — see wrapUpStart.
   val wrapUpTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == PWrapUp)
-  /// Enqueued tickets whose repo's gate is FREE — the dequeue-enabled set
+  /// Enqueued tickets whose project's gate is FREE — the dequeue-enabled set
   /// (wrapUpStartableIn is the shared guard; the depth-1 refusal).
   val wrapUpStartable: Set[int] = wrapUpStartablesIn(core)
-  /// The occupied gate slots (at most one per repo — leaseExclusive).
+  /// The occupied gate slots (at most one per project — leaseExclusive).
   val holdingTickets: Set[int] = holdingIn(core)
   val doneTickets: Set[int] = doneIn(core)
   /// Parked tickets the operator may Retry (retryableIn: a modeled resume
@@ -1075,7 +1075,7 @@ module chuggy_domain {
     N_TASKS >= 1,        // well-formedness: a phase carries a real task set
     N_TICKETS >= 1,         // the arrival bound must admit at least one ticket
     MAX_STAGES >= 1,     // at least one authorable program must exist
-    N_REPOS >= 1,        // a ticket needs a repo to target
+    N_PROJECTS >= 1,        // a ticket needs a project to target
     reworkBudget(REWORK_POLICY) >= 0,
     wrapUpBudget(WRAPUP_PRICING) >= 0,
     tickets' = Map(),
@@ -1092,11 +1092,11 @@ module chuggy_domain {
   /// authoring time, see decideArrive/dependableTickets) — and its
   /// eval PROGRAM a nondet pick among the WELL-FORMED programs: the
   /// machine explores every authorable program, and ill-formed ones are
-  /// refused structurally (validPrograms is the refusal rule). Multi-repo
-  /// PR: the author also picks the ticket's TARGET REPO from the bounded
+  /// refused structurally (validPrograms is the refusal rule). Multi-project
+  /// PR: the author also picks the ticket's TARGET PROJECT from the bounded
   /// universe — the third authored draw, refused structurally the same
-  /// way (repos is the rule) — and deps stay UNCONSTRAINED by it: the
-  /// author may depend across repos (decideArrive's doc). The FOURTH and
+  /// way (projects is the rule) — and deps stay UNCONSTRAINED by it: the
+  /// author may depend across projects (decideArrive's doc). The FOURTH and
   /// last draw is the WRAP-UP CHOICE, from wrapUpChoices: the same
   /// refusal shape once more, and the one that decides whether this
   /// ticket ever reaches a wrap-up phase — a WNone arrival completes on
@@ -1107,9 +1107,9 @@ module chuggy_domain {
     canArrive,
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
-    nondet repo_ = repos.oneOf()
+    nondet project_ = projects.oneOf()
     nondet wrapUp_ = wrapUpChoices.oneOf()
-    apply(decideArrive(core, deps_, prog, repo_, wrapUp_))
+    apply(decideArrive(core, deps_, prog, project_, wrapUp_))
   }
 
   /// Author releases a Draft into the pipeline; Ready/Blocked re-derive.
@@ -1203,14 +1203,14 @@ module chuggy_domain {
     apply(decideEvalStageReduce(core, j))
   }
 
-  /// THE DEQUEUE: a ticket whose repo's gate is
+  /// THE DEQUEUE: a ticket whose project's gate is
   /// free leaves the queue, and the environment draws — per attempt, fresh,
-  /// no stored flag (the named-nondet discipline) — whether that repo's
+  /// no stored flag (the named-nondet discipline) — whether that project's
   /// default branch MOVED under the candidate since evaluation:
   ///   - quiet: the skip fast-path — the gate never opens; the one outcome
   ///     wrapUpOutcomes(false) permits (WOk, the direct squash)
   ///     resolves the landing in this same step;
-  ///   - moved: the gate OPENS (PWrapUpHolding) and holds its repo's depth-1 slot
+  ///   - moved: the gate OPENS (PWrapUpHolding) and holds its project's depth-1 slot
   ///     until wrapUpResolve.
   /// WHICH enqueued ticket dequeues is unrestricted nondet. A queue is a
   /// non-goal in any shape, and an order that does not survive a restart is
@@ -1304,9 +1304,9 @@ module chuggy_domain {
   /// when it is Done. "Per cycle" collapses to "per ticket" because a
   /// completion effect ends the ticket (PDone is absorbing) and failed
   /// completions emit no completion effect. DELIBERATELY UNCHANGED — per-ticket
-  /// exclusivity is strictly stronger than any per-repo form (exactly one
-  /// completion per ticket implies at most one per ticket per repo), so the
-  /// multi-repo gate needs nothing weaker and gets nothing weaker.
+  /// exclusivity is strictly stronger than any per-project form (exactly one
+  /// completion per ticket implies at most one per ticket per project), so the
+  /// multi-project gate needs nothing weaker and gets nothing weaker.
   /// A withdrawn extension covered groups — a marked Done ticket
   /// having completed via its lead's completion, emitting nothing of its own.
   /// That extension is WITHDRAWN with the grouping removal, and the
@@ -1338,15 +1338,15 @@ module chuggy_domain {
   ///     that resolves one: single ticket, one of the four
   ///     landing-resolution labels (ticket-done, the gate rework, the two
   ///     landing walls), the attribution naming the stepped ticket's OWN
-  ///     repo (repo is immutable, so reading it from the post-state is
-  ///     reading the authored field) from inside the repo universe.
+  ///     project (project is immutable, so reading it from the post-state is
+  ///     reading the authored field) from inside the project universe.
   ///   - THE ISOLATION CLAIM: a gate-FAILURE step (any attempt that is
   ///     not the ticket-done success) carries invalidated = true — a
-  ///     landing can fail ONLY via its own repo's branch moving. There is
-  ///     no cross-repo path to a failure: the attempt's attribution IS
-  ///     the ticket's repo (the own-repo conjunct), and no other repo's
+  ///     landing can fail ONLY via its own project's branch moving. There is
+  ///     no cross-project path to a failure: the attempt's attribution IS
+  ///     the ticket's project (the own-project conjunct), and no other project's
   ///     choice appears anywhere in the step (the environment draws
-  ///     invalidated for the target repo alone — nothing else exists to
+  ///     invalidated for the target project alone — nothing else exists to
   ///     leak in).
   ///   - Completeness: a step with NO attempt (WONone) carries none of
   ///     the uniquely-landing labels — a landing is never resolved
@@ -1387,9 +1387,9 @@ module chuggy_domain {
         lastStep.label != "ticket-escalated wrapup_budget_exhausted"
       }
     | WOAttempt(a) => and {
-        repos.contains(a.repo),
+        projects.contains(a.project),
         lastStep.transitions.length() >= 1,
-        tickets.get(lastStep.transitions[0].ticket).repo == a.repo,
+        tickets.get(lastStep.transitions[0].ticket).project == a.project,
         or {
           lastStep.label == "ticket-done",
           lastStep.label == "rework-started wrapup_failure",
@@ -1404,26 +1404,26 @@ module chuggy_domain {
       }
   }
 
-  /// QUIET REPO LANDS CLEANLY (the gate's other half), stated in its
+  /// QUIET PROJECT LANDS CLEANLY (the gate's other half), stated in its
   /// STRONGEST CHECKABLE FORM — and honestly about what that form is.
-  /// "Quiet" is a PER-ATTEMPT environment choice, not stored repo state
-  /// (the named-nondet discipline forbids the flag), so "repo R is quiet"
+  /// "Quiet" is a PER-ATTEMPT environment choice, not stored project state
+  /// (the named-nondet discipline forbids the flag), so "project R is quiet"
   /// is not a predicate over any reachable state and the naive reading
-  /// ("a quiet repo's tickets never gate-fail") cannot be a state
-  /// theorem AS QUANTIFIED OVER REPOS. What IS a state theorem — checked
+  /// ("a quiet project's tickets never gate-fail") cannot be a state
+  /// theorem AS QUANTIFIED OVER PROJECTS. What IS a state theorem — checked
   /// here on every reachable step — is the per-attempt form: an attempt
   /// the environment chose QUIET resolves as the ticket-done success,
   /// full stop (state-wise a corollary of wrapUpIsolation's
   /// failure-implies-moved conjunct, stated named like revokedNeverCompletes
   /// because it is the gate's claim in its own words). The TRACE-level
-  /// reading — pin every draw for a repo quiet and its tickets all land
+  /// reading — pin every draw for a project quiet and its tickets all land
   /// cleanly / pin a move and the rework is attributed — is deliberately
   /// discharged as deterministic witness traces, not an invariant:
   /// tests/chuggy_witness_test.qnt quietLandDeterministicTest (the choice
   /// pinned quiet, the landing succeeds) and movedReworkAttributedTest
   /// (the choice pinned moved, the gate rework and the wall both carry
   /// the attribution).
-  val quietRepoLandsCleanly: bool = match lastStep.landing {
+  val quietProjectLandsCleanly: bool = match lastStep.landing {
     | WONone => true
     | WOAttempt(a) => not(a.invalidated) implies lastStep.label == "ticket-done"
   }
@@ -1441,7 +1441,7 @@ module chuggy_domain {
   /// The resource is whatever the wrap-up kind names, never a repo by
   /// definition: a per-repo merge queue is one instance of this lease, and
   /// reading the general form off that instance is how it gets narrowed.
-  val leaseExclusive: bool = repos.forall(r =>
+  val leaseExclusive: bool = projects.forall(r =>
     liveTickets.filter(j => and {
       tickets.get(j).phase == PWrapUpHolding,
       leaseOf(tickets.get(j)) == r
@@ -1467,21 +1467,21 @@ module chuggy_domain {
   val artifactWellFormed: bool = liveTickets.forall(j =>
     (tickets.get(j).phase == PDone) implies (tickets.get(j).artifact != ANone))
 
-  /// Every live ticket targets a repo inside the bounded universe — the
+  /// Every live ticket targets a project inside the bounded universe — the
   /// arrival-refusal claim made durable (the programsWellFormed shape):
-  /// repos enter only through decideArrive, whose callers draw from
-  /// `repos`, and are never rewritten.
-  val reposWellFormed: bool = liveTickets.forall(j =>
-    repos.contains(tickets.get(j).repo))
+  /// projects enter only through decideArrive, whose callers draw from
+  /// `projects`, and are never rewritten.
+  val projectsWellFormed: bool = liveTickets.forall(j =>
+    projects.contains(tickets.get(j).project))
 
   /// Every live ticket's authored wrap-up choice is inside the bounded
   /// universe — the arrival-refusal claim made durable (the
-  /// reposWellFormed shape): wrap-up choices enter only through
+  /// projectsWellFormed shape): wrap-up choices enter only through
   /// decideArrive, whose callers draw from `wrapUpChoices`, and are never
   /// rewritten (the field is written once, in freshTicket).
   ///
   /// What it catches is the resource inside WExclusive(r). leaseExclusive
-  /// counts holders per member of `repos`, so a lease on a resource
+  /// counts holders per member of `projects`, so a lease on a resource
   /// OUTSIDE that universe is serialized against nothing and counted by
   /// no one: two tickets could hold it at once and the depth-1 claim would
   /// stay green. The refusal is what makes leaseExclusive's quantifier
@@ -1941,11 +1941,11 @@ module chuggy_domain {
     completionExclusive,
     revokedNeverCompletes,
     wrapUpIsolation,
-    quietRepoLandsCleanly,
+    quietProjectLandsCleanly,
     leaseExclusive,
     noLeaseWithoutAKind,
     artifactWellFormed,
-    reposWellFormed,
+    projectsWellFormed,
     wrapUpWellFormed,
     terminalsAbsorbing,
     deskConsistent,
