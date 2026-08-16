@@ -351,7 +351,7 @@ test("the vocabulary is the model's, constructor for constructor", () => {
     { tag: "DeadlineOnly" },
   ];
   const policies: readonly ReworkPolicy[] = [{ tag: "RWBudget", budget: 1 }];
-  const landings: readonly WrapUpObs[] = [
+  const observations: readonly WrapUpObs[] = [
     { tag: "WONone" },
     { tag: "WOAttempt", project: 2, invalidated: true },
   ];
@@ -364,7 +364,7 @@ test("the vocabulary is the model's, constructor for constructor", () => {
     { tag: "ASome", id: 7 },
   ];
   assert.deepEqual(
-    [kinds, states, pricings, policies, landings, wrapUps, marks].map(
+    [kinds, states, pricings, policies, observations, wrapUps, marks].map(
       (r) => r.length,
     ),
     [2, 2, 2, 1, 2, 2, 2],
@@ -743,7 +743,7 @@ test("the accounts of a Budgeted ticket escape their radix under DeadlineOnly bo
 test("happyPathMeasureDescendsTest: every step of the happy path descends", () => {
   // THE WALK IS THE DECIDERS' OWN, one solo Core stepped through the model's
   // chain: release, dispatch, both work completions, the work reduce, both
-  // eval completions, the eval reduce, and the quiet landing. What this file
+  // eval completions, the eval reduce, and the quiet land. What this file
   // adds is the measure at each state; what the state IS belongs to the
   // decider that produced it (issue #13).
   const cA = draft(cfgBudgeted);
@@ -859,7 +859,7 @@ test("workFailedWallTest / evalWallsNamedTest: every wall descends by rank", () 
 });
 
 test("gateWallsNamedTest: both gate walls descend out of the held lease", () => {
-  // The eval-side walls are pinned above; these are the LANDING-side pair, and
+  // The eval-side walls are pinned above; these are the WRAP-UP-side pair, and
   // they were claimed as mirrored in round 0 without actually being written.
   // The budget wall is the one PLAN.md records as unreachable by trace
   // sampling (`ticket-escalated wrapup_budget_exhausted`), which makes a unit
@@ -975,7 +975,7 @@ test("gateReworkBudgetedDescendsTest / gateReworkDeadlineOnlyTest: the eviction 
   assert.equal(evictedFree.gasLeft, 1);
 });
 
-test("gateOpenClassifiedTest: the dequeue and the landing each descend by rank alone", () => {
+test("gateOpenClassifiedTest: the gate open and the resolution each descend by rank alone", () => {
   const enqueued: Ticket = { ...draft(cfgBudgeted), phase: "PWrapUp" };
   const held = stepped(decideWrapUpStart(solo(enqueued), 1));
   const done = stepped(

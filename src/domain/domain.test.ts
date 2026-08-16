@@ -234,7 +234,7 @@ function mD(c: Core): number {
 // === The happy path, decision by decision ==================================
 // `chuggy_test`'s own chain, verbatim and whole: two arrivals, a release, the
 // dispatch, both work completions, the work reduce, both eval completions, the
-// eval reduce, and the landing — which the model's path takes QUIET, off the
+// eval reduce, and the wrap-up — which the model's path takes QUIET, off the
 // queue, because the solo ticket's branch never moved.
 
 const cEmpty: Core = { tickets: new Map() };
@@ -276,9 +276,9 @@ const dComplete = decideWrapUpResolve(cfgBudgeted, c7, 1, "WOk", false);
 const c8 = dComplete.post;
 
 /**
- * The HELD twin of c7's landing: the same enqueued ticket, dequeued with the
+ * The HELD twin of c7's wrap-up: the same enqueued ticket, dequeued with the
  * environment drawing MOVED, so the gate opens and the resolution promotes out
- * of the slot. `chuggy_test` builds exactly this pair to keep the two landing
+ * of the slot. `chuggy_test` builds exactly this pair to keep the two wrap-up
  * paths distinguishable at decider grain.
  */
 const dGateOpen7 = decideWrapUpStart(c7, 1);
@@ -301,7 +301,7 @@ test("happyPathMeasureDescendsTest: every decision on the path strictly descends
     ["the first eval completion", c4, c5],
     ["the second eval completion", c5, c6],
     ["the eval reduce (rank)", c6, c7],
-    ["the landing (rank)", c7, c8],
+    ["the wrap-up (rank)", c7, c8],
   ];
   for (const [what, pre, post] of walk) {
     assert.ok(mB(post) < mB(pre), `${what} does not descend`);
@@ -488,10 +488,10 @@ test("completeDuplicateExclusiveTest: a re-delivered completion for a Done ticke
   assert.deepEqual(dup.rec.effects, []);
   assert.equal(ticketAt(dup.post, 1).completions, 1);
   assert.equal(mB(dup.post), mB(c8));
-  // The absorber is the Done tickets' alone: a landing cannot be re-delivered
-  // for a ticket that never landed — pinned at the OTHER terminal as well as
-  // in the queue, because "not Done" and "not terminal" are different guards
-  // and only a Revoked ticket separates them.
+  // The absorber is the Done tickets' alone: a completion cannot be
+  // re-delivered for a ticket that never landed — pinned at the OTHER terminal
+  // as well as in the queue, because "not Done" and "not terminal" are
+  // different guards and only a Revoked ticket separates them.
   assert.throws(() => decideCompleteDuplicate(c7, 1), AssertionError);
   assert.throws(
     () => decideCompleteDuplicate(revokeOne(jLand).post, 1),
@@ -735,7 +735,7 @@ test("the WNone route: a kindless ticket completes at the eval pass, taking no l
   ]);
   assert.deepEqual(d.rec.effects, ["Complete"]);
   // A COMPLETION IS NOT ALWAYS AN ATTEMPT: this is the one ticket-done that
-  // legitimately carries no attribution, because no landing attempt resolved.
+  // legitimately carries no attribution, because no wrap-up attempt resolved.
   assert.deepEqual(d.rec.attempt, { tag: "WONone" });
   const landed = ticketAt(d.post, 1);
   assert.equal(landed.phase, "PDone");
@@ -982,7 +982,7 @@ const dGateGasWall = decideWrapUpResolve(
   true,
 );
 
-test("gateReworkBudgetedDescendsTest: a landing failure spends 1 gate budget AND 1 gas", () => {
+test("gateReworkBudgetedDescendsTest: a wrap-up failure spends 1 gate budget AND 1 gas", () => {
   assert.equal(dGateRework.rec.label, "rework-started wrapup_failure");
   const reworking = ticketAt(dGateRework.post, 1);
   assert.equal(reworking.phase, "PWorking");
@@ -1002,7 +1002,7 @@ test("gateReworkBudgetedDescendsTest: a landing failure spends 1 gate budget AND
 test("gateWallsNamedTest: the gate-budget wall and the gas wall, each with its name", () => {
   assert.equal(dGateWall.rec.label, "ticket-escalated wrapup_budget_exhausted");
   assert.equal(ticketAt(dGateWall.post, 1).reason, "RsWrapUpBudgetExhausted");
-  // The landing resume RE-ENQUEUES: back to the queue, never into the gate.
+  // The wrap-up resume RE-ENQUEUES: back to the queue, never into the gate.
   assert.equal(ticketAt(dGateWall.post, 1).resumeAt, "RWrapUp");
   assert.ok(mB(dGateWall.post) < mB(cGateWall));
   assert.equal(dGateGasWall.rec.label, "ticket-escalated gas_exhausted");
@@ -1119,13 +1119,13 @@ test("preWorkResumeFreeAtZeroGasTest: the pre-work resume is free under BOTH met
 });
 
 test("opRetryChargedDescendsTest: under the default metering every pipeline resume pays", () => {
-  const landing = decideOpRetry(cfgBudgeted, cEscB, 1);
-  assert.equal(landing.rec.label, "operator-retry");
-  assert.deepEqual(landing.rec.effects, ["EnqueueWrapUp"]);
-  assert.equal(ticketAt(landing.post, 1).phase, "PWrapUp");
-  assert.equal(ticketAt(landing.post, 1).gasLeft, 1); // charged
-  assert.ok(!hasOpenHumanTask(ticketAt(landing.post, 1)));
-  assert.ok(mB(landing.post) < mB(cEscB));
+  const wrapUp = decideOpRetry(cfgBudgeted, cEscB, 1);
+  assert.equal(wrapUp.rec.label, "operator-retry");
+  assert.deepEqual(wrapUp.rec.effects, ["EnqueueWrapUp"]);
+  assert.equal(ticketAt(wrapUp.post, 1).phase, "PWrapUp");
+  assert.equal(ticketAt(wrapUp.post, 1).gasLeft, 1); // charged
+  assert.ok(!hasOpenHumanTask(ticketAt(wrapUp.post, 1)));
+  assert.ok(mB(wrapUp.post) < mB(cEscB));
   const working = decideOpRetry(cfgBudgeted, cEscWorking, 1);
   assert.equal(ticketAt(working.post, 1).phase, "PWorking");
   assert.equal(ticketAt(working.post, 1).gasLeft, 1);
@@ -1207,7 +1207,7 @@ test("the metering parameter changes the price and NOTHING else", () => {
   assert.deepEqual(evaluating.rec.effects, ["SpawnEvalTasks"]);
 });
 
-test("DeadlineOnly resolves a landing SUCCESS exactly as Budgeted does", () => {
+test("DeadlineOnly resolves a wrap-up SUCCESS exactly as Budgeted does", () => {
   // The gate pricing is asked only about FAILURES anywhere else, so a pricing
   // leak into the success arm would sit in the half of the config domain
   // nothing exercises. Read from the model: same label, same effect, same
@@ -1536,7 +1536,7 @@ test("revocableExactlyNonTerminalTest: the absorbing terminals are exactly the u
   assert.throws(() => decideRevoke(c8, 1), AssertionError);
 });
 
-test("revokedNeverCompletesTest: revoking a ticket ON the landing strip emits no completion effect", () => {
+test("revokedNeverCompletesTest: revoking a ticket ON the wrap-up queue emits no completion effect", () => {
   assert.equal(ticketAt(revokeOne(jLand).post, 1).completions, 0);
   assert.deepEqual(revokeOne(jLand).rec.effects, ["Revoke"]);
   // Its contrast, and what makes the zero above a claim rather than a default:
@@ -1785,7 +1785,7 @@ test("the dequeue guard asks about the RESOURCE its kind names, not the project"
   );
 });
 
-// === PROJECT ISOLATION at the landing boundary ==============================
+// === PROJECT ISOLATION at the wrap-up boundary ==============================
 
 /** A quiet-dequeue fixture: PWrapUp — the queue the fast-path resolves off. */
 const cQueueB: Core = solo({
@@ -1855,7 +1855,7 @@ test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own
   );
   assert.equal(reworked.rec.label, "rework-started wrapup_failure");
   assert.deepEqual(reworked.rec.attempt, attempt(2, true));
-  // Both landing walls carry it too — the attempt that PARKED the ticket is
+  // Both wrap-up walls carry it too — the attempt that PARKED the ticket is
   // attributable like the one that reworked it, and the gas wall is the one
   // `wrapUpIsolation`'s completeness cannot reach (it shares its label with
   // the eval side), so a stamp-drop there is visible only here.
@@ -1879,7 +1879,7 @@ test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own
     true,
   );
   assert.deepEqual(gasWall.rec.attempt, attempt(2, true));
-  // DeadlineOnly's landing gas wall attributes the same way, on project 1.
+  // DeadlineOnly's wrap-up gas wall attributes the same way, on project 1.
   const deadlineWall = decideWrapUpResolve(
     cfgDeadlineOnly,
     cGateDWall,
@@ -2567,11 +2567,11 @@ test("artifactStampedAndSupersededTest: work-passed stamps the artifact it produ
   assert.deepEqual(second, { tag: "ASome", id: 5 });
 });
 
-test("nonLandingStepsCarryNoAttributionTest: attribution appears at the landing boundary and nowhere else", () => {
+test("nonLandingStepsCarryNoAttributionTest: attribution appears at the wrap-up boundary and nowhere else", () => {
   // All twelve of the model's conjuncts. Most pointedly: the eval-side
   // "ticket-escalated gas_exhausted" carries the SAME label string as the
-  // landing gas wall — the attribution field, not the label, marks the
-  // boundary — eval-passed only ENQUEUES the landing, the gate OPEN resolves
+  // wrap-up gas wall — the attribution field, not the label, marks the
+  // boundary — eval-passed only ENQUEUES the wrap-up, the gate OPEN resolves
   // no attempt, and the absorbed complete-duplicate emits nothing at all.
   for (const d of [
     dArr1,
@@ -2590,7 +2590,7 @@ test("nonLandingStepsCarryNoAttributionTest: attribution appears at the landing 
     assert.deepEqual(
       d.rec.attempt,
       { tag: "WONone" },
-      `${d.rec.label} carries a landing attribution`,
+      `${d.rec.label} carries a wrap-up attribution`,
     );
   }
 });

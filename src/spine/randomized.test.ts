@@ -130,7 +130,7 @@ export const walkBudget = { walks: 300, steps: 40 } as const;
  *
  * A ROOT PER INSTANCE RATHER THAN ONE FOR ALL THREE, because the budgeted and
  * deadline-only instances differ only in gate pricing — a difference no step
- * before a landing can see. Walked from the same root they would take the same
+ * before a wrap-up can see. Walked from the same root they would take the same
  * trace and the second run would be free of information; from different roots
  * they explore different parts of one shared shallow region.
  */
@@ -475,7 +475,7 @@ const stageAdvanceScript: readonly Cmd[] = [
   { tag: "JTaskDone", ticket: 1, tid: 5, verdict: "VPass" },
   // The final stage passes: no advance this time, the program passed.
   { tag: "JEvalReduce", ticket: 1 },
-  // The dequeue draws QUIET: the skip fast-path resolves the landing outright.
+  // The dequeue draws QUIET: the skip fast-path resolves the wrap-up outright.
   { tag: "JDequeue", ticket: 1, moved: false },
   // At-least-once: a stale completion after Done, absorbed with no effect.
   { tag: "JCompleteDuplicate", ticket: 1 },
@@ -703,7 +703,7 @@ test("stageAdvanceNever is violated on the stage-advance trace, and no other wit
     [["stageAdvanceNever", 9, "eval-stage-passed"]],
   );
   // The trace closes the lifecycle the sampled walks never reach, and the
-  // roster is the evidence: the two labels past evaluation, the landing that
+  // roster is the evidence: the two labels past evaluation, the wrap-up that
   // resolves without opening a gate, and the absorbed duplicate.
   const closingLabels: readonly StepLabel[] = [
     "eval-passed",
@@ -715,11 +715,11 @@ test("stageAdvanceNever is violated on the stage-advance trace, and no other wit
     [],
   );
   // AND THE EIGHTH EXEMPTION ARM, which no sampled walk in this file fires.
-  // The reason is the SUBSEQUENT DRAW rather than the landing: the arm needs a
-  // landed ticket AND the re-delivery drawn on it before the run ends, and
-  // while the budgeted root's walks do land one, none of them goes on to draw
-  // the duplicate — `walk.test.ts`'s `settle` note argues the same shape for
-  // the same arm. With this the two deterministic traces and the sampled walks
+  // The reason is the SUBSEQUENT DRAW rather than the completion: the arm
+  // needs a landed ticket AND the re-delivery drawn on it before the run ends,
+  // and while the budgeted root's walks do land one, none of them goes on to
+  // draw the duplicate — `walk.test.ts`'s `settle` note argues the same shape
+  // for the same arm. With this the two deterministic traces and the sampled walks
   // together fire all eight arms of `stepDescends` — the roster PLAN.md's
   // coverage obligation names.
   assert.ok(

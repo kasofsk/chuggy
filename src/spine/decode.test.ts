@@ -223,9 +223,9 @@ test("a stutter label under the wrong action is a decode failure", () => {
   );
 });
 
-test("a landing route whose observation and from-phase disagree is a decode failure", () => {
-  // `ticket-done` arrives by three routes and the landing observation picks
-  // one; the from-phase is checked against it rather than trusted.
+test("a completion route whose observation and from-phase disagree is a decode failure", () => {
+  // `ticket-done` arrives by three routes and the wrap-up attempt observation
+  // picks one; the from-phase is checked against it rather than trusted.
   assert.throws(
     () =>
       decodeSteps(
@@ -244,8 +244,8 @@ test("a landing route whose observation and from-phase disagree is a decode fail
   );
 });
 
-test("a landing failure that records no invalidated attempt is a decode failure", () => {
-  // `wrapUpOutcomes` makes a quiet failure undrawable, so a failing landing
+test("a wrap-up failure that records no invalidated attempt is a decode failure", () => {
+  // `wrapUpOutcomes` makes a quiet failure undrawable, so a failing wrap-up
   // that claims a valid attempt is not a step this machine takes.
   assert.throws(
     () =>

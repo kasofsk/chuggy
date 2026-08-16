@@ -233,7 +233,7 @@ test("execCmd: every constructor reaches the decider the model names", () => {
 });
 
 test("execCmd: the dequeue's two arms reach the two routes the model hoists", () => {
-  // The moved arm opens the gate; the quiet arm resolves the landing in the
+  // The moved arm opens the gate; the quiet arm resolves the wrap-up in the
   // same step. Naming either route in `execCmd` would be the copied route
   // `decideDequeue`'s header exists to prevent, so the pin is that the arms
   // differ and each equals the route it stands for.
