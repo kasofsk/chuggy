@@ -70,6 +70,7 @@ run_gate() { # <label> <script> [<arg>...]
 }
 
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
+run_gate "check-figures" ./.chug/tasks/check-figures.sh
 run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
 run_gate "check-gates" ./.chug/tasks/check-gates.sh
 
