@@ -133,8 +133,10 @@
 ///                                         -stageWeight + r <= -1 a
 ///                                         fortiori)
 ///   ticket-escalated work_failed           rank 4->0 (cycle-level resolution:
-///                                       the fabric already retried below
-///                                       the cycle via trusted backoffLimit)
+///                                       the fabric already retried the
+///                                       container below the cycle grain,
+///                                       which this model trusts rather
+///                                       than models)
 ///   eval-passed (the FINAL stage        rank 3->2 AND stagesLeft 1->0 (the
 ///     passes)                             ticket ENQUEUES for the gate —
 ///                                         PWrapUp is the queued state)
@@ -441,8 +443,8 @@ module chuggy_measure {
   /// (the cascade wall, chuggy-NEW — NOT retryable, its only exit is
   /// revoke). RsGasExhausted is the rename of the deadline wall
   /// (`gas_exhausted` on the trace); RsWorkFailed is the CYCLE-level work
-  /// wall (there is no retries wall: below-cycle retries are the fabric's
-  /// trusted backoffLimit, §2).
+  /// wall (there is no retries wall: retrying a failed container below the
+  /// cycle grain is the fabric's job, trusted here rather than modeled).
   type Reason =
     RsNone | RsWorkFailed | RsReworkBudgetExhausted |
     RsWrapUpBudgetExhausted | RsGasExhausted | RsRevalidationFailed |
