@@ -54,10 +54,13 @@ import type { StepLabel } from "./decode.ts";
 import {
   driveTrace,
   hex,
+  observeOnce,
   walkOnce,
   walkSeeds,
   type RunResult,
 } from "./walk.test.ts";
+import { initStepRecord, initialState, type MachineState } from "./machine.ts";
+import { jDone, solo } from "../domain/fixtures.test.ts";
 
 // === The budget, and the seeds =============================================
 
@@ -452,11 +455,21 @@ const stageAdvanceScript: readonly Cmd[] = [
   { tag: "JCompleteDuplicate", ticket: 1 },
 ];
 
-/** The arrival both scripts open with: no deps, project 1, that project's lease. */
-function arrive(program: readonly Stage[]): Cmd {
+/**
+ * The arrival every script opens with: project 1, that project's lease, and by
+ * default no dependencies.
+ *
+ * `deps` is a parameter rather than a spread over the result, because `Cmd` is
+ * a union and spreading one widens every arm's fields into the record — which
+ * typechecks as nothing at all.
+ */
+function arrive(
+  program: readonly Stage[],
+  deps: ReadonlySet<number> = new Set(),
+): Cmd {
   return {
     tag: "JArrive",
-    deps: new Set(),
+    deps,
     program,
     project: 1,
     wrapUp: { tag: "WExclusive", resource: 1 },
@@ -554,4 +567,100 @@ test("a run refuses an illegal command and names it", () => {
 test("a seed prints as the model's own --seed spelling", () => {
   assert.equal(hex(walkRoots.budgeted), "0x2a");
   assert.equal(hex(-1), "0xffffffff");
+});
+
+// === The walker's own alarms ===============================================
+//
+// EVERY PROBE ABOVE ASSERTS THAT A RUN FOUND NOTHING, so nothing above would
+// notice a run that could not report. `a run refuses an illegal command` covers
+// the refusal path; the three regions of `observe` are the rest, and two of
+// them cannot fire from a walk at all — every state a run reaches is a shipped
+// decider's own output, so a correct roster and a correct bundle are true over
+// all of them. That is the replayer's situation one layer up, and it has the
+// same answer: hand the observer a state no decider would produce.
+
+test("the walker's unrostered-label alarm fires, and names the label it could not place", () => {
+  // A LABEL THE MACHINE COULD ONLY EMIT BY GROWING ONE. `stepLabel` throws on
+  // it because the decoder is reading a trace it cannot place; here the label
+  // came out of this tree's own step, so the throw is a finding to report and
+  // not an exception to let past the run. Muted, a decider that started
+  // emitting a label the corpus's roster does not know would walk green.
+  const teleported: MachineState = {
+    ...initialState(configs.budgeted),
+    lastStep: { ...initStepRecord, label: "ticket-teleported" },
+  };
+  assert.deepEqual(observeOnce(configs.budgeted, teleported), [
+    'probe step 0 after init: "ticket-teleported" is outside the reachable step-label roster',
+  ]);
+});
+
+test("the walker's bundle alarm fires, and names the conjuncts that went red", () => {
+  // THE OTHER HALF OF WHAT A WALK IS FOR. The bundle after every step is the
+  // whole point of the randomized layer, and a run that stopped asking it would
+  // still report its rosters, its witnesses and its reproductions — all green.
+  // The finding carries the conjunct names because a randomized failure whose
+  // text is "expected true" has found a defect and thrown away the copy.
+  const doubled: MachineState = {
+    ...initialState(configs.budgeted),
+    core: solo({ ...jDone, completions: 2 }),
+  };
+  assert.deepEqual(observeOnce(configs.budgeted, doubled), [
+    "probe step 0 after init: allInvariants is false; red conjuncts: completionExclusive",
+  ]);
+});
+
+test("the walker's observer is silent on a state the machine really reaches", () => {
+  // The control for the two above: the same observer, over `init` at the same
+  // consts, says nothing — so the findings above are attributable to the
+  // states and not to the probe.
+  assert.deepEqual(
+    observeOnce(configs.budgeted, initialState(configs.budgeted)),
+    [],
+  );
+});
+
+// === The cascade witness's discriminating power ============================
+
+const loneRevoke: readonly Cmd[] = [
+  arrive(progFlat1),
+  { tag: "JRevoke", ticket: 1 },
+];
+
+const cascadingRevoke: readonly Cmd[] = [
+  arrive(progFlat1),
+  arrive(progFlat1, new Set([1])),
+  { tag: "JRevoke", ticket: 1 },
+];
+
+test("cascadeParkNever discriminates: a lone revoke does not fire it, a cascading one does", () => {
+  // WHAT THE SAMPLED PROBE ABOVE CANNOT SAY. It asks only that the witness
+  // FIRED somewhere in three hundred walks, and every revoke in the machine
+  // carries a `ticket-revoked` label — so dropping the transitions conjunct,
+  // which is the whole of what makes this a CASCADE witness, leaves that probe
+  // green and turns the witness into "a revoke happened". These two traces are
+  // the pair that tells them apart: same decider, same label, one dependent
+  // between them.
+  const lone = driveTrace(
+    configs.budgeted,
+    "budgeted",
+    "lone revoke (deterministic)",
+    loneRevoke,
+  );
+  assert.deepEqual(lone.findings, []);
+  assert.equal(lone.steps, loneRevoke.length);
+  // The exact set, and it is EMPTY: a revoke that parked nobody is not the
+  // shape `cascadeSafety` needs a witness for.
+  assert.deepEqual(lone.firings, []);
+
+  const cascade = driveTrace(
+    configs.budgeted,
+    "budgeted",
+    "cascading revoke (deterministic)",
+    cascadingRevoke,
+  );
+  assert.deepEqual(cascade.findings, []);
+  assert.deepEqual(
+    cascade.firings.map((f) => [f.witness, f.step, f.label]),
+    [["cascadeParkNever", cascadingRevoke.length, "ticket-revoked"]],
+  );
 });
