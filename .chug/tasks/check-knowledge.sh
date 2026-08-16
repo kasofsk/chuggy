@@ -4,7 +4,9 @@
 # WHAT IS DECIDABLE. Not "is this claim carried yet" — that is the reviewer's.
 # Two consequences of the rule are mechanical:
 #
-#   C1  NO `## Correction` SECTION, at any heading level. What a correction
+#   C1  NO `## Correction` SECTION, at any heading level and under any
+#       inflection of the word — a plural or a participle is the rename an
+#       author consolidating sections reaches for. What a correction
 #       says is already fixed in the code, the gates and the suites, and the
 #       body is editable — CLAUDE.md says so — so it has somewhere better to
 #       go: into the head, or nowhere.
@@ -16,8 +18,9 @@
 #
 # WHAT IT CANNOT SEE, said plainly so nobody trusts it further than it goes. A
 # clause with no terminator reads as a label and gets through. A row whose
-# status is spelled some other way is not recognised as landed. Prose outside a
-# table row is invisible entirely, and stays the reviewer's.
+# status is spelled some other way is not recognised as landed, and neither is
+# a correcting section headed some other word — errata, amendment, revision.
+# Prose outside a table row is invisible entirely, and stays the reviewer's.
 #
 # SCOPE: tracked `docs/design/*.md`, whole-directory. It is the only directory
 # this gate reads, for the reason `check-figures.sh` and `check-paths.sh` carve
@@ -76,12 +79,15 @@ trap 'rm -rf "$work"' EXIT
 awk '
 FNR == 1 { docs_read++ }
 
-# C1. Any heading whose first word is Correction, at any level.
+# C1. Any heading whose first word is Correction or an inflection of it, at any
+# level. The alternation is longest-first so a plural is not read as the
+# singular with a stray letter after it, and it stops short of the adjective:
+# a heading about correctness is not a section that corrects.
 /^#+[ \t]/ {
 	headings++
 	head = $0
 	sub(/^#+[ \t]+/, "", head)
-	if (tolower(head) ~ /^correction([^a-z]|$)/)
+	if (tolower(head) ~ /^correct(ions|ion|ing|ed)([^a-z]|$)/)
 		print "ERROR " FILENAME ":" FNR ": a Correction section — the tree carries what it corrects, so edit the head instead"
 	next
 }

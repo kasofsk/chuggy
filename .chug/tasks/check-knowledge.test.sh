@@ -46,6 +46,18 @@ check "a Correction section is a finding" 1 "$RC" "004-plan.md:2: a Correction s
 doc_saying '# A plan' '#### correction' 'It was wrong.'
 check "a Correction at any level is a finding" 1 "$RC" "a Correction section"
 
+# NEITHER IS THE INFLECTION. Consolidating several sections into one is what
+# reaches for the plural, and rewriting the heading as a verb is the other way
+# out; both were once a way through this rule.
+doc_saying '# A plan' '## Corrections — 2026-08-16' 'They were wrong.'
+check "a plural Corrections is a finding" 1 "$RC" "a Correction section"
+
+doc_saying '# A plan' '## Correcting the record' 'It was wrong.'
+check "a Correcting section is a finding" 1 "$RC" "a Correction section"
+
+doc_saying '# A plan' '## Corrected — 2026-08-16' 'It was wrong.'
+check "a Corrected section is a finding" 1 "$RC" "a Correction section"
+
 # A landed row restating the contract the commit already satisfied.
 doc_saying '| S0 | Toolchain | Formatter and linter sequenced in. | **Landed** `abc1234` |'
 check "a landed row with a sentence is a finding" 1 "$RC" "a landed row states its argument"
@@ -70,6 +82,11 @@ check "a proposed row may argue" 0 "$RC" "0 finding(s)"
 # The rule is about a section that corrects, not about the word.
 doc_saying '# A plan' '## What a correction cannot buy' 'A correction is one session.'
 check "a heading that mentions the word later is silent" 0 "$RC" "0 finding(s)"
+
+# THE ADJECTIVE IS NOT AN INFLECTION OF THE NOUN, and it is the shape widening
+# C1 to the plural could have swallowed.
+doc_saying '# A plan' '## Correctness of the measure' 'It is proved.'
+check "a heading about correctness is silent" 0 "$RC" "0 finding(s)"
 
 # Prose outside a table row is the reviewer's, and the gate says nothing.
 doc_saying '# A plan' 'S0 landed the toolchain. It did more than the row asked.'

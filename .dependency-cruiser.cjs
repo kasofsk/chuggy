@@ -15,9 +15,11 @@
 // tree does not have, which `check-paths.sh` rejects and offers no way to
 // suppress. So each layer's boundary lands in the commit that lands the layer,
 // which is what "the graph rule lands in the same commit as the folder split"
-// means read one folder at a time. The full table is in
-// `docs/design/004-pure-core-implementation.md` under "The target tree"; what
-// is here is the part of it the tree can currently be held to.
+// means read one folder at a time. So the rules here are the whole boundary
+// the tree can currently be held to, and
+// `docs/design/004-pure-core-implementation.md` under "The target tree" is the
+// rest — the directories that do not exist yet, each with the rule name it
+// owes this file. There is no third place, and neither holds the other's rows.
 //
 // Every rule below is proved to bite against a fixture tree carrying its
 // violation, in `.chug/tasks/check-boundaries.test.sh`. An unverified control
@@ -45,7 +47,15 @@ module.exports = {
     },
     {
       name: "no-source-reaches-a-suite",
-      comment: "The suites mirror src/ and are downstream of every part of it.",
+      comment:
+        "The suites mirror src/ and are downstream of every part of it. They " +
+        "are not colocated, which is the more common idiom, because a " +
+        "*.test.ts carve-out inside domain-is-pure's glob is the escape hatch " +
+        "that makes a graph rule stop meaning anything: a suite may " +
+        "legitimately read a file, and a pattern that admits one exception " +
+        "admits the helper a decider imports. Refutation trigger: if " +
+        "navigating between a module and its suite becomes the friction, " +
+        "colocate and pay for the narrow exclusion instead.",
       severity: "error",
       from: { path: "^src/" },
       to: { path: "^test/" },

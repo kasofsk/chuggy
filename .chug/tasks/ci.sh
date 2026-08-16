@@ -3,8 +3,9 @@
 # pre-commit hook calls the individual gates directly — the sequencing has one
 # definition, here.
 #
-# ORDERING: pure-shell gates first, cheapest first; then the suites; then what
-# needs a toolchain; the model gate last, being by far the slowest.
+# ORDERING: the pure-shell gates first, then the suites, then the gates that
+# need the TypeScript toolchain; the model gate last, being by far the slowest.
+# Within a stage the order is not a claim about cost.
 #
 # EACH GATE IS THREE-VALUED — 0 clean, 1 finding, 2 could-not-run — and this
 # script keeps the distinction all the way to its own exit. A gate that could

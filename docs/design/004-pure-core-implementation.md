@@ -16,7 +16,7 @@ A landing commit carries a `Slice: 004-pure-core-implementation <row>` trailer, 
 | S3 | The deciders and the enablement predicates | — | S2 | **Landed** `a10d38c` |
 | S4 | The invariants | — | S2 | **Landed** `af5a39a` |
 | S5 | The replayer and the conformance gate | — | S1, S3, S4 | **Landed** `d375b5f` |
-| S6 | The randomized layer | The model's own action roster and draw sets, seeded, at every mc instance, asserting the full bundle plus the per-ticket completion-emission accumulator after every step, and shrinking a counterexample into the corpus format so the replayer can consume it. | S5 | Proposed |
+| S6 | The randomized layer | The model's own action roster and draw sets, seeded, at the full-roster instances in `model/mc/mc_chuggy.qnt`, asserting the full bundle plus the per-ticket completion-emission accumulator after every step, and shrinking a counterexample into the corpus format so the replayer can consume it. | S5 | Proposed |
 | S7 | The journaled actor | `model/refinement.qnt` as pure code — Cmd, Entry, `execCmd`, `cmdEnabled`, `replayCore`, `journalLegalOn`, the executor cursor, recovery by replay, and the carry rule below — its obligations in the model's own two bundles, and a crash-seam suite in which `refinementCore` stays green while the world-facing bundle goes red under the hazard. | S3, S4 | Proposed |
 | S8 | The interpreter, the ports and the walk | The effect interpreter over `(Entry, post-Core)`; the ports — fabric, journal store, desk — with their promises stated where they are declared; the stub adapters; the journal entry's wire schema and the parse at the store boundary; and one ticket driven from arrival to completion against stubs, with journal-before-effect structural and duplicate deliveries injected and absorbed. | S7 | Proposed |
 
@@ -47,9 +47,7 @@ Refutation trigger: an obligation that needs a real clock or real concurrency to
 
 ### `pre` is the Core before the last domain *decision*
 
-`installCore` writes `prevMeasure' = prevMeasure` and `prevRecords' = prevRecords`, declining to re-snapshot, and every refinement-layer step routes through it. So the `(pre, rec)` the invariant bundle reads is carried unchanged across emit, crash-recover and the hazard step, and advances only when the actor journals a decision.
-
-Read instead as "the state one step ago" — the obvious reading — it breaks `stepDescends` on the emit step: after a journaled `dispatch` the measure has already fallen, no arm exempts that label, and the suite reports a broken invariant on a step the model proves harmless. The honest reading of that report is that the discipline is unsound rather than that the harness is, which is why the carry rule is part of S7's contract rather than an implication of a signature.
+`src/domain/invariants.ts` states the rule and the reading of it that breaks `stepDescends`. What is S7's is that every refinement-layer step routes through `installCore` too, so the actor carries `(pre, rec)` unchanged across emit, crash-recover and the hazard step — a carry rule in the contract, not an implication of a signature.
 
 ### The interpreter's argument is `(Entry, post-Core)`
 
@@ -59,11 +57,11 @@ The alternative is payloads on the effect constructors, which changes the domain
 
 ### The at-most-one completion is S6's, and it is S6's alone
 
-`completions` is derived from the phase here rather than stored, so `completionExclusive` is structurally true and no state this tree can build refutes it. The forward half — Done implies exactly one completion — is carried by S5's per-step record equality, where a mutant reaching `PDone` without emitting `ticket-done` diverges from the golden. The `<= 1` half needs a layer with no golden to subsume it, so it is the per-ticket completion-emission accumulator in S6's row: under exact equality an accumulator could only go red where equality had gone red first. In S7 the same property is `noDuplicateCycle`, over the world rather than over a record.
+`test/domain/invariants.test.ts` states why no state this tree can build refutes `completionExclusive`, and which layer carries the property instead. What is not settled there is why the accumulator cannot sit in S5: under exact equality it could only go red where equality had gone red first, so the `<= 1` half needs the layer with no golden to subsume it. In S7 the same property is `noDuplicateCycle`, over the world rather than over a record.
 
 ### The refinement obligations stay in two bundles
 
-`refinementCore` is the discipline-independent half and holds under both step relations; the world-facing half is green under `rstep` and is the expected violation under `rstepHazard`. Implementing them as one flat list loses the demonstration, which is the same argument the domain's anti-vacuity witnesses make on the other side. Both relations are implemented too, since the delta between them *is* the discipline. The crash-seam suite asserts precisely which members fall at which seam, and imprecision there would hide the result; `model/tests/chuggy_refinement_test.qnt` pins both shapes deterministically.
+`refinementCore` is the discipline-independent half and holds under both step relations; the world-facing half is green under `rstep` and is the expected violation under `rstepHazard`. Neither bundle takes the domain's `Invariant` signature, and `src/domain/invariants.ts`'s one-signature rule does not reach them: these read the actor's journal, cursor and world, so theirs is `(ActorState) => boolean`, and forcing them into the domain's would invent arguments they do not use. Implementing them as one flat list loses the demonstration, which is the same argument the domain's anti-vacuity witnesses make on the other side. Both relations are implemented too, since the delta between them *is* the discipline. The crash-seam suite asserts precisely which members fall at which seam, and imprecision there would hide the result; `model/tests/chuggy_refinement_test.qnt` pins both shapes deterministically.
 
 ### The dependencies still to land
 
