@@ -34,7 +34,34 @@ current (open / in progress / PR # / landed PR #).
 | `s4-random` | The seeded randomized layer mirroring the model's: random legal action walks at the mc consts on all three instances, the full 24-invariant bundle (s2c) asserted after every step; the three anti-vacuity witnesses (`freeClimbNever`, `cascadeParkNever`, `stageAdvanceNever`) as expected-violation probes, so the exemption arms and the cascade stay exercised in TS, not dead. | s3-conformance | landed PR #46 |
 | `s5-actor` | `refinement.qnt`'s runtime: `Entry` — the journal schema written schema-first, static type derived, reusing s3's `Cmd` and storing `StepRecord` in the golden-trace vocabulary; `genesis`, `replayCore`, `journalLegalOn` (thin folds over s3's `execCmd`/`cmdEnabled`); `domain.qnt`'s `installCore` — the refinement-layer seam, which s3 deliberately left unlanded because nothing below this slice has a seam to install a replay across; the world-accounting functions (`hasEffect`, `stepsTicket`, `isSpawnFor`, `isCompletionFor`, the `*SpawnsOn`/`*CompletionsOn` counters); the journaled-actor runtime — single writer, journal-before-effect, executor cursor, crash recovery by replay; the journal-store port (in-memory append-only stub, promises documented); all 7 refinement invariants as predicates; the crash-seam suite — crash at every observable seam, recovery-by-replay proven, re-emission absorbed by journal seq, and the hazard demonstration mirroring `chuggy_refinement_test.qnt`'s 13 runs (the dispatch double-spend, the rework double-spend, the duplicate cycle), whose expects conjoin the s2c domain bundle exactly as the model's do. | s3-conformance | landed PR #45 |
 | `s6-interpreter` | The effect vocabulary as a typed ADT — the 8 effect strings become constructors, serialized 1:1 to the journal/trace strings; one interpreter; the fabric port stub (records spawns and cancellations, decides nothing; the harness delivers completions including duplicates and stale ones); desk/authoring surfaces as harness events; the end-to-end walk — a ticket driven arrival through landing against stubs, journal-before-effect enforced structurally, duplicate deliveries injected and absorbed. Every port documents what it promises, where it may fail, ordering and idempotence. | s4-random, s5-actor | landed PR #48 |
-| `sweep-1-fixes` | Convergence sweep 1 findings (lenses A-D + completeness critic): the recovery cursor's missing world bound, the conformance gate's unpinned finding-producers, the replayer's deletable bundle verdict, the roster staleness alarm, and the cross-slice drift batch. Sweep findings become work under the same protocol. | s6-interpreter | in progress |
+| `sweep-1-fixes` | Convergence sweep 1 findings (lenses A-D + completeness critic): the recovery cursor's missing world bound, the conformance gate's unpinned finding-producers, the replayer's deletable bundle verdict, the roster staleness alarm, and the cross-slice drift batch. Round 2 extended the roster alarm to the surfaces stated as `val` conjunctions and sum types — `allInvariants`' conjuncts, `Cmd`'s arms, both refinement bundles as separate rosters — closing the class where a model-side addition passed every gate. Sweep findings become work under the same protocol. | s6-interpreter | landed PR #50 |
+
+## Convergence
+
+The protocol: whole-tree sweeps (lenses A–D plus a completeness critic, each a fresh
+session), every finding fixed under the slice protocol, until two consecutive sweeps
+return zero blocking findings; the sweep cap is ORCHESTRATION.md's, and hitting it
+reports to the human the same as converging does.
+
+**Sweep 1: complete; fixes landed as PR #50.** Its structural result, in one line: the
+machine was cross-checked and the checkers were not — every blocking finding was a hole
+in a gate, an alarm, or a recovery bound rather than in the machine the model proves.
+All were closed and each closure verified by the lens that found it, red-proof by named
+test. Sweep 2 runs on the repaired tree and its briefs carry the checker-checking class
+explicitly.
+
+Recorded by sweep 1's verification, carried forward as context rather than opened as
+findings:
+
+- **`model/measure.qnt` is not opened by the roster alarm.** Its exported types have no
+  list-shaped TS counterpart for a roster comparison to hold; a new field on a decoded
+  type is caught instead by `itf.ts`'s `fieldsExactly` on regeneration. Declared here so
+  the shadow is a decision, not an oversight.
+- **`.chug/tasks/check-figures.sh` scans `*.md`, `*.sh`, `*.qnt`, the hook and the
+  justfile — TypeScript comments are outside its corpus.** The ban is the tree's rule and
+  the gate is one surface of it; the most prose-heavy surface is currently enforced by
+  review alone (a stale spelled-out count in a `.ts` comment shipped and was caught by
+  hand in PR #50's close-out). Candidate work for a sweep finding or a follow-up slice.
 
 ## Sequencing
 
