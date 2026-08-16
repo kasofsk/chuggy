@@ -101,8 +101,14 @@ import {
  * are. Named once so that no invariant spells out the quantifier, and so that
  * "live" has one definition here: the fleet's keys, exactly as `liveTickets` is
  * `tickets.keys()`.
+ *
+ * EXPORTED FOR THE LAYER ABOVE. `model/refinement.qnt`'s own invariants quantify
+ * over the same `liveTickets`, so the refinement layer asks this rather than
+ * respelling it — a second spelling of "live" is a second answer waiting to
+ * happen, and the one that respells it also pays for a ticket lookup that this
+ * one does not need.
  */
-function everyTicket(
+export function everyTicket(
   c: Core,
   holds: (jb: Ticket, j: number) => boolean,
 ): boolean {
