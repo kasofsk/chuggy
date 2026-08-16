@@ -1,6 +1,6 @@
 # The pure-core implementation
 
-**Status: IN PROGRESS** — S0 and S1 have landed. Every later row is still proposed.
+**Status: IN PROGRESS** — S0, S1 and S2 have landed. Every later row is still proposed.
 
 This is a plan: a design doc with a slice table. Its head — this line down to the end of *Open questions* — is rewritten freely as rows land. Its body is appended to, never edited. A line naming a path, gate, command or constant this tree does not have carries the marker CLAUDE.md defines for it.
 
@@ -20,7 +20,7 @@ Every row is one PR-sized deliverable, adversarially reviewed in a fresh session
 |---|---|---|---|---|
 | S0 | Toolchain and tree shape | Formatter, linter, module-graph checker and test runner configured and sequenced into `.chug/tasks/ci.sh`; each of house rules 1–6 acquires the gate or config that enforces it and is stated there and nowhere else; every one of them proved to bite against a tree carrying its violation. `src/domain/` lands with the graph rule that holds it, and each later layer's rule lands with that layer — see the correction below for why that is the same sentence read one folder at a time. | — | **Landed** `1bf76be` |
 | S1 | The golden corpus | One regeneration script produces every committed trace deterministically from the pinned quint; the corpus, its manifest and an ITF decoder are committed; a coverage check derives the label and exemption-arm rosters from the model and proves the corpus fires every one, per instance. | S0 | **Landed** |
-| S2 | The measure and the vocabulary | `model/measure.qnt`'s 23 types, the effect vocabulary as an ADT, the task plumbing, `ticketMeasure`/`sysMeasure` with every radix derived in code the way the model derives it, and the parameterised vocabulary both deciders and invariants read. Every golden state's ticket map decodes into `Ticket` and re-encodes identically. | S1 | Proposed |
+| S2 | The measure and the vocabulary | `model/measure.qnt`'s 23 types, the effect vocabulary as an ADT, the task plumbing, `ticketMeasure`/`sysMeasure` with every radix derived in code the way the model derives it, and the parameterised vocabulary both deciders and invariants read. Every golden state's ticket map decodes into `Ticket` and re-encodes identically. | S1 | **Landed** |
 | S3 | The deciders and the enablement predicates | All 13 `decide*` functions and all 20 `*In` definitions, exhaustively switched, with unit tests mirroring what `model/tests/chuggy_test.qnt` pins. | S2 | Proposed |
 | S4 | The invariants | All 25 leaf safety predicates behind one signature, the five derived sets that three of them are stated over, and the three anti-vacuity witnesses fenced off as their own kind. Each lands with a make-it-red demonstration against a tree carrying the defect it names, and the bundle's membership is checked against `model/domain.qnt` at run time. | S2 | Proposed |
 | S5 | The replayer and the conformance gate | Each golden step replays through the implementation's own deciders, reproducing the StepRecord and the post-Core exactly and evaluating the whole invariant bundle after every step; a new gate runs the replay and never regenerates. | S1, S3, S4 | Proposed |
