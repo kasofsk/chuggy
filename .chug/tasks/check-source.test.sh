@@ -113,6 +113,9 @@ fixture
 clean_source
 seal
 check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
+# The tally is asserted rather than trusted: it is what says the run measured
+# something, and the file count it replaced described a set no stage read.
+check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
 
 # --- The house rules ---------------------------------------------------------
 #

@@ -23,6 +23,18 @@
 # that has never rejected anything is an unverified control, and this repo's
 # standing position is that one of those is worse than none.
 #
+# THE CLEAN LINE COUNTS WHAT THE CRUISE READ, which is not what the discovery
+# above lists. The graph is cruised over `src` and `test` together and resolved
+# from disk; the tracked-source glob is a precondition — an empty `src/` is a
+# could-not-run rather than a clean verdict over nothing — and reporting its
+# size described a set this gate never asked about. So the figure is
+# dependency-cruiser's own, read back off the verdict it printed, with the
+# colour escapes stripped first for `check-duplication.sh`'s reason: a pattern
+# that skips non-digits to reach a number reaches the digits inside the escape
+# instead. An unreadable verdict prints as unknown rather than as a number
+# nothing stands behind, and `.chug/tasks/check-boundaries.test.sh` requires
+# this line to report a fixture whose size it knows.
+#
 # WHAT IT CANNOT SEE. A capability reached without an import — a global, a
 # dynamic `import()` built from a computed string, a value injected at run time
 # — is invisible to a static graph. The first is eslint's half. The second is
@@ -92,4 +104,13 @@ if [ "$rc" -ne 0 ]; then
 	exit 1
 fi
 
-echo "check-boundaries: graph clean across $(printf '%s' "$sources" | grep -c .) module(s)"
+cruised="$(awk '{ gsub(/\033\[[0-9;]*m/, "") }
+/ modules,/ {
+	if (match($0, /[0-9]+ modules/)) {
+		token = substr($0, RSTART, RLENGTH)
+		sub(/ modules/, "", token)
+		print token
+		exit
+	}
+}' "$work/out")"
+echo "check-boundaries: graph clean across ${cruised:-?} module(s)"

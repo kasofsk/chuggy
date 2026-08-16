@@ -10,13 +10,21 @@
  * cheap ones and left a sweep unrun.
  *
  * WHAT THE BUNDLE ADDS THAT EQUALITY DOES NOT, and it is not what it looks
- * like. Where equality holds, the state under the predicates is the model's own
- * — already proved to satisfy them — so the bundle cannot report a defect in
- * the machine. What it reports is a defect in *this tree's* transcription of
- * the predicates: an invariant that is too strong goes red on a state the
- * specification proved green. S4's demonstrations run the other way, each
- * showing a predicate red on a state carrying its defect, and neither direction
- * substitutes for the other.
+ * like. The states under the predicates are the model's own output, which is
+ * weaker than states proved to satisfy them: what stands behind
+ * `allInvariants` is the unseeded randomized run `.chug/tasks/check-model.sh`
+ * makes over the full-roster instances, plus the witness and refinement suites,
+ * which assert it at every step of the particular traces they walk. There is no
+ * `quint verify` in this tree and no inductive proof, and the rows emitted under
+ * `model/mc/mc_chuggy_directed.qnt`'s restricted step relation are longer than
+ * that run's step bound. So a red bundle is a disagreement between this tree's
+ * transcription and the specification, and the transcription is where to look
+ * first — an invariant that is too strong goes red on a state the specification
+ * sampled green, which is the direction S4's demonstrations cannot reach, each
+ * of those showing a predicate red on a state carrying its defect. On a state
+ * from a directed emitter it is also the first evaluation the bundle has ever
+ * had there, so a reading against the specification stays open until the
+ * transcription is cleared.
  *
  * A LEAF THAT CANNOT BE ASKED IS NAMED RATHER THAN THROWN, which `evaluate.ts`
  * is for: the states where a report matters most are the ones a wrong decider
@@ -34,11 +42,18 @@
  * one thing that writes a golden, because a job that can rewrite its own
  * expected output is not a check; `CHUG_GOLDEN_DIR` moves what is read and
  * nothing here opens a file for writing.
+ *
+ * IT RECONCILES THE DIRECTORY AGAINST THE MANIFEST, which `test/golden/`'s own
+ * coverage suite also does and for a different corpus. That one reads the
+ * committed directory by construction; this one reads whatever `CHUG_GOLDEN_DIR`
+ * points at, which is what the gate's suite hands it. Without the case here, a
+ * corpus holding a golden no row names replays whatever the manifest happens to
+ * list and the gate reports a clean sweep of the rest.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
@@ -69,8 +84,11 @@ import { bundleHolds, evaluateBundle, type BundleVerdict } from "./evaluate.ts";
 const GOLDEN_DIR =
   process.env["CHUG_GOLDEN_DIR"] ?? join(import.meta.dirname, "..", "golden");
 
-/** How many findings are printed in full before the rest are counted. */
+/** The floor on how many findings are printed in full; every kind gets one. */
 const DETAILED = 3;
+
+/** What a golden file is called, once, so the reconciliation below can strip it. */
+const SUFFIX = ".itf.json";
 
 interface Row {
   readonly name: string;
@@ -86,8 +104,14 @@ interface Golden {
   readonly stepVar: string;
 }
 
-/** One thing that is wrong, at the place a reader has to open to see it. */
+/**
+ * One thing that is wrong, at the place a reader has to open to see it. `kind`
+ * is what the report groups by, and is deliberately coarser than `what`: two
+ * findings of one kind differ in which ticket or which leaf they name, and a
+ * reader who has read the first has read the shape.
+ */
 interface Finding {
+  readonly kind: string;
   readonly where: string;
   readonly what: string;
   readonly detail: readonly string[];
@@ -117,7 +141,7 @@ function rows(): readonly Row[] {
 
 function loadGolden(row: Row): Golden {
   const raw = JSON.parse(
-    readFileSync(join(GOLDEN_DIR, `${row.name}.itf.json`), "utf8"),
+    readFileSync(join(GOLDEN_DIR, `${row.name}${SUFFIX}`), "utf8"),
   ) as { states: Record<string, unknown>[] };
   const trace = decodeTrace(raw);
   const ticketsVar = trace.vars.find((v) => v.endsWith("::tickets"));
@@ -322,6 +346,7 @@ function recordFinding(
   if (isDeepStrictEqual(got, want)) return [];
   return [
     {
+      kind: "record",
       where: siteOf(golden, index, action),
       what: "the step record diverged",
       detail: fieldDiff("record", got, want),
@@ -340,6 +365,7 @@ function coreFinding(
   if (isDeepStrictEqual(got, want)) return [];
   return [
     {
+      kind: "post-state",
       where: siteOf(golden, index, action),
       what: "the post-state diverged",
       detail: coreDiff(got, want),
@@ -372,9 +398,10 @@ function bundleFinding(
 ): readonly Finding[] {
   const verdict = evaluateBundle(config, view);
   if (bundleHolds(verdict)) return [];
-  const where = `${GOLDEN_DIR}/${golden.row.name}.itf.json`;
+  const where = `${GOLDEN_DIR}/${golden.row.name}${SUFFIX}`;
   return [
     {
+      kind: "bundle",
       where: siteOf(golden, index, action),
       what: bundleWhat(verdict),
       detail: [
@@ -430,19 +457,42 @@ function replayGolden(golden: Golden, config: Config, run: Run): void {
   }
 }
 
+/**
+ * The first finding of each distinct kind, then the rest in corpus order. Two
+ * independent defects are the case worth printing for, and in corpus order the
+ * commoner one fills the report and the other is counted rather than shown —
+ * which reads as one defect and sends the reader back for a second run.
+ */
+function inPrintOrder(findings: readonly Finding[]): readonly Finding[] {
+  const seen = new Set<string>();
+  const first: Finding[] = [];
+  const rest: Finding[] = [];
+  for (const finding of findings) {
+    if (seen.has(finding.kind)) rest.push(finding);
+    else {
+      seen.add(finding.kind);
+      first.push(finding);
+    }
+  }
+  return [...first, ...rest];
+}
+
 function report(run: Run): string {
   if (run.findings.length === 0) return "";
-  const shown = run.findings
-    .slice(0, DETAILED)
+  const kinds = new Set(run.findings.map((finding) => finding.kind)).size;
+  const detailed = Math.max(DETAILED, kinds);
+  const shown = inPrintOrder(run.findings)
+    .slice(0, detailed)
     .flatMap((finding) => [
       `${finding.where}: ${finding.what}`,
       ...finding.detail,
     ]);
-  const rest = run.findings.length - DETAILED;
+  const rest = run.findings.length - detailed;
   const tail =
     rest > 0 ? [`and ${String(rest)} further finding(s) not printed`] : [];
+  const ordering = kinds > 1 ? ", one of each kind first" : "";
   return [
-    `the replay found ${String(run.findings.length)} finding(s) against the committed corpus:`,
+    `the replay found ${String(run.findings.length)} finding(s) against the committed corpus${ordering}:`,
     ...shown,
     ...tail,
   ].join("\n");
@@ -492,6 +542,25 @@ test("the replay consumed every step and every state the manifest accounts for",
     steps + rows().length,
     "the bundle was not evaluated on every state, initial states included",
   );
+});
+
+test("what the replay consumed is the whole corpus in the directory", () => {
+  const named = new Set(rows().map((row) => row.name));
+  const found = readdirSync(GOLDEN_DIR)
+    .filter((entry) => entry.endsWith(SUFFIX))
+    .map((entry) => entry.slice(0, -SUFFIX.length));
+  for (const golden of found) {
+    assert.ok(
+      named.has(golden),
+      `${golden}${SUFFIX} is in ${GOLDEN_DIR} with no manifest row, so nothing replayed it`,
+    );
+  }
+  for (const row of named) {
+    assert.ok(
+      found.includes(row),
+      `manifest row ${row} names a golden ${GOLDEN_DIR} does not hold`,
+    );
+  }
 });
 
 test("the deciders produced every label the corpus carries", () => {

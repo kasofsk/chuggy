@@ -40,11 +40,38 @@
 #   - NOT EVERY ARM OF EVERY DECIDER. The corpus's coverage claim is per step
 #     label and per exemption arm, and a decider has arms that carry a label
 #     some other arm already fired. Those are `test/domain/deciders.test.ts`'s.
-#   - NOT THE INVARIANTS AGAINST THE MACHINE. Where the replay agrees, the state
-#     the bundle is evaluated on is the model's own, already proved to satisfy
-#     it. What a red bundle reports here is a predicate this tree transcribed
-#     too strongly, which is the direction S4's make-it-red demonstrations
-#     cannot reach; neither substitutes for the other.
+#   - NOT THE INVARIANTS AGAINST THE MACHINE, and not because the machine has
+#     been proved to satisfy them. The states here are the model's own OUTPUT,
+#     which is the weaker thing: what stands behind `allInvariants` in this
+#     tree is the unseeded randomized run `.chug/tasks/check-model.sh` makes
+#     over the full-roster instances, plus the deterministic witness and
+#     refinement suites, which assert it at every step of the particular
+#     traces they walk. There is no `quint verify` here and no inductive
+#     proof. A sample says nothing about whether the states in this corpus are
+#     among the ones it visited, and the rows emitted under
+#     `model/mc/mc_chuggy_directed.qnt`'s restricted step relation — most of
+#     the corpus's steps, by the manifest's own count — are longer than that
+#     run's step bound, which is the same reason those emitters had to be
+#     written. So a red bundle is a disagreement between this tree's
+#     transcription and the specification, and the transcription is where to
+#     look first: a leaf transcribed too strongly is the direction S4's
+#     make-it-red demonstrations cannot reach, and neither substitutes for the
+#     other. On a directed-emitter state it is also the first evaluation the
+#     bundle has ever had there — the aimed run refuted a label predicate, not
+#     this one — so a reading against the specification stays open until the
+#     transcription is cleared.
+#
+# WHAT THE CLEAN LINE COUNTS, and why it is not the files in the directory. The
+# suite iterates the manifest's rows, so a count of `*.itf.json` on disk is a
+# count of a set nothing replayed — and the two disagree exactly when the corpus
+# holds a golden no row names, which is the case a reader most needs told. So
+# the figure is the manifest's own account of the corpus, rows and steps, and it
+# is worth printing only because two other things hold it there:
+# `test/conformance/replay.test.ts` fails unless the replay consumed every row
+# and every step that account claims, and fails again on a golden in the
+# directory that no row names. The find below stays what it always was, a
+# precondition — a corpus with nothing in it is a could-not-run rather than a
+# clean sweep of nothing.
 #
 # EXITS, and where the line between them is. A finding is anything the replay
 # reports, INCLUDING a crash inside it: failing to read the specification's own
@@ -108,6 +135,21 @@ if [ -z "$suites" ]; then
 	exit 2
 fi
 
+# The manifest is JSON and this is shell, so node reads it, the way
+# `.chug/tasks/emit-goldens.sh` reads the same file for the same reason. A
+# manifest that cannot be parsed is a could-not-run for the reason an absent one
+# is: nothing was asked of this tree.
+counted="$(node -e '
+const rows = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).goldens
+process.stdout.write(rows.length + " " + rows.reduce((n, r) => n + r.steps, 0))
+' "$GOLDEN_DIR/manifest.json" 2>/dev/null || true)"
+if [ -z "$counted" ]; then
+	echo "check-conformance: LINTER ERROR — $GOLDEN_DIR/manifest.json could not be read"
+	exit 2
+fi
+rows_counted="${counted%% *}"
+steps_counted="${counted##* }"
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -131,4 +173,4 @@ if [ "$rc" -ne 0 ]; then
 	exit 1
 fi
 
-echo "check-conformance: $(printf '%s' "$goldens" | grep -c .) golden(s) replayed clean, records, states and bundle"
+echo "check-conformance: $rows_counted golden(s), $steps_counted step(s) replayed clean, records, states and bundle"

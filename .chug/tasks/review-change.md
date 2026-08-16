@@ -94,6 +94,19 @@ a preset reads exactly like a rule that is working.
 14. **Contract-first.** A change to the core names the contract it changes. If
     it cannot be expressed that way then the contract does not exist yet, and
     writing it is the first commit of the work.
+15. **A gate's success line reports only what that run consumed, and any figure
+    in it is asserted by the gate's own suite.** The failure is not a wrong
+    verdict — it is a right verdict with a wrong account of its coverage, which
+    is the half a reader believes and never checks again: a count of the files
+    in a directory where the suite iterated a manifest, of the tracked sources
+    where the tool cruised a graph, of the files selected where some were never
+    read. Each of those has been in this tree, and one of them printed a
+    constant scraped out of a colour escape. So the figure is derived from the
+    run rather than from something adjacent to it, and the sibling `*.test.sh`
+    requires the line to report a fixture whose size it knows — the same bar
+    the standing commitment on unverified controls sets for the verdict, applied
+    to the sentence that carries it. Where no honest figure exists, the line
+    says what it did instead of counting something else.
 
 ## The standing rules — the model's, numbered 1 to 4
 

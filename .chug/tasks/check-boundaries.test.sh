@@ -82,12 +82,16 @@ seal
 check "an empty src exits 2, not 0" 2 "$RC" "the graph would be empty"
 
 # 2. A tree that breaks no rule is clean, which is what makes every case below
-#    a statement about the rule rather than about the fixture.
+#    a statement about the rule rather than about the fixture. Its size is
+#    asserted as well: the fixture holds a source and a suite, the cruise reads
+#    both, and the clean line reported the tracked sources alone until it was
+#    made to report what the cruise had read.
 fixture
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
 seal
 check "a clean graph passes" 0 "$RC" "graph clean"
+check "the clean line counts the modules cruised" 0 "$RC" "across 2 module(s)"
 
 # --- domain-is-pure, the rule house rule 2 is stated in -----------------------
 

@@ -33,6 +33,17 @@
 # gate whose verdict depends on which version happens to be installed is not a
 # gate. Each missing one is a could-not-run, reported as itself.
 #
+# THE CLEAN LINE COUNTS STAGES AND NOT FILES, because no file count here would
+# be one of them's. Each tool resolves its own scope — the typechecker from
+# `tsconfig.json`, the linter and the formatter from their own ignore files,
+# the runner from its discovery — and the formatter's reaches past TypeScript
+# to every JSON and config file in the tree. The tracked-source glob above is a
+# precondition rather than a measurement, and printing its size beside the
+# stages said they had run over it. What the count still has to do is say the
+# run measured something, and the stage tally does that: each stage prints its
+# own verdict above, and a tree with no TypeScript in it never reaches this
+# line.
+#
 # Usage:
 #   .chug/tasks/check-source.sh
 #
@@ -63,6 +74,7 @@ done
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 failed=0
+ran=0
 
 stage() { # <label> <command>...
 	label="$1"
@@ -72,6 +84,7 @@ stage() { # <label> <command>...
 	"$@" >"$work/out" 2>&1
 	rc=$?
 	set -e
+	ran=$((ran + 1))
 	if [ "$rc" -eq 0 ]; then
 		echo "clean"
 	else
@@ -95,5 +108,5 @@ if [ -z "$suites" ]; then
 fi
 stage "  unit     " node --test --test-reporter=dot
 
-echo "check-source: $failed stage(s) failed across $(printf '%s' "$sources" | grep -c .) file(s)"
+echo "check-source: $failed stage(s) failed, $ran run"
 [ "$failed" -eq 0 ]

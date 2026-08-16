@@ -71,7 +71,23 @@ else
 "
 fi
 
-files="$(printf '%s' "$files" | grep -v '^$' || true)"
+# A selected doc can be missing from the worktree — deleted and not yet
+# committed, or named explicitly by a caller — and there is nothing to read when
+# it is. The filter sits here rather than inside the loops so the tally at the
+# end counts the files this run read and not the ones it was handed.
+set -f
+IFS='
+'
+readable=""
+for f in $files; do
+	[ -f "$f" ] || continue
+	readable="$readable$f
+"
+done
+unset IFS
+set +f
+
+files="$(printf '%s' "$readable" | grep -v '^$' || true)"
 if [ -z "$files" ]; then
 	[ "$emit_links" -eq 1 ] || echo "doc-lint: no tracked markdown — nothing to lint"
 	exit 0
@@ -105,7 +121,6 @@ if [ "$emit_links" -eq 1 ]; then
 	IFS='
 '
 	for f in $files; do
-		[ -f "$f" ] || continue
 		extract "$f" | awk -v f="$f" -v dir="$(dirname "$f")" '
 			function norm(p,   a, n, i, k, o, r) {
 				n = split(p, a, "/"); k = 0
@@ -141,7 +156,6 @@ report_warn() { echo "warn  $1"; warnings=$((warnings + 1)); }
 IFS='
 '
 for f in $files; do
-	[ -f "$f" ] || continue # a deleted doc can be named explicitly but has no content
 	case "$f" in
 	docs/design/*/*) : ;; # a nested subdirectory is not a design doc
 	docs/design/*.md)

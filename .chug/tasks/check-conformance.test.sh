@@ -17,6 +17,14 @@
 # encoding instead of the corpus. One row is enough for every case and keeps the
 # suite inside the sequencer's per-suite cap.
 #
+# AND THE CLEAN LINE'S FIGURE IS ASSERTED, on `check-duplication.test.sh`'s
+# argument and after the same failure: a success line nobody asserts is a
+# success line that can report the wrong set for as long as it likes, and this
+# one reported the files in the directory rather than the rows the replay
+# consumed. The expected figure is computed from the fixture's own manifest
+# rather than transcribed, so a regenerated corpus cannot leave this suite
+# asserting against a stale count.
+#
 # Run:  .chug/tasks/check-conformance.test.sh
 set -eu
 
@@ -54,6 +62,15 @@ fs.writeFileSync(process.argv[2], JSON.stringify({ goldens: [row] }, null, 2) + 
 ' "$ROOT/test/golden/manifest.json" "$1/manifest.json" "$GOLDEN" "${2:-}"
 }
 
+# What the fixture's manifest accounts for, which is what the gate's clean line
+# has to report.
+steps_in() { # <manifest>
+	node -e '
+const rows = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).goldens
+process.stdout.write(String(rows.reduce((n, r) => n + r.steps, 0)))
+' "$1"
+}
+
 # --- Could not run -----------------------------------------------------------
 
 run_gate "$WORK/absent"
@@ -73,6 +90,21 @@ check "a manifest with no golden beside it exits 2, not 0" 2 "$RC" "the glob mat
 fixture "$WORK/clean"
 run_gate "$WORK/clean"
 check "a golden that replays exits 0" 0 "$RC" "replayed clean"
+check "the clean line counts what the replay consumed" 0 "$RC" \
+	"1 golden(s), $(steps_in "$WORK/clean/manifest.json") step(s) replayed clean"
+
+# --- A golden the replay never opened ----------------------------------------
+#
+# The manifest is what the replay iterates, so a corpus can hold goldens no row
+# names and every one of them goes unreplayed. Counting the directory reported
+# them as replayed clean, which is the shape this repo's standing commitment
+# about unverified controls names: the verdict was right and the account of what
+# it covered was not.
+
+fixture "$WORK/orphaned"
+cp "$ROOT"/test/golden/*.itf.json "$WORK/orphaned/"
+run_gate "$WORK/orphaned"
+check "a golden no manifest row names is a finding" 1 "$RC" "with no manifest row"
 
 # --- It only reads -----------------------------------------------------------
 #
@@ -104,10 +136,11 @@ grep -qF "$GOLDEN state 1" "$OUT" || {
 
 # --- A state the bundle refuses ----------------------------------------------
 #
-# The bundle is evaluated on states the specification proved, so no edit to a
-# trace alone can make a leaf go red; what the corpus does not fix is the
-# constants the row is replayed under, and a row naming another instance is a
-# defect of exactly that shape.
+# The bundle is evaluated on the model's own output, so no edit to a trace alone
+# can make a leaf go red — the replay diverges first, before the invariants have
+# anything to disagree with. What the corpus does not fix is the constants the
+# row is replayed under, and a row naming another instance is a defect of exactly
+# that shape.
 
 fixture "$WORK/misfiled" mc_chuggy_retryfree
 run_gate "$WORK/misfiled"

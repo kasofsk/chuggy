@@ -64,6 +64,12 @@ printf 'not markdown\n' > "$WORK/docs/reference/notes.txt"
 run docs/reference/notes.txt
 check "a non-markdown argument is skipped" 0 "$RC" "nothing to lint"
 
+# A doc can be selected and not be there — deleted and not yet committed, or
+# named by a caller. The tally has to count what was read, or a run that linted
+# nothing reports the same line as a run that linted the file.
+run docs/design/001-good.md docs/design/002-deleted.md
+check "the tally counts the docs that were read" 0 "$RC" "across 1 file(s)"
+
 # --- Rule 1: well-formedness -------------------------------------------------
 
 printf '#Heading with no space\n\nBody.\n' > "$WORK/docs/reference/nospace.md"
