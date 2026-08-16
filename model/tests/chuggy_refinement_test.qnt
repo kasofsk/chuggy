@@ -383,7 +383,7 @@ module chuggy_refinement_witness_test {
       .expect(and {
         obs.label == "ticket-done",
         obs.transitions == [{ ticket: 1, from: PEvaluating, to: PDone }],
-        obs.landing == WONone,          // no attempt, so nothing to attribute
+        obs.attempt == WONone,          // no attempt, so nothing to attribute
         memCore.tickets.get(1).phase == PDone,
         journalCompletions(1) == 1,
         worldCompletions(1) == 0,
