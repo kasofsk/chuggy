@@ -595,4 +595,107 @@ rm -rf "$R/src/spine"
 run purity
 check "a missing pure directory exits 2, not 0" 2 "$RC" "named by the purity rule"
 
+# 36. The interpretation layer's boundary, downward. An interp module reaching
+#     an ADAPTER is a port declaration reaching its own implementation, and the
+#     stub stops being substitutable. Not covered by any rule above: interp is
+#     not in the pure core, and `effects-reach-only-domain` governs a different
+#     directory.
+scaffold
+cat >"$R/src/adapters/store.ts" <<'TS'
+export const rows: string[] = [];
+TS
+cat >"$R/src/interp/route.ts" <<'TS'
+export { rows } from "../adapters/store.ts";
+TS
+run purity
+check "an adapter reached from src/interp is a finding" 1 "$RC" \
+	"interp-reaches-only-the-core"
+
+# 37. The same boundary, sideways and three hops down, so the assertion is on
+#     the chain's ORIGIN rather than its last hop — case 6's argument, for the
+#     layer that had no rule at all until s6.
+scaffold
+cat >"$R/src/interp/deep.ts" <<'TS'
+export { readFileSync } from "node:fs";
+TS
+cat >"$R/src/interp/middle.ts" <<'TS'
+export { readFileSync } from "./deep.ts";
+TS
+cat >"$R/src/interp/route.ts" <<'TS'
+export { readFileSync } from "./middle.ts";
+TS
+run purity
+check "a transitive path out of src/interp names its origin" 1 "$RC" \
+	"interp-reaches-only-the-core: src/interp/route.ts → fs"
+
+# 38. The positive control for that rule, and the reason it needs one: the
+#     three directories interp MAY reach are what the whole slice is built out
+#     of, so a rule that only ever said no would be indistinguishable from a
+#     rule whose `pathNot` was mistyped.
+scaffold
+cat >"$R/src/effects/effect.ts" <<'TS'
+export type Effect = "Complete";
+TS
+cat >"$R/src/interp/route.ts" <<'TS'
+import type { Effect } from "../effects/effect.ts";
+import { quadruple } from "../spine/step.ts";
+import { twice } from "../domain/pure.ts";
+
+export function route(e: Effect, n: number): string {
+  return `${e}${String(quadruple(twice(n)))}`;
+}
+TS
+run purity
+check "interp reaching effects, spine and domain is clean" 0 "$RC" "purity clean"
+
+# 39. The ports' defining promise as a graph edge: an adapter that could reach
+#     the single writer could commit a decision, which is a second writer. The
+#     reach is three hops, because an adapter laundering it through a helper is
+#     the version that would actually get written.
+scaffold
+cat >"$R/src/spine/actor.ts" <<'TS'
+export function commit(n: number): number {
+  return n;
+}
+TS
+cat >"$R/src/adapters/helper.ts" <<'TS'
+export { commit } from "../spine/actor.ts";
+TS
+cat >"$R/src/adapters/store.ts" <<'TS'
+export { commit } from "./helper.ts";
+TS
+run purity
+check "an adapter reaching the single writer is a finding" 1 "$RC" \
+	"adapters-decide-nothing"
+
+# 40. The other forbidden edge, and it is the one that would let a fabric stub
+#     synthesize a completion nobody's run produced.
+scaffold
+cat >"$R/src/interp/events.ts" <<'TS'
+export type ExternalEvent = { readonly tag: "TaskEnded" };
+TS
+cat >"$R/src/adapters/store.ts" <<'TS'
+export type { ExternalEvent } from "../interp/events.ts";
+TS
+run purity
+check "an adapter reaching the event vocabulary is a finding" 1 "$RC" \
+	"adapters-decide-nothing"
+
+# 41. The positive control for THAT rule, and it is the sharper of the two:
+#     src/adapters/ is deliberately not reachability-bounded — an adapter is
+#     where a node builtin belongs — so a rule spelled as a boundary rather
+#     than as two named edges would fail here, and the failure would read as a
+#     purity finding against the one directory that is allowed a medium.
+scaffold
+cat >"$R/src/adapters/store.ts" <<'TS'
+import { readFileSync } from "node:fs";
+import { quadruple } from "../spine/step.ts";
+
+export function sizeOf(path: string): number {
+  return quadruple(readFileSync(path, "utf8").length);
+}
+TS
+run purity
+check "an adapter reaching a node builtin is clean" 0 "$RC" "purity clean"
+
 done_ "check-ts.test.sh"

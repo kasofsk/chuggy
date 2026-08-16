@@ -56,10 +56,14 @@
  * between the two. That codec belongs ABOVE the port, in the spine, beside this
  * schema — never in the store, which is the component required to interpret
  * nothing. `journal-store.ts` states the same placement from the port's side.
- * It is not shipped in this slice, deliberately: the effect vocabulary that
- * fixes half of a wire format is s6's, and a codec written before it is a guess.
- * What is fixed now is where it goes and that its output is what this gate
- * checks.
+ * It is STILL not shipped, and the reason has moved rather than gone. s6 landed
+ * the effect vocabulary this paragraph was waiting on — `src/effects/effect.ts`,
+ * whose constructors ARE the strings a `rec` already stores, so that half of a
+ * wire format is now fixed and stable. What is not fixed is the need: the only
+ * store in this tree keeps values in memory, so nothing here has bytes to
+ * write, and a codec with no medium beneath it would be a guess about the
+ * medium instead of a guess about the vocabulary. What is fixed is where it
+ * goes and that its output is what this gate checks.
  *
  * WHAT THE SCHEMA'S `row` AND `version` ARE, AND ARE NOT. They identify the
  * SCHEMA; no row carries either, because a row is `model/refinement.qnt`'s

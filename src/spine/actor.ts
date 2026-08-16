@@ -62,13 +62,25 @@
  *
  * AND THE GRAIN OF ABSORPTION IS THE ROW, WHICH IS THE OTHER HALF OF THE SAME
  * SENTENCE. `worldEffects: ReadonlySet<number>` says the unit is one seq
- * carrying one whole effect list — not one key per effect. A fabric that keyed
- * elements individually would deduplicate WITHIN a row, and a row's effect list
+ * carrying one whole effect list — not one key per effect VALUE. A fabric that
+ * keyed elements individually BY VALUE would deduplicate WITHIN a row, and a
+ * row's effect list
  * is not a set: `corpus/tier2/witness-cascade-park.itf.json`'s `ticket-revoked`
  * row carries `["Revoke", "OpenHumanTask", "OpenHumanTask"]`, two desk tasks for
  * two cascade-parked dependents, and collapsing them would open one desk task
  * for two tickets. Same key for the whole list, absorbed as a list; that is what
- * this layer proves and what s6 must wire.
+ * this layer proves.
+ *
+ * AND `src/interp/` IS WHERE IT IS NOW WIRED, with one refinement worth reading
+ * before trusting the sentence above too literally. `execute.ts` keeps the
+ * promise exactly — every effect of a row carries the row's seq, and `emitNext`
+ * is called only once the whole list has returned — but `ports.ts`'s `Delivery`
+ * keys the WORLD by the pair (seq, ordinal-in-the-row) rather than by the seq
+ * alone. That is not the per-effect key this paragraph forbids: an ordinal is a
+ * position in the row, not a property of the effect, so it collapses nothing
+ * within a row while absorbing a re-emitted row element for element. Project
+ * the ordinal away and what is left is this file's set of seqs, which is why
+ * `worldEffects` needed no change.
  *
  * EVERY ACTION IS TOTAL AND REFUSES BY ANSWERING. A guard that does not hold
  * returns `undefined`; nothing here throws to say "not enabled". That is
