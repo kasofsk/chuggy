@@ -13,6 +13,15 @@
 # Each copies the real config — a suite testing a config of its own invention
 # would pass while this tree's rules were broken.
 #
+# A RULE WITH `reachable: true` NEEDS A TREE ONLY REACHABILITY CATCHES, or the
+# flag can be deleted with this suite still green and the dimension the config
+# calls its whole reason goes unverified.
+#
+# A CASE NAMES ITS RULE WITH THE COLON THE REPORTER PRINTS AFTER IT. The bare
+# name is a substring, and a rule renamed around it — `domain-is-pure-OLD`, a
+# stale copy left beside a live one — would satisfy the match and read as the
+# rule working.
+#
 # Run:  .chug/tasks/check-boundaries.test.sh
 set -eu
 
@@ -87,7 +96,7 @@ check "the clean line counts the modules cruised" 0 "$RC" "across 2 module(s)"
 fixture
 printf '%s\n' 'import { join } from "node:path"' 'export const x = join("a", "b")' > "$R/src/domain/a.ts"
 seal
-check "the domain may not import a platform module" 1 "$RC" "domain-is-pure"
+check "the domain may not import a platform module" 1 "$RC" "domain-is-pure:"
 
 # Every file here is individually innocent, so only reachability sees it.
 fixture
@@ -95,14 +104,14 @@ mkdir -p "$R/src/domain/util"
 printf '%s\n' 'import { join } from "node:path"' 'export const paths = (a: string) => join(a, "b")' > "$R/src/domain/util/paths.ts"
 printf '%s\n' 'import { paths } from "./util/paths.ts"' 'export const decide = () => paths("x")' > "$R/src/domain/a.ts"
 seal
-check "the domain may not REACH a platform module transitively" 1 "$RC" "domain-is-pure"
+check "the domain may not REACH a platform module transitively" 1 "$RC" "domain-is-pure:"
 
 fixture
 mkdir -p "$R/src/interpreter"
 printf '%s\n' 'export const port = 1' > "$R/src/interpreter/port.ts"
 printf '%s\n' 'import { port } from "../interpreter/port.ts"' 'export const x = port' > "$R/src/domain/a.ts"
 seal
-check "the domain may not reach outward" 1 "$RC" "domain-is-pure"
+check "the domain may not reach outward" 1 "$RC" "domain-is-pure:"
 
 # --- actor-sees-domain-only --------------------------------------------------
 
@@ -126,7 +135,19 @@ printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'import { x } from "../domain/a.ts"' 'import { join } from "node:path"' 'export const y = join("a", String(x))' > "$R/src/actor/b.ts"
 printf '%s\n' 'import { y } from "../src/actor/b.ts"' 'export const z = y' > "$R/test/a.test.ts"
 seal
-check "the actor may not reach past the domain" 1 "$RC" "actor-sees-domain-only"
+check "the actor may not import a platform module" 1 "$RC" "actor-sees-domain-only:"
+
+# The one edge leaving the actor is the domain import the layer exists to take,
+# so nothing but a path through the graph reaches node:path. Without
+# `reachable: true` on the rule, domain-is-pure fires here alone and this is the
+# only case that notices.
+fixture
+mkdir -p "$R/src/actor"
+printf '%s\n' 'import { join } from "node:path"' 'export const x = join("a", "b")' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const y = x' > "$R/src/actor/b.ts"
+printf '%s\n' 'import { y } from "../src/actor/b.ts"' 'export const z = y' > "$R/test/a.test.ts"
+seal
+check "the actor may not REACH a platform module transitively" 1 "$RC" "actor-sees-domain-only:"
 
 # --- The layer boundaries ----------------------------------------------------
 
@@ -137,14 +158,14 @@ fixture
 printf '%s\n' 'export const helper = 1' > "$R/test/helper.ts"
 printf '%s\n' 'import { helper } from "../../test/helper.ts"' 'export const x = helper' > "$R/src/domain/a.ts"
 seal
-check "a source reaching a suite is a finding" 1 "$RC" "domain-is-pure"
+check "a source reaching a suite is a finding" 1 "$RC" "domain-is-pure:"
 
 # A cycle makes the layer a module belongs to unanswerable.
 fixture
 printf '%s\n' 'import { b } from "./b.ts"' 'export const a = b' > "$R/src/domain/a.ts"
 printf '%s\n' 'import { a } from "./a.ts"' 'export const b = a' > "$R/src/domain/b.ts"
 seal
-check "a cycle is a finding" 1 "$RC" "no-circular-dependency"
+check "a cycle is a finding" 1 "$RC" "no-circular-dependency:"
 
 # A module nothing reaches is dead or is a boundary nobody crossed.
 fixture
@@ -152,6 +173,6 @@ printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'export const orphaned = 1' > "$R/src/domain/orphan.ts"
 printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
 seal
-check "an orphan module is a finding" 1 "$RC" "no-orphan-module"
+check "an orphan module is a finding" 1 "$RC" "no-orphan-module:"
 
 done_ "check-boundaries.test.sh"

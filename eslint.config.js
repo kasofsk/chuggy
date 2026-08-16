@@ -11,6 +11,14 @@
 // module names no forbidden global, and a decider that reads a clock imports
 // nothing.
 //
+// THE ACTOR TAKES THE SAME AMBIENT HALF, under its own claim rather than house
+// rule 2. Every step in `src/actor/` is a deterministic function of the state
+// and its named picks, which is what makes crashing at every observable seam
+// exhaustive rather than a scheduling problem; a clock read or a drawn number
+// ends that and adds no edge for `actor-sees-domain-only` to catch. The roster
+// of capabilities has one home, below — only the subject of the message
+// differs, because only one of the two layers is house rule 2's.
+//
 // RULE 3 — every discriminated union is switched exhaustively, with
 // `assertNever` in the default arm. `switch-exhaustiveness-check` is the
 // enforcement; `src/domain/assertNever.ts` is what the arm calls.
@@ -36,40 +44,35 @@
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 
-const domainForbiddenGlobals = [
+// The capabilities a pure layer may not name, each with the sentence its
+// message completes about the layer the block below is scoped to.
+const ambientCapabilities = [
+  { name: "Date", why: "takes time as an argument" },
+  { name: "process", why: "reads no environment" },
+  { name: "fetch", why: "reaches no network" },
+  { name: "setTimeout", why: "schedules nothing" },
+  { name: "setInterval", why: "schedules nothing" },
+  { name: "setImmediate", why: "schedules nothing" },
+  { name: "queueMicrotask", why: "schedules nothing" },
+  { name: "crypto", why: "takes identifiers as arguments" },
+  { name: "performance", why: "reads no clock" },
+  { name: "structuredClone", why: "builds its own values" },
+];
+
+const noAmbientGlobals = (subject) => [
+  "error",
+  ...ambientCapabilities.map(({ name, why }) => ({
+    name,
+    message: `${subject} ${why}.`,
+  })),
+];
+
+const noAmbientDraws = (subject) => [
+  "error",
   {
-    name: "Date",
-    message: "house rule 2: the domain takes time as an argument.",
-  },
-  {
-    name: "process",
-    message: "house rule 2: the domain reads no environment.",
-  },
-  { name: "fetch", message: "house rule 2: the domain reaches no network." },
-  {
-    name: "setTimeout",
-    message: "house rule 2: the domain schedules nothing.",
-  },
-  {
-    name: "setInterval",
-    message: "house rule 2: the domain schedules nothing.",
-  },
-  {
-    name: "setImmediate",
-    message: "house rule 2: the domain schedules nothing.",
-  },
-  {
-    name: "queueMicrotask",
-    message: "house rule 2: the domain schedules nothing.",
-  },
-  {
-    name: "crypto",
-    message: "house rule 2: the domain takes identifiers as arguments.",
-  },
-  { name: "performance", message: "house rule 2: the domain reads no clock." },
-  {
-    name: "structuredClone",
-    message: "house rule 2: the domain builds its own values.",
+    object: "Math",
+    property: "random",
+    message: `${subject} takes its draws as arguments.`,
   },
 ];
 
@@ -132,15 +135,8 @@ export default tseslint.config(
   {
     files: ["src/domain/**/*.ts"],
     rules: {
-      "no-restricted-globals": ["error", ...domainForbiddenGlobals],
-      "no-restricted-properties": [
-        "error",
-        {
-          object: "Math",
-          property: "random",
-          message: "house rule 2: the domain takes its draws as arguments.",
-        },
-      ],
+      "no-restricted-globals": noAmbientGlobals("house rule 2: the domain"),
+      "no-restricted-properties": noAmbientDraws("house rule 2: the domain"),
       "no-restricted-imports": [
         "error",
         {
@@ -157,6 +153,13 @@ export default tseslint.config(
           ],
         },
       ],
+    },
+  },
+  {
+    files: ["src/actor/**/*.ts"],
+    rules: {
+      "no-restricted-globals": noAmbientGlobals("the journaled actor"),
+      "no-restricted-properties": noAmbientDraws("the journaled actor"),
     },
   },
   // The configs themselves. They sit outside tsconfig.json's include, so the

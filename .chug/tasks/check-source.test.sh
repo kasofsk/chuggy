@@ -127,6 +127,13 @@ clean_source
 	printf '%s\n' 'import { join } from "node:path";'
 	printf '%s\n' 'export const p = join("a", "b");'
 } > "$R/src/domain/imports.ts"
+# The actor carries the same ambient ban under its own claim, so the same
+# constructs must be findings one directory over and named for that layer.
+mkdir -p "$R/src/actor"
+{
+	printf '%s\n' 'export const stamped = Date.now();'
+	printf '%s\n' 'export const drawn = Math.random();'
+} > "$R/src/actor/ambient.ts"
 {
 	printf '%s\n' 'type Kind = { k: "a" } | { k: "b" };'
 	printf '%s\n' 'export function pick(v: Kind): string {'
@@ -166,6 +173,8 @@ check "house rule 2: the domain may not import a platform module" 1 "$RC" "impor
 check "house rule 3: a non-total switch is a finding" 1 "$RC" "Switch is not exhaustive"
 check "house rule 4: a floating promise is a finding" 1 "$RC" "Promises must be awaited"
 check "house rule 5: a function over the cap is a finding" 1 "$RC" "Maximum allowed is 70"
+check "the actor may not read a clock either" 1 "$RC" "the journaled actor takes time as an argument"
+check "the actor may not draw randomness either" 1 "$RC" "the journaled actor takes its draws as arguments"
 
 # The floating-promise exemption is narrow: node:test's own functions and
 # nothing else. The clean fixture's suite calls `test` without awaiting it, so

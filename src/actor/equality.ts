@@ -3,11 +3,20 @@
  * per shape, each a conjunction over the shape's declared fields.
  *
  * The model compares records and states with its own `==`; here the replay
- * checker and the recovery obligation ask the same question, so the answer is
- * a pure function rather than a serialization the reader cannot audit. The
- * per-field spelling is deliberate: a field added to a domain type makes the
- * equality here a compile-time gap the moment the conjunction reads it, where
- * a generic deep comparison would silently start comparing it.
+ * checker and the recovery obligation ask the same question, and the answer is
+ * written out because `actor-sees-domain-only` in `.dependency-cruiser.cjs`
+ * puts `node:util`'s deep compare outside this layer's graph. What is left is
+ * a pure function of the domain's own types, which a reader can audit where a
+ * serialization would not be.
+ *
+ * WHAT A CONJUNCTION CANNOT SAY IS THAT IT IS COMPLETE. A variant arm is total
+ * by `assertNever` on its tag, but a product's conjunction compiles and
+ * answers `true` on two values differing only in a field nobody conjoined —
+ * which is `recoveryComplete` green on a state the journal cannot rebuild, and
+ * `journalLegalOn` accepting a forged record. `test/actor/equality.test.ts`
+ * holds each product shape to a `Record<keyof Shape, ...>` roster, so a field
+ * added to a domain type is a compile error there and an unread field in the
+ * roster is a failing case.
  */
 
 import { assertNever } from "../domain/assertNever.ts";

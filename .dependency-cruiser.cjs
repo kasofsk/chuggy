@@ -52,8 +52,9 @@ module.exports = {
         "nothing else, transitively, by any path in the module graph. What " +
         "that buys is the crash-seam demonstration — every actor step is a " +
         "pure function of its state and picks, so crashing at every " +
-        "observable seam is exhaustive; a path from the actor to a platform " +
-        "module or an outer layer is where that quietly stops being true.",
+        "observable seam is exhaustive. This rule is the graph half of that " +
+        "and the ambient half is `eslint.config.js`, because a step that " +
+        "reads a clock takes no path anywhere for a graph rule to find.",
       severity: "error",
       from: { path: "^src/actor/" },
       to: {
