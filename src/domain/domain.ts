@@ -6,8 +6,10 @@
  * WHAT IS NOT HERE, and where it goes instead: the model's state-and-actions
  * section (the four vars, `init`, the thirteen actions, `installCore`) is the
  * machine's rather than a decider's — its TypeScript home is the spine, s3 —
- * and the twenty-three invariants are s2c's. This file is exactly the part of
- * `chuggy_domain` that is a pure function of a `Core`.
+ * and the conjuncts of `allInvariants` are s2c's — named rather than counted,
+ * because the bundle has already gained one since this line was written. This
+ * file is exactly the part of `chuggy_domain` that is a pure function of a
+ * `Core`.
  *
  * THE MODEL IS THE SPEC AND ITS HEADER IS THE ARGUMENT. Why a ticket's life has
  * the shape it has, why the cascade parks rather than cascade-revokes, why
@@ -1427,8 +1429,9 @@ export function decideRevalFail(c: Core, j: number): Decision {
 }
 
 /**
- * `model/domain.qnt` decideOpRetry — THE operator resume: one decider, four
- * flavors, one trace label, the flavor visible in the transition's target.
+ * `model/domain.qnt` decideOpRetry — THE operator resume: one decider, a flavor
+ * per resume point, one trace label, the flavor visible in the transition's
+ * target.
  *
  * THE GUARD IS `retryableIn` MINUS THE ARM THE MODEL WROTE, and it is written
  * as that subtraction rather than as a copy: `hasModeledResume` is the conjunct

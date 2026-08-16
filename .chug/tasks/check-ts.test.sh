@@ -15,10 +15,10 @@
 # the fixture. Two cases run every stage on purpose: one to show a clean tree
 # is clean, and one to show that a finding in an early stage does not stop a
 # later one from reporting its own. Every case scaffolds its own git checkout
-# and drives the real toolchain over it, which is why this is the slowest
-# thing `.chug/tasks/ci.sh` runs before the model — `time sh
-# .chug/tasks/check-ts.test.sh` says by how much on the host that asks. So a
-# new case should share a run where it can, which is why the roster assertions
+# and drives the real toolchain over it, which is why this is the slowest thing
+# `.chug/tasks/ci.sh` runs before the model; how much slower is what
+# `time sh .chug/tasks/check-ts.test.sh` says on the host that asks. So a new
+# case should share a run where it can, which is why the roster assertions
 # share one rather than scaffolding a tree apiece.
 #
 # THE POSITIVE CONTROL IS A CASE, NOT A COMMENT. `Date.now()` in
@@ -466,9 +466,8 @@ check "depcruise with no verdict exits 2, not 1" 2 "$RC" "produced no verdict"
 #     exactly that many violations exits 0. Measured, not theorised: the loop
 #     below writes one leaking domain module per unit of the modulus, and the
 #     run exits 0 while printing `256 errors`. A gate that trusted the code
-#     would call the dirtiest
-#     graph this tree can produce clean, so the count is read from the printed
-#     line and the code is only a corroborator.
+#     would call the dirtiest graph this tree can produce clean, so the count
+#     is read from the printed line and the code is only a corroborator.
 scaffold
 n=0
 while [ "$n" -lt 256 ]; do

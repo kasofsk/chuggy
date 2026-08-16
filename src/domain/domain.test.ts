@@ -76,8 +76,9 @@
  * mirrored as the model states them — descends, climbs, or exactly flat —
  * through `measure.ts`, which pins its own integers.
  *
- * WHAT IS DELIBERATELY ABSENT: the 24 domain invariants (s2c) — 24 rather than
- * 23 since `wrapUpWellFormed` joined `allInvariants` — and the model's
+ * WHAT IS DELIBERATELY ABSENT: the conjuncts of `allInvariants` (s2c), named
+ * rather than counted because `wrapUpWellFormed` joined the bundle after this
+ * line was first written and the count went stale where it stood — and the model's
  * state-and-actions section — `init`, the thirteen actions and the ghosts are
  * the machine's, and the spine (s3) is where they land.
  */

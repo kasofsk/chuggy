@@ -43,9 +43,8 @@
 # WHY ONE GATE AND NOT ONE PER STAGE. `.chug/tasks/check-gates.sh` requires a
 # sibling suite per gate, so a gate per stage would be a suite per stage
 # sharing one fixture builder — the duplication `.chug/tasks/_suite.sh` exists
-# to stop — behind a label apiece in `.chug/tasks/ci.sh` that pass and fail
-# together after the same `npm ci`. What a split buys is running one check
-# alone, and
+# to stop — behind labels in `.chug/tasks/ci.sh` that pass and fail together
+# after the same `npm ci`. What a split buys is running one check alone, and
 # that is an argument, not a file:
 #
 #   .chug/tasks/check-ts.sh            every stage, in the order below
@@ -61,11 +60,11 @@
 # cannot be saved by going first — and it does not discriminate anyway: no
 # stage on this tree is an order of magnitude dearer than its neighbours, and
 # `time ./.chug/tasks/check-ts.sh <stage>` is how to see that rather than take
-# it on trust. What the fixed order
-# buys is that the same tree always reports the same way, coarsest question
-# first: is it written the way this repo writes things, does it typecheck, does
-# it lint, is the domain pure, do the tests pass. Where the gate as a whole
-# sits in `.chug/tasks/ci.sh` IS a cost decision, and it is made there.
+# it on trust. What the fixed order buys is that the same tree always reports
+# the same way, coarsest question first: is it written the way this repo writes
+# things, does it typecheck, does it lint, is the domain pure, do the tests
+# pass. Where the gate as a whole sits in `.chug/tasks/ci.sh` IS a cost
+# decision, and it is made there.
 #
 # NOT IN `.githooks/pre-commit`, deliberately. That hook's budget is about two
 # seconds and it already declines the shell suites for being slower than that.
