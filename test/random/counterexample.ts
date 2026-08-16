@@ -22,7 +22,11 @@ import { join } from "node:path";
 
 import type { Config } from "../../src/domain/config.ts";
 import { initRecord } from "../../src/domain/core.ts";
-import { encodeCore, encodeStepRecord } from "../itf/vocabulary.ts";
+import {
+  encodeCore,
+  encodeOption,
+  encodeStepRecord,
+} from "../itf/vocabulary.ts";
 import { drawnWire, type Drawn } from "./draws.ts";
 import { shrinkSteps } from "./shrink.ts";
 import {
@@ -40,19 +44,12 @@ export function seedLabel(seed: number): string {
   return `0x${seed.toString(16)}`;
 }
 
-/** One drawn-or-not pick under the option tagging `--mbt` writes. */
-function optionOf(value: unknown): unknown {
-  return value === undefined
-    ? { tag: "None", value: { "#tup": [] } }
-    : { tag: "Some", value };
-}
-
 /** A whole `mbt::nondetPicks` record, every pick present, absent draws as `None`. */
 function nondetPicksOf(drawn: Drawn): unknown {
   return Object.fromEntries(
     Object.entries(drawnWire(drawn)).map(([name, wire]) => [
       name,
-      optionOf(wire),
+      encodeOption(wire),
     ]),
   );
 }

@@ -349,6 +349,14 @@ export function encodeInt(value: number): unknown {
   return { "#bigint": String(value) };
 }
 
+/**
+ * Wraps an already-encoded value in the option tagging `--mbt` writes around a
+ * nondet pick. `undefined` is the draw the action does not make, and is `None`.
+ */
+export function encodeOption(encoded: unknown): unknown {
+  return encoded === undefined ? tagged("None") : tagged("Some", encoded);
+}
+
 function encodeTaskKind(kind: TaskKind): unknown {
   return kind.kind === "TKWork"
     ? tagged("TKWork")
