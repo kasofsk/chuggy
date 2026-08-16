@@ -1,16 +1,20 @@
 /**
- * The two assertion mechanisms the engineering bar names by hand, homed in the
- * layer that may not reach anything else: `assertNever` for the default arm of
- * an exhaustive switch, and `invariant` for the liberal assertions domain code
- * is required to carry.
+ * The deepest layer's own helpers: the two assertion mechanisms the engineering
+ * bar names by hand — `assertNever` for the default arm of an exhaustive
+ * switch, `invariant` for the liberal assertions domain code is required to
+ * carry — the error they raise, and `messageOf`, which every layer that catches
+ * needs and none of them should write twice.
  *
  * They live here rather than in a shared utility directory because they are
  * pure and because the domain is the deepest layer — a helper above it could
  * not be called from inside it without breaking the module-graph rule that
  * governs this directory. Every layer above may import downward.
  *
- * Neither is model content: `model/domain.qnt` has no counterpart to either.
- * They are the toolchain's contribution, and the later slices consume them.
+ * NONE OF THE FOUR IS MODEL CONTENT — not `AssertionError`, not `invariant`,
+ * not `assertNever`, not `messageOf`. `model/` has a counterpart to none of
+ * them: Quint needs no exhaustiveness escape, asserts nothing at runtime, and
+ * catches nothing. They are the toolchain's contribution, and every slice above
+ * consumes them.
  */
 
 /** Thrown by both helpers, so a failed assertion is distinguishable by type. */

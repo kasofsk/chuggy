@@ -101,8 +101,9 @@ export type Task = {
  * sequential within the ticket and never reused (`model/measure.qnt` Task), so
  * ascending id is a total order on any set the machine can build, and two
  * canonical arrays are structurally equal exactly when the sets they denote
- * are equal. That is the property the golden-trace replay in a later slice
- * needs, and a `Set` would not have it.
+ * are equal. That is the property the golden-trace replay needs — `replay.ts`
+ * compares a decided task set against the model's own, step for step — and a
+ * `Set` would not have it.
  *
  * The order also removes the one place the model is order-nondeterministic —
  * see `evalStage`, which asserts rather than picking.
@@ -280,8 +281,9 @@ export type Transition = {
 /**
  * `model/measure.qnt` StepRecord — one decision's observable record,
  * golden-trace shaped. `effects` stays `string[]` because the model's effects
- * are strings; the typed effect vocabulary is a later slice's, and it
- * serializes to exactly these strings.
+ * are strings; the typed effect vocabulary is `src/effects/effect.ts`'s, whose
+ * constructors ARE these strings — so it types this field's contents without
+ * changing one stored byte of it.
  */
 export type StepRecord = {
   readonly label: string;

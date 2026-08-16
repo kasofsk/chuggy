@@ -49,10 +49,13 @@ import type { JournalStore } from "../spine/journal-store.ts";
 /**
  * A fresh, empty in-memory journal.
  *
- * A factory rather than a class, on the tree's own precedent: nothing else in
- * `src/` declares one, and the closure gives the log the encapsulation a
- * private field would — `rows` is unreachable except through the two methods
- * that keep the promises.
+ * A factory rather than a class, and the reason is the closure rather than a
+ * count: `rows` is unreachable except through the two methods that keep the
+ * promises, which is the encapsulation a private field would buy and one fewer
+ * thing to construct. The tree does declare classes where a class is the right
+ * shape — `CoverageBuilder` is a mutable accumulator, and three error types
+ * extend `Error` because that is how a `catch` discriminates — so "nothing else
+ * in `src/` declares one" was never true and is not the argument.
  */
 export function createInMemoryJournalStore(): JournalStore {
   const rows: Entry[] = [];

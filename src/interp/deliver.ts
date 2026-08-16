@@ -17,9 +17,10 @@
  * numbers is built per call and discarded with it, so a redelivery arriving in
  * a LATER batch is handled again — and the order check has no memory of the
  * previous batch's high-water mark either. Absorption ACROSS calls needs a
- * cursor that outlives them; that cursor is the executor's, and it is s5's.
- * What is here is the within-batch half, which is the half that does not
- * depend on a journal existing yet.
+ * cursor that outlives them; that cursor is the executor's — `actor.ts`'s
+ * `applied`, advanced by `emitNext` — and `execute.ts` is where the two meet.
+ * What is here is the within-batch half, which is the half that depends on no
+ * journal at all.
  *
  * It is generic in both the effect and the handler's result, and `execute.ts`
  * is what composes it. WHAT IT CONTRIBUTES THERE IS THE ORDER CHECK AND THE

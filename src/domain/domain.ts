@@ -1046,6 +1046,30 @@ function resolutionOf(v: Verdict): TaskOutcome {
  * in the LIVE set makes this a duplicate or a stale delivery, and the decision
  * is a state-identical no-op — staleness absorbed by identity, because task
  * ids are unique across the ticket's whole history.
+ *
+ * IT ASSERTS WHERE THE MODEL IS TOTAL, and that is a different departure from
+ * the file header's rule than every other assertion here. Elsewhere the rule is
+ * "every STATED caller guarantee is asserted, by calling the predicate that
+ * states it", and the guarantee is stated — in the model's prose, in the
+ * action's draw set, or by a `get` the model's own body would error on. Here
+ * the model states NONE and the body is total: an unknown `tid` finds no live
+ * match and falls to the duplicate arm, and a ticket in no task phase would
+ * simply be read. So the two `invariant`s below make a partial function out of
+ * a total one, deliberately. `decideCompleteDuplicate` is the only other
+ * decider in this file that does it, for the same reason and with the same
+ * argument.
+ *
+ * IT COSTS NO CONFORMANCE, and that is the whole argument for it. The model's
+ * own `taskDone` action draws `j` from `taskPhaseTickets` and `tid` from
+ * `deliverableTaskIds(core, j)`, and `model/refinement.qnt`'s `cmdEnabled`
+ * states the same pair on its `JTaskDone` arm — so no machine step, no journal
+ * row and no golden trace can deliver a call these two refuse. What they turn
+ * into a loud failure is a CALLER that reached past the guard: an interpreter
+ * translating a fabric report, or a suite building a call by hand. Absorbing
+ * that silently as a duplicate is the one answer that would be
+ * indistinguishable from the absorption the arm below is FOR, which is why the
+ * strictness wins over the totality here. `domain.test.ts` pins both refusals,
+ * and pins that the absorb-by-identity claim itself is unaffected.
  */
 export function decideTaskDone(
   c: Core,
@@ -1445,6 +1469,15 @@ export function decideWrapUpResolve(
  * `model/domain.qnt` decideCompleteDuplicate — a duplicate landing event for an
  * already-Done ticket. NO completion effect is emitted, and that no-op IS the
  * exactly-once-at-the-landing-boundary claim.
+ *
+ * THE SECOND OF THE TWO DECIDERS THAT ASSERT WHERE THE MODEL IS TOTAL, on
+ * `decideTaskDone`'s argument and for its reason: the model's definition is
+ * `noop` over any `j` at all, its `completeDuplicate` action draws `j` from
+ * `doneTickets`, and `cmdEnabled`'s `JCompleteDuplicate` arm asks `doneIn` — so
+ * nothing the machine can take is refused here, and what the assertion catches
+ * is a caller that reached past the guard. Absorbing that silently would make a
+ * re-delivery for a ticket that never landed indistinguishable from one for a
+ * ticket that did, which is the whole claim this decider makes.
  */
 export function decideCompleteDuplicate(c: Core, j: number): Decision {
   invariant(

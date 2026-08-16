@@ -6,7 +6,7 @@
  * the machine's own step and the golden-trace replayer — the path standing
  * rule 4 rests on, where "the same Core and the same event produce the same
  * StepRecord on any host at any hour" is the whole conformance argument, and
- * where s5's `replayCore` will fold. A clock there voids the replay exactly as
+ * where s5's `replayCore` folds. A clock there voids the replay exactly as
  * a clock in a decider does. `src/tools/` is deliberately NOT here: it reads
  * the filesystem and spawns quint by design, and what keeps that honest is the
  * module graph's reachability rules, which forbid anything pure from reaching

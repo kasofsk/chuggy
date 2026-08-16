@@ -177,11 +177,12 @@ export function isSpawnFor(rec: StepRecord, j: number): boolean {
  * `model/refinement.qnt` isCompletionFor — the emission that merges ticket
  * `j`'s diff.
  *
- * The model's name for this is `isCompletionFor` and `PLAN.md`'s s5 row still
- * calls it `isLandingFor`; the model is the spec, so the name here is the
- * model's. The same rename reached `journalCompletionsMatchLedger`, which
- * `ORCHESTRATION.md` still calls `journalLandingsMatchLedger` — recorded in
- * `PLAN.md`'s divergence section rather than edited into the mandate text.
+ * The model's name for this is `isCompletionFor`, and the model is the spec, so
+ * the name here is the model's. `PLAN.md`'s s5 row has since been brought to
+ * it. The same rename reached `journalCompletionsMatchLedger`, which
+ * `ORCHESTRATION.md` still calls `journalLandingsMatchLedger` — a name no
+ * definition in `refinement.qnt` answers to, recorded in `PLAN.md`'s divergence
+ * section rather than edited into the mandate text.
  */
 export function isCompletionFor(rec: StepRecord, j: number): boolean {
   return rec.label === "ticket-done" && stepsTicket(rec, j);

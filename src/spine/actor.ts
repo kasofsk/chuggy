@@ -162,7 +162,8 @@ declare const durable: unique symbol;
  * store's append fence and `commit`'s length cross-check refuse it at the next
  * commit. What the brand stops is the honest mistake — wiring an executor to
  * the output of a decide step — which is the one that actually happens, and the
- * one `src/interp/` will be built on top of.
+ * one `src/interp/`'s `interpret` is built on top of: it takes a `DurableState`
+ * and nothing else.
  */
 export type DurableState = ActorState & { readonly [durable]: true };
 

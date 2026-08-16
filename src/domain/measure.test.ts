@@ -712,9 +712,11 @@ test("the accounts of a Budgeted ticket escape their radix under DeadlineOnly bo
   assert.ok(!accountDigitsInRange(bBudgeted, { ...jWork, gasLeft: -1 }));
   // ONE CONJUNCT PER LINE, all five. Three of them — both reworkLeft bounds
   // and wrapUpLeft's lower one — could be deleted with the suite still green
-  // when only the other two were pinned. s2a/s2b are the callers that will
-  // rely on this predicate to know when the flattening may be read
-  // lexicographically, so an unpinned conjunct is a promise nothing keeps.
+  // when only the other two were pinned. The caller that relies on this
+  // predicate is `invariants.ts`'s `accountsBounded`, which delegates every
+  // comparison but the gas ceiling to it and is asked after every replayed
+  // step and every walk step — so an unpinned conjunct is a promise nothing
+  // keeps, in the one predicate the whole bundle leans on for its accounts.
   assert.ok(!accountDigitsInRange(bBudgeted, { ...jWork, wrapUpLeft: -1 }));
   assert.ok(!accountDigitsInRange(bBudgeted, { ...jWork, reworkLeft: -1 }));
   assert.ok(

@@ -12,7 +12,7 @@
  * the two files can be diffed by eye, and every conjunct of every run is
  * asserted — not a summary of it.
  *
- * THREE CLAIMS ARE THIS FILE'S OWN, because they are about the TypeScript and
+ * FIVE CLAIMS ARE THIS FILE'S OWN, because they are about the TypeScript and
  * the model has no counterpart to make:
  *
  *   - `genesis` is `initialState`'s fleet. The model gets this for free by
@@ -24,6 +24,14 @@
  *     enablement-first ordering's whole payoff, and it is only visible from
  *     both sides: the checker answers, the fold does not, which is exactly why
  *     the checker runs first.
+ *   - A SEQ EMITTED TWICE IS COUNTED ONCE. The model gets this for free from
+ *     `Set[int]` — a Quint set cannot be handed the same element twice — so its
+ *     own run cannot show the half that matters here, where a `Set` is a
+ *     mutable object something could `add` to again.
+ *   - A RECORD WITH NO HEAD TRANSITION IS CHARGED TO NOBODY, rather than to
+ *     ticket 0. `stepsTicket` reads `transitions[0]` and TypeScript answers
+ *     `undefined` where Quint's own indexing would not be reached at all, so
+ *     the empty case is this language's to get right.
  */
 
 import assert from "node:assert/strict";

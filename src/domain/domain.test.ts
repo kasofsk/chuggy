@@ -472,7 +472,7 @@ test("staleStageCompletionNoopsTest: a completion for a RETIRED id no-ops by ide
   // and no golden trace can deliver it, because the action draws j from
   // `taskPhaseTickets` — and `model/refinement.qnt`'s `cmdEnabled` states the
   // same pair on its `JTaskDone` arm (`taskPhaseIn` and `deliverableTaskIds`),
-  // which is the citation that matters for s3: the replayer will refuse the
+  // which is the citation that matters for the spine: `cmdEnabled` refuses the
   // command at the same two guards this refuses the call at, so the strictness
   // costs no conformance. The absorb-by-identity claim itself is
   // pinned above at c4, and inside the task phase at `cS1`

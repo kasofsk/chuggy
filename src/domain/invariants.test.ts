@@ -79,8 +79,8 @@
  * `idsDense` at DB's consts, because `N_TICKETS` is 2 there and those fleets
  * carry three or four tickets. Nothing is wrong with them — they exist to pin
  * guards over a phase domain, and a guard does not ask about the arrival bound —
- * but the moment s3 asserts the bundle after every replayed step, a fleet
- * borrowed from that suite will red for a reason that has nothing to do with the
+ * but `replay.ts` asserts the bundle after every replayed step, so a fleet
+ * borrowed from that suite reds for a reason that has nothing to do with the
  * step. The fleets built here take `cfgFleet` for exactly that reason.
  */
 
@@ -343,8 +343,8 @@ test("every landed fixture is a state the bundle accepts", () => {
 
 test("the bundle is green on real pre/post pairs, not only on hand-built states", () => {
   // Four deciders, four step pairs, each carrying its own `StepRecord` and the
-  // pre-state's measure and records — the shape the spine will hand the bundle
-  // after every replayed step.
+  // pre-state's measure and records — the shape `machine.ts`'s `applyDecision`
+  // hands the bundle after every replayed step.
   const beforeRelease = solo(jDraft);
   const beforeDispatch = solo(jPend);
   const beforeLanding = solo(jGatedRun);
