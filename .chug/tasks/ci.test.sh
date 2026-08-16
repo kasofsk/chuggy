@@ -93,9 +93,15 @@ check "a passing suite leaves the run clean" 0 "$RC" "all gates clean"
 
 # 6. The budget stops between suites and NAMES what it did not run. A budget
 #    that silently truncates reads as full coverage.
+#
+#    A skipped suite is a could-not-run, not a finding, and EVERY skipped suite
+#    counts: the tally used to take one increment for the whole truncated tail,
+#    so a budget that stopped the entire stage reported the same as a single
+#    gate finding. Two suites here, so the tally has something to get wrong.
 stub_repo 0
 printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/one.test.sh"
-chmod +x "$R/.chug/tasks/one.test.sh"
+printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/two.test.sh"
+chmod +x "$R/.chug/tasks/one.test.sh" "$R/.chug/tasks/two.test.sh"
 git -C "$R" add -A
 OUT="$WORK/.out"
 set +e
@@ -103,8 +109,10 @@ set +e
 	./.chug/tasks/ci.sh) >"$OUT" 2>&1
 RC=$?
 set -e
-check "an exhausted budget names the suites it skipped" 1 "$RC" "did NOT run"
-check "the skipped suite is named, not just counted" 1 "$RC" "one.test.sh"
+check "an exhausted budget names the suites it skipped" 2 "$RC" "did NOT run"
+check "the skipped suite is named, not just counted" 2 "$RC" "one.test.sh"
+check "a skipped suite is a could-not-run, not a failure" 2 "$RC" \
+	"2 gate(s) could not run"
 
 # 7. No suites at all -> could not run. The glob matching nothing must not read
 #    as "the suites passed".
@@ -119,5 +127,31 @@ set +e
 RC=$?
 set -e
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
+
+# 9. THE PER-SUITE CAP, which nothing drove until now — the one bound this file
+#    announces on every run and had never once applied in a case. A suite the
+#    cap kills reached no verdict, so it is a could-not-run and not a finding,
+#    and the message has to name the cap: a reader told only "rc=124" goes
+#    looking for a bug in a suite that never got to have one.
+#
+#    Skipped where no working `timeout` resolves, on ci.sh's own probe and for
+#    its reason: macOS ships neither, the stage runs uncapped there, and a
+#    sleeping suite with nothing to kill it would hang this file instead.
+if timeout 5 true > /dev/null 2>&1 || gtimeout 5 true > /dev/null 2>&1; then
+	stub_repo 0
+	printf '#!/bin/sh\nsleep 30\n' > "$R/.chug/tasks/slow.test.sh"
+	chmod +x "$R/.chug/tasks/slow.test.sh"
+	git -C "$R" add -A
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && CHUG_CI_SHELL_SUITES=1 CHUG_CI_SUITE_TIMEOUT_SECS=2 \
+		./.chug/tasks/ci.sh) >"$OUT" 2>&1
+	RC=$?
+	set -e
+	check "a suite the cap killed exits 2, not 1" 2 "$RC" "per-suite cap"
+	check "the killed suite is named" 2 "$RC" "slow.test.sh"
+else
+	echo "skip - the per-suite cap (no working timeout or gtimeout on this host)"
+fi
 
 done_ "ci.test.sh"

@@ -17,7 +17,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/_suite.sh"
 SUT="$HERE/doc-lint.sh"
 BARE="$(mktemp -d)"
-trap 'rm -rf "$WORK" "$BARE"' EXIT
+EMPTY="$(mktemp -d)"
+trap 'rm -rf "$WORK" "$BARE" "$EMPTY"' EXIT
 
 git -C "$WORK" init -q -b main
 git -C "$WORK" config user.email t@example.com
@@ -141,5 +142,34 @@ set +e
 RC=$?
 set -e
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
+
+# A repo with commits and no markdown in them. Whole-tree mode DISCOVERED this
+# corpus, so an empty result is a glob that matched nothing rather than a tree
+# with nothing wrong with it — and the argument case above proves the two are
+# still told apart, because there the caller named the files.
+fresh_repo "$EMPTY"
+printf 'placeholder\n' > "$EMPTY/README.txt"
+git -C "$EMPTY" add -A
+OUT="$EMPTY/.out"
+set +e
+(cd "$EMPTY" && "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "an empty discovered corpus exits 2, not 0" 2 "$RC" "the glob matched nothing"
+
+# A FILTER THAT FAILED IS NOT A FILTER THAT MATCHED NOTHING. The blank-line
+# filter's status used to be discarded, so a grep that could not run at all
+# emptied the file list and the gate reported the whole corpus as absent — over
+# a tree that is full of markdown, as $WORK is here.
+BIN="$WORK/brokenbin"
+tools_only "$BIN" git
+printf '#!/bin/sh\nexit 2\n' > "$BIN/grep"
+chmod +x "$BIN/grep"
+OUT="$WORK/.out"
+set +e
+(cd "$WORK" && env PATH="$BIN" "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "a failed filter exits 2, not 0" 2 "$RC" "the file-list filter failed"
 
 done_ "doc-lint.test.sh"

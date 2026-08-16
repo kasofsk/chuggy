@@ -21,6 +21,25 @@
 # binary wins over anything on PATH, because a verdict that depends on which
 # copy happens to be installed is not a verdict.
 #
+# THE FILE COUNT IS READ FROM THE REPORT'S TOTAL ROW, and the escape codes are
+# stripped before anything is parsed. The count used to be scraped from the
+# table header with a regex that ran into a colour escape and stopped there, so
+# it reported the escape's own digits: the same number on every tree, on every
+# host, whatever was scanned. It looked like a measurement and was a constant.
+# A count of zero, or one this gate cannot parse, is now a could-not-run under
+# the same policy as a missing verdict below — a corpus an `ignorePattern` edit
+# has collapsed to nothing reports "no clones" truthfully and means nothing by
+# it, and that is precisely the reading this gate must not offer.
+#
+# WHAT IT CANNOT SEE. The detector has a floor — the `--min-lines` and
+# `--min-tokens` arguments below — and a clone shorter than that floor is
+# invisible to it however many times it is pasted. A short shared helper
+# duplicated across every suite is exactly that shape: `_suite.sh` exists
+# because a reviewer noticed one, not because this gate did, and the next one
+# will be caught the same way. Nor does it see a clone that has been edited
+# apart since it was pasted, which is the state every clone reaches eventually
+# and the reason the threshold is zero rather than a budget.
+#
 # Exits 0 clean, 1 on a finding, 2 when it could not run — and a fetch failure
 # must never read as "no duplication", which is why the output is checked for a
 # verdict rather than the exit code being trusted alone.
@@ -45,14 +64,22 @@ else
 	exit 2
 fi
 
+raw="$(mktemp)"
 out="$(mktemp)"
-trap 'rm -f "$out"' EXIT
+trap 'rm -f "$raw" "$out"' EXIT
 
 set +e
 # shellcheck disable=SC2086
-$RUN --min-lines 10 --min-tokens 80 --threshold 0 --reporters console . > "$out" 2>&1
+$RUN --min-lines 10 --min-tokens 80 --threshold 0 --reporters console . > "$raw" 2>&1
 rc=$?
 set -e
+
+# The console reporter colours its table whether or not a human is watching,
+# and every parse below reads the plain text. The escape is spelled with printf
+# rather than written into the pattern, because the `\x` form is a GNU sed
+# extension and the machine this runs on ships the other sed.
+esc="$(printf '\033')"
+sed "s/${esc}\[[0-9;]*m//g" "$raw" > "$out"
 
 # A run that produced no verdict did not measure anything — a network failure
 # exits non-zero with no findings, and reporting that as duplication would be
@@ -70,4 +97,20 @@ if [ "$rc" -ne 0 ]; then
 	exit 1
 fi
 
-echo "check-duplication: no clones ($(grep -oE 'Files analyzed[^0-9]*[0-9]+' "$out" | grep -oE '[0-9]+$' || echo '?') files)"
+# The Total row, which the per-format rows above it sum into. A verdict of
+# "clean" over a corpus this gate cannot show it read is no verdict at all.
+scanned="$(sed -n 's/.*Total:[^0-9]*\([0-9][0-9]*\).*/\1/p' "$out" | tail -1)"
+if [ -z "$scanned" ]; then
+	echo "check-duplication: LINTER ERROR — no Total row in the report, so the"
+	echo "    number of files scanned is unknown and \"no clones\" claims nothing:"
+	sed 's/^/    /' "$out"
+	exit 2
+fi
+if [ "$scanned" -eq 0 ]; then
+	echo "check-duplication: LINTER ERROR — jscpd analyzed no files. Check the"
+	echo "    \`ignorePattern\` in .jscpd.json: a corpus narrowed to nothing"
+	echo "    reports no clones and has measured none."
+	exit 2
+fi
+
+echo "check-duplication: no clones ($scanned files)"

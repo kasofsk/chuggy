@@ -80,4 +80,35 @@ RC=$?
 set -e
 check "outside a checkout the hook fails open" 0 "$RC" "skipping"
 
+# 7. THE STAGED-ARGUMENT BRANCH, which nothing here drove. check-paths is the
+#    one gate the hook narrows: whole-tree in `just check`, staged-only here,
+#    and the narrowing is a hand-rolled split of `git diff --cached` output
+#    onto the argument list. Get that split wrong and the gate is handed one
+#    argument that names no file, answers "no readable files to scan", exits 0
+#    — and the hook reports a clean commit having checked nothing.
+#
+#    So the case drives the REAL check-paths over a real staged set, with the
+#    claim in the LAST staged file: a split that collapsed would not reach it.
+#    check-paths itself is left unstaged, because a gate script full of true
+#    claims about the repo it ships in is full of false ones about a fixture.
+staged_repo() { # <notes.md body>
+	stub_repo 0
+	printf 'placeholder\n' > "$R/README.md"
+	printf '%s\n' "$1" > "$R/notes.md"
+	git -C "$R" add -A
+	cp "$HERE/../.chug/tasks/check-paths.sh" "$R/.chug/tasks/check-paths.sh"
+	chmod +x "$R/.chug/tasks/check-paths.sh"
+}
+
+staged_repo 'It is written in `.chug/tasks/nope.sh`.'
+run_hook
+check "a staged file with a bad path claim rejects" 1 "$RC" "REJECTED by check-paths"
+check "the staged file is reached, so the split held" 1 "$RC" ".chug/tasks/nope.sh"
+
+# The control. Same staged set, a claim that resolves — so the rejection above
+# is the claim's doing and not the branch's mere existence.
+staged_repo 'It is written in `.chug/tasks/doc-lint.sh`.'
+run_hook
+check "a staged file with a good path claim passes" 0 "$RC" "clean"
+
 done_ "pre-commit.test.sh"

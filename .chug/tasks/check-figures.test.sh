@@ -162,4 +162,24 @@ check "an empty corpus exits 2, not 0" 2 "$RC" "glob matched nothing"
 run_in "$BARE"
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
 
+# 17. NO AWK IS A BROKEN GATE, NOT A PASS. The whole scan is one awk program,
+#     and without the guard the shell exits on the missing command with a
+#     status this gate's header does not claim and the sequencer reads as
+#     neither a finding nor a refusal it can name.
+#     The PATH carries everything else the gate reaches for, so awk is the only
+#     thing missing and the exit status is about awk and nothing else. Strip
+#     git too and the gate refuses one step earlier, for a different reason,
+#     and the case would pass without the guard existing.
+NOAWK="$WORK/noawk"
+tools_only "$NOAWK" git mktemp grep cat rm
+fresh_repo "$R"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$R/gate.sh"
+git -C "$R" add -A
+OUT="$WORK/.out"
+set +e
+(cd "$R" && env PATH="$NOAWK" "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "no awk exits 2, not 127" 2 "$RC" "no \`awk\` on PATH"
+
 done_ "check-figures.test.sh"

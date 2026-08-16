@@ -20,6 +20,8 @@
 #   provides   $WORK   a temp dir, removed on exit
 #              $OUT    where a driver should write captured output
 #              check   assert an exit code and a substring of $OUT
+#              fresh_repo   a throwaway git checkout
+#              tools_only   a PATH holding only the tools named
 #              done_   print the tally and exit non-zero if anything failed
 #   expects    the suite to set $OUT before each check
 
@@ -52,6 +54,22 @@ fresh_repo() { # <dir>
 	git -C "$1" init -q -b main
 	git -C "$1" config user.email t@example.com
 	git -C "$1" config user.name t
+}
+
+# A directory to use as the whole of PATH, holding only the tools named. Gates
+# separate a clean tree from a tree they could not read, and the second half is
+# only reachable by taking a tool away — every suite that drives a could-not-run
+# path needs one of these, and what makes each case worth anything is which
+# tools it leaves IN: strip more than the one under test and the gate refuses
+# for some other reason and the case passes without the guard existing.
+tools_only() { # <dir> <tool>...
+	_dir="$1"
+	shift
+	rm -rf "$_dir"
+	mkdir -p "$_dir"
+	for _t in "$@"; do
+		ln -sf "$(command -v "$_t")" "$_dir/$_t"
+	done
 }
 
 done_() { # <suite name>

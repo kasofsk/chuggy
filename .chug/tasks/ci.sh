@@ -14,6 +14,20 @@
 # breaks them, and it is also the change that would exit early from a
 # language-scoped stage.
 #
+# CHEAPEST FIRST IS A CLAIM, so it is one a reader can refute by timing the
+# block — and it was refuted: the order below was the order the gates were
+# written in, with the dearest of them sitting third. Re-measure by timing each
+# gate in the block on its own, `time ./.chug/tasks/<gate>.sh`, and reorder
+# rather than editing this sentence. No numbers here: they would go stale in
+# silence, which is the whole of `.chug/tasks/check-figures.sh`'s argument.
+#
+# check-duplication is last in the block despite measuring cheaper than the two
+# above it, and that is deliberate. It is the one gate here that is not pure
+# shell: with no local jscpd it fetches one over the network, so its cost is a
+# property of the machine rather than of the tree, and a stage whose place in
+# the order flips with the contents of `node_modules` is a stage nobody can
+# reason about.
+#
 # EACH GATE IS THREE-VALUED — 0 clean, 1 finding, 2 could-not-run — and this
 # script keeps the distinction all the way to its own exit. A gate that could
 # not run is a failure here, reported under its own heading, because "the check
@@ -61,10 +75,19 @@ run_gate() { # <label> <script> [args...]
 
 # --- Pure-shell gates --------------------------------------------------------
 
+if [ -x ./.chug/tasks/check-gates.sh ]; then
+	run_gate "check-gates" ./.chug/tasks/check-gates.sh
+fi
+
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 
+if [ -x ./.chug/tasks/check-shell-quoting.sh ]; then
+	run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
+fi
+
 # Before check-paths: one awk pass over the prose corpus, where that one shells
-# out to git for the whole deletion history.
+# out to git for the whole deletion history. The measurement agrees, so this
+# pair needs no exception to the ordering above.
 if [ -x ./.chug/tasks/check-figures.sh ]; then
 	run_gate "check-figures" ./.chug/tasks/check-figures.sh
 fi
@@ -73,16 +96,8 @@ if [ -x ./.chug/tasks/check-paths.sh ]; then
 	run_gate "check-paths" ./.chug/tasks/check-paths.sh
 fi
 
-if [ -x ./.chug/tasks/check-shell-quoting.sh ]; then
-	run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
-fi
-
 if [ -x ./.chug/tasks/check-duplication.sh ]; then
 	run_gate "check-duplication" ./.chug/tasks/check-duplication.sh
-fi
-
-if [ -x ./.chug/tasks/check-gates.sh ]; then
-	run_gate "check-gates" ./.chug/tasks/check-gates.sh
 fi
 
 # --- The TypeScript toolchain ------------------------------------------------
@@ -96,7 +111,7 @@ fi
 # reason is worth writing down because the opposite reading is tempting: a
 # purity gate that quietly vanished would read exactly like a passing one.
 # Three things make the guard the better answer anyway. The `-x` form is what
-# every gate but the first uses. The fixtures in `.chug/tasks/ci.test.sh`
+# every gate but doc-lint uses. The fixtures in `.chug/tasks/ci.test.sh`
 # exercise the sequencer, not the roster, and requiring each to stub every gate
 # would give this file the list-to-update that the suite stage's discovery glob
 # exists to avoid. And the failure the unconditional form would catch is caught
@@ -167,6 +182,7 @@ else
 		fi
 		started="$(date +%s)"
 		stopped=""
+		stopped_count=0
 		IFS='
 '
 		for suite in $suites; do
@@ -176,6 +192,7 @@ else
 			if [ "$elapsed" -ge "$suite_budget" ]; then
 				stopped="$stopped$suite
 "
+				stopped_count=$((stopped_count + 1))
 				continue
 			fi
 			printf '  - %s\n' "$suite"
@@ -187,17 +204,36 @@ else
 			fi
 			rc=$?
 			set -e
-			if [ "$rc" -ne 0 ]; then
+			# A SUITE THE CAP KILLED DID NOT FAIL — it did not finish, and this
+			# tree calls that could-not-run. `timeout` reports the kill as 124,
+			# and the suite it killed reached no verdict at all: reporting that
+			# as a finding sends the reader looking for a bug in the suite when
+			# what is wrong is the cap, the host, or a suite that has grown
+			# past its bound. The message names the cap for that reason. The
+			# reading is only made when a cap was actually applied, since a
+			# suite exiting 124 of its own accord is otherwise the same byte.
+			if [ "$rc" -eq 124 ] && [ -n "$timeout_cmd" ]; then
+				echo "ci: LINTER ERROR — $suite hit the ${suite_cap}s per-suite cap and was"
+				echo "ci:     killed, so it reached no verdict; this is not a pass. Raise"
+				echo "ci:     CHUG_CI_SUITE_TIMEOUT_SECS or rerun with: sh $suite"
+				errored=$((errored + 1))
+			elif [ "$rc" -ne 0 ]; then
 				echo "ci: FAILED — $suite (rc=$rc); rerun with: sh $suite"
 				failed=$((failed + 1))
 			fi
 		done
 		unset IFS
 		echo "ci: suites finished in $(( $(date +%s) - started ))s"
+		# EVERY SKIPPED SUITE COUNTS, not the skip. The tally used to take one
+		# increment for the whole truncated tail, so a budget that stopped most
+		# of the stage reported the same as one gate finding — and a run that
+		# checked less than it says it did is the one thing this file exists to
+		# make impossible to misread. They are counted as could-not-run for the
+		# same reason the killed suite above is: they never ran.
 		if [ -n "$stopped" ]; then
 			echo "ci: BUDGET REACHED — these suites did NOT run:"
 			printf '%s' "$stopped" | sed 's/^/    /'
-			failed=$((failed + 1))
+			errored=$((errored + stopped_count))
 		fi
 	fi
 fi
