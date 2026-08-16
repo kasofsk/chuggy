@@ -25,9 +25,9 @@
 # ref to read, so every run would take the fall-back path and print a
 # degradation notice about a degradation that is simply the normal case — and a
 # notice that prints every time is read by nobody. Whole-tree over a corpus this
-# size costs milliseconds, needs no network, and cannot report a stale verdict.
-# Re-introduce diff scoping when the corpus makes it worth the machinery, not
-# before.
+# size costs less than the base-ref machinery it avoids, needs no network, and
+# cannot report a stale verdict. Re-introduce diff scoping when the corpus makes
+# it worth the machinery, not before.
 #
 # Usage:
 #   .chug/tasks/doc-lint.sh [<file>...]

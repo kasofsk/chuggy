@@ -11,8 +11,8 @@
 # It calls the gate scripts directly rather than going through `just`, because
 # `just` may not be installed and a hook that depends on it fails open.
 #
-# Budget: ~2s. The shell suites are deliberately absent — they are the slowest
-# stage and they belong in `just check`.
+# The shell suites are deliberately absent — they are the slowest stage and
+# they belong in `just check`.
 #
 # `git commit --no-verify` bypasses this, and bypasses every gate at once
 # rather than the one that was in the way. Legitimate when the alternative is
