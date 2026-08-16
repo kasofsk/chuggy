@@ -54,7 +54,7 @@
       "states": 22
     },
     {
-      "name": "budgeted-landing-duplicate",
+      "name": "budgeted-completion-duplicate",
       "instance": "budgeted",
       "seed": "0x2a",
       "maxSamples": 20000,
@@ -65,7 +65,7 @@
         "decideCompleteDuplicate",
         "complete-duplicate"
       ],
-      "rationale": "a re-delivered landing absorbed by an already-Done ticket",
+      "rationale": "a re-delivered completion absorbed by an already-Done ticket",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -325,7 +325,7 @@
         "eval-stage-passed",
         "complete-duplicate"
       ],
-      "rationale": "a staged eval program advancing, and the landing that follows it",
+      "rationale": "a staged eval program advancing, and the wrap-up that follows it",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",
@@ -411,7 +411,7 @@
         "decideWrapUpResolve",
         "ticket-done"
       ],
-      "rationale": "the depth-1 refusal mid-trace, and both landing paths on one machine trace",
+      "rationale": "the depth-1 refusal mid-trace, and both wrap-up paths on one machine trace",
       "consts": {
         "N_TICKETS": "3",
         "N_TASKS": "2",

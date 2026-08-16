@@ -109,7 +109,7 @@ test("the stutter steps decode to a plan and not to a guessed pick", () => {
   // Tier 1 records the pick, and it rides along — the class is what checks the
   // step, and a recorded pick is one more member of it. Tier 2 has none, and
   // the plan is the same shape without it.
-  const trace = load("budgeted-landing-duplicate");
+  const trace = load("budgeted-completion-duplicate");
   const native = decodeSteps(trace, "t");
   const stutters = native.filter((plan) => plan.kind === "stutter");
   assert.ok(stutters.length > 0);
