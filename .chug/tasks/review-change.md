@@ -43,7 +43,7 @@ The rules no gate enforces, because no script can decide them. They bind the
 author, and the reviewer rejects by number.
 
 **They are HOUSE rules, and the model's own STANDING rules are a different list
-with a different numbering.** `model/` numbers its four and cites them by number
+with a different numbering.** `model/` numbers them and cites them by number
 at the definitions they govern — see the next section. Calling both "rule 3" in
 one review is how a finding stops being answerable.
 
@@ -94,7 +94,7 @@ as everywhere else.
 2. **No free re-entry** — no step returns to a prior state without spending
    measure. `model/domain.qnt` cites it at every metering site.
 3. **Derive, don't store** — a stored duplicate of a derivable fact is a
-   finding. The most-cited of the four.
+   finding. The most-cited of them.
 4. **Golden traces from day one, direction reversed** — the model emits them and
    the implementation grows up against them.
 

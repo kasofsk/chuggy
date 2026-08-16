@@ -63,6 +63,12 @@ run_gate() { # <label> <script> [args...]
 
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 
+# Before check-paths: one awk pass over the prose corpus, where that one shells
+# out to git for the whole deletion history.
+if [ -x ./.chug/tasks/check-figures.sh ]; then
+	run_gate "check-figures" ./.chug/tasks/check-figures.sh
+fi
+
 if [ -x ./.chug/tasks/check-paths.sh ]; then
 	run_gate "check-paths" ./.chug/tasks/check-paths.sh
 fi

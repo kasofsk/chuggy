@@ -1,5 +1,5 @@
 #!/bin/sh
-# The model gate. Typechecks every Quint module, runs the unit suite, the eight
+# The model gate. Typechecks every Quint module, runs the unit suite, the
 # deterministic witness modules, the refinement suites, and the randomized
 # invariant runs over each instance.
 #

@@ -13,7 +13,7 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 
 This file is the third: an entry point and a set of conventions, holding what neither of those two can hold.
 
-**The general standards came back as skills the tree declares rather than holds.** `.claude/settings.json` enables the eight `blessed-practices` plugins — `layering` and `domain-modelling` among them, the two that left with `docs`. They are invoked through the Skill tool rather than read, so a reviewer cites one by name and an author is given the same file. The trade is worth stating: their content is versioned in `kasofsk/blessed-practices` and can move without a commit here, which a gate header cannot. That is the cost of not maintaining a second copy, and it is why the two places above still carry everything that must be true of *this* tree — a skill states what good code looks like anywhere, never what is true here.
+**The general standards came back as skills the tree declares rather than holds.** `.claude/settings.json` enables the `blessed-practices` plugins — `layering` and `domain-modelling` among them, the two that left with `docs`. They are invoked through the Skill tool rather than read, so a reviewer cites one by name and an author is given the same file. The trade is worth stating: their content is versioned in `kasofsk/blessed-practices` and can move without a commit here, which a gate header cannot. That is the cost of not maintaining a second copy, and it is why the two places above still carry everything that must be true of *this* tree — a skill states what good code looks like anywhere, never what is true here.
 
 ## Checks
 
@@ -23,7 +23,7 @@ just check          # everything
 
 The pre-commit hook runs the fast subset and is installed with `git config core.hooksPath .githooks` — **a fresh clone needs that once**, because git config is not tracked and nothing in a checkout can set it for you.
 
-The skills need no such step, and the difference is the reason `.claude/settings.json` is tracked at all: a clone and a `git worktree` both come up with the eight already enabled, where an untracked settings file would leave a worktree silently without them. A machine that has never seen the `blessed-practices` marketplace fetches it on first use.
+The skills need no such step, and the difference is the reason `.claude/settings.json` is tracked at all: a clone and a `git worktree` both come up with them already enabled, where an untracked settings file would leave a worktree silently without them. A machine that has never seen the `blessed-practices` marketplace fetches it on first use.
 
 Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
 slowest by far is `check-model.sh`, which is why it runs last and never in the
@@ -35,7 +35,7 @@ That path is not a placeholder. When this repo is eventually orchestrated by the
 
 - **There is no CI but the local gates.** No Actions, no PR checks, no server. `just check` and the hook are the whole of it, which means a gate that is slow or noisy is a gate that gets bypassed — and then it enforces nothing.
 - **`--no-verify` bypasses every gate at once**, including the ones you were not trying to skip. Legitimate when the alternative is leaving work uncommitted; run `just check` before you push either way.
-- **A figure written into a doc carries its measurement date.** Timings, counts and thresholds go stale silently, and a count written into a comment goes stale even when the comment beside it asks for re-measurement. Prefer a figure a script derives at run time to one a reader has to trust.
+- **No comment states a quantity a reader has to trust.** This used to be "a figure carries its measurement date", which failed in the ordinary way: the dates went unwritten, the figures went stale in silence, and a dated figure is still one nobody can check without leaving the sentence. `.chug/tasks/check-figures.sh` enforces the ban and its header carries the rule — what makes a figure legitimate, what the gate cannot see, and why `model/` is deferred rather than exempt. Read it there rather than here; a rule with two homes has two versions of itself inside a year. The one surface it leaves alone is `docs/design/*.md`, because a doc arguing a decision has to be able to cite the measurement that motivated it, dated and with the command that reproduces it.
 - **A rule needs a failure it can prevent here.** Before adding one, name the thing that goes wrong in *this* tree if it is absent. A rule adopted because it sounds right is a rule nobody can apply a refutation trigger to.
 - **Nothing reviews its own work.** `.chug/tasks/review-change.md` is the reviewer's brief, and it is written to be run in a **fresh session** that did not author the change — an agent handed its own diff re-reads its intentions instead of the code, and agrees with itself. Until there is a platform to run it as an evaluation task, run it by hand before anything lands. It is also where the standing rules and commitments are written, so **an author is bound by it too** — read it before writing, not only before reviewing.
 - **Don't run destructive commands** — deploys, restarts, data resets — without asking first.
