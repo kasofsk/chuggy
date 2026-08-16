@@ -16,7 +16,10 @@
  * THE RED-PROOF CORPUS IS THE CENTRE OF THE FILE. Each entry carries a defect
  * tree, the corrected twin, and — this is the part that makes it evidence
  * rather than decoration — THE EXACT SET of bundle conjuncts the defect tree
- * turns red. That exact set is this tree's own guard-pinning rule
+ * turns red, read off the roster in `bundle.test.ts` (which is a file of its
+ * own because the randomized layer names a failing conjunct through the same
+ * roster, and a second copy of it is the drift the agreement test below
+ * exists to catch). That exact set is this tree's own guard-pinning rule
  * (`domain.test.ts`'s header: an equality guard is pinned by an exact set over
  * its whole domain, never by counter-examples) applied to the invariants
  * themselves, and it buys three things a bare red/green pair does not:
@@ -85,6 +88,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { AssertionError } from "./assert.ts";
+import { bundleConjuncts, redConjuncts, type Subject } from "./bundle.test.ts";
 import {
   boundsOf,
   decideDispatch,
@@ -153,7 +157,6 @@ import {
   wrapUpIsolation,
   wrapUpWallNamed,
   wrapUpWellFormed,
-  type StepHistory,
 } from "./invariants.ts";
 import {
   evalStage,
@@ -187,13 +190,6 @@ const settledStep: StepRecord = {
   transitions: [],
   effects: [],
   landing: { tag: "WONone" },
-};
-
-/** Everything the bundle reads, so a defect tree can be stated once and asked anything. */
-type Subject = {
-  readonly cfg: Config;
-  readonly core: Core;
-  readonly history: StepHistory;
 };
 
 /**
@@ -384,64 +380,6 @@ test("the bundle is green on real pre/post pairs, not only on hand-built states"
     );
   }
 });
-
-// === The bundle's roster ===================================================
-
-/**
- * The conjuncts of `allInvariants`, in the model's order, each as the call the
- * bundle makes. It exists so the corpus below can name an EXACT SET
- * of failing conjuncts; the shipped bundle is a plain short-circuiting
- * conjunction, and the agreement test keeps the two from drifting apart.
- */
-const bundleConjuncts: readonly (readonly [string, (s: Subject) => boolean])[] =
-  [
-    ["completionExclusive", (s) => completionExclusive(s.core)],
-    ["revokedNeverCompletes", (s) => revokedNeverCompletes(s.core)],
-    [
-      "wrapUpIsolation",
-      (s) => wrapUpIsolation(s.cfg, s.core, s.history.lastStep),
-    ],
-    [
-      "quietProjectLandsCleanly",
-      (s) => quietProjectLandsCleanly(s.history.lastStep),
-    ],
-    ["leaseExclusive", (s) => leaseExclusive(s.cfg, s.core)],
-    ["noLeaseWithoutAKind", (s) => noLeaseWithoutAKind(s.core)],
-    ["artifactWellFormed", (s) => artifactWellFormed(s.core)],
-    ["projectsWellFormed", (s) => projectsWellFormed(s.cfg, s.core)],
-    ["wrapUpWellFormed", (s) => wrapUpWellFormed(s.cfg, s.core)],
-    ["terminalsAbsorbing", (s) => terminalsAbsorbing(s.history.lastStep)],
-    ["deskConsistent", (s) => deskConsistent(s.core)],
-    ["wrapUpWallNamed", (s) => wrapUpWallNamed(s.cfg, s.core)],
-    ["accountsBounded", (s) => accountsBounded(s.cfg, s.core)],
-    ["tasksWellFormed", (s) => tasksWellFormed(s.cfg, s.core)],
-    ["recordWellFormed", (s) => recordWellFormed(s.core)],
-    ["recordMonotone", (s) => recordMonotone(s.core, s.history.prevRecords)],
-    ["idsAccounted", (s) => idsAccounted(s.core)],
-    ["programsWellFormed", (s) => programsWellFormed(s.cfg, s.core)],
-    ["depsAcyclic", (s) => depsAcyclic(s.core)],
-    ["idsDense", (s) => idsDense(s.cfg, s.core)],
-    ["stuckSubsetCovered", (s) => stuckSubsetCovered(s.core)],
-    ["cascadeSafety", (s) => cascadeSafety(s.core)],
-    ["noStructuralDeadlock", (s) => noStructuralDeadlock(s.core)],
-    [
-      "measureDescends",
-      (s) =>
-        measureDescends(
-          s.cfg,
-          s.core,
-          s.history.lastStep,
-          s.history.prevMeasure,
-        ),
-    ],
-  ];
-
-/** The exact set of bundle conjuncts a subject turns red. */
-function redConjuncts(s: Subject): ReadonlySet<string> {
-  return new Set(
-    bundleConjuncts.filter(([, holds]) => !holds(s)).map(([name]) => name),
-  );
-}
 
 test("the roster is the model's own conjunct list, name for name and in order", () => {
   // Read off `model/domain.qnt`'s `allInvariants`. The roster drives the exact

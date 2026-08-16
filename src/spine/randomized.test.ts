@@ -1,0 +1,465 @@
+/**
+ * THE RANDOMIZED LAYER — `check-model.sh`'s `--invariant=allInvariants` stage,
+ * mirrored: seeded random legal action walks at each mc instance's consts, the
+ * whole domain bundle after every step, and the model's three anti-vacuity
+ * witnesses as expected-violation probes.
+ *
+ * WHY IT IS NOT ENOUGH TO HAVE THE CORPUS. `check-conformance.sh` replays the
+ * traces the model emitted, so it can only re-ask the questions the model
+ * already asked. The model's own header records what that misses: twice an
+ * all-green deterministic suite hid a defect that only randomized exploration
+ * found. This suite is the same net under the same machine, one layer up.
+ *
+ * THE INSTANCES ARE READ OUT OF THE MODEL, not written down here.
+ * `mc/mc_chuggy.qnt` is where the three instances' consts live, and
+ * `corpus.ts`'s reader is what the emitter already uses to check a fixture's
+ * manifest entry against them — so "at the mc consts" is a fact this file
+ * cannot drift from rather than a claim it makes. The three configurations in
+ * `fixtures.test.ts` are deliberately NOT reused: two of them are
+ * `chuggy_test`'s instances, which differ from the mc ones in `N_TICKETS`, and
+ * a walk at the wrong fleet bound is a walk of a different machine.
+ *
+ * THE SEEDS AND BUDGETS ARE DATA, and the walks are run once at module scope
+ * because several probes read them. `just check` is the whole of CI here, so
+ * the budget below is what fits beside every other gate rather than what the
+ * machine could absorb; the command that measures what it costs is at
+ * `walkBudget`.
+ *
+ * WHAT THE SAMPLED WALKS REACH, AND WHAT THEY DO NOT. Uniform random action
+ * choice at these consts is dominated by authoring churn — `revoke` is enabled
+ * for every non-terminal ticket, so the fleet is settled long before a ticket
+ * reaches a gate. That is the MODEL's profile too, not an artifact of this
+ * implementation: the corpus's own manifest records that finding a
+ * `wrapup-started` step by sampling took 20000 samples of 60 steps, against
+ * 500 for a cascade park. So the rosters the walks are asserted to reach below
+ * are the shallow half of the machine, and the deep half is covered exactly
+ * where the model covers it — by deterministic traces, here and in the corpus.
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import type { Config } from "../domain/domain.ts";
+import type { Stage } from "../domain/measure.ts";
+import { configOf, mcSource, readModuleConsts } from "../tools/corpus.ts";
+import type { Cmd } from "./cmd.ts";
+import {
+  CoverageBuilder,
+  mcInstances,
+  type Coverage,
+  type McInstance,
+} from "./coverage.ts";
+import {
+  driveTrace,
+  hex,
+  walkOnce,
+  walkSeeds,
+  type RunResult,
+} from "./walk.test.ts";
+
+// === The budget, and the seeds =============================================
+
+/**
+ * THE BUDGET, PER INSTANCE. Walks rather than steps is the knob that matters:
+ * at these consts every walk in every run below ends on its own — a quiet fleet
+ * or a dead end — well inside the step cap, so raising `steps` buys nothing and
+ * raising `walks` buys everything.
+ *
+ * MEASURED, and this is the command that re-measures it:
+ *
+ *   time node --test src/spine/randomized.test.ts
+ *
+ * Re-run it after changing either number, and after any change to the
+ * enumeration: the cost per step is dominated by filtering the arrival's
+ * payload product through `cmdEnabled`, which is the largest single thing this
+ * suite does.
+ */
+export const walkBudget = { walks: 300, steps: 40 } as const;
+
+/**
+ * ONE ROOT SEED PER INSTANCE, and the three are the pinned seeds this tree
+ * already carries rather than new ones: `0x2a` is what every sampled fixture in
+ * `corpus/manifest.json` was emitted at, and `0xb1` and `0xf1` are the two
+ * resistance probes PLAN.md records. Which instance draws which is arbitrary —
+ * a root is a starting point, not a property of a machine — and reusing them
+ * keeps one set of pinned seeds in the tree instead of two.
+ *
+ * A ROOT PER INSTANCE RATHER THAN ONE FOR ALL THREE, because the budgeted and
+ * deadline-only instances differ only in gate pricing — a difference no step
+ * before a landing can see. Walked from the same root they would take the same
+ * trace and the second run would be free of information; from different roots
+ * they explore different parts of one shared shallow region.
+ */
+export const walkRoots: Readonly<Record<McInstance, number>> = {
+  budgeted: 0x2a,
+  deadline_only: 0xb1,
+  retryfree: 0xf1,
+};
+
+// === The instances, read out of the model ==================================
+
+const configs: Readonly<Record<McInstance, Config>> = {
+  budgeted: instanceConfig("budgeted"),
+  deadline_only: instanceConfig("deadline_only"),
+  retryfree: instanceConfig("retryfree"),
+};
+
+function instanceConfig(instance: McInstance): Config {
+  return configOf(
+    readModuleConsts(mcSource, `mc_chuggy_${instance}`),
+    `mc_chuggy_${instance}`,
+  );
+}
+
+// === The runs ==============================================================
+
+/** One instance's whole run: every walk, folded. */
+type InstanceRun = {
+  readonly instance: McInstance;
+  readonly walks: readonly RunResult[];
+  readonly coverage: Coverage;
+  readonly firings: ReadonlyMap<string, string>;
+  readonly findings: readonly string[];
+  readonly steps: number;
+};
+
+const runs: readonly InstanceRun[] = mcInstances.map((instance) =>
+  runInstance(instance),
+);
+
+function runInstance(instance: McInstance): InstanceRun {
+  const cfg = configs[instance];
+  const walks = walkSeeds(walkRoots[instance], walkBudget.walks).map((seed) =>
+    walkOnce(cfg, instance, seed, walkBudget.steps),
+  );
+  return { instance, walks, ...fold(walks) };
+}
+
+/** The union of a set of runs — rosters unioned, findings concatenated. */
+function fold(results: readonly RunResult[]): {
+  readonly coverage: Coverage;
+  readonly firings: ReadonlyMap<string, string>;
+  readonly findings: readonly string[];
+  readonly steps: number;
+} {
+  const coverage = new CoverageBuilder();
+  const firings = new Map<string, string>();
+  const findings: string[] = [];
+  let steps = 0;
+  for (const result of results) {
+    coverage.absorb(result.coverage);
+    steps += result.steps;
+    findings.push(...result.findings);
+    for (const firing of result.firings) {
+      if (!firings.has(firing.witness)) {
+        firings.set(
+          firing.witness,
+          `${result.where} step ${String(firing.step)} (${firing.label})`,
+        );
+      }
+    }
+  }
+  return { coverage: coverage.taken(), firings, findings, steps };
+}
+
+// === The walks =============================================================
+
+test("the seeded walks hold allInvariants at every step, on all three mc instances", () => {
+  for (const run of runs) {
+    // THE WHOLE FINDING, never a count and never the first one. A finding
+    // carries its seed, its step index, the command taken and the conjuncts
+    // that went red, and this is the assertion that puts all of that in front
+    // of whoever reads the failure.
+    assert.deepEqual(
+      run.findings,
+      [],
+      `${run.instance}: the walk found something`,
+    );
+    assert.ok(run.steps > 0, `${run.instance}: the walk took no steps at all`);
+  }
+});
+
+test("every walk is reproducible from its seed alone", () => {
+  // THE POINT OF THE SEEDED GENERATOR, asserted rather than assumed: a defect
+  // this layer reports is worth reporting only if the walk that found it can be
+  // re-run. Same seed, same walk — steps, rosters and witness firings alike;
+  // a different seed is a different walk, which is what keeps the run from
+  // being one trace repeated.
+  const cfg = configs.budgeted;
+  const [first, second] = walkSeeds(0x2a, 2);
+  assert.ok(first !== undefined && second !== undefined);
+  const once = walkOnce(cfg, "budgeted", first, walkBudget.steps);
+  const again = walkOnce(cfg, "budgeted", first, walkBudget.steps);
+  assert.deepEqual(again, once);
+  const other = walkOnce(cfg, "budgeted", second, walkBudget.steps);
+  assert.notDeepEqual(other.coverage, once.coverage);
+});
+
+test("each instance's walk reaches the roster it is stated to reach", () => {
+  // ROSTERS, NOT COUNTS: what the exploration reached, entry by entry, so that
+  // a walk that quietly stopped reaching a decider is a red gate rather than a
+  // number nobody compares. Stated as a floor rather than as an exact set —
+  // exploration that reaches MORE is not a regression, and pinning the exact
+  // set would make every improvement a failure.
+  for (const run of runs) {
+    assert.deepEqual(
+      sampledDeciders.filter((d) => !run.coverage.deciders.has(d)),
+      [],
+      `${run.instance}: the walk stopped reaching a decider it used to`,
+    );
+    assert.deepEqual(
+      sampledLabels.filter((l) => !hasEntry(run.coverage.labels, l)),
+      [],
+      `${run.instance}: the walk stopped reaching a step label it used to`,
+    );
+    assert.deepEqual(
+      sampledArms.filter((a) => !hasEntry(run.coverage.arms, a)),
+      [],
+      `${run.instance}: the walk stopped firing an exemption arm it used to`,
+    );
+  }
+});
+
+/**
+ * WHAT UNIFORM SAMPLING REACHES AT THESE CONSTS, on EVERY one of the three
+ * instances — the intersection, measured at the budget and roots above. Two of
+ * the runs reach more than this (the budgeted root's walks also pass an
+ * evaluation and land a ticket outright), and the floor deliberately does not
+ * say so: an entry only one run reaches is a claim about one seed rather than
+ * about the exploration.
+ *
+ * The deep half of the machine — the wrap-up phases, the rework economy's walls
+ * — is not here at all, and the file header says why: this is the model's own
+ * sampling profile, and what covers the deep half is the deterministic half of
+ * both layers.
+ */
+const sampledDeciders: readonly string[] = [
+  "decideArrive",
+  "decideRelease",
+  "decideRevoke",
+  "decideDispatch",
+  "decideTaskDone",
+  "decideWorkReduce",
+  "decideRevalFail",
+  "decideOpRetry",
+];
+
+const sampledLabels: readonly string[] = [
+  "init",
+  "ticket-arrived",
+  "ticket-released",
+  "ticket-revoked",
+  "dispatch",
+  "task-done",
+  "task-done-duplicate",
+  "work-passed",
+  "ticket-escalated work_failed",
+  "ticket-escalated revalidation_failed",
+  "operator-retry",
+  "settled",
+];
+
+const sampledArms: readonly string[] = [
+  "init",
+  "task-done-duplicate",
+  "settled",
+  "operator-retry, RPending flavor",
+  "ticket-arrived",
+  "ticket-revoked, desk-only flat",
+];
+
+/** Membership in a roster set whose entries are narrower types than `string`. */
+function hasEntry(reached: ReadonlySet<string>, entry: string): boolean {
+  return reached.has(entry);
+}
+
+// === The anti-vacuity witnesses ============================================
+
+test("cascadeParkNever is violated by sampling, on every instance", () => {
+  // THE EXPECTED VIOLATION, and the probe fails when it stops happening: a
+  // revoke that parks no dependent would make `cascadeSafety` vacuously true
+  // wherever `revokeDoomed` stayed empty, and every green walk above would go
+  // on passing. This one witness IS reachable by sampling — comfortably, on
+  // roughly a quarter of the walks — so it is asserted where the model would
+  // rather have it, on machine traces nobody wrote down.
+  for (const run of runs) {
+    assert.ok(
+      run.firings.has("cascadeParkNever"),
+      `${run.instance}: no walk revoked a ticket with a dependent behind it — the cascade witness has gone vacuous`,
+    );
+  }
+});
+
+// === The two shapes sampling cannot reach ==================================
+//
+// Driven deterministically — the model's own fallback, and its own traces.
+//
+// `chuggy_witness_test.qnt` exists because the model needed exactly this: the
+// no-arm-without-a-witness rule requires every `stepDescends` exemption arm to
+// be fired by a deterministic run, and both shapes below sit behind chains of
+// correctly-drawn steps that uniform sampling does not find. PLAN.md records
+// the search that established it for the free climb — not reached across
+// roughly 240000 model traces, at budgets to 200000 samples of 100 steps — and
+// the walks above reach a stage advance about once in three hundred walks,
+// which is a probe that would go quiet under a seed change rather than under a
+// defect.
+//
+// Each script is the model's `run` with its `do*` drivers read as the `Cmd`s
+// they are, at the same consts, step for step.
+
+const progFlat1: readonly Stage[] = [
+  { fanout: 1, combinator: "CUnanimousPass" },
+];
+
+const progStaged2: readonly Stage[] = [
+  { fanout: 2, combinator: "CUnanimousPass" },
+  { fanout: 1, combinator: "CUnanimousPass" },
+];
+
+/**
+ * `chuggy_witness_free_test::freeClimbDeterministicTest`, at
+ * `mc_chuggy_retryfree`: a ticket burns both accounts to zero, parks from a
+ * PIPELINE phase, and the operator resumes it FREE — the measure climbing on
+ * the resume step, which is the `RetryFree` CHURN arm of `stepDescends`
+ * exempting exactly that climb.
+ */
+const freeClimbScript: readonly Cmd[] = [
+  arrive(progFlat1),
+  { tag: "JRelease", ticket: 1 },
+  { tag: "JDispatch", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" },
+  // The same task's completion re-delivered with the other verdict:
+  // first-write-wins discards it whole, and the STUTTER arm fires.
+  { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VFail" },
+  { tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 3, verdict: "VFail" },
+  // The short-circuit buys the one budgeted rework: rework and gas both empty
+  // from here on.
+  { tag: "JEvalReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 4, verdict: "VPass" },
+  { tag: "JTaskDone", ticket: 1, tid: 5, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 6, verdict: "VFail" },
+  // The stage fails with the rework account empty: parked at gas 0, resume
+  // point REvaluating — retryable only because RetryFree prices it at nothing.
+  { tag: "JEvalReduce", ticket: 1 },
+  // THE WITNESSED STEP.
+  { tag: "JOpRetry", ticket: 1 },
+];
+
+/**
+ * `chuggy_witness_stage_test::stageAdvanceDeterministicTest`, at
+ * `mc_chuggy_budgeted`: a two-stage program's stage-0 unanimous pass advancing
+ * to stage 1 — the interpreter's advance edge and the measure's stage digit —
+ * then run through to Done and past it, so the staged program's whole lifecycle
+ * closes.
+ */
+const stageAdvanceScript: readonly Cmd[] = [
+  arrive(progStaged2),
+  { tag: "JRelease", ticket: 1 },
+  { tag: "JDispatch", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" },
+  { tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 3, verdict: "VPass" },
+  { tag: "JTaskDone", ticket: 1, tid: 4, verdict: "VPass" },
+  // THE WITNESSED STEP: stage 0 passes unanimously with a later stage left.
+  { tag: "JEvalReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 5, verdict: "VPass" },
+  // The final stage passes: no advance this time, the program passed.
+  { tag: "JEvalReduce", ticket: 1 },
+  // The dequeue draws QUIET: the skip fast-path resolves the landing outright.
+  { tag: "JDequeue", ticket: 1, moved: false },
+  // At-least-once: a stale completion after Done, absorbed with no effect.
+  { tag: "JCompleteDuplicate", ticket: 1 },
+];
+
+/** The arrival both scripts open with: no deps, project 1, that project's lease. */
+function arrive(program: readonly Stage[]): Cmd {
+  return {
+    tag: "JArrive",
+    deps: new Set(),
+    program,
+    project: 1,
+    wrapUp: { tag: "WExclusive", resource: 1 },
+  };
+}
+
+const freeClimb = driveTrace(
+  configs.retryfree,
+  "retryfree",
+  "free-climb (deterministic)",
+  freeClimbScript,
+);
+
+const stageAdvance = driveTrace(
+  configs.budgeted,
+  "budgeted",
+  "stage-advance (deterministic)",
+  stageAdvanceScript,
+);
+
+test("freeClimbNever is violated on the free-climb trace, and no other witness is", () => {
+  assert.deepEqual(freeClimb.findings, []);
+  assert.equal(freeClimb.steps, freeClimbScript.length);
+  // THE WITNESS FIRES, on the step the model's own run witnesses it on: the
+  // free pipeline resume, climbing. The other two do not fire here, which is
+  // the exact set this asserts — a trace that also parked a dependent or
+  // advanced a stage would be proving three things at once and none of them
+  // separately.
+  assert.deepEqual(
+    freeClimb.firings.map((f) => [f.witness, f.step, f.label]),
+    [["freeClimbNever", freeClimbScript.length, "operator-retry"]],
+  );
+  // AND THE BUNDLE HOLDS ON THE CLIMBING STEP — checked by the run itself,
+  // which asserts it after every step. That pairing is the whole content of
+  // the witness: the climb is real AND `stepDescends` exempts it, which is
+  // what tells a dead arm from a live one.
+  assert.ok(
+    freeClimb.coverage.arms.has("operator-retry, RetryFree pipeline flavor"),
+    "the RetryFree pipeline exemption arm did not fire on the free climb",
+  );
+});
+
+test("stageAdvanceNever is violated on the stage-advance trace, and no other witness is", () => {
+  assert.deepEqual(stageAdvance.findings, []);
+  assert.equal(stageAdvance.steps, stageAdvanceScript.length);
+  // The advance is mid-trace rather than last: the run goes on past it, and
+  // the step after is where `stageAdvanceNever` HOLDS again — the final stage
+  // passing is not an advance. Both readings are in this one exact set.
+  assert.deepEqual(
+    stageAdvance.firings.map((f) => [f.witness, f.step, f.label]),
+    [["stageAdvanceNever", 9, "eval-stage-passed"]],
+  );
+  // The trace closes the lifecycle the sampled walks never reach, and the
+  // roster is the evidence: the two labels past evaluation, the landing that
+  // resolves without opening a gate, and the absorbed duplicate.
+  assert.deepEqual(
+    ["eval-passed", "ticket-done", "complete-duplicate"].filter(
+      (l) => !hasEntry(stageAdvance.coverage.labels, l),
+    ),
+    [],
+  );
+});
+
+// === The alarm path ========================================================
+
+test("a run refuses an illegal command and names it", () => {
+  // THE FINDING PATH, exercised: every probe above asserts that a run found
+  // NOTHING, so nothing above would notice a run that could not report at all.
+  // A command no state enables is the cheapest way to make one talk — here,
+  // releasing a ticket the empty fleet does not hold.
+  const refused = driveTrace(configs.budgeted, "budgeted", "illegal", [
+    { tag: "JRelease", ticket: 1 },
+  ]);
+  assert.deepEqual(refused.findings, [
+    "illegal: step 1: JRelease ticket=1 is scripted here and cmdEnabled does not admit it",
+    "illegal: the run took 0 of the 1 scripted steps",
+  ]);
+});
+
+test("a seed prints as the model's own --seed spelling", () => {
+  assert.equal(hex(walkRoots.budgeted), "0x2a");
+  assert.equal(hex(-1), "0xffffffff");
+});
