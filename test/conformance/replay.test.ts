@@ -20,8 +20,9 @@
  * that run's step bound. So a red bundle is a disagreement between this tree's
  * transcription and the specification, and the transcription is where to look
  * first — an invariant that is too strong goes red on a state the specification
- * sampled green, which is the direction S4's demonstrations cannot reach, each
- * of those showing a predicate red on a state carrying its defect. On a state
+ * sampled green, which is the direction the invariant make-it-red
+ * demonstrations cannot reach, each of those showing a predicate red on a
+ * state carrying its defect. On a state
  * from a directed emitter it is also the first evaluation the bundle has ever
  * had there, so a reading against the specification stays open until the
  * transcription is cleared.
@@ -62,11 +63,17 @@ import type { Decision } from "../../src/domain/core.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 import {
   decodeTrace,
+  decodeValue,
   field,
   stateValue,
+  type ItfMap,
+  type ItfRecord,
+  type ItfSet,
   type ItfState,
   type ItfTrace,
+  type ItfTuple,
   type ItfValue,
+  type ItfVariant,
 } from "../itf/decode.ts";
 import {
   decodeCore,
@@ -230,79 +237,96 @@ function labelAt(golden: Golden, index: number): string {
  * divergence read out of the wire tagging is a divergence nobody reads.
  */
 function terse(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(terse).join(", ")}]`;
-  const record = value as Record<string, unknown>;
-  const literal = record["#bigint"];
-  if (typeof literal === "string") return literal;
-  return terseContainer(record);
+  return terseValue(decodeValue(value));
 }
 
-/** The tagged shapes: a set, a tuple, a map, a variant, or a plain record. */
-function terseContainer(record: Record<string, unknown>): string {
-  const set = record["#set"];
-  if (Array.isArray(set)) return `{${set.map(terse).join(", ")}}`;
-  const tuple = record["#tup"];
-  if (Array.isArray(tuple)) {
-    return tuple.length === 0 ? "" : `(${tuple.map(terse).join(", ")})`;
+function terseValue(value: ItfValue): string {
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(terseValue).join(", ")}]`;
+  return terseContainer(value);
+}
+
+/** The decoded containers: a set, a tuple, a map, a variant, or a record. */
+function terseContainer(
+  value: ItfMap | ItfRecord | ItfSet | ItfTuple | ItfVariant,
+): string {
+  switch (value.kind) {
+    case "set":
+      return `{${value.elements.map(terseValue).join(", ")}}`;
+    case "tuple":
+      return value.elements.length === 0
+        ? ""
+        : `(${value.elements.map(terseValue).join(", ")})`;
+    case "map":
+      return `[${value.entries.map(terseEntry).join(", ")}]`;
+    case "variant": {
+      const payload = terseValue(value.value);
+      return payload === "" ? value.tag : `${value.tag}(${payload})`;
+    }
+    case "record":
+      return `{${[...value.fields]
+        .map(([name, held]) => `${name}: ${terseValue(held)}`)
+        .join(", ")}}`;
   }
-  const map = record["#map"];
-  if (Array.isArray(map)) return `[${map.map(terseEntry).join(", ")}]`;
-  const tag = record["tag"];
-  if (typeof tag === "string") {
-    const payload = terse(record["value"]);
-    return payload === "" ? tag : `${tag}(${payload})`;
+}
+
+function terseEntry([key, held]: readonly [ItfValue, ItfValue]): string {
+  return `${terseValue(key)} -> ${terseValue(held)}`;
+}
+
+/** A field one side does not carry, printed as the absence it is. */
+function terseField(value: ItfValue | undefined): string {
+  return value === undefined ? "(absent)" : terseValue(value);
+}
+
+/** An encoded ticket map, decoded and keyed by the id its entry carries. */
+function ticketsOf(encoded: unknown): ReadonlyMap<string, ItfValue> {
+  const decoded = decodeValue(encoded);
+  const out = new Map<string, ItfValue>();
+  if (
+    typeof decoded !== "object" ||
+    Array.isArray(decoded) ||
+    decoded.kind !== "map"
+  ) {
+    return out;
   }
-  return `{${Object.entries(record)
-    .map(([name, held]) => `${name}: ${terse(held)}`)
-    .join(", ")}}`;
-}
-
-function terseEntry(pair: unknown): string {
-  return Array.isArray(pair) && pair.length === 2
-    ? `${terse(pair[0])} -> ${terse(pair[1])}`
-    : terse(pair);
-}
-
-/** An encoded ticket map, keyed by the id its entry carries. */
-function ticketsOf(encoded: unknown): ReadonlyMap<string, unknown> {
-  const entries = (encoded as { "#map"?: unknown } | null)?.["#map"];
-  const out = new Map<string, unknown>();
-  if (!Array.isArray(entries)) return out;
-  for (const pair of entries) {
-    if (!Array.isArray(pair) || pair.length !== 2) continue;
-    const key = (pair[0] as { "#bigint"?: unknown } | null)?.["#bigint"];
-    out.set(typeof key === "string" ? key : JSON.stringify(pair[0]), pair[1]);
+  for (const [key, ticket] of decoded.entries) {
+    out.set(typeof key === "bigint" ? key.toString() : terseValue(key), ticket);
   }
   return out;
 }
 
-/** The named fields of an encoded ticket, or nothing if it is not one. */
-function fieldsOf(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+/** The named fields of a decoded ticket, or nothing if it is not one. */
+function fieldsOf(value: ItfValue | undefined): ReadonlyMap<string, ItfValue> {
+  return typeof value === "object" &&
+    !Array.isArray(value) &&
+    value.kind === "record"
+    ? value.fields
+    : new Map<string, ItfValue>();
 }
 
 /** Only the fields that differ, so a divergence points at a field rather than at a value. */
-function fieldDiff(subject: string, got: unknown, want: unknown): string[] {
+function fieldDiff(
+  subject: string,
+  got: ItfValue | undefined,
+  want: ItfValue | undefined,
+): string[] {
   const mine = fieldsOf(got);
   const theirs = fieldsOf(want);
-  const names = [
-    ...new Set([...Object.keys(mine), ...Object.keys(theirs)]),
-  ].sort();
+  const names = [...new Set([...mine.keys(), ...theirs.keys()])].sort();
   const rows = names.flatMap((name) =>
-    isDeepStrictEqual(mine[name], theirs[name])
+    isDeepStrictEqual(mine.get(name), theirs.get(name))
       ? []
       : [
-          `  ${subject} ${name}: replayed ${terse(mine[name])}, golden ${terse(theirs[name])}`,
+          `  ${subject} ${name}: replayed ${terseField(mine.get(name))}, golden ${terseField(theirs.get(name))}`,
         ],
   );
   return rows.length > 0
     ? rows
     : [
-        `  ${subject} replayed: ${terse(got)}`,
-        `  ${subject} golden  : ${terse(want)}`,
+        `  ${subject} replayed: ${terseField(got)}`,
+        `  ${subject} golden  : ${terseField(want)}`,
       ];
 }
 
@@ -326,7 +350,7 @@ function coreDiff(got: unknown, want: unknown): string[] {
 /** One line per ticket, which is how a whole state stays readable in a report. */
 function coreLines(label: string, encoded: unknown): string[] {
   return [...ticketsOf(encoded)].map(
-    ([id, ticket]) => `  ${label} ticket ${id}: ${terse(ticket)}`,
+    ([id, ticket]) => `  ${label} ticket ${id}: ${terseValue(ticket)}`,
   );
 }
 
@@ -349,7 +373,7 @@ function recordFinding(
       kind: "record",
       where: siteOf(golden, index, action),
       what: "the step record diverged",
-      detail: fieldDiff("record", got, want),
+      detail: fieldDiff("record", decodeValue(got), decodeValue(want)),
     },
   ];
 }

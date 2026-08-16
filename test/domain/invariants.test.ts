@@ -27,8 +27,8 @@
  * disagreement — the defect exists only in the derivation, and the per-ticket
  * predicate is fed one directly here. The model warns by name that an
  * invariant which cannot fail is a defect written on purpose; what carries the
- * property instead is per-step record equality in S5 and a completion-emission
- * accumulator in S6.
+ * property instead is the conformance replay's per-step record equality and
+ * the randomized walk's completion-emission accumulator.
  *
  * `stuckSubsetCovered` IS THE OTHER SHAPE OF HARD. It is a tautology over its
  * two walks and the model says so at length, so the defect it names is an edit
