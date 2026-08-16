@@ -3,11 +3,11 @@
 #
 # WHOLE TREE, EVERY FILE TYPE, and that is the point. Prose about paths lives
 # in shell headers, model comments and markdown alike, and the failures that
-# motivated this gate were spread across all three: two gate headers cited
-# proof scripts belonging to another repo, and seven model comments cited
-# documents this tree had deleted. A markdown-only check would have caught
-# none of them, and the one class markdown tooling does cover — a relative
-# link — `doc-lint.sh` already resolves.
+# motivated this gate were spread across all three: gate headers citing proof
+# scripts belonging to another repo, and model comments citing documents this
+# tree had deleted. A markdown-only check would have caught none of them, and
+# the one class markdown tooling does cover — a relative link — `doc-lint.sh`
+# already resolves.
 #
 # WHAT COUNTS AS A CLAIM. A token with a slash in it, and then only under one
 # of two positive rules. Everything else is skipped in SILENCE, because a gate
