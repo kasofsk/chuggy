@@ -1352,7 +1352,7 @@ module chuggy_domain {
   ///     the labels unique to wrap-up — a wrap-up is never resolved
   ///     off-record. ("ticket-escalated gas_exhausted" is shared with the
   ///     eval side, so it is legitimately WONone there — pinned in
-  ///     tests/chuggy_test.qnt, nonLandingStepsCarryNoAttributionTest;
+  ///     tests/chuggy_test.qnt, nonWrapUpStepsCarryNoAttributionTest;
   ///     complete-duplicate absorbs with nothing emitted and is not an
   ///     attempt; wrapup-started OPENS an attempt but resolves none — the
   ///     resolution's attribution carries the choice the open encoded.)
@@ -1419,7 +1419,7 @@ module chuggy_domain {
   /// reading — pin every draw for a project quiet and its tickets all land
   /// cleanly / pin a move and the rework is attributed — is deliberately
   /// discharged as deterministic witness traces, not an invariant:
-  /// tests/chuggy_witness_test.qnt quietLandDeterministicTest (the choice
+  /// tests/chuggy_witness_test.qnt quietWrapUpDeterministicTest (the choice
   /// pinned quiet, the wrap-up succeeds) and movedReworkAttributedTest
   /// (the choice pinned moved, the gate rework and the wall both carry
   /// the attribution).

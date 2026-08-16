@@ -849,7 +849,7 @@ module chuggy_test {
     DB::decideOpRetry(cParkNoGas, 1).post.tickets.get(1).gasLeft == 0,
     // Contrast: a CHARGING resume at zero gas is not retryable (the
     // permanently-parked corner).
-    not(DB::retryableIn({ tickets: Map(1 -> { ...escLanding, gasLeft: 0 }) }, 1))
+    not(DB::retryableIn({ tickets: Map(1 -> { ...escWrapUp, gasLeft: 0 }) }, 1))
   })
 
   /// Charged retry metering, the default: every PIPELINE resume
@@ -857,10 +857,10 @@ module chuggy_test {
   /// livelock priced away. (The pre-work RPending flavor stays free
   /// either way —
   /// pinned above.)
-  pure val escLanding: Ticket = { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
+  pure val escWrapUp: Ticket = { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PEscalated, resumeAt: RWrapUp, reason: RsGasExhausted,
     gasLeft: 2 }
-  pure val cEscB: Core = { tickets: Map(1 -> escLanding) }
+  pure val cEscB: Core = { tickets: Map(1 -> escWrapUp) }
   pure val dRetryCharged = DB::decideOpRetry(cEscB, 1)
 
   pure val escWorking: Ticket = { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
@@ -905,7 +905,7 @@ module chuggy_test {
   /// measure CLIMBS — the CHURN set's other member, a documented churn
   /// kept reproducible by configuration; the Working resume still pays
   /// (entry to Working always meters — standing rule 2).
-  pure val cEscF: Core = { tickets: Map(1 -> escLanding) }
+  pure val cEscF: Core = { tickets: Map(1 -> escWrapUp) }
   pure val dRetryFree = DF::decideOpRetry(cEscF, 1)
   pure val dRetryFreeWork = DF::decideOpRetry({ tickets: Map(1 -> escWorking) }, 1)
 
@@ -1000,7 +1000,7 @@ module chuggy_test {
   pure val jWork: Ticket = { ...jDraft, phase: PWorking,
     tasks: spawnTasks(TKWork, 1, 2), spawned: 2 }
   pure val jEval: Ticket = { ...jDraft, phase: PEvaluating, tasks: mixedE0, spawned: 2 }
-  pure val jLand: Ticket = { ...jDraft, phase: PWrapUp }
+  pure val jWrapUp: Ticket = { ...jDraft, phase: PWrapUp }
   /// Revoke from the OCCUPIED GATE — the slot frees by
   /// phase (derive-don't-store: leaseFreeIn is true of the post-state with
   /// no cleanup step anywhere).
@@ -1026,7 +1026,7 @@ module chuggy_test {
 
   run revokeFromEachPhaseTest = assert(and {
     revokeOneOk(jDraft), revokeOneOk(jPend),
-    revokeOneOk(jWork), revokeOneOk(jEval), revokeOneOk(jLand),
+    revokeOneOk(jWork), revokeOneOk(jEval), revokeOneOk(jWrapUp),
     revokeOneOk(jGated),
     revokeOneOk(jEsc), revokeOneOk(jParkPre), revokeOneOk(jParkDep),
     // Revoking the gate's occupant frees the slot by phase alone.
@@ -1060,7 +1060,7 @@ module chuggy_test {
     mOneAfter(jPend) < mOne(jPend),
     mOneAfter(jWork) < mOne(jWork),
     mOneAfter(jEval) < mOne(jEval),
-    mOneAfter(jLand) < mOne(jLand),
+    mOneAfter(jWrapUp) < mOne(jWrapUp),
     mOneAfter(jGated) < mOne(jGated),   // the occupied gate is rank 1: strict
     mOneAfter(jEsc) == mOne(jEsc),      // desk revoke: flat, by design
     mOneAfter(jParkPre) == mOne(jParkPre),
@@ -1080,8 +1080,8 @@ module chuggy_test {
   /// completion counter at zero — contrast with the completed ticket (c8),
   /// whose counter is 1 and which is beyond revoke's reach (previous test).
   run revokedNeverCompletesTest = assert(and {
-    revokeOne(jLand).post.tickets.get(1).completions == 0,
-    revokeOne(jLand).rec.effects == ["Revoke"],
+    revokeOne(jWrapUp).post.tickets.get(1).completions == 0,
+    revokeOne(jWrapUp).rec.effects == ["Revoke"],
     c8.tickets.get(1).completions == 1
   })
 
@@ -1233,7 +1233,7 @@ module chuggy_test {
   /// arm's stamp — wrapUpIsolation's completeness cannot forbid the
   /// shared gas_exhausted label, so a stamp-drop there is visible only
   /// here (multi-project review, observation A).
-  run landingAttributionStampsOwnProjectTest = assert(and {
+  run wrapUpAttributionStampsOwnProjectTest = assert(and {
     // Success, quiet: the fast-path off the queue — attributed, effects
     // untouched.
     DB::decideWrapUpResolve(onProject2(cQueueB), 1, WOk, false).rec.attempt
@@ -1272,7 +1272,7 @@ module chuggy_test {
   /// boundary), eval-passed (which only ENQUEUES the wrap-up — the
   /// attempt resolves later, under a choice not yet made), and the
   /// absorbed complete-duplicate (no attempt resolves, nothing is emitted).
-  run nonLandingStepsCarryNoAttributionTest = assert(and {
+  run nonWrapUpStepsCarryNoAttributionTest = assert(and {
     dArr1.rec.attempt == WONone,
     dRelease.rec.attempt == WONone,
     dDispatch.rec.attempt == WONone,
@@ -1305,7 +1305,7 @@ module chuggy_test {
     ticketMeasure(bB, jPend) == ticketMeasure(bB, { ...jPend, artifact: ASome(3) }),
     ticketMeasure(bB, jWork) == ticketMeasure(bB, { ...jWork, artifact: ASome(9) }),
     ticketMeasure(bB, jEval) == ticketMeasure(bB, { ...jEval, artifact: ASome(1) }),
-    ticketMeasure(bB, jLand) == ticketMeasure(bB, { ...jLand, artifact: ASome(4) }),
+    ticketMeasure(bB, jWrapUp) == ticketMeasure(bB, { ...jWrapUp, artifact: ASome(4) }),
     ticketMeasure(bD, jWork) == ticketMeasure(bD, { ...jWork, artifact: ASome(2) }),
     ticketMeasure(bB, { ...jEval, artifact: ASome(1) })
       == ticketMeasure(bB, { ...jEval, artifact: ASome(99) })
@@ -1328,9 +1328,9 @@ module chuggy_test {
     ticketMeasure(bB, jPend) == ticketMeasure(bB, { ...jPend, project: 2 }),
     ticketMeasure(bB, jWork) == ticketMeasure(bB, { ...jWork, project: 2 }),
     ticketMeasure(bB, jEval) == ticketMeasure(bB, { ...jEval, project: 2 }),
-    ticketMeasure(bB, jLand) == ticketMeasure(bB, { ...jLand, project: 2 }),
+    ticketMeasure(bB, jWrapUp) == ticketMeasure(bB, { ...jWrapUp, project: 2 }),
     ticketMeasure(bB, jGated) == ticketMeasure(bB, { ...jGated, project: 2 }),
-    ticketMeasure(bB, escLanding) == ticketMeasure(bB, { ...escLanding, project: 2 }),
+    ticketMeasure(bB, escWrapUp) == ticketMeasure(bB, { ...escWrapUp, project: 2 }),
     ticketMeasure(bD, jWork) == ticketMeasure(bD, { ...jWork, project: 2 })
   })
 
@@ -1400,10 +1400,10 @@ module chuggy_test {
     accounted(cFresh), accounted(cParkNoGas), accounted(cQueueB),
     accounted(cChain), accounted(cGateOcc),
     accounted(cXDepPre), accounted(cXDepDone),
-    accountedTicket(escLanding), accountedTicket(escWorking),
+    accountedTicket(escWrapUp), accountedTicket(escWorking),
     accountedTicket(escEval),
     accountedTicket(jDraft), accountedTicket(jPend), accountedTicket(jWork),
-    accountedTicket(jEval), accountedTicket(jLand), accountedTicket(jGated),
+    accountedTicket(jEval), accountedTicket(jWrapUp), accountedTicket(jGated),
     accountedTicket(jEsc), accountedTicket(jParkPre), accountedTicket(jParkDep)
   })
 }
