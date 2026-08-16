@@ -11,6 +11,15 @@
  * mid-flight, which is what stops a leaf that always fails from reading as a
  * demonstration.
  *
+ * THE BAR IS THE CONJUNCT, NOT THE PREDICATE, because a case that goes red
+ * when a whole invariant is mutated to constant `true` says nothing about the
+ * named sub-control it appears to target: several here fail on a conjunct
+ * beside the one their fixture was built for, and a conjunct nobody has fed a
+ * defect can sit inside a predicate having never once performed the refusal it
+ * exists for. So a case is proved against the deletion of the single conjunct
+ * it names — with that conjunct gone the invariant returns true on the fixture
+ * and the case fails, which is what says the two are about the same thing.
+ *
  * TWO OF THEM CANNOT BE MADE RED BY A STATE, and saying so is the honest
  * report rather than substituting a weaker check. `completionExclusive` and
  * `revokedNeverCompletes` are stated over a completion count that this record
@@ -82,6 +91,7 @@ import {
   type StepView,
 } from "../../src/domain/invariants.ts";
 import { sysMeasure } from "../../src/domain/measure.ts";
+import { reworkBudget } from "../../src/domain/pricing.ts";
 import type { Task } from "../../src/domain/task.ts";
 import { completionsOf, hasOpenHumanTask } from "../../src/domain/ticket.ts";
 import {
@@ -160,13 +170,15 @@ test("revokedNeverCompletes rejects a revoked ticket that completed", () => {
 });
 
 test("wrapUpIsolation rejects a wrap-up resolved off the record or attributed elsewhere", () => {
-  assert.ok(
-    !wrapUpIsolation(
-      config,
-      stepView(recordOf({ label: "rework-started wrapup_failure" })),
-    ),
-    "a gate rework carrying no attempt is a wrap-up resolved off-record",
-  );
+  for (const label of [
+    "rework-started wrapup_failure",
+    "ticket-escalated wrapup_budget_exhausted",
+  ]) {
+    assert.ok(
+      !wrapUpIsolation(config, stepView(recordOf({ label }))),
+      `${label} is unique to the wrap-up side, so carrying no attempt resolves one off-record`,
+    );
+  }
   assert.ok(
     !wrapUpIsolation(
       config,
@@ -241,6 +253,35 @@ test("wrapUpIsolation rejects a failure on a valid artifact and a path that did 
   assert.ok(
     !wrapUpIsolation(config, stepView(fannedOut)),
     "one wrap-up attempt moves exactly one ticket",
+  );
+});
+
+test("wrapUpIsolation rejects a label that resolves no wrap-up and an attribution off the universe", () => {
+  const offRoster = recordOf({
+    label: "rework-started eval_failure",
+    transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "PWorking" }],
+    attempt: woAttempt(asProjectId(2), true),
+  });
+  assert.ok(
+    !wrapUpIsolation(config, stepView(offRoster)),
+    "the eval side's rework resolves no wrap-up, so no step carrying an attempt may wear its label",
+  );
+  const outside = config.nProjects + 1;
+  const offUniverse = coreOf([
+    ticketOn(config, outside, { phase: "PWrapUpHolding" }),
+  ]);
+  const attributed = recordOf({
+    label: "ticket-done",
+    transitions: [{ ticket: id(1), from: "PWrapUpHolding", to: "PDone" }],
+    attempt: woAttempt(asProjectId(outside), true),
+  });
+  assert.ok(
+    !wrapUpIsolation(config, {
+      ...healthy,
+      post: offUniverse,
+      rec: attributed,
+    }),
+    "the stepped ticket carries that project too, so the own-project conjunct agrees and the universe is what refuses it",
   );
 });
 
@@ -427,6 +468,8 @@ test("accountsBounded rejects an overdraw and a refund", () => {
     { gasLeft: -1 },
     { gasLeft: config.gas + 1 },
     { reworkLeft: -1 },
+    { reworkLeft: reworkBudget(config.reworkPolicy) + 1 },
+    { wrapUpLeft: -1 },
     { wrapUpLeft: config.wrapUpPricing.pricing === "Budgeted" ? 99 : 1 },
   ]) {
     assert.ok(
@@ -507,6 +550,13 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
   assert.ok(
     !tasksWellFormed(config, stateView(evaluating([evalRunning(3, 0)]))),
     "the set is exactly the stage's declared width",
+  );
+  assert.ok(
+    !tasksWellFormed(
+      config,
+      stateView(evaluating([evalTask(3, 0, "TCancelled"), evalRunning(4, 0)])),
+    ),
+    "cancelled is a retirement mark on the eval side too, and this branch has its own conjunct saying so",
   );
 });
 
@@ -729,6 +779,23 @@ test("cascadeSafety rejects a doomed ticket left waiting invisibly", () => {
     }),
   ]);
   assert.ok(cascadeSafety(config, stateView(parked)));
+  const wrongWall = coreOf([
+    ticketOn(config, 1, { phase: "PRevoked" }),
+    ticketOn(config, 1, {
+      phase: "PEscalated",
+      reason: "RsWorkFailed",
+      resumeAt: "RWorking",
+      deps: [id(1)],
+    }),
+  ]);
+  assert.ok(
+    !cascadeSafety(config, stateView(wrongWall)),
+    "a doomed ticket parked behind a retryable wall is a resume the desk would offer on a ticket that can never run",
+  );
+  assert.ok(
+    noStructuralDeadlock(config, stateView(wrongWall)),
+    "the desk task is open either way, so the wall's own name is the only thing that catches this",
+  );
   const transitive = coreOf([
     ticketOn(config, 1, { phase: "PRevoked" }),
     ticketOn(config, 1, {
