@@ -51,7 +51,8 @@ fresh_repo_at() { # <dir>
 # case starts here and adds exactly the defect it is about.
 scaffold() {
 	rm -rf "$R"
-	mkdir -p "$R/src/domain" "$R/src/effects" "$R/src/interp" "$R/src/adapters"
+	mkdir -p "$R/src/domain" "$R/src/spine" "$R/src/effects" "$R/src/interp" \
+		"$R/src/adapters" "$R/src/tools"
 	fresh_repo_at "$R"
 	ln -s "$REPO/node_modules" "$R/node_modules"
 	for config in package.json tsconfig.json eslint.config.js \
@@ -72,6 +73,17 @@ import { twice } from "./pure.ts";
 test("twice doubles", () => {
   assert.equal(twice(2), 4);
 });
+TS
+	# The spine is the pure core's second directory, so a fixture without one is
+	# not this gate's subject: the purity stage requires every directory the rule
+	# names to exist and to hold a file. This module also exercises the one
+	# direction the graph rule permits — the spine reaching the domain.
+	cat >"$R/src/spine/step.ts" <<'TS'
+import { twice } from "../domain/pure.ts";
+
+export function quadruple(n: number): number {
+  return twice(twice(n));
+}
 TS
 }
 
@@ -526,5 +538,61 @@ check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
 scaffold
 run nosuchstage
 check "an unknown stage exits 2" 2 "$RC" "unknown stage nosuchstage"
+
+# --- The pure core is TWO directories ---------------------------------------
+# `src/spine/` holds the decision-event vocabulary, the machine's own step and
+# the golden-trace replayer. It was claimed pure in its own headers before any
+# gate covered it, and both halves of the rule scoped to `src/domain/` — so a
+# clock or a node builtin on the replay path passed every stage. These cases
+# are what make the extension a rule rather than a claim; each was watched to
+# fail with the extension reverted and the defect left in place.
+
+# 32. The ambient half, on the spine. Narrowing the stage's directory list back
+#     to the domain alone makes this case pass a tree that reads the clock on
+#     the replay path — measured, with the clock below still in it.
+scaffold
+cat >>"$R/src/spine/step.ts" <<'TS'
+
+export function stamp(): number {
+  return Date.now();
+}
+TS
+run purity
+check "a clock in src/spine is a finding" 1 "$RC" 'may not reach `Date`'
+
+# 33. The graph half, on the spine, and it names its own rule rather than
+#     `domain-is-pure`: the two differ in what they permit, because the spine
+#     may reach the domain and the domain may reach nothing.
+scaffold
+cat >>"$R/src/spine/step.ts" <<'TS'
+
+export { readFileSync } from "node:fs";
+TS
+run purity
+check "node:fs in src/spine is a finding" 1 "$RC" "spine-is-pure"
+
+# 34. The positive control for the widened rule, and the reason `src/tools/`
+#     exists at all: the emitter spawns quint and the gate driver reads the
+#     corpus, so the same call one directory across must stay clean. A purity
+#     rule only ever observed saying no has not been shown to be scoped to the
+#     directories it names — and it now names two, so it needs its own control.
+scaffold
+cat >"$R/src/tools/emit.ts" <<'TS'
+export function stamp(): number {
+  return Date.now();
+}
+TS
+run purity
+check "Date.now in src/tools is clean" 0 "$RC" "purity clean"
+
+# 35. A directory the rule names and the tree does not have. Could-not-run
+#     rather than clean: a rule whose subject has left the tree did not pass,
+#     and the stage would otherwise print clean over a roster it no longer
+#     reads. Case 29's neighbour, for the other pure directory and for absence
+#     rather than emptiness.
+scaffold
+rm -rf "$R/src/spine"
+run purity
+check "a missing pure directory exits 2, not 0" 2 "$RC" "named by the purity rule"
 
 done_ "check-ts.test.sh"

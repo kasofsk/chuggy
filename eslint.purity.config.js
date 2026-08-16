@@ -1,7 +1,18 @@
 /**
- * Half of the purity rule: `src/domain/` reaches no ambient capability.
+ * Half of the purity rule: THE PURE CORE reaches no ambient capability.
  *
- * The other half — no transitive path out of the directory by import — is the
+ * THE PURE CORE IS TWO DIRECTORIES, `src/domain/` and `src/spine/`, and the
+ * roster below governs both. The spine holds the decision-event vocabulary,
+ * the machine's own step and the golden-trace replayer — the path standing
+ * rule 4 rests on, where "the same Core and the same event produce the same
+ * StepRecord on any host at any hour" is the whole conformance argument, and
+ * where s5's `replayCore` will fold. A clock there voids the replay exactly as
+ * a clock in a decider does. `src/tools/` is deliberately NOT here: it reads
+ * the filesystem and spawns quint by design, and what keeps that honest is the
+ * module graph's reachability rules, which forbid anything pure from reaching
+ * it.
+ *
+ * The other half — no transitive path out of the pure core by import — is the
  * module graph, and it lives in `.dependency-cruiser.mjs`. A module graph
  * cannot see `Date.now()`, because a global is not an import; a lint rule
  * cannot see a three-hop path into `node:fs`, because it reads one file at a
@@ -10,8 +21,8 @@
  * THIS HALF IS A ROSTER, AND `.dependency-cruiser.mjs` ARGUES AGAINST ROSTERS.
  * The contradiction is real and worth stating rather than leaving to be found.
  * The graph half can be spelled as a closed predicate — nothing reachable from
- * the domain lies outside it — because "outside the domain" is decidable from
- * a path. Ambient capability has no such predicate: the set of globals a
+ * a pure directory lies outside it — because "outside the directory" is
+ * decidable from a path. Ambient capability has no such predicate: the set of globals a
  * JavaScript host offers is open, it grows with the runtime, and nothing about
  * the shape of `Intl` distinguishes it from `Map` except knowing what it does.
  * So this half is enumerated, which means it is exactly as complete as its
@@ -62,13 +73,13 @@
  * WHAT IT CATCHES: any lexical reference to a rostered ambient global, any
  * `Math.random()` or `Date.now()` property access, `eval`, `new Function`, a
  * dynamic `import()`, and `import.meta` — across every file extension the
- * `DOMAIN_FILES` glob below admits.
+ * `PURE_FILES` glob below admits.
  *
  * WHAT IT CANNOT CATCH, stated rather than hoped:
  *
  *   1. A capability that is not on the roster. See the dated sweep. The
  *      compensating control is not a promise to remember: the purity stage
- *      hands `src/domain/` files to eslint EXPLICITLY under `--max-warnings=0`,
+ *      hands every pure-core file to eslint EXPLICITLY under `--max-warnings=0`,
  *      so a file this config does not match is a finding rather than a silent
  *      skip. That gap is how a `.mts` file reached `Date.now()` and the whole
  *      gate still printed clean.
@@ -78,13 +89,14 @@
  *   3. A capability handed in as an argument by an impure caller. Not a hole
  *      but the design: a decider is pure with respect to what it is given, and
  *      the model's own `Core` is exactly that argument. What forbids a *port*
- *      from reaching the domain is the module-graph half, not this one.
+ *      from reaching the pure core is the module-graph half, not this one.
  */
 
 import tseslint from "typescript-eslint";
 
 /**
- * The files this config governs. Every TypeScript extension rather than `.ts`
+ * The files this config governs: every TypeScript file of the two pure
+ * directories. Every TypeScript extension rather than `.ts`
  * alone: `.mts` and `.cts` are TypeScript that `tsc` compiles and that a
  * `*.ts` glob silently declines to lint. `.d.ts` matches too, and costs
  * nothing.
@@ -97,11 +109,14 @@ import tseslint from "typescript-eslint";
  * for a file that is still type-invisible, which is the worse of the two
  * answers.
  */
-export const DOMAIN_FILES = ["src/domain/**/*.{ts,mts,cts}"];
+export const PURE_FILES = [
+  "src/domain/**/*.{ts,mts,cts}",
+  "src/spine/**/*.{ts,mts,cts}",
+];
 
 const why = (capability, reason) => ({
   name: capability,
-  message: `src/domain/ may not reach \`${capability}\`: ${reason}`,
+  message: `the pure core may not reach \`${capability}\`: ${reason}`,
 });
 
 const NONDETERMINISM = "a replayed decision must produce the same record twice";
@@ -189,7 +204,7 @@ const restrictedGlobals = [
 
 export default [
   {
-    files: DOMAIN_FILES,
+    files: PURE_FILES,
     // The purity stage runs this config alone, so it carries the parser it
     // needs. None of these rules is type-aware, which is why the stage is fast
     // enough to be the one a developer runs on every save.
@@ -201,12 +216,12 @@ export default [
         {
           object: "Math",
           property: "random",
-          message: `src/domain/ may not reach \`Math.random\`: ${NONDETERMINISM}`,
+          message: `the pure core may not reach \`Math.random\`: ${NONDETERMINISM}`,
         },
         {
           object: "Date",
           property: "now",
-          message: `src/domain/ may not reach \`Date.now\`: ${NONDETERMINISM}`,
+          message: `the pure core may not reach \`Date.now\`: ${NONDETERMINISM}`,
         },
       ],
       "no-restricted-syntax": [
@@ -214,11 +229,11 @@ export default [
         {
           selector: "ImportExpression",
           message:
-            "src/domain/ may not use a dynamic import: the module graph must be statically checkable",
+            "the pure core may not use a dynamic import: the module graph must be statically checkable",
         },
         {
           selector: "MetaProperty[meta.name='import']",
-          message: `src/domain/ may not read \`import.meta\`: ${HOST_COUPLING}`,
+          message: `the pure core may not read \`import.meta\`: ${HOST_COUPLING}`,
         },
       ],
       "no-eval": "error",

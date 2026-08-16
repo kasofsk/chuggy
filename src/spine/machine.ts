@@ -28,7 +28,12 @@
  */
 
 import { invariant } from "../domain/assert.ts";
-import { boundsOf, configAdmitsInit, type Config } from "../domain/domain.ts";
+import {
+  boundsOf,
+  canArriveIn,
+  configAdmitsInit,
+  type Config,
+} from "../domain/domain.ts";
 import { allInvariants, type StepHistory } from "../domain/invariants.ts";
 import {
   sysMeasure,
@@ -89,7 +94,11 @@ export function currentRecords(c: Core): ReadonlyMap<number, readonly Task[]> {
  * without asking that question would accept a trace where it had not.
  */
 export function quiet(cfg: Config, c: Core): boolean {
-  if (c.tickets.size < cfg.nTickets) {
+  // The model writes `not(canArrive)` — a REFERENCE to the arrival bound, not a
+  // restatement of it. This predicate guards every settled step, so a second
+  // spelling of that bound would be the copied guard `domain.ts` forbids, in
+  // one of the few places a golden trace could not catch the drift.
+  if (canArriveIn(cfg, c)) {
     return false;
   }
   for (const jb of c.tickets.values()) {
@@ -189,8 +198,8 @@ export function settle(
 }
 
 /**
- * The domain bundle at a machine state — all twenty-four conjuncts of
- * `allInvariants`, over the state's own `Core` and its own step history.
+ * The domain bundle at a machine state — every conjunct of `allInvariants`,
+ * over the state's own `Core` and its own step history.
  *
  * A one-line adapter, and it earns its place by being the only spelling of the
  * pairing: the replayer asserts the bundle after every step, the randomized
