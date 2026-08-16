@@ -216,8 +216,8 @@
 /// (deps/grouping stay expressible), N_TASKS = 1 (singleton task sets),
 /// RWBudget(1) + GAS = 3 (dispatch + one eval rework + one gate rework
 /// all affordable, walls reachable), Budgeted(1), RetryCharged (the
-/// default metering), MAX_STAGES = 1 / N_REPOS = 1
-/// (staging and multi-repo are orthogonal to the seam —
+/// default metering), MAX_STAGES = 1 / N_PROJECTS = 1
+/// (staging and multi-project are orthogonal to the seam —
 /// each collapses to its documented degeneration; the landing's
 /// invalidated draw still exercises both paths). Unlike the mc
 /// instances there is no per-pricing spread: the seam model reads no
@@ -274,7 +274,7 @@ module chuggy_refinement {
     WRAPUP_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 1,
-    N_REPOS = 1
+    N_PROJECTS = 1
   ).* from "./domain"
 
   // ==========================================================================
@@ -291,7 +291,7 @@ module chuggy_refinement {
   /// pure, so (Core, picks) determines everything; the picks are the
   /// only information the crash could lose.
   type Cmd =
-      JArrive({ deps: Set[int], prog: List[Stage], repo: int, wrapUp: WrapUp })
+      JArrive({ deps: Set[int], prog: List[Stage], project: int, wrapUp: WrapUp })
     | JRelease(int)
     | JRevoke(int)
     | JDispatch(int)
@@ -327,7 +327,7 @@ module chuggy_refinement {
   /// step, and THE replay step: both sides of theorem 3 are this one
   /// function, so they cannot drift.
   pure def execCmd(c: Core, cmd: Cmd): Decision = match cmd {
-    | JArrive(a) => decideArrive(c, a.deps, a.prog, a.repo, a.wrapUp)
+    | JArrive(a) => decideArrive(c, a.deps, a.prog, a.project, a.wrapUp)
     | JRelease(j) => decideRelease(c, j)
     | JRevoke(j) => decideRevoke(c, j)
     | JDispatch(j) => decideDispatch(c, j)
@@ -353,7 +353,7 @@ module chuggy_refinement {
         canArriveIn(c),
         a.deps.subseteq(dependableIn(c)),
         validPrograms.contains(a.prog),
-        repos.contains(a.repo),
+        projects.contains(a.project),
         wrapUpChoices.contains(a.wrapUp)
       }
     | JRelease(j) => draftsIn(c).contains(j)
@@ -571,9 +571,9 @@ module chuggy_refinement {
     canArrive,
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
-    nondet repo_ = repos.oneOf()
+    nondet project_ = projects.oneOf()
     nondet wrapUp_ = wrapUpChoices.oneOf()
-    journalStep(JArrive({ deps: deps_, prog: prog, repo: repo_,
+    journalStep(JArrive({ deps: deps_, prog: prog, project: project_,
       wrapUp: wrapUp_ }))
   }
   action actorRelease = all {
