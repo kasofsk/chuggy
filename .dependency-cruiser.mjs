@@ -90,15 +90,15 @@
  *      dynamic-imported clean. The ban is now spelled as `src/**` minus the
  *      pure core, which has no directory left to forget.
  *
- *      AND `import()` IS ONE OF THREE WAYS. `createRequire(import.meta.url)`
- *      and a `Worker` given a `URL` fetch a module by name too, and both are an
- *      ordinary import of an ordinary node builtin in exactly the layers this
- *      file ALLOWS node builtins — measured live from an adapter into
- *      `src/spine/actor.ts`. `eslint.purity.config.js` restricts `node:module`
- *      and `node:worker_threads` there for the reason that fits in one line: an
- *      adapter needs a medium, not a module loader.
+ *      AND `import()` IS NOT THE ONLY WAY. `createRequire(import.meta.url)`, a
+ *      `Worker` given a `URL`, and `process.getBuiltinModule` reaching either
+ *      one fetch a module by name too, in exactly the layers this file ALLOWS
+ *      node builtins — each measured live from an adapter into
+ *      `src/spine/actor.ts`. `eslint.purity.config.js` closes the loaders and
+ *      the accessor there, for the reason that fits in one line: a layer with a
+ *      medium has no use for a module loader.
  *
- *      WITH ALL THREE CLOSED, every remaining edge is one this graph HAS — so
+ *      WITH THEM CLOSED, every remaining edge is one this graph HAS — so
  *      `adapters-decide-nothing`'s transitivity catches the static route
  *      through a tool, which it always promised and could not deliver while an
  *      invisible edge existed. The literal `import()` stays this file's, and

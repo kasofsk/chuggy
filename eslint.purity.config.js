@@ -70,25 +70,35 @@
  * array in, so the rules have one definition and the whole-tree lint enforces
  * them too.
  *
- * IT ALSO CARRIES TWO RULES THAT ARE NOT ABOUT PURITY AT ALL, and the misfit is
+ * IT ALSO CARRIES RULES THAT ARE NOT ABOUT PURITY AT ALL, and the misfit is
  * worth naming at the top rather than leaving to be found halfway down. THE
  * MODULE GRAPH IS COMPLETE ONLY IF NOTHING IN THIS TREE FETCHES A MODULE AT RUN
  * TIME — a claim about the tree rather than about a layer, since a graph with
- * one unresolvable edge in it cannot answer a reachability question anywhere —
- * and there are three ways to break it: a computed `import()`, `createRequire`,
- * and a worker given a URL. Each was measured live from `src/adapters/` into
+ * one unresolvable edge in it cannot answer a reachability question anywhere.
+ *
+ * WHAT IS CLOSED, rather than how many ways there were of breaking it: the
+ * dynamic-import EXPRESSION, every spelling of the builtins that hand back a
+ * module (`module`, `worker_threads`, each with and without the `node:`
+ * prefix), and the accessor that hands one back with no import to see
+ * (`getBuiltinModule`). Each shape was measured live from `src/adapters/` into
  * `src/spine/actor.ts`, the single writer, with depcruise, tsc and the whole
- * lint green. So a second block below applies a dynamic-import ban and a
- * module-loader import ban, and nothing else, to every TypeScript file under
- * `src/` that the pure block does not already cover. The alternative was a
- * third config file holding two rules, which would put the two spellings of the
- * same claim in two places.
+ * lint green over it. A COUNT WOULD BE THE WRONG SHAPE OF SENTENCE HERE, and
+ * this file has now learned that twice: the roster was a list of directories
+ * until a file at the `src/` root walked past it, and a list of loaders until a
+ * bare specifier and an accessor did — so what is written down is the closure,
+ * and a name that belongs in it is an addition rather than a refutation.
+ *
+ * The rules live in a second block below, applied to every TypeScript file
+ * under `src/` that the pure block does not already cover. The alternative was
+ * a third config file, which would put the two spellings of the same claim in
+ * two places.
  *
  * WHAT IT CATCHES: any lexical reference to a rostered ambient global, any
  * `Math.random()` or `Date.now()` property access, `eval`, `new Function`, a
  * dynamic `import()`, and `import.meta` — across every file extension the
- * `PURE_FILES` glob below admits; and a dynamic `import()` or an import of a
- * module loader everywhere else under `src/`.
+ * `PURE_FILES` glob below admits; and everywhere else under `src/`, a dynamic
+ * `import()`, an import of a module loader, and any reach for
+ * `getBuiltinModule`.
  *
  * WHAT IT CANNOT CATCH, stated rather than hoped:
  *
@@ -130,9 +140,9 @@ export const PURE_FILES = [
 ];
 
 /**
- * THE MODULE LOADERS. A dynamic `import()` is not the only way to fetch a module
- * at run time, and the other two arrive as ordinary node builtins in exactly
- * the layers that are allowed node builtins.
+ * THE MODULE LOADERS THAT ARRIVE AS IMPORTS. A dynamic `import()` is not the
+ * only way to fetch a module at run time, and the rest arrive as ordinary node
+ * builtins in exactly the layers that are allowed node builtins.
  *
  * `createRequire(import.meta.url)("../spine/actor.ts")` executed against this
  * tree returns `commit` and every other export of the single writer;
@@ -140,15 +150,43 @@ export const PURE_FILES = [
  * passed depcruise, tsc and the whole lint (measured), because both are a legal
  * import of a legal builtin followed by a call.
  *
- * AN ADAPTER NEEDS A MEDIUM, NOT A MODULE LOADER, and that sentence is the
+ * BOTH SPELLINGS OF EVERY NAME, and the pair is why this is a list rather than
+ * a prefix test: node resolves `module` and `node:module` to the same builtin,
+ * and it resolves `worker_threads` the same way. A roster holding one spelling
+ * of a name is a roster with a synonym for the thing it forbids.
+ *
+ * A LAYER HERE NEEDS A MEDIUM, NOT A MODULE LOADER, and that sentence is the
  * whole rule. `src/adapters/` is deliberately not reachability-bounded — a
  * medium is what an adapter is for — and `src/tools/` spawns quint and reads
  * the corpus; `fs`, `child_process`, `os` and `path` are all legitimate in
- * both. What neither has any use for is a way to fetch an arbitrary module by
- * name, which is not a medium at all: it is the module graph's own job, done
- * where the graph cannot see it.
+ * both, and `src/effects/` and `src/interp/` reach neither. What none of them
+ * has any use for is a way to fetch an arbitrary module by name, which is not a
+ * medium at all: it is the module graph's own job, done where the graph cannot
+ * see it.
  */
-const MODULE_LOADERS = ["node:module", "module", "node:worker_threads"];
+const MODULE_LOADERS = [
+  "node:module",
+  "module",
+  "node:worker_threads",
+  "worker_threads",
+];
+
+/**
+ * THE MODULE LOADER THAT ARRIVES AS NO IMPORT AT ALL.
+ * `process.getBuiltinModule("node:module").createRequire(…)` reached the single
+ * writer from `src/adapters/`, executed live, with every gate green — and
+ * `no-restricted-imports` is structurally blind to it, because there is no
+ * import statement anywhere in the expression.
+ *
+ * IT IS BANNED BY THE PROPERTY NAME AND NOT BY `process.` IN FRONT OF IT, which
+ * is the difference from `Math.random` in the roster above. The pure core bans
+ * the `process` global outright, so a receiver there has nowhere to hide; here
+ * `process` is legitimate — `src/tools/` sets `process.exitCode`, and its suite
+ * moves with `process.chdir`/`process.cwd` — so what has to be forbidden is the
+ * METHOD, on any receiver it is reached through. Nothing in this tree offers a
+ * member of this name for any other purpose.
+ */
+const BUILTIN_MODULE_GETTER = "getBuiltinModule";
 
 const NO_DYNAMIC_IMPORT =
   "the module graph must be statically checkable: a computed dynamic import is an edge `.dependency-cruiser.mjs` cannot see";
@@ -340,8 +378,19 @@ export default [
         {
           paths: MODULE_LOADERS.map((name) => ({
             name,
-            message: `an adapter needs a medium, not a module loader: \`${name}\` fetches a module by name, which is the module graph's job done where the graph cannot see it`,
+            message: `a layer here needs a medium, not a module loader: \`${name}\` fetches a module by name, which is the module graph's job done where the graph cannot see it`,
           })),
+        },
+      ],
+      // ...AND THE ONE THAT NEEDS NO IMPORT. See `BUILTIN_MODULE_GETTER`: an
+      // import ban cannot see an expression with no import in it, and this
+      // expression reached the single writer. Keyed on the property alone
+      // rather than on `process.`, because `process` itself is legitimate here.
+      "no-restricted-properties": [
+        "error",
+        {
+          property: BUILTIN_MODULE_GETTER,
+          message: `a layer here needs a medium, not a module loader: \`${BUILTIN_MODULE_GETTER}\` fetches a builtin by name with no import to see, which is the module graph's job done where the graph cannot see it`,
         },
       ],
     },
