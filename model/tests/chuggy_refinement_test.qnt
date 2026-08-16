@@ -13,7 +13,11 @@
 ///     rework, and the landing; total cursor loss with re-emission
 ///     absorbed; final full-journal recovery), asserting
 ///     `allDomainInvariants and refinementInvariants` after EVERY step —
-///     the crash-recover-continue gate run.
+///     the crash-recover-continue gate run. Plus the LEASE-FREE route,
+///     which reaches no landing at all: a WNone ticket completing
+///     straight out of PEvaluating, crashed at its completion seam, so
+///     the same obligations are carried on a ticket that never takes a
+///     lease.
 ///   - chuggy_refinement_hazard_test — the EXPECTED-VIOLATION traces
 ///     (theorem 4): the effect-then-journal seam double-spending on
 ///     recovery — the dispatch double-spend, the duplicate landing, and
@@ -46,7 +50,7 @@ module chuggy_refinement_unit_test {
   // A three-decision history built BY the deciders (arrive, release,
   // dispatch), entry records taken from the decisions themselves — the
   // journal an honest actor would write.
-  pure val cmd1: Cmd = JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })
+  pure val cmd1: Cmd = JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })
   pure val d1: Decision = execCmd(genesis, cmd1)
   pure val e1: Entry = { seq: 1, cmd: cmd1, rec: d1.rec }
   pure val cmd2: Cmd = JRelease(1)
@@ -116,24 +120,24 @@ module chuggy_refinement_unit_test {
   })
 
   /// Tamper 4 — an out-of-universe PAYLOAD: an arrival's wrap-up lease
-  /// must come from `wrapUpChoices`, exactly as its prog and repo come
-  /// from validPrograms and repos (the `arrive` action's fourth draw,
+  /// must come from `wrapUpChoices`, exactly as its prog and project come
+  /// from validPrograms and projects (the `arrive` action's fourth draw,
   /// and wrapUpChoices IS the refusal rule). The row is otherwise
   /// impeccable — dense seq, and its rec is the one the decider itself
   /// produces — so only the draw-set conjunct can refuse it; without
   /// that conjunct the replay materializes a ticket holding a lease on
-  /// a resource the universe does not contain. N_REPOS = 1 here, so
+  /// a resource the universe does not contain. N_PROJECTS = 1 here, so
   /// WExclusive(2) is out of universe too: the refusal is membership,
   /// not a range sniff.
   run journalRefusesOutOfUniversePayloadTest =
     val phantom: Cmd =
-      JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(99) })
+      JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(99) })
     val ePhantom: Entry = { seq: 1, cmd: phantom, rec: execCmd(genesis, phantom).rec }
     assert(and {
       not(cmdEnabled(genesis, phantom)),
       not(journalLegalOn([ePhantom])),
       not(cmdEnabled(genesis,
-        JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(2) })))
+        JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(2) })))
     })
 
   /// The world/journal arithmetic of theorem 2, on concrete data: an
@@ -199,7 +203,7 @@ module chuggy_refinement_witness_test {
   run crashRecoverContinueDeterministicTest =
     rinit
       // The Draft arrives and is journaled (entry 1)...
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
       .expect(and { journal.length() == 1, allDomainInvariants, refinementInvariants })
       // ...and the actor dies BEFORE emitting it. Recovery replays: the
       // Draft is in memory again — the decision was durable the instant
@@ -343,6 +347,75 @@ module chuggy_refinement_witness_test {
         worldSpawns(1) == 2,
         allDomainInvariants, refinementInvariants
       })
+
+  /// THE LEASE-FREE TICKET, journaled. A WNone ticket's effect already
+  /// happened during work, so its passing evaluation IS its completion:
+  /// it enters neither wrap-up phase and takes no lease. Every other run
+  /// in this file walks a WExclusive ticket through the gate, so this is
+  /// where the refinement obligations are evaluated on a ticket that
+  /// never holds one — the journal's legality, the replay, the cursor
+  /// arithmetic and the two world-facing theorems, all on the route that
+  /// skips the gate.
+  ///
+  /// The crash sits at the COMPLETION seam because that is where this
+  /// route differs from the gated one: the completion decision rides an
+  /// eval reduction rather than a dequeue, so recovery has to rebuild a
+  /// Done ticket from a journal whose last entry is JEvalReduce.
+  run leaseFreeArrivalRecoversAndCompletesDeterministicTest =
+    rinit
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WNone })))
+      .expect(and {
+        memCore.tickets.get(1).wrapUp == WNone,
+        journal.length() == 1,
+        allDomainInvariants, refinementInvariants
+      })
+      .then(emitNext)
+      .expect(and { applied == 1, allDomainInvariants, refinementInvariants })
+      .then(stepEmit(JRelease(1), "ticket-released"))
+      .then(stepEmit(JDispatch(1), "dispatch"))
+      .then(stepEmit(JTaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
+      .then(stepEmit(JWorkReduce(1), "work-passed"))
+      .then(stepEmit(JTaskDone({ ticket: 1, tid: 2, verdict: VPass }), "task-done"))
+      // THE WITNESSED STEP: evaluation passing completes the ticket
+      // outright, straight out of PEvaluating. Journaled, not emitted —
+      // the world has been told nothing yet.
+      .then(journalStep(JEvalReduce(1)))
+      .expect(and {
+        obs.label == "ticket-done",
+        obs.transitions == [{ ticket: 1, from: PEvaluating, to: PDone }],
+        obs.landing == WONone,          // no attempt, so nothing to attribute
+        memCore.tickets.get(1).phase == PDone,
+        journalCompletions(1) == 1,
+        worldCompletions(1) == 0,
+        allDomainInvariants, refinementInvariants
+      })
+      // CRASH at the completion seam, with total cursor loss: replay
+      // rebuilds the Done ticket — and its lease-free kind — out of the
+      // journal alone, and the world has still completed nothing.
+      .then(crashRecoverTo(0))
+      .expect(and {
+        memCore.tickets.get(1).phase == PDone,
+        memCore.tickets.get(1).wrapUp == WNone,
+        memCore.tickets.get(1).completions == 1,
+        applied == 0,
+        worldCompletions(1) == 0,
+        allDomainInvariants, refinementInvariants
+      })
+      // The executor re-emits the whole journal: the prefix the world
+      // already holds is absorbed, and the completion lands exactly once.
+      .then(7.reps(_ => emitNext))
+      .expect(and {
+        applied == 7,
+        worldCompletions(1) == 1,
+        worldSpawns(1) == 1,
+        // NO WRAP-UP PHASE, over the whole journaled history rather than
+        // over the states this run stops at: no entry records a
+        // transition INTO either one, so the gate was never entered and
+        // no lease was ever taken.
+        journal.foldl(true, (b, e) => e.rec.transitions.foldl(b, (acc, t) =>
+          acc and t.to != PWrapUp and t.to != PWrapUpHolding)),
+        allDomainInvariants, refinementInvariants
+      })
 }
 
 /// THE HAZARD WITNESS (theorem 4, expected violations) — effect-then-
@@ -365,7 +438,7 @@ module chuggy_refinement_hazard_test {
   /// duplicate cycle), each produced by one effect-first crash.
   run hazardDoubleSpendDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
       .then(emitNext)
       .then(journalStep(JRelease(1)))
       .then(emitNext)
@@ -449,7 +522,7 @@ module chuggy_refinement_hazard_test {
   /// fan-outs in the world.
   run hazardReworkDoubleSpendDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, repo: 1, wrapUp: WExclusive(1) })))
+      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
       .then(emitNext)
       .then(journalStep(JRelease(1)))
       .then(emitNext)

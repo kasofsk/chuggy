@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copy-paste detection at threshold 0: no clone of ten lines or eighty tokens,
+# Copy-paste detection at threshold 0: no clone of the size `.jscpd.json` sets,
 # anywhere, ever.
 #
 # WHY ZERO AND NOT A BUDGET. A duplication allowance is an allowance somebody
@@ -8,9 +8,8 @@
 #
 # TESTS ARE IN SCOPE, deliberately. The usual argument for excluding them — "a
 # test should read top to bottom as the scenario it is" — is a good one, and it
-# protects a test's SCENARIO.
-# What the suites here were actually sharing was HARNESS: a `check`
-# helper, a temp dir, a trap, two counters, growing by twenty-five lines with
+# protects a test's SCENARIO. What the suites here were actually sharing was
+# HARNESS: a `check` helper, a temp dir, a trap, two counters, growing with
 # every gate. That is what `_suite.sh` is, and extracting it cost no case its
 # readability. Where a genuine scenario must repeat, mark the region with
 # `jscpd:ignore-start` and a reason on the directive line rather than widening

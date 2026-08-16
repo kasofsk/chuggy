@@ -1,11 +1,11 @@
 #!/bin/sh
 # Shell test for check-model.sh.
 #
-# Every case drives a STUB quint, because the real model run is ~50s and a
-# suite that takes fifty seconds to assert a guard is a suite that gets
-# excluded from the budget. What is under test here is the gate's refusals —
-# the paths where it must report could-not-run rather than pass — and those are
-# exactly the paths a real run never exercises.
+# Every case drives a STUB quint, because the real model run is by far the
+# slowest thing this tree runs and a suite that spends that to assert a guard
+# is a suite that gets excluded from the budget. What is under test here is the
+# gate's refusals — the paths where it must report could-not-run rather than
+# pass — and those are exactly the paths a real run never exercises.
 #
 # Run:  .chug/tasks/check-model.test.sh
 set -eu
