@@ -56,9 +56,18 @@
  * mark a trace would have stamped before it reached the queue, because the
  * landed fixture carries `freshTicket`'s `ANone` and a landing out of it would
  * produce a Done ticket `artifactWellFormed` forbids. That is the same
- * unreachable-fixture class kasofsk PR #31 corrects for `cXDepDone`; the model's
- * own `cQueueB` and its four `cGate*` fixtures are shaped the same way, and are
- * left exactly as the model writes them, because the model leads.
+ * unreachable-fixture class kasofsk PR #31 corrects for `cXDepDone`. The model's
+ * `cQueueB`, `cGateB`, `cGateWall`, `cGateGasWall`, `cGateD` and `cGateDWall`
+ * are shaped the same way — `cGated7` is not, being machine-built — and all of
+ * them are left exactly as the model writes them, because the model leads.
+ *
+ * A NOTE THE SPINE WILL WANT. The multi-ticket fleets in `domain.test.ts` red
+ * `idsDense` at DB's consts, because `N_TICKETS` is 2 there and those fleets
+ * carry three or four tickets. Nothing is wrong with them — they exist to pin
+ * guards over a phase domain, and a guard does not ask about the arrival bound —
+ * but the moment s3 asserts the bundle after every replayed step, a fleet
+ * borrowed from that suite will red for a reason that has nothing to do with the
+ * step. The fleets built here take `cfgFleet` for exactly that reason.
  */
 
 import assert from "node:assert/strict";
@@ -134,7 +143,9 @@ import {
   type StepHistory,
 } from "./invariants.ts";
 import {
+  evalStage,
   hasOpenHumanTask,
+  runningCount,
   sysMeasure,
   type ArtifactMark,
   type Core,
@@ -231,6 +242,41 @@ const runMark: ArtifactMark = { tag: "ASome", id: 2 };
 
 /** `jGated` as a trace reaches it: holding the slot, carrying what work produced. */
 const jGatedRun: Ticket = { ...jGated, artifact: runMark };
+
+/**
+ * The reference instance with room for a FLEET, and nothing else changed.
+ *
+ * `cfgBudgeted` is the model's DB, whose arrival bound is 2 — which is right for
+ * the deciders' own suite and wrong for a relation. An invariant that quantifies
+ * over a DEPENDENCY needs at least a dependent, a dep that agrees and a dep that
+ * disagrees, and at that size every fleet reds `idsDense` at DB's bound, which
+ * would swamp the exact set of every tree built on one. `N_TICKETS` is the
+ * arrival BOUND rather than a fleet size and the model varies it per instance, so
+ * a wider instance is the model's own move, not a workaround.
+ */
+const cfgFleet: Config = { ...cfgBudgeted, nTickets: 4 };
+
+/**
+ * A work fan-out WIDER than the const it was spawned at, and RESOLVED.
+ *
+ * Resolved rather than running, and the difference is not cosmetic: a live task
+ * set of three would trip `micro`'s own radix precondition (`running <= nTasks`)
+ * before any invariant was asked, so the tree would throw where it is meant to
+ * report. Resolved tasks leave `runningCount` at 0, which lets the width
+ * equality be the only thing wrong with the state.
+ */
+const jWorkWide: Ticket = {
+  ...jWork,
+  tasks: [wt(1, "TPassed"), wt(2, "TPassed"), wt(3, "TPassed")],
+  spawned: 3,
+};
+
+/** The same, on the eval arm: a stage fan-out wider than the program declares. */
+const jEvalWide: Ticket = {
+  ...jEval,
+  tasks: [et(1, 0, "TPassed"), et(2, 0, "TFailed"), et(3, 0, "TPassed")],
+  spawned: 3,
+};
 
 /** The nine phases, exhaustively: a tenth stops this object compiling. */
 const phaseRoster: Readonly<Record<Phase, null>> = {
@@ -488,6 +534,23 @@ const redProofs: readonly RedProof[] = [
     reds: ["completionExclusive", "revokedNeverCompletes"],
   },
   {
+    name: "revokedNeverCompletes (isolated)",
+    holds: (s) => revokedNeverCompletes(s.core),
+    // ...AND THE COROLLARY HAS A FLOOR THE MODEL NEVER STATES, which is what
+    // makes this one isolable after all. The derivation runs "completions == 1
+    // iff Done, completions <= 1, Revoked is not Done, therefore completions ==
+    // 0" — and that last step needs `completions >= 0`, which no invariant
+    // asserts. A NEGATIVE ghost counter satisfies `completionExclusive` in both
+    // halves and reds this one alone. Parity with the model, filed as
+    // model-question kasofsk#39; mirrored here rather than repaired, because the
+    // model leads and a floor invented in TypeScript would be the divergence.
+    ...oneTicket(
+      { ...jDraft, phase: "PRevoked", completions: -1 },
+      { ...jDraft, phase: "PRevoked" },
+    ),
+    reds: ["revokedNeverCompletes"],
+  },
+  {
     name: "wrapUpIsolation",
     holds: (s) => wrapUpIsolation(s.cfg, s.core, s.history.lastStep),
     // The attribution names a project the stepped ticket is not in — the
@@ -658,6 +721,25 @@ const redProofs: readonly RedProof[] = [
     // A work fan-out narrower than the const it is spawned at. `spawned` moves
     // with it, so `idsAccounted` stays green and the defect is this one alone.
     ...oneTicket({ ...jWork, tasks: [wr(1)], spawned: 1 }, jWork),
+    reds: ["tasksWellFormed"],
+  },
+  {
+    name: "tasksWellFormed (work width, from ABOVE)",
+    holds: (s) => tasksWellFormed(s.cfg, s.core),
+    // THE WIDTH IS AN EQUALITY AND IS PINNED FROM BOTH SIDES. A fan-out narrower
+    // than the const is the obvious defect and the one above is the dangerous
+    // one: the measure's digit-order argument rests on `runningCount <= nTasks`,
+    // so a set the anatomy admitted at width `nTasks + 1` is a state whose micro
+    // digit can escape its radix.
+    ...oneTicket(jWorkWide, jWork),
+    reds: ["tasksWellFormed"],
+  },
+  {
+    name: "tasksWellFormed (eval fan-out, from ABOVE)",
+    holds: (s) => tasksWellFormed(s.cfg, s.core),
+    // The same equality on the eval arm, where the width is the PROGRAM's rather
+    // than the const's — the interpreter running the program as written.
+    ...oneTicket(jEvalWide, jEval),
     reds: ["tasksWellFormed"],
   },
   {
@@ -893,15 +975,12 @@ test("the corpus carries a defect tree for every bundle conjunct but the tautolo
 test("exactly the conjuncts the model calls corollaries are the ones no tree isolates", () => {
   // THE HONEST LIMIT OF THE MEMBERSHIP GUARD, stated rather than left to be
   // discovered. The agreement test above catches a conjunct dropped from the
-  // bundle only where some tree reds THAT conjunct ALONE. Four cannot be
-  // isolated by any tree, and the model names each of them as the reason:
+  // bundle only where some tree reds THAT conjunct ALONE. Three cannot be
+  // isolated by any tree, and the model names the reason for each:
   //
-  //   revokedNeverCompletes    — state-wise a corollary of completionExclusive
-  //                              (completions == 1 iff Done, and Revoked is not
-  //                              Done), stated separately because it is the
-  //                              exclusivity half in its own words.
   //   quietProjectLandsCleanly — a corollary of wrapUpIsolation's
-  //                              failure-implies-moved conjunct, stated
+  //                              failure-implies-moved conjunct, which is the
+  //                              same condition in other words, stated
   //                              separately because it is the gate's own claim.
   //   stuckSubsetCovered       — a tautology over its two walks; no machine can
   //                              red it, which is the model's own finding.
@@ -910,8 +989,15 @@ test("exactly the conjuncts the model calls corollaries are the ones no tree iso
   //                              cycle or dangling dep (depsAcyclic does), so
   //                              every tree that reds it reds a companion.
   //
-  // Reviewing the bundle beside the model's `and { ... }` is what covers these
-  // four. The set is pinned so that a FIFTH one appearing is a finding.
+  // `revokedNeverCompletes` READ AS UN-ISOLABLE AND IS NOT, which is why this
+  // list is asserted rather than asserted-in-prose: its corollary derivation
+  // needs `completions >= 0`, a floor no invariant states, so a negative ghost
+  // counter reds it alone. That tree is in the corpus above and the
+  // model-question is kasofsk#39.
+  //
+  // Reviewing the bundle beside the model's `and { ... }` is what covers the
+  // three that remain. The set is pinned so that a FOURTH appearing is a
+  // finding — and so that one leaving it, as this one just did, is visible too.
   const isolated = new Set(
     redProofs.filter((p) => p.reds.length === 1).flatMap((p) => p.reds),
   );
@@ -920,11 +1006,51 @@ test("exactly the conjuncts the model calls corollaries are the ones no tree iso
       bundleConjuncts.map(([name]) => name).filter((n) => !isolated.has(n)),
     ),
     new Set([
-      "revokedNeverCompletes",
       "quietProjectLandsCleanly",
       "stuckSubsetCovered",
       "noStructuralDeadlock",
     ]),
+  );
+});
+
+test("the redundancy roster: conjuncts mirrored from the model that no state can red", () => {
+  // THE RECORD THE TWO PREDICATES FORWARD-REFERENCE. Three mirrored conjuncts
+  // cannot answer false on any tree, each because a TypeScript definition below
+  // them is stricter or more total than the Quint one the model had to write
+  // around. They are kept, because the model's arm has them and because the
+  // assertion each leans on could be relaxed; they are named here so that a
+  // reader who cannot find their red-proof learns why there is none, and so that
+  // the mutation sweep's expected-survivor set has a home in the tree.
+  //
+  //   tasksWellFormed  `t.kind.stage === s`  — `evalStage` asserts the live set
+  //                                            carries one stage's marks, so a
+  //                                            set that reached here is uniform.
+  //   tasksWellFormed  `s >= 0`              — `evalStage` asserts each mark is
+  //                                            a count and answers 0 for a set
+  //                                            with no marks at all.
+  //   recordMonotone   `record.length >=`    — `sameTask` is total on an absent
+  //                                            entry, so the walk already
+  //                                            refuses a shrunk record. Quint
+  //                                            errors on an out-of-range index,
+  //                                            which is why the model needs it.
+  //
+  // Each claim below is the assertion that makes its conjunct redundant, so if
+  // one is relaxed this test fails and the conjunct needs a red-proof again.
+  assert.throws(
+    () => evalStage([et(1, 0, "TPassed"), et(2, 1, "TPassed")]),
+    AssertionError,
+  );
+  assert.equal(evalStage([]), 0);
+  assert.equal(evalStage([wt(1, "TPassed")]), 0);
+  assert.throws(() => evalStage([et(1, -1, "TPassed")]), AssertionError);
+  // `sameTask`'s totality, read through the predicate that uses it: a previous
+  // record longer than the current one is refused by the entry walk alone.
+  assert.equal(
+    recordMonotone(
+      solo({ ...jDraft, record: [], spawned: 0 }),
+      new Map([[1, [wt(1, "TPassed")]]]),
+    ),
+    false,
   );
 });
 
@@ -1208,6 +1334,18 @@ test("completionExclusive and revokedNeverCompletes, over every phase", () => {
     ),
     new Set(allPhases),
   );
+  // AND THE IFF IN ITS OTHER DIRECTION. Everything above varies the COUNT away
+  // from the phase; this varies the phase away from the count, so `Done implies
+  // one completion` is pinned rather than only `one completion implies Done`. A
+  // landed ticket that emitted nothing is refused at Done and, being a plain
+  // uncompleted ticket anywhere else, is well-formed at the other eight.
+  assert.deepEqual(
+    refusedPhases(
+      (phase) => ({ ...jDone, phase, completions: 0 }),
+      completionExclusive,
+    ),
+    new Set(["PDone"]),
+  );
 });
 
 test("artifactWellFormed, noLeaseWithoutAKind and deskConsistent, over every phase", () => {
@@ -1272,6 +1410,17 @@ test("tasksWellFormed: dead live-task state is refused in every phase but the tw
     ),
     phasesExcept("PEvaluating"),
   );
+  // BOTH WIDTHS ARE EQUALITIES, AND BOTH ARE NOW PINNED FROM ABOVE AS WELL AS
+  // FROM BELOW. Only the narrow side had a fixture, and the wide side is the one
+  // that matters more: `micro`'s digit-order argument holds `runningCount` below
+  // `nTasks`, so an anatomy that admitted a wider set would admit states whose
+  // measure digit escapes its radix. Both fixtures carry RESOLVED tasks, which
+  // is what lets the invariant answer at all — a live set of three trips that
+  // same precondition inside the measure before any invariant is asked.
+  assert.equal(tasksWellFormed(cfgBudgeted, solo(jWorkWide)), false);
+  assert.equal(tasksWellFormed(cfgBudgeted, solo(jEvalWide)), false);
+  assert.equal(runningCount(jWorkWide.tasks), 0);
+  assert.equal(runningCount(jEvalWide.tasks), 0);
   // The width, the kind, the outcome and the id run, each alone.
   const badEvals: readonly (readonly [string, Ticket])[] = [
     [
@@ -1407,6 +1556,97 @@ test("leaseExclusive is a relation over resources AND phases, pinned at both end
     ),
     new Set([1]),
   );
+  // AND THE COLLISION ITSELF IS SWEPT OVER THE UNIVERSE, not pinned to the
+  // first project. Every fixture above holds resource 1, so a walk that counted
+  // holders of resource 1 alone — or quantified over `[firstProjectId]` instead
+  // of over `projects` — would agree with all of them. A collision on EVERY
+  // member of the universe is what closes that.
+  for (const resource of [1, 2]) {
+    const both: Ticket = { ...jGated, wrapUp: { tag: "WExclusive", resource } };
+    assert.equal(
+      leaseExclusive(
+        cfgBudgeted,
+        core([
+          [1, both],
+          [2, both],
+        ]),
+      ),
+      false,
+      `a collision on resource ${String(resource)} is not counted`,
+    );
+  }
+});
+
+// === Dependencies that DISAGREE ============================================
+// `domain.test.ts`'s `cMixedDeps` lesson, inherited: "a `forall` over a relation
+// needs members that disagree, not one more uniform set". Every quantifier over
+// a dep set — `anyEdgeIn`'s exists, `everyDepIn`'s forall, and the two walks
+// that read a dep list to its end — answers identically on every single-dep
+// fleet, whichever way it is written. Only a ticket with two deps that disagree
+// tells them apart, and in each fleet below the DISCRIMINATING dep is the second
+// one, so a walk that stops at the first is caught as well as one that swaps its
+// quantifier.
+
+/** A healthy dep and a PARKED one, in that order, under one dependent. */
+const cMixedStuck: Core = core([
+  [1, { ...jDraft, phase: "PPending" }],
+  [2, jEsc],
+  [3, { ...jDraft, phase: "PPending", deps: new Set([1, 2]) }],
+]);
+
+/** A dep that FINISHED and one that never will, in that order, under one dependent. */
+const cMixedFinish: Core = core([
+  [1, jDone],
+  [2, { ...jDraft, phase: "PRevoked" }],
+  [3, { ...jDraft, phase: "PPending", deps: new Set([1, 2]) }],
+]);
+
+test("the visibility walks quantify with EXISTS over a dep set, and read it to the end", () => {
+  // A dependent is stuck behind ONE parked dep, not only behind all of them —
+  // and the parked dep is the second, so the walk has to get past a healthy one
+  // to find it. A forall here would answer {2}, and a first-dep-only walk would
+  // answer {2} as well.
+  assert.deepEqual(stuckSet(cMixedStuck), new Set([2, 3]));
+  // Coverage propagates the same way and through EVERY phase, so it agrees.
+  assert.deepEqual(coveredSet(cMixedStuck), new Set([2, 3]));
+  assert.ok(stuckSubsetCovered(cMixedStuck));
+  // And the other direction of the same quantifier: no parked dep anywhere in
+  // the chain leaves the dependent unstuck, however many deps it has.
+  const healthy = core([
+    [1, { ...jDraft, phase: "PPending" }],
+    [2, { ...jDraft, phase: "PPending" }],
+    [3, { ...jDraft, phase: "PPending", deps: new Set([1, 2]) }],
+  ]);
+  assert.deepEqual(stuckSet(healthy), new Set());
+  assert.deepEqual(coveredSet(healthy), new Set());
+});
+
+test("canFinishSet quantifies with FORALL over a dep set, and revokeDoomed reads it to the end", () => {
+  // THE MACHINE THEOREM. A ticket can finish only when EVERY gate dep can — one
+  // Done dep is not enough while another is Revoked, and swapping this forall
+  // for an exists would report the deadlocked ticket as live. The Revoked dep is
+  // second, so a walk that stopped at the Done one would agree with the exists.
+  assert.deepEqual(canFinishSet(cMixedFinish), new Set([1]));
+  assert.equal(noStructuralDeadlock(cMixedFinish), false);
+  // The doom walk reads the same dep list to its end, for the same reason.
+  assert.deepEqual(revokeDoomed(cMixedFinish), new Set([3]));
+  assert.equal(cascadeSafety(cMixedFinish), false);
+  // Those two are the whole of what this fleet reds — the deadlock and the
+  // cascade, which is the pairing the model argues for and nothing else.
+  assert.deepEqual(
+    redConjuncts(quiet(cfgFleet, cMixedFinish)),
+    new Set(["cascadeSafety", "noStructuralDeadlock"]),
+  );
+  // And the forall's other direction: EVERY dep Done puts the dependent back in
+  // the fixpoint, which is what stops this being a claim about dep COUNT.
+  const allDone = core([
+    [1, jDone],
+    [2, jDone],
+    [3, { ...jDraft, phase: "PPending", deps: new Set([1, 2]) }],
+  ]);
+  assert.deepEqual(canFinishSet(allDone), new Set([1, 2, 3]));
+  assert.ok(noStructuralDeadlock(allDone));
+  assert.deepEqual(revokeDoomed(allDone), new Set());
 });
 
 // === The dependency relation, pinned at both ends ==========================
@@ -1445,6 +1685,22 @@ test("depsAcyclic reads the dep's existence AND its id order, over both ends", (
     ),
     false,
   );
+  // AND THE WALK READS THE DEP SET TO ITS END. Every fleet above gives a ticket
+  // one dep, so a walk that inspected only the first would agree with all of
+  // them. Here the first dep is impeccable and the second carries the breach —
+  // once for each of the two conjuncts, so neither is pinned only at position 0.
+  const secondDepIsBad = (bad: number): Core =>
+    core([
+      [1, jDraft],
+      [2, jDraft],
+      [3, { ...jDraft, deps: new Set([1, bad]) }],
+      [4, jDraft],
+    ]);
+  assert.equal(depsAcyclic(secondDepIsBad(4)), false); // points upward
+  assert.equal(depsAcyclic(secondDepIsBad(9)), false); // names no ticket
+  // The same fleet with a good second dep is accepted, so the two assertions
+  // above are about the dep and not about having two of them.
+  assert.ok(depsAcyclic(secondDepIsBad(2)));
   // And a ticket with NO deps is accepted at every position.
   assert.ok(
     depsAcyclic(
@@ -1575,6 +1831,19 @@ test("recordMonotone refuses a shrink, a rewrite and a vanished ticket", () => {
     recordMonotone(withRecord([wt(1, "TPassed"), wr(2)]), previous),
     false,
   );
+  // AND THE KIND IS COMPARED INSIDE ITS CONSTRUCTOR, not only by constructor.
+  // Every rewrite above changes the tag, the id or the outcome, so a comparison
+  // that read `TKEval` as one value — ignoring the stage it carries — would
+  // agree with all of them. A stage rewritten UNDER the same id is the shape
+  // that tells them apart, and it is the shape that matters: the stage mark is
+  // what makes history's provenance readable, so a step that quietly renumbered
+  // it would rewrite which stage a retired task belonged to.
+  const stagedPrevious = new Map([[1, [et(1, 0, "TPassed")]]]);
+  assert.equal(
+    recordMonotone(withRecord([et(1, 1, "TPassed")]), stagedPrevious),
+    false,
+  );
+  assert.ok(recordMonotone(withRecord([et(1, 0, "TPassed")]), stagedPrevious));
   // Tickets are never deleted, so the previous domain always survives.
   assert.equal(
     recordMonotone(withRecord(twoEntries), new Map([[2, []]])),
@@ -1731,9 +2000,20 @@ test("idsDense: the arrival bound, and the hole the doomed walk asserts on", () 
     [3, jDraft],
   ]);
   assert.throws(() => cascadeSafety(holed), AssertionError);
-  assert.equal(
-    allInvariants(cfgBudgeted, holed, quiet(cfgBudgeted, dense).history),
-    false,
+  // THE HOLED FLEET GETS ITS OWN HISTORY, and that is the whole of what makes
+  // this an order pin. Handed the DENSE fleet's history it would red
+  // `recordMonotone` first — a ticket in the previous snapshot that the current
+  // state does not hold — and the bundle would return false long before reaching
+  // either conjunct this is about. With its own history every conjunct ahead of
+  // `idsDense` is green, so `idsDense` is what reds and `cascadeSafety` is what
+  // is never reached; hoisting the doomed walk above the density claim turns
+  // this answer into the throw above.
+  const holedHistory = quiet(cfgBudgeted, holed).history;
+  assert.ok(recordMonotone(holed, holedHistory.prevRecords));
+  assert.equal(allInvariants(cfgBudgeted, holed, holedHistory), false);
+  assert.deepEqual(
+    redConjuncts({ cfg: cfgBudgeted, core: dense, history: holedHistory }),
+    new Set(["recordMonotone"]),
   );
 });
 
@@ -1938,6 +2218,23 @@ test("stepDescends: the model's eight roster entries, each firing and each neede
       "operator-retry into Working, free",
       cfgRetryFree,
       movingStep("operator-retry", "PEscalated", "PWorking"),
+    ],
+    // A STEP THAT MOVES NOTHING is exempted by neither operator-retry flavor,
+    // and both flavors are asked. The model's condition is `foldl(false, …)`,
+    // whose base is what decides the empty case: an `operator-retry` carrying no
+    // transition has resumed nothing, so there is no target phase to read and no
+    // flavor to claim. A fold based at `true` — an `every` where the model has a
+    // `some` — would exempt it, and every other fixture in this table carries a
+    // transition and so cannot tell the two apart.
+    [
+      "operator-retry that moved nothing, charged",
+      cfgBudgeted,
+      { ...settledStep, label: "operator-retry" },
+    ],
+    [
+      "operator-retry that moved nothing, free",
+      cfgRetryFree,
+      { ...settledStep, label: "operator-retry" },
     ],
     // A revoke that drags a LIVE rank down gets no exemption at all: the cascade
     // park is exactly such a transition.

@@ -311,6 +311,16 @@ export function wrapUpWallNamed(cfg: Config, c: Core): boolean {
  * reason: gas is the measure's most significant digit, so it needs no radix and
  * `Bounds` holds no grant for it. The grant lives on the machine's config, and
  * so does the conjunct that reads it.
+ *
+ * THE DELEGATION REORDERS THE MODEL'S CONJUNCTS, and that is the one place this
+ * file departs from definition-for-definition order on purpose. The model asks
+ * each account's floor and ceiling as a pair, gas first; `accountDigitsInRange`
+ * asks them in its own order and the gas ceiling arrives last. Nothing observes
+ * the difference — all six are total comparisons on a record, none can error and
+ * none narrows anything a later one reads, so the conjunction has the same value
+ * under any permutation. Where reordering WOULD be observable, the order is kept
+ * and pinned: see the bundle's own note on `measureNonNegative`. Referencing the
+ * shipped derivation is the stronger rule of the two, and it wins here.
  */
 export function accountsBounded(cfg: Config, c: Core): boolean {
   const b = boundsOf(cfg);
@@ -344,12 +354,15 @@ export function accountsBounded(cfg: Config, c: Core): boolean {
  *     order. The exclusion is checked either way; it is checked one level
  *     louder here.
  *
- * ONE CONJUNCT IS THEREFORE UNFALSIFIABLE BY RETURN, and it is kept anyway:
- * `t.kind.stage === s` cannot fail on any set that got past `evalStage`, since
- * uniformity is exactly what that function asserts. The model's arm has it, so
- * this arm has it — and the day `measure.ts` answers a mixed set instead of
- * refusing it, this is the conjunct that would have to be here already. The
- * suite records that it is pinned by the assertion rather than by a state.
+ * TWO CONJUNCTS OF THE EVAL ARM ARE THEREFORE UNFALSIFIABLE BY RETURN, and both
+ * are kept anyway. `t.kind.stage === s` cannot fail on any set that got past
+ * `evalStage`, since uniformity is exactly what that function asserts; `s >= 0`
+ * cannot fail either, because the same function asserts that every mark it reads
+ * is a count and answers 0 for a set carrying no marks at all. The model's arm
+ * has both, so this arm has both — and the day `measure.ts` answers a mixed set
+ * instead of refusing it, they are the conjuncts that would have to be here
+ * already. The suite names them in its redundancy roster, beside the third of
+ * their kind on `recordMonotone`.
  *
  * Its neighbour `t.kind.tag === "TKEval"` is pinned by something stronger than
  * either: deleting it stops the file compiling, because `t.kind.stage` does not
@@ -428,8 +441,8 @@ export function recordWellFormed(c: Core): boolean {
  * saying because no state can make it answer alone. Quint indexes a list out of
  * range by erroring, so the model must establish the length before walking the
  * previous indices; here `sameTask` is total on an absent entry, so a shrunk
- * record is already refused by the walk. It is mirrored because the model
- * states it, and the suite records that it is redundant rather than pinned.
+ * record is already refused by the walk. It is mirrored because the model states
+ * it, and the suite names it in its redundancy roster.
  */
 export function recordMonotone(
   c: Core,
