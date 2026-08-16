@@ -388,6 +388,7 @@ function observe(
       stepLabel(state.lastStep, `${where}.states[${String(index)}]`),
     );
     coverage.observeArm(cfg, state.core, state.lastStep);
+    coverage.observeEffects(state.lastStep.effects);
     if (state.picks !== undefined) {
       coverage.observePicks(state.picks);
     }

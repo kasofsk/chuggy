@@ -24,6 +24,7 @@ import type { Core, Phase, StepRecord } from "../domain/measure.ts";
 import {
   CoverageBuilder,
   coverageGaps,
+  effectGaps,
   exemptionArms,
   exemptionArmOf,
   mcInstances,
@@ -217,6 +218,33 @@ test("coverageGaps: a full corpus has none, and each roster is checked both ways
       gap.missing.includes("ticket-teleported"),
     ),
   );
+});
+
+test("effectGaps: an effect the vocabulary names and no step emits is a gap, both ways", () => {
+  // A REACH CHECK, WHICH THE ROSTER COMPARISON IS NOT. `src/tools/verify.ts`
+  // holds the shipped effect vocabulary against the model's own code literals
+  // as an exact set — two SPELLINGS agreeing, which a vocabulary nothing ever
+  // emits satisfies perfectly. This asks the other question: did any replayed
+  // step actually ask the world for it. An effect the interpreter routes and no
+  // golden trace carries is a wire nothing exercises.
+  const vocabulary = ["CreateDraft", "Complete"];
+  const partial = new CoverageBuilder();
+  partial.observeEffects(["CreateDraft", "CreateDraft"]);
+  assert.deepEqual(effectGaps(vocabulary, partial.taken()), [
+    { obligation: "effect", missing: "Complete — no fixture reaches it" },
+  ]);
+
+  // And the other direction: a step emitting a string no roster names is this
+  // tree's vocabulary and the machine's having drifted, with the corpus as the
+  // evidence.
+  const strange = new CoverageBuilder();
+  strange.observeEffects(["CreateDraft", "Complete", "OpenTheGate"]);
+  assert.deepEqual(effectGaps(vocabulary, strange.taken()), [
+    {
+      obligation: "effect",
+      missing: "OpenTheGate — reached, and the roster does not name it",
+    },
+  ]);
 });
 
 test("coverageGaps: the resume arm declared beyond the corpus reds when a fixture reaches it", () => {

@@ -23,6 +23,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 
+import { jWork, solo, wr, wt } from "../domain/fixtures.test.ts";
 import {
   decodeSteps,
   reachableStepLabels,
@@ -282,7 +283,9 @@ test("a step whose label steps a ticket and records no transition is a decode fa
 
 test("a task completion that resolved no live task is a decode failure", () => {
   // The reconstruction reads the one running task that became resolved. None
-  // and two are both refused, because neither is one delivery.
+  // is refused here; two is refused below, and until sweep 2 this comment
+  // claimed both while driving one — so weakening the check to
+  // `only === undefined` passed the whole gate.
   assert.throws(
     () =>
       decodeSteps(
@@ -294,6 +297,90 @@ test("a task completion that resolved no live task is a decode failure", () => {
     (error: unknown) =>
       error instanceof DecodeError &&
       /exactly one live task/.test(error.message),
+  );
+});
+
+test("a task completion that resolved TWO live tasks is a decode failure too", () => {
+  // THE OTHER DIRECTION, and the one the enforcement is really for. A tier-2
+  // trace has no picks, so the delivered task id is read from the task-set
+  // diff: two tasks resolving across one step pair is not one delivery, and
+  // reading either of them would be a guess about which. The step is otherwise
+  // impeccable — a real `task-done` label, a fleet the machine could hold —
+  // which is what makes this the case a weakened check survives.
+  const running = { ...jWork, tasks: [wr(1), wr(2)], spawned: 2 };
+  const bothDone = {
+    ...running,
+    tasks: [wt(1, "TPassed"), wt(2, "TPassed")],
+  };
+  assert.throws(
+    () =>
+      decodeSteps(
+        {
+          hasDecisionEvents: false,
+          states: [
+            { ...genesis, core: solo(running) },
+            {
+              ...genesis,
+              core: solo(bothDone),
+              lastStep: { ...genesis.lastStep, label: "task-done" },
+            },
+          ],
+        },
+        "t",
+      ),
+    (error: unknown) =>
+      error instanceof DecodeError &&
+      /exactly one live task, and this one resolved 2/.test(error.message),
+  );
+});
+
+test("a settled step under an action that is not settle is a decode failure", () => {
+  // `expectAction`'s OTHER caller. The two stutter labels have their case
+  // above; `settled` is the one that drives no decider at all, so a trace
+  // labelling a REAL action's step `settled` would be a step this replayer
+  // skipped rather than took — and the label and the action are two independent
+  // carriers of the same fact.
+  assert.throws(
+    () =>
+      decodeSteps(
+        traceOf(true, {
+          action: "release",
+          picks: { ticket: 1 },
+          lastStep: { ...genesis.lastStep, label: "settled" },
+        }),
+        "t",
+      ),
+    (error: unknown) =>
+      error instanceof DecodeError &&
+      /this label is settle's, and the trace names release/.test(error.message),
+  );
+});
+
+test("an arrival onto an id the fleet already held is a decode failure", () => {
+  // `arrivalOf`'s ABSENT-BEFORE half, whose sibling — the born-after half — has
+  // the case below. The id an arrival mints is the fleet's own size plus one
+  // (`idsDense` is what makes that the whole rule), so a previous state already
+  // holding it is a fleet whose ids are not dense, and reading the "arrived"
+  // ticket out of it would attribute an arrival to a ticket that predates it.
+  assert.throws(
+    () =>
+      decodeSteps(
+        {
+          hasDecisionEvents: false,
+          states: [
+            { ...genesis, core: { tickets: new Map([[2, jWork]]) } },
+            {
+              ...genesis,
+              core: { tickets: new Map([[2, jWork]]) },
+              lastStep: { ...genesis.lastStep, label: "ticket-arrived" },
+            },
+          ],
+        },
+        "t",
+      ),
+    (error: unknown) =>
+      error instanceof DecodeError &&
+      /ticket 2 predates its own arrival/.test(error.message),
   );
 });
 

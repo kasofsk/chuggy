@@ -21,6 +21,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { Config } from "../domain/domain.ts";
 import type { StepRecord } from "../domain/measure.ts";
 import type { ActorState } from "./actor.ts";
 import type { Entry } from "./entry.ts";
@@ -33,7 +34,10 @@ import {
   noDoubleSpentBudget,
   noDuplicateCycle,
   recoveryComplete,
+  refinementBundleConjuncts,
+  refinementBundles,
   refinementCore,
+  refinementCoreConjuncts,
   refinementInvariants,
 } from "./refinement-invariants.ts";
 import {
@@ -59,6 +63,12 @@ const spawnRec: StepRecord = recordLabelled(honest, "dispatch");
 /** The landing's record: the emission that merges the diff. */
 const completionRec: StepRecord = recordLabelled(settled, "ticket-done");
 
+/**
+ * The arrival's record: an effect the world received that neither per-ticket
+ * counter reads — `CreateDraft` is neither a spawn nor a completion.
+ */
+const draftRec: StepRecord = recordLabelled(honest, "ticket-arrived");
+
 function recordLabelled(s: ActorState, label: string): StepRecord {
   const row = s.journal.find((entry) => entry.rec.label === label);
   assert.ok(row !== undefined, `no ${label} row in the walk`);
@@ -73,7 +83,7 @@ function recordLabelled(s: ActorState, label: string): StepRecord {
 const defects: readonly (readonly [
   string,
   ActorState,
-  (s: ActorState) => boolean,
+  (cfg: Config, s: ActorState) => boolean,
 ])[] = [
   [
     // A row whose record is not what the decider at that prefix produces. The
@@ -84,7 +94,7 @@ const defects: readonly (readonly [
         i === 2 ? { ...row, rec: { ...row.rec, label: "ticket-done" } } : row,
       ),
     ),
-    (s) => journalLegal(cfg, s),
+    journalLegal,
   ],
   [
     // The seqs stop being dense: no replay can index this log.
@@ -92,14 +102,14 @@ const defects: readonly (readonly [
     withJournal(honest, (rows) =>
       rows.map((row, i) => (i === 2 ? { ...row, seq: 9 } : row)),
     ),
-    (s) => journalLegal(cfg, s),
+    journalLegal,
   ],
   [
     // Memory that the journal cannot account for: recovery would land somewhere
     // else, which is the one thing a journaled actor may not survive.
     "recoveryComplete: memory the replay does not reproduce",
     { ...honest, mem: { ...honest.mem, core: genesis } },
-    (s) => recoveryComplete(cfg, s),
+    recoveryComplete,
   ],
   [
     "executorSound: a cursor past the journal's end",
@@ -121,6 +131,15 @@ const defects: readonly (readonly [
   [
     "journalCoversWorld: an un-keyed effect reached the world",
     { ...honest, orphans: [spawnRec] },
+    journalCoversWorld,
+  ],
+  [
+    // THE COVERAGE HALF, ALONE. Every other orphan in this roster is a spawn or
+    // a completion, so it reds an arithmetic conjunct on the way through; an
+    // arrival's draft asks the world for something no counter counts, which
+    // makes this the one state that isolates the coverage claim itself.
+    "journalCoversWorld: an orphan no per-ticket counter reads",
+    { ...honest, orphans: [draftRec] },
     journalCoversWorld,
   ],
   [
@@ -176,11 +195,11 @@ test("all seven hold on states the actor actually reaches", () => {
   for (const s of [honest, settled]) {
     assert.ok(journalLegal(cfg, s));
     assert.ok(recoveryComplete(cfg, s));
-    assert.ok(executorSound(s));
-    assert.ok(journalCoversWorld(s));
-    assert.ok(noDoubleSpentBudget(s));
-    assert.ok(noDuplicateCycle(s));
-    assert.ok(journalCompletionsMatchLedger(s));
+    assert.ok(executorSound(cfg, s));
+    assert.ok(journalCoversWorld(cfg, s));
+    assert.ok(noDoubleSpentBudget(cfg, s));
+    assert.ok(noDuplicateCycle(cfg, s));
+    assert.ok(journalCompletionsMatchLedger(cfg, s));
     assert.ok(refinementCore(cfg, s));
     assert.ok(refinementInvariants(cfg, s));
   }
@@ -188,12 +207,12 @@ test("all seven hold on states the actor actually reaches", () => {
   // prefix argument: an actor that has decided nothing is sound.
   const fresh = driveEmitted([]);
   assert.ok(refinementInvariants(cfg, fresh));
-  assert.ok(executorSound(fresh));
+  assert.ok(executorSound(cfg, fresh));
 });
 
 test("each invariant is RED against a state carrying the defect it names", () => {
   for (const [what, state, invariant] of defects) {
-    assert.equal(invariant(state), false, `${what}: stayed green`);
+    assert.equal(invariant(cfg, state), false, `${what}: stayed green`);
     // ...and the full bundle catches every one of them, which is what makes
     // the bundle the thing a suite may assert instead of the seven.
     assert.equal(
@@ -209,8 +228,8 @@ test("the two bundles split where the model splits them", () => {
   // asymmetry is what every hazard run asserts, so it is pinned here directly
   // rather than only observed there.
   const orphaned: ActorState = { ...honest, orphans: [spawnRec] };
-  assert.equal(journalCoversWorld(orphaned), false);
-  assert.equal(noDoubleSpentBudget(orphaned), false);
+  assert.equal(journalCoversWorld(cfg, orphaned), false);
+  assert.equal(noDoubleSpentBudget(cfg, orphaned), false);
   assert.ok(refinementCore(cfg, orphaned), "the journal and replay are intact");
   assert.equal(refinementInvariants(cfg, orphaned), false);
 
@@ -219,6 +238,62 @@ test("the two bundles split where the model splits them", () => {
   const lost: ActorState = { ...honest, mem: { ...honest.mem, core: genesis } };
   assert.equal(refinementCore(cfg, lost), false);
   assert.equal(refinementInvariants(cfg, lost), false);
+});
+
+// === The membership guard =================================================
+
+test("each bundle's roster is the members' own names, so a name cannot outlive its call", () => {
+  // THE GUARD THE DOMAIN LAYER HAS AND THIS ONE DID NOT. Both bundles were an
+  // `&&` chain beside a hand-typed array of names, and nothing tied one to the
+  // other: dropping `journalCompletionsMatchLedger` from the chain, and
+  // swapping `noDoubleSpentBudget` for a duplicate call, both left the whole
+  // tree at exit 0 — the hazard states are over-determined, so the crash-seam
+  // asserts stayed false-green over the missing conjunct.
+  //
+  // The bundle is now the roster: each member takes its name from its own
+  // function reference and the exported name lists are projections of the
+  // members, so a conjunct the bundle stopped asking is a conjunct the roster
+  // stopped naming, and `src/tools/verify.ts` compares that roster against
+  // `model/refinement.qnt`'s own `and { … }` as an exact set in both
+  // directions on every run of the conformance gate. This case is what holds
+  // the projection to the members while that comparison holds the names to the
+  // model.
+  assert.deepEqual(
+    refinementBundles.refinementCore.map(([name]) => name),
+    refinementCoreConjuncts,
+  );
+  assert.deepEqual(
+    refinementBundles.refinementInvariants.map(([name]) => name),
+    refinementBundleConjuncts,
+  );
+  for (const [bundle, members] of Object.entries(refinementBundles)) {
+    // A member's name IS its function's name, which is what makes a
+    // name/call pairing unwritable rather than merely easy to get right.
+    for (const [name, holds] of members) {
+      assert.equal(holds.name, name, bundle);
+    }
+    // ...and no bundle names one conjunct twice, which is what a duplicate
+    // call leaves behind here before the model comparison ever sees it.
+    const names = members.map(([name]) => name);
+    assert.equal(new Set(names).size, names.length, bundle);
+  }
+});
+
+test("every conjunct of both bundles has a defect tree of its own, and the roster says which", () => {
+  // THE CORPUS'S COMPLETENESS, asserted as an EQUALITY rather than as
+  // containment — which is the half that makes it a guard on the bundles too.
+  // Containment would pass more easily for a bundle that had LOST a conjunct;
+  // an equality reds, because the defect tree above then names an invariant no
+  // bundle conjoins. `refinementCore` is excluded by name for the obvious
+  // reason: it is a bundle rather than an invariant, and its own conjuncts are
+  // each on the list.
+  const proved = new Set(defects.map(([, , invariant]) => invariant.name));
+  const conjoined = new Set(
+    [...refinementCoreConjuncts, ...refinementBundleConjuncts].filter(
+      (name) => name !== "refinementCore",
+    ),
+  );
+  assert.deepEqual(proved, conjoined);
 });
 
 test("the quantifier is over the whole fleet, not over the first ticket", () => {
@@ -240,6 +315,6 @@ test("the quantifier is over the whole fleet, not over the first ticket", () => 
       },
     },
   };
-  assert.equal(journalCompletionsMatchLedger(broken), false);
+  assert.equal(journalCompletionsMatchLedger(cfg, broken), false);
   assert.equal(refinementInvariants(cfg, broken), false);
 });

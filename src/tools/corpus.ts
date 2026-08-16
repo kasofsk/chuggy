@@ -747,6 +747,26 @@ export function readModelRosters(): ModelRosters {
   };
 }
 
+/**
+ * Every `run` the witness suite declares, by name.
+ *
+ * THE TIER-2 CORPUS IS SUPPOSED TO BE THAT LIST, and until sweep 2 nothing said
+ * so in either direction. A run the model added under its own
+ * no-arm-without-a-witness rule and this corpus never exported is a
+ * deterministic pin the implementation does not replay — which is exactly the
+ * shape of the obligation the model keeps witnesses FOR; and a manifest entry
+ * naming a run the module does not declare is a fixture nobody can regenerate,
+ * discoverable today only by running the emitter.
+ *
+ * It is `matchesOf`'s rule again: a suite with no runs at all is this parse
+ * having stopped seeing them, not a suite that pins nothing.
+ */
+export function readWitnessRuns(): readonly string[] {
+  return matchesOf(readSource(witnessSource), /^\s*run ([A-Za-z0-9_]+)\s*=/gm, {
+    at: `${witnessSource}: run declarations`,
+  });
+}
+
 function readSource(path: string): string {
   try {
     return readFileSync(path, "utf8");

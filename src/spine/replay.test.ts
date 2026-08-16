@@ -45,6 +45,16 @@
  * and what it buys is a decider that absorbed for one pick and not for another
  * — a shipped-file mutation again, and nothing hides behind the silence.
  *
+ * ONE CONJUNCT FIRES AT EXACTLY ONE STEP, and it is named here for the same
+ * reason: `compareState`'s `lastStep` comparison can only report at GENESIS.
+ * Every later state's record is compared inside the drive — `driveOne` for a
+ * decided or stutter step, `settled.rec` for a settled one — and each returns
+ * nothing on a mismatch, so the walk stops before `compareState` runs. That is
+ * not a gap: genesis is the one state no decision produced, so it is the one
+ * whose record nothing else could check, and the case below drives exactly
+ * that. What the sentence buys is that a reader chasing a `lastStep` finding
+ * knows which of the two comparisons produced it.
+ *
  * THE INVARIANT HOOK IS NOT REDDENED FROM HERE, AND IT CANNOT BE — a stronger
  * statement than the gap it replaces, and the reason its red proof lives
  * elsewhere rather than being owed here. Every state the bundle is asked of is
@@ -174,6 +184,26 @@ test("the initial state is compared too, and a trace that does not start at init
   const { trace, plans } = walk(straight);
   const moved = withState(trace, 0, { core: solo(jDone) });
   assert.ok(replay(moved, plans).some((f) => f.startsWith("0: init: tickets")));
+});
+
+test("the initial state's own record is compared, which is the only step `compareState` compares one for", () => {
+  // `compareState` compares all four vars after every step, and its `lastStep`
+  // conjunct fires at GENESIS AND NOWHERE ELSE — which is worth a case rather
+  // than a sentence, because "it never fires" and "it fires on exactly one
+  // step" read the same from a green suite. At every later index the record is
+  // compared FIRST, inside the drive: a decided step compares it in `driveOne`,
+  // a stutter step compares it there too, and a settled step compares it as
+  // `settled.rec`, and each of the three returns nothing on a mismatch so the
+  // walk stops before `compareState` is reached. Genesis is the one state no
+  // decision produced, so it is the one whose record only this conjunct can
+  // check.
+  const { trace, plans } = walk(straight);
+  const forged = withState(trace, 0, {
+    lastStep: { ...stateAt(trace, 0).lastStep, label: "ticket-arrived" },
+  });
+  assert.deepEqual(replay(forged, plans), [
+    "0: init: lastStep.label: expected ticket-arrived, got init",
+  ]);
 });
 
 test("a recorded StepRecord one field off reds, at the step that recorded it", () => {

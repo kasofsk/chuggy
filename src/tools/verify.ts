@@ -35,6 +35,7 @@ import {
 import {
   CoverageBuilder,
   coverageGaps,
+  effectGaps,
   exemptionArms,
   mcInstances,
   pinsMissed,
@@ -62,6 +63,7 @@ import {
   readJson,
   readModelRosters,
   readModuleConsts,
+  readWitnessRuns,
   tier1Dir,
   tier2Dir,
   witnessSource,
@@ -100,11 +102,16 @@ export function verifyCorpus(): Verification {
     // module it cannot find is a could-not-run, which would stop the walk
     // before the roster finding that explains it had been recorded.
     findings.push(...staleRosters());
+    findings.push(...staleWitnessRuns(manifest));
     findings.push(...staleConsts(manifest));
     for (const fixture of manifest.tier1) {
-      coverage.observeInstance(fixture.instance);
       findings.push(
-        ...replayFixture(fixture, fixturePath(fixture, 1), coverage),
+        ...replayFixture(
+          fixture,
+          fixturePath(fixture, 1),
+          coverage,
+          fixture.instance,
+        ),
       );
       replayed.push(fixture.name);
     }
@@ -120,7 +127,7 @@ export function verifyCorpus(): Verification {
 
   const taken = coverage.taken();
   findings.push(
-    ...coverageGaps(taken).map(
+    ...[...coverageGaps(taken), ...effectGaps(effectVocabulary, taken)].map(
       (gap) => `coverage: ${gap.obligation} ${gap.missing}`,
     ),
   );
@@ -148,6 +155,15 @@ function errorOnly(error: unknown, coverage: CoverageBuilder): Verification {
  * which is the whole of what makes a pin checkable: against a corpus-wide
  * accumulator every pin would be satisfied as long as SOME fixture reached the
  * entry, which is exactly the claim a pin is not making.
+ *
+ * AND THE INSTANCE IS TAKEN FROM A REPLAY THAT WENT CLEAN, which is the one
+ * obligation this walk cannot observe from a trace at all: an mc instance is a
+ * manifest field, so it used to be counted before the fixture was opened and
+ * was satisfiable by DECLARATION — a corpus whose only DeadlineOnly fixture no
+ * longer replayed still reported the instance covered, and the reader saw one
+ * finding where there were two obligations in trouble. Counting it only when
+ * the fixture came back clean makes the claim "this instance is exercised"
+ * rather than "this instance is mentioned".
  */
 function replayFixture(
   fixture: {
@@ -158,6 +174,7 @@ function replayFixture(
   },
   path: string,
   corpus: CoverageBuilder,
+  instance?: string,
 ): readonly string[] {
   const trace = decodeTrace(readJson(path), fixture.name);
   const plans = decodeSteps(trace, fixture.name);
@@ -165,7 +182,7 @@ function replayFixture(
   const report = replayTrace(fixture.consts, trace, plans, own, fixture.name);
   const taken = own.taken();
   corpus.absorb(taken);
-  return [
+  const problems = [
     ...truncated(fixture, trace.states.length),
     ...report.findings.map(
       (finding) =>
@@ -176,6 +193,10 @@ function replayFixture(
         `${fixture.name}: the manifest pins ${pin} to this fixture, and it reaches no such step`,
     ),
   ];
+  if (instance !== undefined && problems.length === 0) {
+    corpus.observeInstance(instance);
+  }
+  return problems;
 }
 
 /**
@@ -236,6 +257,28 @@ function orphanFixtures(manifest: Manifest): readonly string[] {
     }
   }
   return findings;
+}
+
+/**
+ * The witness suite's runs against the tier-2 corpus, as an exact set in both
+ * directions.
+ *
+ * TIER 2 IS SUPPOSED TO BE THE MODEL'S OWN WITNESS RUNS — that is the trace
+ * mechanism's whole argument for it: the model already maintains those pins
+ * under its no-arm-without-a-witness rule, and the implementation inherits
+ * them. Nothing checked that inheritance. A run the model ADDS is a
+ * deterministic obligation this tree does not replay, and it arrives with no
+ * fixture, so every roster stays complete and `coverageGaps` reports nothing —
+ * the roster alarm's own failure mode, one file further out. A run the manifest
+ * names and the module does not declare is a fixture nobody can regenerate,
+ * which today is discovered by running the emitter and not by any gate.
+ */
+function staleWitnessRuns(manifest: Manifest): readonly string[] {
+  return rosterDisagrees(
+    "witness run",
+    manifest.tier2.map((fixture) => fixture.run),
+    readWitnessRuns(),
+  );
 }
 
 /**

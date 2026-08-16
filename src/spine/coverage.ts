@@ -194,6 +194,8 @@ export type Coverage = {
   readonly binders: ReadonlySet<string>;
   /** The `decideOpRetry` resume points an operator retry was taken at. */
   readonly resumes: ReadonlySet<ResumeArm>;
+  /** The effect strings a replayed step actually asked the world for. */
+  readonly effects: ReadonlySet<string>;
 };
 
 /** A mutable accumulator, so a corpus walk needs no set unions per step. */
@@ -204,6 +206,7 @@ export class CoverageBuilder {
   private readonly instances = new Set<string>();
   private readonly binders = new Set<string>();
   private readonly resumes = new Set<ResumeArm>();
+  private readonly effects = new Set<string>();
 
   observeLabel(label: StepLabel): void {
     this.labels.add(label);
@@ -246,6 +249,23 @@ export class CoverageBuilder {
   }
 
   /**
+   * The effects a step asked the world for.
+   *
+   * IT IS A REACH CHECK AND THE ROSTER COMPARISON IS NOT, which is the whole
+   * reason it exists. `src/tools/verify.ts` holds `effectVocabulary` against
+   * the model's own code literals as an exact set — a check that the two
+   * SPELLINGS agree, satisfied by a vocabulary nothing ever emits. An effect
+   * the model can produce and the corpus never carries is a wire the
+   * interpreter routes and no golden trace exercises, which is exactly the
+   * shape the coverage obligations exist to refuse everywhere else.
+   */
+  observeEffects(effects: readonly string[]): void {
+    for (const effect of effects) {
+      this.effects.add(effect);
+    }
+  }
+
+  /**
    * Which of the machine's nondet draws this decision event carried. The
    * mapping is `itf.ts`'s own binder table rather than a second list of names,
    * so the roster this reports and the roster the decoder demands are one.
@@ -278,6 +298,9 @@ export class CoverageBuilder {
     for (const resume of other.resumes) {
       this.resumes.add(resume);
     }
+    for (const effect of other.effects) {
+      this.effects.add(effect);
+    }
   }
 
   taken(): Coverage {
@@ -288,6 +311,7 @@ export class CoverageBuilder {
       instances: this.instances,
       binders: this.binders,
       resumes: this.resumes,
+      effects: this.effects,
     };
   }
 }
@@ -354,6 +378,15 @@ export type CoverageGap = {
  * themselves, where nothing has vetted them, so those are the ones checked in
  * both directions.
  *
+ * THE EFFECT ROSTER IS NOT HERE, and the reason is the purity rule rather than
+ * a judgement about the obligation: `effectVocabulary` lives in
+ * `src/effects/`, which `src/spine/` may not reach at any depth. So the reach
+ * check is `effectGaps` below, which takes the roster as an argument, and
+ * `src/tools/verify.ts` is where the two meet — the same file that already
+ * holds `effectVocabulary` against the model's own literals. That comparison is
+ * a check that the two SPELLINGS agree and is satisfied by a vocabulary nothing
+ * emits; this one asks whether the corpus ever asked the world for it.
+ *
  * THE RESUME ARMS ARE CHECKED THREE WAYS, because one of them is declared
  * unreachable by this corpus. What the corpus owes is the roster minus that
  * declaration; what no roster names is reported as usual; and the declared arm
@@ -361,6 +394,16 @@ export type CoverageGap = {
  * because the declaration has then outlived its reason and must go in the same
  * change as the fixture that refuted it.
  */
+export function effectGaps(
+  vocabulary: readonly string[],
+  coverage: Coverage,
+): readonly CoverageGap[] {
+  return [
+    ...missing("effect", vocabulary, coverage.effects),
+    ...unexpected("effect", vocabulary, coverage.effects),
+  ];
+}
+
 export function coverageGaps(coverage: Coverage): readonly CoverageGap[] {
   return [
     ...missing("decider", shippedDeciders, coverage.deciders),

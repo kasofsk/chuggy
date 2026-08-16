@@ -81,7 +81,7 @@ export function recoveryComplete(cfg: Config, s: ActorState): boolean {
  * every seq up to the size, which is the same claim over a `Set` that cannot be
  * compared to a range literal.
  */
-export function executorSound(s: ActorState): boolean {
+export function executorSound(_cfg: Config, s: ActorState): boolean {
   if (s.applied < 0 || s.applied > s.journal.length) {
     return false;
   }
@@ -103,7 +103,7 @@ export function executorSound(s: ActorState): boolean {
  * Structural under the disciplined actions, since only `effectCrash` appends
  * one; the FIRST invariant to fall under the hazard, on the very crash step.
  */
-export function journalCoversWorld(s: ActorState): boolean {
+export function journalCoversWorld(_cfg: Config, s: ActorState): boolean {
   return s.orphans.length === 0;
 }
 
@@ -115,7 +115,7 @@ export function journalCoversWorld(s: ActorState): boolean {
  * the same decision absorbed by seq. Under the hazard an orphaned spawn is a
  * Job the book never charged for, which is the double-spend as arithmetic.
  */
-export function noDoubleSpentBudget(s: ActorState): boolean {
+export function noDoubleSpentBudget(_cfg: Config, s: ActorState): boolean {
   return everyTicket(
     s.mem.core,
     (_jb, j) =>
@@ -128,7 +128,7 @@ export function noDoubleSpentBudget(s: ActorState): boolean {
  * THEOREM 2, cycle half — NO DUPLICATE CYCLE: the world lands a ticket's diff
  * at most once, across crashes at any seam.
  */
-export function noDuplicateCycle(s: ActorState): boolean {
+export function noDuplicateCycle(_cfg: Config, s: ActorState): boolean {
   return everyTicket(
     s.mem.core,
     (_jb, j) =>
@@ -145,7 +145,10 @@ export function noDuplicateCycle(s: ActorState): boolean {
  * disagreeing. The lookup is the fleet's own map read, which cannot miss: the
  * quantifier is over that map's keys.
  */
-export function journalCompletionsMatchLedger(s: ActorState): boolean {
+export function journalCompletionsMatchLedger(
+  _cfg: Config,
+  s: ActorState,
+): boolean {
   return everyTicket(
     s.mem.core,
     (jb, j) => journalCompletionsOn(s.journal, j) === jb.completions,
@@ -153,19 +156,84 @@ export function journalCompletionsMatchLedger(s: ActorState): boolean {
 }
 
 /**
+ * ONE MEMBER OF A BUNDLE: the conjunct itself, and the name it is known by.
+ *
+ * THE NAME COMES FROM THE FUNCTION, which is the whole of what this helper is
+ * for. Written as a table of name/call pairs, a bundle can be wrong in a way no
+ * value ever shows: `["noDoubleSpentBudget", journalCoversWorld]` typechecks,
+ * evaluates identically wherever the two agree, and leaves the roster claiming
+ * a conjunct the bundle never asks. Taking the name off the reference makes
+ * that pairing unwritable — a member IS its function, and the roster is a
+ * projection of the members rather than a second list beside them.
+ *
+ * IT REQUIRES EVERY MEMBER TO TAKE THE SAME TWO ARGUMENTS, which is why three
+ * of the seven carry a `_cfg` they do not read. That is the MODEL's shape
+ * rather than a concession to this helper: `refinement.qnt` states both bundles
+ * as `and { … }` over module vars, where every conjunct is a `val` of the same
+ * kind, and the split between "reads the consts" and "does not" is an artifact
+ * of writing them as functions. A reader meeting `_cfg` should read it as the
+ * bundle's signature, not as a parameter that went unused by accident.
+ *
+ * IT DEPENDS ON `Function.prototype.name`, and the one thing that would break
+ * it is a build step that renames functions. There is none: node runs this tree
+ * from source. A tree that grew one would have to say so here.
+ */
+type BundleMember = readonly [
+  name: string,
+  holds: (cfg: Config, s: ActorState) => boolean,
+];
+
+function member(holds: (cfg: Config, s: ActorState) => boolean): BundleMember {
+  return [holds.name, holds];
+}
+
+/**
+ * `model/refinement.qnt` refinementCore's conjuncts, in the model's order.
+ *
+ * THE BUNDLE IS THE ROSTER AND THE ROSTER IS THE BUNDLE, which is the guard the
+ * domain layer gets from `bundle.test.ts`'s agreement test and this layer had
+ * nothing of. Both were name arrays beside an `&&` chain, and nothing tied
+ * one to the other: dropping `journalCompletionsMatchLedger` from the chain and
+ * swapping `noDoubleSpentBudget` for a duplicate call both left every gate at
+ * exit 0, with the hazard runs' asserts false-green because the hazard states
+ * are over-determined. Now a conjunct dropped from the chain is a conjunct
+ * dropped from the roster, and `src/tools/verify.ts` compares the roster to
+ * `model/refinement.qnt`'s own `and { … }` as an exact set in both directions —
+ * so the chain is checked against the model rather than against a list beside
+ * it.
+ */
+const refinementCoreMembers: readonly BundleMember[] = [
+  member(journalLegal),
+  member(recoveryComplete),
+  member(executorSound),
+  member(journalCompletionsMatchLedger),
+];
+
+/**
  * The discipline-INDEPENDENT core: holds under the disciplined machine AND
  * under the hazard, because the hazard corrupts the world, never the journal or
  * the replay. The hazard runs assert exactly this bundle at the step where the
  * world-facing half has already fallen.
+ *
+ * `every` SHORT-CIRCUITS, so this is the `&&` chain it replaced, member for
+ * member and in the model's order — which matters because `invariants.ts`
+ * argues that a bundle evaluating every conjunct turns a state the model
+ * reports as a plain violation into whatever the conjuncts after it do with it.
+ * Naming the failing conjunct is still a checking-layer job and still evaluates
+ * them all; that is `refinement-invariants.test.ts`'s, exactly as the domain's
+ * is `bundle.test.ts`'s.
  */
 export function refinementCore(cfg: Config, s: ActorState): boolean {
-  return (
-    journalLegal(cfg, s) &&
-    recoveryComplete(cfg, s) &&
-    executorSound(s) &&
-    journalCompletionsMatchLedger(s)
-  );
+  return refinementCoreMembers.every(([, holds]) => holds(cfg, s));
 }
+
+/** `model/refinement.qnt` refinementInvariants' conjuncts, in the model's order. */
+const refinementBundleMembers: readonly BundleMember[] = [
+  member(refinementCore),
+  member(journalCoversWorld),
+  member(noDoubleSpentBudget),
+  member(noDuplicateCycle),
+];
 
 /**
  * The full journal-then-effect gate: the core plus the three world-facing
@@ -173,12 +241,7 @@ export function refinementCore(cfg: Config, s: ActorState): boolean {
  * violations are the hazard's.
  */
 export function refinementInvariants(cfg: Config, s: ActorState): boolean {
-  return (
-    refinementCore(cfg, s) &&
-    journalCoversWorld(s) &&
-    noDoubleSpentBudget(s) &&
-    noDuplicateCycle(s)
-  );
+  return refinementBundleMembers.every(([, holds]) => holds(cfg, s));
 }
 
 /**
@@ -194,21 +257,35 @@ export function refinementInvariants(cfg: Config, s: ActorState): boolean {
  * does not know it owes — which is the whole failure mode the roster alarm was
  * built for, on a surface it could not see.
  *
+ * THEY ARE PROJECTIONS OF THE MEMBERS, never typed out beside them. That is the
+ * difference between this roster and the hand-written pair it replaced: a name
+ * here cannot name a conjunct the bundle does not ask, and a conjunct the
+ * bundle stopped asking cannot go on being named.
+ *
  * TWO ROSTERS AND NOT THEIR UNION, because the model states two blocks and the
  * split is load-bearing: the core is what survives the hazard, and a conjunct
  * that moved from one block to the other would be exactly the change a union
  * could not see.
  */
-export const refinementCoreConjuncts: readonly string[] = [
-  "journalLegal",
-  "recoveryComplete",
-  "executorSound",
-  "journalCompletionsMatchLedger",
-];
+export const refinementCoreConjuncts: readonly string[] =
+  refinementCoreMembers.map(([name]) => name);
 
-export const refinementBundleConjuncts: readonly string[] = [
-  "refinementCore",
-  "journalCoversWorld",
-  "noDoubleSpentBudget",
-  "noDuplicateCycle",
-];
+export const refinementBundleConjuncts: readonly string[] =
+  refinementBundleMembers.map(([name]) => name);
+
+/**
+ * The bundles' members as name/call pairs, for the one caller that needs to
+ * evaluate every conjunct rather than stop at the first false: the suite that
+ * states the EXACT SET a defective state reds.
+ *
+ * `bundle.test.ts` is the domain's counterpart and lives in a `.test.ts` file
+ * because it is a second opinion the shipped code does not use. This one is
+ * here because it is not a second opinion at all — it IS the bundle, and
+ * exporting it is what keeps the suite from building a third copy.
+ */
+export const refinementBundles: Readonly<
+  Record<"refinementCore" | "refinementInvariants", readonly BundleMember[]>
+> = {
+  refinementCore: refinementCoreMembers,
+  refinementInvariants: refinementBundleMembers,
+};

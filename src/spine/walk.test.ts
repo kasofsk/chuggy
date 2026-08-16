@@ -408,6 +408,17 @@ export type MoveSource = "enumeration" | "script";
  * `report` is how a chooser states a finding of its own; returning nothing ends
  * the run.
  */
+/**
+ * WHERE A RUN'S OPTIONS COME FROM. It is `availableActions` for every run in
+ * this tree, and it is a parameter for exactly one reason: the alarm below
+ * fires when a scripted command is enabled and the enumeration did not offer
+ * it, and on a CORRECT enumeration that never happens — so the only way to
+ * drive the alarm is to hand a run an enumeration that is deliberately short.
+ * A control nothing can make fire is a control nobody has checked, which is
+ * this tree's standing commitment and the reason this seam exists.
+ */
+type Enumeration = (cfg: Config, c: Core) => readonly Available[];
+
 type Chooser = (
   options: readonly Available[],
   state: MachineState,
@@ -487,6 +498,7 @@ function runMachine(
   where: string,
   budget: number,
   choose: Chooser,
+  enumerate: Enumeration = availableActions,
 ): RunResult {
   const coverage = new CoverageBuilder();
   coverage.observeInstance(instance);
@@ -502,7 +514,7 @@ function runMachine(
   let step = 0;
   let ended = false;
   while (step < budget && findings.length === 0 && !ended) {
-    const options = availableActions(cfg, state.core);
+    const options = enumerate(cfg, state.core);
     if (options.length === 0) {
       break;
     }
@@ -687,6 +699,7 @@ export function driveTrace(
   instance: string,
   label: string,
   script: readonly Cmd[],
+  enumerate?: Enumeration,
 ): RunResult {
   const run = runMachine(
     cfg,
@@ -706,6 +719,7 @@ export function driveTrace(
       }
       return { kind: "cmd", cmd, from: "script" };
     },
+    enumerate,
   );
   return run.steps === script.length
     ? run

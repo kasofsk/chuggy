@@ -9,12 +9,20 @@
  * the modules the manifest names, rather than against a fixture that would go
  * on parsing after the model's shape had changed.
  *
- * `verify.ts` and the two CLI drivers have no suite here on purpose: everything
- * they do is read the filesystem and turn a walk into an exit code, and
- * `.chug/tasks/check-conformance.test.sh` drives them over real repositories —
- * a clean one, one with a corrupted fixture, one with a manifest entry dropped,
- * and one with no corpus at all. A unit test that stubbed the filesystem would
- * check less at more cost.
+ * `verify.ts` HAS A SUITE, and it is `verify.test.ts` next door rather than
+ * here. This header used to say it had none on purpose — that everything the
+ * walk does is read the filesystem, so the shell gate's real repositories were
+ * the whole of its coverage. That argument did not survive PR #50: two of the
+ * walk's finding-producers were deletable in silence, and what closed them was
+ * a suite that builds a real fixture repo per case and asserts the EXACT
+ * finding list. The shell gate is still what drives the drivers end to end —
+ * a clean tree, a corrupted fixture, a dropped manifest entry, no corpus at
+ * all — and it is now the outer half of a pair rather than the only half.
+ *
+ * WHAT STAYS HERE is what neither of those can ask: `readModuleConsts` against
+ * the model sources this checkout actually holds, at the modules the manifest
+ * actually names. `verify.test.ts` works in a COPY of the model, so a case
+ * there proves the reader answers a document; these prove it answers THIS one.
  */
 
 import assert from "node:assert/strict";

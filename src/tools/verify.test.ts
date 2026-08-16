@@ -74,6 +74,14 @@ type RawFixture = {
   name: string;
   states: number;
   pins: string[];
+  /**
+   * Every other field, unread by the cases that touch the three above and
+   * writable by the ones that check a refusal. It is an index signature rather
+   * than the real field list for the same reason this type is not `Manifest`:
+   * what a refusal case has to produce is a DOCUMENT the reader rejects, and
+   * several of them are documents no typed shape would admit.
+   */
+  [field: string]: unknown;
 };
 type RawManifest = { tier1: RawFixture[]; tier2: RawFixture[] };
 
@@ -258,6 +266,29 @@ test("verifyCorpus: a tier-2 witness module whose consts moved is a finding too"
 
 // === replayFixture: the replay itself ======================================
 
+test("verifyCorpus: a tier-1 instance whose only fixture stops replaying loses the instance too", () => {
+  // THE OBLIGATION THAT USED TO BE SATISFIABLE BY DECLARATION. An mc instance
+  // is a manifest field rather than something a trace says, so it was counted
+  // before the fixture was opened: a corpus whose only DeadlineOnly trace no
+  // longer replayed still reported the instance covered. It is now counted from
+  // a replay that came back clean, so the second obligation is visible beside
+  // the first.
+  const verification = verifying((repo) => {
+    const path = `${repo}/corpus/tier1/deadline-only-gate-rework.itf.json`;
+    writeFileSync(
+      path,
+      readFileSync(path, "utf8").replace(
+        '"gasLeft":{"#bigint":"3"}',
+        '"gasLeft":{"#bigint":"2"}',
+      ),
+    );
+  });
+  assert.deepEqual(verification.findings, [
+    "deadline-only-gate-rework: state 1: ticket-arrived: tickets.tickets[1].gasLeft: expected 2, got 3",
+    "coverage: mc instance deadline_only — no fixture reaches it",
+  ]);
+});
+
 test("verifyCorpus: a fixture this tree replays differently is a finding naming the fixture and the state", () => {
   const verification = verifying((repo) => {
     const path = `${repo}/corpus/tier1/budgeted-cascade-park.itf.json`;
@@ -377,6 +408,13 @@ test("verifyCorpus: a manifest length nobody emitted is the same finding, from t
   });
   assert.deepEqual(verification.findings, [
     "retryfree-settled: the manifest says the trace holds 7 state(s) and it holds 6",
+    // AND THE INSTANCE OBLIGATION GOES WITH IT, which is what observing the
+    // instance from a CLEAN replay buys: `retryfree-settled` is the only tier-1
+    // fixture on that instance, so a corpus that can no longer believe it is a
+    // corpus with nothing exercising RetryFree. Counted from the manifest, as
+    // it used to be, the reader saw one finding where two obligations were in
+    // trouble.
+    "coverage: mc instance retryfree — no fixture reaches it",
   ]);
 });
 
@@ -397,6 +435,11 @@ test("verifyCorpus: an obligation no remaining fixture reaches is a coverage fin
     rmSync(`${repo}/corpus/tier2/witness-free-climb.itf.json`);
   });
   assert.deepEqual(verification.findings, [
+    // THE CORRESPONDENCE CHECK FIRST, because it is the coarser alarm and the
+    // one that explains the rest: tier 2 is supposed to BE the witness suite's
+    // runs, so a run the model declares and this corpus does not export is the
+    // finding, and the coverage gaps below are what that omission costs.
+    "model: witness run freeClimbDeterministicTest — the model has it and this tree's roster does not",
     "coverage: step label rework-started eval_failure — no fixture reaches it",
     "coverage: step label ticket-escalated rework_budget_exhausted — no fixture reaches it",
     "coverage: stepDescends exemption arm operator-retry, RetryFree pipeline flavor — no fixture reaches it",
@@ -473,6 +516,168 @@ test("verifyCorpus: a manifest that cannot be believed is an error before any fi
     "corpus/manifest.json.tier1[0].pins: decideNothing is not a decider, a step label or an exemption arm",
   ]);
 });
+
+// === loadManifest: the refusals ============================================
+
+/**
+ * THE MANIFEST READER'S REFUSALS, one case each — the controls that were
+ * unproved until sweep 2 and each deletable at full-gate exit 0.
+ *
+ * WHY A GENERIC ASSERTION WAS NOT ENOUGH, and it is the failure this whole file
+ * was written against. `corpus.test.ts` asserted properties of the LOADED
+ * manifest — no duplicate names, both tiers populated, every instance rostered
+ * — which can only fail if the guard and the committed manifest change
+ * together. A guard deleted from the reader leaves those assertions passing
+ * over a manifest that still happens to be well formed. So each case below
+ * hands the reader a document carrying exactly one defect and asserts the exact
+ * message, which no other producer in this walk can emit.
+ *
+ * THEY ARE ERRORS AND NOT FINDINGS, all of them: a manifest that cannot be
+ * believed is a check that could not run, and the walk stops before a fixture
+ * is opened. That is the second half of what each case pins.
+ */
+const manifestRefusals: readonly {
+  readonly case: string;
+  readonly edit: (manifest: RawManifest) => void;
+  readonly error: string;
+}[] = [
+  {
+    case: "two fixtures under one name",
+    edit: (manifest) => {
+      const first = manifest.tier2[0];
+      assert.ok(first !== undefined);
+      first.name = manifest.tier1[0]?.name ?? "";
+    },
+    error: "corpus/manifest.json: two fixtures are named budgeted-cascade-park",
+  },
+  {
+    case: "a tier with no fixtures in it",
+    edit: (manifest) => {
+      manifest.tier2 = [];
+    },
+    error:
+      "corpus/manifest.json: the corpus is two-tier, and one tier is empty",
+  },
+  {
+    case: "a tier-1 fixture naming an instance the model has no module for",
+    edit: (manifest) => {
+      const first = manifest.tier1[0];
+      assert.ok(first !== undefined);
+      first["instance"] = "nowhere";
+    },
+    error:
+      "corpus/manifest.json.tier1[0].instance: nowhere is outside [budgeted, deadline_only, retryfree]",
+  },
+  {
+    case: "a search whose expected verdict is neither of the two",
+    edit: (manifest) => {
+      const first = manifest.tier1[0];
+      assert.ok(first !== undefined);
+      first["expect"] = "maybe";
+    },
+    error:
+      "corpus/manifest.json.tier1[0].expect: expected violation or ok, got maybe",
+  },
+  {
+    case: "a fixture that says nothing about what it is in the corpus for",
+    edit: (manifest) => {
+      const first = manifest.tier1[0];
+      assert.ok(first !== undefined);
+      first.pins = [];
+    },
+    error:
+      "corpus/manifest.json.tier1[0].pins: a fixture states what it is in the corpus for",
+  },
+  {
+    // THE ONE WITH A REACH BEYOND THE CORPUS. A fixture's name IS its file
+    // name, so a name holding a slash or a parent segment is a path the emitter
+    // writes to and the gate reads from, outside `corpus/` entirely.
+    case: "a fixture name that is a path",
+    edit: (manifest) => {
+      const first = manifest.tier1[0];
+      assert.ok(first !== undefined);
+      first.name = "../../etc/passwd";
+    },
+    error:
+      "corpus/manifest.json.tier1[0].name: a fixture name is lowercase, digits and dashes, got ../../etc/passwd",
+  },
+  {
+    case: "a consts block missing one of the model's consts",
+    edit: (manifest) => {
+      const first = manifest.tier1[0];
+      assert.ok(first !== undefined);
+      const consts = { ...(first["consts"] as Record<string, unknown>) };
+      delete consts["GAS"];
+      first["consts"] = consts;
+    },
+    error:
+      "corpus/manifest.json.tier1[0].consts: the consts are [GAS, MAX_STAGES, N_PROJECTS, N_TASKS, N_TICKETS, OP_RETRY_PRICING, REWORK_POLICY, WRAPUP_PRICING], got [MAX_STAGES, N_PROJECTS, N_TASKS, N_TICKETS, OP_RETRY_PRICING, REWORK_POLICY, WRAPUP_PRICING]",
+  },
+  {
+    case: "a consts block carrying one the model does not declare",
+    edit: (manifest) => {
+      const first = manifest.tier1[0];
+      assert.ok(first !== undefined);
+      first["consts"] = {
+        ...(first["consts"] as Record<string, unknown>),
+        N_DESKS: "1",
+      };
+    },
+    error:
+      "corpus/manifest.json.tier1[0].consts: the consts are [GAS, MAX_STAGES, N_PROJECTS, N_TASKS, N_TICKETS, OP_RETRY_PRICING, REWORK_POLICY, WRAPUP_PRICING], got [GAS, MAX_STAGES, N_DESKS, N_PROJECTS, N_TASKS, N_TICKETS, OP_RETRY_PRICING, REWORK_POLICY, WRAPUP_PRICING]",
+  },
+  {
+    case: "a search budget of no samples at all",
+    edit: (manifest) => {
+      const first = manifest.tier1[0];
+      assert.ok(first !== undefined);
+      first["maxSamples"] = 0;
+    },
+    error:
+      "corpus/manifest.json.tier1[0].maxSamples: expected a positive whole number",
+  },
+  {
+    case: "a state count that is not a whole number",
+    edit: (manifest) => {
+      const first = manifest.tier2[0];
+      assert.ok(first !== undefined);
+      first.states = 2.5;
+    },
+    error:
+      "corpus/manifest.json.tier2[0].states: expected a positive whole number",
+  },
+  {
+    case: "a tier that is not an array",
+    edit: (manifest) => {
+      (manifest as unknown as Record<string, unknown>)["tier2"] = {};
+    },
+    // The manifest's path is interpolated rather than written out, and the
+    // suffix is not spelled in this comment either: a slashed token in a `.ts`
+    // file is a claim about THIS tree to `.chug/tasks/check-paths.sh`, and a
+    // tier suffix on the manifest's name resolves to nothing here.
+    error: `${manifestPath}.tier2: expected an array`,
+  },
+  {
+    case: "a fixture whose provenance is not a string",
+    edit: (manifest) => {
+      const first = manifest.tier2[0];
+      assert.ok(first !== undefined);
+      first["module"] = 7;
+    },
+    error: "corpus/manifest.json.tier2[0].module: expected a string",
+  },
+];
+
+for (const refusal of manifestRefusals) {
+  test(`loadManifest: ${refusal.case} — could-not-run, before a fixture is opened`, () => {
+    const verification = verifying((repo) => {
+      editManifest(repo, refusal.edit);
+    });
+    assert.deepEqual(verification.errors, [refusal.error]);
+    assert.deepEqual(verification.findings, []);
+    assert.deepEqual(verification.replayed, []);
+  });
+}
 
 // === staleRosters: the model's surface against the hand-typed rosters ======
 
@@ -836,6 +1041,28 @@ const parseHonesty: readonly {
     error: 'model/measure.qnt: WOAttempt: no "WOAttempt({" arm',
   },
   {
+    // `matchesOf`'s refusal, which every regex-shaped roster shares: a pattern
+    // that matches nothing is this reader having stopped seeing the
+    // declaration, and reporting it as an empty roster would red every decider
+    // at once and blame the tree for a defect in this file.
+    case: "a pattern-read roster matches nothing at all",
+    source: domainSource,
+    from: "pure def decide",
+    to: "pure def choose",
+    error: "model/domain.qnt: pure def decide*: this parse matched nothing",
+  },
+  {
+    // `exemptionRoster`'s SECOND refusal. The first — the marker gone — is the
+    // case at the bottom of this file; this is the marker still there with
+    // nothing under it, which a reader that only looked for the marker would
+    // answer with an empty roster.
+    case: "the exemption roster's comment survives with no entries under it",
+    source: domainSource,
+    from: "Current roster:",
+    to: "Current roster:\n  val stepDescends",
+    error: "model/domain.qnt: the exemption roster reads empty",
+  },
+  {
     case: "the refinement bundle's declaration is spelled another way",
     source: refinementSource,
     from: "val refinementInvariants: bool = and {",
@@ -1078,10 +1305,20 @@ test("recordTypeFields: the model's field-by-field prose hides no field", () => 
 });
 
 test("staleRosters: a roster the parse can no longer see is could-not-run, never an empty roster", () => {
-  // `readModuleConsts`'s rule, applied to every roster reader: "no entries" and
-  // "entries this parse cannot see" must not report the same. Reporting the
-  // second as the first would red every entry of the roster at once and blame
-  // the tree for a defect in the reader.
+  // `readModuleConsts`'s rule: "no entries" and "entries this parse cannot see"
+  // must not report the same. Reporting the second as the first would red every
+  // entry of the roster at once and blame the tree for a defect in the reader.
+  //
+  // THIS COMMENT USED TO SAY "APPLIED TO EVERY ROSTER READER", which was a
+  // claim about coverage that nothing checked and that was not true. What IS
+  // driven, each by its own case in the table above: `matchesOf`'s pattern
+  // matching nothing (the pattern-read rosters — deciders, literals,
+  // instances, binders, consts), `conjunctsOf`'s empty conjunction and its
+  // non-name conjunct, `sumTypeArms`' absent declaration, empty arm list and
+  // non-constructor arm, `recordFieldsAt`'s absent declaration, empty record
+  // and non-field entry, and `exemptionRoster`'s empty roster — plus this case,
+  // which is `exemptionRoster`'s marker gone. The one arm not driven is named
+  // in that table's own header.
   const verification = verifying((repo) => {
     editModelText(repo, domainSource, "Current roster:", "The arms:");
   });

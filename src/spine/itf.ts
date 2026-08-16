@@ -36,6 +36,7 @@
  * compared as a set.
  */
 
+import { assertNever } from "../domain/assert.ts";
 import { canonicalTaskSet } from "../domain/measure.ts";
 import type {
   ArtifactMark,
@@ -698,8 +699,14 @@ function decodePicks(v: unknown, where: string): Picks {
       case "out":
         picks.out = decodeWrapUpOutcome(value, at);
         break;
+      // THE EXHAUSTIVE ARM, and it is `assertNever` rather than a decode
+      // failure on purpose. `as` ranges over `nondetBinders`' own second
+      // elements, so reaching here means a binder was added to that table and
+      // not to this switch — a defect in THIS FILE, not a document this
+      // decoder cannot read. Reporting it as a `DecodeError` would tell a gate
+      // the corpus was unreadable and send a reader to the fixture.
       default:
-        fail(at, "unhandled binder");
+        return assertNever(as, `${at}: unhandled binder`);
     }
   }
   return picks;

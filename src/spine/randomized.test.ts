@@ -40,6 +40,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { Config } from "../domain/domain.ts";
+import type { Core } from "../domain/measure.ts";
 import { jDone, solo } from "../domain/fixtures.test.ts";
 import type { Stage } from "../domain/measure.ts";
 import { configOf, mcSource, readModuleConsts } from "../tools/corpus.ts";
@@ -59,11 +60,13 @@ import {
   type MachineState,
 } from "./machine.ts";
 import {
+  availableActions,
   driveTrace,
   hex,
   observeOnce,
   walkOnce,
   walkSeeds,
+  type Available,
   type RunResult,
 } from "./walk.test.ts";
 
@@ -789,6 +792,44 @@ test("the walker's bundle alarm fires, and names the conjuncts that went red", (
   assert.deepEqual(observeOnce(configs.budgeted, doubled), [
     "probe step 0 after init: allInvariants is false; red conjuncts: completionExclusive",
   ]);
+});
+
+test("the walker's enumeration-completeness alarm fires, and names the command that was withheld", () => {
+  // THE FOURTH REGION, and the one with the widest blast radius: `offered` is
+  // the sole guardian of the sampled walks' PAYLOAD SPACE. Every other probe in
+  // this file asks what a walk REACHED, and a walk only ever takes what the
+  // enumeration hands it — so an enumeration that quietly stopped offering the
+  // dequeue's quiet arm, or a lease-taking arrival, would explore less than it
+  // claims with every roster still complete and every witness still firing.
+  //
+  // A correct enumeration never fires it, which is why the enumeration is a
+  // parameter of `driveTrace`: the alarm is driven by handing one run a short
+  // enumeration, exactly as the three regions above are driven by handing the
+  // observer a state no decider would produce.
+  const withoutQuietDequeue = (cfg: Config, c: Core): readonly Available[] =>
+    availableActions(cfg, c).flatMap((option) => {
+      if (option.kind !== "cmd" || option.tag !== "JDequeue") {
+        return [option];
+      }
+      const picks = option.picks.filter(
+        (pick) => pick.tag === "JDequeue" && pick.moved,
+      );
+      return picks.length === 0 ? [] : [{ ...option, picks }];
+    });
+  const withheld = driveTrace(
+    configs.budgeted,
+    "budgeted",
+    "withheld dequeue",
+    stageAdvanceScript,
+    withoutQuietDequeue,
+  );
+  assert.deepEqual(withheld.findings, [
+    "withheld dequeue: step 12: JDequeue moved=false ticket=1 is enabled here and the enumeration did not offer it",
+    "withheld dequeue: the run took 12 of the 13 scripted steps",
+  ]);
+  // The control: the SAME script under the real enumeration says nothing, so
+  // the finding is attributable to the withheld row and not to the script.
+  assert.deepEqual(stageAdvance.findings, []);
 });
 
 test("the walker's observer is silent on a state the machine really reaches", () => {
