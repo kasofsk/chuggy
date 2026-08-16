@@ -10,7 +10,7 @@
 ///   - the STUTTER-set transitions (duplicate deliveries) leave it exactly
 ///     unchanged, and the CHURN-set transitions are pinned as the only
 ///     climbers;
-///   - effect-exclusivity at the landing boundary on a happy path AND a
+///   - effect-exclusivity at the completion boundary on a happy path AND a
 ///     task-done-duplicate / complete-duplicate path;
 ///   - every escalation wall carries its name, on
 ///     both WrapUpPricing branches;
@@ -73,15 +73,15 @@
 ///   - the wrapUpOutcomes draw rule pinned: a QUIET branch refuses
 ///     WFailed (the structural refusal — a valid, uninvalidated artifact
 ///     always commits cleanly, expressed as the outcome set itself);
-///   - landing-boundary ATTRIBUTION pinned at decider grain, on a
+///   - wrap-up boundary ATTRIBUTION pinned at decider grain, on a
 ///     project-2 ticket so own-project attribution is distinguishable from
 ///     project-constant stamping: both successes, the wrap-up rework, and both
-///     landing walls each carry WOAttempt with the ticket's OWN project and
+///     wrap-up walls each carry WOAttempt with the ticket's OWN project and
 ///     the attempt's invalidated choice — and the effect vocabulary is
 ///     untouched by the new field;
-///   - every NON-landing step carries WONone — including the shared
+///   - every step resolving NO wrap-up carries WONone — including the shared
 ///     "ticket-escalated gas_exhausted" label from the EVAL side (the
-///     attribution, not the label string, marks the landing boundary),
+///     attribution, not the label string, marks the wrap-up boundary),
 ///     eval-passed (which merely enqueues), and the absorbed
 ///     complete-duplicate;
 ///   - PROJECT-BLINDNESS as a machine check, not just a comment theorem:
@@ -273,7 +273,7 @@ module chuggy_test {
 
   /// Every decision on the happy path strictly descends the measure —
   /// dispatch (gas), task completions (task count), both phase reductions
-  /// (rank), the landing (rank).
+  /// (rank), the wrap-up (rank).
   run happyPathMeasureDescendsTest = assert(and {
     mB(c1) < mB(c0),
     mB(c2) < mB(c1),
@@ -362,7 +362,7 @@ module chuggy_test {
     dComplete.rec.effects == ["Complete"]
   })
 
-  /// The held twin of c7's landing: the dequeue drew MOVED, the gate
+  /// The held twin of c7's wrap-up: the dequeue drew MOVED, the gate
   /// opened, and the resolution promotes by ADVANCING the default ref.
   pure val dGateOpen7 = DB::decideWrapUpStart(c7, 1)
   pure val cGated7 = dGateOpen7.post
@@ -447,7 +447,7 @@ module chuggy_test {
     // c4: eval stage 0 live (ids 3,4); work ids 1,2 retired.
     DB::decideTaskDone(c4, 1, 1, VFail).post == c4,
     DB::decideTaskDone(c4, 1, 1, VFail).rec.label == "task-done-duplicate",
-    // c7: Landing, everything retired; a stale eval completion no-ops.
+    // c7: WrapUp, everything retired; a stale eval completion no-ops.
     DB::decideTaskDone(c7, 1, 3, VFail).post == c7,
     DB::decideTaskDone(c7, 1, 3, VFail).rec.label == "task-done-duplicate",
     mB(DB::decideTaskDone(c4, 1, 1, VFail).post) == mB(c4)
@@ -455,7 +455,7 @@ module chuggy_test {
 
   /// EFFECT EXCLUSIVITY, complete-duplicate path: a re-delivered completion
   /// event for a Done ticket emits NOTHING — exactly-once is proved at the
-  /// landing boundary and nowhere else.
+  /// completion boundary and nowhere else.
   run completeDuplicateExclusiveTest = assert(and {
     DB::decideCompleteDuplicate(c8, 1).post == c8,
     DB::decideCompleteDuplicate(c8, 1).rec.label == "complete-duplicate",
@@ -741,7 +741,7 @@ module chuggy_test {
   // the occupied slot; every account delta below is byte-identical to the
   // the earlier pricing (the eviction changed from-phase, never price).
 
-  /// Budgeted branch: a landing failure spends 1 gate budget AND 1 gas.
+  /// Budgeted branch: a wrap-up failure spends 1 gate budget AND 1 gas.
   pure val cGateB: Core = { tickets: Map(1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)),
     phase: PWrapUpHolding, wrapUpLeft: 1, gasLeft: 2 }) }
   pure val dGateRework = DB::decideWrapUpResolve(cGateB, 1, WFailed, true)
@@ -776,7 +776,7 @@ module chuggy_test {
     mB(dGateGasWall.post) < mB(cGateGasWall)
   })
 
-  /// DeadlineOnly branch: a landing failure spends gas alone (the required
+  /// DeadlineOnly branch: a wrap-up failure spends gas alone (the required
   /// gas account is the only meter), and the gate-budget wall
   /// can never be the reason.
   pure val cGateD: Core = { tickets: Map(1 -> { ...DD::freshTicket(Set(), progU2, 1, WExclusive(1)),
@@ -901,7 +901,7 @@ module chuggy_test {
     mB(dRetryEval.post) < mB({ tickets: Map(1 -> escEval) })
   })
 
-  /// Free retry metering: a resume into Landing charges nothing and the
+  /// Free retry metering: a resume into WrapUp charges nothing and the
   /// measure CLIMBS — the CHURN set's other member, a documented churn
   /// kept reproducible by configuration; the Working resume still pays
   /// (entry to Working always meters — standing rule 2).
@@ -969,7 +969,7 @@ module chuggy_test {
   // === Revoke, from every live phase =======================================
   // Every non-terminal may be revoked. Single-ticket
   // fixtures: one per live phase (Draft, Pending, Working,
-  // Evaluating, Landing) and all
+  // Evaluating, WrapUp) and all
   // THREE desk-reason flavors of the one parked phase (post-work wall,
   // pre-work revalidation, cascade wall) — the desk fixtures are the
   // measure-FLAT cases (AUTHORING set), every live-rank phase must
@@ -1076,7 +1076,7 @@ module chuggy_test {
   })
 
   /// REVOKED NEVER COMPLETES (the exclusivity extension): revoking a ticket
-  /// parked ON the landing strip emits no completion effect and leaves the
+  /// parked IN the wrap-up queue emits no completion effect and leaves the
   /// completion counter at zero — contrast with the completed ticket (c8),
   /// whose counter is 1 and which is beyond revoke's reach (previous test).
   run revokedNeverCompletesTest = assert(and {
@@ -1180,7 +1180,7 @@ module chuggy_test {
   })
 
   // ==========================================================================
-  // === PROJECT ISOLATION at the landing boundary ============================
+  // === PROJECT ISOLATION at the wrap-up boundary ============================
   // ==========================================================================
   // Design + provenance at domain.qnt's header (the refinement layer, gate:
   // isolation invariants; `domain/firstclass` "one orchestrator, many
@@ -1229,7 +1229,7 @@ module chuggy_test {
   /// Combos are the PATH-legal ones only (wrapUpOutcomes):
   /// quiet+WOk off the queue, moved+WOk/Failed out of
   /// the lease.
-  /// NOTE: the gas-wall conjuncts below are THE guard for that landing
+  /// NOTE: the gas-wall conjuncts below are THE guard for that wrap-up
   /// arm's stamp — wrapUpIsolation's completeness cannot forbid the
   /// shared gas_exhausted label, so a stamp-drop there is visible only
   /// here (multi-project review, observation A).
@@ -1242,7 +1242,7 @@ module chuggy_test {
       == ["Complete"],
     // Success under a MOVED branch is drawable and honestly attributed:
     // the move makes failure POSSIBLE, never certain — and its clean
-    // landing is the GATED promotion (R3).
+    // wrap-up is the GATED promotion (R3).
     DB::decideWrapUpResolve(onProject2(cGateB), 1, WOk, true).rec.attempt
       == WOAttempt({ project: 2, invalidated: true }),
     DB::decideWrapUpResolve(onProject2(cGateB), 1, WOk, true).rec.effects
@@ -1252,7 +1252,7 @@ module chuggy_test {
       == "rework-started wrapup_failure",
     DB::decideWrapUpResolve(onProject2(cGateB), 1, WFailed, true).rec.attempt
       == WOAttempt({ project: 2, invalidated: true }),
-    // Both landing walls carry it too — the attempt that PARKED the
+    // Both wrap-up walls carry it too — the attempt that PARKED the
     // ticket is attributable like the one that reworked it.
     DB::decideWrapUpResolve(onProject2(cGateWall), 1, WFailed, true).rec.label
       == "ticket-escalated wrapup_budget_exhausted",
@@ -1260,16 +1260,16 @@ module chuggy_test {
       == WOAttempt({ project: 2, invalidated: true }),
     DB::decideWrapUpResolve(onProject2(cGateGasWall), 1, WFailed, true).rec.attempt
       == WOAttempt({ project: 2, invalidated: true }),
-    // DeadlineOnly's landing gas wall attributes the same way.
+    // DeadlineOnly's wrap-up gas wall attributes the same way.
     DD::decideWrapUpResolve(cGateDWall, 1, WFailed, true).rec.attempt
       == WOAttempt({ project: 1, invalidated: true })
   })
 
-  /// Attribution appears at the landing boundary and NOWHERE else: every
-  /// non-landing decision carries WONone — most pointedly the eval-side
-  /// "ticket-escalated gas_exhausted" (the SAME label string as the
-  /// landing gas wall: the attribution field, not the label, marks the
-  /// boundary), eval-passed (which only ENQUEUES the landing — the
+  /// Attribution appears at the wrap-up boundary and NOWHERE else: every
+  /// decision resolving no wrap-up carries WONone — most pointedly the
+  /// eval-side "ticket-escalated gas_exhausted" (the SAME label string as
+  /// the wrap-up gas wall: the attribution field, not the label, marks the
+  /// boundary), eval-passed (which only ENQUEUES the wrap-up — the
   /// attempt resolves later, under a choice not yet made), and the
   /// absorbed complete-duplicate (no attempt resolves, nothing is emitted).
   run nonLandingStepsCarryNoAttributionTest = assert(and {
@@ -1339,7 +1339,7 @@ module chuggy_test {
   /// dependencies may cross projects): a project-2 ticket behind a project-1 dep
   /// is Blocked exactly while the dep is not Done — and Ready the moment
   /// it is, the projects never consulted (depsDoneIn reads phase alone).
-  /// The machine-trace version — the landing in project 1 UNBLOCKING the
+  /// The machine-trace version — the wrap-up in project 1 UNBLOCKING the
   /// project-2 dependent — is the crossProjectDepDeterministicTest witness.
   pure val cXDepPre: Core = { tickets: Map(
     1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PWrapUp },
