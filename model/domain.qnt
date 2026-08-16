@@ -270,7 +270,7 @@ module chuggy_domain {
   /// Draft -> Pending: the ticket enters the released pipeline. There is
   /// one release target rather than a Ready/Blocked pair, because the split
   /// is DERIVED (standing rule 3) — it re-derives from deps the moment the
-  /// phase lands. Descends (rank 5 -> 4). Charges nothing: the Working
+  /// phase lands. Descends (rank 6 -> 5). Charges nothing: the Working
   /// boundary still meters actual work entry (standing rule 2).
   ///
   /// Release leaves from Draft alone. Pinning a Draft's content before
@@ -1098,7 +1098,7 @@ module chuggy_domain {
   }
 
   /// Author releases a Draft into the pipeline; Ready/Blocked re-derive.
-  /// Descends: rank 5 -> 4. Release is authoring's only phase-level act
+  /// Descends: rank 6 -> 5. Release is authoring's only phase-level act
   /// after arrival.
   action release = all {
     draftTickets.size() > 0,

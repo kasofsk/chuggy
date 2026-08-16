@@ -780,7 +780,7 @@ module chuggy_test {
 
   // === The human desk: parks, retries, and the metering parameter ==========
 
-  /// Pre-work invalidation parks the ticket (rank 4 -> 0: descends, free) on
+  /// Pre-work invalidation parks the ticket (rank 5 -> 0: descends, free) on
   /// PEscalated's one parked phase — with the pre-work
   /// wall's reason AND resume point (RPending: back to Pending, never to a
   /// pipeline phase, because nothing pipeline ever ran) …
@@ -924,7 +924,7 @@ module chuggy_test {
     mB(cA2) > mB(cA1)
   })
 
-  /// Release strictly descends (Draft -> Pending, rank 5 -> 4), golden-trace
+  /// Release strictly descends (Draft -> Pending, rank 6 -> 5), golden-trace
   /// shaped, and the derived waiting room splits it correctly on landing.
   /// Release is authoring's only phase edge after arrival, and arrival is
   /// the AUTHORING set's only climber (pinned in
