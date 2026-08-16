@@ -22,8 +22,12 @@
  * and the model beside it, changes ONE thing, and asserts the findings as an
  * EXACT LIST. That is what makes a finding attributable to the mutation rather
  * than to the fixture repo: a case asserting "some finding appeared" would pass
- * for any of the nine producers, which is the failure mode this file was
- * written to answer.
+ * for ANY producer in `verify.ts`, which is the failure mode this file was
+ * written to answer and the one the shell case below it fell into.
+ *
+ * To re-derive which producers are covered, read the section headings: there is
+ * one per `findings.push` and per `throw` site in `verify.ts`, and a producer
+ * added without a heading here is a producer nothing reds.
  *
  * IT CHANGES DIRECTORY, WHICH IS WORTH ONE SENTENCE. The corpus paths
  * `corpus.ts` exports are relative — the gate runs at the checkout root — so a
