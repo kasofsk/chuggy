@@ -168,11 +168,20 @@ declare const durable: unique symbol;
 export type DurableState = ActorState & { readonly [durable]: true };
 
 /**
- * What the world holds. A crash of the ACTOR cannot touch it — hence the name,
- * and hence that recovery takes it as an argument rather than rebuilding it: the
- * world's ledger is not in the journal, was never the actor's to lose, and an
- * orphan in it survives every recovery the actor can perform. That survival is
- * the composition the hazard sweep drives across `recoverFrom`.
+ * What survived the actor's death on the far side of the seam. A crash of the
+ * ACTOR cannot touch it — hence the name, and hence that recovery takes it as an
+ * argument rather than rebuilding it: none of it is in the journal, none of it
+ * was ever the actor's to lose, and an orphan in it survives every recovery the
+ * actor can perform. That survival is the composition the hazard sweep drives
+ * across `recoverFrom`.
+ *
+ * `worldEffects` IS DECISIONS EMITTED, NOT REQUESTS THE WORLD RECEIVED, and the
+ * distinction is load-bearing now that `recoverFrom` reads it. `emitNext` unions
+ * a row's seq whether or not the row asked the world for anything, so this set
+ * counts rows the executor got out; a real world's own ledger counts things it
+ * was asked to do, and the two differ by every effect-free row. `ports.ts` calls
+ * the second a projection of the first and `harness.test.ts` spells the
+ * narrowing `emittedAndAsking`.
  */
 export type WorldLedger = {
   readonly worldEffects: ReadonlySet<number>;
@@ -426,13 +435,29 @@ export function effectCrash(
  * `crashRecoverTo`'s caller-error refusal wearing the argument this function's
  * extra argument makes available. `crashRecoverTo` refuses `a > applied`
  * because a cursor above the one being lost is not a crash; the same sentence
- * here reads "a cursor above what the WORLD evidences", because a durable
+ * here reads "a cursor above what the LEDGER evidences", because a durable
  * rebuild has no `applied` to compare against and the ledger is what survived
  * instead. The relation is exact rather than approximate: `emitNext` unions the
  * emitted row's seq into `worldEffects` whether or not the row carried any
  * effect, and nothing else ever adds one, so a disciplined actor's ledger is
  * always the dense prefix `1..appliedEver` — and every cursor a crash can
  * honestly come back with lies inside it.
+ *
+ * WHICH SET THAT IS, SAID EXACTLY, BECAUSE THE GATE IS ONLY SOUND OVER ONE OF
+ * TWO. `worldEffects` is DECISIONS EMITTED — one seq per row the executor got
+ * out, effect-bearing or not — and it is NOT a reconstruction of what the world
+ * was asked to do. The two differ by exactly the effect-free rows, of which the
+ * committed corpus holds several (every absorbed duplicate is one), and
+ * `src/interp/harness.test.ts` needs `emittedAndAsking` for precisely that
+ * reason: the actor counts decisions, a world's ledger counts requests.
+ *
+ * SO A CALLER MUST NOT BUILD THIS ARGUMENT FROM A WORLD'S OWN LEDGER. Doing
+ * that yields a strict SUBSET — every effect-free seq missing — and this gate
+ * would then refuse a recovery the process is entitled to, which is the one way
+ * it can be wrong. What a recovering process passes is the `worldEffects` it
+ * carried out of the crash, exactly as every call site here does; a deployment
+ * that must rebuild the value from outside the process owes the effect-free
+ * seqs too, and the journal it is recovering from is where they are.
  *
  * WHAT IT COSTS TO OMIT, which is why the gate is here and not a comment. A
  * checkpoint that over-reports mints `applied > |worldEffects|`, a state
@@ -482,8 +507,13 @@ export function recoverFrom(
 }
 
 /**
- * Does the world's ledger evidence a cursor of `cursor` — is every seq the
- * checkpoint claims to have emitted one the world actually received?
+ * Does the ledger evidence a cursor of `cursor` — is every seq the checkpoint
+ * claims to have emitted one the ledger records as emitted?
+ *
+ * IT ASKS `worldEffects` AND NOTHING ELSE, which is the set of seqs the executor
+ * got out — see `WorldLedger`, where the difference between that and a world's
+ * own request ledger is stated, and why passing the second here would refuse an
+ * honest recovery.
  *
  * THE PREFIX IS THE WHOLE QUESTION, and it is a membership scan rather than a
  * size comparison for `executorSound`'s reason: `worldEffects` is a set that

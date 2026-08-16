@@ -20,8 +20,10 @@
  * the suite reaches what it reaches. `harness.test.ts`'s `cfgInterp` is the
  * refinement instance widened by one ticket — small on purpose, and its own
  * header says what it cannot reach. Here each walk runs at the consts the
- * manifest records for the trace it is driving, which are the model's mc
- * instances, so the fleet, the fan-out and both pricings are the machine's.
+ * manifest records for the trace it is driving: an mc instance's for a tier-1
+ * fixture, the witness module's own for a tier-2 one, and `staleConsts` is what
+ * keeps either honest against the model. Either way the fleet, the fan-out and
+ * both pricings are the machine's rather than this slice's.
  *
  * WHAT IS ASSERTED, AND IN WHICH DIRECTION.
  *
@@ -51,10 +53,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type {
-  RecordingWorld,
-  WorldRecord,
-} from "../adapters/recording-world.ts";
+import type { WorldRecord } from "../adapters/recording-world.ts";
 import type { Config } from "../domain/domain.ts";
 import { effectVocabulary, effectsOf } from "../effects/effect.ts";
 import {
@@ -135,7 +134,7 @@ type Walked = {
   readonly drained: DurableState;
   readonly beforeCrash: readonly WorldRecord[];
   readonly afterRecovery: readonly WorldRecord[];
-  readonly rebuilt: DurableState;
+  readonly redrained: DurableState;
 };
 
 /**
@@ -184,7 +183,7 @@ function walk(cfg: Config, commands: readonly Cmd[]): Walked {
     drained,
     beforeCrash,
     afterRecovery: rig.world.ledger(),
-    rebuilt: redrained,
+    redrained,
   };
 }
 
@@ -264,11 +263,11 @@ test("a crash into total cursor loss re-emits everything and the world absorbs a
       walked.beforeCrash,
       `${name}: the re-drain changed what the world holds`,
     );
-    assert.equal(walked.rebuilt.applied, walked.rebuilt.journal.length);
+    assert.equal(walked.redrained.applied, walked.redrained.journal.length);
     // The rebuild kept nothing but the store's rows and the ledger, and lands
     // on the machine state the live actor held.
     assert.deepEqual(
-      walked.rebuilt.mem,
+      walked.redrained.mem,
       walked.drained.mem,
       `${name}: the durable rebuild landed elsewhere`,
     );
@@ -334,18 +333,9 @@ test("the corpus drives every port method the four contracts declare", () => {
   );
 });
 
-test("each port method is reachable from the corpus, named one at a time", () => {
-  // THE ROSTER ABOVE AS A UNION SAYS ONLY THAT SOMETHING REACHED EACH METHOD.
-  // This says which fixture, through the world's own per-method view, so a
-  // routing arm that started sending `OpenGate` to the fabric would name the
-  // trace that caught it rather than a set difference.
-  const worlds: readonly (readonly [string, RecordingWorld])[] = walks.map(
-    ({ name, walked }) => [name, walked.rig.world] as const,
-  );
-  for (const call of portCalls) {
-    const reachedBy = worlds
-      .filter(([, world]) => world.recorded(call).length > 0)
-      .map(([name]) => name);
-    assert.ok(reachedBy.length > 0, `no fixture in the corpus reaches ${call}`);
-  }
-});
+// A PER-METHOD CASE WAS TRIED HERE AND DROPPED, which is worth one sentence so
+// it is not re-added. `RecordingWorld.recorded(call)` filters the same array
+// `ledger()` returns, so "some fixture reaches each method" is implied by the
+// exact set above — and the assertion could only fail with an empty fixture
+// list, so it had no trace to name either. The accessor itself is pinned in
+// `src/adapters/recording-world.test.ts`, where it is the subject.

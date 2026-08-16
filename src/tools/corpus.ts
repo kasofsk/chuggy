@@ -529,9 +529,19 @@ export function readModelRosters(): ModelRosters {
     }),
     // THE SPELLING IS THE MODEL'S OWN AND IT IS STATED AS A RULE, not inferred:
     // every effect the model writes is a constructor name in upper camel case
-    // and every step label is lower case with dashes. Refutation trigger: a
-    // model PR that writes either the other way round lands in `unclassified`
-    // and reds this alarm, which is the review hook rather than a false alarm.
+    // and every step label is lower case with dashes.
+    //
+    // A MIS-CASED ENTRY IS SORTED INTO THE WRONG ROSTER AND REDS BOTH — absent
+    // from the one it belongs to, present-and-unrostered in the one it landed
+    // in — which is the alarm firing twice rather than a spelling rule going
+    // unchecked. It does NOT reach `unclassified`, which holds only a literal
+    // starting with neither case; saying otherwise would name a mutation that
+    // does not fire, and a control is only worth what its stated refutation is.
+    //
+    // Refutation trigger: the partition assumes the model never writes a code
+    // literal that is neither an effect nor a label. One that is — a debug
+    // string, a tag, a name — lands in `unclassified` and reds this alarm; the
+    // fix is a third roster here, not a widened filter.
     effects: literals.filter((text) => /^[A-Z]/.test(text)),
     stepLabels: literals.filter((text) => /^[a-z]/.test(text)),
     unclassified: literals.filter((text) => !/^[A-Za-z]/.test(text)),

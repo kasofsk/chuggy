@@ -32,9 +32,13 @@
 #      nondet binders and the const names — are compared against the model's
 #      own declarations as exact sets in both directions, so a decider the
 #      model gained is a finding rather than an obligation nobody owes. What
-#      remains is a decider whose BODY moved with its name intact, and that is
-#      `check-model.sh` running the model's own suites in the same `just
-#      check`.
+#      remains is a decider whose BODY moved with its NAME and its ROSTERS
+#      intact, and that remainder is narrowed rather than closed:
+#      `check-model.sh` runs the model's own suites in the same `just check`,
+#      which catches a body change the model's own theorems refuse — and stays
+#      green on one they do not, while the stale corpus replays green beside
+#      it. Regenerating the corpus is what closes it, and the diff that leaves
+#      is the thing to read.
 #   2. AN ENABLEMENT ARM WIDENED. `cmdEnabled` refusing less than the machine
 #      does is invisible to replay — every fixture holds decisions the machine
 #      TOOK, and a widened guard still admits those. What covers it is

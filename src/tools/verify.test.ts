@@ -26,8 +26,12 @@
  * written to answer and the one the shell case below it fell into.
  *
  * To re-derive which producers are covered, read the section headings: there is
- * one per `findings.push` and per `throw` site in `verify.ts`, and a producer
- * added without a heading here is a producer nothing reds.
+ * one per `findings.push` in `verify.ts` and one per way the walk can stop, and
+ * a producer added without a heading here is a producer nothing reds. The one
+ * path with no case is `errorOnly`'s rethrow — the arm for an error that is
+ * neither a `CorpusError` nor a `DecodeError`, which no input to this walk can
+ * produce, and which exists so that a defect in the tool is not reported as a
+ * finding about the corpus.
  *
  * IT CHANGES DIRECTORY, WHICH IS WORTH ONE SENTENCE. The corpus paths
  * `corpus.ts` exports are relative — the gate runs at the checkout root — so a

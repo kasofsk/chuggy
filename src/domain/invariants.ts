@@ -73,8 +73,8 @@ import { assertNever } from "./assert.ts";
 import {
   boundsOf,
   isAuthorableWrapUp,
-  isSubsetOf,
   firstTicketId,
+  isSubsetOf,
   leaseOf,
   projects,
   ticketAt,

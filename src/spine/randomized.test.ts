@@ -40,6 +40,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { Config } from "../domain/domain.ts";
+import { jDone, solo } from "../domain/fixtures.test.ts";
 import type { Stage } from "../domain/measure.ts";
 import { configOf, mcSource, readModuleConsts } from "../tools/corpus.ts";
 import type { Cmd } from "./cmd.ts";
@@ -51,6 +52,7 @@ import {
   type McInstance,
 } from "./coverage.ts";
 import type { StepLabel } from "./decode.ts";
+import { initStepRecord, initialState, type MachineState } from "./machine.ts";
 import {
   driveTrace,
   hex,
@@ -59,8 +61,6 @@ import {
   walkSeeds,
   type RunResult,
 } from "./walk.test.ts";
-import { initStepRecord, initialState, type MachineState } from "./machine.ts";
-import { jDone, solo } from "../domain/fixtures.test.ts";
 
 // === The budget, and the seeds =============================================
 

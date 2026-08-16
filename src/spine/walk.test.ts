@@ -735,32 +735,6 @@ function offered(options: readonly Available[], cmd: Cmd): boolean {
  * in the same shape as every other, and the eight probes go on reporting
  * independently.
  */
-/**
- * `observe`'s findings for ONE state a caller supplies — the probe seam for its
- * three alarm regions.
- *
- * IT EXISTS BECAUSE THE ALARMS CANNOT FIRE FROM A WALK, and that is the same
- * shape `replay.test.ts` states for the replayer's bundle verdict: every state
- * a run reaches is a shipped decider's own output, so a correct roster and a
- * correct bundle are true over all of them. Two of the three regions were
- * therefore exercised by nothing at all — mute the unrostered-label report or
- * the bundle verdict and every walk in the tree stayed green. What can falsify
- * them is a state no decider produced, which a probe can build and a walk
- * cannot, so the seam is here rather than the claim being left as prose.
- *
- * It is a probe rather than a second observer: the body below is the one the
- * loop calls, with the accumulator and the step index a run would have
- * supplied.
- */
-export function observeOnce(
-  cfg: Config,
-  state: MachineState,
-): readonly string[] {
-  const findings: string[] = [];
-  observe(new CoverageBuilder(), cfg, state, 0, findings, "probe");
-  return findings;
-}
-
 function observe(
   coverage: CoverageBuilder,
   cfg: Config,
@@ -812,6 +786,32 @@ function observe(
   } catch (error) {
     findings.push(`${at}: allInvariants threw: ${messageOf(error)}`);
   }
+}
+
+/**
+ * `observe`'s findings for ONE state a caller supplies — the probe seam for its
+ * three alarm regions.
+ *
+ * IT EXISTS BECAUSE THE ALARMS CANNOT FIRE FROM A WALK, and that is the same
+ * shape `replay.test.ts` states for the replayer's bundle verdict: every state
+ * a run reaches is a shipped decider's own output, so a correct roster and a
+ * correct bundle are true over all of them. Two of the three regions were
+ * therefore exercised by nothing at all — mute the unrostered-label report or
+ * the bundle verdict and every walk in the tree stayed green. What can falsify
+ * them is a state no decider produced, which a probe can build and a walk
+ * cannot, so the seam is here rather than the claim being left as prose.
+ *
+ * It is a probe rather than a second observer: the body below is the one the
+ * loop calls, with the accumulator and the step index a run would have
+ * supplied.
+ */
+export function observeOnce(
+  cfg: Config,
+  state: MachineState,
+): readonly string[] {
+  const findings: string[] = [];
+  observe(new CoverageBuilder(), cfg, state, 0, findings, "probe");
+  return findings;
 }
 
 // === Reporting =============================================================
