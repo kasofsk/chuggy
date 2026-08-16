@@ -132,7 +132,7 @@
 /// journal — is caught by state predicate, not by construction argument.
 ///
 /// ==========================================================================
-/// THE FOUR THEOREMS (the PR gate), as implemented
+/// THE THEOREMS (the PR gate), as implemented
 /// ==========================================================================
 ///
 ///   1. REFINEMENT (journalLegal): every journaled history projects to a
@@ -638,7 +638,7 @@ module chuggy_refinement {
 
   // --- The hazard roster (rstepHazard only): the effect-first seam on ------
   // the world-effect-bearing decisions. The seam exists at EVERY
-  // decision; these four are the ones whose orphaned effects the
+  // decision; these are the ones whose orphaned effects the
   // theorems price — the paid spawns (dispatch, the eval-rework, the
   // gate eviction's respawn) and the landing resolutions (the dequeue's
   // fast-path squash, the gated promotion). An orphaned bookkeeping
