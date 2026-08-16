@@ -31,6 +31,7 @@
  */
 
 import type { Config } from "../domain/domain.ts";
+import { everyTicket } from "../domain/invariants.ts";
 import type { ActorState } from "./actor.ts";
 import { diffCore } from "./compare.ts";
 import {
@@ -41,19 +42,6 @@ import {
   worldCompletionsOn,
   worldSpawnsOn,
 } from "./journal.ts";
-
-/** The model's `liveTickets.forall(j => ...)` — the fleet's keys, once. */
-function everyLiveTicket(
-  s: ActorState,
-  holds: (j: number) => boolean,
-): boolean {
-  for (const j of s.mem.core.tickets.keys()) {
-    if (!holds(j)) {
-      return false;
-    }
-  }
-  return true;
-}
 
 /**
  * THEOREM 1 — REFINEMENT: every journaled history projects to a legal
@@ -128,9 +116,9 @@ export function journalCoversWorld(s: ActorState): boolean {
  * Job the book never charged for, which is the double-spend as arithmetic.
  */
 export function noDoubleSpentBudget(s: ActorState): boolean {
-  return everyLiveTicket(
-    s,
-    (j) =>
+  return everyTicket(
+    s.mem.core,
+    (_jb, j) =>
       worldSpawnsOn(s.journal, s.worldEffects, s.orphans, j) <=
       journalSpawnsOn(s.journal, j),
   );
@@ -141,9 +129,10 @@ export function noDoubleSpentBudget(s: ActorState): boolean {
  * at most once, across crashes at any seam.
  */
 export function noDuplicateCycle(s: ActorState): boolean {
-  return everyLiveTicket(
-    s,
-    (j) => worldCompletionsOn(s.journal, s.worldEffects, s.orphans, j) <= 1,
+  return everyTicket(
+    s.mem.core,
+    (_jb, j) =>
+      worldCompletionsOn(s.journal, s.worldEffects, s.orphans, j) <= 1,
   );
 }
 
@@ -157,12 +146,10 @@ export function noDuplicateCycle(s: ActorState): boolean {
  * quantifier is over that map's keys.
  */
 export function journalCompletionsMatchLedger(s: ActorState): boolean {
-  return everyLiveTicket(s, (j) => {
-    const jb = s.mem.core.tickets.get(j);
-    return (
-      jb !== undefined && journalCompletionsOn(s.journal, j) === jb.completions
-    );
-  });
+  return everyTicket(
+    s.mem.core,
+    (jb, j) => journalCompletionsOn(s.journal, j) === jb.completions,
+  );
 }
 
 /**

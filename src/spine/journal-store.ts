@@ -41,10 +41,20 @@
  *   truncated log from a shorter one and would replay into a state that never
  *   existed.
  *
+ *   A ROW IS A ROW. An implementation REFUSES anything `hasEntryShape` refuses,
+ *   and that is a promise of the port rather than a courtesy of one
+ *   implementation: a store that accepts a malformed row hands a later process
+ *   a log it cannot replay, and the process that finds out is the one that was
+ *   recovering. The check is a shape check and nothing more — see the next
+ *   promise for the line it must not cross.
+ *
  *   IT DECIDES NOTHING. No row is rewritten, reordered, merged, compacted or
- *   dropped; nothing is derived from a row's contents. A store that skipped a
- *   row it judged redundant would be deciding, and the theorems would be
- *   proving things about a journal the store does not keep.
+ *   dropped; nothing is INTERPRETED. Checking that a row is a row is not
+ *   reading the decision: a store may not ask whether the decision was enabled,
+ *   whether the record is the one the decider would have produced, or whether
+ *   the row is redundant — those are `journalLegalOn`'s questions, one layer up,
+ *   and a store that answered them would be deciding, leaving the theorems to
+ *   prove things about a journal the store does not keep.
  *
  * ==========================================================================
  * IDEMPOTENCE, STATED HONESTLY
@@ -66,8 +76,15 @@
  *   - `append` may fail: the medium is full or unwritable, an fsync fails, or a
  *     newer writer has fenced this one. It signals by throwing. Nothing has
  *     been emitted for that decision — that is what journal-before-effect buys
- *     — so a failed append loses a decision and nothing else, and the actor may
- *     re-decide it from a state that never moved.
+ *     — so the row is EITHER absent, in which case the decision is lost and
+ *     nothing else is, and the actor may re-decide it from a state that never
+ *     moved; OR durable and unknown to the caller, because the throw came after
+ *     the write (a lost acknowledgement), which is the case the idempotence
+ *     note above turns on. A THROW IS NOT A DENIAL: an author reading this
+ *     section may not conclude from it that the row is absent, and a caller
+ *     that assumed so would re-decide a decision the log already holds — which
+ *     the append fence then refuses on its seq, and which recovery resolves by
+ *     believing the store.
  *   - A crash DURING an append may leave the tail row either present or absent,
  *     and a caller cannot know which. Both are safe, for the same reason: an
  *     absent row is a decision that never happened, and a present one is a
@@ -90,12 +107,31 @@
  * durable, which is what the caller means.
  *
  * `readAll` RETURNS `unknown` ROWS. A durable store returns what it stored, not
- * what it was promised: the bytes outlive the process whose types described
+ * what it was promised: the rows outlive the process whose types described
  * them, so the reader validates (`hasEntryShape`) before believing them, and
  * `recoverFrom` is where that happens. Typing the read as `Entry[]` would be
  * typing the port to the convenience of the in-memory stub — the one
  * implementation for which it happens to be true — and the first real adapter
  * would either break the signature or lie in it.
+ *
+ * ==========================================================================
+ * WHERE THE BYTES ARE, AND WHERE THE DECODE IS NOT
+ * ==========================================================================
+ *
+ * THIS PORT IS OVER ROWS, NOT BYTES. `Entry` is a shape of in-memory values —
+ * `Cmd` carries a `Set` of ticket ids, which has no byte form at all — so a
+ * store that persists to a medium needs a CODEC, and the codec is not this
+ * port's and not the store's. It sits ABOVE the port, in the spine, beside the
+ * schema that describes what it must produce: encode on the way down, decode on
+ * the way up, and the decoded rows then pass `hasEntryShape` exactly as the
+ * in-memory ones do. Putting it in the store would make the component that must
+ * decide nothing responsible for reconstructing a decision from bytes, which is
+ * the one interpretation this file forbids by name.
+ *
+ * It is not shipped here, and the omission is deliberate rather than pending: no
+ * byte form exists yet to encode, the effect vocabulary that would fix half of
+ * it is s6's, and a codec written before either is a guess about a wire format.
+ * What is fixed now is where it goes and what its output must satisfy.
  */
 
 import type { Entry } from "./entry.ts";
@@ -115,6 +151,15 @@ export type JournalStore = {
    */
   readAll(): readonly unknown[];
 
-  /** How many rows are durable — the seq of the last one, since seqs are dense from 1. */
+  /**
+   * How many rows are durable — the seq of the last one, since seqs are dense
+   * from 1.
+   *
+   * IT EXISTS BECAUSE `commit` ASKS IT: after an append returns, a store holding
+   * a different number of rows than the actor believes it wrote has been written
+   * by somebody else, and that is the single-writer rule with a check under it.
+   * A real store answers this without paging the log in, which is why it is a
+   * promise of its own rather than `readAll().length`.
+   */
   length(): number;
 };

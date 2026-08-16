@@ -162,14 +162,26 @@ test("journalRefusesOutOfUniversePayloadTest: an arrival's lease comes from the 
   // WHERE THE MODEL'S RUN AND THIS ONE PART, AND WHY THE MODEL IS STILL THE
   // SPEC. The model builds this row's `rec` by calling `decideArrive` on the
   // phantom, because its decider assumes the caller drew from `wrapUpChoices`
-  // and will happily mint the phantom ticket. The shipped decider ASSERTS that
-  // precondition instead — the bar's assert-liberally rule, `domain.ts`'s
-  // choice — so the record the model reads back cannot be obtained here at all,
-  // which is the assertion below. The consequence is worth stating: a missing
+  // and will happily mint the phantom ticket. The RECORD is obtainable here too
+  // and is byte-identical to the model's — `decideArrive`'s body is the same
+  // function of the same arguments — but not by that CALL ROUTE: the shipped
+  // decider asserts the precondition its caller is supposed to have met (the
+  // bar's assert-liberally rule, `domain.ts`'s choice), so the route the model
+  // takes throws, which is the assertion below. The row asserted on is
+  // therefore the model's row, and `journalLegalOn` refuses it at the same
+  // conjunct for the same reason. One consequence is worth stating: a missing
   // draw-set conjunct in `cmdEnabled` would turn this refusal into a CRASH
   // rather than into the model's materialized phantom ticket. Refused either
   // way, and loudly either way.
   const ePhantom: Entry = { seq: 1, cmd: phantom, rec: e1.rec };
+  // And that the row IS the model's row is demonstrated rather than claimed: an
+  // arrival's record does not read the lease, so two arrivals differing only in
+  // it produce the same record, and the record here is the same bytes as the
+  // one the model's call route returns.
+  assert.deepEqual(
+    execCmd(cfg, genesis, { ...phantom, wrapUp: { tag: "WNone" } }).rec,
+    e1.rec,
+  );
   assert.equal(cmdEnabled(cfg, genesis, phantom), false);
   assert.equal(journalLegalOn(cfg, [ePhantom]), false);
   assert.throws(() => execCmd(cfg, genesis, phantom), AssertionError);

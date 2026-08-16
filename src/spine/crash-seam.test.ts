@@ -28,7 +28,27 @@
  * nothing, so each sweep also rebuilds the actor from the STORE's rows alone —
  * through the port, through the schema's gate, through the legality fold — and
  * requires the same state. That is the claim the model cannot make and the one
- * a real deployment needs.
+ * a real deployment needs. The hazard sweep rebuilds too, and requires the
+ * OPPOSITE: an orphan is in the world, not in the journal, so recovery must
+ * carry it and `journalCoversWorld` must still be red on the recovered state.
+ * A recovery that dropped the world's ledger would erase the hazard on exactly
+ * the path a real process takes.
+ *
+ * THE SEAM THIS SUITE DOES NOT DRIVE, and it is inherited rather than chosen. A
+ * row may carry several effects, so a real executor can die with part of one
+ * row's list out. `worldEffects` is keyed per DECISION — the model's set of
+ * seqs cannot express "half of seq 8" — so that seam is invisible here exactly
+ * as it is in the model (rule 4). `actor.ts`'s `emitNext` states the promise
+ * that makes the omission safe and hands it to s6: every effect of a row
+ * carries that row's seq, and the cursor advances only once the whole list is
+ * out, so a crash mid-list re-emits the whole list and collapses into the
+ * re-emission this suite does drive — at every cursor of every seam of every
+ * walk below. The same sentence fixes the GRAIN of absorption, which s6 reads
+ * before wiring an executor: one seq per ROW, absorbed as a whole list, never a
+ * key per effect. A row's effects are not a set — the cascade-park witness in
+ * the corpus carries two identical `OpenHumanTask`s for two parked dependents —
+ * so per-element keying would collapse them and open one desk task for two
+ * tickets.
  */
 
 import assert from "node:assert/strict";
@@ -41,7 +61,6 @@ import {
   crashRecoverTo,
   effectCrash,
   emitNext,
-  journalStep,
   recoverFrom,
 } from "./actor.ts";
 import type { Cmd } from "./cmd.ts";
@@ -86,10 +105,11 @@ const cfg = cfgRefinement;
 // ==========================================================================
 
 test("crashRecoverContinueDeterministicTest: journal-then-effect survives a crash at every seam of one ticket's life", () => {
+  const store = createInMemoryJournalStore();
   let s = actorInit(cfg);
 
   // The Draft arrives and is journaled (entry 1)...
-  s = must(journalStep(cfg, s, arrive), "arrive");
+  s = must(commit(cfg, store, s, arrive), "arrive");
   assert.equal(s.journal.length, 1);
   expectSteady(s);
 
@@ -105,11 +125,11 @@ test("crashRecoverContinueDeterministicTest: journal-then-effect survives a cras
   assert.equal(s.applied, 1);
   expectSteady(s);
 
-  s = stepEmit(s, release, "ticket-released");
+  s = stepEmit(store, s, release, "ticket-released");
 
   // The dispatch charges one gas and journals its Job spawn (entry 3) —
   // nothing has reached the world yet.
-  s = must(journalStep(cfg, s, dispatch), "dispatch");
+  s = must(commit(cfg, store, s, dispatch), "dispatch");
   assert.equal(memTicket(s, 1).gasLeft, 2);
   assert.equal(journalSpawns(s, 1), 1);
   assert.equal(worldSpawns(s, 1), 0);
@@ -132,16 +152,16 @@ test("crashRecoverContinueDeterministicTest: journal-then-effect survives a cras
 
   // The work task resolves; its completion re-delivers with a different verdict
   // (inbound at-least-once) and the actor journals the ABSORPTION (entry 5).
-  s = stepEmit(s, done(1, "VPass"), "task-done");
-  s = stepEmit(s, done(1, "VFail"), "task-done-duplicate");
+  s = stepEmit(store, s, done(1, "VPass"), "task-done");
+  s = stepEmit(store, s, done(1, "VFail"), "task-done-duplicate");
   assert.equal(s.journal.length, 5);
   expectSteady(s);
 
   // Work passes; the eval task (id 2) fails; THE REWORK charges 1 rework and
   // 1 gas and spawns the new cycle's work set (entry 8).
-  s = stepEmit(s, workReduce, "work-passed");
-  s = stepEmit(s, done(2, "VFail"), "task-done");
-  s = must(journalStep(cfg, s, evalReduce), "the rework");
+  s = stepEmit(store, s, workReduce, "work-passed");
+  s = stepEmit(store, s, done(2, "VFail"), "task-done");
+  s = must(commit(cfg, store, s, evalReduce), "the rework");
   assert.equal(s.mem.lastStep.label, "rework-started eval_failure");
   assert.equal(memTicket(s, 1).gasLeft, 1);
   assert.equal(memTicket(s, 1).reworkLeft, 0);
@@ -185,14 +205,14 @@ test("crashRecoverContinueDeterministicTest: journal-then-effect survives a cras
 
   // The rework cycle passes work and eval (the failed evaluator respawns — id
   // 4), and the ticket enqueues for landing.
-  s = stepEmit(s, done(3, "VPass"), "task-done");
-  s = stepEmit(s, workReduce, "work-passed");
-  s = stepEmit(s, done(4, "VPass"), "task-done");
-  s = stepEmit(s, evalReduce, "eval-passed");
+  s = stepEmit(store, s, done(3, "VPass"), "task-done");
+  s = stepEmit(store, s, workReduce, "work-passed");
+  s = stepEmit(store, s, done(4, "VPass"), "task-done");
+  s = stepEmit(store, s, evalReduce, "eval-passed");
 
   // The valid-artifact dequeue completes the ticket (entry 13) — journaled, not
   // yet emitted: the merge has NOT happened yet.
-  s = must(journalStep(cfg, s, quietLand), "the landing");
+  s = must(commit(cfg, store, s, quietLand), "the landing");
   assert.equal(s.mem.lastStep.label, "ticket-done");
   assert.equal(memTicket(s, 1).phase, "PDone");
   assert.equal(journalCompletions(s, 1), 1);
@@ -213,7 +233,7 @@ test("crashRecoverContinueDeterministicTest: journal-then-effect survives a cras
 
   // A stale completion confirmation re-delivers; the domain absorbs it and the
   // actor journals the no-op (entry 14) — the world's count does not move.
-  s = stepEmit(s, completeAgain, "complete-duplicate");
+  s = stepEmit(store, s, completeAgain, "complete-duplicate");
   assert.equal(worldCompletions(s, 1), 1);
   expectSteady(s);
 
@@ -229,9 +249,10 @@ test("crashRecoverContinueDeterministicTest: journal-then-effect survives a cras
 });
 
 test("leaseFreeArrivalRecoversAndCompletesDeterministicTest: the route that takes no lease carries the same obligations", () => {
+  const store = createInMemoryJournalStore();
   let s = actorInit(cfg);
 
-  s = must(journalStep(cfg, s, arriveLeaseFree), "arrive");
+  s = must(commit(cfg, store, s, arriveLeaseFree), "arrive");
   assert.deepEqual(memTicket(s, 1).wrapUp, { tag: "WNone" });
   assert.equal(s.journal.length, 1);
   expectSteady(s);
@@ -240,16 +261,16 @@ test("leaseFreeArrivalRecoversAndCompletesDeterministicTest: the route that take
   assert.equal(s.applied, 1);
   expectSteady(s);
 
-  s = stepEmit(s, release, "ticket-released");
-  s = stepEmit(s, dispatch, "dispatch");
-  s = stepEmit(s, done(1, "VPass"), "task-done");
-  s = stepEmit(s, workReduce, "work-passed");
-  s = stepEmit(s, done(2, "VPass"), "task-done");
+  s = stepEmit(store, s, release, "ticket-released");
+  s = stepEmit(store, s, dispatch, "dispatch");
+  s = stepEmit(store, s, done(1, "VPass"), "task-done");
+  s = stepEmit(store, s, workReduce, "work-passed");
+  s = stepEmit(store, s, done(2, "VPass"), "task-done");
 
   // THE WITNESSED STEP: evaluation passing completes the ticket outright,
   // straight out of PEvaluating. Journaled, not emitted — the world has been
   // told nothing yet.
-  s = must(journalStep(cfg, s, evalReduce), "the completing evaluation");
+  s = must(commit(cfg, store, s, evalReduce), "the completing evaluation");
   assert.equal(s.mem.lastStep.label, "ticket-done");
   assert.deepEqual(s.mem.lastStep.transitions, [
     { ticket: 1, from: "PEvaluating", to: "PDone" },
@@ -290,9 +311,10 @@ test("leaseFreeArrivalRecoversAndCompletesDeterministicTest: the route that take
 });
 
 test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the dispatch and lands the same diff twice", () => {
+  const store = createInMemoryJournalStore();
   let s = actorInit(cfg);
-  s = journalThenEmit(s, arrive);
-  s = journalThenEmit(s, release);
+  s = journalThenEmit(store, s, arrive);
+  s = journalThenEmit(store, s, release);
   expectSteady(s);
 
   // THE SEAM: the actor decides the dispatch, the Job LAUNCHES in the world,
@@ -312,7 +334,7 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
 
   // The recovered actor legitimately re-decides the dispatch — one journaled
   // charge, and now TWO Jobs in the world: the double-spent budget, concrete.
-  s = journalThenEmit(s, dispatch);
+  s = journalThenEmit(store, s, dispatch);
   assert.equal(memTicket(s, 1).gasLeft, 2);
   assert.equal(worldSpawns(s, 1), 2);
   assert.equal(journalSpawns(s, 1), 1);
@@ -321,10 +343,10 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
   assert.ok(invariantsHold(cfg, s.mem));
 
   // Walk the (journaled) cycle to the landing queue.
-  s = journalThenEmit(s, done(1, "VPass"));
-  s = journalThenEmit(s, workReduce);
-  s = journalThenEmit(s, done(2, "VPass"));
-  s = journalThenEmit(s, evalReduce);
+  s = journalThenEmit(store, s, done(1, "VPass"));
+  s = journalThenEmit(store, s, workReduce);
+  s = journalThenEmit(store, s, done(2, "VPass"));
+  s = journalThenEmit(store, s, evalReduce);
   assert.equal(memTicket(s, 1).phase, "PWrapUp");
   assert.ok(invariantsHold(cfg, s.mem));
 
@@ -342,7 +364,7 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
   // The recovered actor re-lands the enqueued ticket: the SAME diff merges a
   // second time — the duplicate cycle — while the journal records exactly one
   // clean completion and the domain's completionExclusive stays green.
-  s = journalThenEmit(s, quietLand);
+  s = journalThenEmit(store, s, quietLand);
   assert.equal(worldCompletions(s, 1), 2);
   assert.equal(journalCompletions(s, 1), 1);
   assert.equal(memTicket(s, 1).completions, 1);
@@ -352,6 +374,7 @@ test("hazardDoubleSpendDeterministicTest: effect-then-journal double-spends the 
 });
 
 test("hazardReworkDoubleSpendDeterministicTest: the rework's charge dies with the crash and the world runs it twice", () => {
+  const store = createInMemoryJournalStore();
   let s = actorInit(cfg);
   for (const cmd of [
     arrive,
@@ -361,7 +384,7 @@ test("hazardReworkDoubleSpendDeterministicTest: the rework's charge dies with th
     workReduce,
     done(2, "VFail"),
   ]) {
-    s = journalThenEmit(s, cmd);
+    s = journalThenEmit(store, s, cmd);
   }
   assert.equal(memTicket(s, 1).gasLeft, 2);
   assert.equal(memTicket(s, 1).reworkLeft, 1);
@@ -383,7 +406,7 @@ test("hazardReworkDoubleSpendDeterministicTest: the rework's charge dies with th
 
   // The recovered actor re-decides the rework: ONE journaled charge (1 rework
   // and 1 gas), THREE Jobs' worth of spend in the world.
-  s = journalThenEmit(s, evalReduce);
+  s = journalThenEmit(store, s, evalReduce);
   assert.equal(s.mem.lastStep.label, "rework-started eval_failure");
   assert.equal(memTicket(s, 1).gasLeft, 1);
   assert.equal(memTicket(s, 1).reworkLeft, 0);
@@ -521,6 +544,7 @@ test("the disciplined sweep: a crash at every seam, at every surviving cursor, r
 
 test("the hazard sweep: an effect-first crash at every decision of every walk is invisible to the domain", () => {
   for (const [name, walk] of walks) {
+    const store = createInMemoryJournalStore();
     let s = actorInit(cfg);
 
     for (const [k, cmd] of walk.entries()) {
@@ -541,7 +565,29 @@ test("the hazard sweep: an effect-first crash at every decision of every walk is
       // second spend rather than a lost one.
       assert.deepEqual(hazard.mem, s.mem, where);
 
-      s = journalThenEmit(s, cmd);
+      // THE COMPOSITION, on the path a real process takes. A crashed process
+      // does not resume from a state in memory; it comes back through
+      // `recoverFrom` with the store's rows and the world's ledger. The hazard
+      // must survive that: the orphan is in the WORLD, and no amount of
+      // rebuilding from a journal that never recorded it can make it untrue.
+      // A recovery that dropped the ledger would report a clean actor over a
+      // world that had already been paid for twice — the hazard erased on
+      // exactly the path that matters.
+      const rebuilt = must(
+        recoverFrom(cfg, store.readAll(), hazard.applied, {
+          worldEffects: hazard.worldEffects,
+          orphans: hazard.orphans,
+        }),
+        `${where}: durable rebuild`,
+      );
+      assert.deepEqual(rebuilt.orphans, hazard.orphans, where);
+      assert.equal(journalCoversWorld(rebuilt), false, where);
+      assert.equal(refinementInvariants(cfg, rebuilt), false, where);
+      assert.ok(refinementCore(cfg, rebuilt), where);
+      assert.ok(invariantsHold(cfg, rebuilt.mem), where);
+      assert.deepEqual(rebuilt.mem, hazard.mem, where);
+
+      s = journalThenEmit(store, s, cmd);
     }
   }
 });
@@ -603,9 +649,10 @@ test("the hazard sweep: every orphaned PAID decision, re-decided, double-spends"
   ];
 
   for (const [what, prefix, seam] of priced) {
+    const store = createInMemoryJournalStore();
     let s = actorInit(cfg);
     for (const cmd of prefix) {
-      s = journalThenEmit(s, cmd);
+      s = journalThenEmit(store, s, cmd);
     }
     expectSteady(s);
 
@@ -628,7 +675,7 @@ test("the hazard sweep: every orphaned PAID decision, re-decided, double-spends"
 
     // The recovered actor re-decides from a book that never recorded the first
     // attempt — and the world does the paid thing a second time.
-    const redecided = journalThenEmit(orphaned, seam);
+    const redecided = journalThenEmit(store, orphaned, seam);
     assert.ok(
       worldSpawns(redecided, 1) > journalSpawns(redecided, 1) ||
         worldCompletions(redecided, 1) > 1,

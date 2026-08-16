@@ -13,11 +13,15 @@
  * separation the port exists to name.
  *
  * IT DECIDES NOTHING, and every line below is arranged to keep that true. It
- * never reads `cmd` or `rec`; the only field it looks at is `seq`, and only to
- * check its own append order. It drops nothing, merges nothing, reorders
- * nothing and derives nothing. The one thing it refuses — a row whose seq is
- * not the next one — is not a judgment about the decision, it is the promise
- * `JournalStore` documents, and it is the fence that makes a second writer
+ * INTERPRETS neither `cmd` nor `rec`: it asks whether the row is a row — the
+ * port's shape promise, which every implementation owes — and it reads `seq`,
+ * to keep its own append order. It never asks whether the decision was enabled,
+ * whether the record is the one a decider would have produced, or whether the
+ * row is redundant; those are `journalLegalOn`'s questions, and `recoverFrom`
+ * asks them one layer up. It drops nothing, merges nothing, reorders nothing
+ * and derives nothing. The two things it refuses — a row that is not a row, and
+ * a row whose seq is not the next one — are the promises `JournalStore`
+ * documents, the second of which is also the fence that makes a second writer
  * loud.
  *
  * IT HOLDS NO CLOCK AND NO AMBIENT CAPABILITY. Nothing here reads time,
@@ -27,11 +31,14 @@
  * — it does not — it is what makes this store usable in the deterministic runs
  * that prove recovery.
  *
- * WHY THE READ COPIES. `readAll` returns a fresh array every time. The log is
- * append-only, and a caller holding a live reference to the backing array could
- * splice a row out of the journal without going through `append` — which is
- * exactly the "durable log rewritten behind the actor's back" failure the
- * theorems have no answer for. A copy costs a walk of a log that a real store
+ * WHY THE READ COPIES, AND WHY ALL THE WAY DOWN. `readAll` returns a fresh
+ * DEEP copy every time. The log is append-only, and a caller holding a live
+ * reference into it could splice a row out — or, one level in and just as
+ * fatally, retag a `cmd` or edit a `rec` — without going through `append`,
+ * which is the "durable log rewritten behind the actor's back" failure the
+ * theorems have no answer for. A one-level copy stops the first and not the
+ * second, so it stops nothing that matters. `structuredClone` is what a real
+ * store gets for free by deserializing, and it costs a walk of a log that store
  * would be paging in from disk anyway.
  */
 
@@ -69,7 +76,7 @@ export function createInMemoryJournalStore(): JournalStore {
     },
 
     readAll(): readonly unknown[] {
-      return [...rows];
+      return structuredClone(rows);
     },
 
     length(): number {

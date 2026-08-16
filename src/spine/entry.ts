@@ -50,11 +50,29 @@
  * legitimate here: it is not a copy that has to be remembered, it is a copy the
  * compiler maintains.
  *
- * VERSIONING IS DECLARED, NOT IMPLEMENTED. `entrySchema.version` is 1 and there
- * is no migration machinery, because there is exactly one version and a
- * migration path for a version that does not exist is speculation. What the
- * field buys today is that the first row ever written carries the number a
- * later reader will ask for.
+ * IT IS A SCHEMA OF VALUES, AND THE BYTES ARE SOMEBODY ELSE'S. `Cmd` carries a
+ * `Set` of ticket ids, which has no byte form at all, so a row as described here
+ * is an in-memory shape and a store that persists to a medium needs a CODEC
+ * between the two. That codec belongs ABOVE the port, in the spine, beside this
+ * schema — never in the store, which is the component required to interpret
+ * nothing. `journal-store.ts` states the same placement from the port's side.
+ * It is not shipped in this slice, deliberately: the effect vocabulary that
+ * fixes half of a wire format is s6's, and a codec written before it is a guess.
+ * What is fixed now is where it goes and that its output is what this gate
+ * checks.
+ *
+ * WHAT THE SCHEMA'S `row` AND `version` ARE, AND ARE NOT. They identify the
+ * SCHEMA; no row carries either, because a row is `model/refinement.qnt`'s
+ * `Entry` and the model owns its three fields. What they buy is a name a reader
+ * can key on and one place a migration begins. What they cost, said plainly
+ * rather than discovered later: a row does not carry its version, so a reader
+ * cannot tell which schema wrote it — it has to be told, and the natural place
+ * to tell it is a header on the LOG rather than a field on every row, which is
+ * a thing this port does not have yet and a real store will. And the exact-field
+ * gate below makes adding a version field to the row BREAKING: every row written
+ * before it would be refused, so that migration must ship a reader that accepts
+ * both shapes. That is the bill; it is stated here rather than deferred in
+ * silence.
  */
 
 import type { Cmd, CmdTag } from "./cmd.ts";
@@ -233,8 +251,10 @@ function isProgram(value: unknown): boolean {
  * An arrival's dep set. It is a `Set` rather than an array because that is what
  * `Cmd` declares and what `cmdEnabled` iterates; a row whose deps arrived as an
  * array would crash that iteration, which is the crash this gate exists to
- * prevent. Reconstructing a `Set` from a serialized list is the store adapter's
- * business, and it must happen before the row reaches here.
+ * prevent. It is also the field that shows this schema to be one of VALUES:
+ * reconstructing a `Set` from whatever a medium stored is the codec's business,
+ * above the port and beside this file (see the header), and it must have
+ * happened before the row reaches here.
  */
 function isTicketIdSet(value: unknown): boolean {
   return value instanceof Set && [...(value as Set<unknown>)].every(isId);

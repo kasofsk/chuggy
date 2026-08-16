@@ -19,6 +19,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { AssertionError } from "../domain/assert.ts";
+
 import { createInMemoryJournalStore } from "../adapters/in-memory-journal-store.ts";
 import {
   actorInit,
@@ -29,15 +31,19 @@ import {
   journalStep,
   recoverFrom,
   type ActorState,
+  type DurableState,
 } from "./actor.ts";
 import type { Cmd } from "./cmd.ts";
 import type { JournalStore } from "./journal-store.ts";
 import { replayCore } from "./journal.ts";
 import { recoveryComplete } from "./refinement-invariants.ts";
 import { initStepRecord, initialState } from "./machine.ts";
+import type { Entry } from "./entry.ts";
 import {
   cfgRefinement,
   arrive,
+  e1,
+  expectSteady,
   dispatch,
   must,
   memTicket,
@@ -49,26 +55,37 @@ const cfg = cfgRefinement;
 /** The empty world every fresh recovery inherits. */
 const noWorld = { worldEffects: new Set<number>(), orphans: [] };
 
-/** Journal these decisions in order, then emit `emitted` of the rows. */
-function drive(cmds: readonly Cmd[], emitted: number): ActorState {
+/**
+ * Commit these decisions in order, then emit `emitted` of the rows.
+ *
+ * It goes through `commit` rather than `journalStep` because everything past
+ * the journal takes a `DurableState`, which is the point of the type: a helper
+ * that wanted to emit from a decided-but-unstored state could not be written.
+ * The store it opens is the one the durability tests below read back.
+ */
+function drive(
+  cmds: readonly Cmd[],
+  emitted: number,
+): { store: JournalStore; s: DurableState } {
+  const store = createInMemoryJournalStore();
   let s = actorInit(cfg);
   for (const cmd of cmds) {
-    s = must(journalStep(cfg, s, cmd), `journalStep ${cmd.tag}`);
+    s = must(commit(cfg, store, s, cmd), `commit ${cmd.tag}`);
   }
   for (let i = 0; i < emitted; i += 1) {
     s = must(emitNext(s), "emitNext");
   }
-  return s;
+  return { store, s };
 }
 
 /** Arrive, release, dispatch — three rows, `emitted` of them emitted. */
-function walked(emitted: number): ActorState {
-  return drive([arrive, release, dispatch], emitted);
+function walked(emitted: number): DurableState {
+  return drive([arrive, release, dispatch], emitted).s;
 }
 
 /** Arrive and release only, so the dispatch is still the next decision. */
-function released(emitted: number): ActorState {
-  return drive([arrive, release], emitted);
+function released(emitted: number): DurableState {
+  return drive([arrive, release], emitted).s;
 }
 
 test("actorInit: the model's rinit, var for var", () => {
@@ -120,6 +137,25 @@ test("journalStep: a decision the machine refuses is ANSWERED, never thrown at",
   assert.equal(journalStep(cfg, s, release), undefined);
   assert.equal(journalStep(cfg, s, { tag: "JDispatch", ticket: 1 }), undefined);
   assert.equal(journalStep(cfg, s, { tag: "JOpRetry", ticket: 9 }), undefined);
+});
+
+test("the durability token: emitting from a decided-but-unstored state does not compile", () => {
+  const decided = must(
+    journalStep(cfg, actorInit(cfg), arrive),
+    "the decision",
+  );
+
+  // @ts-expect-error emitNext takes a DurableState and journalStep does not
+  // return one, so journal-before-effect is a property of the type rather than
+  // of a sentence. THIS DIRECTIVE IS THE RED PROOF: if the token ever stopped
+  // discriminating, tsc reports the directive as unused and the types stage
+  // goes red — the check runs on every gate rather than in a mutation script.
+  const emitted = emitNext(decided);
+
+  // And the runtime cannot tell, which is why the compiler has to: the brand is
+  // a phantom, so the call the type refuses would have emitted quite happily.
+  assert.ok(emitted !== undefined);
+  assert.equal(emitted.applied, 1);
 });
 
 test("emitNext: advances the cursor, and is refused once the cursor has caught up", () => {
@@ -189,10 +225,14 @@ test("crashRecoverTo: recovery is BY REPLAY, which is only visible when memory a
   // difference is put on the table here: an actor whose memory has drifted from
   // its journal must come back from the JOURNAL.
   const live = walked(2);
-  const drifted: ActorState = {
+  // The cast is the whole fixture: a state whose memory has drifted from its
+  // journal is one the actor cannot produce, and the brand says nothing about
+  // memory — only about the log having been stored.
+  const memoryLost: ActorState = {
     ...live,
     mem: { ...live.mem, core: { tickets: new Map() } },
   };
+  const drifted = memoryLost as DurableState;
   assert.equal(recoveryComplete(cfg, drifted), false, "the premise");
 
   const recovered = must(crashRecoverTo(cfg, drifted, 0), "crash");
@@ -257,6 +297,64 @@ test("commit: an append that fails loses the decision and nothing else", () => {
   // arrived, and the decision may simply be re-decided from a state that never
   // moved. That is what journal-before-effect buys at this seam.
   assert.deepEqual(before, actorInit(cfg));
+});
+
+test("commit: a lost acknowledgement leaves the store ahead, and recovery believes the store", () => {
+  const { store, s } = drive([arrive, release], 2);
+
+  // The append succeeded and its acknowledgement was lost — the port says this
+  // is a way an append may fail, so the actor is entitled to no other story.
+  // Simulated exactly: the row the actor would have written IS durable, and the
+  // actor still holds the state it had before deciding.
+  const decided = must(journalStep(cfg, s, dispatch), "the lost decision");
+  const row = decided.journal[decided.journal.length - 1];
+  assert.ok(row !== undefined);
+  store.append(row);
+  assert.equal(s.journal.length, 2);
+  assert.equal(store.length(), 3);
+
+  // The actor, believing the decision lost, re-decides it — and the store's
+  // fence is what tells it otherwise, on the seq the log already holds.
+  assert.throws(() => commit(cfg, store, s, dispatch), AssertionError);
+
+  // Recovery reads the store and BELIEVES IT, which is the promise `actor.ts`
+  // makes about this disagreement: the row is in the log, so the decision
+  // happened; nothing was emitted for it, so the cursor is where the actor left
+  // it and the row goes out for the first time.
+  const recovered = must(
+    recoverFrom(cfg, store.readAll(), s.applied, {
+      worldEffects: s.worldEffects,
+      orphans: s.orphans,
+    }),
+    "recovery from the store the actor fell behind",
+  );
+  assert.equal(recovered.journal.length, 3);
+  assert.equal(recovered.applied, 2);
+  assert.equal(memTicket(recovered, 1).phase, "PWorking");
+  assert.ok(recoveryComplete(cfg, recovered));
+  expectSteady(recovered);
+});
+
+test("commit: a store written by somebody else is caught where the fence cannot see it", () => {
+  // A store with no fence — every other promise kept. It stands for the case
+  // the fence structurally cannot catch: a second writer whose rows were
+  // accepted IN ORDER, so no seq ever collided.
+  const rows: Entry[] = [];
+  const unfenced: JournalStore = {
+    append(entry: Entry): void {
+      rows.push(entry);
+    },
+    readAll: () => [...rows],
+    length: () => rows.length,
+  };
+  rows.push({ ...e1, seq: 1 });
+
+  // The actor writes its own first row. Nothing throws inside the store, and
+  // one row's worth of somebody else's decisions is now in the log.
+  assert.throws(
+    () => commit(cfg, unfenced, actorInit(cfg), arrive),
+    AssertionError,
+  );
 });
 
 test("recoverFrom: a process that kept nothing rebuilds all four machine vars", () => {

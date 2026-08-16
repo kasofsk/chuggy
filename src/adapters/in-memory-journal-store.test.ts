@@ -88,18 +88,39 @@ test("a row that is not a journal row never becomes durable", () => {
   assert.equal(store.length(), 0);
 });
 
-test("the read is a copy: the log cannot be rewritten behind the actor's back", () => {
+test("the read is a copy ALL THE WAY DOWN: the log cannot be rewritten behind the actor's back", () => {
   const store = createInMemoryJournalStore();
-  store.append(e1);
-  store.append(e2);
+  // Rows this test OWNS. Appending the shared fixtures would make the
+  // comparison below vacuous the moment the copy leaked: the mutation would
+  // land on the fixture and on the log at once, and both sides of the equality
+  // would move together.
+  const own = structuredClone([e1, e2]);
+  for (const row of own) {
+    store.append(row);
+  }
+  const expected = structuredClone(store.readAll());
 
+  // The array, spliced.
   const rows = store.readAll() as unknown[];
   rows.pop();
   rows.push({ seq: 3, cmd: e3.cmd, rec: e3.rec });
 
+  // ...and the rows themselves, edited one and two levels in — which a
+  // one-level copy would have let straight through to the durable log.
+  const inner = store.readAll() as {
+    seq: number;
+    cmd: { deps?: Set<number> };
+    rec: { label: string };
+  }[];
+  const first = inner[0];
+  assert.ok(first !== undefined);
+  first.seq = 99;
+  first.rec.label = "ticket-done";
+  first.cmd.deps?.add(7);
+
   // An append-only log that a caller could splice is not append-only, and the
   // theorems have no answer for a journal that changed under them.
-  assert.deepEqual(store.readAll(), [e1, e2]);
+  assert.deepEqual(store.readAll(), expected);
   assert.equal(store.length(), 2);
 });
 

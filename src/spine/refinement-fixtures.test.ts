@@ -23,7 +23,15 @@ import assert from "node:assert/strict";
 
 import type { Config } from "../domain/domain.ts";
 import type { Decision, Stage, WrapUp } from "../domain/measure.ts";
-import { actorInit, emitNext, journalStep, type ActorState } from "./actor.ts";
+import { createInMemoryJournalStore } from "../adapters/in-memory-journal-store.ts";
+import {
+  actorInit,
+  commit,
+  emitNext,
+  type ActorState,
+  type DurableState,
+} from "./actor.ts";
+import type { JournalStore } from "./journal-store.ts";
 import { execCmd, type Cmd } from "./cmd.ts";
 import type { Entry } from "./entry.ts";
 import {
@@ -105,11 +113,15 @@ export const e3: Entry = { seq: 3, cmd: dispatch, rec: d3.rec };
 /** The honest three-decision journal: arrive, release, dispatch. */
 export const goodJ: readonly Entry[] = [e1, e2, e3];
 
-/** Journal these decisions in order and emit every row — a settled prefix. */
-export function driveEmitted(cmds: readonly Cmd[]): ActorState {
+/**
+ * Journal these decisions in order and emit every row — a settled prefix, with
+ * its own store, for a suite that wants the state rather than the walk.
+ */
+export function driveEmitted(cmds: readonly Cmd[]): DurableState {
+  const store = createInMemoryJournalStore();
   let s = actorInit(cfgRefinement);
   for (const cmd of cmds) {
-    s = journalThenEmit(s, cmd);
+    s = journalThenEmit(store, s, cmd);
   }
   return s;
 }
@@ -138,7 +150,7 @@ export const landingWalk: readonly Cmd[] = [
  * as a `journalStep` whose `cmdEnabled` conjunct is false fails the model's run
  * rather than skipping a step.
  */
-export function must(state: ActorState | undefined, what: string): ActorState {
+export function must<T>(state: T | undefined, what: string): T {
   assert.ok(state !== undefined, `${what}: the action was refused`);
   return state;
 }
@@ -160,11 +172,25 @@ export function expectSteady(s: ActorState): void {
  * The model's `stepEmit` action: the routine decision-and-emission pair, with
  * the invariants asserted at BOTH intermediate states — post-journal, with the
  * produced label pinned, and post-emission.
+ *
+ * WHICH DISCIPLINE THE MIRRORS EXERCISE, since the type now distinguishes two.
+ * The model's `journalStep` appends to a `journal` var that IS the durable log —
+ * durability is free there, because a Quint var cannot fail to be written. Here
+ * durability is a store, so the faithful spelling of that action is `commit`:
+ * decide, append, and only then a state the executor may emit from. Every
+ * mirrored run therefore drives `commit` against an in-memory store, and
+ * `journalStep` alone — the same decision with nothing durable behind it —
+ * appears only where a suite is pinning that function's own behaviour.
  */
-export function stepEmit(s: ActorState, cmd: Cmd, label: string): ActorState {
+export function stepEmit(
+  store: JournalStore,
+  s: DurableState,
+  cmd: Cmd,
+  label: string,
+): DurableState {
   const journaled = must(
-    journalStep(cfgRefinement, s, cmd),
-    `journalStep ${label}`,
+    commit(cfgRefinement, store, s, cmd),
+    `commit ${label}`,
   );
   assert.equal(journaled.mem.lastStep.label, label);
   expectSteady(journaled);
@@ -182,16 +208,20 @@ export function stepEmit(s: ActorState, cmd: Cmd, label: string): ActorState {
  * demonstrating the absence of. The model inlines the pair in its hazard runs
  * for the same reason.
  */
-export function journalThenEmit(s: ActorState, cmd: Cmd): ActorState {
+export function journalThenEmit(
+  store: JournalStore,
+  s: DurableState,
+  cmd: Cmd,
+): DurableState {
   const journaled = must(
-    journalStep(cfgRefinement, s, cmd),
-    "journalStep (hazard walk)",
+    commit(cfgRefinement, store, s, cmd),
+    "commit (hazard walk)",
   );
   return must(emitNext(journaled), "emitNext (hazard walk)");
 }
 
 /** The model's `n.reps(_ => emitNext)` — the executor catching up. */
-export function emitTimes(s: ActorState, n: number): ActorState {
+export function emitTimes(s: DurableState, n: number): DurableState {
   let state = s;
   for (let i = 0; i < n; i += 1) {
     state = must(emitNext(state), `emitNext #${String(i + 1)}`);
