@@ -52,7 +52,12 @@ import {
   type McInstance,
 } from "./coverage.ts";
 import type { StepLabel } from "./decode.ts";
-import { initStepRecord, initialState, type MachineState } from "./machine.ts";
+import {
+  currentMeasure,
+  initStepRecord,
+  initialState,
+  type MachineState,
+} from "./machine.ts";
 import {
   driveTrace,
   hex,
@@ -476,11 +481,92 @@ function arrive(
   };
 }
 
+/**
+ * THE WRAP-UP RESUME, at `mc_chuggy_retryfree`: a ticket that reaches the
+ * wrap-up queue, fails the gate until gas runs out, parks on the
+ * `gas_exhausted` wall with `resumeAt = RWrapUp`, and is resumed FREE — back
+ * into the queue, re-enqueued.
+ *
+ * IT IS HERE BECAUSE THE CORPUS CANNOT HOLD IT, and that is a fact about the
+ * two tiers rather than about the machine. Tier 1 is a uniform sampled search
+ * and this is a long chain of correctly-drawn steps; tier 2 exports the
+ * model's own witness runs, and none of them drives an operator retry off a
+ * wrap-up wall. `coverage.ts` declares the arm beyond the corpus with that
+ * argument and a refutation trigger; this is what exercises it meanwhile, at
+ * the highest tier this tree can reach without a model PR — the shipped
+ * deciders, step by step, with the whole domain bundle after every one.
+ *
+ * WHAT IT PROVES THAT NO ROSTER CAN. Deleting the `EnqueueWrapUp` effect from
+ * `decideOpRetry`'s `RWrapUp` arm was measured to leave the entire tree green
+ * but one hand-written assertion: every label, decider and exemption arm stays
+ * covered, because an effect list is not a roster entry. The final record is
+ * asserted below for exactly that reason.
+ */
+const wrapUpResumeScript: readonly Cmd[] = [
+  arrive(progFlat1),
+  { tag: "JRelease", ticket: 1 },
+  { tag: "JDispatch", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" },
+  { tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 3, verdict: "VPass" },
+  // The program passes: the ticket takes its lease and joins the queue.
+  { tag: "JEvalReduce", ticket: 1 },
+  // The environment moved under the candidate, so the gate opens.
+  { tag: "JDequeue", ticket: 1, moved: true },
+  // The eviction, priced under DeadlineOnly: gas alone, and there is gas left.
+  { tag: "JGateResolve", ticket: 1, out: "WFailed" },
+  { tag: "JTaskDone", ticket: 1, tid: 4, verdict: "VPass" },
+  { tag: "JTaskDone", ticket: 1, tid: 5, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 6, verdict: "VPass" },
+  { tag: "JEvalReduce", ticket: 1 },
+  { tag: "JDequeue", ticket: 1, moved: true },
+  // The second eviction with gas at zero: the wall, stamping resumeAt RWrapUp.
+  { tag: "JGateResolve", ticket: 1, out: "WFailed" },
+  // THE ARM UNDER TEST.
+  { tag: "JOpRetry", ticket: 1 },
+];
+
+/**
+ * The pre-work resume at the same consts, and it is the DISCRIMINATING half of
+ * the free-climb witness rather than a second example of it.
+ *
+ * `freeClimbNever` deliberately excludes the `RPending` flavor: that resume
+ * climbs for free under BOTH meterings, so admitting it would let a charged
+ * instance violate the witness without ever exercising the `RetryFree` arm the
+ * witness exists to prove alive. The exclusion is a claim, and a claim with no
+ * probe is `cascadeParkNever`'s transitions conjunct before its own pair was
+ * written: this trace climbs, at RetryFree, on an `operator-retry` step, and
+ * the witness must NOT fire.
+ */
+const preWorkResumeScript: readonly Cmd[] = [
+  arrive(progFlat1),
+  { tag: "JRelease", ticket: 1 },
+  // The world changed under the ticket before it ever ran: the pre-work park.
+  { tag: "JRevalFail", ticket: 1 },
+  { tag: "JOpRetry", ticket: 1 },
+];
+
 const freeClimb = driveTrace(
   configs.retryfree,
   "retryfree",
   "free-climb (deterministic)",
   freeClimbScript,
+);
+
+const wrapUpResume = driveTrace(
+  configs.retryfree,
+  "retryfree",
+  "wrap-up resume (deterministic)",
+  wrapUpResumeScript,
+);
+
+const preWorkResume = driveTrace(
+  configs.retryfree,
+  "retryfree",
+  "pre-work resume (deterministic)",
+  preWorkResumeScript,
 );
 
 const stageAdvance = driveTrace(
@@ -510,6 +596,84 @@ test("freeClimbNever is violated on the free-climb trace, and no other witness i
     freeClimb.coverage.arms.has("operator-retry, RetryFree pipeline flavor"),
     "the RetryFree pipeline exemption arm did not fire on the free climb",
   );
+});
+
+test("the RWrapUp resume re-enqueues the wrap-up, and the free climb fires on its own disjunct", () => {
+  assert.deepEqual(wrapUpResume.findings, []);
+  assert.equal(wrapUpResume.steps, wrapUpResumeScript.length);
+
+  // THE RECORD THE ARM PRODUCED, which is the model's own text for it: back to
+  // PWrapUp from the desk, re-enqueuing. `EnqueueWrapUp` is the whole of what
+  // distinguishes this arm from the RPending one, and no roster in this tree
+  // can ask for it.
+  assert.deepEqual(wrapUpResume.final.lastStep, {
+    label: "operator-retry",
+    transitions: [{ ticket: 1, from: "PEscalated", to: "PWrapUp" }],
+    effects: ["EnqueueWrapUp"],
+    attempt: { tag: "WONone" },
+  });
+  // The resume point is spent: `resumeAt` is RNone again and the desk reason
+  // with it, which is what makes the arm a resume rather than a second park.
+  const resumed = wrapUpResume.final.core.tickets.get(1);
+  assert.ok(resumed !== undefined, "the fleet still holds the resumed ticket");
+  assert.equal(resumed.resumeAt, "RNone");
+  assert.equal(resumed.reason, "RsNone");
+  // AND IT COST NOTHING, which is the RetryFree pricing: the wall it resumes
+  // from is the gas wall, so a charged resume could not have been taken at all.
+  assert.equal(resumed.gasLeft, 0);
+
+  // THE WITNESS FIRES ON THE `PWrapUp` DISJUNCT — the half of `freeClimbNever`
+  // that was dead: the model writes the free churn set as the Evaluating AND
+  // WrapUp resumes, and until this trace existed only the first was ever
+  // exercised, in this file and in the corpus alike.
+  assert.deepEqual(
+    wrapUpResume.firings.map((f) => [f.witness, f.step, f.label]),
+    [["freeClimbNever", wrapUpResumeScript.length, "operator-retry"]],
+  );
+  // And the exemption that lets the climb be legal is the RetryFree pipeline
+  // arm, in its wrap-up flavor: the pairing IS the witness's content, exactly
+  // as on the free-climb trace above.
+  assert.ok(
+    wrapUpResume.coverage.arms.has("operator-retry, RetryFree pipeline flavor"),
+    "the RetryFree pipeline exemption arm did not fire on the wrap-up resume",
+  );
+  // The resume roster records which arm of `decideOpRetry` was taken, which is
+  // the obligation `coverage.ts` declares beyond the corpus.
+  assert.ok(wrapUpResume.coverage.resumes.has("RWrapUp"));
+});
+
+test("freeClimbNever discriminates: the pre-work resume climbs at RetryFree and does not fire it", () => {
+  // WHAT THE FREE-CLIMB TRACE ALONE CANNOT SAY, and `cascadeParkNever` has had
+  // the same pair since it was written. `freeClimbNever` excludes the RPending
+  // flavor deliberately — that resume is free under BOTH meterings, so a
+  // witness admitting it would fire on a charged instance and prove nothing
+  // about the RetryFree arm. Drop the phase conjunct and this trace starts
+  // firing it; the exclusion is what this short script holds in place.
+  assert.deepEqual(preWorkResume.findings, []);
+  assert.equal(preWorkResume.steps, preWorkResumeScript.length);
+  assert.deepEqual(preWorkResume.final.lastStep, {
+    label: "operator-retry",
+    transitions: [{ ticket: 1, from: "PEscalated", to: "PPending" }],
+    effects: [],
+    attempt: { tag: "WONone" },
+  });
+  // THE CLIMB IS REAL, which is what makes the non-firing a discrimination
+  // rather than a trace that never got near the witness: the measure is higher
+  // after the resume than the step before it, at RetryFree, on an
+  // `operator-retry` step — every conjunct of the witness but the phase one.
+  assert.ok(
+    currentMeasure(configs.retryfree, preWorkResume.final.core) >
+      preWorkResume.final.prevMeasure,
+    "the pre-work resume did not climb, so the exclusion is undriven",
+  );
+  assert.deepEqual(preWorkResume.firings, []);
+  // And the arm it fired is the RPending one, told apart from the free flavor
+  // by the pricing probe rather than by the label they share.
+  assert.ok(
+    preWorkResume.coverage.arms.has("operator-retry, RPending flavor"),
+    "the RPending exemption arm did not fire on the pre-work resume",
+  );
+  assert.ok(preWorkResume.coverage.resumes.has("RPending"));
 });
 
 test("stageAdvanceNever is violated on the stage-advance trace, and no other witness is", () => {

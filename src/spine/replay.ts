@@ -161,7 +161,7 @@ function decidedStep(
   index: number,
   findings: ReplayFinding[],
 ): MachineState | undefined {
-  coverage.observeCmd(cmd);
+  coverage.observeCmd(state.core, cmd);
   const decision = driveOne(
     cfg,
     state.core,
@@ -206,7 +206,7 @@ function stutterStep(
   }
   let first: Decided | undefined;
   for (const cmd of picks) {
-    coverage.observeCmd(cmd);
+    coverage.observeCmd(state.core, cmd);
     const decision = driveOne(
       cfg,
       state.core,

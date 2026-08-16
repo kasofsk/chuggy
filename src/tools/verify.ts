@@ -153,6 +153,7 @@ function replayFixture(
   fixture: {
     readonly name: string;
     readonly consts: Config;
+    readonly states: number;
     readonly pins: readonly string[];
   },
   path: string,
@@ -165,6 +166,7 @@ function replayFixture(
   const taken = own.taken();
   corpus.absorb(taken);
   return [
+    ...truncated(fixture, trace.states.length),
     ...report.findings.map(
       (finding) =>
         `${fixture.name}: state ${String(finding.state)}: ${finding.detail}`,
@@ -173,6 +175,32 @@ function replayFixture(
       (pin) =>
         `${fixture.name}: the manifest pins ${pin} to this fixture, and it reaches no such step`,
     ),
+  ];
+}
+
+/**
+ * The fixture's length against the manifest's — the one corruption the trace
+ * cannot report about itself.
+ *
+ * `itf.ts` checks every state's `#meta.index` against its position, so a state
+ * removed from the MIDDLE of a fixture is a decode failure naming the state.
+ * A state removed from the END leaves a dense, ascending, perfectly readable
+ * shorter trace, and replay has nothing to say about the steps that are no
+ * longer there: the committed corpus holds fixtures whose `pins` are all
+ * reached before their last state, so truncating one of those was measured to
+ * pass the whole gate at exit 0. The manifest's count is the second statement that makes the
+ * loss visible — written by the emitter, checked here, and in a different file
+ * from the one a hand truncation edits.
+ */
+function truncated(
+  fixture: { readonly name: string; readonly states: number },
+  found: number,
+): readonly string[] {
+  if (found === fixture.states) {
+    return [];
+  }
+  return [
+    `${fixture.name}: the manifest says the trace holds ${String(fixture.states)} state(s) and it holds ${String(found)}`,
   ];
 }
 
@@ -353,7 +381,7 @@ function staleRosters(): readonly string[] {
 /**
  * THE RECORD SCHEMAS THIS TREE SHIPS, and where each is written.
  *
- * The twelfth roster, and the one the other eleven are expressed in. A decider,
+ * The twelfth roster, and the one every roster above it is expressed in. A decider,
  * a label and an effect are NAMES: a comparison of them catches the model
  * gaining or losing one. A record is a VOCABULARY, and the way it goes stale is
  * a FIELD — which no name roster can see. Both shipped copies of the model's

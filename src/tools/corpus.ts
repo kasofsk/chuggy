@@ -14,10 +14,23 @@
  *
  * THE MANIFEST IS THE PROVENANCE, one entry per committed fixture: the command
  * that regenerates it (an instance and a seeded search for tier 1, a module and
- * a run for tier 2) and the consts the machine it speaks about was
- * instantiated at. Nothing derived lives there — no counts, no coverage claims
- * — because a derived figure in a hand-edited file is a figure that goes stale
- * without anything noticing.
+ * a run for tier 2), the consts the machine it speaks about was instantiated
+ * at, and how many states the emitted trace has.
+ *
+ * THAT LAST FIELD IS DERIVED, WHICH THIS HEADER USED TO FORBID OUTRIGHT, and
+ * the rule it broke is worth restating before the exception: a derived figure
+ * in a hand-edited file is a figure that goes stale without anything noticing.
+ * `states` is the one figure that cannot, because it is compared against the
+ * decoded trace on every replay — the emitter WRITES it, the gate CHECKS it,
+ * and a disagreement is a finding naming the fixture. What it buys is the one
+ * corruption the trace itself cannot report: `itf.ts` checks each state's
+ * `#meta.index` against its position, so a state removed from the MIDDLE is a
+ * decode failure, and a state removed from the END leaves a dense, ascending,
+ * perfectly readable shorter trace. The committed corpus holds fixtures whose
+ * `pins` are all reached before their last state, so truncating one of those was
+ * measured to pass the whole gate at exit 0. No coverage claim has joined it: a claim about what
+ * a fixture REACHES is `pins`, checked against the replay, and a count of
+ * states is not one.
  *
  * WHY THE TIER-1 HALF IS NOT ROSTER-MINIMAL, measured rather than assumed. Six
  * of its fixtures could be dropped with every decider, label and exemption arm
@@ -56,7 +69,7 @@
  * rather than guessed at.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import { messageOf } from "../domain/assert.ts";
 import type { Config } from "../domain/domain.ts";
@@ -85,6 +98,8 @@ export type Tier1Fixture = {
   /** What the search must report: a targeted search finds a violation, a plain walk does not. */
   readonly expect: "violation" | "ok";
   readonly consts: Config;
+  /** How many states the emitted trace holds — the truncation pin. */
+  readonly states: number;
   readonly pins: readonly string[];
   readonly rationale: string;
 };
@@ -95,6 +110,8 @@ export type Tier2Fixture = {
   readonly module: string;
   readonly run: string;
   readonly consts: Config;
+  /** How many states the emitted trace holds — the truncation pin. */
+  readonly states: number;
   readonly pins: readonly string[];
   readonly rationale: string;
 };
@@ -183,6 +200,7 @@ function tier1Fixture(raw: unknown, at: string): Tier1Fixture {
     invariant: str(entry["invariant"], `${at}.invariant`),
     expect,
     consts: consts(entry["consts"], `${at}.consts`),
+    states: count(entry["states"], `${at}.states`),
     pins: pins(entry["pins"], `${at}.pins`),
     rationale: str(entry["rationale"], `${at}.rationale`),
   };
@@ -195,6 +213,7 @@ function tier2Fixture(raw: unknown, at: string): Tier2Fixture {
     module: str(entry["module"], `${at}.module`),
     run: str(entry["run"], `${at}.run`),
     consts: consts(entry["consts"], `${at}.consts`),
+    states: count(entry["states"], `${at}.states`),
     pins: pins(entry["pins"], `${at}.pins`),
     rationale: str(entry["rationale"], `${at}.rationale`),
   };
@@ -231,6 +250,52 @@ function pins(raw: unknown, at: string): readonly string[] {
     }
   }
   return entries;
+}
+
+/**
+ * Write each fixture's emitted state count back into the manifest — the
+ * emitter's half of the truncation pin.
+ *
+ * IT IS THE ONLY WRITE THIS TREE MAKES TO THE MANIFEST, and it is deliberately
+ * a field update rather than a re-authoring: the document is parsed, the named
+ * fixtures' `states` are set in place, and everything else is written back as
+ * it was read. A fixture the manifest does not name is refused rather than
+ * added, because the manifest is where a human declares what the corpus is FOR
+ * and this function has no opinion about that.
+ *
+ * `regenerate, then read the diff` IS STILL THE WORKFLOW. A count that moved
+ * shows up in the same diff as the trace that moved, which is the pairing a
+ * reader needs: a fixture whose search found a longer trace and a fixture
+ * somebody truncated by hand look identical in the corpus and completely
+ * different here.
+ */
+export function writeManifestStateCounts(
+  counts: ReadonlyMap<string, number>,
+): void {
+  const doc = object(readJson(manifestPath), manifestPath);
+  const written = new Set<string>();
+  for (const tier of ["tier1", "tier2"] as const) {
+    for (const raw of array(doc[tier], `${manifestPath}.${tier}`)) {
+      const entry = object(raw, `${manifestPath}.${tier}`);
+      const named = str(entry["name"], `${manifestPath}.${tier}[].name`);
+      const found = counts.get(named);
+      if (found === undefined) {
+        throw new CorpusError(
+          `${manifestPath}: ${named} was not emitted, so its state count is unknown`,
+        );
+      }
+      entry["states"] = found;
+      written.add(named);
+    }
+  }
+  for (const named of counts.keys()) {
+    if (!written.has(named)) {
+      throw new CorpusError(
+        `${manifestPath}: ${named} was emitted and the manifest names no fixture for it`,
+      );
+    }
+  }
+  writeFileSync(manifestPath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
 }
 
 /** A fixture name is its file name, so it may hold nothing a path would read. */
@@ -598,7 +663,7 @@ export type ModelRosters = {
    * The FIELD LIST of every record declaration this tree decodes, in the
    * model's own declaration order.
    *
-   * The twelfth roster, and the one the other eleven are written in terms of:
+   * The twelfth roster, and the one every roster above it is written in:
    * a decider, a label and an effect are all names, while a record is a
    * VOCABULARY, and every hand-typed copy of one in this tree — `itf.ts`'s
    * exact-field decodes, `entry.ts`'s journal schema — was held against
@@ -882,7 +947,7 @@ function declarationIndent(code: string, opened: number): number {
 /**
  * The fields a `type <name> = { … }` declares, in the model's own order.
  *
- * THIS IS THE ROSTER THE OTHER ELEVEN ARE WRITTEN IN. A decider, an effect and
+ * THIS IS THE ROSTER EVERY OTHER ONE IS WRITTEN IN. A decider, an effect and
  * a label are names this tree copies; a record is the vocabulary a golden trace
  * is expressed in, copied into `itf.ts`'s exact-field decodes and into
  * `entry.ts`'s journal schema, and until this reader existed both copies were
@@ -891,8 +956,8 @@ function declarationIndent(code: string, opened: number): number {
  *
  * COMMENTS AND BLANK LINES INSIDE THE BLOCK ARE NOT A BOUNDARY, which the sum
  * reader above learned the hard way: the model documents `Ticket` field by
- * field, so a reader that stopped at the first blank line would see one field
- * of fifteen. The block is bounded by its own braces instead, counted by depth,
+ * field, so a reader that stopped at the first blank line would see the first
+ * field and none of the rest. The block is bounded by its own braces instead, counted by depth,
  * and split on top-level commas — `deps: Set[int]` and `program: List[Stage]`
  * are why the split cannot be a plain `,`.
  *

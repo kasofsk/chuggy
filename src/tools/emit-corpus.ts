@@ -30,6 +30,16 @@
  *      an obligation to save bytes. Only a TRAILING run is truncated, and only
  *      as a suffix, so every state's `#meta.index` still equals its position.
  *
+ * AND IT WRITES ONE FIELD OF THE MANIFEST: each fixture's `states`, the length
+ * pin `verify.ts` checks on every replay. The manifest is otherwise a
+ * hand-authored document and stays one — the counts are set in place and
+ * nothing else about it is re-authored — because it is where a human declares
+ * what a fixture is FOR, and this tool has no opinion about that. What the pin
+ * buys is the one corruption a trace cannot report about itself: a state
+ * removed from the end leaves a dense, ascending, perfectly readable shorter
+ * trace, and the index check that catches every other removal has nothing to
+ * say about it.
+ *
  * THE SIGSEGV RETRY. Quint 0.32.0 intermittently dies on the rust backend with
  * signal 11 and no output (ledger #12). A run that dies that way has produced
  * no verdict, so it is retried rather than recorded — and a run that dies
@@ -54,10 +64,12 @@ import {
   CorpusError,
   fixturePath,
   loadManifest,
+  manifestPath,
   readJson,
   tier1Dir,
   tier2Dir,
   witnessSource,
+  writeManifestStateCounts,
   type Tier1Fixture,
   type Tier2Fixture,
 } from "./corpus.ts";
@@ -150,7 +162,10 @@ function runQuint(args: readonly string[]): Run {
  * the bytes and a one-field change spreads over a dozen diff hunks; on one line
  * per state it is one changed line, at the index the finding names.
  */
-function commitForm(raw: unknown, where: string): string {
+function commitForm(
+  raw: unknown,
+  where: string,
+): { readonly text: string; readonly states: number } {
   const doc = { ...(raw as Record<string, unknown>) };
   const meta = doc["#meta"];
   if (typeof meta === "object" && meta !== null) {
@@ -166,7 +181,14 @@ function commitForm(raw: unknown, where: string): string {
       ([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)}`,
     );
   const body = states.map((state) => `    ${JSON.stringify(state)}`);
-  return `{\n${head.join(",\n")},\n  "states": [\n${body.join(",\n")}\n  ]\n}\n`;
+  return {
+    text: `{\n${head.join(",\n")},\n  "states": [\n${body.join(",\n")}\n  ]\n}\n`,
+    // THE COUNT THE MANIFEST WILL CARRY, taken from what was actually written
+    // rather than from what the search reported: the trailing-settled
+    // truncation above happens between the two, and a pin that counted the raw
+    // trace would red every settled fixture on the first replay.
+    states: states.length,
+  };
 }
 
 function truncateTrailingSettled(
@@ -200,6 +222,17 @@ function write(path: string, text: string): void {
   console.log(`  wrote ${path}`);
 }
 
+/**
+ * What each fixture's committed trace turned out to hold, gathered as the
+ * fixtures are written and handed to the manifest at the end.
+ *
+ * ONE WRITE AT THE END RATHER THAN ONE PER FIXTURE, so a run that dies halfway
+ * leaves the manifest as it was: a half-updated manifest is a document whose
+ * counts describe two different corpora, and the gate would then report the
+ * fixtures that were rewritten as the corrupt ones.
+ */
+const emittedStates = new Map<string, number>();
+
 // === Tier 1: the seeded searches ===========================================
 
 function emitTier1(fixture: Tier1Fixture, scratch: string): void {
@@ -222,7 +255,9 @@ function emitTier1(fixture: Tier1Fixture, scratch: string): void {
       `${fixture.name}: the search was to report ${fixture.expect} (exit ${String(wanted)}) and exited ${String(run.status)}: ${run.stdout}${run.stderr}`,
     );
   }
-  write(fixturePath(fixture, 1), commitForm(readJson(out), fixture.name));
+  const committed = commitForm(readJson(out), fixture.name);
+  write(fixturePath(fixture, 1), committed.text);
+  emittedStates.set(fixture.name, committed.states);
 }
 
 // === Tier 2: the deterministic witness exports =============================
@@ -258,10 +293,9 @@ function emitTier2(
         `${fixture.name}: ${module} exported no trace for run ${fixture.run}; it wrote [${written.join(", ")}]`,
       );
     }
-    write(
-      fixturePath(fixture, 2),
-      commitForm(readJson(join(dir, file)), fixture.name),
-    );
+    const committed = commitForm(readJson(join(dir, file)), fixture.name);
+    write(fixturePath(fixture, 2), committed.text);
+    emittedStates.set(fixture.name, committed.states);
   }
 }
 
@@ -304,6 +338,11 @@ function main(): number {
         scratch,
       );
     }
+    // THE MANIFEST LAST, and only once every fixture is on disk: the counts it
+    // takes are what was written, so the document and the corpus move together
+    // or neither does.
+    writeManifestStateCounts(emittedStates);
+    console.log(`  wrote ${manifestPath}`);
   } catch (error) {
     console.log(`emit-corpus: LINTER ERROR — ${messageOf(error)}`);
     return 2;

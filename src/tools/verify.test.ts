@@ -72,6 +72,7 @@ const checkout = process.cwd();
  */
 type RawFixture = {
   name: string;
+  states: number;
   pins: string[];
 };
 type RawManifest = { tier1: RawFixture[]; tier2: RawFixture[] };
@@ -318,6 +319,67 @@ test("verifyCorpus: a pin IS checked against the fixture's own replay, not again
   ]);
 });
 
+// === replayFixture: the length pin =========================================
+
+/** Drop `state` from a fixture repo's committed trace, keeping it valid JSON. */
+function dropState(repo: string, name: string, tier: 1 | 2, at: number): void {
+  const path = `${repo}/corpus/tier${String(tier)}/${name}.itf.json`;
+  const doc = JSON.parse(readFileSync(path, "utf8")) as {
+    states: unknown[];
+  };
+  doc.states.splice(at, 1);
+  writeFileSync(path, JSON.stringify(doc));
+}
+
+test("verifyCorpus: a fixture with its LAST state removed is a finding naming the fixture and both counts", () => {
+  // THE ONE CORRUPTION A TRACE CANNOT REPORT ABOUT ITSELF. Every state carries
+  // its own `#meta.index` and the decoder checks it against its position, so a
+  // state taken out of the middle is a decode failure — but taking the last one
+  // leaves a dense, ascending, perfectly readable shorter trace, and replay has
+  // nothing to say about steps that are no longer there. This fixture's `pins`
+  // are all reached before its end, so before the manifest carried a length the
+  // whole gate passed over it at exit 0.
+  const verification = verifying((repo) => {
+    dropState(repo, "witness-lease-exclusive", 2, 19);
+  });
+  assert.deepEqual(verification.findings, [
+    "witness-lease-exclusive: the manifest says the trace holds 20 state(s) and it holds 19",
+  ]);
+  assert.deepEqual(verification.errors, []);
+});
+
+test("verifyCorpus: a fixture with a state removed from the MIDDLE is still a decode error, not a length finding", () => {
+  // The division of labour, stated as a case: the index check is the sharper
+  // instrument where it reaches, because it names the state. The length pin is
+  // only for the end, and adding it did not move the boundary.
+  const verification = verifying((repo) => {
+    dropState(repo, "witness-lease-exclusive", 2, 5);
+  });
+  assert.deepEqual(verification.findings, []);
+  assert.match(
+    verification.errors[0] ?? "",
+    /witness-lease-exclusive\.states\[5\]\.#meta\.index: state 5 is indexed 6$/,
+  );
+});
+
+test("verifyCorpus: a manifest length nobody emitted is the same finding, from the other side", () => {
+  // The pin is an EQUALITY, not a floor: a count edited upwards without the
+  // trace to match is the same disagreement, and it reads the same way. Which
+  // of the two files moved is what the diff says.
+  const verification = verifying((repo) => {
+    editManifest(repo, (manifest) => {
+      for (const fixture of manifest.tier1) {
+        if (fixture.name === "retryfree-settled") {
+          fixture.states += 1;
+        }
+      }
+    });
+  });
+  assert.deepEqual(verification.findings, [
+    "retryfree-settled: the manifest says the trace holds 7 state(s) and it holds 6",
+  ]);
+});
+
 // === coverageGaps ==========================================================
 
 test("verifyCorpus: an obligation no remaining fixture reaches is a coverage finding", () => {
@@ -338,6 +400,12 @@ test("verifyCorpus: an obligation no remaining fixture reaches is a coverage fin
     "coverage: step label rework-started eval_failure — no fixture reaches it",
     "coverage: step label ticket-escalated rework_budget_exhausted — no fixture reaches it",
     "coverage: stepDescends exemption arm operator-retry, RetryFree pipeline flavor — no fixture reaches it",
+    // AND THE RESUME ARM, which is the obligation this witness was carrying
+    // that no roster used to state: its retry is the only `REvaluating` one in
+    // the whole corpus, and while `decideOpRetry` was the finest grain
+    // available, dropping the fixture left that reported covered by the three
+    // retries at other resume points.
+    "coverage: decideOpRetry resume arm REvaluating — no fixture reaches it",
   ]);
 });
 
@@ -827,7 +895,7 @@ test("staleRosters: a code literal spelled as neither an effect nor a step label
 // === staleRosters: the record schemas =====================================
 
 /**
- * THE TWELFTH ROSTER, and the one the other eleven are written in terms of. A
+ * THE TWELFTH ROSTER, and the one every roster above it is written in. A
  * decider, a label and an effect are NAMES; a record is the VOCABULARY a golden
  * trace is expressed in, and the way one goes stale is a FIELD, which no name
  * roster can see. Both shipped copies are hand-typed — `itf.ts` decodes each
@@ -838,7 +906,7 @@ test("staleRosters: a code literal spelled as neither an effect nor a step label
  *
  * EACH CASE STATES ITS OWN FINDINGS RATHER THAN DERIVING THEM, because the
  * count is part of the claim: `StepRecord` is copied in two files and reds
- * four times from one rename, while `Ticket` is copied in one and reds once.
+ * from both on one rename, while `Ticket` is copied in one and reds once.
  * A shared expectation builder would hide exactly that.
  */
 const recordSchemaCases: readonly {
@@ -966,8 +1034,8 @@ test("sumTypeArms: a comment and a blank line INSIDE the arm list hide no arm", 
     );
   });
   // Every arm below the note is still rostered, so nothing reds: with the
-  // truncation, the four arms from `JGateResolve` down each report as held by
-  // this tree and not by the model.
+  // truncation, every arm from `JGateResolve` down reports as held by this
+  // tree and not by the model.
   assert.deepEqual(verification.findings, []);
   assert.deepEqual(verification.errors, []);
 });
@@ -993,7 +1061,8 @@ test("conjunctsOf: a comment and a blank line INSIDE a bundle hide no conjunct",
 test("recordTypeFields: the model's field-by-field prose hides no field", () => {
   // `Ticket` is the record the model documents most heavily — a comment above
   // nearly every field — so a reader bounded by blank lines or by comments
-  // would see one field of fifteen. The committed tree already exercises that;
+  // would see the first field and none of the rest. The committed tree already
+  // exercises that;
   // this adds a blank line INSIDE the block, which is the shape the sum reader
   // above was truncating on.
   const verification = verifying((repo) => {

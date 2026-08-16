@@ -443,6 +443,19 @@ export type RunResult = {
   readonly coverage: Coverage;
   readonly firings: readonly WitnessFiring[];
   readonly findings: readonly string[];
+  /**
+   * The state the run stopped at — `lastStep` included, which is the whole
+   * reason it is here.
+   *
+   * A ROSTER SAYS WHICH ARM FIRED AND NEVER WHAT IT EMITTED. `coverage` carries
+   * labels, deciders and exemption arms; `firings` carries a witness, a step
+   * and a label. None of them can see a decider's EFFECT list, so deleting an
+   * effect from one arm of one decider was measured to leave every probe in
+   * this file green. A deterministic script that ends on the arm under test can
+   * assert the record that arm produced — which is the model's own text, step
+   * for step — and that needs the state, not a summary of it.
+   */
+  readonly final: MachineState;
 };
 
 /**
@@ -503,6 +516,7 @@ function runMachine(
     // else, which is the corpus emitter's rule for the same run of steps:
     // truncate it, and keep a representative.
     ended = quiet(cfg, state.core);
+    const before = state;
     step += 1;
     const move = choose(options, state, step, report);
     if (move === undefined) {
@@ -520,7 +534,10 @@ function runMachine(
     const taken = showMove(move);
     trace.push(taken);
     if (move.kind === "cmd") {
-      coverage.observeCmd(move.cmd);
+      // THE STATE THE DECISION DEPARTED FROM, not the one it produced: the
+      // `decideOpRetry` resume arm is the ticket's `resumeAt` BEFORE the step,
+      // and the step is what clears it.
+      coverage.observeCmd(before.core, move.cmd);
     }
     observe(coverage, cfg, state, step, findings, where, taken);
     // GUARDED FOR `observe`'s REASON, and it is the same hazard: `freeClimbNever`
@@ -549,6 +566,7 @@ function runMachine(
     coverage: coverage.taken(),
     firings,
     findings,
+    final: state,
   };
 }
 
