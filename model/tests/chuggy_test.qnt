@@ -197,8 +197,17 @@ module chuggy_test {
   // the artifact identity, so a short counter answers a question the machine
   // would answer differently. freshTicket's 0 is right for a fixture with no
   // history; every fixture below that gives itself one carries the matching
-  // count, and handBuiltFixturesAccountedTest (bottom of this file) is what
-  // keeps the next one honest.
+  // count.
+  //
+  // ADDING A HAND-BUILT FIXTURE? NAME IT IN THE GUARD, IN THE SAME COMMIT.
+  // The guard at the bottom of this file is a CLOSED ENUMERATION of names,
+  // split into runs by SUBJECT — each run aggregates the sections that share
+  // one, so a fixture's run is not always the section it was written in.
+  // Quint has no reflection, so nothing discovers a new `pure val` of type
+  // Core or Ticket for you, and the property that follows is exact: a
+  // fixture never named there is not checked, and a defective one passes the
+  // whole suite green. The list is the mechanism, and keeping it current is
+  // a human step this comment is the reminder for.
 
   // Programs used throughout. progU2 is exactly DB::defaultProgram — the
   // unanimous single-stage default, which is the compatibility shape: a
@@ -1312,15 +1321,19 @@ module chuggy_test {
   })
 
   /// WORK-PASSED STAMPS AN ARTIFACT, and a rework SUPERSEDES it. The second
-  /// half is what makes the mark an identity rather than a flag: two cycles
-  /// of the same ticket produced different things and the model can say so.
+  /// half is what makes the mark an identity rather than a flag: TWO CYCLES
+  /// OF THE SAME TICKET produced different things and the model can say so.
   run artifactStampedAndSupersededTest = assert(and {
     dDispatch.post.tickets.get(1).artifact == ANone,
     dWorkReduce.post.tickets.get(1).artifact != ANone,
-    // The rework fixture walks a second cycle; its product differs from the
-    // first, which a stamp-once mutant would fail.
+    // The staged fixture walks two work cycles on ONE ticket — dToEval
+    // stamps the first, dBackToEval the second, after the rework — so
+    // comparing those two IS the supersession claim, in its own terms:
+    // ASome(2) then ASome(5), differing because that ticket's own counter
+    // advanced between them. A stamp-once mutant leaves the second stamp at
+    // the first's value, and dies here.
     dBackToEval.post.tickets.get(1).artifact != ANone,
-    dBackToEval.post.tickets.get(1).artifact != dWorkReduce.post.tickets.get(1).artifact
+    dBackToEval.post.tickets.get(1).artifact != dToEval.post.tickets.get(1).artifact
   })
 
   run measureProjectBlindTest = assert(and {
@@ -1345,8 +1358,20 @@ module chuggy_test {
     1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PWrapUp },
     2 -> { ...DB::freshTicket(Set(1), progU2, 2, WExclusive(2)), phase: PPending }
   ) }
+
+  /// Ticket 1 carries a MARK because it is Done: domain.qnt's
+  /// artifactWellFormed is "a completed ticket produced something", and
+  /// PDone with ANone violates it — the same class of defect as the short
+  /// spawn counters, one invariant over. The mark written here is the one
+  /// the happy path's own Done ticket carries — read `c8`'s artifact and
+  /// compare — so the fixture states what the model would have stamped
+  /// rather than an arbitrary non-ANone. It stays what it was — a compressed
+  /// stand-in for "the dep is Done" — and no consuming assertion reads it:
+  /// isReadyIn/isBlockedIn read phase and deps, and the measure is
+  /// artifact-blind (pinned in measureArtifactBlindTest).
   pure val cXDepDone: Core = { tickets: Map(
-    1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PDone, completions: 1 },
+    1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PDone,
+           completions: 1, artifact: ASome(2) },
     2 -> { ...DB::freshTicket(Set(1), progU2, 2, WExclusive(2)), phase: PPending }
   ) }
 
@@ -1378,32 +1403,106 @@ module chuggy_test {
     DO::wrapUpOutcomes(true) == Set(WOk, WFailed)
   })
 
-  /// EVERY HAND-BUILT FIXTURE IN THIS FILE IS A SHAPE THE MACHINE COULD HAVE
-  /// REACHED. idsAccounted is a machine invariant, so the randomized runs and
-  /// the witness suites check it after every step the machine takes — and on
-  /// nothing this file writes by hand. That gap is the one the fixtures fell
-  /// into: some of them carried a live task set or a record while leaving
-  /// freshTicket's spawned at 0, which is not a state any trace reaches, and
-  /// work-passed's ASome(retired.spawned) stamp read the short counter. The
-  /// deciders below cannot repair it — nothing recomputes `spawned` from the
-  /// record — so the equality has to be asserted where the state is written.
-  /// This is that assertion, and the reason a new fixture cannot
-  /// repeat the mistake quietly.
-  run handBuiltFixturesAccountedTest = assert(and {
+  // ==========================================================================
+  // === HAND-BUILT FIXTURE ACCOUNTING: the closed guard list =================
+  // ==========================================================================
+
+  // HAND-BUILT FIXTURES ACCOUNT FOR THE IDS THEY HAND THEMSELVES. That one
+  // equality — domain.qnt's idsAccounted — is the whole of what the runs
+  // below check, and the claim is deliberately no wider than that.
+  //
+  // idsAccounted is a MACHINE invariant, so the randomized runs and the
+  // witness suites check it after every step the machine takes — and on
+  // nothing this file writes by hand. That gap is the one the fixtures fell
+  // into: some of them carried a live task set or a record while leaving
+  // freshTicket's spawned at 0, which is not a state any trace reaches, and
+  // work-passed's ASome(retired.spawned) stamp read the short counter. The
+  // deciders cannot repair it — nothing recomputes `spawned` from the
+  // record — so the equality has to be asserted where the state is written.
+  // These runs are that assertion.
+  //
+  // WHAT THEY DO NOT SAY: that an enrolled fixture is a shape the machine
+  // could have reached. Satisfying one invariant is not reachability, and
+  // several fixtures here are compressed stand-ins that no trace produces —
+  // a Done ticket with an empty record, most plainly. Passing here means
+  // the counter agrees with the record and the live set, and nothing more.
+  //
+  // AND WHAT THEY CONSTRAIN TODAY IS LESS THAN THE ENUMERATION SUGGESTS.
+  // Where a fixture hands itself no task set and no record, its conjunct
+  // reads 0 == 0 + 0 — freshTicket's zero is already the accounted value —
+  // and whole groups below are of that kind. Those conjuncts are TRIPWIRES
+  // rather than checks of live arithmetic: they hold today because the
+  // fixture has no history, and they start doing work the moment one gains
+  // a task set or a record without its counter, which is exactly the defect
+  // that made this guard necessary. To see which conjunct is which, read
+  // the fixture's `spawned:` field where it is written above — a fixture
+  // that never writes one is a tripwire.
+  //
+  // THE LIST IS CLOSED, AND THE ENUMERATION BELOW IS THE WHOLE OF IT. Quint
+  // has no reflection, so nothing enrols a fixture for you: A NEW HAND-BUILT
+  // FIXTURE MUST BE ADDED TO ITS GROUP BELOW IN THE SAME COMMIT. An
+  // unenrolled fixture is not checked, and a defective one passes the whole
+  // suite green. (Issue #32 proposes the mechanical alternative — a gate
+  // cross-checking every `pure val` this file declares `: Core` or
+  // `: Ticket` against the names in this block. A gate is also the only
+  // honest owner of a tally of them: a comment carrying one would state a
+  // quantity nobody can check without leaving the sentence, and the
+  // enumeration below is the fact anyway.)
+  //
+  // Declared with an explicit `: Core` / `: Ticket` annotation and NOT
+  // enrolled, each for a stated reason: `cEmpty` has no tickets to check;
+  // `c0` and `cRel2` are decider OUTPUT (`.post`), where the machine
+  // invariant already reaches; `cEscB` and `cEscF` are one-ticket wrappers
+  // around `escLanding`, which is enrolled on its own. The vals whose type
+  // is INFERRED rather than annotated — `cA1`, `cA2`, `c1`..`c8`, `cGated7`,
+  // `cS0`, `cS1`, `cAfterShort`, `cParked` — are decider output too, and sit
+  // under the same exemption.
+  //
+  // The runs are SPLIT BY SUBJECT — each aggregating the sections that share
+  // one, which is why `cQueueB` is checked with the wrap-up group though it
+  // is written in the project-isolation section — so that a red run names
+  // the family the offender came from. One assert over every name at once
+  // reports only that something, somewhere, is wrong, which is the least
+  // useful thing a guard can say at the moment it fires.
+
+  /// The work wall and the middle loop's rework and wall fixtures.
+  run handBuiltAccountedPipelineTest = assert(and {
     accounted(cWorkFail), accounted(cEvalFail),
-    accounted(cReworkWall), accounted(cEvalGasWall),
+    accounted(cReworkWall), accounted(cEvalGasWall)
+  })
+
+  /// The staged program's fixtures, and program-as-data's.
+  run handBuiltAccountedProgramTest = assert(and {
     accounted(cStagedWork), accounted(cStagedNoBudget),
     accounted(cMixedAny), accounted(cMixedUna),
-    accounted(cFlatWork), accounted(cFailAny),
+    accounted(cFlatWork), accounted(cFailAny)
+  })
+
+  /// The outer loop under both pricings, the depth-1 gate's occupancy
+  /// fixture, and the quiet-dequeue queue fixture.
+  run handBuiltAccountedWrapUpTest = assert(and {
     accounted(cGateB), accounted(cGateWall), accounted(cGateGasWall),
     accounted(cGateD), accounted(cGateDWall),
-    accounted(cFresh), accounted(cParkNoGas), accounted(cQueueB),
-    accounted(cChain), accounted(cGateOcc),
-    accounted(cXDepPre), accounted(cXDepDone),
+    accounted(cGateOcc), accounted(cQueueB)
+  })
+
+  /// The human desk: its park fixtures and its escalated resumes.
+  run handBuiltAccountedDeskTest = assert(and {
+    accounted(cFresh), accounted(cParkNoGas),
     accountedTicket(escLanding), accountedTicket(escWorking),
-    accountedTicket(escEval),
+    accountedTicket(escEval)
+  })
+
+  /// The revoke suite's one-per-phase tickets, and the cascade's chain.
+  run handBuiltAccountedRevokeTest = assert(and {
     accountedTicket(jDraft), accountedTicket(jPend), accountedTicket(jWork),
     accountedTicket(jEval), accountedTicket(jLand), accountedTicket(jGated),
-    accountedTicket(jEsc), accountedTicket(jParkPre), accountedTicket(jParkDep)
+    accountedTicket(jEsc), accountedTicket(jParkPre),
+    accountedTicket(jParkDep), accounted(cChain)
+  })
+
+  /// The cross-project dep-gate fixtures.
+  run handBuiltAccountedCrossProjectTest = assert(and {
+    accounted(cXDepPre), accounted(cXDepDone)
   })
 }
