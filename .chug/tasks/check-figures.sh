@@ -64,21 +64,17 @@
 # is deliberate. What is left over is the reviewer's, and
 # `.chug/tasks/review-change.md` is where that is written.
 #
-# SCOPE: tracked `*.md` and `*.sh`, the hook and the justfile — the files this
-# tree writes prose in. In everything but markdown ONLY COMMENT LINES ARE READ,
-# the narrowing `check-paths.sh` makes for a suite and for its reason: a figure
-# in code is a value, and a value is not a claim. In markdown a fenced block is
-# code, so it is skipped.
+# SCOPE: tracked `*.md`, `*.sh` and `*.qnt`, the hook and the justfile — the
+# files this tree writes prose in. In everything but markdown ONLY COMMENT
+# LINES ARE READ, the narrowing `check-paths.sh` makes for a suite and for its
+# reason: a figure in code is a value, and a value is not a claim. In markdown
+# a fenced block is code, so it is skipped.
 #
-# `model/` IS NOT IN THE DEFAULT CORPUS, and that is a deferral rather than a
-# finding that the rule stops there. The model carries the same defect today,
-# including one comment that records its own count having gone stale. Naming
-# files scans them, so
-#
-#   .chug/tasks/check-figures.sh $(git ls-files 'model/*.qnt')
-#
-# is what the deferral is hiding, and the day that comes back empty the
-# exclusion goes with it.
+# THE MODEL IS PROSE. `model/` is the specification, and its `///` headers are
+# where this tree argues at length: a count in one of them is a claim about the
+# tree exactly as a count in a gate header is, and being proved says nothing
+# about the prose wrapped round the proof. Quint's `///` is a comment marker
+# like any other, so the comment-line narrowing needs nothing added for it.
 #
 # THERE IS NO ESCAPE, on `check-paths.sh`'s policy and for its reason. A count
 # of things the sentence itself lists does not need the count; a count of
@@ -103,12 +99,12 @@ fi
 cd "$root" || exit 2
 
 # The files to scan: the arguments if given, else the tracked prose corpus. A
-# named file is scanned wherever it lives, which is what makes the deferred
-# `model/` set reachable without an option to remember.
+# named file is scanned wherever it lives, so the one directory the corpus
+# leaves out is reachable without an option to remember.
 set -f
 if [ "$#" -eq 0 ]; then
-	corpus="$(git ls-files '*.md' '*.sh' '.githooks/pre-commit' 'justfile' \
-		':!:model/*' ':!:docs/design/*' 2>/dev/null || true)"
+	corpus="$(git ls-files '*.md' '*.sh' '*.qnt' '.githooks/pre-commit' 'justfile' \
+		':!:docs/design/*' 2>/dev/null || true)"
 	if [ -z "$corpus" ]; then
 		echo "check-figures: LINTER ERROR — no prose files tracked; the glob matched nothing"
 		exit 2
