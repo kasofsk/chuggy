@@ -100,14 +100,14 @@
 /// requirements R1-R7, and the severability map at domain.qnt's header):
 ///   - THE PATH RULE pinned (R3, at decider grain):
 ///     wrapUpOutcomes(false) is the WOk singleton (the skip
-///     fast-path), wrapUpOutcomes(true) is {WOk, Failed} (the
+///     fast-path), wrapUpOutcomes(true) is {WOk, WFailed} (the
 ///     gate ran) — quiet refuses failure AND the held promotion, moved
 ///     refuses the direct squash; both success paths emit the ONE
 ///     completion effect;
 ///   - THE DEPTH-1 GUARD pinned (R4): an occupied gate refuses every
 ///     same-repo dequeue (wrapUpStartableIn false) while another repo's
-///     dequeue stays enabled — serialization is per-repo; gate-opened is
-///     rank descent, WONone, charges nothing;
+///     dequeue stays enabled — serialization is per-repo; wrapup-started
+///     is rank descent, WONone, charges nothing;
 ///   - THE EVICTION unchanged in pricing (R5): the existing gate-rework/
 ///     wall fixtures moved from PWrapUp to PWrapUpHolding (where failures now
 ///     fire from) with account deltas byte-identical;
@@ -1349,7 +1349,7 @@ module chuggy_test {
   /// the collapsed universe and the intact draw rule are the whole claim —
   /// everything else is repo-blind by the measure theorem.
   /// NOTE: the two set equalities below are the SECOND guard for the
-  /// draw sets (wrapUpOutcomesPathRuleTest's note has the argument — the
+  /// draw sets (wrapUpOutcomesDrawRuleTest's note has the argument — the
   /// sets are checkable only by pinning their contents; everything
   /// downstream draws from them).
   run oneRepoDegenerationTest = assert(and {

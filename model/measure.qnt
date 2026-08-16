@@ -696,7 +696,7 @@ module chuggy_measure {
   /// step.
   pure val rankHolding: int = rankSettled + 1
   /// PWrapUp — ENQUEUED for the gate: the
-  /// dequeue (gate-opened) descends into the gate, the quiet fast-path
+  /// dequeue (wrapup-started) descends into the gate, the quiet fast-path
   /// descends straight to Done.
   pure val rankWrapUp: int = rankHolding + 1
   pure val rankEvaluating: int = rankWrapUp + 1
