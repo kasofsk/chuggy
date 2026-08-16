@@ -26,6 +26,7 @@ import {
   isReadyIn,
   leaseFreeIn,
   leaseOf,
+  quietIn,
   readiesIn,
   reducibleEvalIn,
   reducibleWorkIn,
@@ -268,4 +269,27 @@ test("a valid artifact has no failure to draw and an invalidated one is not forc
   assert.deepEqual(wrapUpOutcomes(true), ["WOk", "WFailed"]);
   assert.ok(!wrapUpOutcomes(false).includes("WFailed"));
   assert.ok(wrapUpOutcomes(true).includes("WOk"));
+});
+
+test("the stutter is enabled exactly on a fully-arrived fleet of terminals", () => {
+  const settled = [
+    ticketOn(config, 1, { phase: "PDone", artifact: aSome(1) }),
+    ticketOn(config, 1, { phase: "PRevoked" }),
+    ticketOn(config, 2, { phase: "PDone", artifact: aSome(2) }),
+  ];
+  assert.ok(quietIn(config, coreOf(settled)));
+  assert.ok(
+    !quietIn(config, coreOf(settled.slice(0, -1))),
+    "room for an arrival means the author can still act",
+  );
+  assert.ok(
+    !quietIn(
+      config,
+      coreOf([
+        ...settled.slice(0, -1),
+        ticketOn(config, 2, { phase: "PWorking" }),
+      ]),
+    ),
+    "a live ticket means some other action is enabled",
+  );
 });

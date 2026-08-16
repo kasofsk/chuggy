@@ -344,10 +344,15 @@ function tagged(tag: string, value: unknown = nullary): unknown {
   return { tag, value };
 }
 
+/** Re-encodes an integer as ITF writes one. Ids, accounts and draws all pass through here. */
+export function encodeInt(value: number): unknown {
+  return { "#bigint": String(value) };
+}
+
 function encodeTaskKind(kind: TaskKind): unknown {
   return kind.kind === "TKWork"
     ? tagged("TKWork")
-    : tagged("TKEval", { "#bigint": String(kind.stage) });
+    : tagged("TKEval", encodeInt(kind.stage));
 }
 
 function encodeTaskState(state: TaskState): unknown {
@@ -358,45 +363,66 @@ function encodeTaskState(state: TaskState): unknown {
 
 function encodeTask(task: Task): unknown {
   return {
-    id: { "#bigint": String(task.id) },
+    id: encodeInt(task.id),
     kind: encodeTaskKind(task.kind),
     state: encodeTaskState(task.state),
   };
 }
 
-function encodeWrapUp(wrapUp: WrapUp): unknown {
+/** Re-encodes a wrap-up kind, as a ticket field and as an arrival's fourth draw. */
+export function encodeWrapUp(wrapUp: WrapUp): unknown {
   return wrapUp.wrapUp === "WNone"
     ? tagged("WNone")
-    : tagged("WExclusive", { "#bigint": String(wrapUp.resource) });
+    : tagged("WExclusive", encodeInt(wrapUp.resource));
 }
 
 function encodeArtifact(artifact: ArtifactMark): unknown {
   return artifact.artifact === "ANone"
     ? tagged("ANone")
-    : tagged("ASome", { "#bigint": String(artifact.mark) });
+    : tagged("ASome", encodeInt(artifact.mark));
+}
+
+/** Re-encodes a dependency set, in the ascending order the decoded form keeps. */
+export function encodeDeps(deps: readonly TicketId[]): unknown {
+  return { "#set": deps.map((d) => encodeInt(d)) };
+}
+
+/** Re-encodes an authored program, stages in the order the interpreter walks them. */
+export function encodeProgram(program: readonly Stage[]): unknown {
+  return program.map((s) => ({
+    combinator: tagged(s.combinator),
+    fanout: encodeInt(s.fanout),
+  }));
+}
+
+/** Re-encodes a task-completion verdict, which only a draw ever carries. */
+export function encodeVerdict(verdict: Verdict): unknown {
+  return tagged(verdict);
+}
+
+/** Re-encodes a wrap-up outcome, which only a draw ever carries. */
+export function encodeWrapUpOutcome(outcome: WrapUpOutcome): unknown {
+  return tagged(outcome);
 }
 
 /** Re-encodes a ticket, reconstructing the `completions` ghost the record does not store. */
 export function encodeTicket(ticket: Ticket): unknown {
   return {
     artifact: encodeArtifact(ticket.artifact),
-    completions: { "#bigint": String(completionsOf(ticket)) },
-    deps: { "#set": ticket.deps.map((d) => ({ "#bigint": String(d) })) },
-    gasLeft: { "#bigint": String(ticket.gasLeft) },
+    completions: encodeInt(completionsOf(ticket)),
+    deps: encodeDeps(ticket.deps),
+    gasLeft: encodeInt(ticket.gasLeft),
     phase: tagged(ticket.phase),
-    program: ticket.program.map((s) => ({
-      combinator: tagged(s.combinator),
-      fanout: { "#bigint": String(s.fanout) },
-    })),
-    project: { "#bigint": String(ticket.project) },
+    program: encodeProgram(ticket.program),
+    project: encodeInt(ticket.project),
     reason: tagged(ticket.reason),
     record: ticket.record.map(encodeTask),
     resumeAt: tagged(ticket.resumeAt),
-    reworkLeft: { "#bigint": String(ticket.reworkLeft) },
-    spawned: { "#bigint": String(ticket.spawned) },
+    reworkLeft: encodeInt(ticket.reworkLeft),
+    spawned: encodeInt(ticket.spawned),
     tasks: { "#set": ticket.tasks.map(encodeTask) },
     wrapUp: encodeWrapUp(ticket.wrapUp),
-    wrapUpLeft: { "#bigint": String(ticket.wrapUpLeft) },
+    wrapUpLeft: encodeInt(ticket.wrapUpLeft),
   };
 }
 
@@ -411,7 +437,7 @@ export function encodeCore(core: Core): unknown {
           `vocabulary: ticket ${String(id)} vanished between keys and lookup`,
         );
       }
-      return [{ "#bigint": String(id) }, encodeTicket(ticket)];
+      return [encodeInt(id), encodeTicket(ticket)];
     }),
   };
 }
@@ -424,13 +450,13 @@ export function encodeStepRecord(record: StepRecord): unknown {
         ? tagged("WONone")
         : tagged("WOAttempt", {
             invalidated: record.attempt.invalidated,
-            project: { "#bigint": String(record.attempt.project) },
+            project: encodeInt(record.attempt.project),
           }),
     effects: record.effects.map(effectLabel),
     label: record.label,
     transitions: record.transitions.map((t) => ({
       from: tagged(t.from),
-      ticket: { "#bigint": String(t.ticket) },
+      ticket: encodeInt(t.ticket),
       to: tagged(t.to),
     })),
   };

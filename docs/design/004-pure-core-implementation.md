@@ -1,8 +1,8 @@
 # The pure-core implementation
 
-**Status: IN PROGRESS** — S0 through S5 have landed. S6, S7 and S8 are proposed.
+**Status: IN PROGRESS** — S0 through S6 have landed. S7 and S8 are proposed.
 
-What is left to build: a randomized layer, `model/refinement.qnt`'s journaled actor as pure code, and the one place where an effect becomes a call. Nothing real is launched; the fabric is a recording stub. The deliverable is the core a later real fabric adapter plugs into without the core moving, which is the property `model/refinement.qnt` states under PLATFORM CAPTURE.
+What is left to build: `model/refinement.qnt`'s journaled actor as pure code, and the one place where an effect becomes a call. Nothing real is launched; the fabric is a recording stub. The deliverable is the core a later real fabric adapter plugs into without the core moving, which is the property `model/refinement.qnt` states under PLATFORM CAPTURE.
 
 ## The slice table
 
@@ -16,11 +16,11 @@ A landing commit carries a `Slice: 004-pure-core-implementation <row>` trailer, 
 | S3 | The deciders and the enablement predicates | — | S2 | **Landed** `a10d38c` |
 | S4 | The invariants | — | S2 | **Landed** `af5a39a` |
 | S5 | The replayer and the conformance gate | — | S1, S3, S4 | **Landed** `d375b5f` |
-| S6 | The randomized layer | The model's own action roster and draw sets, seeded, at the full-roster instances in `model/mc/mc_chuggy.qnt`, asserting the full bundle plus the per-ticket completion-emission accumulator after every step, and shrinking a counterexample into the corpus format so the replayer can consume it. | S5 | Proposed |
+| S6 | The randomized layer | — | S5 | **Landed** |
 | S7 | The journaled actor | `model/refinement.qnt` as pure code — Cmd, Entry, `execCmd`, `cmdEnabled`, `replayCore`, `journalLegalOn`, the executor cursor, recovery by replay, and the carry rule below — its obligations in the model's own two bundles, and a crash-seam suite in which `refinementCore` stays green while the world-facing bundle goes red under the hazard. | S3, S4 | Proposed |
 | S8 | The interpreter, the ports and the walk | The effect interpreter over `(Entry, post-Core)`; the ports — fabric, journal store, desk — with their promises stated where they are declared; the stub adapters; the journal entry's wire schema and the parse at the store boundary; and one ticket driven from arrival to completion against stubs, with journal-before-effect structural and duplicate deliveries injected and absorbed. | S7 | Proposed |
 
-**Depends on** is consumption — what a row's code and its suites read. Independently of that graph, no row merges with the conformance replay red. S6 and S7 may run concurrently; nothing else may.
+**Depends on** is consumption — what a row's code and its suites read. Independently of that graph, no row merges with the conformance replay red.
 
 ## The target tree
 
@@ -55,10 +55,6 @@ An effect is nullary, so no port call can be formed from the effect list alone, 
 
 The alternative is payloads on the effect constructors, which changes the domain vocabulary and `StepRecord`, so it is a model commit first and not this plan's to take. Consequences: the routing is a total function over the effect constructors, exhaustively switched, not a partition into three — a bookkeeping effect goes to the desk and a work effect to the fabric, while the journal store is reached by the executor loop before any emission rather than by the interpreter at all.
 
-### The at-most-one completion is S6's, and it is S6's alone
-
-`test/domain/invariants.test.ts` states why no state this tree can build refutes `completionExclusive`, and which layer carries the property instead. What is not settled there is why the accumulator cannot sit in S5: under exact equality it could only go red where equality had gone red first, so the `<= 1` half needs the layer with no golden to subsume it. In S7 the same property is `noDuplicateCycle`, over the world rather than over a record.
-
 ### The refinement obligations stay in two bundles
 
 `refinementCore` is the discipline-independent half and holds under both step relations; the world-facing half is green under `rstep` and is the expected violation under `rstepHazard`. Neither bundle takes the domain's `Invariant` signature, and `src/domain/invariants.ts`'s one-signature rule does not reach them: these read the actor's journal, cursor and world, so theirs is `(ActorState) => boolean`, and forcing them into the domain's would invent arguments they do not use. Implementing them as one flat list loses the demonstration, which is the same argument the domain's anti-vacuity witnesses make on the other side. Both relations are implemented too, since the delta between them *is* the discipline. The crash-seam suite asserts precisely which members fall at which seam, and imprecision there would hide the result; `model/tests/chuggy_refinement_test.qnt` pins both shapes deterministically.
@@ -67,7 +63,6 @@ The alternative is payloads on the effect constructors, which changes the domain
 
 | Need | Presumptive choice | Why | Slice |
 |---|---|---|---|
-| property testing | the ecosystem default that integrates with the test runner | S6's randomized layer and the shrinking it needs | S6 |
 | schema <!-- intent --> | a schema-first library, runtime dependency of `src/interpreter/` and outward | the first thing that needs a wire `Entry` is the journal store's adapter, and the model puts the parse at the boundary where a tampered journal arrives | S8 |
 
 Naming a presumptive choice here is a note that the question was looked at, not the argument. Each still argues its case in the commit that lands it.

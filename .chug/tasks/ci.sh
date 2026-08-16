@@ -170,6 +170,12 @@ if [ -x ./.chug/tasks/check-conformance.sh ]; then
 	run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
 fi
 
+# --- The randomized walk -----------------------------------------------------
+
+if [ -x ./.chug/tasks/check-random.sh ]; then
+	run_gate "check-random" ./.chug/tasks/check-random.sh
+fi
+
 # --- The model ---------------------------------------------------------------
 
 if [ -x ./.chug/tasks/check-model.sh ]; then

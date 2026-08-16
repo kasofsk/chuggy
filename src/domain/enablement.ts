@@ -230,3 +230,18 @@ export function wrapUpOutcomes(
 ): readonly ("WOk" | "WFailed")[] {
   return invalidated ? ["WOk", "WFailed"] : ["WOk"];
 }
+
+/**
+ * When the stutter is all that is left: the fleet is fully arrived and every
+ * ticket is settled in a terminal. The model's `settle` action is guarded by
+ * exactly this, so a run over a quiesced fleet stutters instead of deadlocking.
+ */
+export function quietIn(config: Config, core: Core): boolean {
+  return (
+    !canArriveIn(config, core) &&
+    ticketIds(core).every((id) => {
+      const phase = ticketAt(core, id).phase;
+      return phase === "PDone" || phase === "PRevoked";
+    })
+  );
+}
