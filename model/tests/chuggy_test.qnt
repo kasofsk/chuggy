@@ -967,8 +967,8 @@ module chuggy_test {
   })
 
   // === Revoke, from every live phase =======================================
-  // Every non-terminal may be revoked. Eight
-  // single-ticket fixtures: one per live phase (Draft, Pending, Working,
+  // Every non-terminal may be revoked. Single-ticket
+  // fixtures: one per live phase (Draft, Pending, Working,
   // Evaluating, Landing) and all
   // THREE desk-reason flavors of the one parked phase (post-work wall,
   // pre-work revalidation, cascade wall) — the desk fixtures are the
@@ -1382,12 +1382,12 @@ module chuggy_test {
   /// REACHED. idsAccounted is a machine invariant, so the randomized runs and
   /// the witness suites check it after every step the machine takes — and on
   /// nothing this file writes by hand. That gap is the one the fixtures fell
-  /// into: thirteen of them carried a live task set or a record while leaving
+  /// into: some of them carried a live task set or a record while leaving
   /// freshTicket's spawned at 0, which is not a state any trace reaches, and
   /// work-passed's ASome(retired.spawned) stamp read the short counter. The
   /// deciders below cannot repair it — nothing recomputes `spawned` from the
   /// record — so the equality has to be asserted where the state is written.
-  /// This is that assertion, and the reason a fourteenth fixture cannot
+  /// This is that assertion, and the reason a new fixture cannot
   /// repeat the mistake quietly.
   run handBuiltFixturesAccountedTest = assert(and {
     accounted(cWorkFail), accounted(cEvalFail),

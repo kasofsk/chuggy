@@ -887,7 +887,7 @@ module chuggy_domain {
 
   /// Operator Retry on a parked ticket: resume at the point the wall stamped,
   /// metered by resumeCharge (configurable, default charge). This is THE
-  /// operator resume — one decider, four flavors,
+  /// operator resume — one decider, a flavor per resume point,
   /// one trace label ("operator-retry"; the flavor is visible in the
   /// transition's target):
   ///   RPending (the pre-work resume flavor per the
@@ -1335,11 +1335,11 @@ module chuggy_domain {
   /// over lastStep, the stepDescends pattern. Reading it as an iff:
   ///
   ///   - A step carrying a landing attempt (WOAttempt) is EXACTLY a step
-  ///     that resolves one: single ticket, one of the four
-  ///     landing-resolution labels (ticket-done, the gate rework, the two
-  ///     landing walls), the attribution naming the stepped ticket's OWN
-  ///     project (project is immutable, so reading it from the post-state is
-  ///     reading the authored field) from inside the project universe.
+  ///     that resolves one: single ticket, one of the landing-resolution
+  ///     labels (ticket-done, the gate rework, the two landing walls),
+  ///     the attribution naming the stepped ticket's OWN project (project
+  ///     is immutable, so reading it from the post-state is reading the
+  ///     authored field) from inside the project universe.
   ///   - THE ISOLATION CLAIM: a gate-FAILURE step (any attempt that is
   ///     not the ticket-done success) carries invalidated = true — a
   ///     landing can fail ONLY via its own project's branch moving. There is

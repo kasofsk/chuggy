@@ -1,13 +1,12 @@
 /// DETERMINISTIC REACHABILITY WITNESSES — the
 /// LOAD-BEARING layer of the model gate's two-layer witness policy.
 ///
-/// WHY THIS FILE EXISTS: Stage 9b's four expected-violation probes
+/// WHY THIS FILE EXISTS: Stage 9b's expected-violation probes
 /// (freeClimbNever / cascadeParkNever / stageAdvanceNever)
-/// were pinned-seed random runs, and every PR that changes the machine's
-/// nondet structure kills the seeds was the FOURTH
-/// consecutive re-pin of the freeClimbNever seed, each dragging a paired
+/// were pinned-seed random runs, and any change to the machine's
+/// nondet structure kills the seeds — each re-pin dragging a paired
 /// allInvariants run that had to move in lock-step. Seeds prove trace-SPACE
-/// facts; the four shapes are trace facts, and a trace fact deserves a
+/// facts; the shapes are trace facts, and a trace fact deserves a
 /// deterministic trace. Each module below builds the witnessed shape as an
 /// explicit machine trace that no nondet drift can touch: the run proves
 /// the shape REACHABLE, asserts the witness verdict AT the witnessing step
@@ -59,9 +58,8 @@
 /// module, so instances cannot share a module); each module's consts are
 /// byte-identical to the mc/mc_chuggy.qnt instance the random layer samples,
 /// so the deterministic trace speaks about the same machine. The model
-/// gate runs all EIGHT via `quint test --main=<module>`; `just chuggy`
-/// mirrors. (The count was stale at seven between the grouping removal,
-/// which deleted the batch module, and the accepted-wait module below.)
+/// gate runs every module via `quint test --main=<module>`; `just chuggy`
+/// mirrors.
 ///
 /// New nondet extends THIS layer first, per its own
 /// convention: the machine's two NEW nondet draws — the authored project pick
@@ -70,12 +68,12 @@
 /// (chuggy_witness_multiproject_test: the choice pinned MOVED with the gate
 /// rework and the landing wall attributed; pinned QUIET with the landing
 /// succeeding; and the project pick exercised off-default with a cross-project
-/// dep chain unblocking). The existing four modules updated mechanically:
-/// arrivals author project 1, and every landing driver names its invalidated
+/// dep chain unblocking). Every other module authors project 1 at arrival,
+/// and every landing driver names its invalidated
 /// choice with the outcome guarded by the machine's own wrapUpOutcomes draw
 /// rule (a quiet failure is not drawable — the drivers reference the same
 /// definition the landing actions draw from, per the guard discipline
-/// above). The fifth module has NO paired random probe: its shapes are
+/// above). The multi-project module has NO paired random probe: its shapes are
 /// exercised by every unseeded allInvariants run (landing attempts are
 /// dense — unlike the carry), so the deterministic runs alone carry the
 /// gate.
@@ -88,7 +86,7 @@
 /// holdingTickets and wrapUpOutcomes(true) for the gated resolve. The route
 /// has ONE definition, and decideDequeue's header carries why a copied one
 /// drifts. Nothing copied.
-/// Three NEW modules carry the PR's witness half:
+/// Two modules carry its witness half:
 ///   - chuggy_witness_gate_test (budgeted consts): DEPTH-1 EXCLUSIVITY as
 ///     a guard-refusal pinned mid-trace (the second same-project ticket's
 ///     dequeue REFUSED while the slot is held, enabled again the step the
@@ -101,10 +99,8 @@
 ///     eviction priced on the OTHER WrapUpPricing branch — two gate
 ///     failures metered by gas alone (wrapUpLeft identically 0) into the
 ///     gas wall — the documented gate-loop shape reproduced on this
-///     machine, with the deadline backstop doing exactly its job (R5);
-/// (A ninth module, chuggy_witness_batch_test, witnessed the group half;
-/// the grouping removal deleted the machinery and this module with it.)
-/// Like the multi-project module, none has a paired random probe: landing
+///     machine, with the deadline backstop doing exactly its job (R5).
+/// Like the multi-project module, neither has a paired random probe: landing
 /// attempts are dense in random exploration; the unseeded Stage 9 runs are
 /// the random side.
 
@@ -1247,7 +1243,7 @@ module chuggy_witness_draft_wait_test {
 /// Done ticket kept its eval tasks — completeTicket does not retire a set,
 /// because on the lease path the set is already retired when the ticket
 /// enqueues, and skipping the wrap-up phases skipped that too. The random
-/// layer found it at roughly one run in fourteen; the empty-task-set
+/// layer found it only intermittently; the empty-task-set
 /// conjunct below is what makes it a one-line failure instead.
 module chuggy_witness_wrapup_none_test {
   import chuggy_measure.* from "../measure"

@@ -110,21 +110,27 @@ check "a small count of a countable noun is silent" 0 "$RC" "0 finding(s)"
 
 # --- Scope -------------------------------------------------------------------
 
-# 12. `model/` is out of the default corpus and reachable by naming it. The
-#     deferral has to be visible, or it is indistinguishable from a clean tree.
+# 12. THE MODEL IS IN THE DEFAULT CORPUS, and a Quint `///` is a comment
+#     marker like any other — so its doc headers are read on the same terms
+#     as a gate's, and its executable lines are not read at all.
 fresh_repo "$R"
 mkdir -p "$R/model"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$R/gate.sh"
 printf '%s\n' '/// the eight witness modules' > "$R/model/domain.qnt"
 git -C "$R" add -A
 run_in "$R"
-check "model is out of the default corpus" 0 "$RC" "0 finding(s)"
-run_in "$R" model/domain.qnt
-check "naming a model file scans it" 1 "$RC" "eight — a spelled quantity"
+check "a model doc comment is in the default corpus" 1 "$RC" "eight — a spelled quantity"
+fresh_repo "$R"
+mkdir -p "$R/model"
+printf '%s\n' 'val note = "eight witness modules"' > "$R/model/domain.qnt"
+git -C "$R" add -A
+run_in "$R"
+check "a model line that is not a comment is not read" 0 "$RC" "0 finding(s)"
 
 # 13. A design doc may carry a measurement, dated and reproducible, so the
 #     directory is left alone. It does not exist yet; this is what will be
-#     waiting when it does.
+#     waiting when it does. Naming one scans it: the only surface the corpus
+#     leaves out is still reachable without an option to remember.
 fresh_repo "$R"
 mkdir -p "$R/docs/design"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$R/gate.sh"
@@ -132,6 +138,8 @@ printf '%s\n' 'Measured at fifty seconds, 2026-08-08.' > "$R/docs/design/001-x.m
 git -C "$R" add -A
 run_in "$R"
 check "a design doc is out of the default corpus" 0 "$RC" "0 finding(s)"
+run_in "$R" docs/design/001-x.md
+check "naming a file scans it wherever it lives" 1 "$RC" "fifty — a spelled quantity"
 
 # 14. A path with a space in it is scanned like any other. The corpus is split
 #     on newlines for exactly this reason.
