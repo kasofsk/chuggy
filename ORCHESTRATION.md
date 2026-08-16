@@ -38,8 +38,8 @@ The model is the spec, and its module headers are the design record. Read:
 
 1. `model/measure.qnt` — the header end to end: the digit-order argument, the descent table, and the named non-descending sets (STUTTER / CHURN / AUTHORING) are the semantics, not commentary. The measure was written before the machine and changes before it.
 2. `model/domain.qnt` — the deciders, the enablement predicates, the invariants, and the header's list of what the machine deliberately does not know.
-3. `model/refinement.qnt` — the journaled-actor shape, the seam model, the four theorems, and the composition argument with an at-least-once fabric.
-4. `model/tests/` — what is already pinned deterministically, including the eight witness modules and the hazard demonstrations.
+3. `model/refinement.qnt` — the journaled-actor shape, the seam model, the theorems, and the composition argument with an at-least-once fabric.
+4. `model/tests/` — what is already pinned deterministically, including the witness modules and the hazard demonstrations.
 5. `.chug/tasks/ci.sh` and `check-model.sh` — the gate conventions this repo already runs on.
 
 This prompt restates as little of the model as possible. When this file and the model appear to disagree, the model wins.
@@ -79,10 +79,10 @@ Held by every builder and enforced by reviewers. Each item is either what the mo
 
 ## The conformance spine — what "tested" means here
 
-Five layers. The plan sequences them; none is optional.
+The layers below. The plan sequences them; none is optional.
 
 1. **Golden trace replay.** The model emits traces; the implementation replays each step through its own deciders and must reproduce the `StepRecord` and post-`Core` exactly, evaluating all 23 invariants after every step. What exists today: the model's `StepRecord` observation and the refinement layer's journal, whose `Cmd` entries are precisely a replayable decision log. What must be built: the emitter script, the committed fixture files, and the TypeScript replayer. Candidate mechanisms, for the plan to decide: ITF traces via `quint run --out-itf` with `--seed` pinned (verify what trace metadata quint 0.32.0 actually emits before designing around it); or a severable trace-driver module in `model/` on `refinement.qnt`'s pattern — a journal-accumulating instance at `mc/`-scale consts — landed as a model PR under the discipline below, `measure.qnt` untouched. Goldens are committed fixtures with one regeneration script and the seed recorded; the gate replays, it never regenerates. Coverage must include every decider, every step label, and every exemption arm in `stepDescends`'s roster (arrival, both duplicates, `settled`, the pre-work resume, the RetryFree churn, the desk-only revoke) — the model holds itself to no-arm-without-a-witness, and the TypeScript side inherits that obligation.
-2. **Invariants as executable predicates.** All 23 domain invariants plus the refinement layer's seven (`journalLegal`, `recoveryComplete`, `executorSound`, `journalCoversWorld`, `noDoubleSpentBudget`, `noDuplicateCycle`, `journalLandingsMatchLedger`), as pure TS functions usable by any test layer and by runtime assertions.
+2. **Invariants as executable predicates.** All 23 domain invariants plus the refinement layer's own (`journalLegal`, `recoveryComplete`, `executorSound`, `journalCoversWorld`, `noDoubleSpentBudget`, `noDuplicateCycle`, `journalLandingsMatchLedger`), as pure TS functions usable by any test layer and by runtime assertions.
 3. **A seeded randomized layer** mirroring the model's: random legal action walks at the `mc/` instances' consts (all three instances — `budgeted`, `deadline_only`, `retryfree`), asserting the full invariant bundle after every step. The model's own header notes record that twice an all-green deterministic suite hid a defect only randomized exploration found; the implementation gets the same safety net.
 4. **Make it red.** A green suite is evidence only once it has been made red. Every new invariant is shown failing against a tree carrying the defect it names; every decider lands with at least one mutation check — delete or invert a deciding line, confirm a named test fails. Red-proof evidence goes in the PR description and reviewers verify it ran.
 5. **The crash-seam suite.** Deterministic tests that crash the actor at every observable seam and prove recovery-by-replay, re-emission absorbed by journal seq — and the hazard demonstration: the effect-before-journal ordering visibly double-spending, as `model/tests/chuggy_refinement_test.qnt` does. The domain layer is blind to that hazard by design, so only this suite holds it.
@@ -149,9 +149,9 @@ The one place the inversion needs a procedure.
 ## Convergence
 
 1. Every slice row landed, all gates green, the full golden corpus replaying green.
-2. Whole-tree adversarial sweeps: fresh reviewers, all four lenses, plus a **completeness critic** asking what is missing — a model definition with no TS twin, an invariant with no red-proof, a decider with no golden step, a port with no documented promise.
+2. Whole-tree adversarial sweeps: fresh reviewers, all the lenses, plus a **completeness critic** asking what is missing — a model definition with no TS twin, an invariant with no red-proof, a decider with no golden step, a port with no documented promise.
 3. Sweep findings become work and are landed under the same protocol.
-4. **Converged: two consecutive whole-tree sweeps with zero blocking findings.** Cap of five sweeps; if the fifth still finds blocking work, stop and report to the human with the open ledger rather than looping.
+4. **Converged: two consecutive whole-tree sweeps with zero blocking findings.** Cap of 5 sweeps; if the fifth still finds blocking work, stop and report to the human with the open ledger rather than looping.
 
 ## Builder briefing (template — Orchestrator fills the braces)
 

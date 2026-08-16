@@ -23,7 +23,7 @@
 /// chosen, each next to its derivation, so no numeral appears twice and a
 /// change to the phase ladder propagates instead of drifting.
 ///
-/// WHAT IT DELIBERATELY DOES NOT READ. The repo, the wrap-up kind's resource
+/// WHAT IT DELIBERATELY DOES NOT READ. The project, the wrap-up kind's resource
 /// and the artifact are vocabulary, not digits — two tickets differing only
 /// in those have equal measure, pinned by test. The retained task record is
 /// append-only provenance, so reading it could only ever climb. And there is
@@ -32,7 +32,7 @@
 ///
 /// THE DIGIT-ORDER ARGUMENT (why stagesLeft sits BELOW phase rank and
 /// ABOVE — not beside — the running-task count):
-///   - BELOW rank: entering Evaluating (work-passed, rank 3->2) makes the
+///   - BELOW rank: entering Evaluating (work-passed, rank 4->3) makes the
 ///     stage digit APPEAR at its maximum (stagesLeft 0 -> L <= maxStages)
 ///     while the stage-0 fan-out spawns (running 0 -> <= nTasks). The one
 ///     rank step must dominate both at once, which forces
@@ -133,13 +133,15 @@
 ///                                         -stageWeight + r <= -1 a
 ///                                         fortiori)
 ///   ticket-escalated work_failed           rank 4->0 (cycle-level resolution:
-///                                       the fabric already retried below
-///                                       the cycle via trusted backoffLimit)
+///                                       the fabric already retried the
+///                                       container below the cycle grain,
+///                                       which this model trusts rather
+///                                       than models)
 ///   eval-passed (the FINAL stage        rank 3->2 AND stagesLeft 1->0 (the
 ///     passes)                             ticket ENQUEUES for the gate —
 ///                                         PWrapUp is the queued state)
 ///   wrapup-started (the dequeue:      rank 2->1 (the ticket
-///     dequeue occupies the repo's         takes the repo's depth-1 slot;
+///     dequeue occupies the project's      takes the project's depth-1 slot;
 ///     depth-1 gate — drawn only when      no account moves — the gate
 ///     the branch MOVED; a quiet dequeue   charges nothing until it fails)
 ///     lands directly in the same step,
@@ -150,7 +152,10 @@
 ///                                         dominated by the account drop)
 ///   ticket-escalated rework_budget_exhausted rank 3->0 (and stage digit ->0)
 ///   ticket-escalated gas_exhausted         rank {3,2,1}->0
-///   ticket-done                            rank {2,1}->0 (2: the quiet
+///   ticket-done                            rank {3,2,1}->0 (3: a WNone
+///                                       ticket, whose passing evaluation IS
+///                                       its completion — it enters neither
+///                                       wrap-up phase; 2: the quiet
 ///                                       completing straight off the queue;
 ///                                       1: completing out of the lease)
 ///   rework-started wrapup_failure         gas -1 (AND wrapUpLeft -1 when
@@ -438,8 +443,8 @@ module chuggy_measure {
   /// (the cascade wall, chuggy-NEW — NOT retryable, its only exit is
   /// revoke). RsGasExhausted is the rename of the deadline wall
   /// (`gas_exhausted` on the trace); RsWorkFailed is the CYCLE-level work
-  /// wall (there is no retries wall: below-cycle retries are the fabric's
-  /// trusted backoffLimit, §2).
+  /// wall (there is no retries wall: retrying a failed container below the
+  /// cycle grain is the fabric's job, trusted here rather than modeled).
   type Reason =
     RsNone | RsWorkFailed | RsReworkBudgetExhausted |
     RsWrapUpBudgetExhausted | RsGasExhausted | RsRevalidationFailed |
@@ -458,23 +463,35 @@ module chuggy_measure {
   /// THE LANDING-BOUNDARY OBSERVATION (the isolation gate
   /// gate's attribution half): every step that RESOLVES a landing attempt
   /// carries WOAttempt with
-  ///   - `repo`: the ticket's target repo — golden traces must be
-  ///     per-repo attributable, and the repo cannot ride the effect
+  ///   - `project`: the ticket's target project — golden traces must be
+  ///     per-project attributable, and the project cannot ride the effect
   ///     strings (no dynamic strings at this grain), so the step record
   ///     carries it structurally;
   ///   - `invalidated`: the environment's PER-ATTEMPT choice of whether
-  ///     the target repo's default branch moved under the candidate — the
-  ///     ONLY reason a landing can fail. This is the
-  ///     envActive standing rule honored: an explicitly NAMED nondet
-  ///     event on the
-  ///     trace, never a stored env flag — there is no per-repo "active"
-  ///     variable anywhere, and quiet/moved is chosen fresh at every
-  ///     attempt (derive-don't-store applied to the environment).
+  ///     the target project's default branch moved under the candidate — the
+  ///     ONLY reason a landing can fail, and the record's one carrier of
+  ///     the discipline stated below.
   /// Every other step — including eval-passed (which merely ENQUEUES the
   /// landing) and complete-duplicate (an absorbed re-delivery: no attempt
   /// resolves, nothing is emitted) — carries WONone. The iff is the
   /// wrapUpIsolation invariant (domain.qnt).
-  type WrapUpObs = WONone | WOAttempt({ repo: int, invalidated: bool })
+  ///
+  /// THE NAMED-NONDET DISCIPLINE, stated here because `invalidated` above
+  /// is where an environment choice reaches the observable record, and
+  /// cited by that name from the sites it governs: an environment choice
+  /// is an explicitly NAMED nondet event, drawn fresh at every attempt
+  /// and carried on the step record — never a flag stored on state.
+  /// There is no per-project "active" variable anywhere. What enforces it is
+  /// the record types: neither Ticket nor Core has a field for one, so
+  /// storing a choice would mean ADDING a field rather than setting one,
+  /// and a choice reaches a decider as a PARAMETER or not at all.
+  ///
+  /// It is NOT one of the numbered standing rules — those are a
+  /// closed list — and it is not rule 3 under another name: rule 3
+  /// refuses a stored duplicate of a DERIVABLE fact, and an environment
+  /// choice is derivable from nothing. They share only the conclusion,
+  /// that the flag does not exist.
+  type WrapUpObs = WONone | WOAttempt({ project: int, invalidated: bool })
 
   /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
   /// like the eval program — eval-is-data applied one seam later.
@@ -509,17 +526,17 @@ module chuggy_measure {
   /// writes PDone, so a dependency's artifact is final before any dependent
   /// can dispatch.
   ///
-  /// NOT a measure input, like `repo` (measureArtifactBlindTest).
+  /// NOT a measure input, like `project` (measureArtifactBlindTest).
   type ArtifactMark = ANone | ASome(int)
 
   /// One ticket's record. The measure below is a pure function of this.
   type Ticket = {
     phase: Phase,
     // Upstream dependency ticket ids (acyclic by construction in domain.qnt).
-    // Deps may CROSS repos — the dep gate is Done-ness, not
+    // Deps may CROSS projects — the dep gate is Done-ness, not
     // location (domain.qnt depsDoneIn reads phase alone; the lean reading
     // of "one orchestrator, many targets": the DAG stays
-    // orchestrator-level, and forbidding cross-repo edges would be new
+    // orchestrator-level, and forbidding cross-project edges would be new
     // machinery nothing has asked for).
     deps: Set[int],
     // How this ticket finishes (design 002): authored, immutable after
@@ -529,14 +546,14 @@ module chuggy_measure {
     // The artifact this ticket has produced, if it has passed work (design
     // 002). Set at work-passed and superseded by each rework's product.
     artifact: ArtifactMark,
-    // THE TARGET REPO — one orchestrator, many targets: a ticket targets
-    // EXACTLY ONE repo, an AUTHORED field like deps and the program —
-    // chosen at arrival from the bounded universe 1..N_REPOS (domain.qnt
-    // repos; reposWellFormed) and immutable after. NOT a measure input:
-    // no digit, weight, or account radix reads it (the repo-blindness
-    // theorem — derivation in this file's multi-repo header note), and no
-    // budget is per-repo, deliberately.
-    repo: int,
+    // THE TARGET PROJECT — one orchestrator, many targets: a ticket targets
+    // EXACTLY ONE project, an AUTHORED field like deps and the program —
+    // chosen at arrival from the bounded universe 1..N_PROJECTS (domain.qnt
+    // projects; projectsWellFormed) and immutable after. NOT a measure input:
+    // no digit, weight, or account radix reads it (the project-blindness
+    // theorem — derivation in this file's multi-project header note), and no
+    // budget is per-project, deliberately.
+    project: int,
     // THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
     // arrives with the Draft and is immutable after arrival, like
     // deps. This is "eval is data, not machinery" made
@@ -639,8 +656,8 @@ module chuggy_measure {
   /// schema {event, transitions, effects} — extended
   /// with the landing-boundary attribution field (`landing`, WONone on
   /// every non-landing step; see WrapUpObs): the minimal StepRecord
-  /// extension that keeps golden traces per-repo attributable at the one
-  /// boundary where the repo matters.
+  /// extension that keeps golden traces per-project attributable at the one
+  /// boundary where the project matters.
   type StepRecord = {
     label: str,
     transitions: List[Transition],
@@ -696,7 +713,7 @@ module chuggy_measure {
   /// step.
   pure val rankHolding: int = rankSettled + 1
   /// PWrapUp — ENQUEUED for the gate: the
-  /// dequeue (gate-opened) descends into the gate, the quiet fast-path
+  /// dequeue (wrapup-started) descends into the gate, the quiet fast-path
   /// descends straight to Done.
   pure val rankWrapUp: int = rankHolding + 1
   pure val rankEvaluating: int = rankWrapUp + 1

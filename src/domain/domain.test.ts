@@ -9,7 +9,7 @@
  * `cGateOcc` and the revoke fixtures as Core literals, and so does this file).
  * Three of the 57 are `measure.ts`'s and are mirrored in its suite
  * (`combinatorBranchesTest`, `measureArtifactBlindTest`,
- * `measureRepoBlindTest`); the other 54 are here — the 57th being
+ * `measureProjectBlindTest`); the other 54 are here — the 57th being
  * `handBuiltFixturesAccountedTest`, which the model gained with the fixture
  * accounting (#27) and which this suite mirrors over its own fixtures.
  *
@@ -76,7 +76,9 @@
  * mirrored as the model states them — descends, climbs, or exactly flat —
  * through `measure.ts`, which pins its own integers.
  *
- * WHAT IS DELIBERATELY ABSENT: the 23 domain invariants (s2c), and the model's
+ * WHAT IS DELIBERATELY ABSENT: the conjuncts of `allInvariants` (s2c), named
+ * rather than counted because `wrapUpWellFormed` joined the bundle after this
+ * line was first written and the count went stale where it stood — and the model's
  * state-and-actions section — `init`, the thirteen actions and the ghosts are
  * the machine's, and the spine (s3) is where they land.
  */
@@ -140,7 +142,7 @@ import {
   doneIn,
   draftsIn,
   escalate,
-  firstRepoId,
+  firstProjectId,
   freshTicket,
   holdingIn,
   isBlockedIn,
@@ -153,7 +155,7 @@ import {
   reducibleEvalIn,
   reducibleWorkIn,
   readiesIn,
-  repos,
+  projects,
   resumeCharge,
   retryableIn,
   retryablesIn,
@@ -197,8 +199,8 @@ const cfgDF: Config = {
   opRetryPricing: "RetryFree",
 };
 
-/** `chuggy_test`'s DO — the single-repo degeneration. */
-const cfgDO: Config = { ...cfgBudgeted, nTickets: 1, nRepos: 1 };
+/** `chuggy_test`'s DO — the single-project degeneration. */
+const cfgDO: Config = { ...cfgBudgeted, nTickets: 1, nProjects: 1 };
 
 /** `chuggy_test`'s DZ — the GASLESS graph, which has no initial state at all. */
 const cfgDZ: Config = { ...cfgBudgeted, nTickets: 1, gas: 0 };
@@ -434,7 +436,7 @@ test("dequeueRoutesBothBranchesTest: the routing decider IS the quiet/moved rout
   assert.deepEqual(quiet.rec.effects, ["Complete"]);
   assert.deepEqual(quiet.rec.landing, {
     tag: "WOAttempt",
-    repo: 1,
+    project: 1,
     invalidated: false,
   });
   assert.equal(ticketAt(quiet.post, 1).completions, 1);
@@ -944,7 +946,7 @@ test("anyPassNotAlwaysPassTest: an all-failed set still walls under CAnyPass", (
 // R5: failures fire from the HELD lease, so these fixtures sit in the occupied
 // slot; every account delta is byte-identical to the pre-gate pricing.
 
-/** An occupant of its repo's gate slot, at chosen accounts. */
+/** An occupant of its project's gate slot, at chosen accounts. */
 function holding(cfg: Config, wrapUpLeft: number, gasLeft: number): Core {
   return solo({
     ...draft(cfg),
@@ -1217,7 +1219,7 @@ test("DeadlineOnly resolves a landing SUCCESS exactly as Budgeted does", () => {
   ]);
   assert.deepEqual(d.rec.landing, {
     tag: "WOAttempt",
-    repo: 1,
+    project: 1,
     invalidated: true,
   });
   assert.equal(ticketAt(d.post, 1).completions, 1);
@@ -1244,7 +1246,7 @@ test("gasRequiredTest: a gasless graph is INVALID — the machine admits no init
     { ...cfgBudgeted, nTasks: 0 },
     { ...cfgBudgeted, nTickets: 0 },
     { ...cfgBudgeted, maxStages: 0 },
-    { ...cfgBudgeted, nRepos: 0 },
+    { ...cfgBudgeted, nProjects: 0 },
   ]) {
     assert.equal(
       configAdmitsInit(broken),
@@ -1298,11 +1300,11 @@ test("configAdmitsInit refuses a negative grant louder than `false`", () => {
 });
 
 test("the authoring universes are the model's, and `bounds` is DB's", () => {
-  // repos and the two draw universes, read out of chuggy_domain at DB's
-  // consts. The model pins `repos` twice in runs (wrapUpOutcomesDrawRuleTest,
-  // oneRepoDegenerationTest); the other two are the arrival's draw sets.
-  assert.deepEqual(repos(cfgBudgeted), new Set([1, 2]));
-  assert.deepEqual(repos(cfgDO), new Set([1]));
+  // projects and the two draw universes, read out of chuggy_domain at DB's
+  // consts. The model pins `projects` twice in runs (wrapUpOutcomesDrawRuleTest,
+  // oneProjectDegenerationTest); the other two are the arrival's draw sets.
+  assert.deepEqual(projects(cfgBudgeted), new Set([1, 2]));
+  assert.deepEqual(projects(cfgDO), new Set([1]));
   assert.deepEqual(wrapUpChoices(cfgBudgeted), [{ tag: "WNone" }, wx1, wx2]);
   assert.deepEqual(wrapUpChoices(cfgDO), [{ tag: "WNone" }, wx1]);
   assert.deepEqual(stageChoices(cfgBudgeted), [
@@ -1375,8 +1377,8 @@ test("arrivalTest: the freshTicket seam — dense ids, full accounts, authored p
   assert.ok(mB(cA2) > mB(cA1));
 });
 
-test("arrivalCarriesRepoTest: the authored target repo rides the arrival", () => {
-  assert.equal(ticketAt(cA1, 1).repo, 1);
+test("arrivalCarriesProjectTest: the authored target project rides the arrival", () => {
+  assert.equal(ticketAt(cA1, 1).project, 1);
   const elsewhere = decideArrive(
     cfgBudgeted,
     cEmpty,
@@ -1385,10 +1387,10 @@ test("arrivalCarriesRepoTest: the authored target repo rides the arrival", () =>
     2,
     wx2,
   );
-  assert.equal(ticketAt(elsewhere.post, 1).repo, 2);
+  assert.equal(ticketAt(elsewhere.post, 1).project, 2);
   assert.equal(elsewhere.rec.label, "ticket-arrived");
   // Out of the universe is refused at authoring time, like an ill-formed
-  // program (`reposWellFormed` makes the refusal durable).
+  // program (`projectsWellFormed` makes the refusal durable).
   assert.throws(
     () =>
       decideArrive(
@@ -1451,7 +1453,7 @@ test("unreleasedDepBlocksTest: a dependency on an UNRELEASED ticket blocks", () 
 });
 
 // === Revoke, from every live phase ==========================================
-// The model's eight single-ticket fixtures — one per live phase and all THREE
+// The model's single-ticket fixtures — one per live phase and all THREE
 // desk-reason flavors of the one parked phase — plus its hand-built landed
 // ticket, all from `fixtures.test.ts`, which both suites read.
 
@@ -1699,18 +1701,18 @@ test("dependableIn: an arrival may not depend on a tombstone", () => {
 
 // === THE WRAP-UP: the depth-1 gate ==========================================
 
-/** Repo 1's slot held, one more repo-1 ticket enqueued behind it, and one on repo 2. */
+/** Project 1's slot held, one more project-1 ticket enqueued behind it, and one on project 2. */
 const cGateOcc: Core = core([
   [1, { ...draft(cfgBudgeted), phase: "PWrapUpHolding" }],
   [2, { ...draft(cfgBudgeted), phase: "PWrapUp" }],
   [3, { ...draft(cfgBudgeted, progU2, 2, 2), phase: "PWrapUp" }],
 ]);
 
-test("leaseExclusiveGuardTest: an occupied gate refuses every SAME-repo dequeue", () => {
+test("leaseExclusiveGuardTest: an occupied gate refuses every SAME-project dequeue", () => {
   assert.ok(!leaseFreeIn(cGateOcc, 1));
   assert.ok(leaseFreeIn(cGateOcc, 2));
-  assert.ok(!wrapUpStartableIn(cGateOcc, 2)); // same repo: REFUSED — depth 1
-  assert.ok(wrapUpStartableIn(cGateOcc, 3)); // other repo: independent
+  assert.ok(!wrapUpStartableIn(cGateOcc, 2)); // same project: REFUSED — depth 1
+  assert.ok(wrapUpStartableIn(cGateOcc, 3)); // other project: independent
   assert.ok(!wrapUpStartableIn(cGateOcc, 1)); // the occupant is not enqueued
   assert.deepEqual(wrapUpStartablesIn(cGateOcc), new Set([3]));
   // Once the slot frees — here the occupant lands, gated — the refusal lifts
@@ -1727,14 +1729,17 @@ test("leaseExclusiveGuardTest: an occupied gate refuses every SAME-repo dequeue"
 });
 
 /**
- * THE LEASE IS ON THE RESOURCE, NOT ON THE REPO, and this is the fleet that can
- * tell them apart: the holder is repo 1 / resource 2, the queue head is repo 2 /
- * resource 1, so `leaseOf` and `repo` disagree on BOTH ends. Every other gate
- * fixture in this suite and in the model's authors `WExclusive(repo)`, where a
- * guard reading the ticket's repo agrees with one reading its resource on every
- * state — the model's own `leaseExclusive` comment names that narrowing ("the
- * resource is whatever the wrap-up kind names, never a repo by definition"),
- * and reading the general form off the per-repo instance is how it gets lost.
+ * THE LEASE IS ON THE RESOURCE, NOT ON THE TICKET'S PROJECT, and this is the
+ * fleet that can tell them apart: the holder is project 1 / resource 2, the
+ * queue head is project 2 / resource 1, so `leaseOf` and `project` disagree on
+ * BOTH ends. Every other gate fixture in this suite and in the model's authors
+ * `WExclusive(project)`, where a guard reading the ticket's project agrees with
+ * one reading its resource on every state — the model's own `leaseExclusive`
+ * comment names that narrowing, and says it in the word this rename KEPT ("the
+ * resource is whatever the wrap-up kind names, never a repo by definition: a
+ * per-repo merge queue is one instance of this lease"), because renaming the
+ * resource would assert the identification the sentence exists to deny. Reading
+ * the general form off that one instance is how it gets lost.
  */
 const cCrossKind: Core = core([
   [1, { ...draft(cfgBudgeted, progU2, 1, 2), phase: "PWrapUpHolding" }],
@@ -1742,10 +1747,10 @@ const cCrossKind: Core = core([
   [3, { ...draft(cfgBudgeted, progU2, 1, 2), phase: "PWrapUp" }],
 ]);
 
-test("the dequeue guard asks about the RESOURCE its kind names, not the repo", () => {
+test("the dequeue guard asks about the RESOURCE its kind names, not the project", () => {
   // Read from the model: the queue head whose resource is free is startable and
   // the one whose resource is held is not — which is the exact reverse of what
-  // a repo-reading guard answers on this fleet.
+  // a project-reading guard answers on this fleet.
   assert.deepEqual(wrapUpStartablesIn(cCrossKind), new Set([2]));
   assert.ok(wrapUpStartableIn(cCrossKind, 2));
   assert.ok(!wrapUpStartableIn(cCrossKind, 3));
@@ -1753,10 +1758,10 @@ test("the dequeue guard asks about the RESOURCE its kind names, not the repo", (
     new Set([0, 1, 2, 3].filter((r) => !leaseFreeIn(cCrossKind, r))),
     new Set([2]),
   );
-  // The repos and the resources really do disagree, so the sets above cannot
+  // The projects and the resources really do disagree, so the sets above cannot
   // agree by accident.
   assert.deepEqual(
-    [...cCrossKind.tickets.values()].map((jb) => [jb.repo, leaseOf(jb)]),
+    [...cCrossKind.tickets.values()].map((jb) => [jb.project, leaseOf(jb)]),
     [
       [1, 2],
       [2, 1],
@@ -1779,7 +1784,7 @@ test("the dequeue guard asks about the RESOURCE its kind names, not the repo", (
   );
 });
 
-// === REPO ISOLATION at the landing boundary =================================
+// === PROJECT ISOLATION at the landing boundary ==============================
 
 /** A quiet-dequeue fixture: PWrapUp — the queue the fast-path resolves off. */
 const cQueueB: Core = solo({
@@ -1789,9 +1794,9 @@ const cQueueB: Core = solo({
   gasLeft: 2,
 });
 
-/** The same single-ticket fixture, re-targeted at repo 2 — the only difference. */
-function onRepo2(c: Core): Core {
-  return solo({ ...ticketAt(c, 1), repo: 2 });
+/** The same single-ticket fixture, re-targeted at project 2 — the only difference. */
+function onProject2(c: Core): Core {
+  return solo({ ...ticketAt(c, 1), project: 2 });
 }
 
 test("wrapUpOutcomesDrawRuleTest: the SET is the refusal", () => {
@@ -1801,7 +1806,7 @@ test("wrapUpOutcomesDrawRuleTest: the SET is the refusal", () => {
   assert.ok(!wrapUpOutcomes(false).has("WFailed"));
   // And an invalidated one is not FORCED to fail — re-validation may pass.
   assert.ok(wrapUpOutcomes(true).has("WOk"));
-  assert.deepEqual(repos(cfgBudgeted), new Set([1, 2]));
+  assert.deepEqual(projects(cfgBudgeted), new Set([1, 2]));
   // The refusal is durable at the decider, not merely stated by the set: the
   // one combination the draw rule forbids cannot be resolved.
   assert.throws(
@@ -1810,18 +1815,18 @@ test("wrapUpOutcomesDrawRuleTest: the SET is the refusal", () => {
   );
 });
 
-test("landingAttributionStampsOwnRepoTest: EVERY arm stamps the attempt's own repo", () => {
-  // Repo 2 throughout, so a constant-stamping mutant would say 1. The combos
+test("landingAttributionStampsOwnProjectTest: EVERY arm stamps the attempt's own project", () => {
+  // Project 2 throughout, so a constant-stamping mutant would say 1. The combos
   // are the PATH-legal ones only: quiet+WOk off the queue, moved+WOk/WFailed
   // out of the lease.
-  const attempt = (repo: number, invalidated: boolean) => ({
+  const attempt = (project: number, invalidated: boolean) => ({
     tag: "WOAttempt" as const,
-    repo,
+    project,
     invalidated,
   });
   const quietOk = decideWrapUpResolve(
     cfgBudgeted,
-    onRepo2(cQueueB),
+    onProject2(cQueueB),
     1,
     "WOk",
     false,
@@ -1832,17 +1837,17 @@ test("landingAttributionStampsOwnRepoTest: EVERY arm stamps the attempt's own re
   // makes failure POSSIBLE, never certain.
   const movedOk = decideWrapUpResolve(
     cfgBudgeted,
-    onRepo2(cGateB),
+    onProject2(cGateB),
     1,
     "WOk",
     true,
   );
   assert.deepEqual(movedOk.rec.landing, attempt(2, true));
   assert.deepEqual(movedOk.rec.effects, ["Complete"]);
-  // Failure: the wrap-up rework carries the repo AND the cause.
+  // Failure: the wrap-up rework carries the project AND the cause.
   const reworked = decideWrapUpResolve(
     cfgBudgeted,
-    onRepo2(cGateB),
+    onProject2(cGateB),
     1,
     "WFailed",
     true,
@@ -1855,7 +1860,7 @@ test("landingAttributionStampsOwnRepoTest: EVERY arm stamps the attempt's own re
   // the eval side), so a stamp-drop there is visible only here.
   const budgetWall = decideWrapUpResolve(
     cfgBudgeted,
-    onRepo2(cGateWall),
+    onProject2(cGateWall),
     1,
     "WFailed",
     true,
@@ -1867,13 +1872,13 @@ test("landingAttributionStampsOwnRepoTest: EVERY arm stamps the attempt's own re
   assert.deepEqual(budgetWall.rec.landing, attempt(2, true));
   const gasWall = decideWrapUpResolve(
     cfgBudgeted,
-    onRepo2(cGateGasWall),
+    onProject2(cGateGasWall),
     1,
     "WFailed",
     true,
   );
   assert.deepEqual(gasWall.rec.landing, attempt(2, true));
-  // DeadlineOnly's landing gas wall attributes the same way, on repo 1.
+  // DeadlineOnly's landing gas wall attributes the same way, on project 1.
   const deadlineWall = decideWrapUpResolve(
     cfgDeadlineOnly,
     cGateDWall,
@@ -1884,16 +1889,16 @@ test("landingAttributionStampsOwnRepoTest: EVERY arm stamps the attempt's own re
   assert.deepEqual(deadlineWall.rec.landing, attempt(1, true));
 });
 
-test("oneRepoDegenerationTest: the collapsed universe and the intact draw rule", () => {
+test("oneProjectDegenerationTest: the collapsed universe and the intact draw rule", () => {
   // The model states the draw rule per instance (`DO::wrapUpOutcomes`) because
   // Quint gives every instance its own copy; here the rule reads no config at
   // all, so the two conjuncts below are the whole instance's answer and the
-  // degeneration is in `repos` alone.
-  assert.deepEqual(repos(cfgDO), new Set([1]));
+  // degeneration is in `projects` alone.
+  assert.deepEqual(projects(cfgDO), new Set([1]));
   assert.deepEqual(wrapUpOutcomes(false), new Set(["WOk"]));
   assert.deepEqual(wrapUpOutcomes(true), new Set(["WOk", "WFailed"]));
-  // And the collapse reaches the lease: at one repo every authorable exclusive
-  // kind names resource 1, so the gate is the single-repo machine's.
+  // And the collapse reaches the lease: at one project every authorable exclusive
+  // kind names resource 1, so the gate is the single-project machine's.
   const soleKind = wrapUpChoices(cfgDO);
   assert.deepEqual(soleKind, [{ tag: "WNone" }, wx1]);
   assert.deepEqual(
@@ -1913,15 +1918,15 @@ const cXDepDone: Core = core([
   [2, { ...draft(cfgBudgeted, progU2, 2, 2, new Set([1])), phase: "PPending" }],
 ]);
 
-test("crossRepoDepGateLocationBlindTest: the dep gate reads Done-ness, never location", () => {
+test("crossProjectDepGateLocationBlindTest: the dep gate reads Done-ness, never location", () => {
   assert.ok(isBlockedIn(cXDepPre, 2));
   assert.ok(!isReadyIn(cXDepPre, 2));
   assert.ok(isReadyIn(cXDepDone, 2));
   assert.ok(!isBlockedIn(cXDepDone, 2));
-  // The repos are genuinely different, so a location-reading gate would fail
+  // The projects are genuinely different, so a location-reading gate would fail
   // above rather than agreeing by accident.
-  assert.equal(ticketAt(cXDepDone, 1).repo, 1);
-  assert.equal(ticketAt(cXDepDone, 2).repo, 2);
+  assert.equal(ticketAt(cXDepDone, 1).project, 1);
+  assert.equal(ticketAt(cXDepDone, 2).project, 2);
 });
 
 test("a ticket waiting on MIXED dependencies is Blocked: every dep, not some dep", () => {
@@ -2191,7 +2196,7 @@ test("every phase-shaped guard, as an EXACT SET over all nine phases", () => {
     new Set([1, 2, 3, 4, 5, 6, 8]),
   );
   // The eval, gate and desk guards, over the same nine. Every ticket here
-  // authors `WExclusive(1)`, so ticket 6 holds repo 1's slot and the enqueued
+  // authors `WExclusive(1)`, so ticket 6 holds project 1's slot and the enqueued
   // ticket 5 is refused by the depth-1 rule — which is why `wrapUpStartablesIn`
   // is EMPTY rather than {5}, and why the fleet below exists to separate the
   // phase conjunct from the lease conjunct.
@@ -2238,7 +2243,7 @@ test("the lease is a relation over resources AND phases, pinned at both ends", (
     ),
   );
   assert.deepEqual(occupiers, new Set([6]));
-  // And what the two ends buy: with the slot taken by the other repo, the
+  // And what the two ends buy: with the slot taken by the other project, the
   // enqueued ticket is startable again — the dequeue guard's phase conjunct,
   // now visible on its own.
   assert.ok(leaseFreeIn(cGateElsewhere, 1));
@@ -2253,12 +2258,12 @@ test("the lease is a relation over resources AND phases, pinned at both ends", (
   assert.equal(leaseOf({ ...draft(cfgBudgeted), wrapUp: wx1 }), 1);
   assert.equal(leaseOf({ ...draft(cfgBudgeted), wrapUp: wx2 }), 2);
   // THE PROPERTY IS THE FLOOR, NOT MEMBERSHIP AT ONE INSTANCE: a value merely
-  // outside DB's universe (3, say) is a real resource at `nRepos = 3`, which
+  // outside DB's universe (3, say) is a real resource at `nProjects = 3`, which
   // `configAdmitsInit` admits. What holds at every admissible instance is that
   // the kindless answer sits below the universe's first id.
-  assert.ok(noResource < firstRepoId);
-  assert.ok(!repos(cfgBudgeted).has(noResource));
-  assert.ok(!repos({ ...cfgBudgeted, nRepos: 9 }).has(noResource));
+  assert.ok(noResource < firstProjectId);
+  assert.ok(!projects(cfgBudgeted).has(noResource));
+  assert.ok(!projects({ ...cfgBudgeted, nProjects: 9 }).has(noResource));
   // ONE WIDENING IN THIS FAMILY IS EQUIVALENT, and is recorded rather than
   // hunted: admitting `PWrapUpHolding` into `wrapUpStartableIn`'s phase
   // conjunct changes no answer, because a holding ticket holds its own
@@ -2621,7 +2626,7 @@ test("withWrapUpObs stamps the record and passes the post-state through untouche
   assert.equal(stamped.post, inner.post);
   assert.deepEqual(stamped.rec.landing, {
     tag: "WOAttempt",
-    repo: 2,
+    project: 2,
     invalidated: true,
   });
   // And the rest of the record survives the stamp: label, transitions and
@@ -2660,7 +2665,7 @@ test("what the model's types forbid is checked here, where TypeScript's do not",
     "a fractional resource was keyed",
   );
   assert.throws(
-    () => repos({ ...cfgBudgeted, nRepos: 1.5 }),
+    () => projects({ ...cfgBudgeted, nProjects: 1.5 }),
     AssertionError,
     "a fractional universe size named a range",
   );
@@ -2722,7 +2727,7 @@ function accountedTicket(j: Ticket): boolean {
 test("handBuiltFixturesAccountedTest: every named fixture states the ids it hands itself", () => {
   // Hand-built fixtures AND decider-derived ones, because the derived states
   // inherit any deficit below them — which is exactly how the model's own
-  // thirteen went unnoticed. A fourteenth cannot repeat it quietly.
+  // short fixtures went unnoticed. A new one cannot repeat it quietly.
   const fleets: readonly (readonly [string, Core])[] = [
     ["cEmpty", cEmpty],
     ["cA1", cA1],

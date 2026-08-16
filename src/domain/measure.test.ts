@@ -139,7 +139,7 @@ import {
 
 // === The three instances' consts ===========================================
 // `Bounds` reads four of the eight machine consts. The other four — N_TICKETS,
-// GAS, OP_RETRY_PRICING, N_REPOS — are the machine's, not the measure's, and
+// GAS, OP_RETRY_PRICING, N_PROJECTS — are the machine's, not the measure's, and
 // the grants below carry GAS separately because a ticket's accounts are state
 // rather than bounds.
 
@@ -353,7 +353,7 @@ test("the vocabulary is the model's, constructor for constructor", () => {
   const policies: readonly ReworkPolicy[] = [{ tag: "RWBudget", budget: 1 }];
   const landings: readonly WrapUpObs[] = [
     { tag: "WONone" },
-    { tag: "WOAttempt", repo: 2, invalidated: true },
+    { tag: "WOAttempt", project: 2, invalidated: true },
   ];
   const wrapUps: readonly WrapUp[] = [
     { tag: "WNone" },
@@ -661,8 +661,8 @@ test("measureArtifactBlindTest: the artifact mark is vocabulary, not a digit", (
   );
 });
 
-test("measureRepoBlindTest: no digit, weight or account radix reads the repo", () => {
-  const elsewhere = (j: Ticket): Ticket => ({ ...j, repo: 2 });
+test("measureProjectBlindTest: no digit, weight or account radix reads the project", () => {
+  const elsewhere = (j: Ticket): Ticket => ({ ...j, project: 2 });
   const escLanding = escalated(
     { ...draft(cfgBudgeted), gasLeft: 2 },
     "RsGasExhausted",
@@ -673,7 +673,7 @@ test("measureRepoBlindTest: no digit, weight or account radix reads the repo", (
     assert.equal(
       ticketMeasure(bBudgeted, j),
       ticketMeasure(bBudgeted, elsewhere(j)),
-      `the measure reads the repo from ${j.phase}`,
+      `the measure reads the project from ${j.phase}`,
     );
   }
   // And under the other gate pricing, where the account radices differ.

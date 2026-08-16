@@ -34,8 +34,8 @@
 # WHICH EXPANSIONS. Every form whose word bash reads: the operator may be any of
 # `-` `=` `+` `?`, with or without the leading colon (`${V:-w}` and `${V-w}`
 # diverge identically), and the parameter may be a name, a positional (`${1:-w}`)
-# or a special parameter (`${@:-w}`). All eight operator spellings and all three
-# parameter forms were measured to diverge; the colon-less and positional forms
+# or a special parameter (`${@:-w}`). Every operator spelling and every
+# parameter form was measured to diverge; the colon-less and positional forms
 # are not a lesser case, and `${1:-…}` is in fact the commonest default in this
 # tree. Shapes with no word — `${V#pat}`, `${V%%pat}`, `${V//a/b}`, `${V:1:2}`,
 # `${#V}` — are not this class and are not matched.

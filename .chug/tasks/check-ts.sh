@@ -1,6 +1,6 @@
 #!/bin/sh
-# The TypeScript gate. Five stages over `src/`: format, types, lint, purity,
-# test.
+# The TypeScript gate. Its stages over `src/`, in the order they run: format,
+# types, lint, purity, test.
 #
 # THE RULE IT EXISTS FOR. `src/domain/` reaches no I/O and no ambient
 # capability — no clock, no randomness, no process, no fetch, no timers, no
@@ -23,8 +23,8 @@
 # file no configuration matches is a finding instead of a silence. Both halves
 # above are only as wide as the globs that select their inputs, and a glob is
 # the one part of a rule that fails without saying anything — a `.mts` file
-# under a `*.ts` glob went UNLINTED while this gate printed clean on all five
-# stages, and `Date.now()` inside it was therefore invisible to the ambient
+# under a `*.ts` glob went UNLINTED while this gate printed clean on every
+# stage, and `Date.now()` inside it was therefore invisible to the ambient
 # roster. It was still typechecked, as long as something imported it: an
 # import pulls a file into the program whatever the `include` glob says, so
 # tsc reported type errors inside that same file while eslint never opened it.
@@ -40,11 +40,11 @@
 # `tsconfig.json` describes. Two floors, two file classes, neither covering
 # for the other.
 #
-# WHY ONE GATE AND NOT FIVE. `.chug/tasks/check-gates.sh` requires a sibling
-# suite per gate, so five gates over one toolchain would be five suites sharing
-# one fixture builder — the duplication `.chug/tasks/_suite.sh` exists to stop
-# — behind five labels in `.chug/tasks/ci.sh` that pass and fail together after
-# the same `npm ci`. What a split actually buys is running one check alone, and
+# WHY ONE GATE AND NOT ONE PER STAGE. `.chug/tasks/check-gates.sh` requires a
+# sibling suite per gate, so a gate per stage would be a suite per stage
+# sharing one fixture builder — the duplication `.chug/tasks/_suite.sh` exists
+# to stop — behind labels in `.chug/tasks/ci.sh` that pass and fail together
+# after the same `npm ci`. What a split buys is running one check alone, and
 # that is an argument, not a file:
 #
 #   .chug/tasks/check-ts.sh            every stage, in the order below
@@ -52,18 +52,19 @@
 #
 # EVERY SELECTED STAGE RUNS, even after one fails. Stopping at the first
 # finding would let a formatting slip hide a purity breach, and the author
-# would re-run four times to learn what one run could have told them.
+# would re-run once per stage to learn what one run could have told them.
 #
 # STAGE ORDER IS A READING ORDER, NOT A SCHEDULE, and the difference is worth
 # stating because `.chug/tasks/ci.sh` orders GATES by cost and this file does
 # not order its stages that way. Every selected stage runs regardless, so cost
-# cannot be saved by going first — and it does not discriminate anyway:
-# measured on this tree, 2026-08-15, 8 source files, format 0.16s, types 0.59s,
-# lint 0.72s, purity 0.61s, test 0.11s, 2.2s for the lot. What the fixed order
-# buys is that the same tree always reports the same way, coarsest question
-# first: is it written the way this repo writes things, does it typecheck, does
-# it lint, is the domain pure, do the tests pass. Where the gate as a whole
-# sits in `.chug/tasks/ci.sh` IS a cost decision, and it is made there.
+# cannot be saved by going first — and it does not discriminate anyway: no
+# stage on this tree is an order of magnitude dearer than its neighbours, and
+# `time ./.chug/tasks/check-ts.sh <stage>` is how to see that rather than take
+# it on trust. What the fixed order buys is that the same tree always reports
+# the same way, coarsest question first: is it written the way this repo writes
+# things, does it typecheck, does it lint, is the domain pure, do the tests
+# pass. Where the gate as a whole sits in `.chug/tasks/ci.sh` IS a cost
+# decision, and it is made there.
 #
 # NOT IN `.githooks/pre-commit`, deliberately. That hook's budget is about two
 # seconds and it already declines the shell suites for being slower than that.

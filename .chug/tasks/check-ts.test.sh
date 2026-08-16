@@ -10,15 +10,16 @@
 # depcruise that `just check` runs. A fixture with its own hand-written config
 # would be testing a second toolchain nobody ships.
 #
-# MOST CASES NAME ONE STAGE. A full five-stage run costs about two seconds; a
-# single stage costs between a tenth and a third of that, and a case about the
-# purity rule learns nothing from also formatting the fixture. Two cases run
-# every stage on purpose: one to show a clean tree is clean, and one to show
-# that a finding in an early stage does not stop a later one from reporting its
-# own. The suite is ~14.6s in total (measured 2026-08-15, thirty fixture
-# trees); it is the slowest thing `.chug/tasks/ci.sh` runs before the model, so
-# a new case should earn its second — which is why the seventeen roster
-# assertions share one run rather than scaffolding seventeen times.
+# MOST CASES NAME ONE STAGE. A full run costs a small multiple of a single
+# stage, and a case about the purity rule learns nothing from also formatting
+# the fixture. Two cases run every stage on purpose: one to show a clean tree
+# is clean, and one to show that a finding in an early stage does not stop a
+# later one from reporting its own. Every case scaffolds its own git checkout
+# and drives the real toolchain over it, which is why this is the slowest thing
+# `.chug/tasks/ci.sh` runs before the model; how much slower is what
+# `time sh .chug/tasks/check-ts.test.sh` says on the host that asks. So a new
+# case should share a run where it can, which is why the roster assertions
+# share one rather than scaffolding a tree apiece.
 #
 # THE POSITIVE CONTROL IS A CASE, NOT A COMMENT. `Date.now()` in
 # `src/adapters/` must stay clean while the identical call in `src/domain/` is
@@ -45,9 +46,9 @@ fresh_repo_at() { # <dir>
 	git -C "$1" config user.name t
 }
 
-# A fixture tree: the four layers, the real configuration, the real toolchain,
-# and one pure domain module with a passing test. Every case starts here and
-# adds exactly the defect it is about.
+# A fixture tree: the layers the `mkdir` below names, the real configuration,
+# the real toolchain, and one pure domain module with a passing test. Every
+# case starts here and adds exactly the defect it is about.
 scaffold() {
 	rm -rf "$R"
 	mkdir -p "$R/src/domain" "$R/src/effects" "$R/src/interp" "$R/src/adapters"
@@ -461,11 +462,12 @@ run purity
 check "depcruise with no verdict exits 2, not 1" 2 "$RC" "produced no verdict"
 
 # 26. And the other direction: depcruise hands its violation COUNT to
-#     `process.exit`, so a shell reads 256 violations as status 0. Measured,
-#     not theorised — 256 domain files each importing `node:fs` exits 0 and
-#     prints `256 errors`. A gate that trusted the code would call the dirtiest
-#     graph this tree can produce clean, so the count is read from the printed
-#     line and the code is only a corroborator.
+#     `process.exit`, and a shell takes that status modulo 256 — so a run with
+#     exactly that many violations exits 0. Measured, not theorised: the loop
+#     below writes one leaking domain module per unit of the modulus, and the
+#     run exits 0 while printing `256 errors`. A gate that trusted the code
+#     would call the dirtiest graph this tree can produce clean, so the count
+#     is read from the printed line and the code is only a corroborator.
 scaffold
 n=0
 while [ "$n" -lt 256 ]; do

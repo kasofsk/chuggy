@@ -3,11 +3,11 @@
 #
 # WHOLE TREE, EVERY FILE TYPE, and that is the point. Prose about paths lives
 # in shell headers, model comments and markdown alike, and the failures that
-# motivated this gate were spread across all three: two gate headers cited
-# proof scripts belonging to another repo, and seven model comments cited
-# documents this tree had deleted. A markdown-only check would have caught
-# none of them, and the one class markdown tooling does cover — a relative
-# link — `doc-lint.sh` already resolves.
+# motivated this gate were spread across all three: gate headers citing proof
+# scripts belonging to another repo, and model comments citing documents this
+# tree had deleted. A markdown-only check would have caught none of them, and
+# the one class markdown tooling does cover — a relative link — `doc-lint.sh`
+# already resolves.
 #
 # WHAT COUNTS AS A CLAIM. A token with a slash in it, and then only under one
 # of two positive rules. Everything else is skipped in SILENCE, because a gate
@@ -29,10 +29,16 @@
 #
 # IN A `*.test.sh`, ONLY COMMENT LINES ARE READ, and that narrowing is measured
 # rather than assumed. A suite builds fixture trees in a throwaway repo, so its
-# code is full of paths that are real somewhere else — twenty of them in this
-# tree's own suites, against zero true findings. What a suite says about THIS
-# repo it says in its header, which is also where both motivating failures
-# lived, so the narrowing costs the gate nothing it was built to catch.
+# code is full of paths that are real somewhere else, and each one reads as a
+# claim about here. To re-measure: set `comments_only` to 0 below and run this
+# gate over `git ls-files '*.test.sh'`. Every finding that then appears is a
+# fixture path, and none of them is a claim this tree makes. What a suite says
+# about THIS repo it says in its header, which is also where both motivating
+# failures lived, so the narrowing costs the gate nothing it was built to catch.
+#
+# Refutation trigger: the narrowing rests on that second half, never on how many
+# the first half produces. One finding among them that is a true claim about
+# this tree ends the case for reading only comments.
 #
 # SKIPPED, deliberately: a glob or a placeholder, a token a glob character
 # immediately follows, a shell variable, a bracketed template, an absolute or
@@ -124,8 +130,8 @@ FNR == 1 { comments_only = (FILENAME ~ /\.test\.sh$/) }
 {
 	# A line with no slash cannot carry a path, and most lines have none. The
 	# test is one index() against a match loop whose dynamic pattern is
-	# recompiled per call: on this tree it is the difference between 3s and
-	# well under 1s, nearly all of it in the model.
+	# recompiled per call, and dropping it measured far slower on this tree,
+	# nearly all of the difference in the model.
 	if (index($0, "/") == 0) next
 	if (comments_only && $0 !~ /^[ \t]*#/) next
 	s = $0
@@ -149,9 +155,9 @@ FNR == 1 { comments_only = (FILENAME ~ /\.test\.sh$/) }
 ' "$@" > "$work/candidates"
 
 # What this tree has deleted, asked ONCE. R2 needs "was this ever ours", and
-# asking git per token costs a process per token — three seconds on this tree,
-# nearly all of it spent proving that `and/or` and `read/write` are not paths.
-# One history dump answers every token in memory instead.
+# asking git per token costs a process per token, which measured far slower on
+# this tree — nearly all of it spent proving that `and/or` and `read/write` are
+# not paths. One history dump answers every token in memory instead.
 #
 # Refutation trigger: this walks the whole history, so it grows with the log
 # rather than the tree. If it ever dominates the gate, narrow it to the range
@@ -159,7 +165,7 @@ FNR == 1 { comments_only = (FILENAME ~ /\.test\.sh$/) }
 git log --diff-filter=D --name-only --format= 2>/dev/null | sort -u > "$work/deleted" || true
 
 # Resolution in one pass over the three lists, because a grep per token is a
-# process per token: the same work took eighteen seconds spelled that way.
+# process per token, and the same work measured slower still spelled that way.
 #   OK    — resolved, counted as a claim
 #   MISS  — first segment is ours and the path is not
 #   GONE  — first segment is not ours now, but this tree used to have it

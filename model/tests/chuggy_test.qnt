@@ -68,15 +68,15 @@
 ///   - the task lifecycle is the explicit TaskState sum: wt/et build
 ///     resolved states, wr/er build running ones.
 ///
-/// REPO ISOLATION (gate: the isolation invariants —
+/// PROJECT ISOLATION (gate: the isolation invariants —
 /// design at domain.qnt's header):
 ///   - the wrapUpOutcomes draw rule pinned: a QUIET branch refuses
 ///     WFailed (the structural refusal — a valid, uninvalidated artifact
 ///     always commits cleanly, expressed as the outcome set itself);
 ///   - landing-boundary ATTRIBUTION pinned at decider grain, on a
-///     repo-2 ticket so own-repo attribution is distinguishable from
-///     repo-constant stamping: both successes, the wrap-up rework, and both
-///     landing walls each carry WOAttempt with the ticket's OWN repo and
+///     project-2 ticket so own-project attribution is distinguishable from
+///     project-constant stamping: both successes, the wrap-up rework, and both
+///     landing walls each carry WOAttempt with the ticket's OWN project and
 ///     the attempt's invalidated choice — and the effect vocabulary is
 ///     untouched by the new field;
 ///   - every NON-landing step carries WONone — including the shared
@@ -84,15 +84,15 @@
 ///     attribution, not the label string, marks the landing boundary),
 ///     eval-passed (which merely enqueues), and the absorbed
 ///     complete-duplicate;
-///   - REPO-BLINDNESS as a machine check, not just a comment theorem:
-///     tickets identical but for `repo` have EQUAL ticketMeasure, phase
+///   - PROJECT-BLINDNESS as a machine check, not just a comment theorem:
+///     tickets identical but for `project` have EQUAL ticketMeasure, phase
 ///     by phase, under both pricings (the measure.qnt derivation pinned);
-///   - the dep gate is LOCATION-BLIND at decider grain: a repo-2 ticket
-///     blocked behind a repo-1 dep derives Ready the moment the dep is
+///   - the dep gate is LOCATION-BLIND at decider grain: a project-2 ticket
+///     blocked behind a project-1 dep derives Ready the moment the dep is
 ///     Done — Done-ness, never location (the machine-trace version is
-///     the crossRepoDepDeterministicTest witness);
-///   - arrival carries the authored repo (and every pre-multi-repo test
-///     updated mechanically: fixtures author repo 1, successes draw
+///     the crossProjectDepDeterministicTest witness);
+///   - arrival carries the authored project (and every pre-multi-project test
+///     updated mechanically: fixtures author project 1, successes draw
 ///     quiet, failures draw moved — the only combinations the machine
 ///     can draw).
 ///
@@ -100,14 +100,14 @@
 /// requirements R1-R7, and the severability map at domain.qnt's header):
 ///   - THE PATH RULE pinned (R3, at decider grain):
 ///     wrapUpOutcomes(false) is the WOk singleton (the skip
-///     fast-path), wrapUpOutcomes(true) is {WOk, Failed} (the
+///     fast-path), wrapUpOutcomes(true) is {WOk, WFailed} (the
 ///     gate ran) — quiet refuses failure AND the held promotion, moved
 ///     refuses the direct squash; both success paths emit the ONE
 ///     completion effect;
 ///   - THE DEPTH-1 GUARD pinned (R4): an occupied gate refuses every
-///     same-repo dequeue (wrapUpStartableIn false) while another repo's
-///     dequeue stays enabled — serialization is per-repo; gate-opened is
-///     rank descent, WONone, charges nothing;
+///     same-project dequeue (wrapUpStartableIn false) while another project's
+///     dequeue stays enabled — serialization is per-project; wrapup-started
+///     is rank descent, WONone, charges nothing;
 ///   - THE EVICTION unchanged in pricing (R5): the existing gate-rework/
 ///     wall fixtures moved from PWrapUp to PWrapUpHolding (where failures now
 ///     fire from) with account deltas byte-identical;
@@ -125,14 +125,14 @@ module chuggy_test {
   import chuggy_domain(
     N_TICKETS = 2, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2, N_REPOS = 2
+    MAX_STAGES = 2, N_PROJECTS = 2
   ) as DB from "../domain"
 
   // DeadlineOnly gate pricing (the other §2 branch).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     WRAPUP_PRICING = DeadlineOnly, OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2, N_REPOS = 2
+    MAX_STAGES = 2, N_PROJECTS = 2
   ) as DD from "../domain"
 
   // Free retry metering — a documented churn, kept reproducible
@@ -140,24 +140,24 @@ module chuggy_test {
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryFree,
-    MAX_STAGES = 2, N_REPOS = 2
+    MAX_STAGES = 2, N_PROJECTS = 2
   ) as DF from "../domain"
 
-  // N_REPOS = 1 — the degeneration instance: the repo universe collapses
-  // to {1}, every arrival draw / stamp / attribution is repo 1, and the
-  // draw rule and pricing are repo-independent — the single-repo machine
+  // N_PROJECTS = 1 — the degeneration instance: the project universe collapses
+  // to {1}, every arrival draw / stamp / attribution is project 1, and the
+  // draw rule and pricing are project-independent — the single-project machine
   // with a constant field (README's degeneration claim, pinned here).
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 3,
     WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2, N_REPOS = 1
+    MAX_STAGES = 2, N_PROJECTS = 1
   ) as DO from "../domain"
 
   // A GASLESS graph — invalid: the gas account is required.
   import chuggy_domain(
     N_TICKETS = 1, N_TASKS = 2, REWORK_POLICY = RWBudget(1), GAS = 0,
     WRAPUP_PRICING = Budgeted(1), OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2, N_REPOS = 2
+    MAX_STAGES = 2, N_PROJECTS = 2
   ) as DZ from "../domain"
 
   /// The required-account rule: a gasless graph is INVALID — the model
@@ -418,7 +418,7 @@ module chuggy_test {
     DB::decideDequeue(c7, 1, false).rec.label == "ticket-done",
     DB::decideDequeue(c7, 1, false).rec.effects == ["Complete"],
     DB::decideDequeue(c7, 1, false).rec.landing
-      == WOAttempt({ repo: 1, invalidated: false }),
+      == WOAttempt({ project: 1, invalidated: false }),
     DB::decideDequeue(c7, 1, false).post.tickets.get(1).completions == 1
   })
 
@@ -800,7 +800,7 @@ module chuggy_test {
 
   // === The human desk: parks, retries, and the metering parameter ==========
 
-  /// Pre-work invalidation parks the ticket (rank 4 -> 0: descends, free) on
+  /// Pre-work invalidation parks the ticket (rank 5 -> 0: descends, free) on
   /// PEscalated's one parked phase — with the pre-work
   /// wall's reason AND resume point (RPending: back to Pending, never to a
   /// pipeline phase, because nothing pipeline ever ran) …
@@ -944,7 +944,7 @@ module chuggy_test {
     mB(cA2) > mB(cA1)
   })
 
-  /// Release strictly descends (Draft -> Pending, rank 5 -> 4), golden-trace
+  /// Release strictly descends (Draft -> Pending, rank 6 -> 5), golden-trace
   /// shaped, and the derived waiting room splits it correctly on landing.
   /// Release is authoring's only phase edge after arrival, and arrival is
   /// the AUTHORING set's only climber (pinned in
@@ -967,8 +967,8 @@ module chuggy_test {
   })
 
   // === Revoke, from every live phase =======================================
-  // Every non-terminal may be revoked. Eight
-  // single-ticket fixtures: one per live phase (Draft, Pending, Working,
+  // Every non-terminal may be revoked. Single-ticket
+  // fixtures: one per live phase (Draft, Pending, Working,
   // Evaluating, Landing) and all
   // THREE desk-reason flavors of the one parked phase (post-work wall,
   // pre-work revalidation, cascade wall) — the desk fixtures are the
@@ -1153,13 +1153,13 @@ module chuggy_test {
   // header (landing/requirements was never answered — everything these
   // mechanics serve is derived and pending confirmation).
 
-  /// THE DEPTH-1 GUARD (R4): with repo 1's slot held, every same-repo
+  /// THE DEPTH-1 GUARD (R4): with project 1's slot held, every same-project
   /// dequeue is refused — including the would-be-quiet one (quietness is
   /// only checked AT the dequeue: each dequeued job re-checks the
   /// fast-path against the then-current state) — while
-  /// repo 2's dequeue stays enabled: serialization is per-repo, gates are
+  /// project 2's dequeue stays enabled: serialization is per-project, gates are
   /// independent. The occupant itself is not enqueued (PWrapUpHolding is not
-  /// PWrapUp), and a free repo's enqueued tickets are all dequeue-able
+  /// PWrapUp), and a free project's enqueued tickets are all dequeue-able
   /// (which one dequeues is the nondet pick — order deliberately
   /// unmodeled).
   pure val cGateOcc: Core = { tickets: Map(
@@ -1171,8 +1171,8 @@ module chuggy_test {
   run leaseExclusiveGuardTest = assert(and {
     not(DB::leaseFreeIn(cGateOcc, 1)),
     DB::leaseFreeIn(cGateOcc, 2),
-    not(DB::wrapUpStartableIn(cGateOcc, 2)),   // same repo: REFUSED — depth 1
-    DB::wrapUpStartableIn(cGateOcc, 3),        // other repo: independent
+    not(DB::wrapUpStartableIn(cGateOcc, 2)),   // same project: REFUSED — depth 1
+    DB::wrapUpStartableIn(cGateOcc, 3),        // other project: independent
     not(DB::wrapUpStartableIn(cGateOcc, 1)),   // the occupant is not enqueued
     // Once the slot frees (here: the occupant lands, gated), the refusal
     // lifts in the same post-state — occupancy is phase, nothing cleans up.
@@ -1180,19 +1180,19 @@ module chuggy_test {
   })
 
   // ==========================================================================
-  // === REPO ISOLATION at the landing boundary ==============================
+  // === PROJECT ISOLATION at the landing boundary ============================
   // ==========================================================================
   // Design + provenance at domain.qnt's header (the refinement layer, gate:
   // isolation invariants; `domain/firstclass` "one orchestrator, many
-  // targets"; the envActive standing rule). Repo universe on DB: {1, 2} —
-  // N_REPOS = 2, the smallest universe where own-repo attribution is
+  // targets"; the named-nondet discipline). Project universe on DB: {1, 2} —
+  // N_PROJECTS = 2, the smallest universe where own-project attribution is
   // distinguishable from a constant stamp.
 
-  /// The same single-ticket fixture, re-targeted at repo 2 — the authored
+  /// The same single-ticket fixture, re-targeted at project 2 — the authored
   /// field is the ONLY difference, which is exactly what the attribution
   /// and blindness tests below need.
-  pure def onRepo2(c: Core): Core =
-    { tickets: Map(1 -> { ...c.tickets.get(1), repo: 2 }) }
+  pure def onProject2(c: Core): Core =
+    { tickets: Map(1 -> { ...c.tickets.get(1), project: 2 }) }
 
   /// THE DRAW RULE (domain.qnt wrapUpOutcomes — the validPrograms shape: the
   /// set IS the refusal). An artifact the environment left VALID cannot
@@ -1213,7 +1213,7 @@ module chuggy_test {
     not(DB::wrapUpOutcomes(false).contains(WFailed)),
     // And an invalidated one is not FORCED to fail — re-validation may pass.
     DB::wrapUpOutcomes(true).contains(WOk),
-    DB::repos == Set(1, 2)
+    DB::projects == Set(1, 2)
   })
 
   /// A quiet-dequeue fixture (PWrapUp — the queue): the fast-path
@@ -1223,7 +1223,7 @@ module chuggy_test {
     phase: PWrapUp, wrapUpLeft: 1, gasLeft: 2 }) }
 
   /// EVERY arm of decideWrapUpResolve stamps the attempt's attribution — the
-  /// ticket's OWN repo (repo 2 here: a constant-stamping mutant would say
+  /// ticket's OWN project (project 2 here: a constant-stamping mutant would say
   /// 1) plus the environment's invalidated choice, while the effect
   /// vocabulary and pricing stay exactly as the gate tests above pin them.
   /// Combos are the PATH-legal ones only (wrapUpOutcomes):
@@ -1232,37 +1232,37 @@ module chuggy_test {
   /// NOTE: the gas-wall conjuncts below are THE guard for that landing
   /// arm's stamp — wrapUpIsolation's completeness cannot forbid the
   /// shared gas_exhausted label, so a stamp-drop there is visible only
-  /// here (multi-repo review, observation A).
-  run landingAttributionStampsOwnRepoTest = assert(and {
+  /// here (multi-project review, observation A).
+  run landingAttributionStampsOwnProjectTest = assert(and {
     // Success, quiet: the fast-path off the queue — attributed, effects
     // untouched.
-    DB::decideWrapUpResolve(onRepo2(cQueueB), 1, WOk, false).rec.landing
-      == WOAttempt({ repo: 2, invalidated: false }),
-    DB::decideWrapUpResolve(onRepo2(cQueueB), 1, WOk, false).rec.effects
+    DB::decideWrapUpResolve(onProject2(cQueueB), 1, WOk, false).rec.landing
+      == WOAttempt({ project: 2, invalidated: false }),
+    DB::decideWrapUpResolve(onProject2(cQueueB), 1, WOk, false).rec.effects
       == ["Complete"],
     // Success under a MOVED branch is drawable and honestly attributed:
     // the move makes failure POSSIBLE, never certain — and its clean
     // landing is the GATED promotion (R3).
-    DB::decideWrapUpResolve(onRepo2(cGateB), 1, WOk, true).rec.landing
-      == WOAttempt({ repo: 2, invalidated: true }),
-    DB::decideWrapUpResolve(onRepo2(cGateB), 1, WOk, true).rec.effects
+    DB::decideWrapUpResolve(onProject2(cGateB), 1, WOk, true).rec.landing
+      == WOAttempt({ project: 2, invalidated: true }),
+    DB::decideWrapUpResolve(onProject2(cGateB), 1, WOk, true).rec.effects
       == ["Complete"],
-    // Failure: the wrap-up rework carries the repo AND the cause.
-    DB::decideWrapUpResolve(onRepo2(cGateB), 1, WFailed, true).rec.label
+    // Failure: the wrap-up rework carries the project AND the cause.
+    DB::decideWrapUpResolve(onProject2(cGateB), 1, WFailed, true).rec.label
       == "rework-started wrapup_failure",
-    DB::decideWrapUpResolve(onRepo2(cGateB), 1, WFailed, true).rec.landing
-      == WOAttempt({ repo: 2, invalidated: true }),
+    DB::decideWrapUpResolve(onProject2(cGateB), 1, WFailed, true).rec.landing
+      == WOAttempt({ project: 2, invalidated: true }),
     // Both landing walls carry it too — the attempt that PARKED the
     // ticket is attributable like the one that reworked it.
-    DB::decideWrapUpResolve(onRepo2(cGateWall), 1, WFailed, true).rec.label
+    DB::decideWrapUpResolve(onProject2(cGateWall), 1, WFailed, true).rec.label
       == "ticket-escalated wrapup_budget_exhausted",
-    DB::decideWrapUpResolve(onRepo2(cGateWall), 1, WFailed, true).rec.landing
-      == WOAttempt({ repo: 2, invalidated: true }),
-    DB::decideWrapUpResolve(onRepo2(cGateGasWall), 1, WFailed, true).rec.landing
-      == WOAttempt({ repo: 2, invalidated: true }),
+    DB::decideWrapUpResolve(onProject2(cGateWall), 1, WFailed, true).rec.landing
+      == WOAttempt({ project: 2, invalidated: true }),
+    DB::decideWrapUpResolve(onProject2(cGateGasWall), 1, WFailed, true).rec.landing
+      == WOAttempt({ project: 2, invalidated: true }),
     // DeadlineOnly's landing gas wall attributes the same way.
     DD::decideWrapUpResolve(cGateDWall, 1, WFailed, true).rec.landing
-      == WOAttempt({ repo: 1, invalidated: true })
+      == WOAttempt({ project: 1, invalidated: true })
   })
 
   /// Attribution appears at the landing boundary and NOWHERE else: every
@@ -1289,14 +1289,14 @@ module chuggy_test {
     DB::decideCompleteDuplicate(c8, 1).rec.landing == WONone
   })
 
-  /// REPO-BLINDNESS, machine-checked (the measure.qnt multi-repo header
-  /// note's derivation pinned): tickets identical but for `repo` have
+  /// PROJECT-BLINDNESS, machine-checked (the measure.qnt multi-project header
+  /// note's derivation pinned): tickets identical but for `project` have
   /// EQUAL ticketMeasure — phase by phase across the part-spent revoke
   /// fixtures, a parked ticket, and under BOTH gate pricings. The
   /// account radices derive from machine-wide consts (GAS, WRAPUP_PRICING,
-  /// REWORK_POLICY — none per-repo), so budgets are repo-blind by type;
+  /// REWORK_POLICY — none per-project), so budgets are project-blind by type;
   /// this pins the measure function itself.
-  /// ARTIFACT-BLINDNESS (design 002), the same derivation as repo: no digit,
+  /// ARTIFACT-BLINDNESS (design 002), the same derivation as project: no digit,
   /// weight or account radix reads the mark, so tickets identical but for it
   /// have EQUAL ticketMeasure. Pinned rather than argued, because a measure
   /// that quietly read the artifact would make the descent table wrong in a
@@ -1323,24 +1323,24 @@ module chuggy_test {
     dBackToEval.post.tickets.get(1).artifact != dWorkReduce.post.tickets.get(1).artifact
   })
 
-  run measureRepoBlindTest = assert(and {
-    ticketMeasure(bB, jDraft) == ticketMeasure(bB, { ...jDraft, repo: 2 }),
-    ticketMeasure(bB, jPend) == ticketMeasure(bB, { ...jPend, repo: 2 }),
-    ticketMeasure(bB, jWork) == ticketMeasure(bB, { ...jWork, repo: 2 }),
-    ticketMeasure(bB, jEval) == ticketMeasure(bB, { ...jEval, repo: 2 }),
-    ticketMeasure(bB, jLand) == ticketMeasure(bB, { ...jLand, repo: 2 }),
-    ticketMeasure(bB, jGated) == ticketMeasure(bB, { ...jGated, repo: 2 }),
-    ticketMeasure(bB, escLanding) == ticketMeasure(bB, { ...escLanding, repo: 2 }),
-    ticketMeasure(bD, jWork) == ticketMeasure(bD, { ...jWork, repo: 2 })
+  run measureProjectBlindTest = assert(and {
+    ticketMeasure(bB, jDraft) == ticketMeasure(bB, { ...jDraft, project: 2 }),
+    ticketMeasure(bB, jPend) == ticketMeasure(bB, { ...jPend, project: 2 }),
+    ticketMeasure(bB, jWork) == ticketMeasure(bB, { ...jWork, project: 2 }),
+    ticketMeasure(bB, jEval) == ticketMeasure(bB, { ...jEval, project: 2 }),
+    ticketMeasure(bB, jLand) == ticketMeasure(bB, { ...jLand, project: 2 }),
+    ticketMeasure(bB, jGated) == ticketMeasure(bB, { ...jGated, project: 2 }),
+    ticketMeasure(bB, escLanding) == ticketMeasure(bB, { ...escLanding, project: 2 }),
+    ticketMeasure(bD, jWork) == ticketMeasure(bD, { ...jWork, project: 2 })
   })
 
   /// THE DEP GATE IS LOCATION-BLIND (the lean reading of "one
   /// orchestrator, many targets": the DAG stays orchestrator-level and
-  /// dependencies may cross repos): a repo-2 ticket behind a repo-1 dep
+  /// dependencies may cross projects): a project-2 ticket behind a project-1 dep
   /// is Blocked exactly while the dep is not Done — and Ready the moment
-  /// it is, the repos never consulted (depsDoneIn reads phase alone).
-  /// The machine-trace version — the landing in repo 1 UNBLOCKING the
-  /// repo-2 dependent — is the crossRepoDepDeterministicTest witness.
+  /// it is, the projects never consulted (depsDoneIn reads phase alone).
+  /// The machine-trace version — the landing in project 1 UNBLOCKING the
+  /// project-2 dependent — is the crossProjectDepDeterministicTest witness.
   pure val cXDepPre: Core = { tickets: Map(
     1 -> { ...DB::freshTicket(Set(), progU2, 1, WExclusive(1)), phase: PWrapUp },
     2 -> { ...DB::freshTicket(Set(1), progU2, 2, WExclusive(2)), phase: PPending }
@@ -1350,30 +1350,30 @@ module chuggy_test {
     2 -> { ...DB::freshTicket(Set(1), progU2, 2, WExclusive(2)), phase: PPending }
   ) }
 
-  run crossRepoDepGateLocationBlindTest = assert(and {
+  run crossProjectDepGateLocationBlindTest = assert(and {
     DB::isBlockedIn(cXDepPre, 2),
     not(DB::isReadyIn(cXDepPre, 2)),
     DB::isReadyIn(cXDepDone, 2),
     not(DB::isBlockedIn(cXDepDone, 2))
   })
 
-  /// Arrival carries the authored target repo — the third authored field
+  /// Arrival carries the authored target project — the third authored field
   /// riding the same event as deps and the program, immutable after.
-  run arrivalCarriesRepoTest = assert(and {
-    cA1.tickets.get(1).repo == 1,
-    DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 2, WExclusive(2)).post.tickets.get(1).repo == 2,
+  run arrivalCarriesProjectTest = assert(and {
+    cA1.tickets.get(1).project == 1,
+    DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 2, WExclusive(2)).post.tickets.get(1).project == 2,
     DB::decideArrive(cEmpty, Set(), DB::defaultProgram, 2, WExclusive(2)).rec.label == "ticket-arrived"
   })
 
-  /// N_REPOS = 1 degeneration (adopted from the multi-repo review's probe):
+  /// N_PROJECTS = 1 degeneration (adopted from the multi-project review's probe):
   /// the collapsed universe and the intact draw rule are the whole claim —
-  /// everything else is repo-blind by the measure theorem.
+  /// everything else is project-blind by the measure theorem.
   /// NOTE: the two set equalities below are the SECOND guard for the
-  /// draw sets (wrapUpOutcomesPathRuleTest's note has the argument — the
+  /// draw sets (wrapUpOutcomesDrawRuleTest's note has the argument — the
   /// sets are checkable only by pinning their contents; everything
   /// downstream draws from them).
-  run oneRepoDegenerationTest = assert(and {
-    DO::repos == Set(1),
+  run oneProjectDegenerationTest = assert(and {
+    DO::projects == Set(1),
     DO::wrapUpOutcomes(false) == Set(WOk),
     DO::wrapUpOutcomes(true) == Set(WOk, WFailed)
   })
@@ -1382,12 +1382,12 @@ module chuggy_test {
   /// REACHED. idsAccounted is a machine invariant, so the randomized runs and
   /// the witness suites check it after every step the machine takes — and on
   /// nothing this file writes by hand. That gap is the one the fixtures fell
-  /// into: thirteen of them carried a live task set or a record while leaving
+  /// into: some of them carried a live task set or a record while leaving
   /// freshTicket's spawned at 0, which is not a state any trace reaches, and
   /// work-passed's ASome(retired.spawned) stamp read the short counter. The
   /// deciders below cannot repair it — nothing recomputes `spawned` from the
   /// record — so the equality has to be asserted where the state is written.
-  /// This is that assertion, and the reason a fourteenth fixture cannot
+  /// This is that assertion, and the reason a new fixture cannot
   /// repeat the mistake quietly.
   run handBuiltFixturesAccountedTest = assert(and {
     accounted(cWorkFail), accounted(cEvalFail),

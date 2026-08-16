@@ -7,7 +7,7 @@
 ///
 /// Bounds are the smallest that still reach the shapes worth reaching:
 /// MAX_STAGES = 2 so a program can advance rather than only pass, and
-/// N_REPOS = 2 so own-repo attribution is distinguishable from a constant
+/// N_PROJECTS = 2 so own-project attribution is distinguishable from a constant
 /// stamp. Everything else is as small as it goes — the state space is the
 /// budget.
 ///
@@ -28,7 +28,7 @@ module mc_chuggy_budgeted {
     WRAPUP_PRICING = Budgeted(1),
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REPOS = 2
+    N_PROJECTS = 2
   ).* from "../domain"
 }
 
@@ -45,7 +45,7 @@ module mc_chuggy_deadline_only {
     WRAPUP_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryCharged,
     MAX_STAGES = 2,
-    N_REPOS = 2
+    N_PROJECTS = 2
   ).* from "../domain"
 }
 
@@ -71,6 +71,6 @@ module mc_chuggy_retryfree {
     WRAPUP_PRICING = DeadlineOnly,
     OP_RETRY_PRICING = RetryFree,
     MAX_STAGES = 2,
-    N_REPOS = 2
+    N_PROJECTS = 2
   ).* from "../domain"
 }

@@ -63,6 +63,12 @@ run_gate() { # <label> <script> [args...]
 
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 
+# Before check-paths: one awk pass over the prose corpus, where that one shells
+# out to git for the whole deletion history.
+if [ -x ./.chug/tasks/check-figures.sh ]; then
+	run_gate "check-figures" ./.chug/tasks/check-figures.sh
+fi
+
 if [ -x ./.chug/tasks/check-paths.sh ]; then
 	run_gate "check-paths" ./.chug/tasks/check-paths.sh
 fi
@@ -82,10 +88,9 @@ fi
 # --- The TypeScript toolchain ------------------------------------------------
 # After every pure-shell gate, because a scripts-only change breaks those and
 # should not wait on a toolchain to hear so; before the shell suites, because
-# it is cheaper than they now are. Measured 2026-08-15 on this tree: the
-# pure-shell gates total 0.5s, check-ts 2.1s, the suites 16.1s — 14.6s of it
-# check-ts's own, which drives the real toolchain over twenty-nine fixture
-# trees — and check-model 50s. Cheapest first, all the way down.
+# it is cheaper than they now are — its own suite scaffolds a git checkout per
+# case and drives the real toolchain over each, which is what makes that stage
+# the dearer of the two. Cheapest first, all the way down.
 #
 # Guarded like the gates above rather than called unconditionally, and the
 # reason is worth writing down because the opposite reading is tempting: a
@@ -184,12 +189,8 @@ else
 fi
 
 # --- The model ---------------------------------------------------------------
-# Last because it is by far the slowest — ~50s against ~19s for everything
-# above, measured 2026-08-15, the toolchain gate and its fixture suite being
-# ~17s of that. The figure moves whenever a stage does, which is why it carries
-# a date rather than an approximation; the ORDERING rests on the ratio, and
-# that survives an order of magnitude of growth above. A fast gate that runs
-# after a slow one is a fast gate nobody benefits from.
+# Last because it is by far the slowest, and a fast gate that runs after a slow
+# one is a fast gate nobody benefits from.
 
 if [ -x ./.chug/tasks/check-model.sh ]; then
 	run_gate "check-model" ./.chug/tasks/check-model.sh
