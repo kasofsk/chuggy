@@ -29,10 +29,16 @@
 #
 # IN A `*.test.sh`, ONLY COMMENT LINES ARE READ, and that narrowing is measured
 # rather than assumed. A suite builds fixture trees in a throwaway repo, so its
-# code is full of paths that are real somewhere else — twenty of them in this
-# tree's own suites, against zero true findings. What a suite says about THIS
-# repo it says in its header, which is also where both motivating failures
-# lived, so the narrowing costs the gate nothing it was built to catch.
+# code is full of paths that are real somewhere else, and each one reads as a
+# claim about here. To re-measure: set `comments_only` to 0 below and run this
+# gate over `git ls-files '*.test.sh'`. Every finding that then appears is a
+# fixture path, and none of them is a claim this tree makes. What a suite says
+# about THIS repo it says in its header, which is also where both motivating
+# failures lived, so the narrowing costs the gate nothing it was built to catch.
+#
+# Refutation trigger: the narrowing rests on that second half, never on how many
+# the first half produces. One finding among them that is a true claim about
+# this tree ends the case for reading only comments.
 #
 # SKIPPED, deliberately: a glob or a placeholder, a token a glob character
 # immediately follows, a shell variable, a bracketed template, an absolute or
