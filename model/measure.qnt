@@ -203,7 +203,7 @@
 ///       pre-work park, and the Working boundary still meters any actual
 ///       re-entry — the pre-work resume's pricing, kept
 ///       honest here by name.
-///     operator-retry into Evaluating/Landing under RetryFree
+///     operator-retry into Evaluating/WrapUp under RetryFree
 ///       (+<= rankEvaluating*rankWeight + maxStages*stageWeight + nTasks —
 ///        the Evaluating resume respawns the LOWEST stage's fan-out with
 ///        the full stage digit — a fresh eval fan-out)
@@ -286,7 +286,7 @@ module chuggy_measure {
   // here because they live in the same module-wide constructor namespace.
   // TK (TaskKind), TS (TaskState — the explicit task lifecycle), RW
   // (ReworkPolicy), W (WrapUpOutcome and WrapUp, which share it), WO
-  // (WrapUpObs — the landing-boundary attribution) and A (ArtifactMark).
+  // (WrapUpObs — the wrap-up attempt attribution) and A (ArtifactMark).
 
   /// STORED ticket phases, deliberately few (standing rule 3, derive don't
   /// store). Blocked and Ready are PREDICATES over deps + record in
@@ -469,10 +469,10 @@ module chuggy_measure {
   ///     carries it structurally;
   ///   - `invalidated`: the environment's PER-ATTEMPT choice of whether
   ///     the target project's default branch moved under the candidate — the
-  ///     ONLY reason a landing can fail, and the record's one carrier of
+  ///     ONLY reason a wrap-up can fail, and the record's one carrier of
   ///     the discipline stated below.
   /// Every other step — including eval-passed (which merely ENQUEUES the
-  /// landing) and complete-duplicate (an absorbed re-delivery: no attempt
+  /// wrap-up) and complete-duplicate (an absorbed re-delivery: no attempt
   /// resolves, nothing is emitted) — carries WONone. The iff is the
   /// wrapUpIsolation invariant (domain.qnt).
   ///

@@ -194,7 +194,7 @@
 /// effect is keyed by its decision's journal seq (worldEffects' set
 /// semantics IS that assumption, stated as a model primitive: "every
 /// effect is idempotent", given its key). Inbound (world -> actor): completions
-/// and landing confirmations arrive at-least-once too, and the DOMAIN
+/// and wrap-up confirmations arrive at-least-once too, and the DOMAIN
 /// machine already absorbs them — duplicate task completions no-op by
 /// identity, duplicate ticket-completion deliveries no-op at the boundary
 /// (decideTaskDone/decideCompleteDuplicate, proved since /) — so the
@@ -218,7 +218,7 @@
 /// all affordable, walls reachable), Budgeted(1), RetryCharged (the
 /// default metering), MAX_STAGES = 1 / N_PROJECTS = 1
 /// (staging and multi-project are orthogonal to the seam —
-/// each collapses to its documented degeneration; the landing's
+/// each collapses to its documented degeneration; the wrap-up's
 /// invalidated draw still exercises both paths). Unlike the mc
 /// instances there is no per-pricing spread: the seam model reads no
 /// account, so one pricing suffices — the domain instances keep that
@@ -640,7 +640,7 @@ module chuggy_refinement {
   // the world-effect-bearing decisions. The seam exists at EVERY
   // decision; these are the ones whose orphaned effects the
   // theorems price — the paid spawns (dispatch, the eval-rework, the
-  // gate eviction's respawn) and the landing resolutions (the dequeue's
+  // gate eviction's respawn) and the wrap-up resolutions (the dequeue's
   // fast-path squash, the gated promotion). An orphaned bookkeeping
   // effect (CreateDraft, OpenHumanTask, ...) is the same shape with
   // nothing priced riding it — journalCoversWorld still flags it; the
