@@ -29,9 +29,15 @@
 #      blocks on every run, so an instance moving under the corpus is a finding
 #      here. The rosters this tree types out by hand — the deciders, the step
 #      labels, the exemption arms, the effect strings, the mc instances, the
-#      nondet binders and the const names — are compared against the model's
-#      own declarations as exact sets in both directions, so a decider the
-#      model gained is a finding rather than an obligation nobody owes. What
+#      nondet binders, the const names, the safety bundle's conjuncts, the
+#      decision-event constructors and the two refinement bundles' conjuncts —
+#      are compared against the model's own declarations as exact sets in both
+#      directions, so a decider the model gained is a finding rather than an
+#      obligation nobody owes. A surface stated as a `val ... = and { ... }` or
+#      as a sum type is read by its own reader, in `src/tools/corpus.ts`,
+#      because a read of `pure def`s and code literals cannot see one: while
+#      two of them were unread, a conjunct added to `allInvariants` and an arm
+#      added to `type Cmd` both passed every gate at exit 0. What
 #      remains is a decider whose BODY moved with its NAME and its ROSTERS
 #      intact, and that remainder is narrowed rather than closed:
 #      `check-model.sh` runs the model's own suites in the same `just check`,

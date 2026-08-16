@@ -56,6 +56,7 @@ import {
   domainSource,
   manifestPath,
   mcSource,
+  refinementSource,
   witnessSource,
 } from "./corpus.ts";
 
@@ -432,9 +433,14 @@ function editModelText(
  * model gained and the entry this tree's roster kept. A rename is the mutation
  * a model PR actually makes, and asking both halves of one exact-set comparison
  * from one edit is what keeps these cases as short as the claim they carry.
+ *
+ * `source` names the model file the edit lands in, because the rosters no
+ * longer come from one: the decision-event vocabulary and this layer's own
+ * invariant bundles are `refinement.qnt`'s.
  */
 const rosterRenames: readonly {
   readonly what: string;
+  readonly source?: string;
   readonly from: string;
   readonly to: string;
   readonly was: string;
@@ -485,18 +491,251 @@ const rosterRenames: readonly {
     was: "MAX_STAGES",
     now: "MAX_TIERS",
   },
+  {
+    // The bundle, stated as a conjunction of names: the anchor is the conjunct
+    // line and not the `val` it names, so the edit moves the ROSTER and leaves
+    // every other reader of this file alone.
+    what: "allInvariants conjunct",
+    from: "\n    depsAcyclic,\n",
+    to: "\n    depsAreAcyclic,\n",
+    was: "depsAcyclic",
+    now: "depsAreAcyclic",
+  },
+  {
+    what: "Cmd arm",
+    source: refinementSource,
+    from: "| JOpRetry(int)",
+    to: "| JOperatorRetry(int)",
+    was: "JOpRetry",
+    now: "JOperatorRetry",
+  },
+  {
+    what: "refinementCore conjunct",
+    source: refinementSource,
+    from: "\n    executorSound,\n",
+    to: "\n    executorBookkeepingSound,\n",
+    was: "executorSound",
+    now: "executorBookkeepingSound",
+  },
+  {
+    what: "refinementInvariants conjunct",
+    source: refinementSource,
+    from: "\n    noDuplicateCycle\n",
+    to: "\n    noDuplicateCycles\n",
+    was: "noDuplicateCycle",
+    now: "noDuplicateCycles",
+  },
 ];
 
 for (const rename of rosterRenames) {
   test(`staleRosters: a renamed ${rename.what} reds from both sides`, () => {
     const verification = verifying((repo) => {
-      editModelText(repo, domainSource, rename.from, rename.to);
+      editModelText(
+        repo,
+        rename.source ?? domainSource,
+        rename.from,
+        rename.to,
+      );
     });
     assert.deepEqual(verification.findings, [
       `model: ${rename.what} ${rename.now} — the model has it and this tree's roster does not`,
       `model: ${rename.what} ${rename.was} — this tree's roster has it and the model does not`,
     ]);
     assert.deepEqual(verification.errors, []);
+  });
+}
+
+/**
+ * THE THREE SURFACES A ROSTER READ OF `pure def`s AND CODE LITERALS COULD NOT
+ * SEE, each mutated in one direction at a time.
+ *
+ * WHY THESE GET AN ADDITION AND A REMOVAL AND THE RENAMES ABOVE DO NOT. A
+ * rename asks both halves of the comparison at once, which is the whole of what
+ * an exact set has to answer — but each of these three surfaces reproduced the
+ * failure this alarm exists for, at exit 0 across every gate, so the direction
+ * that matters is asked ALONE as well: the model gains a conjunct, an arm, an
+ * obligation, and nothing in this tree owes it.
+ *
+ * A MODEL-SIDE ADDITION AND A TREE-SIDE REMOVAL ARE THE SAME COMPARISON, and
+ * so are their opposites — `rosterDisagrees` is symmetric and reads both
+ * differences off the same two sets. Editing the model is what a fixture repo
+ * can do; the shipped roster is compiled in. So each case below is the red
+ * proof for its own direction from either side.
+ */
+const rosterAdditions: readonly {
+  readonly what: string;
+  readonly source: string;
+  readonly from: string;
+  readonly to: string;
+  readonly gained: string;
+}[] = [
+  {
+    what: "allInvariants conjunct",
+    source: domainSource,
+    from: "\n    measureDescends\n",
+    to: "\n    measureDescends,\n    leasesAccounted\n",
+    gained: "leasesAccounted",
+  },
+  {
+    // THE LIVE CASE, in the packet's own words: an action with no decider of
+    // its own, so the decider roster stays level and this is the only alarm
+    // that can fire.
+    what: "Cmd arm",
+    source: refinementSource,
+    from: "    | JOpRetry(int)\n",
+    to: "    | JOpRetry(int)\n    | JPause(int)\n",
+    gained: "JPause",
+  },
+  {
+    what: "refinementInvariants conjunct",
+    source: refinementSource,
+    from: "\n    noDuplicateCycle\n",
+    to: "\n    noDuplicateCycle,\n    noOrphanedLease\n",
+    gained: "noOrphanedLease",
+  },
+];
+
+for (const added of rosterAdditions) {
+  test(`staleRosters: a ${added.what} the model gained and this tree does not owe is a finding`, () => {
+    const verification = verifying((repo) => {
+      editModelText(repo, added.source, added.from, added.to);
+    });
+    assert.deepEqual(verification.findings, [
+      `model: ${added.what} ${added.gained} — the model has it and this tree's roster does not`,
+    ]);
+    assert.deepEqual(verification.errors, []);
+  });
+}
+
+const rosterRemovals: readonly {
+  readonly what: string;
+  readonly source: string;
+  readonly from: string;
+  readonly to: string;
+  readonly lost: string;
+}[] = [
+  {
+    what: "allInvariants conjunct",
+    source: domainSource,
+    from: "\n    cascadeSafety,",
+    to: "",
+    lost: "cascadeSafety",
+  },
+  {
+    what: "Cmd arm",
+    source: refinementSource,
+    from: "\n    | JRevalFail(int)",
+    to: "",
+    lost: "JRevalFail",
+  },
+  {
+    what: "refinementCore conjunct",
+    source: refinementSource,
+    from: "\n    executorSound,",
+    to: "",
+    lost: "executorSound",
+  },
+];
+
+for (const removed of rosterRemovals) {
+  test(`staleRosters: a ${removed.what} the model dropped and this tree still holds is a finding`, () => {
+    const verification = verifying((repo) => {
+      editModelText(repo, removed.source, removed.from, removed.to);
+    });
+    assert.deepEqual(verification.findings, [
+      `model: ${removed.what} ${removed.lost} — this tree's roster has it and the model does not`,
+    ]);
+    assert.deepEqual(verification.errors, []);
+  });
+}
+
+/**
+ * PARSE HONESTY, PER READER: a declaration whose shape these readers no longer
+ * recognize is a could-not-run, never an empty roster and never a roster of
+ * whatever the text happened to hold.
+ *
+ * `readModuleConsts`'s rule, and the reason it is asked of every new reader
+ * one at a time: an empty answer here would red every entry of the roster at
+ * once and blame the tree for a defect in this file, while a roster built out
+ * of an unparsed expression would report a disagreement nobody can act on.
+ */
+const parseHonesty: readonly {
+  readonly case: string;
+  readonly source: string;
+  readonly from: string;
+  readonly to: string;
+  readonly error: string;
+}[] = [
+  {
+    case: "the bundle's declaration is spelled another way",
+    source: domainSource,
+    from: "val allInvariants: bool = and {",
+    to: "val allInvariants: bool = every {",
+    error:
+      'model/domain.qnt: val allInvariants: no "val allInvariants: bool = and {" declaration',
+  },
+  {
+    case: "the bundle conjoins nothing at all",
+    source: domainSource,
+    from: "val allInvariants: bool = and {\n    completionExclusive,",
+    to: "val allInvariants: bool = and {}\n  val allSafety: bool = and {\n    completionExclusive,",
+    error: "model/domain.qnt: val allInvariants: this parse matched nothing",
+  },
+  {
+    case: "a conjunct is an expression rather than a name",
+    source: domainSource,
+    from: "\n    cascadeSafety,",
+    to: "\n    completions >= 0,",
+    error:
+      'model/domain.qnt: val allInvariants: "completions >= 0" is not a conjunct name',
+  },
+  {
+    case: "the decision event's type is renamed",
+    source: refinementSource,
+    from: "type Cmd =",
+    to: "type Decision_ =",
+    error: 'model/refinement.qnt: type Cmd: no "type Cmd =" declaration',
+  },
+  {
+    case: "the arms move onto the declaration's own line",
+    source: refinementSource,
+    from: "type Cmd =\n      JArrive(",
+    to: "type Cmd = JArrive(",
+    error:
+      "model/refinement.qnt: type Cmd: the arm list does not start on the line below the declaration",
+  },
+  {
+    case: "an arm is spelled outside the model's constructor case",
+    source: refinementSource,
+    from: "| JOpRetry(int)",
+    to: "| jOpRetry(int)",
+    error:
+      'model/refinement.qnt: type Cmd: "jOpRetry(int)" is not a constructor',
+  },
+  {
+    case: "the arm list is empty",
+    source: refinementSource,
+    from: "type Cmd =\n      JArrive(",
+    to: "type Cmd =\n\n      JArrive(",
+    error: "model/refinement.qnt: type Cmd: this parse matched nothing",
+  },
+  {
+    case: "the refinement bundle's declaration is spelled another way",
+    source: refinementSource,
+    from: "val refinementInvariants: bool = and {",
+    to: "val refinementInvariants: bool = every {",
+    error:
+      'model/refinement.qnt: val refinementInvariants: no "val refinementInvariants: bool = and {" declaration',
+  },
+];
+
+for (const honesty of parseHonesty) {
+  test(`staleRosters: ${honesty.case} — could-not-run, never a roster`, () => {
+    const verification = verifying((repo) => {
+      editModelText(repo, honesty.source, honesty.from, honesty.to);
+    });
+    assert.deepEqual(verification.findings, []);
+    assert.deepEqual(verification.errors, [honesty.error]);
   });
 }
 

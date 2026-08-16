@@ -817,3 +817,49 @@ export function allInvariants(
     measureDescends(cfg, c, history.lastStep, history.prevMeasure)
   );
 }
+
+/**
+ * The bundle above as NAMES, in the model's own conjunct order — the roster
+ * `src/tools/verify.ts` holds against `model/domain.qnt`'s own `and { … }` as
+ * an exact set in both directions.
+ *
+ * WHY THE NAMES ARE HERE AND THE VERDICTS ARE NOT. `bundle.test.ts` pairs each
+ * name with the call the bundle makes, and its header says why that pairing
+ * belongs to the suites rather than to this file. The conformance gate cannot
+ * read it: a `.test.ts` module is this tree's file class for "exists only for
+ * the suite", and `.dependency-cruiser.mjs`'s `no-shipped-test-fixtures`
+ * forbids any shipped module from importing one. So the comparable half — the
+ * roster with no verdicts attached — ships here, and `invariants.test.ts` holds
+ * the two to each other.
+ *
+ * IT IS THE ONE THING ABOUT THE BUNDLE A COMPILER CANNOT KEEP. The conjunction
+ * above is a chain of calls, so a conjunct dropped from it is invisible to every
+ * type in this file; the model comparison is what notices, and it can only
+ * notice against a list.
+ */
+export const bundleConjunctNames: readonly string[] = [
+  "completionExclusive",
+  "revokedNeverCompletes",
+  "wrapUpIsolation",
+  "quietProjectLandsCleanly",
+  "leaseExclusive",
+  "noLeaseWithoutAKind",
+  "artifactWellFormed",
+  "projectsWellFormed",
+  "wrapUpWellFormed",
+  "terminalsAbsorbing",
+  "deskConsistent",
+  "wrapUpWallNamed",
+  "accountsBounded",
+  "tasksWellFormed",
+  "recordWellFormed",
+  "recordMonotone",
+  "idsAccounted",
+  "programsWellFormed",
+  "depsAcyclic",
+  "idsDense",
+  "stuckSubsetCovered",
+  "cascadeSafety",
+  "noStructuralDeadlock",
+  "measureDescends",
+];

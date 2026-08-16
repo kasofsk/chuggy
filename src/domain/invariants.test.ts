@@ -128,6 +128,7 @@ import {
   accountsBounded,
   allInvariants,
   artifactWellFormed,
+  bundleConjunctNames,
   canFinishSet,
   cascadeSafety,
   completionExclusive,
@@ -381,38 +382,21 @@ test("the bundle is green on real pre/post pairs, not only on hand-built states"
   }
 });
 
-test("the roster is the model's own conjunct list, name for name and in order", () => {
-  // Read off `model/domain.qnt`'s `allInvariants`. The roster drives the exact
-  // sets below, so a conjunct silently dropped from it would quietly stop being
-  // checked by every one of them; this is where that is refused.
+test("the roster is the shipped conjunct list, name for name and in order", () => {
+  // The roster drives the exact sets below, so a conjunct silently dropped from
+  // it would quietly stop being checked by every one of them; this is where that
+  // is refused.
+  //
+  // AGAINST `invariants.ts`'s OWN LIST RATHER THAN AGAINST A COPY OF THE
+  // MODEL'S, which is the half this file can check. The other half — that the
+  // shipped list IS `model/domain.qnt`'s `allInvariants`, as an exact set in
+  // both directions — is the conformance gate's, through `verify.ts`'s roster
+  // comparison, because reading the model is a filesystem read and this suite
+  // is domain-pure. A third hand-typed copy here would have been the drift the
+  // pair exists to catch.
   assert.deepEqual(
     bundleConjuncts.map(([name]) => name),
-    [
-      "completionExclusive",
-      "revokedNeverCompletes",
-      "wrapUpIsolation",
-      "quietProjectLandsCleanly",
-      "leaseExclusive",
-      "noLeaseWithoutAKind",
-      "artifactWellFormed",
-      "projectsWellFormed",
-      "wrapUpWellFormed",
-      "terminalsAbsorbing",
-      "deskConsistent",
-      "wrapUpWallNamed",
-      "accountsBounded",
-      "tasksWellFormed",
-      "recordWellFormed",
-      "recordMonotone",
-      "idsAccounted",
-      "programsWellFormed",
-      "depsAcyclic",
-      "idsDense",
-      "stuckSubsetCovered",
-      "cascadeSafety",
-      "noStructuralDeadlock",
-      "measureDescends",
-    ],
+    bundleConjunctNames,
   );
 });
 

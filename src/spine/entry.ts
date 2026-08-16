@@ -330,6 +330,22 @@ const cmdFields: Readonly<Record<CmdTag, readonly NamedCheck[]>> = {
   JOpRetry: ticketOnly,
 };
 
+/**
+ * Every `Cmd` constructor's tag, DERIVED from the table above rather than typed
+ * out again: the `Record<CmdTag, …>` is exhaustive or this file does not
+ * compile, so its keys are the union and cannot fall behind it.
+ *
+ * IT IS EXPORTED FOR THE CONFORMANCE GATE, which holds it against
+ * `model/refinement.qnt`'s own `type Cmd` as an exact set in both directions.
+ * The compiler keeps this roster and `cmd.ts`'s union together; nothing in
+ * TypeScript can keep either of them level with the model, and a constructor
+ * the model gains that brings no decider with it was invisible to every gate
+ * until that comparison existed.
+ */
+export const shippedCmdTags: readonly CmdTag[] = Object.keys(
+  cmdFields,
+) as readonly CmdTag[];
+
 /** A decision event: a tag in the vocabulary, carrying exactly that arm's payload. */
 function isCmd(value: unknown): boolean {
   if (typeof value !== "object" || value === null) {

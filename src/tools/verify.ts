@@ -20,8 +20,14 @@ import { readdirSync } from "node:fs";
 
 import { messageOf } from "../domain/assert.ts";
 import type { Config } from "../domain/domain.ts";
+import { bundleConjunctNames } from "../domain/invariants.ts";
 import { effectVocabulary } from "../effects/effect.ts";
 import { shippedDeciders } from "../spine/cmd.ts";
+import { shippedCmdTags } from "../spine/entry.ts";
+import {
+  refinementBundleConjuncts,
+  refinementCoreConjuncts,
+} from "../spine/refinement-invariants.ts";
 import {
   CoverageBuilder,
   coverageGaps,
@@ -237,13 +243,25 @@ function staleConsts(manifest: Manifest): readonly string[] {
  * obligation nobody now owes. There is no drift today, and there was no alarm
  * either — which is the shape of control this repo refuses.
  *
- * SEVEN ROSTERS, AND THE COMPILER MAINTAINS NONE OF THEM, which is what
+ * NO COMPILER MAINTAINS ANY OF THESE ROSTERS AGAINST THE MODEL, which is what
  * separates them from the second statements this tree is happy to keep.
  * `effect.ts`'s `vocabulary`, `decode.ts`'s `labels` and `entry.ts`'s field
- * tables are copies the TYPE CHECKER holds to their unions; these seven are
- * copies of something written in another language, and nothing in TypeScript
- * can reach across that boundary. `corpus.ts`'s reader is what reaches, and
- * this is where the two sides meet.
+ * tables are copies the TYPE CHECKER holds to their unions — and that is a
+ * check against TypeScript, never against `model/`: `shippedCmdTags` is derived
+ * from a `Record` the compiler proves exhaustive over `Cmd`, and neither it nor
+ * `Cmd` can notice the model growing an arm. Every roster below is a copy of
+ * something written in another language, and nothing in TypeScript reaches
+ * across that boundary. `corpus.ts`'s reader is what reaches, and this is where
+ * the two sides meet.
+ *
+ * THE BUNDLE, THE `Cmd` ARMS AND THE REFINEMENT BLOCKS ARE THE ONES A
+ * `pure def` READ COULD NOT SEE, and they are here because their absence
+ * reproduced this alarm's own failure mode: a model
+ * surface stated as a `val … = and { … }` or as a sum type is invisible to a
+ * reader that looks for definitions, code literals and consts, so a conjunct
+ * added to `allInvariants` and an arm added to `type Cmd` both passed every
+ * gate at exit 0. Two of them also mean this walk reads `refinement.qnt`, which
+ * `staleConsts` never opens.
  *
  * EXACT SETS, BOTH DIRECTIONS, ORDER IGNORED. A roster entry the model has and
  * this tree does not is an obligation nobody owes; one this tree has and the
@@ -281,6 +299,22 @@ function staleRosters(): readonly string[] {
       model.binders,
     ),
     ...rosterDisagrees("model const", constNames, model.consts),
+    ...rosterDisagrees(
+      "allInvariants conjunct",
+      bundleConjunctNames,
+      model.bundleConjuncts,
+    ),
+    ...rosterDisagrees("Cmd arm", shippedCmdTags, model.cmdArms),
+    ...rosterDisagrees(
+      "refinementCore conjunct",
+      refinementCoreConjuncts,
+      model.refinementCoreConjuncts,
+    ),
+    ...rosterDisagrees(
+      "refinementInvariants conjunct",
+      refinementBundleConjuncts,
+      model.refinementBundleConjuncts,
+    ),
     ...model.unclassified.map(
       (text) =>
         `model: string literal ${JSON.stringify(text)} — the model's code holds it and it is spelled as neither an effect nor a step label`,
