@@ -92,7 +92,7 @@
 ///   - chuggy_witness_gate_test (budgeted consts): DEPTH-1 EXCLUSIVITY as
 ///     a guard-refusal pinned mid-trace (the second same-repo ticket's
 ///     dequeue REFUSED while the slot is held, enabled again the step the
-///     slot frees) and BOTH success effects on one machine trace — the
+///     slot frees) and BOTH success PATHS on one machine trace — the
 ///     held WOk, then the direct completion (the path rule, R3,
 ///     witnessed) — plus the QUIET FAST-PATH as its
 ///     own witnessed run (direct-path reachability pinned against the
@@ -822,8 +822,8 @@ module chuggy_witness_multirepo_test {
 /// promotion (WOk — the default ref advanced onto the validated
 /// candidate), the slot frees BY PHASE in the same step, and the second
 /// ticket dequeues QUIET into the fast-path direct squash (WOk) —
-/// BOTH success effects distinguished on one machine trace, each from its
-/// own path: the divergence as a theorem, witnessed. The SECOND run is
+/// BOTH success PATHS on one machine trace, told apart by the phase each
+/// resolves from and by its attribution. The SECOND run is
 /// the QUIET FAST-PATH as its own named
 /// witnessed shape — direct-path reachability through decideDequeue's
 /// valid artifact on a solo trace where the lease NEVER opens: the
@@ -957,8 +957,8 @@ module chuggy_witness_gate_test {
       })
       // THE FAST-PATH (R3, the other half): ticket 2 dequeues QUIET —
       // the lease is skipped and the direct squash lands in one step.
-      // Both success effects now stand on this one trace, each from its
-      // own path.
+      // Both success paths now stand on this one trace — the same effect,
+      // told apart by their attribution.
       .then(doDequeue(2, false))
       .expect(and {
         lastStep.label == "ticket-done",

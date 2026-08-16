@@ -703,7 +703,7 @@ module chuggy_domain {
           // retired when the ticket enqueued. Skipping the wrap-up phases
           // skips that retirement too, and a Done ticket holding live eval
           // tasks breaks tasksWellFormed. Caught by the random layer.
-          | WNone => completeTicket(withTicket(c, j, retired), j, "Complete")
+          | WNone => completeTicket(withTicket(c, j, retired), j)
           | WExclusive(_) =>
             move(
               withTicket(c, j, retired),
@@ -775,16 +775,19 @@ module chuggy_domain {
     if (moved) decideWrapUpStart(c, j)
     else decideWrapUpResolve(c, j, WOk, false)
 
-  /// A landing SUCCESS (either effect): the ticket lands, and that is the
-  /// whole of it — ONE transition, ONE landing effect. The merge-queue
-  /// PR's R2 fan-out (a lead's landing completing its group's members in
-  /// the same decision) went with the grouping removal, so what was the
+  /// THE COMPLETION: the ticket reaches PDone, and that is the whole of it —
+  /// ONE transition, ONE effect. Both routes in — a WOk wrap-up resolution
+  /// and a WNone ticket's passing evaluation — emit the same "Complete",
+  /// because the domain knows only that the step succeeded and never which
+  /// mechanism promoted anything (measure.qnt, WrapUpOutcome). The
+  /// merge-queue PR's R2 fan-out (one decision completing a lead and its
+  /// group's members) went with the grouping removal, so what was the
   /// memberless degeneration is now the only case.
-  pure def completeTicket(c: Core, j: int, eff: str): Decision =
+  pure def completeTicket(c: Core, j: int): Decision =
     { rec: {
         label: "ticket-done",
         transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: PDone }],
-        effects: [eff],
+        effects: ["Complete"],
         landing: WONone },
       post: withTicket(c, j,
         { ...c.tickets.get(j), phase: PDone,
@@ -813,8 +816,8 @@ module chuggy_domain {
   /// event carries `moved` — the environment's per-attempt choice of
   /// whether THIS ticket's target repo's default branch moved under the
   /// candidate (callers guarantee out ∈ wrapUpOutcomes(moved), so a failure
-  /// implies moved, and — R3 — the success EFFECT is determined by it) —
-  /// and EVERY arm stamps the step with the attempt's
+  /// implies moved — R3, the path rule) — and EVERY arm stamps the step with
+  /// the attempt's
   /// attribution (withWrapUpObs: the ticket's own repo + the choice), so
   /// the golden trace attributes each landing resolution, success or
   /// failure, to its repo and its cause. Accounts and pricing are
@@ -822,7 +825,7 @@ module chuggy_domain {
   /// each arm fires from (the path).
   pure def decideWrapUpResolve(c: Core, j: int, out: WrapUpOutcome, moved: bool): Decision =
     withWrapUpObs(match out {
-      | WOk => completeTicket(c, j, "Complete")
+      | WOk => completeTicket(c, j)
       | WFailed =>
         match WRAPUP_PRICING {
           | Budgeted(_) =>

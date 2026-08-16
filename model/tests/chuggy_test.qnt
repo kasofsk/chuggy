@@ -102,8 +102,8 @@
 ///     wrapUpOutcomes(false) is the WOk singleton (the skip
 ///     fast-path), wrapUpOutcomes(true) is {WOk, Failed} (the
 ///     gate ran) — quiet refuses failure AND the held promotion, moved
-///     refuses the direct squash; the two success effects come from their
-///     two paths and nowhere else;
+///     refuses the direct squash; both success paths emit the ONE
+///     completion effect;
 ///   - THE DEPTH-1 GUARD pinned (R4): an occupied gate refuses every
 ///     same-repo dequeue (wrapUpStartableIn false) while another repo's
 ///     dequeue stays enabled — serialization is per-repo; gate-opened is
@@ -334,7 +334,8 @@ module chuggy_test {
 
   /// EFFECT EXCLUSIVITY, happy path (effect-only):
   /// exactly one completion effect, exactly at Done — the quiet fast-path's
-  /// direct squash (the path rule: WOk is the QUIET effect).
+  /// direct squash (the path rule: WOk is the one outcome a quiet draw
+  /// permits).
   run effectExclusivityHappyPathTest = assert(and {
     c8.tickets.get(1).phase == PDone,
     c8.tickets.get(1).completions == 1,
@@ -347,13 +348,14 @@ module chuggy_test {
   pure val cGated7 = dGateOpen7.post
   pure val dCompleteGated = DB::decideWrapUpResolve(cGated7, 1, WOk, true)
 
-  /// The two landing SUCCESS outcomes are distinct, named effects — the
-  /// one conformance divergence, pinned from day one — and each comes
-  /// from ITS path and no other (R3, at decider grain): the held promotion
-  /// advances the default ref onto the validated candidate; the quiet
-  /// fast-path squash-merges directly. Same terminal, same exclusivity
-  /// counter, different effect — determined by the path, not drawn.
-  run landingOutcomesDistinctTest = assert(and {
+  /// BOTH WRAP-UP SUCCESS PATHS EMIT THE ONE EFFECT: the held promotion
+  /// advances the default ref onto the validated candidate, the quiet
+  /// fast-path squash-merges directly, and each emits exactly "Complete".
+  /// What tells them apart is the phase each resolves from (R3, at decider
+  /// grain) — never the effect, because which mechanism promoted the
+  /// artifact is the adapter's and the domain does not know it. Same
+  /// terminal, same exclusivity counter.
+  run wrapUpSuccessPathsEmitOneEffectTest = assert(and {
     dCompleteGated.rec.effects == ["Complete"],
     dCompleteGated.rec.transitions == [{ ticket: 1, from: PWrapUpHolding, to: PDone }],
     dCompleteGated.post.tickets.get(1).phase == PDone,
