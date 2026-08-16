@@ -278,10 +278,13 @@ test("each instance's walk reaches the roster it is stated to reach", () => {
 /**
  * WHAT UNIFORM SAMPLING REACHES AT THESE CONSTS, on EVERY one of the three
  * instances — the intersection, measured at the budget and roots above. The
- * budgeted root reaches more than this (its walks also pass an evaluation stage
- * and land a ticket outright), and the floor deliberately does not say so: an
- * entry one run reaches and the others do not is a claim about one seed rather
- * than about the exploration.
+ * budgeted root reaches more than this (its walks also pass an evaluation and
+ * land a ticket outright), and the floor deliberately does not say so. Those
+ * two entries are one walk in three hundred each — the same thinness the
+ * `work-passed` caveat below describes, and here it is the reason for leaving
+ * them out rather than a caveat on keeping them in: an entry one run reaches
+ * and the others do not is a claim about one seed rather than about the
+ * exploration.
  *
  * THE FLOORS ARE INSTANCE-BLIND BY CONSTRUCTION — one shared list checked
  * against all three runs — and that is a decision rather than an omission. What
@@ -348,7 +351,7 @@ test("cascadeParkNever is violated by sampling, on every instance", () => {
   // on passing. This one witness IS reachable by sampling, and comfortably so
   // on all three instances, though not equally: the rate runs from about a
   // twelfth of the retryfree walks — where a two-ticket fleet is the whole
-  // supply of dependents — to better than a quarter of the other two. Re-read
+  // supply of dependents — to about a quarter of the other two. Re-read
   // the rate by counting `firings` per walk rather than folding them; the probe
   // itself asks only that the shape occurred, which is the claim the witness
   // makes.
@@ -367,14 +370,16 @@ test("cascadeParkNever is violated by sampling, on every instance", () => {
 // `chuggy_witness_test.qnt` exists because the model needed exactly this: the
 // no-arm-without-a-witness rule requires every `stepDescends` exemption arm to
 // be fired by a deterministic run, and both shapes below sit behind chains of
-// correctly-drawn steps that uniform sampling does not find. PLAN.md records
+// correctly-drawn steps that uniform sampling does not find at this budget. PLAN.md records
 // the search that established it for the free climb — not reached across
 // roughly 240000 model traces, at budgets to 200000 samples of 100 steps. The
 // stage advance is the same story one order of magnitude in: the runs above
-// reach it zero times, and so does a thirtyfold extension of them from the same
-// roots (raise `walkBudget.walks` and count the `stageAdvanceNever` firings to
-// re-measure). A sampled probe for it would be a probe that goes quiet under a
-// reseed rather than under a defect.
+// reach it zero times, and so does a tenfold extension of them from the same
+// roots — the first firing appears somewhere between 3000 and 6000 walks per
+// instance, on every one of the three (raise `walkBudget.walks` and count the
+// `stageAdvanceNever` firings to re-measure). So it IS reachable by sampling —
+// just not at a budget this suite can afford, which makes a sampled probe for
+// it one that goes quiet under a reseed rather than under a defect.
 //
 // Each script is the model's `run` with its `do*` drivers read as the `Cmd`s
 // they are, at the same consts, step for step.
@@ -516,11 +521,14 @@ test("stageAdvanceNever is violated on the stage-advance trace, and no other wit
     closingLabels.filter((l) => !stageAdvance.coverage.labels.has(l)),
     [],
   );
-  // AND THE EIGHTH EXEMPTION ARM, which is reachable on no other run in this
-  // file: `complete-duplicate` needs a landed ticket to re-deliver a completion
-  // to, and the sampled walks do not land one. With this the two deterministic
-  // traces and the sampled walks together fire all eight arms of
-  // `stepDescends` — the roster PLAN.md's coverage obligation names.
+  // AND THE EIGHTH EXEMPTION ARM, which no sampled walk in this file fires.
+  // The reason is the SUBSEQUENT DRAW rather than the landing: the arm needs a
+  // landed ticket AND the re-delivery drawn on it before the run ends, and
+  // while the budgeted root's walks do land one, none of them goes on to draw
+  // the duplicate — `walk.test.ts`'s `settle` note argues the same shape for
+  // the same arm. With this the two deterministic traces and the sampled walks
+  // together fire all eight arms of `stepDescends` — the roster PLAN.md's
+  // coverage obligation names.
   assert.ok(
     stageAdvance.coverage.arms.has("complete-duplicate"),
     "the complete-duplicate exemption arm did not fire on the absorbed duplicate",

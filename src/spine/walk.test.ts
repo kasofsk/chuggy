@@ -60,10 +60,10 @@
  * walking a machine whose `step` roster has twelve entries instead of
  * thirteen. (The tempting second reason — that a quiet fleet still enables
  * `complete-duplicate`, so a fallback would never fire — does not survive
- * measurement: that arm needs a LANDED ticket, and landing is so rare under
- * uniform choice that `randomized.test.ts`'s shared floor cannot name
- * `ticket-done` at all. The decision stands on the model's roster, which is
- * why the roster is the reason given.)
+ * measurement: that arm needs a landed ticket AND the re-delivery drawn on it
+ * before the run ends, and the sampled walks in `randomized.test.ts` do land
+ * one without ever going on to draw the duplicate. The decision stands on the
+ * model's roster, which is why the roster is the reason given.)
  *
  * WHAT THIS FILE IS NOT. It declares no test: it is the harness
  * `randomized.test.ts` drives, on `fixtures.test.ts`'s precedent — the `.test.ts`
