@@ -238,8 +238,9 @@ export function settle(
  * over the state's own `Core` and its own step history.
  *
  * A one-line adapter, and it earns its place by being the only spelling of the
- * pairing: the replayer asserts the bundle after every step, the randomized
- * layer will assert it after every walk step, and both must ask it of the same
+ * pairing: the replayer asserts the bundle after every replayed step, the
+ * randomized walker after every walk step, and the crash-seam and interpreter
+ * suites at every state they observe — and all of them must ask it of the same
  * three history values the step just wrote.
  */
 export function invariantsHold(cfg: Config, state: MachineState): boolean {

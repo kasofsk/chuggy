@@ -16,7 +16,7 @@
 # drives the golden corpus through them. The spine was claimed pure in its own
 # headers before any gate covered it, which is the shape of control this repo
 # refuses: a clock there voids replay exactly as a clock in a decider does, and
-# s5's recovery-by-replay folds over that code next. `src/tools/` is
+# s5's recovery-by-replay folds over that code. `src/tools/` is
 # deliberately outside the rule — the emitter spawns quint, the gate driver
 # reads the corpus — and what keeps that honest is direction rather than
 # naming: `.dependency-cruiser.mjs` forbids anything pure from reaching it.

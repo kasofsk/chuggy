@@ -43,12 +43,61 @@
  * knowledge, so there is nothing for a port to carry them to.
  *
  * ==========================================================================
- * TWO PROMISES ARE THE SAME FOR ALL FOUR, SO THEY ARE STATED ONCE
+ * THE VIEW AN ADAPTER HOLDS — DECLARED, NOT IMPLIED
+ * ==========================================================================
+ *
+ * The paragraph above says an adapter "derives the rest from the view it
+ * already holds", and three port sections below lean on that sentence. It names
+ * a component, so the component is declared here rather than left as a phrase.
+ *
+ * WHAT A `Delivery` CARRIES IS THE DECISION, NOT THE WORK. The key, the effect
+ * and the record — and a `StepRecord` is `model/measure.qnt`'s: a label, a list
+ * of phase transitions, the effect list and the landing observation. It carries
+ * NO task ids, no fan-out width, no evaluator stage and no program. So a real
+ * fabric adapter, told `SpawnEvalTasks` for a ticket, is not told which runs to
+ * start.
+ *
+ * THE ANSWER IS A READ MODEL, AND IT IS THE ADAPTER'S OWN COMPONENT — not this
+ * layer's, not a fifth port, and not a field on `Delivery`. The moment an effect
+ * carried the width, somebody would have to derive it, and the two candidates
+ * are a decider (which would then be performing) and the interpreter (which
+ * would then be deciding). `model/domain.qnt` already takes this position for
+ * the desk in as many words: the open desk task is DERIVED from the phase, and
+ * `OpenHumanTask` is its trace-visible effect. The generalization is the shape
+ * of this whole layer — AN EFFECT IS A NOTIFICATION THAT THE ANSWER CHANGED,
+ * UNDER A KEY, AND NEVER THE ANSWER ITSELF.
+ *
+ * ITS CONSISTENCY IS BOUNDED, AND THE BOUND IS WHAT MAKES THE POSITION SAFE. A
+ * read model may lag the actor's `Core` by any amount and may be read for
+ * nothing but performing the delivery in hand. It is never a source of truth:
+ * no adapter may decide from it, and nothing the machine owns — enablement,
+ * mutual exclusion, an account, a route — may be re-derived out of it, which is
+ * the refusal every port section below already states as "it decides nothing".
+ * What the key buys is that a lagging read model costs correctness nothing: a
+ * delivery it cannot yet serve is one the adapter refuses by throwing, the
+ * cursor does not advance, and the row re-emits until it can.
+ *
+ * AND THE FEED IS NOT ONE OF THESE FOUR CONTRACTS, said plainly because it is
+ * the honest half. This tree ships no read model and no way to build one: the
+ * only implementation records what it was asked and answers nothing, so nothing
+ * here has ever needed the view. A deployment that runs real work supplies that
+ * feed outside these contracts, and that is where the core-does-not-move claim
+ * is paid for — the pure core, the journal schema and these four types are
+ * unchanged by it, and the component that lands is the adapter's.
+ *
+ * ONE CHANGE WOULD MOVE THE CORE, so it is named rather than discovered.
+ * Putting task ids or a width INTO the record: `StepRecord` is the model's,
+ * `refinement.qnt` journals it, and every committed golden trace carries its
+ * current shape — so that is a model PR under rule 4 and a corpus regeneration,
+ * never a widening of this file.
+ *
+ * ==========================================================================
+ * THREE PROMISES ARE THE SAME FOR ALL FOUR, SO THEY ARE STATED ONCE
  * ==========================================================================
  *
  * A second copy of a promise is what drifts, and four copies of one paragraph
  * is four chances to correct three of them. Each port below documents what only
- * it can say; these two are the whole of what it inherits.
+ * it can say; these three are the whole of what it inherits.
  *
  * A DELIVERY IS A DELIVERY. Every implementation REFUSES anything
  * `hasDeliveryShape` refuses, and that is a promise of the PORT rather than a
@@ -79,6 +128,34 @@
  *     drains hand them over carries no information an implementation may act
  *     on. An adapter that inferred anything from arrival order across drains
  *     would be inferring it from the crash history of the process above it.
+ *
+ * IDEMPOTENCE IS SCOPED TO THE WORLD, NOT TO A PROCESS, which is the promise
+ * every port below restates and the scope none of them stated. A delivery under
+ * a key the port has already accepted has NO FURTHER EFFECT, and the memory
+ * that holds the key must outlive the process that received it — because the
+ * thing being absorbed outlives it too. `journal-store.ts` is where the same
+ * sentence is written honestly one layer down, and this is its consequence: an
+ * actor's cursor is durable only up to whatever checkpoint survived, so a
+ * crash-and-recover re-emits rows the world received before the crash, and
+ * nothing bounds how much later that is. A dedup table in process memory
+ * absorbs a re-emission WITHIN one run of the actor and nothing else; it would
+ * land a ticket's diff twice across the exact crash `noDuplicateCycle` prices,
+ * which is the failure the whole design exists to prevent.
+ *
+ *   - THE KEY SPACE IS THE JOURNAL, so the memory grows with the log and
+ *     nothing in the machine ever retires an entry. An implementation may hold
+ *     that memory itself, or may borrow it from a medium that is already
+ *     idempotent under this key — a conditional write, a unique constraint, a
+ *     content-addressed store. Both keep the promise; a set in a variable does
+ *     not.
+ *   - IT IS THE PORT'S PROMISE AND NOT THE STUB'S CONVENIENCE. An
+ *     implementation that cannot absorb, because the medium beneath it cannot,
+ *     has not implemented the port it claims — and the refinement theorems
+ *     above it do not hold of the system it is in.
+ *   - `src/adapters/recording-world.ts` keeps it for the lifetime it has: its
+ *     ledger is a map in a closure and the world is the process. That is the
+ *     honest scope of a stub, and it is exactly why the promise is stated here
+ *     as the port's rather than read off the one implementation.
  */
 
 import type { Keyed } from "../effects/keyed.ts";
@@ -122,7 +199,7 @@ import type { StepRecord } from "../domain/measure.ts";
  * deduplicates nothing within a row and deduplicates a re-emitted row exactly.
  * Project the ordinal away and what is left is `model/refinement.qnt`'s
  * `worldEffects: Set[int]` — this is that set refined, not replaced, and
- * `harness.test.ts`'s `expectSteady` asserts the projection at every state of
+ * `harness.test.ts`'s `expectRigSteady` asserts the projection at every state of
  * every walk rather than leaving it as an argument.
  *
  * HOW MUCH OF THE MACHINE THIS IS ABOUT, stated because it bounds the risk.
@@ -233,15 +310,18 @@ export function hasDeliveryShape(delivery: Delivery): boolean {
  *
  *   IT RUNS WHAT IT IS TOLD TO RUN. `spawn` is handed a decision that spawned a
  *   task set — `SpawnWorkTasks` or `SpawnEvalTasks` — and starts the ticket's
- *   live set. The width, the kind and the ids are the ticket's, and they are
- *   already in the view the adapter holds; nothing about them is a choice the
- *   fabric makes.
+ *   live set. WHICH runs those are is read from the adapter's own read model at
+ *   the ticket `subjectOf` names: the width, the kind and the ids are the
+ *   ticket's, the record carries none of them, and nothing about them is a
+ *   choice the fabric makes.
  *
  *   IT STOPS WHAT IT IS TOLD TO STOP. `cancel` withdraws the ticket's
- *   outstanding runs. Cancelling a ticket that has nothing running SUCCEEDS and
- *   does nothing: the revoke cascade reaches Drafts and Pendings that never ran
- *   a task, and a port that treated that as an error would make the commonest
- *   revocation a failure.
+ *   outstanding runs — read from the same view, at the same ticket, for the
+ *   same reason: `Revoke` names a decision and never a run, so the set to
+ *   withdraw is the adapter's answer and not the effect's. Cancelling a ticket
+ *   that has nothing running SUCCEEDS and does nothing: the revoke cascade
+ *   reaches Drafts and Pendings that never ran a task, and a port that treated
+ *   that as an error would make the commonest revocation a failure.
  *
  *   IT REPORTS ENDINGS. A run that ends is reported, and the report reaches the
  *   actor as an external event that a surface translates into a candidate
@@ -305,16 +385,11 @@ export function hasDeliveryShape(delivery: Delivery): boolean {
  * IDEMPOTENCE
  * ==========================================================================
  *
- * A delivery under a key this port has already accepted has NO FURTHER EFFECT.
- * The key is `Delivery`'s pair, and the promise is what makes an at-least-once
- * channel upstream safe: a cursor that regressed re-emits rows the world
- * already has, and re-running a task set for a decision already run would be
- * the double-spend `noDoubleSpentBudget` prices. It is also the whole of what
- * survives across drains, since the ordering promise does not.
- *
- * The promise is the PORT's, not the stub's convenience. An implementation that
- * cannot absorb — because the medium beneath it cannot — has not implemented
- * this port, and the theorems above it do not hold of the system it is in.
+ * The header's, at the header's scope — outliving the process, not the drain.
+ * The key is `Delivery`'s pair, and what this port adds is the price of getting
+ * it wrong: re-running a task set for a decision already run is the double-spend
+ * `noDoubleSpentBudget` prices, so an unabsorbed redelivery here is a theorem
+ * falsified rather than a request repeated.
  */
 export type FabricPort = {
   /** Start the ticket's live task set for this decision. */
@@ -338,6 +413,16 @@ export type FabricPort = {
  * NOT storage this port keeps — it is `hasOpenHumanTask`, a predicate over the
  * phase, and a desk that kept its own copy would be the second thing that can
  * disagree.
+ *
+ * IT IS THE ONE PORT `subjectOf` DOES NOT ANSWER FOR, and the exception is
+ * stated here because the fabric section states the formula. A cascade row's
+ * first transition is the ticket the decision REVOKED, while its
+ * `OpenHumanTask`s are that ticket's parked DEPENDENTS — so `subjectOf` on this
+ * delivery names a ticket no desk task is being opened for. The tickets to open
+ * for are read from the adapter's own view of what is newly parked, exactly as
+ * the header's derived-view paragraph says and for its reason: pairing effects
+ * with transitions by position would be a fact about how `decideRevoke` happens
+ * to build two lists rather than anything the machine promises.
  *
  * IT DECIDES NOTHING. It does not close a task on its own, does not merge two
  * tasks for one ticket, and does not choose what an operator may do — an

@@ -22,13 +22,29 @@
 # reasoned — each entry below was verified by making the change and watching
 # this gate stay green.
 #
-#   1. THE MODEL MOVING UNDER THE CORPUS. A new decider with no fixture reddens
-#      the coverage roster, but a CHANGED decider whose traces were never
-#      regenerated replays green against the machine it was emitted from. Two
-#      things narrow it: the manifest's consts are compared against the model's
-#      own const blocks on every run, so an instance moving under the corpus is
-#      a finding here; and `check-model.sh` runs the model's own suites in the
-#      same `just check`.
+#   1. THE MODEL MOVING UNDER THE CORPUS. A CHANGED decider whose traces were
+#      never regenerated replays green against the machine it was emitted from.
+#      Three things narrow it, and the first two are alarms this gate raises
+#      itself. The manifest's consts are compared against the model's own const
+#      blocks on every run, so an instance moving under the corpus is a finding
+#      here. The rosters this tree types out by hand — the deciders, the step
+#      labels, the exemption arms, the effect strings, the mc instances, the
+#      nondet binders, the const names, the safety bundle's conjuncts, the
+#      decision-event constructors and the two refinement bundles' conjuncts —
+#      are compared against the model's own declarations as exact sets in both
+#      directions, so a decider the model gained is a finding rather than an
+#      obligation nobody owes. A surface stated as a `val ... = and { ... }` or
+#      as a sum type is read by its own reader, in `src/tools/corpus.ts`,
+#      because a read of `pure def`s and code literals cannot see one: while
+#      two of them were unread, a conjunct added to `allInvariants` and an arm
+#      added to `type Cmd` both passed every gate at exit 0. What
+#      remains is a decider whose BODY moved with its NAME and its ROSTERS
+#      intact, and that remainder is narrowed rather than closed:
+#      `check-model.sh` runs the model's own suites in the same `just check`,
+#      which catches a body change the model's own theorems refuse — and stays
+#      green on one they do not, while the stale corpus replays green beside
+#      it. Regenerating the corpus is what closes it, and the diff that leaves
+#      is the thing to read.
 #   2. AN ENABLEMENT ARM WIDENED. `cmdEnabled` refusing less than the machine
 #      does is invisible to replay — every fixture holds decisions the machine
 #      TOOK, and a widened guard still admits those. What covers it is

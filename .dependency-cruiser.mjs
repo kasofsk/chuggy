@@ -121,7 +121,7 @@ export default {
       name: "spine-is-pure",
       severity: "error",
       comment:
-        "src/spine/ is the other half of the pure core — the decision-event vocabulary, the machine's own step, and the golden-trace replayer — and it may reach the domain and nothing else, at any depth. This is `domain-is-pure` one layer up, and it is not a layering nicety: replay is the whole conformance argument, so a spine that reached a clock or a socket would let the same Core and the same event answer differently on a different host, which is exactly what standing rule 4 rests on not happening. s5's recovery-by-replay folds over this code next. The filesystem and the quint process live in `src/tools/` deliberately; this rule and `domain-is-pure` are what keep either from being reachable from anything that claims to be pure.",
+        "src/spine/ is the other half of the pure core — the decision-event vocabulary, the machine's own step, and the golden-trace replayer — and it may reach the domain and nothing else, at any depth. This is `domain-is-pure` one layer up, and it is not a layering nicety: replay is the whole conformance argument, so a spine that reached a clock or a socket would let the same Core and the same event answer differently on a different host, which is exactly what standing rule 4 rests on not happening. s5's recovery-by-replay folds over this code, and s6's interpreter drains the journal it rebuilds. The filesystem and the quint process live in `src/tools/` deliberately; this rule and `domain-is-pure` are what keep either from being reachable from anything that claims to be pure.",
       from: { path: "^src/spine/", pathNot: "[.]test[.](ts|mts|cts)$" },
       to: { reachable: true, pathNot: "^src/(spine|domain)/" },
     },

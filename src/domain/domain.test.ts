@@ -164,6 +164,7 @@ import {
   stageChoices,
   taskPhaseIn,
   ticketAt,
+  isSubsetOf,
   validPrograms,
   waitsOn,
   withTicket,
@@ -471,7 +472,7 @@ test("staleStageCompletionNoopsTest: a completion for a RETIRED id no-ops by ide
   // and no golden trace can deliver it, because the action draws j from
   // `taskPhaseTickets` — and `model/refinement.qnt`'s `cmdEnabled` states the
   // same pair on its `JTaskDone` arm (`taskPhaseIn` and `deliverableTaskIds`),
-  // which is the citation that matters for s3: the replayer will refuse the
+  // which is the citation that matters for the spine: `cmdEnabled` refuses the
   // command at the same two guards this refuses the call at, so the strictness
   // costs no conformance. The absorb-by-identity claim itself is
   // pinned above at c4, and inside the task phase at `cS1`
@@ -2831,4 +2832,22 @@ test("handBuiltFixturesAccountedTest: every named fixture states the ids it hand
   }
   // And the guard bites: the defect it names is one field wide.
   assert.ok(!accountedTicket({ ...jWork, spawned: 0 }));
+});
+
+test("isSubsetOf: the model's subseteq, and the empty set every caller leans on", () => {
+  // THE ONE SPELLING, hoisted here from three. `decideArrive`'s deps guard asks
+  // it of a drawn subset, `canFinishSet` of a ticket's waits, and
+  // `stuckSubsetCovered` of two whole walks — and all three reach the empty
+  // case routinely: an arrival with no deps, a ticket at the bottom of the DAG,
+  // and a fleet nothing has escalated. Quint's `subseteq` answers TRUE there,
+  // and a copy that answered otherwise would refuse every dependency-free
+  // arrival the machine can make.
+  assert.equal(isSubsetOf(new Set(), new Set()), true, "empty in empty");
+  assert.equal(isSubsetOf(new Set(), new Set([1])), true, "empty in anything");
+  assert.equal(isSubsetOf(new Set([1]), new Set()), false, "nothing holds it");
+  assert.equal(isSubsetOf(new Set([1, 2]), new Set([2, 1, 3])), true);
+  assert.equal(isSubsetOf(new Set([1, 2]), new Set([1, 3])), false);
+  // Membership, never order or size: the larger set is a superset by what it
+  // HOLDS, and a comparison by count would call these two equal.
+  assert.equal(isSubsetOf(new Set([3, 1]), new Set([1, 3])), true);
 });

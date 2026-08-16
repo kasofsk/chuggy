@@ -8,6 +8,14 @@ ORCHESTRATION.md differs from the model's, the difference is called out and the 
 the model. Amended in round 1 of the adversarial panel (PR #2): the domain invariants
 re-homed below the spine, s2 split, the trace mechanism made two-tier on probe evidence.
 
+**This is the branch's own map, and it is the only one.** `README.md` and `CLAUDE.md` are
+upstream main's files, synced into this branch and describing main — a tree where `model/`
+lives alone and no implementation exists — so their status prose is true where it is written
+and is not this branch's to edit. An implementation slice that "corrected" README's status
+would be editing another branch's description of itself, and the correction would arrive as
+a conflict the next time main moved. What is true of the code in this branch is stated here
+and in the headers of the files themselves.
+
 ## The slice table
 
 One row per PR-sized slice; branch `slice/<label>`. The Orchestrator keeps the status column

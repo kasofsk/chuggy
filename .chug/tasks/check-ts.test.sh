@@ -332,6 +332,16 @@ check "the ambient roster covers domain tests" 1 "$RC" 'may not reach `Date`'
 
 # 14. The positive control. The same call one directory across is legal, so the
 #    rule is scoped to the directory it names rather than to the tree.
+#
+#    AND THIS FIXTURE IS THE WHOLE OF IT, said here because a shipped module
+#    under `src/adapters/` once claimed the same role in its own header and
+#    could not have it. Not because the rule never sees such a file: widening
+#    `PURE_FILES` alone DID red the gate on it, through `stage_lint`, because
+#    `eslint.config.js` spreads the purity array in and the whole-tree lint runs
+#    it. The reason is that this case asserts the gate's VERDICT — a named exit
+#    code on a fixture written into a scaffolded repo — on every run, where a
+#    shipped file's cleanliness is an observation somebody has to make and
+#    re-make. Only a control that runs is one.
 scaffold
 cat >"$R/src/adapters/clock.ts" <<'TS'
 export function stamp(): number {

@@ -118,18 +118,62 @@ run_in_repo
 check "a corrupted fixture is a finding" 1 "$RC" "FINDING"
 
 # A fixture the manifest no longer names is a trace nothing replays — the shape
-# a dropped manifest entry leaves behind, and the coverage it carried goes with
-# it.
+# a dropped manifest entry leaves behind.
+#
+# THE FIXTURE IS CHOSEN SO THAT ONLY THE ORPHAN CHECK CAN RED, and the choice
+# is the whole case. This used to drop `retryfree-settled` and match the
+# generic `FINDING` line — which that fixture's departure produces three
+# further ways, because it is the corpus's only settled step, only settled
+# exemption arm and only retryfree instance. The case passed whether or not the
+# orphan check existed. `budgeted-desk-only-revoke` is coverage-redundant:
+# every roster entry it reaches, another fixture reaches too, so the orphan
+# message below is the only thing the gate can say about its absence.
+# `src/tools/verify.test.ts` asserts the same finding as an exact list.
 real_repo
 node -e '
 const fs = require("node:fs");
 const path = process.argv[1];
 const m = JSON.parse(fs.readFileSync(path, "utf8"));
-m.tier1 = m.tier1.filter((f) => f.name !== "retryfree-settled");
+m.tier1 = m.tier1.filter((f) => f.name !== "budgeted-desk-only-revoke");
 fs.writeFileSync(path, JSON.stringify(m, null, 2) + "\n");
 ' "$R/corpus/manifest.json"
 run_in_repo
-check "a fixture dropped from the manifest is a finding" 1 "$RC" "FINDING"
+check "a fixture dropped from the manifest is reported as an orphan" 1 "$RC" \
+	"corpus/tier1/budgeted-desk-only-revoke.itf.json is committed and the manifest names no fixture for it"
+
+# THE PER-STEP INVARIANT BUNDLE, RED-PROVED. Spine layer 1 is exact equality
+# AND the whole domain bundle after every step, and the second half is the one
+# a healthy tree can never make fire: the replayer evaluates the bundle over the
+# state its own deciders just produced at the replay's own consts, so no fixture
+# and no doctored trace can falsify a CORRECT conjunct — which is exactly what
+# makes discarding the verdict invisible. What can falsify one is a wrong
+# conjunct, so that is what this case ships.
+#
+# THE MUTATION IS DEEP ON PURPOSE. `wrapUpWallNamed`'s Budgeted arm is `true`;
+# giving it the DeadlineOnly arm's body makes it false only for a ticket that
+# has hit the wrap-up-budget wall — a state no sampled walk reaches and only the
+# deterministic half of the corpus carries. Nothing else moves: the conjunct is
+# read by no decider, so every record and every post-state still matches and the
+# bundle verdict is the only producer left.
+#
+# Delete `bundleFindings`' push in `src/spine/replay.ts` and this case is what
+# goes red.
+real_repo
+node -e '
+const fs = require("node:fs");
+const path = process.argv[1];
+const src = fs.readFileSync(path, "utf8");
+const from = "    case \"Budgeted\":\n      return true;";
+const to = "    case \"Budgeted\":\n      return everyTicket(c, (jb) => jb.reason !== \"RsWrapUpBudgetExhausted\");";
+if (!src.includes(from)) {
+  console.error("check-conformance.test.sh: the conjunct this case breaks has moved");
+  process.exit(3);
+}
+fs.writeFileSync(path, src.replace(from, to));
+' "$R/src/domain/invariants.ts"
+run_in_repo
+check "a conjunct false only on the deep half reaches the gate as the bundle verdict" \
+	1 "$RC" "the domain invariant bundle is false after this step"
 
 # No corpus at all: could not run, never a pass. A gate that reported "clean"
 # for a tree with nothing to check is the failure this whole file exists for.

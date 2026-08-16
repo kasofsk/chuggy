@@ -19,6 +19,23 @@ import { readFileSync, readdirSync } from "node:fs";
 
 import { decideArrive, decideRevoke, type Config } from "../domain/domain.ts";
 import type { Core, Stage, WrapUp } from "../domain/measure.ts";
+// THE ONE FIXTURE IMPORT IN THIS TREE THAT RUNS UPWARD, and it is deliberate:
+// `src/effects/` sits below `src/spine/`, and depcruise's `.test.ts` exemption
+// means no rule governs the direction. What is imported is the refinement
+// instance's own consts, which the case below spreads rather than re-mints —
+// re-minting them here would make this file an independent statement of an
+// instance every suite that walks the refinement machine reads, and a
+// `wrapUpPricing` that moved upstream would
+// leave it testing a machine nothing else runs. The direction is safe because
+// of what a `.test.ts` file is: `no-shipped-test-fixtures` stops anything that
+// ships from importing either file, so nothing but a suite ever takes this
+// edge. If a second upward import appears, the fixtures move down instead —
+// one is a considered exception, two is a layer inverting.
+import {
+  cfgRefinement,
+  progFlat,
+  wx1,
+} from "../spine/refinement-fixtures.test.ts";
 import {
   effectVocabulary,
   effectsOf,
@@ -206,18 +223,17 @@ test("parseEffect refuses a string outside the vocabulary", () => {
 
 // === A record's whole list ==================================================
 
-const cfg: Config = {
-  nTickets: 3,
-  nTasks: 1,
-  reworkPolicy: { tag: "RWBudget", budget: 1 },
-  gas: 3,
-  wrapUpPricing: { tag: "Budgeted", budget: 1 },
-  opRetryPricing: "RetryCharged",
-  maxStages: 1,
-  nProjects: 1,
-};
-const prog: readonly Stage[] = [{ fanout: 1, combinator: "CUnanimousPass" }];
-const wrapUp: WrapUp = { tag: "WExclusive", resource: 1 };
+/**
+ * The refinement instance with room for the cascade, by spread — `s6`'s own
+ * rule, which `harness.test.ts` states at `cfgInterp` and applies the same way:
+ * the delta is the whole of what this case needs, and it is visible as one
+ * line. Re-minting the instance's fields here made the fixture one more
+ * independent statement of one instance, and a `wrapUpPricing` that moved
+ * upstream would have left this file testing a machine no other suite runs.
+ */
+const cfg: Config = { ...cfgRefinement, nTickets: 3 };
+const prog: readonly Stage[] = progFlat;
+const wrapUp: WrapUp = wx1;
 
 /** A fleet where two Drafts depend on ticket 1 — the cascade's shape. */
 function twoDependentsOnOne(): Core {

@@ -37,8 +37,12 @@ import type { JournalStore } from "../spine/journal-store.ts";
 import { invariantsHold } from "../spine/machine.ts";
 import {
   cfgRefinement,
+  dispatch,
+  enterGate,
+  evalReduce,
   must,
   progFlat,
+  workReduce,
   wx1,
 } from "../spine/refinement-fixtures.test.ts";
 import {
@@ -74,7 +78,11 @@ import type { Delivery, Ports } from "./ports.ts";
  */
 export const cfgInterp: Config = { ...cfgRefinement, nTickets: 4 };
 
-export { must, progFlat, wx1 };
+// RE-EXPORTED RATHER THAN RE-DECLARED, on `cfgInterp`'s argument one line
+// up: the decision vocabulary this slice's walks are written in is the
+// refinement slice's, and a second declaration of `JDispatch on ticket 1`
+// is a second place for the ticket id to move.
+export { dispatch, enterGate, evalReduce, must, progFlat, workReduce, wx1 };
 
 /**
  * The authoring surface's report, on the gated route.
@@ -212,7 +220,7 @@ export function createRig(): Rig {
  * The equality itself is `expectWorldSettled`, asked at drain boundaries, where
  * it is the actual claim rather than a bound on it.
  */
-export function expectSteady(rig: Rig, s: ActorState): void {
+export function expectRigSteady(rig: Rig, s: ActorState): void {
   assert.ok(invariantsHold(cfgInterp, s.mem), "the domain bundle");
   assert.ok(refinementCore(cfgInterp, s), "the refinement core");
   assert.ok(refinementInvariants(cfgInterp, s), "the refinement bundle");
@@ -239,7 +247,7 @@ export function expectSteady(rig: Rig, s: ActorState): void {
  * ledger holds IS `worldEffects`: the ordinal projected away, exactly as
  * `ports.ts` claims. Between a port call and the `emitNext` behind it the two
  * differ by design, which is why this is a separate question and not a stronger
- * `expectSteady`.
+ * `expectRigSteady`.
  */
 export function expectWorldSettled(rig: Rig, s: ActorState): void {
   assert.deepEqual(
@@ -329,10 +337,10 @@ export function expectRefused(
 }
 
 function drained(rig: Rig, journaled: DurableState): DurableState {
-  expectSteady(rig, journaled);
+  expectRigSteady(rig, journaled);
   expectWorldSettled(rig, journaled);
   const out = interpret(cfgInterp, journaled, rig.ports);
-  expectSteady(rig, out);
+  expectRigSteady(rig, out);
   expectWorldSettled(rig, out);
   return out;
 }

@@ -41,7 +41,7 @@
  *
  *   - ACROSS CALLS, THE CURSOR ABSORBS. A row already emitted is not in
  *     `interpretPending`, so a second call re-delivers nothing. This is the
- *     absorber `deliver.ts`'s header names as the real one, and it is s5's.
+ *     absorber `deliver.ts`'s header names as the real one: `actor.ts`'s cursor.
  *   - WITHIN ONE CALL, `deliverOnce` ABSORBS — and finds nothing to absorb,
  *     because a journal's seqs are dense and each appears once in the pending
  *     slice. Said plainly rather than sold: what it contributes here is the

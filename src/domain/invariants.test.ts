@@ -75,12 +75,12 @@
  * out of the gate, so the run's own last conjunct reads a post-state holding a
  * `PDone` ticket with `ANone`.
  *
- * A NOTE THE SPINE WILL WANT. The multi-ticket fleets in `domain.test.ts` red
+ * A NOTE THE SPINE NEEDS. The multi-ticket fleets in `domain.test.ts` red
  * `idsDense` at DB's consts, because `N_TICKETS` is 2 there and those fleets
  * carry three or four tickets. Nothing is wrong with them — they exist to pin
  * guards over a phase domain, and a guard does not ask about the arrival bound —
- * but the moment s3 asserts the bundle after every replayed step, a fleet
- * borrowed from that suite will red for a reason that has nothing to do with the
+ * but `replay.ts` asserts the bundle after every replayed step, so a fleet
+ * borrowed from that suite reds for a reason that has nothing to do with the
  * step. The fleets built here take `cfgFleet` for exactly that reason.
  */
 
@@ -128,6 +128,7 @@ import {
   accountsBounded,
   allInvariants,
   artifactWellFormed,
+  bundleConjunctNames,
   canFinishSet,
   cascadeSafety,
   completionExclusive,
@@ -343,8 +344,8 @@ test("every landed fixture is a state the bundle accepts", () => {
 
 test("the bundle is green on real pre/post pairs, not only on hand-built states", () => {
   // Four deciders, four step pairs, each carrying its own `StepRecord` and the
-  // pre-state's measure and records — the shape the spine will hand the bundle
-  // after every replayed step.
+  // pre-state's measure and records — the shape `machine.ts`'s `applyDecision`
+  // hands the bundle after every replayed step.
   const beforeRelease = solo(jDraft);
   const beforeDispatch = solo(jPend);
   const beforeLanding = solo(jGatedRun);
@@ -381,38 +382,21 @@ test("the bundle is green on real pre/post pairs, not only on hand-built states"
   }
 });
 
-test("the roster is the model's own conjunct list, name for name and in order", () => {
-  // Read off `model/domain.qnt`'s `allInvariants`. The roster drives the exact
-  // sets below, so a conjunct silently dropped from it would quietly stop being
-  // checked by every one of them; this is where that is refused.
+test("the roster is the shipped conjunct list, name for name and in order", () => {
+  // The roster drives the exact sets below, so a conjunct silently dropped from
+  // it would quietly stop being checked by every one of them; this is where that
+  // is refused.
+  //
+  // AGAINST `invariants.ts`'s OWN LIST RATHER THAN AGAINST A COPY OF THE
+  // MODEL'S, which is the half this file can check. The other half — that the
+  // shipped list IS `model/domain.qnt`'s `allInvariants`, as an exact set in
+  // both directions — is the conformance gate's, through `verify.ts`'s roster
+  // comparison, because reading the model is a filesystem read and this suite
+  // is domain-pure. A third hand-typed copy here would have been the drift the
+  // pair exists to catch.
   assert.deepEqual(
     bundleConjuncts.map(([name]) => name),
-    [
-      "completionExclusive",
-      "revokedNeverCompletes",
-      "wrapUpIsolation",
-      "quietProjectLandsCleanly",
-      "leaseExclusive",
-      "noLeaseWithoutAKind",
-      "artifactWellFormed",
-      "projectsWellFormed",
-      "wrapUpWellFormed",
-      "terminalsAbsorbing",
-      "deskConsistent",
-      "wrapUpWallNamed",
-      "accountsBounded",
-      "tasksWellFormed",
-      "recordWellFormed",
-      "recordMonotone",
-      "idsAccounted",
-      "programsWellFormed",
-      "depsAcyclic",
-      "idsDense",
-      "stuckSubsetCovered",
-      "cascadeSafety",
-      "noStructuralDeadlock",
-      "measureDescends",
-    ],
+    bundleConjunctNames,
   );
 });
 
@@ -1601,7 +1585,7 @@ test("leaseExclusive is a relation over resources AND phases, pinned at both end
 // === Dependencies that DISAGREE ============================================
 // `domain.test.ts`'s `cMixedDeps` lesson, inherited: "a `forall` over a relation
 // needs members that disagree, not one more uniform set". Every quantifier over
-// a dep set — `anyEdgeIn`'s exists, `everyDepIn`'s forall, and the two walks
+// a dep set — `anyEdgeIn`'s exists, `isSubsetOf`'s forall, and the two walks
 // that read a dep list to its end — answers identically on every single-dep
 // fleet, whichever way it is written. Only a ticket with two deps that disagree
 // tells them apart, and in each fleet below the DISCRIMINATING dep is the second

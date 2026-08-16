@@ -71,7 +71,7 @@ test("assertNever survives a bare bigint", () => {
 });
 
 test("assertNever keeps the tag of a record carrying bigint fields", () => {
-  // The shape s3 will actually decode: ITF serializes integers as bigints, so
+  // The shape `itf.ts` actually decodes: ITF serializes integers as bigints, so
   // the unhandled value is a RECORD with bigint fields. Without the replacer
   // JSON.stringify throws on the whole record and the string coercion renders
   // it `[object Object]` — losing the one field that names the unhandled case.

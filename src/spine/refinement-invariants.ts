@@ -180,3 +180,35 @@ export function refinementInvariants(cfg: Config, s: ActorState): boolean {
     noDuplicateCycle(s)
   );
 }
+
+/**
+ * The two bundles above as NAMES, in the model's own conjunct order — the
+ * rosters `src/tools/verify.ts` holds against `model/refinement.qnt`'s own
+ * `and { … }` blocks as exact sets in both directions.
+ *
+ * `invariants.ts`'s `bundleConjunctNames`, one layer up, and it is here for the
+ * same reason: this layer's obligations are a list in the model and a chain of
+ * calls here, and nothing in TypeScript compares a chain of calls to a Quint
+ * declaration. An invariant the model adds to either bundle brings no fixture
+ * and no decider with it, so replay stays green over an obligation this tree
+ * does not know it owes — which is the whole failure mode the roster alarm was
+ * built for, on a surface it could not see.
+ *
+ * TWO ROSTERS AND NOT THEIR UNION, because the model states two blocks and the
+ * split is load-bearing: the core is what survives the hazard, and a conjunct
+ * that moved from one block to the other would be exactly the change a union
+ * could not see.
+ */
+export const refinementCoreConjuncts: readonly string[] = [
+  "journalLegal",
+  "recoveryComplete",
+  "executorSound",
+  "journalCompletionsMatchLedger",
+];
+
+export const refinementBundleConjuncts: readonly string[] = [
+  "refinementCore",
+  "journalCoversWorld",
+  "noDoubleSpentBudget",
+  "noDuplicateCycle",
+];

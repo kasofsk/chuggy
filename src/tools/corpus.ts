@@ -249,7 +249,7 @@ function name(raw: unknown, at: string): string {
 // `import chuggy_domain(...)` block it names and the comparison below is
 // between two texts rather than between a text and an interpretation.
 
-const constNames = [
+export const constNames = [
   "N_TICKETS",
   "N_TASKS",
   "REWORK_POLICY",
@@ -352,12 +352,7 @@ function retryPricing(raw: string, at: string): Config["opRetryPricing"] {
  * The bound is what makes the promise true.
  */
 export function readModuleConsts(path: string, module: string): ModelConsts {
-  let source;
-  try {
-    source = readFileSync(path, "utf8");
-  } catch (error) {
-    throw new CorpusError(`${path} cannot be read: ${messageOf(error)}`);
-  }
+  const source = readSource(path);
   const start = source.indexOf(`module ${module} {`);
   if (start < 0) {
     throw new CorpusError(`${path}: no module ${module}`);
@@ -462,4 +457,342 @@ function count(raw: unknown, at: string): number {
     throw new CorpusError(`${at}: expected a positive whole number`);
   }
   return raw;
+}
+
+// === The model's own rosters ===============================================
+//
+// THE SECOND STALENESS ALARM, and it is the const alarm's argument applied to
+// the other thing a manifest-free part of this tree copies out of the model.
+// The rosters here are typed out by hand from the model's own sources — the
+// deciders, the reachable step labels, the `stepDescends` exemption arms, the
+// effect strings, the mc instances, the nondet binder names, the const names,
+// the conjuncts of `allInvariants` and of the two refinement bundles, and the
+// `Cmd` constructors — and every one of them is a second statement of something
+// the model already says. The corpus does not catch a roster going stale: a
+// model PR that adds a decider adds no fixture either, so `coverageGaps` finds
+// every rostered entry covered and reports nothing, and the whole gate stays
+// green over a machine this tree does not describe.
+//
+// WHAT MAKES A SECOND STATEMENT LEGITIMATE, in this tree, is that something
+// maintains it. Where the compiler can, it does — `effect.ts`'s `vocabulary`
+// and `decode.ts`'s `labels` are `satisfies` clauses over their own unions, and
+// `entry.ts`'s field tables are `Record<CmdTag, …>`. What the compiler holds it
+// holds against a TypeScript union and never against `model/`: `entry.ts`'s
+// table cannot fall behind `cmd.ts`'s `Cmd`, and neither of them can notice the
+// model growing an arm. So this is what reaches across the language boundary
+// instead: a text read of the Quint source, compared as EXACT SETS in both
+// directions by `src/tools/verify.ts`.
+//
+// IT IS A TEXT PARSE AND IT SAYS SO. Quint has no exported schema this could
+// ask, so what follows reads declarations whose spelling the model has held
+// since it was written. A parse that finds nothing where a roster must be
+// non-empty is reported as could-not-run rather than as an empty roster
+// disagreeing with everything — the `readModuleConsts` rule, for the same
+// reason: "no entries" and "entries this parse cannot see" must not report the
+// same.
+
+/** The module the machine, its labels, its effects and its consts live in. */
+export const domainSource = "model/domain.qnt";
+
+/**
+ * The module the journaled actor lives in: the decision-event vocabulary the
+ * spine replays and this layer's own invariants.
+ *
+ * IT IS READ BECAUSE TWO SURFACES OF IT ARE COPIED HERE and neither is stated
+ * in `domain.qnt` at all — a roster read of that file alone left them invisible,
+ * and a model-side addition to either passed every gate.
+ */
+export const refinementSource = "model/refinement.qnt";
+
+/** The hand-maintained rosters, as `model/` actually spells them. */
+export type ModelRosters = {
+  /** `pure def decide*` in definition order. */
+  readonly deciders: readonly string[];
+  /** Code literals spelled as a constructor — the effect vocabulary. */
+  readonly effects: readonly string[];
+  /** Code literals spelled as a step label, the guarded-unreachable one included. */
+  readonly stepLabels: readonly string[];
+  /** The `stepDescends` roster comment's entries, flavors and all. */
+  readonly exemptionArms: readonly string[];
+  /** `module mc_chuggy_*` in `mc/mc_chuggy.qnt`. */
+  readonly instances: readonly string[];
+  /** The names the machine's actions bind with `nondet`. */
+  readonly binders: readonly string[];
+  /** The module's `const` declarations. */
+  readonly consts: readonly string[];
+  /** `val allInvariants`' conjuncts — the safety bundle, by name. */
+  readonly bundleConjuncts: readonly string[];
+  /** `type Cmd`'s constructors, in `model/refinement.qnt`. */
+  readonly cmdArms: readonly string[];
+  /** `val refinementCore`'s conjuncts, in `model/refinement.qnt`. */
+  readonly refinementCoreConjuncts: readonly string[];
+  /** `val refinementInvariants`' conjuncts, in `model/refinement.qnt`. */
+  readonly refinementBundleConjuncts: readonly string[];
+  /**
+   * Code literals neither spelling rule classified, module paths aside.
+   *
+   * It exists so that the two spelling rules below are a PARTITION rather than
+   * two filters: a literal the model grows that is neither an effect nor a
+   * label would otherwise be silently absent from both rosters, which is the
+   * silence this whole section is against.
+   */
+  readonly unclassified: readonly string[];
+};
+
+export function readModelRosters(): ModelRosters {
+  const domainText = readSource(domainSource);
+  const domainCode = withoutComments(domainText);
+  const refinementCode = withoutComments(readSource(refinementSource));
+  const literals = codeLiterals(domainCode);
+  return {
+    deciders: matchesOf(domainCode, /\bpure def (decide[A-Za-z]*)\s*\(/g, {
+      at: `${domainSource}: pure def decide*`,
+    }),
+    // THE SPELLING IS THE MODEL'S OWN AND IT IS STATED AS A RULE, not inferred:
+    // every effect the model writes is a constructor name in upper camel case
+    // and every step label is lower case with dashes.
+    //
+    // A MIS-CASED ENTRY IS SORTED INTO THE WRONG ROSTER AND REDS BOTH — absent
+    // from the one it belongs to, present-and-unrostered in the one it landed
+    // in — which is the alarm firing twice rather than a spelling rule going
+    // unchecked. It does NOT reach `unclassified`, which holds only a literal
+    // starting with neither case; saying otherwise would name a mutation that
+    // does not fire, and a control is only worth what its stated refutation is.
+    //
+    // Refutation trigger: the partition assumes the model never writes a code
+    // literal that is neither an effect nor a label. One that is — a debug
+    // string, a tag, a name — lands in `unclassified` and reds this alarm; the
+    // fix is a third roster here, not a widened filter.
+    effects: literals.filter((text) => /^[A-Z]/.test(text)),
+    stepLabels: literals.filter((text) => /^[a-z]/.test(text)),
+    unclassified: literals.filter((text) => !/^[A-Za-z]/.test(text)),
+    exemptionArms: exemptionRoster(domainText),
+    instances: matchesOf(
+      readSource(mcSource),
+      /^module mc_chuggy_([A-Za-z_]+) \{/gm,
+      { at: `${mcSource}: module mc_chuggy_*` },
+    ),
+    binders: unique(
+      matchesOf(domainCode, /\bnondet ([A-Za-z_]+)\s*=/g, {
+        at: `${domainSource}: nondet binders`,
+      }),
+    ),
+    consts: matchesOf(domainCode, /^\s*const ([A-Z_]+)\s*:/gm, {
+      at: `${domainSource}: const declarations`,
+    }),
+    bundleConjuncts: conjunctsOf(domainCode, "allInvariants", domainSource),
+    cmdArms: sumTypeArms(refinementCode, "Cmd", refinementSource),
+    refinementCoreConjuncts: conjunctsOf(
+      refinementCode,
+      "refinementCore",
+      refinementSource,
+    ),
+    refinementBundleConjuncts: conjunctsOf(
+      refinementCode,
+      "refinementInvariants",
+      refinementSource,
+    ),
+  };
+}
+
+function readSource(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    throw new CorpusError(`${path} cannot be read: ${messageOf(error)}`);
+  }
+}
+
+/**
+ * The source with every `//` comment stripped, so a roster read below sees code
+ * and not the model's prose about it.
+ *
+ * The model argues at length in `///` headers and names its own labels there,
+ * so a literal scan over the raw text would report the prose as the machine.
+ * It is a line-wise strip rather than a lexer: a `//` inside a string literal
+ * would truncate that line, and the only literals in this file with a slash in
+ * them are module paths, which the literal reader drops anyway.
+ */
+function withoutComments(source: string): string {
+  return source
+    .split("\n")
+    .map((line) => line.replace(/\/\/.*$/, ""))
+    .join("\n");
+}
+
+/** Every distinct string literal in the model's code, module paths aside. */
+function codeLiterals(code: string): readonly string[] {
+  return unique(
+    matchesOf(code, /"([^"]*)"/g, { at: `${domainSource}: string literals` }),
+  ).filter((text) => !text.includes("/"));
+}
+
+/**
+ * The `stepDescends` roster comment's entries — the one roster the model states
+ * in prose rather than in code, because the flavors it distinguishes are two
+ * readings of ONE disjunct and the code has no separate name for either.
+ *
+ * The model keeps that list under its own no-arm-without-a-witness rule, which
+ * is what makes it a roster worth comparing rather than a comment: an arm added
+ * without a line here is already a review finding in the model's own terms.
+ */
+function exemptionRoster(source: string): readonly string[] {
+  const marker = "Current roster:";
+  const from = source.indexOf(marker);
+  const to = source.indexOf("val stepDescends", from);
+  if (from < 0 || to < 0) {
+    throw new CorpusError(
+      `${domainSource}: no ${JSON.stringify(marker)} comment before val stepDescends`,
+    );
+  }
+  const entries = source
+    .slice(from + marker.length, to)
+    .split("\n")
+    .map((line) => line.replace(/^\s*\/\/\/\s*/, "").trim())
+    // A continuation line carries only this entry's witness run, after the
+    // dash: the two-line entries are the two whose names do not fit beside it.
+    .map((line) => line.split("—")[0]?.trim() ?? "")
+    .map((line) => line.replace(/[;.]$/, "").trim())
+    .filter((line) => line.length > 0);
+  if (entries.length === 0) {
+    throw new CorpusError(`${domainSource}: the exemption roster reads empty`);
+  }
+  return entries;
+}
+
+/**
+ * The names a `val <name>: bool = and { … }` conjoins, as the model spells
+ * them — the shape `allInvariants` and the two refinement bundles are written
+ * in, and the one a roster read of `pure def` and of code literals cannot see.
+ *
+ * A BUNDLE IS A ROSTER THAT LOOKS LIKE CODE, which is why it needed saying: the
+ * model states its safety bundle as a conjunction of names, this tree states the
+ * same list as a chain of calls and again as a roster its suites read, and
+ * nothing compared the two. The bundle has already grown by a conjunct once,
+ * and what caught it was attention.
+ *
+ * EVERY ENTRY MUST BE A BARE NAME. A conjunct that is an expression — `and`
+ * takes them, and `executorSound` is one — is reported as could-not-run rather
+ * than rostered as whatever the text between two commas happened to be. That is
+ * `readModuleConsts`'s rule again: a parse that cannot see the declaration must
+ * not answer as though it had.
+ */
+function conjunctsOf(
+  code: string,
+  val: string,
+  source: string,
+): readonly string[] {
+  const at = `${source}: val ${val}`;
+  const marker = `val ${val}: bool = and {`;
+  const opened = code.indexOf(marker);
+  if (opened < 0) {
+    throw new CorpusError(`${at}: no ${JSON.stringify(marker)} declaration`);
+  }
+  const from = opened + marker.length;
+  const to = code.indexOf("}", from);
+  if (to < 0) {
+    throw new CorpusError(`${at}: the conjunction does not close`);
+  }
+  const entries = code
+    .slice(from, to)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (entries.length === 0) {
+    throw new CorpusError(`${at}: this parse matched nothing`);
+  }
+  for (const entry of entries) {
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(entry)) {
+      throw new CorpusError(
+        `${at}: ${JSON.stringify(entry)} is not a conjunct name`,
+      );
+    }
+  }
+  return entries;
+}
+
+/**
+ * The constructors of a `|`-separated sum type, as the model declares them —
+ * `type Cmd`, the decision-event vocabulary this tree mirrors as a union.
+ *
+ * THE ARMS ARE READ LINE BY LINE, one arm per line, which is how the model
+ * writes them and what bounds the read: the list ends at the first line that
+ * holds no arm. A payload may hold commas and brackets and is not read at all —
+ * `entry.ts` is where a payload's fields are checked, against the union rather
+ * than against the model — so what this compares is the constructor roster.
+ *
+ * A DECLARATION WHOSE ARMS DO NOT START ON THE NEXT LINE IS REFUSED, rather
+ * than answered with the arms this reader can see. The same rule as everywhere
+ * in this section: a shape the parse no longer recognizes is a could-not-run.
+ */
+function sumTypeArms(
+  code: string,
+  type: string,
+  source: string,
+): readonly string[] {
+  const at = `${source}: type ${type}`;
+  const marker = `type ${type} =`;
+  const opened = code.indexOf(marker);
+  if (opened < 0) {
+    throw new CorpusError(`${at}: no ${JSON.stringify(marker)} declaration`);
+  }
+  const [rest, ...lines] = code.slice(opened + marker.length).split("\n");
+  if ((rest ?? "").trim().length > 0) {
+    throw new CorpusError(
+      `${at}: the arm list does not start on the line below the declaration`,
+    );
+  }
+  const arms: string[] = [];
+  for (const line of lines) {
+    if (line.trim().length === 0) {
+      break;
+    }
+    for (const piece of line.split("|")) {
+      const text = piece.trim();
+      if (text.length === 0) {
+        continue;
+      }
+      const name = /^([A-Z][A-Za-z0-9_]*)\s*(\(|$)/.exec(text)?.[1];
+      if (name === undefined) {
+        throw new CorpusError(
+          `${at}: ${JSON.stringify(text)} is not a constructor`,
+        );
+      }
+      arms.push(name);
+    }
+  }
+  if (arms.length === 0) {
+    throw new CorpusError(`${at}: this parse matched nothing`);
+  }
+  return arms;
+}
+
+/**
+ * Every first capture of `pattern`, refusing an empty answer.
+ *
+ * A roster this tree compares against is never legitimately empty, so an empty
+ * match set is the parse having stopped seeing the declaration rather than the
+ * model having dropped every one — and reporting it as a roster disagreement
+ * would blame the tree for a defect in this reader.
+ */
+function matchesOf(
+  source: string,
+  pattern: RegExp,
+  where: { readonly at: string },
+): readonly string[] {
+  const found: string[] = [];
+  for (const match of source.matchAll(pattern)) {
+    const captured = match[1];
+    if (captured !== undefined) {
+      found.push(captured);
+    }
+  }
+  if (found.length === 0) {
+    throw new CorpusError(`${where.at}: this parse matched nothing`);
+  }
+  return found;
+}
+
+function unique(values: readonly string[]): readonly string[] {
+  return [...new Set(values)];
 }

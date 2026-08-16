@@ -14,10 +14,10 @@
  * layer above the domain rather than inside it.
  *
  * WHAT IT MUST NOT BECOME. This is the vocabulary the golden corpus decodes
- * into and the journal will store; it carries no journal, no cursor, no crash
- * and no fabric, exactly as `model/refinement.qnt`'s platform-capture note
- * requires of anything the domain machine can be driven by. `Entry` — seq, cmd,
- * rec — is s5's, and lands with the actor that appends one.
+ * into and the journal stores; it carries no journal, no cursor, no crash and
+ * no fabric, exactly as `model/refinement.qnt`'s platform-capture note requires
+ * of anything the domain machine can be driven by. `Entry` — seq, cmd, rec —
+ * is `entry.ts`'s, beside the actor that appends one.
  *
  * THE ENCODING, beyond the seven decisions `measure.ts` and `domain.ts` argue
  * and this file inherits:
@@ -61,6 +61,7 @@ import {
   draftsIn,
   holdingIn,
   isAuthorableWrapUp,
+  isSubsetOf,
   isValidProgram,
   projects,
   readiesIn,
@@ -240,19 +241,6 @@ export function cmdEnabled(cfg: Config, c: Core, cmd: Cmd): boolean {
     default:
       return assertNever(cmd, "unhandled Cmd");
   }
-}
-
-/** The model's `a.deps.subseteq(dependableIn(c))`, over two primitive sets. */
-function isSubsetOf(
-  smaller: ReadonlySet<number>,
-  larger: ReadonlySet<number>,
-): boolean {
-  for (const x of smaller) {
-    if (!larger.has(x)) {
-      return false;
-    }
-  }
-  return true;
 }
 
 /**
