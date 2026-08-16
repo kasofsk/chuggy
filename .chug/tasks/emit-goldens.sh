@@ -1,50 +1,32 @@
 #!/bin/sh
 # Regenerates the golden corpus from the model. NOT A GATE — it writes.
 #
-# THE CORPUS IS COMMITTED AND THIS IS THE ONLY THING THAT WRITES IT. The gate
+# The corpus is committed and this is the only thing that writes it: the gate
 # that checks the implementation against it replays and never regenerates,
-# because a job that can rewrite its own expected output is not a check. The
-# two are separate files for that reason and no other.
+# because a job that can rewrite its own expected output is not a check.
 #
-# It carries a suite because `check-gates.sh` asks every script in this
-# directory for one, and because the normalisation below is the part that goes
-# wrong: a corpus that is not byte-identical across two regenerations produces
-# a diff on every run, and a diff nobody reads is a fixture nobody is checking.
+# WHAT IS NORMALISED. Quint writes a top-level `#meta` carrying a wall-clock
+# `timestamp` and a `description` containing the run date; both change on every
+# run and neither says anything about the trace, so both are dropped and the
+# deterministic fields kept. The per-state `#meta` is a state index, derived
+# from the trace rather than from the clock, and is kept.
 #
-# WHAT IS NORMALISED, and why the corpus would otherwise be noise. Quint writes
-# a top-level `#meta` carrying a wall-clock `timestamp` and a `description`
-# containing the run date. Both change on every run and neither says anything
-# about the trace, so both are dropped and the deterministic fields kept. The
-# per-state `#meta` is a state index and is kept — it is derived from the trace
-# rather than from the clock.
-#
-# THE CORPUS IS IN THE FORMATTER'S SCOPE, so this script leaves it in the
-# formatter's shape rather than leaving that to whoever regenerates next.
-# `test/golden/` is not in `.prettierignore`, and `check-source.sh` holds the
-# whole tree to `prettier --check`; what `JSON.stringify` indents is not what
-# Prettier emits, so a regeneration used to leave the tree red until somebody
-# remembered to format by hand. A step nobody can forget beats a note nobody
-# reads, and the alternative — teaching this script to write what the formatter
-# would have written — is a second copy of the formatter with nothing keeping it
-# current. The binary is the local one this tree pins, resolving its
-# configuration the way the gate does so the two cannot reach different answers,
-# and its absence is a could-not-run: a corpus written into a shape the gate
-# rejects is worse than a corpus not written.
+# IT LEAVES THE CORPUS IN THE FORMATTER'S SHAPE, with the local prettier this
+# tree pins: `test/golden/` is not in `.prettierignore` and `check-source.sh`
+# holds the whole tree to `prettier --check`, so an unformatted regeneration
+# leaves the tree red. That binary's absence is a could-not-run.
 #
 # EVERY GOLDEN IS REPRODUCIBLE FROM ITS MANIFEST ROW, which is what makes the
 # corpus reviewable rather than magic: instance, seed, sample budget, step
 # bound, and the invariant used to aim the search. `--n-threads=1` is pinned so
-# determinism does not depend on how many cores the machine has; regeneration
-# runs once, so what that costs in wall time buys the removal of an entire
-# class of argument about whether a reproduction was luck.
+# determinism does not depend on how many cores the machine has.
 #
 # HOW A TRACE IS AIMED. Most of this machine's step labels never come up in a
-# random walk — arrivals are capped, a quiesced fleet stutters, and the deep
-# labels need a specific interleaving. So a golden that must contain a label
-# asks quint to refute "this label never occurs" and keeps the counterexample.
-# The model is not modified and the pipeline is the same one the untargeted
-# traces use; the aiming is a flag, recorded in the row beside the seed. A row
-# with no invariant is an ordinary walk.
+# random walk, so a golden that must contain a label asks quint to refute "this
+# label never occurs" and keeps the counterexample. The model is not modified
+# and the pipeline is the one the untargeted traces use; the aiming is a flag,
+# recorded in the row beside the seed. A row with no invariant is an ordinary
+# walk.
 #
 # Usage:
 #   .chug/tasks/emit-goldens.sh              regenerate every row
@@ -101,8 +83,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # The manifest is JSON and this is shell, so node reads it and prints one
-# tab-separated row per golden. Parsing JSON in awk would be a second parser to
-# keep correct.
+# tab-separated row per golden.
 if ! node -e '
 const rows = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).goldens
 for (const r of rows) {
@@ -152,10 +133,9 @@ while IFS="$(printf '\t')" read -r name source module stepname seed samples step
 	set +f
 	set -e
 
-	# An aimed row must find its counterexample; quint reports that as 1. An
-	# unaimed row must complete; quint reports that as 0. Either way the run
-	# has to have written a trace, and a row that stops matching its aim is a
-	# failure rather than a quietly shorter corpus.
+	# An aimed row must find its counterexample, which quint reports as 1; an
+	# unaimed row must complete, which it reports as 0. Either way the run has
+	# to have written a trace.
 	if [ -n "$invariant" ] && [ "$rc" -ne 1 ]; then
 		echo "emit-goldens: FAILED — $name: the invariant was not refuted (rc=$rc)"
 		echo "emit-goldens:   its aim is: $invariant"
@@ -205,9 +185,8 @@ if [ "$emitted" -eq 0 ] && [ -n "$wanted" ]; then
 	exit 2
 fi
 
-# One pass over what this run actually wrote, rather than over the directory: a
-# row the caller did not name must not be rewritten behind their back, and a
-# spawn per row buys nothing.
+# One pass over what this run wrote, rather than over the directory: a row the
+# caller did not name must not be rewritten behind their back.
 formatted=1
 if [ -s "$work/targets" ]; then
 	set -f

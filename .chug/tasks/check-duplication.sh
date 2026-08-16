@@ -1,48 +1,23 @@
 #!/bin/sh
 # Copy-paste detection at threshold 0: no clone of the size `.jscpd.json` sets,
-# anywhere, ever.
+# anywhere, ever. Tests are in scope. Where a genuine scenario must repeat, mark
+# the region with `jscpd:ignore-start` and a reason on that line.
 #
-# WHY ZERO AND NOT A BUDGET. A duplication allowance is an allowance somebody
-# spends, and the second copy of anything is where the two start disagreeing.
-# Zero is the only threshold that needs no argument at each violation.
+# A SCAN THAT MEASURED NOTHING IS A COULD-NOT-RUN. Two shapes: no verdict in the
+# output, and a verdict over an empty scan. A fetch failure produces the first
+# and a mis-scoped `ignorePattern` the second, and "no clones" over nothing
+# reads exactly like "no clones" over the tree.
 #
-# TESTS ARE IN SCOPE, deliberately. The usual argument for excluding them — "a
-# test should read top to bottom as the scenario it is" — is a good one, and it
-# protects a test's SCENARIO. What the suites here were actually sharing was
-# HARNESS: a `check` helper, a temp dir, a trap, two counters, growing with
-# every gate. That is what `_suite.sh` is, and extracting it cost no case its
-# readability. Where a genuine scenario must repeat, mark the region with
-# `jscpd:ignore-start` and a reason on the directive line rather than widening
-# the ignore list.
+# `.jscpd.json` is JSON and carries no comments, so its ignore list is stated
+# here. `**/.claude/worktrees/**` is there because a git worktree is a second
+# copy of the tree: scanned, every file pairs against its own copy. The entry is
+# that path and not `.claude/` entire — a tracked file under `.claude/` is this
+# tree's own, and a clone of it is a finding like any other.
 #
-# A NESTED CHECKOUT IS NOT A CLONE, and `**/.claude/worktrees/**` in the ignore
-# list is what says so. This repo's own tooling puts a git worktree there, and a
-# worktree is a second copy of the tree at a different commit: scanned, every
-# file pairs against its own copy and the gate reports each pair as duplication.
-# A verdict whose only remedy is deleting the checkout somebody is working in is
-# a verdict nobody can act on, and a gate that is red for a reason nobody can
-# act on is a gate that gets bypassed.
+# The version is pinned exactly, never `@5`: config semantics move within the
+# major, `ignorePattern` matching among them. A local binary wins over PATH.
 #
-# THE ENTRY IS THAT PATH AND NOT `.claude/` ENTIRE, which is where this list
-# parts company with `.prettierignore`. The formatter skips the whole directory
-# because a harness config is not this tree's file to format, and that argument
-# does not reach here: a TRACKED file under `.claude/` is this tree's own, and a
-# clone of it is a finding like any other. Excluding the directory would exempt
-# code nobody has written yet, against a failure nobody can name. What is out of
-# scope is the copy, not the address.
-#
-# `.jscpd.json` is JSON and carries no comments, so its ignore list is argued
-# here or nowhere.
-#
-# THE VERSION IS PINNED EXACTLY, never `@5`. jscpd v5 is a Rust rewrite of v4
-# with different config semantics, and 5.0.4 -> 5.0.5 changed how ignorePattern
-# matches — a floating major silently changes what the gate can see. A local
-# binary wins over anything on PATH, because a verdict that depends on which
-# copy happens to be installed is not a verdict.
-#
-# Exits 0 clean, 1 on a finding, 2 when it could not run — and a fetch failure
-# must never read as "no duplication", which is why the output is checked for a
-# verdict rather than the exit code being trusted alone.
+# Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
 export LC_ALL=C
 
@@ -73,9 +48,6 @@ $RUN --min-lines 10 --min-tokens 80 --threshold 0 --reporters console . > "$out"
 rc=$?
 set -e
 
-# A run that produced no verdict did not measure anything — a network failure
-# exits non-zero with no findings, and reporting that as duplication would be
-# as wrong as reporting it as clean.
 if ! grep -qE "Found [0-9]+ clones|No duplicates found" "$out"; then
 	echo "check-duplication: LINTER ERROR — jscpd produced no verdict (rc=$rc):"
 	sed 's/^/    /' "$out"
@@ -89,24 +61,17 @@ if [ "$rc" -ne 0 ]; then
 	exit 1
 fi
 
-# THE COUNT SAYS THE RUN MEASURED SOMETHING, which is the only reason a clean
-# line carries a figure at all: "no clones" over an empty scan and "no clones"
-# over the tree read identically without it, and an ignore list that matched
-# everything is a way this gate stops being one. So the figure is asserted —
-# `check-duplication.test.sh` scans a fixture of a known size and requires this
-# line to report it. It went unasserted once and printed the same wrong number
-# for every tree it ever saw, which is the shape the standing commitment names:
-# a success line believed once and never checked again.
-#
-# THE ESCAPES COME OFF FIRST. The console reporter colours its output
-# unconditionally — not being a TTY makes no difference, and neither does
-# NO_COLOR — so a pattern that skips non-digits to reach a number reaches the
-# digits inside the colour escape instead, and reports those. The figure is in
-# the `Total:` row: the header carries the column labels and no value, and the
-# colon is what separates that row from the `Total lines` and `Total tokens`
-# labels beside it. It counts what jscpd analyzed rather than what is on disk —
-# a file under the token floor is neither — and an unreadable table prints as
-# unknown rather than as a number nothing stands behind.
+# What jscpd analyzed, off its own table. The console reporter colours its
+# output unconditionally, so the escapes come off before anything reads for
+# digits; the colon is what separates the `Total:` row from the `Total lines`
+# and `Total tokens` labels beside it. A table this cannot read is a scan whose
+# size is unknown, which is the could-not-run above rather than a figure.
 scanned="$(awk '{ gsub(/\033\[[0-9;]*m/, "") }
 /Total:/ { sub(/^[^0-9]*/, ""); sub(/[^0-9].*$/, ""); print; exit }' "$out")"
-echo "check-duplication: no clones (${scanned:-?} files)"
+if [ -z "$scanned" ] || [ "$scanned" -eq 0 ]; then
+	echo "check-duplication: LINTER ERROR — the scan measured nothing; check"
+	echo "    \`.jscpd.json\`'s ignorePattern and that the corpus is where it looked:"
+	sed 's/^/    /' "$out"
+	exit 2
+fi
+echo "check-duplication: no clones ($scanned files)"

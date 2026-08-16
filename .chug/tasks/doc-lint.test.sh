@@ -1,14 +1,12 @@
 #!/bin/sh
 # Shell test for doc-lint.sh — no network, no toolchain.
 #
-# Every case breaks exactly one rule and asserts the named finding, because a
-# suite that only ever runs the clean path proves the script exits 0, not that
-# it can say no. The clean cases sit beside them as the controls.
+# Every case breaks exactly one rule and asserts the named finding; the clean
+# cases sit beside them as the controls.
 #
 # $WORK is a real git checkout: doc-lint.sh resolves the repo root and works
-# from there, so rule 3 (which matches on the *repo-relative* path) can only be
-# exercised by a harness that gives it a repo. The non-git case is its own
-# fixture and asserts the could-not-run verdict.
+# from there, so rule 3, which matches on the repo-relative path, can only be
+# exercised by a harness that gives it a repo.
 #
 # Run:  .chug/tasks/doc-lint.test.sh   (exits 0 if all cases pass)
 set -eu
@@ -50,9 +48,8 @@ EOF
 run docs/design/001-good.md
 check "clean doc passes" 0 "$RC" "0 error(s)"
 
-# The fence body above contains a line a naive heading check would flag. That
-# it passed is the proof fences are skipped; assert it as its own case so a
-# regression in the fence tracking cannot hide behind the case above.
+# The fence body above contains a line a naive heading check would flag, so
+# this is its own case rather than something hiding behind the one before it.
 run docs/design/001-good.md
 check "fenced content is not linted" 0 "$RC" "0 error(s)"
 
@@ -64,9 +61,8 @@ printf 'not markdown\n' > "$WORK/docs/reference/notes.txt"
 run docs/reference/notes.txt
 check "a non-markdown argument is skipped" 0 "$RC" "nothing to lint"
 
-# A doc can be selected and not be there — deleted and not yet committed, or
-# named by a caller. The tally has to count what was read, or a run that linted
-# nothing reports the same line as a run that linted the file.
+# A doc can be selected and not be there. The tally has to count what was read,
+# or a run that linted nothing reports the same line as one that linted a file.
 run docs/design/001-good.md docs/design/002-deleted.md
 check "the tally counts the docs that were read" 0 "$RC" "across 1 file(s)"
 
@@ -101,9 +97,8 @@ printf '# Bad\n\nBody.\n' > "$WORK/docs/design/no-leading-digits.md"
 run docs/design/no-leading-digits.md
 check "design filename without a seq fails" 1 "$RC" "{seq}-{slug}.md"
 
-# The load-bearing locale case: under a collating locale an `a-z` range also
-# spans uppercase, and this rule would quietly stop rejecting it. LC_ALL=C and
-# the enumerated character class are what keep this red.
+# THE LOCALE CASE: under a collating locale an `a-z` range also spans
+# uppercase, and this rule would quietly stop rejecting it.
 printf '# Bad\n\nBody.\n' > "$WORK/docs/design/002-Uppercase.md"
 run docs/design/002-Uppercase.md
 check "design filename with an uppercase slug fails" 1 "$RC" "{seq}-{slug}.md"
@@ -113,8 +108,7 @@ printf '# Nested\n\nBody.\n' > "$WORK/docs/design/nested/Anything.md"
 run docs/design/nested/Anything.md
 check "a nested subdirectory is not a design doc" 0 "$RC" "0 error(s)"
 
-# A design doc named correctly must not be flagged — the control that keeps the
-# two cases above from passing for the wrong reason.
+# The control that keeps the two cases above from passing for the wrong reason.
 run docs/design/001-good.md
 check "well-named design doc passes rule 3" 0 "$RC" "0 error(s)"
 

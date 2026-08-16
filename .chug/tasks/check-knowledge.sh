@@ -1,26 +1,13 @@
 #!/bin/sh
 # A design doc holds only what the tree does not yet carry.
 #
-# WHY. Every other rule in this tree is stated in the thing that enforces it, so
-# changing the enforcement changes the statement. A design doc has no enforcer,
-# so it only accretes — this one outgrew every other prose file in the tree put
-# together, most of it restating decisions the code, the gates and their suites
-# had already landed, and knowing what was true meant reading a head, a body and
-# a stack of corrections that partly superseded each other. Once the tree
-# carries a decision, the statement lives in the enforcer and the doc's copy is
-# a second version of itself waiting to happen.
+# WHAT IS DECIDABLE. Not "is this claim carried yet" — that is the reviewer's.
+# Two consequences of the rule are mechanical:
 #
-# WHAT IS DECIDABLE. Not "is this claim carried yet" — that is the reviewer's,
-# and a gate that guessed at it would be noise, and a noisy gate gets bypassed.
-# Two consequences of the rule are mechanical, and both are shapes this tree
-# actually grew:
-#
-#   C1  NO `## Correction` SECTION, at any heading level. A correction is
-#       written after the thing it corrects has landed, so what it says is
-#       already fixed in the code, the gates and the suites; what is left over
-#       is one session's confusion, paid for by every later reader. The body is
-#       editable — CLAUDE.md says so — so a correction always has somewhere
-#       better to go: into the head, or nowhere.
+#   C1  NO `## Correction` SECTION, at any heading level. What a correction
+#       says is already fixed in the code, the gates and the suites, and the
+#       body is editable — CLAUDE.md says so — so it has somewhere better to
+#       go: into the head, or nowhere.
 #   C2  A LANDED ROW IS A POINTER, NOT AN ARGUMENT. In a table, a row carrying
 #       a cell that says Landed and nothing else may carry no sentence
 #       punctuation in any of its cells — no full stop, no semicolon. A label,
@@ -29,18 +16,12 @@
 #
 # WHAT IT CANNOT SEE, said plainly so nobody trusts it further than it goes. A
 # clause with no terminator reads as a label and gets through. A row whose
-# status is spelled some other way is not recognised as landed, and is not
-# judged. Prose outside a table row is invisible entirely: a section arguing for
-# work that landed last week is a reviewer's finding and never this gate's.
-# That is the trade — it catches the two shapes that accreted here without ever
-# arguing with a sentence.
+# status is spelled some other way is not recognised as landed. Prose outside a
+# table row is invisible entirely, and stays the reviewer's.
 #
-# SCOPE: tracked `docs/design/*.md`, whole-directory rather than diff-aware,
-# because that corpus is one directory and selecting part of it would cost more
-# than reading all of it. It is also the only directory this gate reads, for the
-# same reason `check-figures.sh` and `check-paths.sh` are the ones that carve it
-# out: it is where this tree writes in the future tense, and the rule is about
-# what happens when that tense expires.
+# SCOPE: tracked `docs/design/*.md`, whole-directory. It is the only directory
+# this gate reads, for the reason `check-figures.sh` and `check-paths.sh` carve
+# it out too: it is where this tree writes in the future tense.
 #
 # Usage:
 #   .chug/tasks/check-knowledge.sh
@@ -56,8 +37,7 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
-# A glob that matches nothing is a verdict about nothing, and this tree's other
-# corpus gates say so rather than passing.
+# A glob that matches nothing is a verdict about nothing.
 docs="$(git ls-files 'docs/design/*.md' 2>/dev/null || true)"
 if [ -z "$docs" ]; then
 	echo "check-knowledge: LINTER ERROR — no tracked docs/design/*.md; the glob matched nothing"
@@ -108,8 +88,7 @@ FNR == 1 { docs_read++ }
 
 # C2. A table row. The outer pipes are dropped before the split so an empty
 # leading cell is not invented, and every backticked span goes with them: a
-# commit pointer, a path and an identifier all carry punctuation that is not a
-# sentence, and none of it is prose.
+# commit pointer, a path and an identifier carry punctuation that is not prose.
 /^[ \t]*\|/ {
 	row = $0
 	sub(/^[ \t]*\|/, "", row)

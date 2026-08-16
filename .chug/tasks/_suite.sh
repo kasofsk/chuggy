@@ -3,24 +3,16 @@
 #
 #   . "$(cd "$(dirname "$0")" && pwd)/_suite.sh"
 #
-# WHY THIS EXISTS RATHER THAN A COPY PER SUITE. The duplication gate runs at
-# threshold 0 and does NOT exempt test files. The usual argument for exempting
-# them — "a test should read top to bottom as the scenario it is" — protects a
-# test's SCENARIO, and what the suites were sharing is HARNESS: a `check`
-# helper, a temp dir, a trap, two counters. None of it is the thing a reader of
-# a case needs in front of them, and it grew with every gate.
-#
-# What stays in each suite is everything that makes its cases different — the
-# fixtures, the drivers, the assertions. A case still reads top to bottom.
-#
-# It carries no `set -eu`: the sourcing suite sets its own options, and a
-# sourced file that changed them would be surprising.
+# It holds the harness and nothing that makes a case what it is: the fixtures,
+# the drivers and the assertions stay in each suite. It carries no `set -eu` —
+# the sourcing suite sets its own options.
 #
 # Contract for a sourcing suite:
-#   provides   $WORK   a temp dir, removed on exit
-#              $OUT    where a driver should write captured output
-#              check   assert an exit code and a substring of $OUT
-#              done_   print the tally and exit non-zero if anything failed
+#   provides   $WORK        a temp dir, removed on exit
+#              $OUT         where a driver should write captured output
+#              check        assert an exit code and a substring of $OUT
+#              fresh_repo   a throwaway git checkout
+#              done_        print the tally and exit non-zero if anything failed
 #   expects    the suite to set $OUT before each check
 
 export LC_ALL=C
@@ -44,8 +36,8 @@ check() { # <name> <expected-rc> <actual-rc> <must-contain>
 	fi
 }
 
-# A throwaway git checkout. Gates read git rather than the filesystem, so a
-# fixture that is not a repo tests nothing they actually do.
+# Gates read git rather than the filesystem, so a fixture that is not a repo
+# tests nothing they actually do.
 fresh_repo() { # <dir>
 	rm -rf "$1"
 	mkdir -p "$1"

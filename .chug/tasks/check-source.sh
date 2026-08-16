@@ -2,47 +2,18 @@
 # The TypeScript gate. Typechecks the sources and the suites, lints them, holds
 # them to the formatter's output, and runs the unit suite.
 #
-# ONE GATE PER TOOLCHAIN, NOT ONE PER TOOL, which is the shape
-# `.chug/tasks/check-model.sh` already has: it typechecks every Quint module
-# and runs several kinds of suite behind a single verdict. A gate per tool
-# would be a header, a sibling suite and a sequencer entry apiece, each saying
-# "the TypeScript did not survive its own tooling" in different words.
+# ONE GATE PER TOOLCHAIN, NOT ONE PER TOOL. The rules the tools apply are
+# stated where they are enforced — `eslint.config.js`, `.prettierrc.json`
+# (whose emptiness is house rule 6), `tsconfig.json` — and
+# `.chug/tasks/review-change.md` routes each house rule to its home. This file runs them and reports.
 #
-# WHERE THE RULES ARE STATED, and why none of them is stated here. House rules
-# 3, 4 and 5 are `eslint.config.js`, which holds their text because it holds
-# their enforcement. House rule 6 — formatting is the formatter's defaults,
-# never argued — is `.prettierrc.json`, whose emptiness IS the rule: there is
-# no configuration to disagree about. House rule 2's graph half is
-# `check-boundaries.sh` and its ambient half is `eslint.config.js`. House rule
-# 1 is `check-comments.sh`. This file runs the tools and reports; a rule
-# restated here would be a second copy with nothing keeping it current.
+# Each tool resolves its own scope, and the formatter's reaches past TypeScript
+# to every JSON and config file in the tree; the tracked-source glob below is a
+# precondition rather than a measurement of what any stage read.
 #
-# THE UNIT SUITE IS PART OF THE GATE rather than a stage of its own, for the
-# reason `check-model.sh` runs the model's suites: a specification that
-# typechecks and fails its own tests has not been checked, and splitting the
-# verdict invites the half that is red to be read as the half that is
-# optional.
-#
-# Node runs TypeScript with no build step and needs no runner installed, which
-# is why the test-runner row of this plan's dependency table cost nothing. The
-# same erasure has a condition — no syntax that survives type stripping — and
-# `tsconfig.json`'s `erasableSyntaxOnly` is what turns a run-time failure there
-# into a compile error.
-#
-# Local binaries win over anything on PATH, on `check-model.sh`'s argument: a
-# gate whose verdict depends on which version happens to be installed is not a
-# gate. Each missing one is a could-not-run, reported as itself.
-#
-# THE CLEAN LINE COUNTS STAGES AND NOT FILES, because no file count here would
-# be one of them's. Each tool resolves its own scope — the typechecker from
-# `tsconfig.json`, the linter and the formatter from their own ignore files,
-# the runner from its discovery — and the formatter's reaches past TypeScript
-# to every JSON and config file in the tree. The tracked-source glob above is a
-# precondition rather than a measurement, and printing its size beside the
-# stages said they had run over it. What the count still has to do is say the
-# run measured something, and the stage tally does that: each stage prints its
-# own verdict above, and a tree with no TypeScript in it never reaches this
-# line.
+# Local binaries win over anything on PATH: a verdict that depends on which
+# version happens to be installed is not a verdict. Each missing one is a
+# could-not-run, reported as itself.
 #
 # Usage:
 #   .chug/tasks/check-source.sh
@@ -98,9 +69,8 @@ stage "  typecheck" ./node_modules/.bin/tsc --noEmit
 stage "  lint     " ./node_modules/.bin/eslint .
 stage "  format   " ./node_modules/.bin/prettier --check --log-level warn .
 
-# The suite glob is the runner's, not this script's: `--test` with no paths
-# discovers `*.test.ts` under the whole tree. A glob matching nothing would be
-# a silent pass, so the discovery is checked first and separately.
+# The runner discovers its own suites, so a glob matching nothing would be a
+# silent pass; the discovery is checked first and separately.
 suites="$(git ls-files 'test/**/*.test.ts' 'test/*.test.ts' 2>/dev/null || true)"
 if [ -z "$suites" ]; then
 	echo "check-source: LINTER ERROR — no tracked *.test.ts; the suite glob matched nothing"

@@ -2,27 +2,18 @@
 # Shell test for check-source.sh.
 #
 # THIS SUITE IS WHERE HOUSE RULES 2 THROUGH 6 ARE PROVED TO BITE. The rules
-# themselves live in `eslint.config.js` and `.prettierrc.json`, and a
-# configuration file cannot demonstrate anything about itself — a rule
-# misspelled, scoped to a path that does not exist, or silently dropped by a
-# preset reads exactly like a rule that is working. So each one gets a fixture
-# carrying the violation it names, and the case fails if the gate does not.
+# live in `eslint.config.js` and `.prettierrc.json`, and a configuration cannot
+# demonstrate anything about itself — a rule misspelled, scoped to a path that
+# does not exist, or dropped by a preset reads exactly like a rule that works.
+# So each gets a fixture carrying the violation it names.
 #
-# The cost of that is real: every case here runs a typechecker, a linter, a
-# formatter and a test runner over a miniature tree, where the sibling suites
-# run an awk pass. It is the slowest suite in `.chug/tasks/` and it earns that
-# by being the only thing standing between "the rules are configured" and "the
-# rules are enforced".
+# THE VIOLATIONS SHARE TWO FIXTURES. Every case here runs a typechecker, a
+# linter, a formatter and a test runner over a miniature tree, and a fixture
+# per rule multiplies that by the rule count — which put this suite over the
+# sequencer cap once already.
 #
-# THE VIOLATIONS SHARE TWO FIXTURES, deliberately, and the argument is in the
-# body beside them. A fixture per rule reads more clearly and multiplies the
-# toolchain runs by the number of rules, which is what put this suite over the
-# sequencer's cap once already.
-#
-# node_modules is symlinked rather than installed, on
-# check-boundaries.test.sh's argument: the toolchain under test must be the one
-# this tree pins, and an install per case would put this suite far outside the
-# sequencer's per-suite cap.
+# node_modules is symlinked rather than installed: the toolchain under test
+# must be the one this tree pins, and an install per case costs the same cap.
 #
 # Run:  .chug/tasks/check-source.test.sh
 set -eu
@@ -43,18 +34,16 @@ run_in() { # <dir>
 	set -e
 }
 
-# A fixture carrying this repo's real configs. Testing invented configs would
-# pass while this tree's rules were broken, which is the failure this suite
-# exists to prevent.
+# A fixture carrying this repo's real configs. An invented config would pass
+# while this tree's rules were broken.
 fixture() { # [--no-modules]
 	rm -rf "$R"
 	mkdir -p "$R/src/domain" "$R/test/domain"
 	for f in tsconfig.json eslint.config.js .prettierrc.json .prettierignore; do
 		cp "$ROOT/$f" "$R/$f"
 	done
-	# Written in the formatter's own output shape. A fixture manifest Prettier
-	# would rewrite makes the format stage fail in every case, which turns each
-	# one into a test of the fixture rather than of the rule it names.
+	# Written in the formatter's own output shape, or the format stage fails in
+	# every case and each becomes a test of the fixture.
 	{
 		printf '%s\n' '{'
 		printf '%s\n' '  "name": "fixture",'
@@ -68,8 +57,8 @@ fixture() { # [--no-modules]
 	git -C "$R" config user.name t
 }
 
-# Every fixture needs one clean source and one passing suite, so a case that is
-# testing one stage is not silently also failing another.
+# Every fixture needs one clean source and one passing suite, so a case testing
+# one stage is not silently also failing another.
 clean_source() {
 	printf '%s\n' 'export const answer = 42;' > "$R/src/domain/a.ts"
 	{
@@ -102,8 +91,7 @@ clean_source
 seal
 check "a missing toolchain exits 2, not 0" 2 "$RC" "Install with"
 
-# A tree with sources but no suite would run three stages and report clean,
-# which is the shape of a check that never ran.
+# A tree with sources but no suite would run the other stages and report clean.
 fixture
 printf '%s\n' 'export const answer = 42;' > "$R/src/domain/a.ts"
 seal
@@ -114,17 +102,15 @@ clean_source
 seal
 check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
 # The tally is asserted rather than trusted: it is what says the run measured
-# something, and the file count it replaced described a set no stage read.
+# something.
 check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
 
 # --- The house rules ---------------------------------------------------------
 #
-# TWO FIXTURES, NOT ONE PER RULE. Every stage of the gate runs whatever the
-# earlier ones did, so one tree carrying several violations reports all of
-# them in a single pass, and each case below greps the output for its own rule
-# name. A rule silently dropped from the config still fails its own case and
-# no other, which is the property a fixture-per-rule was buying — at several
-# seconds a run, and this suite has a cap to stay inside.
+# TWO FIXTURES, NOT ONE PER RULE. Every stage runs whatever the earlier ones
+# did, so one tree carrying several violations reports all of them in a single
+# pass and each case greps the output for its own rule name — a rule dropped
+# from the config still fails its own case and no other.
 #
 # The split is by stage rather than by rule: the lint fixture must typecheck
 # and must be formatted, or the case would pass on a finding it did not mean.
@@ -183,8 +169,8 @@ check "house rule 5: a function over the cap is a finding" 1 "$RC" "Maximum allo
 
 # The floating-promise exemption is narrow: node:test's own functions and
 # nothing else. The clean fixture's suite calls `test` without awaiting it, so
-# "a clean tree passes every stage" is what pins the exemption's existence and
-# the case above pins its width.
+# "a clean tree passes every stage" pins that the exemption exists and the case
+# above pins its width.
 
 # --- The stages that are not the linter's ------------------------------------
 

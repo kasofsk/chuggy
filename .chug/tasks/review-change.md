@@ -2,10 +2,9 @@
 
 You are reviewing a change in this repository. You did not write it, and that
 is the point of you: an agent reviewing its own work re-reads its own
-intentions rather than the diff, and agrees with itself. **Start from the diff
-and the tree, not from a description of what the change was supposed to do.**
-
-Run this in a fresh session with no memory of the authoring.
+intentions rather than the diff, and agrees with itself. Run this in a fresh
+session with no memory of the authoring, and **start from the diff and the
+tree, not from a description of what the change was supposed to do.**
 
 ## The order
 
@@ -43,21 +42,18 @@ The rules no gate enforces, because no script can decide them. They bind the
 author, and the reviewer rejects by number.
 
 **They are HOUSE rules, and the model's own STANDING rules are a different list
-with a different numbering.** `model/` numbers them and cites them by number
-at the definitions they govern — see the next section. Calling both "rule 3" in
-one review is how a finding stops being answerable.
+with a different numbering.** Calling both "rule 3" in one review is how a
+finding stops being answerable.
 
 **The numbering starts at 7, and that is not a gap.** House rules 1 through 6
-are the mechanical ones, and each is now stated in the thing that enforces it
-and nowhere else. A rule with two homes has two versions of itself inside a
-year, which is the whole reason this repo has no standards document — so what
-follows is a routing table, not a copy. Read each rule at its home; where this
-table and a home disagree, the home is right.
+are the mechanical ones, each stated in the thing that enforces it. What
+follows is a routing table, not a copy: read each rule at its home, and where
+this table and a home disagree, the home is right.
 
 | # | The rule, in short | Stated and enforced at |
 |---|---|---|
 | 1 | comment quantity | `.chug/tasks/check-comments.sh` |
-| 2 | the domain reaches no I/O and no ambient capability | `.chug/tasks/check-boundaries.sh` and `eslint.config.js` — the graph half and the ambient half, and each header says why one is not enough |
+| 2 | the domain reaches no I/O and no ambient capability | `.chug/tasks/check-boundaries.sh` for the graph half, `eslint.config.js` for the ambient half |
 | 3 | exhaustive switching | `eslint.config.js` |
 | 4 | no floating promises | `eslint.config.js` |
 | 5 | the function length cap | `eslint.config.js` |
@@ -97,23 +93,17 @@ a preset reads exactly like a rule that is working.
 15. **A gate's success line reports only what that run consumed, and any figure
     in it is asserted by the gate's own suite.** The failure is not a wrong
     verdict — it is a right verdict with a wrong account of its coverage, which
-    is the half a reader believes and never checks again: a count of the files
-    in a directory where the suite iterated a manifest, of the tracked sources
-    where the tool cruised a graph, of the files selected where some were never
-    read. Each of those has been in this tree, and one of them printed a
-    constant scraped out of a colour escape. So the figure is derived from the
-    run rather than from something adjacent to it, and the sibling `*.test.sh`
-    requires the line to report a fixture whose size it knows — the same bar
-    the standing commitment on unverified controls sets for the verdict, applied
-    to the sentence that carries it. Where no honest figure exists, the line
-    says what it did instead of counting something else.
+    is the half a reader believes and never checks again. So the figure is
+    derived from the run rather than from something adjacent to it, and the
+    sibling `*.test.sh` requires the line to report a fixture whose size it
+    knows. Where no honest figure exists, the line says what it did instead of
+    counting something else.
 
 ## The standing rules — the model's, numbered 1 to 4
 
 **This is an index, not a copy.** The model states these in its own headers, at
 the definitions they govern, and cites them by number throughout. Read them
-there. Where this list and a model header disagree, the model is right, the same
-as everywhere else.
+there; where this list and a model header disagree, the model is right.
 
 1. **The measure comes first** — `model/measure.qnt` opens on it. When the
    machine changes, the measure is reworked before anything else: not
@@ -149,16 +139,15 @@ number. Cite one by name. A change that needs one of them to be false is an
 > If you cannot write those three things, you do not have a finding. Put it in
 > the notes instead.
 
-Two failures are worse than missing a bug, because both train the author to
-stop reading you: a finding that turns out to be false, and a finding that is
-really a preference. Prefer to be quiet and right.
+A finding that turns out to be false and a finding that is really a preference
+are both worse than missing a bug, because both train the author to stop
+reading you. Prefer to be quiet and right.
 
 **Read; do not run.** `just check` runs every gate over the whole tree and the
-author is expected to have run it — re-running it here produces a verdict that
-already exists and delays yours. Read the code instead: whether the change is
+author is expected to have run it. Read the code instead: whether the change is
 *correct* is the part no gate can decide, and it is the whole reason a reviewer
-is worth the time. If you believe a gate would fail, say which one and why,
-and let it be run.
+is worth the time. If you believe a gate would fail, say which one and why, and
+let it be run.
 
 **Never edit the tree.** Not to fix a typo, not to try something out. Your
 output is a verdict; the author holds the pen.

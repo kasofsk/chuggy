@@ -2,12 +2,9 @@
 # Shell test for ci.sh — the sequencer's own behaviour, not the gates'.
 #
 # Cases run against throwaway repos holding stub gates with controllable exit
-# codes, because what is under test is how ci.sh *treats* a verdict: that a
-# finding and a could-not-run are different answers all the way to its own
-# exit code, and that the suite budget stops where it says it does.
-#
-# The real ci.sh hands every suite CHUG_CI_SHELL_SUITES=0, which is what keeps
-# this file from recursing into a live run when the suite stage executes it.
+# codes: what is under test is how ci.sh *treats* a verdict — that a finding
+# and a could-not-run stay different answers all the way to its own exit code,
+# and that the suite budget stops where it says it does.
 #
 # Run:  .chug/tasks/ci.test.sh
 set -eu
@@ -33,10 +30,10 @@ stub_repo() { # <doc-lint exit> — a repo whose only gate is a stub doc-lint
 }
 
 # The real ci.sh hands every suite CHUG_CI_SHELL_SUITES=0 so this file cannot
-# recurse into a live run. That guard is inherited here, which would silently
-# skip the suite stage in exactly the cases below that exist to exercise it —
-# so they set it back to 1 explicitly. Recursion stays bounded because the
-# stub ci.sh under test passes 0 down to its own stub suites.
+# recurse into a live run. That guard is inherited here and would skip the
+# suite stage in the cases that exist to exercise it, so they set it back
+# explicitly; recursion stays bounded because the stub ci.sh under test passes
+# the guard down to its own stub suites.
 run_ci() {
 	OUT="$WORK/.out"
 	set +e
@@ -45,7 +42,6 @@ run_ci() {
 	set -e
 }
 
-# 1. Every gate clean, suite stage off -> clean.
 stub_repo 0
 OUT="$WORK/.out"
 set +e
@@ -55,7 +51,6 @@ set -e
 check "all gates clean exits 0" 0 "$RC" "all gates clean"
 check "CHUG_CI_SHELL_SUITES=0 skips the suite stage" 0 "$RC" "SKIPPED"
 
-# 2. A gate returning 1 is a finding -> exit 1.
 stub_repo 1
 OUT="$WORK/.out"
 set +e
@@ -64,8 +59,7 @@ RC=$?
 set -e
 check "a gate finding exits 1" 1 "$RC" "1 gate(s) failed"
 
-# 3. A gate returning 2 could not run -> exit 2, NOT 1 and never 0. This is the
-#    distinction the whole three-valued convention exists for.
+# A gate that could not run exits 2, NOT 1 and never 0.
 stub_repo 2
 OUT="$WORK/.out"
 set +e
@@ -75,7 +69,6 @@ set -e
 check "a gate that could not run exits 2" 2 "$RC" "could not run"
 check "could-not-run is reported as not a pass" 2 "$RC" "this is not a pass"
 
-# 4. The suite stage runs a tracked suite and reports its failure.
 stub_repo 0
 printf '#!/bin/sh\nexit 1\n' > "$R/.chug/tasks/failing.test.sh"
 chmod +x "$R/.chug/tasks/failing.test.sh"
@@ -83,7 +76,6 @@ git -C "$R" add -A
 run_ci
 check "a failing suite fails the run" 1 "$RC" "failing.test.sh"
 
-# 5. A suite that passes leaves the run clean, and the stage says so.
 stub_repo 0
 printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/passing.test.sh"
 chmod +x "$R/.chug/tasks/passing.test.sh"
@@ -91,8 +83,8 @@ git -C "$R" add -A
 run_ci
 check "a passing suite leaves the run clean" 0 "$RC" "all gates clean"
 
-# 6. The budget stops between suites and NAMES what it did not run. A budget
-#    that silently truncates reads as full coverage.
+# The budget stops between suites and NAMES what it did not run: one that
+# silently truncates reads as full coverage.
 stub_repo 0
 printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/one.test.sh"
 chmod +x "$R/.chug/tasks/one.test.sh"
@@ -106,13 +98,11 @@ set -e
 check "an exhausted budget names the suites it skipped" 1 "$RC" "did NOT run"
 check "the skipped suite is named, not just counted" 1 "$RC" "one.test.sh"
 
-# 7. No suites at all -> could not run. The glob matching nothing must not read
-#    as "the suites passed".
+# A glob matching nothing must not read as "the suites passed".
 stub_repo 0
 run_ci
 check "no suites found exits 2, not 0" 2 "$RC" "matched nothing"
 
-# 8. Outside a git checkout -> could not run.
 OUT="$BARE/.out"
 set +e
 (cd "$BARE" && "$SUT") >"$OUT" 2>&1

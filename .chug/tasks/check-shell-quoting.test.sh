@@ -1,46 +1,19 @@
 #!/bin/sh
 # Shell test for check-shell-quoting.sh — no NATS, no Docker, no cargo.
 #
-# It drives the gate in explicit-path mode over fixtures in a temp dir and
-# asserts the properties the gate rests on:
+# It drives the gate in explicit-path mode over fixtures in a temp dir. The
+# gate claims a class rather than one spelling of it, so every expansion form
+# gets a case, and each exclusion gets one too: a command substitution, an
+# unquoted word, a heredoc with a quoted delimiter.
 #
-#   1. The motivating shape is caught: an apostrophe in a `${VAR:-…}` default,
-#      sitting in the `then` branch of the very test whose passing arm the
-#      mis-parse swallows. It fails (rc 1) and is named with its line number.
-#   1b-1d. The rest of the expansion forms are caught too, because the gate
-#      claims the class and not one spelling of it: the colon-less operator
-#      (`${V-word}`), a positional parameter (`${1:-word}`), and a heredoc body,
-#      whose lines carry no surrounding quotes of their own yet are read as
-#      quoted by both shells.
-#   2. Its fix passes. The same message with the apostrophe written out of the
-#      prose is clean (rc 0), so the gate is satisfied by the shape the fix took
-#      rather than by an escape.
-#   3. A command substitution in a default is NOT flagged. `$(…)` opens a fresh
-#      parsing context and quotes normally in both shells, so
-#      `${DIR:-$(cd "$(dirname "$0")" && pwd)}` is correct code, and a gate
-#      that flags it is noise.
-#   3b-3c. Neither is an expansion in an UNQUOTED word, nor one in a heredoc
-#      with a quoted delimiter. Both are measured below rather than assumed:
-#      the first agrees between the shells and the second expands in neither, so
-#      flagging them would be noise of exactly the kind that gets a gate tuned
-#      away. 3b is a shape real scripts carry, not a straw fixture.
-#   4. The whole tree is clean, in the gate's own default mode. That is the
-#      claim the CI wiring makes, and it is worth one assertion rather than a
-#      reader's trust.
-#
-# Plus: a broken gate is rc 2, never a pass.
-#
-# It also pins the premise, because the premise is the whole reason the gate
-# exists and nothing else in this repo asserts it: a POSIX shell accepts the
-# fixture outright — so no `sh -n` sweep can stand in for this gate — and bash
-# reads the same bytes as something else. Whether bash then *rejects* the file
-# depends on what follows it — a later apostrophe closes the run, and then
-# `bash -n` passes too and only the bindings move — which is why the
-# assertion is on the disagreement rather than on either verdict. The premise
-# has a second half, and it is what draws the gate's boundary: the shells AGREE
-# about the unquoted form, so case 3b is an exclusion the measurement earns
-# rather than a hole. The bash half is skipped when there is no bash — but it is
-# announced, never silent.
+# IT ALSO PINS THE PREMISE, which nothing else in this repo asserts: a POSIX
+# shell accepts the fixture outright, so no `sh -n` sweep can stand in for this
+# gate, and bash reads the same bytes as something else. The assertion is on
+# the disagreement rather than on either verdict, because whether bash rejects
+# the file depends on what follows it. The premise has a second half that draws
+# the gate's boundary: the shells AGREE about the unquoted form, so its
+# exclusion is a measurement rather than a hole. The bash half is skipped when
+# there is no bash — announced, never silent.
 #
 # Run:  .chug/tasks/check-shell-quoting.test.sh   (exits 0 if all cases pass)
 set -eu
@@ -60,9 +33,9 @@ run_sut() { # <arg>... -> writes rc to $RC, output to $OUT
 APOSTROPHE="'"
 CLEAN="no quote-in-default"
 
-# 1. The motivating shape: the expansion sits in the `then` branch of the very
-#    test whose passing arm the mis-parse swallows, so the two lines after it
-#    bind inside the `if` and run only when the guard's own check FAILS.
+# The motivating shape: the expansion sits in the `then` branch of the very
+# test whose passing arm the mis-parse swallows, so the two lines after it bind
+# inside the `if` and run only when the guard's own check FAILS.
 {
 	echo 'if [ "${CHUG_CI_SUITE_TIMEOUT_SECS:-}" != "60" ]; then'
 	echo "  CAP=\"the cap is '\${CHUG_CI_SUITE_TIMEOUT_SECS:-<unset: the sequencer${APOSTROPHE}s own default>}'\""
@@ -73,22 +46,19 @@ CLEAN="no quote-in-default"
 run_sut "$WORK/broken.sh"
 check "an apostrophe in a \${VAR:-word} default is a finding" 1 "$RC" "broken.sh:2:"
 
-# 1b. The colon-less operator. bash reads the word of `${V-w}` exactly as it
-#     reads `${V:-w}`, so a gate that saw only the colon form would pass the
-#     same bug back with one character removed.
+# The colon-less operator. bash reads the word of `${V-w}` exactly as it reads
+# `${V:-w}`.
 echo "MSG=\"cap is '\${CHUG_CI_SUITE_TIMEOUT_SECS-<unset: the sequencer${APOSTROPHE}s own default>}'\"" > "$WORK/nocolon.sh"
 run_sut "$WORK/nocolon.sh"
 check "an apostrophe in a \${VAR-word} default is a finding" 1 "$RC" "nocolon.sh:1:"
 
-# 1c. A positional parameter. bash reads its word exactly as it reads a named
-#     parameter's, so the form is covered for the same reason 1b is.
+# A positional parameter, whose word bash reads as it reads a named one.
 echo "LABEL=\"stage \${1:-the caller${APOSTROPHE}s own}\"" > "$WORK/positional.sh"
 run_sut "$WORK/positional.sh"
 check "an apostrophe in a \${1:-word} default is a finding" 1 "$RC" "positional.sh:1:"
 
-# 1d. A heredoc body with a plain delimiter. Nothing on the line is quoted, yet
-#     both shells expand it and only bash reads the apostrophe — and this repo
-#     writes its fake scripts through heredocs.
+# A heredoc body with a plain delimiter. Nothing on the line is quoted, yet
+# both shells expand it and only bash reads the apostrophe.
 {
 	echo 'cat <<EOF'
 	echo "  budget: \${CHUG_CI_SUITES_BUDGET_SECS-<unset: the sequencer${APOSTROPHE}s own default>}"
@@ -97,12 +67,12 @@ check "an apostrophe in a \${1:-word} default is a finding" 1 "$RC" "positional.
 run_sut "$WORK/heredoc.sh"
 check "an apostrophe in a heredoc body default is a finding" 1 "$RC" "heredoc.sh:2:"
 
-# 2. The fix, which is the prose rewritten rather than the quote escaped.
+# The fix, which is the prose rewritten rather than the quote escaped.
 sed "s/the sequencer${APOSTROPHE}s own default/the default the sequencer applies/" "$WORK/broken.sh" > "$WORK/fixed.sh"
 run_sut "$WORK/fixed.sh"
 check "the same message without the apostrophe passes" 0 "$RC" "$CLEAN"
 
-# 3. Command substitution inside a default is correct code in both shells.
+# Command substitution inside a default is correct code in both shells.
 {
 	echo 'MODEL="${CHUG_MODEL_DIR:-$(cd "$(dirname "$0")/../.." && pwd)/model}"'
 	echo 'echo "$MODEL"'
@@ -110,9 +80,8 @@ check "the same message without the apostrophe passes" 0 "$RC" "$CLEAN"
 run_sut "$WORK/cmdsub.sh"
 check "a \$(…) in a default is not a finding" 0 "$RC" "$CLEAN"
 
-# 3b. An UNQUOTED expansion. POSIX has the word expanded like any other word
-#     here, so the shells agree (asserted below) and the quotes are load-bearing
-#     — they are what makes this one `env` argument instead of two.
+# An UNQUOTED expansion. POSIX has the word expanded like any other word here,
+# so the shells agree (asserted below) and the quotes are load-bearing.
 {
 	echo 'env -i \'
 	echo '  ${2:+QUINT_SEED="$2"} \'
@@ -121,8 +90,7 @@ check "a \$(…) in a default is not a finding" 0 "$RC" "$CLEAN"
 run_sut "$WORK/unquoted.sh"
 check "an unquoted expansion is not a finding" 0 "$RC" "$CLEAN"
 
-# 3c. A heredoc with a quoted delimiter performs no expansion at all, so there
-#     is nothing for the two shells to disagree about.
+# A heredoc with a quoted delimiter performs no expansion at all.
 {
 	echo "cat <<${APOSTROPHE}EOF${APOSTROPHE}"
 	echo "  budget: \${CHUG_CI_SUITES_BUDGET_SECS-<unset: the sequencer${APOSTROPHE}s own default>}"
@@ -131,11 +99,11 @@ check "an unquoted expansion is not a finding" 0 "$RC" "$CLEAN"
 run_sut "$WORK/heredoc-quoted.sh"
 check "a quoted-delimiter heredoc is not a finding" 0 "$RC" "$CLEAN"
 
-# 4. The tree the gate is wired over, in its own default mode.
+# The tree the gate is wired over, in its own default mode.
 ( cd "$HERE/../.." && "$SUT" > "$OUT" 2>&1 ) && RC=0 || RC=$?
 check "the whole tree is clean" 0 "$RC" "$CLEAN"
 
-# 5. A gate that cannot run says so (rc 2) instead of reporting a clean tree.
+# A gate that cannot run says so instead of reporting a clean tree.
 mkdir -p "$WORK/bin"
 OUT="$WORK/out"
 set +e
@@ -144,19 +112,10 @@ RC=$?
 set -e
 check "no awk is a broken gate, not a pass" 2 "$RC" "no \`awk\` on PATH"
 
-# The premise: a strict POSIX shell accepts the fixture outright, and bash reads
-# it as something else. If this ever stops holding, the gate guards nothing.
-#
-# NAME THE SHELL rather than trusting /bin/sh. On this machine /bin/sh IS bash,
-# so comparing /bin/sh against bash would measure a shell against itself and
-# report no disagreement — a premise check that passes for the wrong reason and
-# would then be "fixed" by deleting it. The two shells that diverge have to be
-# named, and dash is the one to name.
-#
-# The hazard is not live on this machine and it is worth saying so: with bash on
-# both sides there is nothing here to diverge. It arrives the first time these
-# scripts run on a Linux host — as job evaluators, or on anyone else's
-# machine — which is why the rule is in force now rather than then.
+# NAME THE SHELL rather than trusting /bin/sh. On a mac /bin/sh IS bash, so
+# comparing /bin/sh against bash measures a shell against itself and reports no
+# disagreement — a premise check that passes for the wrong reason. The two
+# shells that diverge have to be named, and dash is the one to name.
 POSIX_SH=""
 for cand in dash /bin/dash busybox_sh; do
 	if command -v "$cand" > /dev/null 2>&1; then POSIX_SH="$cand"; break; fi

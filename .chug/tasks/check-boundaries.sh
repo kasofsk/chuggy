@@ -2,44 +2,21 @@
 # The module graph points inward, and `src/domain/` reaches nothing outside
 # itself by any path through it.
 #
-# THIS IS HOUSE RULE 2'S OTHER HALF. `eslint.config.js` holds the ambient half
-# — the globals a domain module may not name — and states both there. What no
-# per-file check can see is reachability: a path helper inside the domain that
-# imports a filesystem module names no forbidden global, and the decider that
-# calls it imports nothing forbidden either, so every per-file rule passes on a
-# tree where the invariant is broken. The rule is about the graph, and this
-# gate is where the graph is asked.
+# This is house rule 2's graph half; `eslint.config.js` holds the ambient half.
+# What no per-file check can see is reachability — a helper inside the domain
+# that imports a filesystem module names no forbidden global, and the decider
+# that calls it imports nothing forbidden either. The rules are in
+# `.dependency-cruiser.cjs`, beside the layer table they encode.
 #
-# WHY A WRAPPER AND NOT THE TOOL DIRECTLY. dependency-cruiser exits non-zero on
-# a violation and non-zero when it cannot resolve a module, and this tree's
-# gates must tell those apart: 1 is a finding a reader should act on, 2 is a
-# verdict that never happened. Running the tool from `ci.sh` unwrapped would
-# collapse the two into "failed", which is the exact confusion every gate here
-# separates. The rules themselves are in `.dependency-cruiser.cjs`, next to the
-# layer table they encode.
-#
-# THE RULES ARE PROVED TO BITE, in `.chug/tasks/check-boundaries.test.sh`,
-# against fixture trees carrying the violation each one names. A boundary rule
-# that has never rejected anything is an unverified control, and this repo's
-# standing position is that one of those is worse than none.
-#
-# THE CLEAN LINE COUNTS WHAT THE CRUISE READ, which is not what the discovery
-# above lists. The graph is cruised over `src` and `test` together and resolved
-# from disk; the tracked-source glob is a precondition — an empty `src/` is a
-# could-not-run rather than a clean verdict over nothing — and reporting its
-# size described a set this gate never asked about. So the figure is
-# dependency-cruiser's own, read back off the verdict it printed, with the
-# colour escapes stripped first for `check-duplication.sh`'s reason: a pattern
-# that skips non-digits to reach a number reaches the digits inside the escape
-# instead. An unreadable verdict prints as unknown rather than as a number
-# nothing stands behind, and `.chug/tasks/check-boundaries.test.sh` requires
-# this line to report a fixture whose size it knows.
+# THE WRAPPER IS WHAT SPLITS THE EXIT CODES. dependency-cruiser exits non-zero
+# both on a violation and when it cannot resolve a module; the tool run
+# unwrapped would report those as one answer.
 #
 # WHAT IT CANNOT SEE. A capability reached without an import — a global, a
 # dynamic `import()` built from a computed string, a value injected at run time
-# — is invisible to a static graph. The first is eslint's half. The second is
-# not written in this tree and would be a finding on sight. The third is what
-# the ports exist to make legible, and the reviewer's, not this gate's.
+# — is invisible to a static graph. The first is eslint's half; the second is
+# not written here and would be a finding on sight; the third is what the ports
+# exist to make legible, and the reviewer's.
 #
 # Usage:
 #   .chug/tasks/check-boundaries.sh
@@ -60,9 +37,8 @@ if [ ! -f .dependency-cruiser.cjs ]; then
 	exit 2
 fi
 
-# The local binary wins over anything on PATH, for check-model.sh's reason: a
-# gate whose verdict depends on which version happens to be installed is not a
-# gate.
+# The local binary wins over anything on PATH: a verdict that depends on which
+# version happens to be installed is not a verdict.
 if [ -x ./node_modules/.bin/depcruise ]; then
 	DEPCRUISE=./node_modules/.bin/depcruise
 elif command -v depcruise >/dev/null 2>&1; then
@@ -72,9 +48,8 @@ else
 	exit 2
 fi
 
-# `src/` arrives one slice at a time, and a directory the graph has no module
-# for is a rule that is inert rather than absent. An empty tree is still a
-# could-not-run: the gate would print a clean verdict having asked nothing.
+# An empty tree is a could-not-run: the gate would print a clean verdict having
+# asked nothing.
 sources="$(git ls-files 'src/*.ts' 'src/**/*.ts' 2>/dev/null || true)"
 if [ -z "$sources" ]; then
 	echo "check-boundaries: LINTER ERROR — no tracked src/*.ts; the graph would be empty"
@@ -89,9 +64,8 @@ set +e
 rc=$?
 set -e
 
-# dependency-cruiser reports rule violations on stdout and its own failures on
-# stderr. A non-zero exit with nothing on stdout is the tool failing to run,
-# not the tree failing the rules.
+# Violations land on stdout and the tool's own failures on stderr, so a
+# non-zero exit with nothing on stdout is the tool failing to run.
 if [ "$rc" -ne 0 ] && [ ! -s "$work/out" ]; then
 	echo "check-boundaries: LINTER ERROR — depcruise could not complete (rc=$rc)"
 	sed 's/^/    /' "$work/err"

@@ -3,21 +3,12 @@
 # pre-commit hook calls the individual gates directly — the sequencing has one
 # definition, here.
 #
-# THE NAME AND PATH ARE THE ONES THIS FILE KEEPS FOREVER. When this repo is
-# eventually orchestrated by the platform it implements, `.chug/tasks/ci.sh`
-# becomes the command evaluator appended to every job type, unchanged. Every
-# gate's header, error messages and reproduce-locally lines already name their
-# own paths, so a later rename is a sweep of the whole tree rather than an edit.
-#
-# ORDERING: pure-shell gates first, cheapest first, before anything that needs a
-# toolchain. A docs-only or scripts-only change is exactly the change that
-# breaks them, and it is also the change that would exit early from a
-# language-scoped stage.
+# ORDERING: pure-shell gates first, cheapest first; then the suites; then what
+# needs a toolchain; the model gate last, being by far the slowest.
 #
 # EACH GATE IS THREE-VALUED — 0 clean, 1 finding, 2 could-not-run — and this
 # script keeps the distinction all the way to its own exit. A gate that could
-# not run is a failure here, reported under its own heading, because "the check
-# passed" and "the check never ran" must never print the same.
+# not run is a failure here, reported under its own heading.
 #
 # Env:
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
@@ -63,8 +54,6 @@ run_gate() { # <label> <script> [args...]
 
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 
-# Before check-paths: one awk pass over the prose corpus, where that one shells
-# out to git for the whole deletion history.
 if [ -x ./.chug/tasks/check-figures.sh ]; then
 	run_gate "check-figures" ./.chug/tasks/check-figures.sh
 fi
@@ -85,9 +74,6 @@ if [ -x ./.chug/tasks/check-gates.sh ]; then
 	run_gate "check-gates" ./.chug/tasks/check-gates.sh
 fi
 
-# The last of the pure-shell gates, on the same rule that orders the rest: each
-# reads less of the tree than anything above it. check-comments has the newest
-# corpus and check-knowledge reads one directory.
 if [ -x ./.chug/tasks/check-comments.sh ]; then
 	run_gate "check-comments" ./.chug/tasks/check-comments.sh
 fi
@@ -98,8 +84,7 @@ fi
 
 # --- Shell suites ------------------------------------------------------------
 # The gates' own tests. Discovery is a glob over tracked files, so adding a
-# suite is enough — there is no list to update. A glob matching nothing is a
-# failure, not a quiet pass.
+# suite is enough; a glob matching nothing is a failure, not a quiet pass.
 
 if [ "${CHUG_CI_SHELL_SUITES:-1}" = "0" ]; then
 	printf '\n--- shell suites: SKIPPED (CHUG_CI_SHELL_SUITES=0)\n'
@@ -108,18 +93,11 @@ else
 	suite_cap="${CHUG_CI_SUITE_TIMEOUT_SECS:-60}"
 	suite_budget="${CHUG_CI_SUITES_BUDGET_SECS:-120}"
 
-	# Probe FUNCTIONALLY — `command -v` says a binary exists, not that it runs.
-	# macOS ships no GNU `timeout`; `gtimeout` arrives with coreutils.
-	#
-	# WHY A MISSING CAP WARNS RATHER THAN ERRORS. On a Linux container host
-	# `timeout` always exists, so its absence there would be a real anomaly
-	# worth erroring on. Here the developer's macOS
-	# machine is the whole of CI, and erroring would make `just check`
-	# permanently red on stock macOS — and a gate that is always red is a gate
-	# that gets bypassed, which is how a suite stage stops running at all. What
-	# the rule actually forbids is announcing a bound that is not being
-	# applied, so the uncapped path says exactly that, loudly, and a hung suite
-	# is the developer's Ctrl-C rather than a wedged pipeline.
+	# Probed functionally — `command -v` says a binary exists, not that it
+	# runs. macOS ships no GNU `timeout`; `gtimeout` arrives with coreutils.
+	# Its absence warns rather than errors: what the rule forbids is
+	# announcing a bound that is not being applied, and the uncapped path says
+	# exactly that.
 	timeout_cmd=""
 	if timeout 5 true >/dev/null 2>&1; then
 		timeout_cmd="timeout"
@@ -145,8 +123,7 @@ else
 '
 		for suite in $suites; do
 			elapsed=$(( $(date +%s) - started ))
-			# Checked BETWEEN suites, never after the loop: a post-loop check
-			# bounds nothing, because the real ceiling would be count x cap.
+			# Checked between suites: a post-loop check bounds nothing.
 			if [ "$elapsed" -ge "$suite_budget" ]; then
 				stopped="$stopped$suite
 "
@@ -177,10 +154,6 @@ else
 fi
 
 # --- The TypeScript toolchain ------------------------------------------------
-# After every pure-shell gate, because these are the first two that need
-# node_modules and a docs-only change should have had its verdict long before
-# reaching them. Boundaries first: it reads the module graph and nothing else,
-# where check-source runs a whole toolchain over the same files.
 
 if [ -x ./.chug/tasks/check-boundaries.sh ]; then
 	run_gate "check-boundaries" ./.chug/tasks/check-boundaries.sh
@@ -191,18 +164,12 @@ if [ -x ./.chug/tasks/check-source.sh ]; then
 fi
 
 # --- The corpus --------------------------------------------------------------
-# After check-source because it replays TypeScript: a tree that does not
-# typecheck should be told so under that heading rather than as a conformance
-# run that could not start. Before check-model for the reason below — it reads
-# a committed corpus where that one runs the model itself.
 
 if [ -x ./.chug/tasks/check-conformance.sh ]; then
 	run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
 fi
 
 # --- The model ---------------------------------------------------------------
-# Last because it is by far the slowest, and a fast gate that runs after a slow
-# one is a fast gate nobody benefits from.
 
 if [ -x ./.chug/tasks/check-model.sh ]; then
 	run_gate "check-model" ./.chug/tasks/check-model.sh

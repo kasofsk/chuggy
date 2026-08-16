@@ -2,57 +2,38 @@
 # In TypeScript, `/** */` is the only prose a source file may carry, and a doc
 # comment is at most two sentences.
 #
-# THIS IS ABOUT QUANTITY. What a comment may SAY is the
-# `comments-describe-the-code` skill's, and both apply to every line here. The
-# two rules answer different failures and neither subsumes the other: a
-# two-sentence comment about the prompt that produced the code passes this gate
-# and fails that skill, and a correct, descriptive essay that runs down the
-# screen passes that skill and fails this one.
-#
-# WHY A CAP AND NOT A STYLE PREFERENCE. A long comment justifying code is a
-# signal pointing at the code, and the fix belongs in the code. A cap is the
-# only form of that rule a script can decide, so the cap is what is written
-# here and the judgement stays with the reviewer.
+# This is house rule 1, and it is about QUANTITY. What a comment may SAY is the
+# `comments-describe-the-code` skill's, and both apply to every line here.
 #
 # THE MODULE HEADER IS EXEMPT, and only it: a file's FIRST `/** */` block,
-# stating what the module accepts, emits and guarantees. That is the one place
-# where length is the job — a reader arriving at an unfamiliar file needs the
-# contract before the code — and it is bounded by being one block per file.
-# Every later block in the same file is a doc comment and is capped.
+# stating what the module accepts, emits and guarantees. Every later block in
+# the same file is a doc comment and is capped.
 #
 # WHAT IS REJECTED OUTRIGHT:
 #
-#   - `//` in any form. `///` and `//!` are Rust syntax, render in no
-#     TypeScript tool, and are ordinary comments here rather than a third kind.
+#   - `//` in any form. `///` and `//!` are Rust syntax and render in no
+#     TypeScript tool.
 #   - `/* */` that is not `/** */`. A block comment that is not a doc comment
-#     is prose the tooling cannot surface, which is the whole of the argument
-#     for doc comments.
+#     is prose the tooling cannot surface.
 #   - `@ts-ignore`, which suppresses without saying what it expected. Its
 #     replacement `@ts-expect-error` fails when the error goes away, so it
 #     cannot outlive the problem it names.
 #
-# MACHINE-READ DIRECTIVES ARE NOT PROSE, and are allowed from a closed list,
-# because each is read by a tool rather than by a person and removing it
-# changes what runs. The list is `jscpd:ignore-start` and `jscpd:ignore-end`,
-# each carrying a reason on the directive line; `prettier-ignore`;
-# `@ts-expect-error` with a description; and `eslint-disable-next-line` naming
-# a rule that is not one of this tree's boundary, purity or exhaustiveness
-# rules — those exist to be unsuppressible, and a rule with a documented way
-# round it enforces nothing.
+# MACHINE-READ DIRECTIVES ARE NOT PROSE, and are allowed from a closed list:
+# `jscpd:ignore-start` and `jscpd:ignore-end`, each carrying a reason on the
+# directive line; `prettier-ignore`; `@ts-expect-error` with a description; and
+# `eslint-disable-next-line` naming a rule that is not one of this tree's
+# boundary, purity or exhaustiveness rules — those exist to be unsuppressible.
 #
 # A DIRECTIVE IS ONE LINE. A wrapped second line is an ordinary comment and is
-# rejected as one. The rule is not fussiness: a two-line directive is read by
-# the tool as one line and by a person as two, and the half the tool ignores is
-# where an explanation grows that nothing checks.
+# rejected as one: the half the tool ignores is where an explanation grows that
+# nothing checks.
 #
 # WHAT IT CANNOT SEE. Sentence counting is terminator counting, so an
 # abbreviation with a period in it reads as a sentence boundary and a
-# semicolon-joined pair reads as one sentence. Both errors point the same way —
-# toward shorter comments — which is why neither gets a special case. A string
-# literal containing `//` is not a comment, and neither is a regex literal
-# matching one; both are tracked. The regex case is decided by the character
-# BEFORE the slash, because a slash after a value is division and a slash
-# after an operator opens a pattern, and no lexer-free rule does better.
+# semicolon-joined pair reads as one sentence. Both errors point the same way,
+# toward shorter comments. A string literal containing `//` is not a comment,
+# and neither is a regex literal matching one; both are tracked.
 #
 # SCOPE: tracked `*.ts`. The gates are shell and the model is Quint; each has
 # its own comment culture and its own header stating it.
@@ -108,9 +89,8 @@ trap 'rm -rf "$work"' EXIT
 
 awk '
 BEGIN {
-	# Rules that exist to be unsuppressible. Each is a boundary, a purity or an
-	# exhaustiveness rule, which are the three this tree states as house rules
-	# rather than as preferences.
+	# The rules that exist to be unsuppressible: the boundary, purity and
+	# exhaustiveness rules this tree states as house rules.
 	split("@typescript-eslint/switch-exhaustiveness-check no-restricted-globals no-restricted-imports no-restricted-properties @typescript-eslint/no-floating-promises @typescript-eslint/no-misused-promises", unsuppressable, " ")
 	for (i in unsuppressable) sealed[unsuppressable[i]] = 1
 }
@@ -167,13 +147,9 @@ FNR == 1 {
 
 		if (c == "\"" || c == "\047" || c == "`") { in_string = c; i++; continue }
 
-		# A REGEX LITERAL IS NOT A COMMENT, and `/^\/\//` is the shape that
-		# proves it: a pattern matching a comment marker reads as one. The
-		# ambiguity with division is settled by what precedes the slash —
-		# after an operator or an opening bracket a regex may start, after a
-		# value only division can. Getting this wrong the other way would let
-		# a comment hide inside what looks like a pattern, so the test is on
-		# the PREVIOUS character rather than on anything after.
+		# A regex literal is not a comment. Its ambiguity with division is
+		# settled by what precedes the slash: after an operator or an opening
+		# bracket a regex may start, after a value only division can.
 		if (c == "/" && two != "//" && two != "/*" && index("(,=:[!&|?{};+-~^<>%*", prev) > 0) {
 			in_regex = 1
 			in_class = 0

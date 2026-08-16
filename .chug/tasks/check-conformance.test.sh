@@ -1,29 +1,20 @@
 #!/bin/sh
 # Shell test for check-conformance.sh.
 #
-# WHAT IT HAS TO PROVE IS THAT THE GATE BITES. A conformance gate is believed
-# once and then never looked at again, so it is exactly the control this repo
-# refuses to ship unverified: each case below hands it a corpus carrying the
-# defect it names — a record that is not the model's, a row replayed under
-# another instance's constants — and requires a finding rather than a pass.
+# WHAT IT HAS TO PROVE IS THAT THE GATE BITES: each case hands it a corpus
+# carrying the defect it names — a record that is not the model's, a row
+# replayed under another instance's constants — and requires a finding.
 #
-# AND THAT IT ONLY READS. The gate's central claim is that it never regenerates,
-# and the case that settles it makes every file of the fixture corpus unwritable
-# and requires the same clean verdict: a run that opened a golden for writing
-# would fail there rather than being trusted not to.
+# AND THAT IT ONLY READS. The case that settles the gate's central claim makes
+# every file of the fixture corpus unwritable and requires the same clean
+# verdict, so a run that opened a golden for writing fails there rather than
+# being trusted not to.
 #
 # THE FIXTURES ARE A REAL GOLDEN AND ITS OWN MANIFEST ROW, copied rather than
 # written, because a hand-built trace would test this suite's idea of the ITF
-# encoding instead of the corpus. One row is enough for every case and keeps the
-# suite inside the sequencer's per-suite cap.
-#
-# AND THE CLEAN LINE'S FIGURE IS ASSERTED, on `check-duplication.test.sh`'s
-# argument and after the same failure: a success line nobody asserts is a
-# success line that can report the wrong set for as long as it likes, and this
-# one reported the files in the directory rather than the rows the replay
-# consumed. The expected figure is computed from the fixture's own manifest
-# rather than transcribed, so a regenerated corpus cannot leave this suite
-# asserting against a stale count.
+# encoding instead of the corpus. The clean line's figure is computed from that
+# manifest rather than transcribed, so a regenerated corpus cannot leave this
+# suite asserting against a stale count.
 #
 # Run:  .chug/tasks/check-conformance.test.sh
 set -eu
@@ -47,8 +38,6 @@ run_gate() { # <golden-dir>
 	set -e
 }
 
-# The row is lifted out of the real manifest rather than transcribed, so a
-# regenerated corpus cannot leave this suite asserting against stale counts.
 fixture() { # <dir> [<instance>]
 	mkdir -p "$1"
 	cp "$ROOT/test/golden/$GOLDEN.itf.json" "$1/$GOLDEN.itf.json"
@@ -96,10 +85,7 @@ check "the clean line counts what the replay consumed" 0 "$RC" \
 # --- A golden the replay never opened ----------------------------------------
 #
 # The manifest is what the replay iterates, so a corpus can hold goldens no row
-# names and every one of them goes unreplayed. Counting the directory reported
-# them as replayed clean, which is the shape this repo's standing commitment
-# about unverified controls names: the verdict was right and the account of what
-# it covered was not.
+# names and every one of them goes unreplayed.
 
 fixture "$WORK/orphaned"
 cp "$ROOT"/test/golden/*.itf.json "$WORK/orphaned/"
@@ -108,8 +94,7 @@ check "a golden no manifest row names is a finding" 1 "$RC" "with no manifest ro
 
 # --- It only reads -----------------------------------------------------------
 #
-# The corpus is the expected output, and a job that can rewrite its own expected
-# output is not a check. Made unwritable, a gate that wrote would fail here.
+# Made unwritable, a gate that wrote would fail here.
 
 fixture "$WORK/readonly"
 chmod -R a-w "$WORK/readonly"
@@ -136,11 +121,9 @@ grep -qF "$GOLDEN state 1" "$OUT" || {
 
 # --- A state the bundle refuses ----------------------------------------------
 #
-# The bundle is evaluated on the model's own output, so no edit to a trace alone
-# can make a leaf go red — the replay diverges first, before the invariants have
-# anything to disagree with. What the corpus does not fix is the constants the
-# row is replayed under, and a row naming another instance is a defect of exactly
-# that shape.
+# No edit to a trace alone can make a leaf go red — the replay diverges first,
+# before the invariants have anything to disagree with. What the corpus does
+# not fix is the constants the row is replayed under.
 
 fixture "$WORK/misfiled" mc_chuggy_retryfree
 run_gate "$WORK/misfiled"

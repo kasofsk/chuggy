@@ -7,9 +7,8 @@
 # landed row that is only a pointer, a heading that says the word later in its
 # own title, and prose anywhere but a table.
 #
-# The tally case is the other half. A gate's success line reports what that run
-# consumed, so this suite builds a corpus whose landed rows, headings and docs
-# it knows by construction and requires the line to report exactly those.
+# The tally case is the other half: the corpus it builds has landed rows,
+# headings and docs it knows by construction, and the line must report those.
 #
 # Run:  .chug/tasks/check-knowledge.test.sh
 set -eu
@@ -43,8 +42,7 @@ doc_saying() { # <line>...
 doc_saying '# A plan' '## Correction — 2026-08-16 (what one session got wrong)' 'It was wrong.'
 check "a Correction section is a finding" 1 "$RC" "004-plan.md:2: a Correction section"
 
-# A correction hidden a level down is the same accretion under a smaller
-# heading, so the level is not part of the rule.
+# The level is not part of the rule.
 doc_saying '# A plan' '#### correction' 'It was wrong.'
 check "a Correction at any level is a finding" 1 "$RC" "a Correction section"
 
@@ -52,21 +50,20 @@ check "a Correction at any level is a finding" 1 "$RC" "a Correction section"
 doc_saying '| S0 | Toolchain | Formatter and linter sequenced in. | **Landed** `abc1234` |'
 check "a landed row with a sentence is a finding" 1 "$RC" "a landed row states its argument"
 
-# A SEMICOLON JOINS CLAUSES, so it is the other half of the same test: the
-# contract cells in this tree's own table joined theirs that way.
+# A SEMICOLON JOINS CLAUSES, so it is the other half of the same test.
 doc_saying '| S1 | Corpus | one script emits; the gate replays | **Landed** `abc1234` |'
 check "a semicolon in a landed row is a finding" 1 "$RC" "a landed row states its argument"
 
 # --- The shapes it must stay silent on ---------------------------------------
 
-# A row that is a pointer. The backticked spans go before the test, so a commit
-# pointer and a path carry punctuation that is not prose.
+# The backticked spans go before the test, so a commit pointer and a path carry
+# punctuation that is not prose.
 doc_saying '| # | Label | Contract | Status |' '|---|---|---|---|' \
 	'| S0 | Toolchain and tree shape | — | **Landed** `abc1234` |' \
 	'| S8 | The interpreter | the wiring in `src/compose.ts` | **Landed** `def5678` |'
 check "a landed row that is a pointer is silent" 0 "$RC" "0 finding(s)"
 
-# AN UNLANDED ROW IS WHERE THE ARGUMENT BELONGS, and it may argue at any length.
+# AN UNLANDED ROW IS WHERE THE ARGUMENT BELONGS, at any length.
 doc_saying '| S7 | The journaled actor | Cmd, Entry, and the carry rule. Pure; its suite is exhaustive. | Proposed |'
 check "a proposed row may argue" 0 "$RC" "0 finding(s)"
 
@@ -92,8 +89,7 @@ check "a Correction outside the directory is silent" 0 "$RC" "0 finding(s)"
 # --- The success line --------------------------------------------------------
 
 # THE FIGURES ARE THE RUN'S OWN, and this fixture is built so the suite knows
-# each of them: two docs, three rows saying Landed and nothing else, three
-# headings. A separator row says nothing and is counted as nothing.
+# each of them. A separator row says nothing and is counted as nothing.
 fresh_repo "$R"
 mkdir -p "$R/docs/design"
 printf '%s\n' '# A plan' '## The slice table' '| # | Label | Status |' '|---|---|---|' \

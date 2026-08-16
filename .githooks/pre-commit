@@ -4,26 +4,19 @@
 # Installed with: git config core.hooksPath .githooks   (once per clone)
 #
 # THE INVARIANT THAT GOVERNS THIS FILE: the hook may reject only what
-# `.chug/tasks/ci.sh` runs unconditionally. That is what guarantees it can
-# never block a commit the full check would accept — a hook that is stricter
-# than CI is a hook people disable, and then none of it runs.
+# `.chug/tasks/ci.sh` runs unconditionally. That is what guarantees it can never
+# block a commit the full check would accept. It calls the gate scripts directly
+# rather than going through `just`, which may not be installed.
 #
-# It calls the gate scripts directly rather than going through `just`, because
-# `just` may not be installed and a hook that depends on it fails open.
-#
-# THE FAST SUBSET ONLY. Both slow stages sit this out — the shell suites and
-# the model gate — and belong in `just check`. This file prints its own elapsed
-# time on every run, so what admitting another gate costs is measured here
-# rather than asserted in a comment that nothing re-checks.
-#
-# `git commit --no-verify` bypasses this, and bypasses every gate at once
-# rather than the one that was in the way. Legitimate when the alternative is
-# leaving work uncommitted; run `just check` before pushing either way.
+# THE FAST SUBSET ONLY. Both slow stages sit this out — the shell suites and the
+# model gate — and belong in `just check`. This file prints its own elapsed time
+# on every run, so what admitting another gate costs is measured here rather
+# than asserted in a comment that nothing re-checks.
 set -eu
 export LC_ALL=C
 
 # A hook inherits these from the invoking git, and they break any command that
-# needs to resolve the repo for itself.
+# resolves the repo for itself.
 unset GIT_DIR GIT_WORK_TREE
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -62,7 +55,7 @@ run_gate() { # <label> <script> [<arg>...]
 		rejected=$((rejected + 1))
 		;;
 	*)
-		# Could not run is a loud skip here, not a rejection: the full check
+		# Could-not-run is a loud skip here, not a rejection: the full check
 		# treats it as a failure, and this hook must not be the stricter of
 		# the two.
 		printf '%s\n' "$out"
@@ -80,8 +73,7 @@ run_gate "check-knowledge" ./.chug/tasks/check-knowledge.sh
 
 # check-paths is whole-tree in `just check` and staged-only here. It resolves
 # against the whole tracked set either way, so the narrowing changes what is
-# scanned and not what counts as a claim — which keeps this the weaker of the
-# two runs, never the stricter one.
+# scanned and not what counts as a claim — which keeps this the weaker run.
 staged="$(git diff --cached --name-only --diff-filter=ACMR)"
 if [ -n "$staged" ]; then
 	set -f

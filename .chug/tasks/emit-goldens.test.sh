@@ -1,20 +1,13 @@
 #!/bin/sh
 # Shell test for emit-goldens.sh.
 #
-# THE CENTRAL CASE IS BYTE-IDENTITY ACROSS TWO REGENERATIONS, because it is the
-# property everything else about the corpus rests on. A committed fixture that
-# rewrites itself on every run produces a diff nobody opens, and a diff nobody
-# opens is a fixture nobody is checking — at which point the corpus has stopped
-# being a control and become a directory.
-#
-# The normalisation is what makes that true and is therefore what this suite
-# spends its cases on: quint stamps a wall clock into the top-level `#meta`, so
-# an unnormalised corpus differs on every regeneration for reasons that say
-# nothing about the machine.
+# THE CENTRAL CASE IS BYTE-IDENTITY ACROSS TWO REGENERATIONS. A committed
+# fixture that rewrites itself on every run produces a diff nobody opens, and a
+# diff nobody opens is a fixture nobody is checking. The normalisation is what
+# makes it true, so it is where this suite spends its cases.
 #
 # It runs the real quint against the real model, because the thing under test
-# is an interaction with that binary at that pin. A fixture model would test
-# this suite's idea of quint rather than quint.
+# is an interaction with that binary at that pin.
 #
 # Run:  .chug/tasks/emit-goldens.test.sh
 set -eu
@@ -27,8 +20,8 @@ trap 'rm -rf "$WORK"' EXIT
 
 OUT="$WORK/.out"
 
-# One helper, because two spellings of "run the emitter" is how the no-argument
-# case ends up passing an empty string as a name filter.
+# One helper: two spellings of "run the emitter" is how the no-argument case
+# ends up passing an empty string as a name filter.
 run_emit() { # <golden-dir> [<name>...]
 	_dir="$1"
 	shift
@@ -38,9 +31,9 @@ run_emit() { # <golden-dir> [<name>...]
 	set -e
 }
 
-# A manifest holding one short, cheap row. The suite must stay inside the
-# sequencer's per-suite cap, so the row is an unaimed walk with a small step
-# bound rather than one of the corpus's aimed searches.
+# A manifest holding one short, cheap row: an unaimed walk with a small step
+# bound rather than one of the corpus's aimed searches, to stay inside the
+# sequencer per-suite cap.
 one_row_manifest() { # <dir> [<extra-json>]
 	mkdir -p "$1"
 	cat > "$1/manifest.json" <<-JSON
@@ -142,11 +135,8 @@ fi
 
 # --- The corpus lands formatted ----------------------------------------------
 #
-# `test/golden/` is in the formatter's scope and `check-source.sh` holds the
-# whole tree to `prettier --check`, so a regeneration that writes raw
-# `JSON.stringify` output leaves the tree red and says nothing about it. Checked
-# with the same binary the gate runs, so this case cannot pass against a shape
-# the gate would reject.
+# Checked with the same binary the gate runs, so this case cannot pass against
+# a shape the gate would reject.
 
 if (cd "$ROOT" && ./node_modules/.bin/prettier --check --log-level warn "$WORK/det/probe.itf.json") > /dev/null 2>&1; then
 	echo "ok   - a regenerated golden is already in the formatter's shape"
