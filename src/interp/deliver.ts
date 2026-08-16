@@ -21,9 +21,14 @@
  * What is here is the within-batch half, which is the half that does not
  * depend on a journal existing yet.
  *
- * It is generic in both the effect and the handler's result. The effect
- * vocabulary, the ports, and the interpreter that names them arrive in a later
- * slice; what is here is the part that does not depend on any of them.
+ * It is generic in both the effect and the handler's result, and `execute.ts`
+ * is what composes it. WHAT IT CONTRIBUTES THERE IS THE ORDER CHECK AND THE
+ * CEILING, said plainly rather than sold: the interpreter hands this function
+ * one keyed item per journal ROW, a journal's seqs are dense, so the absorption
+ * above finds nothing to absorb and the executor's cursor is doing that work.
+ * The row grain is why the payload handed over is a whole row — keying the
+ * elements instead would make a row's second effect absorb against its first,
+ * and a row's effect list is not a set.
  */
 
 import { invariant } from "../domain/assert.ts";

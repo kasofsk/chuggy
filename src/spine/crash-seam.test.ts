@@ -43,12 +43,18 @@
  * carries that row's seq, and the cursor advances only once the whole list is
  * out, so a crash mid-list re-emits the whole list and collapses into the
  * re-emission this suite does drive — at every cursor of every seam of every
- * walk below. The same sentence fixes the GRAIN of absorption, which s6 reads
- * before wiring an executor: one seq per ROW, absorbed as a whole list, never a
- * key per effect. A row's effects are not a set — the cascade-park witness in
- * the corpus carries two identical `OpenHumanTask`s for two parked dependents —
- * so per-element keying would collapse them and open one desk task for two
- * tickets.
+ * walk below. The same sentence fixes the GRAIN of absorption: one seq per ROW,
+ * absorbed as a whole list, never a key per effect. A row's effects are not a
+ * set — the cascade-park witness in the corpus carries two identical
+ * `OpenHumanTask`s for two parked dependents — so per-element keying would
+ * collapse them and open one desk task for two tickets.
+ *
+ * THAT SEAM IS NOW DRIVEN ONE LAYER UP. `src/interp/execute.test.ts` crashes a
+ * port part-way through the cascade's list and requires the whole list to
+ * re-emit and absorb element for element; `src/interp/end-to-end.test.ts`
+ * drives the same collapse across a real recovery from the store. Nothing about
+ * this suite changes — the seam is still invisible to a set of seqs — but it is
+ * no longer unexercised anywhere.
  */
 
 import assert from "node:assert/strict";

@@ -128,10 +128,13 @@
  * decide nothing responsible for reconstructing a decision from bytes, which is
  * the one interpretation this file forbids by name.
  *
- * It is not shipped here, and the omission is deliberate rather than pending: no
- * byte form exists yet to encode, the effect vocabulary that would fix half of
- * it is s6's, and a codec written before either is a guess about a wire format.
- * What is fixed now is where it goes and what its output must satisfy.
+ * It is still not shipped, and the omission is still deliberate rather than
+ * pending. s6 landed the effect vocabulary half of it was waiting on; what
+ * remains missing is a medium, since the only implementation of this port keeps
+ * values in memory and has no bytes to write. A codec written against no medium
+ * is a guess about that medium. `entry.ts` carries the same note from the
+ * schema's side; what is fixed here is where it goes and what its output must
+ * satisfy.
  */
 
 import type { Entry } from "./entry.ts";
