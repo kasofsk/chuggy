@@ -21,12 +21,33 @@
  * interpreter whose `EnqueueWrapUp` and `OpenGate` arms are the only ones a
  * completion has ever been seen through.
  *
- * THE CRASH IS A REAL ONE, at the seam that costs the most. The gate row is
+ * THERE ARE TWO CRASHES, and they are different crashes.
+ *
+ * THE FIRST is at the gate, the seam that costs the most: the gate row is
  * durable, the landing surface TAKES the gate and then dies before
  * acknowledging it, the executor's cursor never advances — and then the process
  * itself dies, so the actor is rebuilt from the store's rows with the cursor
  * regressed all the way to zero. The re-drain re-emits every row of the walk so
  * far, and the world's ledger does not grow by one entry.
+ *
+ * THE SECOND IS AFTER THE TICKET HAS LANDED, and it is there for two claims
+ * that nothing else in this tree drives.
+ *
+ *   - THE RE-EMITTED `land`. `ports.ts` calls absorbing a re-delivered landing
+ *     "load-bearing rather than tidy", because `noDuplicateCycle` says the
+ *     world lands a ticket's diff at most once across crashes at any seam —
+ *     and the crash seam it survives is exactly a `land` whose row was
+ *     re-emitted. A walk that crashed only BEFORE the landing never drives it.
+ *   - ELEMENT-WISE ABSORPTION ACROSS A DURABLE RECOVERY. Every delivery on a
+ *     single ticket's route sits at ordinal zero, because `decideRevoke` is the
+ *     one decider in the machine whose list is longer than one. So the walk
+ *     goes on to arrive three more tickets and revoke the one two of them
+ *     depend on, putting a real `["Revoke", "OpenHumanTask", "OpenHumanTask"]`
+ *     row in the journal — the corpus's frozen shape — and only THEN crashes
+ *     the process. The re-drain re-emits that row through the store, through
+ *     the schema's gate and through the legality fold, and the world absorbs it
+ *     ordinal by ordinal. In-process re-delivery is `execute.test.ts`'s; this
+ *     is the same collapse with a real recovery under it.
  */
 
 import assert from "node:assert/strict";
@@ -50,8 +71,10 @@ import {
   decide,
   expectRefused,
   expectSteady,
+  expectWorldSettled,
   must,
   report,
+  watching,
   type Rig,
 } from "./harness.test.ts";
 import type { Ports } from "./ports.ts";
@@ -69,6 +92,24 @@ const gatePassed: ExternalEvent = {
 /** The fabric reporting that one of ticket 1's runs has ended, and passed. */
 function ended(task: number): ExternalEvent {
   return { tag: "TaskEnded", ticket: 1, task, verdict: "VPass" };
+}
+
+/** The authoring surface reporting a ticket that waits on `deps`. */
+function authoredWith(deps: ReadonlySet<number>): ExternalEvent {
+  return { ...authored, deps };
+}
+
+/** Somebody withdrawing a ticket, which cascades over its dependents. */
+function revoked(ticket: number): ExternalEvent {
+  return { tag: "TicketRevoked", ticket };
+}
+
+/** The ordinals the world holds for one decision, in acceptance order. */
+function ordinalsAt(rig: Rig, seq: number): readonly number[] {
+  return rig.world
+    .ledger()
+    .filter((entry) => entry.seq === seq)
+    .map((entry) => entry.ordinal);
 }
 
 const dispatch: Cmd = { tag: "JDispatch", ticket: 1 };
@@ -148,7 +189,7 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
     commit(cfgInterp, rig.store, s, enterGate),
     "commit the dequeue",
   );
-  expectSteady(journaled);
+  expectSteady(rig, journaled);
 
   let gateFailures = 1;
   const dyingLanding: Ports = {
@@ -185,13 +226,13 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
     }),
     "rebuild the actor from the store",
   );
-  expectSteady(recovered);
+  expectSteady(rig, recovered);
   assert.equal(recovered.applied, 0);
 
   // Every row of the walk so far is re-emitted, and the world takes NOTHING
   // twice: every delivery arrives under a key it already holds.
   s = interpret(cfgInterp, recovered, rig.ports);
-  expectSteady(s);
+  expectSteady(rig, s);
   assert.equal(s.applied, s.journal.length);
   assert.equal(
     rig.world.ledger().length,
@@ -218,6 +259,61 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
   // is the other of the two absorbers.
   expectRefused(rig, s, gatePassed, "a stale gate resolution");
 
+  // --- A cascade, so the journal holds a row wider than one ----------------
+  // Three more tickets, two of them depending on the third, and then the
+  // revocation that parks both. This is the only shape in the machine that
+  // produces a multi-effect row, and the walk needs one before it can crash
+  // across it.
+
+  s = report(rig, s, authoredWith(new Set()), "a second ticket is authored");
+  s = report(rig, s, authoredWith(new Set([2])), "a dependent is authored");
+  s = report(rig, s, authoredWith(new Set([2])), "and another dependent");
+  s = report(rig, s, revoked(2), "the second ticket is revoked");
+
+  const cascadeSeq = s.journal.length;
+  assert.deepEqual(
+    ordinalsAt(rig, cascadeSeq),
+    [0, 1, 2],
+    "the cascade did not reach the world as a whole list",
+  );
+  assert.equal(rig.world.recorded("cancel").length, 1);
+  assert.equal(rig.world.recorded("openTask").length, 2);
+
+  // --- The process dies again, with a landing and a cascade behind it -------
+
+  const askedBeforeSecond = rig.world.ledger().length;
+  const afterCrash = must(
+    recoverFrom(cfgInterp, rig.store.readAll(), 0, {
+      worldEffects: s.worldEffects,
+      orphans: s.orphans,
+    }),
+    "rebuild the actor a second time",
+  );
+  expectSteady(rig, afterCrash);
+  s = interpret(cfgInterp, afterCrash, rig.ports);
+  expectSteady(rig, s);
+  expectWorldSettled(rig, s);
+  assert.equal(s.applied, s.journal.length);
+
+  assert.equal(
+    rig.world.ledger().length,
+    askedBeforeSecond,
+    "the re-drain past a landing and a cascade asked for something twice",
+  );
+  // The two claims this second crash exists for, named separately so a failure
+  // says which one broke.
+  assert.equal(
+    rig.world.recorded("land").length,
+    1,
+    "the re-emitted land was not absorbed",
+  );
+  assert.deepEqual(
+    ordinalsAt(rig, cascadeSeq),
+    [0, 1, 2],
+    "the re-emitted cascade was not absorbed element for element",
+  );
+  assert.equal(s.mem.core.tickets.get(1)?.completions, 1);
+
   // --- What the world was asked for, in total ------------------------------
 
   assert.deepEqual(spawnSeqs(rig), spawningRowSeqs(s));
@@ -226,14 +322,63 @@ test("a WExclusive ticket walks arrival to landing, through a crash at the gate"
   assert.deepEqual(
     countByCall(rig),
     {
-      createDraft: 1,
+      createDraft: 4,
       spawn: 2,
       enqueue: 1,
       openGate: 1,
       land: 1,
+      cancel: 1,
+      openTask: 2,
     },
     "the world was asked for something it should not have been",
   );
+});
+
+// === The ordering promise, and the half of it that is not true =============
+
+test("across drains the landing port is re-sent a route it has already finished", () => {
+  // THE EVIDENCE FOR THE SCOPED PROMISE. `ports.ts` says ordering holds within
+  // one drain and not across drains, and this is the case that would falsify
+  // the unscoped version: the world holds this ticket's `land`, the process
+  // dies, and the next drain hands the landing port that same ticket's
+  // `enqueue` and `openGate` again — a ticket being queued for a wrap-up it
+  // has already completed. Nothing is wrong when it happens; the journal's
+  // order never moved, and every one of those deliveries is a redelivery under
+  // a key the port already holds.
+  const rig = createRig();
+  let s = throughEvaluation(rig, authored);
+  s = decide(rig, s, enterGate, "the dequeue");
+  s = report(rig, s, gatePassed, "the gate passes");
+  assert.equal(rig.world.recorded("land").length, 1);
+  assert.equal(s.mem.core.tickets.get(1)?.phase, "PDone");
+
+  const seen: string[] = [];
+  const recovered = must(
+    recoverFrom(cfgInterp, rig.store.readAll(), 0, {
+      worldEffects: s.worldEffects,
+      orphans: s.orphans,
+    }),
+    "rebuild the actor",
+  );
+  s = interpret(cfgInterp, recovered, watching(rig.ports, seen));
+
+  assert.deepEqual(seen, [
+    "authoring.createDraft",
+    "fabric.spawn",
+    "fabric.spawn",
+    "landing.enqueue",
+    "landing.openGate",
+    "landing.land",
+  ]);
+  // The sentence the unscoped promise made, falsified: an `enqueue` reached
+  // this port after a `land` for the same ticket had.
+  assert.ok(
+    seen.includes("landing.enqueue"),
+    "the landing port was re-sent an enqueue for a ticket it had already landed",
+  );
+  assert.equal(rig.world.recorded("land").length, 1);
+  expectSteady(rig, s);
+  expectWorldSettled(rig, s);
 });
 
 // === The lease-free route ==================================================

@@ -16,7 +16,7 @@ import { test } from "node:test";
 
 import type { Effect } from "../effects/effect.ts";
 import type { StepRecord } from "../domain/measure.ts";
-import type { Delivery } from "../interp/ports.ts";
+import { hasDeliveryShape, type Delivery } from "../interp/ports.ts";
 import { createRecordingWorld } from "./recording-world.ts";
 
 /** The revoke cascade's record: one seq, three effects, two of them identical. */
@@ -123,47 +123,76 @@ test("a key that comes back carrying a different effect is refused", () => {
   );
 });
 
-test("a delivery whose record does not hold that effect there is refused", () => {
-  const world = createRecordingWorld();
-  assert.throws(
-    () => {
-      world.ports.fabric.cancel(delivery(8, 2, "Revoke", cascade));
-    },
-    {
-      name: "AssertionError",
-      message:
-        /ordinal 2 was delivered as Revoke, which is not what its record holds/,
-    },
+test("the port's shape gate refuses every delivery that is not one", () => {
+  // Each of these is a shape a correct executor cannot produce, and each is
+  // refused by the predicate the PORT promises — `hasDeliveryShape` — rather
+  // than by a check written in this adapter. Both halves of the key are here
+  // together because asserting only the ordinal left `8.5` accepted, and `8.5`
+  // and `8` are different keys: a redelivery under one would not absorb
+  // against the other, and a task set would run twice.
+  const refused: readonly (readonly [string, Delivery])[] = [
+    [
+      "the effect is not what the record holds there",
+      delivery(8, 2, "Revoke", cascade),
+    ],
+    [
+      "the ordinal is past the end of the list",
+      delivery(8, 3, "OpenHumanTask", cascade),
+    ],
+    ["the ordinal is not a count", delivery(8, -1, "Revoke", cascade)],
+    ["the ordinal is fractional", delivery(8, 0.5, "Revoke", cascade)],
+    ["the seq is fractional", delivery(8.5, 0, "Revoke", cascade)],
+    ["the seq is below the journal's first", delivery(0, 0, "Revoke", cascade)],
+    ["the seq is negative", delivery(-1, 0, "Revoke", cascade)],
+    [
+      "the seq is past the safe integer range",
+      delivery(Number.MAX_SAFE_INTEGER + 1, 0, "Revoke", cascade),
+    ],
+  ];
+  for (const [why, bad] of refused) {
+    assert.equal(hasDeliveryShape(bad), false, why);
+    assert.throws(
+      () => {
+        createRecordingWorld().ports.fabric.cancel(bad);
+      },
+      { name: "AssertionError", message: /is not a delivery/ },
+      why,
+    );
+  }
+});
+
+test("the shape gate accepts every delivery a correct executor produces", () => {
+  // The positive control. A gate only ever observed saying no has not been
+  // shown to be scoped to the shapes it names, and every walk in this slice
+  // goes through it.
+  for (const good of [revoked, parkedFirst, parkedSecond]) {
+    assert.equal(hasDeliveryShape(good), true);
+  }
+  assert.equal(
+    hasDeliveryShape(delivery(1, 0, "CreateDraft", arrival)),
+    true,
+    "an arrival names no ticket and is still a delivery",
   );
 });
 
-test("a delivery past the end of its record's list is refused", () => {
-  const world = createRecordingWorld();
-  assert.throws(
-    () => {
-      world.ports.desk.openTask(delivery(8, 3, "OpenHumanTask", cascade));
-    },
-    { name: "AssertionError" },
-  );
-});
-
-test("an ordinal that is not a count is refused", () => {
-  const world = createRecordingWorld();
-  assert.throws(
-    () => {
-      world.ports.fabric.cancel(delivery(8, -1, "Revoke", cascade));
-    },
-    {
-      name: "AssertionError",
-      message: /ordinal is a non-negative safe integer, got -1/,
-    },
-  );
-});
-
-test("the ledger is a copy, so a reader cannot rewrite what the world was asked", () => {
+test("the ledger is a deep copy, so a reader cannot rewrite the absorption state", () => {
   const world = createRecordingWorld();
   world.ports.authoring.createDraft(delivery(1, 0, "CreateDraft", arrival));
   const held = world.ledger();
   (held as { length: number }).length = 0;
-  assert.equal(world.ledger().length, 1);
+  assert.equal(world.ledger().length, 1, "splicing the array reached the log");
+
+  // The half a one-level copy does not stop, and the half that matters here:
+  // an entry IS the value the absorber is keyed against, so a retag through a
+  // handed-out reference would change what the world believes it was asked
+  // for rather than merely what it reports.
+  const entry = world.ledger()[0];
+  assert.ok(entry !== undefined);
+  (entry as { seq: number }).seq = 99;
+  (entry as { call: string }).call = "land";
+  assert.deepEqual(
+    world.ledger().map((e) => [e.call, e.seq]),
+    [["createDraft", 1]],
+    "a retag through the handed-out entry reached the log",
+  );
 });

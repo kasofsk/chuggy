@@ -39,8 +39,27 @@
  * through a `.test.ts` file — and on reporting the chain's origin rather than
  * only its last hop.
  *
+ * THE LAYERS ABOVE THE PURE CORE ARE GOVERNED TOO, and by direction rather
+ * than by purity. `src/effects/` reaches the domain and nothing above it;
+ * `src/interp/` reaches the effect vocabulary, the spine and the domain, so it
+ * cannot reach an ADAPTER — a port is declared with its consumer and
+ * implemented below, and a contract that reached its own implementation would
+ * stop being substitutable. `src/adapters/` is deliberately NOT
+ * reachability-bounded, because an adapter is exactly where a node builtin and
+ * a medium belong; what it gets instead is the two edges that would falsify the
+ * ports' defining promise, forbidden by name at `adapters-decide-nothing`.
+ * Neither of those two rules is a purity claim, and reading them as one is how
+ * a later slice would argue its way out of them for the wrong reason.
+ *
+ * NO `interp-not-through-its-tests` SIBLING, and its absence is a decision. The
+ * pure layers carry one each, but `no-shipped-test-fixtures` is tree-wide and
+ * DIRECT, and every hop of a chain ending at a test file has a non-test file as
+ * its source — so it already catches what such a sibling would, for every
+ * layer. A rule needs a failure it can prevent here; this one has none left.
+ *
  * WHAT IT CATCHES: any import, static or type-only, from a `src/domain/`
- * module to anything not under `src/domain/`, at any depth.
+ * module to anything not under `src/domain/`, at any depth — and the same shape
+ * for each layer rule below, at its own boundary.
  *
  * WHAT IT CANNOT CATCH:
  *
@@ -109,6 +128,22 @@ export default {
         "An effect is data describing a request to the world, so the effect vocabulary may reach the domain and nothing above it. This adds no protection to the domain, which cannot import upward anyway; it protects the meaning of the effects layer.",
       from: { path: "^src/effects/", pathNot: "[.]test[.](ts|mts|cts)$" },
       to: { reachable: true, pathNot: "^src/(effects|domain)/" },
+    },
+    {
+      name: "interp-reaches-only-the-core",
+      severity: "error",
+      comment:
+        "src/interp/ is the interpretation layer: it declares the outbound ports, routes an effect to one of them, and translates a report from outside into a candidate command. It may reach the effect vocabulary, the spine and the domain — and nothing else, at any depth. This is NOT a purity claim: interp sits outside the pure core, and a capability handed to it as an argument is the design (a port arrives as a parameter, exactly as a JournalStore does). It is a LAYERING claim, and it has two edges to forbid. Downward, an ADAPTER: a port is declared with its consumer and implemented below, so an interp module that reached src/adapters/ would be a contract reaching its own implementation, and the stub would stop being substitutable. Sideways, src/tools/: the emitter spawns quint. Spelled as reachability rather than as a roster of forbidden targets, on this file's own argument — a node builtin, a package and a sibling layer all fail one predicate, and a roster is the thing nobody edits. If a later slice genuinely needs an I/O-shaped surface here rather than in src/adapters/, that is a change to this rule with an argument attached, which is the point of having it.",
+      from: { path: "^src/interp/", pathNot: "[.]test[.](ts|mts|cts)$" },
+      to: { reachable: true, pathNot: "^src/(interp|effects|spine|domain)/" },
+    },
+    {
+      name: "adapters-decide-nothing",
+      severity: "error",
+      comment:
+        "An adapter implements a port, and the ports' defining promise is that they decide nothing. Two reachable modules would let one: src/interp/events.ts is the vocabulary an external report is translated in, so an adapter that could reach it could SYNTHESIZE a completion nobody's run produced; src/spine/actor.ts is the single writer, so an adapter that could reach it could commit a decision, which is a second writer. Neither is prevented by anything else in this file — src/adapters/ is deliberately not reachability-bounded, because an adapter is exactly where a node builtin and a medium belong — so the promise is stated here as the two edges that would falsify it. Transitive, so a helper in between does not launder the reach.",
+      from: { path: "^src/adapters/", pathNot: "[.]test[.](ts|mts|cts)$" },
+      to: { reachable: true, path: "^src/(interp/events|spine/actor)[.]ts$" },
     },
     {
       name: "no-circular",

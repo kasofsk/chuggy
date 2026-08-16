@@ -56,12 +56,17 @@
  *     that derived it, and would be a second place for it to be wrong.
  *   - `JDequeue` turns on whether the project's lease is free, and that is a
  *     read of another ticket's state — a global decision, and a second writer if
- *     a surface made it. The environment contributes only the `invalidated`
- *     choice, which is a pick inside the decision rather than a report of one.
+ *     a surface made it. The environment contributes only the `moved` draw,
+ *     which `domain.ts` calls the environment's invalidated choice at
+ *     `decideDequeue`; either way it is a pick INSIDE the decision rather than
+ *     a report of one, and the timing is the actor's.
  *   - `JRevalFail` has no surface in this slice, said plainly rather than
- *     designed around. A pre-work revalidation is plausibly something the world
- *     reports, but nothing in this tree reports one yet, and an event type with
- *     no producer is a contract nobody implements.
+ *     designed around — and it is the one of the five that plausibly owes one
+ *     later. `model/domain.qnt` describes it as "the world changed under a
+ *     ticket before it ever ran (static config no longer valid)", which is a
+ *     report if anything in this tree is. Nothing in this tree produces one
+ *     yet, and an event type with no producer is a contract nobody implements,
+ *     so the omission is recorded here rather than filled with a guess.
  */
 
 import { assertNever } from "../domain/assert.ts";

@@ -27,11 +27,13 @@ import type { Cmd } from "../spine/cmd.ts";
 import { deliverEffect, interpret } from "./execute.ts";
 import {
   cfgInterp,
+  expectWorldSettled,
   createRig,
   decide,
   expectSteady,
   must,
   progFlat,
+  recordThenFailOnce,
   wx1,
   type Rig,
 } from "./harness.test.ts";
@@ -39,21 +41,35 @@ import type { Delivery, Ports } from "./ports.ts";
 
 // === The routing table =====================================================
 
-/** Every port method there is, as the roster the mapping must cover. */
-const portMethods: readonly string[] = [
-  "fabric.spawn",
-  "fabric.cancel",
-  "desk.openTask",
-  "authoring.createDraft",
-  "landing.enqueue",
-  "landing.openGate",
-  "landing.land",
-];
+/**
+ * Every port method there is, qualified by the port it is on — DERIVED from
+ * `Ports`, so a method added, removed or renamed is a compile error here.
+ *
+ * `effect.ts`'s argument for a compiler-maintained copy, applied to the roster
+ * this suite checks the mapping's coverage against. A hand-written list would
+ * pass happily while a new port method went unreachable, which is the one
+ * failure this case exists to catch.
+ */
+type QualifiedPortCall = {
+  [P in keyof Ports]: `${P & string}.${keyof Ports[P] & string}`;
+}[keyof Ports];
+
+const everyPortMethod = {
+  "fabric.spawn": true,
+  "fabric.cancel": true,
+  "desk.openTask": true,
+  "authoring.createDraft": true,
+  "landing.enqueue": true,
+  "landing.openGate": true,
+  "landing.land": true,
+} satisfies Record<QualifiedPortCall, true>;
+
+const portMethods: readonly string[] = Object.keys(everyPortMethod);
 
 /** Ports that record which method was called and nothing else. */
 function spyPorts(calls: string[]): Ports {
   const note =
-    (name: string) =>
+    (name: QualifiedPortCall) =>
     (delivery: Delivery): void => {
       calls.push(`${name}(${delivery.effect})`);
     };
@@ -174,21 +190,9 @@ test("a port that throws part-way through a list leaves the cursor where it was"
   const rig = createRig();
   const before = cascadeReady(rig);
 
-  let deskFailures = 1;
   const failingDesk: Ports = {
     ...rig.ports,
-    desk: {
-      openTask: (delivery) => {
-        // Record FIRST, then fail: an effect that reached the world and lost
-        // its acknowledgement is the case idempotence exists for, and the
-        // easier ordering would prove less.
-        rig.ports.desk.openTask(delivery);
-        if (deskFailures > 0) {
-          deskFailures -= 1;
-          throw new Error("the desk is unreachable");
-        }
-      },
-    },
+    desk: { openTask: recordThenFailOnce(rig.ports.desk.openTask, "the desk") },
   };
 
   const journaled = must(
@@ -198,7 +202,7 @@ test("a port that throws part-way through a list leaves the cursor where it was"
     "commit the revoke",
   );
   assert.throws(() => interpret(cfgInterp, journaled, failingDesk), {
-    message: "the desk is unreachable",
+    message: "the desk went away",
   });
 
   // The cursor did not move, and the world's ledger holds exactly what got out
@@ -212,7 +216,7 @@ test("a port that throws part-way through a list leaves the cursor where it was"
       .map((entry) => entry.ordinal),
     [0, 1],
   );
-  expectSteady(journaled);
+  expectSteady(rig, journaled);
 
   // The next drain re-emits the WHOLE row. The two elements the world already
   // took are absorbed by key; the one it never took arrives.
@@ -231,7 +235,7 @@ test("a port that throws part-way through a list leaves the cursor where it was"
   );
   assert.equal(rig.world.recorded("cancel").length, 1);
   assert.equal(recovered.applied, 4);
-  expectSteady(recovered);
+  expectSteady(rig, recovered);
 });
 
 test("a throw discards the cursor progress of the whole call, and the re-drain absorbs it", () => {
@@ -248,7 +252,7 @@ test("a throw discards the cursor progress of the whole call, and the re-drain a
     ...rig.ports,
     desk: {
       openTask: () => {
-        throw new Error("the desk is unreachable");
+        throw new Error("the desk went away");
       },
     },
   };
@@ -279,7 +283,95 @@ test("a throw discards the cursor progress of the whole call, and the re-drain a
     ],
     "the re-drain recorded a draft or a cancellation twice",
   );
-  expectSteady(drained);
+  expectSteady(rig, drained);
+});
+
+// === The failure paths the port docs make the strongest claims about ========
+
+/** One ticket, arrival to the gate — the decisions, without the surfaces. */
+const toTheGate: readonly Cmd[] = [
+  arriveWith(new Set()),
+  { tag: "JRelease", ticket: 1 },
+  { tag: "JDispatch", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 1, verdict: "VPass" },
+  { tag: "JWorkReduce", ticket: 1 },
+  { tag: "JTaskDone", ticket: 1, tid: 2, verdict: "VPass" },
+  { tag: "JEvalReduce", ticket: 1 },
+  { tag: "JDequeue", ticket: 1, moved: true },
+];
+
+test("a cancel that fails leaves the cursor, and the re-drain absorbs the row", () => {
+  // `FabricPort` promises that a failed cancel breaks nothing downstream, and
+  // the cancel sits at ordinal 0 of the one row in the machine that is wider
+  // than one — so its failure is also the case where the row's LATER effects
+  // have not been out at all yet.
+  const rig = createRig();
+  const journaled = must(
+    commitOf(rig, cascadeReady(rig), revoke),
+    "commit the revoke",
+  );
+  const failingFabric: Ports = {
+    ...rig.ports,
+    fabric: {
+      ...rig.ports.fabric,
+      cancel: recordThenFailOnce(rig.ports.fabric.cancel, "the fabric"),
+    },
+  };
+  assert.throws(() => interpret(cfgInterp, journaled, failingFabric), {
+    message: "the fabric went away",
+  });
+  assert.equal(journaled.applied, 3);
+  assert.deepEqual(
+    rig.world
+      .ledger()
+      .filter((entry) => entry.seq === 4)
+      .map((entry) => entry.ordinal),
+    [0],
+    "the desk tasks behind the failed cancel should not have gone out",
+  );
+
+  const recovered = interpret(cfgInterp, journaled, rig.ports);
+  assert.equal(rig.world.recorded("cancel").length, 1);
+  assert.equal(rig.world.recorded("openTask").length, 2);
+  assert.equal(recovered.applied, 4);
+  expectSteady(rig, recovered);
+});
+
+test("a land that fails leaves the cursor, and the re-drain lands nothing twice", () => {
+  // The claim `ports.ts` calls load-bearing: `noDuplicateCycle` says the world
+  // lands a ticket's diff at most once across crashes at any seam, and a `land`
+  // that succeeded and lost its acknowledgement is that seam.
+  const rig = createRig();
+  let s = actorInit(cfgInterp);
+  for (const cmd of toTheGate) {
+    s = decide(rig, s, cmd, `to the gate: ${cmd.tag}`);
+  }
+  const journaled = must(
+    commitOf(rig, s, { tag: "JGateResolve", ticket: 1, out: "WOk" }),
+    "commit the gate resolution",
+  );
+  const failingLanding: Ports = {
+    ...rig.ports,
+    landing: {
+      ...rig.ports.landing,
+      land: recordThenFailOnce(rig.ports.landing.land, "the landing surface"),
+    },
+  };
+  assert.throws(() => interpret(cfgInterp, journaled, failingLanding), {
+    message: "the landing surface went away",
+  });
+  assert.equal(rig.world.recorded("land").length, 1);
+  assert.equal(journaled.applied, journaled.journal.length - 1);
+
+  const recovered = interpret(cfgInterp, journaled, rig.ports);
+  assert.equal(
+    rig.world.recorded("land").length,
+    1,
+    "the re-emitted landing was applied a second time",
+  );
+  assert.equal(recovered.mem.core.tickets.get(1)?.completions, 1);
+  expectSteady(rig, recovered);
+  expectWorldSettled(rig, recovered);
 });
 
 // === The ordinary shapes ===================================================

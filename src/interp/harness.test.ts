@@ -47,23 +47,49 @@ import {
 } from "../spine/refinement-invariants.ts";
 import { interpret } from "./execute.ts";
 import { submitEvent, type ExternalEvent } from "./events.ts";
-import type { Ports } from "./ports.ts";
+import type { Delivery, Ports } from "./ports.ts";
 
 /**
  * THE INSTANCE: the model's refinement instance, with one const moved.
  *
- * A revoke cascade is only observable when a revoked ticket has dependents to
- * park, and the shape this slice must keep — one seq carrying a `Revoke` and
- * more than one `OpenHumanTask` — needs two of them. Everything else is the
+ * A walk that both lands a ticket and cascades a revoke over two parked
+ * dependents needs four ticket slots — one for the ticket that lands, three for
+ * the cascade — and the cascade is the shape this slice must keep: one seq
+ * carrying a `Revoke` and more than one `OpenHumanTask`. Everything else is the
  * refinement instance's unchanged, which is why it arrives by spread: the delta
  * is the whole of what this slice needed, and it is visible as one line.
+ *
+ * WHAT THIS INSTANCE CANNOT REACH, stated rather than left to be discovered.
+ * `N_TASKS` is one and `progFlat`'s fan-out is one, so a ticket never holds two
+ * live tasks at once — and therefore no walk here can deliver two completions
+ * for one ticket OUT OF ORDER, which is a shape the fabric port's contract
+ * explicitly permits. That is not a gap in the contract's coverage, it is a gap
+ * in THIS layer's: concurrency inside a task set is a domain question, and it
+ * is covered where the domain is covered, at the model's own mc instances
+ * (`N_TASKS = 2`) — `src/spine/randomized.test.ts` walks them with the whole
+ * invariant bundle after every step, and `check-conformance.sh` replays the
+ * corpus emitted from them. Widening the instance here would re-cover that
+ * ground with a worse tool and would cost every walk in the slice its
+ * legibility.
  */
-export const cfgInterp: Config = { ...cfgRefinement, nTickets: 3 };
+export const cfgInterp: Config = { ...cfgRefinement, nTickets: 4 };
 
 export { must, progFlat, wx1 };
 
-/** The authoring surface's report, on the gated route. */
-export const authored: ExternalEvent = {
+/**
+ * The authoring surface's report, on the gated route.
+ *
+ * Typed at its own ARM of the event union rather than at the union, so a walk
+ * can spread it — `{ ...authored, deps }` — and still have an arrival. Widening
+ * it to `ExternalEvent` makes the spread a union of every constructor with a
+ * `deps` field bolted on, which is not a report anything can send.
+ */
+export type TicketAuthored = Extract<
+  ExternalEvent,
+  { readonly tag: "TicketAuthored" }
+>;
+
+export const authored: TicketAuthored = {
   tag: "TicketAuthored",
   deps: new Set(),
   program: progFlat,
@@ -72,10 +98,69 @@ export const authored: ExternalEvent = {
 };
 
 /** The same report without a lease: the route whose completion needs no gate. */
-export const authoredLeaseFree: ExternalEvent = {
+export const authoredLeaseFree: TicketAuthored = {
   ...authored,
   wrapUp: { tag: "WNone" },
 };
+
+/**
+ * Wrap a port method so it RECORDS AND THEN FAILS, once — the lost
+ * acknowledgement, which is the expensive half of at-least-once.
+ *
+ * The order is the point. A port that failed before doing anything needs no
+ * idempotence to be safe: nothing happened, and the re-emission is a first
+ * delivery. A port that did the thing and then lost its answer is the case the
+ * key exists for, and it is the one a real medium produces.
+ *
+ * It is here rather than inline in three suites because the duplication gate is
+ * at threshold 0 and because the ORDER is the claim: three copies would be
+ * three chances to write the cheap failure by mistake.
+ */
+export function recordThenFailOnce(
+  inner: (delivery: Delivery) => void,
+  what: string,
+): (delivery: Delivery) => void {
+  let failuresLeft = 1;
+  return (delivery) => {
+    inner(delivery);
+    if (failuresLeft > 0) {
+      failuresLeft -= 1;
+      throw new Error(`${what} went away`);
+    }
+  };
+}
+
+/**
+ * Ports that note every delivery they are handed, qualified by the method, and
+ * then pass it on.
+ *
+ * It watches what the EXECUTOR sends rather than what the world keeps, which is
+ * the difference the ordering promise is about: an absorbed redelivery leaves
+ * no ledger entry, so a ledger cannot evidence what order a port was called in.
+ */
+export function watching(ports: Ports, seen: string[]): Ports {
+  const note =
+    (name: string, inner: (delivery: Delivery) => void) =>
+    (delivery: Delivery): void => {
+      seen.push(name);
+      inner(delivery);
+    };
+  return {
+    fabric: {
+      spawn: note("fabric.spawn", ports.fabric.spawn),
+      cancel: note("fabric.cancel", ports.fabric.cancel),
+    },
+    desk: { openTask: note("desk.openTask", ports.desk.openTask) },
+    authoring: {
+      createDraft: note("authoring.createDraft", ports.authoring.createDraft),
+    },
+    landing: {
+      enqueue: note("landing.enqueue", ports.landing.enqueue),
+      openGate: note("landing.openGate", ports.landing.openGate),
+      land: note("landing.land", ports.landing.land),
+    },
+  };
+}
 
 /** A store, a world, and the ports that world implements. */
 export type Rig = {
@@ -91,18 +176,103 @@ export function createRig(): Rig {
 }
 
 /**
- * Both bundles, at one state, asserted separately so a failure says which
- * machine broke.
+ * Both bundles and the projection claim, at one state, asserted separately so a
+ * failure says which machine broke.
  *
- * The middle one is the claim this slice is held to by name — the discipline-
- * independent core, green at every step of every walk — and asking it before
- * the full bundle localizes a failure to the journal-and-replay half rather
- * than to the world-facing half.
+ * The middle bundle is the claim this slice is held to by name — the
+ * discipline-independent core, green at every step of every walk — and asking
+ * it before the full bundle localizes a failure to the journal-and-replay half
+ * rather than to the world-facing half.
+ *
+ * THE PROJECTION IS THE PART THAT IS THIS SLICE'S OWN. `ports.ts` argues that
+ * the world's `(seq, ordinal)` key is `model/refinement.qnt`'s
+ * `worldEffects: Set[int]` REFINED rather than replaced, and an argument in a
+ * header is not a checked fact.
+ *
+ * IT IS NOT QUITE `worldEffects`, AND THE GAP IS EXACT. `emitNext` adds a row's
+ * seq to `worldEffects` whether or not the row asked the world for anything, so
+ * a release, a `task-done` and every absorbed duplicate are in that set with no
+ * ledger entry to their name — the model counts DECISIONS EMITTED, and the
+ * world records THINGS IT WAS ASKED TO DO. The projection is therefore
+ * `worldEffects` narrowed to the rows that carry an effect, and writing it as a
+ * bare equality is the first thing this assertion caught.
+ *
+ * What is asserted at EVERY state, mid-crash included, is the half that
+ * survives an effect being out with the cursor not yet advanced:
+ *
+ *   - THE KEY SPACE. Every seq the world's ledger holds is a seq the journal
+ *     holds. A ledger entry outside `1..journal.length` is a key that projects
+ *     to nothing, and the projection claim would be empty.
+ *   - THE DIRECTION THAT CANNOT LAG. Every effect-bearing row the actor
+ *     believes it emitted is one the world was asked about. The converse lags
+ *     by design — between a port call and its `emitNext` the ledger runs ahead,
+ *     which is the whole mid-list seam — so requiring it everywhere would make
+ *     the honest failure mode a test failure.
+ *
+ * The equality itself is `expectWorldSettled`, asked at drain boundaries, where
+ * it is the actual claim rather than a bound on it.
  */
-export function expectSteady(s: ActorState): void {
+export function expectSteady(rig: Rig, s: ActorState): void {
   assert.ok(invariantsHold(cfgInterp, s.mem), "the domain bundle");
   assert.ok(refinementCore(cfgInterp, s), "the refinement core");
   assert.ok(refinementInvariants(cfgInterp, s), "the refinement bundle");
+
+  const inTheWorld = ledgerSeqs(rig);
+  for (const seq of inTheWorld) {
+    assert.ok(
+      seq >= 1 && seq <= s.journal.length,
+      `the world holds seq ${String(seq)}, which is outside a journal of ${String(s.journal.length)}`,
+    );
+  }
+  for (const seq of emittedAndAsking(s)) {
+    assert.ok(
+      inTheWorld.has(seq),
+      `the actor believes it emitted seq ${String(seq)}, which asks the world for something, and the world was never asked`,
+    );
+  }
+}
+
+/**
+ * The projection, as an equality — asked where it is one.
+ *
+ * At a drain boundary no effect is in flight, so the set of seqs the world's
+ * ledger holds IS `worldEffects`: the ordinal projected away, exactly as
+ * `ports.ts` claims. Between a port call and the `emitNext` behind it the two
+ * differ by design, which is why this is a separate question and not a stronger
+ * `expectSteady`.
+ */
+export function expectWorldSettled(rig: Rig, s: ActorState): void {
+  assert.deepEqual(
+    ascending(ledgerSeqs(rig)),
+    ascending(emittedAndAsking(s)),
+    "the world's ledger and the actor's belief about it disagree at a drain boundary",
+  );
+}
+
+/** The world's ledger with the ordinal projected away — the model's set of seqs. */
+function ledgerSeqs(rig: Rig): ReadonlySet<number> {
+  return new Set(rig.world.ledger().map((entry) => entry.seq));
+}
+
+/**
+ * The seqs the executor has emitted whose rows actually ask the world for
+ * something — `worldEffects` narrowed to the effect-bearing rows.
+ *
+ * The narrowing reads the journal rather than a second record of it, so a row
+ * that stops carrying effects moves this set with no edit here.
+ */
+function emittedAndAsking(s: ActorState): ReadonlySet<number> {
+  const asking = new Set<number>();
+  for (const entry of s.journal) {
+    if (s.worldEffects.has(entry.seq) && entry.rec.effects.length > 0) {
+      asking.add(entry.seq);
+    }
+  }
+  return asking;
+}
+
+function ascending(seqs: ReadonlySet<number>): readonly number[] {
+  return [...seqs].sort((a, b) => a - b);
 }
 
 /**
@@ -159,8 +329,10 @@ export function expectRefused(
 }
 
 function drained(rig: Rig, journaled: DurableState): DurableState {
-  expectSteady(journaled);
+  expectSteady(rig, journaled);
+  expectWorldSettled(rig, journaled);
   const out = interpret(cfgInterp, journaled, rig.ports);
-  expectSteady(out);
+  expectSteady(rig, out);
+  expectWorldSettled(rig, out);
   return out;
 }

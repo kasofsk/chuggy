@@ -82,8 +82,10 @@ import type { Delivery, Ports } from "./ports.ts";
  * effect added to `Effect` without a home here is a compile error rather than a
  * request that quietly reaches nobody.
  *
- * THE TWO ARMS WORTH THE ARGUMENT, because the other six route where their
- * names say:
+ * THE TWO ARMS WORTH THE ARGUMENT. `CreateDraft` reaches the authoring
+ * surface, `OpenHumanTask` the desk, `SpawnWorkTasks` and `SpawnEvalTasks` the
+ * fabric's `spawn`, `EnqueueWrapUp` and `Complete` the landing port: each of
+ * those routes where its name says. These do not:
  *
  *   `Revoke` REACHES THE FABRIC'S `cancel`. Revoking retires the ticket's live
  *   set, so something must stop paying for runs that are still going — "stop it
@@ -177,8 +179,10 @@ function interpretPending(s: DurableState): readonly Keyed<Entry>[] {
 /**
  * One row's whole effect list, out in the order the decider emitted it.
  *
- * THE CEILING IS THE FLEET. The widest list any decider emits is the revoke
- * cascade's — one `Revoke` plus one `OpenHumanTask` per parked dependent — and
+ * THE CEILING IS THE FLEET, and `decideRevoke` is the only decider it is ever
+ * about. Every other effect-bearing decision in `model/domain.qnt` goes through
+ * `move`, `escalate` or `completeTicket` and emits exactly one effect; the
+ * cascade emits one `Revoke` plus one `OpenHumanTask` per parked dependent, and
  * a dependent is a ticket, so the list cannot outrun the fleet the
  * configuration admits. Anything longer is a decider that has stopped agreeing
  * with the machine it belongs to, and the executor is a good place to hear so.

@@ -13,14 +13,23 @@
  * puts work in front of a person; an `AuthoringPort` shows an author a draft; a
  * `LandingPort` moves a ticket across the boundary onto its project. Those are
  * four different things to be wrong about, four different failure modes and
- * four different things a deployment substitutes independently, and one port
- * with seven methods would have one contract paragraph covering all of them —
- * which is to say none of them.
+ * four different things a deployment substitutes independently. One port
+ * carrying every method between them would have one contract paragraph
+ * covering all of them — which is to say none of them.
  *
- * WHY THE EFFECT ARRIVES AS DATA AND NOT AS A METHOD ARGUMENT LIST. Every
- * method takes one `Delivery` and returns nothing. The interpreter's whole job
+ * EVERY PORT IS A RECORD OF FUNCTIONS, SPELLED AS PROPERTIES RATHER THAN AS
+ * METHODS, and the two differences both matter here. A method's parameters are
+ * checked BIVARIANTLY, so a substitute port could narrow what it accepts and
+ * still typecheck; a property's are not, which is the check a contract wants.
+ * And a port function is routinely lifted out of its record — a test wrapping
+ * one to make it fail, an adapter composing two — which method syntax makes a
+ * lint finding and which is safe here because no implementation may read
+ * `this`. A port has no identity; it is what it does.
+ *
+ * WHY THE EFFECT ARRIVES AS DATA AND NOT AS A FUNCTION ARGUMENT LIST. Every
+ * port function takes one `Delivery` and returns nothing. The interpreter's whole job
  * is to route, and a routing table whose arms have different shapes is a
- * routing table that has started interpreting: the moment a port method takes a
+ * routing table that has started interpreting: the moment a port function takes a
  * ticket id and a task width, somebody has to derive them, and that somebody is
  * either a decider (which would then be performing) or the interpreter (which
  * would then be deciding). What the world gets is the decision's identity, the
@@ -32,6 +41,44 @@
  * runs. There is no port for scheduling, capacity, fairness or retry below the
  * cycle — `model/domain.qnt`'s header puts all four outside the machine's
  * knowledge, so there is nothing for a port to carry them to.
+ *
+ * ==========================================================================
+ * TWO PROMISES ARE THE SAME FOR ALL FOUR, SO THEY ARE STATED ONCE
+ * ==========================================================================
+ *
+ * A second copy of a promise is what drifts, and four copies of one paragraph
+ * is four chances to correct three of them. Each port below documents what only
+ * it can say; these two are the whole of what it inherits.
+ *
+ * A DELIVERY IS A DELIVERY. Every implementation REFUSES anything
+ * `hasDeliveryShape` refuses, and that is a promise of the PORT rather than a
+ * courtesy of one implementation — `journal-store.ts` says the same thing about
+ * `hasEntryShape` and for the same reason: a delivery whose key is not a key,
+ * or which does not describe its own record, is one an implementation cannot
+ * absorb correctly, and the process that finds out is a later one. It is a
+ * shape check and nothing more; the line it must not cross is the next
+ * paragraph but one.
+ *
+ * ORDERING IS SCOPED TO ONE DRAIN, AND ACROSS DRAINS THERE IS NONE. This is the
+ * scope `deliver.ts` states for its own absorber, and it is the same scope for
+ * the same reason: a promise wider than the mechanism that keeps it is a
+ * promise the layer is in no position to make.
+ *
+ *   - WITHIN ONE DRAIN, deliveries arrive in journal order, one row at a time,
+ *     with every effect of a row delivered before any effect of its successor.
+ *     `execute.ts` is what keeps that, and an adapter may rely on it.
+ *   - ACROSS DRAINS, NOTHING IS PROMISED, because the executor's cursor is
+ *     durable only up to whatever checkpoint survived. A cursor that regressed
+ *     re-sends rows the world already has, so a later drain can deliver seq 1
+ *     after seq 3 has been in the world for some time — and, on the landing
+ *     port specifically, can re-send an `enqueue` after the `land` that ended
+ *     the same ticket. Nothing is out of order in the journal; the JOURNAL is
+ *     the order, and a drain is a window onto a prefix of it.
+ *   - WHAT HOLDS REGARDLESS IS THE KEY. Every delivery is either new or a
+ *     redelivery under a key the port already holds, so the sequence in which
+ *     drains hand them over carries no information an implementation may act
+ *     on. An adapter that inferred anything from arrival order across drains
+ *     would be inferring it from the crash history of the process above it.
  */
 
 import type { Keyed } from "../effects/keyed.ts";
@@ -67,13 +114,25 @@ import type { StepRecord } from "../domain/measure.ts";
  *     collapses into the re-emission the refinement layer already absorbs.
  *
  * A key of `seq` alone keeps the second and breaks the first — the row's second
- * and third effects would absorb against its own first. A key derived from the
- * effect keeps neither. The pair keeps both, and it is not a per-effect key in
- * the sense `actor.ts` forbids: the ordinal is a POSITION IN THE ROW, not a
- * property of the effect, so it deduplicates nothing within a row and
- * deduplicates a re-emitted row exactly. Project the ordinal away and what is
- * left is `model/refinement.qnt`'s `worldEffects: Set[int]` — this is that set
- * refined, not replaced.
+ * and third effects would absorb against its own first, and the measured cost
+ * is not one desk task for two tickets but ZERO, since the cascade's own
+ * `Revoke` takes the key first. A key derived from the effect keeps neither.
+ * The pair keeps both, and it is not the per-effect key `actor.ts` forbids: the
+ * ordinal is a POSITION IN THE ROW, not a property of the effect, so it
+ * deduplicates nothing within a row and deduplicates a re-emitted row exactly.
+ * Project the ordinal away and what is left is `model/refinement.qnt`'s
+ * `worldEffects: Set[int]` — this is that set refined, not replaced, and
+ * `harness.test.ts`'s `expectSteady` asserts the projection at every state of
+ * every walk rather than leaving it as an argument.
+ *
+ * HOW MUCH OF THE MACHINE THIS IS ABOUT, stated because it bounds the risk.
+ * `decideRevoke` is the ONLY decider in `model/domain.qnt` that emits a list
+ * longer than one: every other effect-bearing decision goes through `move`,
+ * `escalate` or `completeTicket`, each of which emits exactly one effect, and
+ * `noop` emits none. So the ordinal is zero for every delivery the machine can
+ * produce except a cascade's, and the cascade is the single shape the whole
+ * refinement turns on. `effect.test.ts` pins that against the committed corpus
+ * rather than against this paragraph.
  */
 export type Delivery = Keyed<Effect> & {
   /**
@@ -119,6 +178,44 @@ export type Delivery = Keyed<Effect> & {
  */
 export function subjectOf(rec: StepRecord): number | undefined {
   return rec.transitions[0]?.ticket;
+}
+
+/**
+ * Is this a delivery? THE PORT LAYER'S SHAPE GATE, and the promise every
+ * implementation inherits from the header above.
+ *
+ * IT CHECKS THE KEY AND THE SELF-DESCRIPTION, and nothing else.
+ *
+ *   - BOTH HALVES OF THE KEY. A `seq` is a journal sequence number, which
+ *     `entry.ts`'s schema makes a safe integer from one up; an `ordinal` indexes
+ *     a list, so it is a count. Neither half was checked when only the ordinal
+ *     was, and a fractional seq is the failure that shape has: `8.5` and `8`
+ *     make different keys, so a redelivery under one would not absorb against
+ *     the other and a task set would run twice.
+ *   - THE DELIVERY DESCRIBES ITS OWN RECORD. The effect handed over must be the
+ *     one sitting at that ordinal of the record handed over with it, which is
+ *     what makes the pair a key INTO the row rather than two numbers beside it.
+ *     An executor that scrambled or truncated a list is caught at the boundary
+ *     instead of three assertions later in somebody's walk.
+ *
+ * IT ANSWERS, IT NEVER THROWS, and it is total over a well-typed `Delivery`.
+ * The refusal is the implementation's to raise, because how loudly a port fails
+ * is a property of the adapter and not of the shape.
+ *
+ * WHAT IT DOES NOT CLAIM: that the effect was one the machine would have
+ * emitted, that the record is one a decider would have produced, or that the
+ * decision was enabled. Those are `journalLegalOn`'s questions, two layers up,
+ * and an implementation that asked them would be interpreting the decision —
+ * the one thing every port here forbids by name.
+ */
+export function hasDeliveryShape(delivery: Delivery): boolean {
+  return (
+    Number.isSafeInteger(delivery.seq) &&
+    delivery.seq >= 1 &&
+    Number.isSafeInteger(delivery.ordinal) &&
+    delivery.ordinal >= 0 &&
+    delivery.rec.effects[delivery.ordinal] === delivery.effect
+  );
 }
 
 // ==========================================================================
@@ -170,11 +267,17 @@ export function subjectOf(rec: StepRecord): number | undefined {
  *     been lost, which is why the re-emission has to be absorbable rather than
  *     merely safe.
  *   - `cancel` may fail, and a failed cancel leaves a run alive. Nothing
- *     downstream breaks: the ticket is `PRevoked` in the actor's memory before
- *     the effect is ever emitted, its live set is retired, and a completion
- *     arriving later for one of its task ids is absorbed by `decideTaskDone`'s
- *     first-write-wins arm. A cancel is a request to stop paying for a run, not
- *     a precondition of correctness.
+ *     downstream breaks, and the absorber is the DOOR rather than the decider.
+ *     The ticket is `PRevoked` in the actor's memory before the effect is ever
+ *     emitted, and `cmdEnabled`'s `JTaskDone` arm asks `taskPhaseIn` first —
+ *     which holds for `PWorking` and `PEvaluating` and for nothing else — so a
+ *     completion arriving later for one of that ticket's task ids is REFUSED at
+ *     enablement and never journaled. It is not `decideTaskDone`'s
+ *     first-write-wins arm that absorbs it: that arm is for a ticket still in a
+ *     task phase, and the decider's own `taskPhaseIn` assertion would reject a
+ *     revoked ticket rather than answer for it. `events.test.ts` pins which of
+ *     the two answers. A cancel is a request to stop paying for a run, not a
+ *     precondition of correctness.
  *   - A run may end and its report never arrive. The machine waits; waiting is
  *     unbounded by decision, and the way out is the human desk.
  *
@@ -182,17 +285,19 @@ export function subjectOf(rec: StepRecord): number | undefined {
  * ORDERING
  * ==========================================================================
  *
- * INBOUND, the port promises nothing and is promised everything. Deliveries
- * arrive in journal order, one row at a time, with every effect of a row
- * delivered before any effect of its successor — that is the EXECUTOR's
- * promise (`execute.ts`), and an adapter may rely on it.
+ * The senses are `model/refinement.qnt`'s, which fixes them once: effects go
+ * TOWARD THE WORLD, and what the world received comes back. Naming them from
+ * the adapter's end instead would invert both halfway down a file.
  *
- * OUTBOUND, the port promises nothing at all. Completions may arrive in any
- * order, more than once, or for runs the machine has already retired. That is
- * at-least-once stated as a contract rather than as a caveat, and the machine
- * is built for it: `decideTaskDone` absorbs a duplicate or stale delivery by
- * task identity, and `journalLegalOn` refuses to journal a decision the state
- * would not enable.
+ * TOWARD THE WORLD, the port is promised the header's drain-scoped ordering and
+ * promises nothing in return.
+ *
+ * BACK FROM THE WORLD, the port promises nothing at all. Completions may arrive
+ * in any order, more than once, or for runs the machine has already retired.
+ * That is at-least-once stated as a contract rather than as a caveat, and the
+ * machine is built for it in two places: `cmdEnabled` refuses to journal a
+ * report the state does not enable, and `decideTaskDone` absorbs by task
+ * identity the duplicates that ARE enabled.
  *
  * ==========================================================================
  * IDEMPOTENCE
@@ -202,7 +307,8 @@ export function subjectOf(rec: StepRecord): number | undefined {
  * The key is `Delivery`'s pair, and the promise is what makes an at-least-once
  * channel upstream safe: a cursor that regressed re-emits rows the world
  * already has, and re-running a task set for a decision already run would be
- * the double-spend `noDoubleSpentBudget` prices.
+ * the double-spend `noDoubleSpentBudget` prices. It is also the whole of what
+ * survives across drains, since the ordering promise does not.
  *
  * The promise is the PORT's, not the stub's convenience. An implementation that
  * cannot absorb — because the medium beneath it cannot — has not implemented
@@ -210,9 +316,9 @@ export function subjectOf(rec: StepRecord): number | undefined {
  */
 export type FabricPort = {
   /** Start the ticket's live task set for this decision. */
-  spawn(delivery: Delivery): void;
+  readonly spawn: (delivery: Delivery) => void;
   /** Stop whatever the ticket has running. Succeeds when there is nothing. */
-  cancel(delivery: Delivery): void;
+  readonly cancel: (delivery: Delivery) => void;
 };
 
 // ==========================================================================
@@ -242,10 +348,13 @@ export type FabricPort = {
  * for the machine's purposes and a page for somebody's — it is not a
  * correctness failure, because nothing downstream of a park is metered.
  *
- * ORDERING. Deliveries arrive in journal order. A row may carry SEVERAL
- * `OpenHumanTask` effects — one per dependent parked by a revoke cascade — and
- * they arrive in the order the cascade parked them, which is ascending ticket
- * id. They are distinct tasks for distinct tickets and nothing may merge them.
+ * ORDERING. The header's, and this is the port the row-scoped half is about:
+ * the revoke cascade is the one decision in the machine whose list is longer
+ * than one, and its `OpenHumanTask`s — one per parked dependent — arrive within
+ * that one drain in the order the cascade parked them, which is ascending
+ * ticket id. They are distinct tasks for distinct tickets and nothing may merge
+ * them. Across drains the cascade row may arrive again in full, which is the
+ * header's second half and the reason the next paragraph is not optional.
  *
  * IDEMPOTENCE. Keyed exactly as `FabricPort` is, by `Delivery`'s pair, which is
  * what keeps the cascade's two identical effects two tasks while a re-emitted
@@ -253,7 +362,7 @@ export type FabricPort = {
  */
 export type DeskPort = {
   /** Open a desk task for the ticket this decision parked. */
-  openTask(delivery: Delivery): void;
+  readonly openTask: (delivery: Delivery) => void;
 };
 
 // ==========================================================================
@@ -282,15 +391,19 @@ export type DeskPort = {
  * which is a visibility failure and not a safety one — nothing is metered until
  * release.
  *
- * ORDERING. Deliveries arrive in journal order, which is arrival order, which is
- * the order the ids were minted in.
+ * ORDERING. The header's. Within a drain, arrivals reach this port in journal
+ * order, which is arrival order, which is the order `decideArrive` minted the
+ * ids in — so an adapter numbering drafts as they appear numbers them the way
+ * the fleet did. Across drains that correspondence does not hold, and an
+ * adapter that inferred an id from position rather than from the fleet would be
+ * inferring it from how many times the process above it has crashed.
  *
  * IDEMPOTENCE. Keyed as the others are. A re-emitted arrival row shows the
  * author one draft, not two.
  */
 export type AuthoringPort = {
   /** Show the author the draft this arrival created. */
-  createDraft(delivery: Delivery): void;
+  readonly createDraft: (delivery: Delivery) => void;
 };
 
 // ==========================================================================
@@ -333,10 +446,19 @@ export type AuthoringPort = {
  * re-delivered landing under its key must make itself absorbable — by the key
  * this port already carries — before it can claim to implement this port.
  *
- * ORDERING. Deliveries arrive in journal order, so `enqueue` precedes the
- * `openGate` of the same ticket's attempt and `land` follows whichever of them
- * the route went through. The three are never concurrent for one ticket:
- * there is one writer.
+ * ORDERING, AND THIS PORT IS WHERE THE HEADER'S SECOND HALF BITES HARDEST.
+ * Within a drain, `enqueue` precedes the `openGate` of the same ticket's
+ * attempt and `land` follows whichever of them the route went through. ACROSS
+ * DRAINS IT DOES NOT: a cursor that regressed past a landing re-sends that
+ * ticket's `enqueue` and `openGate` AFTER its `land`, so the sequence a real
+ * adapter sees can end with a ticket being queued for a wrap-up it has already
+ * completed. Nothing is wrong when that happens — the journal's order never
+ * moved, the drain is a window onto a prefix of it, and every one of those
+ * deliveries is a redelivery under a key this port already holds. An
+ * implementation that read a lifecycle out of arrival order would be reading
+ * the crash history of the process above it, and would land a ticket twice the
+ * first time one crashed. What IS true at any instant is that the three are
+ * never concurrent for one ticket: there is one writer.
  *
  * IDEMPOTENCE. Keyed as the others are, and here the promise is load-bearing
  * rather than tidy: `noDuplicateCycle` says the world lands a ticket's diff at
@@ -345,11 +467,11 @@ export type AuthoringPort = {
  */
 export type LandingPort = {
   /** Announce that this ticket wants its wrap-up. */
-  enqueue(delivery: Delivery): void;
+  readonly enqueue: (delivery: Delivery) => void;
   /** Start the wrap-up step behind the lease the machine granted. */
-  openGate(delivery: Delivery): void;
+  readonly openGate: (delivery: Delivery) => void;
   /** Publish this ticket's completion. */
-  land(delivery: Delivery): void;
+  readonly land: (delivery: Delivery) => void;
 };
 
 /**
@@ -365,3 +487,18 @@ export type Ports = {
   readonly authoring: AuthoringPort;
   readonly landing: LandingPort;
 };
+
+/**
+ * Which port method the world was asked through — DERIVED from `Ports`, never
+ * written beside it.
+ *
+ * `effect.ts`'s argument for a compiler-maintained copy, applied to the other
+ * vocabulary this slice has: a method added to a port, a method removed, or a
+ * fifth port added is a change to this union with no second edit, and a hand
+ * roster that fell behind would leave a ledger unable to name what it recorded.
+ * It names the METHODS rather than the effects, because an adapter is told what
+ * to do and not what decision led to it.
+ */
+export type PortCall = {
+  [P in keyof Ports]: keyof Ports[P] & string;
+}[keyof Ports];

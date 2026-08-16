@@ -52,30 +52,25 @@
  * IT HOLDS NO CLOCK AND NO AMBIENT CAPABILITY, for the store's reason: a walk
  * driven through it twice gives the same ledger twice, which is what makes it
  * usable in the deterministic runs that prove recovery.
+ *
+ * WHY THE READS COPY, AND WHY ALL THE WAY DOWN. `ledger` and `recorded` return
+ * a fresh DEEP copy every time, on `in-memory-journal-store.ts`'s argument and
+ * for a sharper version of its reason. There the risk was a caller splicing the
+ * log; here the entries are the values `accepted` is keyed against, so a caller
+ * holding a live reference could retag one and change what the world believes
+ * it was asked for — the absorption state itself, not just a report of it. A
+ * one-level copy stops the splice and not the retag, so it stops the half that
+ * does not matter. `readonly` fields are a compile-time claim and this file's
+ * consumers include tests that reach past it.
  */
 
 import { invariant } from "../domain/assert.ts";
-import type { Delivery, Ports } from "../interp/ports.ts";
-import { subjectOf } from "../interp/ports.ts";
-
-/**
- * Which port method the world was asked through. Named for the METHODS rather
- * than for the effects, deliberately: an adapter is told what to do, not what
- * decision led to it, and a ledger keyed on effects would be this file
- * restating the interpreter's routing table.
- */
-export type WorldCall =
-  | "createDraft"
-  | "spawn"
-  | "cancel"
-  | "openTask"
-  | "enqueue"
-  | "openGate"
-  | "land";
+import type { Delivery, PortCall, Ports } from "../interp/ports.ts";
+import { hasDeliveryShape, subjectOf } from "../interp/ports.ts";
 
 /** One thing the world was asked to do, and the decision that asked. */
 export type WorldRecord = {
-  readonly call: WorldCall;
+  readonly call: PortCall;
   /** The decision's journal sequence number. */
   readonly seq: number;
   /** The effect's position in that decision's list. */
@@ -96,7 +91,7 @@ export type RecordingWorld = {
   /** Everything recorded, in the order it was accepted. */
   ledger(): readonly WorldRecord[];
   /** Everything recorded through one port method, in order. */
-  recorded(call: WorldCall): readonly WorldRecord[];
+  recorded(call: PortCall): readonly WorldRecord[];
 };
 
 /**
@@ -110,19 +105,17 @@ export function createRecordingWorld(): RecordingWorld {
   const accepted = new Map<string, WorldRecord>();
   const order: WorldRecord[] = [];
 
-  function record(call: WorldCall, delivery: Delivery): void {
+  function record(call: PortCall, delivery: Delivery): void {
+    // THE PORT'S SHAPE PROMISE, kept with the port's own predicate rather than
+    // with a check written here. Every implementation owes this refusal, so the
+    // thing being refused has one definition, in the layer that declares the
+    // contract — `journal-store.ts` and `hasEntryShape` are the same
+    // arrangement one layer down. Asserting rather than answering is this
+    // file's choice, not the port's: the shape is the contract, how loudly an
+    // implementation fails is the implementation's.
     invariant(
-      Number.isSafeInteger(delivery.ordinal) && delivery.ordinal >= 0,
-      `recording world: an ordinal is a non-negative safe integer, got ${String(delivery.ordinal)}`,
-    );
-    // The delivery must describe its own record. This is a shape check and not
-    // an opinion about the decision: it asks only that the effect handed over
-    // is the one sitting at that ordinal of the record handed over with it, so
-    // an executor that scrambled a row's list is caught at the boundary rather
-    // than three assertions later in somebody's walk.
-    invariant(
-      delivery.rec.effects[delivery.ordinal] === delivery.effect,
-      `recording world: seq ${String(delivery.seq)} ordinal ${String(delivery.ordinal)} was delivered as ${delivery.effect}, which is not what its record holds there`,
+      hasDeliveryShape(delivery),
+      `recording world: seq ${String(delivery.seq)} ordinal ${String(delivery.ordinal)} delivered as ${delivery.effect} is not a delivery`,
     );
 
     const key = `${String(delivery.seq)}:${String(delivery.ordinal)}`;
@@ -180,11 +173,11 @@ export function createRecordingWorld(): RecordingWorld {
     },
 
     ledger(): readonly WorldRecord[] {
-      return [...order];
+      return structuredClone(order);
     },
 
-    recorded(call: WorldCall): readonly WorldRecord[] {
-      return order.filter((entry) => entry.call === call);
+    recorded(call: PortCall): readonly WorldRecord[] {
+      return structuredClone(order.filter((entry) => entry.call === call));
     },
   };
 }

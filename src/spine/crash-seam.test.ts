@@ -44,7 +44,10 @@
  * out, so a crash mid-list re-emits the whole list and collapses into the
  * re-emission this suite does drive — at every cursor of every seam of every
  * walk below. The same sentence fixes the GRAIN of absorption: one seq per ROW,
- * absorbed as a whole list, never a key per effect. A row's effects are not a
+ * absorbed as a whole list, never a key per effect VALUE — `actor.ts` states
+ * that clause and its qualification together, and this copy carries the
+ * cross-reference rather than the qualification, because the second copy of a
+ * rule is the one that drifts. A row's effects are not a
  * set — the cascade-park witness in the corpus carries two identical
  * `OpenHumanTask`s for two parked dependents — so per-element keying would
  * collapse them and open one desk task for two tickets.

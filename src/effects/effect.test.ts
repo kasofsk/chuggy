@@ -53,28 +53,56 @@ function corpusEffectStrings(): readonly { file: string; text: string }[] {
 
 /** Hand every string of every `effects` array to `visit`, at any depth. */
 function walk(node: unknown, visit: (text: string) => void): void {
+  walkRecords(node, (rec) => {
+    for (const item of rec.effects) {
+      visit(item);
+    }
+  });
+}
+
+/** A step record as ITF spells it: a label beside a list of effect strings. */
+type CorpusRecord = { readonly label: string; readonly effects: string[] };
+
+/** Hand every step record in the trace to `visit`, at any depth. */
+function walkRecords(node: unknown, visit: (rec: CorpusRecord) => void): void {
   if (Array.isArray(node)) {
     for (const item of node as unknown[]) {
-      walk(item, visit);
+      walkRecords(item, visit);
     }
     return;
   }
   if (typeof node !== "object" || node === null) {
     return;
   }
-  for (const [key, value] of Object.entries(node)) {
-    if (key === "effects" && Array.isArray(value)) {
-      for (const item of value as unknown[]) {
-        assert.equal(typeof item, "string", `${key} holds a non-string`);
-        visit(item as string);
-      }
-      continue;
+  const row = node as Record<string, unknown>;
+  const effects = row["effects"];
+  if (Array.isArray(effects) && typeof row["label"] === "string") {
+    for (const item of effects as unknown[]) {
+      assert.equal(typeof item, "string", "an effects list holds a non-string");
     }
-    walk(value, visit);
+    visit({ label: row["label"], effects: effects as string[] });
+    return;
+  }
+  for (const value of Object.values(row)) {
+    walkRecords(value, visit);
   }
 }
 
 const corpus = corpusEffectStrings();
+
+/** Every step record the committed fixtures carry, with its file. */
+function corpusRecords(): readonly { file: string; rec: CorpusRecord }[] {
+  const found: { file: string; rec: CorpusRecord }[] = [];
+  for (const dir of ["corpus/tier1", "corpus/tier2"]) {
+    for (const name of readdirSync(dir).sort()) {
+      const file = `${dir}/${name}`;
+      walkRecords(JSON.parse(readFileSync(file, "utf8")), (rec) => {
+        found.push({ file, rec });
+      });
+    }
+  }
+  return found;
+}
 
 // === The vocabulary ========================================================
 
@@ -125,6 +153,31 @@ test("the strings the corpus carries are exactly the vocabulary, both ways", () 
 test("printing then parsing returns the same constructor", () => {
   for (const effect of effectVocabulary) {
     assert.equal(parseEffect(printEffect(effect)), effect);
+  }
+});
+
+test("the only record the machine emits with a list longer than one is a cascade", () => {
+  // THE STRUCTURAL FACT the whole `(seq, ordinal)` key turns on, checked
+  // against the model's own emitted traces rather than argued in a header.
+  // Every other effect-bearing decision goes through `move`, `escalate` or
+  // `completeTicket` and emits exactly one effect; only `decideRevoke` builds a
+  // list, one `OpenHumanTask` per parked dependent. If this ever finds a second
+  // shape, `ports.ts`'s bound on how much of the machine the ordinal is about
+  // has gone stale, and the interpreter's fleet ceiling with it.
+  const wide = corpusRecords().filter(({ rec }) => rec.effects.length > 1);
+  assert.ok(wide.length > 0, "the corpus witnesses no multi-effect record");
+  for (const { file, rec } of wide) {
+    assert.equal(
+      rec.label,
+      "ticket-revoked",
+      `${file}: ${rec.label} emitted ${String(rec.effects.length)} effects`,
+    );
+    assert.deepEqual(
+      [...new Set(rec.effects.slice(1))],
+      ["OpenHumanTask"],
+      `${file}: a cascade's tail is desk tasks and nothing else`,
+    );
+    assert.equal(rec.effects[0], "Revoke");
   }
 });
 
