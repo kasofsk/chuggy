@@ -19,6 +19,17 @@ import { readFileSync, readdirSync } from "node:fs";
 
 import { decideArrive, decideRevoke, type Config } from "../domain/domain.ts";
 import type { Core, Stage, WrapUp } from "../domain/measure.ts";
+// THE ONE FIXTURE IMPORT IN THIS TREE THAT RUNS UPWARD, and it is deliberate:
+// `src/effects/` sits below `src/spine/`, and depcruise's `.test.ts` exemption
+// means no rule governs the direction. What is imported is the refinement
+// instance's own consts, which the case below spreads rather than re-mints —
+// re-minting them here would make this file an independent statement of an
+// instance four suites read, and a `wrapUpPricing` that moved upstream would
+// leave it testing a machine nothing else runs. The direction is safe because
+// of what a `.test.ts` file is: `no-shipped-test-fixtures` stops anything that
+// ships from importing either file, so nothing but a suite ever takes this
+// edge. If a second upward import appears, the fixtures move down instead —
+// one is a considered exception, two is a layer inverting.
 import {
   cfgRefinement,
   progFlat,

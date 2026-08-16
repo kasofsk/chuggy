@@ -414,6 +414,16 @@ export type FabricPort = {
  * phase, and a desk that kept its own copy would be the second thing that can
  * disagree.
  *
+ * IT IS THE ONE PORT `subjectOf` DOES NOT ANSWER FOR, and the exception is
+ * stated here because the fabric section states the formula. A cascade row's
+ * first transition is the ticket the decision REVOKED, while its
+ * `OpenHumanTask`s are that ticket's parked DEPENDENTS — so `subjectOf` on this
+ * delivery names a ticket no desk task is being opened for. The tickets to open
+ * for are read from the adapter's own view of what is newly parked, exactly as
+ * the header's derived-view paragraph says and for its reason: pairing effects
+ * with transitions by position would be a fact about how `decideRevoke` happens
+ * to build two lists rather than anything the machine promises.
+ *
  * IT DECIDES NOTHING. It does not close a task on its own, does not merge two
  * tasks for one ticket, and does not choose what an operator may do — an
  * operator's retry arrives back as an external event and the machine decides

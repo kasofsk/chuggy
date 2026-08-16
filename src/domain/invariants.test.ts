@@ -75,7 +75,7 @@
  * out of the gate, so the run's own last conjunct reads a post-state holding a
  * `PDone` ticket with `ANone`.
  *
- * A NOTE THE SPINE WILL WANT. The multi-ticket fleets in `domain.test.ts` red
+ * A NOTE THE SPINE NEEDS. The multi-ticket fleets in `domain.test.ts` red
  * `idsDense` at DB's consts, because `N_TICKETS` is 2 there and those fleets
  * carry three or four tickets. Nothing is wrong with them — they exist to pin
  * guards over a phase domain, and a guard does not ask about the arrival bound —
@@ -1585,7 +1585,7 @@ test("leaseExclusive is a relation over resources AND phases, pinned at both end
 // === Dependencies that DISAGREE ============================================
 // `domain.test.ts`'s `cMixedDeps` lesson, inherited: "a `forall` over a relation
 // needs members that disagree, not one more uniform set". Every quantifier over
-// a dep set — `anyEdgeIn`'s exists, `everyDepIn`'s forall, and the two walks
+// a dep set — `anyEdgeIn`'s exists, `isSubsetOf`'s forall, and the two walks
 // that read a dep list to its end — answers identically on every single-dep
 // fleet, whichever way it is written. Only a ticket with two deps that disagree
 // tells them apart, and in each fleet below the DISCRIMINATING dep is the second
