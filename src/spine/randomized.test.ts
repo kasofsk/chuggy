@@ -1068,6 +1068,21 @@ test("a witness roster the parse cannot see is could-not-run, never an empty ros
 // `observe`'s reason, in their own words, and muting either left the whole gate
 // green.
 //
+// FOUR MORE `report` CALLS IN `walk.test.ts` ARE OUTSIDE THAT LIST AND OWE NO
+// CASE, which the enumeration has to say out loud to be exhaustive rather than
+// merely long: `settle` refusing a fleet the loop has just called quiet, an
+// action draw landing outside the roster it was bounded by, a payload draw
+// landing outside the picks it was bounded by, and a script running out inside
+// its own length. Each is an IMPOSSIBILITY GUARD against the harness
+// contradicting itself in the same breath — `drawIndex` takes the length it
+// indexes, `driveTrace` sets the budget from the script it reads — so the state
+// that fires one is not a state of the MACHINE but a harness this tree cannot
+// produce, and a case would have to build that harness rather than drive this
+// one. They stay because a total function answers rather than indexing past the
+// end of an array, which is `actor.ts`'s treatment of its subsumed cursor bound
+// and is written down here for the same reason: an undriven guard nobody
+// declared reads exactly like one nobody noticed.
+//
 // NONE OF THEM CAN FIRE FROM A CORRECT TREE, which is why each needs a case
 // built rather than a walk run. Every state a run reaches is a shipped
 // decider's own output, so a correct roster, a correct measure, a correct
