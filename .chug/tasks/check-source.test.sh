@@ -134,6 +134,13 @@ mkdir -p "$R/src/actor"
 	printf '%s\n' 'export const stamped = Date.now();'
 	printf '%s\n' 'export const drawn = Math.random();'
 } > "$R/src/actor/ambient.ts"
+# And the interpreter, whose ports are its only capability: a scoped block that
+# named a path nothing matches would read exactly like a working one.
+mkdir -p "$R/src/interpreter"
+{
+	printf '%s\n' 'export const stamped = Date.now();'
+	printf '%s\n' 'export const drawn = Math.random();'
+} > "$R/src/interpreter/ambient.ts"
 {
 	printf '%s\n' 'type Kind = { k: "a" } | { k: "b" };'
 	printf '%s\n' 'export function pick(v: Kind): string {'
@@ -175,6 +182,8 @@ check "house rule 4: a floating promise is a finding" 1 "$RC" "Promises must be 
 check "house rule 5: a function over the cap is a finding" 1 "$RC" "Maximum allowed is 70"
 check "the actor may not read a clock either" 1 "$RC" "the journaled actor takes time as an argument"
 check "the actor may not draw randomness either" 1 "$RC" "the journaled actor takes its draws as arguments"
+check "the interpreter may not read a clock either" 1 "$RC" "the interpreter takes time as an argument"
+check "the interpreter may not draw randomness either" 1 "$RC" "the interpreter takes its draws as arguments"
 
 # The floating-promise exemption is narrow: node:test's own functions and
 # nothing else. The clean fixture's suite calls `test` without awaiting it, so

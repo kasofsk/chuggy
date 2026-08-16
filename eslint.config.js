@@ -17,7 +17,16 @@
 // exhaustive rather than a scheduling problem; a clock read or a drawn number
 // ends that and adds no edge for `actor-sees-domain-only` to catch. The roster
 // of capabilities has one home, below — only the subject of the message
-// differs, because only one of the two layers is house rule 2's.
+// differs, because only one of the layers is house rule 2's.
+//
+// SO DOES THE INTERPRETER, and for a reason of its own: its ports ARE its
+// capabilities, and a capability it reached past them would be one no port
+// declares, no adapter answers and no boundary rule can see. That it awaits is
+// beside the point — the roster below is ambient authority, not asynchrony.
+// `src/adapters/` is the one layer with no such block, because holding ambient
+// capability is what an adapter is for and banning it there would ban the
+// layer. What stands behind a stub that quietly read a clock is the reviewer
+// and the suites, which is weaker, and is why the gap is one directory wide.
 //
 // RULE 3 — every discriminated union is switched exhaustively, with
 // `assertNever` in the default arm. `switch-exhaustiveness-check` is the
@@ -160,6 +169,13 @@ export default tseslint.config(
     rules: {
       "no-restricted-globals": noAmbientGlobals("the journaled actor"),
       "no-restricted-properties": noAmbientDraws("the journaled actor"),
+    },
+  },
+  {
+    files: ["src/interpreter/**/*.ts"],
+    rules: {
+      "no-restricted-globals": noAmbientGlobals("the interpreter"),
+      "no-restricted-properties": noAmbientDraws("the interpreter"),
     },
   },
   // The configs themselves. They sit outside tsconfig.json's include, so the

@@ -160,6 +160,93 @@ printf '%s\n' 'import { helper } from "../../test/helper.ts"' 'export const x = 
 seal
 check "a source reaching a suite is a finding" 1 "$RC" "domain-is-pure:"
 
+# The whole allowed direction in one tree: an adapter answers a port the
+# interpreter declared, the interpreter reads the actor, the actor reads the
+# domain, and the composition root imports the adapter. A red here would mean a
+# rule below over-fires on the shape the split exists to permit.
+fixture
+mkdir -p "$R/src/actor" "$R/src/interpreter" "$R/src/adapters"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const decided = x' > "$R/src/actor/b.ts"
+printf '%s\n' 'import { decided } from "../actor/b.ts"' 'export const port = decided' > "$R/src/interpreter/port.ts"
+printf '%s\n' 'import { port } from "../interpreter/port.ts"' 'export const stub = port' > "$R/src/adapters/stub.ts"
+printf '%s\n' 'import { stub } from "./adapters/stub.ts"' 'export const wired = stub' > "$R/src/compose.ts"
+printf '%s\n' 'import { stub } from "../src/adapters/stub.ts"' 'export const z = stub' > "$R/test/a.test.ts"
+seal
+check "the layers below the composition root import inward and stay clean" 0 "$RC" "graph clean"
+# The count is what says the root was cruised rather than skipped. It is the
+# only module here nothing imports, and it is clean because a module with
+# dependencies is not an orphan however little depends on it.
+check "the composition root is cruised, not absent" 0 "$RC" "across 6 module(s)"
+
+# --- interpreter-constructs-no-adapter ---------------------------------------
+
+fixture
+mkdir -p "$R/src/interpreter" "$R/src/adapters"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const stub = 1' > "$R/src/adapters/stub.ts"
+printf '%s\n' 'import { stub } from "../adapters/stub.ts"' 'export const port = stub' > "$R/src/interpreter/port.ts"
+printf '%s\n' 'import { port } from "../src/interpreter/port.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = port + x' > "$R/test/a.test.ts"
+seal
+check "the interpreter may not import an adapter" 1 "$RC" "interpreter-constructs-no-adapter:"
+
+# The relay belongs to neither directory, so no edge leaves src/interpreter/ for
+# src/adapters/ and only reachability sees it. Without `reachable: true` on the
+# rule this tree is clean and no other case notices.
+fixture
+mkdir -p "$R/src/interpreter" "$R/src/adapters" "$R/src/shared"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const stub = 1' > "$R/src/adapters/stub.ts"
+printf '%s\n' 'import { stub } from "../adapters/stub.ts"' 'export const relay = stub' > "$R/src/shared/relay.ts"
+printf '%s\n' 'import { relay } from "../shared/relay.ts"' 'export const port = relay' > "$R/src/interpreter/port.ts"
+printf '%s\n' 'import { port } from "../src/interpreter/port.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = port + x' > "$R/test/a.test.ts"
+seal
+check "the interpreter may not REACH an adapter through a relay" 1 "$RC" "interpreter-constructs-no-adapter:"
+
+# --- no-adapter-sees-another -------------------------------------------------
+
+fixture
+mkdir -p "$R/src/adapters"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const two = 2' > "$R/src/adapters/two.ts"
+printf '%s\n' 'import { two } from "./two.ts"' 'export const one = two' > "$R/src/adapters/one.ts"
+printf '%s\n' 'import { one } from "../src/adapters/one.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = one + x' > "$R/test/a.test.ts"
+seal
+check "one adapter may not import another" 1 "$RC" "no-adapter-sees-another:"
+
+# The shared helper between two stubs is the shape the rule is really about, and
+# every edge in it is individually innocent.
+fixture
+mkdir -p "$R/src/adapters" "$R/src/shared"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const two = 2' > "$R/src/adapters/two.ts"
+printf '%s\n' 'import { two } from "../adapters/two.ts"' 'export const relay = two' > "$R/src/shared/relay.ts"
+printf '%s\n' 'import { relay } from "../shared/relay.ts"' 'export const one = relay' > "$R/src/adapters/one.ts"
+printf '%s\n' 'import { one } from "../src/adapters/one.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = one + x' > "$R/test/a.test.ts"
+seal
+check "one adapter may not REACH another through a shared helper" 1 "$RC" "no-adapter-sees-another:"
+
+# --- nothing-imports-the-composition-root ------------------------------------
+
+fixture
+printf '%s\n' 'export const wired = 1' > "$R/src/compose.ts"
+printf '%s\n' 'import { wired } from "../src/compose.ts"' 'export const z = wired' > "$R/test/a.test.ts"
+seal
+check "importing the composition root is a finding" 1 "$RC" "nothing-imports-the-composition-root:"
+
+# --- no-source-reaches-a-suite, under its own name ----------------------------
+
+# From the domain the broader purity rule catches this first, which is why the
+# case above it names domain-is-pure. The interpreter has no such rule, so this
+# is the layer where the suite boundary answers for itself.
+fixture
+mkdir -p "$R/src/interpreter"
+printf '%s\n' 'export const helper = 1' > "$R/test/helper.ts"
+printf '%s\n' 'import { helper } from "../../test/helper.ts"' 'export const port = helper' > "$R/src/interpreter/port.ts"
+printf '%s\n' 'import { port } from "../src/interpreter/port.ts"' 'export const z = port' > "$R/test/a.test.ts"
+seal
+check "a source reaching a suite is a finding under its own rule" 1 "$RC" "no-source-reaches-a-suite:"
+
 # A cycle makes the layer a module belongs to unanswerable.
 fixture
 printf '%s\n' 'import { b } from "./b.ts"' 'export const a = b' > "$R/src/domain/a.ts"

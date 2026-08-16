@@ -15,11 +15,11 @@
 // tree does not have, which `check-paths.sh` rejects and offers no way to
 // suppress. So each layer's boundary lands in the commit that lands the layer,
 // which is what "the graph rule lands in the same commit as the folder split"
-// means read one folder at a time. So the rules here are the whole boundary
-// the tree can currently be held to, and
-// `docs/design/004-pure-core-implementation.md` under "The target tree" is the
-// rest — the directories that do not exist yet, each with the rule name it
-// owes this file. There is no third place, and neither holds the other's rows.
+// means read one folder at a time. Every directory the tree has now has its
+// rule here, so this file is the whole boundary and there is no second place
+// holding rows. A layer argued for before it exists owes its rule name to the
+// design doc arguing it, and collects the rule here in the commit that builds
+// the directory.
 //
 // Every rule below is proved to bite against a fixture tree carrying its
 // violation, in `.chug/tasks/check-boundaries.test.sh`. An unverified control
@@ -63,6 +63,51 @@ module.exports = {
       },
     },
     {
+      name: "interpreter-constructs-no-adapter",
+      comment:
+        "The interpreter declares the ports and never picks who answers them: " +
+        "an adapter reached from here is a deployment choice inside the layer " +
+        "that must not have one, and it is also the edge that would let a " +
+        "second fabric change the core. Stated as reachability rather than as " +
+        "an import, because the shape that breaks it is a relay — a module " +
+        "belonging to neither directory that one imports and the other " +
+        "answers, which is what the domain and the actor are each already " +
+        "forbidden to be.",
+      severity: "error",
+      from: { path: "^src/interpreter/" },
+      to: { reachable: true, path: "^src/adapters/" },
+    },
+    {
+      name: "no-adapter-sees-another",
+      comment:
+        "Two adapters that need each other are either one adapter or a " +
+        "coordination belonging above both, and the second is the executor's " +
+        "job. Reachability again, and for the same reason: the interesting " +
+        "violation is a shared helper between two stubs rather than one stub " +
+        "importing another by name. The capture group is what lets a rule " +
+        "over a directory exclude the file it started from.",
+      severity: "error",
+      from: { path: "^src/adapters/([^/]+)" },
+      to: {
+        reachable: true,
+        path: "^src/adapters/",
+        pathNot: "^src/adapters/$1",
+      },
+    },
+    {
+      name: "nothing-imports-the-composition-root",
+      comment:
+        "src/compose.ts is the graph's root: it may import everything and " +
+        "nothing may import it, because a root something depends on is a " +
+        "module, and the layers below could then reach an adapter through " +
+        "it. A plain import rule is complete here where the two above are " +
+        "not — every path into a module ends at some module importing it " +
+        "directly, and `from` is unrestricted.",
+      severity: "error",
+      from: { pathNot: "^src/compose[.]ts$" },
+      to: { path: "^src/compose[.]ts$" },
+    },
+    {
       name: "no-source-reaches-a-suite",
       comment:
         "The suites mirror src/ and are downstream of every part of it. They " +
@@ -88,7 +133,11 @@ module.exports = {
       name: "no-orphan-module",
       comment:
         "A module nothing reaches is either dead or a boundary nobody crossed; " +
-        "either way it is not what the tree claims to hold.",
+        "either way it is not what the tree claims to hold. The composition " +
+        "root needs no carve-out here and has none: an orphan is a module with " +
+        "no dependents AND no dependencies, and a root that composes anything " +
+        "has dependencies. A root that stopped having them would be composing " +
+        "nothing, which is what this rule should say about it.",
       severity: "error",
       from: { orphan: true, pathNot: "\\.d\\.ts$" },
       to: {},
