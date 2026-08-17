@@ -84,10 +84,9 @@ export interface WorldPorts {
 }
 
 /**
- * The durable decision log. It is a port with no second side today because the
- * refinement obligation is exactly that a real store substitutes without the
- * core moving, and a port is what makes that substitution checkable instead of
- * promised.
+ * The durable decision log. The refinement obligation is exactly that a real
+ * store substitutes without the core moving; a store on disk answers this port
+ * beside the one in memory, and the promises below are what both are held to.
  */
 export interface JournalStore {
   /** Resolves only once the entry would survive a crash, which is the whole of journal-then-effect. */
