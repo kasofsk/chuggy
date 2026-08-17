@@ -265,6 +265,11 @@ const refusals: readonly Refusal[] = [
     cmd: jArrive([id(2)], flatProgram, asProjectId(1), wExclusive(1)),
   },
   {
+    conjunct: "JArrive/depsDistinct",
+    at: drafted,
+    cmd: jArrive([id(1), id(1)], flatProgram, asProjectId(1), wExclusive(1)),
+  },
+  {
     conjunct: "JArrive/isValidProgram",
     at: genesis,
     cmd: jArrive(
@@ -347,6 +352,23 @@ test("the refusal table names every constructor the model declares", () => {
     [...new Set(refusals.map((row) => row.cmd.cmd))].sort(),
     [...cmdTags].sort(),
   );
+});
+
+/**
+ * The repeat is refused for being a repeat and nothing else: the same arrival
+ * naming the dep once is enabled at the same state, which is what the row above
+ * cannot say on its own.
+ */
+test("an arrival repeating a dep is refused where naming it once is enabled", () => {
+  const once = jArrive([id(1)], flatProgram, asProjectId(1), wExclusive(1));
+  const twice = jArrive(
+    [id(1), id(1)],
+    flatProgram,
+    asProjectId(1),
+    wExclusive(1),
+  );
+  assert.ok(!cmdEnabled(config, drafted, twice), "the repeat was enabled");
+  assert.ok(cmdEnabled(config, drafted, once), "the distinct twin was refused");
 });
 
 /** `decided` is the domain decider called directly, so a mis-wired dispatch arm has somewhere to disagree. */

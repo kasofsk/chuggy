@@ -15,8 +15,9 @@
  * total.
  *
  * The model carries `JArrive`'s deps as a set; here the payload is the array
- * the domain's `decideArrive` takes, and membership in `dependableIn` is the
- * whole of the model's `subseteq` conjunct.
+ * the domain's `decideArrive` takes, so the model's `subseteq` conjunct becomes
+ * two here — membership in `dependableIn`, and the `depsDistinct` a set gets
+ * for free and an array does not.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -45,6 +46,7 @@ import {
   canArriveIn,
   deliverableTaskIds,
   dependableIn,
+  depsDistinct,
   dispatchableIn,
   doneIn,
   draftsIn,
@@ -232,6 +234,7 @@ export function cmdEnabled(config: Config, core: Core, cmd: Cmd): boolean {
       return (
         canArriveIn(config, core) &&
         cmd.deps.every((dep) => dependableIn(core).includes(dep)) &&
+        depsDistinct(cmd.deps) &&
         isValidProgram(config, cmd.program) &&
         projects(config).includes(cmd.project) &&
         wrapUpChoices(config).some((choice) => wrapUpEquals(choice, cmd.wrapUp))

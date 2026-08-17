@@ -105,6 +105,15 @@ export function dependableIn(core: Core): readonly TicketId[] {
   });
 }
 
+/**
+ * An arrival's dependencies name distinct tickets. The model draws them from a
+ * powerset, so a repeat is a value its `Set` has no counterpart for; the array
+ * that carries them here can hold one, and this is what refuses it.
+ */
+export function depsDistinct(deps: readonly TicketId[]): boolean {
+  return new Set(deps).size === deps.length;
+}
+
 /** The only authoring phase, hence the only releasable set. */
 export function draftsIn(core: Core): readonly TicketId[] {
   return ticketIds(core).filter((id) => ticketAt(core, id).phase === "PDraft");
