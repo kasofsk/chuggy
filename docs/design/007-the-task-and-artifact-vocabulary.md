@@ -1,10 +1,10 @@
 # The task and artifact vocabulary
 
-**Status: R4 LANDED** — the vocabulary, the stored declaration and the completion route are in the tree; kasofsk/chuggy#71 carries the task-type catalog and the install into evaluation, which are not.
+**Status: R5 LANDED** — the vocabulary, the stored declaration, the completion route, the task-type catalog and the install into evaluation are in the tree.
 
 ## A task type is deployment configuration
 
-A ticket names a task type, and the type names everything the fabric needs to run it: the work image and command, the evaluation image and command, resources, and the deadline and relaunch limit the model's trusted fabric axioms require. The catalog of types is configuration the composition root parses — never content of the project's own repository, because a spec a work branch could rewrite is work granting itself capability, which the authority split's node-local tier forbids. A repo-carried evaluation *command* is a different thing (`.chug/tasks/ci.sh` is the one this repo's tickets will name): it runs inside the sandbox the spawn granted and decides nothing about grants.
+What a type names, and why the catalog is configuration the composition root parses rather than content of the project's own repository, is stated where it is enforced: `src/adapters/k8sFabric/catalog.ts`. The forward pointer stays here: `.chug/tasks/ci.sh` is the repo-carried evaluation command this repo's own tickets will name, when the platform runs them.
 
 ## The install into evaluation
 
@@ -19,4 +19,4 @@ The first deployment fixes the work fan-out and every evaluation stage's fan-out
 | # | What lands | Depends on | Status |
 |---|---|---|---|
 | R4 | The stored declaration, the completion route, the per-job token | #69 | **Landed** |
-| R5 | The catalog, its parse, and the install into evaluation | #68 | Proposed |
+| R5 | The catalog, its parse, and the install into evaluation | #68, #70 | **Landed** |

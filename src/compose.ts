@@ -12,12 +12,12 @@
  * in the module graph.
  *
  * Running it is the deployment: open the one database, wire the executor
- * against the real desk, the stub fabric and whichever wrap-up performer the
- * environment names — git against a configured remote, or the recording stub
- * without one — then boot, and serve the face over HTTP. The real adapters
- * never meet: each is constructed here and handed the others as values, which
- * is what keeps `no-adapter-sees-another` a fact about the graph rather than
- * an intention.
+ * against the real desk and whichever fabric and wrap-up performer the
+ * environment names — Kubernetes Jobs and git against configured endpoints,
+ * or the recording stubs without them — then boot, and serve the face over
+ * HTTP. The real adapters never meet: each is constructed here and handed the
+ * others as values, which is what keeps `no-adapter-sees-another` a fact
+ * about the graph rather than an intention.
  *
  * IDENTITY IS CONFIGURED, NOT COMPILED IN. The issuer, the audience and the
  * key source arrive from the environment and are handed to the face as one
@@ -37,15 +37,19 @@ import { fabricStub } from "./adapters/fabricStub.ts";
 import { gitWrapUp, type GitWrapUp } from "./adapters/gitWrapUp/gitWrapUp.ts";
 import { httpApiArtifacts } from "./adapters/httpApi/artifacts.ts";
 import type { Identity } from "./adapters/httpApi/identity.ts";
+import { httpApiJobTokenMint } from "./adapters/httpApi/jobToken.ts";
 import { httpApi } from "./adapters/httpApi/server.ts";
+import { k8sFabric, type K8sFabric } from "./adapters/k8sFabric/k8sFabric.ts";
 import { registrySqlite } from "./adapters/registrySqlite.ts";
 import { sqliteJournal } from "./adapters/sqliteJournal.ts";
 import { wrapUpStub } from "./adapters/wrapUpStub.ts";
 import type { Config } from "./domain/config.ts";
 import { budgeted, reworkBudgetOf } from "./domain/pricing.ts";
 import type { Executor } from "./interpreter/executor.ts";
+import type { JobTokenMint } from "./interpreter/jobToken.ts";
 import type {
   DeskPort,
+  FabricPort,
   JournalStore,
   WrapUpPort,
 } from "./interpreter/ports.ts";
@@ -158,17 +162,54 @@ function composeWrapUp(
   });
 }
 
-/** Wires the executor: the journal store and the real desk on the one database, the stub fabric, and the handed performer. */
+/**
+ * The fabric this deployment runs: Kubernetes Jobs against the configured API,
+ * or nothing — the caller falls back to the stub — so a deployment with no
+ * cluster keeps working unchanged.
+ */
+function composeFabric(
+  store: JournalStore,
+  registry: Registry,
+  mint: JobTokenMint,
+  db: DatabaseSync,
+): K8sFabric | undefined {
+  const apiBase = composeSetting("CHUGGY_FABRIC_API_BASE");
+  if (apiBase === undefined) return undefined;
+  const bearerTokenPath = composeSetting("CHUGGY_FABRIC_TOKEN_FILE");
+  return k8sFabric({
+    config: deployment,
+    load: () => store.load(),
+    annexes: () => registry.annexes(),
+    mint,
+    db,
+    catalogPath: composeRequired(
+      "CHUGGY_FABRIC_CATALOG",
+      "a fabric with no task-type catalog can run nothing",
+    ),
+    api: {
+      base: apiBase,
+      namespace: composeSetting("CHUGGY_FABRIC_NAMESPACE") ?? "default",
+      bearerTokenPath,
+    },
+    completionUrl: composeRequired(
+      "CHUGGY_COMPLETION_URL",
+      "a job that cannot reach the completion route can declare nothing",
+    ),
+  });
+}
+
+/** Wires the executor: the journal store and the real desk on the one database, and the handed fabric and performer. */
 function compose(
   config: Config,
   store: JournalStore,
   desk: DeskPort,
   wrapUp: WrapUpPort,
+  fabric: FabricPort,
 ): Executor {
   return {
     config,
     store,
-    ports: { fabric: fabricStub(), desk, wrapUp },
+    ports: { fabric, desk, wrapUp },
   };
 }
 
@@ -193,10 +234,23 @@ const desk = deskEvents(database);
 const registry = registrySqlite(database);
 const artifacts = httpApiArtifacts(database);
 const performer = composeWrapUp(store, database);
-const executor = compose(deployment, store, desk, performer ?? wrapUpStub());
+const fabric = composeFabric(
+  store,
+  registry,
+  httpApiJobTokenMint(jobSecret),
+  database,
+);
+const executor = compose(
+  deployment,
+  store,
+  desk,
+  performer ?? wrapUpStub(),
+  fabric ?? fabricStub(),
+);
 const booted = await boot(executor);
 const driven = drive(executor, composeWakeAfter, booted);
 performer?.bindInbound(driven);
+fabric?.bindInbound(driven);
 
 await composeBootstrapOperator(registry, adminSubject);
 
