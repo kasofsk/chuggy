@@ -103,12 +103,17 @@ if [ -n "$staged" ]; then
 fi
 
 elapsed=$(( $(date +%s) - started ))
+# The account is both counts; the verdict is the stricter of them. Reporting
+# only the count that set the exit code sends an author to fix the missing gate
+# with the rejection still standing behind it.
+if [ "$rejected" -gt 0 ]; then
+	echo "pre-commit: ${rejected} gate(s) rejected this commit (${elapsed}s)"
+fi
 if [ "$unrunnable" -gt 0 ]; then
 	echo "pre-commit: ${unrunnable} gate(s) named but not runnable (${elapsed}s)"
 	exit 2
 fi
 if [ "$rejected" -gt 0 ]; then
-	echo "pre-commit: ${rejected} gate(s) rejected this commit (${elapsed}s)"
 	exit 1
 fi
 echo "pre-commit: clean (${elapsed}s)"
