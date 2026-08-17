@@ -1,6 +1,0 @@
-# Provider binaries and any state that reaches a working directory. State lives
-# in the bucket the backend names; a copy here is a second writer.
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfvars

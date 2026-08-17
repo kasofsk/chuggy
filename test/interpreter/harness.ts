@@ -4,9 +4,8 @@
  * THE WITNESS IS ON THE STORE, NOT ON THE PORTS. Journal-before-effect is a
  * claim about what the world had been told at the moment an entry became
  * durable, and the store is the one place that moment exists. Wrapping it costs
- * one face where wrapping the ports would cost every method of every one, and
- * the sample it takes — how much of the world had heard anything — is all the
- * claim needs.
+ * four methods where wrapping both port faces would cost eight, and the sample
+ * it takes — how much of the world had heard anything — is all the claim needs.
  *
  * THE TWO READINGS ARE DELIVERIES AND HOLDINGS. A world absorbs when a second
  * delivery of one emission is more arrivals and no more holdings; `absorbed`
@@ -21,7 +20,6 @@ import {
   journalStoreStub,
   type JournalStoreStub,
 } from "../../src/adapters/journalStoreStub.ts";
-import { wrapUpStub, type WrapUpStub } from "../../src/adapters/wrapUpStub.ts";
 import type { Config } from "../../src/domain/config.ts";
 import {
   drainPlan,
@@ -36,25 +34,7 @@ export interface Wiring {
   readonly store: JournalStoreStub;
   readonly desk: DeskStub;
   readonly fabric: FabricStub;
-  readonly wrapUp: WrapUpStub;
   readonly witness: readonly number[];
-}
-
-/**
- * The sample the witness takes, at emission grain to match the schedule's
- * `Emit` steps: a revocation is two port calls under one emission, and only
- * its desk row — the pair's closing half — is counted. That leaves the
- * opening half unwitnessed between `cancelTasks` resolving and the desk row
- * landing, a blind spot stated rather than claimed away — no append can reach
- * it today, because the drain awaits both halves and the stubs resolve
- * synchronously.
- */
-function wiringSample(
-  desk: DeskStub,
-  fabric: FabricStub,
-  wrapUp: WrapUpStub,
-): number {
-  return desk.deliveries.length + fabric.requests.length + wrapUp.handed.length;
 }
 
 /** The executor against fresh stubs, with a store that samples the world before each append. */
@@ -62,11 +42,10 @@ export function wiring(config: Config): Wiring {
   const store = journalStoreStub();
   const desk = deskStub();
   const fabric = fabricStub();
-  const wrapUp = wrapUpStub();
   const witness: number[] = [];
   const sampled: JournalStore = {
     append: async (entry) => {
-      witness.push(wiringSample(desk, fabric, wrapUp));
+      witness.push(desk.deliveries.length + fabric.requests.length);
       await store.append(entry);
     },
     load: () => store.load(),
@@ -74,11 +53,10 @@ export function wiring(config: Config): Wiring {
     saveCursor: (applied) => store.saveCursor(applied),
   };
   return {
-    executor: { config, store: sampled, ports: { fabric, desk, wrapUp } },
+    executor: { config, store: sampled, ports: { fabric, desk } },
     store,
     desk,
     fabric,
-    wrapUp,
     witness,
   };
 }
@@ -138,19 +116,11 @@ export interface Reading {
   readonly held: number;
 }
 
-/** The reading of a wired world, every port face together, at delivery grain. */
+/** The reading of a wired world, both ports together. */
 export function reading(wired: Wiring): Reading {
   return {
-    deliveries:
-      wired.desk.deliveries.length +
-      wired.fabric.requests.length +
-      wired.fabric.cancellations.length +
-      wired.wrapUp.handed.length,
-    held:
-      wired.desk.board.size +
-      wired.fabric.running.size +
-      wired.fabric.withdrawn.size +
-      wired.wrapUp.held.size,
+    deliveries: wired.desk.deliveries.length + wired.fabric.requests.length,
+    held: wired.desk.board.size + wired.fabric.running.size,
   };
 }
 

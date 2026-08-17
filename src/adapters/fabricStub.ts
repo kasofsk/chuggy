@@ -24,25 +24,16 @@ export interface FabricLaunch {
   readonly emission: Emission;
 }
 
-/**
- * The fabric with every reading exposed: what is running, what it was asked
- * for, and what was withdrawn. A withdrawal is recorded rather than acted on —
- * deleting launches would be simulating a cluster, and what a suite reads off a
- * stub is what the fabric was told.
- */
+/** The fabric with both readings exposed: what is running, and what it was asked for. */
 export interface FabricStub extends FabricPort {
   readonly running: ReadonlyMap<string, FabricLaunch>;
   readonly requests: readonly FabricLaunch[];
-  readonly withdrawn: ReadonlyMap<string, Emission>;
-  readonly cancellations: readonly Emission[];
 }
 
 /** A fresh fabric: nothing running, and nothing asked of it yet. */
 export function fabricStub(): FabricStub {
   const running = new Map<string, FabricLaunch>();
   const requests: FabricLaunch[] = [];
-  const withdrawn = new Map<string, Emission>();
-  const cancellations: Emission[] = [];
   const launch = (set: FabricSet, emission: Emission): Promise<void> => {
     const asked: FabricLaunch = { set, emission };
     requests.push(asked);
@@ -52,14 +43,7 @@ export function fabricStub(): FabricStub {
   return {
     running,
     requests,
-    withdrawn,
-    cancellations,
     spawnWorkTasks: (emission) => launch("Work", emission),
     spawnEvalTasks: (emission) => launch("Eval", emission),
-    cancelTasks: (emission) => {
-      cancellations.push(emission);
-      withdrawn.set(emissionKey(emission), emission);
-      return Promise.resolve();
-    },
   };
 }

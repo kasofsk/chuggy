@@ -158,7 +158,7 @@ const entrySchema = z.object({
 const journalSchema = z.array(entrySchema).readonly();
 
 /** Assignable in both directions, or `never` — and `never` is what fails to compile below. */
-export type Mirrors<Left, Right> = [Left] extends [Right]
+type Mirrors<Left, Right> = [Left] extends [Right]
   ? [Right] extends [Left]
     ? true
     : never
@@ -175,8 +175,8 @@ export type Parsed<Value> =
   | { readonly parsed: "Ok"; readonly value: Value }
   | { readonly parsed: "Refused"; readonly why: string };
 
-/** Renders the schema's complaint as one line, so the library's own error type stops at the wire layer. */
-export function parseRefusal(error: z.ZodError): string {
+/** Renders the schema's complaint as one line, so the library's own error type stops at this module. */
+function parseRefusal(error: z.ZodError): string {
   return error.issues
     .map((issue) => {
       const at = issue.path.map((key) => String(key)).join(".");
