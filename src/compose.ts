@@ -12,11 +12,12 @@
  * in the module graph.
  *
  * Running it is the deployment: open the one database, wire the executor
- * against the real desk and the stub fabric, boot, and serve the face over
- * HTTP. The three real adapters never meet — the desk's own store, the
- * registry and the HTTP face are constructed here and handed to each other as
- * values, which is what keeps `no-adapter-sees-another` a fact about the graph
- * rather than an intention.
+ * against the real desk, the stub fabric and whichever wrap-up performer the
+ * environment names — git against a configured remote, or the recording stub
+ * without one — then boot, and serve the face over HTTP. The real adapters
+ * never meet: each is constructed here and handed the others as values, which
+ * is what keeps `no-adapter-sees-another` a fact about the graph rather than
+ * an intention.
  *
  * IDENTITY IS CONFIGURED, NOT COMPILED IN. The issuer, the audience and the
  * key source arrive from the environment and are handed to the face as one
@@ -33,6 +34,7 @@ import { createRemoteJWKSet } from "jose";
 
 import { deskEvents } from "./adapters/deskEvents.ts";
 import { fabricStub } from "./adapters/fabricStub.ts";
+import { gitWrapUp, type GitWrapUp } from "./adapters/gitWrapUp/gitWrapUp.ts";
 import type { Identity } from "./adapters/httpApi/identity.ts";
 import { httpApi } from "./adapters/httpApi/server.ts";
 import { registrySqlite } from "./adapters/registrySqlite.ts";
@@ -41,7 +43,11 @@ import { wrapUpStub } from "./adapters/wrapUpStub.ts";
 import type { Config } from "./domain/config.ts";
 import { budgeted, reworkBudgetOf } from "./domain/pricing.ts";
 import type { Executor } from "./interpreter/executor.ts";
-import type { DeskPort } from "./interpreter/ports.ts";
+import type {
+  DeskPort,
+  JournalStore,
+  WrapUpPort,
+} from "./interpreter/ports.ts";
 import type { Registry } from "./interpreter/registry.ts";
 import { boot } from "./runtime/boot.ts";
 import { drive, type WakeAfter } from "./runtime/drive.ts";
@@ -117,12 +123,51 @@ const composeWakeAfter: WakeAfter = (delayMs, wake) => {
   setTimeout(() => void wake(), delayMs);
 };
 
-/** Wires the executor: the SQLite journal and the real desk on the one database, and the stub fabric and performer. */
-function compose(config: Config, db: DatabaseSync, desk: DeskPort): Executor {
+/** The machine's committer identity when the environment names none. */
+const composeGitIdentityDefault = { name: "chuggy", email: "chuggy@localhost" };
+
+/**
+ * The wrap-up performer this deployment runs: git against the configured
+ * remote, or nothing — the caller falls back to the stub — so a deployment
+ * with no repository keeps working unchanged.
+ */
+function composeWrapUp(
+  store: JournalStore,
+  db: DatabaseSync,
+): GitWrapUp | undefined {
+  const remote = composeSetting("CHUGGY_GIT_REMOTE");
+  if (remote === undefined) return undefined;
+  return gitWrapUp({
+    config: deployment,
+    store,
+    db,
+    remote,
+    scratchDirectory: composeRequired(
+      "CHUGGY_GIT_SCRATCH_DIR",
+      "a scratch mirror needs a volume to live on",
+    ),
+    identity: {
+      name:
+        composeSetting("CHUGGY_GIT_IDENT_NAME") ??
+        composeGitIdentityDefault.name,
+      email:
+        composeSetting("CHUGGY_GIT_IDENT_EMAIL") ??
+        composeGitIdentityDefault.email,
+    },
+  });
+}
+
+/** Wires the executor: the journal store and the real desk on the one database, the stub fabric, and the handed performer. */
+function compose(
+  config: Config,
+  store: JournalStore,
+  desk: DeskPort,
+  wrapUp: WrapUpPort,
+): Executor {
   return {
     config,
-    store: sqliteJournal(db),
-    ports: { fabric: fabricStub(), desk, wrapUp: wrapUpStub() },
+    store,
+    ports: { fabric: fabricStub(), desk, wrapUp },
   };
 }
 
@@ -138,11 +183,14 @@ const adminSubject = composeRequired(
 const listenPort = composePort("CHUGGY_PORT");
 
 const database = new DatabaseSync(journalPath);
+const store = sqliteJournal(database);
 const desk = deskEvents(database);
 const registry = registrySqlite(database);
-const executor = compose(deployment, database, desk);
+const performer = composeWrapUp(store, database);
+const executor = compose(deployment, store, desk, performer ?? wrapUpStub());
 const booted = await boot(executor);
 const driven = drive(executor, composeWakeAfter, booted);
+performer?.bindInbound(driven);
 
 await composeBootstrapOperator(registry, adminSubject);
 
