@@ -6,6 +6,10 @@
 # not to block a commit the full check would accept, and it is the behaviour a
 # well-meaning edit is most likely to "fix" into a rejection.
 #
+# Its boundary is the case after it: a gate the hook names and cannot find
+# stops the commit, because that is a claim about the tree rather than about
+# the machine the hook happens to be running on.
+#
 # Run:  .githooks/pre-commit.test.sh
 set -eu
 
@@ -15,12 +19,22 @@ SUT="$HERE/pre-commit"
 
 R="$WORK/repo"
 
-stub_repo() { # <doc-lint exit>
-	rm -rf "$R"
+# The hook's roster is the gates it calls, so the fixture reads it off the hook
+# instead of keeping a list that would drift out of step with it.
+hook_gates() { grep -o '\./\.chug/tasks/[a-z-]*\.sh' "$SUT" | sed 's|.*/||; s|\.sh$||'; }
+
+if [ -z "$(hook_gates)" ]; then
+	echo "pre-commit.test.sh: no gate calls found in $SUT; the fixture would stub nothing"
+	exit 2
+fi
+
+stub_repo() { # <doc-lint exit> — every gate the hook names, clean but doc-lint
+	fresh_repo "$R"
 	mkdir -p "$R/.chug/tasks"
-	git -C "$R" init -q -b main
-	git -C "$R" config user.email t@example.com
-	git -C "$R" config user.name t
+	for gate in $(hook_gates); do
+		printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/$gate.sh"
+		chmod +x "$R/.chug/tasks/$gate.sh"
+	done
 	printf '#!/bin/sh\necho stub doc-lint spoke\nexit %s\n' "$1" > "$R/.chug/tasks/doc-lint.sh"
 	chmod +x "$R/.chug/tasks/doc-lint.sh"
 	git -C "$R" add -A
@@ -59,14 +73,23 @@ run_hook
 check "a merge in progress skips the hook" 0 "$RC" "MERGE_HEAD present"
 rm -f "$R/.git/MERGE_HEAD"
 
-# Gates land over time, and the hook must work in a repo without all of them.
-rm -rf "$R"
-mkdir -p "$R/.chug/tasks"
-git -C "$R" init -q -b main
-git -C "$R" config user.email t@example.com
-git -C "$R" config user.name t
+# A gate the hook names but the tree does not carry stops the commit, where the
+# case above does not: a gate that ran and said it could not is describing the
+# machine, and this is describing the tree. Guarding the call with `[ -x ]`
+# made a deleted gate and a clean one print the same line.
+stub_repo 0
+rm -f "$R/.chug/tasks/check-gates.sh"
+git -C "$R" add -A
 run_hook
-check "an absent gate is skipped, not an error" 0 "$RC" "clean"
+check "a missing named gate stops the commit" 2 "$RC" "check-gates.sh is missing"
+check "the count of unrunnable gates is reported" 2 "$RC" "1 gate(s) named but not runnable"
+
+# The half a diff hides in a mode line.
+stub_repo 0
+chmod -x "$R/.chug/tasks/check-comments.sh"
+git -C "$R" add -A
+run_hook
+check "a non-executable named gate stops the commit" 2 "$RC" "check-comments.sh is not executable"
 
 # Outside a git checkout the hook fails OPEN. It is not a gate of record;
 # `just check` is, and it fails closed on the same condition.

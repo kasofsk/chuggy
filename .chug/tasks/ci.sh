@@ -11,6 +11,12 @@
 # script keeps the distinction all the way to its own exit. A gate that could
 # not run is a failure here, reported under its own heading.
 #
+# THE CALL IS THE ROSTER. A gate named below must exist and be executable;
+# absent or unexecutable, it is a could-not-run like any other. A gate that
+# belongs to a later stage is left unnamed rather than named and guarded, so
+# that "not part of this run" and "should have run and was not there" cannot
+# print the same.
+#
 # Env:
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
 #                                 suites themselves, so ci.test.sh cannot
@@ -34,6 +40,12 @@ run_gate() { # <label> <script> [args...]
 	label="$1"
 	shift
 	printf '\n--- %s\n' "$label"
+	if [ ! -x "$1" ]; then
+		if [ -e "$1" ]; then why="is not executable"; else why="is missing"; fi
+		echo "ci: LINTER ERROR — $1 $why; this is not a pass"
+		errored=$((errored + 1))
+		return 0
+	fi
 	set +e
 	"$@"
 	rc=$?
@@ -55,33 +67,13 @@ run_gate() { # <label> <script> [args...]
 
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 
-if [ -x ./.chug/tasks/check-figures.sh ]; then
-	run_gate "check-figures" ./.chug/tasks/check-figures.sh
-fi
-
-if [ -x ./.chug/tasks/check-paths.sh ]; then
-	run_gate "check-paths" ./.chug/tasks/check-paths.sh
-fi
-
-if [ -x ./.chug/tasks/check-shell-quoting.sh ]; then
-	run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
-fi
-
-if [ -x ./.chug/tasks/check-duplication.sh ]; then
-	run_gate "check-duplication" ./.chug/tasks/check-duplication.sh
-fi
-
-if [ -x ./.chug/tasks/check-gates.sh ]; then
-	run_gate "check-gates" ./.chug/tasks/check-gates.sh
-fi
-
-if [ -x ./.chug/tasks/check-comments.sh ]; then
-	run_gate "check-comments" ./.chug/tasks/check-comments.sh
-fi
-
-if [ -x ./.chug/tasks/check-knowledge.sh ]; then
-	run_gate "check-knowledge" ./.chug/tasks/check-knowledge.sh
-fi
+run_gate "check-figures" ./.chug/tasks/check-figures.sh
+run_gate "check-paths" ./.chug/tasks/check-paths.sh
+run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
+run_gate "check-duplication" ./.chug/tasks/check-duplication.sh
+run_gate "check-gates" ./.chug/tasks/check-gates.sh
+run_gate "check-comments" ./.chug/tasks/check-comments.sh
+run_gate "check-knowledge" ./.chug/tasks/check-knowledge.sh
 
 # --- Shell suites ------------------------------------------------------------
 # The gates' own tests. Discovery is a glob over tracked files, so adding a
@@ -156,31 +148,20 @@ fi
 
 # --- The TypeScript toolchain ------------------------------------------------
 
-if [ -x ./.chug/tasks/check-boundaries.sh ]; then
-	run_gate "check-boundaries" ./.chug/tasks/check-boundaries.sh
-fi
-
-if [ -x ./.chug/tasks/check-source.sh ]; then
-	run_gate "check-source" ./.chug/tasks/check-source.sh
-fi
+run_gate "check-boundaries" ./.chug/tasks/check-boundaries.sh
+run_gate "check-source" ./.chug/tasks/check-source.sh
 
 # --- The corpus --------------------------------------------------------------
 
-if [ -x ./.chug/tasks/check-conformance.sh ]; then
-	run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
-fi
+run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
 
 # --- The randomized walk -----------------------------------------------------
 
-if [ -x ./.chug/tasks/check-random.sh ]; then
-	run_gate "check-random" ./.chug/tasks/check-random.sh
-fi
+run_gate "check-random" ./.chug/tasks/check-random.sh
 
 # --- The model ---------------------------------------------------------------
 
-if [ -x ./.chug/tasks/check-model.sh ]; then
-	run_gate "check-model" ./.chug/tasks/check-model.sh
-fi
+run_gate "check-model" ./.chug/tasks/check-model.sh
 
 # --- Verdict -----------------------------------------------------------------
 
