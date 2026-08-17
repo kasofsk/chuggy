@@ -21,7 +21,11 @@ import {
   type JournalStoreStub,
 } from "../../src/adapters/journalStoreStub.ts";
 import type { Config } from "../../src/domain/config.ts";
-import { drainPlan, type Executor } from "../../src/interpreter/executor.ts";
+import {
+  drainPlan,
+  type DrainStep,
+  type Executor,
+} from "../../src/interpreter/executor.ts";
 import type { Emission, JournalStore } from "../../src/interpreter/ports.ts";
 
 /** A wired executor with its stubs kept in hand, and the sample taken at every append. */
@@ -81,6 +85,28 @@ export function journalPrecedesEffect(
   return witness.every(
     (told, index) =>
       told <= journalPrecedesEffectCeiling(config, journal, index),
+  );
+}
+
+/**
+ * Whether every emission a schedule asks for is closed by a later checkpoint of
+ * its own decision. The other order checkpoints the cursor past an entry whose
+ * effects have not happened, so a crash between the two loses them and the
+ * recovered cursor skips the entry that asked.
+ */
+export function emissionPrecedesCheckpoint(
+  plan: readonly DrainStep[],
+): boolean {
+  return plan.every(
+    (step, index) =>
+      step.step !== "Emit" ||
+      plan
+        .slice(index + 1)
+        .some(
+          (later) =>
+            later.step === "Checkpoint" &&
+            later.seq === step.planned.emission.seq,
+        ),
   );
 }
 

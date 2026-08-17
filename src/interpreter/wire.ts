@@ -149,14 +149,14 @@ const cmdSchema = z.discriminatedUnion("cmd", [
 ]);
 
 /** One stored row: the sequence number, the decision event, and the record the decision produced. */
-export const entrySchema = z.object({
+const entrySchema = z.object({
   seq: z.int().min(1),
   cmd: cmdSchema,
   rec: recordSchema,
 });
 
 /** A whole stored journal, in the order the store kept it. */
-export const journalSchema = z.array(entrySchema).readonly();
+const journalSchema = z.array(entrySchema).readonly();
 
 /** Assignable in both directions, or `never` — and `never` is what fails to compile below. */
 type Mirrors<Left, Right> = [Left] extends [Right]

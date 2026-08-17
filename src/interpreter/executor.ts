@@ -93,9 +93,10 @@ function executorReplayView(
 
 /**
  * Whether the store's journal is the one this actor holds, entry for entry. The
- * record is the grain because the record is what gets emitted, and
- * `journalLegalOn` has already tied each one to a decision this machine would
- * take at that prefix.
+ * record is the grain because the record is what gets emitted, `journalLegalOn`
+ * has already tied each one to a decision this machine would take at that
+ * prefix, and the replay the schedule is built from folds the stored `cmd`s
+ * rather than memory's, so a `cmd` the two disagreed about reaches no port.
  */
 function executorAgrees(
   stored: readonly Entry[],

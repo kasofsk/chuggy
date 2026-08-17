@@ -4,10 +4,12 @@
  *
  * EVERY CONTROL HERE IS PAIRED WITH SOMETHING THAT FAILS IT. The ordering check
  * is run once against the walk and once against a sample list carrying an
- * emission before its append; the absorption reading is taken of the walk and
- * of a world that files by arrival; the duplicate delivery is asserted to move
- * nothing beside the first delivery, which must move something. A check nothing
- * fails is not evidence, and this tree's defects have all been of that shape.
+ * emission before its append; the schedule is read for emissions closed by a
+ * later checkpoint, of the walk's own plan and of that plan with a checkpoint
+ * hoisted above the emissions it closes; the absorption reading is taken of the
+ * walk and of a world that files by arrival; the duplicate delivery is asserted
+ * to move nothing beside the first delivery, which must move something. A check
+ * nothing fails is not evidence.
  *
  * The domain bundle and every refinement obligation are asserted either side of
  * every decision, by the same `assertStep` the crash-seam suites use, so the
@@ -42,7 +44,12 @@ import { fabricStub } from "../../src/adapters/fabricStub.ts";
 import { ticketAt } from "../../src/domain/core.ts";
 import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
 import { wExclusive } from "../../src/domain/wrapUp.ts";
-import { decide, drain, recover } from "../../src/interpreter/executor.ts";
+import {
+  decide,
+  drain,
+  drainPlan,
+  recover,
+} from "../../src/interpreter/executor.ts";
 import type { JournalStore } from "../../src/interpreter/ports.ts";
 import {
   assertStep,
@@ -52,6 +59,7 @@ import {
 import { id } from "../domain/fixtures.ts";
 import {
   absorbed,
+  emissionPrecedesCheckpoint,
   filingByArrival,
   journalPrecedesEffect,
   reading,
@@ -160,6 +168,34 @@ test("and the ordering check is one an emission before its append fails", async 
   assert.ok(
     !journalPrecedesEffect(config, state.journal, early),
     "a world told something before the first entry was durable must fail this",
+  );
+});
+
+test("every emission is scheduled before the checkpoint that closes its own decision", async () => {
+  const wired = wiring(config);
+  const state = await walkToCompletion(wired);
+  const plan = drainPlan(config, state.journal, 0);
+  assert.ok(
+    plan.some((step) => step.step === "Emit"),
+    "the schedule asks the world for nothing, so the check below reads nothing",
+  );
+  assert.ok(
+    emissionPrecedesCheckpoint(plan),
+    "a checkpoint scheduled before its own entry's emissions advances the cursor past effects a crash then loses for good",
+  );
+});
+
+test("and the scheduling check is one a checkpoint above its own emissions fails", async () => {
+  const wired = wiring(config);
+  const state = await walkToCompletion(wired);
+  const plan = drainPlan(config, state.journal, 0);
+  const closes = plan.findIndex((step) => step.step === "Checkpoint");
+  const closing = plan[closes];
+  assert.ok(closing !== undefined, "the schedule closes no entry to hoist");
+  const hoisted = [closing, ...plan.filter((_, index) => index !== closes)];
+  assert.ok(
+    !emissionPrecedesCheckpoint(hoisted),
+    "a decision whose cursor moves before its effects are performed must fail this",
   );
 });
 

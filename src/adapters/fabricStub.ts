@@ -2,11 +2,11 @@
  * The fabric, as a stub: it records the task fan-outs it was asked to run and
  * runs nothing.
  *
- * Recording is the whole of it, and that is the point of the slice — the fabric
- * runs work and decides nothing, so a stub that records is a fabric missing
- * only its compute. A launched set is keyed by `emissionKey`, because a second
- * delivery of one decision's fan-out must not be a second fan-out; that is the
- * assumption the model prices its no-double-spend obligation against.
+ * Recording is the whole of it: the fabric runs work and decides nothing, so a
+ * stub that records is a fabric missing only its compute. A launched set is
+ * keyed by `emissionKey`, because a second delivery of one decision's fan-out
+ * must not be a second fan-out; that is the assumption the model prices its
+ * no-double-spend obligation against.
  */
 
 import {
