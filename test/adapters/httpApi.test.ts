@@ -540,6 +540,37 @@ test("the registry is written by an operator alone", async (t) => {
   });
 });
 
+test("a credential grant is stored by an operator as references, never material", async (t) => {
+  const wired = httpApiWiring(t);
+  await httpApiAdmit(wired.registry);
+  const grant = {
+    path: "/api/users/credentials",
+    ...httpApiPosts({
+      subject: "author",
+      apiKeyRef: "projects/p/secrets/author-key/versions/latest",
+      gitName: "Ada",
+      gitEmail: "ada@example.test",
+    }),
+  };
+  const refused = await wired.route(await httpApiSigned("author", grant));
+  assert.equal(refused.status, 403);
+  const missing = await wired.route(
+    await httpApiSigned("operator", {
+      path: "/api/users/credentials",
+      ...httpApiPosts({ subject: "author" }),
+    }),
+  );
+  assert.equal(missing.status, 400);
+  const written = await wired.route(await httpApiSigned("operator", grant));
+  assert.equal(written.status, 200);
+  await wired.route(await httpApiSigned("author", httpApiArrives("a ticket")));
+  assert.deepEqual(await wired.registry.credentialsFor(asTicketId(1)), {
+    apiKeyRef: "projects/p/secrets/author-key/versions/latest",
+    gitName: "Ada",
+    gitEmail: "ada@example.test",
+  });
+});
+
 test("a title carrying markup renders as the text it is", async (t) => {
   const wired = httpApiWiring(t);
   await httpApiAdmit(wired.registry);

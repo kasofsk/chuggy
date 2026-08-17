@@ -1,10 +1,12 @@
 /**
  * The Jobs API as a fixture: a `node:http` server implementing exactly what
- * the thin client uses — create with a conflict on a duplicate name, list,
- * the chunked-lines watch stream, and delete by label — plus the scripting a
- * case needs to inject a drop, an expired watch, or a failing delete. It is a
- * fixture, not a simulation: nothing here transitions a Job on its own, and
- * every phase change is an event the case sends itself.
+ * the thin client uses — create with a conflict on a duplicate name and a uid
+ * stamped onto the stored instance, a read of one Job by name, Secret create
+ * with the same conflict, list, the chunked-lines watch stream, and delete by
+ * label — plus the scripting a case needs to inject a drop, an expired watch,
+ * or a failing delete. It is a fixture, not a simulation: nothing here
+ * transitions a Job on its own, and every phase change is an event the case
+ * sends itself.
  */
 
 import {
@@ -15,10 +17,14 @@ import {
 } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import type { FabricApiJob } from "../../src/adapters/k8sFabric/client.ts";
+import type {
+  FabricApiJob,
+  FabricApiSecret,
+} from "../../src/adapters/k8sFabric/client.ts";
 
-/** A stored Job as a case shapes it: what the client wrote, plus any status the case gave it. */
+/** A stored Job as a case shapes it: what the client wrote, the uid the store stamped, plus any status the case gave it. */
 export interface FakeStoredJob extends FabricApiJob {
+  readonly metadata: FabricApiJob["metadata"] & { readonly uid?: string };
   readonly status?: {
     readonly conditions?: readonly { type: string; status: string }[];
   };
@@ -41,6 +47,7 @@ export interface FakeKubernetesApi {
     readonly propagationPolicy: string | null;
   }[];
   jobs(): readonly FakeStoredJob[];
+  secrets(): readonly FabricApiSecret[];
   putJob(job: FakeStoredJob): void;
   clearJobs(): void;
   send(event: FakeWatchEvent): void;
@@ -53,6 +60,7 @@ export interface FakeKubernetesApi {
 interface FakeState {
   readonly server: Server;
   readonly jobs: Map<string, FakeStoredJob>;
+  readonly secrets: Map<string, FabricApiSecret>;
   readonly log: string[];
   readonly authorizations: (string | undefined)[];
   readonly created: FabricApiJob[];
@@ -106,10 +114,40 @@ function fakeCreate(
     });
     return;
   }
-  own.jobs.set(job.metadata.name, job);
+  const stored: FakeStoredJob = {
+    ...job,
+    metadata: { ...job.metadata, uid: `uid-${job.metadata.name}` },
+  };
+  own.jobs.set(job.metadata.name, stored);
   own.created.push(job);
   own.resourceVersion += 1;
-  fakeJson(response, 201, job);
+  fakeJson(response, 201, stored);
+}
+
+function fakeCreateSecret(
+  own: FakeState,
+  response: ServerResponse,
+  body: string,
+): void {
+  const secret = JSON.parse(body) as FabricApiSecret;
+  if (own.secrets.has(secret.metadata.name)) {
+    fakeJson(response, 409, {
+      kind: "Status",
+      reason: "AlreadyExists",
+      code: 409,
+    });
+    return;
+  }
+  own.secrets.set(secret.metadata.name, secret);
+  fakeJson(response, 201, secret);
+}
+
+/** The single Job a path names, or nothing when it addresses a collection. */
+function fakeJobNameIn(pathname: string): string | undefined {
+  const at = pathname.lastIndexOf("/jobs/");
+  if (at < 0) return undefined;
+  const name = pathname.slice(at + "/jobs/".length);
+  return name === "" ? undefined : name;
 }
 
 function fakeList(
@@ -160,8 +198,20 @@ async function fakeHandle(
   own.log.push(`${request.method ?? ""} ${url.pathname}${url.search}`);
   own.authorizations.push(request.headers.authorization);
   const selector = url.searchParams.get("labelSelector");
+  if (request.method === "POST" && url.pathname.endsWith("/secrets")) {
+    fakeCreateSecret(own, response, await fakeBody(request));
+    return;
+  }
   if (request.method === "POST") {
     fakeCreate(own, response, await fakeBody(request));
+    return;
+  }
+  const named = fakeJobNameIn(url.pathname);
+  if (request.method === "GET" && named !== undefined) {
+    const held = own.jobs.get(named);
+    if (held === undefined)
+      fakeJson(response, 404, { kind: "Status", code: 404 });
+    else fakeJson(response, 200, held);
     return;
   }
   if (request.method === "DELETE") {
@@ -185,6 +235,7 @@ export function fakeKubernetesApi(): Promise<FakeKubernetesApi> {
   const own: FakeState = {
     server: createServer(),
     jobs: new Map(),
+    secrets: new Map(),
     log: [],
     authorizations: [],
     created: [],
@@ -206,6 +257,7 @@ export function fakeKubernetesApi(): Promise<FakeKubernetesApi> {
         created: own.created,
         deletes: own.deletes,
         jobs: () => [...own.jobs.values()],
+        secrets: () => [...own.secrets.values()],
         putJob: (job) => {
           own.jobs.set(job.metadata.name, job);
           own.resourceVersion += 1;

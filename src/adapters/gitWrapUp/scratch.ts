@@ -43,15 +43,17 @@ interface ScratchRun {
 /** The oldest git whose `merge-tree` writes trees; the code below refuses anything older. */
 export const scratchGitVersionMin = { major: 2, minor: 38 };
 
-/** Runs git in the scratch, rejecting only when git itself could not run. */
+/** Runs git in the scratch, rejecting only when git itself could not run; a handed environment adds to the process's own. */
 function scratchGit(
   scratchDirectory: string,
   args: readonly string[],
+  env?: Readonly<Record<string, string>>,
 ): Promise<ScratchRun> {
   return new Promise((resolve, reject) => {
     execFile(
       "git",
       ["-C", scratchDirectory, ...args],
+      { env: env === undefined ? process.env : { ...process.env, ...env } },
       (failure, stdout, stderr) => {
         if (failure === null) {
           resolve({ code: 0, stdout, stderr });
@@ -69,8 +71,9 @@ function scratchGit(
 async function scratchGitOk(
   scratchDirectory: string,
   args: readonly string[],
+  env?: Readonly<Record<string, string>>,
 ): Promise<string> {
-  const ran = await scratchGit(scratchDirectory, args);
+  const ran = await scratchGit(scratchDirectory, args, env);
   if (ran.code !== 0) {
     throw new Error(
       `git ${args[0] ?? ""} exited ${String(ran.code)}: ${ran.stderr.trim()}`,
@@ -205,25 +208,31 @@ export async function scratchMergeTree(
   );
 }
 
-/** Writes the merge commit for an already-written tree, attributed to the handed identity. */
+/** Writes the merge commit for an already-written tree, attributing author and committer separately through git's own environment. */
 export async function scratchCommitMerge(
   scratchDirectory: string,
-  identity: GitIdentity,
+  author: GitIdentity,
+  committer: GitIdentity,
   tree: string,
   parents: readonly string[],
   message: string,
 ): Promise<string> {
-  const written = await scratchGitOk(scratchDirectory, [
-    "-c",
-    `user.name=${identity.name}`,
-    "-c",
-    `user.email=${identity.email}`,
-    "commit-tree",
-    tree,
-    ...parents.flatMap((parent) => ["-p", parent]),
-    "-m",
-    message,
-  ]);
+  const written = await scratchGitOk(
+    scratchDirectory,
+    [
+      "commit-tree",
+      tree,
+      ...parents.flatMap((parent) => ["-p", parent]),
+      "-m",
+      message,
+    ],
+    {
+      GIT_AUTHOR_NAME: author.name,
+      GIT_AUTHOR_EMAIL: author.email,
+      GIT_COMMITTER_NAME: committer.name,
+      GIT_COMMITTER_EMAIL: committer.email,
+    },
+  );
   return written.trim();
 }
 

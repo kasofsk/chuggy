@@ -31,15 +31,19 @@
  * fails past the attempt — the conclusion's own write, the report's journal —
  * ends the chain loudly and the boot re-drive re-delivers.
  *
- * THE MERGE IS ATTRIBUTED TO THE MACHINE'S CONFIGURED IDENTITY, author and
- * committer both, until the registry holds git identities to name the
- * ticket's author with; nothing is signed, there being no key to sign with.
+ * THE MERGE'S AUTHOR IS THE TICKET AUTHOR'S GIT IDENTITY, read through the
+ * handed resolver at attempt time, and the committer stays the machine's. An
+ * author the registry holds no identity for leaves the machine authoring
+ * both: doc 011 scopes failing closed to the spawn, and a merge withheld
+ * over attribution would wedge machine work. Nothing is signed, there being
+ * no key to sign with.
  */
 
 import type { DatabaseSync } from "node:sqlite";
 
 import { assertNever } from "../../domain/assertNever.ts";
 import type { Config } from "../../domain/config.ts";
+import type { TicketId } from "../../domain/ids.ts";
 import type { WrapUpOutcome } from "../../domain/wrapUp.ts";
 import type { Inbound } from "../../interpreter/inbound.ts";
 import {
@@ -70,6 +74,9 @@ export interface GitWrapUpOptions {
   readonly remote: string;
   readonly scratchDirectory: string;
   readonly identity: GitIdentity;
+  /** The ticket author's git identity, read from configuration at attempt time; absent or answering nothing, the machine authors. */
+  readonly authorOf?:
+    ((ticket: TicketId) => Promise<GitIdentity | undefined>) | undefined;
   readonly retryDelaysMs?: readonly number[];
 }
 
@@ -142,8 +149,11 @@ async function gitWrapUpMergeOnce(
     case "MConflict":
       return { outcome: "WFailed", detail: merge.detail };
     case "MClean": {
+      const author =
+        (await own.options.authorOf?.(emission.ticket)) ?? identity;
       const sha = await scratchCommitMerge(
         scratchDirectory,
+        author,
         identity,
         merge.tree,
         [defaultTip, workTip],

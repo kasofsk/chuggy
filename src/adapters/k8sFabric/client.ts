@@ -1,6 +1,7 @@
 /**
- * The thin client over `fetch` against the Jobs API: one namespace, one
- * resource kind, a watch — and not the client library, whose informer
+ * The thin client over `fetch` against the API server: one namespace, the
+ * Jobs the fabric runs and the Secrets it writes beside them, a watch — and
+ * not the client library, whose informer
  * machinery this adapter replaces with a list-and-reconnect loop it can read.
  * Refutation trigger: a second watch-resync defect adopts the library, and the
  * dependency's justification writes itself.
@@ -33,11 +34,18 @@ export interface FabricApiOptions {
   readonly bearerTokenPath?: string | undefined;
 }
 
-/** One environment entry as the API takes it. */
-export interface FabricApiJobEnv {
-  readonly name: string;
-  readonly value: string;
-}
+/** One environment entry as the API takes it: a literal value, or a key read out of a named Secret. */
+export type FabricApiJobEnv =
+  | { readonly name: string; readonly value: string }
+  | {
+      readonly name: string;
+      readonly valueFrom: {
+        readonly secretKeyRef: {
+          readonly name: string;
+          readonly key: string;
+        };
+      };
+    };
 
 /** The one container a spawned Job runs. */
 export interface FabricApiContainer {
@@ -67,6 +75,32 @@ export interface FabricApiJob {
       };
     };
   };
+}
+
+/** How a Job create resolved: made, with the uid an owning Secret needs, or absorbed by the name. */
+export type FabricApiCreated =
+  | { readonly created: "Created"; readonly uid: string }
+  | { readonly created: "AlreadyExists" };
+
+/** The one owner a per-job Secret names: the Job instance whose collection collects the material. */
+export interface FabricApiOwner {
+  readonly apiVersion: "batch/v1";
+  readonly kind: "Job";
+  readonly name: string;
+  readonly uid: string;
+}
+
+/** The Secret this adapter writes beside a Job: name-keyed absorption, owned by the Job, material under `stringData` so the server owns the encoding. */
+export interface FabricApiSecret {
+  readonly apiVersion: "v1";
+  readonly kind: "Secret";
+  readonly metadata: {
+    readonly name: string;
+    readonly labels: Readonly<Record<string, string>>;
+    readonly ownerReferences: readonly [FabricApiOwner];
+  };
+  readonly type: "Opaque";
+  readonly stringData: Readonly<Record<string, string>>;
 }
 
 /** One status condition as read back, untranslated. */
@@ -123,6 +157,10 @@ const fabricApiEventSchema = z.object({
 
 const fabricApiErrorSchema = z.object({ code: z.number().optional() });
 
+const fabricApiUidSchema = z.object({
+  metadata: z.object({ uid: z.string() }),
+});
+
 /** Flattens one raw Job into the view, absent halves read as empty. */
 function fabricApiViewOf(
   raw: z.infer<typeof fabricApiJobRawSchema>,
@@ -157,27 +195,87 @@ function fabricApiHeaders(
   return { authorization: `Bearer ${token}` };
 }
 
-/** Posts one Job; a name collision is the absorption the naming buys, answered as a value. */
-export async function fabricApiCreateJob(
+/** Posts one object to a collection; a name collision is the absorption the naming buys, answered as a value. */
+async function fabricApiPost(
   options: FabricApiOptions,
-  job: FabricApiJob,
-): Promise<"Created" | "AlreadyExists"> {
-  const response = await fetch(fabricApiUrl(options, {}), {
+  url: string,
+  payload: unknown,
+  named: string,
+): Promise<{ readonly absorbed: boolean; readonly body: string }> {
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       ...fabricApiHeaders(options),
       "content-type": "application/json",
     },
-    body: JSON.stringify(job),
+    body: JSON.stringify(payload),
   });
   const body = await response.text();
-  if (response.status === 409) return "AlreadyExists";
+  if (response.status === 409) return { absorbed: true, body };
   if (!response.ok) {
     throw new Error(
-      `k8sFabric: creating ${job.metadata.name} answered ${String(response.status)} — ${body}`,
+      `k8sFabric: creating ${named} answered ${String(response.status)} — ${body}`,
     );
   }
-  return "Created";
+  return { absorbed: false, body };
+}
+
+/** The uid off an object the API answered, which is what ties an ownerReference to exactly this instance. */
+function fabricApiUidOf(body: string, named: string): string {
+  const parsed = fabricApiUidSchema.safeParse(JSON.parse(body));
+  if (!parsed.success) {
+    throw new Error(`k8sFabric: the API answered no uid for ${named}`);
+  }
+  return parsed.data.metadata.uid;
+}
+
+/** Posts one Job, answering the created instance's uid; a name collision is absorbed as a value. */
+export async function fabricApiCreateJob(
+  options: FabricApiOptions,
+  job: FabricApiJob,
+): Promise<FabricApiCreated> {
+  const posted = await fabricApiPost(
+    options,
+    fabricApiUrl(options, {}),
+    job,
+    job.metadata.name,
+  );
+  if (posted.absorbed) return { created: "AlreadyExists" };
+  return {
+    created: "Created",
+    uid: fabricApiUidOf(posted.body, job.metadata.name),
+  };
+}
+
+/** One Job's uid read back by name, for the absorbed create that still needs to own a Secret. */
+export async function fabricApiReadJobUid(
+  options: FabricApiOptions,
+  name: string,
+): Promise<string> {
+  const response = await fetch(`${fabricApiUrl(options, {})}/${name}`, {
+    headers: fabricApiHeaders(options),
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `k8sFabric: reading ${name} answered ${String(response.status)}`,
+    );
+  }
+  return fabricApiUidOf(body, name);
+}
+
+/** Posts one Secret to the core-group collection, absorbing a name collision exactly as a Job's is. */
+export async function fabricApiCreateSecret(
+  options: FabricApiOptions,
+  secret: FabricApiSecret,
+): Promise<"Created" | "AlreadyExists"> {
+  const posted = await fabricApiPost(
+    options,
+    `${options.base}/api/v1/namespaces/${options.namespace}/secrets`,
+    secret,
+    `secret ${secret.metadata.name}`,
+  );
+  return posted.absorbed ? "AlreadyExists" : "Created";
 }
 
 /** Lists every matching Job, with the resourceVersion a watch resumes from. */
