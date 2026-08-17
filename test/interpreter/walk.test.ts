@@ -27,7 +27,6 @@ import {
   jEvalReduce,
   jGateResolve,
   jRelease,
-  jRevoke,
   jTaskDone,
   jWorkReduce,
   type Cmd,
@@ -42,7 +41,6 @@ import {
 import { worldCompletions } from "../../src/actor/world.ts";
 import { deskStub } from "../../src/adapters/deskStub.ts";
 import { fabricStub } from "../../src/adapters/fabricStub.ts";
-import { wrapUpStub } from "../../src/adapters/wrapUpStub.ts";
 import { ticketAt } from "../../src/domain/core.ts";
 import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
 import { wExclusive } from "../../src/domain/wrapUp.ts";
@@ -126,7 +124,7 @@ test("one ticket reaches completion, and the world was told once for each decisi
   assert.equal(reading(wired).deliveries, reading(wired).held);
 });
 
-test("the desk and the wrap-up performer each hold their own effects, about the ticket its transition stepped", async () => {
+test("the desk holds one row per bookkeeping effect, each about the ticket its transition stepped", async () => {
   const wired = wiring(config);
   await walkToCompletion(wired);
   assert.deepEqual(
@@ -136,17 +134,9 @@ test("the desk and the wrap-up performer each hold their own effects, about the 
     ]),
     [
       ["CreateDraft", id(1)],
-      ["Complete", id(1)],
-    ],
-  );
-  assert.deepEqual(
-    [...wired.wrapUp.held.values()].map((note) => [
-      note.effect,
-      note.emission.ticket,
-    ]),
-    [
       ["EnqueueWrapUp", id(1)],
       ["OpenGate", id(1)],
+      ["Complete", id(1)],
     ],
   );
 });
@@ -245,14 +235,13 @@ test("a store journal of the right length but the wrong entries emits nothing ei
 test("a decision the store refuses reaches neither the world nor a state any caller holds", async () => {
   const desk = deskStub();
   const fabric = fabricStub();
-  const wrapUp = wrapUpStub();
   const refusing: JournalStore = {
     append: () => Promise.reject(new Error("the store took nothing")),
     load: () => Promise.resolve({ parsed: "Ok", value: [] }),
     loadCursor: () => Promise.resolve(0),
     saveCursor: () => Promise.resolve(),
   };
-  const executor = { config, store: refusing, ports: { fabric, desk, wrapUp } };
+  const executor = { config, store: refusing, ports: { fabric, desk } };
   const state = actorInit();
 
   await assert.rejects(
@@ -262,56 +251,7 @@ test("a decision the store refuses reaches neither the world nor a state any cal
   assert.equal(state.journal.length, 0);
   const after = await drain(executor, state);
   assert.equal(after.applied, 0);
-  assert.equal(
-    desk.deliveries.length + fabric.requests.length + wrapUp.handed.length,
-    0,
-  );
-});
-
-/** Two tickets, the second depending on the first, driven to the first's revocation mid-work. */
-async function walkToRevocation(wired: Wiring): Promise<ActorState> {
-  let state = await step(wired, actorInit(), arrival, "ticket-arrived");
-  state = await step(
-    wired,
-    state,
-    jArrive([id(1)], flatProgram, asProjectId(1), wExclusive(1)),
-    "ticket-arrived",
-  );
-  state = await step(wired, state, jRelease(id(1)), "ticket-released");
-  state = await step(wired, state, jDispatch(id(1)), "dispatch");
-  return step(wired, state, jRevoke(id(1)), "ticket-revoked");
-}
-
-test("a revocation withdraws the fabric's task set and parks the dependent on the desk", async () => {
-  const wired = wiring(config);
-  const state = await walkToRevocation(wired);
-
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PRevoked");
-  assert.equal(ticketAt(memoryCore(state), id(2)).phase, "PEscalated");
-
-  const withdrawal = [...wired.fabric.withdrawn.entries()].at(0);
-  assert.ok(withdrawal !== undefined, "the revocation withdrew nothing");
-  assert.equal(wired.fabric.cancellations.length, 1);
-  const [key, emission] = withdrawal;
-  assert.equal(emission.ticket, id(1));
-
-  assert.deepEqual(
-    wired.desk.board.get(key),
-    { effect: "Revoke", emission },
-    "the withdrawal and the desk's revocation are two deliveries of one emission",
-  );
-  assert.deepEqual(
-    [...wired.desk.board.values()].map((row) => [
-      row.effect,
-      row.emission.ticket,
-    ]),
-    [
-      ["CreateDraft", id(1)],
-      ["CreateDraft", id(2)],
-      ["Revoke", id(1)],
-      ["OpenHumanTask", id(2)],
-    ],
-  );
+  assert.equal(desk.deliveries.length + fabric.requests.length, 0);
 });
 
 test("a duplicate task completion is absorbed, and the first delivery is not", async () => {
@@ -353,32 +293,6 @@ test("a lost checkpoint re-delivers the whole prefix, and the world absorbs all 
   assert.equal(after.deliveries, before.deliveries * 2);
   assert.equal(worldCompletions(state, id(1)), 1);
   assertStep(config, state, "after the lost checkpoint");
-});
-
-test("a revocation re-delivered after a lost checkpoint is absorbed on both its legs", async () => {
-  const wired = wiring(config);
-  const revoked = await walkToRevocation(wired);
-  const before = reading(wired);
-  assert.equal(
-    wired.fabric.cancellations.length,
-    1,
-    "the walk withdrew nothing, so the reading below asks nothing of the withdrawn leg",
-  );
-
-  await wired.store.saveCursor(0);
-  let state = await recover(wired.executor);
-  assert.ok(
-    coreEquals(memoryCore(state), memoryCore(revoked)),
-    "recovery through the store and the parse rebuilt a different fleet",
-  );
-  state = await drain(wired.executor, state);
-
-  const after = reading(wired);
-  assert.ok(absorbed(before, after));
-  assert.equal(after.deliveries, before.deliveries * 2);
-  assert.equal(wired.fabric.cancellations.length, 2);
-  assert.equal(wired.fabric.withdrawn.size, 1);
-  assertStep(config, state, "after the revocation re-drain");
 });
 
 test("and the absorption reading is one a world filing by arrival fails", () => {

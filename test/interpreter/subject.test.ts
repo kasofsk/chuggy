@@ -25,7 +25,6 @@ import {
 } from "../../src/actor/state.ts";
 import { deskStub } from "../../src/adapters/deskStub.ts";
 import { fabricStub } from "../../src/adapters/fabricStub.ts";
-import { wrapUpStub } from "../../src/adapters/wrapUpStub.ts";
 import type { Core } from "../../src/domain/core.ts";
 import { allEffects, type Effect } from "../../src/domain/effect.ts";
 import { asProjectId, type TicketId } from "../../src/domain/ids.ts";
@@ -147,35 +146,25 @@ test("an arrival-labelled record of the wrong shape is refused rather than read 
   );
 });
 
-test("every effect this machine declares routes to the ports its constructor names, each at most once", async () => {
+test("every effect this machine declares routes to exactly one port method", async () => {
   const emission: Emission = { seq: 1, effectIndex: 0, ticket: id(1) };
   const routed: Record<Effect, string> = {} as Record<Effect, string>;
   for (const effect of allEffects) {
     const desk = deskStub();
     const fabric = fabricStub();
-    const wrapUp = wrapUpStub();
-    await perform({ desk, fabric, wrapUp }, { effect, emission });
-    const faces = [
-      ["desk", desk.deliveries.length],
-      ["fabric", fabric.requests.length + fabric.cancellations.length],
-      ["wrap-up", wrapUp.handed.length],
-    ] as const;
-    for (const [face, calls] of faces) {
-      assert.ok(calls <= 1, `${effect} reached ${face} ${String(calls)} times`);
-    }
-    routed[effect] = faces
-      .filter(([, calls]) => calls === 1)
-      .map(([face]) => face)
-      .join("+");
+    await perform({ desk, fabric }, { effect, emission });
+    const reached = desk.deliveries.length + fabric.requests.length;
+    assert.equal(reached, 1, `${effect} reached ${String(reached)} port calls`);
+    routed[effect] = desk.deliveries.length === 1 ? "desk" : "fabric";
   }
   assert.deepEqual(routed, {
     CreateDraft: "desk",
-    Revoke: "desk+fabric",
+    Revoke: "desk",
     OpenHumanTask: "desk",
     SpawnWorkTasks: "fabric",
     SpawnEvalTasks: "fabric",
-    EnqueueWrapUp: "wrap-up",
-    OpenGate: "wrap-up",
+    EnqueueWrapUp: "desk",
+    OpenGate: "desk",
     Complete: "desk",
   });
 });

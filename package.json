@@ -13,8 +13,7 @@
   },
   "type": "module",
   "scripts": {
-    "check": "./.chug/tasks/ci.sh",
-    "start": "node src/compose.ts"
+    "check": "./.chug/tasks/ci.sh"
   },
   "dependencies": {
     "zod": "^4.4.3"

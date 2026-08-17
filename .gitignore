@@ -8,7 +8,3 @@ node_modules/
 dist/
 coverage/
 .DS_Store
-
-# The entrypoint's default journal and its WAL siblings, written where the
-# process runs; a deployment names its own path instead.
-chuggy.sqlite*
