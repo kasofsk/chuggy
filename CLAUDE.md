@@ -14,7 +14,7 @@ A job orchestrator: tickets form a DAG, a single journaled actor drives each thr
 
 This file is the entry point: it routes to those three and holds the conventions none of them can.
 
-**The general standards came back as skills the tree declares rather than holds.** `.claude/settings.json` enables the `blessed-practices` plugins — `layering` and `domain-modelling` among them, the two that left when the reference pages went — and that file is the roster, so counting them means reading it. They are invoked through the Skill tool rather than read, so a reviewer cites one by name and an author is given the same file. The trade is worth stating: their content is versioned in `kasofsk/blessed-practices` and can move without a commit here, which a gate header cannot. That is the cost of not maintaining a second copy, and it is why the places above still carry everything that must be true of *this* tree — a skill states what good code looks like anywhere, never what is true here.
+**The general standards are skills rather than pages in this tree.** `.claude/settings.json` enables the `blessed-practices` plugins and is the roster. They are invoked through the Skill tool, so a reviewer cites one by name and an author is given the same file. Their content is versioned outside this tree and can move without a commit here, which is why the places above still carry everything that must be true of *this* tree — a skill states what good code looks like anywhere, never what is true here.
 
 ## Checks
 
@@ -31,11 +31,9 @@ just hooks          # git config core.hooksPath .githooks
 
 The pre-commit hook runs the fast subset. It needs that `git config` because git config is not tracked and nothing in a checkout can set it for you; `npm ci` is what turns `check-boundaries` and `check-source` from could-not-run into a verdict, and a could-not-run is not a pass.
 
-The skills need no such step, and the difference is the reason `.claude/settings.json` is tracked at all: a clone and a `git worktree` both come up with them already enabled, where an untracked settings file would leave a worktree silently without them. A machine that has never seen the `blessed-practices` marketplace fetches it on first use.
-
 Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
 slowest by far is `check-model.sh`, which is why it runs last and never in the
-hook. Every gate exits 0 clean, 1 on a finding, **2 when it could not run** — and 2 is not a pass. The sequencing lives in `.chug/tasks/ci.sh`; the justfile is a thin wrapper, and the hook calls the scripts directly because `just` may not be installed.
+hook. A gate exits 0 clean, 1 on a finding, **2 when it could not run** — and 2 is not a pass. Not every gate uses all three: `check-roster` has no finding state, because everything it can detect is the environment. The sequencing lives in `.chug/tasks/ci.sh`; the justfile is a thin wrapper, and the hook calls the scripts directly because `just` may not be installed.
 
 The source tree is layered, with the boundary between layers enforced rather than described: `src/domain/` is pure and reaches nothing outside itself, and each further layer arrives with the slice that fills it and with its own rule in `.dependency-cruiser.cjs`. Those rules are the whole boundary, and `check-boundaries.sh` is what holds the tree to them, over the module graph rather than per file, because the shape that breaks the rule is a helper nobody would call a decider sitting between a decider and the filesystem.
 

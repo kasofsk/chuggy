@@ -3,13 +3,10 @@
 # pre-commit hook calls the individual gates directly — the sequencing has one
 # definition, here.
 #
-# ORDERING: the pure-shell gates first, then the suites, then the gates that
-# need the TypeScript toolchain; the model gate last, being by far the slowest.
-# Within a stage the order is not a claim about cost.
-#
-# EACH GATE IS THREE-VALUED — 0 clean, 1 finding, 2 could-not-run — and this
-# script keeps the distinction all the way to its own exit. A gate that could
-# not run is a failure here, reported under its own heading.
+# THE PROTOCOL IS 0 clean, 1 finding, 2 could-not-run, and this script keeps the
+# distinction all the way to its own exit. Not every gate uses all three —
+# check-roster has no finding state — and a gate that could not run is a failure
+# here, reported under its own heading.
 #
 # THE CALL IS THE ROSTER. A gate named below must exist and be executable;
 # absent or unexecutable, it is a could-not-run like any other. A gate that
@@ -63,8 +60,6 @@ run_gate() { # <label> <script> [args...]
 	esac
 }
 
-# --- Pure-shell gates --------------------------------------------------------
-
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 
 run_gate "check-figures" ./.chug/tasks/check-figures.sh
@@ -74,10 +69,7 @@ run_gate "check-duplication" ./.chug/tasks/check-duplication.sh
 run_gate "check-gates" ./.chug/tasks/check-gates.sh
 run_gate "check-comments" ./.chug/tasks/check-comments.sh
 run_gate "check-knowledge" ./.chug/tasks/check-knowledge.sh
-
-# --- Shell suites ------------------------------------------------------------
-# The gates' own tests. Discovery is a glob over tracked files, so adding a
-# suite is enough; a glob matching nothing is a failure, not a quiet pass.
+run_gate "check-roster" ./.chug/tasks/check-roster.sh
 
 if [ "${CHUG_CI_SHELL_SUITES:-1}" = "0" ]; then
 	printf '\n--- shell suites: SKIPPED (CHUG_CI_SHELL_SUITES=0)\n'
@@ -146,24 +138,14 @@ else
 	fi
 fi
 
-# --- The TypeScript toolchain ------------------------------------------------
-
 run_gate "check-boundaries" ./.chug/tasks/check-boundaries.sh
 run_gate "check-source" ./.chug/tasks/check-source.sh
 
-# --- The corpus --------------------------------------------------------------
-
 run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
-
-# --- The randomized walk -----------------------------------------------------
 
 run_gate "check-random" ./.chug/tasks/check-random.sh
 
-# --- The model ---------------------------------------------------------------
-
 run_gate "check-model" ./.chug/tasks/check-model.sh
-
-# --- Verdict -----------------------------------------------------------------
 
 printf '\n'
 if [ "$errored" -gt 0 ]; then
