@@ -78,9 +78,10 @@ stage "  typecheck" ./node_modules/.bin/tsc --noEmit
 stage "  lint     " ./node_modules/.bin/eslint .
 stage "  format   " ./node_modules/.bin/prettier --check --log-level warn .
 
-# The runner discovers its own suites, so a glob matching nothing would be a
-# silent pass; the discovery is checked first and separately.
-suites="$(git ls-files 'test/**/*.test.ts' 'test/*.test.ts' 2>/dev/null || true)"
+# The runner is handed its list rather than discovering one, and an empty
+# list would send it back to whole-tree discovery; the glob is checked first
+# and separately.
+suites="$(git ls-files '*.test.ts' 2>/dev/null || true)"
 if [ -z "$suites" ]; then
 	echo "check-source: LINTER ERROR — no tracked *.test.ts; the suite glob matched nothing"
 	exit 2

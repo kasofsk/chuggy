@@ -50,10 +50,11 @@ run_gate() { # <label> <script> [<arg>...]
 	script="$2"
 	shift 2
 	if [ ! -x "$script" ]; then
-		# Unlike the rc=2 branch below, this one blocks. A gate that ran and
-		# reported it could not run is describing the machine, which differs
-		# per developer; a gate that is not there is describing the tree,
-		# which does not.
+		# Unlike the rc=2 branch below, this one blocks: a named gate that
+		# is not there, or that this checkout cannot run, is what
+		# `just check` will find on the same tree. A gate that ran and
+		# answered could-not-run is describing the machine, which differs
+		# per developer and is what `just check` settles.
 		if [ -e "$script" ]; then why="is not executable"; else why="is missing"; fi
 		echo "pre-commit: $script $why — cannot run"
 		unrunnable=$((unrunnable + 1))

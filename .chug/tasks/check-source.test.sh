@@ -233,12 +233,17 @@ failing_suite "$R/test/domain/failing.test.ts" "this one is meant to fail"
 # in none at all.
 mkdir -p "$R/test/golden"
 failing_suite "$R/test/golden/coverage.test.ts" "this golden one is meant to fail"
+# The discovery is the whole tree, not test/: a suite beside its source runs
+# here or nowhere.
+mkdir -p "$R/src/actor"
+failing_suite "$R/src/actor/stray.test.ts" "this stray one is meant to fail"
 seal
 
 check "house rule 6: unformatted source is a finding" 1 "$RC" "Code style issues found"
 check "a type error is a finding" 1 "$RC" "not assignable"
 check "a failing unit test is a finding" 1 "$RC" "this one is meant to fail"
 check "a test/golden suite is this stage's own" 1 "$RC" "this golden one is meant to fail"
+check "a suite outside test/ is this stage's own" 1 "$RC" "this stray one is meant to fail"
 check "each stage reports independently of the others" 1 "$RC" "3 stage(s) failed"
 
 done_ "check-source.test.sh"

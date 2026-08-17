@@ -31,6 +31,7 @@ import {
   canArriveIn,
   deliverableTaskIds,
   dependableIn,
+  depsDistinct,
   dispatchableIn,
   doneIn,
   draftsIn,
@@ -140,6 +141,7 @@ const arrive: WalkAction = {
     }
     return (
       deps.every((d) => dependableIn(core).includes(d)) &&
+      depsDistinct(deps) &&
       isValidProgram(config, program) &&
       projects(config).includes(project) &&
       wrapUpChoices(config).some((choice) => wrapUpEquals(choice, wrapUp))
