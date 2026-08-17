@@ -1,0 +1,44 @@
+# The control plane.
+#
+# The API server advertises a public bucket as its service-account issuer, and
+# the bucket serves the discovery document and the JWKS the operator publishes
+# there after bootstrap. That is what lets Google federate a Kubernetes service
+# account with no key file anywhere. Three values here have a counterpart in
+# Terraform and must not drift from it: the issuer URL is the `oidc` bucket, the
+# second audience is `var.oidc_audience`, and the etcd subnet is
+# `var.subnet_cidr`.
+#
+# The order of `api-audiences` is load-bearing. Its first entry is the audience
+# a token gets when the asker names none, so with the issuer first an ordinary
+# in-cluster token is not exchangeable at Google, and only a pod that asks for
+# the second audience by name holds one that is. The provider matches on the
+# subject alone and trusts every token this issuer signs, so that default is
+# what keeps the blast radius to pods that opted in.
+#
+# Cilium is installed by hand after bootstrap and takes kube-proxy's place, so
+# neither is bootstrapped here.
+#
+# The Talos API is reachable from inside the cluster for one role only, so a
+# scheduled etcd snapshot needs no credential of the operator's.
+cluster:
+  network:
+    cni:
+      name: none
+  proxy:
+    disabled: true
+  apiServer:
+    extraArgs:
+      service-account-issuer: https://storage.googleapis.com/chuggy-oidc
+      service-account-jwks-uri: https://storage.googleapis.com/chuggy-oidc/openid/v1/jwks
+      api-audiences: https://storage.googleapis.com/chuggy-oidc,chuggy-workload-identity
+  etcd:
+    advertisedSubnets:
+      - 10.10.0.0/20
+machine:
+  features:
+    kubernetesTalosAPIAccess:
+      enabled: true
+      allowedRoles:
+        - os:etcd:backup
+      allowedKubernetesNamespaces:
+        - chuggy-system

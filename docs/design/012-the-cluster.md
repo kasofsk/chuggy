@@ -1,6 +1,6 @@
 # The cluster
 
-**Status: PROPOSED** — kasofsk/chuggy#75 is the ticket; applies are an operator's hand, forever.
+**Status: PROPOSED** — the P0 files are in `infra/`; kasofsk/chuggy#75 carries the applies, which are an operator's hand, forever.
 
 Self-managed Kubernetes on Talos, on GCE machines, with node pools carrying the authority split. Managed infrastructure — the secret store, object storage, the image registry — stays the cloud's; the cluster itself does not, so the deployment owns its control plane and everything stateful below it states its restore (doc 015).
 
@@ -20,4 +20,4 @@ In-cluster workloads reach cloud services by federation against the cluster's ow
 
 | # | What lands | Depends on | Status |
 |---|---|---|---|
-| P0 | `infra/` <!-- intent -->: the cloud foundation and the machines | — | Proposed |
+| P0 | `infra/terraform`, `infra/talos` and `infra/runbooks/phase-0.md` | — | **Landed** |

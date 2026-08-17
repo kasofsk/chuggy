@@ -1,0 +1,6 @@
+# Applied to every node. Talos on GCE takes its network, hostname and clock from
+# the platform; what it cannot take from the platform is which disk is the
+# system disk once the CSI driver has attached others, so that one is pinned.
+machine:
+  install:
+    disk: /dev/sda
