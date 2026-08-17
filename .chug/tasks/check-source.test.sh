@@ -72,6 +72,19 @@ clean_source() {
 	} > "$R/test/domain/a.test.ts"
 }
 
+# A suite that fails on purpose, so a case can ask whether the stage ran it at
+# all. Written in the formatter's output shape, like every fixture file here.
+failing_suite() { # <path> <test name>
+	{
+		printf '%s\n' 'import { test } from "node:test";'
+		printf '%s\n' 'import assert from "node:assert/strict";'
+		printf '%s\n' ''
+		printf '%s\n' "test(\"$2\", () => {"
+		printf '%s\n' '  assert.equal(1, 2);'
+		printf '%s\n' '});'
+	} > "$1"
+}
+
 seal() {
 	git -C "$R" add -A
 	run_in "$R"
@@ -104,6 +117,24 @@ check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
 # The tally is asserted rather than trusted: it is what says the run measured
 # something.
 check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
+
+# --- What the unit stage runs ------------------------------------------------
+#
+# `check-conformance.sh` and `check-random.sh` own their directories, and a
+# suite of theirs failing here would mean this stage had discovered it anyway.
+# So both are made to fail and the gate is required to pass regardless.
+
+fixture
+clean_source
+mkdir -p "$R/test/conformance" "$R/test/random"
+failing_suite "$R/test/conformance/replay.test.ts" "the corpus gate's own"
+failing_suite "$R/test/random/walk.test.ts" "the walk gate's own"
+seal
+
+check "the corpus and walk gates' suites are not this stage's" 0 "$RC" "0 stage(s) failed"
+# The split is asserted against a fixture whose suites this file wrote, so the
+# line cannot report a scope the run did not have.
+check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 2 left to check-conformance and check-random"
 
 # --- The house rules ---------------------------------------------------------
 #
@@ -196,19 +227,18 @@ fixture
 clean_source
 printf '%s\n' 'export const  spaced   =    1;' > "$R/src/domain/ugly.ts"
 printf '%s\n' 'export const wrong: number = "a string";' > "$R/src/domain/mistyped.ts"
-{
-	printf '%s\n' 'import { test } from "node:test";'
-	printf '%s\n' 'import assert from "node:assert/strict";'
-	printf '%s\n' ''
-	printf '%s\n' 'test("this one is meant to fail", () => {'
-	printf '%s\n' '  assert.equal(1, 2);'
-	printf '%s\n' '});'
-} > "$R/test/domain/failing.test.ts"
+failing_suite "$R/test/domain/failing.test.ts" "this one is meant to fail"
+# test/golden carries the corpus's own coverage suite, which neither the corpus
+# gate nor the walk gate discovers: a failure there surfaces in this stage or
+# in none at all.
+mkdir -p "$R/test/golden"
+failing_suite "$R/test/golden/coverage.test.ts" "this golden one is meant to fail"
 seal
 
 check "house rule 6: unformatted source is a finding" 1 "$RC" "Code style issues found"
 check "a type error is a finding" 1 "$RC" "not assignable"
 check "a failing unit test is a finding" 1 "$RC" "this one is meant to fail"
+check "a test/golden suite is this stage's own" 1 "$RC" "this golden one is meant to fail"
 check "each stage reports independently of the others" 1 "$RC" "3 stage(s) failed"
 
 done_ "check-source.test.sh"
