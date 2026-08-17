@@ -23,8 +23,12 @@
  *
  * THE ROUTING IS TOTAL over the effect constructors and exhaustively switched,
  * so an effect added to the vocabulary is a compile error here rather than an
- * emission that reaches nothing. It is not a partition into three: the journal
- * store is reached by the executor before any emission and never by this file.
+ * emission that reaches nothing. It is total without being a partition: a
+ * revocation reaches the fabric and then the desk — the withdrawal lands before
+ * the board hears, because the board's answer is a human's and the fabric's is
+ * money still burning — and both deliveries share the one emission key, each
+ * port absorbing against its own store. The journal store is reached by the
+ * executor before any emission and never by this file.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -106,7 +110,7 @@ export function perform(
     case "CreateDraft":
       return ports.desk.createDraft(at);
     case "Revoke":
-      return ports.desk.revoke(at);
+      return ports.fabric.cancelTasks(at).then(() => ports.desk.revoke(at));
     case "OpenHumanTask":
       return ports.desk.openHumanTask(at);
     case "SpawnWorkTasks":
@@ -114,9 +118,9 @@ export function perform(
     case "SpawnEvalTasks":
       return ports.fabric.spawnEvalTasks(at);
     case "EnqueueWrapUp":
-      return ports.desk.enqueueWrapUp(at);
+      return ports.wrapUp.enqueueWrapUp(at);
     case "OpenGate":
-      return ports.desk.openGate(at);
+      return ports.wrapUp.openGate(at);
     case "Complete":
       return ports.desk.complete(at);
     default:

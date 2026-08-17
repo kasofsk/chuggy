@@ -42,26 +42,45 @@ export function emissionKey(emission: Emission): string {
 export interface FabricPort {
   spawnWorkTasks(emission: Emission): Promise<void>;
   spawnEvalTasks(emission: Emission): Promise<void>;
+
+  /** Withdraws the revoked ticket's live task set: enablement already refuses a revoked ticket's completions, so this stops the spend rather than guards the machine. A set already withdrawn, or never running, is left as it is. */
+  cancelTasks(emission: Emission): Promise<void>;
 }
 
 /**
- * The desk is the ticket board a human reads and acts on, which is every effect
- * that is not paid work. It carries the fabric's idempotence promise unchanged:
- * a repeated `emissionKey` is the same instruction, never a second one.
+ * The desk is the ticket board a human reads and acts on: what arrives here is
+ * answered by a person, never performed by the machine. It carries the fabric's
+ * idempotence promise unchanged: a repeated `emissionKey` is the same
+ * instruction, never a second one.
  */
 export interface DeskPort {
   createDraft(emission: Emission): Promise<void>;
   revoke(emission: Emission): Promise<void>;
   openHumanTask(emission: Emission): Promise<void>;
-  enqueueWrapUp(emission: Emission): Promise<void>;
-  openGate(emission: Emission): Promise<void>;
   complete(emission: Emission): Promise<void>;
 }
 
-/** Both sides of the world an emission can reach, passed as one value so the routing takes one argument. */
+/**
+ * The wrap-up performer: the machine work a ticket finishes with — a merge, a
+ * deploy — run under the lease the phase derives, which is why its two
+ * instructions are not desk rows a person answers. Absorption binds it like the
+ * others, with the one nuance stated here: a repeated `openGate` must not run a
+ * second distinct attempt, and re-answering the same attempt's outcome is
+ * exactly what the re-delivery asks of it.
+ */
+export interface WrapUpPort {
+  /** Notice that the ticket entered the queue; advisory, since the true queue is derived from the core. */
+  enqueueWrapUp(emission: Emission): Promise<void>;
+
+  /** The instruction to perform the attempt for the ticket now holding the lease. */
+  openGate(emission: Emission): Promise<void>;
+}
+
+/** Every side of the world an emission can reach, passed as one value so the routing takes one argument. */
 export interface WorldPorts {
   readonly fabric: FabricPort;
   readonly desk: DeskPort;
+  readonly wrapUp: WrapUpPort;
 }
 
 /**

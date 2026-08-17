@@ -44,8 +44,6 @@ export function deskStub(): DeskStub {
     createDraft: (emission) => post("CreateDraft", emission),
     revoke: (emission) => post("Revoke", emission),
     openHumanTask: (emission) => post("OpenHumanTask", emission),
-    enqueueWrapUp: (emission) => post("EnqueueWrapUp", emission),
-    openGate: (emission) => post("OpenGate", emission),
     complete: (emission) => post("Complete", emission),
   };
 }
