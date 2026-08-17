@@ -95,6 +95,31 @@ module.exports = {
       },
     },
     {
+      name: "runtime-reaches-no-adapter",
+      comment:
+        "The runtime coordinates adapters it is handed, never adapters it " +
+        "names: an adapter reached from the driver is a deployment choice " +
+        "inside the layer whose whole position is that the composition root " +
+        "makes those. Reachability rather than an import, for the reason the " +
+        "interpreter's rule gives — the shape that breaks it is a relay " +
+        "belonging to neither directory.",
+      severity: "error",
+      from: { path: "^src/runtime/" },
+      to: { reachable: true, path: "^src/adapters/" },
+    },
+    {
+      name: "the-runtime-is-reached-only-from-the-root",
+      comment:
+        "A second importer of the drive would be an actor with two drivers, " +
+        "so no source module but the composition root reaches the runtime. " +
+        "The from is scoped to src/ because the suites are downstream of " +
+        "every layer; within it a plain import rule is complete, since every " +
+        "path into a module ends at some module importing it directly.",
+      severity: "error",
+      from: { path: "^src/", pathNot: "^src/(runtime/|compose[.]ts$)" },
+      to: { path: "^src/runtime/" },
+    },
+    {
       name: "nothing-imports-the-composition-root",
       comment:
         "src/compose.ts is the graph's root: it may import everything and " +

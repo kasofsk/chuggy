@@ -226,6 +226,55 @@ printf '%s\n' 'import { one } from "../src/adapters/one.ts"' 'import { x } from 
 seal
 check "one adapter may not REACH another through a shared helper" 1 "$RC" "no-adapter-sees-another:"
 
+# --- runtime-reaches-no-adapter ----------------------------------------------
+
+# The allowed wiring first: the root imports the runtime, the runtime reads the
+# interpreter, and a suite reads the runtime. A red here would mean a rule
+# below over-fires on the shape the layer exists for — in particular on the
+# suite import the reached-only rule's src/ scope exists to admit.
+fixture
+mkdir -p "$R/src/runtime" "$R/src/interpreter"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const port = x' > "$R/src/interpreter/port.ts"
+printf '%s\n' 'import { port } from "../interpreter/port.ts"' 'export const driver = port' > "$R/src/runtime/drive.ts"
+printf '%s\n' 'import { driver } from "./runtime/drive.ts"' 'export const wired = driver' > "$R/src/compose.ts"
+printf '%s\n' 'import { driver } from "../src/runtime/drive.ts"' 'export const z = driver' > "$R/test/a.test.ts"
+seal
+check "the root and the suites reaching the runtime are clean" 0 "$RC" "graph clean"
+check "the clean runtime graph counts every module cruised" 0 "$RC" "across 5 module(s)"
+
+fixture
+mkdir -p "$R/src/runtime" "$R/src/adapters"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const stub = 1' > "$R/src/adapters/stub.ts"
+printf '%s\n' 'import { stub } from "../adapters/stub.ts"' 'export const driver = stub' > "$R/src/runtime/drive.ts"
+printf '%s\n' 'import { driver } from "../src/runtime/drive.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = driver + x' > "$R/test/a.test.ts"
+seal
+check "the runtime may not import an adapter" 1 "$RC" "runtime-reaches-no-adapter:"
+
+# The relay belongs to neither directory, so no edge leaves src/runtime/ for
+# src/adapters/ and only reachability sees it.
+fixture
+mkdir -p "$R/src/runtime" "$R/src/adapters" "$R/src/shared"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const stub = 1' > "$R/src/adapters/stub.ts"
+printf '%s\n' 'import { stub } from "../adapters/stub.ts"' 'export const relay = stub' > "$R/src/shared/relay.ts"
+printf '%s\n' 'import { relay } from "../shared/relay.ts"' 'export const driver = relay' > "$R/src/runtime/drive.ts"
+printf '%s\n' 'import { driver } from "../src/runtime/drive.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = driver + x' > "$R/test/a.test.ts"
+seal
+check "the runtime may not REACH an adapter through a relay" 1 "$RC" "runtime-reaches-no-adapter:"
+
+# --- the-runtime-is-reached-only-from-the-root --------------------------------
+
+fixture
+mkdir -p "$R/src/runtime" "$R/src/interpreter"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const driver = 1' > "$R/src/runtime/drive.ts"
+printf '%s\n' 'import { driver } from "../runtime/drive.ts"' 'export const port = driver' > "$R/src/interpreter/port.ts"
+printf '%s\n' 'import { port } from "../src/interpreter/port.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = port + x' > "$R/test/a.test.ts"
+seal
+check "a second importer of the runtime is a finding" 1 "$RC" "the-runtime-is-reached-only-from-the-root:"
+
 # --- nothing-imports-the-composition-root ------------------------------------
 
 fixture

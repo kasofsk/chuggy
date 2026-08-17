@@ -172,6 +172,12 @@ mkdir -p "$R/src/interpreter"
 	printf '%s\n' 'export const stamped = Date.now();'
 	printf '%s\n' 'export const drawn = Math.random();'
 } > "$R/src/interpreter/ambient.ts"
+# And the runtime, whose one deferral is an injected capability.
+mkdir -p "$R/src/runtime"
+{
+	printf '%s\n' 'export const stamped = Date.now();'
+	printf '%s\n' 'export const drawn = Math.random();'
+} > "$R/src/runtime/ambient.ts"
 {
 	printf '%s\n' 'type Kind = { k: "a" } | { k: "b" };'
 	printf '%s\n' 'export function pick(v: Kind): string {'
@@ -215,6 +221,8 @@ check "the actor may not read a clock either" 1 "$RC" "the journaled actor takes
 check "the actor may not draw randomness either" 1 "$RC" "the journaled actor takes its draws as arguments"
 check "the interpreter may not read a clock either" 1 "$RC" "the interpreter takes time as an argument"
 check "the interpreter may not draw randomness either" 1 "$RC" "the interpreter takes its draws as arguments"
+check "the runtime may not read a clock either" 1 "$RC" "the runtime takes time as an argument"
+check "the runtime may not draw randomness either" 1 "$RC" "the runtime takes its draws as arguments"
 
 # The floating-promise exemption is narrow: node:test's own functions and
 # nothing else. The clean fixture's suite calls `test` without awaiting it, so
