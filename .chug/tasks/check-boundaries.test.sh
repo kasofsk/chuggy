@@ -226,6 +226,47 @@ printf '%s\n' 'import { one } from "../src/adapters/one.ts"' 'import { x } from 
 seal
 check "one adapter may not REACH another through a shared helper" 1 "$RC" "no-adapter-sees-another:"
 
+# --- briefing-is-pure ---------------------------------------------------------
+
+# The one edge the directory exists to take, proved clean before the rule's bite.
+fixture
+mkdir -p "$R/src/briefing"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const named = 1' > "$R/src/briefing/registry.ts"
+printf '%s\n' 'import { named } from "./registry.ts"' 'export const chain = named' > "$R/src/briefing/chain.ts"
+printf '%s\n' 'import { chain } from "../src/briefing/chain.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = [chain, x]' > "$R/test/a.test.ts"
+seal
+check "the composer importing itself is clean" 0 "$RC" "graph clean"
+
+fixture
+mkdir -p "$R/src/briefing"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { readFileSync } from "node:fs"' 'export const chain = readFileSync' > "$R/src/briefing/chain.ts"
+printf '%s\n' 'import { chain } from "../src/briefing/chain.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = [chain, x]' > "$R/test/a.test.ts"
+seal
+check "the composer may not import a platform module" 1 "$RC" "briefing-is-pure:"
+
+# A read through a module the composer imports rather than in the composer. Not
+# a reachability case: `gather.ts` imports it directly, which is why the rule
+# carries no `reachable` flag.
+fixture
+mkdir -p "$R/src/briefing"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { readFileSync } from "node:fs"' 'export const gather = () => readFileSync' > "$R/src/briefing/gather.ts"
+printf '%s\n' 'import { gather } from "./gather.ts"' 'export const chain = gather()' > "$R/src/briefing/chain.ts"
+printf '%s\n' 'import { chain } from "../src/briefing/chain.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = [chain, x]' > "$R/test/a.test.ts"
+seal
+check "a layer helper reading for itself is a finding" 1 "$RC" "briefing-is-pure:"
+
+# The composer is generic over its view, so an edge inward is an edge out.
+fixture
+mkdir -p "$R/src/briefing"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../domain/a.ts"' 'export const chain = x' > "$R/src/briefing/chain.ts"
+printf '%s\n' 'import { chain } from "../src/briefing/chain.ts"' 'export const z = chain' > "$R/test/a.test.ts"
+seal
+check "the composer may not reach the domain either" 1 "$RC" "briefing-is-pure:"
+
 # --- nothing-imports-the-composition-root ------------------------------------
 
 fixture

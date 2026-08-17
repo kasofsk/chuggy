@@ -95,6 +95,24 @@ module.exports = {
       },
     },
     {
+      name: "briefing-is-pure",
+      comment:
+        "src/briefing/ imports nothing outside itself. It is generic over " +
+        "the view, so it needs neither the domain nor a platform module, and " +
+        "what the rule buys is that a helper cannot acquire a read. No " +
+        "`reachable` flag: for a rule from X to not-X every path leaving X " +
+        "has a first edge whose source is still in X, so the flag would be " +
+        "inert and deletable with the suite still green. It is not the fifth " +
+        "home 004 says would refute the split — no layer imports it and it " +
+        "imports none; if something outside comes to import it and it is " +
+        "still none of the four, the trigger has fired.",
+      severity: "error",
+      from: { path: "^src/briefing/" },
+      to: {
+        path: "^(?!src/briefing/)",
+      },
+    },
+    {
       name: "nothing-imports-the-composition-root",
       comment:
         "src/compose.ts is the graph's root: it may import everything and " +
