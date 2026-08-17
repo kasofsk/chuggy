@@ -69,6 +69,23 @@ the model (fixture truncation slack, the un-rostered record schemas), and contro
 red proofs (the walker's payload-space alarm, the manifest reader's refusals). Sweep 3
 runs after the three rows land.
 
+**Sweep 3: complete; NOT clean.** The consolidated findings are issue #62. The machine
+came up sound again (lens A re-verified `cmdEnabled` conjunct-for-conjunct, the invariant
+chain, the decode path, the thinnest corpus cells; lens B killed 131 of 158 mutations with
+attribution). The findings are the checking apparatus one layer deeper, and this sweep
+sharpened the diagnosis: three lenses independently hit the same class — a roster closed
+one model surface and left its siblings (record fields done in sweep 2; sum-type
+constructors and `*In` predicates still open), and the single-writer lint keeps yielding
+new readable routes (`Reflect.get`, `eval`). The fix is Option A per finding, plus one
+cheap Option-B slice — a meta-completeness guard that reds when the model grows any
+unrostered `type`/`*In` — because one meta-check is cheaper than another sweep round
+finding the next forgotten surface. Fix work is the `s3-conformance-machinery` and
+`s3-gates` rows above (lens B's blocking findings folded into them by file territory).
+The deeper question — whether a lint is the right instrument for single-writer at all,
+given no lint can enumerate every module-fetch spelling — is deferred: the immediate fix
+closes the readable routes and, more importantly, corrects the shipped comments that
+overclaim a completeness the mechanism cannot deliver.
+
 **Sweep 2 fix work: landed** as PRs #54, #55 and #56, each
 through the full round protocol with every closure verified by the finder that filed it.
 Carried out of the fix rounds as recorded context, none blocking: `decideOpRetry`'s
