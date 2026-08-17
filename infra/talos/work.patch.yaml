@@ -1,0 +1,8 @@
+# The work pool: agent-authored code and nothing else. The taint is what keeps
+# every other workload off these machines, and the label is what a task Job
+# selects on.
+machine:
+  nodeLabels:
+    chuggy.io/pool: work
+  nodeTaints:
+    chuggy.io/pool: work:NoSchedule
