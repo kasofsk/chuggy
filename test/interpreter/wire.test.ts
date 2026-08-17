@@ -10,6 +10,11 @@
  * The constructor roster is walked against `cmdTags` rather than against a list
  * written here, because a thirteenth command with no schema arm is exactly the
  * drift a hand-written roster hides.
+ *
+ * THE ROUND TRIP IS THE ENCODE DIRECTION'S RUN-TIME CHECK. `EntryWire` pins
+ * that direction at compile time (`src/interpreter/wire.ts`); what a type
+ * cannot say is that the bytes read back as the entry that was written, deps
+ * and their order included, and that is what the round trip here holds.
  */
 
 import assert from "node:assert/strict";
@@ -38,9 +43,13 @@ import { journalStoreStub } from "../../src/adapters/journalStoreStub.ts";
 import type { StepRecord } from "../../src/domain/core.ts";
 import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
 import { wExclusive, wNone, woNone } from "../../src/domain/wrapUp.ts";
-import { parseEntry, type Parsed } from "../../src/interpreter/wire.ts";
+import {
+  encodeEntry,
+  parseEntry,
+  type Parsed,
+} from "../../src/interpreter/wire.ts";
 import { flatProgram, refinementInstance } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { depsOf, id } from "../domain/fixtures.ts";
 
 const config = refinementInstance;
 
@@ -54,7 +63,7 @@ const plainRecord: StepRecord = {
 
 /** One command per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
 const oneOfEach: Readonly<Record<Cmd["cmd"], Cmd>> = {
-  JArrive: jArrive([id(1)], flatProgram, asProjectId(1), wExclusive(1)),
+  JArrive: jArrive(depsOf(1), flatProgram, asProjectId(1), wExclusive(1)),
   JRelease: jRelease(id(1)),
   JRevoke: jRevoke(id(1)),
   JDispatch: jDispatch(id(1)),
@@ -69,8 +78,8 @@ const oneOfEach: Readonly<Record<Cmd["cmd"], Cmd>> = {
 };
 
 /** Through the wire and back, which is the only route a stored entry ever takes. */
-function reread(entry: unknown): Parsed<Entry> {
-  return parseEntry(JSON.parse(JSON.stringify(entry)) as unknown);
+function reread(entry: Entry): Parsed<Entry> {
+  return parseEntry(JSON.parse(encodeEntry(entry)) as unknown);
 }
 
 /** The parsed value, or a failure naming the refusal, so a case reads as one assertion. */
@@ -88,7 +97,7 @@ test("a journaled entry survives the wire unchanged, record and all", () => {
   const state = journalStep(
     config,
     actorInit(),
-    jArrive([], flatProgram, asProjectId(1), wNone),
+    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);
@@ -108,7 +117,7 @@ test("every command this machine declares has a schema arm, and the roster is th
 
 test("an arrival naming a ticket twice is refused, which is the gap between an array and the model's set", () => {
   const dependent = { ...oneOfEach.JArrive, deps: [id(1), id(1)] };
-  const refused = reread({ seq: 1, cmd: dependent, rec: plainRecord });
+  const refused = parseEntry({ seq: 1, cmd: dependent, rec: plainRecord });
   assert.equal(refused.parsed, "Refused");
   assert.ok(refused.parsed === "Refused");
   assert.match(refused.why, /the arrival draws a set/);
@@ -116,7 +125,17 @@ test("an arrival naming a ticket twice is refused, which is the gap between an a
 
 test("the same arrival with distinct deps is accepted, so the refusal is about the repeat", () => {
   const dependent = { ...oneOfEach.JArrive, deps: [id(1), id(2)] };
-  accepted(reread({ seq: 1, cmd: dependent, rec: plainRecord }));
+  accepted(parseEntry({ seq: 1, cmd: dependent, rec: plainRecord }));
+});
+
+test("a multi-dep arrival is written as an ascending array and read back as the set it was", () => {
+  const entry: Entry = {
+    seq: 1,
+    cmd: jArrive(depsOf(2, 1), flatProgram, asProjectId(1), wExclusive(1)),
+    rec: plainRecord,
+  };
+  assert.match(encodeEntry(entry), /"deps":\[1,2\]/);
+  assert.deepEqual(accepted(reread(entry)), entry);
 });
 
 test("a row is refused, with the field named, for each way the wire can lie", () => {
@@ -173,7 +192,7 @@ test("the store refuses a row it cannot read as JSON before the schema is asked"
   const state = journalStep(
     config,
     actorInit(),
-    jArrive([], flatProgram, asProjectId(1), wNone),
+    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);
@@ -190,7 +209,7 @@ test("the store refuses a stored row edited into a shape the machine does not wr
   const state = journalStep(
     config,
     actorInit(),
-    jArrive([], flatProgram, asProjectId(1), wNone),
+    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);
@@ -210,7 +229,7 @@ test("an untouched store reads back what it was given", async () => {
   const state = journalStep(
     config,
     actorInit(),
-    jArrive([], flatProgram, asProjectId(1), wNone),
+    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);

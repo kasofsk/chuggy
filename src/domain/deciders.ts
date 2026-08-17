@@ -99,13 +99,14 @@ export function withWrapUpObs(
 /** A ticket is born a Draft with its full accounts, and reaches the pipeline only by release. */
 export function freshTicket(
   config: Config,
-  deps: readonly TicketId[],
+  deps: ReadonlySet<TicketId>,
   program: readonly Stage[],
   project: ProjectId,
   wrapUp: WrapUp,
 ): Ticket {
   return {
     phase: "PDraft",
+    /** Stored ascending, once: the arrival's set carries no order and the folds that read it do. */
     deps: [...deps].sort((a, b) => a - b),
     program,
     wrapUp,
@@ -158,7 +159,7 @@ export function completeTicket(core: Core, id: TicketId): Decision {
 export function decideArrive(
   config: Config,
   core: Core,
-  deps: readonly TicketId[],
+  deps: ReadonlySet<TicketId>,
   program: readonly Stage[],
   project: ProjectId,
   wrapUp: WrapUp,

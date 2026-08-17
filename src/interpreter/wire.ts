@@ -11,13 +11,21 @@
  * out, and a returned refusal is what that looks like where illegal values
  * actually arrive.
  *
- * THE DOMAIN TYPE IS THE TRUTH AND THE SCHEMA IS ITS MIRROR.
- * `entrySchemaMirrorsEntry` stops compiling the moment the two stop describing
- * each other, which is the difference between a duplicate and a mirror: a field
- * dropped from a schema, a vocabulary member missing from a tuple, or a domain
- * type that grew are each a type error here rather than a value that parsed and
- * lost something. That is also what holds the restated vocabularies below to
- * their unions, so they need no second roster to be checked against.
+ * THE DOMAIN TYPE IS THE TRUTH AND THE SCHEMA IS ITS MIRROR, in the read
+ * direction. `entrySchemaMirrorsEntry` stops compiling the moment the parsed
+ * type and `Entry` stop describing each other, which is the difference between a
+ * duplicate and a mirror: a field dropped from a schema, a vocabulary member
+ * missing from a tuple, or a domain type that grew are each a type error here
+ * rather than a value that parsed and lost something. That is also what holds
+ * the restated vocabularies below to their unions, so they need no second roster
+ * to be checked against.
+ *
+ * THE WRITE DIRECTION CANNOT BE MIRRORED, because the deps transform is not an
+ * identity, so it is pinned twice instead. `encodeEntry` builds an `EntryWire` —
+ * the schema's own INPUT type — before it stringifies, so a domain shape the
+ * wire has no counterpart for is a type error rather than the empty object
+ * `JSON.stringify` writes for a set; and `test/interpreter/wire.test.ts`
+ * round-trips a multi-dep arrival back to an `Entry` equal to the one written.
  *
  * WHAT IT DOES NOT CHECK. A row's syntax is this file's; a journal's HISTORY is
  * `journalLegalOn`'s — dense seqs, every decision enabled at its replayed
@@ -25,11 +33,12 @@
  * seam between a malformed row and a well-formed row of a run that never
  * happened, and `src/interpreter/executor.ts` reads a journal through both.
  *
- * THE REPRESENTATION GAP THIS PARSE RE-STATES: the model's arrival draws its
- * deps as a SET where `Cmd` carries an array, so an array with a repeat is a
- * value the model has no counterpart for. `depsDistinct` is that rule, and
- * `cmdEnabled` reads the same one before any decision is journaled; the parse
- * reads it again because a journal on disk did not have to come from that path.
+ * WHERE THE DEPS CHANGE SHAPE. `Cmd` carries the model's own SET and the wire
+ * carries an ascending array, so this module is the seam that converts, and the
+ * repeat an array can hold is refused here — by `depsDistinct`, before the
+ * surviving array becomes the set. A journal on disk did not have to come from
+ * this process, which is why the refusal is at the boundary and not only at the
+ * type.
  *
  * THE OTHER GAP IS LEFT OPEN DELIBERATELY: `seq` enters unbranded, where every
  * identity in `src/domain/ids.ts` is branded. A brand exists to stop two
@@ -49,7 +58,12 @@ import type { Cmd } from "../actor/command.ts";
 import type { Entry } from "../actor/journal.ts";
 import { allEffects } from "../domain/effect.ts";
 import { depsDistinct } from "../domain/enablement.ts";
-import { asProjectId, asTaskId, asTicketId } from "../domain/ids.ts";
+import {
+  asProjectId,
+  asTaskId,
+  asTicketId,
+  type TicketId,
+} from "../domain/ids.ts";
 
 /** A wire integer already inside the range the domain mints its identifiers from. */
 const identifierNumber = z.int().min(1);
@@ -58,10 +72,13 @@ const ticketIdSchema = identifierNumber.transform(asTicketId);
 const taskIdSchema = identifierNumber.transform(asTaskId);
 const projectIdSchema = identifierNumber.transform(asProjectId);
 
-/** An arrival's dependencies, refusing the repeat that the model's set cannot express. */
-const depsSchema = z.array(ticketIdSchema).readonly().refine(depsDistinct, {
-  message: "names a ticket twice, and the arrival draws a set",
-});
+/** An arrival's dependencies: an array here, refused for a repeat, and the model's set after. */
+const depsSchema = z
+  .array(ticketIdSchema)
+  .refine(depsDistinct, {
+    message: "names a ticket twice, and the arrival draws a set",
+  })
+  .transform((deps): ReadonlySet<TicketId> => new Set(deps));
 
 const stageSchema = z.object({
   fanout: z.int().min(1),
@@ -169,6 +186,19 @@ export const entrySchemaMirrorsEntry: Mirrors<
   z.infer<typeof entrySchema>,
   Entry
 > = true;
+
+/** A stored row as JSON holds it: the schema's own input, which is what makes the write direction checkable. */
+type EntryWire = z.input<typeof entrySchema>;
+
+/** Writes one `Entry` as the text a store keeps, laying the arrival's set out ascending. */
+export function encodeEntry(entry: Entry): string {
+  const cmd: EntryWire["cmd"] =
+    entry.cmd.cmd === "JArrive"
+      ? { ...entry.cmd, deps: [...entry.cmd.deps].sort((a, b) => a - b) }
+      : entry.cmd;
+  const wire: EntryWire = { ...entry, cmd };
+  return JSON.stringify(wire);
+}
 
 /** What a parse answers: the value, or the reason it was refused. */
 export type Parsed<Value> =

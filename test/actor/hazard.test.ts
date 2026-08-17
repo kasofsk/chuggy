@@ -45,7 +45,7 @@ import { ticketAt } from "../../src/domain/core.ts";
 import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
 import { completionsOf } from "../../src/domain/ticket.ts";
 import { wExclusive } from "../../src/domain/wrapUp.ts";
-import { id } from "../domain/fixtures.ts";
+import { depsOf, id } from "../domain/fixtures.ts";
 import {
   assertStep,
   flatProgram,
@@ -65,7 +65,7 @@ function phaseDispatchDoubleSpend(): ActorState {
   state = stepEmit(
     config,
     state,
-    jArrive([], flatProgram, asProjectId(1), wExclusive(1)),
+    jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
     "ticket-arrived",
   );
   state = stepEmit(config, state, jRelease(id(1)), "ticket-released");
@@ -162,7 +162,7 @@ function walkToEvalFailure(): ActorState {
   state = stepEmit(
     config,
     state,
-    jArrive([], flatProgram, asProjectId(1), wExclusive(1)),
+    jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
     "ticket-arrived",
   );
   state = walkFirstCycle(config, state, "VFail");

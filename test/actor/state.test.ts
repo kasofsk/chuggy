@@ -22,11 +22,11 @@ import {
 import { initRecord } from "../../src/domain/core.ts";
 import { asProjectId } from "../../src/domain/ids.ts";
 import { wExclusive } from "../../src/domain/wrapUp.ts";
-import { id } from "../domain/fixtures.ts";
+import { depsOf, id } from "../domain/fixtures.ts";
 import { flatProgram, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
-const arrival = jArrive([], flatProgram, asProjectId(1), wExclusive(1));
+const arrival = jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1));
 
 test("the initial state is genesis under the init record, with nothing journaled or emitted", () => {
   const state = actorInit();

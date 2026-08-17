@@ -130,7 +130,7 @@ export function replayStep(
       return decideArrive(
         config,
         pre,
-        decodeDeps(need(picks.deps, "deps_")),
+        new Set(decodeDeps(need(picks.deps, "deps_"))),
         decodeProgram(need(picks.program, "prog")),
         decodeProjectId(need(picks.project, "project_")),
         decodeWrapUp(need(picks.wrapUp, "wrapUp_")),

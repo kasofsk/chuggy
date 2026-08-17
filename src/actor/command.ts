@@ -14,10 +14,12 @@
  * than crashed on. The deciders assume their guards; only `cmdEnabled` is
  * total.
  *
- * The model carries `JArrive`'s deps as a set; here the payload is the array
- * the domain's `decideArrive` takes, so the model's `subseteq` conjunct becomes
- * two here — membership in `dependableIn`, and the `depsDistinct` a set gets
- * for free and an array does not.
+ * `JArrive` CARRIES ITS DEPS AS THE MODEL'S OWN SET, so the arrival that names
+ * a ticket twice — a value the model's powerset draw has no counterpart for —
+ * cannot be constructed at this boundary at all, and the enablement is the
+ * model's `subseteq` and nothing beside it. The distinctness rule stays where an
+ * array still arrives: `src/interpreter/wire.ts` reads it off a journal on disk,
+ * which did not have to come from this path.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -46,7 +48,6 @@ import {
   canArriveIn,
   deliverableTaskIds,
   dependableIn,
-  depsDistinct,
   dispatchableIn,
   doneIn,
   draftsIn,
@@ -73,7 +74,7 @@ import {
 export type Cmd =
   | {
       readonly cmd: "JArrive";
-      readonly deps: readonly TicketId[];
+      readonly deps: ReadonlySet<TicketId>;
       readonly program: readonly Stage[];
       readonly project: ProjectId;
       readonly wrapUp: WrapUp;
@@ -125,7 +126,7 @@ export const cmdTags: readonly Cmd["cmd"][] = [
 
 /** An arrival at the given draws. */
 export function jArrive(
-  deps: readonly TicketId[],
+  deps: ReadonlySet<TicketId>,
   program: readonly Stage[],
   project: ProjectId,
   wrapUp: WrapUp,
@@ -233,8 +234,7 @@ export function cmdEnabled(config: Config, core: Core, cmd: Cmd): boolean {
     case "JArrive":
       return (
         canArriveIn(config, core) &&
-        cmd.deps.every((dep) => dependableIn(core).includes(dep)) &&
-        depsDistinct(cmd.deps) &&
+        [...cmd.deps].every((dep) => dependableIn(core).includes(dep)) &&
         isValidProgram(config, cmd.program) &&
         projects(config).includes(cmd.project) &&
         wrapUpChoices(config).some((choice) => wrapUpEquals(choice, cmd.wrapUp))

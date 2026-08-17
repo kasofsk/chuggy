@@ -36,7 +36,7 @@ import {
 } from "../../src/interpreter/interpret.ts";
 import type { Emission } from "../../src/interpreter/ports.ts";
 import { flatProgram, refinementInstance } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { depsOf, id } from "../domain/fixtures.ts";
 
 const config = refinementInstance;
 
@@ -48,7 +48,7 @@ function lastOf(state: ActorState): { entry: Entry; post: Core } {
 }
 
 /** An arrival at the default draws, which is every walk's first decision. */
-function arriveOn(state: ActorState, deps: readonly TicketId[]): ActorState {
+function arriveOn(state: ActorState, deps: ReadonlySet<TicketId>): ActorState {
   return journalStep(
     config,
     state,
@@ -57,7 +57,7 @@ function arriveOn(state: ActorState, deps: readonly TicketId[]): ActorState {
 }
 
 test("the arrival's subject is the id it appended, and it has no transition to read", () => {
-  const state = arriveOn(actorInit(), []);
+  const state = arriveOn(actorInit(), depsOf());
   const { entry, post } = lastOf(state);
   assert.equal(entry.rec.label, arrivalLabel);
   assert.deepEqual(entry.rec.transitions, []);
@@ -69,15 +69,15 @@ test("the arrival's subject is the id it appended, and it has no transition to r
 });
 
 test("a second arrival's subject is the second id, so the exception reads the post-state and not a constant", () => {
-  const state = arriveOn(arriveOn(actorInit(), []), []);
+  const state = arriveOn(arriveOn(actorInit(), depsOf()), depsOf());
   const { entry, post } = lastOf(state);
   const planned = emissionsOf(entry, post);
   assert.equal(planned[0]?.emission.ticket, id(2));
 });
 
 test("a revoke attributes each effect to its own transition, not to the head one", () => {
-  let state = arriveOn(actorInit(), []);
-  state = arriveOn(state, [id(1)]);
+  let state = arriveOn(actorInit(), depsOf());
+  state = arriveOn(state, depsOf(1));
   state = journalStep(config, state, jRevoke(id(1)));
   const { entry, post } = lastOf(state);
 
@@ -102,8 +102,8 @@ test("a revoke attributes each effect to its own transition, not to the head one
 });
 
 test("the effect index is the position in the record, so one decision's emissions have distinct keys", () => {
-  let state = arriveOn(actorInit(), []);
-  state = arriveOn(state, [id(1)]);
+  let state = arriveOn(actorInit(), depsOf());
+  state = arriveOn(state, depsOf(1));
   state = journalStep(config, state, jRevoke(id(1)));
   const { entry, post } = lastOf(state);
   assert.deepEqual(
