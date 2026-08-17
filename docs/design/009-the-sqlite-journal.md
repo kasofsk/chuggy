@@ -1,12 +1,12 @@
 # The SQLite journal
 
-**Status: PROPOSED** — kasofsk/chuggy#67 is the ticket.
+**Status: LANDED** — R1 has landed; kasofsk/chuggy#67 was the ticket.
 
-The durable store is one SQLite database on the dispatcher's own volume, opened by the dispatcher process alone, streamed out by a replication sidecar. Every reader the world needs goes through the dispatcher's own face, because a store a second process reads is a store a second process eventually learns to write.
+The durable store is one SQLite database on the dispatcher's own volume, opened by the dispatcher process alone, streamed out by a replication sidecar. Every reader the world needs goes through the dispatcher's own face, because a store a second process reads is a store a second process eventually learns to write. `src/adapters/sqliteJournal.ts` is the store and states what it carries; opening the one database is the composition root's with the runtime (doc 006), and streaming it out is the deployment's (doc 015).
 
-## The shape
+## The tables the other adapters may add
 
-The journal table's primary key is the sequence number, which is two of the tree's obligations in one mechanism: the dedup memory that must outlive the process, and a second line of defense for Single writer — a rollout that briefly runs two dispatchers has the loser crash on the constraint rather than fork history. Rows are wire text and every load passes the parse, exactly as the stub keeps them; the cursor is stored beside the rows and deliberately not with them, because a lost checkpoint re-emitting its suffix is the model's own drawn regression. Each adapter creates and solely owns its side tables; no table has two writers, and none stores what the journal derives (standing rule 3) — there is no task-instance table, because the journal is it.
+Each adapter creates and solely owns its side tables. No table has two writers, and none stores what the journal derives (standing rule 3) — there is no task-instance table, because the journal is it.
 
 ## What is deliberately absent
 
@@ -20,4 +20,4 @@ Write-ahead mode, one writer, the database at a stable configured path — and n
 
 | # | What lands | Depends on | Status |
 |---|---|---|---|
-| R1 | The store, its schema, the crash and tamper suite | #66 | Proposed |
+| R1 | The store, its schema, the crash and tamper suite | #66 | **Landed** |
