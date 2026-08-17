@@ -3,13 +3,15 @@
  * — names, spec, environment, labels and per-pair tokens — the two halves of
  * absorption exercised separately, the fold pinned to the emission's own
  * decision across a rework, the refusals that hold the cursor, the watch as
- * failure detector with its grace and its relist-reconnect loop, and the
- * label-scoped cancellation. Every case scripts the exact API behaviour it
- * needs; nothing in the fixture transitions a Job on its own.
+ * failure detector with its grace and its relist-reconnect loop, the
+ * label-scoped cancellation, and the user-credential resolution — grant to
+ * material to a per-job Secret the Job owns, failing the spawn closed where
+ * any link is missing. Every case scripts the exact API behaviour it needs;
+ * nothing in the fixture transitions a Job on its own.
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -28,10 +30,15 @@ import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import {
   k8sFabric,
+  k8sFabricApiKeyEnv,
+  k8sFabricSecretKey,
   type K8sFabric,
+  type K8sFabricCredentials,
   type K8sFabricOptions,
 } from "../../src/adapters/k8sFabric/k8sFabric.ts";
 import type { FabricApiJob } from "../../src/adapters/k8sFabric/client.ts";
+import { registrySqlite } from "../../src/adapters/registrySqlite.ts";
+import { secretFileSource } from "../../src/adapters/secretFileSource.ts";
 import type { Config } from "../../src/domain/config.ts";
 import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
 import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
@@ -39,7 +46,10 @@ import type { Stage } from "../../src/domain/program.ts";
 import { wNone } from "../../src/domain/wrapUp.ts";
 import type { Inbound, Submitted } from "../../src/interpreter/inbound.ts";
 import type { Emission } from "../../src/interpreter/ports.ts";
-import type { TicketAnnex } from "../../src/interpreter/registry.ts";
+import type {
+  TicketAnnex,
+  UserCredentials,
+} from "../../src/interpreter/registry.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   fakeKubernetesApi,
@@ -111,11 +121,17 @@ function emissionAt(seq: number): Emission {
   return { seq, effectIndex: 0, ticket: id(1) };
 }
 
+interface GroundCredentials {
+  readonly grant: UserCredentials | undefined;
+  readonly files: Readonly<Record<string, string>>;
+}
+
 interface GroundOptions {
   readonly history?: readonly Cmd[];
   readonly loadRefused?: boolean;
   readonly annexTaskType?: string;
   readonly withoutAnnex?: boolean;
+  readonly credentials?: GroundCredentials;
   readonly succeededGraceMs?: number;
   readonly watchRetryDelaysMs?: readonly number[];
   readonly bearerToken?: string;
@@ -148,6 +164,22 @@ function groundInbound(ground: {
       ground.delivered.push([ticket, taskId, verdict]);
       return Promise.resolve(ground.answer);
     },
+  };
+}
+
+/** A real file source over the case's temp directory, answering the one handed grant for every ticket. */
+function groundCredentials(
+  dir: string,
+  draw: GroundCredentials,
+): K8sFabricCredentials {
+  const secretsDirectory = join(dir, "secrets");
+  mkdirSync(secretsDirectory);
+  for (const [name, material] of Object.entries(draw.files)) {
+    writeFileSync(join(secretsDirectory, name), material);
+  }
+  return {
+    credentialsFor: () => Promise.resolve(draw.grant),
+    source: secretFileSource(secretsDirectory),
   };
 }
 
@@ -201,6 +233,10 @@ async function ground(
           : { parsed: "Ok", value: journal },
       ),
     annexes: () => Promise.resolve(annexes),
+    credentials:
+      options.credentials === undefined
+        ? undefined
+        : groundCredentials(dir, options.credentials),
     mint: (ticket, taskId) => {
       minted.push([ticket, taskId]);
       return `tag-${String(ticket)}-${String(taskId)}`;
@@ -359,10 +395,12 @@ test("the fold serves each emission at its own decision, and a rework bends no o
   await g.fabric.spawnWorkTasks(emissionAt(3));
   await g.fabric.spawnEvalTasks(emissionAt(5));
 
-  const branchOf = (job: FabricApiJob): string | undefined =>
-    job.spec.template.spec.containers[0].env.find(
-      (entry) => entry.name === "CHUG_WORK_BRANCH",
-    )?.value;
+  const branchOf = (job: FabricApiJob): string | undefined => {
+    const entry = job.spec.template.spec.containers[0].env.find(
+      (one) => one.name === "CHUG_WORK_BRANCH",
+    );
+    return entry !== undefined && "value" in entry ? entry.value : undefined;
+  };
   assert.deepEqual(
     g.fake.created.map((job) => [job.metadata.name, branchOf(job)]),
     [
@@ -592,4 +630,202 @@ test("a configured token file rides every call as the bearer credential", async 
   const g = await ground(t, { bearerToken: "sekret" });
   await g.fabric.spawnWorkTasks(emissionAt(3));
   assert.ok(g.fake.authorizations.includes("Bearer sekret"));
+});
+
+/** The one grant the credentialed cases resolve, against a file the ground writes. */
+const groundGrant: UserCredentials = {
+  apiKeyRef: "author.key",
+  gitName: "Ada",
+  gitEmail: "ada@example.test",
+};
+
+test("a configured resolution writes the per-job Secret the Job owns and the env references", async (t) => {
+  const g = await ground(t, {
+    credentials: {
+      grant: groundGrant,
+      files: { "author.key": "author-material\n" },
+    },
+  });
+  await g.fabric.spawnWorkTasks(emissionAt(3));
+
+  const [job] = g.fake.created;
+  assert.ok(job !== undefined && g.fake.created.length === 1);
+  assert.deepEqual(job.spec.template.spec.containers[0].env, [
+    { name: "EXTRA", value: "yes" },
+    { name: "CHUG_TICKET", value: "1" },
+    { name: "CHUG_TASK", value: "1" },
+    { name: "CHUG_COMPLETION_URL", value: "http://desk.test/" },
+    { name: "CHUG_COMPLETION_TOKEN", value: "tag-1-1" },
+    { name: "CHUG_WORK_BRANCH", value: "chug/t1/k1" },
+    {
+      name: k8sFabricApiKeyEnv,
+      valueFrom: {
+        secretKeyRef: { name: "chug-t1-k1", key: k8sFabricSecretKey },
+      },
+    },
+  ]);
+  assert.deepEqual(g.fake.secrets(), [
+    {
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: {
+        name: "chug-t1-k1",
+        labels: { "chug-ticket": "1", "chug-task": "1" },
+        ownerReferences: [
+          {
+            apiVersion: "batch/v1",
+            kind: "Job",
+            name: "chug-t1-k1",
+            uid: "uid-chug-t1-k1",
+          },
+        ],
+      },
+      type: "Opaque",
+      stringData: { [k8sFabricSecretKey]: "author-material" },
+    },
+  ]);
+  assert.deepEqual(groundSpawnRows(g.db), ["3:0"]);
+});
+
+test("a configured resolution fails the spawn closed: no grant or no material spawns nothing", async (t) => {
+  const noRow = await ground(t, {
+    credentials: { grant: undefined, files: {} },
+  });
+  await assert.rejects(
+    noRow.fabric.spawnWorkTasks(emissionAt(3)),
+    /no credential grant/,
+  );
+
+  const noFile = await ground(t, {
+    credentials: { grant: groundGrant, files: {} },
+  });
+  await assert.rejects(
+    noFile.fabric.spawnWorkTasks(emissionAt(3)),
+    /author\.key/,
+  );
+
+  for (const g of [noRow, noFile]) {
+    assert.equal(groundPosts(g.fake), 0);
+    assert.equal(g.fake.secrets().length, 0);
+    assert.deepEqual(groundSpawnRows(g.db), []);
+  }
+});
+
+test("a catalog naming the credential variable is refused at construction under a configured resolution", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "chuggy-k8sfabric-"));
+  const db = new DatabaseSync(":memory:");
+  t.after(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const catalogPath = join(dir, "catalog.json");
+  const shadowed = {
+    build: {
+      ...groundCatalog.build,
+      work: {
+        ...groundCatalog.build.work,
+        env: { [k8sFabricApiKeyEnv]: "a-shared-key" },
+      },
+    },
+  };
+  writeFileSync(catalogPath, JSON.stringify(shadowed));
+  assert.throws(
+    () =>
+      k8sFabric({
+        config: groundConfig,
+        load: () => Promise.resolve({ parsed: "Ok", value: [] }),
+        annexes: () => Promise.resolve(new Map()),
+        credentials: groundCredentials(dir, { grant: groundGrant, files: {} }),
+        mint: () => "tag",
+        db,
+        catalogPath,
+        api: { base: "http://127.0.0.1:9", namespace: "chuggy" },
+        completionUrl: "http://desk.test/",
+      }),
+    /ANTHROPIC_API_KEY/,
+  );
+});
+
+test("a re-served credentialed spawn re-creates idempotently: the Job and its Secret both absorb", async (t) => {
+  const g = await ground(t, {
+    credentials: { grant: groundGrant, files: { "author.key": "material" } },
+  });
+  await g.fabric.spawnWorkTasks(emissionAt(3));
+  g.db.prepare("DELETE FROM fabric_spawns").run();
+
+  await g.fabric.spawnWorkTasks(emissionAt(3));
+  assert.equal(g.fake.created.length, 1);
+  assert.equal(g.fake.secrets().length, 1);
+  assert.ok(
+    g.fake.log.some(
+      (line) => line.startsWith("GET ") && line.includes("/jobs/chug-t1-k1"),
+    ),
+  );
+  assert.deepEqual(groundSpawnRows(g.db), ["3:0"]);
+});
+
+/** Two tickets arrive, and each is released and dispatched in turn. */
+const twoAuthorsHistory: readonly Cmd[] = [
+  jArrive([], groundProgram, asProjectId(1), wNone),
+  jArrive([], groundProgram, asProjectId(1), wNone),
+  jRelease(id(1)),
+  jDispatch(id(1)),
+  jRelease(id(2)),
+  jDispatch(id(2)),
+];
+
+test("two users' tickets run under different keys, resolved from their registered grants", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "chuggy-k8sfabric-"));
+  const fake = await fakeKubernetesApi();
+  const db = new DatabaseSync(":memory:");
+  t.after(async () => {
+    await fake.close();
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const registry = registrySqlite(db);
+  await registry.upsertCredentials("alice-sub", {
+    apiKeyRef: "alice.key",
+    gitName: "Alice",
+    gitEmail: "alice@example.test",
+  });
+  await registry.upsertCredentials("bob-sub", {
+    apiKeyRef: "bob.key",
+    gitName: "Bob",
+    gitEmail: "bob@example.test",
+  });
+  const annex = { title: "t", brief: "b", taskType: "build" };
+  await registry.writeAnnex(id(1), { ...annex, author: "alice-sub" });
+  await registry.writeAnnex(id(2), { ...annex, author: "bob-sub" });
+  const secretsDirectory = join(dir, "secrets");
+  mkdirSync(secretsDirectory);
+  writeFileSync(join(secretsDirectory, "alice.key"), "alice-material\n");
+  writeFileSync(join(secretsDirectory, "bob.key"), "bob-material\n");
+  const catalogPath = join(dir, "catalog.json");
+  writeFileSync(catalogPath, JSON.stringify(groundCatalog));
+  const journal = groundJournal(twoAuthorsHistory);
+  const fabric = k8sFabric({
+    config: groundConfig,
+    load: () => Promise.resolve({ parsed: "Ok", value: journal }),
+    annexes: () => registry.annexes(),
+    credentials: {
+      credentialsFor: (ticket) => registry.credentialsFor(ticket),
+      source: secretFileSource(secretsDirectory),
+    },
+    mint: (ticket, taskId) => `tag-${String(ticket)}-${String(taskId)}`,
+    db,
+    catalogPath,
+    api: { base: fake.base, namespace: "chuggy" },
+    completionUrl: "http://desk.test/",
+  });
+
+  await fabric.spawnWorkTasks({ seq: 4, effectIndex: 0, ticket: id(1) });
+  await fabric.spawnWorkTasks({ seq: 6, effectIndex: 0, ticket: id(2) });
+  assert.deepEqual(
+    fake.secrets().map((held) => [held.metadata.name, held.stringData]),
+    [
+      ["chug-t1-k1", { [k8sFabricSecretKey]: "alice-material" }],
+      ["chug-t2-k1", { [k8sFabricSecretKey]: "bob-material" }],
+    ],
+  );
 });

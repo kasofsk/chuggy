@@ -89,3 +89,18 @@ test("the fabric environment constructs the fabric, whose unservable catalog ref
   assert.notEqual(code, 0);
   assert.match(run.output(), /the catalog at .* cannot be read/);
 });
+
+test("naming both secret stores refuses start-up before the fabric reads anything", async (t) => {
+  const run = composeRun(t, {
+    ...composeBaseEnv,
+    CHUGGY_FABRIC_API_BASE: "http://127.0.0.1:9",
+    CHUGGY_FABRIC_CATALOG: join(tmpdir(), "chuggy-compose-absent.json"),
+    CHUGGY_COMPLETION_URL: "http://127.0.0.1:9/",
+    CHUGGY_SECRETS_DIR: join(tmpdir(), "chuggy-compose-secrets"),
+    CHUGGY_SECRETS_GCP_TOKEN_FILE: join(tmpdir(), "chuggy-compose-token"),
+  });
+  const code = await run.exited;
+  assert.notEqual(code, 0);
+  assert.match(run.output(), /both set/);
+  assert.doesNotMatch(run.output(), /the catalog at/);
+});

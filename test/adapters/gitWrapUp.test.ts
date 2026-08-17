@@ -2,8 +2,9 @@
  * The git performer against real bare repositories: the merge that completes
  * a `WExclusive` ticket, the conflict the rework economy prices, the ancestor
  * check that lets a re-delivered gate re-answer without touching a ref, the
- * absorption of repeated deliveries, the refusals that hold the cursor, and
- * the fold that resolves the branch at the emission's own decision.
+ * absorption of repeated deliveries, the refusals that hold the cursor, the
+ * fold that resolves the branch at the emission's own decision, and the
+ * authorship split between the ticket's author and the machine committer.
  *
  * The integration walks run the real loop — boot, drive, SQLite journal —
  * with this suite standing in for the fabric: it pushes the work branches a
@@ -35,6 +36,7 @@ import { actorInit, journalStep } from "../../src/actor/state.ts";
 import {
   gitWrapUp,
   type GitWrapUp,
+  type GitWrapUpOptions,
 } from "../../src/adapters/gitWrapUp/gitWrapUp.ts";
 import { wrapUpBranchAt } from "../../src/adapters/gitWrapUp/resolve.ts";
 import {
@@ -137,7 +139,11 @@ interface Walk {
 }
 
 /** The real loop over the given remote, with the gate outcomes captured on their way into the drive. */
-async function walkOpen(dir: string, remote: string): Promise<Walk> {
+async function walkOpen(
+  dir: string,
+  remote: string,
+  authorOf?: GitWrapUpOptions["authorOf"],
+): Promise<Walk> {
   const db = new DatabaseSync(join(dir, "chuggy.sqlite"));
   const store = sqliteJournal(db);
   const performer = gitWrapUp({
@@ -147,6 +153,7 @@ async function walkOpen(dir: string, remote: string): Promise<Walk> {
     remote,
     scratchDirectory: join(dir, "scratch.git"),
     identity: { name: "chuggy", email: "chuggy@example.test" },
+    authorOf,
     retryDelaysMs: [10, 20],
   });
   const executor: Executor = {
@@ -220,13 +227,16 @@ interface WalkGround {
 }
 
 /** A temp ground with a seeded remote and an open walk, both torn down with the case. */
-async function walkGround(t: TestContext): Promise<WalkGround> {
+async function walkGround(
+  t: TestContext,
+  authorOf?: GitWrapUpOptions["authorOf"],
+): Promise<WalkGround> {
   const dir = mkdtempSync(join(tmpdir(), "chuggy-gitwrapup-"));
   t.after(() => {
     rmSync(dir, { recursive: true, force: true });
   });
   const { remote, seed } = fixtureRemote(dir);
-  const walk = await walkOpen(dir, remote);
+  const walk = await walkOpen(dir, remote, authorOf);
   t.after(() => {
     walk.db.close();
   });
@@ -368,6 +378,27 @@ test("a re-delivered gate re-answers: from the table when concluded, by the ance
   assert.equal(openGateNotices?.["held"], 1);
 });
 
+test("the merge is authored by the ticket author's registered identity, and the committer stays the machine", async (t) => {
+  const ground = await walkGround(t, (ticket) => {
+    assert.equal(ticket, id(1));
+    return Promise.resolve({ name: "Ada", email: "ada@example.test" });
+  });
+  await walkMerge(ground);
+  assert.equal(
+    fixtureGit(ground.remote, "log", "-1", "--format=%an|%ae|%cn|%ce", "main"),
+    "Ada|ada@example.test|chuggy|chuggy@example.test",
+  );
+});
+
+test("an author the registry holds no identity for leaves the machine authoring both", async (t) => {
+  const ground = await walkGround(t, () => Promise.resolve(undefined));
+  await walkMerge(ground);
+  assert.equal(
+    fixtureGit(ground.remote, "log", "-1", "--format=%an|%cn", "main"),
+    "chuggy|chuggy",
+  );
+});
+
 test("an unreachable remote exhausts the bounded ladder and is priced onto the ticket", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "chuggy-gitwrapup-"));
   t.after(() => {
@@ -416,6 +447,7 @@ test("a push racing a moved default branch is refused, and the next lap re-fetch
   const staleMerge = await scratchCommitMerge(
     scratch,
     identity,
+    identity,
     stale.tree,
     [staleTip, workTip],
     "stale merge",
@@ -433,6 +465,7 @@ test("a push racing a moved default branch is refused, and the next lap re-fetch
   assert.ok(remerge.merged === "MClean");
   const landed = await scratchCommitMerge(
     scratch,
+    identity,
     identity,
     remerge.tree,
     [movedTip, workTip],

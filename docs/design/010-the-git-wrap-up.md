@@ -6,7 +6,7 @@ For a ticket wrapping up exclusively, the gate is the merge. The tree carries th
 
 ## What the tree does not yet carry
 
-The repositories are to live behind the git service (doc 013), which serves bytes and enforces ref scope while deciding nothing; the performer then pushes with the sole credential allowed to move a default branch, where today it pushes to whatever remote it is configured with. Authorship is to become the ticket's author once the registry holds git identities, with the committer staying the machine's; a signature, once key infrastructure exists, is the machine's too, because a job or a merge that could hold a person's signing key could sign as that person.
+The repositories are to live behind the git service (doc 013), which serves bytes and enforces ref scope while deciding nothing; the performer then pushes with the sole credential allowed to move a default branch, where today it pushes to whatever remote it is configured with. A signature, once key infrastructure exists, is the machine's — never the author's — because a job or a merge that could hold a person's signing key could sign as that person.
 
 ## What would refute the recovery position
 

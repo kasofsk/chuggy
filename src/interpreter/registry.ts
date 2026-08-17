@@ -20,9 +20,12 @@
  * rather than throwing: a verified subject with no row is a caller this
  * deployment declines to serve, not a failure of the lookup.
  *
- * WHAT IS ABSENT. The credential references doc 011 names are not here. Spawn-
- * time resolution reads the registry row and the task-type catalog together,
- * and neither the catalog nor the spawn that reads it exists yet.
+ * THE CREDENTIAL GRANT IS CONFIGURATION, NOT STATE. `credentialsFor` joins the
+ * ticket's annexed author — written by the authenticated desk at arrival, and
+ * rewritten by nothing a work task can reach — to that subject's stored
+ * references and git identity, so what reaches a spawn is decided by the
+ * operator surface alone. It answers a value because absence is the refusal
+ * here as in `userBySubject`, and failing closed on it is the caller's.
  */
 
 import type { Effect } from "../domain/effect.ts";
@@ -33,6 +36,13 @@ export interface RegistryUser {
   readonly subject: string;
   readonly display: string;
   readonly admin: boolean;
+}
+
+/** A subject's stored grant: the reference the spawn resolves material through, and the git identity the wrap-up authors with. */
+export interface UserCredentials {
+  readonly apiKeyRef: string;
+  readonly gitName: string;
+  readonly gitEmail: string;
 }
 
 /** What an author writes onto a ticket and the machine never reads. */
@@ -54,6 +64,15 @@ export interface Registry {
 
   /** Writes the row for a subject, replacing whatever it held. */
   upsertUser(subject: string, display: string, admin: boolean): Promise<void>;
+
+  /** Writes the subject's grant, replacing whatever it held; the desk stores references, never material. */
+  upsertCredentials(
+    subject: string,
+    credentials: UserCredentials,
+  ): Promise<void>;
+
+  /** The grant of the ticket's annexed author, or nothing — and nothing is what a configured spawn fails closed on. */
+  credentialsFor(ticket: TicketId): Promise<UserCredentials | undefined>;
 
   /** The annex row for an arrival, written beside the journaled decision rather than inside it. */
   writeAnnex(ticket: TicketId, annex: TicketAnnex): Promise<void>;

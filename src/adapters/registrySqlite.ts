@@ -1,6 +1,15 @@
 /**
- * The registry over SQLite: the allowlist of admitted subjects, and the ticket
- * annex, in two tables this adapter creates and solely owns.
+ * The registry over SQLite: the allowlist of admitted subjects, the ticket
+ * annex, and the credential grants, in three tables this adapter creates and
+ * solely owns. The grants are their own table rather than columns of `users`
+ * because this tree migrates nothing: every table is created if absent and
+ * never altered, so a contract that grows grows a table.
+ *
+ * THE GRANT JOIN IS THE ANNEXED AUTHOR'S AND NOBODY ELSE'S. `credentialsFor`
+ * joins the ticket's stored author to that subject's grant row in one
+ * statement, so the spawn reads the author as stored — written at arrival,
+ * and rewritten by nothing a work task can reach — and an absent row on
+ * either side is the refusal the caller fails closed on.
  *
  * THE ANNEX IS KEYED BY THE TICKET AND NOTHING ELSE. The dense id the arrival
  * grew is the key, so the join the board performs is a lookup rather than a
@@ -28,9 +37,10 @@ import type {
   Registry,
   RegistryUser,
   TicketAnnex,
+  UserCredentials,
 } from "../interpreter/registry.ts";
 
-/** The two tables this adapter creates and owns; `admin` is a flag because STRICT has no boolean of its own. */
+/** The three tables this adapter creates and owns; `admin` is a flag because STRICT has no boolean of its own. */
 const registrySqliteSchema = `
   CREATE TABLE IF NOT EXISTS users (
     subject TEXT PRIMARY KEY,
@@ -43,6 +53,12 @@ const registrySqliteSchema = `
     brief TEXT NOT NULL,
     task_type TEXT NOT NULL,
     author TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS user_credentials (
+    subject TEXT PRIMARY KEY,
+    api_key_ref TEXT NOT NULL,
+    git_name TEXT NOT NULL,
+    git_email TEXT NOT NULL
   ) STRICT;
 `;
 
@@ -57,6 +73,20 @@ function registrySqliteUser(
     subject: String(row["subject"]),
     display: String(row["display"]),
     admin: Number(row["admin"]) === 1,
+  };
+}
+
+/** Reads the ticket's author's grant off the annex-to-grant join, coercing at this boundary like the other readers. */
+function registrySqliteCredentials(
+  select: StatementSync,
+  ticket: TicketId,
+): UserCredentials | undefined {
+  const row = select.get(ticket);
+  if (row === undefined) return undefined;
+  return {
+    apiKeyRef: String(row["api_key_ref"]),
+    gitName: String(row["git_name"]),
+    gitEmail: String(row["git_email"]),
   };
 }
 
@@ -91,6 +121,12 @@ export function registrySqlite(db: DatabaseSync): Registry {
   const selectAnnexes = db.prepare(
     "SELECT ticket, title, brief, task_type, author FROM ticket_annex ORDER BY ticket",
   );
+  const upsertCredentials = db.prepare(
+    "INSERT INTO user_credentials (subject, api_key_ref, git_name, git_email) VALUES (?, ?, ?, ?) ON CONFLICT (subject) DO UPDATE SET api_key_ref = excluded.api_key_ref, git_name = excluded.git_name, git_email = excluded.git_email",
+  );
+  const selectCredentials = db.prepare(
+    "SELECT c.api_key_ref, c.git_name, c.git_email FROM ticket_annex a JOIN user_credentials c ON c.subject = a.author WHERE a.ticket = ?",
+  );
   return {
     userBySubject: (subject) =>
       Promise.resolve(registrySqliteUser(selectUser, subject)),
@@ -98,6 +134,17 @@ export function registrySqlite(db: DatabaseSync): Registry {
       upsertUser.run(subject, display, admin ? 1 : 0);
       return Promise.resolve();
     },
+    upsertCredentials: (subject, credentials) => {
+      upsertCredentials.run(
+        subject,
+        credentials.apiKeyRef,
+        credentials.gitName,
+        credentials.gitEmail,
+      );
+      return Promise.resolve();
+    },
+    credentialsFor: (ticket) =>
+      Promise.resolve(registrySqliteCredentials(selectCredentials, ticket)),
     writeAnnex: (ticket, annex) => {
       insertAnnex.run(
         ticket,

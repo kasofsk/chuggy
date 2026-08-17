@@ -41,6 +41,8 @@ import { httpApiJobTokenMint } from "./adapters/httpApi/jobToken.ts";
 import { httpApi } from "./adapters/httpApi/server.ts";
 import { k8sFabric, type K8sFabric } from "./adapters/k8sFabric/k8sFabric.ts";
 import { registrySqlite } from "./adapters/registrySqlite.ts";
+import { secretFileSource } from "./adapters/secretFileSource.ts";
+import { secretGcpSource } from "./adapters/secretGcpSource.ts";
 import { sqliteJournal } from "./adapters/sqliteJournal.ts";
 import { wrapUpStub } from "./adapters/wrapUpStub.ts";
 import type { Config } from "./domain/config.ts";
@@ -54,6 +56,7 @@ import type {
   WrapUpPort,
 } from "./interpreter/ports.ts";
 import type { Registry } from "./interpreter/registry.ts";
+import type { SecretSource } from "./interpreter/secretSource.ts";
 import { boot } from "./runtime/boot.ts";
 import { drive, type WakeAfter } from "./runtime/drive.ts";
 
@@ -131,13 +134,43 @@ const composeWakeAfter: WakeAfter = (delayMs, wake) => {
 /** The machine's committer identity when the environment names none. */
 const composeGitIdentityDefault = { name: "chuggy", email: "chuggy@localhost" };
 
+/** Where Google serves Secret Manager unless the environment points the source somewhere else. */
+const composeSecretManagerBase = "https://secretmanager.googleapis.com";
+
+/**
+ * The secret source credentials resolve through, or nothing: an unconfigured
+ * resolution spawns as today, since a catalog's own env remains a legitimate
+ * way to hand every job one shared key, and doc 011 scopes failing closed to
+ * a configured resolution missing a subject's grant. Naming both stores is
+ * refused rather than ranked, because which one holds the material is not a
+ * choice this file may make silently.
+ */
+function composeSecretSource(): SecretSource | undefined {
+  const directory = composeSetting("CHUGGY_SECRETS_DIR");
+  const tokenPath = composeSetting("CHUGGY_SECRETS_GCP_TOKEN_FILE");
+  if (directory !== undefined && tokenPath !== undefined) {
+    throw new Error(
+      "compose: CHUGGY_SECRETS_DIR and CHUGGY_SECRETS_GCP_TOKEN_FILE are both set, and one deployment resolves against one store",
+    );
+  }
+  if (directory !== undefined) return secretFileSource(directory);
+  if (tokenPath === undefined) return undefined;
+  return secretGcpSource({
+    base: composeSetting("CHUGGY_SECRETS_GCP_BASE") ?? composeSecretManagerBase,
+    bearerTokenPath: tokenPath,
+  });
+}
+
 /**
  * The wrap-up performer this deployment runs: git against the configured
  * remote, or nothing — the caller falls back to the stub — so a deployment
- * with no repository keeps working unchanged.
+ * with no repository keeps working unchanged. The author resolver is handed
+ * as a value here, which is what keeps the performer and the registry from
+ * ever seeing each other.
  */
 function composeWrapUp(
   store: JournalStore,
+  registry: Registry,
   db: DatabaseSync,
 ): GitWrapUp | undefined {
   const remote = composeSetting("CHUGGY_GIT_REMOTE");
@@ -147,6 +180,12 @@ function composeWrapUp(
     store,
     db,
     remote,
+    authorOf: async (ticket) => {
+      const held = await registry.credentialsFor(ticket);
+      return held === undefined
+        ? undefined
+        : { name: held.gitName, email: held.gitEmail };
+    },
     scratchDirectory: composeRequired(
       "CHUGGY_GIT_SCRATCH_DIR",
       "a scratch mirror needs a volume to live on",
@@ -176,10 +215,18 @@ function composeFabric(
   const apiBase = composeSetting("CHUGGY_FABRIC_API_BASE");
   if (apiBase === undefined) return undefined;
   const bearerTokenPath = composeSetting("CHUGGY_FABRIC_TOKEN_FILE");
+  const source = composeSecretSource();
   return k8sFabric({
     config: deployment,
     load: () => store.load(),
     annexes: () => registry.annexes(),
+    credentials:
+      source === undefined
+        ? undefined
+        : {
+            credentialsFor: (ticket) => registry.credentialsFor(ticket),
+            source,
+          },
     mint,
     db,
     catalogPath: composeRequired(
@@ -233,7 +280,7 @@ const store = sqliteJournal(database);
 const desk = deskEvents(database);
 const registry = registrySqlite(database);
 const artifacts = httpApiArtifacts(database);
-const performer = composeWrapUp(store, database);
+const performer = composeWrapUp(store, registry, database);
 const fabric = composeFabric(
   store,
   registry,

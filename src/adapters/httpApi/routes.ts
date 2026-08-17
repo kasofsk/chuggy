@@ -678,6 +678,43 @@ async function httpApiUser(
     : httpApiJson(200, { subject, display, admin });
 }
 
+/** A subject's credential grant, written by an operator; what is stored is the reference and the git identity, never material. */
+async function httpApiUserCredentials(
+  desk: HttpApiDesk,
+  request: HttpApiRequest,
+  user: RegistryUser,
+  fields: HttpApiFields,
+): Promise<HttpApiAnswer> {
+  if (!user.admin) {
+    return httpApiRefused(
+      request,
+      403,
+      "not an operator",
+      "the registry is written only by an operator",
+    );
+  }
+  const subject = httpApiField(fields, "subject") ?? "";
+  const apiKeyRef = httpApiField(fields, "apiKeyRef") ?? "";
+  const gitName = httpApiField(fields, "gitName") ?? "";
+  const gitEmail = httpApiField(fields, "gitEmail") ?? "";
+  if ([subject, apiKeyRef, gitName, gitEmail].includes("")) {
+    return httpApiRefused(
+      request,
+      400,
+      "not a credential grant",
+      "subject, apiKeyRef, gitName and gitEmail are all required",
+    );
+  }
+  await desk.registry.upsertCredentials(subject, {
+    apiKeyRef,
+    gitName,
+    gitEmail,
+  });
+  return httpApiWantsPage(request)
+    ? httpApiSeeOther("/")
+    : httpApiJson(200, { subject, apiKeyRef, gitName, gitEmail });
+}
+
 /** The writes: the arrival, the four acts on a ticket, and the registry. */
 async function httpApiWrite(
   desk: HttpApiDesk,
@@ -691,6 +728,13 @@ async function httpApiWrite(
   if (segments[0] !== "api") return undefined;
   if (segments[1] === "users" && segments.length === 2) {
     return await httpApiUser(desk, request, user, fields);
+  }
+  if (
+    segments[1] === "users" &&
+    segments.length === 3 &&
+    segments[2] === "credentials"
+  ) {
+    return await httpApiUserCredentials(desk, request, user, fields);
   }
   if (segments[1] !== "tickets") return undefined;
   if (segments.length === 2) {
