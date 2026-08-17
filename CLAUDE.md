@@ -37,7 +37,7 @@ Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
 slowest by far is `check-model.sh`, which is why it runs last and never in the
 hook. Every gate exits 0 clean, 1 on a finding, **2 when it could not run** — and 2 is not a pass. The sequencing lives in `.chug/tasks/ci.sh`; the justfile is a thin wrapper, and the hook calls the scripts directly because `just` may not be installed.
 
-The source tree is layered, with the boundary between layers enforced rather than described: `src/domain/` is pure and reaches nothing outside itself, and each further layer arrives with the slice that fills it and with its own rule in `.dependency-cruiser.cjs`. `docs/design/004-pure-core-implementation.md` holds the target table. `check-boundaries.sh` is what holds the tree to it, over the module graph rather than per file, because the shape that breaks the rule is a helper nobody would call a decider sitting between a decider and the filesystem.
+The source tree is layered, with the boundary between layers enforced rather than described: `src/domain/` is pure and reaches nothing outside itself, and each further layer arrives with the slice that fills it and with its own rule in `.dependency-cruiser.cjs`. Those rules are the whole boundary, and `check-boundaries.sh` is what holds the tree to them, over the module graph rather than per file, because the shape that breaks the rule is a helper nobody would call a decider sitting between a decider and the filesystem.
 
 That path is not a placeholder. When this repo is eventually orchestrated by the platform it implements, `.chug/tasks/ci.sh` becomes the command evaluator every job runs, unchanged.
 
