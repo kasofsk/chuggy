@@ -17,6 +17,7 @@
     "start": "node src/compose.ts"
   },
   "dependencies": {
+    "jose": "^6.2.9",
     "zod": "^4.4.3"
   }
 }
