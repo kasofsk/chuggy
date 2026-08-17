@@ -42,7 +42,7 @@ import { ticketAt } from "../../src/domain/core.ts";
 import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
 import { completionsOf } from "../../src/domain/ticket.ts";
 import { wExclusive, wNone, woNone } from "../../src/domain/wrapUp.ts";
-import { id } from "../domain/fixtures.ts";
+import { depsOf, id } from "../domain/fixtures.ts";
 import {
   assertStep,
   flatProgram,
@@ -58,7 +58,7 @@ function phaseDispatchChargeSurvives(): ActorState {
   let state = journalStep(
     config,
     actorInit(),
-    jArrive([], flatProgram, asProjectId(1), wExclusive(1)),
+    jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
   );
   assert.equal(state.journal.length, 1);
   assertStep(config, state, "arrive (journaled)");
@@ -199,7 +199,7 @@ function walkLeaseFreeToCompletion(): ActorState {
   let state = journalStep(
     config,
     actorInit(),
-    jArrive([], flatProgram, asProjectId(1), wNone),
+    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   assert.equal(ticketAt(memoryCore(state), id(1)).wrapUp.wrapUp, "WNone");
   assert.equal(state.journal.length, 1);

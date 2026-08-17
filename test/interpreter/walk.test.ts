@@ -56,7 +56,7 @@ import {
   flatProgram,
   refinementInstance,
 } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { depsOf, id } from "../domain/fixtures.ts";
 import {
   absorbed,
   emissionPrecedesCheckpoint,
@@ -70,7 +70,12 @@ import {
 const config = refinementInstance;
 
 /** The arrival every run here begins with: no deps, one stage, a lease on the one project. */
-const arrival: Cmd = jArrive([], flatProgram, asProjectId(1), wExclusive(1));
+const arrival: Cmd = jArrive(
+  depsOf(),
+  flatProgram,
+  asProjectId(1),
+  wExclusive(1),
+);
 
 /** One decision journaled and then drained, with the model's gate asserted at both states. */
 async function step(

@@ -64,12 +64,12 @@ import {
 } from "../../src/domain/deciders.ts";
 import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
 import { wExclusive } from "../../src/domain/wrapUp.ts";
-import { id } from "../domain/fixtures.ts";
+import { depsOf, id } from "../domain/fixtures.ts";
 import { flatProgram, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
 
-const cmd1 = jArrive([], flatProgram, asProjectId(1), wExclusive(1));
+const cmd1 = jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1));
 const d1 = execCmd(config, genesis, cmd1);
 const e1: Entry = { seq: 1, cmd: cmd1, rec: d1.rec };
 const cmd2 = jRelease(id(1));
@@ -141,7 +141,12 @@ test("a forged record is refused: the entry's rec must be exactly the decider's"
 });
 
 test("an out-of-universe payload is refused by draw-set membership", () => {
-  const phantom = jArrive([], flatProgram, asProjectId(1), wExclusive(99));
+  const phantom = jArrive(
+    depsOf(),
+    flatProgram,
+    asProjectId(1),
+    wExclusive(99),
+  );
   const phantomEntry: Entry = {
     seq: 1,
     cmd: phantom,
@@ -153,7 +158,7 @@ test("an out-of-universe payload is refused by draw-set membership", () => {
     !cmdEnabled(
       config,
       genesis,
-      jArrive([], flatProgram, asProjectId(1), wExclusive(2)),
+      jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(2)),
     ),
   );
 });
@@ -262,18 +267,13 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "JArrive/dependableIn",
     at: drafted,
-    cmd: jArrive([id(2)], flatProgram, asProjectId(1), wExclusive(1)),
-  },
-  {
-    conjunct: "JArrive/depsDistinct",
-    at: drafted,
-    cmd: jArrive([id(1), id(1)], flatProgram, asProjectId(1), wExclusive(1)),
+    cmd: jArrive(depsOf(2), flatProgram, asProjectId(1), wExclusive(1)),
   },
   {
     conjunct: "JArrive/isValidProgram",
     at: genesis,
     cmd: jArrive(
-      [],
+      depsOf(),
       [...flatProgram, ...flatProgram],
       asProjectId(1),
       wExclusive(1),
@@ -282,12 +282,12 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "JArrive/projects",
     at: genesis,
-    cmd: jArrive([], flatProgram, asProjectId(2), wExclusive(1)),
+    cmd: jArrive(depsOf(), flatProgram, asProjectId(2), wExclusive(1)),
   },
   {
     conjunct: "JArrive/wrapUpChoices",
     at: genesis,
-    cmd: jArrive([], flatProgram, asProjectId(1), wExclusive(99)),
+    cmd: jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(99)),
   },
   { conjunct: "JRelease/draftsIn", at: ready, cmd: jRelease(id(1)) },
   { conjunct: "JRevoke/revocablesIn", at: done, cmd: jRevoke(id(1)) },
@@ -339,7 +339,10 @@ const refusals: readonly Refusal[] = [
 /**
  * `JGateResolve`'s outcome membership has no row: `WrapUpOutcome` holds only
  * the two the model draws, so nothing outside the set can be constructed and
- * the `WFailed` drive below is what stands behind that conjunct.
+ * the `WFailed` drive below is what stands behind that conjunct. The arrival
+ * repeating a dep has no row and no conjunct either — the payload is the model's
+ * set — so that refusal lives in `test/interpreter/wire.test.ts`, on the array a
+ * stored journal carries.
  */
 test("every conjunct of every enablement refuses on a state that fails it alone", () => {
   for (const { conjunct, at, cmd } of refusals) {
@@ -347,28 +350,22 @@ test("every conjunct of every enablement refuses on a state that fails it alone"
   }
 });
 
+/** The arm's positive half, which a table of refusals cannot carry. */
+test("an arrival naming a dependable dep is enabled", () => {
+  assert.ok(
+    cmdEnabled(
+      config,
+      drafted,
+      jArrive(depsOf(1), flatProgram, asProjectId(1), wExclusive(1)),
+    ),
+  );
+});
+
 test("the refusal table names every constructor the model declares", () => {
   assert.deepEqual(
     [...new Set(refusals.map((row) => row.cmd.cmd))].sort(),
     [...cmdTags].sort(),
   );
-});
-
-/**
- * The repeat is refused for being a repeat and nothing else: the same arrival
- * naming the dep once is enabled at the same state, which is what the row above
- * cannot say on its own.
- */
-test("an arrival repeating a dep is refused where naming it once is enabled", () => {
-  const once = jArrive([id(1)], flatProgram, asProjectId(1), wExclusive(1));
-  const twice = jArrive(
-    [id(1), id(1)],
-    flatProgram,
-    asProjectId(1),
-    wExclusive(1),
-  );
-  assert.ok(!cmdEnabled(config, drafted, twice), "the repeat was enabled");
-  assert.ok(cmdEnabled(config, drafted, once), "the distinct twin was refused");
 });
 
 /** `decided` is the domain decider called directly, so a mis-wired dispatch arm has somewhere to disagree. */

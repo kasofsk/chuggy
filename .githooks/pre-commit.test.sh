@@ -91,6 +91,16 @@ git -C "$R" add -A
 run_hook
 check "a non-executable named gate stops the commit" 2 "$RC" "check-comments.sh is not executable"
 
+# Both at once: the missing gate sets the verdict, and the rejection is still
+# accounted for. A reader given only the stricter line would fix the missing
+# gate and take that for the whole bill.
+stub_repo 1
+rm -f "$R/.chug/tasks/check-gates.sh"
+git -C "$R" add -A
+run_hook
+check "both conditions keep the stricter verdict" 2 "$RC" "1 gate(s) named but not runnable"
+check "the rejection is still reported beside it" 2 "$RC" "1 gate(s) rejected this commit"
+
 # Outside a git checkout the hook fails OPEN. It is not a gate of record;
 # `just check` is, and it fails closed on the same condition.
 OUT="$WORK/.out"

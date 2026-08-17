@@ -38,6 +38,10 @@ import { aSome, wExclusive } from "../../src/domain/wrapUp.ts";
 /** A ticket id, so a fixture reads the way the model's numbering does. */
 export const id = (value: number): TicketId => asTicketId(value);
 
+/** An arrival's dependency draw, in the shape the arrival carries it: the model's set. */
+export const depsOf = (...values: number[]): ReadonlySet<TicketId> =>
+  new Set(values.map(id));
+
 /** A resolved work task, as the retained record holds one. */
 export const workTask = (value: number, outcome: TaskOutcome): Task => ({
   id: asTaskId(value),
@@ -81,7 +85,7 @@ export function ticketOn(
 ): Ticket {
   const born = freshTicket(
     config,
-    [],
+    depsOf(),
     defaultProgram(config),
     asProjectId(project),
     wExclusive(project),

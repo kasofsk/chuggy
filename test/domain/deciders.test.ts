@@ -42,6 +42,7 @@ import {
 import {
   accountsForAll,
   coreOf,
+  depsOf,
   evalTask,
   id,
   ticketOn,
@@ -289,7 +290,7 @@ test("arrival is the authoring climber, and release descends off it", () => {
   const arrived = decideArrive(
     config,
     empty,
-    [],
+    depsOf(),
     defaultProgram(config),
     asProjectId(2),
     wExclusive(2),

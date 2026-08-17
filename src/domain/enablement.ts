@@ -107,8 +107,9 @@ export function dependableIn(core: Core): readonly TicketId[] {
 
 /**
  * An arrival's dependencies name distinct tickets. The model draws them from a
- * powerset, so a repeat is a value its `Set` has no counterpart for; the array
- * that carries them here can hold one, and this is what refuses it.
+ * powerset and the command payload carries that set, so this is what refuses a
+ * repeat where an array still carries the draw — off the wire, and in a drawn
+ * trace.
  */
 export function depsDistinct(deps: readonly TicketId[]): boolean {
   return new Set(deps).size === deps.length;

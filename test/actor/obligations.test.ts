@@ -31,7 +31,7 @@ import {
 import { ticketAt, withTicket } from "../../src/domain/core.ts";
 import { asProjectId } from "../../src/domain/ids.ts";
 import { aSome, wExclusive } from "../../src/domain/wrapUp.ts";
-import { id } from "../domain/fixtures.ts";
+import { depsOf, id } from "../domain/fixtures.ts";
 import {
   declaredCmdConstructors,
   declaredRefinementBundle,
@@ -48,7 +48,7 @@ function journaledArrival(): ActorState {
   return journalStep(
     config,
     actorInit(),
-    jArrive([], flatProgram, asProjectId(1), wExclusive(1)),
+    jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
   );
 }
 

@@ -37,7 +37,7 @@ import {
   wExclusive,
   woAttempt,
 } from "../../src/domain/wrapUp.ts";
-import { id, workRunning, workTask } from "../domain/fixtures.ts";
+import { depsOf, id, workRunning, workTask } from "../domain/fixtures.ts";
 import { flatProgram, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
@@ -64,7 +64,7 @@ function assertDiscriminates<Shape>(
 
 const baseTicket: Ticket = freshTicket(
   config,
-  [],
+  depsOf(),
   flatProgram,
   asProjectId(1),
   wExclusive(1),
