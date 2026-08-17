@@ -21,6 +21,13 @@
  * through the timer, where the composition root lets it end the process and
  * boot re-drives. The layer itself names no clock and no timer, which is what
  * keeps it under the same ambient ban as the interpreter.
+ *
+ * THE READ IS BESIDE THE FACE BECAUSE THE STATE IS HERE. The drive owns the
+ * actor state, so a face that rendered the machine from its own copy would
+ * render a stale one, and a face that replayed the journal itself would be a
+ * second reader of the single writer's book. `core` hands back the state the
+ * chain has reached and nothing else: it takes no argument, decides nothing,
+ * and cannot advance the machine.
  */
 
 import {
@@ -35,6 +42,7 @@ import {
 } from "../actor/command.ts";
 import { memoryCore, type ActorState } from "../actor/state.ts";
 import { boundsOf } from "../domain/config.ts";
+import type { Core } from "../domain/core.ts";
 import { sysMeasure } from "../domain/measure.ts";
 import { decide, drain, type Executor } from "../interpreter/executor.ts";
 import type { Inbound, Submitted } from "../interpreter/inbound.ts";
@@ -42,6 +50,11 @@ import { followUpsIn } from "./followUps.ts";
 
 /** The one capability the runtime is granted: run `wake` after the delay, off this layer's stack. */
 export type WakeAfter = (delayMs: number, wake: () => Promise<void>) => void;
+
+/** What the drive hands out: the inbound face, and the pure read of the state it holds. */
+export interface Drive extends Inbound {
+  readonly core: () => Core;
+}
 
 /** The pump's retry ladder; running off its end re-raises the failure through the timer. */
 export const driveDrainRetryDelaysMs: readonly number[] = [100, 1000, 10000];
@@ -137,7 +150,7 @@ export function drive(
   executor: Executor,
   wakeAfter: WakeAfter,
   booted: ActorState,
-): Inbound {
+): Drive {
   const own: DriveState = {
     actor: booted,
     chain: Promise.resolve(),
@@ -147,6 +160,7 @@ export function drive(
     driveSubmit(executor, wakeAfter, own, cmd);
   void driveSerialize(own, () => drivePumpGuarded(executor, wakeAfter, own));
   return {
+    core: () => memoryCore(own.actor),
     arrive: (deps, program, project, wrapUp) =>
       submit(jArrive(deps, program, project, wrapUp)),
     release: (ticket) => submit(jRelease(ticket)),
