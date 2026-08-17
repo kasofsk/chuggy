@@ -1,14 +1,6 @@
 #!/bin/sh
 # Every gate script has a sibling `*.test.sh`.
 #
-# Habit is not a gate. "Every gate has a suite" holds right up until the commit
-# where it doesn't, and a suite nothing runs is indistinguishable from one that
-# passes. This is the check that makes the convention a rule.
-#
-# It also asserts the discovery glob matched something. A glob that matches
-# nothing is the failure mode this whole file exists to prevent, so it must not
-# be the way this file passes.
-#
 # Scope: tracked `.chug/tasks/*.sh` plus `.githooks/pre-commit`. A `*.test.sh`
 # is not itself a gate and needs no test of its own.
 #
@@ -24,7 +16,7 @@ fi
 cd "$root" || exit 2
 
 # A leading underscore marks a sourced library rather than a gate; it has no
-# verdict of its own, so it has nothing to test.
+# verdict, so it has nothing to test.
 gates="$(git ls-files '.chug/tasks/*.sh' '.githooks/pre-commit' 2>/dev/null \
 	| grep -v '\.test\.sh$' | grep -v '/_' || true)"
 

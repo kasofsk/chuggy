@@ -2,13 +2,8 @@
 # A comment may not state a quantity measured from this tree that a reader has
 # to trust.
 #
-# WHY A GATE AND NOT A CONVENTION. The convention was "a figure carries its
-# measurement date", and it failed in the ordinary way: the dates were never
-# written, the figures went stale in silence, and a single session turned the
-# same defect up in a gate header, a sequencer comment, a suite header and the
-# routing doc. A date would have saved none of them, because a dated figure is
-# still one the reader cannot check without leaving the sentence. What makes a
-# figure legitimate is being CHECKABLE, and the ways of being checkable are:
+# WHAT MAKES A FIGURE LEGITIMATE is being CHECKABLE, and the ways of being
+# checkable are:
 #
 #   - THE CODE ACTS ON IT. A cap, a default, a threshold — `${X:-60}` is a
 #     value the script reads, not a claim about the tree. Only comment lines
@@ -19,12 +14,10 @@
 #   - IT IS A PIN OR A DATE. `0.32.0`, `2026-08-08`. Neither carries a unit,
 #     and a numeral with a dot or a dash between digits is skipped below.
 #   - THE SENTENCE SHIPS THE PROCEDURE THAT REPRODUCES IT. That is the
-#     treatment that replaces a figure instead of dating it: `check-paths.sh`
-#     says which flag to flip and what to run rather than how many its own
-#     narrowing skips.
+#     treatment that replaces a figure instead of dating it.
 #
 # WHAT COUNTS AS A QUANTITY. Two shapes, and everything else is skipped in
-# SILENCE, because a gate that argues with prose is a gate that gets bypassed:
+# SILENCE:
 #
 #   Q1  A number bound to a measure — a time unit written onto the numeral
 #       (`Ns`, `Nms`), or a measure noun within a word or two after it:
@@ -35,54 +28,34 @@
 #       this tree has only ever spelled a number out to report a measurement.
 #
 # A DURATION IS A MEASUREMENT AT ANY SIZE, so Q1 reads a time unit after a
-# number below the floor as well. Below the floor, a number in front of
-# `checks` or `counters` is the sentence counting what it has just listed; in
-# front of `seconds` it is a figure. The countable nouns get no such treatment
-# — `lines` after a small number describes a shape rather than measuring the
-# tree, and a count stops being a description only once it passes the floor.
+# number below the floor as well. The countable nouns get no such treatment: a
+# count stops being a description only once it passes the floor.
 #
 # This header is inside the corpus, so it cannot quote the shapes it rejects.
 # Naming the noun is what is left, and it is the better sentence anyway.
-#
-# Q2 IS THE LOAD-BEARING HALF. A noun list catches only the nouns it already
-# knows, so on its own it would need an inventory of everything this tree
-# contains, kept current — the very thing being banned. Spelling is a property
-# of the sentence rather than of the thing counted, so Q2 catches a count of
-# anything: witnesses, plugins, comments, gates, rules.
-#
-# Refutation trigger: Q2's floor is a claim that small numbers here are
-# enumeration and larger ones are measurement. A legitimate sentence that must
-# spell out a larger number refutes it, and the fix is to look at that
-# sentence before touching the floor — every rejection so far has had a rewrite
-# that reads better than the original.
 #
 # WHAT IT CANNOT SEE, said plainly so nobody trusts it further than it goes. A
 # magnitude with no number — "costs milliseconds" — is invisible, and has to
 # be: "a violation costs seconds instead of a rework" is the same shape and is
 # honest rhetoric. A dotted numeral reads as a version, so a sub-second
 # duration written with a decimal point gets through. A count below the floor
-# is deliberate. What is left over is the reviewer's, and
-# `.chug/tasks/review-change.md` is where that is written.
+# is deliberate. What is left over is `.chug/tasks/review-change.md`'s.
 #
 # SCOPE: tracked `*.md`, `*.sh` and `*.qnt`, the hook and the justfile — the
 # files this tree writes prose in. In everything but markdown ONLY COMMENT
-# LINES ARE READ, the narrowing `check-paths.sh` makes for a suite and for its
-# reason: a figure in code is a value, and a value is not a claim. In markdown
-# a fenced block is code, so it is skipped.
+# LINES ARE READ: a figure in code is a value, and a value is not a claim. In
+# markdown a fenced block is code, so it is skipped.
 #
 # THE MODEL IS PROSE. `model/` is the specification, and its `///` headers are
 # where this tree argues at length: a count in one of them is a claim about the
 # tree exactly as a count in a gate header is, and being proved says nothing
-# about the prose wrapped round the proof. Quint's `///` is a comment marker
-# like any other, so the comment-line narrowing needs nothing added for it.
+# about the prose wrapped round the proof.
 #
-# THERE IS NO ESCAPE, on `check-paths.sh`'s policy and for its reason. A count
-# of things the sentence itself lists does not need the count; a count of
-# things it does not list is the defect. The one surface left alone is
-# `docs/design/*.md`, because a design doc argues a decision and has to be able
-# to cite the measurement that motivated it — dated, and with the command that
-# reproduces it. That directory does not exist yet and this is what will be
-# waiting when it does.
+# THERE IS NO ESCAPE. The one surface left alone is `docs/design/*.md`, because
+# a design doc argues a decision and has to be able to cite the measurement
+# that motivated it — dated, and with the command that reproduces it. A figure
+# there is answerable to a reviewer instead, which is a weaker control and is
+# the reason it covers one directory and no other.
 #
 # Usage:
 #   .chug/tasks/check-figures.sh [<file>...]

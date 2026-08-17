@@ -1,0 +1,32 @@
+# House rule 6 is about code, and this file is where "code" is drawn.
+#
+# The formatter owns what it can reformat without changing what a sentence
+# says: TypeScript, the JavaScript configs, JSON. Everything below is prose or
+# is governed elsewhere, and running a code formatter over it would reflow
+# paragraphs that were written a line at a time to be read a line at a time.
+#
+#   *.md        doc-lint.sh owns markdown well-formedness, and this tree's
+#               prose is hand-wrapped. A reflow would produce a diff on every
+#               file, touching every line, for no reader's benefit.
+#   .chug/      shell, and check-shell-quoting.sh is what judges it.
+#   model/      Quint, which Prettier does not parse.
+#   .claude/    not this tree's file to format.
+#
+# A file this list covers is not unformatted; it is formatted by whatever gate
+# names it above. What has no such gate is TypeScript, which is exactly what is
+# left in scope.
+
+# Both forms, for .gitignore's reason and after the same failure: the
+# trailing-slash form matches a directory only, so a SYMLINK named
+# node_modules walks straight past it. A suite fixture links one in rather
+# than installing a second copy, and the formatter then walked the whole real
+# tree on every case.
+node_modules
+node_modules/
+
+*.md
+.chug/
+.githooks/
+model/
+.claude/
+package-lock.json

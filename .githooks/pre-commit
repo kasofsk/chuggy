@@ -4,24 +4,25 @@
 # Installed with: git config core.hooksPath .githooks   (once per clone)
 #
 # THE INVARIANT THAT GOVERNS THIS FILE: the hook may reject only what
-# `.chug/tasks/ci.sh` runs unconditionally. That is what guarantees it can
-# never block a commit the full check would accept — a hook that is stricter
-# than CI is a hook people disable, and then none of it runs.
+# `.chug/tasks/ci.sh` runs unconditionally. That is what guarantees it can never
+# block a commit the full check would accept. It calls the gate scripts directly
+# rather than going through `just`, which may not be installed.
 #
-# It calls the gate scripts directly rather than going through `just`, because
-# `just` may not be installed and a hook that depends on it fails open.
+# THE FAST SUBSET ONLY. Both slow stages sit this out — the shell suites and the
+# model gate — and belong in `just check`. This file prints its own elapsed time
+# on every run, so what admitting another gate costs is measured here rather
+# than asserted in a comment that nothing re-checks.
 #
-# The shell suites are deliberately absent — they are the slowest stage and
-# they belong in `just check`.
-#
-# `git commit --no-verify` bypasses this, and bypasses every gate at once
-# rather than the one that was in the way. Legitimate when the alternative is
-# leaving work uncommitted; run `just check` before pushing either way.
+# THE CALL IS THE ROSTER. A gate named below must exist and be executable, and
+# a named gate that is absent stops the commit. That is not the stricter-than-CI
+# case the invariant forbids: `.chug/tasks/ci.sh` fails on the same tree. It is
+# also why the fast subset is expressed by leaving a gate unnamed rather than by
+# guarding its call — a guard makes "not in the subset" and "gone" look alike.
 set -eu
 export LC_ALL=C
 
 # A hook inherits these from the invoking git, and they break any command that
-# needs to resolve the repo for itself.
+# resolves the repo for itself.
 unset GIT_DIR GIT_WORK_TREE
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -42,12 +43,23 @@ done
 
 started="$(date +%s)"
 rejected=0
+unrunnable=0
 
 run_gate() { # <label> <script> [<arg>...]
 	label="$1"
 	script="$2"
 	shift 2
-	[ -x "$script" ] || return 0
+	if [ ! -x "$script" ]; then
+		# Unlike the rc=2 branch below, this one blocks: a named gate that
+		# is not there, or that this checkout cannot run, is what
+		# `just check` will find on the same tree. A gate that ran and
+		# answered could-not-run is describing the machine, which differs
+		# per developer and is what `just check` settles.
+		if [ -e "$script" ]; then why="is not executable"; else why="is missing"; fi
+		echo "pre-commit: $script $why — cannot run"
+		unrunnable=$((unrunnable + 1))
+		return 0
+	fi
 	set +e
 	out="$("$script" "$@" 2>&1)"
 	rc=$?
@@ -60,7 +72,7 @@ run_gate() { # <label> <script> [<arg>...]
 		rejected=$((rejected + 1))
 		;;
 	*)
-		# Could not run is a loud skip here, not a rejection: the full check
+		# Could-not-run is a loud skip here, not a rejection: the full check
 		# treats it as a failure, and this hook must not be the stricter of
 		# the two.
 		printf '%s\n' "$out"
@@ -73,11 +85,12 @@ run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 run_gate "check-figures" ./.chug/tasks/check-figures.sh
 run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
 run_gate "check-gates" ./.chug/tasks/check-gates.sh
+run_gate "check-comments" ./.chug/tasks/check-comments.sh
+run_gate "check-knowledge" ./.chug/tasks/check-knowledge.sh
 
 # check-paths is whole-tree in `just check` and staged-only here. It resolves
 # against the whole tracked set either way, so the narrowing changes what is
-# scanned and not what counts as a claim — which keeps this the weaker of the
-# two runs, never the stricter one.
+# scanned and not what counts as a claim — which keeps this the weaker run.
 staged="$(git diff --cached --name-only --diff-filter=ACMR)"
 if [ -n "$staged" ]; then
 	set -f
@@ -90,6 +103,10 @@ if [ -n "$staged" ]; then
 fi
 
 elapsed=$(( $(date +%s) - started ))
+if [ "$unrunnable" -gt 0 ]; then
+	echo "pre-commit: ${unrunnable} gate(s) named but not runnable (${elapsed}s)"
+	exit 2
+fi
 if [ "$rejected" -gt 0 ]; then
 	echo "pre-commit: ${rejected} gate(s) rejected this commit (${elapsed}s)"
 	exit 1

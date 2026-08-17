@@ -1,33 +1,25 @@
 #!/bin/sh
-# Markdown lint over every tracked `*.md`. Three checks, no external tooling —
-# POSIX sh + awk only, so it runs anywhere the repo is checked out:
+# Markdown lint over every tracked `*.md`. Three checks, POSIX sh and awk only,
+# so it runs anywhere the repo is checked out:
 #
 #   1. Well-formedness — headings need a space after the `#`, and code fences
 #      must close. ERRORS. Trailing whitespace is a WARNING only.
 #   2. Intra-repo links resolve — every relative markdown link `](path)` points
 #      at something that exists. Anchors, `http(s)://` and `mailto:` targets are
 #      skipped. A dangling relative link is an ERROR.
-#   3. Design filenames — each `docs/design/*.md` is named
-#      `{seq}-{slug}.md`: leading digits, a hyphen, then a lowercase-kebab slug.
-#      The directory does not exist today and this rule is what will be waiting
-#      when it does.
-#      ERROR. The match anchors on the repo-relative path, so a path merely
-#      *ending* in `docs/design/*.md` is some other repo's file, and a nested
-#      subdirectory is out of scope. Its character classes are spelled out
-#      rather than written as `a-z` ranges: range membership in shell patterns
-#      follows the locale's collation order, so under en_US.UTF-8 `a-z` also
-#      spans the uppercase letters and the rule would quietly stop rejecting
-#      them. Same reason LC_ALL=C is pinned below — the verdict must be the
-#      same on every host.
+#   3. Design filenames — each `docs/design/*.md` is named `{seq}-{slug}.md`:
+#      leading digits, a hyphen, then a lowercase-kebab slug. Numbers are spent
+#      rather than reused, and this rule judges shape alone — which number is
+#      free is a question for the log. ERROR. The match anchors on the
+#      repo-relative path, so a path merely *ending* in `docs/design/*.md` is
+#      some other repo's file, and a nested subdirectory is out of scope. Its
+#      character classes are spelled out rather than written as `a-z` ranges:
+#      range membership in shell patterns follows the locale's collation order,
+#      so under en_US.UTF-8 `a-z` also spans the uppercase letters and the rule
+#      would quietly stop rejecting them. Same reason LC_ALL=C is pinned below.
 #
-# WHOLE-TREE, NOT DIFF-AWARE, deliberately. Diff selection needs a base ref and
-# a `git fetch` to resolve it; under this repo's local-only CI there is no base
-# ref to read, so every run would take the fall-back path and print a
-# degradation notice about a degradation that is simply the normal case — and a
-# notice that prints every time is read by nobody. Whole-tree over a corpus this
-# size costs less than the base-ref machinery it avoids, needs no network, and
-# cannot report a stale verdict. Re-introduce diff scoping when the corpus makes
-# it worth the machinery, not before.
+# Whole-tree, not diff-aware: diff selection needs a base ref and a `git fetch`
+# to resolve it, and this repo's CI is local-only.
 #
 # Usage:
 #   .chug/tasks/doc-lint.sh [<file>...]
@@ -35,9 +27,7 @@
 #
 # `--emit-links` is rule 2's extractor with the verdict removed: it judges
 # nothing and prints `<file><tab><line><tab><target>` for every intra-repo
-# relative link, target normalized to a repo-relative path. It exists so the
-# deferred orphan check asks rule 2 "what does this doc link to" rather than
-# growing a second answer to the same question.
+# relative link, target normalized to a repo-relative path.
 #
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
@@ -70,7 +60,22 @@ else
 "
 fi
 
-files="$(printf '%s' "$files" | grep -v '^$' || true)"
+# A selected doc can be missing from the worktree — deleted and not yet
+# committed, or named by a caller. The filter sits here rather than inside the
+# loops so the tally counts what this run read, not what it was handed.
+set -f
+IFS='
+'
+readable=""
+for f in $files; do
+	[ -f "$f" ] || continue
+	readable="$readable$f
+"
+done
+unset IFS
+set +f
+
+files="$(printf '%s' "$readable" | grep -v '^$' || true)"
 if [ -z "$files" ]; then
 	[ "$emit_links" -eq 1 ] || echo "doc-lint: no tracked markdown — nothing to lint"
 	exit 0
@@ -98,13 +103,12 @@ extract() {
 }
 
 # The target is joined onto the linking file's directory and `.`/`..` segments
-# are collapsed, so a doc linking `../reference/style.md` emits the path the
-# rest of the tree calls it by. Anchor-only and off-tree targets are dropped.
+# are collapsed, so the emitted path is the one the rest of the tree calls it
+# by. Anchor-only and off-tree targets are dropped.
 if [ "$emit_links" -eq 1 ]; then
 	IFS='
 '
 	for f in $files; do
-		[ -f "$f" ] || continue
 		extract "$f" | awk -v f="$f" -v dir="$(dirname "$f")" '
 			function norm(p,   a, n, i, k, o, r) {
 				n = split(p, a, "/"); k = 0
@@ -140,7 +144,6 @@ report_warn() { echo "warn  $1"; warnings=$((warnings + 1)); }
 IFS='
 '
 for f in $files; do
-	[ -f "$f" ] || continue # a deleted doc can be named explicitly but has no content
 	case "$f" in
 	docs/design/*/*) : ;; # a nested subdirectory is not a design doc
 	docs/design/*.md)

@@ -1,47 +1,23 @@
 #!/bin/sh
 # Shell-quoting gate: a quote character inside the word of a `${VAR:-word}`-style
-# parameter expansion, where bash reads the quote and dash does not.
-#
-# The class, in one sentence: in a context that already quotes — inside double
-# quotes, or inside an unquoted heredoc body — bash parses quotes INSIDE the
-# word of a `${VAR<op>word}` expansion and dash does not, so the same line means
-# two different things in the two shells while staying syntactically valid in
-# both.
-#
-#   V=""; M="X is '${V:-this node's CPU count}'"
-#     dash: M is `X is 'this node's CPU count'`
-#     bash: the apostrophe OPENS a quoted run that swallows the following lines
-#           until the next one, binding them into whatever block the line sits in
-#
-# Why a gate and not just care: the divergence is invisible to
-# everything this repo already runs. A POSIX shell always accepts the file, so no
-# `sh -n` sweep can see it, and whether BASH rejects it depends only on what
-# happens to follow — a later apostrophe closes the run, and then
-# `bash -n` passes too and the file is valid in both shells while binding
-# different lines in each.
-#
-# WHICH SHELL READS A SCRIPT HERE IS A PROPERTY OF THE HOST. `.chug/tasks/ci.sh`
-# drives every `*.test.sh` suite as `sh "$suite"`: on the developer's macOS
-# machine — which is the whole of CI — /bin/sh IS bash, while on a Linux host it
-# is usually dash. So the same tree binds different code on two machines, and a
-# suite exercising the exact failing input stays green on whichever of them
-# reads it the way the author meant.
-#
-# The damage is worse than a wrong string. The swallowed run carries whatever
-# follows it into the quoted text, so a pre-flight guard can end up inside the
-# `if` above it and run only when its own check FAILS.
+# parameter expansion, in a context that already quotes — inside double quotes,
+# or inside an unquoted heredoc body. bash parses the quote and dash does not,
+# so the same line means two different things in the two shells while staying
+# syntactically valid in both. Nothing else this repo runs can see it: a POSIX
+# shell always accepts the file, and whether bash rejects it depends only on
+# what happens to follow — a later apostrophe closes the run, and then `bash -n`
+# passes too and the file is valid in both shells while binding different lines
+# in each.
 #
 # WHICH EXPANSIONS. Every form whose word bash reads: the operator may be any of
 # `-` `=` `+` `?`, with or without the leading colon (`${V:-w}` and `${V-w}`
-# diverge identically), and the parameter may be a name, a positional (`${1:-w}`)
-# or a special parameter (`${@:-w}`). Every operator spelling and every
-# parameter form was measured to diverge; the colon-less and positional forms
-# are not a lesser case, and `${1:-…}` is in fact the commonest default in this
-# tree. Shapes with no word — `${V#pat}`, `${V%%pat}`, `${V//a/b}`, `${V:1:2}`,
-# `${#V}` — are not this class and are not matched.
+# diverge identically), and the parameter may be a name, a positional
+# (`${1:-w}`) or a special parameter (`${@:-w}`). Shapes with no word —
+# `${V#pat}`, `${V%%pat}`, `${V//a/b}`, `${V:1:2}`, `${#V}` — are not this class
+# and are not matched.
 #
-# WHICH CONTEXTS, and this is measured rather than assumed (2026-08-08, dash 0.5
-# and bash 5.2, the two shells that matter):
+# WHICH CONTEXTS, measured rather than assumed (2026-08-08, dash 0.5 and bash
+# 5.2, the two shells that matter):
 #
 #   context                  unbalanced quote          balanced quote
 #   double-quoted            DIVERGES, silently        diverges if it spans a `}`
@@ -49,33 +25,23 @@
 #   heredoc, quoted delimiter no expansion happens at all — nothing to diverge
 #   unquoted word            BOTH shells reject it     both shells agree
 #
-# So the gate flags the first two rows and stays silent on the last two. The
-# unquoted row is the one worth spelling out, because it is the row a purely
-# lexical scan would flag by accident: there, POSIX has the word expanded like
-# any other word, so `env ${2:+QUINT_SEED="$2"} quint test …` means the same in
-# both shells, and an unbalanced quote is a loud syntax error in dash as well as
-# bash. Nothing silent survives there, so flagging it would be noise. A command
-# substitution is excluded for the same reason: `$(…)` and backticks open a
-# fresh parsing context and quote normally in both shells, which is why
-# `${DIR:-$(cd "$(dirname "$0")" && pwd)}` is correct and must not be flagged.
+# So the gate flags the first two rows, balanced and unbalanced alike, and stays
+# silent on the last two. In an unquoted word POSIX has the word expanded like
+# any other word, so an unbalanced quote is a loud syntax error in dash as well
+# as bash and nothing silent survives there. A command substitution is excluded
+# for the same reason: `$(…)` and backticks open a fresh parsing context and
+# quote normally in both shells.
 #
-# Balanced quotes are flagged alongside unbalanced ones. `"${V:-'}'}"` is `'}'`
-# in bash and `''}` in dash: the quoted run hides the brace from bash's scan for
-# the closing one, which is the same disagreement with a quieter blast radius.
-#
-# The fix is never an escape. Write the message without the quote — plain prose
-# is what the rest of these scripts use — or move the quoted text out of the
-# expansion and into the surrounding string.
+# THE FIX IS NEVER AN ESCAPE. Write the message without the quote, or move the
+# quoted text out of the expansion and into the surrounding string.
 #
 # This is a LEXICAL heuristic, not a shell parser. It tracks quoting, command
-# substitution and heredocs a line at a time, so the shapes it cannot see are:
-# a double-quoted string continued across a newline (each line is scanned from a
-# fresh unquoted state), a `<<\EOF` or `<<` inside an arithmetic `$(( … ))`, a
-# nested `${…}` inside the word (which truncates the match), and a trailing
+# substitution and heredocs a line at a time, so the shapes it cannot see are: a
+# double-quoted string continued across a newline, a `<<\EOF` or `<<` inside an
+# arithmetic `$(( … ))`, a nested `${…}` inside the word, and a trailing
 # comment, which is read as code. Whole-line comments are skipped. It is scoped
 # to the one divergence CI's shell cannot see, not to shell portability at
-# large; it measured zero findings over the tree when it landed, so a finding is
-# a real one to look at rather than noise to tune away.
+# large.
 #
 # Usage:
 #   .chug/tasks/check-shell-quoting.sh            # every tracked shell file

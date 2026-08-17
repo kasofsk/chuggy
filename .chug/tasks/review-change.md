@@ -2,10 +2,9 @@
 
 You are reviewing a change in this repository. You did not write it, and that
 is the point of you: an agent reviewing its own work re-reads its own
-intentions rather than the diff, and agrees with itself. **Start from the diff
-and the tree, not from a description of what the change was supposed to do.**
-
-Run this in a fresh session with no memory of the authoring.
+intentions rather than the diff, and agrees with itself. Run this in a fresh
+session with no memory of the authoring, and **start from the diff and the
+tree, not from a description of what the change was supposed to do.**
 
 ## The order
 
@@ -43,17 +42,28 @@ The rules no gate enforces, because no script can decide them. They bind the
 author, and the reviewer rejects by number.
 
 **They are HOUSE rules, and the model's own STANDING rules are a different list
-with a different numbering.** `model/` numbers them and cites them by number
-at the definitions they govern — see the next section. Calling both "rule 3" in
-one review is how a finding stops being answerable.
+with a different numbering.** Calling both "rule 3" in one review is how a
+finding stops being answerable.
 
-**The numbering starts at 7, and that is not a gap.** House rules 1 through 6 are the
-mechanical ones — comment quantity, the domain layer reaching no I/O and no
-ambient capability, exhaustive switching, no floating promises, a function
-length cap, and formatter defaults. Each arrives as a gate or a lint config
-with the toolchain that can enforce it, and is then stated in the thing that
-enforces it and never here. A rule with two homes has two versions of itself
-inside a year, which is the whole reason this repo has no standards document.
+**The numbering starts at 7, and that is not a gap.** House rules 1 through 6
+are the mechanical ones, each stated in the thing that enforces it. What
+follows is a routing table, not a copy: read each rule at its home, and where
+this table and a home disagree, the home is right.
+
+| # | The rule, in short | Stated and enforced at |
+|---|---|---|
+| 1 | comment quantity | `.chug/tasks/check-comments.sh` |
+| 2 | the domain reaches no I/O and no ambient capability | `.chug/tasks/check-boundaries.sh` for the graph half, `eslint.config.js` for the ambient half |
+| 3 | exhaustive switching | `eslint.config.js` |
+| 4 | no floating promises | `eslint.config.js` |
+| 5 | the function length cap | `eslint.config.js` |
+| 6 | the formatter's defaults, never argued | `.prettierrc.json`, whose emptiness is the rule, and `.prettierignore` for what counts as code |
+
+Rules 2 through 6 are proved to bite in `.chug/tasks/check-source.test.sh` and
+`.chug/tasks/check-boundaries.test.sh`, against fixture trees carrying the
+violation each one names. A configuration cannot demonstrate anything about
+itself: a rule misspelled, scoped to a path that does not exist, or dropped by
+a preset reads exactly like a rule that is working.
 
 7. **Deciders return effects; they never perform them.** A decider is a pure
    function of an observed view and an event, returning transitions and a list
@@ -80,13 +90,28 @@ inside a year, which is the whole reason this repo has no standards document.
 14. **Contract-first.** A change to the core names the contract it changes. If
     it cannot be expressed that way then the contract does not exist yet, and
     writing it is the first commit of the work.
+15. **A gate's success line reports only what that run consumed, and any figure
+    in it is asserted by the gate's own suite.** The failure is not a wrong
+    verdict — it is a right verdict with a wrong account of its coverage, which
+    is the half a reader believes and never checks again. So the figure is
+    derived from the run rather than from something adjacent to it, and the
+    sibling `*.test.sh` requires the line to report a fixture whose size it
+    knows. Where no honest figure exists, the line says what it did instead of
+    counting something else.
+16. **A change states no lesson.** A new standard, convention or piece of
+    meta-commentary lands only in a change whose stated scope is that rule;
+    stating one as a side effect of other work is a finding, wherever it
+    appears — a comment, a doc, a header. What was learned en route belongs to
+    the change's own record — session, report, review verdict, commit
+    message — and an outer loop decides across tickets what becomes practice
+    (kasofsk/chuggy#58). The reviewer checks a change's additions against its
+    stated scope.
 
 ## The standing rules — the model's, numbered 1 to 4
 
 **This is an index, not a copy.** The model states these in its own headers, at
 the definitions they govern, and cites them by number throughout. Read them
-there. Where this list and a model header disagree, the model is right, the same
-as everywhere else.
+there; where this list and a model header disagree, the model is right.
 
 1. **The measure comes first** — `model/measure.qnt` opens on it. When the
    machine changes, the measure is reworked before anything else: not
@@ -122,16 +147,15 @@ number. Cite one by name. A change that needs one of them to be false is an
 > If you cannot write those three things, you do not have a finding. Put it in
 > the notes instead.
 
-Two failures are worse than missing a bug, because both train the author to
-stop reading you: a finding that turns out to be false, and a finding that is
-really a preference. Prefer to be quiet and right.
+A finding that turns out to be false and a finding that is really a preference
+are both worse than missing a bug, because both train the author to stop
+reading you. Prefer to be quiet and right.
 
 **Read; do not run.** `just check` runs every gate over the whole tree and the
-author is expected to have run it — re-running it here produces a verdict that
-already exists and delays yours. Read the code instead: whether the change is
+author is expected to have run it. Read the code instead: whether the change is
 *correct* is the part no gate can decide, and it is the whole reason a reviewer
-is worth the time. If you believe a gate would fail, say which one and why,
-and let it be run.
+is worth the time. If you believe a gate would fail, say which one and why, and
+let it be run.
 
 **Never edit the tree.** Not to fix a typo, not to try something out. Your
 output is a verdict; the author holds the pen.

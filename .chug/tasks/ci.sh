@@ -3,21 +3,19 @@
 # pre-commit hook calls the individual gates directly — the sequencing has one
 # definition, here.
 #
-# THE NAME AND PATH ARE THE ONES THIS FILE KEEPS FOREVER. When this repo is
-# eventually orchestrated by the platform it implements, `.chug/tasks/ci.sh`
-# becomes the command evaluator appended to every job type, unchanged. Every
-# gate's header, error messages and reproduce-locally lines already name their
-# own paths, so a later rename is a sweep of the whole tree rather than an edit.
-#
-# ORDERING: pure-shell gates first, cheapest first, before anything that needs a
-# toolchain. A docs-only or scripts-only change is exactly the change that
-# breaks them, and it is also the change that would exit early from a
-# language-scoped stage.
+# ORDERING: the pure-shell gates first, then the suites, then the gates that
+# need the TypeScript toolchain; the model gate last, being by far the slowest.
+# Within a stage the order is not a claim about cost.
 #
 # EACH GATE IS THREE-VALUED — 0 clean, 1 finding, 2 could-not-run — and this
 # script keeps the distinction all the way to its own exit. A gate that could
-# not run is a failure here, reported under its own heading, because "the check
-# passed" and "the check never ran" must never print the same.
+# not run is a failure here, reported under its own heading.
+#
+# THE CALL IS THE ROSTER. A gate named below must exist and be executable;
+# absent or unexecutable, it is a could-not-run like any other. A gate that
+# belongs to a later stage is left unnamed rather than named and guarded, so
+# that "not part of this run" and "should have run and was not there" cannot
+# print the same.
 #
 # Env:
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
@@ -42,6 +40,12 @@ run_gate() { # <label> <script> [args...]
 	label="$1"
 	shift
 	printf '\n--- %s\n' "$label"
+	if [ ! -x "$1" ]; then
+		if [ -e "$1" ]; then why="is not executable"; else why="is missing"; fi
+		echo "ci: LINTER ERROR — $1 $why; this is not a pass"
+		errored=$((errored + 1))
+		return 0
+	fi
 	set +e
 	"$@"
 	rc=$?
@@ -63,32 +67,17 @@ run_gate() { # <label> <script> [args...]
 
 run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
 
-# Before check-paths: one awk pass over the prose corpus, where that one shells
-# out to git for the whole deletion history.
-if [ -x ./.chug/tasks/check-figures.sh ]; then
-	run_gate "check-figures" ./.chug/tasks/check-figures.sh
-fi
-
-if [ -x ./.chug/tasks/check-paths.sh ]; then
-	run_gate "check-paths" ./.chug/tasks/check-paths.sh
-fi
-
-if [ -x ./.chug/tasks/check-shell-quoting.sh ]; then
-	run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
-fi
-
-if [ -x ./.chug/tasks/check-duplication.sh ]; then
-	run_gate "check-duplication" ./.chug/tasks/check-duplication.sh
-fi
-
-if [ -x ./.chug/tasks/check-gates.sh ]; then
-	run_gate "check-gates" ./.chug/tasks/check-gates.sh
-fi
+run_gate "check-figures" ./.chug/tasks/check-figures.sh
+run_gate "check-paths" ./.chug/tasks/check-paths.sh
+run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
+run_gate "check-duplication" ./.chug/tasks/check-duplication.sh
+run_gate "check-gates" ./.chug/tasks/check-gates.sh
+run_gate "check-comments" ./.chug/tasks/check-comments.sh
+run_gate "check-knowledge" ./.chug/tasks/check-knowledge.sh
 
 # --- Shell suites ------------------------------------------------------------
 # The gates' own tests. Discovery is a glob over tracked files, so adding a
-# suite is enough — there is no list to update. A glob matching nothing is a
-# failure, not a quiet pass.
+# suite is enough; a glob matching nothing is a failure, not a quiet pass.
 
 if [ "${CHUG_CI_SHELL_SUITES:-1}" = "0" ]; then
 	printf '\n--- shell suites: SKIPPED (CHUG_CI_SHELL_SUITES=0)\n'
@@ -97,18 +86,11 @@ else
 	suite_cap="${CHUG_CI_SUITE_TIMEOUT_SECS:-60}"
 	suite_budget="${CHUG_CI_SUITES_BUDGET_SECS:-120}"
 
-	# Probe FUNCTIONALLY — `command -v` says a binary exists, not that it runs.
-	# macOS ships no GNU `timeout`; `gtimeout` arrives with coreutils.
-	#
-	# WHY A MISSING CAP WARNS RATHER THAN ERRORS. On a Linux container host
-	# `timeout` always exists, so its absence there would be a real anomaly
-	# worth erroring on. Here the developer's macOS
-	# machine is the whole of CI, and erroring would make `just check`
-	# permanently red on stock macOS — and a gate that is always red is a gate
-	# that gets bypassed, which is how a suite stage stops running at all. What
-	# the rule actually forbids is announcing a bound that is not being
-	# applied, so the uncapped path says exactly that, loudly, and a hung suite
-	# is the developer's Ctrl-C rather than a wedged pipeline.
+	# Probed functionally — `command -v` says a binary exists, not that it
+	# runs. macOS ships no GNU `timeout`; `gtimeout` arrives with coreutils.
+	# Its absence warns rather than errors: what the rule forbids is
+	# announcing a bound that is not being applied, and the uncapped path says
+	# exactly that.
 	timeout_cmd=""
 	if timeout 5 true >/dev/null 2>&1; then
 		timeout_cmd="timeout"
@@ -134,8 +116,7 @@ else
 '
 		for suite in $suites; do
 			elapsed=$(( $(date +%s) - started ))
-			# Checked BETWEEN suites, never after the loop: a post-loop check
-			# bounds nothing, because the real ceiling would be count x cap.
+			# Checked between suites: a post-loop check bounds nothing.
 			if [ "$elapsed" -ge "$suite_budget" ]; then
 				stopped="$stopped$suite
 "
@@ -165,13 +146,22 @@ else
 	fi
 fi
 
-# --- The model ---------------------------------------------------------------
-# Last because it is by far the slowest, and a fast gate that runs after a slow
-# one is a fast gate nobody benefits from.
+# --- The TypeScript toolchain ------------------------------------------------
 
-if [ -x ./.chug/tasks/check-model.sh ]; then
-	run_gate "check-model" ./.chug/tasks/check-model.sh
-fi
+run_gate "check-boundaries" ./.chug/tasks/check-boundaries.sh
+run_gate "check-source" ./.chug/tasks/check-source.sh
+
+# --- The corpus --------------------------------------------------------------
+
+run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
+
+# --- The randomized walk -----------------------------------------------------
+
+run_gate "check-random" ./.chug/tasks/check-random.sh
+
+# --- The model ---------------------------------------------------------------
+
+run_gate "check-model" ./.chug/tasks/check-model.sh
 
 # --- Verdict -----------------------------------------------------------------
 

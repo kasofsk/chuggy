@@ -2,6 +2,20 @@
   "name": "chuggy",
   "private": true,
   "devDependencies": {
-    "@informalsystems/quint": "0.32.0"
+    "@eslint/js": "^10.0.1",
+    "@informalsystems/quint": "0.32.0",
+    "@types/node": "^26.2.0",
+    "dependency-cruiser": "^18.2.0",
+    "eslint": "^10.8.1",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0"
+  },
+  "type": "module",
+  "scripts": {
+    "check": "./.chug/tasks/ci.sh"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }

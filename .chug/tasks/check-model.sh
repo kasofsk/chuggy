@@ -3,16 +3,11 @@
 # deterministic witness modules, the refinement suites, and the randomized
 # invariant runs over each instance.
 #
-# THE MODEL LEADS. It is proved before the implementation exists and it emits
-# the golden traces the implementation replays, so this gate is not a test of
-# the code — it is the check that the specification the code answers to is
-# still true. When the two disagree, the implementation is wrong.
+# Quint is pinned in package.json, and the local binary wins over anything on
+# PATH: a verdict that depends on which version happens to be installed is not
+# a verdict. A version this gate does not expect is a could-not-run.
 #
-# Quint is pinned in package.json. The local binary wins over anything on PATH,
-# because a gate whose verdict depends on which version happens to be installed
-# is not a gate; if neither resolves, that is a could-not-run and not a pass.
-#
-# Exits 0 clean, 1 on a finding, 2 when it could not run.
+# Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
 export LC_ALL=C
 
@@ -64,10 +59,9 @@ echo "--- unit suite"
 "$QUINT" test model/tests/chuggy_test.qnt >/dev/null 2>&1 \
 	|| { echo "ERROR model/tests/chuggy_test.qnt failed"; failed=$((failed + 1)); }
 
-# The witness modules prove each named shape REACHABLE and assert every
-# invariant after every step. The last is the odd one out: it witnesses
-# something the machine deliberately does not guarantee, so that the accepted
-# position is held by the suite rather than by a paragraph.
+# The witness modules prove each named shape reachable and assert every
+# invariant after every step. `wrapup_none` is the odd one out: it witnesses
+# something the machine deliberately does not guarantee.
 echo "--- witnesses"
 for w in free cascade stage multiproject gate gate_deadline draft_wait wrapup_none; do
 	"$QUINT" test --main="chuggy_witness_${w}_test" \

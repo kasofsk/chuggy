@@ -6,6 +6,7 @@
   "ignorePattern": [
     "**/node_modules/**",
     "**/.git/**",
+    "**/.claude/worktrees/**",
     "**/dist/**",
     "**/coverage/**",
     "**/*.md",
