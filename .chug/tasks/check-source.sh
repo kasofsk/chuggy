@@ -1,6 +1,6 @@
 #!/bin/sh
 # The TypeScript gate. Typechecks the sources and the suites, lints them, holds
-# them to the formatter's output, and runs the unit suite.
+# them to the formatter's output, and runs the unit suites.
 #
 # ONE GATE PER TOOLCHAIN, NOT ONE PER TOOL. The rules the tools apply are
 # stated where they are enforced — `eslint.config.js`, `.prettierrc.json`
@@ -10,6 +10,15 @@
 # Each tool resolves its own scope, and the formatter's reaches past TypeScript
 # to every JSON and config file in the tree; the tracked-source glob below is a
 # precondition rather than a measurement of what any stage read.
+#
+# THE UNIT STAGE RUNS THE SUITES NO OTHER GATE OWNS. `check-conformance.sh`
+# replays the corpus and `check-random.sh` walks the seeded sweep, each over
+# its own directory; discovering those here as well replays and walks twice per
+# `ci.sh` run. So this stage subtracts their directories from the tracked
+# suites rather than naming the ones it wants — a suite added anywhere else
+# runs here without being listed, and a directory nothing covers is a glob
+# matching nothing rather than a quiet pass. The clean line reports the split,
+# because a stage that narrowed its own scope has to say so.
 #
 # Local binaries win over anything on PATH: a verdict that depends on which
 # version happens to be installed is not a verdict. Each missing one is a
@@ -69,14 +78,37 @@ stage "  typecheck" ./node_modules/.bin/tsc --noEmit
 stage "  lint     " ./node_modules/.bin/eslint .
 stage "  format   " ./node_modules/.bin/prettier --check --log-level warn .
 
-# The runner discovers its own suites, so a glob matching nothing would be a
-# silent pass; the discovery is checked first and separately.
-suites="$(git ls-files 'test/**/*.test.ts' 'test/*.test.ts' 2>/dev/null || true)"
+# The runner is handed its list rather than discovering one, and an empty
+# list would send it back to whole-tree discovery; the glob is checked first
+# and separately.
+suites="$(git ls-files '*.test.ts' 2>/dev/null || true)"
 if [ -z "$suites" ]; then
 	echo "check-source: LINTER ERROR — no tracked *.test.ts; the suite glob matched nothing"
 	exit 2
 fi
-stage "  unit     " node --test --test-reporter=dot
+
+# The pattern mirrors how those gates find their own work — the directory
+# itself, not below it — so a suite nested deeper than they look is this
+# stage's, which is what keeps the two halves a partition.
+owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$'
+unit_suites="$(printf '%s\n' "$suites" | grep -Ev "$owned" || true)"
+if [ -z "$unit_suites" ]; then
+	echo "check-source: LINTER ERROR — every tracked suite belongs to another gate; this stage would run nothing"
+	exit 2
+fi
+unit_count="$(printf '%s\n' "$unit_suites" | grep -c '' || true)"
+owned_count="$(printf '%s\n' "$suites" | grep -Ec "$owned" || true)"
+
+set -f
+IFS='
+'
+# shellcheck disable=SC2086 # the suite list is newline-separated by construction
+set -- $unit_suites
+unset IFS
+set +f
+
+stage "  unit     " node --test --test-reporter=dot "$@"
+echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance and check-random"
 
 echo "check-source: $failed stage(s) failed, $ran run"
 [ "$failed" -eq 0 ]

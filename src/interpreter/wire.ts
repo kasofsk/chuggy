@@ -25,10 +25,11 @@
  * seam between a malformed row and a well-formed row of a run that never
  * happened, and `src/interpreter/executor.ts` reads a journal through both.
  *
- * THE ONE REPRESENTATION GAP THIS PARSE CLOSES: the model's arrival draws its
+ * THE REPRESENTATION GAP THIS PARSE RE-STATES: the model's arrival draws its
  * deps as a SET where `Cmd` carries an array, so an array with a repeat is a
- * value the model has no counterpart for, and it is refused here rather than
- * reaching a decider that would keep it.
+ * value the model has no counterpart for. `depsDistinct` is that rule, and
+ * `cmdEnabled` reads the same one before any decision is journaled; the parse
+ * reads it again because a journal on disk did not have to come from that path.
  *
  * THE OTHER GAP IS LEFT OPEN DELIBERATELY: `seq` enters unbranded, where every
  * identity in `src/domain/ids.ts` is branded. A brand exists to stop two
@@ -47,6 +48,7 @@ import * as z from "zod";
 import type { Cmd } from "../actor/command.ts";
 import type { Entry } from "../actor/journal.ts";
 import { allEffects } from "../domain/effect.ts";
+import { depsDistinct } from "../domain/enablement.ts";
 import { asProjectId, asTaskId, asTicketId } from "../domain/ids.ts";
 
 /** A wire integer already inside the range the domain mints its identifiers from. */
@@ -57,12 +59,9 @@ const taskIdSchema = identifierNumber.transform(asTaskId);
 const projectIdSchema = identifierNumber.transform(asProjectId);
 
 /** An arrival's dependencies, refusing the repeat that the model's set cannot express. */
-const depsSchema = z
-  .array(ticketIdSchema)
-  .readonly()
-  .refine((deps) => new Set(deps).size === deps.length, {
-    message: "names a ticket twice, and the arrival draws a set",
-  });
+const depsSchema = z.array(ticketIdSchema).readonly().refine(depsDistinct, {
+  message: "names a ticket twice, and the arrival draws a set",
+});
 
 const stageSchema = z.object({
   fanout: z.int().min(1),

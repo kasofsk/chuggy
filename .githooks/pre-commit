@@ -12,6 +12,12 @@
 # model gate — and belong in `just check`. This file prints its own elapsed time
 # on every run, so what admitting another gate costs is measured here rather
 # than asserted in a comment that nothing re-checks.
+#
+# THE CALL IS THE ROSTER. A gate named below must exist and be executable, and
+# a named gate that is absent stops the commit. That is not the stricter-than-CI
+# case the invariant forbids: `.chug/tasks/ci.sh` fails on the same tree. It is
+# also why the fast subset is expressed by leaving a gate unnamed rather than by
+# guarding its call — a guard makes "not in the subset" and "gone" look alike.
 set -eu
 export LC_ALL=C
 
@@ -37,12 +43,23 @@ done
 
 started="$(date +%s)"
 rejected=0
+unrunnable=0
 
 run_gate() { # <label> <script> [<arg>...]
 	label="$1"
 	script="$2"
 	shift 2
-	[ -x "$script" ] || return 0
+	if [ ! -x "$script" ]; then
+		# Unlike the rc=2 branch below, this one blocks: a named gate that
+		# is not there, or that this checkout cannot run, is what
+		# `just check` will find on the same tree. A gate that ran and
+		# answered could-not-run is describing the machine, which differs
+		# per developer and is what `just check` settles.
+		if [ -e "$script" ]; then why="is not executable"; else why="is missing"; fi
+		echo "pre-commit: $script $why — cannot run"
+		unrunnable=$((unrunnable + 1))
+		return 0
+	fi
 	set +e
 	out="$("$script" "$@" 2>&1)"
 	rc=$?
@@ -86,6 +103,10 @@ if [ -n "$staged" ]; then
 fi
 
 elapsed=$(( $(date +%s) - started ))
+if [ "$unrunnable" -gt 0 ]; then
+	echo "pre-commit: ${unrunnable} gate(s) named but not runnable (${elapsed}s)"
+	exit 2
+fi
 if [ "$rejected" -gt 0 ]; then
 	echo "pre-commit: ${rejected} gate(s) rejected this commit (${elapsed}s)"
 	exit 1

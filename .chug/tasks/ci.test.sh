@@ -6,6 +6,10 @@
 # and a could-not-run stay different answers all the way to its own exit code,
 # and that the suite budget stops where it says it does.
 #
+# The fixture carries a stub for every gate the sequencer names, because a
+# named gate that is absent is itself a could-not-run. A fixture short of one
+# would exercise that rather than the case it was written for.
+#
 # Run:  .chug/tasks/ci.test.sh
 set -eu
 
@@ -17,16 +21,42 @@ trap 'rm -rf "$WORK" "$BARE"' EXIT
 
 R="$WORK/repo"
 
-stub_repo() { # <doc-lint exit> — a repo whose only gate is a stub doc-lint
-	rm -rf "$R"
+# Read off the sequencer rather than listed here: the roster is the calls, and
+# a second copy of it would be the half that drifts.
+named_gates() { # <script> — the gates it calls, by bare name
+	grep -o '\./\.chug/tasks/[a-z-]*\.sh' "$1" | sed 's|.*/||; s|\.sh$||'
+}
+
+# An empty roster would leave every case below passing against a repo with no
+# gates at all — the exact reading this suite exists to refuse.
+if [ -z "$(named_gates "$SUT")" ]; then
+	echo "ci.test.sh: no gate calls found in $SUT; the fixture would stub nothing"
+	exit 2
+fi
+
+stub_repo() { # <doc-lint exit> — every named gate stubbed clean but doc-lint
+	fresh_repo "$R"
 	mkdir -p "$R/.chug/tasks"
-	git -C "$R" init -q -b main
-	git -C "$R" config user.email t@example.com
-	git -C "$R" config user.name t
 	cp "$SUT" "$R/.chug/tasks/ci.sh"
+	chmod +x "$R/.chug/tasks/ci.sh"
+	for gate in $(named_gates "$SUT"); do
+		printf '#!/bin/sh\necho stub %s\nexit 0\n' "$gate" > "$R/.chug/tasks/$gate.sh"
+		chmod +x "$R/.chug/tasks/$gate.sh"
+	done
 	printf '#!/bin/sh\necho stub doc-lint\nexit %s\n' "$1" > "$R/.chug/tasks/doc-lint.sh"
-	chmod +x "$R/.chug/tasks/doc-lint.sh" "$R/.chug/tasks/ci.sh"
+	chmod +x "$R/.chug/tasks/doc-lint.sh"
 	git -C "$R" add -A
+}
+
+# The gate stage alone: with the suite stage on, the fixture's empty suite glob
+# would add a second could-not-run and the counts below would stop being about
+# the roster.
+run_gates_only() {
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+	RC=$?
+	set -e
 }
 
 # The real ci.sh hands every suite CHUG_CI_SHELL_SUITES=0 so this file cannot
@@ -43,31 +73,37 @@ run_ci() {
 }
 
 stub_repo 0
-OUT="$WORK/.out"
-set +e
-(cd "$R" && CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
-RC=$?
-set -e
+run_gates_only
 check "all gates clean exits 0" 0 "$RC" "all gates clean"
 check "CHUG_CI_SHELL_SUITES=0 skips the suite stage" 0 "$RC" "SKIPPED"
 
 stub_repo 1
-OUT="$WORK/.out"
-set +e
-(cd "$R" && CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
-RC=$?
-set -e
+run_gates_only
 check "a gate finding exits 1" 1 "$RC" "1 gate(s) failed"
 
 # A gate that could not run exits 2, NOT 1 and never 0.
 stub_repo 2
-OUT="$WORK/.out"
-set +e
-(cd "$R" && CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
-RC=$?
-set -e
+run_gates_only
 check "a gate that could not run exits 2" 2 "$RC" "could not run"
 check "could-not-run is reported as not a pass" 2 "$RC" "this is not a pass"
+
+# A gate the sequencer names but the tree does not carry is a could-not-run
+# too. Guarding the call with `[ -x ]` made this print "all gates clean" having
+# never attempted the gate — a not-run that read exactly like a pass.
+stub_repo 0
+rm -f "$R/.chug/tasks/check-gates.sh"
+git -C "$R" add -A
+run_gates_only
+check "a missing named gate exits 2, not 0" 2 "$RC" "1 gate(s) could not run"
+check "the missing gate is named" 2 "$RC" "check-gates.sh is missing"
+
+# The half a diff hides in a mode line.
+stub_repo 0
+chmod -x "$R/.chug/tasks/check-conformance.sh"
+git -C "$R" add -A
+run_gates_only
+check "a non-executable named gate exits 2, not 0" 2 "$RC" "1 gate(s) could not run"
+check "the non-executable gate is named" 2 "$RC" "check-conformance.sh is not executable"
 
 stub_repo 0
 printf '#!/bin/sh\nexit 1\n' > "$R/.chug/tasks/failing.test.sh"

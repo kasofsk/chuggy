@@ -27,11 +27,12 @@ import type { Config } from "../../src/domain/config.ts";
 import { isValidProgram } from "../../src/domain/config.ts";
 import type { StepRecord } from "../../src/domain/core.ts";
 import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
-import { aSome, woNone } from "../../src/domain/wrapUp.ts";
+import { asProjectId } from "../../src/domain/ids.ts";
+import { aSome, wNone, woNone } from "../../src/domain/wrapUp.ts";
 import { declaredActions } from "../domain/declared.ts";
 import { CONFIGS, budgetedInstance } from "../domain/configs.ts";
 import { coreOf, id, ticketOn } from "../domain/fixtures.ts";
-import { validProgramsIn, walkActions } from "./draws.ts";
+import { validProgramsIn, walkActionOf, walkActions } from "./draws.ts";
 import { counterexampleReport } from "./counterexample.ts";
 import {
   completionFindings,
@@ -146,6 +147,24 @@ test("the arrival's program draw ranges over exactly the well-formed set", () =>
     new Set(programs.map((p) => JSON.stringify(p))).size,
     programs.length,
     "a duplicate would weight one program over its siblings",
+  );
+});
+
+test("the arrival's permit refuses the dep named twice", () => {
+  const core = coreOf([ticketOn(budgetedInstance, 1)]);
+  const program = validProgramsIn(budgetedInstance)[0];
+  assert.ok(program);
+  const drawn = {
+    deps: [id(1), id(1)],
+    program,
+    project: asProjectId(1),
+    wrapUp: wNone,
+  };
+  const arrive = walkActionOf("arrive");
+  assert.equal(arrive.permitsIn(budgetedInstance, core, drawn), false);
+  assert.equal(
+    arrive.permitsIn(budgetedInstance, core, { ...drawn, deps: [id(1)] }),
+    true,
   );
 });
 
