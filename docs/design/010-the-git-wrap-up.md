@@ -6,7 +6,7 @@ For a ticket wrapping up exclusively, the gate is the merge. The model's lease i
 
 ## Always moved
 
-The dequeue with `moved` false completes the ticket in the same decision — before any physical attempt could run — so a deployment performing a real merge always draws it true and lets the gate carry the attempt. Always-true is a legal refinement of the invalidation draw, and it keeps the invariant that failure is drawable only against an invalidated artifact trivially satisfied.
+The tree carries this draw and its argument: `src/runtime/followUps.ts` states why a deployment performing a real merge always dequeues moved.
 
 ## The attempt
 

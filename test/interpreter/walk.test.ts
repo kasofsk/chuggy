@@ -268,8 +268,8 @@ test("a decision the store refuses reaches neither the world nor a state any cal
   );
 });
 
-test("a revocation withdraws the fabric's task set and parks the dependent on the desk", async () => {
-  const wired = wiring(config);
+/** Two tickets, the second depending on the first, driven to the first's revocation mid-work. */
+async function walkToRevocation(wired: Wiring): Promise<ActorState> {
   let state = await step(wired, actorInit(), arrival, "ticket-arrived");
   state = await step(
     wired,
@@ -279,7 +279,12 @@ test("a revocation withdraws the fabric's task set and parks the dependent on th
   );
   state = await step(wired, state, jRelease(id(1)), "ticket-released");
   state = await step(wired, state, jDispatch(id(1)), "dispatch");
-  state = await step(wired, state, jRevoke(id(1)), "ticket-revoked");
+  return step(wired, state, jRevoke(id(1)), "ticket-revoked");
+}
+
+test("a revocation withdraws the fabric's task set and parks the dependent on the desk", async () => {
+  const wired = wiring(config);
+  const state = await walkToRevocation(wired);
 
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PRevoked");
   assert.equal(ticketAt(memoryCore(state), id(2)).phase, "PEscalated");
@@ -348,6 +353,32 @@ test("a lost checkpoint re-delivers the whole prefix, and the world absorbs all 
   assert.equal(after.deliveries, before.deliveries * 2);
   assert.equal(worldCompletions(state, id(1)), 1);
   assertStep(config, state, "after the lost checkpoint");
+});
+
+test("a revocation re-delivered after a lost checkpoint is absorbed on both its legs", async () => {
+  const wired = wiring(config);
+  const revoked = await walkToRevocation(wired);
+  const before = reading(wired);
+  assert.equal(
+    wired.fabric.cancellations.length,
+    1,
+    "the walk withdrew nothing, so the reading below asks nothing of the withdrawn leg",
+  );
+
+  await wired.store.saveCursor(0);
+  let state = await recover(wired.executor);
+  assert.ok(
+    coreEquals(memoryCore(state), memoryCore(revoked)),
+    "recovery through the store and the parse rebuilt a different fleet",
+  );
+  state = await drain(wired.executor, state);
+
+  const after = reading(wired);
+  assert.ok(absorbed(before, after));
+  assert.equal(after.deliveries, before.deliveries * 2);
+  assert.equal(wired.fabric.cancellations.length, 2);
+  assert.equal(wired.fabric.withdrawn.size, 1);
+  assertStep(config, state, "after the revocation re-drain");
 });
 
 test("and the absorption reading is one a world filing by arrival fails", () => {

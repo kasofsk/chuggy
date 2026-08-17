@@ -23,6 +23,9 @@
 // capabilities, and a capability it reached past them would be one no port
 // declares, no adapter answers and no boundary rule can see. That it awaits is
 // beside the point — the roster below is ambient authority, not asynchrony.
+// AND SO DOES THE RUNTIME: every stimulus it answers is an inbound call and
+// every deferral it needs is a capability the composition root injects, so a
+// clock, timer or draw named there is authority nothing granted.
 // `src/adapters/` is the one layer with no such block, because holding ambient
 // capability is what an adapter is for and banning it there would ban the
 // layer. What stands behind a stub that quietly read a clock is the reviewer
@@ -176,6 +179,13 @@ export default tseslint.config(
     rules: {
       "no-restricted-globals": noAmbientGlobals("the interpreter"),
       "no-restricted-properties": noAmbientDraws("the interpreter"),
+    },
+  },
+  {
+    files: ["src/runtime/**/*.ts"],
+    rules: {
+      "no-restricted-globals": noAmbientGlobals("the runtime"),
+      "no-restricted-properties": noAmbientDraws("the runtime"),
     },
   },
   // The configs themselves. They sit outside tsconfig.json's include, so the
