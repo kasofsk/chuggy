@@ -35,6 +35,7 @@ import { createRemoteJWKSet } from "jose";
 import { deskEvents } from "./adapters/deskEvents.ts";
 import { fabricStub } from "./adapters/fabricStub.ts";
 import { gitWrapUp, type GitWrapUp } from "./adapters/gitWrapUp/gitWrapUp.ts";
+import { httpApiArtifacts } from "./adapters/httpApi/artifacts.ts";
 import type { Identity } from "./adapters/httpApi/identity.ts";
 import { httpApi } from "./adapters/httpApi/server.ts";
 import { registrySqlite } from "./adapters/registrySqlite.ts";
@@ -180,12 +181,17 @@ const adminSubject = composeRequired(
   "CHUGGY_ADMIN_SUBJECT",
   "a registry with no operator in it can never gain one",
 );
+const jobSecret = composeRequired(
+  "CHUGGY_JOB_SECRET",
+  "a desk that cannot verify a job's token accepts no completion, and the fabric has no other way back",
+);
 const listenPort = composePort("CHUGGY_PORT");
 
 const database = new DatabaseSync(journalPath);
 const store = sqliteJournal(database);
 const desk = deskEvents(database);
 const registry = registrySqlite(database);
+const artifacts = httpApiArtifacts(database);
 const performer = composeWrapUp(store, database);
 const executor = compose(deployment, store, desk, performer ?? wrapUpStub());
 const booted = await boot(executor);
@@ -206,8 +212,10 @@ httpApi({
   core: driven.core,
   registry,
   deskLog: desk,
+  artifacts,
   identity,
   oauthClientId,
+  jobSecret,
 }).listen(listenPort);
 
 console.log(

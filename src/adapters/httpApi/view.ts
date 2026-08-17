@@ -34,6 +34,7 @@ import type { Stage } from "../../domain/program.ts";
 import type { Task } from "../../domain/task.ts";
 import type { ArtifactMark, WrapUp } from "../../domain/wrapUp.ts";
 import type { DeskEvent, TicketAnnex } from "../../interpreter/registry.ts";
+import type { HttpApiArtifact } from "./artifacts.ts";
 
 /** What the machine would take for a ticket now, each name the path segment its route answers on. */
 export type DeskAction = "release" | "revoke" | "retry" | "gate";
@@ -58,7 +59,7 @@ export interface BoardRow {
   readonly actions: readonly DeskAction[];
 }
 
-/** One ticket in full: its board line, the rest of the machine's record, and what the desk was told about it. */
+/** One ticket in full: its board line, the rest of the machine's record, and what the desk was told and handed. */
 export interface TicketView {
   readonly row: BoardRow;
   readonly deps: readonly TicketId[];
@@ -71,6 +72,7 @@ export interface TicketView {
   readonly tasks: readonly Task[];
   readonly record: readonly Task[];
   readonly events: readonly DeskEvent[];
+  readonly declared: readonly HttpApiArtifact[];
 }
 
 /** The actions enablement allows on this ticket, each conjunct a reference to the predicate the machine reads. */
@@ -125,6 +127,7 @@ export function viewTicket(
   annexes: ReadonlyMap<TicketId, TicketAnnex>,
   ticket: TicketId,
   events: readonly DeskEvent[],
+  declared: readonly HttpApiArtifact[],
 ): TicketView | undefined {
   if (!core.tickets.has(ticket)) return undefined;
   const held = ticketAt(core, ticket);
@@ -140,5 +143,6 @@ export function viewTicket(
     tasks: held.tasks,
     record: held.record,
     events,
+    declared,
   };
 }

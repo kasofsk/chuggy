@@ -27,8 +27,10 @@ import type {
   WrapUp,
   WrapUpOutcome,
 } from "../../domain/wrapUp.ts";
+import type { ArtifactBody } from "../../interpreter/artifact.ts";
 import type { RegistryUser } from "../../interpreter/registry.ts";
 import { httpApiStageText, httpApiWrapUpText } from "./arrival.ts";
+import type { HttpApiArtifact } from "./artifacts.ts";
 import type { BoardRow, DeskAction, TicketView } from "./view.ts";
 
 /** The characters that would otherwise close a tag or an attribute, and what each becomes. */
@@ -213,6 +215,28 @@ function htmlTasks(tasks: readonly Task[]): string {
     .join("");
 }
 
+/** What one finished task handed over, in words. */
+function htmlBody(body: ArtifactBody): string {
+  switch (body.body) {
+    case "BGitRef":
+      return `branch ${htmlText(body.branch)}`;
+    case "BNote":
+      return `note ${htmlText(body.text)}`;
+    case "BNone":
+      return "nothing";
+    default:
+      return assertNever(body);
+  }
+}
+
+/** The bodies this ticket's tasks declared, one line each, or a note that none were. */
+function htmlDeclared(declared: readonly HttpApiArtifact[]): string {
+  if (declared.length === 0) return "<li>none</li>";
+  return declared
+    .map((one) => `<li>${String(one.task)} ${htmlBody(one.body)}</li>`)
+    .join("");
+}
+
 /** The annex as the author wrote it, or the note that a crash left the arrival without one. */
 function htmlAnnex(view: TicketView): string {
   const annex = view.row.annex;
@@ -234,6 +258,6 @@ export function htmlTicket(
     .join("");
   return htmlPage(
     `chuggy — ticket ${String(view.row.ticket)}`,
-    `${htmlWhoami(user)}${htmlAnnex(view)}${facts}<h2>live tasks</h2><ul>${htmlTasks(view.tasks)}</ul><h2>retired tasks</h2><ul>${htmlTasks(view.record)}</ul><h2>desk log</h2><ul>${events}</ul><h2>actions</h2>${htmlActions(user, view.row, outcomes)}`,
+    `${htmlWhoami(user)}${htmlAnnex(view)}${facts}<h2>live tasks</h2><ul>${htmlTasks(view.tasks)}</ul><h2>retired tasks</h2><ul>${htmlTasks(view.record)}</ul><h2>declared</h2><ul>${htmlDeclared(view.declared)}</ul><h2>desk log</h2><ul>${events}</ul><h2>actions</h2>${htmlActions(user, view.row, outcomes)}`,
   );
 }

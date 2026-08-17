@@ -38,10 +38,38 @@
  * THE ANNEX WRITE IS THE SECOND OF TWO WRITES and is deliberately not welded to
  * the first: a crash between them leaves the draft standing with no annex,
  * which the board renders and its author can write again.
+ *
+ * THE JOB BAND ANSWERS BEFORE THE DESK READS A BODY OR LOOKS FOR A PERSON. A
+ * worker is not a caller the registry holds a row for, so a completion is
+ * admitted by a token minted for exactly the ticket's task its path names and by
+ * nothing else. It reads its own body too: a declaration is a nested value where
+ * the desk's fields are flat, and `httpApiFields` would refuse it before any
+ * route saw it.
+ *
+ * THE ARTIFACT WRITE PRECEDES THE DECISION AND THE ACK FOLLOWS BOTH. A crash
+ * between the two leaves a body no journal mentions, which nothing can reach —
+ * the producing task of a mark is derived from the journal — where the reverse
+ * order would journal a pass whose artifact was lost. So the write is
+ * unconditional: a route asking enablement first, to decide whether to store,
+ * would be the second decider this file has none of.
+ *
+ * A DROPPED COMPLETION IS ANSWERED 200 WHERE A DROPPED DESK ACT IS ANSWERED 409.
+ * The desk's caller is a person who can go and do something else; a worker
+ * re-delivers at least once and would loop on a 4xx forever, so the drop is
+ * handed back as the answer it is and the delivery duty ends there.
  */
 
-import { asTicketId, type TicketId } from "../../domain/ids.ts";
-import { dependableIn, wrapUpOutcomes } from "../../domain/enablement.ts";
+import {
+  asTaskId,
+  asTicketId,
+  type TaskId,
+  type TicketId,
+} from "../../domain/ids.ts";
+import {
+  deliverableTaskIds,
+  dependableIn,
+  wrapUpOutcomes,
+} from "../../domain/enablement.ts";
 import {
   projects,
   wrapUpChoices,
@@ -50,13 +78,19 @@ import {
 import type { Config } from "../../domain/config.ts";
 import type { Core } from "../../domain/core.ts";
 import { assertNever } from "../../domain/assertNever.ts";
+import {
+  parseDeclaration,
+  type CompletionDeclaration,
+} from "../../interpreter/artifact.ts";
 import type { Inbound, Submitted } from "../../interpreter/inbound.ts";
 import type {
   DeskLog,
   Registry,
   RegistryUser,
 } from "../../interpreter/registry.ts";
+import type { Parsed } from "../../interpreter/wire.ts";
 import { httpApiArrival, httpApiWholeNumber } from "./arrival.ts";
+import type { HttpApiArtifacts } from "./artifacts.ts";
 import { htmlBoard, htmlLogin, htmlRefusal, htmlTicket } from "./html.ts";
 import {
   identityCaller,
@@ -66,7 +100,13 @@ import {
   type Caller,
   type Identity,
 } from "./identity.ts";
-import { httpApiField, httpApiFields, type HttpApiFields } from "./request.ts";
+import { httpApiJobTokenHolds } from "./jobToken.ts";
+import {
+  httpApiBodyJson,
+  httpApiField,
+  httpApiFields,
+  type HttpApiFields,
+} from "./request.ts";
 import { deskActions, viewBoard, viewTicket, type DeskAction } from "./view.ts";
 
 /** Everything the face is handed: the machine's face and read, the stores it joins, and who it verifies against. */
@@ -76,8 +116,10 @@ export interface HttpApiDesk {
   readonly core: () => Core;
   readonly registry: Registry;
   readonly deskLog: DeskLog;
+  readonly artifacts: HttpApiArtifacts;
   readonly identity: Identity;
   readonly oauthClientId: string;
+  readonly jobSecret: string;
 }
 
 /** One request, as the headers and the body the transport already read. */
@@ -155,6 +197,29 @@ function httpApiTicketIn(segment: string | undefined): TicketId | undefined {
   return value === undefined ? undefined : asTicketId(value);
 }
 
+/** The task a path segment names, or nothing when it names no id at all. */
+function httpApiTaskIn(segment: string | undefined): TaskId | undefined {
+  const value = httpApiWholeNumber(segment ?? "");
+  return value === undefined ? undefined : asTaskId(value);
+}
+
+/** The pair of identities a job's path names. */
+interface HttpApiTaskPath {
+  readonly ticket: TicketId;
+  readonly taskId: TaskId;
+}
+
+/** The ticket and task two adjacent segments name, or nothing when either is not an id. */
+function httpApiTaskPath(
+  ticketSegment: string | undefined,
+  taskSegment: string | undefined,
+): HttpApiTaskPath | undefined {
+  const ticket = httpApiTicketIn(ticketSegment);
+  const taskId = httpApiTaskIn(taskSegment);
+  if (ticket === undefined || taskId === undefined) return undefined;
+  return { ticket, taskId };
+}
+
 /** The two refusals identity produces, each with the status that says which it was. */
 function httpApiUnadmitted(
   request: HttpApiRequest,
@@ -214,6 +279,138 @@ async function httpApiSession(
   };
 }
 
+/** The bearer a job carries, read without the session cookie: a browser's cookie is nobody's job credential. */
+function httpApiBearer(request: HttpApiRequest): string | undefined {
+  return identityTokenIn(request.authorization, undefined);
+}
+
+/** The completion path's pair, or nothing when this is not a post to one. */
+function httpApiCompletionPath(
+  request: HttpApiRequest,
+  segments: readonly string[],
+): HttpApiTaskPath | undefined {
+  if (request.method !== "POST" || segments.length !== 5) return undefined;
+  if (segments[0] !== "internal" || segments[1] !== "tasks") return undefined;
+  if (segments[4] !== "completion") return undefined;
+  return httpApiTaskPath(segments[2], segments[3]);
+}
+
+/** The artifact path's pair, or nothing when this is not a read of one. */
+function httpApiArtifactPath(
+  request: HttpApiRequest,
+  segments: readonly string[],
+): HttpApiTaskPath | undefined {
+  if (request.method !== "GET" || segments.length !== 4) return undefined;
+  if (segments[0] !== "api" || segments[1] !== "artifacts") return undefined;
+  return httpApiTaskPath(segments[2], segments[3]);
+}
+
+/**
+ * Whether the request holds a token minted for any task this ticket ever issued,
+ * which is what an evaluation job carries when it reads the work body. The range
+ * is the delivery range the machine itself admits, so it is bounded by the ids
+ * the ticket has spent rather than by anything this file counts.
+ */
+function httpApiJobOfTicket(
+  desk: HttpApiDesk,
+  request: HttpApiRequest,
+  ticket: TicketId,
+): boolean {
+  const core = desk.core();
+  if (!core.tickets.has(ticket)) return false;
+  const offered = httpApiBearer(request);
+  return deliverableTaskIds(core, ticket).some((taskId) =>
+    httpApiJobTokenHolds(desk.jobSecret, ticket, taskId, offered),
+  );
+}
+
+/** The declaration a worker posted, read as the nested value it is and refused where the vocabulary does not describe it. */
+function httpApiDeclaration(
+  request: HttpApiRequest,
+): Parsed<CompletionDeclaration> {
+  const raw = httpApiBodyJson(request.body);
+  return raw.parsed === "Refused" ? raw : parseDeclaration(raw.value);
+}
+
+/** One stored body, or the refusal that this deployment kept none under that task. */
+async function httpApiArtifact(
+  desk: HttpApiDesk,
+  request: HttpApiRequest,
+  at: HttpApiTaskPath,
+): Promise<HttpApiAnswer> {
+  const named = `ticket ${String(at.ticket)} task ${String(at.taskId)}`;
+  const stored = await desk.artifacts.read(at.ticket, at.taskId);
+  if (stored === undefined) {
+    return httpApiRefused(
+      request,
+      404,
+      "no such artifact",
+      `nothing has been declared for ${named}`,
+    );
+  }
+  if (stored.parsed === "Refused") {
+    return httpApiRefused(request, 500, "not an artifact", stored.why);
+  }
+  return httpApiJson(200, { artifact: stored.value });
+}
+
+/** The completion a worker posts: the body kept first, then the decision, and the answer only once that resolved. */
+async function httpApiCompletion(
+  desk: HttpApiDesk,
+  request: HttpApiRequest,
+  at: HttpApiTaskPath,
+): Promise<HttpApiAnswer> {
+  const named = `ticket ${String(at.ticket)} task ${String(at.taskId)}`;
+  if (
+    !httpApiJobTokenHolds(
+      desk.jobSecret,
+      at.ticket,
+      at.taskId,
+      httpApiBearer(request),
+    )
+  ) {
+    return httpApiRefused(
+      request,
+      401,
+      "not this task's job",
+      `the request carries no token minted for ${named}`,
+    );
+  }
+  const declared = httpApiDeclaration(request);
+  if (declared.parsed === "Refused") {
+    return httpApiRefused(request, 400, "not a declaration", declared.why);
+  }
+  await desk.artifacts.write(at.ticket, at.taskId, declared.value.artifact);
+  const submitted = await desk.inbound.taskDone(
+    at.ticket,
+    at.taskId,
+    declared.value.verdict,
+  );
+  return submitted.submitted === "Dropped"
+    ? httpApiJson(200, { dropped: submitted.why })
+    : httpApiJson(200, { seq: submitted.seq });
+}
+
+/**
+ * What a job answers for itself. The completion is the job's alone; the artifact
+ * read is offered here to the ticket's own jobs and left to the desk's own band
+ * for everybody else, so one function answers it under either admission.
+ */
+async function httpApiJobRoutes(
+  desk: HttpApiDesk,
+  request: HttpApiRequest,
+): Promise<HttpApiAnswer | undefined> {
+  const segments = httpApiSegments(request.path);
+  const completion = httpApiCompletionPath(request, segments);
+  if (completion !== undefined) {
+    return await httpApiCompletion(desk, request, completion);
+  }
+  const artifact = httpApiArtifactPath(request, segments);
+  if (artifact === undefined) return undefined;
+  if (!httpApiJobOfTicket(desk, request, artifact.ticket)) return undefined;
+  return await httpApiArtifact(desk, request, artifact);
+}
+
 /** The routes that answer before anyone is identified. */
 async function httpApiOpen(
   desk: HttpApiDesk,
@@ -261,12 +458,17 @@ async function httpApiTicket(
   user: RegistryUser,
   ticket: TicketId,
 ): Promise<HttpApiAnswer> {
+  const declared = await desk.artifacts.forTicket(ticket);
+  if (declared.parsed === "Refused") {
+    return httpApiRefused(request, 500, "not an artifact", declared.why);
+  }
   const view = viewTicket(
     desk.config,
     desk.core(),
     await desk.registry.annexes(),
     ticket,
     await desk.deskLog.eventsFor(ticket),
+    declared.value,
   );
   if (view === undefined) {
     return httpApiRefused(
@@ -311,6 +513,10 @@ async function httpApiRead(
   const segments = httpApiSegments(request.path);
   if (httpApiReadsBoard(segments)) {
     return await httpApiBoard(desk, request, user);
+  }
+  const artifact = httpApiArtifactPath(request, segments);
+  if (artifact !== undefined) {
+    return await httpApiArtifact(desk, request, artifact);
   }
   const named = httpApiReadsTicket(segments);
   if (named === undefined) return undefined;
@@ -501,6 +707,8 @@ async function httpApiWrite(
 export function httpApiRouter(desk: HttpApiDesk): HttpApiRouter {
   const arrive = httpApiSerialArrivals();
   return async (request) => {
+    const job = await httpApiJobRoutes(desk, request);
+    if (job !== undefined) return job;
     const read = httpApiFields(request.contentType, request.body);
     if (read.parsed === "Refused") {
       return httpApiRefused(request, 400, "not a body", read.why);
