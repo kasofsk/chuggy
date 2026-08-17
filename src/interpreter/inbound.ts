@@ -17,9 +17,13 @@
  *
  * WHAT IS ABSENT IS THE POINT. No dispatch, no reduce, no dequeue: those are
  * the actor's own follow-ups, decided above this face, and a world that could
- * submit them would be a second decider. The face carries exactly the
- * environment's draws — the desk's authored acts on one side, the fabric's
- * completions and the performer's gate outcomes on the other.
+ * submit them would be a second decider. The face carries the environment's
+ * draws this deployment can produce — the desk's authored acts on one side,
+ * the fabric's completions and the performer's gate outcomes on the other.
+ * One draw the model grants the environment is deliberately not carried:
+ * revalidation churn (`JRevalFail`) has no source here, and an environment
+ * that never fires a draw refines the one that may — carrying it waits for a
+ * deployment that revalidates.
  */
 
 import type { ProjectId, TaskId, TicketId } from "../domain/ids.ts";

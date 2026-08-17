@@ -42,11 +42,12 @@ export interface Wiring {
 
 /**
  * The sample the witness takes, at emission grain to match the schedule's
- * `Emit` steps: a revocation's withdrawal precedes its desk delivery inside one
- * `perform`, so the desk row is the pair's closing half and the one counted. An
- * emission whose withdrawal landed without its desk half is one not yet
- * performed, which errs the safe way — a smaller sample can only tighten the
- * `journalPrecedesEffect` bound, never satisfy it falsely.
+ * `Emit` steps: a revocation is two port calls under one emission, and only
+ * its desk row — the pair's closing half — is counted. That leaves the
+ * opening half unwitnessed between `cancelTasks` resolving and the desk row
+ * landing, a blind spot stated rather than claimed away — no append can reach
+ * it today, because the drain awaits both halves and the stubs resolve
+ * synchronously.
  */
 function wiringSample(
   desk: DeskStub,
