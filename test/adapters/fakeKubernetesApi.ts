@@ -4,7 +4,8 @@
  * stamped onto the stored instance, a read of one Job by name, Secret create
  * with the same conflict, list, the chunked-lines watch stream, and delete by
  * label — plus the scripting a case needs to inject a drop, an expired watch,
- * or a failing delete. It is a fixture, not a simulation: nothing here
+ * a failing delete, a refused Job create, or a Job create whose answer is held
+ * open. It is a fixture, not a simulation: nothing here
  * transitions a Job on its own, and every phase change is an event the case
  * sends itself.
  */
@@ -36,6 +37,21 @@ export interface FakeWatchEvent {
   readonly object: unknown;
 }
 
+/** A scripted hold over one Job create: `arrived` resolves once the store took the create, and `release` frees the answer — or disarms the script when no create ever reached it. */
+export interface FakeCreateHold {
+  readonly arrived: Promise<void>;
+  readonly release: () => void;
+}
+
+/** How one Job create is scripted: refused before the store is touched, or held after it with only the answer missing. */
+type FakeCreateScript =
+  | { readonly script: "Fail"; readonly status: number }
+  | {
+      readonly script: "Hold";
+      readonly arrived: () => void;
+      readonly released: Promise<void>;
+    };
+
 /** The fixture's face: the base URL, the recorded traffic, and the scripting hooks. */
 export interface FakeKubernetesApi {
   readonly base: string;
@@ -54,6 +70,8 @@ export interface FakeKubernetesApi {
   dropWatches(): void;
   expireWatches(): void;
   failNextDelete(status: number): void;
+  failNextCreate(status: number): void;
+  holdNextCreate(): FakeCreateHold;
   close(): Promise<void>;
 }
 
@@ -69,6 +87,7 @@ interface FakeState {
     propagationPolicy: string | null;
   }[];
   readonly watches: Set<ServerResponse>;
+  readonly createScripts: FakeCreateScript[];
   resourceVersion: number;
   deleteFailure: number | undefined;
 }
@@ -100,14 +119,19 @@ function fakeJson(
   response.end(JSON.stringify(body));
 }
 
-function fakeCreate(
+async function fakeCreate(
   own: FakeState,
   response: ServerResponse,
   body: string,
-): void {
+): Promise<void> {
+  const script = own.createScripts.shift();
+  if (script?.script === "Fail") {
+    fakeJson(response, script.status, { kind: "Status", code: script.status });
+    return;
+  }
   const job = JSON.parse(body) as FabricApiJob;
   if (own.jobs.has(job.metadata.name)) {
-    fakeJson(response, 409, {
+    await fakeCreateAnswer(script, response, 409, {
       kind: "Status",
       reason: "AlreadyExists",
       code: 409,
@@ -121,7 +145,21 @@ function fakeCreate(
   own.jobs.set(job.metadata.name, stored);
   own.created.push(job);
   own.resourceVersion += 1;
-  fakeJson(response, 201, stored);
+  await fakeCreateAnswer(script, response, 201, stored);
+}
+
+/** Writes a create's answer, first sitting out a scripted hold: the store has already taken the create, so a caller killed here observes exactly the landed-but-unanswered window. */
+async function fakeCreateAnswer(
+  script: FakeCreateScript | undefined,
+  response: ServerResponse,
+  status: number,
+  body: unknown,
+): Promise<void> {
+  if (script?.script === "Hold") {
+    script.arrived();
+    await script.released;
+  }
+  fakeJson(response, status, body);
 }
 
 function fakeCreateSecret(
@@ -203,7 +241,7 @@ async function fakeHandle(
     return;
   }
   if (request.method === "POST") {
-    fakeCreate(own, response, await fakeBody(request));
+    await fakeCreate(own, response, await fakeBody(request));
     return;
   }
   const named = fakeJobNameIn(url.pathname);
@@ -230,6 +268,27 @@ async function fakeHandle(
   fakeList(own, response, selector);
 }
 
+/** The create-scripting half of the face, built apart so the constructor stays within the function budget. */
+function fakeCreateScripting(
+  own: FakeState,
+): Pick<FakeKubernetesApi, "failNextCreate" | "holdNextCreate"> {
+  return {
+    failNextCreate: (status) => {
+      own.createScripts.push({ script: "Fail", status });
+    },
+    holdNextCreate: () => {
+      const arrived = Promise.withResolvers<void>();
+      const released = Promise.withResolvers<void>();
+      own.createScripts.push({
+        script: "Hold",
+        arrived: arrived.resolve,
+        released: released.promise,
+      });
+      return { arrived: arrived.promise, release: released.resolve };
+    },
+  };
+}
+
 /** A listening fixture on an ephemeral local port. */
 export function fakeKubernetesApi(): Promise<FakeKubernetesApi> {
   const own: FakeState = {
@@ -241,6 +300,7 @@ export function fakeKubernetesApi(): Promise<FakeKubernetesApi> {
     created: [],
     deletes: [],
     watches: new Set(),
+    createScripts: [],
     resourceVersion: 1,
     deleteFailure: undefined,
   };
@@ -287,6 +347,7 @@ export function fakeKubernetesApi(): Promise<FakeKubernetesApi> {
         failNextDelete: (status) => {
           own.deleteFailure = status;
         },
+        ...fakeCreateScripting(own),
         close: () =>
           new Promise((closed) => {
             for (const watch of own.watches) watch.destroy();

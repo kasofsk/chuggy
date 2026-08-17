@@ -75,7 +75,7 @@ const deployment: Config = {
 /** The one issuer this deployment admits a token from. */
 const composeIssuer = "https://accounts.google.com";
 
-/** Where that issuer publishes the keys a token is verified against. */
+/** Where the issuer publishes the keys a token is verified against, when the environment names no other key source. */
 const composeJwksUri = "https://www.googleapis.com/oauth2/v3/certs";
 
 /** The port the desk listens on when the environment names none. */
@@ -302,7 +302,9 @@ fabric?.bindInbound(driven);
 await composeBootstrapOperator(registry, adminSubject);
 
 const identity: Identity = {
-  keys: createRemoteJWKSet(new URL(composeJwksUri)),
+  keys: createRemoteJWKSet(
+    new URL(composeSetting("CHUGGY_JWKS_URI") ?? composeJwksUri),
+  ),
   issuer: composeSetting("CHUGGY_ISSUER") ?? composeIssuer,
   audience: oauthClientId,
 };

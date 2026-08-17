@@ -14,6 +14,7 @@
   "type": "module",
   "scripts": {
     "check": "./.chug/tasks/ci.sh",
+    "demo": "node test/demo/firstTicket.ts",
     "start": "node src/compose.ts"
   },
   "dependencies": {

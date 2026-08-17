@@ -8,7 +8,7 @@ Start at [CLAUDE.md](./CLAUDE.md) — it is the entry point for humans and agent
 
 ## Status
 
-Pre-implementation. What exists today is the proved model, the gates that run over this tree, and the design docs that sequence the work — the first two landed **before** any code, because a standard is cheap to adopt on an empty tree and expensive to retrofit onto a full one. The written standards that accompanied them have been removed; each gate now carries its own rule in its own header, which is where a rule cannot drift from its enforcement. `CLAUDE.md` names the three places this tree states what is true of itself.
+The machine runs. `npm start` boots the composition root — `src/compose.ts` — which replays the SQLite journal, re-drives what a crash left holding, and serves the desk over HTTP; the environment names the rest, and each half falls back to a recording stub where it names nothing: the fabric runs Kubernetes Jobs against a configured API, and the wrap-up merges over git against a configured remote. The proved model in `model/` still leads — the implementation replays its golden traces — and the crash suite in `test/entrypoint/` kills the dispatcher mid-flight and proves recovery at process level. A first real ticket has been driven end to end with `.chug/tasks/ci.sh` as its evaluator; `npm run demo` reruns it. What remains is the platform's applies: the cloud foundation under `infra/` is written and none of it is applied, so every deployment so far is a local process.
 
 ```sh
 just hooks    # once per clone
