@@ -30,7 +30,12 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { actorInit } from "../../src/actor/state.ts";
 import { deskEvents } from "../../src/adapters/deskEvents.ts";
 import { fabricStub } from "../../src/adapters/fabricStub.ts";
+import {
+  httpApiArtifacts,
+  type HttpApiArtifacts,
+} from "../../src/adapters/httpApi/artifacts.ts";
 import type { Identity } from "../../src/adapters/httpApi/identity.ts";
+import { httpApiJobTokenMint } from "../../src/adapters/httpApi/jobToken.ts";
 import {
   httpApiBody,
   httpApiBodyBytesMax,
@@ -45,14 +50,22 @@ import {
   type HttpApiRouter,
 } from "../../src/adapters/httpApi/routes.ts";
 import { httpApi } from "../../src/adapters/httpApi/server.ts";
-import { journalStoreStub } from "../../src/adapters/journalStoreStub.ts";
+import {
+  journalStoreStub,
+  type JournalStoreStub,
+} from "../../src/adapters/journalStoreStub.ts";
 import { registrySqlite } from "../../src/adapters/registrySqlite.ts";
 import { sqliteJournal } from "../../src/adapters/sqliteJournal.ts";
 import { wrapUpStub } from "../../src/adapters/wrapUpStub.ts";
 import type { Config } from "../../src/domain/config.ts";
-import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
+import { asTaskId, asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
 import type { Ticket } from "../../src/domain/ticket.ts";
+import {
+  workBranch,
+  type ArtifactBody,
+  type CompletionDeclaration,
+} from "../../src/interpreter/artifact.ts";
 import type { Executor } from "../../src/interpreter/executor.ts";
 import type { Submitted } from "../../src/interpreter/inbound.ts";
 import type {
@@ -122,7 +135,12 @@ interface HttpApiWiring {
   readonly route: HttpApiRouter;
   readonly desk: HttpApiDesk;
   readonly registry: Registry;
+  readonly artifacts: HttpApiArtifacts;
+  readonly store: JournalStoreStub;
 }
+
+/** The secret these cases key a job token with; no case here mints one, and a face still needs one to refuse with. */
+const httpApiJobSecret = "the-desk-suite-secret";
 
 /** The face over one desk value, so a case that wires its own stores still routes through the same code. */
 function httpApiFace(
@@ -130,6 +148,7 @@ function httpApiFace(
   driven: Drive,
   registry: Registry,
   log: DeskLog,
+  artifacts: HttpApiArtifacts,
 ): HttpApiDesk {
   return {
     config,
@@ -137,15 +156,18 @@ function httpApiFace(
     core: driven.core,
     registry,
     deskLog: log,
+    artifacts,
     identity: httpApiIdentity,
     oauthClientId: httpApiAudience,
+    jobSecret: httpApiJobSecret,
   };
 }
 
-/** A desk over in-memory stores and a drive over the stub world; the registry may be wrapped to fail a write. */
+/** A desk over in-memory stores and a drive over the stub world; either store may be wrapped to fail a write. */
 function httpApiWiring(
   t: TestContext,
   wrap: (registry: Registry) => Registry = (registry) => registry,
+  cut: (driven: Drive) => Drive = (driven) => driven,
 ): HttpApiWiring {
   const database = new DatabaseSync(":memory:");
   t.after(() => {
@@ -153,14 +175,16 @@ function httpApiWiring(
   });
   const log = deskEvents(database);
   const registry = wrap(registrySqlite(database));
+  const store = journalStoreStub();
   const executor: Executor = {
     config: httpApiConfig,
-    store: journalStoreStub(),
+    store,
     ports: { fabric: fabricStub(), desk: log, wrapUp: wrapUpStub() },
   };
-  const driven = drive(executor, () => undefined, actorInit());
-  const desk = httpApiFace(httpApiConfig, driven, registry, log);
-  return { route: httpApiRouter(desk), desk, registry };
+  const driven = cut(drive(executor, () => undefined, actorInit()));
+  const artifacts = httpApiArtifacts(database);
+  const desk = httpApiFace(httpApiConfig, driven, registry, log, artifacts);
+  return { route: httpApiRouter(desk), desk, registry, artifacts, store };
 }
 
 /** One request as the transport would have read it, carrying only what a case names. */
@@ -192,7 +216,10 @@ function httpApiPosts(value: unknown): Partial<HttpApiRequest> {
 }
 
 /** The arrival a case makes when it needs a ticket to act on. */
-function httpApiArrives(title: string): Partial<HttpApiRequest> {
+function httpApiArrives(
+  title: string,
+  wrapUp = "WNone",
+): Partial<HttpApiRequest> {
   return {
     path: "/api/tickets",
     ...httpApiPosts({
@@ -200,7 +227,7 @@ function httpApiArrives(title: string): Partial<HttpApiRequest> {
       brief: "the face the fabric never sees",
       taskType: "code",
       project: 1,
-      wrapUp: "WNone",
+      wrapUp,
     }),
   };
 }
@@ -406,6 +433,7 @@ test("the serializer is what keeps two annexes from landing under one id", async
     httpApiInterleavingDrive(),
     registry,
     deskEvents(database),
+    httpApiArtifacts(database),
   );
   const arrive = httpApiSerialArrivals();
   const author: RegistryUser = {
@@ -695,7 +723,15 @@ test("the deployment's own adapters carry an arrival and a release end to end", 
   await registry.upsertUser("operator", "Grace", true);
   const base = await httpApiListening(
     t,
-    httpApi(httpApiFace(httpApiConfig, driven, registry, log)),
+    httpApi(
+      httpApiFace(
+        httpApiConfig,
+        driven,
+        registry,
+        log,
+        httpApiArtifacts(database),
+      ),
+    ),
   );
   const token = await httpApiToken({ subject: "operator" });
   const form = {
@@ -734,4 +770,341 @@ test("the deployment's own adapters carry an arrival and a release end to end", 
     (await log.eventsFor(asTicketId(1))).map((event) => event.effect),
     ["CreateDraft"],
   );
+});
+
+/** The mint a job is handed at spawn, keyed by the secret the face verifies against. */
+const httpApiMint = httpApiJobTokenMint(httpApiJobSecret);
+
+/** The token a real job holds for one ticket's task. */
+function httpApiJobToken(ticket: number, task: number): string {
+  return httpApiMint(asTicketId(ticket), asTaskId(task));
+}
+
+/** The completion one job posts, at whichever token a case wants it to carry. */
+function httpApiCompletes(
+  ticket: number,
+  task: number,
+  declared: CompletionDeclaration,
+  token: string,
+): Partial<HttpApiRequest> {
+  return {
+    path: `/internal/tasks/${String(ticket)}/${String(task)}/completion`,
+    authorization: `Bearer ${token}`,
+    ...httpApiPosts(declared),
+  };
+}
+
+/** The step labels the store kept, which is where a decision taken is told from one refused. */
+function httpApiSteps(store: JournalStoreStub): readonly string[] {
+  return store.rows.map(
+    (row) => (JSON.parse(row) as { rec: { label: string } }).rec.label,
+  );
+}
+
+/** A released ticket, which the drive has already dispatched, so its work task is running. */
+async function httpApiWorking(
+  wired: HttpApiWiring,
+  wrapUp = "WNone",
+): Promise<void> {
+  await httpApiAdmit(wired.registry);
+  await wired.route(
+    await httpApiSigned("author", httpApiArrives("a ticket", wrapUp)),
+  );
+  await wired.route(
+    await httpApiSigned("author", {
+      path: "/api/tickets/1/release",
+      ...httpApiPosts({}),
+    }),
+  );
+}
+
+/** The declaration a case posts when the body itself is not what it is asking about. */
+const httpApiNothing: CompletionDeclaration = {
+  verdict: "VPass",
+  artifact: { body: "BNone" },
+};
+
+/** The body a case expects to read back, as the store answers it. */
+function httpApiKept(body: ArtifactBody): unknown {
+  return { parsed: "Ok", value: body };
+}
+
+test("a completion is admitted by the token minted for that task and by nothing else", async (t) => {
+  const wired = httpApiWiring(t);
+  await httpApiWorking(wired);
+  const wrong = [
+    "",
+    "not-a-token",
+    httpApiJobToken(1, 2),
+    httpApiJobTokenMint("some-other-secret")(asTicketId(1), asTaskId(1)),
+  ];
+  for (const token of wrong) {
+    const answer = await wired.route(
+      httpApiAsk(httpApiCompletes(1, 1, httpApiNothing, token)),
+    );
+    assert.equal(answer.status, 401, token);
+  }
+  const none = await wired.route(
+    httpApiAsk({
+      path: "/internal/tasks/1/1/completion",
+      ...httpApiPosts(httpApiNothing),
+    }),
+  );
+  assert.equal(none.status, 401);
+  assert.deepEqual(httpApiSteps(wired.store), [
+    "ticket-arrived",
+    "ticket-released",
+    "dispatch",
+  ]);
+  assert.equal(
+    await wired.artifacts.read(asTicketId(1), asTaskId(1)),
+    undefined,
+  );
+  const held = await wired.route(
+    httpApiAsk(httpApiCompletes(1, 1, httpApiNothing, httpApiJobToken(1, 1))),
+  );
+  assert.equal(held.status, 200);
+});
+
+test("a declaration the vocabulary does not describe is refused, and nothing is kept", async (t) => {
+  const wired = httpApiWiring(t);
+  await httpApiWorking(wired);
+  const answer = await wired.route(
+    httpApiAsk({
+      path: "/internal/tasks/1/1/completion",
+      authorization: `Bearer ${httpApiJobToken(1, 1)}`,
+      ...httpApiPosts({ verdict: "VPass" }),
+    }),
+  );
+  assert.equal(answer.status, 400);
+  assert.equal(httpApiRead(answer.body)["refused"], "not a declaration");
+  assert.match(String(httpApiRead(answer.body)["why"]), /artifact/);
+  assert.deepEqual(httpApiSteps(wired.store), [
+    "ticket-arrived",
+    "ticket-released",
+    "dispatch",
+  ]);
+  assert.equal(
+    await wired.artifacts.read(asTicketId(1), asTaskId(1)),
+    undefined,
+  );
+});
+
+test("a job's completion is journaled and its body is readable back over the socket", async (t) => {
+  const wired = httpApiWiring(t);
+  await httpApiWorking(wired);
+  const base = await httpApiListening(t, httpApi(wired.desk));
+  const token = httpApiJobToken(1, 1);
+  const branch = workBranch(asTicketId(1), asTaskId(1));
+  const posted = await fetch(`${base}/internal/tasks/1/1/completion`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      verdict: "VPass",
+      artifact: { body: "BGitRef", branch },
+    }),
+  });
+  assert.equal(posted.status, 200);
+  assert.equal(((await posted.json()) as Record<string, unknown>)["seq"], 4);
+  assert.ok(httpApiSteps(wired.store).includes("task-done"));
+  const read = await fetch(`${base}/api/artifacts/1/1`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(read.status, 200);
+  assert.deepEqual(
+    ((await read.json()) as Record<string, unknown>)["artifact"],
+    {
+      body: "BGitRef",
+      branch,
+    },
+  );
+});
+
+test("the artifact is kept even when the decision that was to follow it never lands", async (t) => {
+  const wired = httpApiWiring(t, undefined, (driven) => ({
+    ...driven,
+    taskDone: () => Promise.reject(new Error("the decision was cut off")),
+  }));
+  await httpApiWorking(wired);
+  const declared: ArtifactBody = { body: "BNote", text: "half a write" };
+  await assert.rejects(
+    wired.route(
+      httpApiAsk(
+        httpApiCompletes(
+          1,
+          1,
+          { verdict: "VPass", artifact: declared },
+          httpApiJobToken(1, 1),
+        ),
+      ),
+    ),
+  );
+  assert.ok(!httpApiSteps(wired.store).includes("task-done"));
+  assert.deepEqual(
+    await wired.artifacts.read(asTicketId(1), asTaskId(1)),
+    httpApiKept(declared),
+  );
+});
+
+test("a second declaration for one task is journaled as a duplicate and leaves the first body", async (t) => {
+  const wired = httpApiWiring(t);
+  await httpApiWorking(wired);
+  const token = httpApiJobToken(1, 1);
+  const first: ArtifactBody = { body: "BNote", text: "the first word" };
+  const opened = await wired.route(
+    httpApiAsk(
+      httpApiCompletes(1, 1, { verdict: "VPass", artifact: first }, token),
+    ),
+  );
+  assert.equal(opened.status, 200);
+  const again = await wired.route(
+    httpApiAsk(
+      httpApiCompletes(
+        1,
+        1,
+        { verdict: "VFail", artifact: { body: "BNote", text: "the second" } },
+        token,
+      ),
+    ),
+  );
+  assert.equal(again.status, 200);
+  assert.equal(httpApiRead(again.body)["seq"], 6);
+  assert.deepEqual(httpApiSteps(wired.store), [
+    "ticket-arrived",
+    "ticket-released",
+    "dispatch",
+    "task-done",
+    "work-passed",
+    "task-done-duplicate",
+  ]);
+  assert.deepEqual(
+    await wired.artifacts.read(asTicketId(1), asTaskId(1)),
+    httpApiKept(first),
+  );
+});
+
+test("a completion for a revoked ticket is answered rather than refused, and its body is still kept", async (t) => {
+  const wired = httpApiWiring(t);
+  await httpApiWorking(wired);
+  await wired.route(
+    await httpApiSigned("author", {
+      path: "/api/tickets/1/revoke",
+      ...httpApiPosts({}),
+    }),
+  );
+  const answer = await wired.route(
+    httpApiAsk(httpApiCompletes(1, 1, httpApiNothing, httpApiJobToken(1, 1))),
+  );
+  assert.equal(answer.status, 200);
+  assert.match(String(httpApiRead(answer.body)["dropped"]), /JTaskDone/);
+  assert.deepEqual(httpApiSteps(wired.store), [
+    "ticket-arrived",
+    "ticket-released",
+    "dispatch",
+    "ticket-revoked",
+  ]);
+  assert.deepEqual(
+    await wired.artifacts.read(asTicketId(1), asTaskId(1)),
+    httpApiKept(httpApiNothing.artifact),
+  );
+});
+
+test("an artifact is read by an admitted person or by one of that ticket's jobs, and by nobody else", async (t) => {
+  const wired = httpApiWiring(t);
+  await httpApiWorking(wired);
+  await wired.route(
+    httpApiAsk(httpApiCompletes(1, 1, httpApiNothing, httpApiJobToken(1, 1))),
+  );
+  const person = await wired.route(
+    await httpApiSigned("author", { path: "/api/artifacts/1/1" }),
+  );
+  assert.equal(person.status, 200);
+  const evaluator = await wired.route(
+    httpApiAsk({
+      path: "/api/artifacts/1/1",
+      authorization: `Bearer ${httpApiJobToken(1, 2)}`,
+    }),
+  );
+  assert.equal(evaluator.status, 200);
+  const stranger = await wired.route(
+    httpApiAsk({
+      path: "/api/artifacts/1/1",
+      authorization: `Bearer ${httpApiJobToken(2, 1)}`,
+    }),
+  );
+  assert.equal(stranger.status, 401);
+  const absent = await wired.route(
+    await httpApiSigned("author", { path: "/api/artifacts/1/2" }),
+  );
+  assert.equal(absent.status, 404);
+});
+
+test("a typed artifact carries a ticket from arrival through work into evaluation", async (t) => {
+  const wired = httpApiWiring(t);
+  await httpApiWorking(wired, "WExclusive:1");
+  const base = await httpApiListening(t, httpApi(wired.desk));
+  const branch = workBranch(asTicketId(1), asTaskId(1));
+  const complete = (task: number, artifact: ArtifactBody): Promise<Response> =>
+    fetch(`${base}/internal/tasks/1/${String(task)}/completion`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${httpApiJobToken(1, task)}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ verdict: "VPass", artifact }),
+    });
+  assert.equal((await complete(1, { body: "BGitRef", branch })).status, 200);
+  assert.equal((await complete(2, { body: "BNone" })).status, 200);
+  assert.deepEqual(httpApiSteps(wired.store), [
+    "ticket-arrived",
+    "ticket-released",
+    "dispatch",
+    "task-done",
+    "work-passed",
+    "task-done",
+    "eval-passed",
+    "wrapup-started",
+  ]);
+  const token = await httpApiToken({ subject: "author" });
+  const view = await fetch(`${base}/api/tickets/1`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const held = (await view.json()) as { ticket: { declared: unknown } };
+  assert.deepEqual(held.ticket.declared, [
+    { task: 1, body: { body: "BGitRef", branch } },
+    { task: 2, body: { body: "BNone" } },
+  ]);
+});
+
+test("the artifact store round-trips the vocabulary and refuses a row it would never have written", async (t) => {
+  const database = new DatabaseSync(":memory:");
+  t.after(() => {
+    database.close();
+  });
+  const artifacts = httpApiArtifacts(database);
+  const bodies: readonly ArtifactBody[] = [
+    { body: "BGitRef", branch: workBranch(asTicketId(1), asTaskId(1)) },
+    { body: "BNote", text: "what the evaluation read" },
+    { body: "BNone" },
+  ];
+  for (let at = 0; at < bodies.length; at++) {
+    const body = bodies[at];
+    if (body === undefined) throw new Error("the case named a body it has not");
+    await artifacts.write(asTicketId(1), asTaskId(at + 1), body);
+  }
+  assert.deepEqual(await artifacts.forTicket(asTicketId(1)), {
+    parsed: "Ok",
+    value: bodies.map((body, at) => ({ task: at + 1, body })),
+  });
+  assert.throws(() =>
+    database.exec(
+      "INSERT INTO artifacts (ticket, task, kind, payload) VALUES (2, 1, 'BTarball', 'x')",
+    ),
+  );
+  database.exec("UPDATE artifacts SET payload = '' WHERE task = 1");
+  const tampered = await artifacts.read(asTicketId(1), asTaskId(1));
+  assert.equal(tampered?.parsed, "Refused");
 });

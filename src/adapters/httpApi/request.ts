@@ -68,15 +68,22 @@ function httpApiValues(raw: unknown): readonly string[] | undefined {
   return values;
 }
 
-/** A JSON object's properties as named lists, refusing a body that is not an object of scalars. */
-function httpApiJsonFields(body: string): Parsed<HttpApiFields> {
-  let raw: unknown;
+/** The body as the JSON value it claims to be; an empty body is the empty object, as a form with no fields is. */
+export function httpApiBodyJson(body: string): Parsed<unknown> {
   try {
-    raw = JSON.parse(body === "" ? "{}" : body);
+    const raw: unknown = JSON.parse(body === "" ? "{}" : body);
+    return { parsed: "Ok", value: raw };
   } catch (failure: unknown) {
     const why = failure instanceof Error ? failure.message : String(failure);
     return { parsed: "Refused", why: `the body is not JSON: ${why}` };
   }
+}
+
+/** A JSON object's properties as named lists, refusing a body that is not an object of scalars. */
+function httpApiJsonFields(body: string): Parsed<HttpApiFields> {
+  const read = httpApiBodyJson(body);
+  if (read.parsed === "Refused") return read;
+  const raw = read.value;
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     return { parsed: "Refused", why: "the body is not a JSON object" };
   }
