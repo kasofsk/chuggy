@@ -27,14 +27,25 @@ its own commit, with the suites re-run.
 **Each gate states its own rule in its own header.** Cite the header: name the
 gate and the sentence in it that the change violates. Where no gate covers it,
 cite a house rule by its number, a standing rule by its number and the model
-header that states it, or a commitment by its name. A rule you cannot point at
-in one of those places is not a rule you can reject over — say it as an opinion
-instead, and let the author take it or leave it.
+header that states it, a commitment by its name, or a practice by its skill name
+and only if you invoked it. A rule you cannot point at in one of those places is
+not a rule you can reject over — say it as an opinion instead, and let the author
+take it or leave it.
 
 **Correctness before anything else**, then whether the change does what it set
 out to do, then whether it does anything it did not set out to do. An
 unrelated improvement in the same diff is worth naming; it is rarely worth
 blocking.
+
+## The practices
+
+The general standards are skills, and `.claude/settings.json` is the roster:
+read it for what is on it rather than working from the ones you remember.
+
+**Invoke them by name with the Skill tool** — the reviewer before judging, the
+author before writing. Ambient availability is not invocation, and a skill
+recalled rather than loaded is a summary of itself. A brief naming the ones its
+change turns on is pointing, not bounding.
 
 ## The house rules
 
@@ -174,4 +185,5 @@ End with exactly one of these, as the first line of your reply:
   needed and who has to make it.
 
 Then the notes: what you looked at and chose not to flag, and anything you were
-unsure about. That section is what the author reads when they disagree with you.
+unsure about. Name the practices you invoked there too — a review that invoked
+none says so. That section is what the author reads when they disagree with you.
