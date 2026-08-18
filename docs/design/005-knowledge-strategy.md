@@ -2,11 +2,7 @@
 
 **Status: IN PROGRESS** — K0 is landed and enforced; K1 and K2 are proposed, and with S8 landed only K1 stands before the first retro. Issue #58 is the interim ticket, and it carries the motivating evidence and the discussion record.
 
-The standard is already this tree's: the repo carries what is true, and the record carries what was learned. House rule 16 closes the tree to lessons stated en route, and the observer below is the destination that makes the closure workable — the half the tree does not carry yet.
-
-## The inner loop is landed, and this doc holds none of it
-
-House rule 16 — *a change states no lesson* — is stated in `.chug/tasks/review-change.md`, enforced by the reviewer, and is the whole of the strategy's enforcement footprint; `247f5c5` is the commit. The reading that settles its edge cases — what a *new* standard excludes, what *stated scope* keeps in scope — is recorded on the ticket. That is why this doc carries the observer and nothing about the rule.
+The standard is already this tree's: the repo carries what is true, and the record carries what was learned. The observer below is the half the tree does not carry yet: a destination for lessons that arise while work is under way.
 
 ## The record
 
