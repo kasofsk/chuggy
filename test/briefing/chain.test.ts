@@ -3,9 +3,10 @@
  * made of is not this module's, so one that looked real would be this suite
  * deciding it.
  *
- * What the spec refuses is refused at compile time, so those cases are
- * `@ts-expect-error` rather than assertions — a suite that could run them
- * would be a suite the typechecker had already let through.
+ * What the spec refuses it refuses at compile time, so those cases are
+ * `@ts-expect-error` over expressions the suite never calls — running one
+ * would be running what the typechecker had already rejected. What a parse
+ * can still hand over is a separate case, asserted the ordinary way.
  */
 
 import { test } from "node:test";
@@ -13,7 +14,7 @@ import assert from "node:assert/strict";
 
 import { chainOf } from "../../src/briefing/chain.ts";
 import { registryOf } from "../../src/briefing/registry.ts";
-import type { Transform } from "../../src/briefing/transform.ts";
+import type { Transform, TransformName } from "../../src/briefing/transform.ts";
 
 interface View {
   readonly body: string;
@@ -44,6 +45,10 @@ const registry = registryOf<View, Spec>({
 });
 
 const view: View = { body: "B" };
+
+/** What a parse that validated nothing hands over: the type is a claim, not a check. */
+const asParsed = (name: string): TransformName<Spec> =>
+  name as TransformName<Spec>;
 
 test("transforms fold in pipeline order, left to right", () => {
   const composed = chainOf(registry)
@@ -120,16 +125,26 @@ test("a chain erased to nothing refuses, naming how far it got", () => {
   );
 });
 
+test("a name that resolves to nothing is refused when it is added, not when it runs", () => {
+  assert.throws(
+    () => chainOf(registry).add(asParsed("absent"), { mark: "a" }),
+    /no transform is registered as absent/,
+  );
+});
+
 test("what the spec refuses, it refuses before anything runs", () => {
   const chain = chainOf(registry);
-  // @ts-expect-error a name the spec has not got
-  chain.add("absent");
-  // @ts-expect-error params for a name that declares none
-  chain.add("open", { mark: "a" });
-  // @ts-expect-error no params for a name that declares some
-  chain.add("append");
-  // @ts-expect-error params of the wrong shape for the name
-  chain.add("append", { times: 2 });
-  // @ts-expect-error params of another name in the same spec
-  chain.add("repeat", { mark: "a" });
+  const rejected = [
+    // @ts-expect-error a name the spec has not got
+    () => chain.add("absent"),
+    // @ts-expect-error params for a name that declares none
+    () => chain.add("open", { mark: "a" }),
+    // @ts-expect-error no params for a name that declares some
+    () => chain.add("append"),
+    // @ts-expect-error params of the wrong shape for the name
+    () => chain.add("append", { times: 2 }),
+    // @ts-expect-error params of another name in the same spec
+    () => chain.add("repeat", { mark: "a" }),
+  ];
+  assert.equal(rejected.length, 5);
 });

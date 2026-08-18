@@ -4,8 +4,10 @@
  * new chain, so a base can be shared.
  *
  * A name the spec has not got, and params of the wrong shape for the name they
- * are added under, are both type errors. The configuration is checked before
- * the run that needed the prompt, and before the process that would make it.
+ * are added under, are both type errors where the chain is written in
+ * TypeScript. Where it is written in a ticket, the name is a parsed string and
+ * the type is what the parse claimed, so `add` refuses one that resolves to
+ * nothing rather than trusting the claim.
  *
  * The method is `add` and not `then`: an object carrying a `then` is a thenable
  * and would be awaited by anything that touched it.
@@ -49,6 +51,9 @@ function chainOfFrom<View, Spec>(
       ...params: ParamsOf<Spec[Name]>
     ): Chain<View, Spec> {
       const transform = registry.transformNamed(name);
+      if (transform === undefined) {
+        throw new Error(`chain: no transform is registered as ${name}`);
+      }
       const applied = (input: string, view: View): string =>
         transform(input, view, ...params);
       return chainOfFrom(registry, [...steps, { name, applied }]);

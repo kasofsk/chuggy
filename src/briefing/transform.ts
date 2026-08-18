@@ -10,6 +10,12 @@
  *
  * One that opens a prompt ignores its input rather than being a kind of its
  * own, so a pipeline can be reordered without its head being retyped.
+ *
+ * PROMPT TEXT AND NOTHING ELSE. A transform returns the whole replacement, so
+ * a pipeline is last-writer-wins, and that is right for text and wrong for
+ * anything composing by precedence or intersection. A task's tools and its
+ * permissions are the two this fold must never be reached for: under
+ * last-writer-wins a later step silently widens what an earlier one narrowed.
  */
 
 /** The names a spec declares, narrowed to the ones a trace entry can carry. */
