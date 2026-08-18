@@ -25,7 +25,7 @@ import {
   tkEval,
   tkWork,
   tsResolved,
-  tsRunning,
+  tsOutstanding,
   type Task,
   type TaskKind,
   type TaskOutcome,
@@ -201,7 +201,7 @@ export function decodeTaskKind(value: ItfValue): TaskKind {
 
 export function decodeTaskState(value: ItfValue): TaskState {
   const tag = variantTag(value);
-  if (tag === "TSRunning") return tsRunning;
+  if (tag === "TSOutstanding") return tsOutstanding;
   if (tag === "TSResolved") {
     return tsResolved(
       oneOf(OUTCOMES, variantTag(variantPayload(value)), "task outcome"),
@@ -364,8 +364,8 @@ function encodeTaskKind(kind: TaskKind): unknown {
 }
 
 function encodeTaskState(state: TaskState): unknown {
-  return state.state === "TSRunning"
-    ? tagged("TSRunning")
+  return state.state === "TSOutstanding"
+    ? tagged("TSOutstanding")
     : tagged("TSResolved", tagged(state.outcome));
 }
 

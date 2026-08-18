@@ -47,7 +47,7 @@ import { aNone, aSome, wNone } from "../../src/domain/wrapUp.ts";
 import type { Ticket } from "../../src/domain/ticket.ts";
 import type { Phase } from "../../src/domain/phase.ts";
 import { budgetedInstance } from "./configs.ts";
-import { ticketOn, workRunning } from "./fixtures.ts";
+import { ticketOn, workOutstanding } from "./fixtures.ts";
 
 const GOLDEN_DIR = join(import.meta.dirname, "..", "golden");
 
@@ -199,7 +199,7 @@ test("no digit, weight or radix reads the project or the artifact", () => {
   for (const phase of phases) {
     const ticket = ticketOn(budgetedInstance, 1, {
       phase,
-      tasks: [workRunning(1)],
+      tasks: [workOutstanding(1)],
       spawned: 1,
     });
     assert.equal(

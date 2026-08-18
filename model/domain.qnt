@@ -296,7 +296,7 @@ module chuggy_domain {
   /// 45-46 `(Done | Revoked, Revoked) => false` — the terminals are
   /// absorbing, so no decider ever moves a ticket OUT of PRevoked (invariant
   /// terminalsAbsorbing). The revoked ticket settles: rank -> 0, live task set
-  /// RETIRED into the record (still-running tasks force-closed as
+  /// RETIRED into the record (still-outstanding tasks force-closed as
   /// TCancelled; the
   /// record itself is KEPT: provenance survives the author's settlement,
   /// "Revoked runs nothing" ≠ "Revoked remembers nothing"), accounts
@@ -476,11 +476,11 @@ module chuggy_domain {
 
   pure def reducibleWorkIn(c: Core): Set[int] =
     c.tickets.keys().filter(j =>
-      c.tickets.get(j).phase == PWorking and runningCount(c.tickets.get(j).tasks) == 0)
+      c.tickets.get(j).phase == PWorking and outstandingCount(c.tickets.get(j).tasks) == 0)
 
   pure def reducibleEvalIn(c: Core): Set[int] =
     c.tickets.keys().filter(j =>
-      c.tickets.get(j).phase == PEvaluating and runningCount(c.tickets.get(j).tasks) == 0)
+      c.tickets.get(j).phase == PEvaluating and outstandingCount(c.tickets.get(j).tasks) == 0)
 
   /// Enqueued tickets whose project's gate is free (the depth-1 refusal).
   pure def wrapUpStartablesIn(c: Core): Set[int] =
@@ -611,7 +611,7 @@ module chuggy_domain {
 
   /// A task-completion event for task `tid` of ticket j (Working or
   /// Evaluating — one decider for both phases' task sets). First write
-  /// wins: if the task is not RUNNING IN THE LIVE SET, this is a duplicate
+  /// wins: if the task is not OUTSTANDING IN THE LIVE SET, this is a duplicate
   /// or stale delivery and the decision is a state-identical no-op
   /// (STUTTER set in measure.qnt). the model the stale arm structural:
   /// task ids are unique across the ticket's whole history, so a completion
@@ -622,7 +622,7 @@ module chuggy_domain {
   /// nothing). No phase transition either way — task records resolve
   /// inside the phase.
   pure def decideTaskDone(c: Core, j: int, tid: int, v: Verdict): Decision =
-    if (c.tickets.get(j).tasks.exists(t => t.id == tid and t.state == TSRunning))
+    if (c.tickets.get(j).tasks.exists(t => t.id == tid and t.state == TSOutstanding))
       { rec: { label: "task-done", transitions: [], effects: [], attempt: WONone },
         post: withTicket(c, j, { ...c.tickets.get(j),
           tasks: resolveTask(c.tickets.get(j).tasks, tid,
@@ -1162,7 +1162,7 @@ module chuggy_domain {
   /// drivers reference too) is the ticket's ENTIRE task history — ids are sequential
   /// within the ticket and never reused, so a
   /// stale completion from an earlier STAGE or incarnation names a retired
-  /// id and no-ops BY IDENTITY (decideTaskDone finds no live running
+  /// id and no-ops BY IDENTITY (decideTaskDone finds no live outstanding
   /// match). This RETIRES the weaker absorption argument (a stale
   /// same-id completion was indistinguishable from a fresh nondet verdict
   /// on the respawned set) — staleness is now absorbed structurally, and
@@ -1572,7 +1572,7 @@ module chuggy_domain {
   /// THE RETAINED RECORD is well-formed: entry i carries id i+1
   /// (the chronological log IS the identity order, 1-indexed), nothing
   /// retired is still
-  /// running — the record is the RESOLVED log, every entry TSResolved
+  /// outstanding — the record is the RESOLVED log, every entry TSResolved
   /// (TPassed/TFailed by verdict, TCancelled by revoke; the
   /// explicit lifecycle makes this a constructor check, not an
   /// outcome-sentinel comparison) — and every retired eval task names a
@@ -1582,7 +1582,7 @@ module chuggy_domain {
     val jb = tickets.get(j)
     and {
       jb.record.indices().forall(i => jb.record[i].id == i + firstTaskId),
-      jb.record.indices().forall(i => jb.record[i].state != TSRunning),
+      jb.record.indices().forall(i => jb.record[i].state != TSOutstanding),
       jb.record.indices().forall(i =>
         match jb.record[i].kind {
           | TKWork => true

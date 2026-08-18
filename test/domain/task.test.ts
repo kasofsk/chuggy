@@ -12,13 +12,13 @@ import {
   nextTaskId,
   resolveTask,
   retiredInIdOrder,
-  runningCount,
+  outstandingCount,
   spawnTasks,
   taskPassed,
   tkEval,
   tkWork,
   tsResolved,
-  tsRunning,
+  tsOutstanding,
   type Task,
 } from "../../src/domain/task.ts";
 import {
@@ -69,13 +69,13 @@ const bare: Ticket = {
   reason: "RsNone",
 };
 
-test("a spawned set is running, contiguous and starts where it was told", () => {
+test("a spawned set is outstanding, contiguous and starts where it was told", () => {
   const tasks = spawnTasks(tkWork, asTaskId(3), 2);
   assert.deepEqual(
     tasks.map((t) => t.id),
     [3, 4],
   );
-  assert.equal(runningCount(tasks), 2);
+  assert.equal(outstandingCount(tasks), 2);
 });
 
 test("spawning zero tasks yields no tasks rather than a task", () => {
@@ -102,10 +102,10 @@ test("resolving an id that is not there changes nothing", () => {
   assert.deepEqual(resolveTask(spawned, asTaskId(99), "TPassed"), spawned);
 });
 
-test("retirement force-closes a running task as cancelled and leaves a resolved one alone", () => {
+test("retirement force-closes an outstanding task as cancelled and leaves a resolved one alone", () => {
   const mixed: readonly Task[] = [
     { id: asTaskId(2), kind: tkWork, state: tsResolved("TPassed") },
-    { id: asTaskId(1), kind: tkWork, state: tsRunning },
+    { id: asTaskId(1), kind: tkWork, state: tsOutstanding },
   ];
   const retired = retiredInIdOrder(mixed);
   assert.deepEqual(

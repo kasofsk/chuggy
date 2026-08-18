@@ -28,7 +28,7 @@ import {
   tkEval,
   tkWork,
   tsResolved,
-  tsRunning,
+  tsOutstanding,
   type Task,
   type TaskOutcome,
 } from "../../src/domain/task.ts";
@@ -60,18 +60,18 @@ export const evalTask = (
   state: tsResolved(outcome),
 });
 
-/** A work task still running, as a live set holds one. */
-export const workRunning = (value: number): Task => ({
+/** A work task still outstanding, as a live set holds one. */
+export const workOutstanding = (value: number): Task => ({
   id: asTaskId(value),
   kind: tkWork,
-  state: tsRunning,
+  state: tsOutstanding,
 });
 
-/** A task of eval stage `stage`, still running. */
-export const evalRunning = (value: number, stage: number): Task => ({
+/** A task of eval stage `stage`, still outstanding. */
+export const evalOutstanding = (value: number, stage: number): Task => ({
   id: asTaskId(value),
   kind: tkEval(stage),
-  state: tsRunning,
+  state: tsOutstanding,
 });
 
 /**
@@ -121,7 +121,7 @@ export function healthyFleet(config: Config): readonly Ticket[] {
     record.push(evalTask(width + i + 1, 0, "TPassed"));
   }
   const live: Task[] = [];
-  for (let i = 0; i < width; i++) live.push(workRunning(i + 1));
+  for (let i = 0; i < width; i++) live.push(workOutstanding(i + 1));
   const finished = {
     record,
     spawned: record.length,

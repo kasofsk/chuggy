@@ -44,7 +44,7 @@
 ///   - stale completions from an earlier stage/incarnation NO-OP BY
 ///     IDENTITY (task ids are sequential within the ticket, never reused);
 ///   - task records are RETAINED: the per-ticket chronological log survives
-///     reduces, escalations, and revoke (running tasks force-closed as
+///     reduces, escalations, and revoke (outstanding tasks force-closed as
 ///     TCancelled, because a revoke closes tasks);
 ///   - PROGRAM-AS-DATA at machine level: two tickets in the SAME machine
 ///     instance, identical but
@@ -66,7 +66,7 @@
 ///     GAS; gasRequiredTest pins the required account);
 ///   - REWORK_POLICY = RWBudget(n) instantiates the rework policy;
 ///   - the task lifecycle is the explicit TaskState sum: wt/et build
-///     resolved states, wr/er build running ones.
+///     resolved states, wr/er build outstanding ones.
 ///
 /// PROJECT ISOLATION (gate: the isolation invariants —
 /// design at domain.qnt's header):
@@ -175,7 +175,7 @@ module chuggy_test {
 
   // Task-record literals, kept terse: wt/et build RESOLVED work and
   // eval-stage tasks (the record's vocabulary — TSResolved carries the
-  // outcome), wr/er build RUNNING ones (the live set's). The split IS the
+  // outcome), wr/er build OUTSTANDING ones (the live set's). The split IS the
   // the explicit lifecycle showing up in the test vocabulary; every
   // pre-existing test needed only this mechanical rewrap.
   pure def wt(i: int, o: TaskOutcome): Task =
@@ -183,9 +183,9 @@ module chuggy_test {
   pure def et(i: int, s: int, o: TaskOutcome): Task =
     { id: i, kind: TKEval(s), state: TSResolved(o) }
   pure def wr(i: int): Task =
-    { id: i, kind: TKWork, state: TSRunning }
+    { id: i, kind: TKWork, state: TSOutstanding }
   pure def er(i: int, s: int): Task =
-    { id: i, kind: TKEval(s), state: TSRunning }
+    { id: i, kind: TKEval(s), state: TSOutstanding }
 
   // A HAND-BUILT FIXTURE STATES ITS OWN `spawned`. The ghost counter
   // (measure.qnt Ticket.spawned) is bumped ONLY by spawnOn, and the literals
@@ -439,7 +439,7 @@ module chuggy_test {
   /// ids are sequential within the ticket and never reused, so a completion
   /// for a task retired into the record — here work task 1 (an earlier
   /// incarnation) and eval task 3 delivered AFTER the eval stage retired —
-  /// finds no live running match and absorbs as the duplicate stutter,
+  /// finds no live outstanding match and absorbs as the duplicate stutter,
   /// whatever verdict it carries. (had to absorb the same-id case
   /// into the respawned set's nondet verdict; identity retired that
   /// argument — the honest extension of the duplicate-adversary scope.)
@@ -1035,7 +1035,7 @@ module chuggy_test {
 
   /// Revoke RETAINS the task record — "Revoked runs nothing" is
   /// about the live set, not the log. A mid-flight revoke force-closes the
-  /// still-running work tasks as TCancelled — a synthetic resolution
+  /// still-outstanding work tasks as TCancelled — a synthetic resolution
   /// recording that the revoke, not a verdict, retired them;
   /// already-resolved outcomes are
   /// preserved unchanged (jEval's mixed stage). Provenance survives the
@@ -1050,7 +1050,7 @@ module chuggy_test {
 
   /// Measure classification of revoke, pinned: strict descent from every
   /// live-rank phase (the settled tier swallows rank, stage digit AND
-  /// running tasks); exactly FLAT from every desk flavor with nobody to
+  /// outstanding tasks); exactly FLAT from every desk flavor with nobody to
   /// park — the AUTHORING set's bounded desk-settle member.
   pure def mOne(j: Ticket): int = mB({ tickets: Map(1 -> j) })
   pure def mOneAfter(j: Ticket): int = mB(revokeOne(j).post)

@@ -26,9 +26,9 @@ export type TaskKind =
 /** A settled task's outcome. `TCancelled` is the mark only a revoke produces. */
 export type TaskOutcome = "TPassed" | "TFailed" | "TCancelled";
 
-/** A task runs, then resolves exactly once. A running task cannot carry an outcome. */
+/** A task is outstanding to the fabric, then resolves exactly once; only a resolution carries an outcome. */
 export type TaskState =
-  | { readonly state: "TSRunning" }
+  | { readonly state: "TSOutstanding" }
   | { readonly state: "TSResolved"; readonly outcome: TaskOutcome };
 
 /** Identity, kind and lifecycle state. Ids are sequential within the ticket. */
@@ -48,16 +48,16 @@ export function tkEval(stage: number): TaskKind {
   return { kind: "TKEval", stage: asStageIndex(stage) };
 }
 
-export const tsRunning: TaskState = { state: "TSRunning" };
+export const tsOutstanding: TaskState = { state: "TSOutstanding" };
 
 /** A resolved task carrying its outcome. */
 export function tsResolved(outcome: TaskOutcome): TaskState {
   return { state: "TSResolved", outcome };
 }
 
-/** How many of these tasks are still running. */
-export function runningCount(tasks: readonly Task[]): number {
-  return tasks.filter((t) => t.state.state === "TSRunning").length;
+/** How many of these tasks are still outstanding to the fabric. */
+export function outstandingCount(tasks: readonly Task[]): number {
+  return tasks.filter((t) => t.state.state === "TSOutstanding").length;
 }
 
 /**
@@ -80,7 +80,7 @@ export function evalStage(tasks: readonly Task[]): StageIndex {
   return stage;
 }
 
-/** A fresh parallel set of `count` running tasks, ids running up from `start`. */
+/** A fresh parallel set of `count` outstanding tasks, with consecutive ids from `start`. */
 export function spawnTasks(
   kind: TaskKind,
   start: TaskId,
@@ -88,13 +88,13 @@ export function spawnTasks(
 ): readonly Task[] {
   const spawned: Task[] = [];
   for (let i = 0; i < count; i++) {
-    spawned.push({ id: asTaskId(start + i), kind, state: tsRunning });
+    spawned.push({ id: asTaskId(start + i), kind, state: tsOutstanding });
   }
   return spawned;
 }
 
 /**
- * First write wins: resolve `id` if it is still running, and change nothing
+ * First write wins: resolve `id` if it is still outstanding, and change nothing
  * otherwise. That is the idempotence an at-least-once fabric demands.
  */
 export function resolveTask(
@@ -103,7 +103,7 @@ export function resolveTask(
   outcome: TaskOutcome,
 ): readonly Task[] {
   return tasks.map((t) =>
-    t.id === id && t.state.state === "TSRunning"
+    t.id === id && t.state.state === "TSOutstanding"
       ? { ...t, state: tsResolved(outcome) }
       : t,
   );
@@ -140,11 +140,11 @@ function taskEqualsKind(left: TaskKind, right: TaskKind): boolean {
   }
 }
 
-/** A resolved task matches only on the same outcome; running matches running. */
+/** A resolved task matches only on the same outcome; outstanding matches outstanding. */
 function taskEqualsState(left: TaskState, right: TaskState): boolean {
   switch (left.state) {
-    case "TSRunning":
-      return right.state === "TSRunning";
+    case "TSOutstanding":
+      return right.state === "TSOutstanding";
     case "TSResolved":
       return right.state === "TSResolved" && right.outcome === left.outcome;
     default:
@@ -154,14 +154,14 @@ function taskEqualsState(left: TaskState, right: TaskState): boolean {
 
 /**
  * Retire a live set into the retained record, in id order. A task still
- * running at retirement is force-closed as cancelled, which only a revoke
+ * outstanding at retirement is force-closed as cancelled, which only a revoke
  * ever reaches.
  */
 export function retiredInIdOrder(tasks: readonly Task[]): readonly Task[] {
   return [...tasks]
     .sort((a, b) => a.id - b.id)
     .map((t) =>
-      t.state.state === "TSRunning"
+      t.state.state === "TSOutstanding"
         ? { ...t, state: tsResolved("TCancelled") }
         : t,
     );

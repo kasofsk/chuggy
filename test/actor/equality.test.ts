@@ -37,7 +37,7 @@ import {
   wExclusive,
   woAttempt,
 } from "../../src/domain/wrapUp.ts";
-import { depsOf, id, workRunning, workTask } from "../domain/fixtures.ts";
+import { depsOf, id, workOutstanding, workTask } from "../domain/fixtures.ts";
 import { flatProgram, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
@@ -77,7 +77,7 @@ const ticketMutants: FieldMutants<Ticket> = {
   artifact: (t) => ({ ...t, artifact: aSome(1) }),
   project: (t) => ({ ...t, project: asProjectId(2) }),
   program: (t) => ({ ...t, program: [] }),
-  tasks: (t) => ({ ...t, tasks: [workRunning(1)] }),
+  tasks: (t) => ({ ...t, tasks: [workOutstanding(1)] }),
   record: (t) => ({ ...t, record: [workTask(1, "TPassed")] }),
   spawned: (t) => ({ ...t, spawned: t.spawned + 1 }),
   reworkLeft: (t) => ({ ...t, reworkLeft: t.reworkLeft + 1 }),
