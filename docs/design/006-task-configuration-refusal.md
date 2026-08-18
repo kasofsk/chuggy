@@ -36,7 +36,7 @@ So it is pinned when the ticket is released, and refused there. The property tha
 
 **R1 — decidable from the configuration alone, so it goes to release.** Every task name a ticket references resolves to a task the tree has, and every task's params satisfy the schema that name declares. Both are pure predicates over authored data and neither needs a ticket to have run, so both are answerable the moment the content is pinned.
 
-**R2 — needs the runtime view, so it stays at execution and changes kind.** Whether a chain composes to a non-empty prompt depends on the ticket's state when the work phase runs, so no predicate over the configuration can decide it without lying. It becomes an ordinary task outcome: the adapter resolves the task failed and carries the trace as the reason, and the machine's existing rework and parking do the rest. No new vocabulary, and no exception crossing a layer.
+**R2 — needs the runtime view, so it stays at execution and changes kind.** Whether a chain composes to a non-empty prompt depends on the ticket's state when the work phase runs, so no predicate over the configuration can decide it without lying. What is left for the consumer to do is resolve the task failed and carry the trace as the reason, where the machine's existing rework and parking do the rest — no new vocabulary, and no exception crossing a layer.
 
 Neither half absorbs the other. Everything at execution is the interpreter defending mid-flight, in the words the model uses to reject it, and it spends a dispatch and a rework cycle discovering what the configuration said all along. Everything at release needs a predicate over data that does not exist yet.
 
@@ -62,7 +62,7 @@ What would refute this: a second consumer that is not an adapter. The likely sha
 |---|---|---|---|---|
 | B1 | The task vocabulary, its params schemas, and the mirror holding them to it | `src/adapters/` | — | Proposed |
 | B2 | The release-time parse, returning the ticket's chains or the reason one was refused | `src/adapters/` | B1 | Proposed |
-| B3 | An empty prompt as a returned refusal rather than a throw | `src/briefing/` | — | Proposed |
+| B3 | An empty prompt as a returned refusal rather than a throw | `src/briefing/` | — | **Landed** `60b24ac` |
 | B4 | Briefing under the adapter layer, and the boundary rule restated | `src/adapters/briefing/` <!-- intent --> | B2 | Proposed |
 
-B3 is independent of the rest and is the one change to a module that already exists. B4 waits on B2 because the consumer it names is the one B2 introduces, and moving a directory before anything imports it would be asserting the answer rather than earning it.
+B3 needed nothing else and went first; what it argued is in `src/briefing/chain.ts` now, where the two refusals are kept different on purpose. B4 waits on B2 because the consumer it names is the one B2 introduces, and moving a directory before anything imports it would be asserting the answer rather than earning it.
