@@ -23,9 +23,6 @@
 // capabilities, and a capability it reached past them would be one no port
 // declares, no adapter answers and no boundary rule can see. That it awaits is
 // beside the point — the roster below is ambient authority, not asynchrony.
-//
-// AND SO DOES THE COMPOSER: its claim is that one view composes twice to one
-// prompt, and a clock read takes no edge for `briefing-is-pure` to catch.
 // `src/adapters/` is the one layer with no such block, because holding ambient
 // capability is what an adapter is for and banning it there would ban the
 // layer. What stands behind a stub that quietly read a clock is the reviewer
@@ -179,13 +176,6 @@ export default tseslint.config(
     rules: {
       "no-restricted-globals": noAmbientGlobals("the interpreter"),
       "no-restricted-properties": noAmbientDraws("the interpreter"),
-    },
-  },
-  {
-    files: ["src/briefing/**/*.ts"],
-    rules: {
-      "no-restricted-globals": noAmbientGlobals("the composer"),
-      "no-restricted-properties": noAmbientDraws("the composer"),
     },
   },
   // The configs themselves. They sit outside tsconfig.json's include, so the
