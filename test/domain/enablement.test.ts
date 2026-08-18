@@ -46,11 +46,11 @@ import { aSome, wNone } from "../../src/domain/wrapUp.ts";
 import { budgetedInstance, retryFreeInstance } from "./configs.ts";
 import {
   coreOf,
-  evalRunning,
+  evalOutstanding,
   evalTask,
   id,
   ticketOn,
-  workRunning,
+  workOutstanding,
   workTask,
 } from "./fixtures.ts";
 
@@ -145,7 +145,7 @@ test("only the two task phases can receive a completion, and only a resolved set
   const core = coreOf([
     ticketOn(config, 1, {
       phase: "PWorking",
-      tasks: [workRunning(1), workTask(2, "TPassed")],
+      tasks: [workOutstanding(1), workTask(2, "TPassed")],
       spawned: 2,
     }),
     ticketOn(config, 1, {
@@ -161,7 +161,7 @@ test("only the two task phases can receive a completion, and only a resolved set
     }),
     ticketOn(config, 1, {
       phase: "PEvaluating",
-      tasks: [evalRunning(1, 0)],
+      tasks: [evalOutstanding(1, 0)],
       spawned: 1,
     }),
   ]);
@@ -255,7 +255,7 @@ test("the delivery range an at-least-once fabric may name is the ticket's whole 
     ticketOn(config, 1, {
       phase: "PEvaluating",
       record: [workTask(1, "TPassed"), workTask(2, "TPassed")],
-      tasks: [evalRunning(3, 0)],
+      tasks: [evalOutstanding(3, 0)],
       spawned: 3,
     }),
     ticketOn(config, 1, { phase: "PDraft" }),

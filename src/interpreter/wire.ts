@@ -33,7 +33,7 @@
  * seam between a malformed row and a well-formed row of a run that never
  * happened, and `src/interpreter/executor.ts` reads a journal through both.
  *
- * WHERE THE DEPS CHANGE SHAPE. `Cmd` carries the model's own SET and the wire
+ * WHERE THE DEPS CHANGE SHAPE. `DecisionEvent` carries the model's own SET and the wire
  * carries an ascending array, so this module is the seam that converts, and the
  * repeat an array can hold is refused here — by `depsDistinct`, before the
  * surviving array becomes the set. A journal on disk did not have to come from
@@ -54,7 +54,7 @@
 
 import * as z from "zod";
 
-import type { Cmd } from "../actor/command.ts";
+import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Entry } from "../actor/journal.ts";
 import { allEffects } from "../domain/effect.ts";
 import { depsDistinct } from "../domain/enablement.ts";
@@ -126,48 +126,48 @@ const recordSchema = z.object({
 });
 
 /** The decisions whose whole payload is the ticket they name. */
-function cmdTicketOnly<Tag extends Cmd["cmd"]>(tag: Tag) {
-  return z.object({ cmd: z.literal(tag), ticket: ticketIdSchema });
+function eventTicketOnly<Tag extends DecisionEvent["event"]>(tag: Tag) {
+  return z.object({ event: z.literal(tag), ticket: ticketIdSchema });
 }
 
-const cmdSchema = z.discriminatedUnion("cmd", [
+const decisionEventSchema = z.discriminatedUnion("event", [
   z.object({
-    cmd: z.literal("JArrive"),
+    event: z.literal("Arrive"),
     deps: depsSchema,
     program: z.array(stageSchema).readonly(),
     project: projectIdSchema,
     wrapUp: wrapUpSchema,
   }),
-  cmdTicketOnly("JRelease"),
-  cmdTicketOnly("JRevoke"),
-  cmdTicketOnly("JDispatch"),
+  eventTicketOnly("Release"),
+  eventTicketOnly("Revoke"),
+  eventTicketOnly("Dispatch"),
   z.object({
-    cmd: z.literal("JTaskDone"),
+    event: z.literal("TaskDone"),
     ticket: ticketIdSchema,
     taskId: taskIdSchema,
     verdict: z.enum(["VPass", "VFail"]),
   }),
-  cmdTicketOnly("JWorkReduce"),
-  cmdTicketOnly("JEvalReduce"),
+  eventTicketOnly("WorkReduce"),
+  eventTicketOnly("EvalReduce"),
   z.object({
-    cmd: z.literal("JDequeue"),
+    event: z.literal("Dequeue"),
     ticket: ticketIdSchema,
     moved: z.boolean(),
   }),
   z.object({
-    cmd: z.literal("JGateResolve"),
+    event: z.literal("GateResolve"),
     ticket: ticketIdSchema,
     outcome: z.enum(["WOk", "WFailed"]),
   }),
-  cmdTicketOnly("JCompleteDuplicate"),
-  cmdTicketOnly("JRevalFail"),
-  cmdTicketOnly("JOpRetry"),
+  eventTicketOnly("CompleteDuplicate"),
+  eventTicketOnly("RevalFail"),
+  eventTicketOnly("OpRetry"),
 ]);
 
 /** One stored row: the sequence number, the decision event, and the record the decision produced. */
 const entrySchema = z.object({
   seq: z.int().min(1),
-  cmd: cmdSchema,
+  event: decisionEventSchema,
   rec: recordSchema,
 });
 
@@ -192,11 +192,11 @@ type EntryWire = z.input<typeof entrySchema>;
 
 /** Writes one `Entry` as the text a store keeps, laying the arrival's set out ascending. */
 export function encodeEntry(entry: Entry): string {
-  const cmd: EntryWire["cmd"] =
-    entry.cmd.cmd === "JArrive"
-      ? { ...entry.cmd, deps: [...entry.cmd.deps].sort((a, b) => a - b) }
-      : entry.cmd;
-  const wire: EntryWire = { ...entry, cmd };
+  const event: EntryWire["event"] =
+    entry.event.event === "Arrive"
+      ? { ...entry.event, deps: [...entry.event.deps].sort((a, b) => a - b) }
+      : entry.event;
+  const wire: EntryWire = { ...entry, event };
   return JSON.stringify(wire);
 }
 

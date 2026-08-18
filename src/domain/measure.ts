@@ -14,7 +14,7 @@
 import { asSafeInteger } from "./ids.ts";
 import { phaseRank, rankCeiling } from "./phase.ts";
 import { reworkBudget, wrapUpBudget, type Bounds } from "./pricing.ts";
-import { runningCount } from "./task.ts";
+import { outstandingCount } from "./task.ts";
 import { stagesLeft, type Ticket } from "./ticket.ts";
 import type { Core } from "./core.ts";
 import { ticketIds } from "./core.ts";
@@ -24,12 +24,12 @@ export function radix(maxDigit: number): number {
   return maxDigit + 1;
 }
 
-/** One unit of stage progress, which strictly dominates the running-task count. */
+/** One unit of stage progress, which strictly dominates the outstanding-task count. */
 export function stageWeight(bounds: Bounds): number {
   return radix(bounds.nTasks);
 }
 
-/** One unit of phase rank, which strictly dominates the stage digit plus any running count. */
+/** One unit of phase rank, which strictly dominates the stage digit plus any outstanding count. */
 export function rankWeight(bounds: Bounds): number {
   return radix(bounds.maxStages) * stageWeight(bounds);
 }
@@ -39,12 +39,12 @@ export function microBound(bounds: Bounds): number {
   return radix(rankCeiling) * rankWeight(bounds);
 }
 
-/** Within-cycle progress, lexicographic in rank, stages left and running count. */
+/** Within-cycle progress, lexicographic in rank, stages left and outstanding count. */
 export function micro(bounds: Bounds, ticket: Ticket): number {
   return (
     phaseRank(ticket.phase) * rankWeight(bounds) +
     stagesLeft(ticket) * stageWeight(bounds) +
-    runningCount(ticket.tasks)
+    outstandingCount(ticket.tasks)
   );
 }
 

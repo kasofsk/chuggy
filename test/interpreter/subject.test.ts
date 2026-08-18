@@ -16,7 +16,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { jArrive, jRevoke } from "../../src/actor/command.ts";
+import { arriveEvent, revokeEvent } from "../../src/actor/decisionEvent.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import {
   actorInit,
@@ -52,7 +52,7 @@ function arriveOn(state: ActorState, deps: ReadonlySet<TicketId>): ActorState {
   return journalStep(
     config,
     state,
-    jArrive(deps, flatProgram, asProjectId(1), wNone),
+    arriveEvent(deps, flatProgram, asProjectId(1), wNone),
   );
 }
 
@@ -78,7 +78,7 @@ test("a second arrival's subject is the second id, so the exception reads the po
 test("a revoke attributes each effect to its own transition, not to the head one", () => {
   let state = arriveOn(actorInit(), depsOf());
   state = arriveOn(state, depsOf(1));
-  state = journalStep(config, state, jRevoke(id(1)));
+  state = journalStep(config, state, revokeEvent(id(1)));
   const { entry, post } = lastOf(state);
 
   assert.deepEqual(
@@ -104,7 +104,7 @@ test("a revoke attributes each effect to its own transition, not to the head one
 test("the effect index is the position in the record, so one decision's emissions have distinct keys", () => {
   let state = arriveOn(actorInit(), depsOf());
   state = arriveOn(state, depsOf(1));
-  state = journalStep(config, state, jRevoke(id(1)));
+  state = journalStep(config, state, revokeEvent(id(1)));
   const { entry, post } = lastOf(state);
   assert.deepEqual(
     emissionsOf(entry, post).map((one) => one.emission.effectIndex),
@@ -115,7 +115,7 @@ test("the effect index is the position in the record, so one decision's emission
 test("an effect with no transition of its own is refused rather than attributed to a neighbour", () => {
   const forged: Entry = {
     seq: 1,
-    cmd: jRevoke(id(1)),
+    event: revokeEvent(id(1)),
     rec: {
       label: "ticket-revoked",
       transitions: [{ ticket: id(1), from: "PDraft", to: "PRevoked" }],
@@ -132,7 +132,7 @@ test("an effect with no transition of its own is refused rather than attributed 
 test("an arrival-labelled record of the wrong shape is refused rather than read positionally", () => {
   const forged: Entry = {
     seq: 1,
-    cmd: jRevoke(id(1)),
+    event: revokeEvent(id(1)),
     rec: {
       label: arrivalLabel,
       transitions: [{ ticket: id(1), from: "PDraft", to: "PRevoked" }],

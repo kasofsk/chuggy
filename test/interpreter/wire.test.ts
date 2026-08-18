@@ -7,8 +7,8 @@
  * each case edits stored text the way something outside this process would and
  * asks what comes back.
  *
- * The constructor roster is walked against `cmdTags` rather than against a list
- * written here, because a thirteenth command with no schema arm is exactly the
+ * The constructor roster is walked against `decisionEventTags` rather than against a list
+ * written here, because a thirteenth decision event with no schema arm is exactly the
  * drift a hand-written roster hides.
  *
  * THE ROUND TRIP IS THE ENCODE DIRECTION'S RUN-TIME CHECK. `EntryWire` pins
@@ -21,21 +21,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  cmdTags,
-  jArrive,
-  jCompleteDuplicate,
-  jDequeue,
-  jDispatch,
-  jEvalReduce,
-  jGateResolve,
-  jOpRetry,
-  jRelease,
-  jRevalFail,
-  jRevoke,
-  jTaskDone,
-  jWorkReduce,
-  type Cmd,
-} from "../../src/actor/command.ts";
+  decisionEventTags,
+  arriveEvent,
+  completeDuplicateEvent,
+  dequeueEvent,
+  dispatchEvent,
+  evalReduceEvent,
+  gateResolveEvent,
+  opRetryEvent,
+  releaseEvent,
+  revalFailEvent,
+  revokeEvent,
+  taskDoneEvent,
+  workReduceEvent,
+  type DecisionEvent,
+} from "../../src/actor/decisionEvent.ts";
 import { recordEquals } from "../../src/actor/equality.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
@@ -53,7 +53,7 @@ import { depsOf, id } from "../domain/fixtures.ts";
 
 const config = refinementInstance;
 
-/** A well-formed record, so a case about a command is not also a case about a record. */
+/** A well-formed record, so a case about a decision event is not also a case about a record. */
 const plainRecord: StepRecord = {
   label: "ticket-released",
   transitions: [{ ticket: id(1), from: "PDraft", to: "PPending" }],
@@ -61,20 +61,20 @@ const plainRecord: StepRecord = {
   attempt: woNone,
 };
 
-/** One command per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
-const oneOfEach: Readonly<Record<Cmd["cmd"], Cmd>> = {
-  JArrive: jArrive(depsOf(1), flatProgram, asProjectId(1), wExclusive(1)),
-  JRelease: jRelease(id(1)),
-  JRevoke: jRevoke(id(1)),
-  JDispatch: jDispatch(id(1)),
-  JTaskDone: jTaskDone(id(1), asTaskId(2), "VFail"),
-  JWorkReduce: jWorkReduce(id(1)),
-  JEvalReduce: jEvalReduce(id(1)),
-  JDequeue: jDequeue(id(1), true),
-  JGateResolve: jGateResolve(id(1), "WFailed"),
-  JCompleteDuplicate: jCompleteDuplicate(id(1)),
-  JRevalFail: jRevalFail(id(1)),
-  JOpRetry: jOpRetry(id(1)),
+/** One decision event per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
+const oneOfEach: Readonly<Record<DecisionEvent["event"], DecisionEvent>> = {
+  Arrive: arriveEvent(depsOf(1), flatProgram, asProjectId(1), wExclusive(1)),
+  Release: releaseEvent(id(1)),
+  Revoke: revokeEvent(id(1)),
+  Dispatch: dispatchEvent(id(1)),
+  TaskDone: taskDoneEvent(id(1), asTaskId(2), "VFail"),
+  WorkReduce: workReduceEvent(id(1)),
+  EvalReduce: evalReduceEvent(id(1)),
+  Dequeue: dequeueEvent(id(1), true),
+  GateResolve: gateResolveEvent(id(1), "WFailed"),
+  CompleteDuplicate: completeDuplicateEvent(id(1)),
+  RevalFail: revalFailEvent(id(1)),
+  OpRetry: opRetryEvent(id(1)),
 };
 
 /** Through the wire and back, which is the only route a stored entry ever takes. */
@@ -97,41 +97,49 @@ test("a journaled entry survives the wire unchanged, record and all", () => {
   const state = journalStep(
     config,
     actorInit(),
-    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
+    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);
   const read = accepted(reread(written));
   assert.equal(read.seq, written.seq);
-  assert.deepEqual(read.cmd, written.cmd);
+  assert.deepEqual(read.event, written.event);
   assert.ok(recordEquals(read.rec, written.rec));
 });
 
-test("every command this machine declares has a schema arm, and the roster is the vocabulary's", () => {
-  assert.deepEqual([...Object.keys(oneOfEach)].sort(), [...cmdTags].sort());
-  for (const [tag, cmd] of Object.entries(oneOfEach)) {
-    const read = accepted(reread({ seq: 1, cmd, rec: plainRecord }));
-    assert.deepEqual(read.cmd, cmd, `${tag} did not survive the wire`);
+test("every decision event this machine declares has a schema arm, and the roster is the vocabulary's", () => {
+  assert.deepEqual(
+    [...Object.keys(oneOfEach)].sort(),
+    [...decisionEventTags].sort(),
+  );
+  for (const [tag, event] of Object.entries(oneOfEach)) {
+    const read = accepted(reread({ seq: 1, event, rec: plainRecord }));
+    assert.deepEqual(read.event, event, `${tag} did not survive the wire`);
   }
 });
 
 test("an arrival naming a ticket twice is refused, which is the gap between an array and the model's set", () => {
-  const dependent = { ...oneOfEach.JArrive, deps: [id(1), id(1)] };
-  const refused = parseEntry({ seq: 1, cmd: dependent, rec: plainRecord });
+  const dependent = { ...oneOfEach.Arrive, deps: [id(1), id(1)] };
+  const refused = parseEntry({ seq: 1, event: dependent, rec: plainRecord });
   assert.equal(refused.parsed, "Refused");
   assert.ok(refused.parsed === "Refused");
   assert.match(refused.why, /the arrival draws a set/);
 });
 
 test("the same arrival with distinct deps is accepted, so the refusal is about the repeat", () => {
-  const dependent = { ...oneOfEach.JArrive, deps: [id(1), id(2)] };
-  accepted(parseEntry({ seq: 1, cmd: dependent, rec: plainRecord }));
+  const dependent = { ...oneOfEach.Arrive, deps: [id(1), id(2)] };
+  accepted(parseEntry({ seq: 1, event: dependent, rec: plainRecord }));
 });
 
 test("a multi-dep arrival is written as an ascending array and read back as the set it was", () => {
   const entry: Entry = {
     seq: 1,
-    cmd: jArrive(depsOf(2, 1), flatProgram, asProjectId(1), wExclusive(1)),
+    event: arriveEvent(
+      depsOf(2, 1),
+      flatProgram,
+      asProjectId(1),
+      wExclusive(1),
+    ),
     rec: plainRecord,
   };
   assert.match(encodeEntry(entry), /"deps":\[1,2\]/);
@@ -142,19 +150,19 @@ test("a row is refused, with the field named, for each way the wire can lie", ()
   const cases: readonly (readonly [string, unknown, RegExp])[] = [
     [
       "a sequence number below the first",
-      { seq: 0, cmd: oneOfEach.JRelease, rec: plainRecord },
+      { seq: 0, event: oneOfEach.Release, rec: plainRecord },
       /seq/,
     ],
     [
-      "a command tag this machine has not got",
-      { seq: 1, cmd: { cmd: "JSquash", ticket: 1 }, rec: plainRecord },
-      /cmd/,
+      "a decision-event tag this machine has not got",
+      { seq: 1, event: { event: "JSquash", ticket: 1 }, rec: plainRecord },
+      /event/,
     ],
     [
       "an effect outside the vocabulary",
       {
         seq: 1,
-        cmd: oneOfEach.JRelease,
+        event: oneOfEach.Release,
         rec: { ...plainRecord, effects: ["Deploy"] },
       },
       /rec\.effects/,
@@ -163,7 +171,7 @@ test("a row is refused, with the field named, for each way the wire can lie", ()
       "a phase outside the vocabulary",
       {
         seq: 1,
-        cmd: oneOfEach.JRelease,
+        event: oneOfEach.Release,
         rec: {
           ...plainRecord,
           transitions: [{ ticket: 1, from: "PParked", to: "PDone" }],
@@ -171,10 +179,10 @@ test("a row is refused, with the field named, for each way the wire can lie", ()
       },
       /rec\.transitions/,
     ],
-    ["a missing record", { seq: 1, cmd: oneOfEach.JRelease }, /rec/],
+    ["a missing record", { seq: 1, event: oneOfEach.Release }, /rec/],
     [
       "a ticket id that is not a whole number",
-      { seq: 1, cmd: { cmd: "JRelease", ticket: 1.5 }, rec: plainRecord },
+      { seq: 1, event: { event: "Release", ticket: 1.5 }, rec: plainRecord },
       /ticket/,
     ],
     ["nothing at all", null, /\$/],
@@ -192,7 +200,7 @@ test("the store refuses a row it cannot read as JSON before the schema is asked"
   const state = journalStep(
     config,
     actorInit(),
-    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
+    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);
@@ -209,7 +217,7 @@ test("the store refuses a stored row edited into a shape the machine does not wr
   const state = journalStep(
     config,
     actorInit(),
-    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
+    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);
@@ -229,7 +237,7 @@ test("an untouched store reads back what it was given", async () => {
   const state = journalStep(
     config,
     actorInit(),
-    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
+    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);

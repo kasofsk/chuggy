@@ -15,7 +15,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 
-import { cmdTags, jArrive } from "../../src/actor/command.ts";
+import {
+  decisionEventTags,
+  arriveEvent,
+} from "../../src/actor/decisionEvent.ts";
 import {
   failedObligations,
   obligationsHold,
@@ -33,7 +36,7 @@ import { asProjectId } from "../../src/domain/ids.ts";
 import { aSome, wExclusive } from "../../src/domain/wrapUp.ts";
 import { depsOf, id } from "../domain/fixtures.ts";
 import {
-  declaredCmdConstructors,
+  declaredDecisionEventConstructors,
   declaredRefinementBundle,
   declaredRefinementCore,
   declaredRefinementObligations,
@@ -48,7 +51,7 @@ function journaledArrival(): ActorState {
   return journalStep(
     config,
     actorInit(),
-    jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
+    arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
   );
 }
 
@@ -79,8 +82,11 @@ test("the reader is reading the model rather than agreeing with itself", () => {
   );
 });
 
-test("the command vocabulary is the model's Cmd, constructor for constructor in order", () => {
-  assert.deepEqual([...cmdTags], [...declaredCmdConstructors(ROOT)]);
+test("the decision-event vocabulary is the model's DecisionEvent, constructor for constructor in order", () => {
+  assert.deepEqual(
+    [...decisionEventTags],
+    [...declaredDecisionEventConstructors(ROOT)],
+  );
 });
 
 test("every obligation is green on the initial state, so no red below is a member that always fails", () => {

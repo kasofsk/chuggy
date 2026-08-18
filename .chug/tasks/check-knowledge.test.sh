@@ -76,7 +76,7 @@ doc_saying '| # | Label | Contract | Status |' '|---|---|---|---|' \
 check "a landed row that is a pointer is silent" 0 "$RC" "0 finding(s)"
 
 # AN UNLANDED ROW IS WHERE THE ARGUMENT BELONGS, at any length.
-doc_saying '| S7 | The journaled actor | Cmd, Entry, and the carry rule. Pure; its suite is exhaustive. | Proposed |'
+doc_saying '| S7 | The journaled actor | DecisionEvent, Entry, and the carry rule. Pure; its suite is exhaustive. | Proposed |'
 check "a proposed row may argue" 0 "$RC" "0 finding(s)"
 
 # The rule is about a section that corrects, not about the word.

@@ -8,12 +8,12 @@
  * an honest actor would write, and every refusal case below is that history
  * with exactly one thing forged.
  *
- * `cmdEnabled` AND `execCmd` GET A CASE PER ARM, from the two tables at the
+ * `decisionEventEnabled` AND `execDecisionEvent` GET A CASE PER ARM, from the two tables at the
  * foot. The refusal table carries a row per conjunct rather than per
  * constructor, because a row refused on a guard's first conjunct says nothing
  * about its second; the drive table takes the arms no walk in `test/actor/`
  * reaches, each answered against the domain decider called directly rather
- * than against `execCmd`'s own answer, so a mis-wired dispatch arm disagrees
+ * than against `execDecisionEvent`'s own answer, so a mis-wired dispatch arm disagrees
  * with something.
  */
 
@@ -21,23 +21,23 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  cmdEnabled,
-  cmdTags,
-  execCmd,
-  jArrive,
-  jCompleteDuplicate,
-  jDequeue,
-  jDispatch,
-  jEvalReduce,
-  jGateResolve,
-  jOpRetry,
-  jRelease,
-  jRevalFail,
-  jRevoke,
-  jTaskDone,
-  jWorkReduce,
-  type Cmd,
-} from "../../src/actor/command.ts";
+  decisionEventEnabled,
+  decisionEventTags,
+  execDecisionEvent,
+  arriveEvent,
+  completeDuplicateEvent,
+  dequeueEvent,
+  dispatchEvent,
+  evalReduceEvent,
+  gateResolveEvent,
+  opRetryEvent,
+  releaseEvent,
+  revalFailEvent,
+  revokeEvent,
+  taskDoneEvent,
+  workReduceEvent,
+  type DecisionEvent,
+} from "../../src/actor/decisionEvent.ts";
 import { coreEquals } from "../../src/actor/equality.ts";
 import {
   genesis,
@@ -69,15 +69,20 @@ import { flatProgram, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
 
-const cmd1 = jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1));
-const d1 = execCmd(config, genesis, cmd1);
-const e1: Entry = { seq: 1, cmd: cmd1, rec: d1.rec };
-const cmd2 = jRelease(id(1));
-const d2 = execCmd(config, d1.post, cmd2);
-const e2: Entry = { seq: 2, cmd: cmd2, rec: d2.rec };
-const cmd3 = jDispatch(id(1));
-const d3 = execCmd(config, d2.post, cmd3);
-const e3: Entry = { seq: 3, cmd: cmd3, rec: d3.rec };
+const event1 = arriveEvent(
+  depsOf(),
+  flatProgram,
+  asProjectId(1),
+  wExclusive(1),
+);
+const d1 = execDecisionEvent(config, genesis, event1);
+const e1: Entry = { seq: 1, event: event1, rec: d1.rec };
+const event2 = releaseEvent(id(1));
+const d2 = execDecisionEvent(config, d1.post, event2);
+const e2: Entry = { seq: 2, event: event2, rec: d2.rec };
+const event3 = dispatchEvent(id(1));
+const d3 = execDecisionEvent(config, d2.post, event3);
+const e3: Entry = { seq: 3, event: event3, rec: d3.rec };
 const goodJournal: readonly Entry[] = [e1, e2, e3];
 
 test("the empty journal is legal and replays to genesis", () => {
@@ -97,13 +102,13 @@ test("replaying one more entry equals stepping the shorter replay once", () => {
   assert.ok(
     coreEquals(
       replayCore(config, goodJournal),
-      execCmd(config, replayCore(config, [e1, e2]), cmd3).post,
+      execDecisionEvent(config, replayCore(config, [e1, e2]), event3).post,
     ),
   );
   assert.ok(
     coreEquals(
       replayCore(config, [e1, e2]),
-      execCmd(config, replayCore(config, [e1]), cmd2).post,
+      execDecisionEvent(config, replayCore(config, [e1]), event2).post,
     ),
   );
 });
@@ -115,14 +120,20 @@ test("a sequence gap or a duplicate seq is refused", () => {
 });
 
 test("a decision that was never enabled is refused, cleanly, at any tampered payload", () => {
-  assert.ok(!cmdEnabled(config, genesis, cmd2));
+  assert.ok(!decisionEventEnabled(config, genesis, event2));
   assert.ok(!journalLegalOn(config, [{ ...e2, seq: 1 }]));
   assert.ok(
-    !cmdEnabled(config, genesis, jTaskDone(id(1), asTaskId(1), "VPass")),
+    !decisionEventEnabled(
+      config,
+      genesis,
+      taskDoneEvent(id(1), asTaskId(1), "VPass"),
+    ),
   );
-  assert.ok(!cmdEnabled(config, genesis, jDispatch(id(1))));
-  assert.ok(!cmdEnabled(config, genesis, jGateResolve(id(1), "WOk")));
-  assert.ok(!cmdEnabled(config, genesis, jOpRetry(id(1))));
+  assert.ok(!decisionEventEnabled(config, genesis, dispatchEvent(id(1))));
+  assert.ok(
+    !decisionEventEnabled(config, genesis, gateResolveEvent(id(1), "WOk")),
+  );
+  assert.ok(!decisionEventEnabled(config, genesis, opRetryEvent(id(1))));
 });
 
 test("a forged record is refused: the entry's rec must be exactly the decider's", () => {
@@ -141,7 +152,7 @@ test("a forged record is refused: the entry's rec must be exactly the decider's"
 });
 
 test("an out-of-universe payload is refused by draw-set membership", () => {
-  const phantom = jArrive(
+  const phantom = arriveEvent(
     depsOf(),
     flatProgram,
     asProjectId(1),
@@ -149,16 +160,16 @@ test("an out-of-universe payload is refused by draw-set membership", () => {
   );
   const phantomEntry: Entry = {
     seq: 1,
-    cmd: phantom,
-    rec: execCmd(config, genesis, phantom).rec,
+    event: phantom,
+    rec: execDecisionEvent(config, genesis, phantom).rec,
   };
-  assert.ok(!cmdEnabled(config, genesis, phantom));
+  assert.ok(!decisionEventEnabled(config, genesis, phantom));
   assert.ok(!journalLegalOn(config, [phantomEntry]));
   assert.ok(
-    !cmdEnabled(
+    !decisionEventEnabled(
       config,
       genesis,
-      jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(2)),
+      arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(2)),
     ),
   );
 });
@@ -179,20 +190,24 @@ test("the world arithmetic: emission closes the gap to the book, an orphan pushe
 });
 
 test("no-op decisions journal like any others and replay through", () => {
-  const real = execCmd(config, d3.post, jTaskDone(id(1), asTaskId(1), "VPass"));
-  const duplicate = execCmd(
+  const real = execDecisionEvent(
+    config,
+    d3.post,
+    taskDoneEvent(id(1), asTaskId(1), "VPass"),
+  );
+  const duplicate = execDecisionEvent(
     config,
     real.post,
-    jTaskDone(id(1), asTaskId(1), "VFail"),
+    taskDoneEvent(id(1), asTaskId(1), "VFail"),
   );
   const e4: Entry = {
     seq: 4,
-    cmd: jTaskDone(id(1), asTaskId(1), "VPass"),
+    event: taskDoneEvent(id(1), asTaskId(1), "VPass"),
     rec: real.rec,
   };
   const e5: Entry = {
     seq: 5,
-    cmd: jTaskDone(id(1), asTaskId(1), "VFail"),
+    event: taskDoneEvent(id(1), asTaskId(1), "VFail"),
     rec: duplicate.rec,
   };
   assert.equal(duplicate.rec.label, "task-done-duplicate");
@@ -202,38 +217,50 @@ test("no-op decisions journal like any others and replay through", () => {
 });
 
 /** The journal an honest actor writes for this run of decisions, each record taken from the decider. */
-function journalOf(cmds: readonly Cmd[]): readonly Entry[] {
+function journalOf(events: readonly DecisionEvent[]): readonly Entry[] {
   const entries: Entry[] = [];
   let core = genesis;
-  for (const cmd of cmds) {
-    const decision = execCmd(config, core, cmd);
-    entries.push({ seq: entries.length + 1, cmd, rec: decision.rec });
+  for (const event of events) {
+    const decision = execDecisionEvent(config, core, event);
+    entries.push({ seq: entries.length + 1, event, rec: decision.rec });
     core = decision.post;
   }
   return entries;
 }
 
 /** The state that run reaches. */
-function coreAfter(cmds: readonly Cmd[]): Core {
-  return cmds.reduce((core, cmd) => execCmd(config, core, cmd).post, genesis);
+function coreAfter(events: readonly DecisionEvent[]): Core {
+  return events.reduce(
+    (core, event) => execDecisionEvent(config, core, event).post,
+    genesis,
+  );
 }
 
-const toDrafted: readonly Cmd[] = [cmd1];
-const toReady: readonly Cmd[] = [...toDrafted, jRelease(id(1))];
-const toWorking: readonly Cmd[] = [...toReady, jDispatch(id(1))];
-const toEvaluating: readonly Cmd[] = [
+const toDrafted: readonly DecisionEvent[] = [event1];
+const toReady: readonly DecisionEvent[] = [...toDrafted, releaseEvent(id(1))];
+const toWorking: readonly DecisionEvent[] = [...toReady, dispatchEvent(id(1))];
+const toEvaluating: readonly DecisionEvent[] = [
   ...toWorking,
-  jTaskDone(id(1), asTaskId(1), "VPass"),
-  jWorkReduce(id(1)),
+  taskDoneEvent(id(1), asTaskId(1), "VPass"),
+  workReduceEvent(id(1)),
 ];
-const toEnqueued: readonly Cmd[] = [
+const toEnqueued: readonly DecisionEvent[] = [
   ...toEvaluating,
-  jTaskDone(id(1), asTaskId(2), "VPass"),
-  jEvalReduce(id(1)),
+  taskDoneEvent(id(1), asTaskId(2), "VPass"),
+  evalReduceEvent(id(1)),
 ];
-const toHolding: readonly Cmd[] = [...toEnqueued, jDequeue(id(1), true)];
-const toDone: readonly Cmd[] = [...toHolding, jGateResolve(id(1), "WOk")];
-const toEscalated: readonly Cmd[] = [...toReady, jRevalFail(id(1))];
+const toHolding: readonly DecisionEvent[] = [
+  ...toEnqueued,
+  dequeueEvent(id(1), true),
+];
+const toDone: readonly DecisionEvent[] = [
+  ...toHolding,
+  gateResolveEvent(id(1), "WOk"),
+];
+const toEscalated: readonly DecisionEvent[] = [
+  ...toReady,
+  revalFailEvent(id(1)),
+];
 
 const drafted = coreAfter(toDrafted);
 const ready = coreAfter(toReady);
@@ -243,7 +270,7 @@ const enqueued = coreAfter(toEnqueued);
 const holding = coreAfter(toHolding);
 const done = coreAfter(toDone);
 const escalated = coreAfter(toEscalated);
-const full = coreAfter([...toDrafted, cmd1]);
+const full = coreAfter([...toDrafted, event1]);
 
 /**
  * A Ready ticket out of gas, which the machine cannot reach: gas is spent only
@@ -259,20 +286,20 @@ const readyNoGas = withTicket(ready, id(1), {
 interface Refusal {
   readonly conjunct: string;
   readonly at: Core;
-  readonly cmd: Cmd;
+  readonly event: DecisionEvent;
 }
 
 const refusals: readonly Refusal[] = [
-  { conjunct: "JArrive/canArriveIn", at: full, cmd: cmd1 },
+  { conjunct: "Arrive/canArriveIn", at: full, event: event1 },
   {
-    conjunct: "JArrive/dependableIn",
+    conjunct: "Arrive/dependableIn",
     at: drafted,
-    cmd: jArrive(depsOf(2), flatProgram, asProjectId(1), wExclusive(1)),
+    event: arriveEvent(depsOf(2), flatProgram, asProjectId(1), wExclusive(1)),
   },
   {
-    conjunct: "JArrive/isValidProgram",
+    conjunct: "Arrive/isValidProgram",
     at: genesis,
-    cmd: jArrive(
+    event: arriveEvent(
       depsOf(),
       [...flatProgram, ...flatProgram],
       asProjectId(1),
@@ -280,64 +307,64 @@ const refusals: readonly Refusal[] = [
     ),
   },
   {
-    conjunct: "JArrive/projects",
+    conjunct: "Arrive/projects",
     at: genesis,
-    cmd: jArrive(depsOf(), flatProgram, asProjectId(2), wExclusive(1)),
+    event: arriveEvent(depsOf(), flatProgram, asProjectId(2), wExclusive(1)),
   },
   {
-    conjunct: "JArrive/wrapUpChoices",
+    conjunct: "Arrive/wrapUpChoices",
     at: genesis,
-    cmd: jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(99)),
+    event: arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(99)),
   },
-  { conjunct: "JRelease/draftsIn", at: ready, cmd: jRelease(id(1)) },
-  { conjunct: "JRevoke/revocablesIn", at: done, cmd: jRevoke(id(1)) },
-  { conjunct: "JDispatch/readiesIn", at: drafted, cmd: jDispatch(id(1)) },
+  { conjunct: "Release/draftsIn", at: ready, event: releaseEvent(id(1)) },
+  { conjunct: "Revoke/revocablesIn", at: done, event: revokeEvent(id(1)) },
+  { conjunct: "Dispatch/readiesIn", at: drafted, event: dispatchEvent(id(1)) },
   {
-    conjunct: "JDispatch/dispatchableIn",
+    conjunct: "Dispatch/dispatchableIn",
     at: readyNoGas,
-    cmd: jDispatch(id(1)),
+    event: dispatchEvent(id(1)),
   },
   {
-    conjunct: "JTaskDone/taskPhaseIn",
+    conjunct: "TaskDone/taskPhaseIn",
     at: ready,
-    cmd: jTaskDone(id(1), asTaskId(1), "VPass"),
+    event: taskDoneEvent(id(1), asTaskId(1), "VPass"),
   },
   {
-    conjunct: "JTaskDone/deliverableTaskIds",
+    conjunct: "TaskDone/deliverableTaskIds",
     at: working,
-    cmd: jTaskDone(id(1), asTaskId(9), "VPass"),
+    event: taskDoneEvent(id(1), asTaskId(9), "VPass"),
   },
   {
-    conjunct: "JWorkReduce/reducibleWorkIn",
+    conjunct: "WorkReduce/reducibleWorkIn",
     at: working,
-    cmd: jWorkReduce(id(1)),
+    event: workReduceEvent(id(1)),
   },
   {
-    conjunct: "JEvalReduce/reducibleEvalIn",
+    conjunct: "EvalReduce/reducibleEvalIn",
     at: evaluating,
-    cmd: jEvalReduce(id(1)),
+    event: evalReduceEvent(id(1)),
   },
   {
-    conjunct: "JDequeue/wrapUpStartablesIn",
+    conjunct: "Dequeue/wrapUpStartablesIn",
     at: holding,
-    cmd: jDequeue(id(1), true),
+    event: dequeueEvent(id(1), true),
   },
   {
-    conjunct: "JGateResolve/holdingIn",
+    conjunct: "GateResolve/holdingIn",
     at: enqueued,
-    cmd: jGateResolve(id(1), "WOk"),
+    event: gateResolveEvent(id(1), "WOk"),
   },
   {
-    conjunct: "JCompleteDuplicate/doneIn",
+    conjunct: "CompleteDuplicate/doneIn",
     at: ready,
-    cmd: jCompleteDuplicate(id(1)),
+    event: completeDuplicateEvent(id(1)),
   },
-  { conjunct: "JRevalFail/readiesIn", at: done, cmd: jRevalFail(id(1)) },
-  { conjunct: "JOpRetry/retryablesIn", at: ready, cmd: jOpRetry(id(1)) },
+  { conjunct: "RevalFail/readiesIn", at: done, event: revalFailEvent(id(1)) },
+  { conjunct: "OpRetry/retryablesIn", at: ready, event: opRetryEvent(id(1)) },
 ];
 
 /**
- * `JGateResolve`'s outcome membership has no row: `WrapUpOutcome` holds only
+ * `GateResolve`'s outcome membership has no row: `WrapUpOutcome` holds only
  * the two the model draws, so nothing outside the set can be constructed and
  * the `WFailed` drive below is what stands behind that conjunct. The arrival
  * repeating a dep has no row and no conjunct either — the payload is the model's
@@ -345,87 +372,93 @@ const refusals: readonly Refusal[] = [
  * stored journal carries.
  */
 test("every conjunct of every enablement refuses on a state that fails it alone", () => {
-  for (const { conjunct, at, cmd } of refusals) {
-    assert.ok(!cmdEnabled(config, at, cmd), `${conjunct}: enabled anyway`);
+  for (const { conjunct, at, event } of refusals) {
+    assert.ok(
+      !decisionEventEnabled(config, at, event),
+      `${conjunct}: enabled anyway`,
+    );
   }
 });
 
 /** The arm's positive half, which a table of refusals cannot carry. */
 test("an arrival naming a dependable dep is enabled", () => {
   assert.ok(
-    cmdEnabled(
+    decisionEventEnabled(
       config,
       drafted,
-      jArrive(depsOf(1), flatProgram, asProjectId(1), wExclusive(1)),
+      arriveEvent(depsOf(1), flatProgram, asProjectId(1), wExclusive(1)),
     ),
   );
 });
 
 test("the refusal table names every constructor the model declares", () => {
   assert.deepEqual(
-    [...new Set(refusals.map((row) => row.cmd.cmd))].sort(),
-    [...cmdTags].sort(),
+    [...new Set(refusals.map((row) => row.event.event))].sort(),
+    [...decisionEventTags].sort(),
   );
 });
 
 /** `decided` is the domain decider called directly, so a mis-wired dispatch arm has somewhere to disagree. */
 interface Drive {
   readonly arm: string;
-  readonly before: readonly Cmd[];
-  readonly cmd: Cmd;
+  readonly before: readonly DecisionEvent[];
+  readonly event: DecisionEvent;
   readonly at: Core;
   readonly decided: Decision;
 }
 
 const drives: readonly Drive[] = [
   {
-    arm: "JRevoke",
+    arm: "Revoke",
     before: toReady,
-    cmd: jRevoke(id(1)),
+    event: revokeEvent(id(1)),
     at: ready,
     decided: decideRevoke(ready, id(1)),
   },
   {
-    arm: "JRevalFail",
+    arm: "RevalFail",
     before: toReady,
-    cmd: jRevalFail(id(1)),
+    event: revalFailEvent(id(1)),
     at: ready,
     decided: decideRevalFail(ready, id(1)),
   },
   {
-    arm: "JGateResolve/WOk",
+    arm: "GateResolve/WOk",
     before: toHolding,
-    cmd: jGateResolve(id(1), "WOk"),
+    event: gateResolveEvent(id(1), "WOk"),
     at: holding,
     decided: decideWrapUpResolve(config, holding, id(1), "WOk", true),
   },
   {
-    arm: "JGateResolve/WFailed",
+    arm: "GateResolve/WFailed",
     before: toHolding,
-    cmd: jGateResolve(id(1), "WFailed"),
+    event: gateResolveEvent(id(1), "WFailed"),
     at: holding,
     decided: decideWrapUpResolve(config, holding, id(1), "WFailed", true),
   },
   {
-    arm: "JOpRetry",
+    arm: "OpRetry",
     before: toEscalated,
-    cmd: jOpRetry(id(1)),
+    event: opRetryEvent(id(1)),
     at: escalated,
     decided: decideOpRetry(config, escalated, id(1)),
   },
 ];
 
 test("each otherwise-undriven arm journals legally and decides what the domain decides", () => {
-  for (const { arm, before, cmd, at, decided } of drives) {
-    assert.ok(cmdEnabled(config, at, cmd), `${arm}: refused at its own state`);
-    const taken = execCmd(config, at, cmd);
+  for (const { arm, before, event, at, decided } of drives) {
+    assert.ok(
+      decisionEventEnabled(config, at, event),
+      `${arm}: refused at its own state`,
+    );
+    const taken = execDecisionEvent(config, at, event);
     assert.deepEqual(taken.rec, decided.rec, `${arm}: a different record`);
     assert.deepEqual(
       taken.post,
       decided.post,
       `${arm}: a different post-state`,
     );
-    const journal = journalOf([...before, cmd]);
+    const journal = journalOf([...before, event]);
     assert.equal(journal.length, before.length + 1);
     assert.ok(
       journalLegalOn(config, journal),

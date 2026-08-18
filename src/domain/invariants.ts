@@ -353,7 +353,7 @@ export const recordWellFormed: Invariant = (_config, view) =>
     t.record.every(
       (entry, index) =>
         entry.id === index + firstTaskId &&
-        entry.state.state !== "TSRunning" &&
+        entry.state.state !== "TSOutstanding" &&
         recordWellFormedStage(entry, t.program),
     ),
   );

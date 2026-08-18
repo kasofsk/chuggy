@@ -265,7 +265,7 @@ export function decideDispatch(
 
 /**
  * A task-completion event, where first write wins: a delivery naming a task
- * that is not running in the live set is a duplicate or a stale re-delivery,
+ * that is not outstanding in the live set is a duplicate or a stale re-delivery,
  * and the decision is a state-identical no-op. Ids are unique across the
  * ticket's whole history, so a stale completion no-ops by identity.
  */
@@ -277,7 +277,7 @@ export function decideTaskDone(
 ): Decision {
   const ticket = ticketAt(core, id);
   const live = ticket.tasks.some(
-    (t) => t.id === taskId && t.state.state === "TSRunning",
+    (t) => t.id === taskId && t.state.state === "TSOutstanding",
   );
   if (!live) return noop(core, "task-done-duplicate");
   return {

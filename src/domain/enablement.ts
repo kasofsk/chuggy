@@ -21,7 +21,7 @@ import { ticketAt, ticketIds, type Core } from "./core.ts";
 import type { Resume } from "./desk.ts";
 import { firstTaskId, asTaskId, type TaskId, type TicketId } from "./ids.ts";
 import { assertNever } from "./assertNever.ts";
-import { nextTaskId, runningCount } from "./task.ts";
+import { nextTaskId, outstandingCount } from "./task.ts";
 import type { ArtifactMark } from "./wrapUp.ts";
 import type { Ticket } from "./ticket.ts";
 
@@ -107,7 +107,7 @@ export function dependableIn(core: Core): readonly TicketId[] {
 
 /**
  * An arrival's dependencies name distinct tickets. The model draws them from a
- * powerset and the command payload carries that set, so this is what refuses a
+ * powerset and the decision-event payload carries that set, so this is what refuses a
  * repeat where an array still carries the draw — off the wire, and in a drawn
  * trace.
  */
@@ -152,7 +152,7 @@ export function taskPhaseIn(core: Core): readonly TicketId[] {
 export function reducibleWorkIn(core: Core): readonly TicketId[] {
   return ticketIds(core).filter((id) => {
     const ticket = ticketAt(core, id);
-    return ticket.phase === "PWorking" && runningCount(ticket.tasks) === 0;
+    return ticket.phase === "PWorking" && outstandingCount(ticket.tasks) === 0;
   });
 }
 
@@ -160,7 +160,9 @@ export function reducibleWorkIn(core: Core): readonly TicketId[] {
 export function reducibleEvalIn(core: Core): readonly TicketId[] {
   return ticketIds(core).filter((id) => {
     const ticket = ticketAt(core, id);
-    return ticket.phase === "PEvaluating" && runningCount(ticket.tasks) === 0;
+    return (
+      ticket.phase === "PEvaluating" && outstandingCount(ticket.tasks) === 0
+    );
   });
 }
 

@@ -34,7 +34,11 @@ import {
   type StepRecord,
 } from "../domain/core.ts";
 import type { StepView } from "../domain/invariants.ts";
-import { cmdEnabled, execCmd, type Cmd } from "./command.ts";
+import {
+  decisionEventEnabled,
+  execDecisionEvent,
+  type DecisionEvent,
+} from "./decisionEvent.ts";
 import { genesis, replayCore, type Entry } from "./journal.ts";
 
 /** The actor's whole state: the carried view, the journal, the executor cursor, and the world's ledger. */
@@ -66,15 +70,15 @@ export function actorInit(): ActorState {
 function decideEnabled(
   config: Config,
   state: ActorState,
-  cmd: Cmd,
+  event: DecisionEvent,
   step: string,
 ): Decision {
-  if (!cmdEnabled(config, memoryCore(state), cmd)) {
+  if (!decisionEventEnabled(config, memoryCore(state), event)) {
     throw new Error(
-      `${step}: ${cmd.cmd} is refused at this state; the actor journals no decision the machine would not take`,
+      `${step}: ${event.event} is refused at this state; the actor journals no decision the machine would not take`,
     );
   }
-  return execCmd(config, memoryCore(state), cmd);
+  return execDecisionEvent(config, memoryCore(state), event);
 }
 
 /**
@@ -86,12 +90,12 @@ function decideEnabled(
 export function journalStep(
   config: Config,
   state: ActorState,
-  cmd: Cmd,
+  event: DecisionEvent,
 ): ActorState {
-  const decision = decideEnabled(config, state, cmd, "journalStep");
+  const decision = decideEnabled(config, state, event, "journalStep");
   const entry: Entry = {
     seq: state.journal.length + 1,
-    cmd,
+    event,
     rec: decision.rec,
   };
   return {
@@ -153,9 +157,9 @@ export function crashRecoverTo(
 export function effectCrash(
   config: Config,
   state: ActorState,
-  cmd: Cmd,
+  event: DecisionEvent,
 ): ActorState {
-  const decision = decideEnabled(config, state, cmd, "effectCrash");
+  const decision = decideEnabled(config, state, event, "effectCrash");
   return {
     ...state,
     view: { ...state.view, post: replayCore(config, state.journal) },

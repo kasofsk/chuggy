@@ -15,14 +15,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  jArrive,
-  jDequeue,
-  jDispatch,
-  jEvalReduce,
-  jRelease,
-  jTaskDone,
-  jWorkReduce,
-} from "../../src/actor/command.ts";
+  arriveEvent,
+  dequeueEvent,
+  dispatchEvent,
+  evalReduceEvent,
+  releaseEvent,
+  taskDoneEvent,
+  workReduceEvent,
+} from "../../src/actor/decisionEvent.ts";
 import {
   obligationsHold,
   refinementCore,
@@ -65,11 +65,11 @@ function phaseDispatchDoubleSpend(): ActorState {
   state = stepEmit(
     config,
     state,
-    jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
+    arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
     "ticket-arrived",
   );
-  state = stepEmit(config, state, jRelease(id(1)), "ticket-released");
-  state = effectCrash(config, state, jDispatch(id(1)));
+  state = stepEmit(config, state, releaseEvent(id(1)), "ticket-released");
+  state = effectCrash(config, state, dispatchEvent(id(1)));
   assert.equal(state.orphans.length, 1);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PPending");
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 3);
@@ -82,7 +82,7 @@ function phaseDispatchDoubleSpend(): ActorState {
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(config, state, jDispatch(id(1)));
+  state = journalStep(config, state, dispatchEvent(id(1)));
   assertStep(config, state, "the orphan priced against the re-decided charge", [
     "journalCoversWorld",
   ]);
@@ -100,33 +100,33 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    jTaskDone(id(1), asTaskId(1), "VPass"),
+    taskDoneEvent(id(1), asTaskId(1), "VPass"),
     "task-done",
     spentWorld,
   );
   state = stepEmit(
     config,
     state,
-    jWorkReduce(id(1)),
+    workReduceEvent(id(1)),
     "work-passed",
     spentWorld,
   );
   state = stepEmit(
     config,
     state,
-    jTaskDone(id(1), asTaskId(2), "VPass"),
+    taskDoneEvent(id(1), asTaskId(2), "VPass"),
     "task-done",
     spentWorld,
   );
   state = stepEmit(
     config,
     state,
-    jEvalReduce(id(1)),
+    evalReduceEvent(id(1)),
     "eval-passed",
     spentWorld,
   );
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PWrapUp");
-  state = effectCrash(config, state, jDequeue(id(1), false));
+  state = effectCrash(config, state, dequeueEvent(id(1), false));
   assert.equal(state.orphans.length, 2);
   assert.equal(worldCompletions(state, id(1)), 1);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PWrapUp");
@@ -138,7 +138,7 @@ function phaseDuplicateCycle(state: ActorState): void {
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(config, state, jDequeue(id(1), false));
+  state = journalStep(config, state, dequeueEvent(id(1), false));
   state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 2);
   assert.equal(journalCompletions(state, id(1)), 1);
@@ -162,7 +162,7 @@ function walkToEvalFailure(): ActorState {
   state = stepEmit(
     config,
     state,
-    jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
+    arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
     "ticket-arrived",
   );
   state = walkFirstCycle(config, state, "VFail");
@@ -173,7 +173,7 @@ function walkToEvalFailure(): ActorState {
 
 test("the rework double-spend: the fan-out launches and the charge dies with the crash", () => {
   let state = walkToEvalFailure();
-  state = effectCrash(config, state, jEvalReduce(id(1)));
+  state = effectCrash(config, state, evalReduceEvent(id(1)));
   assert.equal(state.orphans.length, 1);
   const recovered = ticketAt(memoryCore(state), id(1));
   assert.equal(recovered.phase, "PEvaluating");
@@ -183,7 +183,7 @@ test("the rework double-spend: the fan-out launches and the charge dies with the
   assert.equal(journalSpawns(state, id(1)), 1);
   assertStep(config, state, "the fan-out the accounts never paid", spentWorld);
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(config, state, jEvalReduce(id(1)));
+  state = journalStep(config, state, evalReduceEvent(id(1)));
   assert.equal(state.view.rec.label, "rework-started eval_failure");
   state = emitNext(state);
   const charged = ticketAt(memoryCore(state), id(1));

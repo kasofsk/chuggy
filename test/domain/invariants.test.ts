@@ -108,14 +108,14 @@ import {
 } from "./configs.ts";
 import {
   coreOf,
-  evalRunning,
+  evalOutstanding,
   evalTask,
   fleetBut,
   healthyFleet,
   id,
   initialView,
   ticketOn,
-  workRunning,
+  workOutstanding,
   workTask,
 } from "./fixtures.ts";
 
@@ -484,7 +484,7 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(fleetBut(fleet, 1, { tasks: [workRunning(1)] })),
+      stateView(fleetBut(fleet, 1, { tasks: [workOutstanding(1)] })),
     ),
     "the work set is one task-set phase at full width",
   );
@@ -492,7 +492,9 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
     !tasksWellFormed(
       config,
       stateView(
-        fleetBut(fleet, 1, { tasks: [workRunning(1), evalRunning(2, 0)] }),
+        fleetBut(fleet, 1, {
+          tasks: [workOutstanding(1), evalOutstanding(2, 0)],
+        }),
       ),
     ),
     "a work phase carries work tasks and nothing else",
@@ -502,7 +504,7 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
       config,
       stateView(
         fleetBut(fleet, 1, {
-          tasks: [workTask(1, "TCancelled"), workRunning(2)],
+          tasks: [workTask(1, "TCancelled"), workOutstanding(2)],
         }),
       ),
     ),
@@ -511,7 +513,7 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(fleetBut(fleet, 0, { tasks: [workRunning(5)] })),
+      stateView(fleetBut(fleet, 0, { tasks: [workOutstanding(5)] })),
     ),
     "a settled ticket carries no live task state",
   );
@@ -530,31 +532,33 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
   assert.ok(
     tasksWellFormed(
       config,
-      stateView(evaluating([evalRunning(3, 0), evalRunning(4, 0)])),
+      stateView(evaluating([evalOutstanding(3, 0), evalOutstanding(4, 0)])),
     ),
   );
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(evaluating([evalRunning(7, 0), evalRunning(8, 0)])),
+      stateView(evaluating([evalOutstanding(7, 0), evalOutstanding(8, 0)])),
     ),
     "the live ids are the contiguous run directly above the retired record",
   );
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(evaluating([evalRunning(3, 5), evalRunning(4, 5)])),
+      stateView(evaluating([evalOutstanding(3, 5), evalOutstanding(4, 5)])),
     ),
     "the stage index has to index into the ticket's own program",
   );
   assert.ok(
-    !tasksWellFormed(config, stateView(evaluating([evalRunning(3, 0)]))),
+    !tasksWellFormed(config, stateView(evaluating([evalOutstanding(3, 0)]))),
     "the set is exactly the stage's declared width",
   );
   assert.ok(
     !tasksWellFormed(
       config,
-      stateView(evaluating([evalTask(3, 0, "TCancelled"), evalRunning(4, 0)])),
+      stateView(
+        evaluating([evalTask(3, 0, "TCancelled"), evalOutstanding(4, 0)]),
+      ),
     ),
     "cancelled is a retirement mark on the eval side too, and this branch has its own conjunct saying so",
   );
@@ -577,8 +581,8 @@ test("recordWellFormed rejects a log that is not the resolved history in identit
     "entry i carries id i plus one: the chronological log is the identity order",
   );
   assert.ok(
-    !recordWellFormed(config, stateView(holding([workRunning(1)]))),
-    "nothing retired is still running",
+    !recordWellFormed(config, stateView(holding([workOutstanding(1)]))),
+    "nothing retired is still outstanding",
   );
   assert.ok(
     !recordWellFormed(config, stateView(holding([evalTask(1, 5, "TPassed")]))),
@@ -852,7 +856,7 @@ test("measureNonNegative rejects an overdrawn account", () => {
   const overdrawn = coreOf([
     ticketOn(config, 1, {
       phase: "PWorking",
-      tasks: [workRunning(1), workRunning(2)],
+      tasks: [workOutstanding(1), workOutstanding(2)],
       spawned: 2,
       gasLeft: -1,
     }),

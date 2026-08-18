@@ -15,7 +15,7 @@
 ///                   pricing.
 ///   3. reworkLeft   the eval-rework account, granted by the rework policy.
 ///   4. micro        within-cycle progress: phase rank, then stagesLeft,
-///                   then the running-task count.
+///                   then the outstanding-task count.
 ///
 /// It is LEXICOGRAPHIC, flattened to one nonnegative integer by radix
 /// weighting — every digit stays strictly below its radix, so the integer
@@ -31,10 +31,10 @@
 /// task, so this machine prices CYCLES, not relaunches.
 ///
 /// THE DIGIT-ORDER ARGUMENT (why stagesLeft sits BELOW phase rank and
-/// ABOVE — not beside — the running-task count):
+/// ABOVE — not beside — the outstanding-task count):
 ///   - BELOW rank: entering Evaluating (work-passed, rank 4->3) makes the
 ///     stage digit APPEAR at its maximum (stagesLeft 0 -> L <= maxStages)
-///     while the stage-0 fan-out spawns (running 0 -> <= nTasks). The one
+///     while the stage-0 fan-out spawns (outstanding 0 -> <= nTasks). The one
 ///     rank step must dominate both at once, which forces
 ///     rankWeight > maxStages*stageWeight + nTasks — the rankWeight
 ///     definition below is exactly that bound plus one. Every EXIT from
@@ -42,8 +42,8 @@
 ///     account, so the stage digit vanishing on exit never needs its own
 ///     descent argument.
 ///   - ABOVE the count: advancing a stage (eval-stage-passed) retires a
-///     fully-resolved task set (running 0) and spawns the next stage's
-///     fan-out — the running count JUMPS from 0 to <= nTasks in the same
+///     fully-resolved task set (outstanding 0) and spawns the next stage's
+///     fan-out — the outstanding count JUMPS from 0 to <= nTasks in the same
 ///     step. stagesLeft falls by exactly 1, so one stage step must outweigh
 ///     the whole jump: stageWeight = radix(nTasks). Were the stage digit
 ///     merely BESIDE the count (equal weight), stage advance over any
@@ -72,15 +72,15 @@
 ///       next weight up must be worth exactly that many. Every "+ 1" in the
 ///       weight chain is this one derivation, named once.
 ///   stageWeight = radix(nTasks)
-///     — one stage step dominates any running count (<= nTasks).
+///     — one stage step dominates any outstanding count (<= nTasks).
 ///   rankWeight  = radix(maxStages) * stageWeight
 ///     — one rank step dominates the full stage digit plus any count:
 ///       stagesLeft <= maxStages (programsWellFormed caps authored programs
 ///       at MAX_STAGES), so
-///       stagesLeft*stageWeight + runningCount
+///       stagesLeft*stageWeight + outstandingCount
 ///         <= maxStages*stageWeight + nTasks < radix(maxStages)*stageWeight.
 ///   microBound  = radix(rankCeiling) * rankWeight
-///     — micro = rank*rankWeight + stagesLeft*stageWeight + runningCount
+///     — micro = rank*rankWeight + stagesLeft*stageWeight + outstandingCount
 ///            <= rankCeiling*rankWeight + (rankWeight - 1)
 ///             < radix(rankCeiling)*rankWeight.
 ///       Written as radix(rankCeiling) so the multiplier re-derives from
@@ -115,13 +115,13 @@
 ///   dispatch                            gas -1 (micro also falls:
 ///                                       rank 5->4 dominates the spawn:
 ///                                       −rankWeight + nTasks < 0)
-///   task-done (a running task resolves) task count -1
+///   task-done (an outstanding task resolves) task count -1
 ///   work-passed                         rank 4->3 (dominates the stage
 ///                                       digit appearing at L <= maxStages
 ///                                       AND the stage-0 fan-out spawn —
 ///                                       the rankWeight bound above.
 ///                                       A scoped re-entry
-///                                       spawns r <= fanout RUNNING tasks
+///                                       spawns r <= fanout OUTSTANDING tasks
 ///                                       — carried tasks are born settled
 ///                                       — so the climb is r <= nTasks,
 ///                                       within the same bound: fewer
@@ -129,7 +129,7 @@
 ///   eval-stage-passed (          stagesLeft -1 (dominates the next
 ///     a non-final stage passes;           stage's fan-out spawn:
 ///     Evaluating -> Evaluating,           -stageWeight + fanout <= -1;
-///                                         spawns r <= fanout running, so
+///                                         spawns r <= fanout outstanding, so
 ///                                         -stageWeight + r <= -1 a
 ///                                         fortiori)
 ///   ticket-escalated work_failed           rank 4->0 (cycle-level resolution:
@@ -342,28 +342,27 @@ module chuggy_measure {
   ///                below) instead of stored — standing rule 3.
   type TaskKind = TKWork | TKEval(int)
 
-  /// A settled task's outcome — RESOLVED verdicts only; a running task
+  /// A settled task's outcome — RESOLVED verdicts only; an outstanding task
   /// cannot carry one (see TaskState). TFailed
   /// covers BOTH a failed verdict and evaluator-infrastructure death: "the
   /// job pays" for evaluator crashes — one account, no new machinery.
   /// TCancelled is the retirement
-  /// mark for a task still RUNNING when its ticket is revoked mid-flight —
+  /// mark for a task still OUTSTANDING when its ticket is revoked mid-flight —
   /// revoke force-closes every pending task with a synthetic resolution
   /// recording that the revoke, not a verdict, retired it.
   /// Only revoke produces it: every other retirement happens at a reduce,
   /// when the set is fully resolved.
   type TaskOutcome = TPassed | TFailed | TCancelled
 
-  /// THE EXPLICIT TASK LIFECYCLE (one
-  /// small sum instead of implicit set-membership). A task is SPAWNED into
-  /// existence running (spawnTasks below — there is no dormant pre-state:
-  /// creation and start are one step at this grain), RUNS, and RESOLVES exactly
-  /// once — TSResolved carries the outcome, and the type now says what the
-  /// old TRunning-in-TaskOutcome only implied: a running task CANNOT carry
-  /// an outcome, and a resolved task MUST. First write wins (resolveTask);
-  /// resolution is final (recordMonotone makes that a theorem).
+  /// THE EXPLICIT TASK LIFECYCLE (one small sum instead of implicit
+  /// set-membership). A task is PUBLISHED to the fabric as outstanding and
+  /// RESOLVES exactly once. Assignment, launch, execution and their retries
+  /// are the trusted fabric's grain, not states of this machine. TSResolved
+  /// carries the outcome, so an outstanding task CANNOT carry one and a
+  /// resolved task MUST. First write wins (resolveTask); resolution is final
+  /// (recordMonotone makes that a theorem).
 
-  type TaskState = TSRunning | TSResolved(TaskOutcome)
+  type TaskState = TSOutstanding | TSResolved(TaskOutcome)
 
   /// A first-class task record: identity + kind +
   /// lifecycle state. `id` is SEQUENTIAL WITHIN THE TICKET, 1-indexed, across
@@ -753,8 +752,8 @@ module chuggy_measure {
       | _ => rankSettled
     }
 
-  pure def runningCount(tasks: Set[Task]): int =
-    tasks.filter(t => t.state == TSRunning).size()
+  pure def outstandingCount(tasks: Set[Task]): int =
+    tasks.filter(t => t.state == TSOutstanding).size()
 
   /// The CURRENT eval stage, DERIVED from the live task set's kind marks
   /// (standing rule 3: no stored stage index) — meaningful only while the
@@ -780,12 +779,12 @@ module chuggy_measure {
   pure def radix(maxDigit: int): int = maxDigit + 1
 
   /// Weight of one unit of stage progress: strictly dominates the
-  /// running-task count (<= nTasks) — the ABOVE-the-count half of the
+  /// outstanding-task count (<= nTasks) — the ABOVE-the-count half of the
   /// digit-order argument.
   pure def stageWeight(b: Bounds): int = radix(b.nTasks)
 
   /// Weight of one unit of phase rank: strictly dominates the full stage
-  /// digit plus any running count (stagesLeft <= maxStages, count <=
+  /// digit plus any outstanding count (stagesLeft <= maxStages, count <=
   /// nTasks < stageWeight) — the BELOW-rank half of the argument.
   pure def rankWeight(b: Bounds): int = radix(b.maxStages) * stageWeight(b)
 
@@ -796,11 +795,11 @@ module chuggy_measure {
   /// restated, so a change to the rung set cannot leave it stale.
   pure def microBound(b: Bounds): int = radix(rankCeiling) * rankWeight(b)
 
-  /// Within-cycle progress, lexicographic (rank, stagesLeft, runningCount).
+  /// Within-cycle progress, lexicographic (rank, stagesLeft, outstandingCount).
   pure def micro(b: Bounds, ticket: Ticket): int =
     phaseRank(ticket.phase) * rankWeight(b)
       + stagesLeft(ticket) * stageWeight(b)
-      + runningCount(ticket.tasks)
+      + outstandingCount(ticket.tasks)
 
   /// THE per-ticket termination measure: lexicographic
   /// (gasLeft, wrapUpLeft, reworkLeft, micro), radix-flattened — each
@@ -825,13 +824,13 @@ module chuggy_measure {
   /// than a magic numeral.
   pure val firstTaskId: int = 1
 
-  /// A fresh parallel task set of kind k: n tasks, all running (spawned
-  /// and started in one step — see TaskState), ids start..start+n-1 — the
+  /// A fresh parallel task set of kind k: n tasks, all outstanding to the
+  /// fabric in one step (see TaskState), ids start..start+n-1 — the
   /// caller passes nextTaskId so identity stays sequential within the ticket
   /// across the whole history.
   pure def spawnTasks(k: TaskKind, start: int, n: int): Set[Task] =
     start.to(start + n - 1).map(i =>
-      { id: i, kind: k, state: TSRunning })
+      { id: i, kind: k, state: TSOutstanding })
 
   /// The next task id this ticket would spawn: every id ever issued is either
   /// retired (record) or live (tasks), and ids are dense from firstTaskId.
@@ -851,7 +850,7 @@ module chuggy_measure {
   /// Retire the live task set into the retained record, in id order
   /// (tasksWellFormed keeps live ids contiguous above the record, so the
   /// appended run keeps record entry i at id firstTaskId + i). A task
-  /// still RUNNING at retirement is force-closed as TSResolved(TCancelled)
+  /// still OUTSTANDING at retirement is force-closed as TSResolved(TCancelled)
   /// — only revoke retires mid-flight sets; every reduce/escalation
   /// retirement is of a
   /// fully-resolved set, so the TCancelled arm never fires there. A
@@ -864,22 +863,22 @@ module chuggy_measure {
           { id: i, kind: TKWork, state: TSResolved(TCancelled) },
           (acc, t) =>
           if (t.id == i)
-            { ...t, state: if (t.state == TSRunning) TSResolved(TCancelled) else t.state }
+            { ...t, state: if (t.state == TSOutstanding) TSResolved(TCancelled) else t.state }
           else acc))) }
 
-  /// First write wins: resolve task `tid` if it is still running; the
+  /// First write wins: resolve task `tid` if it is still outstanding; the
   /// caller (decideTaskDone) treats an already-resolved task as a duplicate
   /// delivery and changes nothing — the idempotence an at-least-once
   /// fabric demands. The explicit
-  /// lifecycle makes the finality structural: TSRunning -> TSResolved(out)
+  /// lifecycle makes the finality structural: TSOutstanding -> TSResolved(out)
   /// is the only edge, and nothing maps a TSResolved back.
   /// The resolution event carries the footprint alongside
   /// the verdict, and first-write-wins covers BOTH — a duplicate delivery
   /// with a different citation changes nothing, and a carried task
-  /// (born settled, no running match) absorbs deliveries the same way.
+  /// (born settled, no outstanding match) absorbs deliveries the same way.
   pure def resolveTask(tasks: Set[Task], tid: int, out: TaskOutcome): Set[Task] =
     tasks.map(t =>
-      if (t.id == tid and t.state == TSRunning) { ...t, state: TSResolved(out) }
+      if (t.id == tid and t.state == TSOutstanding) { ...t, state: TSResolved(out) }
       else t)
 
   /// What counts as a PASS to the combinator: a verdict earned this

@@ -46,7 +46,7 @@ import {
   evalTask,
   id,
   ticketOn,
-  workRunning,
+  workOutstanding,
 } from "./fixtures.ts";
 
 const config = budgetedInstance;
@@ -319,7 +319,7 @@ test("every fixture this suite builds is a shape the machine could have reached"
   const live = coreOf([
     ticketOn(config, 1, {
       phase: "PWorking",
-      tasks: [workRunning(1)],
+      tasks: [workOutstanding(1)],
       spawned: 1,
     }),
   ]);
