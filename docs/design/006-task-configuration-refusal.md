@@ -1,8 +1,7 @@
 # Task configuration and prompt briefing
 
-**Status: PROPOSED** — this is a direction for the first task configuration
-consumer, not a renderer, a prompt catalogue, or a claim that release-time
-validation exists.
+**Status: PROPOSED** — the ownership and integration decisions are settled
+here; the renderer, schemas and adapters are not built yet.
 
 A ticket eventually asks agents to implement a change and to review it. Each
 task needs two kinds of instruction: the stable responsibilities of its role,
@@ -53,22 +52,57 @@ actually run. Letting a later prompt block widen a permission an earlier one
 narrowed would make authority depend on prose and leave the executor nothing to
 enforce.
 
-## Where refusal belongs remains an integration decision
+## Release pins one validated configuration revision
 
 Names, shapes and practice scopes that can be checked from task configuration
-alone should be parsed before a ticket is released. A prompt that is empty only
-after it reads the runtime view is an execution outcome, and the consumer must
-turn it into a task failure rather than throw through a layer.
+alone are validated by the dispatcher runtime while it handles `Release`,
+before it journals the domain's `Release` decision. Validation is not an API
+preflight and not a fabric-adapter concern: either would race a later Draft
+edit or discover an invalid configuration after the ticket entered the
+pipeline.
 
-The current core journals `decideRelease` before the fabric adapter is called.
-An adapter therefore cannot, by itself, refuse release-time configuration: the
-future integration must name a pre-release validation boundary, or change the
-command contract to carry validation. This is deliberately not claimed as
-landed here.
+Draft configuration lives as immutable revisions in the authoring store. A
+release request names the revision it observed. At the dispatcher's serialized
+position, one transaction verifies that the ticket is still a Draft, checks
+that the named revision is current, parses and validates it, and pins its
+revision and digest beside the released ticket projection. Only then does the
+runtime invoke the pure `Release` decider and commit its journal entry. A stale
+revision or invalid configuration refuses the operation without a domain
+event; released tickets cannot acquire another revision.
 
-Likewise, any failure trace needs an explicit retention and redaction policy
-before it is handed to a desk or persisted. Intermediate prompt text can be
-large or contain ticket-sensitive material.
+This validation surrounds the model rather than enlarging it. Task
+configuration changes neither a ticket transition nor the termination
+measure, and the model-level effect remains nullary.
+
+## Execution reads the pinned revision
+
+When a journaled decision creates logical tasks, the concrete effect outbox is
+materialized from that decision's exact post-state. It names the decision and
+effect position, ticket, logical task identities and kinds, stable capacity
+account, and the pinned configuration revision and digest. The model does not
+gain those transport fields.
+
+The fabric consumer reads that immutable revision and renders the purpose-owned
+template with runtime facts. It never reads an unversioned moving ticket row.
+Redelivery therefore describes the same executions and the same briefing even
+after later ticket decisions, and partial batch registration can safely fill
+only the missing logical task identities.
+
+## A runtime refusal is a task outcome with bounded diagnostics
+
+A prompt that is empty only after runtime facts are applied is an execution
+outcome, not a release-time schema error. The consumer resolves the logical
+task failed through the normal durable completion path; it does not throw
+around the ticket lifecycle.
+
+The retained diagnostic is structured and bounded: outcome code, template
+version, configuration revision and digest, section identifiers and sizes, and
+a sanitized message truncated at a configured byte ceiling. Rendered prompts,
+runtime source material, credentials and arbitrary exception objects are not
+persisted or handed to the desk. Operators may inspect sensitive material only
+through an explicitly authorized, short-lived diagnostic path whose access is
+audited. Redaction happens before the completion outbox or desk record is
+written.
 
 ## When a pipeline would be earned
 
@@ -83,6 +117,6 @@ then, exhaustive task-purpose templates are simpler to parse, test and review.
 | # | What lands | Where | Status |
 |---|---|---|---|
 | B1 | Typed code and review templates, shared ticket brief, scoped practices, and runtime slots | `src/briefing/` <!-- intent --> | Proposed |
-| B2 | Concrete task configuration schema and a pre-release validation boundary | task authoring and command path | Proposed |
-| B3 | Runtime empty-prompt outcome and bounded/redacted diagnostics | fabric consumer | Proposed |
+| B2 | Revisioned task configuration schema and serialized release validation | authoring store and dispatcher runtime | Proposed |
+| B3 | Version-pinned execution payload, runtime outcome and bounded/redacted diagnostics | effect outbox and fabric consumer | Proposed |
 | B4 | Move briefing under the adapter that actually consumes it | `src/adapters/` <!-- intent --> | Proposed |
