@@ -35,8 +35,19 @@ export interface TraceEntry<Name extends string> {
   readonly output: string;
 }
 
-/** A fold cannot say which transform a line came from; the trace says what the prompt was after each. */
-export interface Composition<Name extends string> {
-  readonly prompt: string;
-  readonly trace: readonly TraceEntry<Name>[];
-}
+/**
+ * What a fold answers: the prompt, or the reason there is none. The trace comes
+ * back either way, since a fold cannot say which transform a line came from and
+ * the refusal is the case with no prompt to read it off.
+ */
+export type Composed<Name extends string> =
+  | {
+      readonly composed: "Ok";
+      readonly prompt: string;
+      readonly trace: readonly TraceEntry<Name>[];
+    }
+  | {
+      readonly composed: "Refused";
+      readonly why: string;
+      readonly trace: readonly TraceEntry<Name>[];
+    };

@@ -9,13 +9,19 @@
  * the type is what the parse claimed, so `add` refuses one that resolves to
  * nothing rather than trusting the claim.
  *
+ * THE TWO REFUSALS ARE NOT THE SAME KIND. A name resolving to nothing got past
+ * whatever parsed the configuration, so it is a broken invariant and it throws.
+ * An empty prompt is a fold's ordinary outcome, reachable only once a view
+ * exists, so it comes back as a value the caller has to choose about — and the
+ * task it fails is one the machine already knows what to do with.
+ *
  * The method is `add` and not `then`: an object carrying a `then` is a thenable
  * and would be awaited by anything that touched it.
  */
 
 import type { Registry } from "./registry.ts";
 import type {
-  Composition,
+  Composed,
   ParamsOf,
   TraceEntry,
   TransformName,
@@ -26,7 +32,7 @@ export interface Chain<View, Spec> {
     name: Name,
     ...params: ParamsOf<Spec[Name]>
   ): Chain<View, Spec>;
-  compose(seed: string, view: View): Composition<TransformName<Spec>>;
+  compose(seed: string, view: View): Composed<TransformName<Spec>>;
 }
 
 /** A step binds its params where their type is still known, so the fold makes one call. */
@@ -58,18 +64,22 @@ function chainOfFrom<View, Spec>(
         transform(input, view, ...params);
       return chainOfFrom(registry, [...steps, { name, applied }]);
     },
-    compose(seed: string, view: View): Composition<TransformName<Spec>> {
+    compose(seed: string, view: View): Composed<TransformName<Spec>> {
       return chainOfComposed(steps, seed, view);
     },
   };
 }
 
-/** An empty prompt reads to its reader exactly like a full one, so it is refused. */
+/**
+ * An empty prompt reads to its reader exactly like a full one, so it is
+ * refused. The caller has to choose what becomes of the task, which is why the
+ * refusal is returned rather than thrown.
+ */
 function chainOfComposed<View, Spec>(
   steps: readonly ChainStep<View, Spec>[],
   seed: string,
   view: View,
-): Composition<TransformName<Spec>> {
+): Composed<TransformName<Spec>> {
   const trace: TraceEntry<TransformName<Spec>>[] = [];
   let text = seed;
   for (const step of steps) {
@@ -77,9 +87,13 @@ function chainOfComposed<View, Spec>(
     trace.push({ transformName: step.name, output: text });
   }
   if (text.trim() === "") {
-    throw new Error(`chain: composed no prompt after ${chainOfHowFar(trace)}`);
+    return {
+      composed: "Refused",
+      why: `composed no prompt after ${chainOfHowFar(trace)}`,
+      trace,
+    };
   }
-  return { prompt: text, trace };
+  return { composed: "Ok", prompt: text, trace };
 }
 
 /** The refusal has no prompt to show, so it says how far the fold got instead. */
