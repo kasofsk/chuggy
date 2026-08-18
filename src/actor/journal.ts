@@ -7,7 +7,7 @@
  * exactly that, row by row — so storing both makes the consistency a checked
  * claim instead of a storage convention, which is the model's own choice.
  *
- * REPLAY IS DETERMINISTIC BY PURITY: `execCmd` is a pure function, so the fold
+ * REPLAY IS DETERMINISTIC BY PURITY: `execDecisionEvent` is a pure function, so the fold
  * has one result, and that is the whole mechanism behind recovery — the
  * journal is a sufficient basis for the state because nothing else ever
  * entered a decision.
@@ -15,13 +15,17 @@
 
 import type { Config } from "../domain/config.ts";
 import type { Core, StepRecord } from "../domain/core.ts";
-import { cmdEnabled, execCmd, type Cmd } from "./command.ts";
+import {
+  decisionEventEnabled,
+  execDecisionEvent,
+  type DecisionEvent,
+} from "./decisionEvent.ts";
 import { recordEquals } from "./equality.ts";
 
 /** One journal row: dense monotone seq, the decision event, and its record. */
 export interface Entry {
   readonly seq: number;
-  readonly cmd: Cmd;
+  readonly event: DecisionEvent;
   readonly rec: StepRecord;
 }
 
@@ -31,7 +35,7 @@ export const genesis: Core = { tickets: new Map() };
 /** Recovery: replay the journal into a fresh state, one decision at a time from `genesis`. */
 export function replayCore(config: Config, journal: readonly Entry[]): Core {
   return journal.reduce(
-    (core, entry) => execCmd(config, core, entry.cmd).post,
+    (core, entry) => execDecisionEvent(config, core, entry.event).post,
     genesis,
   );
 }
@@ -49,10 +53,13 @@ export function journalLegalOn(
   let replayed = genesis;
   let next = 1;
   for (const entry of journal) {
-    if (entry.seq !== next || !cmdEnabled(config, replayed, entry.cmd)) {
+    if (
+      entry.seq !== next ||
+      !decisionEventEnabled(config, replayed, entry.event)
+    ) {
       return false;
     }
-    const decision = execCmd(config, replayed, entry.cmd);
+    const decision = execDecisionEvent(config, replayed, entry.event);
     if (!recordEquals(decision.rec, entry.rec)) return false;
     replayed = decision.post;
     next += 1;

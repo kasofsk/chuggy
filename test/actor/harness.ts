@@ -18,12 +18,12 @@
 import assert from "node:assert/strict";
 
 import {
-  jDispatch,
-  jRelease,
-  jTaskDone,
-  jWorkReduce,
-  type Cmd,
-} from "../../src/actor/command.ts";
+  dispatchEvent,
+  releaseEvent,
+  taskDoneEvent,
+  workReduceEvent,
+  type DecisionEvent,
+} from "../../src/actor/decisionEvent.ts";
 import {
   failedObligations,
   refinementInvariants,
@@ -90,11 +90,11 @@ export function assertStep(
 export function stepEmit(
   config: Config,
   state: ActorState,
-  cmd: Cmd,
+  event: DecisionEvent,
   label: string,
   failed: readonly string[] = [],
 ): ActorState {
-  const journaled = journalStep(config, state, cmd);
+  const journaled = journalStep(config, state, event);
   assert.equal(journaled.view.rec.label, label);
   assertStep(config, journaled, `${label} (journaled)`, failed);
   const emitted = emitNext(journaled);
@@ -112,19 +112,19 @@ export function walkFirstCycle(
   state: ActorState,
   evalVerdict: Verdict,
 ): ActorState {
-  state = stepEmit(config, state, jRelease(id(1)), "ticket-released");
-  state = stepEmit(config, state, jDispatch(id(1)), "dispatch");
+  state = stepEmit(config, state, releaseEvent(id(1)), "ticket-released");
+  state = stepEmit(config, state, dispatchEvent(id(1)), "dispatch");
   state = stepEmit(
     config,
     state,
-    jTaskDone(id(1), asTaskId(1), "VPass"),
+    taskDoneEvent(id(1), asTaskId(1), "VPass"),
     "task-done",
   );
-  state = stepEmit(config, state, jWorkReduce(id(1)), "work-passed");
+  state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
   return stepEmit(
     config,
     state,
-    jTaskDone(id(1), asTaskId(2), evalVerdict),
+    taskDoneEvent(id(1), asTaskId(2), evalVerdict),
     "task-done",
   );
 }

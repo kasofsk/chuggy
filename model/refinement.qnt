@@ -49,14 +49,14 @@
 ///   journal      : List[Entry] — THE DURABLE DECISION LOG, the only
 ///                  thing that survives a crash. An Entry is the domain
 ///                  StepRecord plus a monotone sequence number plus the
-///                  DECISION EVENT itself (`cmd`: which decider, at which
+///                  DECISION EVENT itself (`event`: which decider, at which
 ///                  named picks — the witness-driver discipline as data).
-///                  The cmd is what makes replay possible (the deciders
+///                  The event is what makes replay possible (the deciders
 ///                  are pure; the picks must be recorded); the rec is
 ///                  what the executor emits and what conformance
 ///                  replays — journal rows are golden-trace steps
 ///                  (standing rule 4). An implementation may derive rec
-///                  from cmd at read time; the model stores both and
+///                  from event at read time; the model stores both and
 ///                  proves them consistent (journalLegal).
 ///   applied      : int — THE EXECUTOR CURSOR: how many journal entries'
 ///                  effects have been emitted to the world. Deliberately
@@ -122,8 +122,8 @@
 /// THE ACTOR'S DECIDE STEP IS THE DOMAIN DECIDER — structurally. Every
 /// actor action draws its picks from the domain's OWN enablement sets
 /// (the same vals the domain's `step` draws from), and journalStep
-/// executes `execCmd` = a total dispatch onto the domain's pure
-/// deciders, guarded by `cmdEnabled` = the same enablement re-stated
+/// executes `execDecisionEvent` = a total dispatch onto the domain's pure
+/// deciders, guarded by `decisionEventEnabled` = the same enablement re-stated
 /// over an explicit Core (the Core-parameterized forms hoisted into
 /// domain.qnt — referenced, never copied). The actor cannot journal a
 /// decision the domain's deciders would not produce from its state:
@@ -139,9 +139,9 @@
 ///      legal domain-machine trace. Checked by replay: fold the journal
 ///      from the genesis Core; at each entry, (a) the sequence number is
 ///      the next in the monotone dense order, (b) the decision was
-///      ENABLED at the replayed prefix state (cmdEnabled — the domain's
+///      ENABLED at the replayed prefix state (decisionEventEnabled — the domain's
 ///      own guards), and (c) the domain decider at the recorded picks
-///      reproduces the recorded StepRecord EXACTLY (execCmd(st, cmd).rec
+///      reproduces the recorded StepRecord EXACTLY (execDecisionEvent(st, event).rec
 ///      == rec). With every non-actor step leaving the domain vars
 ///      untouched, the domain-visible trace of any disciplined run IS
 ///      the journal's record sequence — the projection is the identity
@@ -290,31 +290,31 @@ module chuggy_refinement {
   /// a real journal row must carry for replay to work: the deciders are
   /// pure, so (Core, picks) determines everything; the picks are the
   /// only information the crash could lose.
-  type Cmd =
-      JArrive({ deps: Set[int], prog: List[Stage], project: int, wrapUp: WrapUp })
-    | JRelease(int)
-    | JRevoke(int)
-    | JDispatch(int)
-    | JTaskDone({ ticket: int, tid: int, verdict: Verdict })
-    | JWorkReduce(int)
-    | JEvalReduce(int)
-    | JDequeue({ ticket: int, moved: bool })
-    | JGateResolve({ ticket: int, out: WrapUpOutcome })
-    | JCompleteDuplicate(int)
-    | JRevalFail(int)
-    | JOpRetry(int)
+  type DecisionEvent =
+      Arrive({ deps: Set[int], prog: List[Stage], project: int, wrapUp: WrapUp })
+    | Release(int)
+    | Revoke(int)
+    | Dispatch(int)
+    | TaskDone({ ticket: int, tid: int, verdict: Verdict })
+    | WorkReduce(int)
+    | EvalReduce(int)
+    | Dequeue({ ticket: int, moved: bool })
+    | GateResolve({ ticket: int, out: WrapUpOutcome })
+    | CompleteDuplicate(int)
+    | RevalFail(int)
+    | OpRetry(int)
 
   /// One journal row: monotone dense seq (entry i carries seq i+1 —
   /// journalLegal checks it), the decision event, and the StepRecord the
   /// decision produced when first decided (the executor's emission
   /// payload; golden-trace shaped, standing rule 4). rec is derivable
-  /// from the cmd-replay — journalLegal proves exactly that — so an
+  /// from the event-replay — journalLegal proves exactly that — so an
   /// implementation may store either; the model stores both to make the
   /// consistency a checked theorem instead of a storage convention.
-  type Entry = { seq: int, cmd: Cmd, rec: StepRecord }
+  type Entry = { seq: int, event: DecisionEvent, rec: StepRecord }
 
   /// The journal's base state: the machine's init fleet — empty (domain
-  /// init: tickets' = Map()). Replay starts here; entry 1's cmd must be
+  /// init: tickets' = Map()). Replay starts here; entry 1's event must be
   /// enabled here (an arrive — nothing else is enabled on an empty
   /// fleet, which journalLegal then enforces for free).
   pure val genesis: Core = { tickets: Map() }
@@ -326,19 +326,19 @@ module chuggy_refinement {
   /// Total dispatch onto the domain's pure deciders — THE actor's decide
   /// step, and THE replay step: both sides of theorem 3 are this one
   /// function, so they cannot drift.
-  pure def execCmd(c: Core, cmd: Cmd): Decision = match cmd {
-    | JArrive(a) => decideArrive(c, a.deps, a.prog, a.project, a.wrapUp)
-    | JRelease(j) => decideRelease(c, j)
-    | JRevoke(j) => decideRevoke(c, j)
-    | JDispatch(j) => decideDispatch(c, j)
-    | JTaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict)
-    | JWorkReduce(j) => decideWorkReduce(c, j)
-    | JEvalReduce(j) => decideEvalStageReduce(c, j)
-    | JDequeue(a) => decideDequeue(c, a.ticket, a.moved)
-    | JGateResolve(a) => decideWrapUpResolve(c, a.ticket, a.out, true)
-    | JCompleteDuplicate(j) => decideCompleteDuplicate(c, j)
-    | JRevalFail(j) => decideRevalFail(c, j)
-    | JOpRetry(j) => decideOpRetry(c, j)
+  pure def execDecisionEvent(c: Core, event: DecisionEvent): Decision = match event {
+    | Arrive(a) => decideArrive(c, a.deps, a.prog, a.project, a.wrapUp)
+    | Release(j) => decideRelease(c, j)
+    | Revoke(j) => decideRevoke(c, j)
+    | Dispatch(j) => decideDispatch(c, j)
+    | TaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict)
+    | WorkReduce(j) => decideWorkReduce(c, j)
+    | EvalReduce(j) => decideEvalStageReduce(c, j)
+    | Dequeue(a) => decideDequeue(c, a.ticket, a.moved)
+    | GateResolve(a) => decideWrapUpResolve(c, a.ticket, a.out, true)
+    | CompleteDuplicate(j) => decideCompleteDuplicate(c, j)
+    | RevalFail(j) => decideRevalFail(c, j)
+    | OpRetry(j) => decideOpRetry(c, j)
   }
 
   /// The decision's enablement at an explicit Core — per constructor,
@@ -348,38 +348,38 @@ module chuggy_refinement {
   /// audit rule: nothing here is a copied expression). Conjoined by
   /// journalStep (the actor cannot journal a refused decision) and
   /// re-checked by journalLegal at every replayed prefix.
-  pure def cmdEnabled(c: Core, cmd: Cmd): bool = match cmd {
-    | JArrive(a) => and {
+  pure def decisionEventEnabled(c: Core, event: DecisionEvent): bool = match event {
+    | Arrive(a) => and {
         canArriveIn(c),
         a.deps.subseteq(dependableIn(c)),
         validPrograms.contains(a.prog),
         projects.contains(a.project),
         wrapUpChoices.contains(a.wrapUp)
       }
-    | JRelease(j) => draftsIn(c).contains(j)
-    | JRevoke(j) => revocablesIn(c).contains(j)
-    | JDispatch(j) => and { readiesIn(c).contains(j), dispatchableIn(c, j) }
-    | JTaskDone(a) => and {
+    | Release(j) => draftsIn(c).contains(j)
+    | Revoke(j) => revocablesIn(c).contains(j)
+    | Dispatch(j) => and { readiesIn(c).contains(j), dispatchableIn(c, j) }
+    | TaskDone(a) => and {
         taskPhaseIn(c).contains(a.ticket),
         deliverableTaskIds(c, a.ticket).contains(a.tid)
       }
-    | JWorkReduce(j) => reducibleWorkIn(c).contains(j)
-    | JEvalReduce(j) => reducibleEvalIn(c).contains(j)
-    | JDequeue(a) => wrapUpStartablesIn(c).contains(a.ticket)
-    | JGateResolve(a) => and {
+    | WorkReduce(j) => reducibleWorkIn(c).contains(j)
+    | EvalReduce(j) => reducibleEvalIn(c).contains(j)
+    | Dequeue(a) => wrapUpStartablesIn(c).contains(a.ticket)
+    | GateResolve(a) => and {
         holdingIn(c).contains(a.ticket),
         wrapUpOutcomes(true).contains(a.out)
       }
-    | JCompleteDuplicate(j) => doneIn(c).contains(j)
-    | JRevalFail(j) => readiesIn(c).contains(j)
-    | JOpRetry(j) => retryablesIn(c).contains(j)
+    | CompleteDuplicate(j) => doneIn(c).contains(j)
+    | RevalFail(j) => readiesIn(c).contains(j)
+    | OpRetry(j) => retryablesIn(c).contains(j)
   }
 
   /// RECOVERY: replay the journal into a fresh in-memory state.
-  /// Deterministic by purity (execCmd is a pure function; the fold has
+  /// Deterministic by purity (execDecisionEvent is a pure function; the fold has
   /// one result) — theorem 3's mechanism.
   pure def replayCore(jl: List[Entry]): Core =
-    jl.foldl(genesis, (c, e) => execCmd(c, e.cmd).post)
+    jl.foldl(genesis, (c, e) => execDecisionEvent(c, e.event).post)
 
   /// THEOREM 1's checker: the journaled history is a legal domain trace.
   /// One fold, three checks per entry at the replayed prefix state —
@@ -392,10 +392,10 @@ module chuggy_refinement {
   /// on).
   pure def journalLegalOn(jl: List[Entry]): bool =
     jl.foldl({ ok: true, st: genesis, n: 0 }, (acc, e) =>
-      if (not(acc.ok) or e.seq != acc.n + 1 or not(cmdEnabled(acc.st, e.cmd)))
+      if (not(acc.ok) or e.seq != acc.n + 1 or not(decisionEventEnabled(acc.st, e.event)))
         { ok: false, st: acc.st, n: acc.n + 1 }
       else
-        val d = execCmd(acc.st, e.cmd)
+        val d = execDecisionEvent(acc.st, e.event)
         { ok: d.rec == e.rec, st: d.post, n: acc.n + 1 })
     .ok
 
@@ -472,20 +472,20 @@ module chuggy_refinement {
 
   /// THE ACTOR'S STEP: decide + journal, atomically (the decide<->journal
   /// seam is unobservable — header). The decision is the domain decider
-  /// at the named picks (execCmd), refused unless enabled (cmdEnabled —
+  /// at the named picks (execDecisionEvent), refused unless enabled (decisionEventEnabled —
   /// so the machine structurally cannot journal an illegal decision);
   /// `apply` installs the post-state in memory and records the step (a
   /// REAL domain step: ghosts snapshot), and the entry appends with the
   /// next dense seq. No emission here: the executor cursor lags
   /// (journal-then-effect). Doubles as the deterministic witness driver
-  /// (tests pass explicit cmds; the actor* actions below are the same
+  /// (tests pass explicit events; the actor* actions below are the same
   /// step with the picks drawn nondet).
-  action journalStep(cmd: Cmd): bool =
-    val d = execCmd(core, cmd)
+  action journalStep(event: DecisionEvent): bool =
+    val d = execDecisionEvent(core, event)
     all {
-      cmdEnabled(core, cmd),
+      decisionEventEnabled(core, event),
       apply(d),
-      journal' = journal.append({ seq: journal.length() + 1, cmd: cmd, rec: d.rec }),
+      journal' = journal.append({ seq: journal.length() + 1, event: event, rec: d.rec }),
       applied' = applied,
       worldEffects' = worldEffects,
       orphans' = orphans,
@@ -545,10 +545,10 @@ module chuggy_refinement {
   /// equal that replay, do not move). Every domain invariant keeps
   /// holding across this step — the domain machine is BLIND to the
   /// hazard, which is the whole reason this layer exists.
-  action effectCrash(cmd: Cmd): bool =
-    val d = execCmd(core, cmd)
+  action effectCrash(event: DecisionEvent): bool =
+    val d = execDecisionEvent(core, event)
     all {
-      cmdEnabled(core, cmd),
+      decisionEventEnabled(core, event),
       installCore(replayCore(journal), lastStep),
       journal' = journal,
       applied' = applied,
@@ -573,67 +573,67 @@ module chuggy_refinement {
     nondet prog = validPrograms.oneOf()
     nondet project_ = projects.oneOf()
     nondet wrapUp_ = wrapUpChoices.oneOf()
-    journalStep(JArrive({ deps: deps_, prog: prog, project: project_,
+    journalStep(Arrive({ deps: deps_, prog: prog, project: project_,
       wrapUp: wrapUp_ }))
   }
   action actorRelease = all {
     draftTickets.size() > 0,
     nondet j = draftTickets.oneOf()
-    journalStep(JRelease(j))
+    journalStep(Release(j))
   }
   action actorRevoke = all {
     revocableTickets.size() > 0,
     nondet j = revocableTickets.oneOf()
-    journalStep(JRevoke(j))
+    journalStep(Revoke(j))
   }
   action actorDispatch = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
-    journalStep(JDispatch(j))
+    journalStep(Dispatch(j))
   }
   action actorTaskDone = all {
     taskPhaseTickets.size() > 0,
     nondet j = taskPhaseTickets.oneOf()
     nondet tid = deliverableTaskIds(core, j).oneOf()
     nondet v = Set(VPass, VFail).oneOf()
-    journalStep(JTaskDone({ ticket: j, tid: tid, verdict: v }))
+    journalStep(TaskDone({ ticket: j, tid: tid, verdict: v }))
   }
   action actorWorkReduce = all {
     reducibleWork.size() > 0,
     nondet j = reducibleWork.oneOf()
-    journalStep(JWorkReduce(j))
+    journalStep(WorkReduce(j))
   }
   action actorEvalReduce = all {
     reducibleEval.size() > 0,
     nondet j = reducibleEval.oneOf()
-    journalStep(JEvalReduce(j))
+    journalStep(EvalReduce(j))
   }
   action actorGateEnter = all {
     wrapUpStartable.size() > 0,
     nondet j = wrapUpStartable.oneOf()
     nondet moved = Set(true, false).oneOf()
-    journalStep(JDequeue({ ticket: j, moved: moved }))
+    journalStep(Dequeue({ ticket: j, moved: moved }))
   }
   action actorGateResolve = all {
     holdingTickets.size() > 0,
     nondet j = holdingTickets.oneOf()
     nondet out = wrapUpOutcomes(true).oneOf()
-    journalStep(JGateResolve({ ticket: j, out: out }))
+    journalStep(GateResolve({ ticket: j, out: out }))
   }
   action actorCompleteDuplicate = all {
     doneTickets.size() > 0,
     nondet j = doneTickets.oneOf()
-    journalStep(JCompleteDuplicate(j))
+    journalStep(CompleteDuplicate(j))
   }
   action actorRevalFail = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
-    journalStep(JRevalFail(j))
+    journalStep(RevalFail(j))
   }
   action actorOpRetry = all {
     retryableEscalated.size() > 0,
     nondet j = retryableEscalated.oneOf()
-    journalStep(JOpRetry(j))
+    journalStep(OpRetry(j))
   }
 
   // --- The hazard roster (rstepHazard only): the effect-first seam on ------
@@ -649,24 +649,24 @@ module chuggy_refinement {
   action hazardDispatch = all {
     readyTickets.size() > 0,
     nondet j = readyTickets.oneOf()
-    effectCrash(JDispatch(j))
+    effectCrash(Dispatch(j))
   }
   action hazardEvalReduce = all {
     reducibleEval.size() > 0,
     nondet j = reducibleEval.oneOf()
-    effectCrash(JEvalReduce(j))
+    effectCrash(EvalReduce(j))
   }
   action hazardGateEnter = all {
     wrapUpStartable.size() > 0,
     nondet j = wrapUpStartable.oneOf()
     nondet moved = Set(true, false).oneOf()
-    effectCrash(JDequeue({ ticket: j, moved: moved }))
+    effectCrash(Dequeue({ ticket: j, moved: moved }))
   }
   action hazardGateResolve = all {
     holdingTickets.size() > 0,
     nondet j = holdingTickets.oneOf()
     nondet out = wrapUpOutcomes(true).oneOf()
-    effectCrash(JGateResolve({ ticket: j, out: out }))
+    effectCrash(GateResolve({ ticket: j, out: out }))
   }
 
   /// THE DISCIPLINED MACHINE (journal-then-effect): decisions journal

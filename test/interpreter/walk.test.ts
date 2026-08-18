@@ -20,17 +20,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  jArrive,
-  jCompleteDuplicate,
-  jDequeue,
-  jDispatch,
-  jEvalReduce,
-  jGateResolve,
-  jRelease,
-  jTaskDone,
-  jWorkReduce,
-  type Cmd,
-} from "../../src/actor/command.ts";
+  arriveEvent,
+  completeDuplicateEvent,
+  dequeueEvent,
+  dispatchEvent,
+  evalReduceEvent,
+  gateResolveEvent,
+  releaseEvent,
+  taskDoneEvent,
+  workReduceEvent,
+  type DecisionEvent,
+} from "../../src/actor/decisionEvent.ts";
 import { coreEquals } from "../../src/actor/equality.ts";
 import {
   actorInit,
@@ -70,7 +70,7 @@ import {
 const config = refinementInstance;
 
 /** The arrival every run here begins with: no deps, one stage, a lease on the one project. */
-const arrival: Cmd = jArrive(
+const arrival: DecisionEvent = arriveEvent(
   depsOf(),
   flatProgram,
   asProjectId(1),
@@ -81,10 +81,10 @@ const arrival: Cmd = jArrive(
 async function step(
   wired: Wiring,
   state: ActorState,
-  cmd: Cmd,
+  event: DecisionEvent,
   label: string,
 ): Promise<ActorState> {
-  const journaled = await decide(wired.executor, state, cmd);
+  const journaled = await decide(wired.executor, state, event);
   assert.equal(journaled.view.rec.label, label);
   assertStep(config, journaled, `${label} (journaled)`);
   const drained = await drain(wired.executor, journaled);
@@ -96,27 +96,37 @@ async function step(
 /** Arrival through dispatch: the prefix every run below shares. */
 async function walkToWork(wired: Wiring): Promise<ActorState> {
   let state = await step(wired, actorInit(), arrival, "ticket-arrived");
-  state = await step(wired, state, jRelease(id(1)), "ticket-released");
-  return step(wired, state, jDispatch(id(1)), "dispatch");
+  state = await step(wired, state, releaseEvent(id(1)), "ticket-released");
+  return step(wired, state, dispatchEvent(id(1)), "dispatch");
 }
 
 /** The whole cycle, with the fabric delivering the work task's completion twice. */
 async function walkToCompletion(wired: Wiring): Promise<ActorState> {
   let state = await walkToWork(wired);
-  const first = jTaskDone(id(1), asTaskId(1), "VPass");
+  const first = taskDoneEvent(id(1), asTaskId(1), "VPass");
   state = await step(wired, state, first, "task-done");
   state = await step(wired, state, first, "task-done-duplicate");
-  state = await step(wired, state, jWorkReduce(id(1)), "work-passed");
+  state = await step(wired, state, workReduceEvent(id(1)), "work-passed");
   state = await step(
     wired,
     state,
-    jTaskDone(id(1), asTaskId(2), "VPass"),
+    taskDoneEvent(id(1), asTaskId(2), "VPass"),
     "task-done",
   );
-  state = await step(wired, state, jEvalReduce(id(1)), "eval-passed");
-  state = await step(wired, state, jDequeue(id(1), true), "wrapup-started");
-  state = await step(wired, state, jGateResolve(id(1), "WOk"), "ticket-done");
-  return step(wired, state, jCompleteDuplicate(id(1)), "complete-duplicate");
+  state = await step(wired, state, evalReduceEvent(id(1)), "eval-passed");
+  state = await step(wired, state, dequeueEvent(id(1), true), "wrapup-started");
+  state = await step(
+    wired,
+    state,
+    gateResolveEvent(id(1), "WOk"),
+    "ticket-done",
+  );
+  return step(
+    wired,
+    state,
+    completeDuplicateEvent(id(1)),
+    "complete-duplicate",
+  );
 }
 
 test("one ticket reaches completion, and the world was told once for each decision that asked", async () => {
@@ -218,7 +228,7 @@ test("an entry the store no longer holds emits nothing, whatever memory carries"
 test("a store journal of the right length but the wrong entries emits nothing either", async () => {
   const wired = wiring(config);
   let state = await step(wired, actorInit(), arrival, "ticket-arrived");
-  state = await decide(wired.executor, state, jRelease(id(1)));
+  state = await decide(wired.executor, state, releaseEvent(id(1)));
   const before = reading(wired);
 
   /** A legal journal of the same length that memory never took: two arrivals where memory released. */
@@ -262,7 +272,7 @@ test("a decision the store refuses reaches neither the world nor a state any cal
 test("a duplicate task completion is absorbed, and the first delivery is not", async () => {
   const wired = wiring(config);
   let state = await walkToWork(wired);
-  const delivery = jTaskDone(id(1), asTaskId(1), "VPass");
+  const delivery = taskDoneEvent(id(1), asTaskId(1), "VPass");
 
   const beforeFirst = memoryCore(state);
   state = await step(wired, state, delivery, "task-done");

@@ -15,15 +15,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  jArrive,
-  jCompleteDuplicate,
-  jDequeue,
-  jDispatch,
-  jEvalReduce,
-  jRelease,
-  jTaskDone,
-  jWorkReduce,
-} from "../../src/actor/command.ts";
+  arriveEvent,
+  completeDuplicateEvent,
+  dequeueEvent,
+  dispatchEvent,
+  evalReduceEvent,
+  releaseEvent,
+  taskDoneEvent,
+  workReduceEvent,
+} from "../../src/actor/decisionEvent.ts";
 import {
   actorInit,
   crashRecoverTo,
@@ -58,7 +58,7 @@ function phaseDispatchChargeSurvives(): ActorState {
   let state = journalStep(
     config,
     actorInit(),
-    jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
+    arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
   );
   assert.equal(state.journal.length, 1);
   assertStep(config, state, "arrive (journaled)");
@@ -70,8 +70,8 @@ function phaseDispatchChargeSurvives(): ActorState {
   state = emitNext(state);
   assert.equal(state.applied, 1);
   assertStep(config, state, "arrive (emitted)");
-  state = stepEmit(config, state, jRelease(id(1)), "ticket-released");
-  state = journalStep(config, state, jDispatch(id(1)));
+  state = stepEmit(config, state, releaseEvent(id(1)), "ticket-released");
+  state = journalStep(config, state, dispatchEvent(id(1)));
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
   assert.equal(journalSpawns(state, id(1)), 1);
   assert.equal(worldSpawns(state, id(1)), 0);
@@ -93,24 +93,24 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
     state,
-    jTaskDone(id(1), asTaskId(1), "VPass"),
+    taskDoneEvent(id(1), asTaskId(1), "VPass"),
     "task-done",
   );
   state = stepEmit(
     config,
     state,
-    jTaskDone(id(1), asTaskId(1), "VFail"),
+    taskDoneEvent(id(1), asTaskId(1), "VFail"),
     "task-done-duplicate",
   );
   assert.equal(state.journal.length, 5);
-  state = stepEmit(config, state, jWorkReduce(id(1)), "work-passed");
+  state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
   state = stepEmit(
     config,
     state,
-    jTaskDone(id(1), asTaskId(2), "VFail"),
+    taskDoneEvent(id(1), asTaskId(2), "VFail"),
     "task-done",
   );
-  state = journalStep(config, state, jEvalReduce(id(1)));
+  state = journalStep(config, state, evalReduceEvent(id(1)));
   assert.equal(state.view.rec.label, "rework-started eval_failure");
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 1);
   assert.equal(ticketAt(memoryCore(state), id(1)).reworkLeft, 0);
@@ -147,18 +147,18 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    jTaskDone(id(1), asTaskId(3), "VPass"),
+    taskDoneEvent(id(1), asTaskId(3), "VPass"),
     "task-done",
   );
-  state = stepEmit(config, state, jWorkReduce(id(1)), "work-passed");
+  state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
   state = stepEmit(
     config,
     state,
-    jTaskDone(id(1), asTaskId(4), "VPass"),
+    taskDoneEvent(id(1), asTaskId(4), "VPass"),
     "task-done",
   );
-  state = stepEmit(config, state, jEvalReduce(id(1)), "eval-passed");
-  state = journalStep(config, state, jDequeue(id(1), false));
+  state = stepEmit(config, state, evalReduceEvent(id(1)), "eval-passed");
+  state = journalStep(config, state, dequeueEvent(id(1), false));
   assert.equal(state.view.rec.label, "ticket-done");
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PDone");
   assert.equal(journalCompletions(state, id(1)), 1);
@@ -175,7 +175,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    jCompleteDuplicate(id(1)),
+    completeDuplicateEvent(id(1)),
     "complete-duplicate",
   );
   assert.equal(worldCompletions(state, id(1)), 1);
@@ -199,7 +199,7 @@ function walkLeaseFreeToCompletion(): ActorState {
   let state = journalStep(
     config,
     actorInit(),
-    jArrive(depsOf(), flatProgram, asProjectId(1), wNone),
+    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
   );
   assert.equal(ticketAt(memoryCore(state), id(1)).wrapUp.wrapUp, "WNone");
   assert.equal(state.journal.length, 1);
@@ -208,7 +208,7 @@ function walkLeaseFreeToCompletion(): ActorState {
   assert.equal(state.applied, 1);
   assertStep(config, state, "lease-free arrive (emitted)");
   state = walkFirstCycle(config, state, "VPass");
-  state = journalStep(config, state, jEvalReduce(id(1)));
+  state = journalStep(config, state, evalReduceEvent(id(1)));
   assert.equal(state.view.rec.label, "ticket-done");
   assert.deepEqual(state.view.rec.transitions, [
     { ticket: id(1), from: "PEvaluating", to: "PDone" },

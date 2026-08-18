@@ -107,7 +107,7 @@ export function dependableIn(core: Core): readonly TicketId[] {
 
 /**
  * An arrival's dependencies name distinct tickets. The model draws them from a
- * powerset and the command payload carries that set, so this is what refuses a
+ * powerset and the decision-event payload carries that set, so this is what refuses a
  * repeat where an array still carries the draw — off the wire, and in a drawn
  * trace.
  */

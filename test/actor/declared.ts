@@ -1,6 +1,6 @@
 /**
  * The rosters `model/refinement.qnt` declares, read out of the model at run
- * time: its two obligation bundles, and its `Cmd` constructor vocabulary.
+ * time: its two obligation bundles, and its `DecisionEvent` constructor vocabulary.
  *
  * It is `test/domain/declared.ts`'s mechanism pointed at the refinement
  * module: the model is the specification, so a hand-maintained list of its
@@ -50,26 +50,30 @@ export function declaredRefinementObligations(root: string): readonly string[] {
 }
 
 /**
- * The constructor tags of the model's `Cmd`, in declaration order: the block
+ * The constructor tags of the model's `DecisionEvent`, in declaration order: the block
  * from the type's opener to its first blank line, one tag per variant arm.
  */
-export function declaredCmdConstructors(root: string): readonly string[] {
+export function declaredDecisionEventConstructors(
+  root: string,
+): readonly string[] {
   const source = refinementSource(root);
-  const start = source.indexOf("\n  type Cmd =");
+  const start = source.indexOf("\n  type DecisionEvent =");
   if (start < 0) {
-    throw new Error("declared: model/refinement.qnt declares no Cmd type");
+    throw new Error(
+      "declared: model/refinement.qnt declares no DecisionEvent type",
+    );
   }
   const end = source.indexOf("\n\n", start);
   const block = source.slice(start, end < 0 ? source.length : end);
   const tags: string[] = [];
   for (const line of block.split("\n")) {
-    const arm = /^\s*\|?\s*(J[A-Za-z]*)\(/.exec(line);
+    const arm = /^\s*\|?\s*([A-Z][A-Za-z]*)\(/.exec(line);
     const tag = arm?.[1];
     if (tag !== undefined) tags.push(tag);
   }
   if (tags.length === 0) {
     throw new Error(
-      "declared: model/refinement.qnt's Cmd holds no constructor this reader recognizes",
+      "declared: model/refinement.qnt's DecisionEvent holds no constructor this reader recognizes",
     );
   }
   return tags;

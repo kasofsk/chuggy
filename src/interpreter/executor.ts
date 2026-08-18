@@ -32,7 +32,10 @@
  * promise.
  */
 
-import { execCmd, type Cmd } from "../actor/command.ts";
+import {
+  execDecisionEvent,
+  type DecisionEvent,
+} from "../actor/decisionEvent.ts";
 import { recordEquals } from "../actor/equality.ts";
 import { genesis, journalLegalOn, type Entry } from "../actor/journal.ts";
 import { emitNext, journalStep, type ActorState } from "../actor/state.ts";
@@ -68,7 +71,7 @@ export function drainPlan(
   const plan: DrainStep[] = [];
   let replayed = genesis;
   for (const [index, entry] of journal.entries()) {
-    replayed = execCmd(config, replayed, entry.cmd).post;
+    replayed = execDecisionEvent(config, replayed, entry.event).post;
     if (index < applied) continue;
     for (const planned of emissionsOf(entry, replayed)) {
       plan.push({ step: "Emit", planned });
@@ -85,7 +88,7 @@ function executorReplayView(
 ): StepView {
   let view: StepView = { pre: genesis, rec: initRecord, post: genesis };
   for (const entry of journal) {
-    const decision = execCmd(config, view.post, entry.cmd);
+    const decision = execDecisionEvent(config, view.post, entry.event);
     view = { pre: view.post, rec: decision.rec, post: decision.post };
   }
   return view;
@@ -95,8 +98,8 @@ function executorReplayView(
  * Whether the store's journal is the one this actor holds, entry for entry. The
  * record is the grain because the record is what gets emitted, `journalLegalOn`
  * has already tied each one to a decision this machine would take at that
- * prefix, and the replay the schedule is built from folds the stored `cmd`s
- * rather than memory's, so a `cmd` the two disagreed about reaches no port.
+ * prefix, and the replay the schedule is built from folds the stored `event`s
+ * rather than memory's, so a `event` the two disagreed about reaches no port.
  */
 function executorAgrees(
   stored: readonly Entry[],
@@ -141,9 +144,9 @@ async function executorReadJournal(
 export async function decide(
   executor: Executor,
   state: ActorState,
-  cmd: Cmd,
+  event: DecisionEvent,
 ): Promise<ActorState> {
-  const journaled = journalStep(executor.config, state, cmd);
+  const journaled = journalStep(executor.config, state, event);
   const entry = journaled.journal.at(-1);
   if (entry === undefined) {
     throw new Error("decide: the journaled state carries no entry to append");

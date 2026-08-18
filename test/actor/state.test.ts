@@ -8,7 +8,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { execCmd, jArrive, jRelease } from "../../src/actor/command.ts";
+import {
+  execDecisionEvent,
+  arriveEvent,
+  releaseEvent,
+} from "../../src/actor/decisionEvent.ts";
 import { coreEquals } from "../../src/actor/equality.ts";
 import { genesis, replayCore } from "../../src/actor/journal.ts";
 import {
@@ -26,7 +30,12 @@ import { depsOf, id } from "../domain/fixtures.ts";
 import { flatProgram, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
-const arrival = jArrive(depsOf(), flatProgram, asProjectId(1), wExclusive(1));
+const arrival = arriveEvent(
+  depsOf(),
+  flatProgram,
+  asProjectId(1),
+  wExclusive(1),
+);
 
 test("the initial state is genesis under the init record, with nothing journaled or emitted", () => {
   const state = actorInit();
@@ -42,7 +51,7 @@ test("the initial state is genesis under the init record, with nothing journaled
 test("journalStep advances the carried view and appends the next dense seq", () => {
   const before = actorInit();
   const after = journalStep(config, before, arrival);
-  const decision = execCmd(config, memoryCore(before), arrival);
+  const decision = execDecisionEvent(config, memoryCore(before), arrival);
   assert.equal(after.view.pre, memoryCore(before));
   assert.deepEqual(after.view.rec, decision.rec);
   assert.ok(coreEquals(after.view.post, decision.post));
@@ -53,8 +62,8 @@ test("journalStep advances the carried view and appends the next dense seq", () 
 
 test("journalStep refuses a decision the machine would not take", () => {
   assert.throws(
-    () => journalStep(config, actorInit(), jRelease(id(1))),
-    /journalStep: JRelease is refused/,
+    () => journalStep(config, actorInit(), releaseEvent(id(1))),
+    /journalStep: Release is refused/,
   );
 });
 
@@ -83,15 +92,19 @@ test("crashRecoverTo installs the genuine replay, carries (pre, rec), and regres
 
 test("effectCrash orphans the decision, reverts memory to the replay, and carries (pre, rec)", () => {
   const emitted = emitNext(journalStep(config, actorInit(), arrival));
-  const crashed = effectCrash(config, emitted, jRelease(id(1)));
-  const lost = execCmd(config, memoryCore(emitted), jRelease(id(1)));
+  const crashed = effectCrash(config, emitted, releaseEvent(id(1)));
+  const lost = execDecisionEvent(
+    config,
+    memoryCore(emitted),
+    releaseEvent(id(1)),
+  );
   assert.equal(crashed.view.pre, emitted.view.pre);
   assert.equal(crashed.view.rec, emitted.view.rec);
   assert.ok(coreEquals(crashed.view.post, replayCore(config, emitted.journal)));
   assert.equal(crashed.journal, emitted.journal);
   assert.deepEqual(crashed.orphans, [lost.rec]);
   assert.throws(
-    () => effectCrash(config, actorInit(), jRelease(id(1))),
-    /effectCrash: JRelease is refused/,
+    () => effectCrash(config, actorInit(), releaseEvent(id(1))),
+    /effectCrash: Release is refused/,
   );
 });

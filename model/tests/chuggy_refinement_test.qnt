@@ -28,11 +28,11 @@
 ///     refinement layer's reason to exist.
 ///
 /// DRIVER DISCIPLINE (the witness-harness rule, inherited): these runs
-/// drive chuggy_refinement's OWN actions — journalStep(cmd) is the
+/// drive chuggy_refinement's OWN actions — journalStep(event) is the
 /// machine's actor step with its nondet picks named (it conjoins
-/// cmdEnabled, the same guard the replay checker re-checks, so a
+/// decisionEventEnabled, the same guard the replay checker re-checks, so a
 /// refused pick fails the run), emitNext / crashRecoverTo(a) /
-/// effectCrash(cmd) are the executor/crash actions themselves — so
+/// effectCrash(event) are the executor/crash actions themselves — so
 /// every accepted trace is a trace of rstep (resp. rstepHazard).
 /// Nothing here copies a guard.
 ///
@@ -50,15 +50,15 @@ module chuggy_refinement_unit_test {
   // A three-decision history built BY the deciders (arrive, release,
   // dispatch), entry records taken from the decisions themselves — the
   // journal an honest actor would write.
-  pure val cmd1: Cmd = JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })
-  pure val d1: Decision = execCmd(genesis, cmd1)
-  pure val e1: Entry = { seq: 1, cmd: cmd1, rec: d1.rec }
-  pure val cmd2: Cmd = JRelease(1)
-  pure val d2: Decision = execCmd(d1.post, cmd2)
-  pure val e2: Entry = { seq: 2, cmd: cmd2, rec: d2.rec }
-  pure val cmd3: Cmd = JDispatch(1)
-  pure val d3: Decision = execCmd(d2.post, cmd3)
-  pure val e3: Entry = { seq: 3, cmd: cmd3, rec: d3.rec }
+  pure val event1: DecisionEvent = Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })
+  pure val d1: Decision = execDecisionEvent(genesis, event1)
+  pure val e1: Entry = { seq: 1, event: event1, rec: d1.rec }
+  pure val event2: DecisionEvent = Release(1)
+  pure val d2: Decision = execDecisionEvent(d1.post, event2)
+  pure val e2: Entry = { seq: 2, event: event2, rec: d2.rec }
+  pure val event3: DecisionEvent = Dispatch(1)
+  pure val d3: Decision = execDecisionEvent(d2.post, event3)
+  pure val e3: Entry = { seq: 3, event: event3, rec: d3.rec }
   pure val goodJ: List[Entry] = [e1, e2, e3]
 
   /// The empty journal is legal and replays to genesis (the base case
@@ -81,8 +81,8 @@ module chuggy_refinement_unit_test {
   /// n+1 entries equals stepping the n-entry replay once (the deciders
   /// are pure, so the fold and the live actor cannot disagree).
   run replayAppendAgreesTest = assert(and {
-    replayCore(goodJ) == execCmd(replayCore([e1, e2]), cmd3).post,
-    replayCore([e1, e2]) == execCmd(replayCore([e1]), cmd2).post
+    replayCore(goodJ) == execDecisionEvent(replayCore([e1, e2]), event3).post,
+    replayCore([e1, e2]) == execDecisionEvent(replayCore([e1]), event2).post
   })
 
   /// Tamper 1 — a sequence gap: the monotone dense seq order is part of
@@ -97,17 +97,17 @@ module chuggy_refinement_unit_test {
   /// Tamper 2 — a decision that was never enabled: release at genesis
   /// (no ticket exists). Enablement is re-checked at every replayed
   /// prefix with the domain's own guards — the actor cannot journal a
-  /// decision the machine would refuse — and the check is TOTAL: a cmd
+  /// decision the machine would refuse — and the check is TOTAL: a event
   /// naming a ticket the state does not hold refuses cleanly (the
   /// set-membership conjuncts guard the per-ticket lookups), so a
   /// tampered journal is rejected, never crashed on.
   run journalRefusesDisabledTest = assert(and {
-    not(cmdEnabled(genesis, cmd2)),
+    not(decisionEventEnabled(genesis, event2)),
     not(journalLegalOn([{ ...e2, seq: 1 }])),
-    not(cmdEnabled(genesis, JTaskDone({ ticket: 1, tid: 1, verdict: VPass }))),
-    not(cmdEnabled(genesis, JDispatch(1))),
-    not(cmdEnabled(genesis, JGateResolve({ ticket: 1, out: WOk }))),
-    not(cmdEnabled(genesis, JOpRetry(1)))
+    not(decisionEventEnabled(genesis, TaskDone({ ticket: 1, tid: 1, verdict: VPass }))),
+    not(decisionEventEnabled(genesis, Dispatch(1))),
+    not(decisionEventEnabled(genesis, GateResolve({ ticket: 1, out: WOk }))),
+    not(decisionEventEnabled(genesis, OpRetry(1)))
   })
 
   /// Tamper 3 — a forged record: the entry's rec must be EXACTLY what
@@ -130,14 +130,14 @@ module chuggy_refinement_unit_test {
   /// WExclusive(2) is out of universe too: the refusal is membership,
   /// not a range sniff.
   run journalRefusesOutOfUniversePayloadTest =
-    val phantom: Cmd =
-      JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(99) })
-    val ePhantom: Entry = { seq: 1, cmd: phantom, rec: execCmd(genesis, phantom).rec }
+    val phantom: DecisionEvent =
+      Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(99) })
+    val ePhantom: Entry = { seq: 1, event: phantom, rec: execDecisionEvent(genesis, phantom).rec }
     assert(and {
-      not(cmdEnabled(genesis, phantom)),
+      not(decisionEventEnabled(genesis, phantom)),
       not(journalLegalOn([ePhantom])),
-      not(cmdEnabled(genesis,
-        JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(2) })))
+      not(decisionEventEnabled(genesis,
+        Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(2) })))
     })
 
   /// The world/journal arithmetic of theorem 2, on concrete data: an
@@ -159,10 +159,10 @@ module chuggy_refinement_unit_test {
   /// inbound at-least-once composed through the journal (the header's
   /// composition argument, inbound half).
   run journalNoopRowsReplayTest =
-    val dReal = execCmd(d3.post, JTaskDone({ ticket: 1, tid: 1, verdict: VPass }))
-    val dDup = execCmd(dReal.post, JTaskDone({ ticket: 1, tid: 1, verdict: VFail }))
-    val e4: Entry = { seq: 4, cmd: JTaskDone({ ticket: 1, tid: 1, verdict: VPass }), rec: dReal.rec }
-    val e5: Entry = { seq: 5, cmd: JTaskDone({ ticket: 1, tid: 1, verdict: VFail }), rec: dDup.rec }
+    val dReal = execDecisionEvent(d3.post, TaskDone({ ticket: 1, tid: 1, verdict: VPass }))
+    val dDup = execDecisionEvent(dReal.post, TaskDone({ ticket: 1, tid: 1, verdict: VFail }))
+    val e4: Entry = { seq: 4, event: TaskDone({ ticket: 1, tid: 1, verdict: VPass }), rec: dReal.rec }
+    val e5: Entry = { seq: 5, event: TaskDone({ ticket: 1, tid: 1, verdict: VFail }), rec: dDup.rec }
     assert(and {
       dDup.rec.label == "task-done-duplicate",
       dDup.post == dReal.post,
@@ -194,8 +194,8 @@ module chuggy_refinement_witness_test {
   /// pair inside an action nests locally instead of lengthening the
   /// spine). Steps that crash, absorb, or pin counts stay unpacked in
   /// the run.
-  action stepEmit(cmd: Cmd, lbl: str): bool =
-    journalStep(cmd)
+  action stepEmit(event: DecisionEvent, lbl: str): bool =
+    journalStep(event)
       .expect(and { obs.label == lbl, allDomainInvariants, refinementInvariants })
       .then(emitNext)
       .expect(and { allDomainInvariants, refinementInvariants })
@@ -203,7 +203,7 @@ module chuggy_refinement_witness_test {
   run crashRecoverContinueDeterministicTest =
     rinit
       // The Draft arrives and is journaled (entry 1)...
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
+      .then(journalStep(Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
       .expect(and { journal.length() == 1, allDomainInvariants, refinementInvariants })
       // ...and the actor dies BEFORE emitting it. Recovery replays: the
       // Draft is in memory again — the decision was durable the instant
@@ -217,10 +217,10 @@ module chuggy_refinement_witness_test {
       })
       .then(emitNext)
       .expect(and { applied == 1, allDomainInvariants, refinementInvariants })
-      .then(stepEmit(JRelease(1), "ticket-released"))
+      .then(stepEmit(Release(1), "ticket-released"))
       // The dispatch charges one gas and journals its Job spawn
       // (entry 3) — nothing has reached the world yet.
-      .then(journalStep(JDispatch(1)))
+      .then(journalStep(Dispatch(1)))
       .expect(and {
         memCore.tickets.get(1).gasLeft == 2,
         journalSpawns(1) == 1,
@@ -247,14 +247,14 @@ module chuggy_refinement_witness_test {
       // The work task resolves; its completion re-delivers with a
       // different verdict (inbound at-least-once) and the actor
       // journals the ABSORPTION — a no-op row (entry 5).
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 1, verdict: VFail }), "task-done-duplicate"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: VFail }), "task-done-duplicate"))
       .expect(and { journal.length() == 5, allDomainInvariants, refinementInvariants })
       // Work passes; the eval task (id 2) fails; THE REWORK charges
       // 1 rework + 1 gas and spawns the new cycle's work set (entry 8).
-      .then(stepEmit(JWorkReduce(1), "work-passed"))
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 2, verdict: VFail }), "task-done"))
-      .then(journalStep(JEvalReduce(1)))
+      .then(stepEmit(WorkReduce(1), "work-passed"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 2, verdict: VFail }), "task-done"))
+      .then(journalStep(EvalReduce(1)))
       .expect(and {
         obs.label == "rework-started eval_failure",
         memCore.tickets.get(1).gasLeft == 1,
@@ -301,13 +301,13 @@ module chuggy_refinement_witness_test {
       })
       // The rework cycle passes work and eval (the failed evaluator
       // respawns — id 4), and the ticket enqueues for wrap-up.
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 3, verdict: VPass }), "task-done"))
-      .then(stepEmit(JWorkReduce(1), "work-passed"))
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 4, verdict: VPass }), "task-done"))
-      .then(stepEmit(JEvalReduce(1), "eval-passed"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 3, verdict: VPass }), "task-done"))
+      .then(stepEmit(WorkReduce(1), "work-passed"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 4, verdict: VPass }), "task-done"))
+      .then(stepEmit(EvalReduce(1), "eval-passed"))
       // The valid-artifact dequeue completes the ticket (entry 13, WOk) —
       // journaled, not yet emitted: the merge has NOT happened yet.
-      .then(journalStep(JDequeue({ ticket: 1, moved: false })))
+      .then(journalStep(Dequeue({ ticket: 1, moved: false })))
       .expect(and {
         obs.label == "ticket-done",
         memCore.tickets.get(1).phase == PDone,
@@ -333,7 +333,7 @@ module chuggy_refinement_witness_test {
       // A stale completion confirmation re-delivers; the domain absorbs it
       // and the actor journals the no-op (entry 14) — the world's
       // completion count does not move.
-      .then(stepEmit(JCompleteDuplicate(1), "complete-duplicate"))
+      .then(stepEmit(CompleteDuplicate(1), "complete-duplicate"))
       .expect(and { worldCompletions(1) == 1, allDomainInvariants, refinementInvariants })
       // Final full-loss recovery: replay of the complete journal
       // reconstructs the settled fleet exactly — the actor can die at
@@ -360,10 +360,10 @@ module chuggy_refinement_witness_test {
   /// The crash sits at the COMPLETION seam because that is where this
   /// route differs from the gated one: the completion decision rides an
   /// eval reduction rather than a dequeue, so recovery has to rebuild a
-  /// Done ticket from a journal whose last entry is JEvalReduce.
+  /// Done ticket from a journal whose last entry is EvalReduce.
   run leaseFreeArrivalRecoversAndCompletesDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WNone })))
+      .then(journalStep(Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WNone })))
       .expect(and {
         memCore.tickets.get(1).wrapUp == WNone,
         journal.length() == 1,
@@ -371,15 +371,15 @@ module chuggy_refinement_witness_test {
       })
       .then(emitNext)
       .expect(and { applied == 1, allDomainInvariants, refinementInvariants })
-      .then(stepEmit(JRelease(1), "ticket-released"))
-      .then(stepEmit(JDispatch(1), "dispatch"))
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
-      .then(stepEmit(JWorkReduce(1), "work-passed"))
-      .then(stepEmit(JTaskDone({ ticket: 1, tid: 2, verdict: VPass }), "task-done"))
+      .then(stepEmit(Release(1), "ticket-released"))
+      .then(stepEmit(Dispatch(1), "dispatch"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
+      .then(stepEmit(WorkReduce(1), "work-passed"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 2, verdict: VPass }), "task-done"))
       // THE WITNESSED STEP: evaluation passing completes the ticket
       // outright, straight out of PEvaluating. Journaled, not emitted —
       // the world has been told nothing yet.
-      .then(journalStep(JEvalReduce(1)))
+      .then(journalStep(EvalReduce(1)))
       .expect(and {
         obs.label == "ticket-done",
         obs.transitions == [{ ticket: 1, from: PEvaluating, to: PDone }],
@@ -438,9 +438,9 @@ module chuggy_refinement_hazard_test {
   /// duplicate cycle), each produced by one effect-first crash.
   run hazardDoubleSpendDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
+      .then(journalStep(Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
       .then(emitNext)
-      .then(journalStep(JRelease(1)))
+      .then(journalStep(Release(1)))
       .then(emitNext)
       .expect(and { allDomainInvariants, refinementInvariants })
       // THE SEAM: the actor decides dispatch, the Job LAUNCHES in the
@@ -449,7 +449,7 @@ module chuggy_refinement_hazard_test {
       // unspent Pending ticket — while the world runs an un-keyed,
       // unpaid Job. The domain machine sees NOTHING (every invariant
       // green); only the world ledger knows.
-      .then(effectCrash(JDispatch(1)))
+      .then(effectCrash(Dispatch(1)))
       .expect(and {
         orphans.length() == 1,
         memCore.tickets.get(1).phase == PPending,
@@ -465,7 +465,7 @@ module chuggy_refinement_hazard_test {
       // The recovered actor legitimately re-decides the dispatch — one
       // journaled charge, and now TWO Jobs in the world: the
       // double-spent budget, concrete.
-      .then(journalStep(JDispatch(1)))
+      .then(journalStep(Dispatch(1)))
       .then(emitNext)
       .expect(and {
         memCore.tickets.get(1).gasLeft == 2,
@@ -476,13 +476,13 @@ module chuggy_refinement_hazard_test {
         allDomainInvariants
       })
       // Walk the (journaled) cycle to the wrap-up queue.
-      .then(journalStep(JTaskDone({ ticket: 1, tid: 1, verdict: VPass })))
+      .then(journalStep(TaskDone({ ticket: 1, tid: 1, verdict: VPass })))
       .then(emitNext)
-      .then(journalStep(JWorkReduce(1)))
+      .then(journalStep(WorkReduce(1)))
       .then(emitNext)
-      .then(journalStep(JTaskDone({ ticket: 1, tid: 2, verdict: VPass })))
+      .then(journalStep(TaskDone({ ticket: 1, tid: 2, verdict: VPass })))
       .then(emitNext)
-      .then(journalStep(JEvalReduce(1)))
+      .then(journalStep(EvalReduce(1)))
       .then(emitNext)
       .expect(and {
         memCore.tickets.get(1).phase == PWrapUp,
@@ -491,7 +491,7 @@ module chuggy_refinement_hazard_test {
       // THE SEAM AT THE WRAP-UP: a valid-artifact dequeue squash-merges IN THE
       // WORLD, the crash eats the journal write — the book still shows
       // the ticket enqueued, completions 0.
-      .then(effectCrash(JDequeue({ ticket: 1, moved: false })))
+      .then(effectCrash(Dequeue({ ticket: 1, moved: false })))
       .expect(and {
         orphans.length() == 2,
         worldCompletions(1) == 1,
@@ -505,7 +505,7 @@ module chuggy_refinement_hazard_test {
       // diff merges a second time — the duplicate cycle — while the
       // journal records exactly one clean completion and the domain's
       // completionExclusive stays green throughout.
-      .then(journalStep(JDequeue({ ticket: 1, moved: false })))
+      .then(journalStep(Dequeue({ ticket: 1, moved: false })))
       .then(emitNext)
       .expect(and {
         worldCompletions(1) == 2,
@@ -522,17 +522,17 @@ module chuggy_refinement_hazard_test {
   /// fan-outs in the world.
   run hazardReworkDoubleSpendDeterministicTest =
     rinit
-      .then(journalStep(JArrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
+      .then(journalStep(Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
       .then(emitNext)
-      .then(journalStep(JRelease(1)))
+      .then(journalStep(Release(1)))
       .then(emitNext)
-      .then(journalStep(JDispatch(1)))
+      .then(journalStep(Dispatch(1)))
       .then(emitNext)
-      .then(journalStep(JTaskDone({ ticket: 1, tid: 1, verdict: VPass })))
+      .then(journalStep(TaskDone({ ticket: 1, tid: 1, verdict: VPass })))
       .then(emitNext)
-      .then(journalStep(JWorkReduce(1)))
+      .then(journalStep(WorkReduce(1)))
       .then(emitNext)
-      .then(journalStep(JTaskDone({ ticket: 1, tid: 2, verdict: VFail })))
+      .then(journalStep(TaskDone({ ticket: 1, tid: 2, verdict: VFail })))
       .then(emitNext)
       .expect(and {
         memCore.tickets.get(1).gasLeft == 2,
@@ -543,7 +543,7 @@ module chuggy_refinement_hazard_test {
       // the crash loses the decision — and with it the charge. The book
       // says the rework never started (accounts untouched), the world
       // runs it anyway.
-      .then(effectCrash(JEvalReduce(1)))
+      .then(effectCrash(EvalReduce(1)))
       .expect(and {
         orphans.length() == 1,
         memCore.tickets.get(1).phase == PEvaluating,
@@ -558,7 +558,7 @@ module chuggy_refinement_hazard_test {
       })
       // The recovered actor re-decides the rework: ONE journaled charge
       // (1 rework + 1 gas), THREE Jobs' worth of spend in the world.
-      .then(journalStep(JEvalReduce(1)))
+      .then(journalStep(EvalReduce(1)))
       .then(emitNext)
       .expect(and {
         obs.label == "rework-started eval_failure",
