@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const root = process.cwd();
-const generator = join(root, "scripts/generate-model-api.mjs");
+const generator = join(root, "scripts/generate-model-api.ts");
 const quint = join(root, "node_modules/.bin/quint");
 
 function fixture(mutator: (ir: Record<string, unknown>) => void): {

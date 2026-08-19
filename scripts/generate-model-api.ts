@@ -7,17 +7,75 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format } from "prettier";
 
+/**
+ * The compiled Quint IR, at the depth this generator reads it. It is a partial
+ * shape rather than a translation of Quint's own: what is not named here is
+ * what this file does not look at, and a kind it cannot represent is refused
+ * rather than approximated.
+ */
+interface QuintRowField {
+  readonly fieldName: string;
+  readonly fieldType: QuintType;
+}
+
+interface QuintRow {
+  readonly kind: string;
+  readonly fields?: readonly QuintRowField[];
+  readonly other?: QuintRow;
+}
+
+interface QuintType {
+  readonly kind: string;
+  readonly name?: string;
+  readonly fields?: QuintRow;
+  readonly elem?: QuintType;
+  readonly arg?: QuintType;
+  readonly res?: QuintType;
+}
+
+interface QuintDeclaration {
+  readonly kind: string;
+  readonly name?: string;
+  readonly type?: QuintType;
+}
+
+interface QuintModule {
+  readonly name: string;
+  readonly declarations?: readonly QuintDeclaration[];
+}
+
+interface QuintIr {
+  readonly stage?: string;
+  readonly errors?: readonly unknown[];
+  readonly modules?: readonly QuintModule[];
+}
+
+/** A typedef the boundary can use: one that has both a name and a type. */
+type Named = QuintDeclaration & {
+  readonly name: string;
+  readonly type: QuintType;
+};
+
+/** One type on the API boundary: the Quint name, the public one, and what it is. */
+interface ApiExport {
+  readonly source: string;
+  readonly name: string;
+  type: QuintType;
+}
+
 const root = fileURLToPath(new globalThis.URL("../", import.meta.url));
-const argument = (name) => {
+const argument = (name: string): string | undefined => {
   const prefix = `--${name}=`;
   return globalThis.process.argv
     .find((value) => value.startsWith(prefix))
     ?.slice(prefix.length);
 };
-// TWO ARTIFACTS, AND THE BOUNDARY IS WHY. `domain-is-pure` forbids src/domain/
-// reaching any module outside itself, so the types the domain reads may import
-// nothing at all — including zod. They are emitted inside src/domain/, and the
-// schemas and codecs that need a runtime stay at the edge.
+/**
+ * `domain-is-pure` forbids src/domain/ reaching any module outside itself, so
+ * the types the domain reads may import nothing at all — zod included. They are
+ * emitted inside src/domain/, and the schemas and codecs that need a runtime
+ * stay at the edge.
+ */
 const outputTypes =
   argument("out-types") ?? join(root, "src/domain/generated/modelTypes.ts");
 const outputSchemas =
@@ -29,13 +87,17 @@ const irPath = join(
 );
 const quint = join(root, "node_modules/.bin/quint");
 
-// AN ARGUMENT THIS SCRIPT DOES NOT KNOW IS A REFUSAL. A caller naming an output
-// that moved would otherwise be answered about the default one, and a --check
-// that reports on a file nobody asked about reports clean for the wrong reason.
+/**
+ * An argument this script does not know is a refusal. A caller naming an output
+ * that moved would otherwise be answered about the default one, and a --check
+ * reporting on a file nobody asked about reports clean for the wrong reason.
+ */
 const known = new Set(["out-types", "out-schemas", "ir"]);
 for (const value of globalThis.process.argv.slice(2)) {
   if (value === "--check") continue;
-  const name = value.startsWith("--") ? value.slice(2).split("=")[0] : value;
+  const name = value.startsWith("--")
+    ? (value.slice(2).split("=")[0] ?? "")
+    : value;
   if (!known.has(name)) {
     globalThis.process.stderr.write(
       `generate-model-api: ${value} is not an argument this script takes\n`,
@@ -44,13 +106,16 @@ for (const value of globalThis.process.argv.slice(2)) {
   }
 }
 
-function fail(message) {
+function fail(message: string): never {
   globalThis.process.stderr.write(`generate-model-api: ${message}\n`);
   globalThis.process.exit(2);
 }
 
 rmSync(irPath, { force: true });
-let compiled = { stderr: "", stdout: "" };
+let compiled: { stderr: string; stdout: string; error?: Error } = {
+  stderr: "",
+  stdout: "",
+};
 if (!suppliedIr) {
   compiled = spawnSync(
     quint,
@@ -68,11 +133,12 @@ if (!suppliedIr) {
   if (compiled.error) fail(compiled.error.message);
 }
 
-let ir;
+let ir: QuintIr;
 try {
-  ir = JSON.parse(readFileSync(suppliedIr ?? irPath, "utf8"));
-} catch (error) {
-  fail((compiled.stderr || compiled.stdout || error.message).trim());
+  ir = JSON.parse(readFileSync(suppliedIr ?? irPath, "utf8")) as QuintIr;
+} catch (error: unknown) {
+  const said = error instanceof Error ? error.message : String(error);
+  fail((compiled.stderr || compiled.stdout || said).trim());
 } finally {
   if (!suppliedIr) rmSync(irPath, { force: true });
 }
@@ -81,67 +147,100 @@ if (ir.stage !== "compiling" || ir.errors?.length) {
   fail("Quint did not produce a clean compiling-stage IR");
 }
 
-const declarations = new Map();
+const declarations = new Map<string, QuintType>();
 for (const module of ir.modules ?? []) {
   for (const declaration of module.declarations ?? []) {
-    if (declaration.kind === "typedef") {
-      if (declarations.has(declaration.name))
-        fail(`duplicate type ${declaration.name}`);
-      declarations.set(declaration.name, declaration.type);
-    }
+    if (declaration.kind !== "typedef") continue;
+    const name = required(declaration.name, module.name, "typedef name");
+    const type = required(declaration.type, name, "typedef body");
+    if (declarations.has(name)) fail(`duplicate type ${name}`);
+    declarations.set(name, type);
   }
 }
 
-const apiModule = ir.modules?.find((module) => module.name === "chuggy_api");
+const apiModule = ir.modules?.find(
+  (module: QuintModule) => module.name === "chuggy_api",
+);
 if (!apiModule) fail("compiled IR has no chuggy_api module");
-const exports = (apiModule.declarations ?? [])
+const exports: ApiExport[] = (apiModule.declarations ?? [])
   .filter(
-    (declaration) =>
-      declaration.kind === "typedef" && declaration.name.startsWith("Api"),
+    (declaration: QuintDeclaration): declaration is Named =>
+      declaration.kind === "typedef" &&
+      declaration.name !== undefined &&
+      declaration.type !== undefined &&
+      declaration.name.startsWith("Api"),
   )
-  .map((declaration) => ({
+  .map((declaration: Named) => ({
     source: declaration.name,
     name: declaration.name.slice(3),
     type: declaration.type,
   }));
 if (exports.length === 0) fail("chuggy_api exports no Api* types");
 
-const publicName = new Map(exports.map(({ source, name }) => [source, name]));
+const publicName = new Map<string, string>(
+  exports.map(({ source, name }) => [source, name]),
+);
 for (const { name } of exports) publicName.set(name, name);
 for (const entry of exports) {
   if (
     entry.type.kind === "const" &&
-    (publicName.get(entry.type.name) ?? entry.type.name) === entry.name
+    (publicName.get(entry.type.name ?? "") ?? entry.type.name) === entry.name
   ) {
-    const target = declarations.get(entry.type.name);
-    if (!target)
-      fail(`${entry.name}: unresolved Quint alias ${entry.type.name}`);
+    const alias = required(entry.type.name, entry.name, "alias name");
+    const target = declarations.get(alias);
+    if (!target) fail(`${entry.name}: unresolved Quint alias ${alias}`);
     entry.type = target;
   }
 }
 
-function rowFields(row, owner) {
+/**
+ * A field the kind guarantees, read as a fact rather than as an assumption.
+ * Quint's IR carries `name` on a const and `arg`/`res` on a function, but the
+ * shape above cannot say which kind carries which, so the guarantee is checked
+ * where it is relied on.
+ */
+function required<Value>(
+  value: Value | undefined,
+  owner: string,
+  what: string,
+): Value {
+  if (value === undefined) {
+    fail(`${owner}: the compiled IR carries no ${what}`);
+  }
+  return value;
+}
+
+function rowFields(
+  row: QuintRow | undefined,
+  owner: string,
+): readonly QuintRowField[] {
   if (row?.kind !== "row" || row.other?.kind !== "empty") {
     fail(`${owner}: open or malformed rows are unsupported`);
   }
   return row.fields ?? [];
 }
 
-function deps(type, owner, found = new Set()) {
+function deps(
+  type: QuintType,
+  owner: string,
+  found: Set<string> = new Set<string>(),
+): Set<string> {
   switch (type.kind) {
     case "bool":
     case "int":
     case "str":
       return found;
-    case "const":
-      found.add(publicName.get(type.name) ?? type.name);
+    case "const": {
+      const named = required(type.name, owner, "type name");
+      found.add(publicName.get(named) ?? named);
       return found;
+    }
     case "list":
     case "set":
-      return deps(type.elem, owner, found);
+      return deps(required(type.elem, owner, "element type"), owner, found);
     case "fun":
-      deps(type.arg, owner, found);
-      return deps(type.res, owner, found);
+      deps(required(type.arg, owner, "domain"), owner, found);
+      return deps(required(type.res, owner, "codomain"), owner, found);
     case "rec":
     case "tup":
     case "sum":
@@ -156,10 +255,10 @@ function deps(type, owner, found = new Set()) {
 }
 
 const byName = new Map(exports.map((entry) => [entry.name, entry]));
-const ordered = [];
+const ordered: ApiExport[] = [];
 const visiting = new Set();
 const visited = new Set();
-function visit(name) {
+function visit(name: string): void {
   if (visited.has(name)) return;
   if (visiting.has(name))
     fail(`${name}: recursive public types are unsupported`);
@@ -174,14 +273,15 @@ function visit(name) {
 }
 for (const { name } of exports) visit(name);
 
-function resolve(type, owner) {
+function resolve(type: QuintType, owner: string): QuintType {
   if (type.kind !== "const") return type;
-  const target = declarations.get(type.name);
-  if (!target) fail(`${owner}: unresolved Quint type ${type.name}`);
+  const named = required(type.name, owner, "type name");
+  const target = declarations.get(named);
+  if (!target) fail(`${owner}: unresolved Quint type ${named}`);
   return target;
 }
 
-function ts(type, owner) {
+function ts(type: QuintType, owner: string): string {
   switch (type.kind) {
     case "bool":
       return "boolean";
@@ -190,17 +290,18 @@ function ts(type, owner) {
     case "str":
       return "string";
     case "const": {
-      const name = publicName.get(type.name) ?? type.name;
+      const named = required(type.name, owner, "type name");
+      const name = publicName.get(named) ?? named;
       if (!byName.has(name))
         fail(`${owner}: ${type.name} is not in the API boundary`);
       return name;
     }
     case "list":
-      return `readonly ${ts(type.elem, owner)}[]`;
+      return `readonly ${ts(required(type.elem, owner, "element type"), owner)}[]`;
     case "set":
-      return `ReadonlySet<${ts(type.elem, owner)}>`;
+      return `ReadonlySet<${ts(required(type.elem, owner, "element type"), owner)}>`;
     case "fun":
-      return `ReadonlyMap<${ts(type.arg, owner)}, ${ts(type.res, owner)}>`;
+      return `ReadonlyMap<${ts(required(type.arg, owner, "domain"), owner)}, ${ts(required(type.res, owner, "codomain"), owner)}>`;
     case "rec":
       return `{ ${rowFields(type.fields, owner)
         .map((f) => `readonly ${f.fieldName}: ${ts(f.fieldType, owner)}`)
@@ -233,7 +334,11 @@ function ts(type, owner) {
  * only in how they render an arm's payload, so that is the argument: a nullary
  * arm is its own tag either way, and a single-arm sum is not a union.
  */
-function sumSchema(type, owner, payloadSchema) {
+function sumSchema(
+  type: QuintType,
+  owner: string,
+  payloadSchema: (payload: QuintType, owner: string) => string,
+): string {
   const members = rowFields(type.fields, owner).map((field) => {
     const payload = field.fieldType;
     const unit =
@@ -242,13 +347,24 @@ function sumSchema(type, owner, payloadSchema) {
       ? `z.literal(${JSON.stringify(field.fieldName)})`
       : `z.object({ type: z.literal(${JSON.stringify(field.fieldName)}), value: ${payloadSchema(payload, owner)} }).readonly()`;
   });
-  return members.length === 1 ? members[0] : `z.union([${members.join(", ")}])`;
+  return members.length === 1
+    ? (members[0] ?? fail(`${owner}: a sum with one arm emitted nothing`))
+    : `z.union([${members.join(", ")}])`;
 }
 
-function schemaName(name) {
-  return `${name[0].toLowerCase()}${name.slice(1)}Schema`;
+function schemaName(name: string): string {
+  return `${(name[0] ?? "").toLowerCase()}${name.slice(1)}Schema`;
 }
-function schema(type, owner) {
+/**
+ * The leaf arms both schema emitters share: the scalars, and a reference to
+ * another boundary type. Only the reference differs between them, which is what
+ * `named` renders.
+ */
+function leafSchema(
+  type: QuintType,
+  owner: string,
+  named: (name: string) => string,
+): string | undefined {
   switch (type.kind) {
     case "bool":
       return "z.boolean()";
@@ -257,17 +373,27 @@ function schema(type, owner) {
     case "str":
       return "z.string()";
     case "const": {
-      const name = publicName.get(type.name) ?? type.name;
+      const alias = required(type.name, owner, "type name");
+      const name = publicName.get(alias) ?? alias;
       if (!byName.has(name))
-        fail(`${owner}: ${type.name} is not in the API boundary`);
-      return schemaName(name);
+        fail(`${owner}: ${alias} is not in the API boundary`);
+      return named(name);
     }
+    default:
+      return undefined;
+  }
+}
+
+function schema(type: QuintType, owner: string): string {
+  const leaf = leafSchema(type, owner, (name) => schemaName(name));
+  if (leaf !== undefined) return leaf;
+  switch (type.kind) {
     case "list":
-      return `z.array(${schema(type.elem, owner)}).readonly()`;
+      return `z.array(${schema(required(type.elem, owner, "element type"), owner)}).readonly()`;
     case "set":
-      return `z.set(${schema(type.elem, owner)}).readonly()`;
+      return `z.set(${schema(required(type.elem, owner, "element type"), owner)}).readonly()`;
     case "fun":
-      return `z.map(${schema(type.arg, owner)}, ${schema(type.res, owner)}).readonly()`;
+      return `z.map(${schema(required(type.arg, owner, "domain"), owner)}, ${schema(required(type.res, owner, "codomain"), owner)}).readonly()`;
     case "rec":
       return `z.object({ ${rowFields(type.fields, owner)
         .map(
@@ -288,26 +414,16 @@ function schema(type, owner) {
   }
 }
 
-function wireSchema(type, owner) {
+function wireSchema(type: QuintType, owner: string): string {
+  const leaf = leafSchema(type, owner, (name) => `${schemaName(name)}Wire`);
+  if (leaf !== undefined) return leaf;
   switch (type.kind) {
-    case "bool":
-      return "z.boolean()";
-    case "int":
-      return "z.number().int().safe()";
-    case "str":
-      return "z.string()";
-    case "const": {
-      const name = publicName.get(type.name) ?? type.name;
-      if (!byName.has(name))
-        fail(`${owner}: ${type.name} is not in the API boundary`);
-      return `${schemaName(name)}Wire`;
-    }
     case "list":
-      return `z.array(${wireSchema(type.elem, owner)}).readonly()`;
+      return `z.array(${wireSchema(required(type.elem, owner, "element type"), owner)}).readonly()`;
     case "set":
-      return `z.array(${wireSchema(type.elem, owner)}).refine(distinctJson, { message: "set contains a duplicate" }).transform((items) => new Set(items))`;
+      return `z.array(${wireSchema(required(type.elem, owner, "element type"), owner)}).refine(distinctJson, { message: "set contains a duplicate" }).transform((items) => new Set(items))`;
     case "fun":
-      return `z.array(z.tuple([${wireSchema(type.arg, owner)}, ${wireSchema(type.res, owner)}])).refine((entries) => distinctJson(entries.map(([key]) => key)), { message: "map contains a duplicate key" }).transform((entries) => new Map(entries))`;
+      return `z.array(z.tuple([${wireSchema(required(type.arg, owner, "domain"), owner)}, ${wireSchema(required(type.res, owner, "codomain"), owner)}])).refine((entries) => distinctJson(entries.map(([key]) => key)), { message: "map contains a duplicate key" }).transform((entries) => new Map(entries))`;
     case "rec":
       return `z.object({ ${rowFields(type.fields, owner)
         .map(
@@ -329,13 +445,15 @@ function wireSchema(type, owner) {
 }
 
 const banner = [
-  "/** Generated by scripts/generate-model-api.mjs from model/api.qnt.",
-  " * Do not edit by hand; run `node scripts/generate-model-api.mjs`. */",
+  "/** Generated by scripts/generate-model-api.ts from model/api.qnt.",
+  " * Do not edit by hand; run `node scripts/generate-model-api.ts`. */",
   "",
 ];
 
-// Written as a specifier rather than a constant so the two artifacts may be
-// emitted anywhere, which is what lets a suite put both in one temp directory.
+/**
+ * Written as a specifier rather than a constant so the two artifacts may be
+ * emitted anywhere, which is what lets a suite put both in one temp directory.
+ */
 const typesSpecifier = (() => {
   const path = relative(dirname(outputSchemas), outputTypes).replace(
     /\\/g,
@@ -390,15 +508,16 @@ for (const entry of ordered) {
       JSON.stringify(field.fieldName),
     );
     typeLines.push(
-      `export const ${entry.name[0].toLowerCase()}${entry.name.slice(1)}Tags = [${tags.join(", ")}] as const;`,
+      `export const ${(entry.name[0] ?? "").toLowerCase()}${entry.name.slice(1)}Tags = [${tags.join(", ")}] as const;`,
     );
   }
   typeLines.push("");
   lines.push("");
 }
-// BOTH ARTIFACTS, OR THE GATE HALF-CHECKS. A --check that reads one of them
-// reports current while the other is stale, which is the same verdict a reader
-// believes and does not check again.
+/**
+ * Both artifacts, or the gate half-checks: a --check reading one of them reports
+ * current while the other is stale.
+ */
 const artifacts = [
   {
     path: outputTypes,

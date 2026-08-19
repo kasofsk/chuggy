@@ -3,7 +3,7 @@
 **Status: PROPOSED** — implementation for issue #98.
 
 `model/api.qnt` is the explicit public data boundary of the Quint model.
-`scripts/generate-model-api.mjs` compiles it with the pinned Quint CLI and
+`scripts/generate-model-api.ts` compiles it with the pinned Quint CLI and
 generates `src/generated/model-api.ts`. Generated code supplies TypeScript
 types, Zod value schemas, JSON codecs and constructor-tag rosters. It does not
 generate deciders, actions, invariants, graph algorithms or infrastructure.
@@ -45,7 +45,7 @@ outside generated declarations.
 ## Change protocol
 
 1. Change the model and expose an intentional `Api*` declaration.
-2. Run `node scripts/generate-model-api.mjs` and review the generated diff.
+2. Run `node scripts/generate-model-api.ts` and review the generated diff.
 3. Run the API drift gate and its round-trip/exhaustiveness tests.
 4. Update handwritten adapters only where production representation deliberately
    differs; do not copy generated vocabularies into another mirror.
