@@ -10,6 +10,10 @@
  * it is a model commit first and not something an implementation may take on
  * its own.
  *
+ * They are hand-written rather than generated because the model types an
+ * effect list as `List[str]`: the vocabulary is what the deciders emit, not a
+ * declared type the API boundary can carry.
+ *
  * What follows from that is the interpreter's signature one layer out: an
  * effect names what to do and carries no subject, so no port call can be
  * formed from the effect list alone, and the subject is read off the record
@@ -18,16 +22,13 @@
 
 import { assertNever } from "./assertNever.ts";
 
-/** The eight effects, one per string the model emits. */
+/** The five effects, one per string the model emits. */
 export type Effect =
-  | "CreateDraft"
-  | "Revoke"
-  | "OpenHumanTask"
   | "SpawnWorkTasks"
   | "SpawnEvalTasks"
-  | "EnqueueWrapUp"
-  | "OpenGate"
-  | "Complete";
+  | "RunFinalizer"
+  | "OpenHumanTask"
+  | "CancelTicketWork";
 
 /**
  * Every effect, in the order this file declares them. It exists so a suite can
@@ -35,14 +36,11 @@ export type Effect =
  * added without a test goes unnoticed.
  */
 export const allEffects: readonly Effect[] = [
-  "CreateDraft",
-  "Revoke",
-  "OpenHumanTask",
   "SpawnWorkTasks",
   "SpawnEvalTasks",
-  "EnqueueWrapUp",
-  "OpenGate",
-  "Complete",
+  "RunFinalizer",
+  "OpenHumanTask",
+  "CancelTicketWork",
 ];
 
 /**
@@ -51,22 +49,16 @@ export const allEffects: readonly Effect[] = [
  */
 export function effectLabel(effect: Effect): string {
   switch (effect) {
-    case "CreateDraft":
-      return "CreateDraft";
-    case "Revoke":
-      return "Revoke";
-    case "OpenHumanTask":
-      return "OpenHumanTask";
     case "SpawnWorkTasks":
       return "SpawnWorkTasks";
     case "SpawnEvalTasks":
       return "SpawnEvalTasks";
-    case "EnqueueWrapUp":
-      return "EnqueueWrapUp";
-    case "OpenGate":
-      return "OpenGate";
-    case "Complete":
-      return "Complete";
+    case "RunFinalizer":
+      return "RunFinalizer";
+    case "OpenHumanTask":
+      return "OpenHumanTask";
+    case "CancelTicketWork":
+      return "CancelTicketWork";
     default:
       return assertNever(effect);
   }

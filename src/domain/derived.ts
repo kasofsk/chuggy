@@ -25,14 +25,15 @@
  * the day a ticket map was rebuilt from a different source.
  */
 
-import { liveTickets, ticketAt, type Core } from "./core.ts";
+import { liveTickets, ticketAt } from "./core.ts";
+import type { Core } from "./generated/modelTypes.ts";
 import { waitsOn } from "./enablement.ts";
 import type { TicketId } from "./ids.ts";
 import { hasOpenHumanTask } from "./ticket.ts";
 
 /** The walk's edge relation: the dependency edges, and only those. */
 export function visEdges(core: Core, id: TicketId): readonly TicketId[] {
-  return ticketAt(core, id).deps;
+  return [...ticketAt(core, id).deps].sort((a, b) => a - b) as TicketId[];
 }
 
 /** Whether a ticket belongs to the set being swept, given what the pass before it admitted. */
@@ -67,8 +68,8 @@ export function stuckSet(core: Core): ReadonlySet<TicketId> {
   return sweep(core, (c, id, stuck) => {
     const phase = ticketAt(c, id).phase;
     return (
-      phase === "PEscalated" ||
-      (phase === "PPending" && visEdges(c, id).some((d) => stuck.has(d)))
+      phase === "Escalated" ||
+      (phase === "Pending" && visEdges(c, id).some((d) => stuck.has(d)))
     );
   });
 }
@@ -96,25 +97,35 @@ export function canFinishSet(core: Core): ReadonlySet<TicketId> {
   return sweep(core, (c, id, finishable) => {
     const phase = ticketAt(c, id).phase;
     return (
-      phase === "PDone" ||
-      (phase !== "PRevoked" && waitsOn(c, id).every((d) => finishable.has(d)))
+      phase === "Done" ||
+      (phase !== "Revoked" &&
+        [...waitsOn(c, id)].every((d) => finishable.has(d as TicketId)))
     );
   });
 }
 
 /**
  * Tickets transitively doomed by a revocation: a revoked ticket anywhere in the
- * dependency closure means this one can never unblock. One ascending pass,
- * because deps point strictly downward.
+ * dependency closure means this one can never unblock. The pass repeats until
+ * it adds nothing, because ids are sparse and a dependency may point at a
+ * numerically larger ticket.
  */
 export function revokeDoomed(core: Core): ReadonlySet<TicketId> {
   const doomed = new Set<TicketId>();
-  for (const id of liveTickets(core)) {
-    const deps = ticketAt(core, id).deps;
-    const behind = deps.some(
-      (d) => ticketAt(core, d).phase === "PRevoked" || doomed.has(d),
-    );
-    if (behind) doomed.add(id);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const id of liveTickets(core)) {
+      const behind = [...ticketAt(core, id).deps].some(
+        (d) =>
+          ticketAt(core, d as TicketId).phase === "Revoked" ||
+          doomed.has(d as TicketId),
+      );
+      if (behind && !doomed.has(id)) {
+        doomed.add(id);
+        grew = true;
+      }
+    }
   }
   return doomed;
 }

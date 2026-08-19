@@ -13,10 +13,10 @@
 
 import { asSafeInteger } from "./ids.ts";
 import { phaseRank, rankCeiling } from "./phase.ts";
-import { reworkBudget, wrapUpBudget, type Bounds } from "./pricing.ts";
+import { finalizationBudget, reworkBudget, type Bounds } from "./pricing.ts";
 import { outstandingCount } from "./task.ts";
-import { stagesLeft, type Ticket } from "./ticket.ts";
-import type { Core } from "./core.ts";
+import { stagesLeft } from "./ticket.ts";
+import type { Core, Ticket } from "./generated/modelTypes.ts";
 import { ticketIds } from "./core.ts";
 
 /** A digit bounded by `maxDigit` takes this many values, so the next weight up is worth this much. */
@@ -55,8 +55,8 @@ export function micro(bounds: Bounds, ticket: Ticket): number {
  */
 export function ticketMeasure(bounds: Bounds, ticket: Ticket): number {
   const accounts =
-    (ticket.gasLeft * radix(wrapUpBudget(bounds.wrapUpPricing)) +
-      ticket.wrapUpLeft) *
+    (ticket.gasLeft * radix(finalizationBudget(bounds.finalizationPricing)) +
+      ticket.finalizationLeft) *
       radix(reworkBudget(bounds.reworkPolicy)) +
     ticket.reworkLeft;
   const measure = accounts * microBound(bounds) + micro(bounds, ticket);

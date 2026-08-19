@@ -7,17 +7,27 @@
  * `model/measure.qnt` gives for passing `Bounds` explicitly: the deciders stay
  * pure functions usable at any configuration, needing no ambient state and no
  * module-level instantiation ceremony.
+ *
+ * The universes below are what a release draws from, which is why an
+ * ill-formed ticket cannot enter a reachable state and no decider defends
+ * against one mid-flight.
  */
 
-import { asProjectId, type ProjectId } from "./ids.ts";
-import { wExclusive, wNone, type WrapUp } from "./wrapUp.ts";
 import type {
-  Bounds,
+  FinalizationPricing,
+  Finalizer,
   ReworkPolicy,
   RetryPricing,
-  WrapUpPricing,
+  Stage,
+} from "./generated/modelTypes.ts";
+import { asTicketId, type TicketId } from "./ids.ts";
+import {
+  budgeted,
+  finalizationBudget,
+  reworkBudget,
+  reworkBudgetOf,
+  type Bounds,
 } from "./pricing.ts";
-import type { Combinator, Stage } from "./program.ts";
 
 /** One deployment's constants. */
 export interface Config {
@@ -25,10 +35,8 @@ export interface Config {
   readonly nTasks: number;
   readonly reworkPolicy: ReworkPolicy;
   readonly gas: number;
-  readonly wrapUpPricing: WrapUpPricing;
-  readonly opRetryPricing: RetryPricing;
+  readonly finalizationPricing: FinalizationPricing;
   readonly maxStages: number;
-  readonly nProjects: number;
 }
 
 /** What the measure needs, read off the configuration it is measuring. */
@@ -37,34 +45,64 @@ export function boundsOf(config: Config): Bounds {
     reworkPolicy: config.reworkPolicy,
     nTasks: config.nTasks,
     maxStages: config.maxStages,
-    wrapUpPricing: config.wrapUpPricing,
+    finalizationPricing: config.finalizationPricing,
   };
 }
 
-/** The project universe an arrival draws its target from. */
-export function projects(config: Config): readonly ProjectId[] {
-  const universe: ProjectId[] = [];
-  for (let p = 1; p <= config.nProjects; p++) universe.push(asProjectId(p));
+/**
+ * The ids a release may claim, deliberately wider than the fleet bound: the
+ * gap is what puts sparse and numerically reversed dependency edges into
+ * reachable states rather than leaving them untested.
+ */
+export function ticketIdUniverse(config: Config): readonly TicketId[] {
+  const universe: TicketId[] = [];
+  for (let j = 1; j <= config.nTickets * 2; j++) universe.push(asTicketId(j));
   return universe;
 }
 
-/**
- * Every authorable wrap-up kind. An arrival draws from exactly this set, so a
- * lease on a resource outside the universe cannot enter a reachable state —
- * the structural refusal `wrapUpWellFormed` then makes durable.
- */
-export function wrapUpChoices(config: Config): readonly WrapUp[] {
-  const choices: WrapUp[] = [wNone];
-  for (let r = 1; r <= config.nProjects; r++) choices.push(wExclusive(r));
+/** Both finish kinds. A ticket authored with no finalizer completes out of evaluation. */
+export const finalizerChoices: readonly Finalizer[] = [
+  "NoFinalizer",
+  "ManagedFinalizer",
+];
+
+/** The work-set widths a release may author. */
+export function workFanoutChoices(config: Config): readonly number[] {
+  const choices: number[] = [];
+  for (let n = 1; n <= config.nTasks; n++) choices.push(n);
   return choices;
 }
 
+/** Every rework grant up to the instance's, so a ticket may be authored poorer than its fleet. */
+export function reworkPolicyChoices(config: Config): readonly ReworkPolicy[] {
+  const choices: ReworkPolicy[] = [];
+  for (let n = 0; n <= reworkBudget(config.reworkPolicy); n++)
+    choices.push(reworkBudgetOf(n));
+  return choices;
+}
+
+/** Every finalization pricing up to the instance's, plus the unbudgeted branch. */
+export function finalizationPricingChoices(
+  config: Config,
+): readonly FinalizationPricing[] {
+  const choices: FinalizationPricing[] = ["DeadlineOnly"];
+  for (let n = 0; n <= finalizationBudget(config.finalizationPricing); n++)
+    choices.push(budgeted(n));
+  return choices;
+}
+
+/** Both resume pricings. `RetryFree` reproduces a known livelock by configuration. */
+export const resumePricingChoices: readonly RetryPricing[] = [
+  "RetryCharged",
+  "RetryFree",
+];
+
 /** The stage vocabulary an author may draw from: any fan-out in range, either combinator. */
 export function stageChoices(config: Config): readonly Stage[] {
-  const combinators: readonly Combinator[] = ["CUnanimousPass", "CAnyPass"];
   const choices: Stage[] = [];
   for (let fanout = 1; fanout <= config.nTasks; fanout++) {
-    for (const combinator of combinators) choices.push({ fanout, combinator });
+    choices.push({ fanout, combinator: "UnanimousPass" });
+    choices.push({ fanout, combinator: "AnyPass" });
   }
   return choices;
 }
@@ -75,14 +113,12 @@ export function stageChoices(config: Config): readonly Stage[] {
  * ticket and a constant would be the machinery eval-is-data rules out.
  */
 export function defaultProgram(config: Config): readonly Stage[] {
-  return [{ fanout: config.nTasks, combinator: "CUnanimousPass" }];
+  return [{ fanout: config.nTasks, combinator: "UnanimousPass" }];
 }
 
 /**
- * Whether a program is one an arrival may carry: non-empty, within the stage
- * bound, every fan-out in range. The model states this as a set an arrival
- * draws from, so no reachable state holds an ill-formed program and no decider
- * defends against one mid-flight.
+ * Whether a program is one a release may carry: non-empty, within the stage
+ * bound, every fan-out in range.
  */
 export function isValidProgram(
   config: Config,

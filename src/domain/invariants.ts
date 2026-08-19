@@ -1,44 +1,20 @@
 /**
- * Every safety invariant `model/domain.qnt` proves, as an executable pure
- * predicate, plus the two rosters the model itself keeps: the leaves, and the
- * bundle a run checks.
+ * The safety invariants, one predicate per name `model/domain.qnt` declares.
  *
- * ONE SIGNATURE, NEVER A MIXTURE. Some of these read only the state, some read
- * the step record beside it, and two need the state before the step — so each
- * takes the same `StepView` and ignores what it does not need. A bundle whose
- * members took different arguments would be a bundle nobody can iterate, and
- * the `Invariant` annotation on every one of them is what makes that a compile
- * error rather than a convention. The configuration rides in front of the view
- * because the model's constants are module constants it instantiates a module
- * per configuration for, and this tree passes them instead — the shape every
- * decider already has.
+ * EVERY ONE IS A PURE FUNCTION OF A STEP VIEW — the states either side of a
+ * decision and the record it wrote. That is what lets the same predicates
+ * judge a replayed golden, a randomized walk and a unit fixture without any of
+ * them knowing which is which.
  *
- * `pre` IS THE CORE BEFORE THE LAST DOMAIN *DECISION*, and `rec` is that
- * decision's record — not the state one step ago. `model/domain.qnt`'s
- * `installCore` declines to re-snapshot its two ghosts precisely so a
- * refinement-layer step leaves them stale, and an implementation reading `pre`
- * as the immediately preceding state breaks `stepDescends` on the emit step:
- * it would compare a measure against itself, find no exemption for the label,
- * and report a broken invariant on a step the model proves harmless. So the
- * pair is carried unchanged across emit, crash-recover and the hazard step,
- * and advances only when a decision lands. With that, neither ghost is stored:
- * one carried `Core` computes both `prevMeasure` and `prevRecords`.
- *
- * THE FAILURE REPORT NAMES ITS MEMBERS rather than collapsing to one answer,
- * because which invariant failed is the finding. It is deliberately not called
- * a verdict: `Verdict` is this machine's noun for a task completion's pass or
- * fail, and one noun means one thing.
+ * THE ROSTERS AT THE BOTTOM ARE THE POINT. The model bundles these under
+ * `allInvariants`, and `test/domain/bundle.test.ts` holds both rosters here
+ * against the model's own text: an invariant added there and not here is a
+ * failure rather than a silent gap. Neither roster is a list a reader is asked
+ * to trust.
  */
 
-import { assertNever } from "./assertNever.ts";
-import { boundsOf, projects, wrapUpChoices, type Config } from "./config.ts";
-import {
-  liveTickets,
-  ticketAt,
-  ticketIds,
-  type Core,
-  type StepRecord,
-} from "./core.ts";
+import { boundsOf, finalizerChoices, type Config } from "./config.ts";
+import { liveTickets, ticketAt } from "./core.ts";
 import {
   canFinishSet,
   coveredSet,
@@ -46,15 +22,19 @@ import {
   stuckSet,
   subsetOf,
 } from "./derived.ts";
-import { leaseOf } from "./enablement.ts";
+import type {
+  Core,
+  Phase,
+  StepRecord,
+  Task,
+  Ticket,
+} from "./generated/modelTypes.ts";
 import { firstTaskId, type TicketId } from "./ids.ts";
-import { phaseRank, rankSettled, type Phase } from "./phase.ts";
-import { reworkBudget, wrapUpBudget } from "./pricing.ts";
-import type { Stage } from "./program.ts";
 import { sysMeasure } from "./measure.ts";
-import { evalStage, taskEquals, type Task } from "./task.ts";
-import { completionsOf, hasOpenHumanTask, type Ticket } from "./ticket.ts";
-import { wrapUpEquals } from "./wrapUp.ts";
+import { phaseRank, rankSettled } from "./phase.ts";
+import { finalizationBudget, reworkBudget } from "./pricing.ts";
+import { evalStage, tasksInIdOrder, taskEquals } from "./task.ts";
+import { hasOpenHumanTask } from "./ticket.ts";
 
 /** What one invariant is evaluated against: the last decision, and the states either side of it. */
 export interface StepView {
@@ -81,204 +61,69 @@ function everyLiveTicket(
 }
 
 /**
- * Exactly one completion per ticket, exactly when it is Done. This record
- * derives the count the model stores as a ghost, so no state can carry the
- * disagreement — see `completionExclusiveFor`, which is where the defect lives.
+ * A ticket completes at most once, and holds a completion exactly while it is
+ * Done. The count is the model's stored ledger, which is what makes a
+ * double-spend visible rather than merely absent.
  */
 export const completionExclusive: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t) =>
-    completionExclusiveFor(completionsOf(t), t.phase),
-  );
-
-/**
- * The per-ticket conjunction, stated over a count rather than a ticket. A
- * stored ghost that disagreed with the phase is the mutant this rejects, and
- * feeding it one is the only way this predicate can be made to fail here.
- */
-export function completionExclusiveFor(
-  completions: number,
-  phase: Phase,
-): boolean {
-  return completions <= 1 && (completions === 1) === (phase === "PDone");
-}
-
-/**
- * A revoked ticket has emitted no completion and never will. The model states
- * it named rather than leaving it a corollary, and so does this.
- */
-export const revokedNeverCompletes: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t) =>
-    revokedNeverCompletesFor(completionsOf(t), t.phase),
-  );
-
-/** The per-ticket implication, over a count, for `completionExclusiveFor`'s reason. */
-export function revokedNeverCompletesFor(
-  completions: number,
-  phase: Phase,
-): boolean {
-  return phase !== "PRevoked" || completions === 0;
-}
-
-/**
- * Wrap-up isolation: a step carrying an attempt is exactly a step resolving
- * one, attributed to the stepped ticket's own project, and a gate failure can
- * only follow that project's own branch moving.
- */
-export const wrapUpIsolation: Invariant = (config, view) => {
-  const rec = view.rec;
-  switch (rec.attempt.attempt) {
-    case "WONone":
-      return (
-        wrapUpIsolationUnattributedDone(view) &&
-        rec.label !== "rework-started wrapup_failure" &&
-        rec.label !== "ticket-escalated wrapup_budget_exhausted"
-      );
-    case "WOAttempt": {
-      const attempt = rec.attempt;
-      const first = rec.transitions[0];
-      return (
-        projects(config).includes(attempt.project) &&
-        first !== undefined &&
-        ticketAt(view.post, first.ticket).project === attempt.project &&
-        wrapUpIsolationResolves(rec.label) &&
-        (rec.label === "ticket-done" || attempt.invalidated) &&
-        first.from === (attempt.invalidated ? "PWrapUpHolding" : "PWrapUp") &&
-        rec.transitions.length === 1
-      );
-    }
-    default:
-      return assertNever(rec.attempt);
-  }
-};
-
-/**
- * The one completion that legitimately carries no attribution: a ticket whose
- * kind needed no lease resolved no wrap-up attempt at all.
- */
-function wrapUpIsolationUnattributedDone(view: StepView): boolean {
-  if (view.rec.label !== "ticket-done") return true;
-  const first = view.rec.transitions[0];
-  return (
-    view.rec.transitions.length === 1 &&
-    first !== undefined &&
-    ticketAt(view.post, first.ticket).wrapUp.wrapUp === "WNone"
-  );
-}
-
-/** The labels a resolved attempt may carry; the gas wall is shared with the eval side. */
-function wrapUpIsolationResolves(label: string): boolean {
-  return (
-    label === "ticket-done" ||
-    label === "rework-started wrapup_failure" ||
-    label === "ticket-escalated wrapup_budget_exhausted" ||
-    label === "ticket-escalated gas_exhausted"
-  );
-}
-
-/**
- * An attempt the environment chose quiet resolves as the success, full stop.
- * The per-project reading is not a state theorem and the model says why; this
- * is the per-attempt form, which is.
- */
-export const quietProjectLandsCleanly: Invariant = (_config, view) => {
-  const attempt = view.rec.attempt;
-  switch (attempt.attempt) {
-    case "WONone":
-      return true;
-    case "WOAttempt":
-      return attempt.invalidated || view.rec.label === "ticket-done";
-    default:
-      return assertNever(attempt);
-  }
-};
-
-/**
- * No resource is ever held by two tickets. Occupancy is the derived phase
- * predicate, so nothing tracks it separately and nothing can disagree.
- */
-export const leaseExclusive: Invariant = (config, view) =>
-  projects(config).every((resource) => {
-    const holders = liveTickets(view.post).filter((id) => {
-      const ticket = ticketAt(view.post, id);
-      return ticket.phase === "PWrapUpHolding" && leaseOf(ticket) === resource;
-    });
-    return holders.length <= 1;
-  });
-
-/**
- * A ticket whose kind needs no lease never takes one. Structural rather than
- * argued: it is what stops a deploy occupying a resource it has no stake in.
- */
-export const noLeaseWithoutAKind: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
-    (t) =>
-      t.wrapUp.wrapUp !== "WNone" ||
-      (t.phase !== "PWrapUp" && t.phase !== "PWrapUpHolding"),
+    (t) => t.completions <= 1 && (t.completions === 1) === (t.phase === "Done"),
   );
 
-/**
- * A completed ticket produced something. Deliberately the weak form: the
- * stronger claim would be true by construction, and an invariant that cannot
- * fail is a defect written on purpose.
- */
+/** A revoked ticket never completed on the way out. */
+export const revokedNeverCompletes: Invariant = (_config, view) =>
+  everyLiveTicket(
+    view.post,
+    (t) => t.phase !== "Revoked" || t.completions === 0,
+  );
+
+/** A ticket authored without a finalizer never reaches the phase that runs one. */
+export const noFinalizationWithoutAKind: Invariant = (_config, view) =>
+  everyLiveTicket(
+    view.post,
+    (t) => t.finalizer !== "NoFinalizer" || t.phase !== "Finalizing",
+  );
+
+/** Nothing is Done without having produced the artifact its dependents read. */
 export const artifactWellFormed: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
-    (t) => t.phase !== "PDone" || t.artifact.artifact !== "ANone",
+    (t) => t.phase !== "Done" || t.artifact !== "NoArtifact",
   );
 
-/** Every live ticket targets a project inside the bounded universe: the arrival refusal made durable. */
-export const projectsWellFormed: Invariant = (config, view) =>
-  everyLiveTicket(view.post, (t) => projects(config).includes(t.project));
+/** Every ticket's finish kind is one a release could have drawn. */
+export const finalizerWellFormed: Invariant = (_config, view) =>
+  everyLiveTicket(view.post, (t) => finalizerChoices.includes(t.finalizer));
 
-/**
- * Every live ticket's authored wrap-up choice is inside the bounded universe,
- * and what that catches is the resource inside the kind: `leaseExclusive`
- * counts holders per member of `projects`, so a lease outside it is serialized
- * against nothing and counted by nobody.
- */
-export const wrapUpWellFormed: Invariant = (config, view) =>
-  everyLiveTicket(view.post, (t) =>
-    wrapUpChoices(config).some((choice) => wrapUpEquals(choice, t.wrapUp)),
-  );
-
-/** The two absorbing terminals never transition out, checked against the observed record. */
+/** The two terminals absorb: no transition ever leaves one. */
 export const terminalsAbsorbing: Invariant = (_config, view) =>
-  view.rec.transitions.every(
-    (t) => t.from !== "PDone" && t.from !== "PRevoked",
-  );
+  view.rec.transitions.every((t) => t.from !== "Done" && t.from !== "Revoked");
 
 /**
- * The desk is consistent: a named wall exactly while parked, and a resume point
- * exactly where a modeled resume exists — which the cascade wall's does not,
- * because its only modeled exit is a revoke.
+ * The desk's two equivalences. A ticket carries a reason exactly while it is
+ * parked, and carries a resume point exactly while it is parked for something
+ * other than a revoked dependency — that wall has no modeled resume, and
+ * saying so structurally is what stops a desk task promising one.
  */
 export const deskConsistent: Invariant = (_config, view) =>
+  everyLiveTicket(view.post, (t) => {
+    const parked = t.phase === "Escalated";
+    const named = t.reason !== "NoReason";
+    const resumable = parked && t.reason !== "DependencyRevoked";
+    return parked === named && (t.resumeAt !== "NoResume") === resumable;
+  });
+
+/** No ticket is walled on an account its pricing never granted. */
+export const finalizerWallNamed: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
     (t) =>
-      (t.phase === "PEscalated") === (t.reason !== "RsNone") &&
-      (t.resumeAt !== "RNone") ===
-        (t.phase === "PEscalated" && t.reason !== "RsDependencyRevoked"),
+      t.finalizationPricing !== "DeadlineOnly" ||
+      t.reason !== "FinalizationBudgetExhausted",
   );
 
-/** The gate-budget wall exists only under budgeted pricing; the vocabulary is carried either way. */
-export const wrapUpWallNamed: Invariant = (config, view) => {
-  switch (config.wrapUpPricing.pricing) {
-    case "Budgeted":
-      return true;
-    case "DeadlineOnly":
-      return everyLiveTicket(
-        view.post,
-        (t) => t.reason !== "RsWrapUpBudgetExhausted",
-      );
-    default:
-      return assertNever(config.wrapUpPricing);
-  }
-};
-
-/** Every account stays a resource: bounded below by nothing overdrawing and above by nothing refunding. */
+/** Every account stays a resource: bounded below by zero, above by its grant. */
 export const accountsBounded: Invariant = (config, view) =>
   everyLiveTicket(
     view.post,
@@ -286,238 +131,213 @@ export const accountsBounded: Invariant = (config, view) =>
       t.gasLeft >= 0 &&
       t.gasLeft <= config.gas &&
       t.reworkLeft >= 0 &&
-      t.reworkLeft <= reworkBudget(config.reworkPolicy) &&
-      t.wrapUpLeft >= 0 &&
-      t.wrapUpLeft <= wrapUpBudget(config.wrapUpPricing),
+      t.reworkLeft <= reworkBudget(t.reworkPolicy) &&
+      t.finalizationLeft >= 0 &&
+      t.finalizationLeft <= finalizationBudget(t.finalizationPricing),
   );
 
-/** The live task set is exactly the current phase's anatomy, which is also the stage-index sanity check. */
-export const tasksWellFormed: Invariant = (config, view) =>
-  everyLiveTicket(view.post, (t) => tasksWellFormedFor(config, t));
-
-/**
- * One ticket's anatomy: the single work set at full width, or one stage's
- * declared fan-out uniformly marked with the stage it indexes, or nothing at
- * all — dead live-task state is never carried.
- */
-function tasksWellFormedFor(config: Config, ticket: Ticket): boolean {
-  const start = ticket.record.length + firstTaskId;
-  if (ticket.phase === "PWorking") {
-    return (
-      ticket.tasks.length === config.nTasks &&
-      tasksWellFormedRun(ticket.tasks, start) &&
-      ticket.tasks.every(
-        (task) =>
-          task.kind.kind === "TKWork" && !tasksWellFormedCancelled(task),
-      )
-    );
-  }
-  if (ticket.phase === "PEvaluating") {
-    const stage = evalStage(ticket.tasks);
-    const declared = ticket.program[stage];
-    return (
-      stage >= 0 &&
-      declared !== undefined &&
-      ticket.tasks.length === declared.fanout &&
-      tasksWellFormedRun(ticket.tasks, start) &&
-      ticket.tasks.every(
-        (task) =>
-          task.kind.kind === "TKEval" &&
-          task.kind.stage === stage &&
-          !tasksWellFormedCancelled(task),
-      )
-    );
-  }
-  return ticket.tasks.length === 0;
-}
-
-/** The live ids are the contiguous run directly above the retired record. */
-function tasksWellFormedRun(tasks: readonly Task[], start: number): boolean {
-  const ids = tasks.map((task) => task.id).sort((a, b) => a - b);
-  return ids.every((value, index) => value === start + index);
-}
-
-/** Cancelled is a retirement mark, never an outcome an event can deliver live. */
-function tasksWellFormedCancelled(task: Task): boolean {
-  return (
-    task.state.state === "TSResolved" && task.state.outcome === "TCancelled"
-  );
-}
-
-/**
- * The retained record is the resolved log, one-indexed and in identity order,
- * and every retired eval task names a stage its ticket's program has.
- */
-export const recordWellFormed: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t) =>
-    t.record.every(
-      (entry, index) =>
-        entry.id === index + firstTaskId &&
-        entry.state.state !== "TSOutstanding" &&
-        recordWellFormedStage(entry, t.program),
-    ),
-  );
-
-/** Programs are immutable, so a retired stage index never dangles. */
-function recordWellFormedStage(
-  entry: Task,
-  program: readonly Stage[],
+/** Whether these ids are exactly the contiguous run of `count` starting at `start`. */
+function idsAreTheRunFrom(
+  tasks: ReadonlySet<Task>,
+  start: number,
+  count: number,
 ): boolean {
-  switch (entry.kind.kind) {
-    case "TKWork":
-      return true;
-    case "TKEval":
-      return entry.kind.stage >= 0 && entry.kind.stage < program.length;
-    default:
-      return assertNever(entry.kind);
-  }
+  const ids = tasksInIdOrder(tasks).map((t) => t.id);
+  return ids.length === count && ids.every((id, index) => id === start + index);
 }
 
 /**
- * The record is append-only history: against the state before the decision,
- * nothing shrinks and nothing settled is rewritten. Tickets are never deleted,
- * so every earlier key survives.
+ * The live task set is exactly the current phase's anatomy: the work set while
+ * Working, one stage's fan-out while Evaluating, and empty everywhere else.
+ * Dead live-task state is never carried, and the live ids are the contiguous
+ * run directly above the retired record — which is what the
+ * at-least-once-by-identity argument needs.
  */
-export const recordMonotone: Invariant = (_config, view) =>
-  ticketIds(view.pre).every((id) => {
-    const before = ticketAt(view.pre, id).record;
-    const after = view.post.tickets.get(id)?.record;
-    if (after === undefined || after.length < before.length) return false;
-    return before.every((entry, index) => {
-      const kept = after[index];
-      return kept !== undefined && taskEquals(entry, kept);
-    });
+export const tasksWellFormed: Invariant = (_config, view) =>
+  everyLiveTicket(view.post, (t) => {
+    const start = t.record.length + firstTaskId;
+    const live = tasksInIdOrder(t.tasks);
+    if (t.phase === "Working") {
+      return (
+        t.tasks.size === t.workFanout &&
+        idsAreTheRunFrom(t.tasks, start, t.workFanout) &&
+        live.every(
+          (task) =>
+            task.kind === "Work" &&
+            !(task.state !== "Outstanding" && task.state.value === "Cancelled"),
+        )
+      );
+    }
+    if (t.phase === "Evaluating") {
+      const stage = evalStage(t.tasks);
+      const declared = t.program[stage];
+      return (
+        stage >= 0 &&
+        declared !== undefined &&
+        live.every(
+          (task) =>
+            task.kind !== "Work" &&
+            task.kind.value === stage &&
+            !(task.state !== "Outstanding" && task.state.value === "Cancelled"),
+        ) &&
+        t.tasks.size === declared.fanout &&
+        idsAreTheRunFrom(t.tasks, start, t.tasks.size)
+      );
+    }
+    return t.tasks.size === 0;
   });
 
-/**
- * Identity accounting: every task a ticket ever spawned is still somewhere,
- * retired or live. A decider that dropped a set instead of retiring it is
- * invisible to the two well-formedness checks and is caught here.
- */
+/** The retained record is dense from the first id, fully settled, and indexes into the program. */
+export const recordWellFormed: Invariant = (_config, view) =>
+  everyLiveTicket(view.post, (t) =>
+    t.record.every((task, index) => {
+      if (task.id !== index + firstTaskId) return false;
+      if (task.state === "Outstanding") return false;
+      if (task.kind === "Work") return true;
+      return task.kind.value >= 0 && task.kind.value < t.program.length;
+    }),
+  );
+
+/** History is append-only: no decision rewrites or shortens a retained record. */
+export const recordMonotone: Invariant = (_config, view) =>
+  liveTickets(view.pre).every((id) => {
+    if (!view.post.tickets.has(id)) return false;
+    const before = ticketAt(view.pre, id).record;
+    const after = ticketAt(view.post, id).record;
+    return (
+      after.length >= before.length &&
+      before.every((task, index) => {
+        const kept = after[index];
+        return kept !== undefined && taskEquals(task, kept);
+      })
+    );
+  });
+
+/** Every id ever issued is either retired into the record or live in the set. */
 export const idsAccounted: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
-    (t) => t.spawned === t.record.length + t.tasks.length,
+    (t) => t.spawned === t.record.length + t.tasks.size,
   );
 
-/** Every live ticket carries a well-formed program: the arrival refusal made durable. */
+/** Every authored program is one a release could have drawn. */
 export const programsWellFormed: Invariant = (config, view) =>
   everyLiveTicket(
     view.post,
     (t) =>
       t.program.length >= 1 &&
       t.program.length <= config.maxStages &&
-      t.program.every(
-        (stage) => stage.fanout >= 1 && stage.fanout <= config.nTasks,
-      ),
+      t.program.every((s) => s.fanout >= 1 && s.fanout <= config.nTasks),
   );
 
-/** Arrival's DAG-by-construction survives every step: each dep is known and strictly smaller. */
+/** Everything this ticket transitively waits on, as a bounded fixpoint over actual keys. */
+function dependencyClosure(core: Core, id: TicketId): ReadonlySet<number> {
+  const seen = new Set<number>(ticketAt(core, id).deps);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const d of [...seen]) {
+      if (!core.tickets.has(d)) continue;
+      for (const further of ticketAt(core, d as TicketId).deps) {
+        if (!seen.has(further)) {
+          seen.add(further);
+          grew = true;
+        }
+      }
+    }
+  }
+  return seen;
+}
+
+/** Dependencies name live tickets, and no ticket waits on itself through any chain. */
 export const depsAcyclic: Invariant = (_config, view) =>
-  everyLiveTicket(view.post, (t, id) =>
-    t.deps.every((d) => view.post.tickets.has(d) && d < id),
-  );
-
-/** Ids are dense from one and never reused, which is what makes every ascending fold above sound. */
-export const idsDense: Invariant = (config, view) => {
-  const ids = liveTickets(view.post);
-  return (
-    ids.every((id, index) => id === index + 1) && ids.length <= config.nTickets
-  );
-};
-
-/**
- * The two walks agree — and that is all this says. It is a tautology over the
- * definitions rather than a theorem about the machine, kept for what it does
- * guard: the walks against each other, so an edit giving one a base case or an
- * edge kind the other lacks goes red here.
- */
-export const stuckSubsetCovered: Invariant = (_config, view) =>
-  subsetOf(stuckSet(view.post), coveredSet(view.post));
-
-/**
- * Every ticket transitively doomed behind a revoked dep is parked with its own
- * desk task, or was settled by its own author. Always-parked rather than
- * eventually, because the cascade is atomic with the revoke.
- */
-export const cascadeSafety: Invariant = (_config, view) =>
-  [...revokeDoomed(view.post)].every((id) => {
-    const ticket = ticketAt(view.post, id);
+  everyLiveTicket(view.post, (t, id) => {
+    const live = new Set<number>(liveTickets(view.post));
     return (
-      ticket.phase === "PRevoked" ||
-      (ticket.phase === "PEscalated" && ticket.reason === "RsDependencyRevoked")
+      [...t.deps].every((d) => live.has(d)) &&
+      !dependencyClosure(view.post, id).has(id)
     );
   });
 
 /**
- * Every live ticket can still reach Done, or was settled by its author, or
- * holds a desk task a human can act on. Unlike the walks' containment this is
- * a claim about the machine, and a dependency cycle is what refutes it.
+ * Ids come from the universe a release draws from, and the fleet stays within
+ * its bound. They are sparse by construction, so this is a membership claim
+ * rather than a density one.
  */
+export const ticketIdsWellFormed: Invariant = (config, view) => {
+  const universeCeiling = config.nTickets * 2;
+  const live = liveTickets(view.post);
+  return (
+    live.every((id) => id >= 1 && id <= universeCeiling) &&
+    live.length <= config.nTickets
+  );
+};
+
+/** Nothing is stuck without a desk task reachable from it: the visibility guarantee. */
+export const stuckSubsetCovered: Invariant = (_config, view) =>
+  subsetOf(stuckSet(view.post), coveredSet(view.post));
+
+/** Every ticket doomed by a revocation is itself revoked, or parked naming that revocation. */
+export const cascadeSafety: Invariant = (_config, view) =>
+  [...revokeDoomed(view.post)].every((id) => {
+    const t = ticketAt(view.post, id);
+    return (
+      t.phase === "Revoked" ||
+      (t.phase === "Escalated" && t.reason === "DependencyRevoked")
+    );
+  });
+
+/** Every live ticket has a route to Done, is revoked, or is on the desk where a human can act. */
 export const noStructuralDeadlock: Invariant = (_config, view) => {
   const finishable = canFinishSet(view.post);
   return everyLiveTicket(
     view.post,
     (t, id) =>
-      finishable.has(id) || t.phase === "PRevoked" || hasOpenHumanTask(t),
+      finishable.has(id) || t.phase === "Revoked" || hasOpenHumanTask(t),
   );
 };
 
-/** Well-foundedness: the measure is bounded below, checked directly for the descent argument's own integrity. */
+/** The measure is a natural number, which is half of what makes it a measure. */
 export const measureNonNegative: Invariant = (config, view) =>
   sysMeasure(boundsOf(config), view.post) >= 0;
 
 /**
- * Every step strictly decreases the measure except the named stutter, churn
- * and authoring steps. There is no exemption for the stage advance: that is
- * the stage digit earning its keep.
+ * Whether this step is one of the declared climbs. Current roster:
+ *   init                  — every run's first step;
+ *   settled               — the quiet fleet's stutter;
+ *   ticket-resumed, RetryFree pipeline flavor
+ *                         — the uncharged resume;
+ *   ticket-released       — every run's releases;
+ *   ticket-revoked, desk-only flat
+ *                         — a revoke whose every transition leaves a settled rank.
  */
+function stepDescendsExempt(view: StepView): boolean {
+  const label = view.rec.label;
+  if (label === "init" || label === "settled") return true;
+  if (label === "ticket-released") return true;
+  if (label === "ticket-resumed") {
+    return view.rec.transitions.some(
+      (t) =>
+        (t.to === "Evaluating" || t.to === "Finalizing") &&
+        ticketAt(view.post, t.ticket as TicketId).resumePricing === "RetryFree",
+    );
+  }
+  if (label === "ticket-revoked") {
+    return view.rec.transitions.every(
+      (t) => phaseRank(t.from as Phase) === rankSettled,
+    );
+  }
+  return false;
+}
+
+/** Every step either descends the measure or is one of the declared climbs. */
 export const stepDescends: Invariant = (config, view) => {
-  if (stepDescendsExempt(config, view.rec)) return true;
+  if (stepDescendsExempt(view)) return true;
   const bounds = boundsOf(config);
   return sysMeasure(bounds, view.post) < sysMeasure(bounds, view.pre);
 };
 
-/** The roster of exempt steps, in the order `model/domain.qnt`'s own header names them. */
-function stepDescendsExempt(config: Config, rec: StepRecord): boolean {
-  return (
-    rec.label === "init" ||
-    rec.label === "task-done-duplicate" ||
-    rec.label === "complete-duplicate" ||
-    rec.label === "settled" ||
-    stepDescendsChurn(config, rec) ||
-    rec.label === "ticket-arrived" ||
-    stepDescendsFlatRevoke(rec)
-  );
-}
-
-/**
- * The uncharged operator resumes: the pre-work flavour, free under both
- * meterings because nothing was ever spent, and under free retries the
- * pipeline flavours too — the Working resume always pays.
- */
-function stepDescendsChurn(config: Config, rec: StepRecord): boolean {
-  if (rec.label !== "operator-retry") return false;
-  return (
-    rec.transitions.some((t) => t.to === "PPending") ||
-    (config.opRetryPricing === "RetryFree" &&
-      rec.transitions.some((t) => t.to !== "PWorking"))
-  );
-}
-
-/**
- * A desk-only revoke is flat: every transition leaves a settled-rank phase and
- * the cascade parked nobody. A park or a live-rank revoke drags a rank down and
- * gets no exemption at all.
- */
-function stepDescendsFlatRevoke(rec: StepRecord): boolean {
-  return (
-    rec.label === "ticket-revoked" &&
-    rec.transitions.every((t) => phaseRank(t.from) === rankSettled)
-  );
-}
-
-/** Both halves under the one name the model's bundle conjoins them by. */
+/** The two halves the model bundles under one name. */
 export const measureDescends: Invariant = (config, view) =>
   measureNonNegative(config, view) && stepDescends(config, view);
 
@@ -529,16 +349,15 @@ export const measureDescends: Invariant = (config, view) =>
 export const invariantLeaves: readonly NamedInvariant[] = [
   { invariant: "completionExclusive", holds: completionExclusive },
   { invariant: "revokedNeverCompletes", holds: revokedNeverCompletes },
-  { invariant: "wrapUpIsolation", holds: wrapUpIsolation },
-  { invariant: "quietProjectLandsCleanly", holds: quietProjectLandsCleanly },
-  { invariant: "leaseExclusive", holds: leaseExclusive },
-  { invariant: "noLeaseWithoutAKind", holds: noLeaseWithoutAKind },
+  {
+    invariant: "noFinalizationWithoutAKind",
+    holds: noFinalizationWithoutAKind,
+  },
   { invariant: "artifactWellFormed", holds: artifactWellFormed },
-  { invariant: "projectsWellFormed", holds: projectsWellFormed },
-  { invariant: "wrapUpWellFormed", holds: wrapUpWellFormed },
+  { invariant: "finalizerWellFormed", holds: finalizerWellFormed },
   { invariant: "terminalsAbsorbing", holds: terminalsAbsorbing },
   { invariant: "deskConsistent", holds: deskConsistent },
-  { invariant: "wrapUpWallNamed", holds: wrapUpWallNamed },
+  { invariant: "finalizerWallNamed", holds: finalizerWallNamed },
   { invariant: "accountsBounded", holds: accountsBounded },
   { invariant: "tasksWellFormed", holds: tasksWellFormed },
   { invariant: "recordWellFormed", holds: recordWellFormed },
@@ -546,7 +365,7 @@ export const invariantLeaves: readonly NamedInvariant[] = [
   { invariant: "idsAccounted", holds: idsAccounted },
   { invariant: "programsWellFormed", holds: programsWellFormed },
   { invariant: "depsAcyclic", holds: depsAcyclic },
-  { invariant: "idsDense", holds: idsDense },
+  { invariant: "ticketIdsWellFormed", holds: ticketIdsWellFormed },
   { invariant: "stuckSubsetCovered", holds: stuckSubsetCovered },
   { invariant: "cascadeSafety", holds: cascadeSafety },
   { invariant: "noStructuralDeadlock", holds: noStructuralDeadlock },

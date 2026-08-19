@@ -1,42 +1,20 @@
 /**
- * The machine's observed state, and what one decision records about itself.
+ * Reading and replacing one ticket in the observed state, and what a decision
+ * returns about itself.
  *
- * `Core` is a record around the ticket map rather than the bare map, which is
- * the shape the model keeps for the same reason: the ticket source stays open,
- * and arrivals grow the map's dense, never-reused id domain without any
- * decider needing surgery.
+ * `Core` is the model's record around the ticket map rather than the bare map,
+ * for the reason the model keeps it: the ticket source stays open, and
+ * releases grow the map's sparse id domain without any decider needing
+ * surgery.
  *
  * The map is iterated in ascending id order everywhere, never in insertion
  * order. JavaScript's insertion order is stable, which is exactly why relying
  * on it would pass every test until the day a ticket map was rebuilt from a
- * different source.
+ * different source — and ids are sparse, so insertion order is not id order.
  */
 
-import type { Effect } from "./effect.ts";
-import type { TicketId } from "./ids.ts";
-import type { Phase } from "./phase.ts";
-import type { Ticket } from "./ticket.ts";
-import { woNone, type WrapUpObs } from "./wrapUp.ts";
-
-/** The observed state, as the pure deciders see it. */
-export interface Core {
-  readonly tickets: ReadonlyMap<TicketId, Ticket>;
-}
-
-/** One observed phase transition. `from === to` is a real row: the stage advance is one. */
-export interface Transition {
-  readonly ticket: TicketId;
-  readonly from: Phase;
-  readonly to: Phase;
-}
-
-/** One decision's observable record, which a golden trace carries verbatim. */
-export interface StepRecord {
-  readonly label: string;
-  readonly transitions: readonly Transition[];
-  readonly effects: readonly Effect[];
-  readonly attempt: WrapUpObs;
-}
+import type { Core, StepRecord, Ticket } from "./generated/modelTypes.ts";
+import { asTicketId, type TicketId } from "./ids.ts";
 
 /** What a pure decider returns: the record performed, and the state after it. */
 export interface Decision {
@@ -49,12 +27,11 @@ export const initRecord: StepRecord = {
   label: "init",
   transitions: [],
   effects: [],
-  attempt: woNone,
 };
 
 /** The ticket ids of a core, ascending. Every fold over the fleet reads this. */
 export function ticketIds(core: Core): readonly TicketId[] {
-  return [...core.tickets.keys()].sort((a, b) => a - b);
+  return [...core.tickets.keys()].sort((a, b) => a - b).map(asTicketId);
 }
 
 /** Reads a ticket, failing loudly where the model would fail its own lookup. */
@@ -75,7 +52,7 @@ export function withTicket(core: Core, id: TicketId, ticket: Ticket): Core {
   return { tickets };
 }
 
-/** The live tickets: everything the map holds, which is every ticket ever arrived. */
+/** The live tickets: everything the map holds, which is every ticket ever released. */
 export function liveTickets(core: Core): readonly TicketId[] {
   return ticketIds(core);
 }
