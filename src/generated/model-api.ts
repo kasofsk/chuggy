@@ -3,6 +3,32 @@
 
 import * as z from "zod";
 
+import type {
+  TaskOutcome,
+  TaskState,
+  TaskKind,
+  Task,
+  Verdict,
+  Combinator,
+  Stage,
+  FinalizationPricing,
+  Phase,
+  ReworkPolicy,
+  RetryPricing,
+  Resume,
+  Reason,
+  FinalizationOutcome,
+  Finalizer,
+  ArtifactMark,
+  Ticket,
+  Core,
+  Transition,
+  StepRecord,
+  TaskResultRef,
+  DecisionEvent,
+  Entry,
+} from "../domain/generated/modelTypes.ts";
+
 export type ModelJson =
   | null
   | boolean
@@ -40,7 +66,6 @@ function distinctJson(values: readonly unknown[]): boolean {
   return true;
 }
 
-export type TaskOutcome = "Passed" | "Failed" | "Cancelled";
 export const taskOutcomeSchema: z.ZodType<TaskOutcome> = z.union([
   z.literal("Passed"),
   z.literal("Failed"),
@@ -57,10 +82,7 @@ export function encodeTaskOutcome(value: TaskOutcome): ModelJson {
 export function decodeTaskOutcome(value: unknown): TaskOutcome {
   return taskOutcomeSchemaWire.parse(value);
 }
-export const taskOutcomeTags = ["Passed", "Failed", "Cancelled"] as const;
 
-export type TaskState =
-  "Outstanding" | { readonly type: "Resolved"; readonly value: TaskOutcome };
 export const taskStateSchema: z.ZodType<TaskState> = z.union([
   z.literal("Outstanding"),
   z
@@ -79,10 +101,7 @@ export function encodeTaskState(value: TaskState): ModelJson {
 export function decodeTaskState(value: unknown): TaskState {
   return taskStateSchemaWire.parse(value);
 }
-export const taskStateTags = ["Outstanding", "Resolved"] as const;
 
-export type TaskKind =
-  "Work" | { readonly type: "Evaluation"; readonly value: number };
 export const taskKindSchema: z.ZodType<TaskKind> = z.union([
   z.literal("Work"),
   z
@@ -101,13 +120,7 @@ export function encodeTaskKind(value: TaskKind): ModelJson {
 export function decodeTaskKind(value: unknown): TaskKind {
   return taskKindSchemaWire.parse(value);
 }
-export const taskKindTags = ["Work", "Evaluation"] as const;
 
-export type Task = {
-  readonly id: number;
-  readonly kind: TaskKind;
-  readonly state: TaskState;
-};
 export const taskSchema: z.ZodType<Task> = z
   .object({
     id: z.number().int().safe(),
@@ -129,7 +142,6 @@ export function decodeTask(value: unknown): Task {
   return taskSchemaWire.parse(value);
 }
 
-export type Verdict = "Pass" | "Fail";
 export const verdictSchema: z.ZodType<Verdict> = z.union([
   z.literal("Pass"),
   z.literal("Fail"),
@@ -144,9 +156,7 @@ export function encodeVerdict(value: Verdict): ModelJson {
 export function decodeVerdict(value: unknown): Verdict {
   return verdictSchemaWire.parse(value);
 }
-export const verdictTags = ["Pass", "Fail"] as const;
 
-export type Combinator = "UnanimousPass" | "AnyPass";
 export const combinatorSchema: z.ZodType<Combinator> = z.union([
   z.literal("UnanimousPass"),
   z.literal("AnyPass"),
@@ -161,12 +171,7 @@ export function encodeCombinator(value: Combinator): ModelJson {
 export function decodeCombinator(value: unknown): Combinator {
   return combinatorSchemaWire.parse(value);
 }
-export const combinatorTags = ["UnanimousPass", "AnyPass"] as const;
 
-export type Stage = {
-  readonly fanout: number;
-  readonly combinator: Combinator;
-};
 export const stageSchema: z.ZodType<Stage> = z
   .object({ fanout: z.number().int().safe(), combinator: combinatorSchema })
   .readonly();
@@ -180,8 +185,6 @@ export function decodeStage(value: unknown): Stage {
   return stageSchemaWire.parse(value);
 }
 
-export type FinalizationPricing =
-  { readonly type: "Budgeted"; readonly value: number } | "DeadlineOnly";
 export const finalizationPricingSchema: z.ZodType<FinalizationPricing> =
   z.union([
     z
@@ -203,16 +206,7 @@ export function encodeFinalizationPricing(
 export function decodeFinalizationPricing(value: unknown): FinalizationPricing {
   return finalizationPricingSchemaWire.parse(value);
 }
-export const finalizationPricingTags = ["Budgeted", "DeadlineOnly"] as const;
 
-export type Phase =
-  | "Pending"
-  | "Working"
-  | "Evaluating"
-  | "Finalizing"
-  | "Done"
-  | "Escalated"
-  | "Revoked";
 export const phaseSchema: z.ZodType<Phase> = z.union([
   z.literal("Pending"),
   z.literal("Working"),
@@ -237,20 +231,7 @@ export function encodePhase(value: Phase): ModelJson {
 export function decodePhase(value: unknown): Phase {
   return phaseSchemaWire.parse(value);
 }
-export const phaseTags = [
-  "Pending",
-  "Working",
-  "Evaluating",
-  "Finalizing",
-  "Done",
-  "Escalated",
-  "Revoked",
-] as const;
 
-export type ReworkPolicy = {
-  readonly type: "BudgetedRework";
-  readonly value: number;
-};
 export const reworkPolicySchema: z.ZodType<ReworkPolicy> = z
   .object({ type: z.literal("BudgetedRework"), value: z.number().int().safe() })
   .readonly();
@@ -263,9 +244,7 @@ export function encodeReworkPolicy(value: ReworkPolicy): ModelJson {
 export function decodeReworkPolicy(value: unknown): ReworkPolicy {
   return reworkPolicySchemaWire.parse(value);
 }
-export const reworkPolicyTags = ["BudgetedRework"] as const;
 
-export type RetryPricing = "RetryCharged" | "RetryFree";
 export const retryPricingSchema: z.ZodType<RetryPricing> = z.union([
   z.literal("RetryCharged"),
   z.literal("RetryFree"),
@@ -280,10 +259,7 @@ export function encodeRetryPricing(value: RetryPricing): ModelJson {
 export function decodeRetryPricing(value: unknown): RetryPricing {
   return retryPricingSchemaWire.parse(value);
 }
-export const retryPricingTags = ["RetryCharged", "RetryFree"] as const;
 
-export type Resume =
-  "NoResume" | "ResumeWorking" | "ResumeEvaluating" | "ResumeFinalizing";
 export const resumeSchema: z.ZodType<Resume> = z.union([
   z.literal("NoResume"),
   z.literal("ResumeWorking"),
@@ -302,25 +278,7 @@ export function encodeResume(value: Resume): ModelJson {
 export function decodeResume(value: unknown): Resume {
   return resumeSchemaWire.parse(value);
 }
-export const resumeTags = [
-  "NoResume",
-  "ResumeWorking",
-  "ResumeEvaluating",
-  "ResumeFinalizing",
-] as const;
 
-export type Reason =
-  | "NoReason"
-  | "WorkFailed"
-  | "ReworkBudgetExhausted"
-  | "FinalizationBudgetExhausted"
-  | "GasExhausted"
-  | "DependencyRevoked"
-  | "ExecutionPolicyDenied"
-  | "TicketConfigIncompatible"
-  | "ExecutionProfileUnavailable"
-  | "RuntimeVersionUnsupported"
-  | "RequiredCapabilityUnavailable";
 export const reasonSchema: z.ZodType<Reason> = z.union([
   z.literal("NoReason"),
   z.literal("WorkFailed"),
@@ -353,22 +311,7 @@ export function encodeReason(value: Reason): ModelJson {
 export function decodeReason(value: unknown): Reason {
   return reasonSchemaWire.parse(value);
 }
-export const reasonTags = [
-  "NoReason",
-  "WorkFailed",
-  "ReworkBudgetExhausted",
-  "FinalizationBudgetExhausted",
-  "GasExhausted",
-  "DependencyRevoked",
-  "ExecutionPolicyDenied",
-  "TicketConfigIncompatible",
-  "ExecutionProfileUnavailable",
-  "RuntimeVersionUnsupported",
-  "RequiredCapabilityUnavailable",
-] as const;
 
-export type FinalizationOutcome =
-  "FinalizationSucceeded" | "FinalizationFailed";
 export const finalizationOutcomeSchema: z.ZodType<FinalizationOutcome> =
   z.union([
     z.literal("FinalizationSucceeded"),
@@ -386,12 +329,7 @@ export function encodeFinalizationOutcome(
 export function decodeFinalizationOutcome(value: unknown): FinalizationOutcome {
   return finalizationOutcomeSchemaWire.parse(value);
 }
-export const finalizationOutcomeTags = [
-  "FinalizationSucceeded",
-  "FinalizationFailed",
-] as const;
 
-export type Finalizer = "NoFinalizer" | "ManagedFinalizer";
 export const finalizerSchema: z.ZodType<Finalizer> = z.union([
   z.literal("NoFinalizer"),
   z.literal("ManagedFinalizer"),
@@ -406,10 +344,7 @@ export function encodeFinalizer(value: Finalizer): ModelJson {
 export function decodeFinalizer(value: unknown): Finalizer {
   return finalizerSchemaWire.parse(value);
 }
-export const finalizerTags = ["NoFinalizer", "ManagedFinalizer"] as const;
 
-export type ArtifactMark =
-  "NoArtifact" | { readonly type: "ProducedArtifact"; readonly value: number };
 export const artifactMarkSchema: z.ZodType<ArtifactMark> = z.union([
   z.literal("NoArtifact"),
   z
@@ -434,28 +369,7 @@ export function encodeArtifactMark(value: ArtifactMark): ModelJson {
 export function decodeArtifactMark(value: unknown): ArtifactMark {
   return artifactMarkSchemaWire.parse(value);
 }
-export const artifactMarkTags = ["NoArtifact", "ProducedArtifact"] as const;
 
-export type Ticket = {
-  readonly phase: Phase;
-  readonly deps: ReadonlySet<number>;
-  readonly finalizer: Finalizer;
-  readonly artifact: ArtifactMark;
-  readonly workFanout: number;
-  readonly reworkPolicy: ReworkPolicy;
-  readonly finalizationPricing: FinalizationPricing;
-  readonly resumePricing: RetryPricing;
-  readonly program: readonly Stage[];
-  readonly tasks: ReadonlySet<Task>;
-  readonly record: readonly Task[];
-  readonly spawned: number;
-  readonly reworkLeft: number;
-  readonly finalizationLeft: number;
-  readonly gasLeft: number;
-  readonly resumeAt: Resume;
-  readonly reason: Reason;
-  readonly completions: number;
-};
 export const ticketSchema: z.ZodType<Ticket> = z
   .object({
     phase: phaseSchema,
@@ -513,7 +427,6 @@ export function decodeTicket(value: unknown): Ticket {
   return ticketSchemaWire.parse(value);
 }
 
-export type Core = { readonly tickets: ReadonlyMap<number, Ticket> };
 export const coreSchema: z.ZodType<Core> = z
   .object({ tickets: z.map(z.number().int().safe(), ticketSchema).readonly() })
   .readonly();
@@ -534,11 +447,6 @@ export function decodeCore(value: unknown): Core {
   return coreSchemaWire.parse(value);
 }
 
-export type Transition = {
-  readonly ticket: number;
-  readonly from: Phase;
-  readonly to: Phase;
-};
 export const transitionSchema: z.ZodType<Transition> = z
   .object({
     ticket: z.number().int().safe(),
@@ -560,11 +468,6 @@ export function decodeTransition(value: unknown): Transition {
   return transitionSchemaWire.parse(value);
 }
 
-export type StepRecord = {
-  readonly label: string;
-  readonly transitions: readonly Transition[];
-  readonly effects: readonly string[];
-};
 export const stepRecordSchema: z.ZodType<StepRecord> = z
   .object({
     label: z.string(),
@@ -586,11 +489,6 @@ export function decodeStepRecord(value: unknown): StepRecord {
   return stepRecordSchemaWire.parse(value);
 }
 
-export type TaskResultRef = {
-  readonly manifest: number;
-  readonly digest: number;
-  readonly schema: number;
-};
 export const taskResultRefSchema: z.ZodType<TaskResultRef> = z
   .object({
     manifest: z.number().int().safe(),
@@ -612,45 +510,6 @@ export function decodeTaskResultRef(value: unknown): TaskResultRef {
   return taskResultRefSchemaWire.parse(value);
 }
 
-export type DecisionEvent =
-  | {
-      readonly type: "ReleaseTicket";
-      readonly value: {
-        readonly ticket: number;
-        readonly deps: ReadonlySet<number>;
-        readonly prog: readonly Stage[];
-        readonly workFanout: number;
-        readonly reworkPolicy: ReworkPolicy;
-        readonly finalizationPricing: FinalizationPricing;
-        readonly resumePricing: RetryPricing;
-        readonly finalizer: Finalizer;
-      };
-    }
-  | { readonly type: "Revoke"; readonly value: number }
-  | { readonly type: "Dispatch"; readonly value: number }
-  | {
-      readonly type: "TaskDone";
-      readonly value: {
-        readonly ticket: number;
-        readonly tid: number;
-        readonly verdict: Verdict;
-        readonly result: TaskResultRef;
-      };
-    }
-  | { readonly type: "WorkReduce"; readonly value: number }
-  | { readonly type: "EvalReduce"; readonly value: number }
-  | {
-      readonly type: "FinalizationResult";
-      readonly value: {
-        readonly ticket: number;
-        readonly out: FinalizationOutcome;
-      };
-    }
-  | {
-      readonly type: "ExecutionBlocked";
-      readonly value: { readonly ticket: number; readonly reason: Reason };
-    }
-  | { readonly type: "ResumeTicket"; readonly value: number };
 export const decisionEventSchema: z.ZodType<DecisionEvent> = z.union([
   z
     .object({
@@ -792,23 +651,7 @@ export function encodeDecisionEvent(value: DecisionEvent): ModelJson {
 export function decodeDecisionEvent(value: unknown): DecisionEvent {
   return decisionEventSchemaWire.parse(value);
 }
-export const decisionEventTags = [
-  "ReleaseTicket",
-  "Revoke",
-  "Dispatch",
-  "TaskDone",
-  "WorkReduce",
-  "EvalReduce",
-  "FinalizationResult",
-  "ExecutionBlocked",
-  "ResumeTicket",
-] as const;
 
-export type Entry = {
-  readonly seq: number;
-  readonly event: DecisionEvent;
-  readonly rec: StepRecord;
-};
 export const entrySchema: z.ZodType<Entry> = z
   .object({
     seq: z.number().int().safe(),

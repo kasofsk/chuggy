@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { phaseTags, type Core } from "../../src/domain/generated/modelTypes.ts";
 import {
   decodeCore,
   decodeDecisionEvent,
   encodeCore,
-  phaseTags,
-  type Core,
 } from "../../src/generated/model-api.ts";
 
 const core: Core = {
