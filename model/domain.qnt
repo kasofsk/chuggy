@@ -1506,9 +1506,6 @@ module chuggy_domain {
   val allInvariants: bool = and {
     completionExclusive,
     revokedNeverCompletes,
-
-
-    noFinalizationWithoutAKind,
     noFinalizationWithoutAKind,
     artifactWellFormed,
     finalizerWellFormed,
