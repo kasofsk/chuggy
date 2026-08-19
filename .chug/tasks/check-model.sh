@@ -63,7 +63,7 @@ echo "--- unit suite"
 # invariant after every step. `wrapup_none` is the odd one out: it witnesses
 # something the machine deliberately does not guarantee.
 echo "--- witnesses"
-for w in free cascade stage multiproject gate gate_deadline draft_wait wrapup_none; do
+for w in free cascade stage sparse gate gate_deadline dependency wrapup_none; do
 	"$QUINT" test --main="chuggy_witness_${w}_test" \
 		model/tests/chuggy_witness_test.qnt >/dev/null 2>&1 \
 		|| { echo "ERROR witness $w failed"; failed=$((failed + 1)); }

@@ -193,15 +193,10 @@
 /// the SAME at-least-once, and both are absorbed because every emitted
 /// effect is keyed by its decision's journal seq (worldEffects' set
 /// semantics IS that assumption, stated as a model primitive: "every
-/// effect is idempotent", given its key). Inbound (world -> actor): completions
-/// and wrap-up confirmations arrive at-least-once too, and the DOMAIN
-/// machine already absorbs them — duplicate task completions no-op by
-/// identity, duplicate ticket-completion deliveries no-op at the boundary
-/// (decideTaskDone/decideCompleteDuplicate, proved since /) — so the
-/// actor journals the absorbing no-op decisions like any others and
-/// replay reproduces them. The composition: at-least-once OUT is
-/// absorbed by decision identity, at-least-once IN by the domain's
-/// existing duplicate tolerance; what neither can absorb is an UN-KEYED
+/// effect is idempotent", given its key). Inbound completion and wrap-up
+/// redelivery is absorbed by durable request identity before a decision
+/// input is constructed. The composition absorbs at-least-once delivery on
+/// both sides below Core; what neither can absorb is an UN-KEYED
 /// effect — a decision that reached the world but never the journal —
 /// and that is exactly the orphan the discipline forbids.
 ///
@@ -214,10 +209,9 @@
 /// smallest consts that exercise a REWORK (a rework is where the
 /// double-spend bites: it is the re-entry that charges): N_TICKETS = 2
 /// (deps/grouping stay expressible), N_TASKS = 1 (singleton task sets),
-/// RWBudget(1) + GAS = 3 (dispatch + one eval rework + one gate rework
+/// BudgetedRework(1) + GAS = 3 (dispatch + one eval rework + one gate rework
 /// all affordable, walls reachable), Budgeted(1), RetryCharged (the
-/// default metering), MAX_STAGES = 1 / N_PROJECTS = 1
-/// (staging and multi-project are orthogonal to the seam —
+/// (staging and partition provisioning are orthogonal to the seam —
 /// each collapses to its documented degeneration; the wrap-up's
 /// invalidated draw still exercises both paths). Unlike the mc
 /// instances there is no per-pricing spread: the seam model reads no
@@ -230,7 +224,7 @@
 /// length is finite under EXACTLY the conditions the per-ticket liveness
 /// sketch is stated under (measure.qnt header): non-exempt decisions are
 /// bounded by descent of the finite measure; AUTHORING rows by
-/// the arrival cap; STUTTER rows (journaled duplicate-absorptions) by
+/// the release cap; STUTTER rows (journaled duplicate-absorptions) by
 /// the fabric's finitely-many-duplicates assumption; CHURN rows are
 /// bounded under RetryCharged (this instance's metering) and unbounded
 /// under RetryFree — the same conditionality, inherited, not new. An
@@ -269,12 +263,10 @@ module chuggy_refinement {
   import chuggy_domain(
     N_TICKETS = 2,
     N_TASKS = 1,
-    REWORK_POLICY = RWBudget(1),
+    REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
     WRAPUP_PRICING = Budgeted(1),
-    OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 1,
-    N_PROJECTS = 1
+     MAX_STAGES = 1
   ).* from "./domain"
 
   // ==========================================================================
@@ -290,19 +282,25 @@ module chuggy_refinement {
   /// a real journal row must carry for replay to work: the deciders are
   /// pure, so (Core, picks) determines everything; the picks are the
   /// only information the crash could lose.
+  type TaskResultRef = { manifest: int, digest: int, schema: int }
+
   type DecisionEvent =
-      Arrive({ deps: Set[int], prog: List[Stage], project: int, wrapUp: WrapUp })
-    | Release(int)
+      ReleaseTicket({ ticket: int, deps: Set[int], prog: List[Stage],
+        workFanout: int, reworkPolicy: ReworkPolicy,
+        wrapUpPricing: WrapUpPricing, resumePricing: RetryPricing,
+        wrapUp: WrapUp })
     | Revoke(int)
     | Dispatch(int)
-    | TaskDone({ ticket: int, tid: int, verdict: Verdict })
+    | TaskDone({ ticket: int, tid: int, verdict: Verdict, result: TaskResultRef })
     | WorkReduce(int)
     | EvalReduce(int)
-    | Dequeue({ ticket: int, moved: bool })
-    | GateResolve({ ticket: int, out: WrapUpOutcome })
-    | CompleteDuplicate(int)
-    | RevalFail(int)
-    | OpRetry(int)
+    | StartWrapUpPreparation(int)
+    | WrapUpPrepared({ ticket: int, approvalRequired: bool })
+    | WrapUpPreparationFailed(int)
+    | WrapUpApproval({ ticket: int, approved: bool })
+    | WrapUpResolve({ ticket: int, out: WrapUpOutcome })
+    | ExecutionBlocked({ ticket: int, reason: Reason })
+    | ResumeTicket(int)
 
   /// One journal row: monotone dense seq (entry i carries seq i+1 —
   /// journalLegal checks it), the decision event, and the StepRecord the
@@ -315,7 +313,7 @@ module chuggy_refinement {
 
   /// The journal's base state: the machine's init fleet — empty (domain
   /// init: tickets' = Map()). Replay starts here; entry 1's event must be
-  /// enabled here (an arrive — nothing else is enabled on an empty
+  /// enabled here (an release — nothing else is enabled on an empty
   /// fleet, which journalLegal then enforces for free).
   pure val genesis: Core = { tickets: Map() }
 
@@ -327,18 +325,20 @@ module chuggy_refinement {
   /// step, and THE replay step: both sides of theorem 3 are this one
   /// function, so they cannot drift.
   pure def execDecisionEvent(c: Core, event: DecisionEvent): Decision = match event {
-    | Arrive(a) => decideArrive(c, a.deps, a.prog, a.project, a.wrapUp)
-    | Release(j) => decideRelease(c, j)
+    | ReleaseTicket(a) => decideReleaseTicket(c, a.ticket, a.deps, a.prog,
+        a.workFanout, a.reworkPolicy, a.wrapUpPricing, a.resumePricing, a.wrapUp)
     | Revoke(j) => decideRevoke(c, j)
     | Dispatch(j) => decideDispatch(c, j)
     | TaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict)
     | WorkReduce(j) => decideWorkReduce(c, j)
     | EvalReduce(j) => decideEvalStageReduce(c, j)
-    | Dequeue(a) => decideDequeue(c, a.ticket, a.moved)
-    | GateResolve(a) => decideWrapUpResolve(c, a.ticket, a.out, true)
-    | CompleteDuplicate(j) => decideCompleteDuplicate(c, j)
-    | RevalFail(j) => decideRevalFail(c, j)
-    | OpRetry(j) => decideOpRetry(c, j)
+    | StartWrapUpPreparation(j) => decideWrapUpStart(c, j)
+    | WrapUpPrepared(a) => decideWrapUpPrepared(c, a.ticket, a.approvalRequired)
+    | WrapUpPreparationFailed(j) => decideWrapUpPreparationFailed(c, j)
+    | WrapUpApproval(a) => decideWrapUpApproval(c, a.ticket, a.approved)
+    | WrapUpResolve(a) => decideWrapUpResolve(c, a.ticket, a.out)
+    | ExecutionBlocked(a) => decideExecutionBlocked(c, a.ticket, a.reason)
+    | ResumeTicket(j) => decideResumeTicket(c, j)
   }
 
   /// The decision's enablement at an explicit Core — per constructor,
@@ -349,30 +349,40 @@ module chuggy_refinement {
   /// journalStep (the actor cannot journal a refused decision) and
   /// re-checked by journalLegal at every replayed prefix.
   pure def decisionEventEnabled(c: Core, event: DecisionEvent): bool = match event {
-    | Arrive(a) => and {
-        canArriveIn(c),
+    | ReleaseTicket(a) => and {
+        canReleaseIn(c, a.ticket),
         a.deps.subseteq(dependableIn(c)),
         validPrograms.contains(a.prog),
-        projects.contains(a.project),
+        workFanoutChoices.contains(a.workFanout),
+        reworkPolicyChoices.contains(a.reworkPolicy),
+        wrapUpPricingChoices.contains(a.wrapUpPricing),
+        resumePricingChoices.contains(a.resumePricing),
         wrapUpChoices.contains(a.wrapUp)
       }
-    | Release(j) => draftsIn(c).contains(j)
     | Revoke(j) => revocablesIn(c).contains(j)
     | Dispatch(j) => and { readiesIn(c).contains(j), dispatchableIn(c, j) }
     | TaskDone(a) => and {
         taskPhaseIn(c).contains(a.ticket),
-        deliverableTaskIds(c, a.ticket).contains(a.tid)
+        a.result.manifest >= 1,
+        a.result.digest >= 1,
+        a.result.schema >= 1,
+        c.tickets.get(a.ticket).tasks.exists(t =>
+          t.id == a.tid and t.state == Outstanding)
       }
     | WorkReduce(j) => reducibleWorkIn(c).contains(j)
     | EvalReduce(j) => reducibleEvalIn(c).contains(j)
-    | Dequeue(a) => wrapUpStartablesIn(c).contains(a.ticket)
-    | GateResolve(a) => and {
-        holdingIn(c).contains(a.ticket),
-        wrapUpOutcomes(true).contains(a.out)
+    | StartWrapUpPreparation(j) => wrapUpStartablesIn(c).contains(j)
+    | WrapUpPrepared(a) => c.tickets.keys().contains(a.ticket) and c.tickets.get(a.ticket).phase == WrapUpPreparing
+    | WrapUpPreparationFailed(j) => c.tickets.keys().contains(j) and c.tickets.get(j).phase == WrapUpPreparing
+    | WrapUpApproval(a) => c.tickets.keys().contains(a.ticket) and c.tickets.get(a.ticket).phase == WrapUpAwaitingApproval
+    | WrapUpResolve(a) => c.tickets.keys().contains(a.ticket) and c.tickets.get(a.ticket).phase == WrapUpCommitting and wrapUpOutcomes.contains(a.out)
+    | ExecutionBlocked(a) => and {
+        taskPhaseIn(c).contains(a.ticket),
+        Set(ExecutionPolicyDenied, TicketConfigIncompatible,
+          ExecutionProfileUnavailable, RuntimeVersionUnsupported,
+          RequiredCapabilityUnavailable).contains(a.reason)
       }
-    | CompleteDuplicate(j) => doneIn(c).contains(j)
-    | RevalFail(j) => readiesIn(c).contains(j)
-    | OpRetry(j) => retryablesIn(c).contains(j)
+    | ResumeTicket(j) => retryablesIn(c).contains(j)
   }
 
   /// RECOVERY: replay the journal into a fresh in-memory state.
@@ -405,7 +415,7 @@ module chuggy_refinement {
   // What the world DOES with an emission is trusted fabric; what the
   // theorems need is arithmetic over which DECISIONS reached it. A
   // "spawn" emission runs a paid task fan-out (the SpawnWorkTasks
-  // effect — dispatch, both rework arms, the RWorking resume: every one
+  // effect — dispatch, both rework arms, the ResumeWorking resume: every one
   // rides a charged account per the domain's descent table); a "completion"
   // emission merges the ticket's diff (the ticket-done success step).
   // Attribution is transitions[0].ticket: every effect-bearing record's
@@ -567,19 +577,20 @@ module chuggy_refinement {
   // simulator plumbing, not a decision, and crashRecover already keeps
   // runs deadlock-free.)
 
-  action actorArrive = all {
-    canArrive,
+  action actorReleaseTicket = all {
+    releasableIds.size() > 0,
+    nondet j = releasableIds.oneOf()
     nondet deps_ = dependableTickets.powerset().oneOf()
     nondet prog = validPrograms.oneOf()
-    nondet project_ = projects.oneOf()
+    nondet workFanout_ = workFanoutChoices.oneOf()
+    nondet reworkPolicy_ = reworkPolicyChoices.oneOf()
+    nondet wrapUpPricing_ = wrapUpPricingChoices.oneOf()
+    nondet resumePricing_ = resumePricingChoices.oneOf()
     nondet wrapUp_ = wrapUpChoices.oneOf()
-    journalStep(Arrive({ deps: deps_, prog: prog, project: project_,
+    journalStep(ReleaseTicket({ ticket: j, deps: deps_, prog: prog,
+      workFanout: workFanout_, reworkPolicy: reworkPolicy_,
+      wrapUpPricing: wrapUpPricing_, resumePricing: resumePricing_,
       wrapUp: wrapUp_ }))
-  }
-  action actorRelease = all {
-    draftTickets.size() > 0,
-    nondet j = draftTickets.oneOf()
-    journalStep(Release(j))
   }
   action actorRevoke = all {
     revocableTickets.size() > 0,
@@ -594,9 +605,10 @@ module chuggy_refinement {
   action actorTaskDone = all {
     taskPhaseTickets.size() > 0,
     nondet j = taskPhaseTickets.oneOf()
-    nondet tid = deliverableTaskIds(core, j).oneOf()
+    nondet tid = core.tickets.get(j).tasks.filter(t => t.state == Outstanding).map(t => t.id).oneOf()
     nondet v = Set(Pass, Fail).oneOf()
-    journalStep(TaskDone({ ticket: j, tid: tid, verdict: v }))
+    journalStep(TaskDone({ ticket: j, tid: tid, verdict: v,
+      result: { manifest: tid, digest: tid, schema: 1 } }))
   }
   action actorWorkReduce = all {
     reducibleWork.size() > 0,
@@ -611,29 +623,35 @@ module chuggy_refinement {
   action actorGateEnter = all {
     wrapUpStartable.size() > 0,
     nondet j = wrapUpStartable.oneOf()
-    nondet moved = Set(true, false).oneOf()
-    journalStep(Dequeue({ ticket: j, moved: moved }))
+    journalStep(StartWrapUpPreparation(j))
+  }
+  action actorWrapUpPrepared = all {
+    liveTickets.exists(k => tickets.get(k).phase == WrapUpPreparing),
+    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpPreparing).oneOf()
+    nondet approvalRequired = Set(true, false).oneOf()
+    journalStep(WrapUpPrepared({ ticket: j, approvalRequired: approvalRequired }))
+  }
+  action actorWrapUpPreparationFailed = all {
+    liveTickets.exists(k => tickets.get(k).phase == WrapUpPreparing),
+    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpPreparing).oneOf()
+    journalStep(WrapUpPreparationFailed(j))
+  }
+  action actorWrapUpApproval = all {
+    liveTickets.exists(k => tickets.get(k).phase == WrapUpAwaitingApproval),
+    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpAwaitingApproval).oneOf()
+    nondet approved = Set(true, false).oneOf()
+    journalStep(WrapUpApproval({ ticket: j, approved: approved }))
   }
   action actorGateResolve = all {
-    holdingTickets.size() > 0,
-    nondet j = holdingTickets.oneOf()
-    nondet out = wrapUpOutcomes(true).oneOf()
-    journalStep(GateResolve({ ticket: j, out: out }))
+    liveTickets.exists(k => tickets.get(k).phase == WrapUpCommitting),
+    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpCommitting).oneOf()
+    nondet out = wrapUpOutcomes.oneOf()
+    journalStep(WrapUpResolve({ ticket: j, out: out }))
   }
-  action actorCompleteDuplicate = all {
-    doneTickets.size() > 0,
-    nondet j = doneTickets.oneOf()
-    journalStep(CompleteDuplicate(j))
-  }
-  action actorRevalFail = all {
-    readyTickets.size() > 0,
-    nondet j = readyTickets.oneOf()
-    journalStep(RevalFail(j))
-  }
-  action actorOpRetry = all {
+  action actorResumeTicket = all {
     retryableEscalated.size() > 0,
     nondet j = retryableEscalated.oneOf()
-    journalStep(OpRetry(j))
+    journalStep(ResumeTicket(j))
   }
 
   // --- The hazard roster (rstepHazard only): the effect-first seam on ------
@@ -642,7 +660,7 @@ module chuggy_refinement {
   // theorems price — the paid spawns (dispatch, the eval-rework, the
   // gate eviction's respawn) and the wrap-up resolutions (the dequeue's
   // fast-path squash, the gated promotion). An orphaned bookkeeping
-  // effect (CreateDraft, OpenHumanTask, ...) is the same shape with
+  // effect (OpenHumanTask, OpenHumanTask, ...) is the same shape with
   // nothing priced riding it — journalCoversWorld still flags it; the
   // demonstration keeps to the shapes the theorems name.
 
@@ -659,22 +677,22 @@ module chuggy_refinement {
   action hazardGateEnter = all {
     wrapUpStartable.size() > 0,
     nondet j = wrapUpStartable.oneOf()
-    nondet moved = Set(true, false).oneOf()
-    effectCrash(Dequeue({ ticket: j, moved: moved }))
+    effectCrash(StartWrapUpPreparation(j))
   }
   action hazardGateResolve = all {
-    holdingTickets.size() > 0,
-    nondet j = holdingTickets.oneOf()
-    nondet out = wrapUpOutcomes(true).oneOf()
-    effectCrash(GateResolve({ ticket: j, out: out }))
+    liveTickets.exists(k => tickets.get(k).phase == WrapUpCommitting),
+    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpCommitting).oneOf()
+    nondet out = wrapUpOutcomes.oneOf()
+    effectCrash(WrapUpResolve({ ticket: j, out: out }))
   }
 
   /// THE DISCIPLINED MACHINE (journal-then-effect): decisions journal
   /// before anything reaches the world; crashes at any instant.
   action rstep = any {
-    actorArrive, actorRelease, actorRevoke, actorDispatch,
+    actorReleaseTicket, actorRevoke, actorDispatch,
     actorTaskDone, actorWorkReduce, actorEvalReduce, actorGateEnter,
-    actorGateResolve, actorCompleteDuplicate, actorRevalFail, actorOpRetry,
+    actorWrapUpPrepared, actorWrapUpPreparationFailed, actorWrapUpApproval,
+    actorGateResolve, actorResumeTicket,
     emitNext, crashRecover
   }
 

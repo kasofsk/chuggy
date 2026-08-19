@@ -62,7 +62,7 @@
 /// The retained task RECORD is NOT a measure
 /// input: it is append-only provenance, so it could only ever climb — the
 /// measure reads phase, live tasks, program length, and the accounts. The
-/// program is immutable after arrival and enters only through stagesLeft.
+/// program is immutable after release and enters only through stagesLeft.
 ///
 /// WEIGHTS, re-derived (the magic-number audit: every numeral
 /// here is a named value or derived from one, with its derivation adjacent;
@@ -96,13 +96,12 @@
 /// DESCENT TABLE — which transitions descend, and by which account.
 /// (Deltas verified per-step by the machine's `stepDescends` invariant and
 /// by tests/chuggy_test.qnt; labels are domain.qnt's StepRecord labels.
-/// There is no stalled-retry label: the pre-work resume is an
-/// operator-retry flavor, in the CHURN set below.)
+/// RetryFree pipeline resumes form the explicit CHURN set below.)
 ///
 ///   label                               descends via
 ///   ----------------------------------- ---------------------------------
 ///   ticket-released                        rank 6->5 (authoring: release —
-///                                       Draft straight into the pipeline;
+///                                       Pending straight into the pipeline;
 ///                                       Ready/Blocked stay derived)
 ///   ticket-revoked (from any rank>0 phase) rank {6,5,4,3,2,1}->0, stage
 ///                                       digit and live tasks cleared
@@ -137,44 +136,37 @@
 ///                                       container below the cycle grain,
 ///                                       which this model trusts rather
 ///                                       than models)
-///   eval-passed (the FINAL stage        rank 3->2 AND stagesLeft 1->0 (the
-///     passes)                             ticket ENQUEUES for the gate —
+///   eval-passed (the FINAL stage        rank 5->4 AND stagesLeft 1->0 (the
+///     passes)                             ticket enters WrapUpQueued —
 ///                                         WrapUpQueued is the queued state)
-///   wrapup-started (the dequeue:      rank 2->1 (the ticket
-///     dequeue occupies the project's      takes the project's depth-1 slot;
-///     depth-1 gate — drawn only when      no account moves — the gate
-///     the branch MOVED; a quiet dequeue   charges nothing until it fails)
-///     lands directly in the same step,
-///     the fast-path ticket-done below)
+///   wrapup-preparation-started          rank 4->3; the ticket takes the
+///                                         project-local repository slot
+///   wrapup-awaiting-approval            rank 3->2
+///   wrapup-commit-permitted             rank {3,2}->1
 ///   rework-started eval_failure         gas -1 AND reworkLeft -1 (the
 ///     (a stage FAILS: the short-circuit   micro reset — rank 3->4, stage
 ///     — later stages never spawn)         digit ->0, work respawn — is
 ///                                         dominated by the account drop)
 ///   ticket-escalated rework_budget_exhausted rank 3->0 (and stage digit ->0)
-///   ticket-escalated gas_exhausted         rank {3,2,1}->0
-///   ticket-done                            rank {3,2,1}->0 (3: a WNone
+///   ticket-escalated gas_exhausted         rank {6,5,4,3,2,1}->0
+///   ticket-done                            rank {5,1}->0 (5: a NoWrapUp
 ///                                       ticket, whose passing evaluation IS
 ///                                       its completion — it enters neither
-///                                       wrap-up phase; 2: the quiet
-///                                       completing straight off the queue;
-///                                       1: completing out of the lease)
-///   rework-started wrapup_failure         gas -1 (AND wrapUpLeft -1 when
-///                                       Budgeted); from WrapUpAwaitingApproval since the
-///                                       the eviction
-///                                       frees the gate by phase (rank
-///                                       1->4 climb + respawn, dominated
+///                                       wrap-up phase; 1: a conclusive
+///                                       permitted commit)
+///   rework-started wrapup_*             gas -1 (AND wrapUpLeft -1 when
+///                                       Budgeted); failure leaves preparing,
+///                                       approval, or committing (rank
+///                                       {3,2,1}->6 climb + respawn, dominated
 ///                                       by the gas drop)
-///   ticket-escalated wrapup_budget_exhausted rank 1->0 (Budgeted only)
-///   ticket-escalated revalidation_failed   rank 5->0 (the pre-work park —
-///                                       Escalated is THE parked phase now;
-///                                       the wall name survives as the
-///                                       reason)
-///   operator-retry, whenever it charges gas -1 (dominates the rank climb
-///     gas (RWorking always — standing     back to 4/3/2 + respawn — for the
-///     rule 2; REvaluating/RWrapUp        REvaluating resume that includes
+///   ticket-escalated wrapup_budget_exhausted rank {3,2,1}->0 (Budgeted only)
+///   ticket-escalated execution_blocked rank {6,5}->0
+///   ticket-resumed, whenever it charges gas -1 (dominates the rank climb
+///     gas (ResumeWorking always — standing     back to 4/3/2 + respawn — for the
+///     rule 2; ResumeEvaluating/ResumeWrapUp        ResumeEvaluating resume that includes
 ///     under RetryCharged)                 the stage digit reappearing at L:
 ///                                         the whole climb is < microBound,
-///                                         which gas outweighs; RWrapUp
+///                                         which gas outweighs; ResumeWrapUp
 ///                                         re-ENQUEUES — resumes to
 ///                                         WrapUpQueued, never into the gate)
 ///
@@ -196,20 +188,12 @@
 ///   back into active work is still metered at the Working boundary —
 ///   standing rule 2, with operator paths governed by the §2 op-retry
 ///   configurability row):
-///     operator-retry, the PRE-WORK resume (Escalated -> Pending, the
-///       RPending flavor's "stalled-retry becomes an
-///       operator resume flavor"): +rankPending*rankWeight. FREE under
-///       BOTH meterings, deliberately: nothing was ever spent on a
-///       pre-work park, and the Working boundary still meters any actual
-///       re-entry — the pre-work resume's pricing, kept
-///       honest here by name.
-///     operator-retry into Evaluating/WrapUp under RetryFree
+///     ticket-resumed into Evaluating/WrapUp under RetryFree
 ///       (+<= rankEvaluating*rankWeight + maxStages*stageWeight + nTasks —
 ///        the Evaluating resume respawns the LOWEST stage's fan-out with
 ///        the full stage digit — a fresh eval fan-out)
-///   Under the DEFAULT metering (RetryCharged) the churn set is the
-///   pre-work resume alone. RetryFree deliberately reproduces a known
-///   operator-churn livelock as a
+///   Under the DEFAULT metering (RetryCharged) the churn set is empty.
+///   RetryFree deliberately reproduces a known operator-churn livelock as a
 ///   configuration, so the model can generate escalation traces under both
 ///   prices — the mc_chuggy_retryfree instance plus the model gate's
 ///   witness layer (the deterministic free-climb machine trace in
@@ -218,15 +202,14 @@
 ///
 ///   AUTHORING (author churn above the
 ///   released pipeline; each member is bounded by name):
-///     ticket-arrived      (+ the fresh Draft's whole ticketMeasure: a ticket enters
-///                       the fleet. Bounded by construction: ids are dense,
-///                       never reused, and capped by the N_TICKETS arrival
-///                       bound — at most N_TICKETS arrivals ever. The arrival
-///                       also fixes the ticket's eval PROGRAM, but a Draft's
+///     ticket-released      (+ the fresh Pending's whole ticketMeasure: a ticket enters
+///                       never reused, and capped by the N_TICKETS release
+///                       bound — at most N_TICKETS arrivals ever. The release
+///                       also fixes the ticket's eval PROGRAM, but a Pending's
 ///                       stage digit is 0, so the climb bound is unchanged.)
-///                       Arrival is this set's ONLY climbing member: an
+///                       Release is this set's ONLY climbing member: an
 ///                       author's edit loop is not in the phase table at
-///                       all, because content edits on a Draft are below
+///                       all, because content edits on a Pending are below
 ///                       its grain.)
 ///     ticket-revoked, desk-only (= 0: revoking an already-parked ticket —
 ///                       Escalated is rank 0, so nothing falls when no
@@ -247,7 +230,7 @@
 /// non-STUTTER non-CHURN non-AUTHORING step strictly decreases the sum of
 /// ticketMeasure over all tickets. Each CHURN step requires an operator
 /// acting on a ticket with an open desk task (domain.qnt `coveredSet`),
-/// and each AUTHORING step is bounded by the arrival cap. So, given the
+/// and each AUTHORING step is bounded by the release cap. So, given the
 /// trusted fabric axioms (spawned tasks eventually resolve, under a
 /// maximum runtime and a relaunch limit) and under default metering, any
 /// run with finitely many stutter and churn events performs FINITELY MANY
@@ -272,7 +255,7 @@
 /// churn — which is the whole of what is owed.
 ///
 /// So: CHUGGY BOUNDS WORK, NOT WAITING. Waiting on an author
-/// to release a Draft, on the dispatcher to pick, and on the gate to free
+/// to release a Pending, on the dispatcher to pick, and on the gate to free
 /// its slot (proposed R6) are all unbounded BY DECISION. The unconditional
 /// system-quiescence theorem is a strictly stronger claim and is NOT
 /// made here.
@@ -286,7 +269,6 @@ module chuggy_measure {
   // here because they live in the same module-wide constructor namespace.
   // TK (TaskKind), TS (TaskState — the explicit task lifecycle), RW
   // (ReworkPolicy), W (WrapUpOutcome and WrapUp, which share it), WO
-  // (WrapUpObs — the wrap-up attempt attribution) and A (ArtifactMark).
 
   /// STORED ticket phases, deliberately few (standing rule 3, derive don't
   /// store). Blocked and Ready are PREDICATES over deps + record in
@@ -297,12 +279,11 @@ module chuggy_measure {
   /// parallel task set; WrapUpQueued is its own phase because its outcome is the
   /// exclusivity boundary; Done is absorbing; Escalated is the human desk.
   ///
-  /// Draft is the ONLY authoring phase: release goes Draft -> Pending
+  /// Pending is the ONLY authoring phase: release goes Pending -> Pending
   /// directly, with Ready and Blocked derived.
   ///
   /// Escalated is THE parked phase — one parked-with-an-open-human-task
-  /// phase, with the `reason` field carrying the pre-work walls
-  /// (revalidation_failed, dependency_revoked).
+  /// phase, with the `reason` field carrying the wall classification.
   ///
   /// Revoked is the other settled terminal: absorbing, runs nothing, never
   /// completes, and opens NO human task, because revocation is the author's
@@ -312,19 +293,12 @@ module chuggy_measure {
   /// Evaluating edge, because within-phase progress lives in the stage
   /// digit rather than in new phases.
   ///
-  /// WrapUpAwaitingApproval is the lease held; WrapUpQueued is ENQUEUED. An
-  /// implementation may keep queue and slot in ONE state with the split
-  /// living in memory; the model lifts the slot into phase so depth-1
-  /// exclusivity is a predicate over stored state, while the queue's ORDER
-  /// stays deliberately unmodeled. A ticket is WrapUpAwaitingApproval only when the
-  /// environment invalidated its artifact at the dequeue — a quiet dequeue
-  /// completes directly and never occupies the gate — so WrapUpAwaitingApproval
-  /// ENCODES invalidated = true with no stored flag, derive-don't-store
-  /// applied to the environment's choice.
+  /// WrapUpQueued is enqueued. Preparing, awaiting approval and committing
+  /// all hold the single project-local repository slot; committing is the
+  /// irreversible boundary.
   type Phase =
-    Draft |
-    Pending | Working | Evaluating | WrapUpQueued | WrapUpAwaitingApproval |
-    Done | Escalated | Revoked
+    Pending | Working | Evaluating | WrapUpQueued | WrapUpPreparing |
+    WrapUpAwaitingApproval | WrapUpCommitting | Done | Escalated | Revoked
 
   /// What a task IS for (task records are first-class — they carry the
   /// anatomy):
@@ -408,7 +382,7 @@ module chuggy_measure {
   /// Eval-rework pricing ("rework budget should be removed from
   /// core job entity and into impl / middleware") — the WrapUpPricing
   /// pattern applied to the rework bound: the machine consults an abstract
-  /// policy, and RWBudget(n) grants a budget of n cycles. Deliberately the
+  /// policy, and BudgetedRework(n) grants a budget of n cycles. Deliberately the
   /// ONLY branch for now: the triage row keeps the bound in the model
   /// because removing it entirely would make per-ticket liveness conditional
   /// on middleware behavior — an unbounded (or gas-only) branch is exactly
@@ -417,37 +391,33 @@ module chuggy_measure {
   /// (the WrapUpPricing method). The per-ticket ACCOUNT the policy meters
   /// (Ticket.reworkLeft) is policy state the middleware owns in the
   /// implementation — see the field's note.
-  type ReworkPolicy = RWBudget(int)
+  type ReworkPolicy = BudgetedRework(int)
 
   /// Operator-retry metering — configurable per deployment, default
   /// charge. RetryFree reproduces a known livelock by configuration.
   type RetryPricing = RetryCharged | RetryFree
 
-  /// Where an operator Retry resumes a parked ticket. RNone when not parked —
+  /// Where an operator Retry resumes a parked ticket. NoResume when not parked —
   /// or parked with NO modeled resume: the dependency_revoked wall's only
   /// modeled exit is revoke (domain.qnt retryableIn), and stamping a
-  /// resume point on it would be a lie to the desk. RPending is the
-  /// PRE-WORK resume flavor: back to the
-  /// released waiting room (Pending, where Ready/Blocked re-derive),
-  /// never to a pipeline phase — a pre-work park spent nothing and
-  /// resumes to exactly where it left.
-  type Resume = RNone | RPending | RWorking | REvaluating | RWrapUp
+  /// resume point on it would be a lie to the desk.
+  type Resume = NoResume | ResumeWorking | ResumeEvaluating | ResumeWrapUp
 
   /// Why a ticket sits on the human desk. The termination requirement
   /// names no individual wall; the reason is
-  /// what distinguishes the parks: RsWorkFailed / RsReworkBudgetExhausted /
-  /// RsWrapUpBudgetExhausted (Budgeted pricing only) / RsGasExhausted are
-  /// the pipeline walls, and the PRE-WORK walls are RsRevalidationFailed
-  /// (retryable — resumes to Pending, RPending) and RsDependencyRevoked
-  /// (the cascade wall, chuggy-NEW — NOT retryable, its only exit is
-  /// revoke). RsGasExhausted is the rename of the deadline wall
-  /// (`gas_exhausted` on the trace); RsWorkFailed is the CYCLE-level work
+  /// what distinguishes the parks: WorkFailed / ReworkBudgetExhausted /
+  /// WrapUpBudgetExhausted (Budgeted pricing only) / GasExhausted are
+  /// the pipeline walls. DependencyRevoked is the cascade wall and is not
+  /// retryable; its only exit is revoke. GasExhausted is the rename of the deadline wall
+  /// (`gas_exhausted` on the trace); WorkFailed is the CYCLE-level work
   /// wall (there is no retries wall: retrying a failed container below the
   /// cycle grain is the fabric's job, trusted here rather than modeled).
   type Reason =
-    RsNone | RsWorkFailed | RsReworkBudgetExhausted |
-    RsWrapUpBudgetExhausted | RsGasExhausted | RsRevalidationFailed |
-    RsDependencyRevoked
+    NoReason | WorkFailed | ReworkBudgetExhausted |
+    WrapUpBudgetExhausted | GasExhausted | DependencyRevoked |
+    ExecutionPolicyDenied | TicketConfigIncompatible |
+    ExecutionProfileUnavailable | RuntimeVersionUnsupported |
+    RequiredCapabilityUnavailable
 
   /// How a wrap-up attempt resolves. ONE success, deliberately: an earlier
   /// model named two, because a merge promotes differently depending on
@@ -457,48 +427,15 @@ module chuggy_measure {
   ///   - WOk      the step committed the artifact.
   ///   - WFailed  it did not, and is drawable only when the environment
   ///              invalidated the artifact (domain.qnt wrapUpOutcomes).
-  type WrapUpOutcome = WOk | WFailed
-
-  /// THE WRAP-UP ATTEMPT OBSERVATION (the isolation gate's attribution
-  /// half): every step that RESOLVES a wrap-up attempt carries WOAttempt
-  /// with
-  ///   - `project`: the ticket's target project — golden traces must be
-  ///     per-project attributable, and the project cannot ride the effect
-  ///     strings (no dynamic strings at this grain), so the step record
-  ///     carries it structurally;
-  ///   - `invalidated`: the environment's PER-ATTEMPT choice of whether
-  ///     the target project's default branch moved under the candidate — the
-  ///     ONLY reason a wrap-up can fail, and the record's one carrier of
-  ///     the discipline stated below.
-  /// Every other step — including eval-passed (which merely ENQUEUES the
-  /// wrap-up) and complete-duplicate (an absorbed re-delivery: no attempt
-  /// resolves, nothing is emitted) — carries WONone. The iff is the
-  /// wrapUpIsolation invariant (domain.qnt).
-  ///
-  /// THE NAMED-NONDET DISCIPLINE, stated here because `invalidated` above
-  /// is where an environment choice reaches the observable record, and
-  /// cited by that name from the sites it governs: an environment choice
-  /// is an explicitly NAMED nondet event, drawn fresh at every attempt
-  /// and carried on the step record — never a flag stored on state.
-  /// There is no per-project "active" variable anywhere. What enforces it is
-  /// the record types: neither Ticket nor Core has a field for one, so
-  /// storing a choice would mean ADDING a field rather than setting one,
-  /// and a choice reaches a decider as a PARAMETER or not at all.
-  ///
-  /// It is NOT one of the numbered standing rules — those are a
-  /// closed list — and it is not rule 3 under another name: rule 3
-  /// refuses a stored duplicate of a DERIVABLE fact, and an environment
-  /// choice is derivable from nothing. They share only the conclusion,
-  /// that the flag does not exist.
-  type WrapUpObs = WONone | WOAttempt({ project: int, invalidated: bool })
+  type WrapUpOutcome = WrapUpCommitted | WrapUpAborted
 
   /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
   /// like the eval program — eval-is-data applied one seam later.
   ///
-  ///   WNone            the effect was external and already happened during
+  ///   NoWrapUp            the effect was external and already happened during
   ///                    work; evaluation passing completes the ticket, and
   ///                    it enters neither wrap-up phase. A deploy, a report.
-  ///   WExclusive(r)    the step needs a LEASE on resource r before it may
+  ///   ExclusiveWrapUp    the step needs a LEASE on resource r before it may
   ///                    run — a merge takes its repo, a registry push takes
   ///                    the registry, a deploy-to-env takes the environment.
   ///
@@ -509,7 +446,7 @@ module chuggy_measure {
   /// Which promotion mechanism a merge uses is not modelled at all.
   ///
   /// NOT a measure input; only the PHASE has a rank.
-  type WrapUp = WNone | WExclusive(int)
+  type WrapUp = NoWrapUp | ExclusiveWrapUp
 
   /// WHAT A TICKET PRODUCED (design 002): an opaque identity for the thing
   /// work built, that evaluation judged, and that wrap-up commits. Its only
@@ -526,39 +463,33 @@ module chuggy_measure {
   /// can dispatch.
   ///
   /// NOT a measure input, like `project` (measureArtifactBlindTest).
-  type ArtifactMark = ANone | ASome(int)
+  type ArtifactMark = NoArtifact | ProducedArtifact(int)
 
   /// One ticket's record. The measure below is a pure function of this.
   type Ticket = {
     phase: Phase,
     // Upstream dependency ticket ids (acyclic by construction in domain.qnt).
-    // Deps may CROSS projects — the dep gate is Done-ness, not
-    // location (domain.qnt depsDoneIn reads phase alone; the lean reading
-    // of "one orchestrator, many targets": the DAG stays
-    // orchestrator-level, and forbidding cross-project edges would be new
-    // machinery nothing has asked for).
+    // Core is project-scoped, so every edge is project-local by construction.
     deps: Set[int],
     // How this ticket finishes (design 002): authored, immutable after
-    // arrival, and what decides whether it takes a lease or completes at
+    // release, and what decides whether it takes a lease or completes at
     // eval-pass.
     wrapUp: WrapUp,
     // The artifact this ticket has produced, if it has passed work (design
     // 002). Set at work-passed and superseded by each rework's product.
     artifact: ArtifactMark,
-    // THE TARGET PROJECT — one orchestrator, many targets: a ticket targets
-    // EXACTLY ONE project, an AUTHORED field like deps and the program —
-    // chosen at arrival from the bounded universe 1..N_PROJECTS (domain.qnt
-    // projects; projectsWellFormed) and immutable after. NOT a measure input:
-    // no digit, weight, or account radix reads it (the project-blindness
-    // theorem — derivation in this file's multi-project header note), and no
-    // budget is per-project, deliberately.
-    project: int,
+    // Release-time semantic policy. Later decisions read these immutable
+    // fields, never the importing module's ambient configuration.
+    workFanout: int,
+    reworkPolicy: ReworkPolicy,
+    wrapUpPricing: WrapUpPricing,
+    resumePricing: RetryPricing,
     // THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
-    // arrives with the Draft and is immutable after arrival, like
+    // is released with the Pending and is immutable after release, like
     // deps. This is "eval is data, not machinery" made
     // literal: the program is data on the ticket record; domain.qnt's
     // decideEvalStageReduce is the interpreter. Well-formedness (non-empty,
-    // length <= MAX_STAGES, every fanout in 1..N_TASKS) is an ARRIVAL
+    // length <= MAX_STAGES, every fanout in 1..N_TASKS) is an RELEASE
     // validity condition — domain.qnt programsWellFormed.
     program: List[Stage],
     // The LIVE task set of the current Working phase or Evaluating stage;
@@ -590,7 +521,7 @@ module chuggy_measure {
     // in the very next state.
     spawned: int,
     // POLICY STATE: the eval-rework account REMAINING, granted
-    // by ReworkPolicy (RWBudget(n) grants n; counts down — the measure
+    // by ReworkPolicy (BudgetedRework(n) grants n; counts down — the measure
     // wants remaining, not spent). In the IMPLEMENTATION this account
     // belongs to the middleware, not to the core ticket entity — the note's
     // demand — and it stays on the model's Ticket record for the same reason
@@ -604,16 +535,13 @@ module chuggy_measure {
     // GAS remaining — the REQUIRED account (the bound is a spend meter,
     // not a clock).
     gasLeft: int,
-    // Operator-resume point (RNone unless Escalated with a modeled
+    // Operator-resume point (NoResume unless Escalated with a modeled
     // resume — the dependency_revoked wall has none; see Resume).
     resumeAt: Resume,
-    // Desk reason (RsNone unless Escalated). Deliberately FIRST-CLASS
+    // Desk reason (NoReason unless Escalated). Deliberately FIRST-CLASS
     // stored trace vocabulary, not derived from phase — and the
-    // Stalled merge leans on exactly that: with one parked phase, only the
-    // reason distinguishes a retryable pre-work park
-    // (RsRevalidationFailed) from the cascade wall (RsDependencyRevoked,
-    // not retryable) and from the pipeline walls, which no phase predicate
-    // could.
+    // With one parked phase, the reason distinguishes the cascade wall
+    // (DependencyRevoked, not retryable) from retryable pipeline walls.
     reason: Reason,
     // GHOST: completion effects ever emitted for this ticket — the counter the
     // effect-exclusivity invariant (exactly one completion) reads.
@@ -633,14 +561,14 @@ module chuggy_measure {
   /// Done. This is precisely why the revoke cascade needs its own
   /// coverage: a dependent stuck behind a Revoked dep gets no visibility
   /// through its dep, so the cascade parks it with a task of its OWN
-  /// (RsDependencyRevoked; domain.qnt `cascadeSafety`).
+  /// (DependencyRevoked; domain.qnt `cascadeSafety`).
   pure def hasOpenHumanTask(ticket: Ticket): bool =
     ticket.phase == Escalated
 
   /// The machine's observed state, as the pure deciders see it. A record
   /// (not a bare map) so the ticket-source shape stays open.  attached
-  /// authoring here with no widening needed after all — tickets ARRIVE by
-  /// growing the map's (dense, never-reused) id domain through the
+  /// authoring here with no widening needed after all — tickets RELEASE by
+  /// growing the map's sparse, never-reused id domain through the
   /// `freshTicket` seam, and no decider needed surgery. The shape that
   /// grew is the Ticket record (program, record, task kinds), not Core.
   type Core = { tickets: int -> Ticket }
@@ -652,25 +580,12 @@ module chuggy_measure {
   type Transition = { ticket: int, from: Phase, to: Phase }
 
   /// One decision's observable record, mirroring the golden-trace step
-  /// schema {event, transitions, effects} — extended
-  /// with the wrap-up attribution field (`attempt`, WONone on every step
-  /// that resolves no wrap-up attempt; see WrapUpObs): the minimal
-  /// StepRecord extension that keeps golden traces per-project attributable
-  /// at the one boundary where the project matters.
-  ///
-  /// IT IS NAMED FOR WHAT IT RANGES OVER, which is the attempt and not the
-  /// completion. Most of the labels it carries a WOAttempt on are failures —
-  /// the gate rework and both wrap-up walls, against the one completion — so
-  /// naming it after the successful case would be wrong on the majority of
-  /// its own domain (wrapUpIsolation's WOAttempt arm lists them). It is not
-  /// named `wrapUp` either, because Ticket.wrapUp is the AUTHORED kind and a
-  /// reader meeting both in one decision should not have to ask which is
-  /// which.
+  /// schema. Infrastructure request and permit identities live in the
+  /// journal cause envelope rather than domain state or this record.
   type StepRecord = {
     label: str,
     transitions: List[Transition],
-    effects: List[str],
-    attempt: WrapUpObs
+    effects: List[str]
   }
 
   /// What a pure decider returns: record performed + post-state.
@@ -702,10 +617,10 @@ module chuggy_measure {
     }
 
   /// The rework account's size under a policy (the WrapUpPricing pattern —
-  /// see ReworkPolicy for why RWBudget is the only branch for now).
+  /// see ReworkPolicy for why BudgetedRework is the only branch for now).
   pure def reworkBudget(rw: ReworkPolicy): int =
     match rw {
-      | RWBudget(n) => n
+      | BudgetedRework(n) => n
     }
 
   // --- Named rank ladder ---------------
@@ -719,23 +634,21 @@ module chuggy_measure {
   /// The held lease sits directly above settled: every resolution —
   /// completion, the priced failure, the walls — settles or reworks in one
   /// step.
-  pure val rankHolding: int = rankSettled + 1
-  /// WrapUpQueued — ENQUEUED for the gate: the
-  /// dequeue (wrapup-started) descends into the gate, the quiet fast-path
-  /// descends straight to Done.
-  pure val rankWrapUp: int = rankHolding + 1
+  pure val rankCommitting: int = rankSettled + 1
+  pure val rankAwaitingApproval: int = rankCommitting + 1
+  pure val rankPreparing: int = rankAwaitingApproval + 1
+  /// WrapUpQueued waits above all slot-holding phases.
+  pure val rankWrapUp: int = rankPreparing + 1
   pure val rankEvaluating: int = rankWrapUp + 1
   pure val rankWorking: int = rankEvaluating + 1
   /// The released waiting room (Ready/Blocked derive from it).
   pure val rankPending: int = rankWorking + 1
-  /// The ONLY authoring phase, the ladder's top; release descends 6 -> 5.
-  pure val rankDraft: int = rankPending + 1
-  /// The ladder's ceiling — the highest rank any phase takes (Draft).
+  /// The ladder's ceiling — the highest rank any phase takes (Pending).
   /// microBound's multiplier is radix(rankCeiling): the
   /// compression (6 -> 5)'s two new rungs (5 -> 7) and
   /// the grouping removal (7 -> 6) each propagated to the multiplier
   /// (7 -> 6 -> 8 -> 7) by derivation, not by editing a literal.
-  pure val rankCeiling: int = rankDraft
+  pure val rankCeiling: int = rankPending
 
   /// How far from settled a ticket's lifecycle position is. The wildcard is
   /// the settled tier: Done, Escalated, and Revoked all take
@@ -743,12 +656,13 @@ module chuggy_measure {
   /// settled.
   pure def phaseRank(p: Phase): int =
     match p {
-      | Draft => rankDraft
       | Pending => rankPending
       | Working => rankWorking
       | Evaluating => rankEvaluating
       | WrapUpQueued => rankWrapUp
-      | WrapUpAwaitingApproval => rankHolding
+      | WrapUpPreparing => rankPreparing
+      | WrapUpAwaitingApproval => rankAwaitingApproval
+      | WrapUpCommitting => rankCommitting
       | _ => rankSettled
     }
 
@@ -833,7 +747,6 @@ module chuggy_measure {
       { id: i, kind: k, state: Outstanding })
 
   /// The next task id this ticket would spawn: every id ever issued is either
-  /// retired (record) or live (tasks), and ids are dense from firstTaskId.
   pure def nextTaskId(ticket: Ticket): int =
     firstTaskId + ticket.record.length() + ticket.tasks.size()
 
@@ -842,7 +755,7 @@ module chuggy_measure {
   /// `spawned` counter by the same n, which is what keeps the idsAccounted
   /// equality (domain.qnt) checkable. Callers guarantee the previous set
   /// is already retired (tasks empty), which every spawn site satisfies:
-  /// dispatch/wrapup-rework/opRetry spawn from task-free phases, and the
+  /// dispatch/wrapup-rework/resumeTicket spawn from task-free phases, and the
   /// reduces spawn on the retireLive'd ticket.
   pure def spawnOn(ticket: Ticket, k: TaskKind, n: int): Ticket =
     { ...ticket, tasks: spawnTasks(k, nextTaskId(ticket), n), spawned: ticket.spawned + n }
