@@ -232,6 +232,99 @@ export type ArtifactMark =
   { readonly tag: "ANone" } | { readonly tag: "ASome"; readonly id: number };
 
 /**
+ * THE SUM-TYPE CONSTRUCTOR ROSTERS THIS TREE SHIPS, one per `model/measure.qnt`
+ * sum type, each an exhaustive list of its union's constructors.
+ *
+ * IT IS DERIVED FROM AN EXHAUSTIVE `Record`, `shippedCmdTags`' arrangement one
+ * seam over: `unionTags` takes a `Record<Members, true>`, so a constructor the
+ * union has and the record omits is a compile error, and a key the union does
+ * not have is one too — the roster cannot silently fall behind the union it
+ * names. The union is this tree's hand-typed copy of the model's `type X`, and
+ * nothing in TypeScript holds either against `model/`: `src/tools/verify.ts`
+ * reads the model's own arms and compares these sets in both directions on every
+ * run of the conformance gate. Until it did, renaming a model constructor no
+ * committed fixture carried passed every gate green — the decode arm-lists in
+ * `itf.ts` catch such a rename only when a trace exercises it.
+ *
+ * A TAGGED UNION IS ROSTERED BY ITS `tag`s AND A BARE STRING UNION BY ITS
+ * MEMBERS — the two shapes this tree writes a sum type in, and the constructor
+ * name is the `tag` in the first and the member itself in the second.
+ */
+function unionTags<T extends string>(
+  members: Readonly<Record<T, true>>,
+): readonly string[] {
+  // The generic is on the ARGUMENT, where it does the work: `Record<T, true>`
+  // refuses an object that omits a member of the union or adds one it lacks. The
+  // names come back as a plain `string[]`, which is all a roster comparison needs
+  // and what lets the keys read out without a cast.
+  return Object.keys(members);
+}
+
+export const shippedSumConstructors = {
+  Phase: unionTags<Phase>({
+    PDraft: true,
+    PPending: true,
+    PWorking: true,
+    PEvaluating: true,
+    PWrapUp: true,
+    PWrapUpHolding: true,
+    PDone: true,
+    PEscalated: true,
+    PRevoked: true,
+  }),
+  TaskKind: unionTags<TaskKind["tag"]>({ TKWork: true, TKEval: true }),
+  TaskOutcome: unionTags<TaskOutcome>({
+    TPassed: true,
+    TFailed: true,
+    TCancelled: true,
+  }),
+  TaskState: unionTags<TaskState["tag"]>({ TSRunning: true, TSResolved: true }),
+  Verdict: unionTags<Verdict>({ VPass: true, VFail: true }),
+  Combinator: unionTags<Combinator>({ CUnanimousPass: true, CAnyPass: true }),
+  WrapUpPricing: unionTags<WrapUpPricing["tag"]>({
+    Budgeted: true,
+    DeadlineOnly: true,
+  }),
+  ReworkPolicy: unionTags<ReworkPolicy["tag"]>({ RWBudget: true }),
+  RetryPricing: unionTags<RetryPricing>({
+    RetryCharged: true,
+    RetryFree: true,
+  }),
+  Resume: unionTags<Resume>({
+    RNone: true,
+    RPending: true,
+    RWorking: true,
+    REvaluating: true,
+    RWrapUp: true,
+  }),
+  Reason: unionTags<Reason>({
+    RsNone: true,
+    RsWorkFailed: true,
+    RsReworkBudgetExhausted: true,
+    RsWrapUpBudgetExhausted: true,
+    RsGasExhausted: true,
+    RsRevalidationFailed: true,
+    RsDependencyRevoked: true,
+  }),
+  WrapUpOutcome: unionTags<WrapUpOutcome>({ WOk: true, WFailed: true }),
+  WrapUpObs: unionTags<WrapUpObs["tag"]>({ WONone: true, WOAttempt: true }),
+  WrapUp: unionTags<WrapUp["tag"]>({ WNone: true, WExclusive: true }),
+  ArtifactMark: unionTags<ArtifactMark["tag"]>({ ANone: true, ASome: true }),
+} as const satisfies Readonly<Record<string, readonly string[]>>;
+
+/** The `model/measure.qnt` sum types this tree ships a constructor roster for. */
+export type ModelSumTypeName = keyof typeof shippedSumConstructors;
+
+/**
+ * The same names as a value, so the model-reading side can iterate them. Read
+ * off the roster's own keys rather than typed a second time, so the two cannot
+ * name different sets.
+ */
+export const modelSumTypeNames = Object.keys(
+  shippedSumConstructors,
+) as readonly ModelSumTypeName[];
+
+/**
  * `model/measure.qnt` Ticket — one ticket's record, in the model's field
  * order. The measure is a pure function of this, which is why the record lives
  * in the measure module rather than the machine's.

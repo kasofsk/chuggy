@@ -19,7 +19,11 @@
 import { readdirSync } from "node:fs";
 
 import { messageOf } from "../domain/assert.ts";
-import type { Config } from "../domain/domain.ts";
+import { enablementPredicateNames, type Config } from "../domain/domain.ts";
+import {
+  modelSumTypeNames,
+  shippedSumConstructors,
+} from "../domain/measure.ts";
 import { bundleConjunctNames } from "../domain/invariants.ts";
 import { effectVocabulary } from "../effects/effect.ts";
 import { shippedDeciders } from "../spine/cmd.ts";
@@ -40,6 +44,7 @@ import {
   mcInstances,
   pinsMissed,
   type Coverage,
+  type CoverageGap,
 } from "../spine/coverage.ts";
 import {
   decodeSteps,
@@ -54,6 +59,7 @@ import {
 } from "../spine/itf.ts";
 import { replayTrace } from "../spine/replay.ts";
 import {
+  assertModelSurfacesClaimed,
   CorpusError,
   constNames,
   constsDisagree,
@@ -96,6 +102,11 @@ export function verifyCorpus(): Verification {
 
   try {
     findings.push(...orphanFixtures(manifest));
+    // THE COMPLETENESS GUARD BEFORE THE ROSTERS. A model type or `…In` predicate
+    // that no roster reads is not a disagreement the comparison below can see —
+    // there is no roster to disagree — so it is a could-not-run raised first,
+    // before the rosters report agreement over a surface nobody is checking.
+    assertModelSurfacesClaimed();
     // THE ROSTERS BEFORE THE CONSTS, because the coarser alarm goes first. If
     // the model's SURFACE has moved, the const comparison's own module lookups
     // are reading a file whose shape this tree no longer describes — and a
@@ -125,13 +136,20 @@ export function verifyCorpus(): Verification {
     return { ...errorOnly(error, coverage), findings, replayed };
   }
 
+  // TWO PRODUCERS, TWO PUSHES, so each has its own case in the suite: a coverage
+  // gap is a roster the corpus does not REACH, and `effectGaps` is the same
+  // question asked of the effect vocabulary — which lives in `src/effects/` and
+  // so is passed in rather than read here. Folded into one push, the effect half
+  // was deletable in silence.
   const taken = coverage.taken();
-  findings.push(
-    ...[...coverageGaps(taken), ...effectGaps(effectVocabulary, taken)].map(
-      (gap) => `coverage: ${gap.obligation} ${gap.missing}`,
-    ),
-  );
+  findings.push(...coverageGaps(taken).map(gapLine));
+  findings.push(...effectGaps(effectVocabulary, taken).map(gapLine));
   return { findings, errors: [], coverage: taken, replayed };
+}
+
+/** One coverage gap as the walk's own finding line — the shape both producers map to. */
+function gapLine(gap: CoverageGap): string {
+  return `coverage: ${gap.obligation} ${gap.missing}`;
 }
 
 function errorOnly(error: unknown, coverage: CoverageBuilder): Verification {
@@ -335,14 +353,23 @@ function staleConsts(manifest: Manifest): readonly string[] {
  * across that boundary. `corpus.ts`'s reader is what reaches, and this is where
  * the two sides meet.
  *
- * THE BUNDLE, THE `Cmd` ARMS AND THE REFINEMENT BLOCKS ARE THE ONES A
- * `pure def` READ COULD NOT SEE, and they are here because their absence
- * reproduced this alarm's own failure mode: a model
- * surface stated as a `val … = and { … }` or as a sum type is invisible to a
- * reader that looks for definitions, code literals and consts, so a conjunct
- * added to `allInvariants` and an arm added to `type Cmd` both passed every
- * gate at exit 0. Two of them also mean this walk reads `refinement.qnt`, which
- * `staleConsts` never opens.
+ * THE BUNDLE, THE SUM-TYPE CONSTRUCTORS AND THE REFINEMENT BLOCKS ARE THE ONES
+ * A `pure def` READ COULD NOT SEE, and they are here because their absence
+ * reproduced this alarm's own failure mode: a model surface stated as a
+ * `val … = and { … }` or as a sum type is invisible to a reader that looks for
+ * definitions, code literals and consts, so a conjunct added to `allInvariants`
+ * and an arm added to `type Cmd` both passed every gate at exit 0. `Cmd` was
+ * the first sum type read; the rest of `measure.qnt`'s — `Phase`, `Verdict`,
+ * `Resume` and the twelve others in `shippedSumConstructors` — arrived when a
+ * constructor rename no committed fixture carried was found to do the same. Some
+ * of these also mean this walk reads `refinement.qnt`, which `staleConsts` never
+ * opens.
+ *
+ * THE `…In` ENABLEMENT PREDICATES ARE HERE FOR THE SAME REASON one seam out: the
+ * model names every enabledness question first-class as a `pure def …In`, this
+ * tree ships one function per predicate, and nothing held the two lists together
+ * — a `quarantinedIn` added upstream reached no gate. `enablementPredicateNames`
+ * is the shipped side, `model.enablementPredicates` the model's own.
  *
  * AND THE RECORD SCHEMAS ARE THE ONES NO ROSTER OF NAMES COULD SEE AT ALL,
  * which is why they arrived last and cost the most. Every roster above is a set
@@ -363,10 +390,20 @@ function staleConsts(manifest: Manifest): readonly string[] {
  * model's literal order is where its deciders happen to write them, and a
  * gate that argued about sequence would be a gate somebody turns off.
  *
- * ONE MODEL ROSTER IS COMPARED SOMEWHERE ELSE, and it is named here so the
- * list below reads as complete rather than as everything anybody thought of.
- * `model/domain.qnt`'s three ANTI-VACUITY WITNESSES are mirrored by
- * `src/spine/walk.test.ts`'s `witnessNames` — a `.test.ts` file, because the
+ * THE `type` AND `…In` SURFACES ARE COMPLETE, AND `assertModelSurfacesClaimed`
+ * IS WHAT MAKES THAT A CHECK RATHER THAN A CLAIM. This header used to say the
+ * list read as complete "rather than as everything anybody thought of" — which
+ * was itself a thing somebody thought of, unverified. The guard in `corpus.ts`
+ * now enumerates every `type` and `…In` the model declares and refuses any that
+ * no roster here reads, so the "closed one surface, left its sibling" defect that
+ * put the sum types and the `…In` predicates on this list cannot recur silently.
+ * The other surfaces — the bundles, the code literals, the consts — are `val`s
+ * and declarations the guard does not range over, and stay a hand-kept list.
+ *
+ * ONE MODEL ROSTER IS COMPARED SOMEWHERE ELSE, and it is named here so the list
+ * reads as complete. `model/domain.qnt`'s three ANTI-VACUITY WITNESSES are
+ * mirrored by `src/spine/walk.test.ts`'s `witnessNames` — a `.test.ts` file,
+ * because the
  * witnesses are the randomized layer's and a shipped predicate with no shipped
  * caller is a shape this tree has declined before. `no-shipped-test-fixtures`
  * forbids this module from importing one, so the comparison is a case in
@@ -414,6 +451,18 @@ function staleRosters(): readonly string[] {
       model.bundleConjuncts,
     ),
     ...rosterDisagrees("Cmd arm", shippedCmdTags, model.cmdArms),
+    ...modelSumTypeNames.flatMap((type) =>
+      rosterDisagrees(
+        `${type} constructor`,
+        shippedSumConstructors[type],
+        model.sumConstructors[type],
+      ),
+    ),
+    ...rosterDisagrees(
+      "enablement predicate",
+      enablementPredicateNames,
+      model.enablementPredicates,
+    ),
     ...rosterDisagrees(
       "refinementCore conjunct",
       refinementCoreConjuncts,

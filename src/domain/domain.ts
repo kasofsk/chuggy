@@ -982,6 +982,49 @@ export function wrapUpStartableIn(c: Core, j: number): boolean {
 }
 
 /**
+ * THE `*In` ENABLEMENT PREDICATES THIS TREE SHIPS, held against
+ * `model/domain.qnt`'s own `pure def …In` by `src/tools/verify.ts` as an exact
+ * set in both directions.
+ *
+ * IT REFERENCES THE FUNCTIONS, NOT THEIR NAMES AS STRINGS, so a predicate
+ * renamed here breaks this list where it is compiled; `Object.keys` reads the
+ * roster back off it — `shippedCmdTags`' arrangement, on the enablement
+ * vocabulary. What no TypeScript can do is notice `model/domain.qnt` growing a
+ * predicate, which is this comparison's whole reason: the model names these
+ * first-class — every enabledness question the actor asks is one — and nothing
+ * held the two lists together until this roster existed, so a `quarantinedIn`
+ * added upstream reached no gate. The completeness guard in `corpus.ts` is the
+ * backstop for the one gap a hand-kept list still leaves: a model predicate this
+ * object forgets is caught by the both-directions compare, but a model predicate
+ * NO roster claims is caught only there.
+ */
+const enablementPredicates = {
+  revocableIn,
+  retryableIn,
+  depsDoneIn,
+  canArriveIn,
+  dependableIn,
+  draftsIn,
+  revocablesIn,
+  readiesIn,
+  taskPhaseIn,
+  reducibleWorkIn,
+  reducibleEvalIn,
+  wrapUpStartablesIn,
+  holdingIn,
+  doneIn,
+  retryablesIn,
+  isReadyIn,
+  isBlockedIn,
+  dispatchableIn,
+  leaseFreeIn,
+  wrapUpStartableIn,
+} as const;
+
+export const enablementPredicateNames: readonly string[] =
+  Object.keys(enablementPredicates);
+
+/**
  * `model/domain.qnt` escalate — park a ticket on the human desk, naming the
  * wall and where Retry resumes. The open desk task is DERIVED from the phase
  * (`hasOpenHumanTask`); `OpenHumanTask` is its trace-visible effect.

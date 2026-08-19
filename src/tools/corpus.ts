@@ -85,6 +85,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import { messageOf } from "../domain/assert.ts";
 import type { Config } from "../domain/domain.ts";
+import { modelSumTypeNames, type ModelSumTypeName } from "../domain/measure.ts";
 import {
   mcInstances,
   pinnableEntries,
@@ -686,6 +687,17 @@ export type ModelRosters = {
   readonly bundleConjuncts: readonly string[];
   /** `type Cmd`'s constructors, in `model/refinement.qnt`. */
   readonly cmdArms: readonly string[];
+  /**
+   * The constructors of every sum type in `model/measure.qnt`, keyed by the
+   * model's own name for it. `cmdArms` is the decision-event union one file over;
+   * these are the rest of the machine's vocabulary, and until they were read a
+   * renamed constructor no committed fixture carried passed every gate green.
+   */
+  readonly sumConstructors: Readonly<
+    Record<ModelSumTypeName, readonly string[]>
+  >;
+  /** `pure def …In`, the enablement predicates, as `model/domain.qnt` spells them. */
+  readonly enablementPredicates: readonly string[];
   /** `val refinementCore`'s conjuncts, in `model/refinement.qnt`. */
   readonly refinementCoreConjuncts: readonly string[];
   /** `val refinementInvariants`' conjuncts, in `model/refinement.qnt`. */
@@ -756,6 +768,14 @@ export function readModelRosters(): ModelRosters {
     }),
     bundleConjuncts: conjunctsOf(domainCode, "allInvariants", domainSource),
     cmdArms: sumTypeArms(refinementCode, "Cmd", refinementSource),
+    sumConstructors: readSumConstructors(measureCode),
+    enablementPredicates: matchesOf(
+      domainCode,
+      /\bpure def ([A-Za-z]+In)\s*\(/g,
+      {
+        at: `${domainSource}: pure def *In`,
+      },
+    ),
     refinementCoreConjuncts: conjunctsOf(
       refinementCode,
       "refinementCore",
@@ -776,6 +796,105 @@ export function readModelRosters(): ModelRosters {
       Entry: recordTypeFields(refinementCode, "Entry", refinementSource),
     },
   };
+}
+
+/** Every sum type's arms, keyed by the model's own name, read from one source. */
+function readSumConstructors(
+  code: string,
+): Readonly<Record<ModelSumTypeName, readonly string[]>> {
+  const out = {} as Record<ModelSumTypeName, readonly string[]>;
+  for (const name of modelSumTypeNames) {
+    out[name] = sumTypeArms(code, name, measureSource);
+  }
+  return out;
+}
+
+/**
+ * THE COMPLETENESS GUARD: every `type` the model declares and every `pure def
+ * …In` predicate is either read by a roster in `readModelRosters` or declared
+ * unrostered, and a surface that is NEITHER is a could-not-run naming it.
+ *
+ * WHY IT EXISTS, and it is the finding that produced it. Three lenses of sweep 3
+ * found the SAME shape independently — a roster closed one surface and left its
+ * siblings uncompared: the record fields were rostered while the sum-type
+ * constructors were not, the decision-event union while no other sum type, the
+ * deciders while not the `…In` predicates. Each was a hand-kept list that could
+ * fall silent the day the model grew a member it did not name. This closes the
+ * recurrence at the class rather than one surface at a time: a roster ADDED for a
+ * new model type is claimed automatically, and a model type added with NO roster
+ * is refused here — the "forgot the sibling" defect can no longer pass green.
+ *
+ * IT IS A COULD-NOT-RUN, NOT A FINDING. An unclaimed surface is not a
+ * disagreement between two rosters — there is no roster to disagree — it is the
+ * gate unable to promise it checks the whole machine, which is exactly what a 2
+ * is for. The enumeration is INDEPENDENT of the rosters' own reads: the `…In`
+ * scan takes every `pure def` name ending in `In`, so a predicate the enablement
+ * roster's narrower pattern misses (a digit in the name, say) is caught here
+ * rather than nowhere.
+ *
+ * THE DELIBERATELY-UNROSTERED TYPES ARE `modelRecordNames`' own three — `Core`,
+ * `Decision`, `Bounds` — named there with why each has no shipped twin to hold
+ * against. Removing one from that list without rostering its type makes this
+ * guard fire on it, which is what keeps the exemption honest.
+ */
+export function assertModelSurfacesClaimed(): void {
+  const measureCode = withoutComments(readSource(measureSource));
+  const refinementCode = withoutComments(readSource(refinementSource));
+  const domainCode = withoutComments(readSource(domainSource));
+  const claimedTypes = new Set<string>([
+    "Cmd",
+    ...modelSumTypeNames,
+    ...modelRecordNames.filter((name) => name !== "WOAttempt"),
+    ...unrosteredModelTypes,
+  ]);
+  const unclaimedTypes = [
+    ...modelTypeNames(measureCode),
+    ...modelTypeNames(refinementCode),
+    ...modelTypeNames(domainCode),
+  ].filter((name) => !claimedTypes.has(name));
+  const claimedIn = new Set(readModelRosters().enablementPredicates);
+  const unclaimedIn = [
+    ...enablementDefsIn(measureCode),
+    ...enablementDefsIn(refinementCode),
+    ...enablementDefsIn(domainCode),
+  ].filter((name) => !claimedIn.has(name));
+  const unclaimed = [
+    ...unclaimedTypes.map((name) => `type ${name}`),
+    ...unclaimedIn.map((name) => `pure def ${name}`),
+  ];
+  if (unclaimed.length > 0) {
+    throw new CorpusError(
+      `model surface with no roster: ${unclaimed.join(", ")} — every model type and …In predicate must be read by a roster in readModelRosters or declared unrostered`,
+    );
+  }
+}
+
+/**
+ * The `type X` names the model declares, WOAttempt-style arm payloads aside —
+ * every name a `type … =` names, so the guard's enumeration is its own and not a
+ * second read of the rosters it checks.
+ */
+const unrosteredModelTypes: readonly string[] = ["Core", "Decision", "Bounds"];
+
+/** Every `type X` name a model source declares. */
+function modelTypeNames(code: string): readonly string[] {
+  return [...code.matchAll(/^\s*type ([A-Za-z][A-Za-z0-9_]*)/gm)]
+    .map((match) => match[1])
+    .filter((name): name is string => name !== undefined);
+}
+
+/**
+ * Every `pure def` name ending in `In`, enumerated from ALL pure defs and
+ * filtered — deliberately broader than the enablement roster's own pattern, so a
+ * predicate that pattern cannot see is this guard's finding rather than a surface
+ * nothing holds against the model.
+ */
+function enablementDefsIn(code: string): readonly string[] {
+  return [...code.matchAll(/\bpure def ([A-Za-z0-9_]+)\s*\(/g)]
+    .map((match) => match[1])
+    .filter(
+      (name): name is string => name !== undefined && name.endsWith("In"),
+    );
 }
 
 /**
@@ -874,6 +993,25 @@ export function readWitnessRuns(): readonly string[] {
   return matchesOf(readSource(witnessSource), /^\s*run ([A-Za-z0-9_]+)\s*=/gm, {
     at: `${witnessSource}: run declarations`,
   });
+}
+
+/**
+ * The trace file a witness run wrote, out of the names a module's export left in
+ * its directory.
+ *
+ * THE EMITTER NAMES ITF FILES `{run}_{seq}.itf.json`, so a run's file is the one
+ * whose name opens with the run AND AN UNDERSCORE. The underscore is
+ * load-bearing, not punctuation: some witness modules host more than one run, so
+ * a bare `startsWith(run)` would let `freeClimb` match `freeClimbLong`'s file and
+ * regenerate a fixture from the wrong run in silence — a corruption
+ * `staleWitnessRuns` cannot see, because the names on the manifest stay right.
+ * It is a function so the discrimination can be red-proved without a quint run.
+ */
+export function runTraceFile(
+  written: readonly string[],
+  run: string,
+): string | undefined {
+  return written.find((file) => file.startsWith(`${run}_`));
 }
 
 function readSource(path: string): string {
@@ -994,27 +1132,36 @@ function conjunctsOf(
 
 /**
  * The constructors of a `|`-separated sum type, as the model declares them —
- * `type Cmd`, the decision-event vocabulary this tree mirrors as a union.
+ * `type Cmd`, the decision-event vocabulary, and every sum type in
+ * `model/measure.qnt` this tree mirrors as a union.
  *
- * THE ARMS ARE READ LINE BY LINE, one arm per line, which is how the model
- * writes them. A payload may hold commas and brackets and is not read at all —
- * `entry.ts` is where a payload's fields are checked, against the union rather
- * than against the model — so what this compares is the constructor roster.
+ * THE ARMS ARE SPLIT ON `|`, one or several to a line. A payload may hold
+ * commas and brackets and is not read at all — `entry.ts` is where a payload's
+ * fields are checked, against the union rather than against the model — so what
+ * this compares is the constructor roster.
  *
- * WHAT BOUNDS THE READ IS INDENTATION, AND IT USED TO BE THE FIRST EMPTY LINE.
- * That was a truncation with no alarm on it: `withoutComments` rewrites a `//`
- * line to whitespace, so a model author's ordinary note beside a new arm ended
- * the list, and every arm below it left this roster in silence while the
- * exact-set comparison went on reporting agreement. A blank line inside the
- * list did the same. So an interior blank — comment or otherwise — is SKIPPED,
- * and the declaration ends where Quint's own layout ends it: at the first
+ * THE MODEL WRITES A SUM TYPE ONE OF TWO WAYS, and this reads both. A SINGLE-LINE
+ * declaration carries its arms after the `=` on the `type` line itself
+ * (`type Verdict = VPass | VFail`); a MULTI-LINE one leaves that line empty and
+ * writes the arms below it (`type Cmd`, `type Phase`). This reader used to refuse
+ * the first outright, which left every single-line sum type held against nothing.
+ *
+ * WHAT BOUNDS THE MULTI-LINE READ IS INDENTATION, AND IT USED TO BE THE FIRST
+ * EMPTY LINE. That was a truncation with no alarm on it: `withoutComments`
+ * rewrites a `//` line to whitespace, so a model author's ordinary note beside a
+ * new arm ended the list, and every arm below it left this roster in silence
+ * while the exact-set comparison went on reporting agreement. A blank line inside
+ * the list did the same. So an interior blank — comment or otherwise — is
+ * SKIPPED, and the arm list ends where Quint's own layout ends it: at the first
  * non-blank line indented no deeper than the `type` line itself, which is the
  * next declaration or the module's own close.
  *
- * A DECLARATION WHOSE ARMS DO NOT START ON THE NEXT LINE IS REFUSED, rather
- * than answered with the arms this reader can see, and so is one whose arm list
- * comes out empty. The same rule as everywhere in this section: a shape the
- * parse no longer recognizes is a could-not-run.
+ * A DECLARATION WHOSE ARMS STRADDLE THE `=` LINE AND THE LINES BELOW IT IS
+ * REFUSED — the model writes one form or the other, never both, so a mix is a
+ * shape this reader will not guess at rather than a roster it half-sees. So is
+ * one whose arm list comes out empty, and one whose arm is not a constructor.
+ * The same rule as everywhere in this section: a shape the parse no longer
+ * recognizes is a could-not-run, never a roster.
  */
 function sumTypeArms(
   code: string,
@@ -1027,14 +1174,9 @@ function sumTypeArms(
   if (opened < 0) {
     throw new CorpusError(`${at}: no ${JSON.stringify(marker)} declaration`);
   }
-  const [rest, ...lines] = code.slice(opened + marker.length).split("\n");
-  if ((rest ?? "").trim().length > 0) {
-    throw new CorpusError(
-      `${at}: the arm list does not start on the line below the declaration`,
-    );
-  }
-  const arms: string[] = [];
   const declaredAt = declarationIndent(code, opened);
+  const [rest, ...lines] = code.slice(opened + marker.length).split("\n");
+  const below: string[] = [];
   for (const line of lines) {
     if (line.trim().length === 0) {
       continue;
@@ -1042,6 +1184,17 @@ function sumTypeArms(
     if (indentOf(line) <= declaredAt) {
       break;
     }
+    below.push(line);
+  }
+  const onDeclarationLine = (rest ?? "").trim().length > 0;
+  if (onDeclarationLine && below.length > 0) {
+    throw new CorpusError(
+      `${at}: the arm list is on the declaration line and the lines below it`,
+    );
+  }
+  const armLines = onDeclarationLine ? [rest ?? ""] : below;
+  const arms: string[] = [];
+  for (const line of armLines) {
     for (const piece of line.split("|")) {
       const text = piece.trim();
       if (text.length === 0) {

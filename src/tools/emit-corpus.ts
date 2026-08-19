@@ -66,6 +66,7 @@ import {
   loadManifest,
   manifestPath,
   readJson,
+  runTraceFile,
   tier1Dir,
   tier2Dir,
   witnessSource,
@@ -287,7 +288,7 @@ function emitTier2(
   }
   const written = readdirSync(dir);
   for (const fixture of fixtures) {
-    const file = written.find((f) => f.startsWith(`${fixture.run}_`));
+    const file = runTraceFile(written, fixture.run);
     if (file === undefined) {
       throw new CorpusError(
         `${fixture.name}: ${module} exported no trace for run ${fixture.run}; it wrote [${written.join(", ")}]`,
