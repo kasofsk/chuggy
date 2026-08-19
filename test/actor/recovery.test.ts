@@ -93,13 +93,13 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "VPass"),
+    taskDoneEvent(id(1), asTaskId(1), "Pass"),
     "task-done",
   );
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "VFail"),
+    taskDoneEvent(id(1), asTaskId(1), "Fail"),
     "task-done-duplicate",
   );
   assert.equal(state.journal.length, 5);
@@ -107,7 +107,7 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(2), "VFail"),
+    taskDoneEvent(id(1), asTaskId(2), "Fail"),
     "task-done",
   );
   state = journalStep(config, state, evalReduceEvent(id(1)));
@@ -147,25 +147,25 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(3), "VPass"),
+    taskDoneEvent(id(1), asTaskId(3), "Pass"),
     "task-done",
   );
   state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(4), "VPass"),
+    taskDoneEvent(id(1), asTaskId(4), "Pass"),
     "task-done",
   );
   state = stepEmit(config, state, evalReduceEvent(id(1)), "eval-passed");
   state = journalStep(config, state, dequeueEvent(id(1), false));
   assert.equal(state.view.rec.label, "ticket-done");
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PDone");
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(journalCompletions(state, id(1)), 1);
   assert.equal(worldCompletions(state, id(1)), 0);
   assertStep(config, state, "completion (journaled, unmerged)");
   state = crashRecoverTo(config, state, 12);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PDone");
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(completionsOf(ticketAt(memoryCore(state), id(1))), 1);
   assert.equal(worldCompletions(state, id(1)), 0);
   assertStep(config, state, "crash at the completion seam");
@@ -180,7 +180,7 @@ function phaseCompletionLandsOnce(state: ActorState): void {
   );
   assert.equal(worldCompletions(state, id(1)), 1);
   state = crashRecoverTo(config, state, 0);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PDone");
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 1);
   assert.equal(state.journal.length, 14);
   assert.equal(worldCompletions(state, id(1)), 1);
@@ -207,14 +207,14 @@ function walkLeaseFreeToCompletion(): ActorState {
   state = emitNext(state);
   assert.equal(state.applied, 1);
   assertStep(config, state, "lease-free arrive (emitted)");
-  state = walkFirstCycle(config, state, "VPass");
+  state = walkFirstCycle(config, state, "Pass");
   state = journalStep(config, state, evalReduceEvent(id(1)));
   assert.equal(state.view.rec.label, "ticket-done");
   assert.deepEqual(state.view.rec.transitions, [
-    { ticket: id(1), from: "PEvaluating", to: "PDone" },
+    { ticket: id(1), from: "Evaluating", to: "Done" },
   ]);
   assert.deepEqual(state.view.rec.attempt, woNone);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PDone");
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(journalCompletions(state, id(1)), 1);
   assert.equal(worldCompletions(state, id(1)), 0);
   assertStep(config, state, "the evaluation's pass is the completion");
@@ -224,7 +224,7 @@ function walkLeaseFreeToCompletion(): ActorState {
 test("a lease-free ticket recovers at its completion seam and completes exactly once", () => {
   let state = walkLeaseFreeToCompletion();
   state = crashRecoverTo(config, state, 0);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PDone");
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(ticketAt(memoryCore(state), id(1)).wrapUp.wrapUp, "WNone");
   assert.equal(completionsOf(ticketAt(memoryCore(state), id(1))), 1);
   assert.equal(state.applied, 0);

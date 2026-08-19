@@ -29,7 +29,7 @@ const config = budgetedInstance;
 
 test("the default program is one unanimous stage at full fan-out, and it is authorable", () => {
   assert.deepEqual(defaultProgram(config), [
-    { fanout: config.nTasks, combinator: "CUnanimousPass" },
+    { fanout: config.nTasks, combinator: "UnanimousPass" },
   ]);
   assert.ok(isValidProgram(config, defaultProgram(config)));
 });
@@ -39,23 +39,23 @@ test("the program rule refuses exactly what an arrival may not carry", () => {
     !isValidProgram(config, []),
     "an empty program authors a ticket that can never pass evaluation",
   );
-  assert.ok(!isValidProgram(config, [{ fanout: 0, combinator: "CAnyPass" }]));
+  assert.ok(!isValidProgram(config, [{ fanout: 0, combinator: "AnyPass" }]));
   assert.ok(
     !isValidProgram(config, [
-      { fanout: config.nTasks + 1, combinator: "CUnanimousPass" },
+      { fanout: config.nTasks + 1, combinator: "UnanimousPass" },
     ]),
   );
   const overlong = Array.from({ length: config.maxStages + 1 }, () => ({
     fanout: 1,
-    combinator: "CUnanimousPass" as const,
+    combinator: "UnanimousPass" as const,
   }));
   assert.ok(!isValidProgram(config, overlong));
 });
 
 test("a program of stages the vocabulary offers is authorable at any length within the bound", () => {
   const staged = [
-    { fanout: 1, combinator: "CUnanimousPass" as const },
-    { fanout: config.nTasks, combinator: "CAnyPass" as const },
+    { fanout: 1, combinator: "UnanimousPass" as const },
+    { fanout: config.nTasks, combinator: "AnyPass" as const },
   ];
   assert.equal(staged.length, config.maxStages);
   assert.ok(isValidProgram(config, staged));
@@ -75,10 +75,10 @@ test("the stage vocabulary is every fan-out in range against both combinators", 
   const choices = stageChoices(config);
   assert.equal(choices.length, config.nTasks * 2);
   assert.deepEqual(choices, [
-    { fanout: 1, combinator: "CUnanimousPass" },
-    { fanout: 1, combinator: "CAnyPass" },
-    { fanout: 2, combinator: "CUnanimousPass" },
-    { fanout: 2, combinator: "CAnyPass" },
+    { fanout: 1, combinator: "UnanimousPass" },
+    { fanout: 1, combinator: "AnyPass" },
+    { fanout: 2, combinator: "UnanimousPass" },
+    { fanout: 2, combinator: "AnyPass" },
   ]);
 });
 

@@ -37,16 +37,16 @@
  * the only thing that could catch what it exists to catch.
  */
 
+import type {
+  Core,
+  StepRecord,
+  Task,
+} from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { boundsOf } from "../../src/domain/config.ts";
-import {
-  liveTickets,
-  ticketAt,
-  type Core,
-  type StepRecord,
-} from "../../src/domain/core.ts";
+import { liveTickets, ticketAt } from "../../src/domain/core.ts";
 import {
   decideOpRetry,
   decideRelease,
@@ -92,7 +92,7 @@ import {
 } from "../../src/domain/invariants.ts";
 import { sysMeasure } from "../../src/domain/measure.ts";
 import { reworkBudget } from "../../src/domain/pricing.ts";
-import type { Task } from "../../src/domain/task.ts";
+
 import { completionsOf, hasOpenHumanTask } from "../../src/domain/ticket.ts";
 import {
   aNone,
@@ -136,15 +136,15 @@ const recordOf = (rec: Partial<StepRecord>): StepRecord => ({
 });
 
 test("completionExclusive rejects a count that disagrees with the phase", () => {
-  assert.ok(completionExclusiveFor(1, "PDone"));
-  assert.ok(completionExclusiveFor(0, "PWorking"));
-  assert.ok(!completionExclusiveFor(2, "PDone"), "nothing completes twice");
+  assert.ok(completionExclusiveFor(1, "Done"));
+  assert.ok(completionExclusiveFor(0, "Working"));
+  assert.ok(!completionExclusiveFor(2, "Done"), "nothing completes twice");
   assert.ok(
-    !completionExclusiveFor(0, "PDone"),
+    !completionExclusiveFor(0, "Done"),
     "Done means the completion was emitted",
   );
   assert.ok(
-    !completionExclusiveFor(1, "PWorking"),
+    !completionExclusiveFor(1, "Working"),
     "a completion means the ticket is Done",
   );
   assert.deepEqual(
@@ -158,13 +158,13 @@ test("completionExclusive rejects a count that disagrees with the phase", () => 
 });
 
 test("revokedNeverCompletes rejects a revoked ticket that completed", () => {
-  assert.ok(revokedNeverCompletesFor(0, "PRevoked"));
-  assert.ok(revokedNeverCompletesFor(1, "PDone"));
+  assert.ok(revokedNeverCompletesFor(0, "Revoked"));
+  assert.ok(revokedNeverCompletesFor(1, "Done"));
   assert.ok(
-    !revokedNeverCompletesFor(1, "PRevoked"),
+    !revokedNeverCompletesFor(1, "Revoked"),
     "a revoke settles the ticket before any completion effect fires",
   );
-  const revoked = coreOf([ticketOn(config, 1, { phase: "PRevoked" })]);
+  const revoked = coreOf([ticketOn(config, 1, { phase: "Revoked" })]);
   assert.equal(completionsOf(ticketAt(revoked, id(1))), 0);
   assert.ok(revokedNeverCompletes(config, stateView(revoked)));
 });
@@ -185,7 +185,7 @@ test("wrapUpIsolation rejects a wrap-up resolved off the record or attributed el
       stepView(
         recordOf({
           label: "ticket-done",
-          transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "PDone" }],
+          transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "Done" }],
         }),
       ),
     ),
@@ -197,7 +197,7 @@ test("wrapUpIsolation rejects a wrap-up resolved off the record or attributed el
       stepView(
         recordOf({
           label: "ticket-done",
-          transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "PDone" }],
+          transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "Done" }],
           attempt: woAttempt(asProjectId(1), true),
         }),
       ),
@@ -210,7 +210,7 @@ test("wrapUpIsolation rejects a wrap-up resolved off the record or attributed el
       stepView(
         recordOf({
           label: "ticket-done",
-          transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "PDone" }],
+          transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "Done" }],
           attempt: woAttempt(asProjectId(2), true),
         }),
       ),
@@ -221,7 +221,7 @@ test("wrapUpIsolation rejects a wrap-up resolved off the record or attributed el
 test("wrapUpIsolation rejects a failure on a valid artifact and a path that did not happen", () => {
   const failed = recordOf({
     label: "rework-started wrapup_failure",
-    transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "PWorking" }],
+    transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "Working" }],
     attempt: woAttempt(asProjectId(2), false),
   });
   assert.ok(
@@ -230,7 +230,7 @@ test("wrapUpIsolation rejects a failure on a valid artifact and a path that did 
   );
   const wrongPath = recordOf({
     label: "ticket-done",
-    transitions: [{ ticket: id(3), from: "PWrapUp", to: "PDone" }],
+    transitions: [{ ticket: id(3), from: "PWrapUp", to: "Done" }],
     attempt: woAttempt(asProjectId(2), true),
   });
   assert.ok(
@@ -239,15 +239,15 @@ test("wrapUpIsolation rejects a failure on a valid artifact and a path that did 
   );
   const quiet = recordOf({
     label: "ticket-done",
-    transitions: [{ ticket: id(3), from: "PWrapUp", to: "PDone" }],
+    transitions: [{ ticket: id(3), from: "PWrapUp", to: "Done" }],
     attempt: woAttempt(asProjectId(2), false),
   });
   assert.ok(wrapUpIsolation(config, stepView(quiet)));
   const fannedOut = recordOf({
     ...quiet,
     transitions: [
-      { ticket: id(3), from: "PWrapUp", to: "PDone" },
-      { ticket: id(2), from: "PWorking", to: "PDone" },
+      { ticket: id(3), from: "PWrapUp", to: "Done" },
+      { ticket: id(2), from: "Working", to: "Done" },
     ],
   });
   assert.ok(
@@ -259,7 +259,7 @@ test("wrapUpIsolation rejects a failure on a valid artifact and a path that did 
 test("wrapUpIsolation rejects a label that resolves no wrap-up and an attribution off the universe", () => {
   const offRoster = recordOf({
     label: "rework-started eval_failure",
-    transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "PWorking" }],
+    transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "Working" }],
     attempt: woAttempt(asProjectId(2), true),
   });
   assert.ok(
@@ -272,7 +272,7 @@ test("wrapUpIsolation rejects a label that resolves no wrap-up and an attributio
   ]);
   const attributed = recordOf({
     label: "ticket-done",
-    transitions: [{ ticket: id(1), from: "PWrapUpHolding", to: "PDone" }],
+    transitions: [{ ticket: id(1), from: "PWrapUpHolding", to: "Done" }],
     attempt: woAttempt(asProjectId(outside), true),
   });
   assert.ok(
@@ -288,7 +288,7 @@ test("wrapUpIsolation rejects a label that resolves no wrap-up and an attributio
 test("quietProjectLandsCleanly rejects a quiet attempt that did not land", () => {
   const reworked = recordOf({
     label: "rework-started wrapup_failure",
-    transitions: [{ ticket: id(3), from: "PWrapUp", to: "PWorking" }],
+    transitions: [{ ticket: id(3), from: "PWrapUp", to: "Working" }],
     attempt: woAttempt(asProjectId(2), false),
   });
   assert.ok(!quietProjectLandsCleanly(config, stepView(reworked)));
@@ -342,7 +342,7 @@ test("artifactWellFormed rejects a completed ticket that produced nothing", () =
       stateView(fleetBut(fleet, 0, { artifact: aNone })),
     ),
   );
-  const revoked = coreOf([ticketOn(config, 1, { phase: "PRevoked" })]);
+  const revoked = coreOf([ticketOn(config, 1, { phase: "Revoked" })]);
   assert.ok(
     artifactWellFormed(config, stateView(revoked)),
     "a revoked ticket may never have run",
@@ -387,14 +387,14 @@ test("wrapUpWellFormed rejects the lease leaseExclusive cannot see", () => {
 });
 
 test("terminalsAbsorbing rejects a transition out of a terminal", () => {
-  for (const from of ["PDone", "PRevoked"] as const) {
+  for (const from of ["Done", "Revoked"] as const) {
     assert.ok(
       !terminalsAbsorbing(
         config,
         stepView(
           recordOf({
-            label: "operator-retry",
-            transitions: [{ ticket: id(1), from, to: "PPending" }],
+            label: "ticket-resumed",
+            transitions: [{ ticket: id(1), from, to: "Pending" }],
           }),
         ),
       ),
@@ -407,7 +407,7 @@ test("terminalsAbsorbing rejects a transition out of a terminal", () => {
       stepView(
         recordOf({
           label: "ticket-done",
-          transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "PDone" }],
+          transitions: [{ ticket: id(3), from: "PWrapUpHolding", to: "Done" }],
         }),
       ),
     ),
@@ -418,18 +418,18 @@ test("deskConsistent rejects a wall without a park, a park without a wall and a 
   assert.ok(
     !deskConsistent(
       config,
-      stateView(fleetBut(fleet, 1, { reason: "RsWorkFailed" })),
+      stateView(fleetBut(fleet, 1, { reason: "WorkFailed" })),
     ),
     "a named wall on a ticket that is not parked",
   );
-  const nameless = coreOf([ticketOn(config, 1, { phase: "PEscalated" })]);
+  const nameless = coreOf([ticketOn(config, 1, { phase: "Escalated" })]);
   assert.ok(
     !deskConsistent(config, stateView(nameless)),
     "a park with no wall",
   );
   const cascadeWall = {
-    phase: "PEscalated" as const,
-    reason: "RsDependencyRevoked" as const,
+    phase: "Escalated" as const,
+    reason: "DependencyRevoked" as const,
   };
   assert.ok(
     !deskConsistent(
@@ -451,9 +451,9 @@ test("deskConsistent rejects a wall without a park, a park without a wall and a 
 test("wrapUpWallNamed rejects the gate-budget wall under pricing that grants no gate account", () => {
   const parked = coreOf([
     ticketOn(deadlineOnlyInstance, 1, {
-      phase: "PEscalated",
-      reason: "RsWrapUpBudgetExhausted",
-      resumeAt: "RWrapUp",
+      phase: "Escalated",
+      reason: "FinalizationBudgetExhausted",
+      resumeAt: "ResumeFinalizing",
     }),
   ]);
   assert.ok(!wrapUpWallNamed(deadlineOnlyInstance, stateView(parked)));
@@ -504,7 +504,7 @@ test("tasksWellFormed rejects a work set that is not the phase's anatomy", () =>
       config,
       stateView(
         fleetBut(fleet, 1, {
-          tasks: [workTask(1, "TCancelled"), workOutstanding(2)],
+          tasks: [workTask(1, "Cancelled"), workOutstanding(2)],
         }),
       ),
     ),
@@ -523,8 +523,8 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
   const evaluating = (tasks: readonly Task[]): Core =>
     coreOf([
       ticketOn(config, 1, {
-        phase: "PEvaluating",
-        record: [workTask(1, "TPassed"), workTask(2, "TPassed")],
+        phase: "Evaluating",
+        record: [workTask(1, "Passed"), workTask(2, "Passed")],
         tasks,
         spawned: 4,
       }),
@@ -557,7 +557,7 @@ test("tasksWellFormed rejects an eval stage the program is not running", () => {
     !tasksWellFormed(
       config,
       stateView(
-        evaluating([evalTask(3, 0, "TCancelled"), evalOutstanding(4, 0)]),
+        evaluating([evalTask(3, 0, "Cancelled"), evalOutstanding(4, 0)]),
       ),
     ),
     "cancelled is a retirement mark on the eval side too, and this branch has its own conjunct saying so",
@@ -576,7 +576,7 @@ test("recordWellFormed rejects a log that is not the resolved history in identit
   assert.ok(
     !recordWellFormed(
       config,
-      stateView(holding([workTask(2, "TPassed"), workTask(1, "TPassed")])),
+      stateView(holding([workTask(2, "Passed"), workTask(1, "Passed")])),
     ),
     "entry i carries id i plus one: the chronological log is the identity order",
   );
@@ -585,7 +585,7 @@ test("recordWellFormed rejects a log that is not the resolved history in identit
     "nothing retired is still outstanding",
   );
   assert.ok(
-    !recordWellFormed(config, stateView(holding([evalTask(1, 5, "TPassed")]))),
+    !recordWellFormed(config, stateView(holding([evalTask(1, 5, "Passed")]))),
     "programs are immutable, so a retired stage index never dangles",
   );
   assert.ok(recordWellFormed(config, healthy));
@@ -598,7 +598,7 @@ test("recordMonotone rejects a record that shrank, was rewritten, or lost its ti
     !recordMonotone(config, { ...healthy, pre: healthy.post, post: shorter }),
   );
   const rewritten = fleetBut(fleet, 2, {
-    record: [workTask(1, "TFailed"), ...kept.slice(1)],
+    record: [workTask(1, "Failed"), ...kept.slice(1)],
   });
   assert.ok(
     !recordMonotone(config, { ...healthy, pre: healthy.post, post: rewritten }),
@@ -610,7 +610,7 @@ test("recordMonotone rejects a record that shrank, was rewritten, or lost its ti
     "tickets are never deleted",
   );
   const grown = fleetBut(fleet, 2, {
-    record: [...kept, workTask(5, "TPassed")],
+    record: [...kept, workTask(5, "Passed")],
   });
   assert.ok(
     recordMonotone(config, { ...healthy, pre: healthy.post, post: grown }),
@@ -620,9 +620,9 @@ test("recordMonotone rejects a record that shrank, was rewritten, or lost its ti
 test("idsAccounted rejects the task set a decider dropped instead of retiring", () => {
   const dropped = coreOf([
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsWorkFailed",
-      resumeAt: "RWorking",
+      phase: "Escalated",
+      reason: "WorkFailed",
+      resumeAt: "ResumeWorking",
       spawned: config.nTasks,
     }),
   ]);
@@ -636,7 +636,7 @@ test("idsAccounted rejects the task set a decider dropped instead of retiring", 
 });
 
 test("programsWellFormed rejects a program no arrival could have carried", () => {
-  const stage = { fanout: 1, combinator: "CUnanimousPass" } as const;
+  const stage = { fanout: 1, combinator: "UnanimousPass" } as const;
   const overlong = Array.from({ length: config.maxStages + 1 }, () => stage);
   for (const program of [[], [{ ...stage, fanout: 0 }], overlong]) {
     assert.ok(
@@ -693,14 +693,14 @@ test("idsDense rejects a gap in the numbering and a fleet past the arrival bound
 test("stuckSubsetCovered goes red when one walk gets a base case the other lacks", () => {
   const drafted = coreOf([
     ticketOn(config, 1, { phase: "PDraft" }),
-    ticketOn(config, 1, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
   ]);
   assert.ok(stuckSubsetCovered(config, stateView(drafted)));
   const draftIsStuck = sweep(drafted, (core, each, stuck) => {
     const phase = ticketAt(core, each).phase;
     return (
       phase === "PDraft" ||
-      (phase === "PPending" && visEdges(core, each).some((d) => stuck.has(d)))
+      (phase === "Pending" && visEdges(core, each).some((d) => stuck.has(d)))
     );
   });
   assert.ok(
@@ -709,17 +709,17 @@ test("stuckSubsetCovered goes red when one walk gets a base case the other lacks
   );
   const parked = coreOf([
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsWorkFailed",
-      resumeAt: "RWorking",
+      phase: "Escalated",
+      reason: "WorkFailed",
+      resumeAt: "ResumeWorking",
     }),
-    ticketOn(config, 1, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
   ]);
   const guardedCoverage = sweep(
     parked,
     (core, each, covered) =>
       hasOpenHumanTask(ticketAt(core, each)) ||
-      (ticketAt(core, each).phase === "PWorking" &&
+      (ticketAt(core, each).phase === "Working" &&
         visEdges(core, each).some((d) => covered.has(d))),
   );
   assert.ok(stuckSubsetCovered(config, stateView(parked)));
@@ -733,9 +733,9 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
   const upstream = coreOf([
     ticketOn(config, 1, { phase: "PDraft" }),
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsWorkFailed",
-      resumeAt: "RWorking",
+      phase: "Escalated",
+      reason: "WorkFailed",
+      resumeAt: "ResumeWorking",
       deps: [id(1)],
     }),
   ]);
@@ -745,7 +745,7 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
       visEdges(core, other).includes(each),
     );
     return (
-      ticketAt(core, each).phase === "PEscalated" ||
+      ticketAt(core, each).phase === "Escalated" ||
       [...visEdges(core, each), ...dependents].some((d) => stuck.has(d))
     );
   });
@@ -755,11 +755,11 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
   );
   const wider = coreOf([
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsWorkFailed",
-      resumeAt: "RWorking",
+      phase: "Escalated",
+      reason: "WorkFailed",
+      resumeAt: "ResumeWorking",
     }),
-    ticketOn(config, 1, { phase: "PDone", deps: [id(1)], artifact: aSome(1) }),
+    ticketOn(config, 1, { phase: "Done", deps: [id(1)], artifact: aSome(1) }),
   ]);
   assert.ok(stuckSubsetCovered(config, stateView(wider)));
   assert.ok(
@@ -770,25 +770,25 @@ test("stuckSubsetCovered goes red when one walk gets an edge kind the other lack
 
 test("cascadeSafety rejects a doomed ticket left waiting invisibly", () => {
   const unparked = coreOf([
-    ticketOn(config, 1, { phase: "PRevoked" }),
-    ticketOn(config, 1, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 1, { phase: "Revoked" }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
   ]);
   assert.ok(!cascadeSafety(config, stateView(unparked)));
   const parked = coreOf([
-    ticketOn(config, 1, { phase: "PRevoked" }),
+    ticketOn(config, 1, { phase: "Revoked" }),
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsDependencyRevoked",
+      phase: "Escalated",
+      reason: "DependencyRevoked",
       deps: [id(1)],
     }),
   ]);
   assert.ok(cascadeSafety(config, stateView(parked)));
   const wrongWall = coreOf([
-    ticketOn(config, 1, { phase: "PRevoked" }),
+    ticketOn(config, 1, { phase: "Revoked" }),
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsWorkFailed",
-      resumeAt: "RWorking",
+      phase: "Escalated",
+      reason: "WorkFailed",
+      resumeAt: "ResumeWorking",
       deps: [id(1)],
     }),
   ]);
@@ -801,13 +801,13 @@ test("cascadeSafety rejects a doomed ticket left waiting invisibly", () => {
     "the desk task is open either way, so the wall's own name is the only thing that catches this",
   );
   const transitive = coreOf([
-    ticketOn(config, 1, { phase: "PRevoked" }),
+    ticketOn(config, 1, { phase: "Revoked" }),
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsDependencyRevoked",
+      phase: "Escalated",
+      reason: "DependencyRevoked",
       deps: [id(1)],
     }),
-    ticketOn(config, 1, { phase: "PPending", deps: [id(2)] }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(2)] }),
   ]);
   assert.ok(
     !cascadeSafety(config, stateView(transitive)),
@@ -817,8 +817,8 @@ test("cascadeSafety rejects a doomed ticket left waiting invisibly", () => {
 
 test("the cascade the revoke performs is what makes cascadeSafety hold in every state", () => {
   const chain = coreOf([
-    ticketOn(config, 1, { phase: "PPending" }),
-    ticketOn(config, 1, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 1, { phase: "Pending" }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
     ticketOn(config, 1, { phase: "PDraft", deps: [id(2)] }),
   ]);
   const revoked = decideRevoke(chain, id(1));
@@ -829,8 +829,8 @@ test("the cascade the revoke performs is what makes cascadeSafety hold in every 
 
 test("noStructuralDeadlock rejects a ticket with no continuation at all", () => {
   const cyclic = coreOf([
-    ticketOn(config, 1, { phase: "PPending", deps: [id(2)] }),
-    ticketOn(config, 1, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(2)] }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
   ]);
   assert.ok(!noStructuralDeadlock(config, stateView(cyclic)));
   assert.ok(
@@ -846,8 +846,8 @@ test("noStructuralDeadlock rejects a ticket with no continuation at all", () => 
     "a cycle is what arrival's construction refuses",
   );
   const behindRevoked = coreOf([
-    ticketOn(config, 1, { phase: "PRevoked" }),
-    ticketOn(config, 1, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 1, { phase: "Revoked" }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
   ]);
   assert.ok(!noStructuralDeadlock(config, stateView(behindRevoked)));
 });
@@ -855,7 +855,7 @@ test("noStructuralDeadlock rejects a ticket with no continuation at all", () => 
 test("measureNonNegative rejects an overdrawn account", () => {
   const overdrawn = coreOf([
     ticketOn(config, 1, {
-      phase: "PWorking",
+      phase: "Working",
       tasks: [workOutstanding(1), workOutstanding(2)],
       spawned: 2,
       gasLeft: -1,
@@ -875,7 +875,7 @@ test("stepDescends rejects a progress step that did not spend anything", () => {
     pre: healthy.post,
     rec: recordOf({
       label: "dispatch",
-      transitions: [{ ticket: id(2), from: "PPending", to: "PWorking" }],
+      transitions: [{ ticket: id(2), from: "Pending", to: "Working" }],
     }),
     post: healthy.post,
   };
@@ -903,7 +903,7 @@ test("stepDescends exempts exactly the stutter, churn and authoring steps the mo
     "task-done-duplicate",
     "complete-duplicate",
     "settled",
-    "ticket-arrived",
+    "ticket-released",
   ]) {
     assert.ok(stepDescends(config, flatly(label)), label);
   }
@@ -920,7 +920,7 @@ test("stepDescends exempts exactly the stutter, churn and authoring steps the mo
 test("stepDescends exempts the pre-work resume, which climbs under both meterings", () => {
   const parked = coreOf([
     ticketOn(config, 1, {
-      phase: "PEscalated",
+      phase: "Escalated",
       reason: "RsRevalidationFailed",
       resumeAt: "RPending",
     }),
@@ -939,9 +939,9 @@ test("stepDescends exempts the free pipeline resume only where retries are free"
   const free = retryFreeInstance;
   const parked = coreOf([
     ticketOn(free, 1, {
-      phase: "PEscalated",
-      reason: "RsGasExhausted",
-      resumeAt: "RWrapUp",
+      phase: "Escalated",
+      reason: "GasExhausted",
+      resumeAt: "ResumeFinalizing",
       gasLeft: 0,
     }),
   ]);
@@ -961,9 +961,9 @@ test("stepDescends exempts the free pipeline resume only where retries are free"
 test("stepDescends exempts the desk-only flat revoke and no other", () => {
   const parked = coreOf([
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsWorkFailed",
-      resumeAt: "RWorking",
+      phase: "Escalated",
+      reason: "WorkFailed",
+      resumeAt: "ResumeWorking",
     }),
   ]);
   const settled = decideRevoke(parked, id(1));
@@ -974,7 +974,7 @@ test("stepDescends exempts the desk-only flat revoke and no other", () => {
     "settled rank to settled rank is flat, so without the arm this step is red",
   );
   assert.ok(stepDescends(config, view));
-  const live = coreOf([ticketOn(config, 1, { phase: "PPending" })]);
+  const live = coreOf([ticketOn(config, 1, { phase: "Pending" })]);
   const dropped = decideRevoke(live, id(1));
   assert.ok(
     stepDescends(config, { pre: live, rec: dropped.rec, post: dropped.post }),

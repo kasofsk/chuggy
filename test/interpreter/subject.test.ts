@@ -25,7 +25,7 @@ import {
 } from "../../src/actor/state.ts";
 import { deskStub } from "../../src/adapters/deskStub.ts";
 import { fabricStub } from "../../src/adapters/fabricStub.ts";
-import type { Core } from "../../src/domain/core.ts";
+
 import { allEffects, type Effect } from "../../src/domain/effect.ts";
 import { asProjectId, type TicketId } from "../../src/domain/ids.ts";
 import { wNone } from "../../src/domain/wrapUp.ts";
@@ -37,6 +37,7 @@ import {
 import type { Emission } from "../../src/interpreter/ports.ts";
 import { flatProgram, refinementInstance } from "../actor/harness.ts";
 import { depsOf, id } from "../domain/fixtures.ts";
+import type { Core } from "../../src/domain/generated/modelTypes.ts";
 
 const config = refinementInstance;
 
@@ -118,7 +119,7 @@ test("an effect with no transition of its own is refused rather than attributed 
     event: revokeEvent(id(1)),
     rec: {
       label: "ticket-revoked",
-      transitions: [{ ticket: id(1), from: "PDraft", to: "PRevoked" }],
+      transitions: [{ ticket: id(1), from: "PDraft", to: "Revoked" }],
       effects: ["Revoke", "OpenHumanTask"],
       attempt: { attempt: "WONone" },
     },
@@ -135,7 +136,7 @@ test("an arrival-labelled record of the wrong shape is refused rather than read 
     event: revokeEvent(id(1)),
     rec: {
       label: arrivalLabel,
-      transitions: [{ ticket: id(1), from: "PDraft", to: "PRevoked" }],
+      transitions: [{ ticket: id(1), from: "PDraft", to: "Revoked" }],
       effects: ["CreateDraft"],
       attempt: { attempt: "WONone" },
     },

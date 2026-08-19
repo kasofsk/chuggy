@@ -44,10 +44,10 @@ import {
 } from "../../src/domain/phase.ts";
 import { asProjectId } from "../../src/domain/ids.ts";
 import { aNone, aSome, wNone } from "../../src/domain/wrapUp.ts";
-import type { Ticket } from "../../src/domain/ticket.ts";
-import type { Phase } from "../../src/domain/phase.ts";
+
 import { budgetedInstance } from "./configs.ts";
 import { ticketOn, workOutstanding } from "./fixtures.ts";
+import type { Phase, Ticket } from "../../src/domain/generated/modelTypes.ts";
 
 const GOLDEN_DIR = join(import.meta.dirname, "..", "golden");
 
@@ -154,8 +154,8 @@ test("micro is bounded strictly below microBound, which is what makes the flatte
     reworkLeft: 0,
     wrapUpLeft: 0,
     gasLeft: 0,
-    resumeAt: "RNone",
-    reason: "RsNone",
+    resumeAt: "NoResume",
+    reason: "NoReason",
   };
   assert.equal(phaseRank(worst.phase), rankDraft);
   assert.ok(micro(bounds, worst) < microBound(bounds));
@@ -165,7 +165,7 @@ test("a settled ticket with empty accounts measures zero, which is the well-foun
   const bounds = boundsFor("mc_chuggy_budgeted");
   assert.ok(bounds);
   const settled: Ticket = {
-    phase: "PDone",
+    phase: "Done",
     deps: [],
     wrapUp: wNone,
     artifact: aNone,
@@ -177,8 +177,8 @@ test("a settled ticket with empty accounts measures zero, which is the well-foun
     reworkLeft: 0,
     wrapUpLeft: 0,
     gasLeft: 0,
-    resumeAt: "RNone",
-    reason: "RsNone",
+    resumeAt: "NoResume",
+    reason: "NoReason",
   };
   assert.equal(phaseRank(settled.phase), rankSettled);
   assert.equal(ticketMeasure(bounds, settled), 0);
@@ -189,12 +189,12 @@ test("no digit, weight or radix reads the project or the artifact", () => {
   assert.ok(bounds);
   const phases: readonly Phase[] = [
     "PDraft",
-    "PPending",
-    "PWorking",
-    "PEvaluating",
+    "Pending",
+    "Working",
+    "Evaluating",
     "PWrapUp",
     "PWrapUpHolding",
-    "PEscalated",
+    "Escalated",
   ];
   for (const phase of phases) {
     const ticket = ticketOn(budgetedInstance, 1, {

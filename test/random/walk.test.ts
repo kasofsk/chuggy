@@ -18,6 +18,7 @@
  * refute, exclusivity of the completion emission over the run.
  */
 
+import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
@@ -25,7 +26,7 @@ import { join } from "node:path";
 
 import type { Config } from "../../src/domain/config.ts";
 import { isValidProgram } from "../../src/domain/config.ts";
-import type { StepRecord } from "../../src/domain/core.ts";
+
 import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
 import { asProjectId } from "../../src/domain/ids.ts";
 import { aSome, wNone, woNone } from "../../src/domain/wrapUp.ts";
@@ -177,7 +178,7 @@ test("a run is a pure function of its seed", () => {
 
 test("the accumulator rebuilds the ghost and can go red in every direction", () => {
   const done = coreOf([
-    ticketOn(budgetedInstance, 1, { phase: "PDone", artifact: aSome(1) }),
+    ticketOn(budgetedInstance, 1, { phase: "Done", artifact: aSome(1) }),
   ]);
   const completeRec: StepRecord = {
     label: "ticket-done",

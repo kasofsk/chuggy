@@ -21,15 +21,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { recordEquals, ticketEquals } from "../../src/actor/equality.ts";
-import {
-  initRecord,
-  type StepRecord,
-  type Transition,
-} from "../../src/domain/core.ts";
+import { initRecord } from "../../src/domain/core.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
 import { asProjectId } from "../../src/domain/ids.ts";
-import type { Stage } from "../../src/domain/program.ts";
-import type { Ticket } from "../../src/domain/ticket.ts";
+
 import {
   aNone,
   aSome,
@@ -39,6 +34,12 @@ import {
 } from "../../src/domain/wrapUp.ts";
 import { depsOf, id, workOutstanding, workTask } from "../domain/fixtures.ts";
 import { flatProgram, refinementInstance } from "./harness.ts";
+import type {
+  Stage,
+  StepRecord,
+  Ticket,
+  Transition,
+} from "../../src/domain/generated/modelTypes.ts";
 
 const config = refinementInstance;
 
@@ -71,27 +72,27 @@ const baseTicket: Ticket = freshTicket(
 );
 
 const ticketMutants: FieldMutants<Ticket> = {
-  phase: (t) => ({ ...t, phase: "PDone" }),
+  phase: (t) => ({ ...t, phase: "Done" }),
   deps: (t) => ({ ...t, deps: [id(2)] }),
   wrapUp: (t) => ({ ...t, wrapUp: wNone }),
   artifact: (t) => ({ ...t, artifact: aSome(1) }),
   project: (t) => ({ ...t, project: asProjectId(2) }),
   program: (t) => ({ ...t, program: [] }),
   tasks: (t) => ({ ...t, tasks: [workOutstanding(1)] }),
-  record: (t) => ({ ...t, record: [workTask(1, "TPassed")] }),
+  record: (t) => ({ ...t, record: [workTask(1, "Passed")] }),
   spawned: (t) => ({ ...t, spawned: t.spawned + 1 }),
   reworkLeft: (t) => ({ ...t, reworkLeft: t.reworkLeft + 1 }),
   wrapUpLeft: (t) => ({ ...t, wrapUpLeft: t.wrapUpLeft + 1 }),
   gasLeft: (t) => ({ ...t, gasLeft: t.gasLeft + 1 }),
-  resumeAt: (t) => ({ ...t, resumeAt: "RWorking" }),
-  reason: (t) => ({ ...t, reason: "RsWorkFailed" }),
+  resumeAt: (t) => ({ ...t, resumeAt: "ResumeWorking" }),
+  reason: (t) => ({ ...t, reason: "WorkFailed" }),
 };
 
 const recordMutants: FieldMutants<StepRecord> = {
   label: (r) => ({ ...r, label: "ticket-done" }),
   transitions: (r) => ({
     ...r,
-    transitions: [{ ticket: id(1), from: "PDraft", to: "PPending" }],
+    transitions: [{ ticket: id(1), from: "PDraft", to: "Pending" }],
   }),
   effects: (r) => ({ ...r, effects: ["Complete"] }),
   attempt: (r) => ({ ...r, attempt: woAttempt(asProjectId(1), true) }),
@@ -99,21 +100,21 @@ const recordMutants: FieldMutants<StepRecord> = {
 
 const baseTransition: Transition = {
   ticket: id(1),
-  from: "PWorking",
-  to: "PEvaluating",
+  from: "Working",
+  to: "Evaluating",
 };
 
 const transitionMutants: FieldMutants<Transition> = {
   ticket: (t) => ({ ...t, ticket: id(2) }),
-  from: (t) => ({ ...t, from: "PPending" }),
-  to: (t) => ({ ...t, to: "PDone" }),
+  from: (t) => ({ ...t, from: "Pending" }),
+  to: (t) => ({ ...t, to: "Done" }),
 };
 
-const baseStage: Stage = { fanout: 1, combinator: "CUnanimousPass" };
+const baseStage: Stage = { fanout: 1, combinator: "UnanimousPass" };
 
 const stageMutants: FieldMutants<Stage> = {
   fanout: (s) => ({ ...s, fanout: s.fanout + 1 }),
-  combinator: (s) => ({ ...s, combinator: "CAnyPass" }),
+  combinator: (s) => ({ ...s, combinator: "AnyPass" }),
 };
 
 test("ticketEquals reads every field Ticket declares", () => {

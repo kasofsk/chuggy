@@ -68,12 +68,12 @@ test("room for one more arrival runs out exactly at the arrival bound", () => {
 test("an arrival may depend on anything but a tombstone", () => {
   const core = coreOf([
     ticketOn(config, 1, { phase: "PDraft" }),
-    ticketOn(config, 1, { phase: "PRevoked" }),
+    ticketOn(config, 1, { phase: "Revoked" }),
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsDependencyRevoked",
+      phase: "Escalated",
+      reason: "DependencyRevoked",
     }),
-    ticketOn(config, 1, { phase: "PEscalated", reason: "RsWorkFailed" }),
+    ticketOn(config, 1, { phase: "Escalated", reason: "WorkFailed" }),
   ]);
   assert.deepEqual(dependableIn(core), [id(1), id(4)]);
 });
@@ -81,7 +81,7 @@ test("an arrival may depend on anything but a tombstone", () => {
 test("the only authoring phase is the only releasable set", () => {
   const core = coreOf([
     ticketOn(config, 1, { phase: "PDraft" }),
-    ticketOn(config, 1, { phase: "PPending" }),
+    ticketOn(config, 1, { phase: "Pending" }),
   ]);
   assert.deepEqual(draftsIn(core), [id(1)]);
 });
@@ -89,10 +89,10 @@ test("the only authoring phase is the only releasable set", () => {
 test("the absorbing terminals are exactly the unrevocable phases", () => {
   const core = coreOf([
     ticketOn(config, 1, { phase: "PDraft" }),
-    ticketOn(config, 1, { phase: "PEscalated", reason: "RsWorkFailed" }),
+    ticketOn(config, 1, { phase: "Escalated", reason: "WorkFailed" }),
     ticketOn(config, 1, { phase: "PWrapUpHolding" }),
-    ticketOn(config, 1, { phase: "PDone" }),
-    ticketOn(config, 1, { phase: "PRevoked" }),
+    ticketOn(config, 1, { phase: "Done" }),
+    ticketOn(config, 1, { phase: "Revoked" }),
   ]);
   assert.deepEqual(revocablesIn(core), [id(1), id(2), id(3)]);
   assert.ok(!revocableIn(core, id(4)));
@@ -102,15 +102,15 @@ test("the absorbing terminals are exactly the unrevocable phases", () => {
 test("a dependency that is not Done blocks, unreleased ones included", () => {
   const blocked = coreOf([
     ticketOn(config, 1, { phase: "PDraft" }),
-    ticketOn(config, 1, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
   ]);
   assert.ok(isBlockedIn(blocked, id(2)));
   assert.ok(!isReadyIn(blocked, id(2)));
   assert.deepEqual(readiesIn(blocked), []);
 
   const released = coreOf([
-    ticketOn(config, 1, { phase: "PDone" }),
-    ticketOn(config, 1, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 1, { phase: "Done" }),
+    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
   ]);
   assert.ok(isReadyIn(released, id(2)));
   assert.ok(!isBlockedIn(released, id(2)));
@@ -120,11 +120,11 @@ test("a dependency that is not Done blocks, unreleased ones included", () => {
 test("the dep gate reads Done-ness and never location", () => {
   const waiting = coreOf([
     ticketOn(config, 1, { phase: "PWrapUp" }),
-    ticketOn(config, 2, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 2, { phase: "Pending", deps: [id(1)] }),
   ]);
   const landed = coreOf([
-    ticketOn(config, 1, { phase: "PDone", artifact: aSome(2) }),
-    ticketOn(config, 2, { phase: "PPending", deps: [id(1)] }),
+    ticketOn(config, 1, { phase: "Done", artifact: aSome(2) }),
+    ticketOn(config, 2, { phase: "Pending", deps: [id(1)] }),
   ]);
   assert.ok(isBlockedIn(waiting, id(2)));
   assert.ok(isReadyIn(landed, id(2)));
@@ -133,10 +133,8 @@ test("the dep gate reads Done-ness and never location", () => {
 });
 
 test("the dispatcher needs a ready ticket with gas to charge", () => {
-  const ready = coreOf([ticketOn(config, 1, { phase: "PPending" })]);
-  const broke = coreOf([
-    ticketOn(config, 1, { phase: "PPending", gasLeft: 0 }),
-  ]);
+  const ready = coreOf([ticketOn(config, 1, { phase: "Pending" })]);
+  const broke = coreOf([ticketOn(config, 1, { phase: "Pending", gasLeft: 0 })]);
   assert.ok(dispatchableIn(ready, id(1)));
   assert.ok(!dispatchableIn(broke, id(1)));
 });
@@ -144,23 +142,23 @@ test("the dispatcher needs a ready ticket with gas to charge", () => {
 test("only the two task phases can receive a completion, and only a resolved set reduces", () => {
   const core = coreOf([
     ticketOn(config, 1, {
-      phase: "PWorking",
-      tasks: [workOutstanding(1), workTask(2, "TPassed")],
+      phase: "Working",
+      tasks: [workOutstanding(1), workTask(2, "Passed")],
       spawned: 2,
     }),
     ticketOn(config, 1, {
-      phase: "PEvaluating",
-      tasks: [evalTask(1, 0, "TFailed")],
+      phase: "Evaluating",
+      tasks: [evalTask(1, 0, "Failed")],
       spawned: 1,
     }),
     ticketOn(config, 1, { phase: "PWrapUp" }),
     ticketOn(config, 1, {
-      phase: "PWorking",
-      tasks: [workTask(1, "TPassed")],
+      phase: "Working",
+      tasks: [workTask(1, "Passed")],
       spawned: 1,
     }),
     ticketOn(config, 1, {
-      phase: "PEvaluating",
+      phase: "Evaluating",
       tasks: [evalOutstanding(1, 0)],
       spawned: 1,
     }),
@@ -208,31 +206,31 @@ test("a wrap-up that needs no lease answers a resource no universe contains", ()
 test("the pre-work resume is free under both meterings and the pipeline resumes are not", () => {
   assert.equal(resumeCharge(config, "RPending"), 0);
   assert.equal(resumeCharge(retryFreeInstance, "RPending"), 0);
-  assert.equal(resumeCharge(config, "RWorking"), 1);
-  assert.equal(resumeCharge(retryFreeInstance, "RWorking"), 1);
-  assert.equal(resumeCharge(config, "RWrapUp"), 1);
-  assert.equal(resumeCharge(retryFreeInstance, "RWrapUp"), 0);
-  assert.equal(resumeCharge(config, "REvaluating"), 1);
-  assert.equal(resumeCharge(retryFreeInstance, "REvaluating"), 0);
+  assert.equal(resumeCharge(config, "ResumeWorking"), 1);
+  assert.equal(resumeCharge(retryFreeInstance, "ResumeWorking"), 1);
+  assert.equal(resumeCharge(config, "ResumeFinalizing"), 1);
+  assert.equal(resumeCharge(retryFreeInstance, "ResumeFinalizing"), 0);
+  assert.equal(resumeCharge(config, "ResumeEvaluating"), 1);
+  assert.equal(resumeCharge(retryFreeInstance, "ResumeEvaluating"), 0);
 });
 
 test("a park is retryable when its resume exists and the ticket can afford it", () => {
   const parked = coreOf([
     ticketOn(config, 1, {
-      phase: "PEscalated",
+      phase: "Escalated",
       resumeAt: "RPending",
       reason: "RsRevalidationFailed",
       gasLeft: 0,
     }),
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      resumeAt: "RWrapUp",
-      reason: "RsGasExhausted",
+      phase: "Escalated",
+      resumeAt: "ResumeFinalizing",
+      reason: "GasExhausted",
       gasLeft: 0,
     }),
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      reason: "RsDependencyRevoked",
+      phase: "Escalated",
+      reason: "DependencyRevoked",
       gasLeft: 3,
     }),
   ]);
@@ -253,8 +251,8 @@ test("a park is retryable when its resume exists and the ticket can afford it", 
 test("the delivery range an at-least-once fabric may name is the ticket's whole history", () => {
   const core = coreOf([
     ticketOn(config, 1, {
-      phase: "PEvaluating",
-      record: [workTask(1, "TPassed"), workTask(2, "TPassed")],
+      phase: "Evaluating",
+      record: [workTask(1, "Passed"), workTask(2, "Passed")],
       tasks: [evalOutstanding(3, 0)],
       spawned: 3,
     }),
@@ -273,9 +271,9 @@ test("a valid artifact has no failure to draw and an invalidated one is not forc
 
 test("the stutter is enabled exactly on a fully-arrived fleet of terminals", () => {
   const settled = [
-    ticketOn(config, 1, { phase: "PDone", artifact: aSome(1) }),
-    ticketOn(config, 1, { phase: "PRevoked" }),
-    ticketOn(config, 2, { phase: "PDone", artifact: aSome(2) }),
+    ticketOn(config, 1, { phase: "Done", artifact: aSome(1) }),
+    ticketOn(config, 1, { phase: "Revoked" }),
+    ticketOn(config, 2, { phase: "Done", artifact: aSome(2) }),
   ];
   assert.ok(quietIn(config, coreOf(settled)));
   assert.ok(
@@ -287,7 +285,7 @@ test("the stutter is enabled exactly on a fully-arrived fleet of terminals", () 
       config,
       coreOf([
         ...settled.slice(0, -1),
-        ticketOn(config, 2, { phase: "PWorking" }),
+        ticketOn(config, 2, { phase: "Working" }),
       ]),
     ),
     "a live ticket means some other action is enabled",

@@ -40,7 +40,7 @@ import { recordEquals } from "../../src/actor/equality.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import { journalStoreStub } from "../../src/adapters/journalStoreStub.ts";
-import type { StepRecord } from "../../src/domain/core.ts";
+
 import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
 import { wExclusive, wNone, woNone } from "../../src/domain/wrapUp.ts";
 import {
@@ -50,13 +50,14 @@ import {
 } from "../../src/interpreter/wire.ts";
 import { flatProgram, refinementInstance } from "../actor/harness.ts";
 import { depsOf, id } from "../domain/fixtures.ts";
+import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
 
 const config = refinementInstance;
 
 /** A well-formed record, so a case about a decision event is not also a case about a record. */
 const plainRecord: StepRecord = {
   label: "ticket-released",
-  transitions: [{ ticket: id(1), from: "PDraft", to: "PPending" }],
+  transitions: [{ ticket: id(1), from: "PDraft", to: "Pending" }],
   effects: [],
   attempt: woNone,
 };
@@ -67,7 +68,7 @@ const oneOfEach: Readonly<Record<DecisionEvent["event"], DecisionEvent>> = {
   Release: releaseEvent(id(1)),
   Revoke: revokeEvent(id(1)),
   Dispatch: dispatchEvent(id(1)),
-  TaskDone: taskDoneEvent(id(1), asTaskId(2), "VFail"),
+  TaskDone: taskDoneEvent(id(1), asTaskId(2), "Fail"),
   WorkReduce: workReduceEvent(id(1)),
   EvalReduce: evalReduceEvent(id(1)),
   Dequeue: dequeueEvent(id(1), true),
@@ -174,7 +175,7 @@ test("a row is refused, with the field named, for each way the wire can lie", ()
         event: oneOfEach.Release,
         rec: {
           ...plainRecord,
-          transitions: [{ ticket: 1, from: "PParked", to: "PDone" }],
+          transitions: [{ ticket: 1, from: "PParked", to: "Done" }],
         },
       },
       /rec\.transitions/,

@@ -132,7 +132,7 @@ test("a Done ticket the journal never completed fails the ledger bridge, with th
   const ticket = ticketAt(memoryCore(state), id(1));
   const forged = withTicket(memoryCore(state), id(1), {
     ...ticket,
-    phase: "PDone",
+    phase: "Done",
     artifact: aSome(1),
   });
   const disagreeing = { ...state, view: { ...state.view, post: forged } };

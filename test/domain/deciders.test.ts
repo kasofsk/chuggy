@@ -13,11 +13,12 @@
  * the measure rather than in the record a golden compares.
  */
 
+import type { Core } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { boundsOf, defaultProgram } from "../../src/domain/config.ts";
-import { ticketAt, type Core } from "../../src/domain/core.ts";
+import { ticketAt } from "../../src/domain/core.ts";
 import {
   decideArrive,
   decideDequeue,
@@ -68,12 +69,12 @@ test("both wrap-up successes emit the one effect and differ only in the phase th
   const quiet = decideWrapUpResolve(config, queued, id(1), "WOk", false);
   assert.equal(held.rec.label, "ticket-done");
   assert.deepEqual(held.rec.transitions, [
-    { ticket: id(1), from: "PWrapUpHolding", to: "PDone" },
+    { ticket: id(1), from: "PWrapUpHolding", to: "Done" },
   ]);
   assert.deepEqual(held.rec.effects, ["Complete"]);
   assert.deepEqual(held.rec.attempt, woAttempt(asProjectId(2), true));
   assert.deepEqual(quiet.rec.transitions, [
-    { ticket: id(1), from: "PWrapUp", to: "PDone" },
+    { ticket: id(1), from: "PWrapUp", to: "Done" },
   ]);
   assert.deepEqual(quiet.rec.effects, ["Complete"]);
   assert.deepEqual(quiet.rec.attempt, woAttempt(asProjectId(2), false));
@@ -116,12 +117,12 @@ test("each budgeted wrap-up wall carries its own name and the attempt's attribut
   );
   assert.equal(
     ticketAt(budgetWall.post, id(1)).reason,
-    "RsWrapUpBudgetExhausted",
+    "FinalizationBudgetExhausted",
   );
-  assert.equal(ticketAt(budgetWall.post, id(1)).resumeAt, "RWrapUp");
+  assert.equal(ticketAt(budgetWall.post, id(1)).resumeAt, "ResumeFinalizing");
   assert.deepEqual(budgetWall.rec.attempt, woAttempt(asProjectId(2), true));
   assert.equal(gasWall.rec.label, "ticket-escalated gas_exhausted");
-  assert.equal(ticketAt(gasWall.post, id(1)).reason, "RsGasExhausted");
+  assert.equal(ticketAt(gasWall.post, id(1)).reason, "GasExhausted");
   assert.deepEqual(gasWall.rec.attempt, woAttempt(asProjectId(2), true));
   assert.ok(measure(budgetWall.post) < measure(spent));
   assert.ok(measure(gasWall.post) < measure(dry));
@@ -137,7 +138,7 @@ test("gas alone meters the gate loop under deadline-only pricing", () => {
   ]);
   const rework = decideWrapUpResolve(deadline, held, id(1), "WFailed", true);
   assert.equal(rework.rec.label, "rework-started wrapup_failure");
-  assert.equal(ticketAt(rework.post, id(1)).phase, "PWorking");
+  assert.equal(ticketAt(rework.post, id(1)).phase, "Working");
   assert.equal(ticketAt(rework.post, id(1)).gasLeft, 1);
   assert.equal(
     ticketAt(rework.post, id(1)).wrapUpLeft,
@@ -153,21 +154,21 @@ test("gas alone meters the gate loop under deadline-only pricing", () => {
 test("the wrap-up resume re-enqueues, and its price is the whole of the metering parameter", () => {
   const parked = coreOf([
     ticketOn(config, 1, {
-      phase: "PEscalated",
-      resumeAt: "RWrapUp",
-      reason: "RsGasExhausted",
+      phase: "Escalated",
+      resumeAt: "ResumeFinalizing",
+      reason: "GasExhausted",
       gasLeft: 2,
     }),
   ]);
   const charged = decideOpRetry(config, parked, id(1));
   const free = decideOpRetry(retryFreeInstance, parked, id(1));
-  assert.equal(charged.rec.label, "operator-retry");
+  assert.equal(charged.rec.label, "ticket-resumed");
   assert.deepEqual(charged.rec.transitions, [
-    { ticket: id(1), from: "PEscalated", to: "PWrapUp" },
+    { ticket: id(1), from: "Escalated", to: "PWrapUp" },
   ]);
   assert.deepEqual(charged.rec.effects, ["EnqueueWrapUp"]);
   assert.equal(ticketAt(charged.post, id(1)).gasLeft, 1);
-  assert.equal(ticketAt(charged.post, id(1)).reason, "RsNone");
+  assert.equal(ticketAt(charged.post, id(1)).reason, "NoReason");
   assert.ok(measure(charged.post) < measure(parked));
   assert.equal(ticketAt(free.post, id(1)).gasLeft, 2);
   assert.ok(
@@ -178,7 +179,7 @@ test("the wrap-up resume re-enqueues, and its price is the whole of the metering
 
 test("a park with no modeled resume is the guarded no-op its enablement refuses", () => {
   const walled = coreOf([
-    ticketOn(config, 1, { phase: "PEscalated", reason: "RsDependencyRevoked" }),
+    ticketOn(config, 1, { phase: "Escalated", reason: "DependencyRevoked" }),
   ]);
   const decision = decideOpRetry(config, walled, id(1));
   assert.equal(decision.rec.label, "operator-retry-unreachable");
@@ -194,7 +195,7 @@ test("revoking out of either wrap-up phase settles without completing and frees 
   ]);
   const revoked = decideRevoke(occupied, id(1));
   assert.deepEqual(revoked.rec.transitions, [
-    { ticket: id(1), from: "PWrapUpHolding", to: "PRevoked" },
+    { ticket: id(1), from: "PWrapUpHolding", to: "Revoked" },
   ]);
   assert.deepEqual(revoked.rec.effects, ["Revoke"]);
   assert.equal(completionsOf(ticketAt(revoked.post, id(1))), 0);
@@ -212,8 +213,8 @@ test("revoking out of either wrap-up phase settles without completing and frees 
 
 /** A chain 1 <- 2 <- 3, released as far as the corpus never builds it: a Draft behind a Pending. */
 const chain = coreOf([
-  ticketOn(config, 1, { phase: "PPending", gasLeft: 2 }),
-  ticketOn(config, 1, { phase: "PPending", deps: [id(1)], gasLeft: 2 }),
+  ticketOn(config, 1, { phase: "Pending", gasLeft: 2 }),
+  ticketOn(config, 1, { phase: "Pending", deps: [id(1)], gasLeft: 2 }),
   ticketOn(config, 1, { deps: [id(2)], gasLeft: 2 }),
 ]);
 const cascaded = decideRevoke(chain, id(1)).post;
@@ -222,9 +223,9 @@ test("the cascade parks every transitive dependent in the one decision, spending
   const decision = decideRevoke(chain, id(1));
   assert.equal(decision.rec.label, "ticket-revoked");
   assert.deepEqual(decision.rec.transitions, [
-    { ticket: id(1), from: "PPending", to: "PRevoked" },
-    { ticket: id(2), from: "PPending", to: "PEscalated" },
-    { ticket: id(3), from: "PDraft", to: "PEscalated" },
+    { ticket: id(1), from: "Pending", to: "Revoked" },
+    { ticket: id(2), from: "Pending", to: "Escalated" },
+    { ticket: id(3), from: "PDraft", to: "Escalated" },
   ]);
   assert.deepEqual(decision.rec.effects, [
     "Revoke",
@@ -232,18 +233,18 @@ test("the cascade parks every transitive dependent in the one decision, spending
     "OpenHumanTask",
   ]);
   for (const parked of [id(2), id(3)]) {
-    assert.equal(ticketAt(cascaded, parked).reason, "RsDependencyRevoked");
-    assert.equal(ticketAt(cascaded, parked).resumeAt, "RNone");
+    assert.equal(ticketAt(cascaded, parked).reason, "DependencyRevoked");
+    assert.equal(ticketAt(cascaded, parked).resumeAt, "NoResume");
     assert.equal(ticketAt(cascaded, parked).gasLeft, 2);
   }
-  assert.equal(ticketAt(cascaded, id(1)).reason, "RsNone");
+  assert.equal(ticketAt(cascaded, id(1)).reason, "NoReason");
   assert.ok(measure(cascaded) < measure(chain));
 });
 
 test("a desk revoke is flat, and it re-parks nobody", () => {
   const settled = decideRevoke(cascaded, id(2));
   assert.deepEqual(settled.rec.transitions, [
-    { ticket: id(2), from: "PEscalated", to: "PRevoked" },
+    { ticket: id(2), from: "Escalated", to: "Revoked" },
   ]);
   assert.deepEqual(settled.rec.effects, ["Revoke"]);
   assert.equal(
@@ -251,26 +252,26 @@ test("a desk revoke is flat, and it re-parks nobody", () => {
     measure(cascaded),
     "settling a parked ticket from the desk is the bounded authoring arm the descent argument exempts",
   );
-  assert.equal(ticketAt(settled.post, id(3)).phase, "PEscalated");
-  assert.equal(ticketAt(settled.post, id(3)).reason, "RsDependencyRevoked");
+  assert.equal(ticketAt(settled.post, id(3)).phase, "Escalated");
+  assert.equal(ticketAt(settled.post, id(3)).reason, "DependencyRevoked");
 });
 
 test("the stage's own combinator decides, so a program is not always-pass", () => {
-  const anyPass = [{ fanout: 2, combinator: "CAnyPass" as const }];
+  const anyPass = [{ fanout: 2, combinator: "AnyPass" as const }];
   const passes = coreOf([
     ticketOn(config, 1, {
-      phase: "PEvaluating",
+      phase: "Evaluating",
       program: anyPass,
-      tasks: [evalTask(1, 0, "TPassed"), evalTask(2, 0, "TFailed")],
+      tasks: [evalTask(1, 0, "Passed"), evalTask(2, 0, "Failed")],
       spawned: 2,
       gasLeft: 2,
     }),
   ]);
   const walls = coreOf([
     ticketOn(config, 1, {
-      phase: "PEvaluating",
+      phase: "Evaluating",
       program: anyPass,
-      tasks: [evalTask(1, 0, "TFailed"), evalTask(2, 0, "TFailed")],
+      tasks: [evalTask(1, 0, "Failed"), evalTask(2, 0, "Failed")],
       spawned: 2,
       gasLeft: 2,
     }),
@@ -304,7 +305,7 @@ test("arrival is the authoring climber, and release descends off it", () => {
 });
 
 test("the pre-work park costs nothing and its resume climbs back, charging nothing either", () => {
-  const ready = coreOf([ticketOn(config, 1, { phase: "PPending" })]);
+  const ready = coreOf([ticketOn(config, 1, { phase: "Pending" })]);
   const parked = decideRevalFail(ready, id(1));
   assert.equal(parked.rec.label, "ticket-escalated revalidation_failed");
   assert.equal(ticketAt(parked.post, id(1)).resumeAt, "RPending");
@@ -318,7 +319,7 @@ test("the pre-work park costs nothing and its resume climbs back, charging nothi
 test("every fixture this suite builds is a shape the machine could have reached", () => {
   const live = coreOf([
     ticketOn(config, 1, {
-      phase: "PWorking",
+      phase: "Working",
       tasks: [workOutstanding(1)],
       spawned: 1,
     }),

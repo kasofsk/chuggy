@@ -50,12 +50,7 @@ import {
   journalSpawnsOn,
   worldSpawnsOn,
 } from "../../src/actor/world.ts";
-import {
-  ticketAt,
-  withTicket,
-  type Core,
-  type Decision,
-} from "../../src/domain/core.ts";
+import { ticketAt, withTicket, type Decision } from "../../src/domain/core.ts";
 import {
   decideOpRetry,
   decideRevalFail,
@@ -66,6 +61,7 @@ import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
 import { wExclusive } from "../../src/domain/wrapUp.ts";
 import { depsOf, id } from "../domain/fixtures.ts";
 import { flatProgram, refinementInstance } from "./harness.ts";
+import type { Core } from "../../src/domain/generated/modelTypes.ts";
 
 const config = refinementInstance;
 
@@ -94,7 +90,7 @@ test("an honest history is legal, and replay reconstructs what the deciders buil
   assert.ok(journalLegalOn(config, goodJournal));
   const replayed = replayCore(config, goodJournal);
   assert.ok(coreEquals(replayed, d3.post));
-  assert.equal(ticketAt(replayed, id(1)).phase, "PWorking");
+  assert.equal(ticketAt(replayed, id(1)).phase, "Working");
   assert.equal(ticketAt(replayed, id(1)).gasLeft, 2);
 });
 
@@ -126,7 +122,7 @@ test("a decision that was never enabled is refused, cleanly, at any tampered pay
     !decisionEventEnabled(
       config,
       genesis,
-      taskDoneEvent(id(1), asTaskId(1), "VPass"),
+      taskDoneEvent(id(1), asTaskId(1), "Pass"),
     ),
   );
   assert.ok(!decisionEventEnabled(config, genesis, dispatchEvent(id(1))));
@@ -193,21 +189,21 @@ test("no-op decisions journal like any others and replay through", () => {
   const real = execDecisionEvent(
     config,
     d3.post,
-    taskDoneEvent(id(1), asTaskId(1), "VPass"),
+    taskDoneEvent(id(1), asTaskId(1), "Pass"),
   );
   const duplicate = execDecisionEvent(
     config,
     real.post,
-    taskDoneEvent(id(1), asTaskId(1), "VFail"),
+    taskDoneEvent(id(1), asTaskId(1), "Fail"),
   );
   const e4: Entry = {
     seq: 4,
-    event: taskDoneEvent(id(1), asTaskId(1), "VPass"),
+    event: taskDoneEvent(id(1), asTaskId(1), "Pass"),
     rec: real.rec,
   };
   const e5: Entry = {
     seq: 5,
-    event: taskDoneEvent(id(1), asTaskId(1), "VFail"),
+    event: taskDoneEvent(id(1), asTaskId(1), "Fail"),
     rec: duplicate.rec,
   };
   assert.equal(duplicate.rec.label, "task-done-duplicate");
@@ -241,12 +237,12 @@ const toReady: readonly DecisionEvent[] = [...toDrafted, releaseEvent(id(1))];
 const toWorking: readonly DecisionEvent[] = [...toReady, dispatchEvent(id(1))];
 const toEvaluating: readonly DecisionEvent[] = [
   ...toWorking,
-  taskDoneEvent(id(1), asTaskId(1), "VPass"),
+  taskDoneEvent(id(1), asTaskId(1), "Pass"),
   workReduceEvent(id(1)),
 ];
 const toEnqueued: readonly DecisionEvent[] = [
   ...toEvaluating,
-  taskDoneEvent(id(1), asTaskId(2), "VPass"),
+  taskDoneEvent(id(1), asTaskId(2), "Pass"),
   evalReduceEvent(id(1)),
 ];
 const toHolding: readonly DecisionEvent[] = [
@@ -327,12 +323,12 @@ const refusals: readonly Refusal[] = [
   {
     conjunct: "TaskDone/taskPhaseIn",
     at: ready,
-    event: taskDoneEvent(id(1), asTaskId(1), "VPass"),
+    event: taskDoneEvent(id(1), asTaskId(1), "Pass"),
   },
   {
     conjunct: "TaskDone/deliverableTaskIds",
     at: working,
-    event: taskDoneEvent(id(1), asTaskId(9), "VPass"),
+    event: taskDoneEvent(id(1), asTaskId(9), "Pass"),
   },
   {
     conjunct: "WorkReduce/reducibleWorkIn",

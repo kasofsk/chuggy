@@ -20,12 +20,12 @@
  * own `settle` action writes.
  */
 
+import type { Core } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Core } from "../../src/domain/core.ts";
 import { budgetedInstance } from "../domain/configs.ts";
 import { declaredActions } from "../domain/declared.ts";
 import { decodeVerdict, decodeWrapUpOutcome } from "../itf/vocabulary.ts";

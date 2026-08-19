@@ -37,9 +37,9 @@ export const UNREACHABLE_LABEL = "operator-retry-unreachable";
 /** The phases `phaseRank` names; everything else ranks as settled. */
 const LIVE_PHASES = new Set([
   "PDraft",
-  "PPending",
-  "PWorking",
-  "PEvaluating",
+  "Pending",
+  "Working",
+  "Evaluating",
   "PWrapUp",
   "PWrapUpHolding",
 ]);
@@ -104,7 +104,7 @@ export function declaredArms(root: string): readonly string[] {
 
 /** A resume into the pipeline, which is the flavor the model's roster names. */
 function isPipelineResume(tos: readonly string[]): boolean {
-  return tos.some((t) => t === "PEvaluating" || t === "PWrapUp");
+  return tos.some((t) => t === "Evaluating" || t === "PWrapUp");
 }
 
 function tagOf(value: ItfValue): string {
@@ -133,13 +133,13 @@ function armsFor(
   if (label === "task-done-duplicate") hit.push("task-done-duplicate");
   if (label === "complete-duplicate") hit.push("complete-duplicate");
   if (label === "settled") hit.push("settled");
-  if (label === "ticket-arrived") hit.push("ticket-arrived");
+  if (label === "ticket-released") hit.push("ticket-released");
 
   if (!Array.isArray(transitions)) return hit;
 
-  if (label === "operator-retry") {
+  if (label === "ticket-resumed") {
     const tos = transitions.map((t) => tagOf(field(t, "to")));
-    if (tos.includes("PPending")) hit.push("operator-retry, RPending flavor");
+    if (tos.includes("Pending")) hit.push("operator-retry, RPending flavor");
     if (retryFree && isPipelineResume(tos)) {
       hit.push("operator-retry, RetryFree pipeline flavor");
     }

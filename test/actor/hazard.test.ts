@@ -66,12 +66,12 @@ function phaseDispatchDoubleSpend(): ActorState {
     config,
     state,
     arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
-    "ticket-arrived",
+    "ticket-released",
   );
   state = stepEmit(config, state, releaseEvent(id(1)), "ticket-released");
   state = effectCrash(config, state, dispatchEvent(id(1)));
   assert.equal(state.orphans.length, 1);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PPending");
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Pending");
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 3);
   assert.equal(worldSpawns(state, id(1)), 1);
   assert.equal(journalSpawns(state, id(1)), 0);
@@ -100,7 +100,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "VPass"),
+    taskDoneEvent(id(1), asTaskId(1), "Pass"),
     "task-done",
     spentWorld,
   );
@@ -114,7 +114,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(2), "VPass"),
+    taskDoneEvent(id(1), asTaskId(2), "Pass"),
     "task-done",
     spentWorld,
   );
@@ -163,9 +163,9 @@ function walkToEvalFailure(): ActorState {
     config,
     state,
     arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
-    "ticket-arrived",
+    "ticket-released",
   );
-  state = walkFirstCycle(config, state, "VFail");
+  state = walkFirstCycle(config, state, "Fail");
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
   assert.equal(ticketAt(memoryCore(state), id(1)).reworkLeft, 1);
   return state;
@@ -176,7 +176,7 @@ test("the rework double-spend: the fan-out launches and the charge dies with the
   state = effectCrash(config, state, evalReduceEvent(id(1)));
   assert.equal(state.orphans.length, 1);
   const recovered = ticketAt(memoryCore(state), id(1));
-  assert.equal(recovered.phase, "PEvaluating");
+  assert.equal(recovered.phase, "Evaluating");
   assert.equal(recovered.gasLeft, 2);
   assert.equal(recovered.reworkLeft, 1);
   assert.equal(worldSpawns(state, id(1)), 2);
