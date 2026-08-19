@@ -117,7 +117,9 @@ const foundationRelations = [
 
 const foundationGrants = [
   `GRANT SELECT ON recovery_epoch TO ${dispatcherRole}`,
-  `GRANT SELECT, UPDATE ON project TO ${dispatcherRole}`,
+  `GRANT SELECT ON project TO ${dispatcherRole}`,
+  `GRANT UPDATE (head, owner, lease_expires_at, recovery_epoch, fencing_epoch)
+     ON project TO ${dispatcherRole}`,
   `GRANT SELECT, INSERT ON journal_entry TO ${dispatcherRole}`,
 ];
 

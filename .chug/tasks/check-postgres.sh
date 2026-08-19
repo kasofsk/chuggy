@@ -21,6 +21,12 @@
 # port claims — but two runs of the gate share nothing, and a crashed run
 # leaves no state the next one inherits.
 #
+# THE VERDICT NAMES WHAT THE RUN ACTUALLY USED. A line ending in the image this
+# script would have started says nothing true when a caller supplied their own
+# server, and says the wrong thing when a container started days ago on a
+# different image is being reused. So the subject is read back from the
+# container that answered, or names the variable that redirected the run.
+#
 # NO DOCKER IS A COULD-NOT-RUN, NOT A PASS. That is the whole reason the
 # protocol has a third exit: a suite that did not execute has proved nothing,
 # and saying so is the only honest verdict available.
@@ -80,6 +86,7 @@ suite_count="$(printf '%s\n' "$suites" | grep -c '' || true)"
 if [ -n "${CHUG_PG_URL:-}" ]; then
 	base_url="$CHUG_PG_URL"
 	scratch=""
+	subject="the server CHUG_PG_URL names"
 else
 	if ! command -v docker >/dev/null 2>&1; then
 		echo "check-postgres: LINTER ERROR — no docker, so no server can be started."
@@ -104,6 +111,9 @@ else
 	else
 		echo "check-postgres: reusing $container on port $port"
 	fi
+	# Read back from the container rather than from CHUG_PG_IMAGE, which says
+	# what a fresh start would have used and not what a reused one is running.
+	subject="$(docker inspect -f '{{.Config.Image}}' "$container" 2>/dev/null || echo "$image")"
 
 	waited=0
 	until docker exec "$container" pg_isready -q -U postgres >/dev/null 2>&1; do
@@ -145,8 +155,8 @@ rc=$?
 set -e
 
 if [ "$rc" -ne 0 ]; then
-	echo "check-postgres: FAILED — the suite went red against $image"
+	echo "check-postgres: FAILED — the suite went red against $subject"
 	exit 1
 fi
 
-echo "check-postgres: $suite_count suite(s) clean against $image"
+echo "check-postgres: $suite_count suite(s) clean against $subject"

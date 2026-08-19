@@ -15,7 +15,10 @@
 # either.
 #
 # The clean line's figure is asserted against a fixture whose suites this file
-# writes, so the line cannot report a scope the run did not have.
+# writes, so the line cannot report a scope the run did not have. Its subject is
+# asserted too, on the path these cases take: a verdict that named the image
+# this script would have started would be naming a server the run never
+# touched. The container path's subject is exercised by `ci.sh` on every run.
 #
 # Run:  .chug/tasks/check-postgres.test.sh
 set -eu
@@ -90,7 +93,7 @@ fixture
 failing_suite "$R/test/postgres/red.test.ts"
 git -C "$R" add -A
 run_gate "$R" CHUG_PG_URL=postgres://fixture/ignored
-check "a red suite is a finding" 1 "$RC" "the suite went red"
+check "a red suite is a finding" 1 "$RC" "the suite went red against the server CHUG_PG_URL names"
 
 # --- A green run is clean, and says what it consumed --------------------------
 
@@ -99,7 +102,7 @@ passing_suite "$R/test/postgres/one.test.ts"
 passing_suite "$R/test/postgres/two.test.ts"
 git -C "$R" add -A
 run_gate "$R" CHUG_PG_URL=postgres://fixture/ignored
-check "a green suite is clean" 0 "$RC" "clean against"
+check "a green suite is clean" 0 "$RC" "clean against the server CHUG_PG_URL names"
 check "the clean line counts the suites it ran" 0 "$RC" "2 suite(s) clean"
 
 done_ "check-postgres.test.sh"

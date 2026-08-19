@@ -95,15 +95,24 @@ test("takeover after expiry advances the epoch, and the former owner cannot rene
   assert.equal(fenced.fencingEpoch, successor.fencingEpoch);
 });
 
-test("release frees the project, and a released lease releases nothing twice", async () => {
+test("release frees the project, and a released lease cannot release its successor", async () => {
   const partition = await postgresHarnessProject(harness.store, "release");
   const lease = await granted(partition, "leaver");
   await harness.store.release(lease);
   const next = await granted(partition, "next");
+
   await harness.store.release(lease);
-  const standing = await harness.store.standing(partition);
-  assert.ok(standing !== undefined);
-  assert.equal(standing.fencingEpoch, next.fencingEpoch);
+
+  const rival = await harness.store.acquire(
+    partition,
+    postgresHarnessOwner("opportunist"),
+    60,
+  );
+  assert.equal(rival.acquired, "HeldByAnother");
+  assert.ok(rival.acquired === "HeldByAnother");
+  assert.equal(rival.owner, next.owner);
+  const renewed = await harness.store.renew(next, 60);
+  assert.equal(renewed.renewed, "Extended");
 });
 
 test("a fenced project admits no dispatcher, and fencing advances both counters", async () => {

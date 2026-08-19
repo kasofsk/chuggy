@@ -64,12 +64,41 @@ test("the dispatcher role cannot mint a recovery epoch, because a runtime that c
   assert.match(String(refusal), /permission denied/);
 });
 
+test("the dispatcher role cannot lift a suspension it is fenced by", async () => {
+  const partition = await postgresHarnessProject(harness.store, "unfence");
+  await harness.store.fence(partition, "IntegrityBlocked");
+  const refusal = await harness.attemptAs(
+    dispatcherRole,
+    `UPDATE project SET lifecycle = 'Active' WHERE tenant = '${partition.tenant}'`,
+  );
+  assert.match(String(refusal), /permission denied/);
+});
+
+test("the dispatcher role cannot move a project across the composite key", async () => {
+  const partition = await postgresHarnessProject(harness.store, "rekey");
+  const refusal = await harness.attemptAs(
+    dispatcherRole,
+    `UPDATE project SET tenant = 'elsewhere' WHERE tenant = '${partition.tenant}'`,
+  );
+  assert.match(String(refusal), /permission denied/);
+});
+
 test("the dispatcher role may append an entry and move the head it counts", async () => {
   const partition = await postgresHarnessProject(harness.store, "grants");
+  const epoch = await harness.store.currentRecoveryEpoch();
   assert.equal(
     await harness.attemptAs(
       dispatcherRole,
-      `UPDATE project SET head = head WHERE tenant = '${partition.tenant}'`,
+      `INSERT INTO journal_entry
+         (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch, recovery_epoch)
+       VALUES ('${partition.tenant}', '${partition.project}', 1, '{}', 'd', 'p', 'o', 1, '${epoch}')`,
+    ),
+    undefined,
+  );
+  assert.equal(
+    await harness.attemptAs(
+      dispatcherRole,
+      `UPDATE project SET head = 1 WHERE tenant = '${partition.tenant}'`,
     ),
     undefined,
   );

@@ -17,9 +17,17 @@
  *
  * THE ENTRY IS STORED AS THE WIRE TEXT THE PORT PARSES BACK. The domain event
  * never becomes a database type, so the load passes the same schema the
- * in-memory store's does and a row edited behind the writer's back arrives as
- * a tampered journal — refused by returning, never trusted and never thrown
- * on.
+ * in-memory store's does, and a row that no longer parses is refused by
+ * returning rather than thrown on.
+ *
+ * WHAT THE LOAD DOES NOT DO IS VERIFY THE CHAIN. It checks shape, not
+ * integrity: an edit that stays inside the schema — a ticket identity changed,
+ * an entry removed from the middle — loads as `Ok` and replays as history. The
+ * digests are written here so that format version one carries them, because a
+ * chain added later is a migration over authoritative history; recomputing and
+ * comparing them is project-local integrity containment, which 006 places at
+ * slice I9 along with what a project fails closed into when the comparison
+ * disagrees.
  */
 
 import type pg from "pg";

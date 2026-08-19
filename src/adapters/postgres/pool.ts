@@ -2,13 +2,25 @@
  * The connection pool and the migration runner: everything the other modules
  * in this adapter need from `pg` that is not a statement about a relation.
  *
- * THE POOL IS BOUNDED AND SO IS EVERY STATEMENT. House rule 9 asks for an
- * explicit limit on anything that can grow, and a database client has two: how
- * many connections it will open, and how long it will wait for one answer.
+ * THE POOL IS BOUNDED AND SO IS EVERY WAIT. House rule 9 asks for an explicit
+ * limit on anything that can grow, and a database client has three: how many
+ * connections it will open, how long a caller will queue for one of them, and
+ * how long it will wait for one answer. The middle one is not optional
+ * either — an unbounded queue for a connection is how pool pressure stops
+ * limiting activation and starts hiding it.
  * 006 adds the reason the first matters here — dispatcher replicas borrow
  * connections only for short replay reads and decision transactions, and pool
  * pressure is meant to limit actor activation rather than queue behind an
  * unbounded pool.
+ *
+ * AN IDLE CLIENT CAN STILL FAIL, AND THAT FAILURE HAS TO GO SOMEWHERE. A
+ * pooled connection sits attached to a live backend, so a server restart, an
+ * administrative termination or a partition raises an error on a client
+ * nobody is currently using. `pg` emits it on the pool, and an emitted error
+ * with no listener is an uncaught exception that ends the process — a crash
+ * through a path this adapter never designed, rather than the fail-closed stop
+ * 006 asks for. So a handler is always attached, and a deployment that wants
+ * to stop accepting on it supplies its own.
  *
  * OWNERSHIP IS NEVER A CONNECTION-SCOPED LOCK. A session advisory lock would
  * be the shorter way to make one writer per project, and it is wrong: 006
@@ -28,15 +40,17 @@ import pg from "pg";
 
 import { migrationLedger, migrations, type Migration } from "./schema.ts";
 
-/** How many connections one pool opens, and how long any one statement may run. */
+/** How many connections one pool opens, how long a caller waits for one, and how long any one statement may run. */
 export interface PostgresLimits {
   readonly connectionsMax: number;
+  readonly connectionWaitMs: number;
   readonly statementTimeoutMs: number;
 }
 
 /** The limits a dispatcher runs with when a deployment names none. */
 export const postgresLimitsDefault: PostgresLimits = {
   connectionsMax: 8,
+  connectionWaitMs: 5_000,
   statementTimeoutMs: 10_000,
 };
 
@@ -46,16 +60,28 @@ export const postgresLimitsDefault: PostgresLimits = {
  */
 const migrationLockKey = 0x63687567;
 
+/** What an idle client's failure is reported to; `pg` has already discarded the client by then. */
+export type PostgresIdleFailure = (failure: Error) => void;
+
+/** Says the failure happened rather than swallowing it, which is what a deployment overrides. */
+export const postgresIdleFailureDefault: PostgresIdleFailure = (failure) => {
+  process.stderr.write(`postgres: an idle client failed: ${failure.message}\n`);
+};
+
 /** Opens a bounded pool against the URL, applying the statement cap to every session it hands out. */
 export function postgresPool(
   url: string,
   limits: PostgresLimits = postgresLimitsDefault,
+  onIdleFailure: PostgresIdleFailure = postgresIdleFailureDefault,
 ): pg.Pool {
-  return new pg.Pool({
+  const pool = new pg.Pool({
     connectionString: url,
     max: limits.connectionsMax,
+    connectionTimeoutMillis: limits.connectionWaitMs,
     statement_timeout: limits.statementTimeoutMs,
   });
+  pool.on("error", onIdleFailure);
+  return pool;
 }
 
 /**
