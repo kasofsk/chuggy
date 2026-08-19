@@ -84,9 +84,13 @@ run_suite "model/tests/capacity_test.qnt" model/tests/capacity_test.qnt
 # The witness modules prove each named shape reachable and assert every
 # invariant after every step. `wrapup_none` is the odd one out: it witnesses
 # something the machine deliberately does not guarantee.
+#
+# They name their runs for what they are, so the selection is named here too:
+# quint's default takes `Test` and would take none of them.
 echo "--- witnesses"
 for w in free cascade stage sparse gate gate_deadline dependency wrapup_none; do
-	run_suite "witness $w" --main="chuggy_witness_${w}_test" \
+	run_suite "witness $w" --match 'Witness$' \
+		--main="chuggy_witness_${w}_test" \
 		model/tests/chuggy_witness_test.qnt
 done
 
