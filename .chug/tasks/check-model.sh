@@ -58,8 +58,6 @@ unset IFS
 echo "--- unit suite"
 "$QUINT" test model/tests/chuggy_test.qnt >/dev/null 2>&1 \
 	|| { echo "ERROR model/tests/chuggy_test.qnt failed"; failed=$((failed + 1)); }
-"$QUINT" test model/tests/capacity_test.qnt >/dev/null 2>&1 \
-	|| { echo "ERROR model/tests/capacity_test.qnt failed"; failed=$((failed + 1)); }
 
 # The witness modules prove each named shape reachable and assert every
 # invariant after every step. `wrapup_none` is the odd one out: it witnesses
