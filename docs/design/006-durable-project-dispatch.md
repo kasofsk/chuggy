@@ -1363,18 +1363,35 @@ Only after those two changes land does the durable PostgreSQL, API, dispatcher,
 scheduler and recovery infrastructure proceed. The infrastructure work must not
 drive an unreviewed semantic change back into the model.
 
-| Slice | What lands | Status |
+### Implementor contract
+
+The table is an implementation order, not a menu. A later slice may add only
+the interfaces named by an earlier slice; it must not simulate a missing
+authority in memory, in a queue, or in an adapter. Each slice owns its schema
+migration, typed ports, metrics and real-PostgreSQL concurrency/process-death
+tests. A slice is complete only when its stated durable boundary works after a
+fresh process reconnects, and no caller can bypass it with a direct table write.
+
+For every new mutable relation, the implementing change must state: its owning
+service role; its composite project key and foreign keys; its immutable
+identity/idempotency key; the transaction that changes it; and the recovery
+query that finds unfinished work. Those are required design-review artifacts,
+not implementation detail. A new transition, an external irreversible action,
+or a change to the pure event payload goes back through model and design review
+first.
+
+| Slice | Depends on | What lands and its definition of done |
 |---|---|---|
-| M0 | Project-scoped sparse-ID `Core`, vocabulary and transition migration | Proposed |
-| G0 | Generated TypeScript model API declarations from issue #98 | Proposed separately |
-| I0 | Partitioned expected-head journal append and project fencing contract | Proposed |
-| I1 | Authority-scoped command envelopes, permanent idempotency and operations | Proposed |
-| I2 | Project activation, bounded mailbox, priority and durable continuations | Proposed |
-| I3 | Transactional PostgreSQL journal, inbox, projections and consumer request tables | Proposed |
-| I4 | Agentic selection, bounded deferral and one-shot manual dispatch | Proposed |
-| I5 | Scheduler completion and cancellation boundary | Proposed |
-| I6 | Managed PostgreSQL deployment, restore fencing and reconciliation | Proposed |
-| I7 | Project suspension, closure, retention and verified erasure | Proposed |
-| I8 | Hardened worker identity, network boundary and execution profiles | Proposed |
-| I9 | Project-local integrity blocking and audited repair workflow | Proposed |
-| I10 | Native web projections and focused external effect vocabulary | Proposed |
+| M0 | — | Project-scoped sparse-ID `Core`, vocabulary and transition migration. The Quint model, measures, witnesses, replay and current conformance mirrors agree on the new semantics. |
+| G0 | M0 | Generated TypeScript model API declarations from issue #98. Checked-in types, schemas, tag rosters and codecs derive from the explicit Quint API module; CI rejects drift. No executable decider is generated. |
+| I0 | M0, G0 | PostgreSQL foundation: project/lifecycle rows, composite keys and roles; project ownership lease/fencing epoch; expected-head journal append; recovery epoch. Competing-owner, stale-writer and independent-project tests pass against real PostgreSQL. |
+| I1 | I0 | Authority-scoped operation/idempotency rows, ingress ordinal, durable inbox/readiness and cancellation race. Acceptance atomically writes operation, inbox and readiness; a crash after acceptance remains discoverable without an active owner. |
+| I2 | I1 | The project decision transaction: replay/load, lifecycle/lease/head/revision fences, journal append, operation terminalization, inbox acknowledgement and primary projection update. Refusal has no journal entry; ambiguous commit resolves by durable read. |
+| I3 | I2 | Bounded project mailbox, priority/aging and durable deterministic continuations; focused native-action and consumer-request tables materialized in the deciding transaction. Process death cannot lose or duplicate a continuation or external request. |
+| I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. |
+| I5 | I3 | Agentic selection: immutable selection views, detached requests/results, bounded deferral and one-shot manual dispatch. Selection failure never becomes a hidden FIFO dispatch policy. |
+| I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. |
+| I7 | I6 | Wrap-up preparation, native approval, commit permit and reconciliation. The reversible/irreversible boundary is proven with revoke-before-permit and revoke-after-permit races. |
+| I8 | I0–I7 | Managed PostgreSQL deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions and permits. Old-epoch actors remain rejected after restore. |
+| I9 | I2–I8 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. |
+| I10 | I6–I9 | Deletion lifecycle: fenced closure writer, execution/wrap-up quiescence, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. |
