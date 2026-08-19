@@ -126,9 +126,7 @@ test("the bundle is green on a fleet in mid-flight, so no red below is a leaf th
 });
 
 test("a failure names the members that failed rather than collapsing to one answer", () => {
-  const broke = initialView(
-    fleetBut(fleet, 0, { artifact: { artifact: "ANone" } }),
-  );
+  const broke = initialView(fleetBut(fleet, 0, { artifact: "NoArtifact" }));
   assert.deepEqual(failedInvariants(config, broke), ["artifactWellFormed"]);
   assert.ok(!allInvariants(config, broke));
 });

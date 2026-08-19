@@ -29,6 +29,21 @@ const irPath = join(
 );
 const quint = join(root, "node_modules/.bin/quint");
 
+// AN ARGUMENT THIS SCRIPT DOES NOT KNOW IS A REFUSAL. A caller naming an output
+// that moved would otherwise be answered about the default one, and a --check
+// that reports on a file nobody asked about reports clean for the wrong reason.
+const known = new Set(["out-types", "out-schemas", "ir"]);
+for (const value of globalThis.process.argv.slice(2)) {
+  if (value === "--check") continue;
+  const name = value.startsWith("--") ? value.slice(2).split("=")[0] : value;
+  if (!known.has(name)) {
+    globalThis.process.stderr.write(
+      `generate-model-api: ${value} is not an argument this script takes\n`,
+    );
+    globalThis.process.exit(2);
+  }
+}
+
 function fail(message) {
   globalThis.process.stderr.write(`generate-model-api: ${message}\n`);
   globalThis.process.exit(2);

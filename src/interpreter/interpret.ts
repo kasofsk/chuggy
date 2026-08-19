@@ -15,11 +15,10 @@
  * would open the revoked ticket's desk task once per parked dependent instead
  * of one task per dependent.
  *
- * THE ARRIVAL IS THE ONE EXCEPTION, because there is nothing to be positional
- * about: `ticket-arrived` records one effect against no transition. Its subject
- * is the id the arrival appended, and the dense never-reused id domain makes
- * that the largest key of the post-state — which is the reason the interpreter
- * takes `(Entry, post-Core)` and not the entry alone.
+ * THERE IS NO EXCEPTION TO IT. Every decision that emits an effect emits it
+ * alongside the transition it belongs to, release included — release changes a
+ * ticket's existence rather than its phase, and asks the world for nothing — so
+ * the subject is always read positionally and the entry alone is enough.
  *
  * THE ROUTING IS TOTAL over the effect constructors and exhaustively switched,
  * so an effect added to the vocabulary is a compile error here rather than an

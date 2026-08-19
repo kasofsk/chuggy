@@ -15,11 +15,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  arriveEvent,
-  dequeueEvent,
   dispatchEvent,
   evalReduceEvent,
-  releaseEvent,
+  finalizationResultEvent,
+  releaseTicketEvent,
   taskDoneEvent,
   workReduceEvent,
 } from "../../src/actor/decisionEvent.ts";
@@ -42,13 +41,12 @@ import {
   worldSpawns,
 } from "../../src/actor/world.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
-import { completionsOf } from "../../src/domain/ticket.ts";
-import { wExclusive } from "../../src/domain/wrapUp.ts";
-import { depsOf, id } from "../domain/fixtures.ts";
+import { asTaskId } from "../../src/domain/ids.ts";
+import { id } from "../domain/fixtures.ts";
 import {
   assertStep,
-  flatProgram,
+  plainAuthoring,
+  plainResult,
   refinementInstance,
   stepEmit,
   walkFirstCycle,
@@ -59,16 +57,15 @@ const config = refinementInstance;
 /** The two world-facing members an orphaned spawn keeps red for the rest of a run. */
 const spentWorld = ["journalCoversWorld", "noDoubleSpentBudget"];
 
-/** The Job launches, the actor dies before the journal write, and the recovered actor re-decides. */
+/** The work set launches, the actor dies before the journal write, and the recovered actor re-decides. */
 function phaseDispatchDoubleSpend(): ActorState {
   let state = actorInit();
   state = stepEmit(
     config,
     state,
-    arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
+    releaseTicketEvent(id(1), plainAuthoring),
     "ticket-released",
   );
-  state = stepEmit(config, state, releaseEvent(id(1)), "ticket-released");
   state = effectCrash(config, state, dispatchEvent(id(1)));
   assert.equal(state.orphans.length, 1);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Pending");
@@ -78,7 +75,7 @@ function phaseDispatchDoubleSpend(): ActorState {
   assertStep(
     config,
     state,
-    "an un-keyed Job the book never charged",
+    "an un-keyed work set the book never charged",
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));
@@ -90,17 +87,26 @@ function phaseDispatchDoubleSpend(): ActorState {
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
   assert.equal(worldSpawns(state, id(1)), 2);
   assert.equal(journalSpawns(state, id(1)), 1);
-  assertStep(config, state, "two Jobs on one journaled charge", spentWorld);
+  assertStep(
+    config,
+    state,
+    "two work sets on one journaled charge",
+    spentWorld,
+  );
   assert.ok(obligationsHold(config, state, refinementCore));
   return state;
 }
 
-/** The valid-artifact dequeue merges in the world, the crash eats the journal write, and the diff lands twice. */
+/**
+ * The finalization result lands in the world, the crash eats the journal write,
+ * and the recovered actor completes a second time — the one duplication the
+ * point of no return cannot take back.
+ */
 function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "Pass"),
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
     "task-done",
     spentWorld,
   );
@@ -114,7 +120,7 @@ function phaseDuplicateCycle(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(2), "Pass"),
+    taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
     "task-done",
     spentWorld,
   );
@@ -125,47 +131,41 @@ function phaseDuplicateCycle(state: ActorState): void {
     "eval-passed",
     spentWorld,
   );
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PWrapUp");
-  state = effectCrash(config, state, dequeueEvent(id(1), false));
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Finalizing");
+  const succeeded = finalizationResultEvent(id(1), "FinalizationSucceeded");
+  state = effectCrash(config, state, succeeded);
   assert.equal(state.orphans.length, 2);
   assert.equal(worldCompletions(state, id(1)), 1);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PWrapUp");
-  assert.equal(completionsOf(ticketAt(memoryCore(state), id(1))), 0);
+  assert.equal(journalCompletions(state, id(1)), 0);
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Finalizing");
+  assert.equal(ticketAt(memoryCore(state), id(1)).completions, 0);
   assertStep(
     config,
     state,
-    "the merge the book still shows enqueued",
+    "the completion the book still shows running",
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));
-  state = journalStep(config, state, dequeueEvent(id(1), false));
+  state = journalStep(config, state, succeeded);
   state = emitNext(state);
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(worldCompletions(state, id(1)), 2);
   assert.equal(journalCompletions(state, id(1)), 1);
-  assert.equal(completionsOf(ticketAt(memoryCore(state), id(1))), 1);
-  assertStep(
-    config,
-    state,
-    "the same diff merged twice on one clean completion",
-    [...spentWorld, "noDuplicateCycle"],
-  );
+  assert.equal(ticketAt(memoryCore(state), id(1)).completions, 1);
+  assertStep(config, state, "one ticket landed twice on one clean completion", [
+    ...spentWorld,
+    "noDuplicateCycle",
+  ]);
   assert.ok(obligationsHold(config, state, refinementCore));
 }
 
-test("the dispatch double-spend and the duplicate cycle, one effect-first crash each", () => {
+test("the dispatch double-spend and the duplicate completion, one effect-first crash each", () => {
   phaseDuplicateCycle(phaseDispatchDoubleSpend());
 });
 
 /** The disciplined walk to the state whose next decision is the rework. */
 function walkToEvalFailure(): ActorState {
-  let state = actorInit();
-  state = stepEmit(
-    config,
-    state,
-    arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
-    "ticket-released",
-  );
-  state = walkFirstCycle(config, state, "Fail");
+  const state = walkFirstCycle(config, actorInit(), "Fail");
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
   assert.equal(ticketAt(memoryCore(state), id(1)).reworkLeft, 1);
   return state;
@@ -194,7 +194,7 @@ test("the rework double-spend: the fan-out launches and the charge dies with the
   assertStep(
     config,
     state,
-    "one journaled charge, a world of extra Jobs",
+    "one journaled charge, a world of extra work sets",
     spentWorld,
   );
   assert.ok(obligationsHold(config, state, refinementCore));

@@ -14,6 +14,7 @@ import {
   retiredInIdOrder,
   outstandingCount,
   spawnTasks,
+  tasksInIdOrder,
   taskPassed,
   tkEval,
   tkWork,
@@ -34,8 +35,8 @@ import {
 import {
   phaseRank,
   rankCeiling,
-  rankDraft,
-  rankHolding,
+  rankFinalizing,
+  rankPending,
   rankSettled,
   isSettled,
 } from "../../src/domain/phase.ts";
@@ -44,10 +45,7 @@ import {
   spawnOn,
   retireLive,
   hasOpenHumanTask,
-  completionsOf,
 } from "../../src/domain/ticket.ts";
-import { aNone, wNone } from "../../src/domain/wrapUp.ts";
-import { asProjectId } from "../../src/domain/ids.ts";
 import type {
   Phase,
   Task,
@@ -56,32 +54,36 @@ import type {
 
 const bare: Ticket = {
   phase: "Pending",
-  deps: [],
-  wrapUp: wNone,
-  artifact: aNone,
-  project: asProjectId(1),
+  deps: new Set(),
+  finalizer: "NoFinalizer",
+  artifact: "NoArtifact",
+  workFanout: 1,
+  reworkPolicy: { type: "BudgetedRework", value: 0 },
+  finalizationPricing: "DeadlineOnly",
+  resumePricing: "RetryCharged",
   program: [],
-  tasks: [],
+  tasks: new Set(),
   record: [],
   spawned: 0,
   reworkLeft: 0,
-  wrapUpLeft: 0,
+  finalizationLeft: 0,
   gasLeft: 0,
   resumeAt: "NoResume",
   reason: "NoReason",
+  completions: 0,
 };
 
 test("a spawned set is outstanding, contiguous and starts where it was told", () => {
   const tasks = spawnTasks(tkWork, asTaskId(3), 2);
   assert.deepEqual(
-    tasks.map((t) => t.id),
+    tasksInIdOrder(tasks).map((t) => t.id),
     [3, 4],
   );
   assert.equal(outstandingCount(tasks), 2);
 });
 
 test("spawning zero tasks yields no tasks rather than a task", () => {
-  assert.deepEqual(spawnTasks(tkWork, firstTaskId, 0), []);
+  assert.equal(spawnTasks(tkWork, firstTaskId, 0).size, 0);
 });
 
 test("the next id counts every id ever issued, retired or live", () => {
@@ -93,22 +95,25 @@ test("first write wins, so a duplicate delivery changes nothing", () => {
   const spawned = spawnTasks(tkWork, firstTaskId, 1);
   const once = resolveTask(spawned, firstTaskId, "Passed");
   const twice = resolveTask(once, firstTaskId, "Failed");
-  assert.deepEqual(twice, once);
-  const resolved = twice[0];
+  assert.deepEqual([...twice], [...once]);
+  const resolved = tasksInIdOrder(twice)[0];
   assert.ok(resolved, "the fixture spawned one task");
   assert.ok(taskPassed(resolved));
 });
 
 test("resolving an id that is not there changes nothing", () => {
   const spawned = spawnTasks(tkWork, firstTaskId, 1);
-  assert.deepEqual(resolveTask(spawned, asTaskId(99), "Passed"), spawned);
+  assert.deepEqual(
+    [...resolveTask(spawned, asTaskId(99), "Passed")],
+    [...spawned],
+  );
 });
 
 test("retirement force-closes an outstanding task as cancelled and leaves a resolved one alone", () => {
-  const mixed: readonly Task[] = [
+  const mixed: ReadonlySet<Task> = new Set([
     { id: asTaskId(2), kind: tkWork, state: tsResolved("Passed") },
     { id: asTaskId(1), kind: tkWork, state: tsOutstanding },
-  ];
+  ]);
   const retired = retiredInIdOrder(mixed);
   assert.deepEqual(
     retired.map((t) => t.id),
@@ -122,7 +127,7 @@ test("retirement force-closes an outstanding task as cancelled and leaves a reso
 test("the eval stage is derived from the kind marks and is zero on a work set", () => {
   assert.equal(evalStage(spawnTasks(tkWork, firstTaskId, 2)), 0);
   assert.equal(evalStage(spawnTasks(tkEval(1), firstTaskId, 2)), 1);
-  assert.equal(evalStage([]), 0);
+  assert.equal(evalStage(new Set()), 0);
 });
 
 test("spawnOn refuses a ticket that still holds live tasks", () => {
@@ -135,25 +140,23 @@ test("retiring then spawning continues the id sequence rather than restarting it
   const first = spawnOn(bare, tkWork, 2);
   const second = spawnOn(retireLive(first), tkEval(0), 2);
   assert.deepEqual(
-    second.tasks.map((t) => t.id),
+    tasksInIdOrder(second.tasks).map((t) => t.id),
     [3, 4],
   );
   assert.equal(second.spawned, 4, "the ghost counts every task ever spawned");
   assert.equal(
     second.spawned,
-    second.record.length + second.tasks.length,
+    second.record.length + second.tasks.size,
     "which is exactly the equality idsAccounted checks",
   );
 });
 
 test("a desk task is open exactly while the ticket is parked", () => {
   const phases: readonly Phase[] = [
-    "PDraft",
     "Pending",
     "Working",
     "Evaluating",
-    "PWrapUp",
-    "PWrapUpHolding",
+    "Finalizing",
     "Done",
     "Escalated",
     "Revoked",
@@ -167,22 +170,16 @@ test("a desk task is open exactly while the ticket is parked", () => {
   }
 });
 
-test("the completion count is one at Done and zero everywhere else", () => {
-  assert.equal(completionsOf({ ...bare, phase: "Done" }), 1);
-  assert.equal(completionsOf({ ...bare, phase: "Revoked" }), 0);
-  assert.equal(completionsOf({ ...bare, phase: "Working" }), 0);
-});
-
 test("the rank ladder is strictly ascending and the settled tier shares its floor", () => {
-  assert.ok(rankSettled < rankHolding);
-  assert.equal(rankCeiling, rankDraft);
+  assert.ok(rankSettled < rankFinalizing);
+  assert.equal(rankCeiling, rankPending);
   assert.equal(phaseRank("Done"), rankSettled);
   assert.equal(phaseRank("Escalated"), rankSettled);
   assert.equal(phaseRank("Revoked"), rankSettled);
   assert.ok(
     isSettled("Done") && isSettled("Escalated") && isSettled("Revoked"),
   );
-  assert.ok(!isSettled("PWrapUpHolding"));
+  assert.ok(!isSettled("Finalizing"));
 });
 
 test("every effect renders to a label and reads back to itself", () => {
@@ -204,20 +201,24 @@ test("a string that is not one of this machine's effects is refused", () => {
 });
 
 test("the combinators are what the model says they are", () => {
-  const passed: readonly Task[] = [
+  const passed: ReadonlySet<Task> = new Set([
     { id: asTaskId(1), kind: tkWork, state: tsResolved("Passed") },
     { id: asTaskId(2), kind: tkWork, state: tsResolved("Failed") },
-  ];
+  ]);
   assert.equal(combine("UnanimousPass", passed), false);
   assert.equal(combine("AnyPass", passed), true);
-  assert.equal(combine("UnanimousPass", []), true, "vacuously, as forall does");
-  assert.equal(combine("AnyPass", []), false);
+  assert.equal(
+    combine("UnanimousPass", new Set()),
+    true,
+    "vacuously, as forall does",
+  );
+  assert.equal(combine("AnyPass", new Set()), false);
 });
 
 test("a cancelled task fails both combinators, so a revoked set never passes", () => {
-  const cancelled: readonly Task[] = [
+  const cancelled: ReadonlySet<Task> = new Set([
     { id: asTaskId(1), kind: tkWork, state: tsResolved("Cancelled") },
-  ];
+  ]);
   assert.equal(combine("UnanimousPass", cancelled), false);
   assert.equal(combine("AnyPass", cancelled), false);
 });

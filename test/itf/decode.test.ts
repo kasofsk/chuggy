@@ -128,7 +128,7 @@ test("describe names each shape", () => {
   assert.equal(describe({ kind: "set", elements: [] }), "set");
   assert.equal(
     describe({ kind: "variant", tag: "Done", value: [] }),
-    "variant(PDone)",
+    "variant(Done)",
   );
 });
 

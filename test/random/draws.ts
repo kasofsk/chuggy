@@ -59,7 +59,7 @@ import type {
 import { asTaskId, type TaskId, type TicketId } from "../../src/domain/ids.ts";
 import { reworkBudget } from "../../src/domain/pricing.ts";
 import type { Picks } from "../conformance/dispatch.ts";
-import { decodeValue, type ItfValue } from "../itf/decode.ts";
+import { decodeValue, encodeValue, type ItfValue } from "../itf/decode.ts";
 import {
   encodeDeps,
   encodeInt,
@@ -199,11 +199,18 @@ const dispatch: WalkAction = {
     dispatchableIn(core, drawn.ticket),
 };
 
+/** Tickets with a task the fabric could still report on — the set `tid` is drawn from. */
+function reportableIn(core: Core): readonly TicketId[] {
+  return taskPhaseIn(core).filter(
+    (j) => outstandingTaskIdsIn(core, j).length > 0,
+  );
+}
+
 const taskDone: WalkAction = {
   action: "taskDone",
-  enabledIn: (_config, core) => taskPhaseIn(core).length > 0,
+  enabledIn: (_config, core) => reportableIn(core).length > 0,
   drawIn: (_config, core, random) => {
-    const ticket = pickFrom(random, taskPhaseIn(core));
+    const ticket = pickFrom(random, reportableIn(core));
     return {
       ticket,
       taskId: asTaskId(pickFrom(random, outstandingTaskIdsIn(core, ticket))),
@@ -214,7 +221,7 @@ const taskDone: WalkAction = {
     drawn.ticket !== undefined &&
     drawn.taskId !== undefined &&
     drawn.verdict !== undefined &&
-    taskPhaseIn(core).includes(drawn.ticket) &&
+    reportableIn(core).includes(drawn.ticket) &&
     outstandingTaskIdsIn(core, drawn.ticket).includes(drawn.taskId),
 };
 
@@ -309,7 +316,9 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
 export function drawnPicks(drawn: Drawn): Picks {
   const wire = drawnWire(drawn);
   const itf = (value: unknown): ItfValue | undefined =>
-    value === undefined ? undefined : decodeValue(value);
+    value === undefined
+      ? undefined
+      : decodeValue(encodeValue(value as ItfValue));
   return {
     ticket: itf(wire["j"]),
     deps: itf(wire["deps_"]),

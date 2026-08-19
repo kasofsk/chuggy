@@ -1,5 +1,5 @@
 /**
- * One ticket driven from arrival to completion against the stub adapters, with
+ * One ticket driven from release to completion against the stub adapters, with
  * the at-least-once environment the model states injected in both directions.
  *
  * EVERY CONTROL HERE IS PAIRED WITH SOMETHING THAT FAILS IT. The ordering check
@@ -7,9 +7,8 @@
  * emission before its append; the schedule is read for emissions closed by a
  * later checkpoint, of the walk's own plan and of that plan with a checkpoint
  * hoisted above the emissions it closes; the absorption reading is taken of the
- * walk and of a world that files by arrival; the duplicate delivery is asserted
- * to move nothing beside the first delivery, which must move something. A check
- * nothing fails is not evidence.
+ * walk and of a world that files by arrival. A check nothing fails is not
+ * evidence.
  *
  * The domain bundle and every refinement obligation are asserted either side of
  * every decision, by the same `assertStep` the crash-seam suites use, so the
@@ -20,13 +19,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  arriveEvent,
-  completeDuplicateEvent,
-  dequeueEvent,
   dispatchEvent,
   evalReduceEvent,
-  gateResolveEvent,
-  releaseEvent,
+  executionBlockedEvent,
+  finalizationResultEvent,
+  releaseTicketEvent,
   taskDoneEvent,
   workReduceEvent,
   type DecisionEvent,
@@ -41,9 +38,9 @@ import {
 import { worldCompletions } from "../../src/actor/world.ts";
 import { deskStub } from "../../src/adapters/deskStub.ts";
 import { fabricStub } from "../../src/adapters/fabricStub.ts";
+import { finalizerStub } from "../../src/adapters/finalizerStub.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
-import { wExclusive } from "../../src/domain/wrapUp.ts";
+import { asTaskId } from "../../src/domain/ids.ts";
 import {
   decide,
   drain,
@@ -53,10 +50,11 @@ import {
 import type { JournalStore } from "../../src/interpreter/ports.ts";
 import {
   assertStep,
-  flatProgram,
+  plainAuthoring,
+  plainResult,
   refinementInstance,
 } from "../actor/harness.ts";
-import { depsOf, id } from "../domain/fixtures.ts";
+import { id } from "../domain/fixtures.ts";
 import {
   absorbed,
   emissionPrecedesCheckpoint,
@@ -69,13 +67,8 @@ import {
 
 const config = refinementInstance;
 
-/** The arrival every run here begins with: no deps, one stage, a lease on the one project. */
-const arrival: DecisionEvent = arriveEvent(
-  depsOf(),
-  flatProgram,
-  asProjectId(1),
-  wExclusive(1),
-);
+/** The release every run here begins with: no deps, one stage, a managed finalizer. */
+const release: DecisionEvent = releaseTicketEvent(id(1), plainAuthoring);
 
 /** One decision journaled and then drained, with the model's gate asserted at both states. */
 async function step(
@@ -93,39 +86,45 @@ async function step(
   return drained;
 }
 
-/** Arrival through dispatch: the prefix every run below shares. */
+/** Release through dispatch: the prefix every run below shares. */
 async function walkToWork(wired: Wiring): Promise<ActorState> {
-  let state = await step(wired, actorInit(), arrival, "ticket-released");
-  state = await step(wired, state, releaseEvent(id(1)), "ticket-released");
+  const state = await step(wired, actorInit(), release, "ticket-released");
   return step(wired, state, dispatchEvent(id(1)), "dispatch");
 }
 
-/** The whole cycle, with the fabric delivering the work task's completion twice. */
+/** The whole cycle: both task sets pass, the finalizer reports, the ticket lands. */
 async function walkToCompletion(wired: Wiring): Promise<ActorState> {
   let state = await walkToWork(wired);
-  const first = taskDoneEvent(id(1), asTaskId(1), "Pass");
-  state = await step(wired, state, first, "task-done");
-  state = await step(wired, state, first, "task-done-duplicate");
+  state = await step(
+    wired,
+    state,
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    "task-done",
+  );
   state = await step(wired, state, workReduceEvent(id(1)), "work-passed");
   state = await step(
     wired,
     state,
-    taskDoneEvent(id(1), asTaskId(2), "Pass"),
+    taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
     "task-done",
   );
   state = await step(wired, state, evalReduceEvent(id(1)), "eval-passed");
-  state = await step(wired, state, dequeueEvent(id(1), true), "wrapup-started");
-  state = await step(
-    wired,
-    state,
-    gateResolveEvent(id(1), "WOk"),
-    "ticket-done",
-  );
   return step(
     wired,
     state,
-    completeDuplicateEvent(id(1)),
-    "complete-duplicate",
+    finalizationResultEvent(id(1), "FinalizationSucceeded"),
+    "ticket-done",
+  );
+}
+
+/** The one route in this suite that asks the desk for anything. */
+async function walkToEscalation(wired: Wiring): Promise<ActorState> {
+  const state = await walkToWork(wired);
+  return step(
+    wired,
+    state,
+    executionBlockedEvent(id(1), "TicketConfigIncompatible"),
+    "ticket-escalated execution_blocked",
   );
 }
 
@@ -139,20 +138,21 @@ test("one ticket reaches completion, and the world was told once for each decisi
   assert.equal(reading(wired).deliveries, reading(wired).held);
 });
 
-test("the desk holds one row per bookkeeping effect, each about the ticket its transition stepped", async () => {
+test("completion asks the desk for nothing, because entering Done is the completion", async () => {
   const wired = wiring(config);
   await walkToCompletion(wired);
+  assert.equal(wired.desk.deliveries.length, 0);
+});
+
+test("the desk holds one row per parked ticket, about the ticket its transition stepped", async () => {
+  const wired = wiring(config);
+  await walkToEscalation(wired);
   assert.deepEqual(
     [...wired.desk.board.values()].map((row) => [
       row.effect,
       row.emission.ticket,
     ]),
-    [
-      ["CreateDraft", id(1)],
-      ["EnqueueWrapUp", id(1)],
-      ["OpenGate", id(1)],
-      ["Complete", id(1)],
-    ],
+    [["OpenHumanTask", id(1)]],
   );
 });
 
@@ -191,7 +191,7 @@ test("every emission is scheduled before the checkpoint that closes its own deci
   const state = await walkToCompletion(wired);
   const plan = drainPlan(config, state.journal, 0);
   assert.ok(
-    plan.some((step) => step.step === "Emit"),
+    plan.some((one) => one.step === "Emit"),
     "the schedule asks the world for nothing, so the check below reads nothing",
   );
   assert.ok(
@@ -204,9 +204,18 @@ test("and the scheduling check is one a checkpoint above its own emissions fails
   const wired = wiring(config);
   const state = await walkToCompletion(wired);
   const plan = drainPlan(config, state.journal, 0);
-  const closes = plan.findIndex((step) => step.step === "Checkpoint");
+  const closes = plan.findIndex(
+    (one, index) =>
+      one.step === "Checkpoint" &&
+      plan
+        .slice(0, index)
+        .some(
+          (earlier) =>
+            earlier.step === "Emit" && earlier.planned.emission.seq === one.seq,
+        ),
+  );
   const closing = plan[closes];
-  assert.ok(closing !== undefined, "the schedule closes no entry to hoist");
+  assert.ok(closing !== undefined, "the schedule closes no emission to hoist");
   const hoisted = [closing, ...plan.filter((_, index) => index !== closes)];
   assert.ok(
     !emissionPrecedesCheckpoint(hoisted),
@@ -216,7 +225,7 @@ test("and the scheduling check is one a checkpoint above its own emissions fails
 
 test("an entry the store no longer holds emits nothing, whatever memory carries", async () => {
   const wired = wiring(config);
-  const state = await decide(wired.executor, actorInit(), arrival);
+  const state = await decide(wired.executor, actorInit(), release);
   wired.store.rows.length = 0;
   await assert.rejects(
     () => drain(wired.executor, state),
@@ -227,15 +236,15 @@ test("an entry the store no longer holds emits nothing, whatever memory carries"
 
 test("a store journal of the right length but the wrong entries emits nothing either", async () => {
   const wired = wiring(config);
-  let state = await step(wired, actorInit(), arrival, "ticket-released");
-  state = await decide(wired.executor, state, releaseEvent(id(1)));
+  let state = await step(wired, actorInit(), release, "ticket-released");
+  state = await decide(wired.executor, state, dispatchEvent(id(1)));
   const before = reading(wired);
 
-  /** A legal journal of the same length that memory never took: two arrivals where memory released. */
+  /** A legal journal of the same length memory never took: a second release where memory dispatched. */
   const forked = journalStep(
     config,
-    journalStep(config, actorInit(), arrival),
-    arrival,
+    journalStep(config, actorInit(), release),
+    releaseTicketEvent(id(2), plainAuthoring),
   );
   wired.store.rows.length = 0;
   for (const entry of forked.journal) await wired.store.append(entry);
@@ -250,44 +259,56 @@ test("a store journal of the right length but the wrong entries emits nothing ei
 test("a decision the store refuses reaches neither the world nor a state any caller holds", async () => {
   const desk = deskStub();
   const fabric = fabricStub();
+  const finalizer = finalizerStub();
   const refusing: JournalStore = {
     append: () => Promise.reject(new Error("the store took nothing")),
     load: () => Promise.resolve({ parsed: "Ok", value: [] }),
     loadCursor: () => Promise.resolve(0),
     saveCursor: () => Promise.resolve(),
   };
-  const executor = { config, store: refusing, ports: { fabric, desk } };
+  const executor = {
+    config,
+    store: refusing,
+    ports: { fabric, finalizer, desk },
+  };
   const state = actorInit();
 
   await assert.rejects(
-    () => decide(executor, state, arrival),
+    () => decide(executor, state, release),
     /the store took nothing/,
   );
   assert.equal(state.journal.length, 0);
   const after = await drain(executor, state);
   assert.equal(after.applied, 0);
-  assert.equal(desk.deliveries.length + fabric.requests.length, 0);
+  assert.equal(
+    desk.deliveries.length + fabric.requests.length + finalizer.requests.length,
+    0,
+  );
 });
 
-test("a duplicate task completion is absorbed, and the first delivery is not", async () => {
+test("a task the fabric reports twice is refused the second time, and moves neither the fleet nor the world", async () => {
   const wired = wiring(config);
   let state = await walkToWork(wired);
-  const delivery = taskDoneEvent(id(1), asTaskId(1), "Pass");
+  const delivery = taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult);
 
   const beforeFirst = memoryCore(state);
   state = await step(wired, state, delivery, "task-done");
   assert.ok(
     !coreEquals(memoryCore(state), beforeFirst),
-    "the first delivery must move the fleet, or absorbing the second says nothing",
+    "the first delivery must move the fleet, or refusing the second says nothing",
   );
 
   const beforeSecond = memoryCore(state);
   const world = reading(wired);
   const rows = state.journal.length;
-  state = await step(wired, state, delivery, "task-done-duplicate");
+  await assert.rejects(
+    () => decide(wired.executor, state, delivery),
+    /TaskDone is refused/,
+  );
   assert.ok(coreEquals(memoryCore(state), beforeSecond));
   assert.deepEqual(reading(wired), world);
-  assert.equal(state.journal.length, rows + 1);
+  assert.equal(state.journal.length, rows);
+  assert.equal(wired.store.rows.length, rows);
 });
 
 test("a lost checkpoint re-delivers the whole prefix, and the world absorbs all of it", async () => {

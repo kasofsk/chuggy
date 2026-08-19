@@ -22,12 +22,7 @@ import {
   stuckSet,
   subsetOf,
 } from "./derived.ts";
-import type {
-  Core,
-  StepRecord,
-  Task,
-  Ticket,
-} from "./generated/modelTypes.ts";
+import type { Core, StepRecord, Task, Ticket } from "./generated/modelTypes.ts";
 import { firstTaskId, type TicketId } from "./ids.ts";
 import { sysMeasure } from "./measure.ts";
 import { phaseRank, rankSettled } from "./phase.ts";
@@ -322,9 +317,7 @@ function stepDescendsExempt(view: StepView): boolean {
     );
   }
   if (label === "ticket-revoked") {
-    return view.rec.transitions.every(
-      (t) => phaseRank(t.from) === rankSettled,
-    );
+    return view.rec.transitions.every((t) => phaseRank(t.from) === rankSettled);
   }
   return false;
 }

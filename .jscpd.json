@@ -2,9 +2,7 @@
   "threshold": 0,
   "minLines": 10,
   "minTokens": 80,
-  "reporters": [
-    "console"
-  ],
+  "reporters": ["console"],
   "ignorePattern": [
     "**/node_modules/**",
     "**/.git/**",

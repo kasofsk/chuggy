@@ -31,7 +31,7 @@ import {
 import type { TicketId } from "../../src/domain/ids.ts";
 
 import { budgetedInstance } from "./configs.ts";
-import { coreOf, id, ticketOn } from "./fixtures.ts";
+import { coreOf, depsOf, id, ticketOn } from "./fixtures.ts";
 import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
 
 const config = budgetedInstance;
@@ -51,17 +51,13 @@ const ordered = (set: ReadonlySet<TicketId>): readonly number[] =>
 
 /** A revoked ticket with a chain of dependents hanging off it, the shape the closure walks. */
 const chain: readonly Ticket[] = [
-  ticketOn(config, 1, { phase: "Revoked" }),
-  ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
-  ticketOn(config, 1, { phase: "PDraft", deps: [id(2)] }),
+  ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
+  ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+  ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(2) }),
 ];
 
 test("a sweep repeats once per live ticket, which is the whole of the termination argument", () => {
-  const fleet = coreOf([
-    ticketOn(config, 1),
-    ticketOn(config, 1),
-    ticketOn(config, 1),
-  ]);
+  const fleet = coreOf([ticketOn(config), ticketOn(config), ticketOn(config)]);
   let calls = 0;
   const admitted = sweep(fleet, () => {
     calls += 1;
@@ -83,13 +79,13 @@ test("a sweep repeats once per live ticket, which is the whole of the terminatio
 
 test("a sweep reaches a closure an ascending fold would not, which is why the shape is kept", () => {
   const fleet = coreOf([
-    ticketOn(config, 1, { phase: "Pending" }),
-    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
-    ticketOn(config, 1, {
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, "ManagedFinalizer", {
       phase: "Escalated",
       reason: "WorkFailed",
       resumeAt: "ResumeWorking",
-      deps: [id(2)],
+      deps: depsOf(2),
     }),
   ]);
   /** An edge kind pointing upward: a ticket is admitted when one of its dependents is. */
@@ -122,14 +118,14 @@ test("the walk's edges are the dependency edges and only those", () => {
 
 test("stuckness grows from the desk and coverage grows from the same edges", () => {
   const fleet = coreOf([
-    ticketOn(config, 1, {
+    ticketOn(config, "ManagedFinalizer", {
       phase: "Escalated",
       reason: "WorkFailed",
       resumeAt: "ResumeWorking",
     }),
-    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
-    ticketOn(config, 1, { phase: "Pending", deps: [id(2)] }),
-    ticketOn(config, 1, { phase: "Working", deps: [id(1)] }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(2) }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Working", deps: depsOf(1) }),
   ]);
   assert.deepEqual(ordered(stuckSet(fleet)), [1, 2, 3]);
   assert.deepEqual(
@@ -139,8 +135,8 @@ test("stuckness grows from the desk and coverage grows from the same edges", () 
   );
   assert.ok(subsetOf(stuckSet(fleet), coveredSet(fleet)));
   const healthyBlocked = coreOf([
-    ticketOn(config, 1, { phase: "Working" }),
-    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Working" }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.deepEqual(
     ordered(stuckSet(healthyBlocked)),
@@ -151,15 +147,15 @@ test("stuckness grows from the desk and coverage grows from the same edges", () 
 
 test("finishability grows upward from the terminal and a cycle never enters it", () => {
   const fleet = coreOf([
-    ticketOn(config, 1, { phase: "Done" }),
-    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
-    ticketOn(config, 1, { phase: "Revoked" }),
-    ticketOn(config, 1, { phase: "Pending", deps: [id(3)] }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Done" }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Revoked" }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(3) }),
   ]);
   assert.deepEqual(ordered(canFinishSet(fleet)), [1, 2]);
   const cyclic = coreOf([
-    ticketOn(config, 1, { phase: "Pending", deps: [id(2)] }),
-    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(2) }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
   ]);
   assert.deepEqual(
     ordered(canFinishSet(cyclic)),
@@ -167,7 +163,7 @@ test("finishability grows upward from the terminal and a cycle never enters it",
     "a cycle has no base case, which is why this walk runs the other way from stuckness",
   );
   const parked = coreOf([
-    ticketOn(config, 1, {
+    ticketOn(config, "ManagedFinalizer", {
       phase: "Escalated",
       reason: "GasExhausted",
       resumeAt: "ResumeEvaluating",
@@ -200,13 +196,13 @@ test("the revocation closure is transitive and reads the fleet in id order", () 
 
 test("every sweep agrees with itself whatever order the map was built in", () => {
   const fleet: readonly Ticket[] = [
-    ticketOn(config, 1, {
+    ticketOn(config, "ManagedFinalizer", {
       phase: "Escalated",
       reason: "WorkFailed",
       resumeAt: "ResumeWorking",
     }),
-    ticketOn(config, 1, { phase: "Pending", deps: [id(1)] }),
-    ticketOn(config, 1, { phase: "Done", deps: [id(1)] }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Done", deps: depsOf(1) }),
   ];
   const ascending = coreOf(fleet);
   const descending = builtBackwards(fleet);

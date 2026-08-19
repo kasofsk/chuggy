@@ -1,26 +1,26 @@
 /**
  * The disciplined machine walked with a crash at every observable seam,
- * mirroring the model's refinement witness suite: one ticket through arrive,
- * dispatch, an eval failure's rework, and the wrap-up, with the domain bundle
- * and every refinement obligation asserted after every single step.
+ * mirroring the model's refinement witness suite: one ticket through release,
+ * dispatch, an eval failure's rework and the finalizer's report, with the
+ * domain bundle and every refinement obligation asserted after every single
+ * step.
  *
  * The seams are the model's: post-journal pre-emission at the dispatch, the
  * rework and the completion; total cursor loss with every re-emission absorbed
- * by decision identity; and a final full-loss recovery at rest. The lease-free
- * run walks the one route that never enters a wrap-up phase, so the same
- * obligations are carried on a ticket that never takes a lease.
+ * by decision identity; and a final full-loss recovery at rest. The
+ * finalizer-free run walks the one route that never enters Finalizing, so the
+ * same obligations are carried on a ticket whose evaluation is its completion.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  arriveEvent,
-  completeDuplicateEvent,
-  dequeueEvent,
+  decisionEventEnabled,
   dispatchEvent,
   evalReduceEvent,
-  releaseEvent,
+  finalizationResultEvent,
+  releaseTicketEvent,
   taskDoneEvent,
   workReduceEvent,
 } from "../../src/actor/decisionEvent.ts";
@@ -39,52 +39,49 @@ import {
   worldSpawns,
 } from "../../src/actor/world.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
-import { completionsOf } from "../../src/domain/ticket.ts";
-import { wExclusive, wNone, woNone } from "../../src/domain/wrapUp.ts";
-import { depsOf, id } from "../domain/fixtures.ts";
+import { asTaskId } from "../../src/domain/ids.ts";
+import { id } from "../domain/fixtures.ts";
 import {
   assertStep,
-  flatProgram,
+  plainAuthoring,
+  plainResult,
   refinementInstance,
   stepEmit,
-  walkFirstCycle,
 } from "./harness.ts";
 
 const config = refinementInstance;
 
-/** The Draft is durable the instant it journals, and the dispatch charge survives its seam. */
+/** The release is durable the instant it journals, and the dispatch charge survives its seam. */
 function phaseDispatchChargeSurvives(): ActorState {
   let state = journalStep(
     config,
     actorInit(),
-    arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
+    releaseTicketEvent(id(1), plainAuthoring),
   );
   assert.equal(state.journal.length, 1);
-  assertStep(config, state, "arrive (journaled)");
+  assertStep(config, state, "release (journaled)");
   state = crashRecoverTo(config, state, 0);
-  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "PDraft");
+  assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Pending");
   assert.equal(state.applied, 0);
   assert.equal(state.journal.length, 1);
   assertStep(config, state, "crash before the first emission");
   state = emitNext(state);
   assert.equal(state.applied, 1);
-  assertStep(config, state, "arrive (emitted)");
-  state = stepEmit(config, state, releaseEvent(id(1)), "ticket-released");
+  assertStep(config, state, "release (emitted)");
   state = journalStep(config, state, dispatchEvent(id(1)));
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
   assert.equal(journalSpawns(state, id(1)), 1);
   assert.equal(worldSpawns(state, id(1)), 0);
   assertStep(config, state, "dispatch (journaled)");
-  state = crashRecoverTo(config, state, 2);
+  state = crashRecoverTo(config, state, 1);
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 2);
   assert.equal(worldSpawns(state, id(1)), 0);
-  assert.equal(state.applied, 2);
+  assert.equal(state.applied, 1);
   assertStep(config, state, "crash at the dispatch seam");
   state = emitNext(state);
   assert.equal(worldSpawns(state, id(1)), 1);
   assert.equal(journalSpawns(state, id(1)), 1);
-  assertStep(config, state, "the Job launches exactly once");
+  assertStep(config, state, "the work set launches exactly once");
   return state;
 }
 
@@ -93,21 +90,25 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "Pass"),
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
     "task-done",
   );
-  state = stepEmit(
-    config,
-    state,
-    taskDoneEvent(id(1), asTaskId(1), "Fail"),
-    "task-done-duplicate",
+  assert.throws(
+    () =>
+      journalStep(
+        config,
+        state,
+        taskDoneEvent(id(1), asTaskId(1), "Fail", plainResult),
+      ),
+    /TaskDone is refused/,
+    "a task already resolved is no longer outstanding, so a second report is refused",
   );
-  assert.equal(state.journal.length, 5);
+  assert.equal(state.journal.length, 3);
   state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(2), "Fail"),
+    taskDoneEvent(id(1), asTaskId(2), "Fail", plainResult),
     "task-done",
   );
   state = journalStep(config, state, evalReduceEvent(id(1)));
@@ -122,67 +123,64 @@ function phaseReworkSurvivesCursorLoss(state: ActorState): ActorState {
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 1);
   assert.equal(ticketAt(memoryCore(state), id(1)).reworkLeft, 0);
   assert.equal(worldSpawns(state, id(1)), 1);
-  assert.equal(state.worldEffects.size, 7);
+  assert.equal(state.worldEffects.size, 5);
   assertStep(config, state, "crash at the rework seam, cursor lost whole");
   state = emitNext(state);
   assert.equal(state.applied, 1);
-  assert.equal(state.worldEffects.size, 7);
+  assert.equal(state.worldEffects.size, 5);
   assert.equal(worldSpawns(state, id(1)), 1);
   assertStep(config, state, "a re-emission is absorbed by its seq");
-  for (let ahead = state.applied; ahead < 7; ahead++) state = emitNext(state);
-  assert.equal(state.applied, 7);
-  assert.equal(state.worldEffects.size, 7);
+  for (let ahead = state.applied; ahead < 5; ahead++) state = emitNext(state);
+  assert.equal(state.applied, 5);
+  assert.equal(state.worldEffects.size, 5);
   assertStep(config, state, "the whole lost prefix re-emits absorbed");
   state = emitNext(state);
-  assert.equal(state.applied, 8);
-  assert.equal(state.worldEffects.size, 8);
+  assert.equal(state.applied, 6);
+  assert.equal(state.worldEffects.size, 6);
   assert.equal(worldSpawns(state, id(1)), 2);
   assert.equal(journalSpawns(state, id(1)), 2);
   assertStep(config, state, "the rework's fan-out launches for the first time");
   return state;
 }
 
-/** The completion decision is durable before the merge, and the merge lands exactly once. */
+/** The completion decision is durable before it is told, and the ticket lands exactly once. */
 function phaseCompletionLandsOnce(state: ActorState): void {
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(3), "Pass"),
+    taskDoneEvent(id(1), asTaskId(3), "Pass", plainResult),
     "task-done",
   );
   state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(4), "Pass"),
+    taskDoneEvent(id(1), asTaskId(4), "Pass", plainResult),
     "task-done",
   );
   state = stepEmit(config, state, evalReduceEvent(id(1)), "eval-passed");
-  state = journalStep(config, state, dequeueEvent(id(1), false));
+  const succeeded = finalizationResultEvent(id(1), "FinalizationSucceeded");
+  state = journalStep(config, state, succeeded);
   assert.equal(state.view.rec.label, "ticket-done");
+  assert.deepEqual(state.view.rec.effects, []);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(journalCompletions(state, id(1)), 1);
   assert.equal(worldCompletions(state, id(1)), 0);
-  assertStep(config, state, "completion (journaled, unmerged)");
-  state = crashRecoverTo(config, state, 12);
+  assert.ok(!decisionEventEnabled(config, memoryCore(state), succeeded));
+  assertStep(config, state, "completion (journaled, untold)");
+  state = crashRecoverTo(config, state, 10);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
-  assert.equal(completionsOf(ticketAt(memoryCore(state), id(1))), 1);
+  assert.equal(ticketAt(memoryCore(state), id(1)).completions, 1);
   assert.equal(worldCompletions(state, id(1)), 0);
   assertStep(config, state, "crash at the completion seam");
   state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 1);
-  assertStep(config, state, "the merge lands");
-  state = stepEmit(
-    config,
-    state,
-    completeDuplicateEvent(id(1)),
-    "complete-duplicate",
-  );
-  assert.equal(worldCompletions(state, id(1)), 1);
+  assertStep(config, state, "the completion reaches the world");
   state = crashRecoverTo(config, state, 0);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(ticketAt(memoryCore(state), id(1)).gasLeft, 1);
-  assert.equal(state.journal.length, 14);
+  assert.equal(state.journal.length, 11);
+  while (state.applied < state.journal.length) state = emitNext(state);
   assert.equal(worldCompletions(state, id(1)), 1);
   assert.equal(worldSpawns(state, id(1)), 2);
   assertStep(config, state, "the actor dies at rest and loses nothing");
@@ -194,26 +192,35 @@ test("crash, recover, continue: the disciplined machine at every observable seam
   );
 });
 
-/** The lease-free ticket journaled to the completion its passing evaluation is. */
-function walkLeaseFreeToCompletion(): ActorState {
-  let state = journalStep(
+/** The finalizer-free ticket journaled to the completion its passing evaluation is. */
+function walkFinalizerFreeToCompletion(): ActorState {
+  let state = stepEmit(
     config,
     actorInit(),
-    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
+    releaseTicketEvent(id(1), { ...plainAuthoring, finalizer: "NoFinalizer" }),
+    "ticket-released",
   );
-  assert.equal(ticketAt(memoryCore(state), id(1)).wrapUp.wrapUp, "WNone");
-  assert.equal(state.journal.length, 1);
-  assertStep(config, state, "lease-free arrive (journaled)");
-  state = emitNext(state);
-  assert.equal(state.applied, 1);
-  assertStep(config, state, "lease-free arrive (emitted)");
-  state = walkFirstCycle(config, state, "Pass");
+  assert.equal(ticketAt(memoryCore(state), id(1)).finalizer, "NoFinalizer");
+  state = stepEmit(config, state, dispatchEvent(id(1)), "dispatch");
+  state = stepEmit(
+    config,
+    state,
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    "task-done",
+  );
+  state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
+  state = stepEmit(
+    config,
+    state,
+    taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
+    "task-done",
+  );
   state = journalStep(config, state, evalReduceEvent(id(1)));
   assert.equal(state.view.rec.label, "ticket-done");
   assert.deepEqual(state.view.rec.transitions, [
     { ticket: id(1), from: "Evaluating", to: "Done" },
   ]);
-  assert.deepEqual(state.view.rec.attempt, woNone);
+  assert.deepEqual(state.view.rec.effects, []);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
   assert.equal(journalCompletions(state, id(1)), 1);
   assert.equal(worldCompletions(state, id(1)), 0);
@@ -221,32 +228,33 @@ function walkLeaseFreeToCompletion(): ActorState {
   return state;
 }
 
-test("a lease-free ticket recovers at its completion seam and completes exactly once", () => {
-  let state = walkLeaseFreeToCompletion();
+test("a finalizer-free ticket recovers at its completion seam and completes exactly once", () => {
+  let state = walkFinalizerFreeToCompletion();
   state = crashRecoverTo(config, state, 0);
   assert.equal(ticketAt(memoryCore(state), id(1)).phase, "Done");
-  assert.equal(ticketAt(memoryCore(state), id(1)).wrapUp.wrapUp, "WNone");
-  assert.equal(completionsOf(ticketAt(memoryCore(state), id(1))), 1);
+  assert.equal(ticketAt(memoryCore(state), id(1)).finalizer, "NoFinalizer");
+  assert.equal(ticketAt(memoryCore(state), id(1)).completions, 1);
   assert.equal(state.applied, 0);
   assert.equal(worldCompletions(state, id(1)), 0);
   assertStep(config, state, "total loss at the completion seam");
   while (state.applied < state.journal.length) state = emitNext(state);
-  assert.equal(state.applied, 7);
+  assert.equal(state.applied, 6);
   assert.equal(worldCompletions(state, id(1)), 1);
   assert.equal(worldSpawns(state, id(1)), 1);
-  const enteredGate = state.journal.some((entry) =>
-    entry.rec.transitions.some(
-      (transition) =>
-        transition.to === "PWrapUp" || transition.to === "PWrapUpHolding",
-    ),
+  const ranFinalizer = state.journal.some(
+    (entry) =>
+      entry.rec.effects.includes("RunFinalizer") ||
+      entry.rec.transitions.some(
+        (transition) => transition.to === "Finalizing",
+      ),
   );
   assert.ok(
-    !enteredGate,
-    "no journaled transition enters a wrap-up phase, so no lease was ever taken",
+    !ranFinalizer,
+    "no journaled decision runs a finalizer, so the pass alone completed the ticket",
   );
   assertStep(
     config,
     state,
-    "the whole journal re-emitted, completion landed once",
+    "the whole journal re-emitted, the completion landed once",
   );
 });

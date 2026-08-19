@@ -32,7 +32,7 @@ import {
   type TicketId,
 } from "../../src/domain/ids.ts";
 import { tasksInIdOrder } from "../../src/domain/task.ts";
-import { describe, type ItfValue } from "./decode.ts";
+import { describe, encodeValue, type ItfValue } from "./decode.ts";
 
 /**
  * ITF as the generated codec wants it. A nullary variant becomes its bare tag,
@@ -111,11 +111,15 @@ export function encodeNullaryTag(tag: string): ItfValue {
   return encodeNullary(tag);
 }
 
-/** A draw ITF records as an option: present under Some, absent under None. */
-export function encodeOption(wire: unknown): unknown {
-  return wire === undefined
+/**
+ * A draw as ITF records one: present under Some, absent under None. It answers
+ * the serialized shape rather than the decoded one, because an option only
+ * exists in a document being written.
+ */
+export function encodeOption(drawn: ItfValue | undefined): unknown {
+  return drawn === undefined
     ? { tag: "None", value: { "#tup": [] } }
-    : { tag: "Some", value: wire };
+    : { tag: "Some", value: encodeValue(drawn) };
 }
 
 /** A model sum with its payload written by the caller, for a draw ITF carries alone. */

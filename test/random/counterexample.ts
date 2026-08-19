@@ -27,6 +27,7 @@ import {
   encodeOption,
   encodeStepRecord,
 } from "../itf/vocabulary.ts";
+import { encodeValue, type ItfValue } from "../itf/decode.ts";
 import { drawnWire, type Drawn } from "./draws.ts";
 import { shrinkSteps } from "./shrink.ts";
 import {
@@ -49,7 +50,7 @@ function nondetPicksOf(drawn: Drawn): unknown {
   return Object.fromEntries(
     Object.entries(drawnWire(drawn)).map(([name, wire]) => [
       name,
-      encodeOption(wire),
+      encodeOption(wire as ItfValue | undefined),
     ]),
   );
 }
@@ -71,8 +72,8 @@ export function counterexampleDocument(
       "#meta": { index: 0 },
       "mbt::actionTaken": "init",
       "mbt::nondetPicks": nondetPicksOf({}),
-      [lastStepVar]: encodeStepRecord(initRecord),
-      [ticketsVar]: encodeCore(walkInit(config)),
+      [lastStepVar]: encodeValue(encodeStepRecord(initRecord)),
+      [ticketsVar]: encodeValue(encodeCore(walkInit(config))),
     },
   ];
   for (const { step, decision } of walkRecord(config, steps, decide)) {
@@ -80,8 +81,8 @@ export function counterexampleDocument(
       "#meta": { index: states.length },
       "mbt::actionTaken": step.action,
       "mbt::nondetPicks": nondetPicksOf(step.drawn),
-      [lastStepVar]: encodeStepRecord(decision.rec),
-      [ticketsVar]: encodeCore(decision.post),
+      [lastStepVar]: encodeValue(encodeStepRecord(decision.rec)),
+      [ticketsVar]: encodeValue(encodeCore(decision.post)),
     });
   }
   return {

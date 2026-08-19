@@ -35,13 +35,10 @@ export function emissionKey(emission: Emission): string {
 }
 
 /**
- * The fabric runs the paid work a decision spawned, and decides nothing.
- * Delivery is at-least-once, so a call repeating an `emissionKey` already
- * served must change nothing.
- *
- * Cancellation belongs here rather than beside the desk: it is addressed to
- * whatever is running the work, and a revoked ticket's live tasks are exactly
- * what it stops.
+ * The fabric runs the paid work a decision spawned and decides nothing;
+ * delivery is at-least-once, so a call repeating an `emissionKey` already
+ * served must change nothing. Cancellation is addressed to whatever is running
+ * that work, so it belongs here rather than beside the desk.
  */
 export interface FabricPort {
   spawnWorkTasks(emission: Emission): Promise<void>;
@@ -60,13 +57,10 @@ export interface FinalizerPort {
 }
 
 /**
- * The desk is the ticket board a human reads and acts on. It carries the
- * fabric's idempotence promise unchanged: a repeated `emissionKey` is the same
- * instruction, never a second one.
- *
- * It has one member because completion and revocation stopped being effects —
- * entering Done is transactional with the journal, so there is nothing left to
- * ask the world for.
+ * The ticket board a human reads and acts on, carrying the fabric's idempotence
+ * promise unchanged: a repeated `emissionKey` is the same instruction, never a
+ * second one. It has one member because entering Done is transactional with the
+ * journal, leaving completion and revocation nothing to ask the world for.
  */
 export interface DeskPort {
   openHumanTask(emission: Emission): Promise<void>;

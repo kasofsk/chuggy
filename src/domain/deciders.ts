@@ -118,10 +118,9 @@ export function decideReleaseTicket(
 }
 
 /**
- * Park a ticket on the desk, naming the wall and where a resume would put it
- * back. The open desk task is derived from the phase; `OpenHumanTask` is its
- * trace-visible effect. The failed set is retired into the record rather than
- * dropped.
+ * Park a ticket on the desk, naming the wall, where a resume would put it back,
+ * and retiring the failed set into the record rather than dropping it. The open
+ * desk task is derived from the phase; `OpenHumanTask` is its visible effect.
  */
 function escalate(
   core: Core,
@@ -139,17 +138,10 @@ function escalate(
 }
 
 /**
- * Revoke, and park every dependent it dooms in the same decision.
- *
- * The cascade parks rather than revokes, so no author's revocation destroys
- * another author's ticket without a human deciding it, and every doomed
- * dependent gets its own desk task saying why. Parking only Pending dependents
- * is exhaustive: a dependent of a revocable ticket can never have dispatched,
- * because dispatch needs every dependency Done and Done is absorbing.
- *
- * The closure is a bounded fixpoint over the ids the map actually holds, not
- * an ascending pass — ids are sparse and a dependency may point at a
- * numerically larger ticket.
+ * Revoke, and in the same decision park every dependent it dooms, each with its
+ * own desk task: a cascade that revoked instead would destroy another author's
+ * ticket with no human deciding it. Parking only Pending dependents is
+ * exhaustive, because dispatch needs every dependency Done and Done absorbs.
  */
 export function decideRevoke(
   config: Config,
@@ -202,14 +194,9 @@ export function decideRevoke(
 }
 
 /**
- * Ready to Working: launch a cycle for the ticket THE DISPATCHER CHOSE.
- *
- * The choice is the decision. Which Ready ticket runs next is an agentic pick
- * rather than a queue position, so this decider takes it as an argument and
- * the recorded step IS the dispatcher's decision event. Any policy conforms,
- * because every policy refines an unrestricted choice among Ready tickets.
- *
- * Charges one gas, as every entry to Working does.
+ * Ready to Working, charging one gas as every entry to Working does. Which
+ * Ready ticket runs next is an agentic pick rather than a queue position, so it
+ * arrives as an argument and the recorded step IS the dispatcher's decision.
  */
 export function decideDispatch(core: Core, id: TicketId): Decision {
   const ticket = ticketAt(core, id);
@@ -226,11 +213,10 @@ export function decideDispatch(core: Core, id: TicketId): Decision {
 }
 
 /**
- * A task completion. First write wins: resolving a task that is not
- * outstanding changes nothing, which is the idempotence an at-least-once
- * fabric demands. Task ids are unique across the ticket's whole history, so a
- * completion for an earlier stage or incarnation names an id that is already
- * retired and matches nothing live.
+ * A task completion, first write wins: resolving a task that is not outstanding
+ * changes nothing, which is the idempotence an at-least-once fabric demands.
+ * Ids are unique across the ticket's history, so a stale completion names one
+ * already retired and matches nothing live.
  */
 export function decideTaskDone(
   core: Core,
@@ -440,10 +426,9 @@ export function decideFinalizationResult(
 }
 
 /**
- * Infrastructure cannot run an intact contract. This is not failed work: it
- * consumes no rework and no finalization budget, and it names its own reason
- * so the desk can act on it. The resume points back at whichever phase held
- * the work.
+ * Infrastructure cannot run an intact contract, which is not failed work: it
+ * spends no rework and no finalization budget, names its own reason, and
+ * resumes back at whichever phase held the work.
  */
 export function decideExecutionBlocked(
   core: Core,

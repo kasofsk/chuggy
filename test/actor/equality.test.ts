@@ -23,16 +23,8 @@ import assert from "node:assert/strict";
 import { recordEquals, ticketEquals } from "../../src/actor/equality.ts";
 import { initRecord } from "../../src/domain/core.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
-import { asProjectId } from "../../src/domain/ids.ts";
-
-import {
-  aNone,
-  aSome,
-  wNone,
-  wExclusive,
-  woAttempt,
-} from "../../src/domain/wrapUp.ts";
-import { depsOf, id, workOutstanding, workTask } from "../domain/fixtures.ts";
+import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
+import { id, workOutstanding, workTask } from "../domain/fixtures.ts";
 import { flatProgram, refinementInstance } from "./harness.ts";
 import type {
   Stage,
@@ -63,39 +55,57 @@ function assertDiscriminates<Shape>(
   }
 }
 
-const baseTicket: Ticket = freshTicket(
-  config,
-  depsOf(),
-  flatProgram,
-  asProjectId(1),
-  wExclusive(1),
-);
+const baseTicket: Ticket = freshTicket({
+  deps: new Set<number>(),
+  program: flatProgram,
+  workFanout: 1,
+  reworkPolicy: reworkBudgetOf(1),
+  finalizationPricing: budgeted(1),
+  resumePricing: "RetryCharged",
+  finalizer: "ManagedFinalizer",
+  gas: config.gas,
+});
 
 const ticketMutants: FieldMutants<Ticket> = {
   phase: (t) => ({ ...t, phase: "Done" }),
-  deps: (t) => ({ ...t, deps: [id(2)] }),
-  wrapUp: (t) => ({ ...t, wrapUp: wNone }),
-  artifact: (t) => ({ ...t, artifact: aSome(1) }),
-  project: (t) => ({ ...t, project: asProjectId(2) }),
+  deps: (t) => ({ ...t, deps: new Set([2]) }),
+  finalizer: (t) => ({ ...t, finalizer: "NoFinalizer" }),
+  artifact: (t) => ({
+    ...t,
+    artifact: { type: "ProducedArtifact", value: 1 },
+  }),
+  workFanout: (t) => ({ ...t, workFanout: t.workFanout + 1 }),
+  reworkPolicy: (t) => ({
+    ...t,
+    reworkPolicy: reworkBudgetOf(t.reworkPolicy.value + 1),
+  }),
+  finalizationPricing: (t) => ({
+    ...t,
+    finalizationPricing: "DeadlineOnly",
+  }),
+  resumePricing: (t) => ({ ...t, resumePricing: "RetryFree" }),
   program: (t) => ({ ...t, program: [] }),
-  tasks: (t) => ({ ...t, tasks: [workOutstanding(1)] }),
+  tasks: (t) => ({ ...t, tasks: new Set([workOutstanding(1)]) }),
   record: (t) => ({ ...t, record: [workTask(1, "Passed")] }),
   spawned: (t) => ({ ...t, spawned: t.spawned + 1 }),
   reworkLeft: (t) => ({ ...t, reworkLeft: t.reworkLeft + 1 }),
-  wrapUpLeft: (t) => ({ ...t, wrapUpLeft: t.wrapUpLeft + 1 }),
+  finalizationLeft: (t) => ({
+    ...t,
+    finalizationLeft: t.finalizationLeft + 1,
+  }),
   gasLeft: (t) => ({ ...t, gasLeft: t.gasLeft + 1 }),
   resumeAt: (t) => ({ ...t, resumeAt: "ResumeWorking" }),
   reason: (t) => ({ ...t, reason: "WorkFailed" }),
+  completions: (t) => ({ ...t, completions: t.completions + 1 }),
 };
 
 const recordMutants: FieldMutants<StepRecord> = {
   label: (r) => ({ ...r, label: "ticket-done" }),
   transitions: (r) => ({
     ...r,
-    transitions: [{ ticket: id(1), from: "PDraft", to: "Pending" }],
+    transitions: [{ ticket: id(1), from: "Pending", to: "Working" }],
   }),
-  effects: (r) => ({ ...r, effects: ["Complete"] }),
-  attempt: (r) => ({ ...r, attempt: woAttempt(asProjectId(1), true) }),
+  effects: (r) => ({ ...r, effects: ["SpawnWorkTasks"] }),
 };
 
 const baseTransition: Transition = {
@@ -160,16 +170,23 @@ test("a list of equal length is compared member by member, not by length alone",
 });
 
 test("each variant arm's payload is compared, not only its tag", () => {
-  const attempted = (project: number, invalidated: boolean): StepRecord => ({
-    ...initRecord,
-    attempt: woAttempt(asProjectId(project), invalidated),
-  });
-  assert.ok(!recordEquals(attempted(1, true), attempted(2, true)));
-  assert.ok(!recordEquals(attempted(1, true), attempted(1, false)));
   const marked = (mark: number): Ticket => ({
     ...baseTicket,
-    artifact: aSome(mark),
+    artifact: { type: "ProducedArtifact", value: mark },
   });
   assert.ok(!ticketEquals(marked(1), marked(2)));
-  assert.ok(!ticketEquals(marked(1), { ...baseTicket, artifact: aNone }));
+  assert.ok(
+    !ticketEquals(marked(1), { ...baseTicket, artifact: "NoArtifact" }),
+  );
+  const priced = (budget: number): Ticket => ({
+    ...baseTicket,
+    finalizationPricing: budgeted(budget),
+  });
+  assert.ok(!ticketEquals(priced(1), priced(2)));
+  assert.ok(
+    !ticketEquals(priced(1), {
+      ...baseTicket,
+      finalizationPricing: "DeadlineOnly",
+    }),
+  );
 });

@@ -14,10 +14,10 @@
  * arm behind it is a failure too — otherwise the constant would drift from the
  * function it describes and each would keep vouching for the other.
  *
- * THE THIRTEENTH ARM HAS NO DECIDER, and its contract is therefore the only one
- * a comparison against a golden could not state on its own: `settle` returns
- * the state it was handed, unchanged and identical, under the label the model's
- * own `settle` action writes.
+ * THE LAST ARM HAS NO DECIDER, and its contract is therefore the only one a
+ * comparison against a golden could not state on its own: `settle` returns the
+ * state it was handed, unchanged and identical, under the label the model's own
+ * `settle` action writes.
  */
 
 import type { Core } from "../../src/domain/generated/modelTypes.ts";
@@ -28,7 +28,6 @@ import { join } from "node:path";
 
 import { budgetedInstance } from "../domain/configs.ts";
 import { declaredActions } from "../domain/declared.ts";
-import { decodeVerdict, decodeWrapUpOutcome } from "../itf/vocabulary.ts";
 import {
   replayActions,
   replayStep,
@@ -45,14 +44,15 @@ const noPicks: Picks = {
   ticket: undefined,
   deps: undefined,
   program: undefined,
-  project: undefined,
-  wrapUp: undefined,
+  workFanout: undefined,
+  reworkPolicy: undefined,
+  finalizationPricing: undefined,
+  resumePricing: undefined,
+  finalizer: undefined,
   taskId: undefined,
   verdict: undefined,
-  moved: undefined,
   outcome: undefined,
-  decodeVerdict,
-  decodeWrapUpOutcome,
+  reason: undefined,
 };
 
 /** The label the model's own `settle` action writes, read where it is written. */
@@ -86,7 +86,10 @@ test("the table's roster is the model's own action roster, in its order", () => 
 
 test("the reader is reading the model rather than agreeing with the table", () => {
   const declared = declaredActions(ROOT);
-  assert.ok(declared.includes("arrive"), "the action roster did not parse");
+  assert.ok(
+    declared.includes("releaseTicket"),
+    "the action roster did not parse",
+  );
   assert.ok(
     declared.includes("settle"),
     "the stutter is an action of the machine and belongs in the roster",
@@ -104,7 +107,7 @@ test("every action in the roster reaches an arm, and none falls through", () => 
 });
 
 test("an action outside the roster is refused rather than routed to a neighbour", () => {
-  const why = refusal("wrapUpstart");
+  const why = refusal("releaseticket");
   assert.ok(
     why?.includes(unknownActionMessage),
     "a name the machine has no action for was accepted; a near miss must not route",
@@ -121,5 +124,4 @@ test("the arm with no decider returns the state it was handed, under the model's
   assert.equal(decision.rec.label, settleLabel());
   assert.deepEqual(decision.rec.transitions, []);
   assert.deepEqual(decision.rec.effects, []);
-  assert.equal(decision.rec.attempt.attempt, "WONone");
 });

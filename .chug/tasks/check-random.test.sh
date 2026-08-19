@@ -32,7 +32,7 @@ R="$WORK/repo"
 
 # The seed is pinned to a budgeted run that draws a duplicate completion;
 # test/random/shrink.test.ts pins the same one and says how to re-find it.
-SEED=0x2adf
+SEED=0x7
 
 run_gate() { # <dir> [env=value...]
 	OUT="$WORK/.out"
@@ -52,6 +52,10 @@ fixture_tree() {
 	cp "$ROOT/model/domain.qnt" "$R/model/domain.qnt"
 	cp -R "$ROOT/src" "$R/src"
 	cp -R "$ROOT/test" "$R/test"
+	# The replay path reaches the generated codec, and the codec reaches zod.
+	# A fixture that cannot resolve it fails every suite for a reason that has
+	# nothing to do with the case under test.
+	ln -s "$ROOT/node_modules" "$R/node_modules"
 	git -C "$R" add -A
 	git -C "$R" -c commit.gpgsign=false commit -qm fixture
 }
@@ -84,7 +88,13 @@ check "a clean walk exits 0" 0 "$RC" "walked clean"
 check "the clean line counts the runs and steps the sweep consumed" 0 "$RC" \
 	"3 instance(s), 6 run(s), 240 step(s) walked clean"
 
-# --- The gate bites: a double-emitting decider in a scratch copy -------------
+# --- The gate bites: a phantom completion in a scratch copy ------------------
+#
+# Completion emits no effect any more — entering Done IS the completion — so a
+# decider that claims one claims a transition. This mutant makes `task-done`
+# record a move to Done while leaving the state alone, which is the shape the
+# accumulator exists to catch: the ledger on the ticket never moves, so nothing
+# but the running count can tell.
 
 fixture_tree
 node -e '
@@ -92,8 +102,8 @@ const fs = require("fs")
 const path = process.argv[1]
 const source = fs.readFileSync(path, "utf8")
 const broken = source.replace(
-  `return noop(core, "complete-duplicate");`,
-  `return { rec: { label: "complete-duplicate", transitions: [], effects: ["Complete"], attempt: woNone }, post: core };`,
+  `rec: { label: "task-done", transitions: [], effects: [] },`,
+  `rec: { label: "task-done", transitions: [{ ticket: id, from: ticketAt(core, id).phase, to: "Done" }], effects: [] },`,
 )
 if (broken === source) throw new Error("the mutant found nothing to break")
 fs.writeFileSync(path, broken)
@@ -103,7 +113,7 @@ run_gate "$R" \
 	CHUG_WALK_SEED="$SEED" \
 	CHUG_WALK_INSTANCE=mc_chuggy_budgeted \
 	CHUG_WALK_DIR="$R/found"
-check "a double emission is a finding" 1 "$RC" "Complete emission"
+check "a phantom completion is a finding" 1 "$RC" "completion(s) counted"
 check "the finding names the seed that reproduces it" 1 "$RC" "$SEED"
 check "the finding points at the written counterexample" 1 "$RC" "walk-mc_chuggy_budgeted-$SEED"
 

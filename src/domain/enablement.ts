@@ -22,7 +22,7 @@ import {
   workFanoutChoices,
   type Config,
 } from "./config.ts";
-import { ticketAt, ticketIds, type Decision } from "./core.ts";
+import { ticketAt, ticketIds } from "./core.ts";
 import type {
   ArtifactMark,
   Core,
@@ -173,10 +173,9 @@ export function isBlockedIn(core: Core, id: TicketId): boolean {
 }
 
 /**
- * May the dispatcher launch this ticket? Ready, with gas to charge — entry to
- * Working always meters. A Pending ticket has never spent gas, so the second
- * conjunct is structurally implied whenever the configuration was accepted; it
- * is stated so the enablement is ONE predicate.
+ * May the dispatcher launch this ticket? Ready, with gas to charge, since entry
+ * to Working always meters — a Pending ticket has never spent gas, so the
+ * second conjunct is implied and is stated so the enablement is one predicate.
  */
 export function dispatchableIn(core: Core, id: TicketId): boolean {
   return isReadyIn(core, id) && ticketAt(core, id).gasLeft > 0;
@@ -254,14 +253,19 @@ function pricingEquals(
 }
 
 /** The ids a release may still claim, which is what makes a fleet quiet or not. */
-export function releasableIdsIn(config: Config, core: Core): readonly TicketId[] {
+export function releasableIdsIn(
+  config: Config,
+  core: Core,
+): readonly TicketId[] {
   if (core.tickets.size >= config.nTickets) return [];
   return ticketIdUniverse(config).filter((j) => !core.tickets.has(j));
 }
 
 /** Tickets running their finalizer, which is the phase a result may be reported for. */
 export function finalizingIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter((j) => ticketAt(core, j).phase === "Finalizing");
+  return ticketIds(core).filter(
+    (j) => ticketAt(core, j).phase === "Finalizing",
+  );
 }
 
 /**
@@ -280,14 +284,12 @@ export function quietIn(config: Config, core: Core): boolean {
 }
 
 /** The task ids of this ticket the fabric could still report on. */
-export function outstandingTaskIdsIn(core: Core, id: TicketId): readonly number[] {
+export function outstandingTaskIdsIn(
+  core: Core,
+  id: TicketId,
+): readonly number[] {
   return [...ticketAt(core, id).tasks]
     .filter((t) => t.state === "Outstanding")
     .map((t) => t.id)
     .sort((a, b) => a - b);
-}
-
-/** A decision that changes nothing, which an absorbed duplicate returns. */
-export function noop(core: Core, label: string): Decision {
-  return { rec: { label, transitions: [], effects: [] }, post: core };
 }

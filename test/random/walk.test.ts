@@ -28,12 +28,15 @@ import type { Config } from "../../src/domain/config.ts";
 import { isValidProgram } from "../../src/domain/config.ts";
 
 import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
-import { asProjectId } from "../../src/domain/ids.ts";
-import { aSome, wNone, woNone } from "../../src/domain/wrapUp.ts";
 import { declaredActions } from "../domain/declared.ts";
 import { CONFIGS, budgetedInstance } from "../domain/configs.ts";
 import { coreOf, id, ticketOn } from "../domain/fixtures.ts";
-import { validProgramsIn, walkActionOf, walkActions } from "./draws.ts";
+import {
+  validProgramsIn,
+  walkActionOf,
+  walkActions,
+  type Drawn,
+} from "./draws.ts";
 import { counterexampleReport } from "./counterexample.ts";
 import {
   completionFindings,
@@ -94,7 +97,7 @@ function plannedRuns(): readonly PlannedRun[] {
   const samples = envInt("CHUG_WALK_SAMPLES", samplesDefault);
   const base = envInt("CHUG_WALK_SEED_BASE", 1);
   return INSTANCES.flatMap((instance) =>
-    Array.from({ length: samples }, (unused, index) => ({
+    Array.from({ length: samples }, (_unused, index) => ({
       instance,
       seed: base + index,
     })),
@@ -128,9 +131,8 @@ test("every other init conjunct refuses as the model's init does", () => {
     { nTasks: 0 },
     { nTickets: 0 },
     { maxStages: 0 },
-    { nProjects: 0 },
     { reworkPolicy: reworkBudgetOf(-1) },
-    { wrapUpPricing: budgeted(-1) },
+    { finalizationPricing: budgeted(-1) },
   ];
   for (const broken of invalid) {
     assert.throws(
@@ -140,7 +142,7 @@ test("every other init conjunct refuses as the model's init does", () => {
   }
 });
 
-test("the arrival's program draw ranges over exactly the well-formed set", () => {
+test("the release's program draw ranges over exactly the well-formed set", () => {
   const programs = validProgramsIn(budgetedInstance);
   assert.equal(programs.length, 20);
   assert.ok(programs.every((p) => isValidProgram(budgetedInstance, p)));
@@ -151,20 +153,24 @@ test("the arrival's program draw ranges over exactly the well-formed set", () =>
   );
 });
 
-test("the arrival's permit refuses the dep named twice", () => {
-  const core = coreOf([ticketOn(budgetedInstance, 1)]);
+test("the release's permit refuses the dep named twice", () => {
+  const core = coreOf([ticketOn(budgetedInstance)]);
   const program = validProgramsIn(budgetedInstance)[0];
   assert.ok(program);
-  const drawn = {
+  const drawn: Drawn = {
+    ticket: id(2),
     deps: [id(1), id(1)],
     program,
-    project: asProjectId(1),
-    wrapUp: wNone,
+    workFanout: 1,
+    reworkPolicy: reworkBudgetOf(0),
+    finalizationPricing: budgeted(0),
+    resumePricing: "RetryCharged",
+    finalizer: "ManagedFinalizer",
   };
-  const arrive = walkActionOf("arrive");
-  assert.equal(arrive.permitsIn(budgetedInstance, core, drawn), false);
+  const release = walkActionOf("releaseTicket");
+  assert.equal(release.permitsIn(budgetedInstance, core, drawn), false);
   assert.equal(
-    arrive.permitsIn(budgetedInstance, core, { ...drawn, deps: [id(1)] }),
+    release.permitsIn(budgetedInstance, core, { ...drawn, deps: [id(1)] }),
     true,
   );
 });
@@ -178,13 +184,16 @@ test("a run is a pure function of its seed", () => {
 
 test("the accumulator rebuilds the ghost and can go red in every direction", () => {
   const done = coreOf([
-    ticketOn(budgetedInstance, 1, { phase: "Done", artifact: aSome(1) }),
+    ticketOn(budgetedInstance, "ManagedFinalizer", {
+      phase: "Done",
+      artifact: { type: "ProducedArtifact", value: 1 },
+      completions: 1,
+    }),
   ]);
   const completeRec: StepRecord = {
     label: "ticket-done",
-    transitions: [],
-    effects: ["Complete"],
-    attempt: woNone,
+    transitions: [{ ticket: id(1), from: "Finalizing", to: "Done" }],
+    effects: [],
   };
   const counts: CompletionCounts = new Map();
   assert.deepEqual(creditCompletions(counts, id(1), completeRec), []);
@@ -193,21 +202,21 @@ test("the accumulator rebuilds the ghost and can go red in every direction", () 
   creditCompletions(counts, id(1), completeRec);
   assert.match(
     completionFindings(counts, done).join(" "),
-    /2 Complete emission/,
-    "a second emission for a completed ticket is the accumulator's whole reason",
+    /2 completion\(s\) counted/,
+    "a second completion for a completed ticket is the accumulator's whole reason",
   );
 
   const silent: CompletionCounts = new Map();
   assert.match(
     completionFindings(silent, done).join(" "),
-    /0 Complete emission/,
-    "a ticket Done with nothing emitted is the other half of the iff",
+    /0 completion\(s\) counted/,
+    "a ticket Done with nothing counted is the other half of the iff",
   );
 
-  const working = coreOf([ticketOn(budgetedInstance, 1)]);
+  const working = coreOf([ticketOn(budgetedInstance)]);
   const early: CompletionCounts = new Map();
   creditCompletions(early, id(1), completeRec);
-  assert.match(completionFindings(early, working).join(" "), /PDraft/);
+  assert.match(completionFindings(early, working).join(" "), /phase Pending/);
 
   assert.match(
     creditCompletions(new Map(), undefined, completeRec).join(" "),
