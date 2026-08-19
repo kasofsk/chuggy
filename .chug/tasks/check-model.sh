@@ -43,6 +43,28 @@ if [ -z "$modules" ]; then
 fi
 
 failed=0
+tests=0
+
+# Quint selects only run names ending in `Test`, and exits 0 when that selects
+# NOTHING: a suite whose runs were renamed passes exactly as loudly as one that
+# ran. So a call is judged on the count it reports as well as on its status,
+# and that total is what the success line accounts for.
+run_suite() { # <label> <quint test args...>
+	label="$1"
+	shift
+	if ! out="$("$QUINT" test "$@" 2>&1)"; then
+		echo "ERROR $label failed"
+		failed=$((failed + 1))
+		return 0
+	fi
+	passing="$(printf '%s\n' "$out" | sed -n 's/^ *\([0-9][0-9]*\) passing.*$/\1/p')"
+	if [ -z "$passing" ] || [ "$passing" -eq 0 ]; then
+		echo "ERROR $label selected no tests; a suite that did not run is not a pass"
+		failed=$((failed + 1))
+		return 0
+	fi
+	tests=$((tests + passing))
+}
 
 echo "--- typecheck"
 IFS='
@@ -56,26 +78,22 @@ done
 unset IFS
 
 echo "--- unit suite"
-"$QUINT" test model/tests/chuggy_test.qnt >/dev/null 2>&1 \
-	|| { echo "ERROR model/tests/chuggy_test.qnt failed"; failed=$((failed + 1)); }
-"$QUINT" test model/tests/capacity_test.qnt >/dev/null 2>&1 \
-	|| { echo "ERROR model/tests/capacity_test.qnt failed"; failed=$((failed + 1)); }
+run_suite "model/tests/chuggy_test.qnt" model/tests/chuggy_test.qnt
+run_suite "model/tests/capacity_test.qnt" model/tests/capacity_test.qnt
 
 # The witness modules prove each named shape reachable and assert every
 # invariant after every step. `wrapup_none` is the odd one out: it witnesses
 # something the machine deliberately does not guarantee.
 echo "--- witnesses"
 for w in free cascade stage sparse gate gate_deadline dependency wrapup_none; do
-	"$QUINT" test --main="chuggy_witness_${w}_test" \
-		model/tests/chuggy_witness_test.qnt >/dev/null 2>&1 \
-		|| { echo "ERROR witness $w failed"; failed=$((failed + 1)); }
+	run_suite "witness $w" --main="chuggy_witness_${w}_test" \
+		model/tests/chuggy_witness_test.qnt
 done
 
 echo "--- refinement"
 for r in unit witness hazard; do
-	"$QUINT" test --main="chuggy_refinement_${r}_test" \
-		model/tests/chuggy_refinement_test.qnt >/dev/null 2>&1 \
-		|| { echo "ERROR refinement $r failed"; failed=$((failed + 1)); }
+	run_suite "refinement $r" --main="chuggy_refinement_${r}_test" \
+		model/tests/chuggy_refinement_test.qnt
 done
 
 echo "--- invariants (randomized)"
@@ -85,5 +103,5 @@ for i in budgeted deadline_only retryfree; do
 		|| { echo "ERROR instance $i violated an invariant"; failed=$((failed + 1)); }
 done
 
-echo "check-model: $failed failure(s)"
+echo "check-model: $failed failure(s), $tests test(s) run"
 [ "$failed" -eq 0 ]
