@@ -1,12 +1,11 @@
 /**
  * The pool's bounds and its idle-failure path.
  *
- * THE CASE THAT MATTERS IS THE ONE THAT USED TO END THE PROCESS. A pooled
- * connection stays attached to a live backend, so terminating that backend
- * raises an error on a client nobody is using. With no listener on the pool
- * `pg` turns that into an uncaught exception; the assertion here is that the
- * failure arrives at a handler instead, and that the suite is still running
- * afterwards to make it.
+ * A POOLED CONNECTION STAYS ATTACHED TO A LIVE BACKEND, so terminating that
+ * backend raises an error on a client nobody is using. With no listener on the
+ * pool `pg` turns that into an uncaught exception; the assertion here is that
+ * the failure arrives at a handler instead, and that the suite is still
+ * running afterwards to make it.
  */
 
 import assert from "node:assert/strict";
@@ -31,18 +30,15 @@ after(async () => {
 });
 
 test("an idle client's failure reaches the handler instead of ending the process", async () => {
-  let reported: Error | undefined;
-  const failed = new Promise<void>((seen) => {
-    subject = postgresPool(
-      postgresHarnessUrl(),
-      postgresLimitsDefault,
-      (failure) => {
-        reported = failure;
-        seen();
-      },
-    );
+  let report: (failure: Error) => void = () => undefined;
+  const failed = new Promise<Error>((seen) => {
+    report = seen;
   });
-  assert.ok(subject !== undefined);
+  const subject = postgresPool(
+    postgresHarnessUrl(),
+    postgresLimitsDefault,
+    report,
+  );
 
   const client = await subject.connect();
   const pid = (
@@ -52,13 +48,10 @@ test("an idle client's failure reaches the handler instead of ending the process
   assert.ok(pid !== undefined);
 
   await admin.query("SELECT pg_terminate_backend($1)", [pid]);
-  await failed;
 
-  assert.ok(reported instanceof Error);
+  assert.ok((await failed) instanceof Error);
   await subject.end();
 });
-
-let subject: pg.Pool | undefined;
 
 test("the pool bounds the wait for a connection as well as the wait for an answer", async () => {
   const oneConnection = postgresPool(postgresHarnessUrl(), {

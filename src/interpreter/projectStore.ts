@@ -19,6 +19,15 @@
  * one — the interpreter names no ambient capability, and `eslint.config.js`
  * says so for this directory.
  *
+ * NOT EVERY METHOD IS THE RUNTIME'S. `acquire`, `renew`, `release`, `append`,
+ * `load`, `standing` and `currentRecoveryEpoch` are what a dispatcher holds.
+ * `establishRecoveryEpoch`, `createProject` and `fence` are the control
+ * plane's, and the runtime database role is granted nothing that would let it
+ * run them — provisioning is not a decision, and suspension is out-of-band
+ * precisely so an unhealthy writer cannot lift it. They share one port because
+ * they share one set of rows and one set of fences; the caller they are
+ * addressed to is stated here rather than discovered at run time.
+ *
  * EVERY REFUSAL IS A VALUE. Losing a race, holding a stale head, arriving
  * after a takeover and finding a project that is not active are outcomes a
  * caller must handle, not exceptions it may ignore. A thrown error here means

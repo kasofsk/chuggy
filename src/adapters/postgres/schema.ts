@@ -124,9 +124,11 @@ const foundationGrants = [
 ];
 
 /**
- * Creates the runtime role if this database has never seen it. `CREATE ROLE`
- * has no `IF NOT EXISTS`, and a role is a cluster-wide object a sibling
- * database may already have made.
+ * Creates the runtime role if this cluster has never seen it. `CREATE ROLE` has
+ * no `IF NOT EXISTS`, and a role is a cluster-wide object a sibling database
+ * may already have made — so the test is a check-then-act that the
+ * database-scoped migration lock cannot serialize, and the handler is what
+ * absorbs the sibling that won.
  */
 const foundationRole = `
   DO $$
@@ -134,6 +136,8 @@ const foundationRole = `
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${dispatcherRole}') THEN
       CREATE ROLE ${dispatcherRole} NOLOGIN;
     END IF;
+  EXCEPTION WHEN duplicate_object THEN
+    NULL;
   END
   $$
 `;

@@ -16,6 +16,7 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { after, before, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { journalLegalOn } from "../../src/actor/journal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -44,7 +45,7 @@ async function crashAt(partition: Partition, seam: string): Promise<void> {
   const child = spawn(
     process.execPath,
     [
-      new URL("crashChild.ts", import.meta.url).pathname,
+      fileURLToPath(new URL("crashChild.ts", import.meta.url)),
       postgresHarnessUrl(),
       partition.tenant,
       partition.project,

@@ -166,3 +166,33 @@ test("each stored digest chains onto its predecessor, and the first onto genesis
     previous = row.entry_digest;
   }
 });
+
+test("a stored row that is not JSON is refused by returning, not thrown on", async () => {
+  const partition = await postgresHarnessProject(harness.store, "notjson");
+  const journal = postgresHarnessJournal();
+  await appendAll(await held(partition, "writer"), journal);
+
+  await harness.query(
+    "UPDATE journal_entry SET entry = 'not json' WHERE tenant = $1 AND project = $2 AND seq = 1",
+    [partition.tenant, partition.project],
+  );
+
+  const loaded = await harness.store.load(partition);
+  assert.equal(loaded.parsed, "Refused");
+  assert.ok(loaded.parsed === "Refused");
+  assert.match(loaded.why, /not JSON/);
+});
+
+test("a stored row that is JSON but not an entry is refused by the schema", async () => {
+  const partition = await postgresHarnessProject(harness.store, "notentry");
+  const journal = postgresHarnessJournal();
+  await appendAll(await held(partition, "writer"), journal);
+
+  await harness.query(
+    `UPDATE journal_entry SET entry = '{"seq":1}' WHERE tenant = $1 AND project = $2 AND seq = 1`,
+    [partition.tenant, partition.project],
+  );
+
+  const loaded = await harness.store.load(partition);
+  assert.equal(loaded.parsed, "Refused");
+});
