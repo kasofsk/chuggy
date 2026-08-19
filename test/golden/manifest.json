@@ -15,10 +15,10 @@
       "invariant": "",
       "steps": 30,
       "quintVersion": "0.32.0",
-      "purpose": "The unaimed walk. It is where the ordinary labels come from, and where the three cheap exemption arms \u2014 settled, task-done-duplicate and the desk-only revoke \u2014 are fired without being asked for."
+      "purpose": "The unaimed walk. It is where the ordinary labels come from, and where the three cheap exemption arms \u2014 settled, task-done and the desk-only revoke \u2014 are fired without being asked for."
     },
     {
-      "name": "budgeted-complete-duplicate",
+      "name": "budgeted-execution-blocked",
       "instance": "mc_chuggy_budgeted",
       "module": "mc_chuggy_budgeted",
       "source": "model/mc/mc_chuggy.qnt",
@@ -26,10 +26,10 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"complete-duplicate\"",
-      "steps": 18,
+      "invariant": "lastStep.label != \"ticket-escalated execution_blocked\"",
+      "steps": 13,
       "quintVersion": "0.32.0",
-      "purpose": "A ticket completes and the completion is delivered again. Carries the complete-duplicate exemption arm, which needs a completion to have happened first."
+      "purpose": "Infrastructure refuses to run an intact contract. It is not failed work: the set retires as cancelled, no rework or finalization budget is spent, and the wall names its own reason."
     },
     {
       "name": "budgeted-eval-stage-passed",
@@ -41,12 +41,12 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"eval-stage-passed\"",
-      "steps": 13,
+      "steps": 14,
       "quintVersion": "0.32.0",
       "purpose": "The stage advance, which stepDescends deliberately does not exempt: it must descend like any other progress step, and that is the stage digit earning its keep."
     },
     {
-      "name": "budgeted-rework-wrapup-failure",
+      "name": "budgeted-rework-finalization-failed",
       "instance": "mc_chuggy_budgeted",
       "module": "mc_chuggy_budgeted",
       "source": "model/mc/mc_chuggy.qnt",
@@ -54,10 +54,10 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 32,
-      "invariant": "lastStep.label != \"rework-started wrapup_failure\"",
+      "invariant": "lastStep.label != \"rework-started finalization_failed\"",
       "steps": 16,
       "quintVersion": "0.32.0",
-      "purpose": "The gate fails and the ticket goes back to work under Budgeted pricing, spending wrapUpLeft alongside gas."
+      "purpose": "A finalizer reports failure and the ticket re-enters work, spending its finalization account and its gas."
     },
     {
       "name": "budgeted-work-failed",
@@ -69,12 +69,12 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"ticket-escalated work_failed\"",
-      "steps": 13,
+      "steps": 8,
       "quintVersion": "0.32.0",
       "purpose": "The work wall, and the operator-retry that follows it \u2014 which is where the pre-work resume exemption arm is fired."
     },
     {
-      "name": "budgeted-wrapup-budget-exhausted",
+      "name": "budgeted-finalization-budget-exhausted",
       "instance": "mc_chuggy_budgeted",
       "module": "mc_chuggy_directed_budgeted",
       "source": "model/mc/mc_chuggy_directed.qnt",
@@ -82,10 +82,10 @@
       "seed": "0x1",
       "maxSamples": 20000,
       "maxSteps": 60,
-      "invariant": "lastStep.label != \"ticket-escalated wrapup_budget_exhausted\"",
-      "steps": 49,
+      "invariant": "lastStep.label != \"ticket-escalated finalization_budget_exhausted\"",
+      "steps": 24,
       "quintVersion": "0.32.0",
-      "purpose": "The one label no other pricing branch can reach: the wrap-up budget spent out. Emitted under the directed step relation, because the full roster derails the gate loop long before the account empties."
+      "purpose": "The finalization account runs out before gas does, so the wall names that account rather than gas."
     },
     {
       "name": "budgeted-rework-budget-exhausted",
@@ -97,7 +97,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-escalated rework_budget_exhausted\"",
-      "steps": 55,
+      "steps": 26,
       "quintVersion": "0.32.0",
       "purpose": "The rework budget spent out while gas remains, which is the branch gas_exhausted is not."
     },
@@ -125,7 +125,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-escalated gas_exhausted\"",
-      "steps": 59,
+      "steps": 49,
       "quintVersion": "0.32.0",
       "purpose": "The gas account emptied by the uncapped gate loop DeadlineOnly allows. Under Budgeted the wrap-up budget runs out first, so this is the branch that reaches it."
     },
@@ -152,10 +152,10 @@
       "seed": "0x1",
       "maxSamples": 20000,
       "maxSteps": 60,
-      "invariant": "not(lastStep.label == \"operator-retry\" and lastStep.transitions.foldl(false, (b, t) => b or t.to == PEvaluating or t.to == PWrapUp))",
-      "steps": 51,
+      "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (Set(Evaluating, Finalizing).contains(t.to) and tickets.get(t.ticket).resumePricing == RetryFree)))",
+      "steps": 29,
       "quintVersion": "0.32.0",
-      "purpose": "The RetryFree CHURN arm: a pipeline resume that costs nothing, which exists on this instance alone. It is the arm freeClimbNever is violated by, and the reason this instance is in the corpus at all."
+      "purpose": "The RetryFree CHURN arm: a pipeline resume that costs nothing. It is the arm freeClimbNever is violated by, and the reason a ticket may be authored RetryFree at all."
     }
   ]
 }

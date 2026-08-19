@@ -32,17 +32,10 @@ const GOLDEN_DIR = join(import.meta.dirname);
 const MANIFEST = join(GOLDEN_DIR, "manifest.json");
 
 /** The one label the model asserts unreachable: a guarded arm `retryableIn` refuses. */
-export const UNREACHABLE_LABEL = "operator-retry-unreachable";
+export const UNREACHABLE_LABEL = "ticket-resume-refused";
 
 /** The phases `phaseRank` names; everything else ranks as settled. */
-const LIVE_PHASES = new Set([
-  "PDraft",
-  "Pending",
-  "Working",
-  "Evaluating",
-  "PWrapUp",
-  "PWrapUpHolding",
-]);
+const LIVE_PHASES = new Set(["Pending", "Working", "Evaluating", "Finalizing"]);
 
 export interface ManifestRow {
   readonly name: string;
@@ -104,7 +97,7 @@ export function declaredArms(root: string): readonly string[] {
 
 /** A resume into the pipeline, which is the flavor the model's roster names. */
 function isPipelineResume(tos: readonly string[]): boolean {
-  return tos.some((t) => t === "Evaluating" || t === "PWrapUp");
+  return tos.some((t) => t === "Evaluating" || t === "Finalizing");
 }
 
 function tagOf(value: ItfValue): string {
@@ -130,8 +123,6 @@ function armsFor(
 ): string[] {
   const hit: string[] = [];
   if (label === "init") hit.push("init");
-  if (label === "task-done-duplicate") hit.push("task-done-duplicate");
-  if (label === "complete-duplicate") hit.push("complete-duplicate");
   if (label === "settled") hit.push("settled");
   if (label === "ticket-released") hit.push("ticket-released");
 
@@ -139,9 +130,8 @@ function armsFor(
 
   if (label === "ticket-resumed") {
     const tos = transitions.map((t) => tagOf(field(t, "to")));
-    if (tos.includes("Pending")) hit.push("operator-retry, RPending flavor");
     if (retryFree && isPipelineResume(tos)) {
-      hit.push("operator-retry, RetryFree pipeline flavor");
+      hit.push("ticket-resumed, RetryFree pipeline flavor");
     }
   }
   if (label === "ticket-revoked" && transitions.length > 0) {
