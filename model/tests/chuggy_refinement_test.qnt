@@ -144,10 +144,10 @@ module chuggy_refinement_witness_test {
         allDomainInvariants, refinementInvariants
       })
 
-  /// Preparation, approval, and commit are separately durable. A cursor
-  /// reset re-emits their effects by journal identity and cannot duplicate
-  /// the irreversible completion.
-  run approvalCommitCrashRecoveryTest =
+  /// The finalization completion is one durable decision. A cursor reset
+  /// re-emits effects by journal identity and cannot duplicate the
+  /// completion.
+  run finalizationCompletionCrashRecoveryTest =
     rinit
       .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
@@ -155,11 +155,6 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(EvalReduce(2), "eval-passed"))
-      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }), "wrapup-preparation-started"))
-      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }),
-        "wrapup-awaiting-approval"))
-      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }),
-        "wrapup-commit-permitted"))
       .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
         memCore.tickets.get(2).phase == Done,
@@ -176,14 +171,14 @@ module chuggy_refinement_witness_test {
         worldCompletions(2) == 0,
         allDomainInvariants, refinementInvariants
       })
-      .then(10.reps(_ => emitNext))
+      .then(7.reps(_ => emitNext))
       .expect(and {
         worldCompletions(2) == 1,
         journalCompletions(2) == 1,
         allDomainInvariants, refinementInvariants
       })
 
-  run preparationFailureRemainsReplayableTest =
+  run finalizationFailureEntersReworkTest =
     rinit
       .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
@@ -191,30 +186,11 @@ module chuggy_refinement_witness_test {
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(EvalReduce(2), "eval-passed"))
-      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }), "wrapup-preparation-started"))
       .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationFailed }),
-        "rework-started wrapup_preparation_failure"))
+        "rework-started finalization_failed"))
       .expect(and {
         memCore.tickets.get(2).phase == Working,
         memCore.tickets.get(2).finalizationLeft == 0,
-        allDomainInvariants, refinementInvariants
-      })
-
-  run conclusiveAbortReturnsToWorkTest =
-    rinit
-      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
-      .then(stepEmit(Dispatch(2), "dispatch"))
-      .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
-      .then(stepEmit(WorkReduce(2), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
-      .then(stepEmit(EvalReduce(2), "eval-passed"))
-      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }), "wrapup-preparation-started"))
-      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }),
-        "wrapup-commit-permitted"))
-      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationFailed }),
-        "rework-started wrapup_aborted"))
-      .expect(and {
-        memCore.tickets.get(2).phase == Working,
         memCore.tickets.get(2).completions == 0,
         allDomainInvariants, refinementInvariants
       })
@@ -268,10 +244,11 @@ module chuggy_refinement_hazard_test {
         not(noDoubleSpentBudget), refinementCore, allDomainInvariants
       })
 
-  /// Losing the commit decision after its effect makes the recovered actor
-  /// commit again. The domain history remains legal while the world observes
-  /// two completions, pinning why commit must be journal-before-effect.
-  run commitEffectFirstDuplicatesIrreversibleCompletionTest =
+  /// Losing the finalization decision after its effect makes the recovered
+  /// actor complete again. The domain history remains legal while the world
+  /// observes two completions, pinning why completion must be
+  /// journal-before-effect.
+  run finalizationEffectFirstDuplicatesIrreversibleCompletionTest =
     rinit
       .then(journalStep(release10)).then(emitNext)
       .then(journalStep(Dispatch(2))).then(emitNext)
@@ -279,8 +256,6 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(WorkReduce(2))).then(emitNext)
       .then(journalStep(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
       .then(journalStep(EvalReduce(2))).then(emitNext)
-      .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))).then(emitNext)
-      .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))).then(emitNext)
       .then(effectCrash(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
         memCore.tickets.get(2).phase == Finalizing,
