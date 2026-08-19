@@ -5,11 +5,11 @@
 module chuggy_witness_free_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, REWORK_POLICY=BudgetedRework(1), GAS=2,
-    WRAPUP_PRICING=DeadlineOnly, MAX_STAGES=2).* from "../domain"
+    FINALIZATION_PRICING=DeadlineOnly, MAX_STAGES=2).* from "../domain"
   pure val p = [{ fanout: 1, combinator: UnanimousPass }]
   action release(j: int, deps: Set[int], rp: RetryPricing): bool = all {
     releasableIds.contains(j), deps.subseteq(dependableTickets), validPrograms.contains(p),
-    apply(decideReleaseTicket(core, j, deps, p, 1, BudgetedRework(1), DeadlineOnly, rp, NoWrapUp)) }
+    apply(decideReleaseTicket(core, j, deps, p, 1, BudgetedRework(1), DeadlineOnly, rp, NoFinalizer)) }
   action doDispatch(j: int): bool = all { dispatchableIn(core,j), apply(decideDispatch(core,j)) }
   action done(j: int, tid: int): bool = all {
     deliverableTaskIds(core,j).contains(tid), apply(decideTaskDone(core,j,tid,Pass)) }
@@ -51,11 +51,11 @@ module chuggy_witness_free_test {
 module chuggy_witness_cascade_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(N_TICKETS=3, N_TASKS=1, REWORK_POLICY=BudgetedRework(1), GAS=3,
-    WRAPUP_PRICING=Budgeted(1), MAX_STAGES=1).* from "../domain"
+    FINALIZATION_PRICING=Budgeted(1), MAX_STAGES=1).* from "../domain"
   pure val p = [{ fanout: 1, combinator: UnanimousPass }]
   action release(j: int, deps: Set[int]): bool = all { releasableIds.contains(j),
     deps.subseteq(dependableTickets), apply(decideReleaseTicket(core,j,deps,p,1,
-      BudgetedRework(1),Budgeted(1),RetryCharged,NoWrapUp)) }
+      BudgetedRework(1),Budgeted(1),RetryCharged,NoFinalizer)) }
   action doRevoke(j: int): bool = all { revocableTickets.contains(j), apply(decideRevoke(core,j)) }
   run sparseReverseCascadeWitness = init
     .then(release(5, Set())).expect(allInvariants)
@@ -73,9 +73,9 @@ module chuggy_witness_cascade_test {
 module chuggy_witness_stage_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(N_TICKETS=1, N_TASKS=2, REWORK_POLICY=BudgetedRework(1), GAS=3,
-    WRAPUP_PRICING=Budgeted(1), MAX_STAGES=2).* from "../domain"
+    FINALIZATION_PRICING=Budgeted(1), MAX_STAGES=2).* from "../domain"
   pure val p = [{ fanout: 1, combinator: UnanimousPass }, { fanout: 1, combinator: AnyPass }]
-  action release: bool = apply(decideReleaseTicket(core,2,Set(),p,1,BudgetedRework(1),Budgeted(1),RetryCharged,NoWrapUp))
+  action release: bool = apply(decideReleaseTicket(core,2,Set(),p,1,BudgetedRework(1),Budgeted(1),RetryCharged,NoFinalizer))
   action doDispatch: bool = all { dispatchableIn(core,2), apply(decideDispatch(core,2)) }
   action done(tid:int): bool = all { deliverableTaskIds(core,2).contains(tid), apply(decideTaskDone(core,2,tid,Pass)) }
   action wr: bool = all { reducibleWork.contains(2), apply(decideWorkReduce(core,2)) }
@@ -90,16 +90,16 @@ module chuggy_witness_stage_test {
 module chuggy_witness_sparse_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(N_TICKETS=2, N_TASKS=2, REWORK_POLICY=BudgetedRework(9), GAS=3,
-    WRAPUP_PRICING=DeadlineOnly, MAX_STAGES=1).* from "../domain"
+    FINALIZATION_PRICING=DeadlineOnly, MAX_STAGES=1).* from "../domain"
   pure val p = [{ fanout: 1, combinator: UnanimousPass }]
-  action release(j:int, wf:int, rw:ReworkPolicy, wp:WrapUpPricing, rp:RetryPricing): bool = all {
-    releasableIds.contains(j), apply(decideReleaseTicket(core,j,Set(),p,wf,rw,wp,rp,ExclusiveWrapUp)) }
+  action release(j:int, wf:int, rw:ReworkPolicy, wp:FinalizationPricing, rp:RetryPricing): bool = all {
+    releasableIds.contains(j), apply(decideReleaseTicket(core,j,Set(),p,wf,rw,wp,rp,ManagedFinalizer)) }
   run ticketLocalPolicyWitness = init
     .then(release(1,1,BudgetedRework(1),Budgeted(2),RetryCharged))
     .then(release(4,2,BudgetedRework(3),DeadlineOnly,RetryFree))
     .expect(and { tickets.get(1).workFanout == 1, tickets.get(4).workFanout == 2,
       tickets.get(1).reworkLeft == 1, tickets.get(4).reworkLeft == 3,
-      tickets.get(1).wrapUpLeft == 2, tickets.get(4).wrapUpLeft == 0,
+      tickets.get(1).finalizationLeft == 2, tickets.get(4).finalizationLeft == 0,
       tickets.get(1).resumePricing == RetryCharged,
       tickets.get(4).resumePricing == RetryFree, allInvariants })
 }
@@ -107,62 +107,41 @@ module chuggy_witness_sparse_test {
 module chuggy_witness_gate_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(N_TICKETS=2, N_TASKS=1, REWORK_POLICY=BudgetedRework(1), GAS=3,
-    WRAPUP_PRICING=Budgeted(1), MAX_STAGES=1).* from "../domain"
+    FINALIZATION_PRICING=Budgeted(1), MAX_STAGES=1).* from "../domain"
   pure val p=[{fanout:1,combinator:UnanimousPass}]
-  action release(j:int):bool=apply(decideReleaseTicket(core,j,Set(),p,1,BudgetedRework(1),Budgeted(1),RetryCharged,ExclusiveWrapUp))
+  action release(j:int):bool=apply(decideReleaseTicket(core,j,Set(),p,1,BudgetedRework(1),Budgeted(1),RetryCharged,ManagedFinalizer))
   action doDispatch(j:int):bool=all{dispatchableIn(core,j),apply(decideDispatch(core,j))}
   action td(j:int,tid:int):bool=all{deliverableTaskIds(core,j).contains(tid),apply(decideTaskDone(core,j,tid,Pass))}
   action wr(j:int):bool=all{reducibleWork.contains(j),apply(decideWorkReduce(core,j))}
   action er(j:int):bool=all{reducibleEval.contains(j),apply(decideEvalStageReduce(core,j))}
-  action start(j:int):bool=all{wrapUpStartableIn(core,j),apply(decideWrapUpStart(core,j))}
-  action prepared(j:int,approval:bool):bool=all{tickets.get(j).phase==WrapUpPreparing,apply(decideWrapUpPrepared(core,j,approval))}
-  action approve(j:int,v:bool):bool=all{tickets.get(j).phase==WrapUpAwaitingApproval,apply(decideWrapUpApproval(core,j,v))}
-  action resolve(j:int,o:WrapUpOutcome):bool=all{tickets.get(j).phase==WrapUpCommitting,apply(decideWrapUpResolve(core,j,o))}
+  action resolve(j:int,o:FinalizationOutcome):bool=all{tickets.get(j).phase==Finalizing,apply(decideFinalizationResult(core,j,o))}
   action doRevoke(j:int):bool=all{revocableTickets.contains(j),apply(decideRevoke(core,j))}
-  run approvalCommitIrreversibilityWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,1)).then(wr(1)).then(td(1,2)).then(er(1))
-    .then(start(1)).expect(and{tickets.get(1).phase==WrapUpPreparing,holdingTickets==Set(1),
-      revocableTickets.contains(1),allInvariants})
-    .then(prepared(1,true)).expect(and{tickets.get(1).phase==WrapUpAwaitingApproval,allInvariants})
-    .then(approve(1,true)).expect(and{tickets.get(1).phase==WrapUpCommitting,lastStep.effects==["CommitWrapUp"],
+  run finalizationSuccessWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,1)).then(wr(1)).then(td(1,2)).then(er(1))
+    .expect(and{tickets.get(1).phase==Finalizing,lastStep.effects==["RunFinalizer"],
       not(revocableTickets.contains(1)),allInvariants})
-    .then(resolve(1,WrapUpCommitted)).expect(and{tickets.get(1).phase==Done,tickets.get(1).completions==1,allInvariants})
-
-  run preparedCommitWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,1)).then(wr(1)).then(td(1,2)).then(er(1))
-    .then(start(1)).expect(and{tickets.get(1).phase==WrapUpPreparing,allInvariants})
-    .then(prepared(1,false)).expect(and{tickets.get(1).phase==WrapUpCommitting,
-      lastStep.effects==["CommitWrapUp"],not(revocableTickets.contains(1)),allInvariants})
-    .then(resolve(1,WrapUpCommitted)).expect(and{tickets.get(1).phase==Done,allInvariants})
-
-  run approvalRejectionWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,1)).then(wr(1)).then(td(1,2)).then(er(1))
-    .then(start(1)).then(prepared(1,true))
-    .then(approve(1,false)).expect(and{tickets.get(1).phase==Working,
-      lastStep.label=="rework-started wrapup_approval_rejected",allInvariants})
+    .then(resolve(1,FinalizationSucceeded)).expect(and{tickets.get(1).phase==Done,allInvariants})
 
   run safeAbortReworkWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,1)).then(wr(1)).then(td(1,2)).then(er(1))
-    .then(start(1)).then(prepared(1,false))
-    .then(resolve(1,WrapUpAborted)).expect(and{tickets.get(1).phase==Working,
-      lastStep.label=="rework-started wrapup_aborted",allInvariants})
+    .then(resolve(1,FinalizationFailed)).expect(and{tickets.get(1).phase==Working,
+      lastStep.label=="rework-started finalization_failed",allInvariants})
 
   run revokeBoundaryWitness=init.then(release(1)).then(doDispatch(1)).then(td(1,1)).then(wr(1)).then(td(1,2)).then(er(1))
-    .then(start(1)).expect(and{revocableTickets.contains(1),allInvariants})
-    .then(doRevoke(1)).expect(and{tickets.get(1).phase==Revoked,
-      lastStep.effects==["CancelTicketWork"],allInvariants})
+    .expect(and{not(revocableTickets.contains(1)),allInvariants})
 }
 
 module chuggy_witness_gate_deadline_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(N_TICKETS=1,N_TASKS=1,REWORK_POLICY=BudgetedRework(1),GAS=2,
-    WRAPUP_PRICING=DeadlineOnly, MAX_STAGES=1).* from "../domain"
+    FINALIZATION_PRICING=DeadlineOnly, MAX_STAGES=1).* from "../domain"
   pure val p=[{fanout:1,combinator:UnanimousPass}]
-  action release=apply(decideReleaseTicket(core,1,Set(),p,1,BudgetedRework(1),DeadlineOnly,RetryCharged,ExclusiveWrapUp))
+  action release=apply(decideReleaseTicket(core,1,Set(),p,1,BudgetedRework(1),DeadlineOnly,RetryCharged,ManagedFinalizer))
   action doDispatch:bool=all{dispatchableIn(core,1),apply(decideDispatch(core,1))}
   action td(tid:int):bool=apply(decideTaskDone(core,1,tid,Pass))
   action wr:bool=apply(decideWorkReduce(core,1))
   action er:bool=apply(decideEvalStageReduce(core,1))
-  action start:bool=apply(decideWrapUpStart(core,1))
-  action prepFail:bool=apply(decideWrapUpPreparationFailed(core,1))
-  run preparationFailureWitness=init.then(release).then(doDispatch).then(td(1)).then(wr).then(td(2)).then(er)
-    .then(start).then(prepFail).expect(and{lastStep.label=="rework-started wrapup_preparation_failure",
+  action finalizationFails:bool=apply(decideFinalizationResult(core,1,FinalizationFailed))
+  run finalizationFailureWitness=init.then(release).then(doDispatch).then(td(1)).then(wr).then(td(2)).then(er)
+    .then(finalizationFails).expect(and{lastStep.label=="rework-started finalization_failed",
       tickets.get(1).phase==Working,tickets.get(1).gasLeft==0,allInvariants})
 }
 
@@ -170,23 +149,23 @@ module chuggy_witness_gate_deadline_test {
 module chuggy_witness_dependency_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(N_TICKETS=2,N_TASKS=1,REWORK_POLICY=BudgetedRework(1),GAS=2,
-    WRAPUP_PRICING=DeadlineOnly, MAX_STAGES=1).* from "../domain"
+    FINALIZATION_PRICING=DeadlineOnly, MAX_STAGES=1).* from "../domain"
   pure val p=[{fanout:1,combinator:UnanimousPass}]
   run existingDependencyWitness=init
-    .then(apply(decideReleaseTicket(core,4,Set(),p,1,BudgetedRework(1),DeadlineOnly,RetryCharged,NoWrapUp)))
-    .then(apply(decideReleaseTicket(core,1,Set(4),p,1,BudgetedRework(1),DeadlineOnly,RetryCharged,NoWrapUp)))
+    .then(apply(decideReleaseTicket(core,4,Set(),p,1,BudgetedRework(1),DeadlineOnly,RetryCharged,NoFinalizer)))
+    .then(apply(decideReleaseTicket(core,1,Set(4),p,1,BudgetedRework(1),DeadlineOnly,RetryCharged,NoFinalizer)))
     .expect(and{tickets.keys()==Set(1,4),tickets.get(1).deps==Set(4),isBlocked(1),allInvariants})
 }
 
 module chuggy_witness_wrapup_none_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(N_TICKETS=1,N_TASKS=1,REWORK_POLICY=BudgetedRework(1),GAS=2,
-    WRAPUP_PRICING=DeadlineOnly, MAX_STAGES=1).* from "../domain"
+    FINALIZATION_PRICING=DeadlineOnly, MAX_STAGES=1).* from "../domain"
   pure val p=[{fanout:1,combinator:UnanimousPass}]
-  run noWrapUpWitness=init
-    .then(apply(decideReleaseTicket(core,2,Set(),p,1,BudgetedRework(1),DeadlineOnly,RetryCharged,NoWrapUp)))
+  run noFinalizerWitness=init
+    .then(apply(decideReleaseTicket(core,2,Set(),p,1,BudgetedRework(1),DeadlineOnly,RetryCharged,NoFinalizer)))
     .then(apply(decideDispatch(core,2))).then(apply(decideTaskDone(core,2,1,Pass)))
     .then(apply(decideWorkReduce(core,2))).then(apply(decideTaskDone(core,2,2,Pass)))
     .then(apply(decideEvalStageReduce(core,2))).expect(and{tickets.get(2).phase==Done,
-      holdingTickets==Set(),allInvariants})
+      allInvariants})
 }

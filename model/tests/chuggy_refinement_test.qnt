@@ -10,8 +10,8 @@ module chuggy_refinement_unit_test {
   pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
   pure val release10: DecisionEvent = ReleaseTicket({
     ticket: 2, deps: Set(), prog: progFlat, workFanout: 1,
-    reworkPolicy: BudgetedRework(1), wrapUpPricing: Budgeted(1),
-    resumePricing: RetryCharged, wrapUp: ExclusiveWrapUp
+    reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+    resumePricing: RetryCharged, finalizer: ManagedFinalizer
   })
   pure val d1 = execDecisionEvent(genesis, release10)
   pure val e1: Entry = { seq: 1, event: release10, rec: d1.rec }
@@ -51,7 +51,7 @@ module chuggy_refinement_unit_test {
     not(decisionEventEnabled(genesis, TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))),
     not(decisionEventEnabled(genesis, ExecutionBlocked({
       ticket: 2, reason: TicketConfigIncompatible }))),
-    not(decisionEventEnabled(genesis, StartWrapUpPreparation(2))),
+    not(decisionEventEnabled(genesis, FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))),
     not(decisionEventEnabled(genesis, ResumeTicket(2)))
   })
 
@@ -62,13 +62,13 @@ module chuggy_refinement_unit_test {
   run journalRefusesInvalidReleasePayloadTest =
     val badDeps: DecisionEvent = ReleaseTicket({
       ticket: 2, deps: Set(99), prog: progFlat, workFanout: 1,
-      reworkPolicy: BudgetedRework(1), wrapUpPricing: Budgeted(1),
-      resumePricing: RetryCharged, wrapUp: ExclusiveWrapUp
+      reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+      resumePricing: RetryCharged, finalizer: ManagedFinalizer
     })
     val badProgram: DecisionEvent = ReleaseTicket({
       ticket: 2, deps: Set(), prog: [], workFanout: 1,
-      reworkPolicy: BudgetedRework(1), wrapUpPricing: Budgeted(1),
-      resumePricing: RetryCharged, wrapUp: ExclusiveWrapUp
+      reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+      resumePricing: RetryCharged, finalizer: ManagedFinalizer
     })
     assert(and {
       not(decisionEventEnabled(genesis, badDeps)),
@@ -102,10 +102,10 @@ module chuggy_refinement_witness_test {
   import chuggy_refinement.* from "../refinement"
 
   pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
-  pure def release(ticket: int, wrapUp: WrapUp): DecisionEvent = ReleaseTicket({
+  pure def release(ticket: int, finalizer: Finalizer): DecisionEvent = ReleaseTicket({
     ticket: ticket, deps: Set(), prog: progFlat, workFanout: 1,
-    reworkPolicy: BudgetedRework(1), wrapUpPricing: Budgeted(1),
-    resumePricing: RetryCharged, wrapUp: wrapUp
+    reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+    resumePricing: RetryCharged, finalizer: finalizer
   })
 
   action stepEmit(event: DecisionEvent, lbl: str): bool =
@@ -118,7 +118,7 @@ module chuggy_refinement_witness_test {
   /// and resumes by spawning a fresh task under the ticket's pinned policy.
   run executionBlockedResumeRecoversTest =
     rinit
-      .then(stepEmit(release(2, ExclusiveWrapUp), "ticket-released"))
+      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(journalStep(ExecutionBlocked({
         ticket: 2, reason: TicketConfigIncompatible })))
@@ -149,24 +149,24 @@ module chuggy_refinement_witness_test {
   /// the irreversible completion.
   run approvalCommitCrashRecoveryTest =
     rinit
-      .then(stepEmit(release(2, ExclusiveWrapUp), "ticket-released"))
+      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(EvalReduce(2), "eval-passed"))
-      .then(stepEmit(StartWrapUpPreparation(2), "wrapup-preparation-started"))
-      .then(stepEmit(WrapUpPrepared({ ticket: 2, approvalRequired: true }),
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }), "wrapup-preparation-started"))
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }),
         "wrapup-awaiting-approval"))
-      .then(stepEmit(WrapUpApproval({ ticket: 2, approved: true }),
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }),
         "wrapup-commit-permitted"))
-      .then(journalStep(WrapUpResolve({ ticket: 2, out: WrapUpCommitted })))
+      .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
         memCore.tickets.get(2).phase == Done,
         journalCompletions(2) == 1,
         worldCompletions(2) == 0,
         not(decisionEventEnabled(memCore,
-          WrapUpResolve({ ticket: 2, out: WrapUpCommitted }))),
+          FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))),
         allDomainInvariants, refinementInvariants
       })
       .then(crashRecoverTo(0))
@@ -185,33 +185,33 @@ module chuggy_refinement_witness_test {
 
   run preparationFailureRemainsReplayableTest =
     rinit
-      .then(stepEmit(release(2, ExclusiveWrapUp), "ticket-released"))
+      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(EvalReduce(2), "eval-passed"))
-      .then(stepEmit(StartWrapUpPreparation(2), "wrapup-preparation-started"))
-      .then(stepEmit(WrapUpPreparationFailed(2),
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }), "wrapup-preparation-started"))
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationFailed }),
         "rework-started wrapup_preparation_failure"))
       .expect(and {
         memCore.tickets.get(2).phase == Working,
-        memCore.tickets.get(2).wrapUpLeft == 0,
+        memCore.tickets.get(2).finalizationLeft == 0,
         allDomainInvariants, refinementInvariants
       })
 
   run conclusiveAbortReturnsToWorkTest =
     rinit
-      .then(stepEmit(release(2, ExclusiveWrapUp), "ticket-released"))
+      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
       .then(stepEmit(Dispatch(2), "dispatch"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(2), "work-passed"))
       .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(EvalReduce(2), "eval-passed"))
-      .then(stepEmit(StartWrapUpPreparation(2), "wrapup-preparation-started"))
-      .then(stepEmit(WrapUpPrepared({ ticket: 2, approvalRequired: false }),
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }), "wrapup-preparation-started"))
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }),
         "wrapup-commit-permitted"))
-      .then(stepEmit(WrapUpResolve({ ticket: 2, out: WrapUpAborted }),
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationFailed }),
         "rework-started wrapup_aborted"))
       .expect(and {
         memCore.tickets.get(2).phase == Working,
@@ -219,9 +219,9 @@ module chuggy_refinement_witness_test {
         allDomainInvariants, refinementInvariants
       })
 
-  run noWrapUpCompletionRecoversTest =
+  run noFinalizerCompletionRecoversTest =
     rinit
-      .then(stepEmit(release(4, NoWrapUp), "ticket-released"))
+      .then(stepEmit(release(4, NoFinalizer), "ticket-released"))
       .then(stepEmit(Dispatch(4), "dispatch"))
       .then(stepEmit(TaskDone({ ticket: 4, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
       .then(stepEmit(WorkReduce(4), "work-passed"))
@@ -236,7 +236,7 @@ module chuggy_refinement_witness_test {
       .then(crashRecoverTo(0))
       .expect(and {
         memCore.tickets.get(4).phase == Done,
-        memCore.tickets.get(4).wrapUp == NoWrapUp,
+        memCore.tickets.get(4).finalizer == NoFinalizer,
         allDomainInvariants, refinementInvariants
       })
 }
@@ -248,8 +248,8 @@ module chuggy_refinement_hazard_test {
   pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
   pure val release10: DecisionEvent = ReleaseTicket({
     ticket: 2, deps: Set(), prog: progFlat, workFanout: 1,
-    reworkPolicy: BudgetedRework(1), wrapUpPricing: Budgeted(1),
-    resumePricing: RetryCharged, wrapUp: ExclusiveWrapUp
+    reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+    resumePricing: RetryCharged, finalizer: ManagedFinalizer
   })
 
   run dispatchEffectFirstDoubleSpendTest =
@@ -279,15 +279,15 @@ module chuggy_refinement_hazard_test {
       .then(journalStep(WorkReduce(2))).then(emitNext)
       .then(journalStep(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
       .then(journalStep(EvalReduce(2))).then(emitNext)
-      .then(journalStep(StartWrapUpPreparation(2))).then(emitNext)
-      .then(journalStep(WrapUpPrepared({ ticket: 2, approvalRequired: false }))).then(emitNext)
-      .then(effectCrash(WrapUpResolve({ ticket: 2, out: WrapUpCommitted })))
+      .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))).then(emitNext)
+      .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))).then(emitNext)
+      .then(effectCrash(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
-        memCore.tickets.get(2).phase == WrapUpCommitting,
+        memCore.tickets.get(2).phase == Finalizing,
         worldCompletions(2) == 1, journalCompletions(2) == 0,
         journalLegal, recoveryComplete, allDomainInvariants
       })
-      .then(journalStep(WrapUpResolve({ ticket: 2, out: WrapUpCommitted })))
+      .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .then(emitNext)
       .expect(and {
         memCore.tickets.get(2).phase == Done,

@@ -265,7 +265,7 @@ module chuggy_refinement {
     N_TASKS = 1,
     REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
-    WRAPUP_PRICING = Budgeted(1),
+    FINALIZATION_PRICING = Budgeted(1),
      MAX_STAGES = 1
   ).* from "./domain"
 
@@ -287,18 +287,14 @@ module chuggy_refinement {
   type DecisionEvent =
       ReleaseTicket({ ticket: int, deps: Set[int], prog: List[Stage],
         workFanout: int, reworkPolicy: ReworkPolicy,
-        wrapUpPricing: WrapUpPricing, resumePricing: RetryPricing,
-        wrapUp: WrapUp })
+        finalizationPricing: FinalizationPricing, resumePricing: RetryPricing,
+        finalizer: Finalizer })
     | Revoke(int)
     | Dispatch(int)
     | TaskDone({ ticket: int, tid: int, verdict: Verdict, result: TaskResultRef })
     | WorkReduce(int)
     | EvalReduce(int)
-    | StartWrapUpPreparation(int)
-    | WrapUpPrepared({ ticket: int, approvalRequired: bool })
-    | WrapUpPreparationFailed(int)
-    | WrapUpApproval({ ticket: int, approved: bool })
-    | WrapUpResolve({ ticket: int, out: WrapUpOutcome })
+    | FinalizationResult({ ticket: int, out: FinalizationOutcome })
     | ExecutionBlocked({ ticket: int, reason: Reason })
     | ResumeTicket(int)
 
@@ -326,17 +322,13 @@ module chuggy_refinement {
   /// function, so they cannot drift.
   pure def execDecisionEvent(c: Core, event: DecisionEvent): Decision = match event {
     | ReleaseTicket(a) => decideReleaseTicket(c, a.ticket, a.deps, a.prog,
-        a.workFanout, a.reworkPolicy, a.wrapUpPricing, a.resumePricing, a.wrapUp)
+        a.workFanout, a.reworkPolicy, a.finalizationPricing, a.resumePricing, a.finalizer)
     | Revoke(j) => decideRevoke(c, j)
     | Dispatch(j) => decideDispatch(c, j)
     | TaskDone(a) => decideTaskDone(c, a.ticket, a.tid, a.verdict)
     | WorkReduce(j) => decideWorkReduce(c, j)
     | EvalReduce(j) => decideEvalStageReduce(c, j)
-    | StartWrapUpPreparation(j) => decideWrapUpStart(c, j)
-    | WrapUpPrepared(a) => decideWrapUpPrepared(c, a.ticket, a.approvalRequired)
-    | WrapUpPreparationFailed(j) => decideWrapUpPreparationFailed(c, j)
-    | WrapUpApproval(a) => decideWrapUpApproval(c, a.ticket, a.approved)
-    | WrapUpResolve(a) => decideWrapUpResolve(c, a.ticket, a.out)
+    | FinalizationResult(a) => decideFinalizationResult(c, a.ticket, a.out)
     | ExecutionBlocked(a) => decideExecutionBlocked(c, a.ticket, a.reason)
     | ResumeTicket(j) => decideResumeTicket(c, j)
   }
@@ -355,9 +347,9 @@ module chuggy_refinement {
         validPrograms.contains(a.prog),
         workFanoutChoices.contains(a.workFanout),
         reworkPolicyChoices.contains(a.reworkPolicy),
-        wrapUpPricingChoices.contains(a.wrapUpPricing),
+        finalizationPricingChoices.contains(a.finalizationPricing),
         resumePricingChoices.contains(a.resumePricing),
-        wrapUpChoices.contains(a.wrapUp)
+        finalizerChoices.contains(a.finalizer)
       }
     | Revoke(j) => revocablesIn(c).contains(j)
     | Dispatch(j) => and { readiesIn(c).contains(j), dispatchableIn(c, j) }
@@ -371,11 +363,7 @@ module chuggy_refinement {
       }
     | WorkReduce(j) => reducibleWorkIn(c).contains(j)
     | EvalReduce(j) => reducibleEvalIn(c).contains(j)
-    | StartWrapUpPreparation(j) => wrapUpStartablesIn(c).contains(j)
-    | WrapUpPrepared(a) => c.tickets.keys().contains(a.ticket) and c.tickets.get(a.ticket).phase == WrapUpPreparing
-    | WrapUpPreparationFailed(j) => c.tickets.keys().contains(j) and c.tickets.get(j).phase == WrapUpPreparing
-    | WrapUpApproval(a) => c.tickets.keys().contains(a.ticket) and c.tickets.get(a.ticket).phase == WrapUpAwaitingApproval
-    | WrapUpResolve(a) => c.tickets.keys().contains(a.ticket) and c.tickets.get(a.ticket).phase == WrapUpCommitting and wrapUpOutcomes.contains(a.out)
+    | FinalizationResult(a) => c.tickets.keys().contains(a.ticket) and c.tickets.get(a.ticket).phase == Finalizing and finalizationOutcomes.contains(a.out)
     | ExecutionBlocked(a) => and {
         taskPhaseIn(c).contains(a.ticket),
         Set(ExecutionPolicyDenied, TicketConfigIncompatible,
@@ -584,13 +572,13 @@ module chuggy_refinement {
     nondet prog = validPrograms.oneOf()
     nondet workFanout_ = workFanoutChoices.oneOf()
     nondet reworkPolicy_ = reworkPolicyChoices.oneOf()
-    nondet wrapUpPricing_ = wrapUpPricingChoices.oneOf()
+    nondet finalizationPricing_ = finalizationPricingChoices.oneOf()
     nondet resumePricing_ = resumePricingChoices.oneOf()
-    nondet wrapUp_ = wrapUpChoices.oneOf()
+    nondet finalizer_ = finalizerChoices.oneOf()
     journalStep(ReleaseTicket({ ticket: j, deps: deps_, prog: prog,
       workFanout: workFanout_, reworkPolicy: reworkPolicy_,
-      wrapUpPricing: wrapUpPricing_, resumePricing: resumePricing_,
-      wrapUp: wrapUp_ }))
+      finalizationPricing: finalizationPricing_, resumePricing: resumePricing_,
+      finalizer: finalizer_ }))
   }
   action actorRevoke = all {
     revocableTickets.size() > 0,
@@ -620,33 +608,11 @@ module chuggy_refinement {
     nondet j = reducibleEval.oneOf()
     journalStep(EvalReduce(j))
   }
-  action actorGateEnter = all {
-    wrapUpStartable.size() > 0,
-    nondet j = wrapUpStartable.oneOf()
-    journalStep(StartWrapUpPreparation(j))
-  }
-  action actorWrapUpPrepared = all {
-    liveTickets.exists(k => tickets.get(k).phase == WrapUpPreparing),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpPreparing).oneOf()
-    nondet approvalRequired = Set(true, false).oneOf()
-    journalStep(WrapUpPrepared({ ticket: j, approvalRequired: approvalRequired }))
-  }
-  action actorWrapUpPreparationFailed = all {
-    liveTickets.exists(k => tickets.get(k).phase == WrapUpPreparing),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpPreparing).oneOf()
-    journalStep(WrapUpPreparationFailed(j))
-  }
-  action actorWrapUpApproval = all {
-    liveTickets.exists(k => tickets.get(k).phase == WrapUpAwaitingApproval),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpAwaitingApproval).oneOf()
-    nondet approved = Set(true, false).oneOf()
-    journalStep(WrapUpApproval({ ticket: j, approved: approved }))
-  }
-  action actorGateResolve = all {
-    liveTickets.exists(k => tickets.get(k).phase == WrapUpCommitting),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpCommitting).oneOf()
-    nondet out = wrapUpOutcomes.oneOf()
-    journalStep(WrapUpResolve({ ticket: j, out: out }))
+  action actorFinalizationResult = all {
+    liveTickets.exists(k => tickets.get(k).phase == Finalizing),
+    nondet j = liveTickets.filter(k => tickets.get(k).phase == Finalizing).oneOf()
+    nondet out = finalizationOutcomes.oneOf()
+    journalStep(FinalizationResult({ ticket: j, out: out }))
   }
   action actorResumeTicket = all {
     retryableEscalated.size() > 0,
@@ -674,25 +640,19 @@ module chuggy_refinement {
     nondet j = reducibleEval.oneOf()
     effectCrash(EvalReduce(j))
   }
-  action hazardGateEnter = all {
-    wrapUpStartable.size() > 0,
-    nondet j = wrapUpStartable.oneOf()
-    effectCrash(StartWrapUpPreparation(j))
-  }
-  action hazardGateResolve = all {
-    liveTickets.exists(k => tickets.get(k).phase == WrapUpCommitting),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpCommitting).oneOf()
-    nondet out = wrapUpOutcomes.oneOf()
-    effectCrash(WrapUpResolve({ ticket: j, out: out }))
+  action hazardFinalizationResult = all {
+    liveTickets.exists(k => tickets.get(k).phase == Finalizing),
+    nondet j = liveTickets.filter(k => tickets.get(k).phase == Finalizing).oneOf()
+    nondet out = finalizationOutcomes.oneOf()
+    effectCrash(FinalizationResult({ ticket: j, out: out }))
   }
 
   /// THE DISCIPLINED MACHINE (journal-then-effect): decisions journal
   /// before anything reaches the world; crashes at any instant.
   action rstep = any {
     actorReleaseTicket, actorRevoke, actorDispatch,
-    actorTaskDone, actorWorkReduce, actorEvalReduce, actorGateEnter,
-    actorWrapUpPrepared, actorWrapUpPreparationFailed, actorWrapUpApproval,
-    actorGateResolve, actorResumeTicket,
+    actorTaskDone, actorWorkReduce, actorEvalReduce, actorFinalizationResult,
+    actorResumeTicket,
     emitNext, crashRecover
   }
 
@@ -702,7 +662,7 @@ module chuggy_refinement {
   /// that single delta breaking the theorems.
   action rstepHazard = any {
     rstep,
-    hazardDispatch, hazardEvalReduce, hazardGateEnter, hazardGateResolve
+    hazardDispatch, hazardEvalReduce, hazardFinalizationResult
   }
 
   // ==========================================================================

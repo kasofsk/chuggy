@@ -48,7 +48,7 @@ module mc_chuggy_directed_deadline {
     N_TASKS = 2,
     REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
-    WRAPUP_PRICING = DeadlineOnly,
+    FINALIZATION_PRICING = DeadlineOnly,
      MAX_STAGES = 2
   ).* from "../domain"
 
@@ -61,11 +61,11 @@ module mc_chuggy_directed_deadline {
     taskDone,
     workReduce,
     evalReduce,
-    wrapUpStart,
-    wrapUpPrepared,
-    wrapUpPreparationFailed,
-    wrapUpApproval,
-    wrapUpResolve,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
     resumeTicket,
     settle
   }
@@ -78,12 +78,12 @@ module mc_chuggy_directed_budgeted {
     N_TASKS = 2,
     REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
-    WRAPUP_PRICING = Budgeted(1),
+    FINALIZATION_PRICING = Budgeted(1),
      MAX_STAGES = 2
   ).* from "../domain"
 
   /// The consts above are mc_chuggy_budgeted's, unchanged. Under Budgeted the
-  /// gate loop spends wrapUpLeft alongside gas, so this is where
+  /// gate loop spends finalizationLeft alongside gas, so this is where
   /// wrapup_budget_exhausted lives and where the rework budget can be spent
   /// out without the gas account emptying first.
   action gateLoopStep = any {
@@ -92,11 +92,11 @@ module mc_chuggy_directed_budgeted {
     taskDone,
     workReduce,
     evalReduce,
-    wrapUpStart,
-    wrapUpPrepared,
-    wrapUpPreparationFailed,
-    wrapUpApproval,
-    wrapUpResolve,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
     resumeTicket,
     settle
   }
@@ -109,13 +109,13 @@ module mc_chuggy_directed_retryfree {
     N_TASKS = 2,
     REWORK_POLICY = BudgetedRework(1),
     GAS = 2,
-    WRAPUP_PRICING = DeadlineOnly,
+    FINALIZATION_PRICING = DeadlineOnly,
      MAX_STAGES = 2
   ).* from "../domain"
 
   /// The consts above are mc_chuggy_retryfree's, unchanged. The arm this
   /// module exists to reach is the PIPELINE resume — a park at Evaluating or
-  /// WrapUp, resumed for nothing — which needs the ticket to reach an
+  /// Finalizer, resumed for nothing — which needs the ticket to reach an
   /// eval-branch or gate-branch wall first.
   action gateLoopStep = any {
     releaseTicket,
@@ -123,11 +123,11 @@ module mc_chuggy_directed_retryfree {
     taskDone,
     workReduce,
     evalReduce,
-    wrapUpStart,
-    wrapUpPrepared,
-    wrapUpPreparationFailed,
-    wrapUpApproval,
-    wrapUpResolve,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
     resumeTicket,
     settle
   }

@@ -24,7 +24,7 @@ module mc_chuggy_budgeted {
     N_TASKS = 2,
     REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
-    WRAPUP_PRICING = Budgeted(1),
+    FINALIZATION_PRICING = Budgeted(1),
      MAX_STAGES = 2
   ).* from "../domain"
 }
@@ -39,7 +39,7 @@ module mc_chuggy_deadline_only {
     N_TASKS = 2,
     REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
-    WRAPUP_PRICING = DeadlineOnly,
+    FINALIZATION_PRICING = DeadlineOnly,
      MAX_STAGES = 2
   ).* from "../domain"
 }
@@ -63,7 +63,7 @@ module mc_chuggy_retryfree {
     N_TASKS = 2,
     REWORK_POLICY = BudgetedRework(1),
     GAS = 2,
-    WRAPUP_PRICING = DeadlineOnly,
+    FINALIZATION_PRICING = DeadlineOnly,
      MAX_STAGES = 2
   ).* from "../domain"
 }

@@ -17,8 +17,8 @@
 /// refines unrestricted choice. Work runs one task set per cycle. Evaluation
 /// runs the ticket's authored program, stage by stage, short-circuiting on a
 /// failure into the rework economy. Then the ticket finishes according to its
-/// authored wrap-up kind: a NoWrapUp ticket's effect already happened during
-/// work, so passing evaluation completes it outright; a ExclusiveWrapUp ticket
+/// authored wrap-up kind: a NoFinalizer ticket's effect already happened during
+/// work, so passing evaluation completes it outright; a ManagedFinalizer ticket
 /// queues for a lease on its named resource, holds it while its step runs,
 /// and releases it by leaving the phase.
 ///
@@ -70,7 +70,7 @@ module chuggy_domain {
   /// stageWeight radix needs exactly this cap.
   const N_TASKS: int
   /// Eval-rework pricing (the bound is a POLICY PARAMETER on the
-  /// WrapUpPricing pattern, not a core-entity constant — BudgetedRework(n) is the
+  /// FinalizationPricing pattern, not a core-entity constant — BudgetedRework(n) is the
   /// only branch for now, argued at the type in measure.qnt; the account
   /// it grants is middleware-owned policy state, documented at
   /// Ticket.reworkLeft).
@@ -81,7 +81,7 @@ module chuggy_domain {
   const GAS: int
   /// Gate-rework pricing (a parameter, not a constant; both
   /// branches instantiated in mc/mc_chuggy.qnt).
-  const WRAPUP_PRICING: WrapUpPricing
+  const FINALIZATION_PRICING: FinalizationPricing
   /// Operator-retry metering (configurable per deployment,
   /// default charge — mc instantiates RetryCharged, plus a RetryFree
   /// instance so the free-resume churn path stays exercised).
@@ -95,13 +95,13 @@ module chuggy_domain {
   /// numeric dependency edges. Production ids are opaque and unbounded.
   pure val ticketIdUniverse: Set[int] = 1.to(N_TICKETS * 2)
 
-  pure val wrapUpChoices: Set[WrapUp] = Set(NoWrapUp, ExclusiveWrapUp)
+  pure val finalizerChoices: Set[Finalizer] = Set(NoFinalizer, ManagedFinalizer)
   pure val workFanoutChoices: Set[int] = 1.to(N_TASKS)
   pure val reworkPolicyChoices: Set[ReworkPolicy] =
     0.to(reworkBudget(REWORK_POLICY)).map(n => BudgetedRework(n))
-  pure val wrapUpPricingChoices: Set[WrapUpPricing] =
+  pure val finalizationPricingChoices: Set[FinalizationPricing] =
     Set(DeadlineOnly).union(
-      0.to(wrapUpBudget(WRAPUP_PRICING)).map(n => Budgeted(n)))
+      0.to(finalizationBudget(FINALIZATION_PRICING)).map(n => Budgeted(n)))
   pure val resumePricingChoices: Set[RetryPricing] = Set(RetryCharged, RetryFree)
 
   /// The measure's bounds, from this instance's consts.
@@ -109,7 +109,7 @@ module chuggy_domain {
     reworkPolicy: REWORK_POLICY,
     nTasks: N_TASKS,
     maxStages: MAX_STAGES,
-    wrapUpPricing: WRAPUP_PRICING
+    finalizationPricing: FINALIZATION_PRICING
   }
 
   /// The stage vocabulary an author may draw from: any fan-out 1..N_TASKS,
@@ -147,22 +147,22 @@ module chuggy_domain {
   /// riding the release, immutable after, like deps and the program.
   pure def freshTicket(
       deps_: Set[int], prog: List[Stage], workFanout_: int,
-      reworkPolicy_: ReworkPolicy, wrapUpPricing_: WrapUpPricing,
-      resumePricing_: RetryPricing, wrapUp_: WrapUp): Ticket = {
+      reworkPolicy_: ReworkPolicy, finalizationPricing_: FinalizationPricing,
+      resumePricing_: RetryPricing, finalizer_: Finalizer): Ticket = {
     phase: Pending,
     deps: deps_,
     program: prog,
-    wrapUp: wrapUp_,
+    finalizer: finalizer_,
     artifact: NoArtifact,
     workFanout: workFanout_,
     reworkPolicy: reworkPolicy_,
-    wrapUpPricing: wrapUpPricing_,
+    finalizationPricing: finalizationPricing_,
     resumePricing: resumePricing_,
     tasks: Set(),
     record: [],
     spawned: 0,
     reworkLeft: reworkBudget(reworkPolicy_),
-    wrapUpLeft: wrapUpBudget(wrapUpPricing_),
+    finalizationLeft: finalizationBudget(finalizationPricing_),
     gasLeft: GAS,
     resumeAt: NoResume,
     reason: NoReason,
@@ -221,23 +221,23 @@ module chuggy_domain {
   ///
   /// The release carries the ticket's WRAP-UP CHOICE last — whether
   /// completion needs a lease, and on which resource. Callers guarantee
-  /// wrapUp_ ∈ wrapUpChoices (the `release` action draws from exactly that
+  /// finalizer_ ∈ finalizerChoices (the `release` action draws from exactly that
   /// set), so a lease on a resource outside the universe is refused at
-  /// authoring time like an out-of-universe target (wrapUpWellFormed makes
+  /// authoring time like an out-of-universe target (finalizerWellFormed makes
   /// the refusal durable). It is the draw that decides whether the ticket
-  /// ever reaches a wrap-up phase at all: NoWrapUp completes on its passing
+  /// ever reaches a wrap-up phase at all: NoFinalizer completes on its passing
   /// evaluation and takes no lease (noLeaseWithoutAKind). Immutable after
   /// release, like deps and the program.
   /// The first domain decision for a ticket. The id is allocated by native
   /// release candidate authoring, may be sparse, and is never minted or ordered by Core.
   pure def decideReleaseTicket(
       c: Core, j: int, deps_: Set[int], prog: List[Stage], workFanout_: int,
-      reworkPolicy_: ReworkPolicy, wrapUpPricing_: WrapUpPricing,
-      resumePricing_: RetryPricing, wrapUp_: WrapUp): Decision =
+      reworkPolicy_: ReworkPolicy, finalizationPricing_: FinalizationPricing,
+      resumePricing_: RetryPricing, finalizer_: Finalizer): Decision =
     { rec: { label: "ticket-released", transitions: [], effects: []},
       post: { ...c, tickets: c.tickets.put(j,
-        freshTicket(deps_, prog, workFanout_, reworkPolicy_, wrapUpPricing_,
-          resumePricing_, wrapUp_)) } }
+        freshTicket(deps_, prog, workFanout_, reworkPolicy_, finalizationPricing_,
+          resumePricing_, finalizer_)) } }
 
   /// Revoke + THE CASCADE. Table provenance for the revoke
   /// edge itself: lines 47-48 `(_, Revoked) => true` — every non-terminal
@@ -319,13 +319,13 @@ module chuggy_domain {
   pure def revocableIn(c: Core, j: int): bool =
     c.tickets.get(j).phase != Done and
       c.tickets.get(j).phase != Revoked and
-      c.tickets.get(j).phase != WrapUpCommitting
+      c.tickets.get(j).phase != Finalizing
 
   /// What one operator resume costs by flavor. One decider —
   /// decideResumeTicket — carries every resume and this table prices it:
   ///   ResumeWorking    — 1 always: entry to Working always meters (standing
   ///                 rule 2), even under RetryFree.
-  ///   ResumeEvaluating/ResumeWrapUp — per ticket-local resumePricing (default
+  ///   ResumeEvaluating/ResumeFinalizing — per ticket-local resumePricing (default
   ///                 charge); RetryFree makes these the reproducible
   ///                 livelock.
   /// NoResume falls through the wildcard but is unreachable: retryableIn
@@ -420,15 +420,6 @@ module chuggy_domain {
     c.tickets.keys().filter(j =>
       c.tickets.get(j).phase == Evaluating and outstandingCount(c.tickets.get(j).tasks) == 0)
 
-  /// Enqueued tickets whose project's gate is free (the depth-1 refusal).
-  pure def wrapUpStartablesIn(c: Core): Set[int] =
-    c.tickets.keys().filter(j => wrapUpStartableIn(c, j))
-
-  /// The occupied gate slots.
-  pure def holdingIn(c: Core): Set[int] =
-    c.tickets.keys().filter(j => Set(WrapUpPreparing, WrapUpAwaitingApproval,
-      WrapUpCommitting).contains(c.tickets.get(j).phase))
-
   pure def doneIn(c: Core): Set[int] =
     c.tickets.keys().filter(j => c.tickets.get(j).phase == Done)
 
@@ -470,19 +461,6 @@ module chuggy_domain {
   pure def deliverableTaskIds(c: Core, j: int): Set[int] =
     firstTaskId.to(nextTaskId(c.tickets.get(j)) - 1)
 
-  // --- The lease guards ----------------------------------------------------
-
-  /// Is the project's repository slot unheld? Occupancy is derived from the
-  /// preparing, awaiting-approval and committing phases.
-  pure def leaseFreeIn(c: Core): bool = holdingIn(c).size() == 0
-
-  /// May ticket j leave the wrap-up queue and take the single project-local
-  /// repository slot? Shared by the machine and witness drivers.
-  pure def wrapUpStartableIn(c: Core, j: int): bool = and {
-    c.tickets.get(j).phase == WrapUpQueued,
-    leaseFreeIn(c)
-  }
-
   /// Park a ticket on the human desk, naming the wall (the termination
   /// requirement commits the terminal, not the names) and where Retry
   /// resumes. The open desk task
@@ -513,7 +491,7 @@ module chuggy_domain {
   /// conforms with any policy (LLM-driven, priority, whatever) because
   /// every policy refines unrestricted choice among Ready tickets. No
   /// policy-hook parameter is introduced: with exactly one honest default
-  /// (unrestricted nondet) a WrapUpPricing-style const would have one
+  /// (unrestricted nondet) a FinalizationPricing-style const would have one
   /// branch and nothing to compare — it enters only when a real competing
   /// policy needs modeling. No queue, no fairness — standing non-goals.
   pure def decideDispatch(c: Core, j: int): Decision =
@@ -582,7 +560,7 @@ module chuggy_domain {
   ///     evaluator passing and a later stage remains: create the next
   ///     stage's evaluator tasks"). Descends: stagesLeft -1 dominates the
   ///     spawn (measure.qnt, the stage digit).
-  ///   - the FINAL stage passes -> the program passed: WrapUpQueued.
+  ///   - the FINAL stage passes -> the program passed: Finalizing.
   ///   - stage FAILS -> SHORT-CIRCUIT: the later stages are not created —
   ///     they are skipped, not failed, so no task records exist for them —
   ///     and the eval reduce proceeds immediately (the
@@ -614,21 +592,21 @@ module chuggy_domain {
           withTicket(c, j, spawnOn(retired, Evaluation(s + 1), fan)),
           j, Evaluating, "eval-stage-passed", ["SpawnEvalTasks"])
       else
-        // THE WRAP-UP ROUTE (design 002). A NoWrapUp ticket's effect already
+        // THE WRAP-UP ROUTE (design 002). A NoFinalizer ticket's effect already
         // happened during work, so evaluation passing IS its completion and
         // it enters neither wrap-up phase — it never queues for a lease it
         // does not need, and never records a wrap-up it did not perform.
-        match jb.wrapUp {
+        match jb.finalizer {
           // On the RETIRED ticket, not the live one: completeTicket does not
           // retire a task set, because on the lease path the set was already
           // retired when the ticket enqueued. Skipping the wrap-up phases
           // skips that retirement too, and a Done ticket holding live eval
           // tasks breaks tasksWellFormed. Caught by the random layer.
-          | NoWrapUp => completeTicket(withTicket(c, j, retired), j)
-          | ExclusiveWrapUp =>
+          | NoFinalizer => completeTicket(withTicket(c, j, retired), j)
+          | ManagedFinalizer =>
             move(
               withTicket(c, j, retired),
-              j, WrapUpQueued, "eval-passed", [])
+              j, Finalizing, "eval-passed", ["RunFinalizer"])
         }
     else if (jb.reworkLeft > 0 and jb.gasLeft > 0)
       move(
@@ -643,52 +621,32 @@ module chuggy_domain {
       escalate(c, j, ResumeEvaluating, GasExhausted,
         "ticket-escalated gas_exhausted")
 
-  /// Conclusive outcomes after an irreversible commit permit. Ambiguity is
-  /// retained below Core and is therefore not an outcome here.
-  pure def wrapUpOutcomes: Set[WrapUpOutcome] =
-    Set(WrapUpCommitted, WrapUpAborted)
+  /// A finalizer reports only a conclusive domain outcome. Queueing,
+  /// preparation, approval, permits and reconciliation are focused durable
+  /// operational records; Core does not learn a finalizer implementation.
+  pure def finalizationOutcomes: Set[FinalizationOutcome] =
+    Set(FinalizationSucceeded, FinalizationFailed)
 
-  /// Acquire the project-local repository slot and request reversible
-  /// preparation. Infrastructure request identity stays below Core.
-  pure def decideWrapUpStart(c: Core, j: int): Decision =
-    move(c, j, WrapUpPreparing, "wrapup-preparation-started", ["PrepareWrapUp"])
-
-  /// A verified prepared candidate either needs native approval or advances
-  /// directly to the irreversible commit-permitted phase.
-  pure def decideWrapUpPrepared(c: Core, j: int, approvalRequired: bool): Decision =
-    if (approvalRequired)
-      move(c, j, WrapUpAwaitingApproval, "wrapup-awaiting-approval", ["OpenGate"])
-    else
-      move(c, j, WrapUpCommitting, "wrapup-commit-permitted", ["CommitWrapUp"])
-
-  pure def wrapUpFailure(c: Core, j: int, label: str): Decision =
+  pure def finalizerFailure(c: Core, j: int, label: str): Decision =
     val jb = c.tickets.get(j)
-    match jb.wrapUpPricing {
+    match jb.finalizationPricing {
       | Budgeted(_) =>
-        if (jb.wrapUpLeft > 0 and jb.gasLeft > 0)
+        if (jb.finalizationLeft > 0 and jb.gasLeft > 0)
           move(withTicket(c, j, { ...spawnOn(jb, Work, jb.workFanout),
-              wrapUpLeft: jb.wrapUpLeft - 1, gasLeft: jb.gasLeft - 1 }),
+              finalizationLeft: jb.finalizationLeft - 1, gasLeft: jb.gasLeft - 1 }),
             j, Working, label, ["SpawnWorkTasks"])
-        else if (jb.wrapUpLeft == 0)
-          escalate(c, j, ResumeWrapUp, WrapUpBudgetExhausted,
-            "ticket-escalated wrapup_budget_exhausted")
-        else escalate(c, j, ResumeWrapUp, GasExhausted,
+        else if (jb.finalizationLeft == 0)
+          escalate(c, j, ResumeFinalizing, FinalizationBudgetExhausted,
+            "ticket-escalated finalization_budget_exhausted")
+        else escalate(c, j, ResumeFinalizing, GasExhausted,
           "ticket-escalated gas_exhausted")
       | DeadlineOnly =>
         if (jb.gasLeft > 0)
           move(withTicket(c, j, { ...spawnOn(jb, Work, jb.workFanout),
               gasLeft: jb.gasLeft - 1 }), j, Working, label, ["SpawnWorkTasks"])
-        else escalate(c, j, ResumeWrapUp, GasExhausted,
+        else escalate(c, j, ResumeFinalizing, GasExhausted,
           "ticket-escalated gas_exhausted")
     }
-
-  pure def decideWrapUpPreparationFailed(c: Core, j: int): Decision =
-    wrapUpFailure(c, j, "rework-started wrapup_preparation_failure")
-
-  pure def decideWrapUpApproval(c: Core, j: int, approved: bool): Decision =
-    if (approved)
-      move(c, j, WrapUpCommitting, "wrapup-commit-permitted", ["CommitWrapUp"])
-    else wrapUpFailure(c, j, "rework-started wrapup_approval_rejected")
 
   /// THE COMPLETION: the ticket reaches Done. Native desk state is updated
   /// transactionally with the journal, so no external completion effect is
@@ -702,22 +660,16 @@ module chuggy_domain {
         { ...c.tickets.get(j), phase: Done,
           completions: c.tickets.get(j).completions + 1 }) }
 
-  /// A conclusive result resolves only from WrapUpCommitting. A success is
+  /// A conclusive result resolves only from Finalizing. A success is
   /// the ticket's single completion
   /// (completeTicket: ghost `completions` counts it, one per ticket). A
-  /// wrap-up failure re-enters work priced per WRAPUP_PRICING exactly as
-  /// Budgeted(n) spends the wrap-up account AND gas,
-  /// DeadlineOnly spends gas alone (a documented gate-loop livelock is
-  /// exactly why the pricing exists, R5); either wall parks
-  /// the ticket with its own name, resumeAt ResumeWrapUp re-ENQUEUING (the
-  /// resume returns to WrapUpQueued — the queue — never into the gate).
-  /// Failure and walls free the lease by phase. A step's internals — stages,
-  /// failure classes, a fix-and-retry path — stay below this grain: the step
-  /// is one abstract verdict.
-  pure def decideWrapUpResolve(c: Core, j: int, out: WrapUpOutcome): Decision =
+  /// finalization failure re-enters work priced per FINALIZATION_PRICING.
+  /// A finalizer's internals and recovery protocol stay below this grain: it
+  /// reports one abstract, conclusive verdict.
+  pure def decideFinalizationResult(c: Core, j: int, out: FinalizationOutcome): Decision =
     match out {
-      | WrapUpCommitted => completeTicket(c, j)
-      | WrapUpAborted => wrapUpFailure(c, j, "rework-started wrapup_aborted")
+      | FinalizationSucceeded => completeTicket(c, j)
+      | FinalizationFailed => finalizerFailure(c, j, "rework-started finalization_failed")
     }
 
   /// Infrastructure cannot execute the current logical task set. Retire its
@@ -741,8 +693,8 @@ module chuggy_domain {
   ///     evaluation against the intact artifact with a fresh eval fan-out;
   ///     stages are never resumed mid-sequence. New ids: the retried tasks
   ///     are NEW records, the failed ones stay retired in the log.
-  ///   ResumeWrapUp: re-enqueue the wrap-up.
-  /// Under RetryFree the Evaluating/WrapUp resumes join the CHURN set —
+  ///   ResumeFinalizing: request a fresh finalization attempt.
+  /// Under RetryFree the Evaluating/Finalizing resumes join the CHURN set —
   /// a known livelock kept reproducible by configuration.
   pure def decideResumeTicket(c: Core, j: int): Decision =
     val jb = c.tickets.get(j)
@@ -756,8 +708,8 @@ module chuggy_domain {
       | ResumeEvaluating =>
         move(withTicket(c, j, spawnOn(resumed, Evaluation(0), jb.program[0].fanout)),
           j, Evaluating, "ticket-resumed", ["SpawnEvalTasks"])
-      | ResumeWrapUp =>
-        move(withTicket(c, j, resumed), j, WrapUpQueued, "ticket-resumed", [])
+      | ResumeFinalizing =>
+        move(withTicket(c, j, resumed), j, Finalizing, "ticket-resumed", ["RunFinalizer"])
       | NoResume =>
         // Unreachable: retryableIn refuses a ticket with no modeled resume
         // (the dependency_revoked wall — its only exit is revoke).
@@ -861,14 +813,7 @@ module chuggy_domain {
   val taskPhaseTickets: Set[int] = taskPhaseIn(core)
   val reducibleWork: Set[int] = reducibleWorkIn(core)
   val reducibleEval: Set[int] = reducibleEvalIn(core)
-  /// The wrap-up QUEUE, derived: enqueued tickets whose
-  /// dequeue the gate serializes. Deliberately unordered — see wrapUpStart.
-  val wrapUpTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == WrapUpQueued)
-  /// Enqueued tickets whose project's gate is FREE — the dequeue-enabled set
-  /// (wrapUpStartableIn is the shared guard; the depth-1 refusal).
-  val wrapUpStartable: Set[int] = wrapUpStartablesIn(core)
-  /// The occupied gate slots (at most one per project — leaseExclusive).
-  val holdingTickets: Set[int] = holdingIn(core)
+  val finalizerTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == Finalizing)
   val doneTickets: Set[int] = doneIn(core)
   /// Parked tickets the operator may Retry (retryableIn: a modeled resume
   /// exists and is affordable). Under RetryCharged a charging resume with
@@ -908,7 +853,7 @@ module chuggy_domain {
     N_TICKETS >= 1,         // the release bound must admit at least one ticket
     MAX_STAGES >= 1,     // at least one authorable program must exist
     reworkBudget(REWORK_POLICY) >= 0,
-    wrapUpBudget(WRAPUP_PRICING) >= 0,
+    finalizationBudget(FINALIZATION_PRICING) >= 0,
     tickets' = Map(),
     lastStep' = { label: "init", transitions: [], effects: []},
     prevMeasure' = 0,
@@ -921,7 +866,7 @@ module chuggy_domain {
   /// dependable existing tickets, a well-formed evaluation program and an
   /// immutable ticket-local policy. The final draw is the wrap-up choice,
   /// which decides whether this
-  /// ticket ever reaches a wrap-up phase — a NoWrapUp release completes on
+  /// ticket ever reaches a wrap-up phase — a NoFinalizer release completes on
   /// its passing evaluation and takes no lease. AUTHORING
   /// set in the measure: climbs by the fresh Pending's whole ticketMeasure,
   /// bounded by N_TICKETS.
@@ -932,11 +877,11 @@ module chuggy_domain {
     nondet prog = validPrograms.oneOf()
     nondet workFanout_ = workFanoutChoices.oneOf()
     nondet reworkPolicy_ = reworkPolicyChoices.oneOf()
-    nondet wrapUpPricing_ = wrapUpPricingChoices.oneOf()
+    nondet finalizationPricing_ = finalizationPricingChoices.oneOf()
     nondet resumePricing_ = resumePricingChoices.oneOf()
-    nondet wrapUp_ = wrapUpChoices.oneOf()
+    nondet finalizer_ = finalizerChoices.oneOf()
     apply(decideReleaseTicket(core, j, deps_, prog, workFanout_, reworkPolicy_,
-      wrapUpPricing_, resumePricing_, wrapUp_))
+      finalizationPricing_, resumePricing_, finalizer_))
   }
 
   /// Author revokes any non-terminal ticket; the atomic
@@ -991,10 +936,10 @@ module chuggy_domain {
   /// acting on a stale VIEW — is exactly the deferred §4 refinement layer
   /// (reconcile vs journaled-actor), not this shared domain layer. the
   /// A sharper corner: a ticket revoked
-  /// OUT of WrapUpQueued (enqueued) or WrapUpAwaitingApproval (the gate mid-validation) could
+  /// OUT of Finalizing (enqueued) or Finalizing (the gate mid-validation) could
   /// race an in-flight merge in the real system — in-model
   /// revokedNeverCompletes holds structurally (a revoked ticket leaves
-  /// holdingTickets/wrapUpStartable, so neither wrap-up action can resolve
+  /// holdingTickets/finalizerStartable, so neither wrap-up action can resolve
   /// it, and the revoke frees the slot by phase); the real revoke/merge
   /// race — the candidate already advancing when the revoke lands — is
   /// record-vs-effect atomicity, the §4 refinement layer.
@@ -1021,46 +966,13 @@ module chuggy_domain {
     apply(decideEvalStageReduce(core, j))
   }
 
-  /// Select an enqueued ticket when the project-local repository slot is
-  /// free and begin reversible preparation. Queue ordering remains an
-  /// infrastructure policy outside Core.
-  action wrapUpStart = all {
-    wrapUpStartable.size() > 0,
-    nondet j = wrapUpStartable.oneOf()
-    apply(decideWrapUpStart(core, j))
-  }
-
-  action wrapUpPrepared = all {
-    liveTickets.exists(k => tickets.get(k).phase == WrapUpPreparing),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpPreparing).oneOf()
-    nondet approvalRequired = Set(true, false).oneOf()
-    apply(decideWrapUpPrepared(core, j, approvalRequired))
-  }
-
-  action wrapUpPreparationFailed = all {
-    liveTickets.exists(k => tickets.get(k).phase == WrapUpPreparing),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpPreparing).oneOf()
-    apply(decideWrapUpPreparationFailed(core, j))
-  }
-
-  action wrapUpApproval = all {
-    liveTickets.exists(k => tickets.get(k).phase == WrapUpAwaitingApproval),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpAwaitingApproval).oneOf()
-    nondet approved = Set(true, false).oneOf()
-    apply(decideWrapUpApproval(core, j, approved))
-  }
-
-  /// THE GATE RESOLVES: the occupant's candidate
-  /// was built against a MOVED branch (WrapUpAwaitingApproval encodes the choice — no
-  /// stored flag), so the outcome draws from wrapUpOutcomes(true): the
-  /// the re-validated artifact completes (WOk) or the attempt fails and
-  /// the eviction prices per WRAPUP_PRICING. Either way the slot frees by
-  /// phase.
-  action wrapUpResolve = all {
-    liveTickets.exists(k => tickets.get(k).phase == WrapUpCommitting),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == WrapUpCommitting).oneOf()
-    nondet out = wrapUpOutcomes.oneOf()
-    apply(decideWrapUpResolve(core, j, out))
+  /// The external finalizer returns one conclusive domain result. Queueing,
+  /// approval, permits and implementation are durable operational state.
+  action finalizationResult = all {
+    liveTickets.exists(k => tickets.get(k).phase == Finalizing),
+    nondet j = liveTickets.filter(k => tickets.get(k).phase == Finalizing).oneOf()
+    nondet out = finalizationOutcomes.oneOf()
+    apply(decideFinalizationResult(core, j, out))
   }
 
   action executionBlocked = all {
@@ -1096,11 +1008,7 @@ module chuggy_domain {
     taskDone,
     workReduce,
     evalReduce,
-    wrapUpStart,
-    wrapUpPrepared,
-    wrapUpPreparationFailed,
-    wrapUpApproval,
-    wrapUpResolve,
+    finalizationResult,
     executionBlocked,
     resumeTicket,
     settle
@@ -1135,8 +1043,7 @@ module chuggy_domain {
   /// REVOKED NEVER COMPLETES: a revoked ticket
   /// has emitted no completion effect — and never will: Revoked is absorbing
   /// (terminalsAbsorbing), no decider touches a revoked
-  /// ticket's `completions`, and revoke from WrapUpQueued clears the ticket OUT of the
-  /// wrap-up boundary before any effect fires. Stated as its own named
+  /// ticket's `completions`. Finalizing is deliberately not revocable. Stated as its own named
   /// invariant because it is the model's exclusivity half, though
   /// state-wise it is a corollary of completionExclusive (completions = 1 iff
   /// Done, completions <= 1, Revoked != Done ⇒ completions = 0) — same
@@ -1144,16 +1051,10 @@ module chuggy_domain {
   val revokedNeverCompletes: bool = liveTickets.forall(j =>
     (tickets.get(j).phase == Revoked) implies (tickets.get(j).completions == 0))
 
-  /// At most one ticket holds the project's sole repository slot.
-  val leaseExclusive: bool = holdingTickets.size() <= 1
-
-  /// A NoWrapUp ticket never enters the repository protocol.
-  val noLeaseWithoutAKind: bool = liveTickets.forall(j =>
-    (tickets.get(j).wrapUp == NoWrapUp) implies and {
-      tickets.get(j).phase != WrapUpQueued,
-      tickets.get(j).phase != WrapUpPreparing,
-      tickets.get(j).phase != WrapUpAwaitingApproval,
-      tickets.get(j).phase != WrapUpCommitting
+  /// A NoFinalizer ticket never enters Finalizing.
+  val noFinalizationWithoutAKind: bool = liveTickets.forall(j =>
+    (tickets.get(j).finalizer == NoFinalizer) implies and {
+      tickets.get(j).phase != Finalizing
     })
 
   /// A COMPLETED TICKET PRODUCED SOMETHING (design 002). Deliberately the
@@ -1167,8 +1068,8 @@ module chuggy_domain {
     (tickets.get(j).phase == Done) implies (tickets.get(j).artifact != NoArtifact))
 
   /// Every released ticket carries one supported wrap-up kind.
-  val wrapUpWellFormed: bool = liveTickets.forall(j =>
-    wrapUpChoices.contains(tickets.get(j).wrapUp))
+  val finalizerWellFormed: bool = liveTickets.forall(j =>
+    finalizerChoices.contains(tickets.get(j).finalizer))
 
   /// The two absorbing terminals never transition OUT. Checked against the
   /// observed step record: no transition ever leaves Done or Revoked.
@@ -1196,10 +1097,10 @@ module chuggy_domain {
 
   /// The gate-budget wall exists only under Budgeted pricing (the wall
   /// vocabulary is carried; the pricing is a parameter).
-  val wrapUpWallNamed: bool = liveTickets.forall(j =>
-    match tickets.get(j).wrapUpPricing {
+  val finalizerWallNamed: bool = liveTickets.forall(j =>
+    match tickets.get(j).finalizationPricing {
       | Budgeted(_) => true
-      | DeadlineOnly => tickets.get(j).reason != WrapUpBudgetExhausted
+      | DeadlineOnly => tickets.get(j).reason != FinalizationBudgetExhausted
     })
 
   /// Every account stays a resource: bounded below by 0 (nothing
@@ -1214,8 +1115,8 @@ module chuggy_domain {
     tickets.get(j).gasLeft >= 0, tickets.get(j).gasLeft <= GAS,
     tickets.get(j).reworkLeft >= 0,
     tickets.get(j).reworkLeft <= reworkBudget(tickets.get(j).reworkPolicy),
-    tickets.get(j).wrapUpLeft >= 0,
-    tickets.get(j).wrapUpLeft <= wrapUpBudget(tickets.get(j).wrapUpPricing)
+    tickets.get(j).finalizationLeft >= 0,
+    tickets.get(j).finalizationLeft <= finalizationBudget(tickets.get(j).finalizationPricing)
   })
 
   /// The LIVE task set is exactly the current phase's anatomy (this is
@@ -1525,7 +1426,7 @@ module chuggy_domain {
         lastStep.transitions.foldl(false, (isFree, t) => or {
           isFree,
           and {
-            Set(Evaluating, WrapUpQueued).contains(t.to),
+            Set(Evaluating, Finalizing).contains(t.to),
             tickets.get(t.ticket).resumePricing == RetryFree
           }
         })
@@ -1552,7 +1453,7 @@ module chuggy_domain {
   val measureDescends: bool = and { measureNonNegative, stepDescends }
 
   /// ANTI-VACUITY WITNESS, not an invariant of the machine: "no
-  /// RetryFree ticket resume into a PIPELINE phase (Evaluating/WrapUp)
+  /// RetryFree ticket resume into a PIPELINE phase (Evaluating/Finalizer)
   /// ever climbs
   /// the measure". EXPECTED TO BE VIOLATED on the RetryFree instance
   /// (the model gate proves it deterministically by the free-climb machine
@@ -1568,7 +1469,7 @@ module chuggy_domain {
       lastStep.label == "ticket-resumed",
       lastStep.transitions.foldl(false, (b, t) =>
         b or and {
-          Set(Evaluating, WrapUpQueued).contains(t.to),
+          Set(Evaluating, Finalizing).contains(t.to),
           tickets.get(t.ticket).resumePricing == RetryFree
         }),
       currentMeasure > prevMeasure
@@ -1607,13 +1508,13 @@ module chuggy_domain {
     revokedNeverCompletes,
 
 
-    leaseExclusive,
-    noLeaseWithoutAKind,
+    noFinalizationWithoutAKind,
+    noFinalizationWithoutAKind,
     artifactWellFormed,
-    wrapUpWellFormed,
+    finalizerWellFormed,
     terminalsAbsorbing,
     deskConsistent,
-    wrapUpWallNamed,
+    finalizerWallNamed,
     accountsBounded,
     tasksWellFormed,
     recordWellFormed,

@@ -11,7 +11,7 @@
 /// WHAT THE MEASURE READS, most significant digit first:
 ///   1. gasLeft      the required account, charged on every entry to Working
 ///                   and on metered operator retries. Never refunded.
-///   2. wrapUpLeft   the wrap-up account, non-zero only under Budgeted
+///   2. finalizationLeft   the wrap-up account, non-zero only under Budgeted
 ///                   pricing.
 ///   3. reworkLeft   the eval-rework account, granted by the rework policy.
 ///   4. micro        within-cycle progress: phase rank, then stagesLeft,
@@ -88,9 +88,9 @@
 ///       the rung set moves the ceiling, and the weight follows.
 /// The domination chain above micro is unchanged in shape: micro <
 /// microBound, so one unit of reworkLeft outweighs any within-cycle climb
-/// (radix microBound), one unit of wrapUpLeft outweighs any reworkLeft refill
+/// (radix microBound), one unit of finalizationLeft outweighs any reworkLeft refill
 /// (radix reworkBudget), and one unit of gas outweighs everything below it
-/// (radix wrapUpBudget). Every digit stays strictly below its radix, so the
+/// (radix finalizationBudget). Every digit stays strictly below its radix, so the
 /// flattened integer order IS the lexicographic order.
 ///
 /// DESCENT TABLE — which transitions descend, and by which account.
@@ -137,8 +137,8 @@
 ///                                       which this model trusts rather
 ///                                       than models)
 ///   eval-passed (the FINAL stage        rank 5->4 AND stagesLeft 1->0 (the
-///     passes)                             ticket enters WrapUpQueued —
-///                                         WrapUpQueued is the queued state)
+///     passes)                             ticket enters Finalizing —
+///                                         Finalizing is the queued state)
 ///   wrapup-preparation-started          rank 4->3; the ticket takes the
 ///                                         project-local repository slot
 ///   wrapup-awaiting-approval            rank 3->2
@@ -149,12 +149,12 @@
 ///                                         dominated by the account drop)
 ///   ticket-escalated rework_budget_exhausted rank 3->0 (and stage digit ->0)
 ///   ticket-escalated gas_exhausted         rank {6,5,4,3,2,1}->0
-///   ticket-done                            rank {5,1}->0 (5: a NoWrapUp
+///   ticket-done                            rank {5,1}->0 (5: a NoFinalizer
 ///                                       ticket, whose passing evaluation IS
 ///                                       its completion — it enters neither
 ///                                       wrap-up phase; 1: a conclusive
 ///                                       permitted commit)
-///   rework-started wrapup_*             gas -1 (AND wrapUpLeft -1 when
+///   rework-started wrapup_*             gas -1 (AND finalizationLeft -1 when
 ///                                       Budgeted); failure leaves preparing,
 ///                                       approval, or committing (rank
 ///                                       {3,2,1}->6 climb + respawn, dominated
@@ -163,12 +163,12 @@
 ///   ticket-escalated execution_blocked rank {6,5}->0
 ///   ticket-resumed, whenever it charges gas -1 (dominates the rank climb
 ///     gas (ResumeWorking always — standing     back to 4/3/2 + respawn — for the
-///     rule 2; ResumeEvaluating/ResumeWrapUp        ResumeEvaluating resume that includes
+///     rule 2; ResumeEvaluating/ResumeFinalizing        ResumeEvaluating resume that includes
 ///     under RetryCharged)                 the stage digit reappearing at L:
 ///                                         the whole climb is < microBound,
-///                                         which gas outweighs; ResumeWrapUp
+///                                         which gas outweighs; ResumeFinalizing
 ///                                         re-ENQUEUES — resumes to
-///                                         WrapUpQueued, never into the gate)
+///                                         Finalizing, never into the gate)
 ///
 /// NAMED NON-DESCENDING SETS — everything else, isolated by name:
 ///
@@ -188,7 +188,7 @@
 ///   back into active work is still metered at the Working boundary —
 ///   standing rule 2, with operator paths governed by the §2 op-retry
 ///   configurability row):
-///     ticket-resumed into Evaluating/WrapUp under RetryFree
+///     ticket-resumed into Evaluating/Finalizer under RetryFree
 ///       (+<= rankEvaluating*rankWeight + maxStages*stageWeight + nTasks —
 ///        the Evaluating resume respawns the LOWEST stage's fan-out with
 ///        the full stage digit — a fresh eval fan-out)
@@ -265,10 +265,10 @@ module chuggy_measure {
   // Sum-type constructors share one namespace per module, hence the
   // prefixes (P/T/TK/TS/V/R/Rs/C/RW/W/WO/A). The two-branch parameter types
   // keep bare descriptive constructor names — Budgeted/DeadlineOnly
-  // (WrapUpPricing) and RetryCharged/RetryFree (RetryPricing) — documented
+  // (FinalizationPricing) and RetryCharged/RetryFree (RetryPricing) — documented
   // here because they live in the same module-wide constructor namespace.
   // TK (TaskKind), TS (TaskState — the explicit task lifecycle), RW
-  // (ReworkPolicy), W (WrapUpOutcome and WrapUp, which share it), WO
+  // (ReworkPolicy), W (FinalizationOutcome and Finalizer, which share it), WO
 
   /// STORED ticket phases, deliberately few (standing rule 3, derive don't
   /// store). Blocked and Ready are PREDICATES over deps + record in
@@ -276,7 +276,7 @@ module chuggy_measure {
   /// the waiting-room split is derived. Pending must be stored (phase is
   /// total and "never started" is not expressible as a predicate over the
   /// other fields without overloading them). Working/Evaluating carry the
-  /// parallel task set; WrapUpQueued is its own phase because its outcome is the
+  /// parallel task set; Finalizing is its own phase because its outcome is the
   /// exclusivity boundary; Done is absorbing; Escalated is the human desk.
   ///
   /// Pending is the ONLY authoring phase: release goes Pending -> Pending
@@ -293,12 +293,10 @@ module chuggy_measure {
   /// Evaluating edge, because within-phase progress lives in the stage
   /// digit rather than in new phases.
   ///
-  /// WrapUpQueued is enqueued. Preparing, awaiting approval and committing
-  /// all hold the single project-local repository slot; committing is the
-  /// irreversible boundary.
+  /// Finalizing is one domain phase. Queueing, approval, permits, and any
+  /// irreversible external action are operational protocol, not Core state.
   type Phase =
-    Pending | Working | Evaluating | WrapUpQueued | WrapUpPreparing |
-    WrapUpAwaitingApproval | WrapUpCommitting | Done | Escalated | Revoked
+    Pending | Working | Evaluating | Finalizing | Done | Escalated | Revoked
 
   /// What a task IS for (task records are first-class — they carry the
   /// anatomy):
@@ -377,10 +375,10 @@ module chuggy_measure {
   /// Gate-rework pricing — a model parameter, not a constant:
   /// the model generates escalation traces under both branches and the
   /// choice is made on evidence.
-  type WrapUpPricing = Budgeted(int) | DeadlineOnly
+  type FinalizationPricing = Budgeted(int) | DeadlineOnly
 
   /// Eval-rework pricing ("rework budget should be removed from
-  /// core job entity and into impl / middleware") — the WrapUpPricing
+  /// core job entity and into impl / middleware") — the FinalizationPricing
   /// pattern applied to the rework bound: the machine consults an abstract
   /// policy, and BudgetedRework(n) grants a budget of n cycles. Deliberately the
   /// ONLY branch for now: the triage row keeps the bound in the model
@@ -388,7 +386,7 @@ module chuggy_measure {
   /// on middleware behavior — an unbounded (or gas-only) branch is exactly
   /// the removal that was rejected. If evidence ever argues for another
   /// pricing, it lands as a new constructor here, instantiated alongside
-  /// (the WrapUpPricing method). The per-ticket ACCOUNT the policy meters
+  /// (the FinalizationPricing method). The per-ticket ACCOUNT the policy meters
   /// (Ticket.reworkLeft) is policy state the middleware owns in the
   /// implementation — see the field's note.
   type ReworkPolicy = BudgetedRework(int)
@@ -401,12 +399,12 @@ module chuggy_measure {
   /// or parked with NO modeled resume: the dependency_revoked wall's only
   /// modeled exit is revoke (domain.qnt retryableIn), and stamping a
   /// resume point on it would be a lie to the desk.
-  type Resume = NoResume | ResumeWorking | ResumeEvaluating | ResumeWrapUp
+  type Resume = NoResume | ResumeWorking | ResumeEvaluating | ResumeFinalizing
 
   /// Why a ticket sits on the human desk. The termination requirement
   /// names no individual wall; the reason is
   /// what distinguishes the parks: WorkFailed / ReworkBudgetExhausted /
-  /// WrapUpBudgetExhausted (Budgeted pricing only) / GasExhausted are
+  /// FinalizationBudgetExhausted (Budgeted pricing only) / GasExhausted are
   /// the pipeline walls. DependencyRevoked is the cascade wall and is not
   /// retryable; its only exit is revoke. GasExhausted is the rename of the deadline wall
   /// (`gas_exhausted` on the trace); WorkFailed is the CYCLE-level work
@@ -414,39 +412,35 @@ module chuggy_measure {
   /// cycle grain is the fabric's job, trusted here rather than modeled).
   type Reason =
     NoReason | WorkFailed | ReworkBudgetExhausted |
-    WrapUpBudgetExhausted | GasExhausted | DependencyRevoked |
+    FinalizationBudgetExhausted | GasExhausted | DependencyRevoked |
     ExecutionPolicyDenied | TicketConfigIncompatible |
     ExecutionProfileUnavailable | RuntimeVersionUnsupported |
     RequiredCapabilityUnavailable
 
-  /// How a wrap-up attempt resolves. ONE success, deliberately: an earlier
+  /// How a finalization attempt resolves. ONE success, deliberately: an earlier
   /// model named two, because a merge promotes differently depending on
   /// whether it went through the gate — and *which* mechanism a merge uses
   /// is a property of the merge adapter, not of the machine. The domain
   /// knows only that the step succeeded or failed.
   ///   - WOk      the step committed the artifact.
   ///   - WFailed  it did not, and is drawable only when the environment
-  ///              invalidated the artifact (domain.qnt wrapUpOutcomes).
-  type WrapUpOutcome = WrapUpCommitted | WrapUpAborted
+  ///              invalidated the artifact (domain.qnt finalizerOutcomes).
+  type FinalizationOutcome = FinalizationSucceeded | FinalizationFailed
 
   /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
   /// like the eval program — eval-is-data applied one seam later.
   ///
-  ///   NoWrapUp            the effect was external and already happened during
+  ///   NoFinalizer            the effect was external and already happened during
   ///                    work; evaluation passing completes the ticket, and
   ///                    it enters neither wrap-up phase. A deploy, a report.
-  ///   ExclusiveWrapUp    the step needs a LEASE on resource r before it may
-  ///                    run — a merge takes its repo, a registry push takes
-  ///                    the registry, a deploy-to-env takes the environment.
+  ///   ManagedFinalizer    a constrained, platform-owned finalizer must
+  ///                    conclusively succeed or fail after evaluation.
   ///
-  /// Mutual exclusion is the domain's business and git is not: deciding that
-  /// ticket A holds r and therefore B may not READS STATE BELONGING TO
-  /// ANOTHER TICKET, which is the authority split's own test for a global
-  /// decision, and pushing it to an adapter would make a second writer.
-  /// Which promotion mechanism a merge uses is not modelled at all.
+  /// Mutual exclusion, queue order, approval, and implementation belong to
+  /// durable operational records. Core retains only this requirement.
   ///
   /// NOT a measure input; only the PHASE has a rank.
-  type WrapUp = NoWrapUp | ExclusiveWrapUp
+  type Finalizer = NoFinalizer | ManagedFinalizer
 
   /// WHAT A TICKET PRODUCED (design 002): an opaque identity for the thing
   /// work built, that evaluation judged, and that wrap-up commits. Its only
@@ -474,7 +468,7 @@ module chuggy_measure {
     // How this ticket finishes (design 002): authored, immutable after
     // release, and what decides whether it takes a lease or completes at
     // eval-pass.
-    wrapUp: WrapUp,
+    finalizer: Finalizer,
     // The artifact this ticket has produced, if it has passed work (design
     // 002). Set at work-passed and superseded by each rework's product.
     artifact: ArtifactMark,
@@ -482,7 +476,7 @@ module chuggy_measure {
     // fields, never the importing module's ambient configuration.
     workFanout: int,
     reworkPolicy: ReworkPolicy,
-    wrapUpPricing: WrapUpPricing,
+    finalizationPricing: FinalizationPricing,
     resumePricing: RetryPricing,
     // THE EVAL PROGRAM — an ordered list of stages, AUTHORED: it
     // is released with the Pending and is immutable after release, like
@@ -531,7 +525,7 @@ module chuggy_measure {
     // modeled).
     reworkLeft: int,
     // Gate-rework budget remaining; identically 0 under DeadlineOnly.
-    wrapUpLeft: int,
+    finalizationLeft: int,
     // GAS remaining — the REQUIRED account (the bound is a spend meter,
     // not a clock).
     gasLeft: int,
@@ -601,7 +595,7 @@ module chuggy_measure {
     reworkPolicy: ReworkPolicy,
     nTasks: int,
     maxStages: int,
-    wrapUpPricing: WrapUpPricing
+    finalizationPricing: FinalizationPricing
   }
 
   // === The measure =========================================================
@@ -610,13 +604,13 @@ module chuggy_measure {
   /// DeadlineOnly grants none (gas alone meters the gate loop — the
   /// documented-livelock shape, kept as the branch to be priced on
   /// evidence).
-  pure def wrapUpBudget(gp: WrapUpPricing): int =
+  pure def finalizationBudget(gp: FinalizationPricing): int =
     match gp {
       | Budgeted(n) => n
       | DeadlineOnly => 0
     }
 
-  /// The rework account's size under a policy (the WrapUpPricing pattern —
+  /// The rework account's size under a policy (the FinalizationPricing pattern —
   /// see ReworkPolicy for why BudgetedRework is the only branch for now).
   pure def reworkBudget(rw: ReworkPolicy): int =
     match rw {
@@ -631,15 +625,9 @@ module chuggy_measure {
   /// The settled tier: Done, Escalated, Revoked — one member fewer since
   /// Stalled merged into Escalated. Nothing is below settled.
   pure val rankSettled: int = 0
-  /// The held lease sits directly above settled: every resolution —
-  /// completion, the priced failure, the walls — settles or reworks in one
-  /// step.
-  pure val rankCommitting: int = rankSettled + 1
-  pure val rankAwaitingApproval: int = rankCommitting + 1
-  pure val rankPreparing: int = rankAwaitingApproval + 1
-  /// WrapUpQueued waits above all slot-holding phases.
-  pure val rankWrapUp: int = rankPreparing + 1
-  pure val rankEvaluating: int = rankWrapUp + 1
+  /// Finalization resolves to completion, priced rework, or a wall.
+  pure val rankFinalizing: int = rankSettled + 1
+  pure val rankEvaluating: int = rankFinalizing + 1
   pure val rankWorking: int = rankEvaluating + 1
   /// The released waiting room (Ready/Blocked derive from it).
   pure val rankPending: int = rankWorking + 1
@@ -659,10 +647,7 @@ module chuggy_measure {
       | Pending => rankPending
       | Working => rankWorking
       | Evaluating => rankEvaluating
-      | WrapUpQueued => rankWrapUp
-      | WrapUpPreparing => rankPreparing
-      | WrapUpAwaitingApproval => rankAwaitingApproval
-      | WrapUpCommitting => rankCommitting
+      | Finalizing => rankFinalizing
       | _ => rankSettled
     }
 
@@ -716,12 +701,12 @@ module chuggy_measure {
       + outstandingCount(ticket.tasks)
 
   /// THE per-ticket termination measure: lexicographic
-  /// (gasLeft, wrapUpLeft, reworkLeft, micro), radix-flattened — each
+  /// (gasLeft, finalizationLeft, reworkLeft, micro), radix-flattened — each
   /// account's radix is one more than its grant (radix again), so every
   /// digit stays strictly below its radix. Nonnegative whenever the
   /// accounts are (domain.qnt's accountsBounded keeps them so).
   pure def ticketMeasure(b: Bounds, ticket: Ticket): int =
-    ((ticket.gasLeft * radix(wrapUpBudget(b.wrapUpPricing)) + ticket.wrapUpLeft)
+    ((ticket.gasLeft * radix(finalizationBudget(b.finalizationPricing)) + ticket.finalizationLeft)
         * radix(reworkBudget(b.reworkPolicy))
       + ticket.reworkLeft) * microBound(b)
     + micro(b, ticket)
