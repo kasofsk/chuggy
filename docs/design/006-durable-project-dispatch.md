@@ -1,8 +1,10 @@
 # Durable project dispatch
 
-**Status: PROPOSED** — this records the decisions agreed in issue #92; the
-runtime, PostgreSQL adapter, project partitions, selection service and durable
-consumer request tables are not built yet.
+**Status: M0 AND G0 LANDED** — issue #92 agreed these decisions, and the model
+tranche now carries them: `model/` proves the project-scoped `Core`, and
+`src/generated/model-api.ts` is generated from `model/api.qnt`. The PostgreSQL
+adapter, project partitions, operations, mailbox, selection service and durable
+consumer request tables are not built, so the body below still argues them.
 
 Clients submit authenticated mutations to a durable PostgreSQL inbox. They do
 not locate or call a dispatcher process. A successful submission creates an
@@ -1272,31 +1274,13 @@ The prose above is normative. Names of SQL tables, indexes and deployments may
 change, but an implementation is incomplete if it weakens an authority,
 transaction, fencing or replay rule below.
 
-The model tranche lands first and contains only semantics plus the mirrors
-required to keep the repository coherent:
-
-- one project-scoped `Core`, with no tenant, project, capacity, lease,
-  selection-attempt or execution-attempt identity;
-- sparse externally supplied ticket IDs and ticket-local monotone task IDs;
-- `ReleaseTicket` as ticket creation directly into `Pending`, with every later
-  behavior-affecting value materialized into the ticket;
-- project-local dependency admission, readiness and atomic transitive revoke
-  closure independent of numeric ID order;
-- the unprefixed phase, task, verdict, policy, reason and effect vocabulary;
-- one non-revocable `Finalizing` phase with the `RunFinalizer` obligation and
-  the `FinalizationResult` input, entry to the phase as the domain point of no
-  return;
-- `ExecutionBlocked` with bounded reasons including
-  `TicketConfigIncompatible`, distinct from failed work;
-- removal of `Arrive`, draft state, transport-duplicate decisions,
-  `RevalFail`, mutable ambient decision configuration and obsolete effects;
-- revised measure, invariants, witnesses, model-check instances, golden traces,
-  replay and TypeScript conformance mirrors.
-
-The model tranche deliberately does not build PostgreSQL operations, leases,
-mailboxes, selectors, attempts, capacity, artifacts, native actions or project
-lifecycle. Issue #98 follows as a separate change that generates supported
-TypeScript model API declarations; it changes no semantics.
+The model tranche landed first, carrying only semantics plus the mirrors that
+keep the repository coherent. What it decided, `model/` now states and proves,
+and the generated API declarations that followed under issue #98 are
+`docs/design/007-quint-model-api-generation.md`'s. Neither tranche built
+PostgreSQL operations, leases, mailboxes, selectors, attempts, capacity,
+artifacts, native actions or project lifecycle, which is what the rest of this
+section hands off.
 
 The infrastructure tranche must provide durable relations equivalent to:
 
@@ -1356,12 +1340,11 @@ first.
 
 ## Landing
 
-Landing is deliberately split. First, change the formal model and only the
-existing TypeScript mirrors, traces and tests required to keep that model
-coherent. Second, implement model-API generation separately under issue #98.
-Only after those two changes land does the durable PostgreSQL, API, dispatcher,
-scheduler and recovery infrastructure proceed. The infrastructure work must not
-drive an unreviewed semantic change back into the model.
+Landing was deliberately split: the formal model and the mirrors required to
+keep it coherent first, model-API generation separately under issue #98 second,
+and the durable PostgreSQL, API, dispatcher, scheduler and recovery
+infrastructure only after both. That infrastructure work must not drive an
+unreviewed semantic change back into the model.
 
 ### Implementor contract
 
@@ -1380,18 +1363,18 @@ not implementation detail. A new transition, an external irreversible action,
 or a change to the pure event payload goes back through model and design review
 first.
 
-| Slice | Depends on | What lands and its definition of done |
-|---|---|---|
-| M0 | — | Project-scoped sparse-ID `Core`, vocabulary and transition migration. The Quint model, measures, witnesses, replay and current conformance mirrors agree on the new semantics. |
-| G0 | M0 | Generated TypeScript model API declarations from issue #98. Checked-in types, schemas, tag rosters and codecs derive from the explicit Quint API module; CI rejects drift. No executable decider is generated. |
-| I0 | M0, G0 | PostgreSQL foundation: project/lifecycle rows, composite keys and roles; project ownership lease/fencing epoch; expected-head journal append; recovery epoch. Competing-owner, stale-writer and independent-project tests pass against real PostgreSQL. |
-| I1 | I0 | Authority-scoped operation/idempotency rows, ingress ordinal, durable inbox/readiness and cancellation race. Acceptance atomically writes operation, inbox and readiness; a crash after acceptance remains discoverable without an active owner. |
-| I2 | I1 | The project decision transaction: replay/load, lifecycle/lease/head/revision fences, journal append, operation terminalization, inbox acknowledgement and primary projection update. Refusal has no journal entry; ambiguous commit resolves by durable read. |
-| I3 | I2 | Bounded project mailbox, priority/aging and durable deterministic continuations; focused native-action and consumer-request tables materialized in the deciding transaction. Process death cannot lose or duplicate a continuation or external request. |
-| I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. |
-| I5 | I3 | Agentic selection: immutable selection views, detached requests/results, bounded deferral and one-shot manual dispatch. Selection failure never becomes a hidden FIFO dispatch policy. |
-| I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. |
-| I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, and sole `FinalizationResult` submission authority. Proven with revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. |
-| I8 | I0–I7 | Managed PostgreSQL deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions and permits. Old-epoch actors remain rejected after restore. |
-| I9 | I2–I8 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. |
-| I10 | I6–I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. |
+| Slice | Depends on | What lands and its definition of done | Status |
+|---|---|---|---|
+| M0 | — | Project-scoped sparse-ID `Core`, vocabulary and transition migration | Landed |
+| G0 | M0 | Generated TypeScript model API declarations from issue #98 | Landed |
+| I0 | M0, G0 | PostgreSQL foundation: project/lifecycle rows, composite keys and roles; project ownership lease/fencing epoch; expected-head journal append; recovery epoch. Competing-owner, stale-writer and independent-project tests pass against real PostgreSQL. | — |
+| I1 | I0 | Authority-scoped operation/idempotency rows, ingress ordinal, durable inbox/readiness and cancellation race. Acceptance atomically writes operation, inbox and readiness; a crash after acceptance remains discoverable without an active owner. | — |
+| I2 | I1 | The project decision transaction: replay/load, lifecycle/lease/head/revision fences, journal append, operation terminalization, inbox acknowledgement and primary projection update. Refusal has no journal entry; ambiguous commit resolves by durable read. | — |
+| I3 | I2 | Bounded project mailbox, priority/aging and durable deterministic continuations; focused native-action and consumer-request tables materialized in the deciding transaction. Process death cannot lose or duplicate a continuation or external request. | — |
+| I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. | — |
+| I5 | I3 | Agentic selection: immutable selection views, detached requests/results, bounded deferral and one-shot manual dispatch. Selection failure never becomes a hidden FIFO dispatch policy. | — |
+| I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
+| I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, and sole `FinalizationResult` submission authority. Proven with revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
+| I8 | I0–I7 | Managed PostgreSQL deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions and permits. Old-epoch actors remain rejected after restore. | — |
+| I9 | I2–I8 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. | — |
+| I10 | I6–I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. | — |

@@ -1,6 +1,9 @@
 # Quint model API generation
 
-**Status: PROPOSED** — implementation for issue #98.
+**Status: LANDED** — issue #98 is in the tree. What the generator accepts is
+`scripts/generate-model-api.ts`'s own header, and the drift verdict is
+`.chug/tasks/check-model-api.sh`'s; what stays here is the argument for the
+subset and the change protocol, which no script decides.
 
 `model/api.qnt` is the explicit public data boundary of the Quint model.
 `scripts/generate-model-api.ts` compiles it with the pinned Quint CLI and
