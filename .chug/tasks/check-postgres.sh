@@ -1,0 +1,152 @@
+#!/bin/sh
+# The durable authority is tested against a real PostgreSQL, never a fake.
+#
+# WHAT THIS GATE EXISTS FOR. `src/adapters/postgres/` claims that competing
+# owners serialize, that a fenced writer cannot commit, that a stale head is
+# refused, that two projects do not block each other, and that the runtime role
+# cannot rewrite history. Every one of those is a claim about what the server
+# does. A fake would answer them by agreeing with the adapter, which is the
+# shape of an unverified control: it reports success and is then believed.
+#
+# THE SERVER IS A CONTAINER THIS GATE OWNS. It is started under a name nothing
+# else uses, on a port that is not the conventional one, so a developer's own
+# PostgreSQL is never touched, never connected to and never dropped. A
+# container already running under that name is reused rather than restarted,
+# because a gate that pays a cold start on every run is a gate that gets
+# bypassed.
+#
+# EACH RUN GETS ITS OWN DATABASE inside that container, dropped when the run
+# ends. Cases share it deliberately — the subject is a partitioned store, so
+# cases holding different partitions in one database exercise the isolation the
+# port claims — but two runs of the gate share nothing, and a crashed run
+# leaves no state the next one inherits.
+#
+# NO DOCKER IS A COULD-NOT-RUN, NOT A PASS. That is the whole reason the
+# protocol has a third exit: a suite that did not execute has proved nothing,
+# and saying so is the only honest verdict available.
+#
+# THE CASES RUN ONE AT A TIME. They share a database and some of them establish
+# a global recovery epoch, which is by design a fact about the whole database;
+# running them concurrently would let one case fence another's lease and report
+# it as the adapter's fault.
+#
+# Env:
+#   CHUG_PG_URL        test against this server instead, skipping the
+#                      container entirely
+#   CHUG_PG_IMAGE      the image to start
+#   CHUG_PG_PORT       the host port to publish it on
+#   CHUG_PG_READY_SECS how long to wait for the server to answer
+#
+# Usage:
+#   .chug/tasks/check-postgres.sh
+#
+# The container outlives the run so the next one is warm. To remove it:
+#   docker rm -f chuggy-check-postgres
+#
+# Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
+set -eu
+export LC_ALL=C
+
+root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$root" ]; then
+	echo "check-postgres: LINTER ERROR — not a git checkout" >&2
+	exit 2
+fi
+cd "$root" || exit 2
+
+unset FORCE_COLOR
+export NO_COLOR=1
+
+image="${CHUG_PG_IMAGE:-postgres:18-alpine}"
+port="${CHUG_PG_PORT:-55432}"
+ready_secs="${CHUG_PG_READY_SECS:-30}"
+container="chuggy-check-postgres"
+password="chuggy-check"
+
+if ! command -v node >/dev/null 2>&1; then
+	echo "check-postgres: LINTER ERROR — no node, so nothing can run"
+	exit 2
+fi
+
+suites="$(find test/postgres -maxdepth 1 -name '*.test.ts' 2>/dev/null | sort || true)"
+if [ -z "$suites" ]; then
+	echo "check-postgres: LINTER ERROR — no test/postgres suite; the glob matched nothing"
+	exit 2
+fi
+suite_count="$(printf '%s\n' "$suites" | grep -c '' || true)"
+
+# A caller-supplied server is used as it stands: this gate did not start it, so
+# it does not stop it, and it creates no database inside it.
+if [ -n "${CHUG_PG_URL:-}" ]; then
+	base_url="$CHUG_PG_URL"
+	scratch=""
+else
+	if ! command -v docker >/dev/null 2>&1; then
+		echo "check-postgres: LINTER ERROR — no docker, so no server can be started."
+		echo "check-postgres:                Set CHUG_PG_URL to test against one you have."
+		exit 2
+	fi
+	if ! docker info >/dev/null 2>&1; then
+		echo "check-postgres: LINTER ERROR — docker is installed but not running."
+		echo "check-postgres:                Set CHUG_PG_URL to test against a server you have."
+		exit 2
+	fi
+
+	if [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || echo false)" != "true" ]; then
+		docker rm -f "$container" >/dev/null 2>&1 || true
+		if ! docker run -d --name "$container" \
+			-e POSTGRES_PASSWORD="$password" \
+			-p "$port:5432" "$image" >/dev/null 2>&1; then
+			echo "check-postgres: LINTER ERROR — could not start $image as $container"
+			exit 2
+		fi
+		echo "check-postgres: started $container on port $port"
+	else
+		echo "check-postgres: reusing $container on port $port"
+	fi
+
+	waited=0
+	until docker exec "$container" pg_isready -q -U postgres >/dev/null 2>&1; do
+		if [ "$waited" -ge "$ready_secs" ]; then
+			echo "check-postgres: LINTER ERROR — $container did not answer within ${ready_secs}s"
+			exit 2
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+
+	base_url="postgres://postgres:$password@127.0.0.1:$port/postgres"
+	scratch="chuggy_check_$$"
+	if ! docker exec "$container" psql -q -U postgres -c "CREATE DATABASE $scratch" >/dev/null 2>&1; then
+		echo "check-postgres: LINTER ERROR — could not create the scratch database"
+		exit 2
+	fi
+	base_url="postgres://postgres:$password@127.0.0.1:$port/$scratch"
+fi
+
+drop_scratch() {
+	[ -n "$scratch" ] || return 0
+	docker exec "$container" psql -q -U postgres \
+		-c "DROP DATABASE IF EXISTS $scratch WITH (FORCE)" >/dev/null 2>&1 || true
+}
+trap drop_scratch EXIT
+
+set -f
+IFS='
+'
+# shellcheck disable=SC2086 # the suite list is newline-split on purpose
+set -- $suites
+unset IFS
+set +f
+
+set +e
+CHUG_PG_URL="$base_url" node --test --test-concurrency=1 --test-reporter=dot "$@"
+rc=$?
+set -e
+
+if [ "$rc" -ne 0 ]; then
+	echo "check-postgres: FAILED — the suite went red against $image"
+	exit 1
+fi
+
+echo "check-postgres: $suite_count suite(s) clean against $image"

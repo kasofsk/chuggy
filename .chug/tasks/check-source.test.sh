@@ -120,21 +120,24 @@ check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 ru
 
 # --- What the unit stage runs ------------------------------------------------
 #
-# `check-conformance.sh` and `check-random.sh` own their directories, and a
-# suite of theirs failing here would mean this stage had discovered it anyway.
-# So both are made to fail and the gate is required to pass regardless.
+# `check-conformance.sh`, `check-random.sh` and `check-postgres.sh` own their
+# directories, and a suite of theirs failing here would mean this stage had
+# discovered it anyway. So all three are made to fail and the gate is required
+# to pass regardless. The postgres one also cannot run here at all — it needs a
+# server — which is the second reason its directory is subtracted.
 
 fixture
 clean_source
-mkdir -p "$R/test/conformance" "$R/test/random"
+mkdir -p "$R/test/conformance" "$R/test/random" "$R/test/postgres"
 failing_suite "$R/test/conformance/replay.test.ts" "the corpus gate's own"
 failing_suite "$R/test/random/walk.test.ts" "the walk gate's own"
+failing_suite "$R/test/postgres/journal.test.ts" "the server gate's own"
 seal
 
-check "the corpus and walk gates' suites are not this stage's" 0 "$RC" "0 stage(s) failed"
+check "the owning gates' suites are not this stage's" 0 "$RC" "0 stage(s) failed"
 # The split is asserted against a fixture whose suites this file wrote, so the
 # line cannot report a scope the run did not have.
-check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 2 left to check-conformance and check-random"
+check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 3 left to check-conformance, check-random and check-postgres"
 
 # --- The house rules ---------------------------------------------------------
 #
