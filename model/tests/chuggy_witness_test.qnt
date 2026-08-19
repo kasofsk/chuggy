@@ -114,7 +114,7 @@
 /// exactly this step — the arm a sign-flip would break, which is what the
 /// removed pinned twin existed to catch and this run now catches
 /// deterministically). The module's SECOND run walks the OTHER free
-/// resume — the pre-work RPending flavor, the `t.to == PPending` CHURN
+/// resume — the pre-work RPending flavor, the `t.to == Pending` CHURN
 /// arm's own witness (see its header) — and the first run also fires the
 /// task-done-duplicate STUTTER arm en route (the stepDescends convention
 /// roster).
@@ -172,40 +172,40 @@ module chuggy_witness_free_test {
 
   /// Single-stage single-evaluator program: the shape needs escalation
   /// economics, not staging (the stage witness owns staging).
-  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   run freeClimbDeterministicTest =
     init
       .then(doArrive(Set(), progFlat1, 1))
-      .expect(and { tickets.get(1).phase == PDraft, allInvariants })
+      .expect(and { tickets.get(1).phase == Draft, allInvariants })
       .then(doRelease(1))
-      .expect(and { tickets.get(1).phase == PPending, allInvariants })
+      .expect(and { tickets.get(1).phase == Pending, allInvariants })
       // gas 2 -> 1; the single work set spawns (ids 1, 2: width N_TASKS).
       .then(doDispatch(1))
       .expect(and { tickets.get(1).gasLeft == 1, allInvariants })
-      .then(doTaskDone(1, 1, VPass))
+      .then(doTaskDone(1, 1, Pass))
       .expect(allInvariants)
       // At-least-once: the SAME task's completion re-delivers — with a
       // DIFFERENT verdict and citation, which first-write-wins discards
       // whole. State-identical no-op: the task-done-duplicate STUTTER
       // arm of stepDescends fired on a machine trace (the convention
       // roster at stepDescends).
-      .then(doTaskDone(1, 1, VFail))
+      .then(doTaskDone(1, 1, Fail))
       .expect(and {
         lastStep.label == "task-done-duplicate",
         currentMeasure == prevMeasure,
         allInvariants
       })
-      .then(doTaskDone(1, 2, VPass))
+      .then(doTaskDone(1, 2, Pass))
       .expect(allInvariants)
       // Work passes: first-time stage-0 entry, eval task 3 spawns running.
       .then(doWorkReduce(1))
       .expect(and {
         lastStep.label == "work-passed",
-        tickets.get(1).phase == PEvaluating,
+        tickets.get(1).phase == Evaluating,
         allInvariants
       })
-      .then(doTaskDone(1, 3, VFail))
+      .then(doTaskDone(1, 3, Fail))
       .expect(allInvariants)
       // The short-circuit buys the one budgeted rework: rework 1 -> 0 AND
       // gas 1 -> 0 — both accounts empty from here on.
@@ -216,22 +216,22 @@ module chuggy_witness_free_test {
         tickets.get(1).gasLeft == 0,
         allInvariants
       })
-      .then(doTaskDone(1, 4, VPass))
+      .then(doTaskDone(1, 4, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 5, VPass))
+      .then(doTaskDone(1, 5, Pass))
       .expect(allInvariants)
       // Re-entry respawns the failed evaluator (task 6; nothing carries —
       // the failing evaluator always respawns, and the silent work
       .then(doWorkReduce(1))
       .expect(and { lastStep.label == "work-passed", allInvariants })
-      .then(doTaskDone(1, 6, VFail))
+      .then(doTaskDone(1, 6, Fail))
       .expect(allInvariants)
       // The stage fails with the rework account empty: park on the desk
       // FROM A PIPELINE PHASE at gas 0, resume point REvaluating.
       .then(doEvalReduce(1))
       .expect(and {
         lastStep.label == "ticket-escalated rework_budget_exhausted",
-        tickets.get(1).phase == PEscalated,
+        tickets.get(1).phase == Escalated,
         tickets.get(1).resumeAt == REvaluating,
         tickets.get(1).gasLeft == 0,
         // Retryable AT ZERO GAS — only because RetryFree prices the
@@ -245,7 +245,7 @@ module chuggy_witness_free_test {
       .then(doOpRetry(1))
       .expect(and {
         lastStep.label == "operator-retry",
-        lastStep.transitions == [{ ticket: 1, from: PEscalated, to: PEvaluating }],
+        lastStep.transitions == [{ ticket: 1, from: Escalated, to: Evaluating }],
         tickets.get(1).gasLeft == 0,                  // free: still zero
         currentMeasure > prevMeasure,                 // the climb is real
         not(freeClimbNever),                          // the witness fires HERE
@@ -256,7 +256,7 @@ module chuggy_witness_free_test {
         allInvariants
       })
 
-  /// The PRE-WORK park and its FREE resume — the `t.to == PPending` CHURN
+  /// The PRE-WORK park and its FREE resume — the `t.to == Pending` CHURN
   /// arm's deterministic witness (the stepDescends convention roster):
   /// Ready -> revalidation park -> operator resume back to Pending
   /// charging NOTHING under BOTH meterings, measure climbing, with
@@ -283,7 +283,7 @@ module chuggy_witness_free_test {
       .then(doRevalFail(1))
       .expect(and {
         lastStep.label == "ticket-escalated revalidation_failed",
-        tickets.get(1).phase == PEscalated,
+        tickets.get(1).phase == Escalated,
         tickets.get(1).reason == RsRevalidationFailed,
         tickets.get(1).resumeAt == RPending,
         tickets.get(1).gasLeft == GAS,      // the park spent NOTHING
@@ -295,7 +295,7 @@ module chuggy_witness_free_test {
       .then(doOpRetry(1))
       .expect(and {
         lastStep.label == "operator-retry",
-        lastStep.transitions == [{ ticket: 1, from: PEscalated, to: PPending }],
+        lastStep.transitions == [{ ticket: 1, from: Escalated, to: Pending }],
         tickets.get(1).gasLeft == GAS,      // still uncharged: the resume is free
         currentMeasure > prevMeasure,       // the climb is real
         freeClimbNever,                     // ...but NOT the pipeline witness's shape
@@ -313,7 +313,7 @@ module chuggy_witness_free_test {
 /// SHAPE 2 — THE CASCADE PARK (cascadeParkNever, mc_chuggy_budgeted
 /// consts). A revoke whose TRANSITIVE pre-flight dependents get parked
 /// Escalated/dependency_revoked in the same decision: 1 <- 2 <- 3 with 2
-/// released (PPending) and 3 still a Draft, so ONE revoke parks both
+/// released (Pending) and 3 still a Draft, so ONE revoke parks both
 /// pre-flight phases in one atomic StepRecord — the machine-level shape
 /// cascadeSafety's green runs need to be non-vacuous. The follow-up
 /// desk-only revoke pins the wall's one modeled exit (and the AUTHORING
@@ -348,7 +348,7 @@ module chuggy_witness_cascade_test {
     apply(decideRevoke(core, j))
   }
 
-  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   run cascadeParkDeterministicTest =
     init
@@ -356,22 +356,22 @@ module chuggy_witness_cascade_test {
       .expect(allInvariants)
       .then(doArrive(Set(1), progFlat1, 1))           // ticket 2 depends on 1
       .expect(allInvariants)
-      // Release 2: PPending, blocked behind the unreleased Draft 1 — one
+      // Release 2: Pending, blocked behind the unreleased Draft 1 — one
       // dependent will be parked from EACH pre-flight phase.
       .then(doRelease(2))
       .expect(and { isBlocked(2), allInvariants })
       .then(doArrive(Set(2), progFlat1, 1))           // ticket 3: TRANSITIVE dependent of 1
       .expect(and { not(tickets.get(3).deps.contains(1)), allInvariants })
       // THE WITNESSED STEP: revoking 1 parks BOTH dependents atomically —
-      // 2 out of PPending, 3 out of PDraft (3 never named 1 as a dep: the
+      // 2 out of Pending, 3 out of Draft (3 never named 1 as a dep: the
       // cascade walked the transitive closure).
       .then(doRevoke(1))
       .expect(and {
         lastStep.label == "ticket-revoked",
         lastStep.transitions == [
-          { ticket: 1, from: PDraft, to: PRevoked },
-          { ticket: 2, from: PPending, to: PEscalated },
-          { ticket: 3, from: PDraft, to: PEscalated }
+          { ticket: 1, from: Draft, to: Revoked },
+          { ticket: 2, from: Pending, to: Escalated },
+          { ticket: 3, from: Draft, to: Escalated }
         ],
         lastStep.effects == ["Revoke", "OpenHumanTask", "OpenHumanTask"],
         not(cascadeParkNever),                     // the witness fires HERE
@@ -391,7 +391,7 @@ module chuggy_witness_cascade_test {
       .then(doRevoke(2))
       .expect(and {
         lastStep.label == "ticket-revoked",
-        lastStep.transitions == [{ ticket: 2, from: PEscalated, to: PRevoked }],
+        lastStep.transitions == [{ ticket: 2, from: Escalated, to: Revoked }],
         cascadeParkNever,                          // ... and does NOT fire here
         allInvariants
       })
@@ -461,8 +461,8 @@ module chuggy_witness_stage_test {
   /// Two stages: a width-2 unanimous stage 0 (the pass must be UNANIMOUS
   /// to advance) into a width-1 stage 1.
   pure val progStaged: List[Stage] =
-    [{ fanout: 2, combinator: CUnanimousPass },
-     { fanout: 1, combinator: CUnanimousPass }]
+    [{ fanout: 2, combinator: UnanimousPass },
+     { fanout: 1, combinator: UnanimousPass }]
 
   run stageAdvanceDeterministicTest =
     init
@@ -472,9 +472,9 @@ module chuggy_witness_stage_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass))
+      .then(doTaskDone(1, 1, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass))
+      .then(doTaskDone(1, 2, Pass))
       .expect(allInvariants)
       // Stage 0 spawns: ids 3, 4 (the program's declared width 2).
       .then(doWorkReduce(1))
@@ -484,9 +484,9 @@ module chuggy_witness_stage_test {
         tickets.get(1).tasks.size() == 2,
         allInvariants
       })
-      .then(doTaskDone(1, 3, VPass))
+      .then(doTaskDone(1, 3, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 4, VPass))
+      .then(doTaskDone(1, 4, Pass))
       .expect(allInvariants)
       // THE WITNESSED STEP: stage 0 passes UNANIMOUSLY with a later stage
       // remaining — the interpreter advances, Evaluating -> Evaluating,
@@ -496,7 +496,7 @@ module chuggy_witness_stage_test {
       .then(doEvalReduce(1))
       .expect(and {
         lastStep.label == "eval-stage-passed",
-        lastStep.transitions == [{ ticket: 1, from: PEvaluating, to: PEvaluating }],
+        lastStep.transitions == [{ ticket: 1, from: Evaluating, to: Evaluating }],
         lastStep.effects == ["SpawnEvalTasks"],
         not(stageAdvanceNever),                    // the witness fires HERE
         evalStage(tickets.get(1).tasks) == 1,
@@ -504,14 +504,14 @@ module chuggy_witness_stage_test {
         currentMeasure < prevMeasure,
         allInvariants
       })
-      .then(doTaskDone(1, 5, VPass))
+      .then(doTaskDone(1, 5, Pass))
       .expect(allInvariants)
       // The FINAL stage passes: no advance this time (the program passed).
       .then(doEvalReduce(1))
       .expect(and {
         lastStep.label == "eval-passed",
         stageAdvanceNever,                         // ... and does NOT fire here
-        tickets.get(1).phase == PWrapUp,
+        tickets.get(1).phase == WrapUpQueued,
         allInvariants
       })
       // The dequeue draws QUIET: the skip fast-path — gate never opened,
@@ -617,7 +617,7 @@ module chuggy_witness_multiproject_test {
 
   /// Single-stage single-evaluator program: these shapes need the wrap-up
   /// boundary, not staging (the stage witness owns staging).
-  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   /// THE QUIET WRAP-UP: the environment chooses the target project's branch
   /// quiet for the attempt — the wrap-up succeeds, attributed. (A quiet
@@ -625,7 +625,7 @@ module chuggy_witness_multiproject_test {
   /// the refusal structurally: the quiet route draws no outcome —
   /// decideDequeue fixes WOk, the one element of wrapUpOutcomes(false) —
   /// and doGateResolve, the only driver taking an outcome, needs
-  /// PWrapUpHolding, which only a moved dequeue enters.)
+  /// WrapUpAwaitingApproval, which only a moved dequeue enters.)
   run quietWrapUpDeterministicTest =
     init
       .then(doArrive(Set(), progFlat1, 2))         // the ticket targets project 2
@@ -634,13 +634,13 @@ module chuggy_witness_multiproject_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass))
+      .then(doTaskDone(1, 1, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass))
+      .then(doTaskDone(1, 2, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // stage 0 spawns: eval id 3
       .expect(and { lastStep.label == "work-passed", allInvariants })
-      .then(doTaskDone(1, 3, VPass))
+      .then(doTaskDone(1, 3, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -671,13 +671,13 @@ module chuggy_witness_multiproject_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass))
+      .then(doTaskDone(1, 1, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass))
+      .then(doTaskDone(1, 2, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // stage 0 spawns: eval id 3
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass))
+      .then(doTaskDone(1, 3, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -686,7 +686,7 @@ module chuggy_witness_multiproject_test {
       .then(doDequeue(1, true))
       .expect(and {
         lastStep.label == "wrapup-started",
-        tickets.get(1).phase == PWrapUpHolding,
+        tickets.get(1).phase == WrapUpAwaitingApproval,
         not(leaseFreeIn(core, 1)),
         allInvariants
       })
@@ -702,20 +702,20 @@ module chuggy_witness_multiproject_test {
         leaseFreeIn(core, 1),
         allInvariants
       })
-      .then(doTaskDone(1, 4, VPass))
+      .then(doTaskDone(1, 4, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 5, VPass))
+      .then(doTaskDone(1, 5, Pass))
       .expect(allInvariants)
       // Silent citations: the eval re-entry respawns in full (id 6).
       .then(doWorkReduce(1))
       .expect(and { lastStep.label == "work-passed", allInvariants })
-      .then(doTaskDone(1, 6, VPass))
+      .then(doTaskDone(1, 6, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // The branch moved AGAIN at the re-dequeue: the lease re-opens...
       .then(doDequeue(1, true))
-      .expect(and { tickets.get(1).phase == PWrapUpHolding, allInvariants })
+      .expect(and { tickets.get(1).phase == WrapUpAwaitingApproval, allInvariants })
       // THE WITNESSED STEP (wall half): ...and fails with the gate
       // account empty — the ticket parks at the gate-budget wall, and the
       // PARKING step is attributed like the rework was.
@@ -723,7 +723,7 @@ module chuggy_witness_multiproject_test {
       .expect(and {
         lastStep.label == "ticket-escalated wrapup_budget_exhausted",
         lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
-        tickets.get(1).phase == PEscalated,
+        tickets.get(1).phase == Escalated,
         tickets.get(1).reason == RsWrapUpBudgetExhausted,
         tickets.get(1).resumeAt == RWrapUp,
         allInvariants
@@ -756,19 +756,19 @@ module chuggy_witness_multiproject_test {
       })
       .then(doDispatch(1))                         // gas 3 -> 2; ticket 1 work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass))
+      .then(doTaskDone(1, 1, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass))
+      .then(doTaskDone(1, 2, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(1))
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass))
+      .then(doTaskDone(1, 3, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // The branch moved: project 1's gate opens for the candidate.
       .then(doDequeue(1, true))
-      .expect(and { tickets.get(1).phase == PWrapUpHolding, allInvariants })
+      .expect(and { tickets.get(1).phase == WrapUpAwaitingApproval, allInvariants })
       // THE WITNESSED STEP: project 1 lands out of the lease (moved branch,
       // clean integration anyway — the move makes failure possible, not
       // certain; the held promotion is WOk, the path rule)
@@ -779,19 +779,19 @@ module chuggy_witness_multiproject_test {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
         lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
-        tickets.get(1).phase == PDone,
+        tickets.get(1).phase == Done,
         isReady(2),                                // THE cross-project unblock
         allInvariants
       })
       .then(doDispatch(2))                         // ticket 2's own ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(2, 1, VPass))
+      .then(doTaskDone(2, 1, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(2, 2, VPass))
+      .then(doTaskDone(2, 2, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(2))
       .expect(allInvariants)
-      .then(doTaskDone(2, 3, VPass))
+      .then(doTaskDone(2, 3, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(2))
       .expect(allInvariants)
@@ -802,7 +802,7 @@ module chuggy_witness_multiproject_test {
       .expect(and {
         lastStep.label == "ticket-done",
         lastStep.attempt == WOAttempt({ project: 2, invalidated: false }),
-        tickets.get(2).phase == PDone,
+        tickets.get(2).phase == Done,
         tickets.get(1).completions == 1,
         tickets.get(2).completions == 1,
         allInvariants
@@ -878,7 +878,7 @@ module chuggy_witness_gate_test {
     apply(decideWrapUpResolve(core, j, out, true))
   }
 
-  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   run leaseExclusiveDeterministicTest =
     init
@@ -894,25 +894,25 @@ module chuggy_witness_gate_test {
       .expect(allInvariants)
       .then(doDispatch(1))
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass))
+      .then(doTaskDone(1, 1, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass))
+      .then(doTaskDone(1, 2, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(1))
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass))
+      .then(doTaskDone(1, 3, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       .then(doDispatch(2))
       .expect(allInvariants)
-      .then(doTaskDone(2, 1, VPass))
+      .then(doTaskDone(2, 1, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(2, 2, VPass))
+      .then(doTaskDone(2, 2, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(2))
       .expect(allInvariants)
-      .then(doTaskDone(2, 3, VPass))
+      .then(doTaskDone(2, 3, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(2))
       .expect(and {
@@ -927,7 +927,7 @@ module chuggy_witness_gate_test {
       .then(doDequeue(1, true))
       .expect(and {
         lastStep.label == "wrapup-started",
-        tickets.get(1).phase == PWrapUpHolding,
+        tickets.get(1).phase == WrapUpAwaitingApproval,
         // THE WITNESSED REFUSAL (R4): while the slot is held, the second
         // same-project ticket CANNOT draw the dequeue — including its
         // would-be-quiet fast-path (quietness is only checked AT the
@@ -971,7 +971,7 @@ module chuggy_witness_gate_test {
   /// attribution, and the lease NEVER opens anywhere on the trace. A
   /// decideDequeue mutant that re-routed quiet into the lease (the
   /// review's p3, which the pre-hoisting composition let ship green)
-  /// leaves the ticket PWrapUpHolding at the witnessed step and fails every
+  /// leaves the ticket WrapUpAwaitingApproval at the witnessed step and fails every
   /// conjunct below; the driver references decideDequeue itself, so there
   /// is no copy of the route left to drift.
   run quietFastPathDeterministicTest =
@@ -982,18 +982,18 @@ module chuggy_witness_gate_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass))
+      .then(doTaskDone(1, 1, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass))
+      .then(doTaskDone(1, 2, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // eval id 3
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass))
+      .then(doTaskDone(1, 3, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and {
         lastStep.label == "eval-passed",
-        tickets.get(1).phase == PWrapUp,
+        tickets.get(1).phase == WrapUpQueued,
         leaseFreeIn(core, 1),
         allInvariants
       })
@@ -1003,8 +1003,8 @@ module chuggy_witness_gate_test {
         lastStep.label == "ticket-done",
         lastStep.effects == ["Complete"],
         lastStep.attempt == WOAttempt({ project: 1, invalidated: false }),
-        lastStep.transitions == [{ ticket: 1, from: PWrapUp, to: PDone }],
-        tickets.get(1).phase == PDone,
+        lastStep.transitions == [{ ticket: 1, from: WrapUpQueued, to: Done }],
+        tickets.get(1).phase == Done,
         tickets.get(1).completions == 1,
         leaseFreeIn(core, 1),                       // the lease was never taken
         allInvariants
@@ -1074,7 +1074,7 @@ module chuggy_witness_gate_deadline_test {
     apply(decideWrapUpResolve(core, j, out, true))
   }
 
-  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   run gateEvictionDeadlineOnlyDeterministicTest =
     init
@@ -1084,19 +1084,19 @@ module chuggy_witness_gate_deadline_test {
       .expect(allInvariants)
       .then(doDispatch(1))                         // gas 3 -> 2; work ids 1, 2
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass))
+      .then(doTaskDone(1, 1, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 2, VPass))
+      .then(doTaskDone(1, 2, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // eval id 3
       .expect(allInvariants)
-      .then(doTaskDone(1, 3, VPass))
+      .then(doTaskDone(1, 3, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
       // Gate failure #1: gas alone pays (2 -> 1); no gate account exists.
       .then(doDequeue(1, true))
-      .expect(and { tickets.get(1).phase == PWrapUpHolding, allInvariants })
+      .expect(and { tickets.get(1).phase == WrapUpAwaitingApproval, allInvariants })
       .then(doGateResolve(1, WFailed))
       .expect(and {
         lastStep.label == "rework-started wrapup_failure",
@@ -1105,13 +1105,13 @@ module chuggy_witness_gate_deadline_test {
         tickets.get(1).gasLeft == 1,
         allInvariants
       })
-      .then(doTaskDone(1, 4, VPass))
+      .then(doTaskDone(1, 4, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 5, VPass))
+      .then(doTaskDone(1, 5, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // eval id 6
       .expect(allInvariants)
-      .then(doTaskDone(1, 6, VPass))
+      .then(doTaskDone(1, 6, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -1125,13 +1125,13 @@ module chuggy_witness_gate_deadline_test {
         tickets.get(1).gasLeft == 0,
         allInvariants
       })
-      .then(doTaskDone(1, 7, VPass))
+      .then(doTaskDone(1, 7, Pass))
       .expect(allInvariants)
-      .then(doTaskDone(1, 8, VPass))
+      .then(doTaskDone(1, 8, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(1))                       // eval id 9
       .expect(allInvariants)
-      .then(doTaskDone(1, 9, VPass))
+      .then(doTaskDone(1, 9, Pass))
       .expect(allInvariants)
       .then(doEvalReduce(1))
       .expect(and { lastStep.label == "eval-passed", allInvariants })
@@ -1144,7 +1144,7 @@ module chuggy_witness_gate_deadline_test {
       .expect(and {
         lastStep.label == "ticket-escalated gas_exhausted",
         lastStep.attempt == WOAttempt({ project: 1, invalidated: true }),
-        tickets.get(1).phase == PEscalated,
+        tickets.get(1).phase == Escalated,
         tickets.get(1).reason == RsGasExhausted,
         tickets.get(1).resumeAt == RWrapUp,       // resume re-ENQUEUES
         // Charging resume at zero gas: parked for good under RetryCharged
@@ -1200,7 +1200,7 @@ module chuggy_witness_draft_wait_test {
     apply(decideRelease(core, j))
   }
 
-  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   run draftWaitAcceptedDeterministicTest =
     init
@@ -1211,9 +1211,9 @@ module chuggy_witness_draft_wait_test {
       .then(doRelease(2))
       .expect(and {
         // 2 is released and blocked behind an authoring-side dep.
-        tickets.get(2).phase == PPending,
+        tickets.get(2).phase == Pending,
         isBlocked(2),
-        tickets.get(1).phase == PDraft,
+        tickets.get(1).phase == Draft,
         // No MACHINE action can move it: not dispatchable, no task set to
         // reduce, not enqueued, not retryable. Only an author can.
         not(readyTickets.contains(2)),
@@ -1289,7 +1289,7 @@ module chuggy_witness_wrapup_none_test {
     apply(decideEvalStageReduce(core, j))
   }
 
-  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat1: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   run wrapUpNoneCompletesDeterministicTest =
     init
@@ -1299,29 +1299,29 @@ module chuggy_witness_wrapup_none_test {
       .expect(allInvariants)
       .then(doDispatch(1))
       .expect(allInvariants)
-      .then(doTaskDone(1, 1, VPass))
+      .then(doTaskDone(1, 1, Pass))
       .expect(allInvariants)
       .then(doWorkReduce(1))
       .expect(and {
         lastStep.label == "work-passed",
-        tickets.get(1).phase == PEvaluating,
+        tickets.get(1).phase == Evaluating,
         // Work stamped what it produced; the deploy's release identity.
         tickets.get(1).artifact != ANone,
         allInvariants
       })
-      .then(doTaskDone(1, 2, VPass))
+      .then(doTaskDone(1, 2, Pass))
       .expect(allInvariants)
       // THE WITNESSED STEP: evaluation passing completes it outright. No
       // enqueue, no lease, no wrap-up phase entered at all.
       .then(doEvalReduce(1))
       .expect(and {
         lastStep.label == "ticket-done",
-        lastStep.transitions == [{ ticket: 1, from: PEvaluating, to: PDone }],
+        lastStep.transitions == [{ ticket: 1, from: Evaluating, to: Done }],
         lastStep.effects == ["Complete"],
         // It resolved no wrap-up attempt, so it carries no attribution —
         // the completeness arm of wrapUpIsolation permits exactly this.
         lastStep.attempt == WONone,
-        tickets.get(1).phase == PDone,
+        tickets.get(1).phase == Done,
         tickets.get(1).completions == 1,
         // THE REGRESSION PIN: the eval set was retired on the way through.
         tickets.get(1).tasks == Set(),

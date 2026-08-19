@@ -15,7 +15,7 @@
 ///     `allDomainInvariants and refinementInvariants` after EVERY step —
 ///     the crash-recover-continue gate run. Plus the LEASE-FREE route,
 ///     which reaches no wrap-up at all: a WNone ticket completing
-///     straight out of PEvaluating, crashed at its completion seam, so
+///     straight out of Evaluating, crashed at its completion seam, so
 ///     the same obligations are carried on a ticket that never takes a
 ///     lease.
 ///   - chuggy_refinement_hazard_test — the EXPECTED-VIOLATION traces
@@ -45,7 +45,7 @@ module chuggy_refinement_unit_test {
   import chuggy_measure.* from "../measure"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   // A three-decision history built BY the deciders (arrive, release,
   // dispatch), entry records taken from the decisions themselves — the
@@ -73,7 +73,7 @@ module chuggy_refinement_unit_test {
   run journalLegalAcceptsHistoryTest = assert(and {
     journalLegalOn(goodJ),
     replayCore(goodJ) == d3.post,
-    replayCore(goodJ).tickets.get(1).phase == PWorking,
+    replayCore(goodJ).tickets.get(1).phase == Working,
     replayCore(goodJ).tickets.get(1).gasLeft == 2
   })
 
@@ -104,7 +104,7 @@ module chuggy_refinement_unit_test {
   run journalRefusesDisabledTest = assert(and {
     not(decisionEventEnabled(genesis, event2)),
     not(journalLegalOn([{ ...e2, seq: 1 }])),
-    not(decisionEventEnabled(genesis, TaskDone({ ticket: 1, tid: 1, verdict: VPass }))),
+    not(decisionEventEnabled(genesis, TaskDone({ ticket: 1, tid: 1, verdict: Pass }))),
     not(decisionEventEnabled(genesis, Dispatch(1))),
     not(decisionEventEnabled(genesis, GateResolve({ ticket: 1, out: WOk }))),
     not(decisionEventEnabled(genesis, OpRetry(1)))
@@ -159,10 +159,10 @@ module chuggy_refinement_unit_test {
   /// inbound at-least-once composed through the journal (the header's
   /// composition argument, inbound half).
   run journalNoopRowsReplayTest =
-    val dReal = execDecisionEvent(d3.post, TaskDone({ ticket: 1, tid: 1, verdict: VPass }))
-    val dDup = execDecisionEvent(dReal.post, TaskDone({ ticket: 1, tid: 1, verdict: VFail }))
-    val e4: Entry = { seq: 4, event: TaskDone({ ticket: 1, tid: 1, verdict: VPass }), rec: dReal.rec }
-    val e5: Entry = { seq: 5, event: TaskDone({ ticket: 1, tid: 1, verdict: VFail }), rec: dDup.rec }
+    val dReal = execDecisionEvent(d3.post, TaskDone({ ticket: 1, tid: 1, verdict: Pass }))
+    val dDup = execDecisionEvent(dReal.post, TaskDone({ ticket: 1, tid: 1, verdict: Fail }))
+    val e4: Entry = { seq: 4, event: TaskDone({ ticket: 1, tid: 1, verdict: Pass }), rec: dReal.rec }
+    val e5: Entry = { seq: 5, event: TaskDone({ ticket: 1, tid: 1, verdict: Fail }), rec: dDup.rec }
     assert(and {
       dDup.rec.label == "task-done-duplicate",
       dDup.post == dReal.post,
@@ -183,7 +183,7 @@ module chuggy_refinement_witness_test {
   import chuggy_measure.* from "../measure"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   /// The routine decision+emission pair, invariants asserted at BOTH
   /// intermediate states (post-journal with the produced label pinned,
@@ -210,7 +210,7 @@ module chuggy_refinement_witness_test {
       // it journaled.
       .then(crashRecoverTo(0))
       .expect(and {
-        memCore.tickets.get(1).phase == PDraft,
+        memCore.tickets.get(1).phase == Draft,
         applied == 0,
         journal.length() == 1,
         allDomainInvariants, refinementInvariants
@@ -247,13 +247,13 @@ module chuggy_refinement_witness_test {
       // The work task resolves; its completion re-delivers with a
       // different verdict (inbound at-least-once) and the actor
       // journals the ABSORPTION — a no-op row (entry 5).
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: VFail }), "task-done-duplicate"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: Pass }), "task-done"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: Fail }), "task-done-duplicate"))
       .expect(and { journal.length() == 5, allDomainInvariants, refinementInvariants })
       // Work passes; the eval task (id 2) fails; THE REWORK charges
       // 1 rework + 1 gas and spawns the new cycle's work set (entry 8).
       .then(stepEmit(WorkReduce(1), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 2, verdict: VFail }), "task-done"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 2, verdict: Fail }), "task-done"))
       .then(journalStep(EvalReduce(1)))
       .expect(and {
         obs.label == "rework-started eval_failure",
@@ -301,16 +301,16 @@ module chuggy_refinement_witness_test {
       })
       // The rework cycle passes work and eval (the failed evaluator
       // respawns — id 4), and the ticket enqueues for wrap-up.
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 3, verdict: VPass }), "task-done"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 3, verdict: Pass }), "task-done"))
       .then(stepEmit(WorkReduce(1), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 4, verdict: VPass }), "task-done"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 4, verdict: Pass }), "task-done"))
       .then(stepEmit(EvalReduce(1), "eval-passed"))
       // The valid-artifact dequeue completes the ticket (entry 13, WOk) —
       // journaled, not yet emitted: the merge has NOT happened yet.
       .then(journalStep(Dequeue({ ticket: 1, moved: false })))
       .expect(and {
         obs.label == "ticket-done",
-        memCore.tickets.get(1).phase == PDone,
+        memCore.tickets.get(1).phase == Done,
         journalCompletions(1) == 1,
         worldCompletions(1) == 0,
         allDomainInvariants, refinementInvariants
@@ -320,7 +320,7 @@ module chuggy_refinement_witness_test {
       // merged nothing — and will merge exactly once.
       .then(crashRecoverTo(12))
       .expect(and {
-        memCore.tickets.get(1).phase == PDone,
+        memCore.tickets.get(1).phase == Done,
         memCore.tickets.get(1).completions == 1,
         worldCompletions(1) == 0,
         allDomainInvariants, refinementInvariants
@@ -340,7 +340,7 @@ module chuggy_refinement_witness_test {
       // rest and lose nothing.
       .then(crashRecoverTo(0))
       .expect(and {
-        memCore.tickets.get(1).phase == PDone,
+        memCore.tickets.get(1).phase == Done,
         memCore.tickets.get(1).gasLeft == 1,
         journal.length() == 14,
         worldCompletions(1) == 1,
@@ -373,18 +373,18 @@ module chuggy_refinement_witness_test {
       .expect(and { applied == 1, allDomainInvariants, refinementInvariants })
       .then(stepEmit(Release(1), "ticket-released"))
       .then(stepEmit(Dispatch(1), "dispatch"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: Pass }), "task-done"))
       .then(stepEmit(WorkReduce(1), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 2, verdict: VPass }), "task-done"))
+      .then(stepEmit(TaskDone({ ticket: 1, tid: 2, verdict: Pass }), "task-done"))
       // THE WITNESSED STEP: evaluation passing completes the ticket
-      // outright, straight out of PEvaluating. Journaled, not emitted —
+      // outright, straight out of Evaluating. Journaled, not emitted —
       // the world has been told nothing yet.
       .then(journalStep(EvalReduce(1)))
       .expect(and {
         obs.label == "ticket-done",
-        obs.transitions == [{ ticket: 1, from: PEvaluating, to: PDone }],
+        obs.transitions == [{ ticket: 1, from: Evaluating, to: Done }],
         obs.attempt == WONone,          // no attempt, so nothing to attribute
-        memCore.tickets.get(1).phase == PDone,
+        memCore.tickets.get(1).phase == Done,
         journalCompletions(1) == 1,
         worldCompletions(1) == 0,
         allDomainInvariants, refinementInvariants
@@ -394,7 +394,7 @@ module chuggy_refinement_witness_test {
       // journal alone, and the world has still completed nothing.
       .then(crashRecoverTo(0))
       .expect(and {
-        memCore.tickets.get(1).phase == PDone,
+        memCore.tickets.get(1).phase == Done,
         memCore.tickets.get(1).wrapUp == WNone,
         memCore.tickets.get(1).completions == 1,
         applied == 0,
@@ -413,7 +413,7 @@ module chuggy_refinement_witness_test {
         // transition INTO either one, so the gate was never entered and
         // no lease was ever taken.
         journal.foldl(true, (b, e) => e.rec.transitions.foldl(b, (acc, t) =>
-          acc and t.to != PWrapUp and t.to != PWrapUpHolding)),
+          acc and t.to != WrapUpQueued and t.to != WrapUpAwaitingApproval)),
         allDomainInvariants, refinementInvariants
       })
 }
@@ -431,7 +431,7 @@ module chuggy_refinement_hazard_test {
   import chuggy_measure.* from "../measure"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
 
   /// The dispatch double-spend and the duplicate wrap-up, one trace:
   /// the two shapes the theorems name (no double-spent budget, no
@@ -452,7 +452,7 @@ module chuggy_refinement_hazard_test {
       .then(effectCrash(Dispatch(1)))
       .expect(and {
         orphans.length() == 1,
-        memCore.tickets.get(1).phase == PPending,
+        memCore.tickets.get(1).phase == Pending,
         memCore.tickets.get(1).gasLeft == 3,
         worldSpawns(1) == 1,
         journalSpawns(1) == 0,
@@ -476,16 +476,16 @@ module chuggy_refinement_hazard_test {
         allDomainInvariants
       })
       // Walk the (journaled) cycle to the wrap-up queue.
-      .then(journalStep(TaskDone({ ticket: 1, tid: 1, verdict: VPass })))
+      .then(journalStep(TaskDone({ ticket: 1, tid: 1, verdict: Pass })))
       .then(emitNext)
       .then(journalStep(WorkReduce(1)))
       .then(emitNext)
-      .then(journalStep(TaskDone({ ticket: 1, tid: 2, verdict: VPass })))
+      .then(journalStep(TaskDone({ ticket: 1, tid: 2, verdict: Pass })))
       .then(emitNext)
       .then(journalStep(EvalReduce(1)))
       .then(emitNext)
       .expect(and {
-        memCore.tickets.get(1).phase == PWrapUp,
+        memCore.tickets.get(1).phase == WrapUpQueued,
         allDomainInvariants
       })
       // THE SEAM AT THE WRAP-UP: a valid-artifact dequeue squash-merges IN THE
@@ -495,7 +495,7 @@ module chuggy_refinement_hazard_test {
       .expect(and {
         orphans.length() == 2,
         worldCompletions(1) == 1,
-        memCore.tickets.get(1).phase == PWrapUp,
+        memCore.tickets.get(1).phase == WrapUpQueued,
         memCore.tickets.get(1).completions == 0,
         journalLegal,
         recoveryComplete,
@@ -528,11 +528,11 @@ module chuggy_refinement_hazard_test {
       .then(emitNext)
       .then(journalStep(Dispatch(1)))
       .then(emitNext)
-      .then(journalStep(TaskDone({ ticket: 1, tid: 1, verdict: VPass })))
+      .then(journalStep(TaskDone({ ticket: 1, tid: 1, verdict: Pass })))
       .then(emitNext)
       .then(journalStep(WorkReduce(1)))
       .then(emitNext)
-      .then(journalStep(TaskDone({ ticket: 1, tid: 2, verdict: VFail })))
+      .then(journalStep(TaskDone({ ticket: 1, tid: 2, verdict: Fail })))
       .then(emitNext)
       .expect(and {
         memCore.tickets.get(1).gasLeft == 2,
@@ -546,7 +546,7 @@ module chuggy_refinement_hazard_test {
       .then(effectCrash(EvalReduce(1)))
       .expect(and {
         orphans.length() == 1,
-        memCore.tickets.get(1).phase == PEvaluating,
+        memCore.tickets.get(1).phase == Evaluating,
         memCore.tickets.get(1).gasLeft == 2,
         memCore.tickets.get(1).reworkLeft == 1,
         worldSpawns(1) == 2,

@@ -595,7 +595,7 @@ module chuggy_refinement {
     taskPhaseTickets.size() > 0,
     nondet j = taskPhaseTickets.oneOf()
     nondet tid = deliverableTaskIds(core, j).oneOf()
-    nondet v = Set(VPass, VFail).oneOf()
+    nondet v = Set(Pass, Fail).oneOf()
     journalStep(TaskDone({ ticket: j, tid: tid, verdict: v }))
   }
   action actorWorkReduce = all {

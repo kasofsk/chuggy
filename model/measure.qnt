@@ -139,7 +139,7 @@
 ///                                       than models)
 ///   eval-passed (the FINAL stage        rank 3->2 AND stagesLeft 1->0 (the
 ///     passes)                             ticket ENQUEUES for the gate —
-///                                         PWrapUp is the queued state)
+///                                         WrapUpQueued is the queued state)
 ///   wrapup-started (the dequeue:      rank 2->1 (the ticket
 ///     dequeue occupies the project's      takes the project's depth-1 slot;
 ///     depth-1 gate — drawn only when      no account moves — the gate
@@ -159,7 +159,7 @@
 ///                                       completing straight off the queue;
 ///                                       1: completing out of the lease)
 ///   rework-started wrapup_failure         gas -1 (AND wrapUpLeft -1 when
-///                                       Budgeted); from PWrapUpHolding since the
+///                                       Budgeted); from WrapUpAwaitingApproval since the
 ///                                       the eviction
 ///                                       frees the gate by phase (rank
 ///                                       1->4 climb + respawn, dominated
@@ -176,7 +176,7 @@
 ///                                         the whole climb is < microBound,
 ///                                         which gas outweighs; RWrapUp
 ///                                         re-ENQUEUES — resumes to
-///                                         PWrapUp, never into the gate)
+///                                         WrapUpQueued, never into the gate)
 ///
 /// NAMED NON-DESCENDING SETS — everything else, isolated by name:
 ///
@@ -232,7 +232,7 @@
 ///                       Escalated is rank 0, so nothing falls when no
 ///                       dependent gets parked by the cascade AND no member
 ///                       gets released by the dissolution (either makes the
-///                       step strictly descend). Bounded: PRevoked is
+///                       step strictly descend). Bounded: Revoked is
 ///                       absorbing, so each such step permanently settles
 ///                       one ticket — at most N_TICKETS ever.)
 ///
@@ -290,21 +290,21 @@ module chuggy_measure {
 
   /// STORED ticket phases, deliberately few (standing rule 3, derive don't
   /// store). Blocked and Ready are PREDICATES over deps + record in
-  /// domain.qnt, not phases — a ticket that has not started is PPending, and
-  /// the waiting-room split is derived. PPending must be stored (phase is
+  /// domain.qnt, not phases — a ticket that has not started is Pending, and
+  /// the waiting-room split is derived. Pending must be stored (phase is
   /// total and "never started" is not expressible as a predicate over the
-  /// other fields without overloading them). PWorking/PEvaluating carry the
-  /// parallel task set; PWrapUp is its own phase because its outcome is the
-  /// exclusivity boundary; PDone is absorbing; PEscalated is the human desk.
+  /// other fields without overloading them). Working/Evaluating carry the
+  /// parallel task set; WrapUpQueued is its own phase because its outcome is the
+  /// exclusivity boundary; Done is absorbing; Escalated is the human desk.
   ///
-  /// PDraft is the ONLY authoring phase: release goes PDraft -> PPending
+  /// Draft is the ONLY authoring phase: release goes Draft -> Pending
   /// directly, with Ready and Blocked derived.
   ///
-  /// PEscalated is THE parked phase — one parked-with-an-open-human-task
+  /// Escalated is THE parked phase — one parked-with-an-open-human-task
   /// phase, with the `reason` field carrying the pre-work walls
   /// (revalidation_failed, dependency_revoked).
   ///
-  /// PRevoked is the other settled terminal: absorbing, runs nothing, never
+  /// Revoked is the other settled terminal: absorbing, runs nothing, never
   /// completes, and opens NO human task, because revocation is the author's
   /// settled choice (see hasOpenHumanTask).
   ///
@@ -312,57 +312,57 @@ module chuggy_measure {
   /// Evaluating edge, because within-phase progress lives in the stage
   /// digit rather than in new phases.
   ///
-  /// PWrapUpHolding is the lease held; PWrapUp is ENQUEUED. An
+  /// WrapUpAwaitingApproval is the lease held; WrapUpQueued is ENQUEUED. An
   /// implementation may keep queue and slot in ONE state with the split
   /// living in memory; the model lifts the slot into phase so depth-1
   /// exclusivity is a predicate over stored state, while the queue's ORDER
-  /// stays deliberately unmodeled. A ticket is PWrapUpHolding only when the
+  /// stays deliberately unmodeled. A ticket is WrapUpAwaitingApproval only when the
   /// environment invalidated its artifact at the dequeue — a quiet dequeue
-  /// completes directly and never occupies the gate — so PWrapUpHolding
+  /// completes directly and never occupies the gate — so WrapUpAwaitingApproval
   /// ENCODES invalidated = true with no stored flag, derive-don't-store
   /// applied to the environment's choice.
   type Phase =
-    PDraft |
-    PPending | PWorking | PEvaluating | PWrapUp | PWrapUpHolding |
-    PDone | PEscalated | PRevoked
+    Draft |
+    Pending | Working | Evaluating | WrapUpQueued | WrapUpAwaitingApproval |
+    Done | Escalated | Revoked
 
   /// What a task IS for (task records are first-class — they carry the
   /// anatomy):
-  ///   TKWork     — a task of the Work phase's single task set (Work stays
+  ///   Work     — a task of the Work phase's single task set (Work stays
   ///                ONE task-set phase per kasofsk's anatomy note; the
   ///                extracted vocabulary agrees
   ///                task creation: "Job enters Work (new cycle): one work
   ///                task", i.e. Work is not staged).
-  ///   TKEval(s)  — a task of eval stage s (0-based index into the ticket's
+  ///   Evaluation(s)  — a task of eval stage s (0-based index into the ticket's
   ///                authored program
   ///                `stage:`, "default 0; non-negative; evaluators run in
   ///                ascending stage order; within a stage they fan out in
   ///                parallel"). The kind mark is what makes the CURRENT
   ///                stage derivable from the live task set (evalStage
   ///                below) instead of stored — standing rule 3.
-  type TaskKind = TKWork | TKEval(int)
+  type TaskKind = Work | Evaluation(int)
 
   /// A settled task's outcome — RESOLVED verdicts only; an outstanding task
-  /// cannot carry one (see TaskState). TFailed
+  /// cannot carry one (see TaskState). Failed
   /// covers BOTH a failed verdict and evaluator-infrastructure death: "the
   /// job pays" for evaluator crashes — one account, no new machinery.
-  /// TCancelled is the retirement
+  /// Cancelled is the retirement
   /// mark for a task still OUTSTANDING when its ticket is revoked mid-flight —
   /// revoke force-closes every pending task with a synthetic resolution
   /// recording that the revoke, not a verdict, retired it.
   /// Only revoke produces it: every other retirement happens at a reduce,
   /// when the set is fully resolved.
-  type TaskOutcome = TPassed | TFailed | TCancelled
+  type TaskOutcome = Passed | Failed | Cancelled
 
   /// THE EXPLICIT TASK LIFECYCLE (one small sum instead of implicit
   /// set-membership). A task is PUBLISHED to the fabric as outstanding and
   /// RESOLVES exactly once. Assignment, launch, execution and their retries
-  /// are the trusted fabric's grain, not states of this machine. TSResolved
+  /// are the trusted fabric's grain, not states of this machine. Resolved
   /// carries the outcome, so an outstanding task CANNOT carry one and a
   /// resolved task MUST. First write wins (resolveTask); resolution is final
   /// (recordMonotone makes that a theorem).
 
-  type TaskState = TSOutstanding | TSResolved(TaskOutcome)
+  type TaskState = Outstanding | Resolved(TaskOutcome)
 
   /// A first-class task record: identity + kind +
   /// lifecycle state. `id` is SEQUENTIAL WITHIN THE TICKET, 1-indexed, across
@@ -381,17 +381,17 @@ module chuggy_measure {
 
   /// A task-completion event's verdict (the event, as distinct from the
   /// stored resolution — duplicates of the event must be tolerated).
-  type Verdict = VPass | VFail
+  type Verdict = Pass | Fail
 
   /// Verdict combinator over a resolved task set. Not a
   /// machine-wide parameter — each STAGE of a ticket's authored program
   /// carries its own, because eval is data. The default, unanimous
   /// pass, is the default program's combinator
-  /// (domain.qnt defaultProgram). CUnanimousPass is the
+  /// (domain.qnt defaultProgram). UnanimousPass is the
   /// required-evaluator rule — every required evaluator in the stage
   /// passed — at chuggy's grain. The required/advisory split is BELOW that
   /// grain: an advisory evaluator is one the stage's combinator ignores.
-  type Combinator = CUnanimousPass | CAnyPass
+  type Combinator = UnanimousPass | AnyPass
 
   /// One stage of a ticket's eval program: a task-set with its own
   /// fan-out width and its own verdict combinator: one task per evaluator
@@ -428,7 +428,7 @@ module chuggy_measure {
   /// modeled exit is revoke (domain.qnt retryableIn), and stamping a
   /// resume point on it would be a lie to the desk. RPending is the
   /// PRE-WORK resume flavor: back to the
-  /// released waiting room (PPending, where Ready/Blocked re-derive),
+  /// released waiting room (Pending, where Ready/Blocked re-derive),
   /// never to a pipeline phase — a pre-work park spent nothing and
   /// resumes to exactly where it left.
   type Resume = RNone | RPending | RWorking | REvaluating | RWrapUp
@@ -521,8 +521,8 @@ module chuggy_measure {
   /// It exists chiefly so a dependent can NAME what its dependency produced,
   /// which is unexpressible today: a dep is only a phase check. Reads across
   /// tickets are safe by construction — terminalsAbsorbing forbids leaving
-  /// PDone, depsDoneIn requires every dep to be PDone, and only a completion
-  /// writes PDone, so a dependency's artifact is final before any dependent
+  /// Done, depsDoneIn requires every dep to be Done, and only a completion
+  /// writes Done, so a dependency's artifact is final before any dependent
   /// can dispatch.
   ///
   /// NOT a measure input, like `project` (measureArtifactBlindTest).
@@ -623,19 +623,19 @@ module chuggy_measure {
 
   /// Standing rule 3 (derive, don't store): the open-human-task flag IS a
   /// predicate over the phase — a desk task is open exactly while the ticket
-  /// is parked on the desk, and PEscalated is THE parked phase.
+  /// is parked on the desk, and Escalated is THE parked phase.
   /// (storing the flag would need the iff proved as an invariant; deriving
   /// it makes the invariant hold by construction.) The trace-visible
   /// artifact is the "OpenHumanTask" effect string.
   ///
-  /// PRevoked is deliberately NOT here: revocation is the author's
+  /// Revoked is deliberately NOT here: revocation is the author's
   /// settled choice — the desk owes a revoked ticket nothing, exactly like
-  /// PDone. This is precisely why the revoke cascade needs its own
+  /// Done. This is precisely why the revoke cascade needs its own
   /// coverage: a dependent stuck behind a Revoked dep gets no visibility
   /// through its dep, so the cascade parks it with a task of its OWN
   /// (RsDependencyRevoked; domain.qnt `cascadeSafety`).
   pure def hasOpenHumanTask(ticket: Ticket): bool =
-    ticket.phase == PEscalated
+    ticket.phase == Escalated
 
   /// The machine's observed state, as the pure deciders see it. A record
   /// (not a bare map) so the ticket-source shape stays open.  attached
@@ -720,7 +720,7 @@ module chuggy_measure {
   /// completion, the priced failure, the walls — settles or reworks in one
   /// step.
   pure val rankHolding: int = rankSettled + 1
-  /// PWrapUp — ENQUEUED for the gate: the
+  /// WrapUpQueued — ENQUEUED for the gate: the
   /// dequeue (wrapup-started) descends into the gate, the quiet fast-path
   /// descends straight to Done.
   pure val rankWrapUp: int = rankHolding + 1
@@ -730,7 +730,7 @@ module chuggy_measure {
   pure val rankPending: int = rankWorking + 1
   /// The ONLY authoring phase, the ladder's top; release descends 6 -> 5.
   pure val rankDraft: int = rankPending + 1
-  /// The ladder's ceiling — the highest rank any phase takes (PDraft).
+  /// The ladder's ceiling — the highest rank any phase takes (Draft).
   /// microBound's multiplier is radix(rankCeiling): the
   /// compression (6 -> 5)'s two new rungs (5 -> 7) and
   /// the grouping removal (7 -> 6) each propagated to the multiplier
@@ -738,37 +738,37 @@ module chuggy_measure {
   pure val rankCeiling: int = rankDraft
 
   /// How far from settled a ticket's lifecycle position is. The wildcard is
-  /// the settled tier: PDone, PEscalated, and PRevoked all take
+  /// the settled tier: Done, Escalated, and Revoked all take
   /// rankSettled — revoke and every wall drop any live rank straight to
   /// settled.
   pure def phaseRank(p: Phase): int =
     match p {
-      | PDraft => rankDraft
-      | PPending => rankPending
-      | PWorking => rankWorking
-      | PEvaluating => rankEvaluating
-      | PWrapUp => rankWrapUp
-      | PWrapUpHolding => rankHolding
+      | Draft => rankDraft
+      | Pending => rankPending
+      | Working => rankWorking
+      | Evaluating => rankEvaluating
+      | WrapUpQueued => rankWrapUp
+      | WrapUpAwaitingApproval => rankHolding
       | _ => rankSettled
     }
 
   pure def outstandingCount(tasks: Set[Task]): int =
-    tasks.filter(t => t.state == TSOutstanding).size()
+    tasks.filter(t => t.state == Outstanding).size()
 
   /// The CURRENT eval stage, DERIVED from the live task set's kind marks
   /// (standing rule 3: no stored stage index) — meaningful only while the
-  /// set is a stage's fan-out (PEvaluating; tasksWellFormed pins the set
-  /// uniformly TKEval(s), so the fold's pick order is irrelevant). 0 on an
+  /// set is a stage's fan-out (Evaluating; tasksWellFormed pins the set
+  /// uniformly Evaluation(s), so the fold's pick order is irrelevant). 0 on an
   /// empty or work set (the fold's base: no eval mark, no stage).
   pure def evalStage(tasks: Set[Task]): int =
-    tasks.fold(0, (acc, t) => match t.kind { | TKWork => acc | TKEval(s) => s })
+    tasks.fold(0, (acc, t) => match t.kind { | Work => acc | Evaluation(s) => s })
 
   /// The stage digit: how many stages of the authored program have not yet
   /// passed — L - s while Evaluating stage s (so in 1..L there), 0 in every
   /// other phase (the digit APPEARS on work-passed and VANISHES on every
   /// exit, both dominated per the header's digit-order argument).
   pure def stagesLeft(ticket: Ticket): int =
-    if (ticket.phase == PEvaluating) ticket.program.length() - evalStage(ticket.tasks)
+    if (ticket.phase == Evaluating) ticket.program.length() - evalStage(ticket.tasks)
     else 0
 
   /// THE radix derivation, named once (the magic-number audit): a digit
@@ -830,7 +830,7 @@ module chuggy_measure {
   /// across the whole history.
   pure def spawnTasks(k: TaskKind, start: int, n: int): Set[Task] =
     start.to(start + n - 1).map(i =>
-      { id: i, kind: k, state: TSOutstanding })
+      { id: i, kind: k, state: Outstanding })
 
   /// The next task id this ticket would spawn: every id ever issued is either
   /// retired (record) or live (tasks), and ids are dense from firstTaskId.
@@ -850,50 +850,50 @@ module chuggy_measure {
   /// Retire the live task set into the retained record, in id order
   /// (tasksWellFormed keeps live ids contiguous above the record, so the
   /// appended run keeps record entry i at id firstTaskId + i). A task
-  /// still OUTSTANDING at retirement is force-closed as TSResolved(TCancelled)
+  /// still OUTSTANDING at retirement is force-closed as Resolved(Cancelled)
   /// — only revoke retires mid-flight sets; every reduce/escalation
   /// retirement is of a
-  /// fully-resolved set, so the TCancelled arm never fires there. A
+  /// fully-resolved set, so the Cancelled arm never fires there. A
   pure def retireLive(ticket: Ticket): Ticket =
     val start = firstTaskId + ticket.record.length()
     { ...ticket,
       tasks: Set(),
       record: range(start, start + ticket.tasks.size()).foldl(ticket.record, (r, i) =>
         r.append(ticket.tasks.fold(
-          { id: i, kind: TKWork, state: TSResolved(TCancelled) },
+          { id: i, kind: Work, state: Resolved(Cancelled) },
           (acc, t) =>
           if (t.id == i)
-            { ...t, state: if (t.state == TSOutstanding) TSResolved(TCancelled) else t.state }
+            { ...t, state: if (t.state == Outstanding) Resolved(Cancelled) else t.state }
           else acc))) }
 
   /// First write wins: resolve task `tid` if it is still outstanding; the
   /// caller (decideTaskDone) treats an already-resolved task as a duplicate
   /// delivery and changes nothing — the idempotence an at-least-once
   /// fabric demands. The explicit
-  /// lifecycle makes the finality structural: TSOutstanding -> TSResolved(out)
-  /// is the only edge, and nothing maps a TSResolved back.
+  /// lifecycle makes the finality structural: Outstanding -> Resolved(out)
+  /// is the only edge, and nothing maps a Resolved back.
   /// The resolution event carries the footprint alongside
   /// the verdict, and first-write-wins covers BOTH — a duplicate delivery
   /// with a different citation changes nothing, and a carried task
   /// (born settled, no outstanding match) absorbs deliveries the same way.
   pure def resolveTask(tasks: Set[Task], tid: int, out: TaskOutcome): Set[Task] =
     tasks.map(t =>
-      if (t.id == tid and t.state == TSOutstanding) { ...t, state: TSResolved(out) }
+      if (t.id == tid and t.state == Outstanding) { ...t, state: Resolved(out) }
       else t)
 
   /// What counts as a PASS to the combinator: a verdict earned this
   /// incarnation. Named rather than inlined because `combine` reads it
   /// twice and the tests pin it directly.
-  pure def taskPassed(t: Task): bool = t.state == TSResolved(TPassed)
+  pure def taskPassed(t: Task): bool = t.state == Resolved(Passed)
 
   /// The verdict combinator, interpreted per stage (the caller reads
   /// it off the ticket's program — eval is data, this is the interpreter's
   /// leaf). Callers guarantee every task is resolved.
-  /// CUnanimousPass is "every required evaluator in the stage passed" at
-  /// this grain; TFailed and TCancelled both fail it (taskPassed above).
+  /// UnanimousPass is "every required evaluator in the stage passed" at
+  /// this grain; Failed and Cancelled both fail it (taskPassed above).
   pure def combine(c: Combinator, tasks: Set[Task]): bool =
     match c {
-      | CUnanimousPass => tasks.forall(t => taskPassed(t))
-      | CAnyPass => tasks.exists(t => taskPassed(t))
+      | UnanimousPass => tasks.forall(t => taskPassed(t))
+      | AnyPass => tasks.exists(t => taskPassed(t))
     }
 }

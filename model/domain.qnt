@@ -125,7 +125,7 @@ module chuggy_domain {
   /// The stage vocabulary an author may draw from: any fan-out 1..N_TASKS,
   /// either combinator (both branches stay exercisable — the model).
   pure val stageChoices: Set[Stage] =
-    tuples(1.to(N_TASKS), Set(CUnanimousPass, CAnyPass))
+    tuples(1.to(N_TASKS), Set(UnanimousPass, AnyPass))
       .map(t => { fanout: t._1, combinator: t._2 })
 
   /// Every WELL-FORMED authorable program: non-empty, at most MAX_STAGES
@@ -147,7 +147,7 @@ module chuggy_domain {
   /// combinator const: the combinator is data on the ticket record, and a
   /// const would be exactly the machinery that eval-is-data rules out.
   pure val defaultProgram: List[Stage] =
-    [{ fanout: N_TASKS, combinator: CUnanimousPass }]
+    [{ fanout: N_TASKS, combinator: UnanimousPass }]
 
   /// The ticket-source seam, now CLOSED:
   /// every ticket the machine ever holds is built here, and the only caller is
@@ -159,7 +159,7 @@ module chuggy_domain {
   /// riding the arrival, immutable after, like deps and the program.
   pure def freshTicket(
       deps_: Set[int], prog: List[Stage], project_: int, wrapUp_: WrapUp): Ticket = {
-    phase: PDraft,
+    phase: Draft,
     deps: deps_,
     program: prog,
     wrapUp: wrapUp_,
@@ -288,26 +288,26 @@ module chuggy_domain {
   /// authoring surface exactly as Draft content edits are, so arrival is
   /// the AUTHORING set's only climbing member (measure.qnt AUTHORING).
   pure def decideRelease(c: Core, j: int): Decision =
-    move(c, j, PPending, "ticket-released", [])
+    move(c, j, Pending, "ticket-released", [])
 
   /// Revoke + THE CASCADE. Table provenance for the revoke
   /// edge itself: lines 47-48 `(_, Revoked) => true` — every non-terminal
   /// phase may be revoked (the caller's guard, revocableIn) — and lines
   /// 45-46 `(Done | Revoked, Revoked) => false` — the terminals are
-  /// absorbing, so no decider ever moves a ticket OUT of PRevoked (invariant
+  /// absorbing, so no decider ever moves a ticket OUT of Revoked (invariant
   /// terminalsAbsorbing). The revoked ticket settles: rank -> 0, live task set
   /// RETIRED into the record (still-outstanding tasks force-closed as
-  /// TCancelled; the
+  /// Cancelled; the
   /// record itself is KEPT: provenance survives the author's settlement,
   /// "Revoked runs nothing" ≠ "Revoked remembers nothing"), accounts
   /// UNTOUCHED — revoke charges no gas and spends no budget in either
-  /// direction — and reason/resumeAt cleared: PRevoked opens NO human task
+  /// direction — and reason/resumeAt cleared: Revoked opens NO human task
   /// (hasOpenHumanTask excludes it; revocation is the author's settled
-  /// choice, like PDone).
+  /// choice, like Done).
   ///
   /// THE CASCADE: a ticket whose dep chain
   /// contains a revoked ticket can never unblock (a dep that is not Done
-  /// blocks, and PRevoked never becomes PDone). Of the two candidate
+  /// blocks, and Revoked never becomes Done). Of the two candidate
   /// semantics —
   ///   (a) transitive cascade-REVOKE: dependents are revoked too;
   ///   (b) PARK: dependents wait on the desk behind a named wall —
@@ -323,12 +323,12 @@ module chuggy_domain {
   /// atomic with the revoke — same decision, one StepRecord — so
   /// cascadeSafety holds in EVERY reachable state, never just eventually.
   ///
-  /// Why parking only PDraft/PPending dependents is exhaustive: a
+  /// Why parking only Draft/Pending dependents is exhaustive: a
   /// transitive dependent of a revocable (hence non-Done) ticket can never
   /// have dispatched — dispatch needs all deps Done, Done is absorbing, and
   /// the revoked ancestor is not Done — so every dependent is still
   /// pre-flight: Draft, Pending, or already settled by an earlier cascade
-  /// (PEscalated RsDependencyRevoked) or by its own author (PRevoked). The
+  /// (Escalated RsDependencyRevoked) or by its own author (Revoked). The
   /// filter parks exactly the first two and leaves the already-settled
   /// alone (no duplicate transitions). Pre-flight tickets hold
   /// no live tasks, so the cascade retires nothing on the parked side.
@@ -346,16 +346,16 @@ module chuggy_domain {
         dset.union(Set(k)) else dset)
     val parked = doomedByJ.filter(k =>
       val p = c.tickets.get(k).phase
-      p == PDraft or p == PPending)
+      p == Draft or p == Pending)
     // Ascending, deterministic order for the golden-trace record.
     val parkedList = range(1, n + 1).foldl([], (l, k) =>
       if (parked.contains(k)) l.append(k) else l)
     { rec: {
         label: "ticket-revoked",
         transitions:
-          [{ ticket: j, from: c.tickets.get(j).phase, to: PRevoked }]
+          [{ ticket: j, from: c.tickets.get(j).phase, to: Revoked }]
             .concat(parkedList.foldl([], (l, k) =>
-              l.append({ ticket: k, from: c.tickets.get(k).phase, to: PEscalated }))),
+              l.append({ ticket: k, from: c.tickets.get(k).phase, to: Escalated }))),
         // "Revoke" for the revoked ticket; one OpenHumanTask per parked
         // dependent — and NONE for the revoked ticket itself.
         effects: ["Revoke"]
@@ -363,17 +363,17 @@ module chuggy_domain {
         attempt: WONone },
       post: { ...c, tickets: c.tickets.keys().mapBy(k =>
         if (k == j)
-          { ...retireLive(c.tickets.get(k)), phase: PRevoked,
+          { ...retireLive(c.tickets.get(k)), phase: Revoked,
             resumeAt: RNone, reason: RsNone }
         else if (parked.contains(k))
-          { ...c.tickets.get(k), phase: PEscalated, reason: RsDependencyRevoked }
+          { ...c.tickets.get(k), phase: Escalated, reason: RsDependencyRevoked }
         else c.tickets.get(k)) } }
 
   // --- Pure guard predicates ------
 
   /// Every phase but the two absorbing terminals may be revoked.
   pure def revocableIn(c: Core, j: int): bool =
-    c.tickets.get(j).phase != PDone and c.tickets.get(j).phase != PRevoked
+    c.tickets.get(j).phase != Done and c.tickets.get(j).phase != Revoked
 
   /// What one operator resume costs, by flavor (with Stalled
   /// merged into Escalated, ONE decider — decideOpRetry — carries every
@@ -398,7 +398,7 @@ module chuggy_domain {
       | _ => match OP_RETRY_PRICING { | RetryCharged => 1 | RetryFree => 0 }
     }
 
-  /// May the operator Retry this parked ticket? Parked is PEscalated (the
+  /// May the operator Retry this parked ticket? Parked is Escalated (the
   /// only desk phase now); a resume must EXIST (resumeAt != RNone) and be
   /// AFFORDABLE (a charging resume needs gas). The one wall with no
   /// modeled resume is dependency_revoked (resumeAt RNone) — a DELIBERATE
@@ -409,7 +409,7 @@ module chuggy_domain {
   /// only modeled exit is revoke; dep re-authoring is future work (README,
   /// deliberately-absent table).
   pure def retryableIn(c: Core, j: int): bool = and {
-    c.tickets.get(j).phase == PEscalated,
+    c.tickets.get(j).phase == Escalated,
     c.tickets.get(j).resumeAt != RNone,
     resumeCharge(c.tickets.get(j).resumeAt) <= c.tickets.get(j).gasLeft
   }
@@ -427,13 +427,13 @@ module chuggy_domain {
 
   /// WHAT THIS TICKET'S DEPENDENCIES PRODUCED (design 002) — the read that
   /// makes a release ticket expressible at all. Derived, never stored, and
-  /// stable: every dep is PDone before a dependent can dispatch, and PDone
+  /// stable: every dep is Done before a dependent can dispatch, and Done
   /// is absorbing, so nothing here can change under a reader.
   pure def depArtifacts(c: Core, j: int): Set[ArtifactMark] =
     waitsOn(c, j).map(d => c.tickets.get(d).artifact)
 
   pure def depsDoneIn(c: Core, j: int): bool =
-    waitsOn(c, j).forall(k => c.tickets.get(k).phase == PDone)
+    waitsOn(c, j).forall(k => c.tickets.get(k).phase == Done)
 
   // --- Core-parameterized enablement (the refinement layer — the
   // m6 hoist discipline one level up, applied to the enablement SETS):
@@ -453,13 +453,13 @@ module chuggy_domain {
   /// Tickets a new arrival may depend on: no tombstones (decideArrive's
   /// doc has the cascadeSafety argument).
   pure def dependableIn(c: Core): Set[int] = c.tickets.keys().filter(k => and {
-    c.tickets.get(k).phase != PRevoked,
-    not(c.tickets.get(k).phase == PEscalated and c.tickets.get(k).reason == RsDependencyRevoked)
+    c.tickets.get(k).phase != Revoked,
+    not(c.tickets.get(k).phase == Escalated and c.tickets.get(k).reason == RsDependencyRevoked)
   })
 
   /// The only authoring phase, hence the only releasable set.
   pure def draftsIn(c: Core): Set[int] =
-    c.tickets.keys().filter(j => c.tickets.get(j).phase == PDraft)
+    c.tickets.keys().filter(j => c.tickets.get(j).phase == Draft)
 
   /// Every non-terminal may be revoked.
   pure def revocablesIn(c: Core): Set[int] =
@@ -472,15 +472,15 @@ module chuggy_domain {
   /// Tickets whose task set can receive completion events.
   pure def taskPhaseIn(c: Core): Set[int] =
     c.tickets.keys().filter(j =>
-      c.tickets.get(j).phase == PWorking or c.tickets.get(j).phase == PEvaluating)
+      c.tickets.get(j).phase == Working or c.tickets.get(j).phase == Evaluating)
 
   pure def reducibleWorkIn(c: Core): Set[int] =
     c.tickets.keys().filter(j =>
-      c.tickets.get(j).phase == PWorking and outstandingCount(c.tickets.get(j).tasks) == 0)
+      c.tickets.get(j).phase == Working and outstandingCount(c.tickets.get(j).tasks) == 0)
 
   pure def reducibleEvalIn(c: Core): Set[int] =
     c.tickets.keys().filter(j =>
-      c.tickets.get(j).phase == PEvaluating and outstandingCount(c.tickets.get(j).tasks) == 0)
+      c.tickets.get(j).phase == Evaluating and outstandingCount(c.tickets.get(j).tasks) == 0)
 
   /// Enqueued tickets whose project's gate is free (the depth-1 refusal).
   pure def wrapUpStartablesIn(c: Core): Set[int] =
@@ -488,10 +488,10 @@ module chuggy_domain {
 
   /// The occupied gate slots.
   pure def holdingIn(c: Core): Set[int] =
-    c.tickets.keys().filter(j => c.tickets.get(j).phase == PWrapUpHolding)
+    c.tickets.keys().filter(j => c.tickets.get(j).phase == WrapUpAwaitingApproval)
 
   pure def doneIn(c: Core): Set[int] =
-    c.tickets.keys().filter(j => c.tickets.get(j).phase == PDone)
+    c.tickets.keys().filter(j => c.tickets.get(j).phase == Done)
 
   /// Parked tickets the operator may Retry (retryableIn per ticket).
   pure def retryablesIn(c: Core): Set[int] =
@@ -503,10 +503,10 @@ module chuggy_domain {
   /// definitionally covered, revoked ones. Location-blind — Done-ness,
   /// never project.
   pure def isReadyIn(c: Core, j: int): bool =
-    c.tickets.get(j).phase == PPending and depsDoneIn(c, j)
+    c.tickets.get(j).phase == Pending and depsDoneIn(c, j)
 
   pure def isBlockedIn(c: Core, j: int): bool =
-    c.tickets.get(j).phase == PPending and not(depsDoneIn(c, j))
+    c.tickets.get(j).phase == Pending and not(depsDoneIn(c, j))
 
   /// May the dispatcher launch ticket j? Ready (the derived waiting room)
   /// with gas to charge — entry to Working always meters (standing rule
@@ -544,24 +544,24 @@ module chuggy_domain {
     match t.wrapUp { | WNone => 0 | WExclusive(r) => r }
 
   /// Is resource r unheld? Occupancy is a DERIVED predicate over phase
-  /// (derive-don't-store — the whole point of PWrapUpHolding): no ticket
+  /// (derive-don't-store — the whole point of WrapUpAwaitingApproval): no ticket
   /// currently holds r. Completion, failure, walls and revoke all release
   /// it by leaving the phase, so nothing cleans up.
   pure def leaseFreeIn(c: Core, r: int): bool =
     c.tickets.keys().forall(k =>
-      not(c.tickets.get(k).phase == PWrapUpHolding and leaseOf(c.tickets.get(k)) == r))
+      not(c.tickets.get(k).phase == WrapUpAwaitingApproval and leaseOf(c.tickets.get(k)) == r))
 
   /// May ticket j be DEQUEUED — leave the wrap-up queue and take its
   /// project's gate slot (or fast-path out of it, if the environment draws
   /// the branch quiet)? Enqueued, and the target project's gate free. THE
-  /// DEPTH-1 REFUSAL LIVES HERE: while any same-project ticket is PWrapUpHolding,
+  /// DEPTH-1 REFUSAL LIVES HERE: while any same-project ticket is WrapUpAwaitingApproval,
   /// this guard refuses every other dequeue for that project — pinned as a
   /// guard-refusal on a deterministic machine trace
   /// (tests/chuggy_witness_test.qnt, gate module). Shared by the
   /// `wrapUpStart` action and the witness drivers (guards are referenced,
   /// never copied — the dispatchableIn discipline).
   pure def wrapUpStartableIn(c: Core, j: int): bool = and {
-    c.tickets.get(j).phase == PWrapUp,
+    c.tickets.get(j).phase == WrapUpQueued,
     leaseFreeIn(c, leaseOf(c.tickets.get(j)))
   }
 
@@ -575,12 +575,12 @@ module chuggy_domain {
   /// RPending), since Escalated is the one parked phase. the failed
   /// set is RETIRED into the retained record, not dropped — every pipeline
   /// escalation is reached at a reduce, so the set is fully resolved and
-  /// the TCancelled arm of retireLive never fires here; a pre-work park
+  /// the Cancelled arm of retireLive never fires here; a pre-work park
   /// holds no tasks, so retireLive is a no-op for it.
   pure def escalate(c: Core, j: int, at: Resume, why: Reason, label: str): Decision =
     move(
       withTicket(c, j, { ...retireLive(c.tickets.get(j)), resumeAt: at, reason: why }),
-      j, PEscalated, label, ["OpenHumanTask"])
+      j, Escalated, label, ["OpenHumanTask"])
 
   /// Ready -> Working: launch a cycle for the ticket THE DISPATCHER CHOSE.
   /// Charges one gas — EVERY entry to Working does (standing rule 2: no
@@ -605,9 +605,9 @@ module chuggy_domain {
   pure def decideDispatch(c: Core, j: int): Decision =
     val jb = c.tickets.get(j)
     move(
-      withTicket(c, j, { ...spawnOn(jb, TKWork, N_TASKS),
+      withTicket(c, j, { ...spawnOn(jb, Work, N_TASKS),
         gasLeft: jb.gasLeft - 1 }),
-      j, PWorking, "dispatch", ["SpawnWorkTasks"])
+      j, Working, "dispatch", ["SpawnWorkTasks"])
 
   /// A task-completion event for task `tid` of ticket j (Working or
   /// Evaluating — one decider for both phases' task sets). First write
@@ -622,11 +622,11 @@ module chuggy_domain {
   /// nothing). No phase transition either way — task records resolve
   /// inside the phase.
   pure def decideTaskDone(c: Core, j: int, tid: int, v: Verdict): Decision =
-    if (c.tickets.get(j).tasks.exists(t => t.id == tid and t.state == TSOutstanding))
+    if (c.tickets.get(j).tasks.exists(t => t.id == tid and t.state == Outstanding))
       { rec: { label: "task-done", transitions: [], effects: [], attempt: WONone },
         post: withTicket(c, j, { ...c.tickets.get(j),
           tasks: resolveTask(c.tickets.get(j).tasks, tid,
-            match v { | VPass => TPassed | VFail => TFailed }) }) }
+            match v { | Pass => Passed | Fail => Failed }) }) }
     else
       noop(c, "task-done-duplicate")
 
@@ -650,12 +650,12 @@ module chuggy_domain {
   pure def decideWorkReduce(c: Core, j: int): Decision =
     val jb = c.tickets.get(j)
     val retired = retireLive(jb)
-    if (jb.tasks.forall(t => t.state == TSResolved(TPassed)))
+    if (jb.tasks.forall(t => t.state == Resolved(Passed)))
       val fan = retired.program[0].fanout
       move(
         withTicket(c, j,
-          { ...spawnOn(retired, TKEval(0), fan), artifact: ASome(retired.spawned) }),
-        j, PEvaluating, "work-passed", ["SpawnEvalTasks"])
+          { ...spawnOn(retired, Evaluation(0), fan), artifact: ASome(retired.spawned) }),
+        j, Evaluating, "work-passed", ["SpawnEvalTasks"])
     else
       escalate(c, j, RWorking, RsWorkFailed, "ticket-escalated work_failed")
 
@@ -671,7 +671,7 @@ module chuggy_domain {
   ///     evaluator passing and a later stage remains: create the next
   ///     stage's evaluator tasks"). Descends: stagesLeft -1 dominates the
   ///     spawn (measure.qnt, the stage digit).
-  ///   - the FINAL stage passes -> the program passed: PWrapUp.
+  ///   - the FINAL stage passes -> the program passed: WrapUpQueued.
   ///   - stage FAILS -> SHORT-CIRCUIT: the later stages are not created —
   ///     they are skipped, not failed, so no task records exist for them —
   ///     and the eval reduce proceeds immediately (the
@@ -685,11 +685,11 @@ module chuggy_domain {
   ///     the ticket behind the existing wall (budget wall checked before the
   ///     gas wall). No new wall, no new account.
   ///
-  /// Evaluator-infrastructure death is a TFailed INSIDE the stage — THE
+  /// Evaluator-infrastructure death is a Failed INSIDE the stage — THE
   /// TICKET PAYS from the same accounts, no new machinery. Deliberate
   /// abstraction from the extracted vocabulary, which escalates required
   /// INFRA failures immediately (skipping rework) and distinguishes abort
-  /// verdicts; chuggy folds all three into TFailed-fails-the-stage because
+  /// verdicts; chuggy folds all three into Failed-fails-the-stage because
   /// they are priced identically — flagged as an open question rather
   /// than silently adopted.
   pure def decideEvalStageReduce(c: Core, j: int): Decision =
@@ -700,8 +700,8 @@ module chuggy_domain {
       if (s + 1 < jb.program.length())
         val fan = retired.program[s + 1].fanout
         move(
-          withTicket(c, j, spawnOn(retired, TKEval(s + 1), fan)),
-          j, PEvaluating, "eval-stage-passed", ["SpawnEvalTasks"])
+          withTicket(c, j, spawnOn(retired, Evaluation(s + 1), fan)),
+          j, Evaluating, "eval-stage-passed", ["SpawnEvalTasks"])
       else
         // THE WRAP-UP ROUTE (design 002). A WNone ticket's effect already
         // happened during work, so evaluation passing IS its completion and
@@ -717,14 +717,14 @@ module chuggy_domain {
           | WExclusive(_) =>
             move(
               withTicket(c, j, retired),
-              j, PWrapUp, "eval-passed", ["EnqueueWrapUp"])
+              j, WrapUpQueued, "eval-passed", ["EnqueueWrapUp"])
         }
     else if (jb.reworkLeft > 0 and jb.gasLeft > 0)
       move(
-        withTicket(c, j, { ...spawnOn(retired, TKWork, N_TASKS),
+        withTicket(c, j, { ...spawnOn(retired, Work, N_TASKS),
           reworkLeft: jb.reworkLeft - 1,
           gasLeft: jb.gasLeft - 1 }),
-        j, PWorking, "rework-started eval_failure", ["SpawnWorkTasks"])
+        j, Working, "rework-started eval_failure", ["SpawnWorkTasks"])
     else if (jb.reworkLeft == 0)
       escalate(c, j, REvaluating, RsReworkBudgetExhausted,
         "ticket-escalated rework_budget_exhausted")
@@ -756,14 +756,14 @@ module chuggy_domain {
 
   /// THE DEQUEUE, MOVED ARM: the environment chose
   /// the branch MOVED at this dequeue, so the gate must RUN — the ticket
-  /// takes its project's depth-1 slot (PWrapUp -> PWrapUpHolding) while the
+  /// takes its project's depth-1 slot (WrapUpQueued -> WrapUpAwaitingApproval) while the
   /// candidate is built and validated over a duration. Charges nothing
   /// (the gate prices only its failures, R5). Callers guarantee
-  /// wrapUpStartableIn — the depth-1 refusal. PWrapUpHolding encodes the moved
+  /// wrapUpStartableIn — the depth-1 refusal. WrapUpAwaitingApproval encodes the moved
   /// choice: wrapUpResolve needs no stored flag to know the attempt's cause
   /// vocabulary (the named-nondet discipline, one more time).
   pure def decideWrapUpStart(c: Core, j: int): Decision =
-    move(c, j, PWrapUpHolding, "wrapup-started", ["OpenGate"])
+    move(c, j, WrapUpAwaitingApproval, "wrapup-started", ["OpenGate"])
 
   /// THE ROUTING RULE, hoisted (adversarial review, MAJOR 1 — the
   /// dispatchableIn/m6 discipline applied one level up): how a dequeue
@@ -786,7 +786,7 @@ module chuggy_domain {
     if (moved) decideWrapUpStart(c, j)
     else decideWrapUpResolve(c, j, WOk, false)
 
-  /// THE COMPLETION: the ticket reaches PDone, and that is the whole of it —
+  /// THE COMPLETION: the ticket reaches Done, and that is the whole of it —
   /// ONE transition, ONE effect. Both routes in — a WOk wrap-up resolution
   /// and a WNone ticket's passing evaluation — emit the same "Complete",
   /// because the domain knows only that the step succeeded and never which
@@ -797,18 +797,18 @@ module chuggy_domain {
   pure def completeTicket(c: Core, j: int): Decision =
     { rec: {
         label: "ticket-done",
-        transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: PDone }],
+        transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: Done }],
         effects: ["Complete"],
         attempt: WONone },
       post: withTicket(c, j,
-        { ...c.tickets.get(j), phase: PDone,
+        { ...c.tickets.get(j), phase: Done,
           completions: c.tickets.get(j).completions + 1 }) }
 
   /// The wrap-up resolves at the END of a concrete path (R1/R3/R5; the
   /// path rule is wrapUpOutcomes'):
-  ///   - QUIET fast-path: called from PWrapUp at the dequeue with
+  ///   - QUIET fast-path: called from WrapUpQueued at the dequeue with
   ///     (WOk, false) — the gate skipped, the direct squash.
-  ///   - GATED: called from PWrapUpHolding with moved = true — WOk
+  ///   - GATED: called from WrapUpAwaitingApproval with moved = true — WOk
   ///     (the validated candidate promoted by advancing the default ref)
   ///     or WFailed (the eviction).
   /// A wrap-up success is the ticket's single completion effect
@@ -818,7 +818,7 @@ module chuggy_domain {
   /// DeadlineOnly spends gas alone (a documented gate-loop livelock is
   /// exactly why the pricing exists, R5); either wall parks
   /// the ticket with its own name, resumeAt RWrapUp re-ENQUEUING (the
-  /// resume returns to PWrapUp — the queue — never into the gate).
+  /// resume returns to WrapUpQueued — the queue — never into the gate).
   /// Failure and walls free the lease by phase. A step's internals — stages,
   /// failure classes, a fix-and-retry path — stay below this grain: the step
   /// is one abstract verdict.
@@ -842,10 +842,10 @@ module chuggy_domain {
           | Budgeted(_) =>
             if (c.tickets.get(j).wrapUpLeft > 0 and c.tickets.get(j).gasLeft > 0)
               move(
-                withTicket(c, j, { ...spawnOn(c.tickets.get(j), TKWork, N_TASKS),
+                withTicket(c, j, { ...spawnOn(c.tickets.get(j), Work, N_TASKS),
                   wrapUpLeft: c.tickets.get(j).wrapUpLeft - 1,
                   gasLeft: c.tickets.get(j).gasLeft - 1 }),
-                j, PWorking, "rework-started wrapup_failure", ["SpawnWorkTasks"])
+                j, Working, "rework-started wrapup_failure", ["SpawnWorkTasks"])
             else if (c.tickets.get(j).wrapUpLeft == 0)
               escalate(c, j, RWrapUp, RsWrapUpBudgetExhausted,
                 "ticket-escalated wrapup_budget_exhausted")
@@ -855,9 +855,9 @@ module chuggy_domain {
           | DeadlineOnly =>
             if (c.tickets.get(j).gasLeft > 0)
               move(
-                withTicket(c, j, { ...spawnOn(c.tickets.get(j), TKWork, N_TASKS),
+                withTicket(c, j, { ...spawnOn(c.tickets.get(j), Work, N_TASKS),
                   gasLeft: c.tickets.get(j).gasLeft - 1 }),
-                j, PWorking, "rework-started wrapup_failure", ["SpawnWorkTasks"])
+                j, Working, "rework-started wrapup_failure", ["SpawnWorkTasks"])
             else
               escalate(c, j, RWrapUp, RsGasExhausted,
                 "ticket-escalated gas_exhausted")
@@ -910,15 +910,15 @@ module chuggy_domain {
       gasLeft: jb.gasLeft - resumeCharge(jb.resumeAt) }
     match jb.resumeAt {
       | RPending =>
-        move(withTicket(c, j, resumed), j, PPending, "operator-retry", [])
+        move(withTicket(c, j, resumed), j, Pending, "operator-retry", [])
       | RWorking =>
-        move(withTicket(c, j, spawnOn(resumed, TKWork, N_TASKS)),
-          j, PWorking, "operator-retry", ["SpawnWorkTasks"])
+        move(withTicket(c, j, spawnOn(resumed, Work, N_TASKS)),
+          j, Working, "operator-retry", ["SpawnWorkTasks"])
       | REvaluating =>
-        move(withTicket(c, j, spawnOn(resumed, TKEval(0), jb.program[0].fanout)),
-          j, PEvaluating, "operator-retry", ["SpawnEvalTasks"])
+        move(withTicket(c, j, spawnOn(resumed, Evaluation(0), jb.program[0].fanout)),
+          j, Evaluating, "operator-retry", ["SpawnEvalTasks"])
       | RWrapUp =>
-        move(withTicket(c, j, resumed), j, PWrapUp, "operator-retry", ["EnqueueWrapUp"])
+        move(withTicket(c, j, resumed), j, WrapUpQueued, "operator-retry", ["EnqueueWrapUp"])
       | RNone =>
         // Unreachable: retryableIn refuses a ticket with no modeled resume
         // (the dependency_revoked wall — its only exit is revoke).
@@ -990,7 +990,7 @@ module chuggy_domain {
   // --- Derived waiting room (standing rule 3: derive, don't store) ---------
   // Blocked and Ready are PREDICATES over deps + record, not phases.
   // Storing them is what forces an unblock cascade; chuggy stores only
-  // PPending and derives the split, so the
+  // Pending and derives the split, so the
   // unblock cascade disappears entirely — there is no Blocked->Ready edge
   // to model or to get wrong. (The open-human-task flag is derived too:
   // measure.qnt hasOpenHumanTask; the eval-stage index is derived from
@@ -1030,7 +1030,7 @@ module chuggy_domain {
   val reducibleEval: Set[int] = reducibleEvalIn(core)
   /// The wrap-up QUEUE, derived: enqueued tickets whose
   /// dequeue the gate serializes. Deliberately unordered — see wrapUpStart.
-  val wrapUpTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == PWrapUp)
+  val wrapUpTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == WrapUpQueued)
   /// Enqueued tickets whose project's gate is FREE — the dequeue-enabled set
   /// (wrapUpStartableIn is the shared guard; the depth-1 refusal).
   val wrapUpStartable: Set[int] = wrapUpStartablesIn(core)
@@ -1054,7 +1054,7 @@ module chuggy_domain {
   /// runs never deadlock.
   val quiet: bool = and {
     not(canArrive),
-    liveTickets.forall(j => tickets.get(j).phase == PDone or tickets.get(j).phase == PRevoked)
+    liveTickets.forall(j => tickets.get(j).phase == Done or tickets.get(j).phase == Revoked)
   }
 
   // --- init -----------------------------------------------------------------
@@ -1168,12 +1168,12 @@ module chuggy_domain {
   /// on the respawned set) — staleness is now absorbed structurally, and
   /// the only remaining first-write-wins case is a duplicate delivery for
   /// a LIVE resolved task. A stale TICKET COMPLETION still implies a success
-  /// occurred, and PDone is absorbing (completeDuplicate). The observed/actual
+  /// occurred, and Done is absorbing (completeDuplicate). The observed/actual
   /// split that would make mid-rework duplicates dangerous — a decider
   /// acting on a stale VIEW — is exactly the deferred §4 refinement layer
   /// (reconcile vs journaled-actor), not this shared domain layer. the
   /// A sharper corner: a ticket revoked
-  /// OUT of PWrapUp (enqueued) or PWrapUpHolding (the gate mid-validation) could
+  /// OUT of WrapUpQueued (enqueued) or WrapUpAwaitingApproval (the gate mid-validation) could
   /// race an in-flight merge in the real system — in-model
   /// revokedNeverCompletes holds structurally (a revoked ticket leaves
   /// holdingTickets/wrapUpStartable, so neither wrap-up action can resolve
@@ -1184,7 +1184,7 @@ module chuggy_domain {
     taskPhaseTickets.size() > 0,
     nondet j = taskPhaseTickets.oneOf()
     nondet tid = deliverableTaskIds(core, j).oneOf()
-    nondet v = Set(VPass, VFail).oneOf()
+    nondet v = Set(Pass, Fail).oneOf()
     apply(decideTaskDone(core, j, tid, v))
   }
 
@@ -1210,7 +1210,7 @@ module chuggy_domain {
   ///   - quiet: the skip fast-path — the gate never opens; the one outcome
   ///     wrapUpOutcomes(false) permits (WOk, the direct squash)
   ///     resolves the wrap-up in this same step;
-  ///   - moved: the gate OPENS (PWrapUpHolding) and holds its project's depth-1 slot
+  ///   - moved: the gate OPENS (WrapUpAwaitingApproval) and holds its project's depth-1 slot
   ///     until wrapUpResolve.
   /// WHICH enqueued ticket dequeues is unrestricted nondet. A queue is a
   /// non-goal in any shape, and an order that does not survive a restart is
@@ -1227,7 +1227,7 @@ module chuggy_domain {
   }
 
   /// THE GATE RESOLVES: the occupant's candidate
-  /// was built against a MOVED branch (PWrapUpHolding encodes the choice — no
+  /// was built against a MOVED branch (WrapUpAwaitingApproval encodes the choice — no
   /// stored flag), so the outcome draws from wrapUpOutcomes(true): the
   /// the re-validated artifact completes (WOk) or the attempt fails and
   /// the eviction prices per WRAPUP_PRICING. Either way the slot frees by
@@ -1302,7 +1302,7 @@ module chuggy_domain {
   /// any number of task executions may duplicate (at-least-once fabric),
   /// but the completion effect is emitted exactly once per ticket, exactly
   /// when it is Done. "Per cycle" collapses to "per ticket" because a
-  /// completion effect ends the ticket (PDone is absorbing) and failed
+  /// completion effect ends the ticket (Done is absorbing) and failed
   /// completions emit no completion effect. DELIBERATELY UNCHANGED — per-ticket
   /// exclusivity is strictly stronger than any per-project form (exactly one
   /// completion per ticket implies at most one per ticket per project), so the
@@ -1314,20 +1314,20 @@ module chuggy_domain {
   /// effect, with no mark conjunct to carve out.
   val completionExclusive: bool = liveTickets.forall(j => and {
     tickets.get(j).completions <= 1,
-    (tickets.get(j).completions == 1) iff (tickets.get(j).phase == PDone)
+    (tickets.get(j).completions == 1) iff (tickets.get(j).phase == Done)
   })
 
   /// REVOKED NEVER COMPLETES: a revoked ticket
-  /// has emitted no completion effect — and never will: PRevoked is absorbing
+  /// has emitted no completion effect — and never will: Revoked is absorbing
   /// (terminalsAbsorbing), no decider touches a revoked
-  /// ticket's `completions`, and revoke from PWrapUp clears the ticket OUT of the
+  /// ticket's `completions`, and revoke from WrapUpQueued clears the ticket OUT of the
   /// wrap-up boundary before any effect fires. Stated as its own named
   /// invariant because it is the model's exclusivity half, though
   /// state-wise it is a corollary of completionExclusive (completions = 1 iff
   /// Done, completions <= 1, Revoked != Done ⇒ completions = 0) — same
   /// stated-corollary treatment as stuckSubsetCovered.
   val revokedNeverCompletes: bool = liveTickets.forall(j =>
-    (tickets.get(j).phase == PRevoked) implies (tickets.get(j).completions == 0))
+    (tickets.get(j).phase == Revoked) implies (tickets.get(j).completions == 0))
 
   // --- Isolation invariants (the isolation gate) ----------------------
 
@@ -1357,9 +1357,9 @@ module chuggy_domain {
   ///     attempt; wrapup-started OPENS an attempt but resolves none — the
   ///     resolution's attribution carries the choice the open encoded.)
   ///   - the PATH iff (R3/R4): a MOVED attempt resolves
-  ///     out of the GATE (transitions[0].from == PWrapUpHolding — the slot the
+  ///     out of the GATE (transitions[0].from == WrapUpAwaitingApproval — the slot the
   ///     dequeue took when it drew moved), a QUIET one straight off the
-  ///     QUEUE (from == PWrapUp — the fast-path; the gate never opened).
+  ///     QUEUE (from == WrapUpQueued — the fast-path; the gate never opened).
   ///     With leaseExclusive this is depth-1 serialization on the trace:
   ///     every moved resolution names the unique slot-holder.
   ///   - EVERY attempt, success or not, touches exactly its ONE ticket.
@@ -1398,7 +1398,7 @@ module chuggy_domain {
         },
         (lastStep.label != "ticket-done") implies a.invalidated,
         // The path iff: moved resolves from the gate, quiet from the queue.
-        lastStep.transitions[0].from == (if (a.invalidated) PWrapUpHolding else PWrapUp),
+        lastStep.transitions[0].from == (if (a.invalidated) WrapUpAwaitingApproval else WrapUpQueued),
         // One wrap-up attempt moves exactly one ticket.
         lastStep.transitions.length() == 1
       }
@@ -1443,7 +1443,7 @@ module chuggy_domain {
   /// reading the general form off that instance is how it gets narrowed.
   val leaseExclusive: bool = projects.forall(r =>
     liveTickets.filter(j => and {
-      tickets.get(j).phase == PWrapUpHolding,
+      tickets.get(j).phase == WrapUpAwaitingApproval,
       leaseOf(tickets.get(j)) == r
     }).size() <= 1)
 
@@ -1453,8 +1453,8 @@ module chuggy_domain {
   /// cost that made merge-only wrong rather than merely narrow.
   val noLeaseWithoutAKind: bool = liveTickets.forall(j =>
     (tickets.get(j).wrapUp == WNone) implies and {
-      tickets.get(j).phase != PWrapUp,
-      tickets.get(j).phase != PWrapUpHolding
+      tickets.get(j).phase != WrapUpQueued,
+      tickets.get(j).phase != WrapUpAwaitingApproval
     })
 
   /// A COMPLETED TICKET PRODUCED SOMETHING (design 002). Deliberately the
@@ -1465,7 +1465,7 @@ module chuggy_domain {
   /// cannot fail is the stuckSubsetCovered defect written on purpose.
   /// A Revoked ticket may hold ANone: it may never have run.
   val artifactWellFormed: bool = liveTickets.forall(j =>
-    (tickets.get(j).phase == PDone) implies (tickets.get(j).artifact != ANone))
+    (tickets.get(j).phase == Done) implies (tickets.get(j).artifact != ANone))
 
   /// Every live ticket targets a project inside the bounded universe — the
   /// arrival-refusal claim made durable (the programsWellFormed shape):
@@ -1490,27 +1490,27 @@ module chuggy_domain {
     wrapUpChoices.contains(tickets.get(j).wrapUp))
 
   /// The two absorbing terminals never transition OUT. Checked against the
-  /// observed step record: no transition ever leaves PDone or PRevoked.
-  /// Both carry it here, because PRevoked is reachable.
+  /// observed step record: no transition ever leaves Done or Revoked.
+  /// Both carry it here, because Revoked is reachable.
   val terminalsAbsorbing: bool =
     lastStep.transitions.foldl(true, (b, t) =>
-      b and t.from != PDone and t.from != PRevoked)
+      b and t.from != Done and t.from != Revoked)
 
   /// The human desk is consistent. The reason-iff-parked half is a named
-  /// wall iff parked — and parked just IS PEscalated. The resumeAt half is
+  /// wall iff parked — and parked just IS Escalated. The resumeAt half is
   /// the sharper one: a resume point iff a MODELED RESUME
   /// EXISTS — every wall stamps one (pipeline walls resume in-pipeline;
   /// the pre-work revalidation wall resumes to Pending, RPending) EXCEPT
   /// dependency_revoked, whose resumeAt stays RNone because its only
   /// modeled exit is revoke (retryableIn). (The open-task flag needs no
   /// conjunct — it is DERIVED from the phase, standing rule 3.)
-  /// note: PRevoked passes both iffs with RsNone/RNone — "Revoked runs
+  /// note: Revoked passes both iffs with RsNone/RNone — "Revoked runs
   /// nothing" is this invariant plus tasksWellFormed doing their existing
   /// tickets over the phase.
   val deskConsistent: bool = liveTickets.forall(j => and {
-    (tickets.get(j).phase == PEscalated) iff (tickets.get(j).reason != RsNone),
+    (tickets.get(j).phase == Escalated) iff (tickets.get(j).reason != RsNone),
     (tickets.get(j).resumeAt != RNone) iff
-      (tickets.get(j).phase == PEscalated and
+      (tickets.get(j).phase == Escalated and
        tickets.get(j).reason != RsDependencyRevoked)
   })
 
@@ -1538,32 +1538,32 @@ module chuggy_domain {
 
   /// The LIVE task set is exactly the current phase's anatomy (this is
   /// also the STAGE-INDEX SANITY invariant):
-  ///   - PWorking: the single work set — width N_TASKS, all TKWork;
-  ///   - PEvaluating: ONE stage's fan-out — uniformly TKEval(s) for a
+  ///   - Working: the single work set — width N_TASKS, all Work;
+  ///   - Evaluating: ONE stage's fan-out — uniformly Evaluation(s) for a
   ///     single s that indexes INTO the program (0 <= s < |program|), with
   ///     exactly that stage's declared width (the interpreter is running
   ///     the program as written, not improvising);
   ///   - every other phase: empty — dead live-task state is never carried
   ///     (derive-don't-store spirit; a Draft has not spawned,
-  ///     PRevoked runs nothing).
+  ///     Revoked runs nothing).
   /// In the task phases the live ids are the contiguous run directly above
   /// the retired record (identity is sequential within the ticket — the
-  /// at-least-once-by-identity argument needs exactly this), and TCancelled
+  /// at-least-once-by-identity argument needs exactly this), and Cancelled
   /// never appears live (it is a retirement mark, not an outcome events
   /// can deliver).
   val tasksWellFormed: bool = liveTickets.forall(j =>
     val jb = tickets.get(j)
     val start = jb.record.length() + firstTaskId
-    if (jb.phase == PWorking) and {
+    if (jb.phase == Working) and {
       jb.tasks.size() == N_TASKS,
       jb.tasks.map(t => t.id) == start.to(start + N_TASKS - 1),
-      jb.tasks.forall(t => t.kind == TKWork and t.state != TSResolved(TCancelled))
-    } else if (jb.phase == PEvaluating)
+      jb.tasks.forall(t => t.kind == Work and t.state != Resolved(Cancelled))
+    } else if (jb.phase == Evaluating)
       val s = evalStage(jb.tasks)
       and {
         s >= 0,
         s < jb.program.length(),
-        jb.tasks.forall(t => t.kind == TKEval(s) and t.state != TSResolved(TCancelled)),
+        jb.tasks.forall(t => t.kind == Evaluation(s) and t.state != Resolved(Cancelled)),
         jb.tasks.size() == jb.program[s].fanout,
         jb.tasks.map(t => t.id) == start.to(start + jb.tasks.size() - 1)
       }
@@ -1572,8 +1572,8 @@ module chuggy_domain {
   /// THE RETAINED RECORD is well-formed: entry i carries id i+1
   /// (the chronological log IS the identity order, 1-indexed), nothing
   /// retired is still
-  /// outstanding — the record is the RESOLVED log, every entry TSResolved
-  /// (TPassed/TFailed by verdict, TCancelled by revoke; the
+  /// outstanding — the record is the RESOLVED log, every entry Resolved
+  /// (Passed/Failed by verdict, Cancelled by revoke; the
   /// explicit lifecycle makes this a constructor check, not an
   /// outcome-sentinel comparison) — and every retired eval task names a
   /// stage its ticket's program actually has (programs are immutable, so
@@ -1582,11 +1582,11 @@ module chuggy_domain {
     val jb = tickets.get(j)
     and {
       jb.record.indices().forall(i => jb.record[i].id == i + firstTaskId),
-      jb.record.indices().forall(i => jb.record[i].state != TSOutstanding),
+      jb.record.indices().forall(i => jb.record[i].state != Outstanding),
       jb.record.indices().forall(i =>
         match jb.record[i].kind {
-          | TKWork => true
-          | TKEval(s) => s >= 0 and s < jb.program.length()
+          | Work => true
+          | Evaluation(s) => s >= 0 and s < jb.program.length()
         })
     })
 
@@ -1675,9 +1675,9 @@ module chuggy_domain {
   val stuckSet: Set[int] =
     range(1, liveTickets.size() + 1).foldl(Set(), (st, _) =>
       liveTickets.filter(j => or {
-        tickets.get(j).phase == PEscalated,
+        tickets.get(j).phase == Escalated,
         and {
-          tickets.get(j).phase == PPending,
+          tickets.get(j).phase == Pending,
           visEdges(j).exists(d => st.contains(d))
         }
       }))
@@ -1686,10 +1686,10 @@ module chuggy_domain {
   /// edges: the ticket's own desk task (derived — hasOpenHumanTask), or a
   /// desk task somewhere in its dependency chain.
   ///
-  ///  note: PRevoked contributes NOTHING here (hasOpenHumanTask
+  ///  note: Revoked contributes NOTHING here (hasOpenHumanTask
   /// excludes it), so a dependent of a revoked ticket can only be covered by
   /// its OWN task — which is exactly what the atomic cascade guarantees
-  /// (cascadeSafety below): parked dependents are PEscalated, hence in
+  /// (cascadeSafety below): parked dependents are Escalated, hence in
   /// stuckSet AND covered by themselves; the folds needed no change for
   /// the authoring phase (a Draft is neither stuck — its progress is
   /// the author's, the named AUTHORING conditionality — nor covering).
@@ -1708,10 +1708,10 @@ module chuggy_domain {
   /// this predicate cannot deliver.
   ///
   /// It is a TAUTOLOGY over the definitions, not a theorem about the
-  /// machine. `stuckSet`'s base case is `PEscalated`; `coveredSet`'s base
-  /// case is `hasOpenHumanTask`, which IS `phase == PEscalated` — the same
+  /// machine. `stuckSet`'s base case is `Escalated`; `coveredSet`'s base
+  /// case is `hasOpenHumanTask`, which IS `phase == Escalated` — the same
   /// predicate. Both walk the same `visEdges`, and `stuckSet`'s inductive
-  /// arm is `coveredSet`'s plus one conjunct (`PPending`), hence strictly
+  /// arm is `coveredSet`'s plus one conjunct (`Pending`), hence strictly
   /// stronger. So with S and C the two sweep operators: S(X) ⊆ C(X) for
   /// every X, C is monotone, both iterate from Set() for the same number
   /// of sweeps, and stₖ ⊆ covₖ ⟹ stₖ₊₁ = S(stₖ) ⊆ C(stₖ) ⊆ C(covₖ) =
@@ -1737,12 +1737,12 @@ module chuggy_domain {
 
   /// Tickets transitively doomed by a revocation: a Revoked ticket somewhere in
   /// the dependency closure means this ticket can never unblock (a dep that
-  /// is not Done blocks, and PRevoked never becomes PDone). Same
+  /// is not Done blocks, and Revoked never becomes Done). Same
   /// ascending-id fold as stuckSet — deps point strictly downward.
   val revokeDoomed: Set[int] =
     range(1, liveTickets.size() + 1).foldl(Set(), (dset, j) =>
       if (tickets.get(j).deps.exists(d =>
-            tickets.get(d).phase == PRevoked or dset.contains(d)))
+            tickets.get(d).phase == Revoked or dset.contains(d)))
         dset.union(Set(j)) else dset)
 
   /// Tickets with a REACHABLE route to Done — a least fixpoint UPWARD from
@@ -1752,7 +1752,7 @@ module chuggy_domain {
   /// relation the dispatch gate reads.
   ///
   /// WHY UPWARD (the grouping lesson): stuckSet grows outward from a base
-  /// case (PEscalated), and a dependency CYCLE has no base case — which is
+  /// case (Escalated), and a dependency CYCLE has no base case — which is
   /// structurally why no phase added to that base could ever have seen the
   /// deadlock absorption could build. A cycle's members each wait on the
   /// other, so neither's forall is ever satisfied and both simply never
@@ -1762,15 +1762,15 @@ module chuggy_domain {
   val canFinishSet: Set[int] =
     range(1, liveTickets.size() + 1).foldl(Set(), (cf, _) =>
       liveTickets.filter(j => or {
-        tickets.get(j).phase == PDone,
+        tickets.get(j).phase == Done,
         and {
-          tickets.get(j).phase != PRevoked,
+          tickets.get(j).phase != Revoked,
           waitsOn(core, j).forall(d => cf.contains(d))
         }
       }))
 
   /// NO STRUCTURAL DEADLOCK: every live ticket can still reach Done, or was
-  /// settled by its author (PRevoked), or holds an open desk task a human
+  /// settled by its author (Revoked), or holds an open desk task a human
   /// can act on. This is the half of the visibility question that IS a
   /// state theorem — a ticket with no continuation at all is a defect in
   /// every reading, whatever anyone accepts about WAITING (an abandoned
@@ -1784,27 +1784,27 @@ module chuggy_domain {
   /// teeth are demonstrated against a real defect rather than argued.
   val noStructuralDeadlock: bool = liveTickets.forall(j => or {
     canFinishSet.contains(j),
-    tickets.get(j).phase == PRevoked,
+    tickets.get(j).phase == Revoked,
     hasOpenHumanTask(tickets.get(j))
   })
 
   /// CASCADE SAFETY (stuckSubsetCovered's style, revoke's content): every ticket
   /// transitively stuck behind a Revoked dep is parked with its own open
-  /// human task (PEscalated, wall dependency_revoked — hasOpenHumanTask
+  /// human task (Escalated, wall dependency_revoked — hasOpenHumanTask
   /// derives the task) or is itself revoked (its author settled it too).
   /// "Eventually parked" strengthens to ALWAYS-parked
   /// because the cascade is atomic with the revoke (decideRevoke): there
   /// is no reachable in-between state where a doomed ticket waits invisibly.
   /// No ticket may wait invisibly forever behind a revoked dep — and since
-  /// PRevoked opens no task (the author's settled choice), this invariant
+  /// Revoked opens no task (the author's settled choice), this invariant
   /// is the coverage the walks cannot provide through the dep itself.
   /// NON-VACUITY: the model gate pins a machine trace where the
   /// cascade actually parks dependents (cascadeParkNever — deterministic
   ///, tests/chuggy_witness_test.qnt), and
   /// tests/chuggy_test.qnt walks a 3-ticket chain end-to-end.
   val cascadeSafety: bool = revokeDoomed.forall(j => or {
-    tickets.get(j).phase == PRevoked,
-    tickets.get(j).phase == PEscalated and tickets.get(j).reason == RsDependencyRevoked
+    tickets.get(j).phase == Revoked,
+    tickets.get(j).phase == Escalated and tickets.get(j).reason == RsDependencyRevoked
   })
 
   // --- Measure descent (per-ticket liveness, sketched) -------------------------
@@ -1857,10 +1857,10 @@ module chuggy_domain {
       and {
         lastStep.label == "operator-retry",
         or {
-          lastStep.transitions.foldl(false, (b, t) => b or t.to == PPending),
+          lastStep.transitions.foldl(false, (b, t) => b or t.to == Pending),
           and {
             OP_RETRY_PRICING == RetryFree,
-            lastStep.transitions.foldl(false, (b, t) => b or t.to != PWorking)
+            lastStep.transitions.foldl(false, (b, t) => b or t.to != Working)
           }
         }
       },
@@ -1905,7 +1905,7 @@ module chuggy_domain {
     not(and {
       lastStep.label == "operator-retry",
       lastStep.transitions.foldl(false, (b, t) =>
-        b or t.to == PEvaluating or t.to == PWrapUp),
+        b or t.to == Evaluating or t.to == WrapUpQueued),
       currentMeasure > prevMeasure
     })
 
