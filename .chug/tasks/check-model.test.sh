@@ -72,6 +72,13 @@ model_repo 0.32.0 1
 run_in_repo
 check "a failing quint call is a finding" 1 "$RC" "failure(s)"
 
+# WHAT THE FAILING RUN SAID IS KEPT. A suite that fails once and passes on the
+# rerun leaves nothing to diagnose if its output went to /dev/null, so the
+# stub's complaint has to reach the reader.
+model_repo 0.32.0 1 "the witness said something worth reading"
+run_in_repo
+check "a failing suite prints what it said" 1 "$RC" "worth reading"
+
 # THE VERSION PIN. A different release can change what typechecks, so a
 # mismatch is a refusal to judge rather than a pass on the wrong tool.
 model_repo 0.31.0 0

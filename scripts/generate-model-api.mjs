@@ -213,6 +213,23 @@ function ts(type, owner) {
   }
 }
 
+/**
+ * A sum's schema, whichever representation is being emitted. The two differ
+ * only in how they render an arm's payload, so that is the argument: a nullary
+ * arm is its own tag either way, and a single-arm sum is not a union.
+ */
+function sumSchema(type, owner, payloadSchema) {
+  const members = rowFields(type.fields, owner).map((field) => {
+    const payload = field.fieldType;
+    const unit =
+      payload.kind === "tup" && rowFields(payload.fields, owner).length === 0;
+    return unit
+      ? `z.literal(${JSON.stringify(field.fieldName)})`
+      : `z.object({ type: z.literal(${JSON.stringify(field.fieldName)}), value: ${payloadSchema(payload, owner)} }).readonly()`;
+  });
+  return members.length === 1 ? members[0] : `z.union([${members.join(", ")}])`;
+}
+
 function schemaName(name) {
   return `${name[0].toLowerCase()}${name.slice(1)}Schema`;
 }
@@ -247,20 +264,8 @@ function schema(type, owner) {
       return `z.tuple([${rowFields(type.fields, owner)
         .map((f) => schema(f.fieldType, owner))
         .join(", ")}]).readonly()`;
-    case "sum": {
-      const members = rowFields(type.fields, owner).map((field) => {
-        const payload = field.fieldType;
-        const unit =
-          payload.kind === "tup" &&
-          rowFields(payload.fields, owner).length === 0;
-        return unit
-          ? `z.literal(${JSON.stringify(field.fieldName)})`
-          : `z.object({ type: z.literal(${JSON.stringify(field.fieldName)}), value: ${schema(payload, owner)} }).readonly()`;
-      });
-      return members.length === 1
-        ? members[0]
-        : `z.union([${members.join(", ")}])`;
-    }
+    case "sum":
+      return sumSchema(type, owner, schema);
     default:
       fail(
         `${owner}: unsupported Quint type kind ${JSON.stringify(type.kind)}`,
@@ -299,20 +304,8 @@ function wireSchema(type, owner) {
       return `z.tuple([${rowFields(type.fields, owner)
         .map((f) => wireSchema(f.fieldType, owner))
         .join(", ")}]).readonly()`;
-    case "sum": {
-      const members = rowFields(type.fields, owner).map((field) => {
-        const payload = field.fieldType;
-        const unit =
-          payload.kind === "tup" &&
-          rowFields(payload.fields, owner).length === 0;
-        return unit
-          ? `z.literal(${JSON.stringify(field.fieldName)})`
-          : `z.object({ type: z.literal(${JSON.stringify(field.fieldName)}), value: ${wireSchema(payload, owner)} }).readonly()`;
-      });
-      return members.length === 1
-        ? members[0]
-        : `z.union([${members.join(", ")}])`;
-    }
+    case "sum":
+      return sumSchema(type, owner, wireSchema);
     default:
       fail(
         `${owner}: unsupported Quint type kind ${JSON.stringify(type.kind)}`,

@@ -2,13 +2,16 @@
   "threshold": 0,
   "minLines": 10,
   "minTokens": 80,
-  "reporters": ["console"],
+  "reporters": [
+    "console"
+  ],
   "ignorePattern": [
     "**/node_modules/**",
     "**/.git/**",
     "**/.claude/worktrees/**",
     "**/dist/**",
     "**/coverage/**",
+    "**/src/generated/**",
     "**/*.md",
     "**/*.json",
     "**/*.lock"

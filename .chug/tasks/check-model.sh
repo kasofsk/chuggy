@@ -54,6 +54,10 @@ run_suite() { # <label> <quint test args...>
 	shift
 	if ! out="$("$QUINT" test "$@" 2>&1)"; then
 		echo "ERROR $label failed"
+		# THE OUTPUT IS THE DIAGNOSIS. A witness that fails once and passes on
+		# the rerun leaves nothing behind if the run that failed was discarded,
+		# and a randomized suite is exactly where that happens.
+		printf '%s\n' "$out" | sed 's/^/    /'
 		failed=$((failed + 1))
 		return 0
 	fi

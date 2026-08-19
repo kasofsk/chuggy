@@ -14,6 +14,13 @@
 # that path and not `.claude/` entire — a tracked file under `.claude/` is this
 # tree's own, and a clone of it is a finding like any other.
 #
+# `**/src/generated/**` is there because nobody edits it. This rule exists so a
+# reader who finds two copies of a thing has one place to change it; over
+# emitted output there is one place already — the emitter — and the repetition
+# is the emitter saying the same thing about several types. The emitter itself
+# is NOT exempt, and a clone inside it is a finding like any other, which is
+# where a reader who wants the repetition gone would have to go anyway.
+#
 # The version is pinned exactly, never `@5`: config semantics move within the
 # major, `ignorePattern` matching among them. A local binary wins over PATH.
 #
