@@ -4,7 +4,7 @@
  * upward fixpoint that says a ticket still has a route to Done.
  *
  * THE BOUNDED SWEEP IS THE TERMINATION ARGUMENT, NOT AN IMPLEMENTATION
- * DETAIL. Three of these are fixpoints computed by repeating a monotone step
+ * DETAIL. Each of these is a fixpoint computed by repeating a monotone step
  * over the whole fleet, and the repeat count is the fleet's own size — which
  * is the whole of the argument that a monotone fixpoint over a finite lattice
  * terminates, and is house rule 9's explicit bound rather than a loop that
@@ -14,10 +14,9 @@
  * the sweep is what lets a future edge kind point upward with no rewrite. An
  * implementer who reads a summary writes the fold and silently drops that.
  *
- * `revokeDoomed` is the one that is NOT a sweep, and the model's fold says
- * which by consuming its index rather than discarding it: one ascending pass
- * decides each id after every id it depends on, which is sound because deps
- * point strictly downward and `depsAcyclic` is what makes that true.
+ * `revokeDoomed` is swept for a reason the others are not: ids are drawn from
+ * a sparse universe, so a dependency may name a numerically larger ticket and
+ * no single ascending pass decides each id after the ids it depends on.
  *
  * ITERATION ORDER IS EXPLICIT EVERYWHERE HERE. Every pass reads `liveTickets`,
  * which sorts, rather than inheriting a map's insertion order — stable in
@@ -106,28 +105,16 @@ export function canFinishSet(core: Core): ReadonlySet<TicketId> {
 
 /**
  * Tickets transitively doomed by a revocation: a revoked ticket anywhere in the
- * dependency closure means this one can never unblock. The pass repeats until
- * it adds nothing, because ids are sparse and a dependency may point at a
- * numerically larger ticket.
+ * dependency closure means this one can never unblock.
  */
 export function revokeDoomed(core: Core): ReadonlySet<TicketId> {
-  const doomed = new Set<TicketId>();
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const id of liveTickets(core)) {
-      const behind = [...ticketAt(core, id).deps].some(
-        (d) =>
-          ticketAt(core, d as TicketId).phase === "Revoked" ||
-          doomed.has(d as TicketId),
-      );
-      if (behind && !doomed.has(id)) {
-        doomed.add(id);
-        grew = true;
-      }
-    }
-  }
-  return doomed;
+  return sweep(core, (c, id, doomed) =>
+    [...ticketAt(c, id).deps].some(
+      (d) =>
+        ticketAt(c, d as TicketId).phase === "Revoked" ||
+        doomed.has(d as TicketId),
+    ),
+  );
 }
 
 /** Containment, which is how the two walks are compared against each other. */

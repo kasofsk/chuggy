@@ -15,7 +15,7 @@
       "invariant": "",
       "steps": 30,
       "quintVersion": "0.32.0",
-      "purpose": "The unaimed walk. It is where the ordinary labels come from, and where the three cheap exemption arms \u2014 settled, task-done and the desk-only revoke \u2014 are fired without being asked for."
+      "purpose": "The unaimed walk. It is where the ordinary labels come from, and where the three cheap exemption arms \u2014 settled, ticket-released and the desk-only revoke \u2014 are fired without being asked for."
     },
     {
       "name": "budgeted-execution-blocked",
@@ -127,7 +127,7 @@
       "invariant": "lastStep.label != \"ticket-escalated gas_exhausted\"",
       "steps": 49,
       "quintVersion": "0.32.0",
-      "purpose": "The gas account emptied by the uncapped gate loop DeadlineOnly allows. Under Budgeted the wrap-up budget runs out first, so this is the branch that reaches it."
+      "purpose": "The gas account emptied by the uncapped gate loop DeadlineOnly allows. Under Budgeted the finalization budget runs out first, so this is the branch that reaches it."
     },
     {
       "name": "retryfree-walk",

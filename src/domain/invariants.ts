@@ -224,20 +224,18 @@ export const programsWellFormed: Invariant = (config, view) =>
       t.program.every((s) => s.fanout >= 1 && s.fanout <= config.nTasks),
   );
 
-/** Everything this ticket transitively waits on, as a bounded fixpoint over actual keys. */
+/**
+ * Everything this ticket transitively waits on, as a bounded fixpoint over
+ * actual keys. A pass that changes anything adds at least one id, so the
+ * fleet's own size is house rule 9's explicit bound.
+ */
 function dependencyClosure(core: Core, id: TicketId): ReadonlySet<number> {
   const seen = new Set<number>(ticketAt(core, id).deps);
-  let grew = true;
-  while (grew) {
-    grew = false;
+  for (let pass = 0; pass < liveTickets(core).length; pass++) {
     for (const d of [...seen]) {
       if (!core.tickets.has(d)) continue;
-      for (const further of ticketAt(core, d as TicketId).deps) {
-        if (!seen.has(further)) {
-          seen.add(further);
-          grew = true;
-        }
-      }
+      for (const further of ticketAt(core, d as TicketId).deps)
+        seen.add(further);
     }
   }
   return seen;

@@ -100,7 +100,7 @@ export function walkInit(config: Config): Core {
   }
   if (config.nTasks < 1) refusals.push("a phase carries a real task set");
   if (config.nTickets < 1) {
-    refusals.push("the arrival bound must admit at least one ticket");
+    refusals.push("the release bound must admit at least one ticket");
   }
   if (config.maxStages < 1) {
     refusals.push("at least one authorable program must exist");

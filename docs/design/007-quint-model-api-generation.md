@@ -4,9 +4,14 @@
 
 `model/api.qnt` is the explicit public data boundary of the Quint model.
 `scripts/generate-model-api.ts` compiles it with the pinned Quint CLI and
-generates `src/generated/model-api.ts`. Generated code supplies TypeScript
-types, Zod value schemas, JSON codecs and constructor-tag rosters. It does not
-generate deciders, actions, invariants, graph algorithms or infrastructure.
+generates two artifacts. `src/domain/generated/modelTypes.ts` holds the
+TypeScript types and the constructor-tag rosters and imports nothing at all;
+`src/generated/model-api.ts` holds the Zod value schemas and the JSON codecs,
+which need a runtime dependency. The split is what `domain-is-pure` requires:
+the domain may read its own vocabulary without any module outside itself, and
+that rule admits no carve-out. Neither artifact is hand-written and `--check`
+reads both. Generated code does not supply deciders, actions, invariants,
+graph algorithms or infrastructure.
 
 ## Supported subset
 

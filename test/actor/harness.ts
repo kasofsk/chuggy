@@ -114,9 +114,9 @@ export function stepEmit(
 }
 
 /**
- * The disciplined first cycle every witness run walks after its arrival:
- * release, dispatch, the work set passing, and the eval task resolved with the
- * caller's verdict — the draw that routes the run toward its own seam.
+ * The disciplined first cycle every witness run walks: release, dispatch, the
+ * work set passing, and the eval task resolved with the caller's verdict — the
+ * draw that routes the run toward its own seam.
  */
 export function walkFirstCycle(
   config: Config,

@@ -3,14 +3,9 @@
  * action calls, and nothing else: no decision is taken here.
  *
  * IT IS READ OFF `model/domain.qnt`'s ACTION ROSTER ONE ACTION AT A TIME, and
- * two rows are worth reading twice. `wrapUpStart` calls `decideDequeue` rather
- * than `decideWrapUpStart`, because the quiet/moved routing is a decider and
- * not a composition inside the action — the model hoisted it there after an
- * inline copy let a valid artifact take the lease with every isolation
- * conjunct staying self-consistently wrong. And `settle` has no decider at
- * all: it is the stutter that keeps a quiesced fleet from deadlocking the
- * sampler, so its arm asserts state identity and carries the label the model
- * writes.
+ * one row is worth reading twice: `settle` has no decider at all. It is the
+ * stutter that keeps a quiesced fleet from deadlocking the sampler, so its arm
+ * asserts state identity and carries the label the model writes.
  *
  * AN UNKNOWN ACTION THROWS. A trace names its action, and falling through to a
  * neighbouring decider would replay something the model never took while

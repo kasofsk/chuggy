@@ -6,16 +6,6 @@
  * listed here, so a label or an arm added to the model turns up as a coverage
  * failure instead of as silence. What is not derivable that way — which
  * instance can reach which label — is the caller's, and is stated there.
- *
- * ONE ARM IS CLASSIFIED MORE NARROWLY THAN `stepDescends` WRITES IT, and the
- * difference is deliberate. That invariant's free-retry arm reads
- * `to != PWorking`, which the pre-work resume satisfies as well — so
- * classifying it that way would mark the arm covered by any pre-work resume
- * on the free instance, and the corpus would claim to exercise something it
- * had never reached. The model's own roster names it the PIPELINE flavor and
- * points at the run that fires it, a resume into Evaluating or WrapUp that
- * `freeClimbNever` is violated by. The narrower reading is what makes the
- * coverage claim mean what the roster says, and it is the reading below.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
