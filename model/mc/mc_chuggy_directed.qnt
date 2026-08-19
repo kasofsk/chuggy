@@ -28,11 +28,11 @@
 /// modules emit; the three instances in mc_chuggy.qnt are what the invariants
 /// are checked over, and they keep the full roster.
 ///   revoke      — ends a ticket's life, and the chain needs it alive.
-///   revalFail   — parks the ticket before it ever reaches the gate.
-///   completeDuplicate
+///   executionBlocked   — parks the ticket before it ever reaches the gate.
+///   completionRedelivery
 ///               — only fires after a completion, which is the chain's end.
-/// Everything else stays, INCLUDING arrive and opRetry: dropping arrive would
-/// stop the fleet ever filling, and opRetry is how a parked ticket rejoins the
+/// Everything else stays, INCLUDING release and resumeTicket: dropping release would
+/// stop the fleet ever filling, and resumeTicket is how a parked ticket rejoins the
 /// chain, so both are part of the shape being aimed at rather than noise.
 ///
 /// A LABEL AIMED AT HERE IS STILL AIMED AT BY AN INVARIANT. The emitter asks
@@ -46,27 +46,27 @@ module mc_chuggy_directed_deadline {
   import chuggy_domain(
     N_TICKETS = 3,
     N_TASKS = 2,
-    REWORK_POLICY = RWBudget(1),
+    REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
-    WRAPUP_PRICING = DeadlineOnly,
-    OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2,
-    N_PROJECTS = 2
+    FINALIZATION_PRICING = DeadlineOnly,
+     MAX_STAGES = 2
   ).* from "../domain"
 
   /// The consts above are mc_chuggy_deadline_only's, unchanged. Under
   /// DeadlineOnly a gate failure costs gas and nothing else, so the gate loop
   /// is what empties the gas account and reaches gas_exhausted.
   action gateLoopStep = any {
-    arrive,
-    release,
+    releaseTicket,
     dispatch,
     taskDone,
     workReduce,
     evalReduce,
-    wrapUpStart,
-    wrapUpResolve,
-    opRetry,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    resumeTicket,
     settle
   }
 }
@@ -76,28 +76,28 @@ module mc_chuggy_directed_budgeted {
   import chuggy_domain(
     N_TICKETS = 3,
     N_TASKS = 2,
-    REWORK_POLICY = RWBudget(1),
+    REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
-    WRAPUP_PRICING = Budgeted(1),
-    OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2,
-    N_PROJECTS = 2
+    FINALIZATION_PRICING = Budgeted(1),
+     MAX_STAGES = 2
   ).* from "../domain"
 
   /// The consts above are mc_chuggy_budgeted's, unchanged. Under Budgeted the
-  /// gate loop spends wrapUpLeft alongside gas, so this is where
+  /// gate loop spends finalizationLeft alongside gas, so this is where
   /// wrapup_budget_exhausted lives and where the rework budget can be spent
   /// out without the gas account emptying first.
   action gateLoopStep = any {
-    arrive,
-    release,
+    releaseTicket,
     dispatch,
     taskDone,
     workReduce,
     evalReduce,
-    wrapUpStart,
-    wrapUpResolve,
-    opRetry,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    resumeTicket,
     settle
   }
 }
@@ -107,30 +107,28 @@ module mc_chuggy_directed_retryfree {
   import chuggy_domain(
     N_TICKETS = 2,
     N_TASKS = 2,
-    REWORK_POLICY = RWBudget(1),
+    REWORK_POLICY = BudgetedRework(1),
     GAS = 2,
-    WRAPUP_PRICING = DeadlineOnly,
-    OP_RETRY_PRICING = RetryFree,
-    MAX_STAGES = 2,
-    N_PROJECTS = 2
+    FINALIZATION_PRICING = DeadlineOnly,
+     MAX_STAGES = 2
   ).* from "../domain"
 
   /// The consts above are mc_chuggy_retryfree's, unchanged. The arm this
   /// module exists to reach is the PIPELINE resume — a park at Evaluating or
-  /// WrapUp, resumed for nothing — which needs the ticket to reach an
-  /// eval-branch or gate-branch wall first. `revalFail` is out of the roster
-  /// precisely because it parks the ticket BEFORE work, at the one wall whose
-  /// resume is the pre-work flavor the other arm already covers.
+  /// Finalizer, resumed for nothing — which needs the ticket to reach an
+  /// eval-branch or gate-branch wall first.
   action gateLoopStep = any {
-    arrive,
-    release,
+    releaseTicket,
     dispatch,
     taskDone,
     workReduce,
     evalReduce,
-    wrapUpStart,
-    wrapUpResolve,
-    opRetry,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    finalizationResult,
+    resumeTicket,
     settle
   }
 }

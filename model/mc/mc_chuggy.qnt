@@ -7,7 +7,6 @@
 ///
 /// Bounds are the smallest that still reach the shapes worth reaching:
 /// MAX_STAGES = 2 so a program can advance rather than only pass, and
-/// N_PROJECTS = 2 so own-project attribution is distinguishable from a constant
 /// stamp. Everything else is as small as it goes — the state space is the
 /// budget.
 ///
@@ -23,12 +22,10 @@ module mc_chuggy_budgeted {
   import chuggy_domain(
     N_TICKETS = 3,
     N_TASKS = 2,
-    REWORK_POLICY = RWBudget(1),
+    REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
-    WRAPUP_PRICING = Budgeted(1),
-    OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2,
-    N_PROJECTS = 2
+    FINALIZATION_PRICING = Budgeted(1),
+     MAX_STAGES = 2
   ).* from "../domain"
 }
 
@@ -40,12 +37,10 @@ module mc_chuggy_deadline_only {
   import chuggy_domain(
     N_TICKETS = 3,
     N_TASKS = 2,
-    REWORK_POLICY = RWBudget(1),
+    REWORK_POLICY = BudgetedRework(1),
     GAS = 3,
-    WRAPUP_PRICING = DeadlineOnly,
-    OP_RETRY_PRICING = RetryCharged,
-    MAX_STAGES = 2,
-    N_PROJECTS = 2
+    FINALIZATION_PRICING = DeadlineOnly,
+     MAX_STAGES = 2
   ).* from "../domain"
 }
 
@@ -58,7 +53,7 @@ module mc_chuggy_deadline_only {
 /// the exemption is exercised, not dead; the demoted pinned-seed probe
 /// reports trace-space health).
 /// GAS = 2 keeps escalations frequent so retries are common. The
-///  churn bound is exercised here too: a free REvaluating resume
+///  churn bound is exercised here too: a free ResumeEvaluating resume
 /// respawns the LOWEST stage's fan-out with the full stage digit
 /// (measure.qnt CHURN set).
 module mc_chuggy_retryfree {
@@ -66,11 +61,9 @@ module mc_chuggy_retryfree {
   import chuggy_domain(
     N_TICKETS = 2,
     N_TASKS = 2,
-    REWORK_POLICY = RWBudget(1),
+    REWORK_POLICY = BudgetedRework(1),
     GAS = 2,
-    WRAPUP_PRICING = DeadlineOnly,
-    OP_RETRY_PRICING = RetryFree,
-    MAX_STAGES = 2,
-    N_PROJECTS = 2
+    FINALIZATION_PRICING = DeadlineOnly,
+     MAX_STAGES = 2
   ).* from "../domain"
 }

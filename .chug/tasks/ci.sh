@@ -146,6 +146,7 @@ run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
 run_gate "check-random" ./.chug/tasks/check-random.sh
 
 run_gate "check-model" ./.chug/tasks/check-model.sh
+run_gate "check-model-api" ./.chug/tasks/check-model-api.sh
 
 printf '\n'
 if [ "$errored" -gt 0 ]; then

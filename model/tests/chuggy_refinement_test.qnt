@@ -1,573 +1,292 @@
-/// REFINEMENT-LAYER TESTS (the refinement layer — model/refinement.qnt;
-/// design, theorems, and the seam model at that file's header). Three
-/// modules, run by the model gate and `just chuggy`:
-///
-///   - chuggy_refinement_unit_test — PURE: journals built by hand,
-///     replay/legality/world-count arithmetic pinned as functions
-///     (including the tampered-journal refusals and the
-///     replay-append agreement that is theorem 3's mechanism).
-///   - chuggy_refinement_witness_test — the DISCIPLINED machine trace:
-///     one ticket walked arrive -> dispatch -> eval-fail -> REWORK ->
-///     eval-pass -> quiet wrap-up, with crash/recover injected at every
-///     observable seam (post-journal pre-emission at the dispatch, the
-///     rework, and the wrap-up; total cursor loss with re-emission
-///     absorbed; final full-journal recovery), asserting
-///     `allDomainInvariants and refinementInvariants` after EVERY step —
-///     the crash-recover-continue gate run. Plus the LEASE-FREE route,
-///     which reaches no wrap-up at all: a WNone ticket completing
-///     straight out of PEvaluating, crashed at its completion seam, so
-///     the same obligations are carried on a ticket that never takes a
-///     lease.
-///   - chuggy_refinement_hazard_test — the EXPECTED-VIOLATION traces
-///     (theorem 4): the effect-then-journal seam double-spending on
-///     recovery — the dispatch double-spend, the duplicate wrap-up, and
-///     the REWORK double-spend (the service must journal decisions or
-///     double-spend) — each violated conjunct asserted at the exact
-///     step it falls, WITH allDomainInvariants still green on the same
-///     step: the domain machine cannot see the hazard, which is the
-///     refinement layer's reason to exist.
-///
-/// DRIVER DISCIPLINE (the witness-harness rule, inherited): these runs
-/// drive chuggy_refinement's OWN actions — journalStep(event) is the
-/// machine's actor step with its nondet picks named (it conjoins
-/// decisionEventEnabled, the same guard the replay checker re-checks, so a
-/// refused pick fails the run), emitNext / crashRecoverTo(a) /
-/// effectCrash(event) are the executor/crash actions themselves — so
-/// every accepted trace is a trace of rstep (resp. rstepHazard).
-/// Nothing here copies a guard.
-///
-/// Quint 0.32: `quint test` executes only runs whose names match
-/// "test" — every run below ends in Test. Imports are not re-exported,
-/// so domain-instance facts are asserted through chuggy_refinement's
-/// wrapper vals (allDomainInvariants, memCore, obs).
+/// Refinement tests for the journaled actor. These tests deliberately drive
+/// DecisionEvent values: replay therefore exercises the same pure deciders as
+/// the live actor, including the sparse native ticket id and materialized
+/// ticket policy carried by ReleaseTicket.
 
 module chuggy_refinement_unit_test {
   import chuggy_measure.* from "../measure"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
+  pure val release10: DecisionEvent = ReleaseTicket({
+    ticket: 2, deps: Set(), prog: progFlat, workFanout: 1,
+    reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+    resumePricing: RetryCharged, finalizer: ManagedFinalizer
+  })
+  pure val d1 = execDecisionEvent(genesis, release10)
+  pure val e1: Entry = { seq: 1, event: release10, rec: d1.rec }
+  pure val dispatch10: DecisionEvent = Dispatch(2)
+  pure val d2 = execDecisionEvent(d1.post, dispatch10)
+  pure val e2: Entry = { seq: 2, event: dispatch10, rec: d2.rec }
+  pure val goodJ: List[Entry] = [e1, e2]
 
-  // A three-decision history built BY the deciders (arrive, release,
-  // dispatch), entry records taken from the decisions themselves — the
-  // journal an honest actor would write.
-  pure val event1: DecisionEvent = Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })
-  pure val d1: Decision = execDecisionEvent(genesis, event1)
-  pure val e1: Entry = { seq: 1, event: event1, rec: d1.rec }
-  pure val event2: DecisionEvent = Release(1)
-  pure val d2: Decision = execDecisionEvent(d1.post, event2)
-  pure val e2: Entry = { seq: 2, event: event2, rec: d2.rec }
-  pure val event3: DecisionEvent = Dispatch(1)
-  pure val d3: Decision = execDecisionEvent(d2.post, event3)
-  pure val e3: Entry = { seq: 3, event: event3, rec: d3.rec }
-  pure val goodJ: List[Entry] = [e1, e2, e3]
-
-  /// The empty journal is legal and replays to genesis (the base case
-  /// every prefix argument stands on).
   run genesisReplayTest = assert(and {
-    journalLegalOn([]),
-    replayCore([]) == genesis
+    journalLegalOn([]), replayCore([]) == genesis
   })
 
-  /// An honest history is legal, and replay reconstructs exactly the
-  /// state the deciders built (theorem 1 + 3 on concrete data).
-  run journalLegalAcceptsHistoryTest = assert(and {
+  run sparseReleaseReplayTest = assert(and {
+    decisionEventEnabled(genesis, release10),
     journalLegalOn(goodJ),
-    replayCore(goodJ) == d3.post,
-    replayCore(goodJ).tickets.get(1).phase == PWorking,
-    replayCore(goodJ).tickets.get(1).gasLeft == 2
+    replayCore(goodJ) == d2.post,
+    replayCore(goodJ).tickets.keys() == Set(2),
+    replayCore(goodJ).tickets.get(2).phase == Working,
+    replayCore(goodJ).tickets.get(2).gasLeft == 2
   })
 
-  /// THEOREM 3's mechanism — incremental/batch agreement: replaying
-  /// n+1 entries equals stepping the n-entry replay once (the deciders
-  /// are pure, so the fold and the live actor cannot disagree).
   run replayAppendAgreesTest = assert(and {
-    replayCore(goodJ) == execDecisionEvent(replayCore([e1, e2]), event3).post,
-    replayCore([e1, e2]) == execDecisionEvent(replayCore([e1]), event2).post
+    replayCore(goodJ) == execDecisionEvent(replayCore([e1]), dispatch10).post,
+    replayCore([e1]) == d1.post
   })
 
-  /// Tamper 1 — a sequence gap: the monotone dense seq order is part of
-  /// legality (the journal never gains an out-of-order or duplicate
-  /// row).
-  run journalRefusesSeqGapTest = assert(and {
+  run journalRefusesSeqAndRecordTamperingTest = assert(and {
     not(journalLegalOn([{ ...e1, seq: 2 }])),
     not(journalLegalOn([e1, { ...e2, seq: 3 }])),
-    not(journalLegalOn([e1, { ...e2, seq: 1 }]))
+    not(journalLegalOn([e1, { ...e2, seq: 1 }])),
+    not(journalLegalOn([e1, { ...e2,
+      rec: { ...e2.rec, label: "ticket-done" } }]))
   })
 
-  /// Tamper 2 — a decision that was never enabled: release at genesis
-  /// (no ticket exists). Enablement is re-checked at every replayed
-  /// prefix with the domain's own guards — the actor cannot journal a
-  /// decision the machine would refuse — and the check is TOTAL: a event
-  /// naming a ticket the state does not hold refuses cleanly (the
-  /// set-membership conjuncts guard the per-ticket lookups), so a
-  /// tampered journal is rejected, never crashed on.
-  run journalRefusesDisabledTest = assert(and {
-    not(decisionEventEnabled(genesis, event2)),
-    not(journalLegalOn([{ ...e2, seq: 1 }])),
-    not(decisionEventEnabled(genesis, TaskDone({ ticket: 1, tid: 1, verdict: VPass }))),
-    not(decisionEventEnabled(genesis, Dispatch(1))),
-    not(decisionEventEnabled(genesis, GateResolve({ ticket: 1, out: WOk }))),
-    not(decisionEventEnabled(genesis, OpRetry(1)))
+  run journalRefusesDisabledEventsTest = assert(and {
+    not(decisionEventEnabled(genesis, Dispatch(2))),
+    not(decisionEventEnabled(genesis, TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))),
+    not(decisionEventEnabled(genesis, ExecutionBlocked({
+      ticket: 2, reason: TicketConfigIncompatible }))),
+    not(decisionEventEnabled(genesis, FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))),
+    not(decisionEventEnabled(genesis, ResumeTicket(2)))
   })
 
-  /// Tamper 3 — a forged record: the entry's rec must be EXACTLY what
-  /// the domain decider produces at the replayed state (a journal
-  /// claiming a completion that the deciders would not have decided is
-  /// illegal — the refinement claim at row grain).
-  run journalRefusesForgedRecordTest = assert(and {
-    not(journalLegalOn([e1, { ...e2, rec: { ...e2.rec, label: "ticket-done" } }])),
-    not(journalLegalOn([e1, { ...e2, rec: { ...e2.rec, effects: ["WOk"] } }]))
-  })
+  run taskResultReferenceRequiredTest = assert(not(decisionEventEnabled(d2.post,
+    TaskDone({ ticket: 2, tid: 1, verdict: Pass,
+      result: { manifest: 0, digest: 1, schema: 1 } }))))
 
-  /// Tamper 4 — an out-of-universe PAYLOAD: an arrival's wrap-up lease
-  /// must come from `wrapUpChoices`, exactly as its prog and project come
-  /// from validPrograms and projects (the `arrive` action's fourth draw,
-  /// and wrapUpChoices IS the refusal rule). The row is otherwise
-  /// impeccable — dense seq, and its rec is the one the decider itself
-  /// produces — so only the draw-set conjunct can refuse it; without
-  /// that conjunct the replay materializes a ticket holding a lease on
-  /// a resource the universe does not contain. N_PROJECTS = 1 here, so
-  /// WExclusive(2) is out of universe too: the refusal is membership,
-  /// not a range sniff.
-  run journalRefusesOutOfUniversePayloadTest =
-    val phantom: DecisionEvent =
-      Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(99) })
-    val ePhantom: Entry = { seq: 1, event: phantom, rec: execDecisionEvent(genesis, phantom).rec }
+  run journalRefusesInvalidReleasePayloadTest =
+    val badDeps: DecisionEvent = ReleaseTicket({
+      ticket: 2, deps: Set(99), prog: progFlat, workFanout: 1,
+      reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+      resumePricing: RetryCharged, finalizer: ManagedFinalizer
+    })
+    val badProgram: DecisionEvent = ReleaseTicket({
+      ticket: 2, deps: Set(), prog: [], workFanout: 1,
+      reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+      resumePricing: RetryCharged, finalizer: ManagedFinalizer
+    })
     assert(and {
-      not(decisionEventEnabled(genesis, phantom)),
-      not(journalLegalOn([ePhantom])),
-      not(decisionEventEnabled(genesis,
-        Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(2) })))
+      not(decisionEventEnabled(genesis, badDeps)),
+      not(decisionEventEnabled(genesis, badProgram))
     })
 
-  /// The world/journal arithmetic of theorem 2, on concrete data: an
-  /// unemitted spawn counts on the book only; emission closes the gap
-  /// to equality; an ORPHAN (the same decision's record with no seq)
-  /// pushes the world PAST the book — the double-spend, as arithmetic.
   run worldArithmeticTest = assert(and {
-    journalSpawnsOn(goodJ, 1) == 1,
-    worldSpawnsOn(goodJ, Set(), [], 1) == 0,
-    worldSpawnsOn(goodJ, Set(1, 2, 3), [], 1) == 1,
-    worldSpawnsOn(goodJ, Set(1, 2, 3), [d3.rec], 1) == 2,
-    worldSpawnsOn(goodJ, Set(1, 2, 3), [d3.rec], 1) > journalSpawnsOn(goodJ, 1),
-    journalCompletionsOn(goodJ, 1) == 0
+    journalSpawnsOn(goodJ, 2) == 1,
+    worldSpawnsOn(goodJ, Set(), [], 2) == 0,
+    worldSpawnsOn(goodJ, Set(1, 2), [], 2) == 1,
+    worldSpawnsOn(goodJ, Set(1, 2), [d2.rec], 2) == 2,
+    journalCompletionsOn(goodJ, 2) == 0
   })
 
-  /// No-op decisions journal like any others and replay through: a
-  /// duplicate task-completion delivery absorbs in the domain
-  /// (state-identical decision) and its journal row is legal — the
-  /// inbound at-least-once composed through the journal (the header's
-  /// composition argument, inbound half).
-  run journalNoopRowsReplayTest =
-    val dReal = execDecisionEvent(d3.post, TaskDone({ ticket: 1, tid: 1, verdict: VPass }))
-    val dDup = execDecisionEvent(dReal.post, TaskDone({ ticket: 1, tid: 1, verdict: VFail }))
-    val e4: Entry = { seq: 4, event: TaskDone({ ticket: 1, tid: 1, verdict: VPass }), rec: dReal.rec }
-    val e5: Entry = { seq: 5, event: TaskDone({ ticket: 1, tid: 1, verdict: VFail }), rec: dDup.rec }
+  run taskCompletionDecisionReplaysTest =
+    val realEvent = TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } })
+    val otherRef = TaskDone({ ticket: 2, tid: 1, verdict: Pass,
+      result: { manifest: 2, digest: 2, schema: 1 } })
+    val real = execDecisionEvent(d2.post, realEvent)
     assert(and {
-      dDup.rec.label == "task-done-duplicate",
-      dDup.post == dReal.post,
-      journalLegalOn([e1, e2, e3, e4, e5]),
-      replayCore([e1, e2, e3, e4, e5]) == dReal.post
+      decisionEventEnabled(d2.post, realEvent),
+      realEvent != otherRef,
+      execDecisionEvent(d2.post, realEvent) == execDecisionEvent(d2.post, otherRef),
+      real.rec.label == "task-done",
+      real.post.tickets.get(2).tasks.forall(t => t.state == Resolved(Passed))
     })
 }
 
-/// THE DISCIPLINED WITNESS — journal-then-effect survives crash/recover
-/// at every seam (theorems 1-3 on a machine trace, the PR-gate run).
-/// The walk includes a REWORK (rework-started eval_failure: the
-/// re-entry that charges — where a double-spend would bite if the
-/// discipline were broken) and both classes of recovery: cursor-intact
-/// (the decision journaled but unemitted survives, its charge is not
-/// re-taken) and total cursor loss (the whole emitted prefix re-emits
-/// and every re-emission is absorbed by decision identity).
 module chuggy_refinement_witness_test {
   import chuggy_measure.* from "../measure"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
+  pure def release(ticket: int, finalizer: Finalizer): DecisionEvent = ReleaseTicket({
+    ticket: ticket, deps: Set(), prog: progFlat, workFanout: 1,
+    reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+    resumePricing: RetryCharged, finalizer: finalizer
+  })
 
-  /// The routine decision+emission pair, invariants asserted at BOTH
-  /// intermediate states (post-journal with the produced label pinned,
-  /// and post-emission) — the "allInvariants + refinement invariants at
-  /// every step" gate, packaged so the run's chain stays inside the
-  /// evaluator's expression-depth budget (Quint 0.32's rust evaluator
-  /// rejects run chains much past ~50 links — measured; composing the
-  /// pair inside an action nests locally instead of lengthening the
-  /// spine). Steps that crash, absorb, or pin counts stay unpacked in
-  /// the run.
   action stepEmit(event: DecisionEvent, lbl: str): bool =
     journalStep(event)
       .expect(and { obs.label == lbl, allDomainInvariants, refinementInvariants })
       .then(emitNext)
       .expect(and { allDomainInvariants, refinementInvariants })
 
-  run crashRecoverContinueDeterministicTest =
+  /// A blocked execution retires its outstanding work, survives recovery,
+  /// and resumes by spawning a fresh task under the ticket's pinned policy.
+  run executionBlockedResumeRecoversTest =
     rinit
-      // The Draft arrives and is journaled (entry 1)...
-      .then(journalStep(Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
-      .expect(and { journal.length() == 1, allDomainInvariants, refinementInvariants })
-      // ...and the actor dies BEFORE emitting it. Recovery replays: the
-      // Draft is in memory again — the decision was durable the instant
-      // it journaled.
-      .then(crashRecoverTo(0))
+      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
+      .then(stepEmit(Dispatch(2), "dispatch"))
+      .then(journalStep(ExecutionBlocked({
+        ticket: 2, reason: TicketConfigIncompatible })))
       .expect(and {
-        memCore.tickets.get(1).phase == PDraft,
-        applied == 0,
-        journal.length() == 1,
+        memCore.tickets.get(2).phase == Escalated,
+        memCore.tickets.get(2).reason == TicketConfigIncompatible,
+        memCore.tickets.get(2).tasks.forall(t => t.state != Outstanding),
         allDomainInvariants, refinementInvariants
       })
-      .then(emitNext)
-      .expect(and { applied == 1, allDomainInvariants, refinementInvariants })
-      .then(stepEmit(Release(1), "ticket-released"))
-      // The dispatch charges one gas and journals its Job spawn
-      // (entry 3) — nothing has reached the world yet.
-      .then(journalStep(Dispatch(1)))
-      .expect(and {
-        memCore.tickets.get(1).gasLeft == 2,
-        journalSpawns(1) == 1,
-        worldSpawns(1) == 0,
-        allDomainInvariants, refinementInvariants
-      })
-      // CRASH at the journal->effect seam: the charge survives (charged
-      // exactly once — recovery re-derives it from the journal, it does
-      // not re-take it), the world still has no Job.
       .then(crashRecoverTo(2))
       .expect(and {
-        memCore.tickets.get(1).gasLeft == 2,
-        worldSpawns(1) == 0,
-        applied == 2,
-        allDomainInvariants, refinementInvariants
-      })
-      // The executor catches up: the Job launches exactly once.
-      .then(emitNext)
-      .expect(and {
-        worldSpawns(1) == 1,
-        journalSpawns(1) == 1,
-        allDomainInvariants, refinementInvariants
-      })
-      // The work task resolves; its completion re-delivers with a
-      // different verdict (inbound at-least-once) and the actor
-      // journals the ABSORPTION — a no-op row (entry 5).
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: VFail }), "task-done-duplicate"))
-      .expect(and { journal.length() == 5, allDomainInvariants, refinementInvariants })
-      // Work passes; the eval task (id 2) fails; THE REWORK charges
-      // 1 rework + 1 gas and spawns the new cycle's work set (entry 8).
-      .then(stepEmit(WorkReduce(1), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 2, verdict: VFail }), "task-done"))
-      .then(journalStep(EvalReduce(1)))
-      .expect(and {
-        obs.label == "rework-started eval_failure",
-        memCore.tickets.get(1).gasLeft == 1,
-        memCore.tickets.get(1).reworkLeft == 0,
-        journalSpawns(1) == 2,
-        worldSpawns(1) == 1,
-        allDomainInvariants, refinementInvariants
-      })
-      // CRASH at the rework seam, with TOTAL cursor loss (the durable
-      // cursor checkpoint was never written): the rework's charge
-      // survives — charged exactly once across the crash — and the
-      // world still holds only the first Job.
-      .then(crashRecoverTo(0))
-      .expect(and {
-        applied == 0,
-        memCore.tickets.get(1).gasLeft == 1,
-        memCore.tickets.get(1).reworkLeft == 0,
-        worldSpawns(1) == 1,
-        worldEffects.size() == 7,
-        allDomainInvariants, refinementInvariants
-      })
-      // Recovery re-emits from the top: the first re-emission is of a
-      // seq the world already holds — ABSORBED (at-least-once toward
-      // the world, keyed by decision identity; the set does not grow).
-      .then(emitNext)
-      .expect(and {
-        applied == 1,
-        worldEffects.size() == 7,
-        worldSpawns(1) == 1,
-        allDomainInvariants, refinementInvariants
-      })
-      // ...the rest of the emitted prefix re-emits the same way...
-      .then(6.reps(_ => emitNext))
-      .expect(and { applied == 7, worldEffects.size() == 7, allDomainInvariants, refinementInvariants })
-      // ...and the rework's Job then launches for the FIRST time: the
-      // world count closes to the book's, never past it.
-      .then(emitNext)
-      .expect(and {
-        applied == 8,
-        worldEffects.size() == 8,
-        worldSpawns(1) == 2,
-        journalSpawns(1) == 2,
-        allDomainInvariants, refinementInvariants
-      })
-      // The rework cycle passes work and eval (the failed evaluator
-      // respawns — id 4), and the ticket enqueues for wrap-up.
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 3, verdict: VPass }), "task-done"))
-      .then(stepEmit(WorkReduce(1), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 4, verdict: VPass }), "task-done"))
-      .then(stepEmit(EvalReduce(1), "eval-passed"))
-      // The valid-artifact dequeue completes the ticket (entry 13, WOk) —
-      // journaled, not yet emitted: the merge has NOT happened yet.
-      .then(journalStep(Dequeue({ ticket: 1, moved: false })))
-      .expect(and {
-        obs.label == "ticket-done",
-        memCore.tickets.get(1).phase == PDone,
-        journalCompletions(1) == 1,
-        worldCompletions(1) == 0,
-        allDomainInvariants, refinementInvariants
-      })
-      // CRASH at the wrap-up seam: the wrap-up DECISION is durable
-      // (recovery rebuilds Done from the journal); the world has still
-      // merged nothing — and will merge exactly once.
-      .then(crashRecoverTo(12))
-      .expect(and {
-        memCore.tickets.get(1).phase == PDone,
-        memCore.tickets.get(1).completions == 1,
-        worldCompletions(1) == 0,
+        memCore.tickets.get(2).phase == Escalated,
+        worldSpawns(2) == 1,
         allDomainInvariants, refinementInvariants
       })
       .then(emitNext)
+      .then(stepEmit(ResumeTicket(2), "ticket-resumed"))
       .expect(and {
-        worldCompletions(1) == 1,
-        allDomainInvariants, refinementInvariants
-      })
-      // A stale completion confirmation re-delivers; the domain absorbs it
-      // and the actor journals the no-op (entry 14) — the world's
-      // completion count does not move.
-      .then(stepEmit(CompleteDuplicate(1), "complete-duplicate"))
-      .expect(and { worldCompletions(1) == 1, allDomainInvariants, refinementInvariants })
-      // Final full-loss recovery: replay of the complete journal
-      // reconstructs the settled fleet exactly — the actor can die at
-      // rest and lose nothing.
-      .then(crashRecoverTo(0))
-      .expect(and {
-        memCore.tickets.get(1).phase == PDone,
-        memCore.tickets.get(1).gasLeft == 1,
-        journal.length() == 14,
-        worldCompletions(1) == 1,
-        worldSpawns(1) == 2,
+        memCore.tickets.get(2).phase == Working,
+        memCore.tickets.get(2).reason == NoReason,
+        journalSpawns(2) == 2,
+        worldSpawns(2) == 2,
         allDomainInvariants, refinementInvariants
       })
 
-  /// THE LEASE-FREE TICKET, journaled. A WNone ticket's effect already
-  /// happened during work, so its passing evaluation IS its completion:
-  /// it enters neither wrap-up phase and takes no lease. Every other run
-  /// in this file walks a WExclusive ticket through the gate, so this is
-  /// where the refinement obligations are evaluated on a ticket that
-  /// never holds one — the journal's legality, the replay, the cursor
-  /// arithmetic and the two world-facing theorems, all on the route that
-  /// skips the gate.
-  ///
-  /// The crash sits at the COMPLETION seam because that is where this
-  /// route differs from the gated one: the completion decision rides an
-  /// eval reduction rather than a dequeue, so recovery has to rebuild a
-  /// Done ticket from a journal whose last entry is EvalReduce.
-  run leaseFreeArrivalRecoversAndCompletesDeterministicTest =
+  /// The finalization completion is one durable decision. A cursor reset
+  /// re-emits effects by journal identity and cannot duplicate the
+  /// completion.
+  run finalizationCompletionCrashRecoveryTest =
     rinit
-      .then(journalStep(Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WNone })))
+      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
+      .then(stepEmit(Dispatch(2), "dispatch"))
+      .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
+      .then(stepEmit(WorkReduce(2), "work-passed"))
+      .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
+      .then(stepEmit(EvalReduce(2), "eval-passed"))
+      .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
-        memCore.tickets.get(1).wrapUp == WNone,
-        journal.length() == 1,
+        memCore.tickets.get(2).phase == Done,
+        journalCompletions(2) == 1,
+        worldCompletions(2) == 0,
+        not(decisionEventEnabled(memCore,
+          FinalizationResult({ ticket: 2, out: FinalizationSucceeded }))),
         allDomainInvariants, refinementInvariants
       })
-      .then(emitNext)
-      .expect(and { applied == 1, allDomainInvariants, refinementInvariants })
-      .then(stepEmit(Release(1), "ticket-released"))
-      .then(stepEmit(Dispatch(1), "dispatch"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 1, verdict: VPass }), "task-done"))
-      .then(stepEmit(WorkReduce(1), "work-passed"))
-      .then(stepEmit(TaskDone({ ticket: 1, tid: 2, verdict: VPass }), "task-done"))
-      // THE WITNESSED STEP: evaluation passing completes the ticket
-      // outright, straight out of PEvaluating. Journaled, not emitted —
-      // the world has been told nothing yet.
-      .then(journalStep(EvalReduce(1)))
-      .expect(and {
-        obs.label == "ticket-done",
-        obs.transitions == [{ ticket: 1, from: PEvaluating, to: PDone }],
-        obs.attempt == WONone,          // no attempt, so nothing to attribute
-        memCore.tickets.get(1).phase == PDone,
-        journalCompletions(1) == 1,
-        worldCompletions(1) == 0,
-        allDomainInvariants, refinementInvariants
-      })
-      // CRASH at the completion seam, with total cursor loss: replay
-      // rebuilds the Done ticket — and its lease-free kind — out of the
-      // journal alone, and the world has still completed nothing.
       .then(crashRecoverTo(0))
       .expect(and {
-        memCore.tickets.get(1).phase == PDone,
-        memCore.tickets.get(1).wrapUp == WNone,
-        memCore.tickets.get(1).completions == 1,
-        applied == 0,
-        worldCompletions(1) == 0,
+        memCore.tickets.get(2).phase == Done,
+        memCore.tickets.get(2).completions == 1,
+        worldCompletions(2) == 0,
         allDomainInvariants, refinementInvariants
       })
-      // The executor re-emits the whole journal: the prefix the world
-      // already holds is absorbed, and the completion lands exactly once.
       .then(7.reps(_ => emitNext))
       .expect(and {
-        applied == 7,
-        worldCompletions(1) == 1,
-        worldSpawns(1) == 1,
-        // NO WRAP-UP PHASE, over the whole journaled history rather than
-        // over the states this run stops at: no entry records a
-        // transition INTO either one, so the gate was never entered and
-        // no lease was ever taken.
-        journal.foldl(true, (b, e) => e.rec.transitions.foldl(b, (acc, t) =>
-          acc and t.to != PWrapUp and t.to != PWrapUpHolding)),
+        worldCompletions(2) == 1,
+        journalCompletions(2) == 1,
+        allDomainInvariants, refinementInvariants
+      })
+
+  run finalizationFailureEntersReworkTest =
+    rinit
+      .then(stepEmit(release(2, ManagedFinalizer), "ticket-released"))
+      .then(stepEmit(Dispatch(2), "dispatch"))
+      .then(stepEmit(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
+      .then(stepEmit(WorkReduce(2), "work-passed"))
+      .then(stepEmit(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
+      .then(stepEmit(EvalReduce(2), "eval-passed"))
+      .then(stepEmit(FinalizationResult({ ticket: 2, out: FinalizationFailed }),
+        "rework-started finalization_failed"))
+      .expect(and {
+        memCore.tickets.get(2).phase == Working,
+        memCore.tickets.get(2).finalizationLeft == 0,
+        memCore.tickets.get(2).completions == 0,
+        allDomainInvariants, refinementInvariants
+      })
+
+  run noFinalizerCompletionRecoversTest =
+    rinit
+      .then(stepEmit(release(4, NoFinalizer), "ticket-released"))
+      .then(stepEmit(Dispatch(4), "dispatch"))
+      .then(stepEmit(TaskDone({ ticket: 4, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
+      .then(stepEmit(WorkReduce(4), "work-passed"))
+      .then(stepEmit(TaskDone({ ticket: 4, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }), "task-done"))
+      .then(journalStep(EvalReduce(4)))
+      .expect(and {
+        obs.label == "ticket-done",
+        memCore.tickets.get(4).phase == Done,
+        journalCompletions(4) == 1,
+        allDomainInvariants, refinementInvariants
+      })
+      .then(crashRecoverTo(0))
+      .expect(and {
+        memCore.tickets.get(4).phase == Done,
+        memCore.tickets.get(4).finalizer == NoFinalizer,
         allDomainInvariants, refinementInvariants
       })
 }
 
-/// THE HAZARD WITNESS (theorem 4, expected violations) — effect-then-
-/// journal double-spends on recovery, deterministically. Each run
-/// asserts the violated conjunct AT the step it falls AND
-/// allDomainInvariants green ON THE SAME STEP: the journaled history
-/// stays a perfectly legal domain trace while the world diverges — the
-/// hazard is invisible at the domain grain, visible only to this
-/// layer's world ledger. (The house pattern: the hazard is kept
-/// reproducible by configuration — here the rstepHazard step relation,
-/// whose one delta over rstep is exactly this seam.)
 module chuggy_refinement_hazard_test {
   import chuggy_measure.* from "../measure"
   import chuggy_refinement.* from "../refinement"
 
-  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: CUnanimousPass }]
+  pure val progFlat: List[Stage] = [{ fanout: 1, combinator: UnanimousPass }]
+  pure val release10: DecisionEvent = ReleaseTicket({
+    ticket: 2, deps: Set(), prog: progFlat, workFanout: 1,
+    reworkPolicy: BudgetedRework(1), finalizationPricing: Budgeted(1),
+    resumePricing: RetryCharged, finalizer: ManagedFinalizer
+  })
 
-  /// The dispatch double-spend and the duplicate wrap-up, one trace:
-  /// the two shapes the theorems name (no double-spent budget, no
-  /// duplicate cycle), each produced by one effect-first crash.
-  run hazardDoubleSpendDeterministicTest =
+  run dispatchEffectFirstDoubleSpendTest =
     rinit
-      .then(journalStep(Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
-      .then(emitNext)
-      .then(journalStep(Release(1)))
-      .then(emitNext)
-      .expect(and { allDomainInvariants, refinementInvariants })
-      // THE SEAM: the actor decides dispatch, the Job LAUNCHES in the
-      // world, and the actor dies before the journal write. Recovery
-      // replays a journal that never dispatched: the book shows an
-      // unspent Pending ticket — while the world runs an un-keyed,
-      // unpaid Job. The domain machine sees NOTHING (every invariant
-      // green); only the world ledger knows.
-      .then(effectCrash(Dispatch(1)))
+      .then(journalStep(release10)).then(emitNext)
+      .then(effectCrash(Dispatch(2)))
       .expect(and {
-        orphans.length() == 1,
-        memCore.tickets.get(1).phase == PPending,
-        memCore.tickets.get(1).gasLeft == 3,
-        worldSpawns(1) == 1,
-        journalSpawns(1) == 0,
-        not(journalCoversWorld),
-        not(noDoubleSpentBudget),
-        journalLegal,
-        recoveryComplete,
-        allDomainInvariants
+        memCore.tickets.get(2).phase == Pending,
+        worldSpawns(2) == 1, journalSpawns(2) == 0,
+        not(journalCoversWorld), not(noDoubleSpentBudget),
+        journalLegal, recoveryComplete, allDomainInvariants
       })
-      // The recovered actor legitimately re-decides the dispatch — one
-      // journaled charge, and now TWO Jobs in the world: the
-      // double-spent budget, concrete.
-      .then(journalStep(Dispatch(1)))
-      .then(emitNext)
+      .then(journalStep(Dispatch(2))).then(emitNext)
       .expect(and {
-        memCore.tickets.get(1).gasLeft == 2,
-        worldSpawns(1) == 2,
-        journalSpawns(1) == 1,
-        not(noDoubleSpentBudget),
-        refinementCore,
-        allDomainInvariants
-      })
-      // Walk the (journaled) cycle to the wrap-up queue.
-      .then(journalStep(TaskDone({ ticket: 1, tid: 1, verdict: VPass })))
-      .then(emitNext)
-      .then(journalStep(WorkReduce(1)))
-      .then(emitNext)
-      .then(journalStep(TaskDone({ ticket: 1, tid: 2, verdict: VPass })))
-      .then(emitNext)
-      .then(journalStep(EvalReduce(1)))
-      .then(emitNext)
-      .expect(and {
-        memCore.tickets.get(1).phase == PWrapUp,
-        allDomainInvariants
-      })
-      // THE SEAM AT THE WRAP-UP: a valid-artifact dequeue squash-merges IN THE
-      // WORLD, the crash eats the journal write — the book still shows
-      // the ticket enqueued, completions 0.
-      .then(effectCrash(Dequeue({ ticket: 1, moved: false })))
-      .expect(and {
-        orphans.length() == 2,
-        worldCompletions(1) == 1,
-        memCore.tickets.get(1).phase == PWrapUp,
-        memCore.tickets.get(1).completions == 0,
-        journalLegal,
-        recoveryComplete,
-        allDomainInvariants
-      })
-      // The recovered actor re-lands the enqueued ticket: the SAME
-      // diff merges a second time — the duplicate cycle — while the
-      // journal records exactly one clean completion and the domain's
-      // completionExclusive stays green throughout.
-      .then(journalStep(Dequeue({ ticket: 1, moved: false })))
-      .then(emitNext)
-      .expect(and {
-        worldCompletions(1) == 2,
-        journalCompletions(1) == 1,
-        memCore.tickets.get(1).completions == 1,
-        not(noDuplicateCycle),
-        refinementCore,
-        allDomainInvariants
+        worldSpawns(2) == 2, journalSpawns(2) == 1,
+        not(noDoubleSpentBudget), refinementCore, allDomainInvariants
       })
 
-  /// THE REWORK DOUBLE-SPEND: the rework decision's task fan-out launches,
-  /// the crash eats both the journal write AND the charge (recovery finds
-  /// the accounts full), and the re-decided rework charges once for two
-  /// fan-outs in the world.
-  run hazardReworkDoubleSpendDeterministicTest =
+  /// Losing the finalization decision after its effect makes the recovered
+  /// actor complete again. The domain history remains legal while the world
+  /// observes two completions, pinning why completion must be
+  /// journal-before-effect.
+  run finalizationEffectFirstDuplicatesIrreversibleCompletionTest =
     rinit
-      .then(journalStep(Arrive({ deps: Set(), prog: progFlat, project: 1, wrapUp: WExclusive(1) })))
-      .then(emitNext)
-      .then(journalStep(Release(1)))
-      .then(emitNext)
-      .then(journalStep(Dispatch(1)))
-      .then(emitNext)
-      .then(journalStep(TaskDone({ ticket: 1, tid: 1, verdict: VPass })))
-      .then(emitNext)
-      .then(journalStep(WorkReduce(1)))
-      .then(emitNext)
-      .then(journalStep(TaskDone({ ticket: 1, tid: 2, verdict: VFail })))
-      .then(emitNext)
+      .then(journalStep(release10)).then(emitNext)
+      .then(journalStep(Dispatch(2))).then(emitNext)
+      .then(journalStep(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
+      .then(journalStep(WorkReduce(2))).then(emitNext)
+      .then(journalStep(TaskDone({ ticket: 2, tid: 2, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
+      .then(journalStep(EvalReduce(2))).then(emitNext)
+      .then(effectCrash(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
       .expect(and {
-        memCore.tickets.get(1).gasLeft == 2,
-        memCore.tickets.get(1).reworkLeft == 1,
-        allDomainInvariants, refinementInvariants
+        memCore.tickets.get(2).phase == Finalizing,
+        worldCompletions(2) == 1, journalCompletions(2) == 0,
+        journalLegal, recoveryComplete, allDomainInvariants
       })
-      // THE SEAM AT THE REWORK: the rework Job fans out in the world;
-      // the crash loses the decision — and with it the charge. The book
-      // says the rework never started (accounts untouched), the world
-      // runs it anyway.
-      .then(effectCrash(EvalReduce(1)))
+      .then(journalStep(FinalizationResult({ ticket: 2, out: FinalizationSucceeded })))
+      .then(emitNext)
       .expect(and {
-        orphans.length() == 1,
-        memCore.tickets.get(1).phase == PEvaluating,
-        memCore.tickets.get(1).gasLeft == 2,
-        memCore.tickets.get(1).reworkLeft == 1,
-        worldSpawns(1) == 2,
-        journalSpawns(1) == 1,
-        not(noDoubleSpentBudget),
-        journalLegal,
-        recoveryComplete,
+        memCore.tickets.get(2).phase == Done,
+        worldCompletions(2) == 2, journalCompletions(2) == 1,
+        not(noDuplicateCycle), refinementCore, allDomainInvariants
+      })
+
+  run reworkEffectFirstDoubleSpendTest =
+    rinit
+      .then(journalStep(release10)).then(emitNext)
+      .then(journalStep(Dispatch(2))).then(emitNext)
+      .then(journalStep(TaskDone({ ticket: 2, tid: 1, verdict: Pass, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
+      .then(journalStep(WorkReduce(2))).then(emitNext)
+      .then(journalStep(TaskDone({ ticket: 2, tid: 2, verdict: Fail, result: { manifest: 1, digest: 1, schema: 1 } }))).then(emitNext)
+      .then(effectCrash(EvalReduce(2)))
+      .expect(and {
+        memCore.tickets.get(2).phase == Evaluating,
+        worldSpawns(2) == 2, journalSpawns(2) == 1,
+        not(noDoubleSpentBudget), journalLegal, recoveryComplete,
         allDomainInvariants
       })
-      // The recovered actor re-decides the rework: ONE journaled charge
-      // (1 rework + 1 gas), THREE Jobs' worth of spend in the world.
-      .then(journalStep(EvalReduce(1)))
-      .then(emitNext)
+      .then(journalStep(EvalReduce(2))).then(emitNext)
       .expect(and {
-        obs.label == "rework-started eval_failure",
-        memCore.tickets.get(1).gasLeft == 1,
-        memCore.tickets.get(1).reworkLeft == 0,
-        worldSpawns(1) == 3,
-        journalSpawns(1) == 2,
-        not(noDoubleSpentBudget),
-        refinementCore,
-        allDomainInvariants
+        worldSpawns(2) == 3, journalSpawns(2) == 2,
+        not(noDoubleSpentBudget), refinementCore, allDomainInvariants
       })
 }
