@@ -18,40 +18,34 @@ import {
   reworkBudgetOf,
 } from "../../src/domain/pricing.ts";
 
-/** The gate account exists here, so a wrap-up failure spends it alongside gas. */
+/** The finalization account exists here, so a failed finalization spends it alongside gas. */
 export const budgetedInstance: Config = {
   nTickets: 3,
   nTasks: 2,
   reworkPolicy: reworkBudgetOf(1),
   gas: 3,
-  wrapUpPricing: budgeted(1),
-  opRetryPricing: "RetryCharged",
+  finalizationPricing: budgeted(1),
   maxStages: 2,
-  nProjects: 2,
 };
 
-/** Gas-only gate pricing: the gate loop is capped by the required account alone. */
+/** Gas-only finalization pricing: the loop is capped by gas alone. */
 export const deadlineOnlyInstance: Config = {
   nTickets: 3,
   nTasks: 2,
   reworkPolicy: reworkBudgetOf(1),
   gas: 3,
-  wrapUpPricing: deadlineOnly,
-  opRetryPricing: "RetryCharged",
+  finalizationPricing: deadlineOnly,
   maxStages: 2,
-  nProjects: 2,
 };
 
-/** A smaller, poorer fleet whose pipeline resumes cost nothing. */
+/** A smaller, poorer fleet. Resume pricing is a ticket's own now, so the instance only bounds it. */
 export const retryFreeInstance: Config = {
   nTickets: 2,
   nTasks: 2,
   reworkPolicy: reworkBudgetOf(1),
   gas: 2,
-  wrapUpPricing: deadlineOnly,
-  opRetryPricing: "RetryFree",
+  finalizationPricing: deadlineOnly,
   maxStages: 2,
-  nProjects: 2,
 };
 
 /** Every instance the corpus draws from, under the name its manifest row carries. */
