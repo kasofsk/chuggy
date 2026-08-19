@@ -38,29 +38,44 @@ export function emissionKey(emission: Emission): string {
  * The fabric runs the paid work a decision spawned, and decides nothing.
  * Delivery is at-least-once, so a call repeating an `emissionKey` already
  * served must change nothing.
+ *
+ * Cancellation belongs here rather than beside the desk: it is addressed to
+ * whatever is running the work, and a revoked ticket's live tasks are exactly
+ * what it stops.
  */
 export interface FabricPort {
   spawnWorkTasks(emission: Emission): Promise<void>;
   spawnEvalTasks(emission: Emission): Promise<void>;
+  cancelTicketWork(emission: Emission): Promise<void>;
 }
 
 /**
- * The desk is the ticket board a human reads and acts on, which is every effect
- * that is not paid work. It carries the fabric's idempotence promise unchanged:
- * a repeated `emissionKey` is the same instruction, never a second one.
+ * The finalizer is its own side of the world, not the fabric's. It is the only
+ * authority that may report a finalization result, its concurrency is its own,
+ * and it is the one adapter that can reach a point of no return — which is why
+ * an implementation of it owes a reconciliation story the fabric does not.
  */
-export interface DeskPort {
-  createDraft(emission: Emission): Promise<void>;
-  revoke(emission: Emission): Promise<void>;
-  openHumanTask(emission: Emission): Promise<void>;
-  enqueueWrapUp(emission: Emission): Promise<void>;
-  openGate(emission: Emission): Promise<void>;
-  complete(emission: Emission): Promise<void>;
+export interface FinalizerPort {
+  runFinalizer(emission: Emission): Promise<void>;
 }
 
-/** Both sides of the world an emission can reach, passed as one value so the routing takes one argument. */
+/**
+ * The desk is the ticket board a human reads and acts on. It carries the
+ * fabric's idempotence promise unchanged: a repeated `emissionKey` is the same
+ * instruction, never a second one.
+ *
+ * It has one member because completion and revocation stopped being effects —
+ * entering Done is transactional with the journal, so there is nothing left to
+ * ask the world for.
+ */
+export interface DeskPort {
+  openHumanTask(emission: Emission): Promise<void>;
+}
+
+/** Every side of the world an emission can reach, passed as one value so the routing takes one argument. */
 export interface WorldPorts {
   readonly fabric: FabricPort;
+  readonly finalizer: FinalizerPort;
   readonly desk: DeskPort;
 }
 

@@ -10,12 +10,7 @@
 
 import type { Task, TaskKind, Ticket } from "./generated/modelTypes.ts";
 import { isSettled } from "./phase.ts";
-import {
-  evalStage,
-  nextTaskId,
-  retiredInIdOrder,
-  spawnTasks,
-} from "./task.ts";
+import { evalStage, nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
 
 /**
  * A desk task is open exactly while the ticket is parked, and parked is one

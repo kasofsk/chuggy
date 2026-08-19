@@ -76,7 +76,10 @@ export function waitsOn(core: Core, id: TicketId): ReadonlySet<number> {
  * every dep is Done before a dependent can dispatch, and Done is absorbing, so
  * nothing here can change under a reader.
  */
-export function depArtifacts(core: Core, id: TicketId): readonly ArtifactMark[] {
+export function depArtifacts(
+  core: Core,
+  id: TicketId,
+): readonly ArtifactMark[] {
   return [...waitsOn(core, id)]
     .sort((a, b) => a - b)
     .map((d) => ticketAt(core, d as TicketId).artifact);
@@ -146,7 +149,9 @@ export function reducibleWorkIn(core: Core): readonly TicketId[] {
 export function reducibleEvalIn(core: Core): readonly TicketId[] {
   return ticketIds(core).filter((j) => {
     const ticket = ticketAt(core, j);
-    return ticket.phase === "Evaluating" && outstandingCount(ticket.tasks) === 0;
+    return (
+      ticket.phase === "Evaluating" && outstandingCount(ticket.tasks) === 0
+    );
   });
 }
 
@@ -231,8 +236,8 @@ export function releasableAuthoring(
     reworkPolicyChoices(config).some(
       (p) => reworkBudget(p) === reworkBudget(authoring.reworkPolicy),
     ) &&
-    finalizationPricingChoices(config).some(
-      (p) => pricingEquals(p, authoring.finalizationPricing),
+    finalizationPricingChoices(config).some((p) =>
+      pricingEquals(p, authoring.finalizationPricing),
     ) &&
     resumePricingChoices.includes(authoring.resumePricing) &&
     finalizerChoices.includes(authoring.finalizer)

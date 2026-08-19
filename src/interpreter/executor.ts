@@ -73,7 +73,7 @@ export function drainPlan(
   for (const [index, entry] of journal.entries()) {
     replayed = execDecisionEvent(config, replayed, entry.event).post;
     if (index < applied) continue;
-    for (const planned of emissionsOf(entry, replayed)) {
+    for (const planned of emissionsOf(entry)) {
       plan.push({ step: "Emit", planned });
     }
     plan.push({ step: "Checkpoint", seq: entry.seq });

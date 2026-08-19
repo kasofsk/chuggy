@@ -20,7 +20,6 @@
 
 import type { Config } from "../domain/config.ts";
 import { liveTickets, ticketAt } from "../domain/core.ts";
-import { completionsOf } from "../domain/ticket.ts";
 import { coreEquals } from "./equality.ts";
 import { journalLegalOn, replayCore } from "./journal.ts";
 import { memoryCore, type ActorState } from "./state.ts";
@@ -64,16 +63,15 @@ export const executorSound: Obligation = (_config, state) => {
 };
 
 /**
- * The journal's completion count per ticket is the ledger's, where the ledger
- * ghost the model stores is derived here from the phase (`completionsOf`). A
- * corollary of legality plus recovery on any reachable state, stated anyway so
- * a mutant journal is caught by name.
+ * The journal's completion count per ticket is the ledger the model stores on
+ * the ticket. A corollary of legality plus recovery on any reachable state,
+ * stated anyway so a mutant journal is caught by name.
  */
 export const journalCompletionsMatchLedger: Obligation = (_config, state) =>
   liveTickets(memoryCore(state)).every(
     (ticket) =>
       journalCompletions(state, ticket) ===
-      completionsOf(ticketAt(memoryCore(state), ticket)),
+      ticketAt(memoryCore(state), ticket).completions,
   );
 
 /** Coverage: every effect the world ever received traces to a journaled decision — no orphans. */

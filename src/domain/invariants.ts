@@ -24,7 +24,6 @@ import {
 } from "./derived.ts";
 import type {
   Core,
-  Phase,
   StepRecord,
   Task,
   Ticket,
@@ -324,7 +323,7 @@ function stepDescendsExempt(view: StepView): boolean {
   }
   if (label === "ticket-revoked") {
     return view.rec.transitions.every(
-      (t) => phaseRank(t.from as Phase) === rankSettled,
+      (t) => phaseRank(t.from) === rankSettled,
     );
   }
   return false;

@@ -304,7 +304,11 @@ export function decideEvalStageReduce(core: Core, id: TicketId): Decision {
     const next = retired.program[stageIndex + 1];
     if (next !== undefined) {
       return move(
-        withTicket(core, id, spawnOn(retired, tkEval(stageIndex + 1), next.fanout)),
+        withTicket(
+          core,
+          id,
+          spawnOn(retired, tkEval(stageIndex + 1), next.fanout),
+        ),
         id,
         "Evaluating",
         "eval-stage-passed",
@@ -382,11 +386,7 @@ function completeTicket(core: Core, id: TicketId): Decision {
  * authored with: a budgeted ticket spends its finalization account and its
  * gas, an unbudgeted one is metered by gas alone. Both wall when spent.
  */
-function finalizerFailure(
-  core: Core,
-  id: TicketId,
-  label: string,
-): Decision {
+function finalizerFailure(core: Core, id: TicketId, label: string): Decision {
   const ticket = ticketAt(core, id);
   const gasWall = (): Decision =>
     escalate(

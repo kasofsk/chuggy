@@ -19,22 +19,16 @@
  * roster is a failing case.
  */
 
-import { assertNever } from "../domain/assertNever.ts";
-import {
-  ticketAt,
-  ticketIds,
-  type Core,
-  type StepRecord,
-  type Transition,
-} from "../domain/core.ts";
-import type { Stage } from "../domain/program.ts";
-import { taskEquals } from "../domain/task.ts";
-import type { Ticket } from "../domain/ticket.ts";
-import {
-  wrapUpEquals,
-  type ArtifactMark,
-  type WrapUpObs,
-} from "../domain/wrapUp.ts";
+import { ticketAt, ticketIds } from "../domain/core.ts";
+import type {
+  ArtifactMark,
+  Core,
+  Stage,
+  StepRecord,
+  Ticket,
+  Transition,
+} from "../domain/generated/modelTypes.ts";
+import { tasksInIdOrder, taskEquals } from "../domain/task.ts";
 
 /** Same length, and equal member by member in order. */
 function listEquals<Value>(
@@ -67,28 +61,12 @@ function recordEqualsTransition(left: Transition, right: Transition): boolean {
   );
 }
 
-function recordEqualsAttempt(left: WrapUpObs, right: WrapUpObs): boolean {
-  switch (left.attempt) {
-    case "WONone":
-      return right.attempt === "WONone";
-    case "WOAttempt":
-      return (
-        right.attempt === "WOAttempt" &&
-        right.project === left.project &&
-        right.invalidated === left.invalidated
-      );
-    default:
-      return assertNever(left);
-  }
-}
-
 /** Whether two step records observe the same decision, field by field. */
 export function recordEquals(left: StepRecord, right: StepRecord): boolean {
   return (
     left.label === right.label &&
     listEquals(left.transitions, right.transitions, recordEqualsTransition) &&
-    listEquals(left.effects, right.effects, sameValue) &&
-    recordEqualsAttempt(left.attempt, right.attempt)
+    listEquals(left.effects, right.effects, sameValue)
   );
 }
 
@@ -96,14 +74,22 @@ function ticketEqualsArtifact(
   left: ArtifactMark,
   right: ArtifactMark,
 ): boolean {
-  switch (left.artifact) {
-    case "ANone":
-      return right.artifact === "ANone";
-    case "ASome":
-      return right.artifact === "ASome" && right.mark === left.mark;
-    default:
-      return assertNever(left);
-  }
+  if (left === "NoArtifact") return right === "NoArtifact";
+  return right !== "NoArtifact" && right.value === left.value;
+}
+
+/** The dependency set as a list, ascending, so two sets compare member by member. */
+function depsInOrder(deps: ReadonlySet<number>): readonly number[] {
+  return [...deps].sort((a, b) => a - b);
+}
+
+/** One pricing branch carries a budget and the other does not, so the tags compare first. */
+function ticketEqualsPricing(
+  left: Ticket["finalizationPricing"],
+  right: Ticket["finalizationPricing"],
+): boolean {
+  if (left === "DeadlineOnly") return right === "DeadlineOnly";
+  return right !== "DeadlineOnly" && right.value === left.value;
 }
 
 function ticketEqualsStage(left: Stage, right: Stage): boolean {
@@ -114,19 +100,27 @@ function ticketEqualsStage(left: Stage, right: Stage): boolean {
 export function ticketEquals(left: Ticket, right: Ticket): boolean {
   return (
     left.phase === right.phase &&
-    listEquals(left.deps, right.deps, sameValue) &&
-    wrapUpEquals(left.wrapUp, right.wrapUp) &&
+    listEquals(depsInOrder(left.deps), depsInOrder(right.deps), sameValue) &&
+    left.finalizer === right.finalizer &&
     ticketEqualsArtifact(left.artifact, right.artifact) &&
-    left.project === right.project &&
+    left.workFanout === right.workFanout &&
+    left.reworkPolicy.value === right.reworkPolicy.value &&
+    ticketEqualsPricing(left.finalizationPricing, right.finalizationPricing) &&
+    left.resumePricing === right.resumePricing &&
     listEquals(left.program, right.program, ticketEqualsStage) &&
-    listEquals(left.tasks, right.tasks, taskEquals) &&
+    listEquals(
+      tasksInIdOrder(left.tasks),
+      tasksInIdOrder(right.tasks),
+      taskEquals,
+    ) &&
     listEquals(left.record, right.record, taskEquals) &&
     left.spawned === right.spawned &&
     left.reworkLeft === right.reworkLeft &&
-    left.wrapUpLeft === right.wrapUpLeft &&
+    left.finalizationLeft === right.finalizationLeft &&
     left.gasLeft === right.gasLeft &&
     left.resumeAt === right.resumeAt &&
-    left.reason === right.reason
+    left.reason === right.reason &&
+    left.completions === right.completions
   );
 }
 
