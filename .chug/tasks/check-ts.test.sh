@@ -708,4 +708,166 @@ TS
 run purity
 check "an adapter reaching a node builtin is clean" 0 "$RC" "purity clean"
 
+# --- The module-loader bans, OUTSIDE the pure core, through the PURITY STAGE
+# (S3-5, S3-3, S3-4). Until now the stage handed eslint only the pure core, so
+# the config's SECOND block — `files: src/** minus the pure core` — matched
+# nothing this stage ran: a computed `import()` in an adapter passed
+# `check-ts.sh purity` and reddened only `check-ts.sh lint`, the stage named for
+# the rule enforcing half of it. Each case drives ONE ban through `run purity`,
+# so together they prove the stage now applies the second block AND that the
+# block closes each route. Every route below was measured live into the single
+# writer. Before the fix, reverting `stage_purity` to hand only `$PURE_DIRS`
+# turns every one of these green — the whole point of them.
+
+# 42. A computed dynamic `import()` in an adapter. Non-literal on purpose: the
+#     graph cannot resolve `import(spec)`, so depcruise is silent and this is
+#     the eslint ban alone — the exact shape that passed `purity` and failed
+#     `lint`.
+scaffold
+cat >"$R/src/adapters/loader.ts" <<'TS'
+export async function load(spec: string): Promise<unknown> {
+  return import(spec);
+}
+TS
+run purity
+check "a computed import() in an adapter is a purity finding" 1 "$RC" \
+	"may not use a dynamic import"
+
+# 43. An import of a module loader.
+scaffold
+cat >"$R/src/adapters/loader.ts" <<'TS'
+import { createRequire } from "node:module";
+export const req = createRequire(import.meta.url);
+TS
+run purity
+check "importing a module loader in an adapter is a purity finding" 1 "$RC" \
+	"not a module loader"
+
+# 44. `getBuiltinModule` by member access.
+scaffold
+cat >"$R/src/adapters/loader.ts" <<'TS'
+export const m = process.getBuiltinModule("node:module");
+TS
+run purity
+check "getBuiltinModule by member is a purity finding" 1 "$RC" \
+	"fetches a builtin by name"
+
+# 45. The SAME getter reached reflectively (S3-3). `no-restricted-properties` is
+#     blind to it — the name is a string ARGUMENT, not a member — so it is a
+#     `no-restricted-syntax` selector, and this is the case that proves the
+#     readable reflective spelling is closed.
+scaffold
+cat >"$R/src/adapters/loader.ts" <<'TS'
+export const m = Reflect.get(process, "getBuiltinModule");
+TS
+run purity
+check "reflective getBuiltinModule is a purity finding" 1 "$RC" 'Reflect.get('
+
+# 46. Plain `eval` outside the pure core (S3-4). `no-eval` lived only in the
+#     pure block; `eval("import(...)")` reaches a module loader from anywhere.
+scaffold
+cat >"$R/src/adapters/loader.ts" <<'TS'
+export function run(src: string): unknown {
+  return eval(src);
+}
+TS
+run purity
+check "plain eval in an adapter is a purity finding" 1 "$RC" "can be harmful"
+
+# 47. The positive control for the loader block: an adapter that fetches NO
+#     module and calls no eval is clean, so the five bans above are scoped to
+#     the route rather than to the directory. An adapter reaching a MEDIUM
+#     (node:fs) rather than a module loader must stay green.
+scaffold
+cat >"$R/src/adapters/loader.ts" <<'TS'
+import { readFileSync } from "node:fs";
+export function size(p: string): number {
+  return readFileSync(p, "utf8").length;
+}
+TS
+run purity
+check "an adapter using a medium but no module loader is clean" 0 "$RC" "purity clean"
+
+# --- The graph-half rules, each PROVED by a probe that reds it (S3-11). The
+# mutation lens narrowed each of these to match nothing and check-ts.sh plus
+# both suites stayed green: they WORK — the positive controls above red each
+# with its own name — but nothing watched them work. Each case asserts the
+# rule's OWN NAME, so narrowing the rule drops the name from the output and the
+# case dies, which is the lens's exact test. `run purity` because these are the
+# depcruise half of the purity stage.
+
+# 48. no-shipped-test-fixtures. A shipped module re-exporting a test file is the
+#     case `domain-not-through-its-tests` cannot make tree-wide; it is cited as
+#     load-bearing prose elsewhere, so an unproved version was the sharp one.
+scaffold
+cat >"$R/src/interp/harness.test.ts" <<'TS'
+export const fixture = 1;
+TS
+cat >"$R/src/interp/probe.ts" <<'TS'
+export { fixture } from "./harness.test.ts";
+TS
+run purity
+check "a shipped module importing a test file reds no-shipped-test-fixtures" 1 "$RC" \
+	"no-shipped-test-fixtures"
+
+# 49. spine-not-through-its-tests. (no-shipped-test-fixtures reds this too; the
+#     needle is this rule's name, so narrowing THIS rule still kills the case.)
+scaffold
+cat >"$R/src/spine/randomized.test.ts" <<'TS'
+export const fixture = 2;
+TS
+cat >"$R/src/spine/probe.ts" <<'TS'
+export { fixture } from "./randomized.test.ts";
+TS
+run purity
+check "spine source importing a spine test reds spine-not-through-its-tests" 1 "$RC" \
+	"spine-not-through-its-tests"
+
+# 50. effects-reach-only-domain.
+scaffold
+cat >"$R/src/spine/cmd.ts" <<'TS'
+export const label = "x";
+TS
+cat >"$R/src/effects/probe.ts" <<'TS'
+export { label } from "../spine/cmd.ts";
+TS
+run purity
+check "an effect reaching the spine reds effects-reach-only-domain" 1 "$RC" \
+	"effects-reach-only-domain"
+
+# 51. no-circular. A two-module type cycle inside interp — type-only, since the
+#     graph counts type imports (tsPreCompilationDeps).
+scaffold
+cat >"$R/src/interp/ring-a.ts" <<'TS'
+import type { B } from "./ring-b.ts";
+export type A = { readonly b: B | null };
+export const a: A = { b: null };
+TS
+cat >"$R/src/interp/ring-b.ts" <<'TS'
+import type { A } from "./ring-a.ts";
+export type B = { readonly a: A | null };
+export const b: B = { a: null };
+TS
+run purity
+check "a cycle inside interp reds no-circular" 1 "$RC" "no-circular"
+
+# --- The test roster is ENUMERATED, not globbed (S3-8) ----------------------
+
+# 52. A `.test.mts` under src/ is RUN. The runner's glob was `*.test.ts`, so a
+#     byte-identical failing assertion in a `.mts` ran NEVER while every gate
+#     stayed green — the purity stage even lints it by name. The roster is
+#     found now, so the extension the tree admits everywhere else runs here.
+#     Reverting stage_test to the `*.test.ts` glob turns this green.
+scaffold
+cat >"$R/src/domain/silent.test.mts" <<'TS'
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+test("an mts test runs", () => {
+  assert.equal(1, 2);
+});
+TS
+run test
+check "a failing .test.mts is run and is a finding" 1 "$RC" "check-ts: FINDING — test"
+
 done_ "check-ts.test.sh"

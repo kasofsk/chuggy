@@ -39,7 +39,7 @@ R="$WORK/repo"
 GITBIN="$WORK/gitonly"
 tools_only "$GITBIN" git
 
-model_repo() { # <quint-version> <quint-exit>
+model_repo() { # <quint-version> <global-fail>
 	rm -rf "$R"
 	mkdir -p "$R/model/mc" "$R/model/tests" "$R/node_modules/.bin"
 	git -C "$R" init -q -b main
@@ -55,20 +55,74 @@ model_repo() { # <quint-version> <quint-exit>
 	printf 'module %s {\n}\n' chuggy_refinement_unit_test \
 		chuggy_refinement_hazard_seam_test chuggy_refinement_tier2_test \
 		> "$R/model/tests/chuggy_refinement_test.qnt"
+	# The stub speaks quint's DIALECT, subcommand by subcommand, because the gate
+	# now classifies on the VERDICT LINE and not the exit code (check-model.sh's
+	# S3-6 fix). The literal markers below are quint 0.32.0's own — `error:
+	# Tests failed`, `error: typechecking failed`, `error: Invariant violated` —
+	# so a case that drives a finding proves the gate reads the same string quint
+	# prints, and a case that drives a crash (exit 139 with NO marker) proves it
+	# refuses rather than reporting the model false.
+	#
+	#   $2 (global-fail) — nonzero makes EVERY subcommand emit its genuine
+	#      finding marker, the coarse "quint disagreed" the old <quint-exit> arg
+	#      stood for.
+	#   STUB_FAIL   modules whose test/run emits a genuine finding marker.
+	#   STUB_CRASH  modules whose test/run dies on 139 with no output (flake #12).
+	#   STUB_QUIET  modules whose test reports no tally at all.
+	#   STUB_ZERO   modules whose test reports a tally of zero.
+	#   STUB_TC     the typecheck subcommand's mode: ok (default), crash, or fail.
+	#
+	# The passing tally is coloured under FORCE_COLOR exactly as quint colours
+	# it, escape at the very start of the line, so the gate's colour-stripping is
+	# proved against output shaped like the thing that defeated it.
 	cat > "$R/node_modules/.bin/quint" <<STUB
 #!/bin/sh
 if [ "\$1" = "--version" ]; then echo "$1"; exit 0; fi
+GFAIL="$2"
+sub=\$1
+shift
 main=""
 for a in "\$@"; do case "\$a" in --main=*) main=\${a#--main=} ;; esac; done
 [ -n "\$main" ] || main=unit
-printf '  %s\n' "\$main"
-case " \${STUB_QUIET:-} " in *" \$main "*) exit 0 ;; esac
-case " \${STUB_ZERO:-} " in *" \$main "*) printf '\n  0 passing (1ms)\n'; exit 0 ;; esac
-case " \${STUB_FAIL:-} " in
-*" \$main "*) printf '    1) aTest failed after 1 test(s)\n\n  1 failed\n'; exit 1 ;;
+tally() {
+	if [ -n "\${FORCE_COLOR:-}" ]; then
+		printf '\n\033[32m  1 passing\033[39m\033[90m (1ms)\033[39m\n'
+	else
+		printf '\n  1 passing (1ms)\n'
+	fi
+}
+case "\$sub" in
+typecheck)
+	case "\${STUB_TC:-ok}" in
+	crash) exit 139 ;;
+	fail) echo "error: typechecking failed"; exit 1 ;;
+	esac
+	[ "\$GFAIL" = 0 ] || { echo "error: typechecking failed"; exit 1; }
+	exit 0
+	;;
+test)
+	case " \${STUB_CRASH:-} " in *" \$main "*) exit 139 ;; esac
+	case " \${STUB_QUIET:-} " in *" \$main "*) printf '  %s\n' "\$main"; exit 0 ;; esac
+	case " \${STUB_ZERO:-} " in *" \$main "*) printf '\n  0 passing (1ms)\n'; exit 0 ;; esac
+	case " \${STUB_FAIL:-} " in
+	*" \$main "*) printf '    1) aTest failed after 1 test(s)\n\n  1 failed\n\nerror: Tests failed\n'; exit 1 ;;
+	esac
+	[ "\$GFAIL" = 0 ] || { printf '\n  1 failed\n\nerror: Tests failed\n'; exit 1; }
+	printf '  %s\n    ok aTest passed 1 test(s)\n' "\$main"
+	tally
+	exit 0
+	;;
+run)
+	case " \${STUB_CRASH:-} " in *" \$main "*) exit 139 ;; esac
+	case " \${STUB_FAIL:-} " in
+	*" \$main "*) echo "error: Invariant violated"; exit 1 ;;
+	esac
+	[ "\$GFAIL" = 0 ] || { echo "error: Invariant violated"; exit 1; }
+	echo "[ok] No violation found"
+	exit 0
+	;;
 esac
-printf '    ok aTest passed 1 test(s)\n\n  1 passing (1ms)\n'
-exit $2
+exit 0
 STUB
 	chmod +x "$R/node_modules/.bin/quint"
 	git -C "$R" add -A
@@ -87,7 +141,9 @@ model_repo 0.32.0 0
 run_in_repo
 check "a clean model run exits 0" 0 "$RC" "0 failure(s)"
 
-# 2. A quint call failing is a finding, not a could-not-run.
+# 2. A quint call disagreeing — printing its own finding verdict — is a finding,
+#    not a could-not-run. The global-fail stub emits every subcommand's genuine
+#    marker; the crash-vs-finding split is driven per stage further down.
 model_repo 0.32.0 1
 run_in_repo
 check "a failing quint call is a finding" 1 "$RC" "failure(s)"
@@ -162,11 +218,18 @@ appended_module model/tests/chuggy_refinement_test.qnt chuggy_refinement_appende
 	"ERROR refinement chuggy_refinement_appended_test failed"
 appended_module model/mc/mc_chuggy.qnt mc_chuggy_appended \
 	"ERROR instance mc_chuggy_appended violated an invariant"
+# S3-7: the unit file was the one run bare, so a second module in it was loaded
+# past. With the unit file discovered like the other three, an appended module
+# is run and its failure named — the same attack, on the file the fix reached
+# last.
+appended_module model/tests/chuggy_test.qnt chuggy_appended_test \
+	"ERROR unit chuggy_appended_test failed"
 
 # 9. Discovery matching nothing is a could-not-run, per source. Each loop reads
 #    a different file with a different pattern, so each refusal is driven; the
 #    message names the file so the reader knows which scan came up empty.
 for empty in \
+	"unit:model/tests/chuggy_test.qnt" \
 	"witness:model/tests/chuggy_witness_test.qnt" \
 	"refinement:model/tests/chuggy_refinement_test.qnt" \
 	"instance:model/mc/mc_chuggy.qnt"; do
@@ -239,5 +302,54 @@ model_repo 0.32.0 0
 run_in_repo STUB_ZERO=chuggy_refinement_unit_test
 check "a tally of zero exits 2, not 0" 2 "$RC" \
 	"refinement chuggy_refinement_unit_test reported no tests run"
+
+# --- A crash is not a finding (S3-6) ----------------------------------------
+# quint's exit code is the same non-zero for a real failure, an argument error,
+# a file it cannot read, and the SIGSEGV this tree tracks as flake #12 — so the
+# gate used to print "the proved model is false" whenever quint merely died.
+# Each pair below drives a stage twice: once with quint DYING on 139 with no
+# output (→ could-not-run, exit 2), once with quint printing its genuine verdict
+# marker (→ finding, exit 1). Reverting the stage to `if ! quint …; then failed`
+# collapses both onto exit 1 and the could-not-run half of every pair reddens.
+
+# 11. The test loops (witness/refinement/unit share one path).
+model_repo 0.32.0 0
+run_in_repo STUB_CRASH=chuggy_witness_free_test
+check "a crashed test stage exits 2, not 1" 2 "$RC" \
+	"witness chuggy_witness_free_test: quint exited 139 with no test verdict"
+model_repo 0.32.0 0
+run_in_repo STUB_FAIL=chuggy_witness_free_test
+check "a genuine test failure is a finding" 1 "$RC" \
+	"ERROR witness chuggy_witness_free_test failed"
+
+# 12. The randomized-invariant loop, whose marker is the one the brief names.
+model_repo 0.32.0 0
+run_in_repo STUB_CRASH=mc_chuggy_budgeted
+check "a crashed invariant run exits 2, not 1" 2 "$RC" \
+	"instance mc_chuggy_budgeted: quint exited 139 with no violation verdict"
+model_repo 0.32.0 0
+run_in_repo STUB_FAIL=mc_chuggy_budgeted
+check "a genuine invariant violation is a finding" 1 "$RC" \
+	"ERROR instance mc_chuggy_budgeted violated an invariant"
+
+# 13. The typecheck stage, driven through its own mode because it takes a file
+#     rather than a --main. A crash there was the loudest of all: it runs over
+#     every module, so a single SIGSEGV failed the whole gate.
+model_repo 0.32.0 0
+run_in_repo STUB_TC=crash
+check "a crashed typecheck exits 2, not 1" 2 "$RC" \
+	"with no verdict"
+model_repo 0.32.0 0
+run_in_repo STUB_TC=fail
+check "a genuine typecheck failure is a finding" 1 "$RC" "does not typecheck"
+
+# 14. COLOUR DOES NOT TURN A HEALTHY MODEL INTO COULD-NOT-RUNS (F3). Quint
+#     colours its tally under FORCE_COLOR even into a pipe, escape at the very
+#     start of the `N passing` line, so the tally guard — anchored at the line's
+#     start — read every suite as one that ran nothing. The gate strips colour
+#     before reading; dropping the strip turns this green tree amber.
+model_repo 0.32.0 0
+run_in_repo FORCE_COLOR=1
+check "FORCE_COLOR does not defeat the tally guard" 0 "$RC" "0 failure(s)"
 
 done_ "check-model.test.sh"

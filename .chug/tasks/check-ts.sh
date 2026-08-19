@@ -28,19 +28,20 @@
 # `eslint.purity.config.js` for the ambient globals — and each of those files
 # states in its own header what it catches and what it cannot.
 #
-# AND A THIRD THING, WHICH IS NOT A HALF BUT A FLOOR: every file under
-# `src/domain/` is handed to eslint BY NAME, under `--max-warnings=0`, so a
-# file no configuration matches is a finding instead of a silence. Both halves
-# above are only as wide as the globs that select their inputs, and a glob is
-# the one part of a rule that fails without saying anything — a `.mts` file
-# under a `*.ts` glob went UNLINTED while this gate printed clean on every
-# stage, and `Date.now()` inside it was therefore invisible to the ambient
-# roster. It was still typechecked, as long as something imported it: an
-# import pulls a file into the program whatever the `include` glob says, so
-# tsc reported type errors inside that same file while eslint never opened it.
-# Only the linting was missing, and the ambient half is entirely lint.
-# Widening the globs fixed that file; passing the files explicitly is what
-# makes the next extension loud.
+# AND A THIRD THING, WHICH IS NOT A HALF BUT A FLOOR: every file under `src/`
+# is handed to eslint BY NAME, under `--max-warnings=0`, so a file no
+# configuration matches is a finding instead of a silence. Both halves above are
+# only as wide as the globs that select their inputs, and a glob is the one part
+# of a rule that fails without saying anything — a `.mts` file under a `*.ts`
+# glob went UNLINTED while this gate printed clean on every stage, and
+# `Date.now()` inside it was therefore invisible to the ambient roster. It was
+# still typechecked, as long as something imported it: an import pulls a file
+# into the program whatever the `include` glob says, so tsc reported type errors
+# inside that same file while eslint never opened it. Only the linting was
+# missing, and the ambient half is entirely lint. Widening the globs fixed that
+# file; passing the files explicitly is what makes the next extension loud —
+# and the same enumeration hands the test stage its roster, so a `.test.mts`
+# cannot run never the way it once did.
 #
 # THAT FLOOR DOES NOT COVER JAVASCRIPT, and the types stage is what does.
 # ESLint always has a configuration for `.js`, `.mjs` and `.cjs`, so no
@@ -76,8 +77,8 @@
 # pass. Where the gate as a whole sits in `.chug/tasks/ci.sh` IS a cost
 # decision, and it is made there.
 #
-# NOT IN `.githooks/pre-commit`, deliberately. That hook's budget is about two
-# seconds and it already declines the shell suites for being slower than that.
+# NOT IN `.githooks/pre-commit`, deliberately. That hook's budget is tight — it
+# already declines the shell suites for being slower than it allows.
 # This gate needs an installed `node_modules` the hook cannot assume, and a
 # hook that is slow or that fails open on a fresh clone is a hook people
 # disable — after which none of it runs. `just check` is where this belongs,
@@ -283,80 +284,87 @@ stage_purity() {
 		verdict=2
 	fi
 
-	# The ambient capabilities. A second, syntax-only eslint run over the PURE
-	# CORE alone: it needs no type information, so it costs
-	# milliseconds, and it means the purity rule is one stage a developer can
-	# run rather than a property spread across two.
+	# The ambient capabilities. A second, syntax-only eslint run: it needs no
+	# type information, so it costs milliseconds, and it means the purity rule is
+	# one stage a developer can run rather than a property spread across two.
 	#
-	# THE FILES ARE PASSED EXPLICITLY, not as the directory, and that is the
-	# structural half of this fix rather than a style choice. Handed a
-	# directory, eslint enumerates only what its config's `files` patterns
-	# already match, so a file no pattern covers is not skipped loudly — it is
-	# not seen at all, and the stage prints "purity clean" for a tree it never
-	# read. That is exactly how a `.mts` file reached `Date.now()` under a
-	# `*.ts` glob. Handed the files, eslint says "File ignored because no
-	# matching configuration was supplied" for each one it cannot place, and
-	# `--max-warnings=0` turns that into the finding it is. The globs were
-	# widened too, but only this makes the NEXT extension loud instead of
-	# silent.
+	# OVER THE WHOLE OF src/, NOT THE PURE CORE ALONE, because the config has TWO
+	# blocks and this stage is named for both. The first rosters ambient
+	# capability across `$PURE_DIRS`; the second bans the module loaders — the
+	# dynamic `import()`, the loader imports, `getBuiltinModule` and its
+	# reflective spelling, `eval` — across `src/**` MINUS the pure core. That
+	# second block's `files:` is exactly the complement, so handing the stage
+	# only `$PURE_DIRS` — the previous shape — left it matching nothing this run
+	# passed: a computed `import()` in an adapter sailed through `check-ts.sh
+	# purity` and reddened only `check-ts.sh lint`, the stage advertised for the
+	# rule running half of it. The whole-tree `lint` stage still applies the same
+	# array (`eslint.config.js` spreads it in) with type information besides;
+	# what this buys is that the fast stage a developer actually runs enforces
+	# the loader bans too.
+	#
+	# THE FILES ARE PASSED EXPLICITLY, not as the directory, and that is
+	# structural rather than a style choice. Handed a directory, eslint
+	# enumerates only what its config's `files` patterns already match, so a file
+	# no pattern covers is not skipped loudly — it is not seen at all, and the
+	# stage prints "purity clean" for a tree it never read. That is exactly how a
+	# `.mts` file reached `Date.now()` under a `*.ts` glob. Handed the files,
+	# eslint says "File ignored because no matching configuration was supplied"
+	# for each one it cannot place, and `--max-warnings=0` turns that into the
+	# finding it is — now the floor beneath EVERY file under src/, not the pure
+	# core alone.
 	#
 	# THAT SAME EXPLICIT LIST IS ALSO WHERE THE STAGE CAN GO BLIND, which is
 	# the price of building it here rather than letting eslint walk the tree.
-	# `find -type f` does not match a symlink, so a symlinked pure module was
-	# dropped from the list and this stage printed clean over a file it never
-	# opened — on the path the package scripts advertise for every save. `-L`
-	# resolves them. A BROKEN symlink resolves to nothing and so cannot be
-	# linted at all: under `-L` it stops being `-type f` and becomes `-type l`,
-	# which is precisely the shape that would vanish from the list in silence,
-	# so it is looked for by name and reported. Could-not-run would be the
-	# wrong verdict for it — nothing about the toolchain failed; a file in the
-	# tree points at nothing, which is a defect in the tree, the same class as
-	# the stray `.js` the types stage rejects.
-	# EVERY PURE DIRECTORY, and each is required to EXIST and to hold at least
-	# one file. `$PURE_DIRS` is the same set `eslint.purity.config.js` globs and
-	# `.dependency-cruiser.mjs` writes a reachability rule for, and a directory
-	# named by the rule that this stage cannot find is a could-not-run: the
-	# alternative is a rule whose subject silently left the tree while the gate
-	# went on printing clean, which is the exact failure the explicit file list
-	# below exists to prevent one level down.
-	pure_files=""
+	# `find -type f` does not match a symlink, so a symlinked module is dropped
+	# from the list and this stage prints clean over a file it never opened — on
+	# the path the package scripts advertise for every save. `-L` resolves them.
+	# A BROKEN symlink resolves to nothing and so cannot be linted at all: under
+	# `-L` it stops being `-type f` and becomes `-type l`, which is precisely the
+	# shape that would vanish from the list in silence, so it is looked for by
+	# name and reported. Could-not-run would be the wrong verdict for it —
+	# nothing about the toolchain failed; a file in the tree points at nothing,
+	# which is a defect in the tree, the same class as the stray `.js` the types
+	# stage rejects.
+	#
+	# EVERY PURE DIRECTORY is still required to EXIST and to hold a file, ahead
+	# of the whole-src list. `$PURE_DIRS` is the set `eslint.purity.config.js`
+	# globs and `.dependency-cruiser.mjs` writes a reachability rule for, and a
+	# directory named by the rule that this stage cannot find is a could-not-run:
+	# a pure directory silently leaving the tree would empty the first block
+	# while the second went on printing clean over everything else.
 	for dir in $PURE_DIRS; do
 		if [ ! -d "$dir" ]; then
 			echo "check-ts: $dir is named by the purity rule and is not in this tree" >>"$OUT"
 			verdict=2
 			return
 		fi
-		dangling="$(find -L "$dir" -type l 2>/dev/null || true)"
-		if [ -n "$dangling" ]; then
-			{
-				echo "check-ts: $dir holds symlinks that resolve to nothing, so the"
-				echo "check-ts: ambient half cannot read them:"
-				printf '%s\n' "$dangling" | sed 's/^/    /'
-			} >>"$OUT"
-			verdict=1
-		fi
-		found="$(find -L "$dir" -type f 2>/dev/null || true)"
-		if [ -z "$found" ]; then
+		if [ -z "$(find -L "$dir" -type f 2>/dev/null || true)" ]; then
 			echo "check-ts: no files under $dir — the ambient half checked nothing" >>"$OUT"
 			verdict=2
 			return
 		fi
-		# Accumulated HERE, inside the loop that splits `$PURE_DIRS` on the
-		# default IFS. The list is split on newlines below, so a directory name
-		# reaching that split would arrive as one unsearchable path.
-		pure_files="$pure_files$found
-"
 	done
 
+	dangling="$(find -L src -type l 2>/dev/null || true)"
+	if [ -n "$dangling" ]; then
+		{
+			echo "check-ts: src/ holds symlinks that resolve to nothing, so the"
+			echo "check-ts: ambient half cannot read them:"
+			printf '%s\n' "$dangling" | sed 's/^/    /'
+		} >>"$OUT"
+		verdict=1
+	fi
+
+	src_files="$(find -L src -type f 2>/dev/null || true)"
 	set -f
 	IFS='
 '
 	# shellcheck disable=SC2086
-	set -- $pure_files
+	set -- $src_files
 	unset IFS
 	set +f
 	if [ "$#" -eq 0 ]; then
-		echo "check-ts: no files under $PURE_DIRS — the ambient half checked nothing" >>"$OUT"
+		echo "check-ts: no files under src/ — the ambient half checked nothing" >>"$OUT"
 		verdict=2
 		return
 	fi
@@ -389,24 +397,57 @@ stage_test() {
 		return
 	fi
 
+	# THE ROSTER OF WHAT RUNS IS ENUMERATED, NOT GLOBBED. `node --test
+	# "src/**/*.test.ts"` was the single roster of what executes, and a glob is
+	# the one part of a rule that fails without saying anything: a `.test.mts` or
+	# `.test.cts` under `src/` matched that `*.test.ts` pattern nowhere and ran
+	# NEVER, while every gate stayed green and the purity stage above even linted
+	# the file by name. The runner is handed every test file under `src/`
+	# explicitly instead, found the way `stage_purity` finds its inputs, so the
+	# set that SHOULD run and the set that DID are the same set by construction —
+	# the floor the lint stage built for itself, at this stage.
+	#
+	# `.test.mts`/`.test.cts` ARE RUN, not forbidden. The tree already admits all
+	# three TypeScript extensions under `src/` — the types stage permits them,
+	# `eslint.purity.config.js` globs them, `.dependency-cruiser.mjs` enumerates
+	# `[.]test[.](ts|mts|cts)$` in every layer rule — so a test written in one is
+	# a test the tree means to keep, and singling test files out for a `.ts`-only
+	# rule would contradict every other file class. What this stage does NOT
+	# reach is a test file OUTSIDE `src/`: every stage here is `src/`-scoped, so
+	# that is a stray of a different kind and not one this gate claims.
+	test_files="$(find -L src -type f \( -name '*.test.ts' -o -name '*.test.mts' -o -name '*.test.cts' \) 2>/dev/null || true)"
+	set -f
+	IFS='
+'
+	# shellcheck disable=SC2086
+	set -- $test_files
+	unset IFS
+	set +f
+	if [ "$#" -eq 0 ]; then
+		# No test file under src/ at all. The runner handed a glob that matched
+		# nothing exits 0 with zero tests; enumerating up front refuses instead.
+		echo "check-ts: no test files under src/ — the test stage matched nothing" >>"$OUT"
+		verdict=2
+		return
+	fi
+
 	# The reporter is pinned because the default depends on whether stdout is a
 	# terminal, and the count below is parsed from it. A gate must not read
 	# differently when a human is watching.
 	set +e
-	node --test --test-reporter=tap "src/**/*.test.ts" >"$OUT" 2>&1
+	node --test --test-reporter=tap "$@" >"$OUT" 2>&1
 	rc=$?
 	set -e
 
+	# The runner counts every file it is handed as a subtest of its own, so a
+	# summary line is proof it opened the roster and a MISSING one is a runner
+	# that died before reporting — could-not-run, the counterpart of the model
+	# gate's tally guard. "Ran nothing" needs no separate reading here: the
+	# roster was checked non-empty above, before node was invoked, where the old
+	# glob could only learn it from a `# tests 0` after the fact.
 	total="$(sed -n 's/^# tests \([0-9][0-9]*\)$/\1/p' "$OUT" | tail -1)"
 	if [ -z "$total" ]; then
 		echo "check-ts: the test runner produced no count (rc=$rc)" >>"$OUT"
-		verdict=2
-		return
-	fi
-	if [ "$total" -eq 0 ]; then
-		# A glob that matched nothing exits 0 with no tests, which is the one
-		# way this stage could pass without checking anything.
-		echo "check-ts: no tests ran; src/**/*.test.ts matched nothing" >>"$OUT"
 		verdict=2
 		return
 	fi

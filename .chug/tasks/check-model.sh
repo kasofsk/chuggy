@@ -55,6 +55,42 @@
 # where this reads a line quint omits entirely when nothing ran and refuses a
 # zero besides.
 #
+# THE UNIT SUITE IS DISCOVERED TOO, and it is here because it was the one file
+# that was not. The witness, refinement and instance files below are each run
+# module by module under `--main=`; `chuggy_test.qnt` was run bare — `quint
+# test` with no `--main`, which loads the file's default main and no other
+# module in it. So a SECOND module appended to that one file typechecked, was
+# never run, and was counted in no residue — the very attack the discovery
+# above closed everywhere else, surviving on the single file the fix had not
+# reached. The unit file now gets the same `discover` and the same opener-count
+# audit, and every module it declares is run.
+#
+# QUINT'S EXIT CODE DOES NOT SEPARATE A FINDING FROM A CRASH, and this gate has
+# to. Every failure mode quint has leaves a non-zero exit: a real test failure,
+# a typecheck error, an argument error, a file it cannot read, and the SIGSEGV
+# this tree tracks as flake #12. A gate that read the code alone — which this
+# one did, mapping every non-zero to a failure with the output discarded —
+# printed "the proved model is false" whenever quint merely died, in the gate
+# that spawns quint the most times per run. What each stage reads instead is the
+# line quint prints when it reached its OWN verdict: `error: Tests failed` for a
+# suite, `error: typechecking failed` for a typecheck, `error: Invariant
+# violated` for a randomized run. A non-zero exit carrying that line is a
+# finding; a non-zero exit without it is a could-not-run, because quint never
+# judged and this gate does not judge for it. That is
+# `.chug/tasks/check-conformance.sh`'s own rule — trust the verdict line, not
+# the exit code — applied to a tool with three verdicts rather than one. The
+# output is kept and printed rather than discarded: a crash the gate refuses
+# over is a crash somebody has to be able to read.
+#
+# THE OUTPUT IS STRIPPED OF COLOUR BEFORE ANY LINE IS READ, on
+# `.chug/tasks/check-duplication.sh`'s precedent and for its reason. Quint
+# colours its tally whenever `FORCE_COLOR` is set, even into a pipe, and the
+# escape lands at the very start of the `N passing` line — so the tally guard,
+# anchored at the line's beginning, read a healthy suite as one that ran nothing
+# and every stage turned into a could-not-run. The verdict markers above happen
+# to print uncoloured today, but reading them off stripped text is what keeps
+# that an observation rather than a dependency.
+#
 # WHAT IT CANNOT SEE, said plainly so nobody trusts it further than it goes.
 #
 #   - It runs what the model declares; it does not judge whether the model
@@ -93,6 +129,22 @@ cd "$root" || exit 2
 
 QUINT_VERSION="0.32.0"
 
+# The lines quint prints when it reaches its OWN verdict, one per subcommand.
+# A non-zero exit carrying the matching marker is a genuine finding; a non-zero
+# exit without it — a crash, an argument error, a file quint could not read — is
+# a could-not-run. See the header: the exit code alone cannot tell the two
+# apart, and this gate must.
+TYPECHECK_FAILED_MARKER='error: typechecking failed'
+TEST_FAILED_MARKER='error: Tests failed'
+INVARIANT_VIOLATED_MARKER='error: Invariant violated'
+
+# Colour is stripped from quint's output before any line is read off it — see
+# the header. The escape is spelled with printf so the pattern is a literal ESC.
+ESC="$(printf '\033')"
+strip_colour() { # reads $1, writes stripped text to stdout
+	sed "s/${ESC}\[[0-9;]*m//g" "$1"
+}
+
 if [ -x ./node_modules/.bin/quint ]; then
 	QUINT=./node_modules/.bin/quint
 elif command -v quint >/dev/null 2>&1; then
@@ -124,7 +176,8 @@ failed=0
 errored=0
 
 run_out="$(mktemp)"
-trap 'rm -f "$run_out"' EXIT
+run_clean="$(mktemp)"
+trap 'rm -f "$run_out" "$run_clean"' EXIT
 
 # Module names read out of the model source, into $MODULES. A scan that matches
 # nothing is a refusal: the loop that follows would otherwise run no module and
@@ -168,8 +221,12 @@ discover() { # <label> <file> <name-pattern>
 	return 0
 }
 
-# One `quint test`, three-valued. A non-zero exit is a finding; a zero exit with
-# no tally is a suite that ran nothing, and that is a could-not-run.
+# One `quint test`, THREE-VALUED ON THE VERDICT LINE, not on the exit code. A
+# non-zero exit is a finding only if quint printed `error: Tests failed`; every
+# other non-zero — a crash, an argument error, a file it could not read — is a
+# could-not-run, because quint never judged the suite (see the header). A zero
+# exit with no tally is a suite that ran nothing, and that too is a could-not-
+# run.
 run_test() { # <label> <file> [<main-module>]
 	_label="$1"
 	set +e
@@ -180,9 +237,18 @@ run_test() { # <label> <file> [<main-module>]
 	fi
 	_rc=$?
 	set -e
+	strip_colour "$run_out" >"$run_clean"
 	if [ "$_rc" -ne 0 ]; then
-		echo "ERROR $_label failed"
-		failed=$((failed + 1))
+		if grep -qF "$TEST_FAILED_MARKER" "$run_clean"; then
+			echo "ERROR $_label failed"
+			sed 's/^/    /' "$run_clean"
+			failed=$((failed + 1))
+		else
+			echo "check-model: LINTER ERROR — $_label: quint exited $_rc with no test verdict."
+			echo "check-model:     A crash or an argument error is not the model being false."
+			sed 's/^/    /' "$run_clean"
+			errored=$((errored + 1))
+		fi
 		return
 	fi
 	# A tally line with something in it. Quint omits the line entirely when no
@@ -190,7 +256,7 @@ run_test() { # <label> <file> [<main-module>]
 	# the two ways "it passed" and "there was nothing to pass" print alike.
 	# Only the zero-exit path reaches here, so there is no `failed` spelling to
 	# admit: a suite with a failure has already been counted as one.
-	if ! grep -qE '^[[:space:]]*[1-9][0-9]* passing' "$run_out"; then
+	if ! grep -qE '^[[:space:]]*[1-9][0-9]* passing' "$run_clean"; then
 		echo "check-model: LINTER ERROR — $_label reported no tests run."
 		echo "check-model:     A suite that ran nothing is not a suite that passed."
 		errored=$((errored + 1))
@@ -201,15 +267,37 @@ echo "--- typecheck"
 IFS='
 '
 for m in $modules; do
-	if ! "$QUINT" typecheck "$m" >/dev/null 2>&1; then
+	set +e
+	"$QUINT" typecheck "$m" >"$run_out" 2>&1
+	_rc=$?
+	set -e
+	[ "$_rc" -eq 0 ] && continue
+	strip_colour "$run_out" >"$run_clean"
+	if grep -qF "$TYPECHECK_FAILED_MARKER" "$run_clean"; then
 		echo "ERROR $m: does not typecheck"
+		sed 's/^/    /' "$run_clean"
 		failed=$((failed + 1))
+	else
+		echo "check-model: LINTER ERROR — quint exited $_rc typechecking $m with no verdict."
+		echo "check-model:     A crash is not a type error."
+		sed 's/^/    /' "$run_clean"
+		errored=$((errored + 1))
 	fi
 done
 unset IFS
 
 echo "--- unit suite"
-run_test "$UNIT_FILE" "$UNIT_FILE"
+# Discovered like the other three files, so a module APPENDED to it is run and
+# counted rather than loaded past. The main suite module is `chuggy_test`, which
+# has no middle segment, so the pattern cannot demand one between `chuggy_` and
+# `test` the way the witness and refinement patterns do — it matches the base
+# name and any `chuggy_<segment>_test` alongside it. The opener-count audit is
+# what catches a module the pattern is too narrow to read, here as everywhere.
+if discover unit "$UNIT_FILE" 'chuggy_[A-Za-z_0-9]*test'; then
+	for u in $MODULES; do
+		run_test "unit $u" "$UNIT_FILE" "$u"
+	done
+fi
 
 # The witness modules prove each named shape REACHABLE and assert every
 # invariant after every step. One of them is the odd one out: it witnesses
@@ -233,9 +321,23 @@ fi
 echo "--- invariants (randomized)"
 if discover instance "$INSTANCE_FILE" 'mc_chuggy_[A-Za-z_0-9]*'; then
 	for i in $MODULES; do
+		set +e
 		"$QUINT" run "$INSTANCE_FILE" --main="$i" \
-			--invariant=allInvariants --max-samples=2000 --max-steps=40 >/dev/null 2>&1 \
-			|| { echo "ERROR instance $i violated an invariant"; failed=$((failed + 1)); }
+			--invariant=allInvariants --max-samples=2000 --max-steps=40 >"$run_out" 2>&1
+		_rc=$?
+		set -e
+		[ "$_rc" -eq 0 ] && continue
+		strip_colour "$run_out" >"$run_clean"
+		if grep -qF "$INVARIANT_VIOLATED_MARKER" "$run_clean"; then
+			echo "ERROR instance $i violated an invariant"
+			sed 's/^/    /' "$run_clean"
+			failed=$((failed + 1))
+		else
+			echo "check-model: LINTER ERROR — instance $i: quint exited $_rc with no violation verdict."
+			echo "check-model:     A crash is not an invariant violation."
+			sed 's/^/    /' "$run_clean"
+			errored=$((errored + 1))
+		fi
 	done
 fi
 

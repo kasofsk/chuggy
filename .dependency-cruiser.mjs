@@ -91,18 +91,23 @@
  *      pure core, which has no directory left to forget.
  *
  *      AND `import()` IS NOT THE ONLY WAY. `createRequire(import.meta.url)`, a
- *      `Worker` given a `URL`, and `process.getBuiltinModule` reaching either
- *      one fetch a module by name too, in exactly the layers this file ALLOWS
- *      node builtins — each measured live from an adapter into
- *      `src/spine/actor.ts`. `eslint.purity.config.js` closes the loaders and
- *      the accessor there, for the reason that fits in one line: a layer with a
- *      medium has no use for a module loader.
+ *      `Worker` given a `URL`, `process.getBuiltinModule` and the same getter
+ *      reached reflectively as `Reflect.get(process, "getBuiltinModule")`, and
+ *      a plain `eval("import(…)")` all fetch a module by name too, in exactly
+ *      the layers this file ALLOWS node builtins — each measured live from an
+ *      adapter into `src/spine/actor.ts`. `eslint.purity.config.js` closes the
+ *      loaders, the accessor and its reflective literal, and `eval` there
+ *      (`new Function` falls to the whole-tree lint's `no-implied-eval`), for
+ *      the reason that fits in one line: a layer with a medium has no use for a
+ *      module loader. What none of those bans can see is a getter name assembled
+ *      at run time; that limit is named in `eslint.purity.config.js` and not
+ *      claimed away here.
  *
- *      WITH THEM CLOSED, every remaining edge is one this graph HAS — so
- *      `adapters-decide-nothing`'s transitivity catches the static route
- *      through a tool, which it always promised and could not deliver while an
- *      invisible edge existed. The literal `import()` stays this file's, and
- *      the ban makes the distinction moot anyway.
+ *      WITH THE READABLE SPELLINGS CLOSED, every remaining edge this graph can
+ *      see is one it HAS — so `adapters-decide-nothing`'s transitivity catches
+ *      the static route through a tool, which it always promised and could not
+ *      deliver while an invisible edge existed. The literal `import()` stays
+ *      this file's, and the ban makes the distinction moot anyway.
  *   3. `adapters-decide-nothing` MOVING OUT FROM UNDER ITSELF. Alone among the
  *      rules here it is pinned to two PATHS rather than to a boundary, because
  *      `src/adapters/` is deliberately not reachability-bounded — so it names

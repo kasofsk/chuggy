@@ -77,16 +77,30 @@
  * one unresolvable edge in it cannot answer a reachability question anywhere.
  *
  * WHAT IS CLOSED, rather than how many ways there were of breaking it: the
- * dynamic-import EXPRESSION, every spelling of the builtins that hand back a
+ * dynamic-import EXPRESSION; every spelling of the builtins that hand back a
  * module (`module`, `worker_threads`, each with and without the `node:`
- * prefix), and the accessor that hands one back with no import to see
- * (`getBuiltinModule`). Each shape was measured live from `src/adapters/` into
- * `src/spine/actor.ts`, the single writer, with depcruise, tsc and the whole
- * lint green over it. A COUNT WOULD BE THE WRONG SHAPE OF SENTENCE HERE, and
- * this file has now learned that twice: the roster was a list of directories
- * until a file at the `src/` root walked past it, and a list of loaders until a
- * bare specifier and an accessor did — so what is written down is the closure,
- * and a name that belongs in it is an addition rather than a refutation.
+ * prefix); the accessor that hands one back with no import to see
+ * (`getBuiltinModule`) AND its reflective spelling `Reflect.get(process,
+ * "getBuiltinModule")`, whose property name is a string LITERAL and so is
+ * greppable; and plain `eval`, which runs an `import()` the graph never sees.
+ * Each shape was measured live from `src/adapters/` into `src/spine/actor.ts`,
+ * the single writer, with depcruise, tsc and the whole lint green over it.
+ *
+ * WHAT IS NOT CLOSED, AND CANNOT BE, said in the same breath so the closure is
+ * never read as completeness: no lint enumerates every spelling of a name. The
+ * property reached by a CONCATENATED name — `Reflect.get(process, "getBuiltin"
+ * + "Module")`, `process["getBuiltin" + "Module"]` — is an edge no static rule
+ * sees, and this file bans the readable spellings precisely because it cannot
+ * ban the obfuscated one. So the boundary claims the STATIC edges it closes and
+ * names that limit, and does not assert that nothing in this tree fetches a
+ * module at run time — only that no readable spelling of doing so passes.
+ *
+ * A COUNT WOULD BE THE WRONG SHAPE OF SENTENCE HERE, and this file keeps
+ * learning it: the roster was a list of directories until a file at the `src/`
+ * root walked past it, a list of loaders until a bare specifier and an accessor
+ * did, and a list of import-and-accessor spellings until a reflective read and
+ * a bare `eval` did — so what is written down is the closure, and a name that
+ * belongs in it is an addition rather than a refutation.
  *
  * The rules live in a second block below, applied to every TypeScript file
  * under `src/` that the pure block does not already cover. The alternative was
@@ -97,8 +111,12 @@
  * `Math.random()` or `Date.now()` property access, `eval`, `new Function`, a
  * dynamic `import()`, and `import.meta` — across every file extension the
  * `PURE_FILES` glob below admits; and everywhere else under `src/`, a dynamic
- * `import()`, an import of a module loader, and any reach for
- * `getBuiltinModule`.
+ * `import()`, an import of a module loader, a reach for `getBuiltinModule` by
+ * member access or by `Reflect.get` with a literal name, and plain `eval`.
+ * `new Function` outside the pure core is closed too, but by the whole-tree
+ * lint's `@typescript-eslint/no-implied-eval` rather than by this file — which
+ * is why the purity stage, running this config alone, leans on the full
+ * `check-ts.sh` for that one route.
  *
  * WHAT IT CANNOT CATCH, stated rather than hoped:
  *
@@ -108,9 +126,13 @@
  *      so a file this config does not match is a finding rather than a silent
  *      skip. That gap is how a `.mts` file reached `Date.now()` and the whole
  *      gate still printed clean.
- *   2. A capability reached by computed name — `globalThis["Da" + "te"]`.
- *      `globalThis`, `global`, `eval`, `new Function` and `WebAssembly` are all
- *      rostered, which closes the readable spellings; obfuscation gets through.
+ *   2. A capability reached by computed name — `globalThis["Da" + "te"]`, or a
+ *      module getter as `Reflect.get(process, "getBuiltin" + "Module")`. The
+ *      readable spellings are rostered in both blocks — `globalThis`, `global`,
+ *      `eval`, `new Function` and `WebAssembly` in the pure core, and the
+ *      module getter, its reflective literal and `eval` outside it — which
+ *      closes what a reader can grep; a name assembled at run time gets through,
+ *      here and in the second block alike, and no lint changes that.
  *   3. A capability handed in as an argument by an impure caller. Not a hole
  *      but the design: a decider is pure with respect to what it is given, and
  *      the model's own `Core` is exactly that argument. What forbids a *port*
@@ -187,6 +209,20 @@ const MODULE_LOADERS = [
  * member of this name for any other purpose.
  */
 const BUILTIN_MODULE_GETTER = "getBuiltinModule";
+
+/**
+ * THE SAME GETTER REACHED REFLECTIVELY. `Reflect.get(process,
+ * "getBuiltinModule")` executed live returned the single writer's exports from
+ * an adapter, with every gate green: `no-restricted-properties` reads a member
+ * expression and a destructure, and this is neither — it is a call whose
+ * property name rides in as a string ARGUMENT. It is closed here rather than
+ * left to the computed-name limit below because the name is a STRING LITERAL:
+ * greppable, readable, a spelling a roster can hold. `Reflect.get(process,
+ * "getBuiltin" + "Module")` is the computed route this cannot see and does not
+ * claim to — see WHAT IT CANNOT CATCH. The selector matches the literal
+ * wherever it sits in the call, which is all a `Reflect.get` needs it to.
+ */
+const REFLECTIVE_BUILTIN_MODULE_GETTER = `CallExpression[callee.object.name='Reflect'][callee.property.name='get'] > Literal[value='${BUILTIN_MODULE_GETTER}']`;
 
 const NO_DYNAMIC_IMPORT =
   "the module graph must be statically checkable: a computed dynamic import is an edge `.dependency-cruiser.mjs` cannot see";
@@ -333,12 +369,14 @@ export default [
      * to a glob.
      *
      * WHAT IT ENFORCES, EXACTLY: no file it matches may write a dynamic
-     * `import()`. That is narrower than "no module in this tree is loaded at
-     * run time", which is a property of the TREE and needs this rule, the pure
-     * block's own copy of it, and the module-loader restriction below —
-     * `createRequire` and `Worker` fetch modules without an `import()` anywhere.
-     * The message says what this rule stops and cites the property rather than
-     * claiming it.
+     * `import()`, import a module loader, reach `getBuiltinModule` by member or
+     * by `Reflect.get` with a literal name, or call `eval`. That is narrower
+     * than "no module in this tree is loaded at run time", which is a property
+     * of the TREE and needs every one of those bans, the pure block's own
+     * copies, and the whole-tree lint's `no-implied-eval` for `new Function` —
+     * `createRequire`, `Worker`, a reflective getter and an `eval("import(…)")`
+     * each fetch a module without a plain `import()` anywhere. The messages say
+     * what these rules stop and cite the property rather than claiming it.
      *
      * WHY BAN RATHER THAN REQUIRE A LITERAL. A literal `import("…")` is already
      * resolved and walked by the graph, so permitting it and banning the rest
@@ -366,13 +404,24 @@ export default [
           selector: "ImportExpression",
           message: `this file may not use a dynamic import: ${NO_DYNAMIC_IMPORT}`,
         },
+        // AND THE SAME GETTER REACHED REFLECTIVELY. See
+        // `REFLECTIVE_BUILTIN_MODULE_GETTER`: `no-restricted-properties` below
+        // sees `process.getBuiltinModule` and `process["getBuiltinModule"]`,
+        // but not `Reflect.get(process, "getBuiltinModule")`, whose property
+        // name is a call argument. The literal is readable, so the spelling is
+        // closed; the concatenated one is not, and is named as a limit rather
+        // than claimed.
+        {
+          selector: REFLECTIVE_BUILTIN_MODULE_GETTER,
+          message: `a layer here needs a medium, not a module loader: \`Reflect.get(…, "${BUILTIN_MODULE_GETTER}")\` fetches a builtin by name with no import to see, which is the module graph's job done where the graph cannot see it`,
+        },
       ],
-      // THE OTHER TWO WAYS TO FETCH A MODULE, closed in the same block because
-      // they are the same claim: see `MODULE_LOADERS`. It is `no-restricted-
-      // imports` rather than a graph rule because what is wrong is HOLDING the
-      // loader, not reaching the module it would load — the graph cannot see
-      // the second, and by the time it could there would be nothing left to
-      // forbid.
+      // THE MODULE LOADERS THAT ARRIVE AS IMPORTS, closed in the same block
+      // because they are the same claim: see `MODULE_LOADERS`. It is `no-
+      // restricted-imports` rather than a graph rule because what is wrong is
+      // HOLDING the loader, not reaching the module it would load — the graph
+      // cannot see the second, and by the time it could there would be nothing
+      // left to forbid.
       "no-restricted-imports": [
         "error",
         {
@@ -393,6 +442,14 @@ export default [
           message: `a layer here needs a medium, not a module loader: \`${BUILTIN_MODULE_GETTER}\` fetches a builtin by name with no import to see, which is the module graph's job done where the graph cannot see it`,
         },
       ],
+      // PLAIN `eval` OUTSIDE THE PURE CORE. `eval("import('../spine/actor.ts')")`
+      // reached the single writer, and the "eval is rostered" reassurance was
+      // the pure core's alone — `no-eval` lived only in the block above. The
+      // whole-tree lint's `@typescript-eslint/no-implied-eval` (from
+      // strictTypeChecked) already closes `new Function` here, so that route
+      // needs no second ban; plain `eval` was closed NOWHERE outside the core,
+      // and is the one added.
+      "no-eval": "error",
     },
   },
 ];
