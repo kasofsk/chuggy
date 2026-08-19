@@ -39,7 +39,7 @@ import { describe, type ItfValue } from "./decode.ts";
  * because that is how the generator emits one; anything else keeps its payload
  * under `type` and `value`.
  */
-function itfToWire(value: ItfValue): unknown {
+export function itfToWire(value: ItfValue): unknown {
   if (typeof value === "bigint") return Number(value);
   if (typeof value === "string" || typeof value === "boolean") return value;
   if (Array.isArray(value)) return value.map(itfToWire);
@@ -104,6 +104,27 @@ export function decodeWith<Value>(
 /** A plain integer, as ITF writes one. */
 export function encodeInt(value: number): ItfValue {
   return BigInt(value);
+}
+
+/** A nullary variant, which is how ITF writes a sum arm carrying nothing. */
+export function encodeNullaryTag(tag: string): ItfValue {
+  return encodeNullary(tag);
+}
+
+/** A draw ITF records as an option: present under Some, absent under None. */
+export function encodeOption(wire: unknown): unknown {
+  return wire === undefined
+    ? { tag: "None", value: { "#tup": [] } }
+    : { tag: "Some", value: wire };
+}
+
+/** A model sum with its payload written by the caller, for a draw ITF carries alone. */
+export function encodeSumValue<Payload>(
+  value: string | { readonly type: string; readonly value: Payload },
+  payload: (inner: Payload) => ItfValue,
+): ItfValue {
+  if (typeof value === "string") return encodeNullary(value);
+  return encodeVariant(value.type, payload(value.value));
 }
 
 /** A nullary variant, which is how ITF writes a sum arm carrying nothing. */

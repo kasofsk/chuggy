@@ -253,6 +253,40 @@ function pricingEquals(
   return right !== "DeadlineOnly" && right.value === left.value;
 }
 
+/** The ids a release may still claim, which is what makes a fleet quiet or not. */
+export function releasableIdsIn(config: Config, core: Core): readonly TicketId[] {
+  if (core.tickets.size >= config.nTickets) return [];
+  return ticketIdUniverse(config).filter((j) => !core.tickets.has(j));
+}
+
+/** Tickets running their finalizer, which is the phase a result may be reported for. */
+export function finalizingIn(core: Core): readonly TicketId[] {
+  return ticketIds(core).filter((j) => ticketAt(core, j).phase === "Finalizing");
+}
+
+/**
+ * A fleet nothing can move: no id left to release, and every ticket settled at
+ * a terminal. It is the stutter's guard, so a run that reaches it records that
+ * it did rather than deadlocking.
+ */
+export function quietIn(config: Config, core: Core): boolean {
+  return (
+    releasableIdsIn(config, core).length === 0 &&
+    ticketIds(core).every((j) => {
+      const phase = ticketAt(core, j).phase;
+      return phase === "Done" || phase === "Revoked";
+    })
+  );
+}
+
+/** The task ids of this ticket the fabric could still report on. */
+export function outstandingTaskIdsIn(core: Core, id: TicketId): readonly number[] {
+  return [...ticketAt(core, id).tasks]
+    .filter((t) => t.state === "Outstanding")
+    .map((t) => t.id)
+    .sort((a, b) => a - b);
+}
+
 /** A decision that changes nothing, which an absorbed duplicate returns. */
 export function noop(core: Core, label: string): Decision {
   return { rec: { label, transitions: [], effects: [] }, post: core };
