@@ -17,7 +17,7 @@ if [ ! -x ./node_modules/.bin/quint ]; then
 fi
 
 set +e
-node ./scripts/generate-model-api.mjs --check
+node ./scripts/generate-model-api.ts --check
 rc=$?
 set -e
 if [ "$rc" -eq 1 ]; then exit 1; fi

@@ -64,6 +64,7 @@ import type { StepView } from "../../src/domain/invariants.ts";
 import {
   decodeTrace,
   decodeValue,
+  encodeValue,
   field,
   stateValue,
   type ItfMap,
@@ -78,8 +79,6 @@ import {
 import {
   decodeCore,
   decodeStepRecord,
-  decodeVerdict,
-  decodeWrapUpOutcome,
   encodeCore,
   encodeStepRecord,
 } from "../itf/vocabulary.ts";
@@ -178,6 +177,16 @@ function rawAt(golden: Golden, index: number, name: string): unknown {
   return state[name];
 }
 
+/** Whether the run recorded this draw at all, as against recording it absent. */
+function recorded(raw: ItfValue, name: string): boolean {
+  return (
+    typeof raw === "object" &&
+    !Array.isArray(raw) &&
+    raw.kind === "record" &&
+    raw.fields.has(name)
+  );
+}
+
 /** The action a state records, which `--mbt` writes as a bare string beside the picks. */
 function actionOf(state: ItfState): string {
   const action = stateValue(state, "mbt::actionTaken");
@@ -189,10 +198,15 @@ function actionOf(state: ItfState): string {
   return action;
 }
 
-/** `mbt::nondetPicks` is a record of options; an absent draw is `None`. */
+/**
+ * `mbt::nondetPicks` is a record of options; an absent draw is `None`. A pick
+ * the run's own roster never draws is absent from the record entirely, which is
+ * how a directed emitter's traces carry no draw for the actions it dropped.
+ */
 function picksOf(state: ItfState): Picks {
   const raw = stateValue(state, "mbt::nondetPicks");
   const some = (name: string): ItfValue | undefined => {
+    if (!recorded(raw, name)) return undefined;
     const option = field(raw, name);
     if (
       typeof option !== "object" ||
@@ -207,14 +221,15 @@ function picksOf(state: ItfState): Picks {
     ticket: some("j"),
     deps: some("deps_"),
     program: some("prog"),
-    project: some("project_"),
-    wrapUp: some("wrapUp_"),
+    workFanout: some("workFanout_"),
+    reworkPolicy: some("reworkPolicy_"),
+    finalizationPricing: some("finalizationPricing_"),
+    resumePricing: some("resumePricing_"),
+    finalizer: some("finalizer_"),
     taskId: some("tid"),
     verdict: some("v"),
-    moved: some("moved"),
     outcome: some("out"),
-    decodeVerdict,
-    decodeWrapUpOutcome,
+    reason: some("why"),
   };
 }
 
@@ -365,7 +380,7 @@ function recordFinding(
   action: string,
   decision: Decision,
 ): readonly Finding[] {
-  const got = encodeStepRecord(decision.rec);
+  const got = encodeValue(encodeStepRecord(decision.rec));
   const want = rawAt(golden, index, golden.stepVar);
   if (isDeepStrictEqual(got, want)) return [];
   return [
@@ -384,7 +399,7 @@ function coreFinding(
   action: string,
   decision: Decision,
 ): readonly Finding[] {
-  const got = encodeCore(decision.post);
+  const got = encodeValue(encodeCore(decision.post));
   const want = rawAt(golden, index, golden.ticketsVar);
   if (isDeepStrictEqual(got, want)) return [];
   return [
@@ -429,8 +444,8 @@ function bundleFinding(
       where: siteOf(golden, index, action),
       what: bundleWhat(verdict),
       detail: [
-        `  record: ${terse(encodeStepRecord(view.rec))}`,
-        ...coreLines("post", encodeCore(view.post)),
+        `  record: ${terse(encodeValue(encodeStepRecord(view.rec)))}`,
+        ...coreLines("post", encodeValue(encodeCore(view.post))),
         index === 0
           ? "  pre is this same state, which is what an initial state means"
           : `  pre is state ${String(index - 1)} of ${where}`,

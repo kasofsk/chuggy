@@ -15,7 +15,7 @@
  * hands back, having first held memory against them entry for entry, so an entry
  * the store never took — or no longer holds — is one nothing emits, whatever
  * memory believes. The interpreter never sees the store at all: its argument is
- * `(Entry, post-Core)` and nothing else.
+ * the entry and nothing else.
  *
  * TWO REFUSALS ON THE WAY IN, at two grains. The store's parse refuses a
  * malformed row; `journalLegalOn` refuses a well-formed journal of a run this
@@ -73,7 +73,7 @@ export function drainPlan(
   for (const [index, entry] of journal.entries()) {
     replayed = execDecisionEvent(config, replayed, entry.event).post;
     if (index < applied) continue;
-    for (const planned of emissionsOf(entry, replayed)) {
+    for (const planned of emissionsOf(entry)) {
       plan.push({ step: "Emit", planned });
     }
     plan.push({ step: "Checkpoint", seq: entry.seq });

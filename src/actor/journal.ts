@@ -14,7 +14,7 @@
  */
 
 import type { Config } from "../domain/config.ts";
-import type { Core, StepRecord } from "../domain/core.ts";
+import type { Core, StepRecord } from "../domain/generated/modelTypes.ts";
 import {
   decisionEventEnabled,
   execDecisionEvent,

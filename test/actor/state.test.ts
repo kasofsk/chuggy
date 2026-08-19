@@ -9,9 +9,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  dispatchEvent,
   execDecisionEvent,
-  arriveEvent,
-  releaseEvent,
+  releaseTicketEvent,
 } from "../../src/actor/decisionEvent.ts";
 import { coreEquals } from "../../src/actor/equality.ts";
 import { genesis, replayCore } from "../../src/actor/journal.ts";
@@ -24,18 +24,12 @@ import {
   memoryCore,
 } from "../../src/actor/state.ts";
 import { initRecord } from "../../src/domain/core.ts";
-import { asProjectId } from "../../src/domain/ids.ts";
-import { wExclusive } from "../../src/domain/wrapUp.ts";
-import { depsOf, id } from "../domain/fixtures.ts";
-import { flatProgram, refinementInstance } from "./harness.ts";
+import { id } from "../domain/fixtures.ts";
+import { plainAuthoring, refinementInstance } from "./harness.ts";
 
 const config = refinementInstance;
-const arrival = arriveEvent(
-  depsOf(),
-  flatProgram,
-  asProjectId(1),
-  wExclusive(1),
-);
+const release = releaseTicketEvent(id(1), plainAuthoring);
+const dispatch = dispatchEvent(id(1));
 
 test("the initial state is genesis under the init record, with nothing journaled or emitted", () => {
   const state = actorInit();
@@ -50,25 +44,26 @@ test("the initial state is genesis under the init record, with nothing journaled
 
 test("journalStep advances the carried view and appends the next dense seq", () => {
   const before = actorInit();
-  const after = journalStep(config, before, arrival);
-  const decision = execDecisionEvent(config, memoryCore(before), arrival);
+  const after = journalStep(config, before, release);
+  const decision = execDecisionEvent(config, memoryCore(before), release);
   assert.equal(after.view.pre, memoryCore(before));
   assert.deepEqual(after.view.rec, decision.rec);
   assert.ok(coreEquals(after.view.post, decision.post));
   assert.equal(after.journal.length, 1);
   assert.deepEqual(after.journal[0]?.seq, 1);
+  assert.deepEqual(after.journal[0]?.event, release);
   assert.equal(after.applied, 0);
 });
 
 test("journalStep refuses a decision the machine would not take", () => {
   assert.throws(
-    () => journalStep(config, actorInit(), releaseEvent(id(1))),
-    /journalStep: Release is refused/,
+    () => journalStep(config, actorInit(), dispatch),
+    /journalStep: Dispatch is refused/,
   );
 });
 
 test("emitNext carries (pre, rec) untouched and refuses an exhausted journal", () => {
-  const journaled = journalStep(config, actorInit(), arrival);
+  const journaled = journalStep(config, actorInit(), release);
   const emitted = emitNext(journaled);
   assert.equal(emitted.view, journaled.view);
   assert.equal(emitted.applied, 1);
@@ -77,7 +72,7 @@ test("emitNext carries (pre, rec) untouched and refuses an exhausted journal", (
 });
 
 test("crashRecoverTo installs the genuine replay, carries (pre, rec), and regresses only inside the run", () => {
-  const emitted = emitNext(journalStep(config, actorInit(), arrival));
+  const emitted = emitNext(journalStep(config, actorInit(), release));
   const recovered = crashRecoverTo(config, emitted, 0);
   assert.equal(recovered.view.pre, emitted.view.pre);
   assert.equal(recovered.view.rec, emitted.view.rec);
@@ -91,20 +86,16 @@ test("crashRecoverTo installs the genuine replay, carries (pre, rec), and regres
 });
 
 test("effectCrash orphans the decision, reverts memory to the replay, and carries (pre, rec)", () => {
-  const emitted = emitNext(journalStep(config, actorInit(), arrival));
-  const crashed = effectCrash(config, emitted, releaseEvent(id(1)));
-  const lost = execDecisionEvent(
-    config,
-    memoryCore(emitted),
-    releaseEvent(id(1)),
-  );
+  const emitted = emitNext(journalStep(config, actorInit(), release));
+  const crashed = effectCrash(config, emitted, dispatch);
+  const lost = execDecisionEvent(config, memoryCore(emitted), dispatch);
   assert.equal(crashed.view.pre, emitted.view.pre);
   assert.equal(crashed.view.rec, emitted.view.rec);
   assert.ok(coreEquals(crashed.view.post, replayCore(config, emitted.journal)));
   assert.equal(crashed.journal, emitted.journal);
   assert.deepEqual(crashed.orphans, [lost.rec]);
   assert.throws(
-    () => effectCrash(config, actorInit(), releaseEvent(id(1))),
-    /effectCrash: Release is refused/,
+    () => effectCrash(config, actorInit(), dispatch),
+    /effectCrash: Dispatch is refused/,
   );
 });

@@ -7,14 +7,15 @@
  * each case edits stored text the way something outside this process would and
  * asks what comes back.
  *
- * The constructor roster is walked against `decisionEventTags` rather than against a list
- * written here, because a thirteenth decision event with no schema arm is exactly the
- * drift a hand-written roster hides.
+ * The constructor roster is walked against `decisionEventTags` rather than
+ * against a list written here, because a decision event with no schema arm is
+ * exactly the drift a hand-written roster hides.
  *
- * THE ROUND TRIP IS THE ENCODE DIRECTION'S RUN-TIME CHECK. `EntryWire` pins
- * that direction at compile time (`src/interpreter/wire.ts`); what a type
- * cannot say is that the bytes read back as the entry that was written, deps
- * and their order included, and that is what the round trip here holds.
+ * THE ROUND TRIP IS THE ENCODE DIRECTION'S ONLY CHECK. The codec is generated
+ * from the model, so nothing in this tree states the schema twice; what a
+ * generator cannot say is that the bytes read back as the entry that was
+ * written, a release's dependency set included, and that is what the round trip
+ * here holds.
  */
 
 import assert from "node:assert/strict";
@@ -22,15 +23,12 @@ import { test } from "node:test";
 
 import {
   decisionEventTags,
-  arriveEvent,
-  completeDuplicateEvent,
-  dequeueEvent,
   dispatchEvent,
   evalReduceEvent,
-  gateResolveEvent,
-  opRetryEvent,
-  releaseEvent,
-  revalFailEvent,
+  executionBlockedEvent,
+  finalizationResultEvent,
+  releaseTicketEvent,
+  resumeTicketEvent,
   revokeEvent,
   taskDoneEvent,
   workReduceEvent,
@@ -40,41 +38,44 @@ import { recordEquals } from "../../src/actor/equality.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import { journalStoreStub } from "../../src/adapters/journalStoreStub.ts";
-import type { StepRecord } from "../../src/domain/core.ts";
-import { asProjectId, asTaskId } from "../../src/domain/ids.ts";
-import { wExclusive, wNone, woNone } from "../../src/domain/wrapUp.ts";
+import { asTaskId } from "../../src/domain/ids.ts";
 import {
   encodeEntry,
   parseEntry,
+  parseJournal,
   type Parsed,
 } from "../../src/interpreter/wire.ts";
-import { flatProgram, refinementInstance } from "../actor/harness.ts";
-import { depsOf, id } from "../domain/fixtures.ts";
+import {
+  plainAuthoring,
+  plainResult,
+  refinementInstance,
+} from "../actor/harness.ts";
+import { id } from "../domain/fixtures.ts";
+import type { StepRecord } from "../../src/domain/generated/modelTypes.ts";
 
 const config = refinementInstance;
 
 /** A well-formed record, so a case about a decision event is not also a case about a record. */
 const plainRecord: StepRecord = {
-  label: "ticket-released",
-  transitions: [{ ticket: id(1), from: "PDraft", to: "PPending" }],
-  effects: [],
-  attempt: woNone,
+  label: "dispatch",
+  transitions: [{ ticket: id(1), from: "Pending", to: "Working" }],
+  effects: ["SpawnWorkTasks"],
 };
 
 /** One decision event per constructor, keyed by its own tag so the roster can be checked against the vocabulary. */
-const oneOfEach: Readonly<Record<DecisionEvent["event"], DecisionEvent>> = {
-  Arrive: arriveEvent(depsOf(1), flatProgram, asProjectId(1), wExclusive(1)),
-  Release: releaseEvent(id(1)),
+const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
+  ReleaseTicket: releaseTicketEvent(id(1), {
+    ...plainAuthoring,
+    deps: new Set([2]),
+  }),
   Revoke: revokeEvent(id(1)),
   Dispatch: dispatchEvent(id(1)),
-  TaskDone: taskDoneEvent(id(1), asTaskId(2), "VFail"),
+  TaskDone: taskDoneEvent(id(1), asTaskId(2), "Fail", plainResult),
   WorkReduce: workReduceEvent(id(1)),
   EvalReduce: evalReduceEvent(id(1)),
-  Dequeue: dequeueEvent(id(1), true),
-  GateResolve: gateResolveEvent(id(1), "WFailed"),
-  CompleteDuplicate: completeDuplicateEvent(id(1)),
-  RevalFail: revalFailEvent(id(1)),
-  OpRetry: opRetryEvent(id(1)),
+  FinalizationResult: finalizationResultEvent(id(1), "FinalizationFailed"),
+  ExecutionBlocked: executionBlockedEvent(id(1), "ExecutionPolicyDenied"),
+  ResumeTicket: resumeTicketEvent(id(1)),
 };
 
 /** Through the wire and back, which is the only route a stored entry ever takes. */
@@ -93,14 +94,20 @@ function accepted(parsed: Parsed<Entry>): Entry {
   return parsed.value;
 }
 
-test("a journaled entry survives the wire unchanged, record and all", () => {
+/** The one honest entry every store case below stores. */
+function journaledRelease(): Entry {
   const state = journalStep(
     config,
     actorInit(),
-    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
+    releaseTicketEvent(id(1), plainAuthoring),
   );
   const written = state.journal[0];
   assert.ok(written !== undefined);
+  return written;
+}
+
+test("a journaled entry survives the wire unchanged, record and all", () => {
+  const written = journaledRelease();
   const read = accepted(reread(written));
   assert.equal(read.seq, written.seq);
   assert.deepEqual(read.event, written.event);
@@ -118,74 +125,71 @@ test("every decision event this machine declares has a schema arm, and the roste
   }
 });
 
-test("an arrival naming a ticket twice is refused, which is the gap between an array and the model's set", () => {
-  const dependent = { ...oneOfEach.Arrive, deps: [id(1), id(1)] };
-  const refused = parseEntry({ seq: 1, event: dependent, rec: plainRecord });
+test("a release naming a ticket twice is refused, which is the gap between an array and the model's set", () => {
+  const written = JSON.parse(
+    encodeEntry({ seq: 1, event: oneOfEach.ReleaseTicket, rec: plainRecord }),
+  ) as { event: { value: { deps: number[] } } };
+  written.event.value.deps = [1, 1];
+  const refused = parseEntry(written);
   assert.equal(refused.parsed, "Refused");
   assert.ok(refused.parsed === "Refused");
-  assert.match(refused.why, /the arrival draws a set/);
+  assert.match(refused.why, /set contains a duplicate/);
 });
 
-test("the same arrival with distinct deps is accepted, so the refusal is about the repeat", () => {
-  const dependent = { ...oneOfEach.Arrive, deps: [id(1), id(2)] };
-  accepted(parseEntry({ seq: 1, event: dependent, rec: plainRecord }));
+test("the same release with distinct deps is accepted, so the refusal is about the repeat", () => {
+  const written = JSON.parse(
+    encodeEntry({ seq: 1, event: oneOfEach.ReleaseTicket, rec: plainRecord }),
+  ) as { event: { value: { deps: number[] } } };
+  written.event.value.deps = [1, 2];
+  const read = accepted(parseEntry(written));
+  assert.ok(read.event.type === "ReleaseTicket");
+  assert.deepEqual(read.event.value.deps, new Set([1, 2]));
 });
 
-test("a multi-dep arrival is written as an ascending array and read back as the set it was", () => {
+test("a multi-dep release is written as an array and read back as the set it was", () => {
   const entry: Entry = {
     seq: 1,
-    event: arriveEvent(
-      depsOf(2, 1),
-      flatProgram,
-      asProjectId(1),
-      wExclusive(1),
-    ),
+    event: releaseTicketEvent(id(1), {
+      ...plainAuthoring,
+      deps: new Set([2, 1]),
+    }),
     rec: plainRecord,
   };
-  assert.match(encodeEntry(entry), /"deps":\[1,2\]/);
+  assert.match(encodeEntry(entry), /"deps":\[(1,2|2,1)\]/);
   assert.deepEqual(accepted(reread(entry)), entry);
 });
 
 test("a row is refused, with the field named, for each way the wire can lie", () => {
   const cases: readonly (readonly [string, unknown, RegExp])[] = [
     [
-      "a sequence number below the first",
-      { seq: 0, event: oneOfEach.Release, rec: plainRecord },
-      /seq/,
+      "a sequence number that is not a whole number",
+      { seq: 1.5, event: oneOfEach.Dispatch, rec: plainRecord },
+      /"seq"/,
     ],
     [
       "a decision-event tag this machine has not got",
-      { seq: 1, event: { event: "JSquash", ticket: 1 }, rec: plainRecord },
-      /event/,
-    ],
-    [
-      "an effect outside the vocabulary",
-      {
-        seq: 1,
-        event: oneOfEach.Release,
-        rec: { ...plainRecord, effects: ["Deploy"] },
-      },
-      /rec\.effects/,
+      { seq: 1, event: { type: "JSquash", value: 1 }, rec: plainRecord },
+      /"event"/,
     ],
     [
       "a phase outside the vocabulary",
       {
         seq: 1,
-        event: oneOfEach.Release,
+        event: oneOfEach.Dispatch,
         rec: {
           ...plainRecord,
-          transitions: [{ ticket: 1, from: "PParked", to: "PDone" }],
+          transitions: [{ ticket: 1, from: "PParked", to: "Done" }],
         },
       },
-      /rec\.transitions/,
+      /"rec",\s+"transitions"/,
     ],
-    ["a missing record", { seq: 1, event: oneOfEach.Release }, /rec/],
+    ["a missing record", { seq: 1, event: oneOfEach.Dispatch }, /"rec"/],
     [
       "a ticket id that is not a whole number",
-      { seq: 1, event: { event: "Release", ticket: 1.5 }, rec: plainRecord },
-      /ticket/,
+      { seq: 1, event: { type: "Dispatch", value: 1.5 }, rec: plainRecord },
+      /"event"/,
     ],
-    ["nothing at all", null, /\$/],
+    ["nothing at all", null, /received null/],
   ];
   for (const [what, row, where] of cases) {
     const refused = parseEntry(row);
@@ -195,16 +199,45 @@ test("a row is refused, with the field named, for each way the wire can lie", ()
   }
 });
 
+/**
+ * The model types a record's effects as strings, so the wire carries any of
+ * them and the vocabulary is enforced one layer out, where an emission is
+ * planned — `test/interpreter/subject.test.ts` holds that refusal.
+ */
+test("an effect string outside the vocabulary passes the wire, which does not know the vocabulary", () => {
+  const read = accepted(
+    parseEntry({
+      seq: 1,
+      event: oneOfEach.Dispatch,
+      rec: { ...plainRecord, effects: ["Deploy"] },
+    }),
+  );
+  assert.deepEqual(read.rec.effects, ["Deploy"]);
+});
+
+test("a whole journal is refused when it is not a list of rows, and by the index of the row that lied", () => {
+  const notAList = parseJournal({ seq: 1 });
+  assert.equal(notAList.parsed, "Refused");
+  assert.ok(notAList.parsed === "Refused");
+  assert.match(notAList.why, /a journal is an array of entries/);
+
+  const good = { seq: 1, event: oneOfEach.Dispatch, rec: plainRecord };
+  const badRow = parseJournal([good, { ...good, seq: 1.5 }]);
+  assert.equal(badRow.parsed, "Refused");
+  assert.ok(badRow.parsed === "Refused");
+  assert.match(badRow.why, /^1: /);
+
+  const both = parseJournal([good, { ...good, seq: 2 }]);
+  assert.ok(both.parsed === "Ok");
+  assert.deepEqual(
+    both.value.map((entry) => entry.seq),
+    [1, 2],
+  );
+});
+
 test("the store refuses a row it cannot read as JSON before the schema is asked", async () => {
   const store = journalStoreStub();
-  const state = journalStep(
-    config,
-    actorInit(),
-    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
-  );
-  const written = state.journal[0];
-  assert.ok(written !== undefined);
-  await store.append(written);
+  await store.append(journaledRelease());
   store.rows[0] = "{ not json";
   const loaded = await store.load();
   assert.equal(loaded.parsed, "Refused");
@@ -214,36 +247,28 @@ test("the store refuses a row it cannot read as JSON before the schema is asked"
 
 test("the store refuses a stored row edited into a shape the machine does not write", async () => {
   const store = journalStoreStub();
-  const state = journalStep(
-    config,
-    actorInit(),
-    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
-  );
-  const written = state.journal[0];
-  assert.ok(written !== undefined);
+  const written = journaledRelease();
   await store.append(written);
   store.rows[0] = JSON.stringify({
-    ...written,
-    rec: { ...written.rec, effects: ["Deploy"] },
+    ...JSON.parse(encodeEntry(written)),
+    rec: {
+      ...written.rec,
+      transitions: [{ ticket: 1, from: "PParked", to: "Done" }],
+    },
   });
   const loaded = await store.load();
   assert.equal(loaded.parsed, "Refused");
   assert.ok(loaded.parsed === "Refused");
-  assert.match(loaded.why, /effects/);
+  assert.match(loaded.why, /"transitions"/);
 });
 
 test("an untouched store reads back what it was given", async () => {
   const store = journalStoreStub();
-  const state = journalStep(
-    config,
-    actorInit(),
-    arriveEvent(depsOf(), flatProgram, asProjectId(1), wNone),
-  );
-  const written = state.journal[0];
-  assert.ok(written !== undefined);
+  const written = journaledRelease();
   await store.append(written);
   const loaded = await store.load();
   assert.ok(loaded.parsed === "Ok");
   assert.equal(loaded.value.length, 1);
+  assert.deepEqual(loaded.value[0]?.event, written.event);
   assert.ok(recordEquals(loaded.value[0]?.rec ?? plainRecord, written.rec));
 });

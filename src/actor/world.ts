@@ -15,7 +15,7 @@
  * price of the effect-first hazard, stated as arithmetic.
  */
 
-import type { StepRecord } from "../domain/core.ts";
+import type { StepRecord } from "../domain/generated/modelTypes.ts";
 import type { Effect } from "../domain/effect.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { Entry } from "./journal.ts";

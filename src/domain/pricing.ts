@@ -1,61 +1,53 @@
 /**
- * The three metering policies, the accounts they grant, and the bounds the
- * measure is parameterised by.
+ * The accounts the metering policies grant, and the bounds the measure is
+ * parameterised by.
  *
- * These are policies rather than constants because the model generates
- * escalation traces under each branch and the choice between them is made on
- * evidence. `Bounds` is passed explicitly for the same reason the model passes
- * it: the measure stays a pure function usable at any bounds, needing no
- * ambient configuration.
+ * The policies themselves are the model's. `Bounds` is not: the model declares
+ * it too, but it is not on the API boundary, and it is passed explicitly for
+ * the reason the model passes it — the measure stays a pure function usable at
+ * any bounds, needing no ambient configuration.
+ *
+ * A ticket carries its own pricing and the bounds carry the instance's. That
+ * is the model's arrangement rather than a duplication: the measure is bounded
+ * by what the instance grants, whatever an individual ticket was authored with.
  */
 
 import { assertNever } from "./assertNever.ts";
+import type {
+  FinalizationPricing,
+  ReworkPolicy,
+} from "./generated/modelTypes.ts";
 
-/** Gate-rework pricing. `DeadlineOnly` grants no gate account; gas alone meters the loop. */
-export type WrapUpPricing =
-  | { readonly pricing: "Budgeted"; readonly budget: number }
-  | { readonly pricing: "DeadlineOnly" };
+export const deadlineOnly: FinalizationPricing = "DeadlineOnly";
 
-/** Eval-rework pricing. One branch for now, and a new one lands as a constructor here. */
-export type ReworkPolicy = {
-  readonly policy: "RWBudget";
-  readonly budget: number;
-};
-
-/** Operator-retry metering. `RetryFree` reproduces a known livelock by configuration. */
-export type RetryPricing = "RetryCharged" | "RetryFree";
-
-export const deadlineOnly: WrapUpPricing = { pricing: "DeadlineOnly" };
-
-/** Gate rework priced with a budget of `budget` cycles. */
-export function budgeted(budget: number): WrapUpPricing {
-  return { pricing: "Budgeted", budget };
+/** Finalization rework priced with a budget of `budget` cycles. */
+export function budgeted(budget: number): FinalizationPricing {
+  return { type: "Budgeted", value: budget };
 }
 
 /** Eval rework granted a budget of `budget` cycles. */
 export function reworkBudgetOf(budget: number): ReworkPolicy {
-  return { policy: "RWBudget", budget };
+  return { type: "BudgetedRework", value: budget };
 }
 
-/** The gate account's size under a pricing. */
-export function wrapUpBudget(pricing: WrapUpPricing): number {
-  switch (pricing.pricing) {
+/** The finalization account's size under a pricing. `DeadlineOnly` grants none; gas alone meters the loop. */
+export function finalizationBudget(pricing: FinalizationPricing): number {
+  if (pricing === "DeadlineOnly") return 0;
+  switch (pricing.type) {
     case "Budgeted":
-      return pricing.budget;
-    case "DeadlineOnly":
-      return 0;
+      return pricing.value;
     default:
-      return assertNever(pricing);
+      return assertNever(pricing.type);
   }
 }
 
 /** The rework account's size under a policy. */
 export function reworkBudget(policy: ReworkPolicy): number {
-  switch (policy.policy) {
-    case "RWBudget":
-      return policy.budget;
+  switch (policy.type) {
+    case "BudgetedRework":
+      return policy.value;
     default:
-      return assertNever(policy.policy);
+      return assertNever(policy.type);
   }
 }
 
@@ -64,5 +56,5 @@ export interface Bounds {
   readonly reworkPolicy: ReworkPolicy;
   readonly nTasks: number;
   readonly maxStages: number;
-  readonly wrapUpPricing: WrapUpPricing;
+  readonly finalizationPricing: FinalizationPricing;
 }

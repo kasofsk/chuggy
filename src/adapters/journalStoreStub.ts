@@ -7,7 +7,7 @@
  * keeping bytes means every read goes through the schema, and a row edited
  * behind the executor's back arrives exactly as a tampered journal does. The
  * bytes come from `encodeEntry` rather than from a serializer written here,
- * because an arrival's deps are a set in the domain and an array on the wire,
+ * because a release's deps are a set in the domain and an array on the wire,
  * and `JSON.stringify` writes a set as an empty object without complaining.
  *
  * The cursor is held beside the rows and is deliberately not written with them:

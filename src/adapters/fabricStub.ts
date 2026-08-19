@@ -16,7 +16,7 @@ import {
 } from "../interpreter/ports.ts";
 
 /** What kind of task set a launch was for, at the grain the fabric is asked in. */
-export type FabricSet = "Work" | "Eval";
+export type FabricSet = "Work" | "Eval" | "Cancel";
 
 /** One launch: which set, and the decision and ticket it belongs to. */
 export interface FabricLaunch {
@@ -43,7 +43,8 @@ export function fabricStub(): FabricStub {
   return {
     running,
     requests,
-    spawnWorkTasks: (emission) => launch("Work", emission),
-    spawnEvalTasks: (emission) => launch("Eval", emission),
+    spawnWorkTasks: (emission: Emission) => launch("Work", emission),
+    spawnEvalTasks: (emission: Emission) => launch("Eval", emission),
+    cancelTicketWork: (emission: Emission) => launch("Cancel", emission),
   };
 }

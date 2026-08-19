@@ -15,30 +15,27 @@
 
 import type { Config } from "../../src/domain/config.ts";
 import { defaultProgram } from "../../src/domain/config.ts";
-import { initRecord, type Core } from "../../src/domain/core.ts";
+import { initRecord } from "../../src/domain/core.ts";
+import type {
+  Core,
+  Task,
+  TaskOutcome,
+  Ticket,
+} from "../../src/domain/generated/modelTypes.ts";
 import { freshTicket } from "../../src/domain/deciders.ts";
-import {
-  asProjectId,
-  asTaskId,
-  asTicketId,
-  type TicketId,
-} from "../../src/domain/ids.ts";
+import { asTaskId, asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 import {
   tkEval,
   tkWork,
   tsResolved,
   tsOutstanding,
-  type Task,
-  type TaskOutcome,
 } from "../../src/domain/task.ts";
-import type { Ticket } from "../../src/domain/ticket.ts";
-import { aSome, wExclusive } from "../../src/domain/wrapUp.ts";
 
 /** A ticket id, so a fixture reads the way the model's numbering does. */
 export const id = (value: number): TicketId => asTicketId(value);
 
-/** An arrival's dependency draw, in the shape the arrival carries it: the model's set. */
+/** A release's dependency draw, in the shape the release carries it: the model's set. */
 export const depsOf = (...values: number[]): ReadonlySet<TicketId> =>
   new Set(values.map(id));
 
@@ -75,21 +72,24 @@ export const evalOutstanding = (value: number, stage: number): Task => ({
 });
 
 /**
- * A ticket authored on `project` with a lease on the resource of the same name,
- * carrying its configuration's full accounts and whatever the caller overrides.
+ * A ticket as a release leaves it, carrying its configuration's full accounts
+ * and whatever the caller overrides.
  */
 export function ticketOn(
   config: Config,
-  project: number,
+  finalizer: Ticket["finalizer"] = "ManagedFinalizer",
   overrides: Partial<Ticket> = {},
 ): Ticket {
-  const born = freshTicket(
-    config,
-    depsOf(),
-    defaultProgram(config),
-    asProjectId(project),
-    wExclusive(project),
-  );
+  const born = freshTicket({
+    deps: new Set<number>(),
+    program: defaultProgram(config),
+    workFanout: config.nTasks,
+    reworkPolicy: config.reworkPolicy,
+    finalizationPricing: config.finalizationPricing,
+    resumePricing: "RetryCharged",
+    finalizer,
+    gas: config.gas,
+  });
   return { ...born, ...overrides };
 }
 
@@ -110,34 +110,41 @@ export function initialView(post: Core): StepView {
 
 /**
  * A fleet in mid-flight: one ticket completed, one working behind it, and one
- * holding a second project's gate. Every safety invariant is green on it, so a
- * defect below is one edit away from a state that passes.
+ * running its finalizer. Every safety invariant is green on it, so a defect
+ * below is one edit away from a state that passes.
  */
 export function healthyFleet(config: Config): readonly Ticket[] {
   const width = config.nTasks;
   const record: Task[] = [];
-  for (let i = 0; i < width; i++) record.push(workTask(i + 1, "TPassed"));
+  for (let i = 0; i < width; i++) record.push(workTask(i + 1, "Passed"));
   for (let i = 0; i < width; i++) {
-    record.push(evalTask(width + i + 1, 0, "TPassed"));
+    record.push(evalTask(width + i + 1, 0, "Passed"));
   }
-  const live: Task[] = [];
-  for (let i = 0; i < width; i++) live.push(workOutstanding(i + 1));
+  const live = new Set<Task>();
+  for (let i = 0; i < width; i++) live.add(workOutstanding(i + 1));
   const finished = {
     record,
     spawned: record.length,
-    artifact: aSome(width),
+    artifact: { type: "ProducedArtifact", value: width } as const,
     gasLeft: config.gas - 1,
   };
   return [
-    ticketOn(config, 1, { ...finished, phase: "PDone" }),
-    ticketOn(config, 1, {
-      phase: "PWorking",
-      deps: [id(1)],
+    ticketOn(config, "ManagedFinalizer", {
+      ...finished,
+      phase: "Done",
+      completions: 1,
+    }),
+    ticketOn(config, "ManagedFinalizer", {
+      phase: "Working",
+      deps: new Set([1]),
       tasks: live,
       spawned: width,
       gasLeft: config.gas - 1,
     }),
-    ticketOn(config, 2, { ...finished, phase: "PWrapUpHolding" }),
+    ticketOn(config, "ManagedFinalizer", {
+      ...finished,
+      phase: "Finalizing",
+    }),
   ];
 }
 
@@ -156,7 +163,7 @@ export function fleetBut(
 
 /** The model's `idsAccounted` for one ticket: every id ever issued is retired or live. */
 export function accountsFor(ticket: Ticket): boolean {
-  return ticket.spawned === ticket.record.length + ticket.tasks.length;
+  return ticket.spawned === ticket.record.length + ticket.tasks.size;
 }
 
 /** The same over a whole core: a fixture accounts for all of its ids or none of them. */

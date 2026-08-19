@@ -3,14 +3,9 @@
  * action calls, and nothing else: no decision is taken here.
  *
  * IT IS READ OFF `model/domain.qnt`'s ACTION ROSTER ONE ACTION AT A TIME, and
- * two rows are worth reading twice. `wrapUpStart` calls `decideDequeue` rather
- * than `decideWrapUpStart`, because the quiet/moved routing is a decider and
- * not a composition inside the action — the model hoisted it there after an
- * inline copy let a valid artifact take the lease with every isolation
- * conjunct staying self-consistently wrong. And `settle` has no decider at
- * all: it is the stutter that keeps a quiesced fleet from deadlocking the
- * sampler, so its arm asserts state identity and carries the label the model
- * writes.
+ * one row is worth reading twice: `settle` has no decider at all. It is the
+ * stutter that keeps a quiesced fleet from deadlocking the sampler, so its arm
+ * asserts state identity and carries the label the model writes.
  *
  * AN UNKNOWN ACTION THROWS. A trace names its action, and falling through to a
  * neighbouring decider would replay something the model never took while
@@ -26,53 +21,48 @@
  */
 
 import type { Config } from "../../src/domain/config.ts";
-import type { Core, Decision } from "../../src/domain/core.ts";
-import type { TicketId } from "../../src/domain/ids.ts";
-import type { Verdict } from "../../src/domain/task.ts";
-import type { WrapUpOutcome } from "../../src/domain/wrapUp.ts";
+import type { Decision } from "../../src/domain/core.ts";
 import {
-  decideArrive,
-  decideCompleteDuplicate,
-  decideDequeue,
   decideDispatch,
   decideEvalStageReduce,
-  decideOpRetry,
-  decideRelease,
-  decideRevalFail,
+  decideExecutionBlocked,
+  decideFinalizationResult,
+  decideReleaseTicket,
+  decideResumeTicket,
   decideRevoke,
   decideTaskDone,
   decideWorkReduce,
-  decideWrapUpResolve,
   settledRecord,
 } from "../../src/domain/deciders.ts";
-import type { ItfValue } from "../itf/decode.ts";
+import type { Core, Stage } from "../../src/domain/generated/modelTypes.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
 import {
-  decodeDeps,
-  decodeInvalidated,
-  decodeProgram,
-  decodeProjectId,
-  decodeTaskId,
-  decodeTicketId,
-  decodeWrapUp,
-} from "../itf/vocabulary.ts";
+  decodeFinalizationOutcome,
+  decodeFinalizationPricing,
+  decodeFinalizer,
+  decodeReason,
+  decodeRetryPricing,
+  decodeReworkPolicy,
+  decodeStage,
+  decodeVerdict,
+} from "../../src/generated/model-api.ts";
+import type { ItfValue } from "../itf/decode.ts";
+import { decodeTaskId, decodeTicketId, itfToWire } from "../itf/vocabulary.ts";
 
 /**
  * Every action name this table routes, in the order `model/domain.qnt`'s `step`
  * lists them. It is checked against that roster rather than trusted.
  */
 export const replayActions: readonly string[] = [
-  "arrive",
-  "release",
+  "releaseTicket",
   "revoke",
   "dispatch",
   "taskDone",
   "workReduce",
   "evalReduce",
-  "wrapUpStart",
-  "wrapUpResolve",
-  "completeDuplicate",
-  "revalFail",
-  "opRetry",
+  "finalizationResult",
+  "executionBlocked",
+  "resumeTicket",
   "settle",
 ];
 
@@ -87,14 +77,30 @@ export interface Picks {
   readonly ticket: ItfValue | undefined;
   readonly deps: ItfValue | undefined;
   readonly program: ItfValue | undefined;
-  readonly project: ItfValue | undefined;
-  readonly wrapUp: ItfValue | undefined;
+  readonly workFanout: ItfValue | undefined;
+  readonly reworkPolicy: ItfValue | undefined;
+  readonly finalizationPricing: ItfValue | undefined;
+  readonly resumePricing: ItfValue | undefined;
+  readonly finalizer: ItfValue | undefined;
   readonly taskId: ItfValue | undefined;
   readonly verdict: ItfValue | undefined;
-  readonly moved: ItfValue | undefined;
   readonly outcome: ItfValue | undefined;
-  readonly decodeVerdict: (value: ItfValue) => Verdict;
-  readonly decodeWrapUpOutcome: (value: ItfValue) => WrapUpOutcome;
+  readonly reason: ItfValue | undefined;
+}
+
+/** A drawn set of ticket ids, which no single model type names. */
+function drawnIds(value: ItfValue): readonly number[] {
+  const raw = itfToWire(value);
+  if (!Array.isArray(raw))
+    throw new Error("replay: a dependency draw is a set");
+  return raw.map(Number);
+}
+
+/** A drawn program: a list of stages, each read through its own decoder. */
+function drawnProgram(value: ItfValue): readonly Stage[] {
+  const raw = itfToWire(value);
+  if (!Array.isArray(raw)) throw new Error("replay: a program draw is a list");
+  return raw.map((stage) => decodeStage(stage));
 }
 
 /** A draw the action needs, refused rather than defaulted when the trace has none. */
@@ -126,53 +132,53 @@ export function replayStep(
   const j = (): TicketId => decodeTicketId(need(picks.ticket, "j"));
 
   switch (action) {
-    case "arrive":
-      return decideArrive(
-        config,
-        pre,
-        new Set(decodeDeps(need(picks.deps, "deps_"))),
-        decodeProgram(need(picks.program, "prog")),
-        decodeProjectId(need(picks.project, "project_")),
-        decodeWrapUp(need(picks.wrapUp, "wrapUp_")),
-      );
-    case "release":
-      return decideRelease(pre, j());
+    case "releaseTicket":
+      return decideReleaseTicket(config, pre, j(), {
+        deps: new Set(drawnIds(need(picks.deps, "deps_"))),
+        program: drawnProgram(need(picks.program, "prog")),
+        workFanout: Number(itfToWire(need(picks.workFanout, "workFanout_"))),
+        reworkPolicy: decodeReworkPolicy(
+          itfToWire(need(picks.reworkPolicy, "reworkPolicy_")),
+        ),
+        finalizationPricing: decodeFinalizationPricing(
+          itfToWire(need(picks.finalizationPricing, "finalizationPricing_")),
+        ),
+        resumePricing: decodeRetryPricing(
+          itfToWire(need(picks.resumePricing, "resumePricing_")),
+        ),
+        finalizer: decodeFinalizer(
+          itfToWire(need(picks.finalizer, "finalizer_")),
+        ),
+      });
     case "revoke":
-      return decideRevoke(pre, j());
+      return decideRevoke(config, pre, j());
     case "dispatch":
-      return decideDispatch(config, pre, j());
+      return decideDispatch(pre, j());
     case "taskDone":
       return decideTaskDone(
         pre,
         j(),
         decodeTaskId(need(picks.taskId, "tid")),
-        picks.decodeVerdict(need(picks.verdict, "v")),
+        decodeVerdict(itfToWire(need(picks.verdict, "v"))),
       );
     case "workReduce":
       return decideWorkReduce(pre, j());
     case "evalReduce":
-      return decideEvalStageReduce(config, pre, j());
-    case "wrapUpStart":
-      return decideDequeue(
-        config,
+      return decideEvalStageReduce(pre, j());
+    case "finalizationResult":
+      return decideFinalizationResult(
         pre,
         j(),
-        decodeInvalidated(need(picks.moved, "moved")),
+        decodeFinalizationOutcome(itfToWire(need(picks.outcome, "out"))),
       );
-    case "wrapUpResolve":
-      return decideWrapUpResolve(
-        config,
+    case "executionBlocked":
+      return decideExecutionBlocked(
         pre,
         j(),
-        picks.decodeWrapUpOutcome(need(picks.outcome, "out")),
-        true,
+        decodeReason(itfToWire(need(picks.reason, "why"))),
       );
-    case "completeDuplicate":
-      return decideCompleteDuplicate(pre, j());
-    case "revalFail":
-      return decideRevalFail(pre, j());
-    case "opRetry":
-      return decideOpRetry(config, pre, j());
+    case "resumeTicket":
+      return decideResumeTicket(pre, j());
     case "settle":
       return { rec: settledRecord(), post: pre };
     default:

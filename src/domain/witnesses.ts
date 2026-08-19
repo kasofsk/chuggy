@@ -31,17 +31,17 @@ export interface Witness {
 }
 
 /**
- * No operator retry into a pipeline phase ever climbs the measure. Violated
- * under free retries and holding under charged ones, which is the whole of its
- * value; the pre-work resume is deliberately excluded because that flavour is
- * free under both meterings.
+ * No resume into a pipeline phase ever climbs the measure. Violated under free
+ * retries and holding under charged ones, which is the whole of its value; a
+ * resume into Working is deliberately excluded, because re-entering Working
+ * meters under both pricings.
  */
 export function freeClimbNever(config: Config, view: StepView): boolean {
   const bounds = boundsOf(config);
   return !(
-    view.rec.label === "operator-retry" &&
+    view.rec.label === "ticket-resumed" &&
     view.rec.transitions.some(
-      (t) => t.to === "PEvaluating" || t.to === "PWrapUp",
+      (t) => t.to === "Evaluating" || t.to === "Finalizing",
     ) &&
     sysMeasure(bounds, view.post) > sysMeasure(bounds, view.pre)
   );

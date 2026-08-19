@@ -138,6 +138,18 @@ export default tseslint.config(
       "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-unnecessary-type-assertion": "error",
       "@typescript-eslint/no-non-null-assertion": "error",
+      // The rest of the strict set that does not collide with house rule 10,
+      // each one a place the types already know something the code restates:
+      // a value stringified without a `toString`, a type argument that is the
+      // default, a union member another member subsumes, a caught value given
+      // a type nothing checked.
+      "@typescript-eslint/no-base-to-string": "error",
+      "@typescript-eslint/no-unsafe-unary-minus": "error",
+      "@typescript-eslint/no-duplicate-type-constituents": "error",
+      "@typescript-eslint/no-redundant-type-constituents": "error",
+      "@typescript-eslint/use-unknown-in-catch-callback-variable": "error",
+      "@typescript-eslint/no-unnecessary-type-arguments": "error",
+      "@typescript-eslint/no-confusing-void-expression": "error",
       eqeqeq: ["error", "always"],
     },
   },

@@ -1,273 +1,222 @@
 /**
- * The deciders: pure functions from an observed state and an event to a
- * record and a post-state. None of them performs an effect; each returns the
- * list of effects the decision asks for, which is what lets the core replay
- * against a golden trace with nothing stubbed.
+ * The deciders: one pure function per decision the machine can make.
  *
- * EACH IS PARTIAL, AND ITS GUARD IS IN `enablement.ts`. Callers guarantee the
- * precondition; these assert it and never re-derive it. A decider that
- * restated its own enablement would be the copied guard the model hoisted
- * `dispatchableIn` out of an action to kill.
+ * A decider takes an observed `Core` and the decision's own arguments and
+ * returns the transitions it performs, the effects it asks the world for, and
+ * the state after it. IT NEVER PERFORMS ONE. That is what lets a golden trace
+ * be replayed through these functions with no world to stub, and what lets the
+ * same functions serve any runtime shape.
  *
- * EVERY PHASE FLIP GOES THROUGH `move`, which records exactly one transition,
- * so the trace shape has one definition. `from === to` is a real row: the
- * stage advance records Evaluating to Evaluating.
+ * Everything a decision needs is already in the `Core` it is handed. A decider
+ * that acquired a read would acquire an await, and then a mock, and then it
+ * would no longer be a function.
+ *
+ * The metering lives here rather than in a caller: every entry to Working
+ * charges gas, every eval failure charges the rework account, every
+ * finalization failure charges the finalization account, and nothing refunds.
+ * Those charges are what make the termination measure descend, so a change to
+ * any of them is a change to `model/measure.qnt` first.
  */
 
-import { assertNever } from "./assertNever.ts";
-import type { Config } from "./config.ts";
-import {
-  ticketAt,
-  ticketIds,
-  withTicket,
-  type Core,
-  type Decision,
-  type StepRecord,
-  type Transition,
-} from "./core.ts";
-import type { Reason, Resume } from "./desk.ts";
-import type { Effect } from "./effect.ts";
-import {
-  asTicketId,
-  type ProjectId,
-  type TaskId,
-  type TicketId,
-} from "./ids.ts";
-import type { Phase } from "./phase.ts";
-import { reworkBudget, wrapUpBudget } from "./pricing.ts";
-import type { Stage } from "./program.ts";
+import { boundsOf, type Config } from "./config.ts";
+import { ticketAt, ticketIds, withTicket, type Decision } from "./core.ts";
+import type {
+  Core,
+  FinalizationOutcome,
+  FinalizationPricing,
+  Finalizer,
+  Phase,
+  Reason,
+  Resume,
+  RetryPricing,
+  ReworkPolicy,
+  Stage,
+  Ticket,
+  Transition,
+  Verdict,
+} from "./generated/modelTypes.ts";
+import type { TaskId, TicketId } from "./ids.ts";
+import { finalizationBudget, reworkBudget } from "./pricing.ts";
 import { combine } from "./program.ts";
-import {
-  evalStage,
-  resolveTask,
-  tkEval,
-  tkWork,
-  taskPassed,
-  type Verdict,
-} from "./task.ts";
-import { retireLive, spawnOn, type Ticket } from "./ticket.ts";
-import {
-  aNone,
-  aSome,
-  woAttempt,
-  woNone,
-  type WrapUp,
-  type WrapUpOutcome,
-} from "./wrapUp.ts";
-import { leaseOf, resumeCharge } from "./enablement.ts";
+import { resumeCharge } from "./enablement.ts";
+import { evalStage, resolveTask, tkEval, tkWork } from "./task.ts";
+import { retireLive, spawnOn } from "./ticket.ts";
 
-/** The one funnel every phase flip goes through, recording exactly one transition. */
-export function move(
+/** One phase change and the record that reports it — the shape most deciders return. */
+function move(
   core: Core,
   id: TicketId,
   to: Phase,
   label: string,
-  effects: readonly Effect[],
+  effects: readonly string[],
 ): Decision {
-  const before = ticketAt(core, id);
+  const from = ticketAt(core, id).phase;
   return {
-    rec: {
-      label,
-      transitions: [{ ticket: id, from: before.phase, to }],
-      effects,
-      attempt: woNone,
-    },
-    post: withTicket(core, id, { ...before, phase: to }),
+    rec: { label, transitions: [{ ticket: id, from, to }], effects },
+    post: withTicket(core, id, { ...ticketAt(core, id), phase: to }),
   };
 }
 
-/** A decision that changes nothing: the idempotent answer to a duplicate delivery. */
-export function noop(core: Core, label: string): Decision {
+/** A ticket as a release leaves it: Pending, with every account at its grant. */
+export function freshTicket(authoring: {
+  readonly deps: ReadonlySet<number>;
+  readonly program: readonly Stage[];
+  readonly workFanout: number;
+  readonly reworkPolicy: ReworkPolicy;
+  readonly finalizationPricing: FinalizationPricing;
+  readonly resumePricing: RetryPricing;
+  readonly finalizer: Finalizer;
+  readonly gas: number;
+}): Ticket {
   return {
-    rec: { label, transitions: [], effects: [], attempt: woNone },
-    post: core,
-  };
-}
-
-/** Stamp the wrap-up boundary's attribution. Every arm of the wrap-up resolution routes through this. */
-export function withWrapUpObs(
-  decision: Decision,
-  project: ProjectId,
-  invalidated: boolean,
-): Decision {
-  return {
-    rec: { ...decision.rec, attempt: woAttempt(project, invalidated) },
-    post: decision.post,
-  };
-}
-
-/** A ticket is born a Draft with its full accounts, and reaches the pipeline only by release. */
-export function freshTicket(
-  config: Config,
-  deps: ReadonlySet<TicketId>,
-  program: readonly Stage[],
-  project: ProjectId,
-  wrapUp: WrapUp,
-): Ticket {
-  return {
-    phase: "PDraft",
-    /** Stored ascending, once: the arrival's set carries no order and the folds that read it do. */
-    deps: [...deps].sort((a, b) => a - b),
-    program,
-    wrapUp,
-    artifact: aNone,
-    project,
-    tasks: [],
+    phase: "Pending",
+    deps: authoring.deps,
+    program: authoring.program,
+    finalizer: authoring.finalizer,
+    artifact: "NoArtifact",
+    workFanout: authoring.workFanout,
+    reworkPolicy: authoring.reworkPolicy,
+    finalizationPricing: authoring.finalizationPricing,
+    resumePricing: authoring.resumePricing,
+    tasks: new Set(),
     record: [],
     spawned: 0,
-    reworkLeft: reworkBudget(config.reworkPolicy),
-    wrapUpLeft: wrapUpBudget(config.wrapUpPricing),
-    gasLeft: config.gas,
-    resumeAt: "RNone",
-    reason: "RsNone",
+    reworkLeft: reworkBudget(authoring.reworkPolicy),
+    finalizationLeft: finalizationBudget(authoring.finalizationPricing),
+    gasLeft: authoring.gas,
+    resumeAt: "NoResume",
+    reason: "NoReason",
+    completions: 0,
   };
 }
 
-/** Park a ticket on the desk, naming the wall and where a retry resumes. */
-export function escalate(
+/**
+ * Release: the ticket enters the fleet already Pending, carrying every value
+ * that will affect its behaviour. There is no draft phase and no second step —
+ * authoring happens outside this machine, and what arrives is frozen.
+ */
+export function decideReleaseTicket(
+  config: Config,
+  core: Core,
+  id: TicketId,
+  authoring: {
+    readonly deps: ReadonlySet<number>;
+    readonly program: readonly Stage[];
+    readonly workFanout: number;
+    readonly reworkPolicy: ReworkPolicy;
+    readonly finalizationPricing: FinalizationPricing;
+    readonly resumePricing: RetryPricing;
+    readonly finalizer: Finalizer;
+  },
+): Decision {
+  const tickets = new Map(core.tickets);
+  tickets.set(id, freshTicket({ ...authoring, gas: config.gas }));
+  return {
+    rec: { label: "ticket-released", transitions: [], effects: [] },
+    post: { tickets },
+  };
+}
+
+/**
+ * Park a ticket on the desk, naming the wall, where a resume would put it back,
+ * and retiring the failed set into the record rather than dropping it. The open
+ * desk task is derived from the phase; `OpenHumanTask` is its visible effect.
+ */
+function escalate(
   core: Core,
   id: TicketId,
   at: Resume,
   why: Reason,
   label: string,
 ): Decision {
-  const parked = {
+  const parked = withTicket(core, id, {
     ...retireLive(ticketAt(core, id)),
     resumeAt: at,
     reason: why,
-  };
-  return move(withTicket(core, id, parked), id, "PEscalated", label, [
-    "OpenHumanTask",
-  ]);
-}
-
-/** The completion: one transition, one effect, and that is the whole of it. */
-export function completeTicket(core: Core, id: TicketId): Decision {
-  const before = ticketAt(core, id);
-  return {
-    rec: {
-      label: "ticket-done",
-      transitions: [{ ticket: id, from: before.phase, to: "PDone" }],
-      effects: ["Complete"],
-      attempt: woNone,
-    },
-    post: withTicket(core, id, { ...before, phase: "PDone" }),
-  };
-}
-
-/** A ticket arrives as a Draft. Ids are dense and never reused: the next is the fleet size plus one. */
-export function decideArrive(
-  config: Config,
-  core: Core,
-  deps: ReadonlySet<TicketId>,
-  program: readonly Stage[],
-  project: ProjectId,
-  wrapUp: WrapUp,
-): Decision {
-  const id = asTicketId(core.tickets.size + 1);
-  const tickets = new Map(core.tickets);
-  tickets.set(id, freshTicket(config, deps, program, project, wrapUp));
-  return {
-    rec: {
-      label: "ticket-arrived",
-      transitions: [],
-      effects: ["CreateDraft"],
-      attempt: woNone,
-    },
-    post: { tickets },
-  };
-}
-
-/** Draft to Pending: the ticket enters the released pipeline, charging nothing. */
-export function decideRelease(core: Core, id: TicketId): Decision {
-  return move(core, id, "PPending", "ticket-released", []);
+  });
+  return move(parked, id, "Escalated", label, ["OpenHumanTask"]);
 }
 
 /**
- * Revoke, and the cascade that parks every dependent doomed by it, atomically:
- * one decision and one record, so the safety property holds in every reachable
- * state rather than eventually. Only pre-flight dependents are parked, and that
- * is exhaustive because a dependent of a revocable ticket can never have
- * dispatched — dispatch needs every dep Done and the revoked ancestor is not.
+ * Revoke, and in the same decision park every dependent it dooms, each with its
+ * own desk task: a cascade that revoked instead would destroy another author's
+ * ticket with no human deciding it. Parking only Pending dependents is
+ * exhaustive, because dispatch needs every dependency Done and Done absorbs.
  */
-export function decideRevoke(core: Core, id: TicketId): Decision {
-  const ids = ticketIds(core);
-  /** Deps point strictly downward, so one ascending pass decides each id after every id it depends on. */
-  const doomed = new Set<TicketId>();
-  for (const k of ids) {
-    const deps = ticketAt(core, k).deps;
-    if (deps.includes(id) || deps.some((d) => doomed.has(d))) doomed.add(k);
-  }
-  const parked = ids.filter((k) => {
-    if (!doomed.has(k)) return false;
-    const phase = ticketAt(core, k).phase;
-    return phase === "PDraft" || phase === "PPending";
-  });
-
-  const transitions: Transition[] = [
-    { ticket: id, from: ticketAt(core, id).phase, to: "PRevoked" },
-    ...parked.map((k) => ({
-      ticket: k,
-      from: ticketAt(core, k).phase,
-      to: "PEscalated" as const,
-    })),
-  ];
-  const effects: Effect[] = [
-    "Revoke",
-    ...parked.map((): Effect => "OpenHumanTask"),
-  ];
-
-  const tickets = new Map<TicketId, Ticket>();
-  for (const k of ids) {
-    const ticket = ticketAt(core, k);
-    if (k === id) {
-      tickets.set(k, {
-        ...retireLive(ticket),
-        phase: "PRevoked",
-        resumeAt: "RNone",
-        reason: "RsNone",
-      });
-    } else if (parked.includes(k)) {
-      tickets.set(k, {
-        ...ticket,
-        phase: "PEscalated",
-        reason: "RsDependencyRevoked",
-      });
-    } else {
-      tickets.set(k, ticket);
-    }
-  }
-
-  return {
-    rec: { label: "ticket-revoked", transitions, effects, attempt: woNone },
-    post: { tickets },
-  };
-}
-
-/** Ready to Working. Every entry to Working charges one gas: there is no free re-entry. */
-export function decideDispatch(
+export function decideRevoke(
   config: Config,
   core: Core,
   id: TicketId,
 ): Decision {
-  const before = ticketAt(core, id);
+  const doomed = new Set<TicketId>([id]);
+  for (let round = 0; round < config.nTickets; round++) {
+    for (const k of ticketIds(core)) {
+      if ([...ticketAt(core, k).deps].some((d) => doomed.has(d as TicketId)))
+        doomed.add(k);
+    }
+  }
+  const parked = ticketIds(core).filter(
+    (k) => k !== id && doomed.has(k) && ticketAt(core, k).phase === "Pending",
+  );
+
+  const transitions: Transition[] = [
+    { ticket: id, from: ticketAt(core, id).phase, to: "Revoked" },
+    ...parked.map((k) => ({
+      ticket: k,
+      from: ticketAt(core, k).phase,
+      to: "Escalated" as const,
+    })),
+  ];
+
+  const tickets = new Map(core.tickets);
+  tickets.set(id, {
+    ...retireLive(ticketAt(core, id)),
+    phase: "Revoked",
+    resumeAt: "NoResume",
+    reason: "NoReason",
+  });
+  for (const k of parked) {
+    tickets.set(k, {
+      ...ticketAt(core, k),
+      phase: "Escalated",
+      reason: "DependencyRevoked",
+    });
+  }
+
+  return {
+    rec: {
+      label: "ticket-revoked",
+      transitions,
+      effects: ["CancelTicketWork", ...parked.map(() => "OpenHumanTask")],
+    },
+    post: { tickets },
+  };
+}
+
+/**
+ * Ready to Working, charging one gas as every entry to Working does. Which
+ * Ready ticket runs next is an agentic pick rather than a queue position, so it
+ * arrives as an argument and the recorded step IS the dispatcher's decision.
+ */
+export function decideDispatch(core: Core, id: TicketId): Decision {
+  const ticket = ticketAt(core, id);
   return move(
     withTicket(core, id, {
-      ...spawnOn(before, tkWork, config.nTasks),
-      gasLeft: before.gasLeft - 1,
+      ...spawnOn(ticket, tkWork, ticket.workFanout),
+      gasLeft: ticket.gasLeft - 1,
     }),
     id,
-    "PWorking",
+    "Working",
     "dispatch",
     ["SpawnWorkTasks"],
   );
 }
 
 /**
- * A task-completion event, where first write wins: a delivery naming a task
- * that is not outstanding in the live set is a duplicate or a stale re-delivery,
- * and the decision is a state-identical no-op. Ids are unique across the
- * ticket's whole history, so a stale completion no-ops by identity.
+ * A task completion, first write wins: resolving a task that is not outstanding
+ * changes nothing, which is the idempotence an at-least-once fabric demands.
+ * Ids are unique across the ticket's history, so a stale completion names one
+ * already retired and matches nothing live.
  */
 export function decideTaskDone(
   core: Core,
@@ -276,341 +225,280 @@ export function decideTaskDone(
   verdict: Verdict,
 ): Decision {
   const ticket = ticketAt(core, id);
-  const live = ticket.tasks.some(
-    (t) => t.id === taskId && t.state.state === "TSOutstanding",
-  );
-  if (!live) return noop(core, "task-done-duplicate");
   return {
-    rec: { label: "task-done", transitions: [], effects: [], attempt: woNone },
+    rec: { label: "task-done", transitions: [], effects: [] },
     post: withTicket(core, id, {
       ...ticket,
       tasks: resolveTask(
         ticket.tasks,
         taskId,
-        verdict === "VPass" ? "TPassed" : "TFailed",
+        verdict === "Pass" ? "Passed" : "Failed",
       ),
     }),
   };
 }
 
 /**
- * The work set fully resolved. A pass retires it and spawns the eval program's
- * lowest stage in full; a failed set is a failed cycle and escalates, because
- * the fabric has already retried each task below this grain.
+ * The work set has settled. Unanimous pass moves into evaluation and stamps
+ * the artifact the dependents will read; anything else parks, resumable at
+ * Working.
  */
 export function decideWorkReduce(core: Core, id: TicketId): Decision {
-  const before = ticketAt(core, id);
-  const retired = retireLive(before);
-  if (!before.tasks.every(taskPassed)) {
+  const ticket = ticketAt(core, id);
+  const retired = retireLive(ticket);
+  const allPassed = [...ticket.tasks].every(
+    (t) => t.state !== "Outstanding" && t.state.value === "Passed",
+  );
+  if (!allPassed) {
     return escalate(
       core,
       id,
-      "RWorking",
-      "RsWorkFailed",
+      "ResumeWorking",
+      "WorkFailed",
       "ticket-escalated work_failed",
     );
   }
-  const first = retired.program[0];
-  if (first === undefined) {
-    throw new Error(
-      `decideWorkReduce: ticket ${String(id)} has an empty program`,
-    );
-  }
+  const stage = retired.program[0];
+  if (stage === undefined)
+    throw new Error("work-reduce: an empty program reached a reduce");
   return move(
     withTicket(core, id, {
-      ...spawnOn(retired, tkEval(0), first.fanout),
-      artifact: aSome(retired.spawned),
+      ...spawnOn(retired, tkEval(0), stage.fanout),
+      artifact: { type: "ProducedArtifact", value: retired.spawned },
     }),
     id,
-    "PEvaluating",
+    "Evaluating",
     "work-passed",
     ["SpawnEvalTasks"],
   );
 }
 
 /**
- * The eval-program interpreter. The stage's own combinator decides, and a
- * failure short-circuits: the later stages are never created, so no task
- * records exist for them, and the next evaluation restarts from the lowest
- * stage rather than resuming mid-sequence.
+ * One eval stage has settled. A passing stage advances, or finishes the
+ * program; a failing one short-circuits into the rework economy, which charges
+ * both the rework account and gas, and walls when either is spent.
  */
-export function decideEvalStageReduce(
-  config: Config,
-  core: Core,
-  id: TicketId,
-): Decision {
-  const before = ticketAt(core, id);
-  const stage = evalStage(before.tasks);
-  const current = before.program[stage];
-  if (current === undefined) {
-    throw new Error(
-      `decideEvalStageReduce: ticket ${String(id)} has no stage ${String(stage)}`,
-    );
-  }
-  return combine(current.combinator, before.tasks)
-    ? evalStagePassedArm(core, id, stage)
-    : evalStageFailedArm(config, core, id);
-}
+export function decideEvalStageReduce(core: Core, id: TicketId): Decision {
+  const ticket = ticketAt(core, id);
+  const stageIndex = evalStage(ticket.tasks);
+  const retired = retireLive(ticket);
+  const stage = ticket.program[stageIndex];
+  if (stage === undefined)
+    throw new Error("eval-reduce: the live stage indexes outside the program");
 
-/**
- * The passing stage's two edges: advance into the next stage's fan-out, or, on
- * the final stage, take the wrap-up route the ticket's authored kind decides.
- */
-function evalStagePassedArm(core: Core, id: TicketId, stage: number): Decision {
-  const before = ticketAt(core, id);
-  const retired = retireLive(before);
-  const next = retired.program[stage + 1];
-  if (next !== undefined) {
-    return move(
-      withTicket(core, id, spawnOn(retired, tkEval(stage + 1), next.fanout)),
-      id,
-      "PEvaluating",
-      "eval-stage-passed",
-      ["SpawnEvalTasks"],
-    );
+  if (combine(stage.combinator, ticket.tasks)) {
+    const next = retired.program[stageIndex + 1];
+    if (next !== undefined) {
+      return move(
+        withTicket(
+          core,
+          id,
+          spawnOn(retired, tkEval(stageIndex + 1), next.fanout),
+        ),
+        id,
+        "Evaluating",
+        "eval-stage-passed",
+        ["SpawnEvalTasks"],
+      );
+    }
+    switch (ticket.finalizer) {
+      case "NoFinalizer":
+        return completeTicket(withTicket(core, id, retired), id);
+      case "ManagedFinalizer":
+        return move(
+          withTicket(core, id, retired),
+          id,
+          "Finalizing",
+          "eval-passed",
+          ["RunFinalizer"],
+        );
+    }
   }
-  switch (before.wrapUp.wrapUp) {
-    case "WNone":
-      /** On the retired ticket: skipping the wrap-up phases skips the retirement they would have done, and a Done ticket holding live eval tasks is ill-formed. */
-      return completeTicket(withTicket(core, id, retired), id);
-    case "WExclusive":
-      return move(withTicket(core, id, retired), id, "PWrapUp", "eval-passed", [
-        "EnqueueWrapUp",
-      ]);
-    default:
-      return assertNever(before.wrapUp);
-  }
-}
 
-/**
- * The failing stage short-circuits into the same rework economy any stage
- * failure enters: a cycle costs one rework and one gas, and an empty account
- * parks the ticket behind the wall that emptied — the budget one checked first.
- */
-function evalStageFailedArm(
-  config: Config,
-  core: Core,
-  id: TicketId,
-): Decision {
-  const before = ticketAt(core, id);
-  if (before.reworkLeft > 0 && before.gasLeft > 0) {
+  if (ticket.reworkLeft > 0 && ticket.gasLeft > 0) {
     return move(
       withTicket(core, id, {
-        ...spawnOn(retireLive(before), tkWork, config.nTasks),
-        reworkLeft: before.reworkLeft - 1,
-        gasLeft: before.gasLeft - 1,
+        ...spawnOn(retired, tkWork, retired.workFanout),
+        reworkLeft: ticket.reworkLeft - 1,
+        gasLeft: ticket.gasLeft - 1,
       }),
       id,
-      "PWorking",
+      "Working",
       "rework-started eval_failure",
       ["SpawnWorkTasks"],
     );
   }
-  if (before.reworkLeft === 0) {
+  if (ticket.reworkLeft === 0) {
     return escalate(
       core,
       id,
-      "REvaluating",
-      "RsReworkBudgetExhausted",
+      "ResumeEvaluating",
+      "ReworkBudgetExhausted",
       "ticket-escalated rework_budget_exhausted",
     );
   }
   return escalate(
     core,
     id,
-    "REvaluating",
-    "RsGasExhausted",
+    "ResumeEvaluating",
+    "GasExhausted",
     "ticket-escalated gas_exhausted",
   );
 }
 
-/** The dequeue's moved arm: the gate runs, and the ticket takes its project's slot. */
-export function decideWrapUpStart(core: Core, id: TicketId): Decision {
-  return move(core, id, "PWrapUpHolding", "wrapup-started", ["OpenGate"]);
-}
-
 /**
- * How a dequeue routes on the environment's choice. It is a decider rather
- * than a composition inside an action because the routing is machine
- * semantics: with it inline, rerouting a valid artifact into the lease shipped
- * green through every layer, because every driver carried a copy.
+ * Completion emits no effect. Entering Done IS the completion, recorded in the
+ * same journal entry as the decision, so there is nothing left for the world
+ * to be asked to do.
  */
-export function decideDequeue(
-  config: Config,
-  core: Core,
-  id: TicketId,
-  moved: boolean,
-): Decision {
-  return moved
-    ? decideWrapUpStart(core, id)
-    : decideWrapUpResolve(config, core, id, "WOk", false);
-}
-
-/**
- * The wrap-up resolves at the end of a concrete path: a success is the ticket's
- * single completion, and a failure re-enters work priced per the gate pricing,
- * either wall parking the ticket re-enqueued rather than in the gate. Every arm
- * stamps the attempt's attribution.
- */
-export function decideWrapUpResolve(
-  config: Config,
-  core: Core,
-  id: TicketId,
-  outcome: WrapUpOutcome,
-  moved: boolean,
-): Decision {
-  const project = ticketAt(core, id).project;
-  return withWrapUpObs(resolveArm(config, core, id, outcome), project, moved);
-}
-
-function resolveArm(
-  config: Config,
-  core: Core,
-  id: TicketId,
-  outcome: WrapUpOutcome,
-): Decision {
-  if (outcome === "WOk") return completeTicket(core, id);
+function completeTicket(core: Core, id: TicketId): Decision {
   const ticket = ticketAt(core, id);
-  const reworkIntoWork = (): Decision =>
+  return {
+    rec: {
+      label: "ticket-done",
+      transitions: [{ ticket: id, from: ticket.phase, to: "Done" }],
+      effects: [],
+    },
+    post: withTicket(core, id, {
+      ...ticket,
+      phase: "Done",
+      completions: ticket.completions + 1,
+    }),
+  };
+}
+
+/**
+ * A failed finalization re-enters work under whichever account the ticket was
+ * authored with: a budgeted ticket spends its finalization account and its
+ * gas, an unbudgeted one is metered by gas alone. Both wall when spent.
+ */
+function finalizerFailure(core: Core, id: TicketId, label: string): Decision {
+  const ticket = ticketAt(core, id);
+  const gasWall = (): Decision =>
+    escalate(
+      core,
+      id,
+      "ResumeFinalizing",
+      "GasExhausted",
+      "ticket-escalated gas_exhausted",
+    );
+  const rework = (spend: number): Decision =>
     move(
       withTicket(core, id, {
-        ...spawnOn(ticket, tkWork, config.nTasks),
-        wrapUpLeft:
-          config.wrapUpPricing.pricing === "Budgeted"
-            ? ticket.wrapUpLeft - 1
-            : ticket.wrapUpLeft,
+        ...spawnOn(ticket, tkWork, ticket.workFanout),
+        finalizationLeft: ticket.finalizationLeft - spend,
         gasLeft: ticket.gasLeft - 1,
       }),
       id,
-      "PWorking",
-      "rework-started wrapup_failure",
+      "Working",
+      label,
       ["SpawnWorkTasks"],
     );
 
-  switch (config.wrapUpPricing.pricing) {
-    case "Budgeted":
-      if (ticket.wrapUpLeft > 0 && ticket.gasLeft > 0) return reworkIntoWork();
-      if (ticket.wrapUpLeft === 0) {
-        return escalate(
-          core,
-          id,
-          "RWrapUp",
-          "RsWrapUpBudgetExhausted",
-          "ticket-escalated wrapup_budget_exhausted",
-        );
-      }
-      return escalate(
-        core,
-        id,
-        "RWrapUp",
-        "RsGasExhausted",
-        "ticket-escalated gas_exhausted",
-      );
-    case "DeadlineOnly":
-      if (ticket.gasLeft > 0) return reworkIntoWork();
-      return escalate(
-        core,
-        id,
-        "RWrapUp",
-        "RsGasExhausted",
-        "ticket-escalated gas_exhausted",
-      );
-    default:
-      return assertNever(config.wrapUpPricing);
+  if (ticket.finalizationPricing === "DeadlineOnly") {
+    return ticket.gasLeft > 0 ? rework(0) : gasWall();
+  }
+  if (ticket.finalizationLeft > 0 && ticket.gasLeft > 0) return rework(1);
+  if (ticket.finalizationLeft === 0) {
+    return escalate(
+      core,
+      id,
+      "ResumeFinalizing",
+      "FinalizationBudgetExhausted",
+      "ticket-escalated finalization_budget_exhausted",
+    );
+  }
+  return gasWall();
+}
+
+/** The finalizer service's one report. Success completes the ticket; failure reworks it. */
+export function decideFinalizationResult(
+  core: Core,
+  id: TicketId,
+  outcome: FinalizationOutcome,
+): Decision {
+  switch (outcome) {
+    case "FinalizationSucceeded":
+      return completeTicket(core, id);
+    case "FinalizationFailed":
+      return finalizerFailure(core, id, "rework-started finalization_failed");
   }
 }
 
 /**
- * A duplicate completion for an already-Done ticket. No completion effect is
- * emitted, and that no-op is the exactly-once claim at the completion boundary.
+ * Infrastructure cannot run an intact contract, which is not failed work: it
+ * spends no rework and no finalization budget, names its own reason, and
+ * resumes back at whichever phase held the work.
  */
-export function decideCompleteDuplicate(core: Core, id: TicketId): Decision {
-  /** The precondition asserted rather than re-decided: a re-delivery names a ticket the fleet holds. */
-  ticketAt(core, id);
-  return noop(core, "complete-duplicate");
-}
-
-/** The pre-work revalidation wall: the world changed under a ticket before it ever ran. */
-export function decideRevalFail(core: Core, id: TicketId): Decision {
-  return escalate(
-    core,
-    id,
-    "RPending",
-    "RsRevalidationFailed",
-    "ticket-escalated revalidation_failed",
-  );
+export function decideExecutionBlocked(
+  core: Core,
+  id: TicketId,
+  why: Reason,
+): Decision {
+  const phase = ticketAt(core, id).phase;
+  const at: Resume =
+    phase === "Working"
+      ? "ResumeWorking"
+      : phase === "Evaluating"
+        ? "ResumeEvaluating"
+        : "NoResume";
+  return escalate(core, id, at, why, "ticket-escalated execution_blocked");
 }
 
 /**
- * The operator resume: one decider, a flavour per resume point, one label. The
- * evaluating flavour spawns a fresh lowest stage rather than resuming
- * mid-sequence, so the retried tasks are new records and the failed ones stay
- * retired in the log.
+ * A parked ticket rejoins the pipeline where its wall said it would, paying
+ * whatever its authored pricing charges. A park with no modeled resume refuses
+ * and records that it did.
  */
-export function decideOpRetry(
-  config: Config,
-  core: Core,
-  id: TicketId,
-): Decision {
-  const before = ticketAt(core, id);
+export function decideResumeTicket(core: Core, id: TicketId): Decision {
+  const ticket = ticketAt(core, id);
   const resumed: Ticket = {
-    ...before,
-    reason: "RsNone",
-    resumeAt: "RNone",
-    gasLeft: before.gasLeft - resumeCharge(config, before.resumeAt),
+    ...ticket,
+    reason: "NoReason",
+    resumeAt: "NoResume",
+    gasLeft: ticket.gasLeft - resumeCharge(ticket, ticket.resumeAt),
   };
-  switch (before.resumeAt) {
-    case "RPending":
+  switch (ticket.resumeAt) {
+    case "ResumeWorking":
       return move(
-        withTicket(core, id, resumed),
+        withTicket(core, id, spawnOn(resumed, tkWork, resumed.workFanout)),
         id,
-        "PPending",
-        "operator-retry",
-        [],
-      );
-    case "RWorking":
-      return move(
-        withTicket(core, id, spawnOn(resumed, tkWork, config.nTasks)),
-        id,
-        "PWorking",
-        "operator-retry",
+        "Working",
+        "ticket-resumed",
         ["SpawnWorkTasks"],
       );
-    case "REvaluating": {
-      const first = before.program[0];
-      if (first === undefined) {
-        throw new Error(
-          `decideOpRetry: ticket ${String(id)} has an empty program`,
-        );
-      }
+    case "ResumeEvaluating": {
+      const stage = ticket.program[0];
+      if (stage === undefined)
+        throw new Error("resume: an empty program reached an eval resume");
       return move(
-        withTicket(core, id, spawnOn(resumed, tkEval(0), first.fanout)),
+        withTicket(core, id, spawnOn(resumed, tkEval(0), stage.fanout)),
         id,
-        "PEvaluating",
-        "operator-retry",
+        "Evaluating",
+        "ticket-resumed",
         ["SpawnEvalTasks"],
       );
     }
-    case "RWrapUp":
+    case "ResumeFinalizing":
       return move(
         withTicket(core, id, resumed),
         id,
-        "PWrapUp",
-        "operator-retry",
-        ["EnqueueWrapUp"],
+        "Finalizing",
+        "ticket-resumed",
+        ["RunFinalizer"],
       );
-    case "RNone":
-      /** Unreachable: the enablement refuses a ticket with no modeled resume. */
-      return noop(core, "operator-retry-unreachable");
-    default:
-      return assertNever(before.resumeAt);
+    case "NoResume":
+      return {
+        rec: { label: "ticket-resume-refused", transitions: [], effects: [] },
+        post: core,
+      };
   }
 }
 
-/** The quiesced fleet's stutter: nothing is enabled, and the state is identical. */
-export function settledRecord(): StepRecord {
-  return { label: "settled", transitions: [], effects: [], attempt: woNone };
+/** The dead-end stutter: what a quiet fleet records rather than deadlocking. */
+export function settledRecord(): Decision["rec"] {
+  return { label: "settled", transitions: [], effects: [] };
 }
 
-/** Which resource a ticket's wrap-up needs, re-exported so a caller reads one name. */
-export { leaseOf };
+/** The measure's bounds, read off the configuration a decision was made under. */
+export { boundsOf };

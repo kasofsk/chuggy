@@ -1408,9 +1408,9 @@ module chuggy_domain {
   /// fires it (asserting allInvariants on that step, so the arm is proved
   /// to exempt exactly the climb it names). Current roster:
   ///   init                  — every run's first step;
-///   settled               — the quiet fleet's stutter;
+  ///   settled               — the quiet fleet's stutter;
   ///   ticket-resumed, RetryFree pipeline flavor
-///                         — freeClimbDeterministicTest's climbing step;
+  ///                         — freeClimbDeterministicTest's climbing step;
   ///   ticket-released       — every run's releases;
   ///   ticket-revoked, desk-only flat
   ///                         — cascadeParkDeterministicTest's second revoke.
@@ -1506,9 +1506,6 @@ module chuggy_domain {
   val allInvariants: bool = and {
     completionExclusive,
     revokedNeverCompletes,
-
-
-    noFinalizationWithoutAKind,
     noFinalizationWithoutAKind,
     artifactWellFormed,
     finalizerWellFormed,

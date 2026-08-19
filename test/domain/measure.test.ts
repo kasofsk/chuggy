@@ -29,25 +29,22 @@ import {
 import {
   budgeted,
   deadlineOnly,
+  finalizationBudget,
   reworkBudgetOf,
   reworkBudget,
-  wrapUpBudget,
   type Bounds,
 } from "../../src/domain/pricing.ts";
 import { boundsOf } from "../../src/domain/config.ts";
 import { CONFIGS } from "./configs.ts";
-import {
-  rankCeiling,
-  rankDraft,
-  rankSettled,
-  phaseRank,
-} from "../../src/domain/phase.ts";
-import { asProjectId } from "../../src/domain/ids.ts";
-import { aNone, aSome, wNone } from "../../src/domain/wrapUp.ts";
-import type { Ticket } from "../../src/domain/ticket.ts";
-import type { Phase } from "../../src/domain/phase.ts";
+import { rankCeiling, rankSettled, phaseRank } from "../../src/domain/phase.ts";
+
 import { budgetedInstance } from "./configs.ts";
-import { ticketOn, workOutstanding } from "./fixtures.ts";
+import { depsOf, ticketOn, workOutstanding } from "./fixtures.ts";
+import type {
+  Phase,
+  Task,
+  Ticket,
+} from "../../src/domain/generated/modelTypes.ts";
 
 const GOLDEN_DIR = join(import.meta.dirname, "..", "golden");
 
@@ -64,16 +61,39 @@ function boundsFor(instance: string): Bounds | undefined {
 interface Row {
   readonly name: string;
   readonly instance: string;
+  readonly steps: number;
 }
 
 function manifestRows(): readonly Row[] {
   const manifest = JSON.parse(
     readFileSync(join(GOLDEN_DIR, "manifest.json"), "utf8"),
   ) as {
-    goldens: { name: string; instance: string }[];
+    goldens: { name: string; instance: string; steps: number }[];
   };
   return manifest.goldens;
 }
+
+/** A ticket at rest, which every hand-built measure case varies one field of. */
+const atRest: Ticket = {
+  phase: "Done",
+  deps: new Set<number>(),
+  finalizer: "NoFinalizer",
+  artifact: "NoArtifact",
+  workFanout: 1,
+  reworkPolicy: reworkBudgetOf(0),
+  finalizationPricing: deadlineOnly,
+  resumePricing: "RetryCharged",
+  program: [],
+  tasks: new Set<Task>(),
+  record: [],
+  spawned: 0,
+  reworkLeft: 0,
+  finalizationLeft: 0,
+  gasLeft: 0,
+  resumeAt: "NoResume",
+  reason: "NoReason",
+  completions: 0,
+};
 
 test("the corpus reproduces this implementation's sysMeasure at every step", () => {
   const rows = manifestRows();
@@ -115,10 +135,16 @@ test("the corpus reproduces this implementation's sysMeasure at every step", () 
       );
       compared++;
     }
+    assert.equal(
+      trace.states.length - 1,
+      row.steps,
+      `${row.name}: the trace on disk is not the length its manifest row claims`,
+    );
   }
-  assert.ok(
-    compared > 300,
-    `only ${String(compared)} states compared; the corpus should carry more`,
+  assert.equal(
+    compared,
+    rows.reduce((total, row) => total + row.steps, 0),
+    "every step of every golden is compared, which is what the manifest's own lengths add up to",
   );
 });
 
@@ -141,83 +167,58 @@ test("each weight is worth exactly a full digit of the one below it", () => {
 test("micro is bounded strictly below microBound, which is what makes the flattening work", () => {
   const bounds = boundsFor("mc_chuggy_budgeted");
   assert.ok(bounds);
-  const worst: Ticket = {
-    phase: "PDraft",
-    deps: [],
-    wrapUp: wNone,
-    artifact: aNone,
-    project: asProjectId(1),
-    program: [],
-    tasks: [],
-    record: [],
-    spawned: 0,
-    reworkLeft: 0,
-    wrapUpLeft: 0,
-    gasLeft: 0,
-    resumeAt: "RNone",
-    reason: "RsNone",
-  };
-  assert.equal(phaseRank(worst.phase), rankDraft);
+  const worst: Ticket = { ...atRest, phase: "Pending" };
+  assert.equal(phaseRank(worst.phase), rankCeiling);
   assert.ok(micro(bounds, worst) < microBound(bounds));
 });
 
 test("a settled ticket with empty accounts measures zero, which is the well-foundedness floor", () => {
   const bounds = boundsFor("mc_chuggy_budgeted");
   assert.ok(bounds);
-  const settled: Ticket = {
-    phase: "PDone",
-    deps: [],
-    wrapUp: wNone,
-    artifact: aNone,
-    project: asProjectId(1),
-    program: [],
-    tasks: [],
-    record: [],
-    spawned: 0,
-    reworkLeft: 0,
-    wrapUpLeft: 0,
-    gasLeft: 0,
-    resumeAt: "RNone",
-    reason: "RsNone",
-  };
-  assert.equal(phaseRank(settled.phase), rankSettled);
-  assert.equal(ticketMeasure(bounds, settled), 0);
+  assert.equal(phaseRank(atRest.phase), rankSettled);
+  assert.equal(ticketMeasure(bounds, atRest), 0);
 });
 
-test("no digit, weight or radix reads the project or the artifact", () => {
+test("no digit, weight or radix reads what the ticket produced or waits on", () => {
   const bounds = boundsFor("mc_chuggy_budgeted");
   assert.ok(bounds);
   const phases: readonly Phase[] = [
-    "PDraft",
-    "PPending",
-    "PWorking",
-    "PEvaluating",
-    "PWrapUp",
-    "PWrapUpHolding",
-    "PEscalated",
+    "Pending",
+    "Working",
+    "Evaluating",
+    "Finalizing",
+    "Escalated",
   ];
   for (const phase of phases) {
-    const ticket = ticketOn(budgetedInstance, 1, {
+    const ticket = ticketOn(budgetedInstance, "ManagedFinalizer", {
       phase,
-      tasks: [workOutstanding(1)],
+      tasks: new Set([workOutstanding(1)]),
       spawned: 1,
     });
     assert.equal(
       ticketMeasure(bounds, ticket),
-      ticketMeasure(bounds, { ...ticket, project: asProjectId(2) }),
-      `${phase}: the measure moved with the project`,
+      ticketMeasure(bounds, {
+        ...ticket,
+        artifact: { type: "ProducedArtifact", value: 9 },
+      }),
+      `${phase}: the measure moved with the artifact`,
     );
     assert.equal(
       ticketMeasure(bounds, ticket),
-      ticketMeasure(bounds, { ...ticket, artifact: aSome(9) }),
-      `${phase}: the measure moved with the artifact`,
+      ticketMeasure(bounds, { ...ticket, deps: depsOf(4) }),
+      `${phase}: the measure moved with the dependency set`,
+    );
+    assert.equal(
+      ticketMeasure(bounds, ticket),
+      ticketMeasure(bounds, { ...ticket, finalizer: "NoFinalizer" }),
+      `${phase}: the measure moved with the finish kind`,
     );
   }
 });
 
 test("the accounts' radices come from the policies, not from a literal", () => {
-  assert.equal(wrapUpBudget(budgeted(3)), 3);
-  assert.equal(wrapUpBudget(deadlineOnly), 0);
+  assert.equal(finalizationBudget(budgeted(3)), 3);
+  assert.equal(finalizationBudget(deadlineOnly), 0);
   assert.equal(reworkBudget(reworkBudgetOf(2)), 2);
 });
 

@@ -1,15 +1,22 @@
 /**
- * Tasks: what one is for, what state it is in, and the plumbing that spawns,
- * resolves and retires a set of them.
+ * What the machine does with a task set: spawn one, resolve into it, read what
+ * it is still waiting on, and retire it into the record.
  *
- * The model holds the live set as `Set[Task]`; here it is an array kept
- * ascending by id. The two are in bijection because ids are unique within the
- * set — `tasksWellFormed` is what makes that true — so the ordering is
- * canonical rather than incidental, and every fold below reads it in id order
- * instead of inheriting whatever order a rebuild happened to produce.
+ * The model holds the live set as `Set[Task]` and this mirrors it, so the
+ * folds below read the set the model reads. Where a fold's result depends on
+ * order — retirement into the record, and every comparison a trace makes —
+ * `tasksInIdOrder` is what supplies it: ids are unique within the set, so id
+ * order is canonical rather than incidental, and nothing here inherits
+ * whatever order a rebuild happened to produce.
  */
 
 import { assertNever } from "./assertNever.ts";
+import type {
+  Task,
+  TaskKind,
+  TaskOutcome,
+  TaskState,
+} from "./generated/modelTypes.ts";
 import {
   firstTaskId,
   asTaskId,
@@ -18,63 +25,44 @@ import {
   type TaskId,
 } from "./ids.ts";
 
-/** What a task is for: the single work set, or one stage of the eval program. */
-export type TaskKind =
-  | { readonly kind: "TKWork" }
-  | { readonly kind: "TKEval"; readonly stage: StageIndex };
-
-/** A settled task's outcome. `TCancelled` is the mark only a revoke produces. */
-export type TaskOutcome = "TPassed" | "TFailed" | "TCancelled";
-
-/** A task is outstanding to the fabric, then resolves exactly once; only a resolution carries an outcome. */
-export type TaskState =
-  | { readonly state: "TSOutstanding" }
-  | { readonly state: "TSResolved"; readonly outcome: TaskOutcome };
-
-/** Identity, kind and lifecycle state. Ids are sequential within the ticket. */
-export interface Task {
-  readonly id: TaskId;
-  readonly kind: TaskKind;
-  readonly state: TaskState;
-}
-
-/** A task-completion event's verdict, as distinct from the stored resolution. */
-export type Verdict = "VPass" | "VFail";
-
-export const tkWork: TaskKind = { kind: "TKWork" };
+export const tkWork: TaskKind = "Work";
 
 /** An eval task of the given stage. */
 export function tkEval(stage: number): TaskKind {
-  return { kind: "TKEval", stage: asStageIndex(stage) };
+  return { type: "Evaluation", value: asStageIndex(stage) };
 }
 
-export const tsOutstanding: TaskState = { state: "TSOutstanding" };
+export const tsOutstanding: TaskState = "Outstanding";
 
 /** A resolved task carrying its outcome. */
 export function tsResolved(outcome: TaskOutcome): TaskState {
-  return { state: "TSResolved", outcome };
+  return { type: "Resolved", value: outcome };
+}
+
+/** The set as a list, ascending by id — the one ordering anything here folds in. */
+export function tasksInIdOrder(tasks: ReadonlySet<Task>): readonly Task[] {
+  return [...tasks].sort((a, b) => a.id - b.id);
 }
 
 /** How many of these tasks are still outstanding to the fabric. */
-export function outstandingCount(tasks: readonly Task[]): number {
-  return tasks.filter((t) => t.state.state === "TSOutstanding").length;
+export function outstandingCount(tasks: ReadonlySet<Task>): number {
+  return [...tasks].filter((t) => t.state === "Outstanding").length;
 }
 
 /**
  * The current eval stage, derived from the set's kind marks rather than
  * stored. Zero on an empty or work set, which is the fold's base.
  */
-export function evalStage(tasks: readonly Task[]): StageIndex {
+export function evalStage(tasks: ReadonlySet<Task>): StageIndex {
   let stage = asStageIndex(0);
-  for (const task of tasks) {
-    switch (task.kind.kind) {
-      case "TKWork":
-        break;
-      case "TKEval":
-        stage = task.kind.stage;
+  for (const task of tasksInIdOrder(tasks)) {
+    if (task.kind === "Work") continue;
+    switch (task.kind.type) {
+      case "Evaluation":
+        stage = asStageIndex(task.kind.value);
         break;
       default:
-        assertNever(task.kind);
+        assertNever(task.kind.type);
     }
   }
   return stage;
@@ -85,10 +73,10 @@ export function spawnTasks(
   kind: TaskKind,
   start: TaskId,
   count: number,
-): readonly Task[] {
-  const spawned: Task[] = [];
+): ReadonlySet<Task> {
+  const spawned = new Set<Task>();
   for (let i = 0; i < count; i++) {
-    spawned.push({ id: asTaskId(start + i), kind, state: tsOutstanding });
+    spawned.add({ id: asTaskId(start + i), kind, state: tsOutstanding });
   }
   return spawned;
 }
@@ -98,20 +86,22 @@ export function spawnTasks(
  * otherwise. That is the idempotence an at-least-once fabric demands.
  */
 export function resolveTask(
-  tasks: readonly Task[],
+  tasks: ReadonlySet<Task>,
   id: TaskId,
   outcome: TaskOutcome,
-): readonly Task[] {
-  return tasks.map((t) =>
-    t.id === id && t.state.state === "TSOutstanding"
-      ? { ...t, state: tsResolved(outcome) }
-      : t,
+): ReadonlySet<Task> {
+  return new Set(
+    [...tasks].map((t) =>
+      t.id === id && t.state === "Outstanding"
+        ? { ...t, state: tsResolved(outcome) }
+        : t,
+    ),
   );
 }
 
 /** A pass earned this incarnation. Both other outcomes fail it. */
 export function taskPassed(task: Task): boolean {
-  return task.state.state === "TSResolved" && task.state.outcome === "TPassed";
+  return task.state !== "Outstanding" && task.state.value === "Passed";
 }
 
 /** The next id this history would issue: every id ever issued is retired or live. */
@@ -130,26 +120,14 @@ export function taskEquals(left: Task, right: Task): boolean {
 
 /** An eval task matches only at the same stage, which is what keeps history from re-labelling itself. */
 function taskEqualsKind(left: TaskKind, right: TaskKind): boolean {
-  switch (left.kind) {
-    case "TKWork":
-      return right.kind === "TKWork";
-    case "TKEval":
-      return right.kind === "TKEval" && right.stage === left.stage;
-    default:
-      return assertNever(left);
-  }
+  if (left === "Work") return right === "Work";
+  return right !== "Work" && right.value === left.value;
 }
 
 /** A resolved task matches only on the same outcome; outstanding matches outstanding. */
 function taskEqualsState(left: TaskState, right: TaskState): boolean {
-  switch (left.state) {
-    case "TSOutstanding":
-      return right.state === "TSOutstanding";
-    case "TSResolved":
-      return right.state === "TSResolved" && right.outcome === left.outcome;
-    default:
-      return assertNever(left);
-  }
+  if (left === "Outstanding") return right === "Outstanding";
+  return right !== "Outstanding" && right.value === left.value;
 }
 
 /**
@@ -157,12 +135,8 @@ function taskEqualsState(left: TaskState, right: TaskState): boolean {
  * outstanding at retirement is force-closed as cancelled, which only a revoke
  * ever reaches.
  */
-export function retiredInIdOrder(tasks: readonly Task[]): readonly Task[] {
-  return [...tasks]
-    .sort((a, b) => a.id - b.id)
-    .map((t) =>
-      t.state.state === "TSOutstanding"
-        ? { ...t, state: tsResolved("TCancelled") }
-        : t,
-    );
+export function retiredInIdOrder(tasks: ReadonlySet<Task>): readonly Task[] {
+  return tasksInIdOrder(tasks).map((t) =>
+    t.state === "Outstanding" ? { ...t, state: tsResolved("Cancelled") } : t,
+  );
 }

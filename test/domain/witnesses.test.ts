@@ -19,15 +19,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { boundsOf, type Config } from "../../src/domain/config.ts";
-import type { Core } from "../../src/domain/core.ts";
+
 import {
   decideEvalStageReduce,
-  decideOpRetry,
+  decideResumeTicket,
   decideRevoke,
 } from "../../src/domain/deciders.ts";
 import type { StepView } from "../../src/domain/invariants.ts";
 import { sysMeasure } from "../../src/domain/measure.ts";
-import type { Stage } from "../../src/domain/program.ts";
+
 import {
   cascadeParkNever,
   freeClimbNever,
@@ -35,7 +35,19 @@ import {
   witnesses,
 } from "../../src/domain/witnesses.ts";
 import { budgetedInstance, retryFreeInstance } from "./configs.ts";
-import { coreOf, evalTask, id, ticketOn, workTask } from "./fixtures.ts";
+import {
+  coreOf,
+  depsOf,
+  evalTask,
+  id,
+  ticketOn,
+  workTask,
+} from "./fixtures.ts";
+import type {
+  Core,
+  RetryPricing,
+  Stage,
+} from "../../src/domain/generated/modelTypes.ts";
 
 const config = budgetedInstance;
 const free = retryFreeInstance;
@@ -48,13 +60,21 @@ function stepped(
   return { pre, rec: decided.rec, post: decided.post };
 }
 
-/** A ticket parked behind a pipeline wall, whose resume the metering decides the price of. */
-function parkedAtEvaluation(instance: Config, gasLeft: number): Core {
+/**
+ * A ticket parked behind a pipeline wall. The resume's price is the ticket's
+ * own authored pricing, so that is what the fixture varies.
+ */
+function parkedAtEvaluation(
+  instance: Config,
+  resumePricing: RetryPricing,
+  gasLeft: number,
+): Core {
   return coreOf([
-    ticketOn(instance, 1, {
-      phase: "PEscalated",
-      reason: "RsReworkBudgetExhausted",
-      resumeAt: "REvaluating",
+    ticketOn(instance, "ManagedFinalizer", {
+      phase: "Escalated",
+      reason: "ReworkBudgetExhausted",
+      resumeAt: "ResumeEvaluating",
+      resumePricing,
       reworkLeft: 0,
       gasLeft,
     }),
@@ -62,41 +82,41 @@ function parkedAtEvaluation(instance: Config, gasLeft: number): Core {
 }
 
 const twoStage: readonly Stage[] = [
-  { fanout: 1, combinator: "CUnanimousPass" },
-  { fanout: 1, combinator: "CUnanimousPass" },
+  { fanout: 1, combinator: "UnanimousPass" },
+  { fanout: 1, combinator: "UnanimousPass" },
 ];
 
 /** A ticket whose lowest eval stage has just passed with a later stage still to run. */
 const midProgram = coreOf([
-  ticketOn(config, 1, {
-    phase: "PEvaluating",
+  ticketOn(config, "ManagedFinalizer", {
+    phase: "Evaluating",
     program: twoStage,
-    record: [workTask(1, "TPassed"), workTask(2, "TPassed")],
-    tasks: [evalTask(3, 0, "TPassed")],
+    record: [workTask(1, "Passed"), workTask(2, "Passed")],
+    tasks: new Set([evalTask(3, 0, "Passed")]),
     spawned: 3,
   }),
 ]);
 
 const freeResume = ((): StepView => {
-  const pre = parkedAtEvaluation(free, 0);
-  return stepped(pre, decideOpRetry(free, pre, id(1)));
+  const pre = parkedAtEvaluation(free, "RetryFree", 0);
+  return stepped(pre, decideResumeTicket(pre, id(1)));
 })();
 
 const cascade = ((): StepView => {
   const pre = coreOf([
-    ticketOn(config, 1, { phase: "PPending" }),
-    ticketOn(config, 1, { phase: "PDraft", deps: [id(1)] }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
+    ticketOn(config, "ManagedFinalizer", {
+      phase: "Pending",
+      deps: depsOf(1),
+    }),
   ]);
-  return stepped(pre, decideRevoke(pre, id(1)));
+  return stepped(pre, decideRevoke(config, pre, id(1)));
 })();
 
-const advance = stepped(
-  midProgram,
-  decideEvalStageReduce(config, midProgram, id(1)),
-);
+const advance = stepped(midProgram, decideEvalStageReduce(midProgram, id(1)));
 
 test("a free pipeline resume climbs the measure, which is what the churn arm exempts", () => {
-  assert.equal(freeResume.rec.label, "operator-retry");
+  assert.equal(freeResume.rec.label, "ticket-resumed");
   assert.ok(
     sysMeasure(boundsOf(free), freeResume.post) >
       sysMeasure(boundsOf(free), freeResume.pre),
@@ -108,8 +128,8 @@ test("a free pipeline resume climbs the measure, which is what the churn arm exe
 });
 
 test("a charged pipeline resume pays for itself, so the same witness holds", () => {
-  const pre = parkedAtEvaluation(config, config.gas);
-  const charged = stepped(pre, decideOpRetry(config, pre, id(1)));
+  const pre = parkedAtEvaluation(config, "RetryCharged", config.gas);
+  const charged = stepped(pre, decideResumeTicket(pre, id(1)));
   assert.ok(
     sysMeasure(boundsOf(config), charged.post) <
       sysMeasure(boundsOf(config), charged.pre),
@@ -121,9 +141,11 @@ test("a revoke parks its pre-flight dependents, which is what keeps cascadeSafet
   assert.equal(cascade.rec.label, "ticket-revoked");
   assert.equal(cascade.rec.transitions.length, 2);
   assert.ok(!cascadeParkNever(config, cascade));
-  const lone = coreOf([ticketOn(config, 1, { phase: "PPending" })]);
+  const lone = coreOf([
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
+  ]);
   assert.ok(
-    cascadeParkNever(config, stepped(lone, decideRevoke(lone, id(1)))),
+    cascadeParkNever(config, stepped(lone, decideRevoke(config, lone, id(1)))),
     "a revoke with nothing hanging off it parks nobody",
   );
 });

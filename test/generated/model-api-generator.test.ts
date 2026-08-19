@@ -6,17 +6,19 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const root = process.cwd();
-const generator = join(root, "scripts/generate-model-api.mjs");
+const generator = join(root, "scripts/generate-model-api.ts");
 const quint = join(root, "node_modules/.bin/quint");
 
 function fixture(mutator: (ir: Record<string, unknown>) => void): {
   readonly directory: string;
   readonly ir: string;
   readonly output: string;
+  readonly types: string;
 } {
   const directory = mkdtempSync(join(tmpdir(), "chuggy-model-api-test-"));
   const ir = join(directory, "api.json");
   const output = join(directory, "model-api.ts");
+  const types = join(directory, "modelTypes.ts");
   execFileSync(
     quint,
     [
@@ -36,7 +38,7 @@ function fixture(mutator: (ir: Record<string, unknown>) => void): {
   >;
   mutator(parsed);
   writeFileSync(ir, JSON.stringify(parsed));
-  return { directory, ir, output };
+  return { directory, ir, output, types };
 }
 
 function apiDeclarations(
@@ -70,14 +72,29 @@ test("generator emits a fixed tuple from compiled Quint IR", () => {
   try {
     execFileSync(
       "node",
-      [generator, `--ir=${paths.ir}`, `--out=${paths.output}`],
+      [
+        generator,
+        `--ir=${paths.ir}`,
+        `--out-schemas=${paths.output}`,
+        `--out-types=${paths.types}`,
+      ],
       { cwd: root },
     );
+    const types = readFileSync(paths.types, "utf8");
     const generated = readFileSync(paths.output, "utf8");
-    assert.match(generated, /export type Pair = readonly \[number, string\]/);
+    assert.match(types, /export type Pair = readonly \[number, string\]/);
+    assert.doesNotMatch(
+      types,
+      /zod|z\./,
+      "the domain reads this artifact, so it may import nothing",
+    );
     assert.match(
       generated,
       /export const pairSchema: z\.ZodType<Pair> = z\s*\.tuple\(/,
+    );
+    assert.match(
+      generated,
+      /import type \{[^}]*Pair[^}]*\} from "\.\/modelTypes\.ts"/s,
     );
   } finally {
     rmSync(paths.directory, { force: true, recursive: true });
@@ -98,7 +115,12 @@ test("generator refuses an unsupported Quint type instead of approximating it", 
       () =>
         execFileSync(
           "node",
-          [generator, `--ir=${paths.ir}`, `--out=${paths.output}`],
+          [
+            generator,
+            `--ir=${paths.ir}`,
+            `--out-schemas=${paths.output}`,
+            `--out-types=${paths.types}`,
+          ],
           { cwd: root, stdio: "pipe" },
         ),
       /unsupported Quint type kind "var"/,

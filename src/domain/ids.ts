@@ -16,17 +16,13 @@
 
 declare const ticketIdBrand: unique symbol;
 declare const taskIdBrand: unique symbol;
-declare const projectIdBrand: unique symbol;
 declare const stageIndexBrand: unique symbol;
 
-/** A ticket's identity: dense from 1, never reused, grown only by an arrival. */
+/** A ticket's identity: supplied at release from a bounded universe, sparse, never reused. */
 export type TicketId = number & { readonly [ticketIdBrand]: true };
 
 /** A task's identity: sequential within its ticket, across the ticket's whole history. */
 export type TaskId = number & { readonly [taskIdBrand]: true };
-
-/** A target project, drawn at arrival from the bounded universe and immutable after. */
-export type ProjectId = number & { readonly [projectIdBrand]: true };
 
 /** A zero-based index into a ticket's authored program. */
 export type StageIndex = number & { readonly [stageIndexBrand]: true };
@@ -59,14 +55,6 @@ export function asTaskId(value: number): TaskId {
   if (value < 1)
     throw new RangeError(`task id: ${String(value)} is below the first id`);
   return value as TaskId;
-}
-
-/** Brands a non-negative integer as a project id. */
-export function asProjectId(value: number): ProjectId {
-  asSafeInteger(value, "project id");
-  if (value < 1)
-    throw new RangeError(`project id: ${String(value)} is below the first id`);
-  return value as ProjectId;
 }
 
 /** Brands a non-negative integer as a stage index. */

@@ -16,9 +16,9 @@ import { failedInvariants } from "../../src/domain/invariants.ts";
 import { budgetedInstance } from "../domain/configs.ts";
 import {
   coreOf,
+  depsOf,
   fleetBut,
   healthyFleet,
-  id,
   initialView,
   ticketOn,
 } from "../domain/fixtures.ts";
@@ -29,7 +29,9 @@ const fleet = healthyFleet(config);
 const healthy = initialView(fleetBut(fleet, 0, {}));
 
 /** A ticket whose dependency is not in the map, which is where a derived walk falls over. */
-const dangling = initialView(coreOf([ticketOn(config, 1, { deps: [id(9)] })]));
+const dangling = initialView(
+  coreOf([ticketOn(config, "ManagedFinalizer", { deps: depsOf(9) })]),
+);
 
 test("a healthy state answers every leaf, and answers each of them yes", () => {
   const verdict = evaluateBundle(config, healthy);
@@ -39,9 +41,7 @@ test("a healthy state answers every leaf, and answers each of them yes", () => {
 });
 
 test("where nothing throws, the guarded evaluation is the bundle itself", () => {
-  const broke = initialView(
-    fleetBut(fleet, 0, { artifact: { artifact: "ANone" } }),
-  );
+  const broke = initialView(fleetBut(fleet, 0, { artifact: "NoArtifact" }));
   /** An initial view exempts the descent leaf by label, so one view carries a step label instead. */
   const stepped = { ...healthy, rec: { ...healthy.rec, label: "dispatch" } };
   for (const view of [healthy, broke, stepped]) {

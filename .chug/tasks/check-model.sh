@@ -43,7 +43,25 @@ if [ -z "$modules" ]; then
 fi
 
 failed=0
+errored=0
 tests=0
+
+# A COULD-NOT-RUN IS NOT A FINDING, AND THE EXIT CODE CANNOT TELL THEM APART.
+# Quint exits 1 for a violated invariant, an unknown module and a parse error
+# alike, and the crash behind #12 leaves on a signal with both streams empty.
+# So each stage is judged on the marker it prints when it reached a verdict,
+# and the output is printed either way: a failure that said nothing is exactly
+# what left that crash undiagnosable.
+verdict() { # <label> <status> <output> <marker> <finding-message>
+	if printf '%s\n' "$3" | grep -q "$4"; then
+		echo "ERROR $5"
+		failed=$((failed + 1))
+	else
+		echo "check-model: LINTER ERROR — $1 could not run (exit $2)"
+		errored=$((errored + 1))
+	fi
+	printf '%s\n' "$3" | sed 's/^/    /'
+}
 
 # Quint selects only run names ending in `Test`, and exits 0 when that selects
 # NOTHING: a suite whose runs were renamed passes exactly as loudly as one that
@@ -52,9 +70,15 @@ tests=0
 run_suite() { # <label> <quint test args...>
 	label="$1"
 	shift
-	if ! out="$("$QUINT" test "$@" 2>&1)"; then
-		echo "ERROR $label failed"
-		failed=$((failed + 1))
+	if out="$("$QUINT" test "$@" 2>&1)"; then
+		rc=0
+	else
+		rc=$?
+	fi
+	if [ "$rc" -ne 0 ]; then
+		# A suite that ran and failed counts its failures; one that never got
+		# that far prints no such line.
+		verdict "$label" "$rc" "$out" '^ *[0-9][0-9]* failed' "$label failed"
 		return 0
 	fi
 	passing="$(printf '%s\n' "$out" | sed -n 's/^ *\([0-9][0-9]*\) passing.*$/\1/p')"
@@ -70,10 +94,12 @@ echo "--- typecheck"
 IFS='
 '
 for m in $modules; do
-	if ! "$QUINT" typecheck "$m" >/dev/null 2>&1; then
-		echo "ERROR $m: does not typecheck"
-		failed=$((failed + 1))
+	if out="$("$QUINT" typecheck "$m" 2>&1)"; then
+		continue
+	else
+		rc=$?
 	fi
+	verdict "$m" "$rc" "$out" '^error' "$m: does not typecheck"
 done
 unset IFS
 
@@ -102,10 +128,20 @@ done
 
 echo "--- invariants (randomized)"
 for i in budgeted deadline_only retryfree; do
-	"$QUINT" run model/mc/mc_chuggy.qnt --main="mc_chuggy_${i}" \
-		--invariant=allInvariants --max-samples=2000 --max-steps=40 >/dev/null 2>&1 \
-		|| { echo "ERROR instance $i violated an invariant"; failed=$((failed + 1)); }
+	if out="$("$QUINT" run model/mc/mc_chuggy.qnt --main="mc_chuggy_${i}" \
+		--invariant=allInvariants --max-samples=2000 --max-steps=40 2>&1)"; then
+		continue
+	else
+		rc=$?
+	fi
+	# A refuted invariant announces itself and carries the seed to reproduce it.
+	verdict "instance $i" "$rc" "$out" '\[violation\]' \
+		"instance $i violated an invariant"
 done
 
 echo "check-model: $failed failure(s), $tests test(s) run"
+if [ "$errored" -ne 0 ]; then
+	echo "check-model: LINTER ERROR — $errored stage(s) could not run; not a pass"
+	exit 2
+fi
 [ "$failed" -eq 0 ]

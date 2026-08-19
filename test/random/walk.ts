@@ -30,11 +30,14 @@
  */
 
 import type { Config } from "../../src/domain/config.ts";
-import type { Core, Decision, StepRecord } from "../../src/domain/core.ts";
+import type { Decision } from "../../src/domain/core.ts";
 import { liveTickets, ticketAt } from "../../src/domain/core.ts";
+import type {
+  Core,
+  StepRecord,
+} from "../../src/domain/generated/modelTypes.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
-import { completionExclusiveFor } from "../../src/domain/invariants.ts";
-import { reworkBudget, wrapUpBudget } from "../../src/domain/pricing.ts";
+import { finalizationBudget, reworkBudget } from "../../src/domain/pricing.ts";
 import { replayStep, type Picks } from "../conformance/dispatch.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
 import { initialView } from "../domain/fixtures.ts";
@@ -97,17 +100,16 @@ export function walkInit(config: Config): Core {
   }
   if (config.nTasks < 1) refusals.push("a phase carries a real task set");
   if (config.nTickets < 1) {
-    refusals.push("the arrival bound must admit at least one ticket");
+    refusals.push("the release bound must admit at least one ticket");
   }
   if (config.maxStages < 1) {
     refusals.push("at least one authorable program must exist");
   }
-  if (config.nProjects < 1) refusals.push("a ticket needs a project to target");
   if (reworkBudget(config.reworkPolicy) < 0) {
     refusals.push("the rework account cannot open overdrawn");
   }
-  if (wrapUpBudget(config.wrapUpPricing) < 0) {
-    refusals.push("the wrap-up account cannot open overdrawn");
+  if (finalizationBudget(config.finalizationPricing) < 0) {
+    refusals.push("the finalization account cannot open overdrawn");
   }
   if (refusals.length > 0) {
     throw new Error(`walk: no initial state: ${refusals.join("; ")}`);
@@ -119,20 +121,21 @@ export function walkInit(config: Config): Core {
 export type CompletionCounts = Map<TicketId, number>;
 
 /**
- * Charge a step's `Complete` emissions to the ticket the step was drawn for.
- * A completion on a step with no stepped ticket has no subject to charge and is
- * itself the finding.
+ * Charge a step's completions to the ticket the step was drawn for. Completion
+ * emits no effect any more — entering Done is the completion — so what is
+ * counted is the transition, and a completion on a step with no drawn ticket
+ * has no subject to charge and is itself the finding.
  */
 export function creditCompletions(
   counts: CompletionCounts,
   subject: TicketId | undefined,
   rec: StepRecord,
 ): readonly string[] {
-  const emitted = rec.effects.filter((effect) => effect === "Complete").length;
+  const emitted = rec.transitions.filter((t) => t.to === "Done").length;
   if (emitted === 0) return [];
   if (subject === undefined) {
     return [
-      `a Complete effect on a "${rec.label}" step with no drawn ticket to charge it to`,
+      `a completion on a "${rec.label}" step with no drawn ticket to charge it to`,
     ];
   }
   counts.set(subject, (counts.get(subject) ?? 0) + emitted);
@@ -147,10 +150,11 @@ export function completionFindings(
   return liveTickets(core).flatMap((id) => {
     const emitted = counts.get(id) ?? 0;
     const phase = ticketAt(core, id).phase;
-    return completionExclusiveFor(emitted, phase)
+    const stored = ticketAt(core, id).completions;
+    return emitted === stored && (stored === 1) === (phase === "Done")
       ? []
       : [
-          `ticket ${String(id)}: ${String(emitted)} Complete emission(s) with phase ${phase}`,
+          `ticket ${String(id)}: ${String(emitted)} completion(s) counted, ${String(stored)} stored, phase ${phase}`,
         ];
   });
 }

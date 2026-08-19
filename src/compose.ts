@@ -17,6 +17,7 @@
 
 import { deskStub } from "./adapters/deskStub.ts";
 import { fabricStub } from "./adapters/fabricStub.ts";
+import { finalizerStub } from "./adapters/finalizerStub.ts";
 import { journalStoreStub } from "./adapters/journalStoreStub.ts";
 import type { Config } from "./domain/config.ts";
 import type { Executor } from "./interpreter/executor.ts";
@@ -26,6 +27,10 @@ export function compose(config: Config): Executor {
   return {
     config,
     store: journalStoreStub(),
-    ports: { fabric: fabricStub(), desk: deskStub() },
+    ports: {
+      fabric: fabricStub(),
+      finalizer: finalizerStub(),
+      desk: deskStub(),
+    },
   };
 }

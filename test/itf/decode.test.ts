@@ -47,11 +47,11 @@ test("a set decodes to its elements and re-encodes in order", () => {
 });
 
 test("the empty tuple a nullary variant carries is not lost", () => {
-  roundTrips({ tag: "PDone", value: { "#tup": [] } });
-  const decoded = decodeValue({ tag: "PDone", value: { "#tup": [] } });
+  roundTrips({ tag: "Done", value: { "#tup": [] } });
+  const decoded = decodeValue({ tag: "Done", value: { "#tup": [] } });
   assert.deepEqual(decoded, {
     kind: "variant",
-    tag: "PDone",
+    tag: "Done",
     value: { kind: "tuple", elements: [] },
   });
 });
@@ -63,7 +63,7 @@ test("a variant carrying a payload keeps it", () => {
 test("a nested variant keeps both tags", () => {
   roundTrips({
     tag: "TSResolved",
-    value: { tag: "TCancelled", value: { "#tup": [] } },
+    value: { tag: "Cancelled", value: { "#tup": [] } },
   });
 });
 
@@ -85,7 +85,7 @@ test("a map keeps its key order and its pairing", () => {
 test("a record keeps every field", () => {
   const raw = {
     fanout: { "#bigint": "2" },
-    combinator: { tag: "CAnyPass", value: { "#tup": [] } },
+    combinator: { tag: "AnyPass", value: { "#tup": [] } },
   };
   roundTrips(raw);
   assert.equal(field(decodeValue(raw), "fanout"), 2n);
@@ -127,8 +127,8 @@ test("describe names each shape", () => {
   assert.equal(describe([1n]), "list[1]");
   assert.equal(describe({ kind: "set", elements: [] }), "set");
   assert.equal(
-    describe({ kind: "variant", tag: "PDone", value: [] }),
-    "variant(PDone)",
+    describe({ kind: "variant", tag: "Done", value: [] }),
+    "variant(Done)",
   );
 });
 

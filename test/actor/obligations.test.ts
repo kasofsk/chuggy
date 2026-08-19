@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import {
   decisionEventTags,
-  arriveEvent,
+  releaseTicketEvent,
 } from "../../src/actor/decisionEvent.ts";
 import {
   failedObligations,
@@ -32,26 +32,24 @@ import {
   type ActorState,
 } from "../../src/actor/state.ts";
 import { ticketAt, withTicket } from "../../src/domain/core.ts";
-import { asProjectId } from "../../src/domain/ids.ts";
-import { aSome, wExclusive } from "../../src/domain/wrapUp.ts";
-import { depsOf, id } from "../domain/fixtures.ts";
+import { id } from "../domain/fixtures.ts";
 import {
   declaredDecisionEventConstructors,
   declaredRefinementBundle,
   declaredRefinementCore,
   declaredRefinementObligations,
 } from "./declared.ts";
-import { flatProgram, refinementInstance } from "./harness.ts";
+import { plainAuthoring, refinementInstance } from "./harness.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const config = refinementInstance;
 
 /** A state one honest decision in, which every forgery below starts from. */
-function journaledArrival(): ActorState {
+function journaledRelease(): ActorState {
   return journalStep(
     config,
     actorInit(),
-    arriveEvent(depsOf(), flatProgram, asProjectId(1), wExclusive(1)),
+    releaseTicketEvent(id(1), plainAuthoring),
   );
 }
 
@@ -98,7 +96,7 @@ test("every obligation is green on the initial state, so no red below is a membe
 });
 
 test("a tampered journal fails journalLegal, and journalLegal alone", () => {
-  const state = journaledArrival();
+  const state = journaledRelease();
   const entry = state.journal[0];
   assert.ok(entry !== undefined);
   const tampered = { ...state, journal: [{ ...entry, seq: 2 }] };
@@ -108,7 +106,7 @@ test("a tampered journal fails journalLegal, and journalLegal alone", () => {
 });
 
 test("memory the journal cannot rebuild fails recoveryComplete", () => {
-  const state = journaledArrival();
+  const state = journaledRelease();
   const amnesiac = { ...state, journal: [] };
   assert.deepEqual(failedObligations(config, amnesiac, refinementInvariants), [
     "recoveryComplete",
@@ -116,7 +114,7 @@ test("memory the journal cannot rebuild fails recoveryComplete", () => {
 });
 
 test("a cursor outside the journal, or a gapped received set, fails executorSound", () => {
-  const state = journaledArrival();
+  const state = journaledRelease();
   const overran = { ...state, applied: 2 };
   assert.deepEqual(failedObligations(config, overran, refinementInvariants), [
     "executorSound",
@@ -128,12 +126,12 @@ test("a cursor outside the journal, or a gapped received set, fails executorSoun
 });
 
 test("a Done ticket the journal never completed fails the ledger bridge, with the recovery it also broke", () => {
-  const state = journaledArrival();
+  const state = journaledRelease();
   const ticket = ticketAt(memoryCore(state), id(1));
   const forged = withTicket(memoryCore(state), id(1), {
     ...ticket,
-    phase: "PDone",
-    artifact: aSome(1),
+    phase: "Done",
+    completions: 1,
   });
   const disagreeing = { ...state, view: { ...state.view, post: forged } };
   assert.deepEqual(

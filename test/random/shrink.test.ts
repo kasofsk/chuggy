@@ -2,20 +2,21 @@
  * The shrinker and the counterexample writer, proved against a deliberately
  * broken decider rather than against a defect nobody has.
  *
- * THE MUTANT IS THE ONE THE ACCUMULATOR EXISTS FOR: the duplicate-completion
- * decider re-emitting `Complete`, which changes no state — so every leaf of the
- * bundle stays green on every state it builds — and is caught only by the
- * emission count across the run. The injection is the walk's `decide` seam, so
- * the broken decider exists for the length of a test and the tree is never
- * touched; `.chug/tasks/check-random.test.sh` runs the same defect through the
- * real gates in a scratch copy and restores it, which is the tier this file
- * cannot express.
+ * THE MUTANT IS THE ONE THE ACCUMULATOR EXISTS FOR: a revoke that records its
+ * ticket reaching Done on the way out. It changes no state, so every leaf of the
+ * bundle stays green on every state it builds — `revokedNeverCompletes`
+ * included, because the ledger it reads is the one the revoke left alone — and
+ * only the completions counted off the record stream see it. The injection is
+ * the walk's `decide` seam, so the broken decider exists for the length of a
+ * test and the tree is never touched; `.chug/tasks/check-random.test.sh` runs
+ * the same defect through the real gates in a scratch copy and restores it,
+ * which is the tier this file cannot express.
  *
  * WHAT THE FIXTURE PROVES CUTS BOTH WAYS. Under the broken decider the written
  * states are exactly what replaying its own trace reproduces, which is what
  * makes the file a corpus the replayer consumes; under the true dispatch table
- * the recorded step diverges at the double emission, which is what makes it pin
- * the defect once fixed.
+ * the recorded step diverges at the phantom completion, which is what makes it
+ * pin the defect once fixed.
  */
 
 import { test } from "node:test";
@@ -26,7 +27,7 @@ import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import { budgetedInstance } from "../domain/configs.ts";
-import { decodeTrace } from "../itf/decode.ts";
+import { decodeTrace, encodeValue } from "../itf/decode.ts";
 import { encodeCore, encodeStepRecord } from "../itf/vocabulary.ts";
 import { seedLabel, writeCounterexample } from "./counterexample.ts";
 import { shrinkSteps } from "./shrink.ts";
@@ -44,12 +45,16 @@ import {
 const config = budgetedInstance;
 const instance = "mc_chuggy_budgeted";
 
-/** The double emission: the duplicate delivery answered with a completion effect, state untouched. */
-const doubleEmit: Decide = (walkConfig, core, action, picks) => {
+/** The phantom completion: a revoke recording its ticket as having reached Done, state untouched. */
+const phantomCompletion: Decide = (walkConfig, core, action, picks) => {
   const decision = decideViaTable(walkConfig, core, action, picks);
-  if (action !== "completeDuplicate") return decision;
+  const moved = decision.rec.transitions[0];
+  if (action !== "revoke" || moved === undefined) return decision;
   return {
-    rec: { ...decision.rec, effects: ["Complete"] },
+    rec: {
+      ...decision.rec,
+      transitions: [...decision.rec.transitions, { ...moved, to: "Done" }],
+    },
     post: decision.post,
   };
 };
@@ -66,23 +71,23 @@ interface Found {
 let cached: Found | undefined;
 
 /**
- * A seed whose budgeted run draws a duplicate completion: the pinned one, then
- * a bounded fallback sweep. A miss on both means the draw stream changed shape
- * under the pin, and the fix is a wider offline sweep and a fresh pin.
+ * A seed whose budgeted run draws a revoke: the pinned one, then a bounded
+ * fallback sweep. A miss on both means the draw stream changed shape under the
+ * pin, and the fix is a wider offline sweep and a fresh pin.
  */
 function found(): Found {
   if (cached !== undefined) return cached;
   const candidates = [
     seedPinned,
-    ...Array.from({ length: seedFallbackMax }, (unused, index) => index + 1),
+    ...Array.from({ length: seedFallbackMax }, (_unused, index) => index + 1),
   ];
   for (const seed of candidates) {
-    const outcome = walkRun(config, seed, walkStepsMax, doubleEmit);
+    const outcome = walkRun(config, seed, walkStepsMax, phantomCompletion);
     if (outcome.finding !== undefined) {
       cached = {
         seed,
         outcome,
-        shrunk: shrinkSteps(config, outcome.steps, doubleEmit),
+        shrunk: shrinkSteps(config, outcome.steps, phantomCompletion),
       };
       return cached;
     }
@@ -92,28 +97,28 @@ function found(): Found {
   );
 }
 
-test("the double emission is caught by the accumulator and by nothing structural", () => {
+test("the phantom completion is caught by the accumulator and by nothing structural", () => {
   const { outcome } = found();
   assert.ok(outcome.finding);
-  assert.equal(outcome.finding.action, "completeDuplicate");
+  assert.equal(outcome.finding.action, "revoke");
   const failure = outcome.finding.failure;
   assert.deepEqual(failure.failed, [], "every bundle leaf stays green");
   assert.deepEqual(failure.refused, [], "no leaf even refuses");
   assert.equal(failure.broke, undefined);
-  assert.match(failure.emissions.join(" "), /Complete emission/);
+  assert.match(failure.emissions.join(" "), /1 completion\(s\) counted/);
 });
 
 test("the counterexample shrinks to a one-minimal machine trace that still fails", () => {
   const { outcome, shrunk } = found();
   assert.ok(shrunk.length >= 1);
   assert.ok(shrunk.length <= outcome.steps.length);
-  const replayed = walkReplay(config, shrunk, doubleEmit);
+  const replayed = walkReplay(config, shrunk, phantomCompletion);
   assert.equal(replayed.kind, "finding");
-  assert.equal(shrunk[shrunk.length - 1]?.action, "completeDuplicate");
+  assert.equal(shrunk[shrunk.length - 1]?.action, "revoke");
   for (let index = 0; index < shrunk.length; index++) {
     const without = [...shrunk.slice(0, index), ...shrunk.slice(index + 1)];
     assert.notEqual(
-      walkReplay(config, without, doubleEmit).kind,
+      walkReplay(config, without, phantomCompletion).kind,
       "finding",
       `dropping step ${String(index + 1)} still fails, so the shrinker left slack`,
     );
@@ -136,8 +141,8 @@ test("the written counterexample is a corpus: its states are what its own steps 
     instance,
     seed,
     shrunk,
-    doubleEmit,
-    "the suite's double-emission counterexample",
+    phantomCompletion,
+    "the suite's phantom-completion counterexample",
   );
   const raw = JSON.parse(readFileSync(written.file, "utf8")) as {
     states: Record<string, unknown>[];
@@ -149,13 +154,21 @@ test("the written counterexample is a corpus: its states are what its own steps 
   assert.ok(lastStepVar, "the replayer looks the record variable up by suffix");
   assert.equal(trace.states.length, shrunk.length + 1);
 
-  const recorded = walkRecord(config, shrunk, doubleEmit);
+  const recorded = walkRecord(config, shrunk, phantomCompletion);
   recorded.forEach(({ decision }, index) => {
     const state = raw.states[index + 1];
     assert.ok(state);
-    assert.ok(isDeepStrictEqual(state[ticketsVar], encodeCore(decision.post)));
     assert.ok(
-      isDeepStrictEqual(state[lastStepVar], encodeStepRecord(decision.rec)),
+      isDeepStrictEqual(
+        state[ticketsVar],
+        encodeValue(encodeCore(decision.post)),
+      ),
+    );
+    assert.ok(
+      isDeepStrictEqual(
+        state[lastStepVar],
+        encodeValue(encodeStepRecord(decision.rec)),
+      ),
     );
   });
 
@@ -169,22 +182,22 @@ test("the written counterexample is a corpus: its states are what its own steps 
   assert.equal(row.name, `walk-${instance}-${seedLabel(seed)}`);
 });
 
-test("under the true dispatch table the recorded step diverges at the double emission", () => {
+test("under the true dispatch table the recorded step diverges at the phantom completion", () => {
   const { shrunk } = found();
-  const broken = walkRecord(config, shrunk, doubleEmit);
+  const broken = walkRecord(config, shrunk, phantomCompletion);
   const fixed = walkRecord(config, shrunk, decideViaTable);
   const last = broken[broken.length - 1];
   const same = fixed[fixed.length - 1];
   assert.ok(last && same);
-  assert.deepEqual(
-    same.decision.rec.effects,
-    [],
-    "the machine absorbs the duplicate silently",
+  assert.equal(
+    same.decision.rec.transitions.filter((t) => t.to === "Done").length,
+    0,
+    "the machine records no completion on the way out of a revoke",
   );
   assert.ok(
     !isDeepStrictEqual(
-      encodeStepRecord(last.decision.rec),
-      encodeStepRecord(same.decision.rec),
+      encodeValue(encodeStepRecord(last.decision.rec)),
+      encodeValue(encodeStepRecord(same.decision.rec)),
     ),
     "the fixture pins exactly the divergence a fixed tree replays red",
   );

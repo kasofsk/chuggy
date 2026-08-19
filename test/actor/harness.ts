@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 
 import {
   dispatchEvent,
-  releaseEvent,
+  releaseTicketEvent,
   taskDoneEvent,
   workReduceEvent,
   type DecisionEvent,
@@ -36,8 +36,7 @@ import {
 import type { Config } from "../../src/domain/config.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
-import type { Stage } from "../../src/domain/program.ts";
-import type { Verdict } from "../../src/domain/task.ts";
+import type { Stage, Verdict } from "../../src/domain/generated/modelTypes.ts";
 import { bundleHolds, evaluateBundle } from "../conformance/evaluate.ts";
 import { id } from "../domain/fixtures.ts";
 
@@ -47,15 +46,27 @@ export const refinementInstance: Config = {
   nTasks: 1,
   reworkPolicy: reworkBudgetOf(1),
   gas: 3,
-  wrapUpPricing: budgeted(1),
-  opRetryPricing: "RetryCharged",
+  finalizationPricing: budgeted(1),
   maxStages: 1,
-  nProjects: 1,
 };
+
+/** What a release freezes when a suite does not care which values it froze. */
+export const plainAuthoring = {
+  deps: new Set<number>(),
+  prog: [{ fanout: 1, combinator: "UnanimousPass" }] as readonly Stage[],
+  workFanout: 1,
+  reworkPolicy: reworkBudgetOf(1),
+  finalizationPricing: budgeted(1),
+  resumePricing: "RetryCharged",
+  finalizer: "ManagedFinalizer",
+} as const;
+
+/** The manifest a task reports when a suite does not care what it reported. */
+export const plainResult = { manifest: 1, digest: 1, schema: 1 } as const;
 
 /** The single-stage unanimous program every refinement-model run authors. */
 export const flatProgram: readonly Stage[] = [
-  { fanout: 1, combinator: "CUnanimousPass" },
+  { fanout: 1, combinator: "UnanimousPass" },
 ];
 
 /**
@@ -103,28 +114,33 @@ export function stepEmit(
 }
 
 /**
- * The disciplined first cycle every witness run walks after its arrival:
- * release, dispatch, the work set passing, and the eval task resolved with the
- * caller's verdict — the draw that routes the run toward its own seam.
+ * The disciplined first cycle every witness run walks: release, dispatch, the
+ * work set passing, and the eval task resolved with the caller's verdict — the
+ * draw that routes the run toward its own seam.
  */
 export function walkFirstCycle(
   config: Config,
   state: ActorState,
   evalVerdict: Verdict,
 ): ActorState {
-  state = stepEmit(config, state, releaseEvent(id(1)), "ticket-released");
+  state = stepEmit(
+    config,
+    state,
+    releaseTicketEvent(id(1), plainAuthoring),
+    "ticket-released",
+  );
   state = stepEmit(config, state, dispatchEvent(id(1)), "dispatch");
   state = stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(1), "VPass"),
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
     "task-done",
   );
   state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
   return stepEmit(
     config,
     state,
-    taskDoneEvent(id(1), asTaskId(2), evalVerdict),
+    taskDoneEvent(id(1), asTaskId(2), evalVerdict, plainResult),
     "task-done",
   );
 }

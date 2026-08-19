@@ -1,6 +1,6 @@
 /// The generated TypeScript API boundary.
 ///
-/// `scripts/generate-model-api.mjs` compiles this module with the repository's
+/// `scripts/generate-model-api.ts` compiles this module with the repository's
 /// pinned Quint and emits every `Api*` alias below without the `Api` prefix.
 /// Adding a public model type is therefore an explicit reviewable act. The
 /// generator fails closed when an alias reaches a Quint construct it cannot

@@ -16,6 +16,7 @@
 import type { Entry } from "../../src/actor/journal.ts";
 import { deskStub, type DeskStub } from "../../src/adapters/deskStub.ts";
 import { fabricStub, type FabricStub } from "../../src/adapters/fabricStub.ts";
+import { finalizerStub } from "../../src/adapters/finalizerStub.ts";
 import {
   journalStoreStub,
   type JournalStoreStub,
@@ -42,6 +43,7 @@ export function wiring(config: Config): Wiring {
   const store = journalStoreStub();
   const desk = deskStub();
   const fabric = fabricStub();
+  const finalizer = finalizerStub();
   const witness: number[] = [];
   const sampled: JournalStore = {
     append: async (entry) => {
@@ -53,7 +55,7 @@ export function wiring(config: Config): Wiring {
     saveCursor: (applied) => store.saveCursor(applied),
   };
   return {
-    executor: { config, store: sampled, ports: { fabric, desk } },
+    executor: { config, store: sampled, ports: { fabric, finalizer, desk } },
     store,
     desk,
     fabric,

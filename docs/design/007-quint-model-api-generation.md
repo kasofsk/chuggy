@@ -3,10 +3,15 @@
 **Status: PROPOSED** — implementation for issue #98.
 
 `model/api.qnt` is the explicit public data boundary of the Quint model.
-`scripts/generate-model-api.mjs` compiles it with the pinned Quint CLI and
-generates `src/generated/model-api.ts`. Generated code supplies TypeScript
-types, Zod value schemas, JSON codecs and constructor-tag rosters. It does not
-generate deciders, actions, invariants, graph algorithms or infrastructure.
+`scripts/generate-model-api.ts` compiles it with the pinned Quint CLI and
+generates two artifacts. `src/domain/generated/modelTypes.ts` holds the
+TypeScript types and the constructor-tag rosters and imports nothing at all;
+`src/generated/model-api.ts` holds the Zod value schemas and the JSON codecs,
+which need a runtime dependency. The split is what `domain-is-pure` requires:
+the domain may read its own vocabulary without any module outside itself, and
+that rule admits no carve-out. Neither artifact is hand-written and `--check`
+reads both. Generated code does not supply deciders, actions, invariants,
+graph algorithms or infrastructure.
 
 ## Supported subset
 
@@ -45,7 +50,7 @@ outside generated declarations.
 ## Change protocol
 
 1. Change the model and expose an intentional `Api*` declaration.
-2. Run `node scripts/generate-model-api.mjs` and review the generated diff.
+2. Run `node scripts/generate-model-api.ts` and review the generated diff.
 3. Run the API drift gate and its round-trip/exhaustiveness tests.
 4. Update handwritten adapters only where production representation deliberately
    differs; do not copy generated vocabularies into another mirror.

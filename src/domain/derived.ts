@@ -4,7 +4,7 @@
  * upward fixpoint that says a ticket still has a route to Done.
  *
  * THE BOUNDED SWEEP IS THE TERMINATION ARGUMENT, NOT AN IMPLEMENTATION
- * DETAIL. Three of these are fixpoints computed by repeating a monotone step
+ * DETAIL. Each of these is a fixpoint computed by repeating a monotone step
  * over the whole fleet, and the repeat count is the fleet's own size — which
  * is the whole of the argument that a monotone fixpoint over a finite lattice
  * terminates, and is house rule 9's explicit bound rather than a loop that
@@ -14,10 +14,9 @@
  * the sweep is what lets a future edge kind point upward with no rewrite. An
  * implementer who reads a summary writes the fold and silently drops that.
  *
- * `revokeDoomed` is the one that is NOT a sweep, and the model's fold says
- * which by consuming its index rather than discarding it: one ascending pass
- * decides each id after every id it depends on, which is sound because deps
- * point strictly downward and `depsAcyclic` is what makes that true.
+ * `revokeDoomed` is swept for a reason the others are not: ids are drawn from
+ * a sparse universe, so a dependency may name a numerically larger ticket and
+ * no single ascending pass decides each id after the ids it depends on.
  *
  * ITERATION ORDER IS EXPLICIT EVERYWHERE HERE. Every pass reads `liveTickets`,
  * which sorts, rather than inheriting a map's insertion order — stable in
@@ -25,14 +24,15 @@
  * the day a ticket map was rebuilt from a different source.
  */
 
-import { liveTickets, ticketAt, type Core } from "./core.ts";
+import { liveTickets, ticketAt } from "./core.ts";
+import type { Core } from "./generated/modelTypes.ts";
 import { waitsOn } from "./enablement.ts";
 import type { TicketId } from "./ids.ts";
 import { hasOpenHumanTask } from "./ticket.ts";
 
 /** The walk's edge relation: the dependency edges, and only those. */
 export function visEdges(core: Core, id: TicketId): readonly TicketId[] {
-  return ticketAt(core, id).deps;
+  return [...ticketAt(core, id).deps].sort((a, b) => a - b) as TicketId[];
 }
 
 /** Whether a ticket belongs to the set being swept, given what the pass before it admitted. */
@@ -67,8 +67,8 @@ export function stuckSet(core: Core): ReadonlySet<TicketId> {
   return sweep(core, (c, id, stuck) => {
     const phase = ticketAt(c, id).phase;
     return (
-      phase === "PEscalated" ||
-      (phase === "PPending" && visEdges(c, id).some((d) => stuck.has(d)))
+      phase === "Escalated" ||
+      (phase === "Pending" && visEdges(c, id).some((d) => stuck.has(d)))
     );
   });
 }
@@ -96,27 +96,25 @@ export function canFinishSet(core: Core): ReadonlySet<TicketId> {
   return sweep(core, (c, id, finishable) => {
     const phase = ticketAt(c, id).phase;
     return (
-      phase === "PDone" ||
-      (phase !== "PRevoked" && waitsOn(c, id).every((d) => finishable.has(d)))
+      phase === "Done" ||
+      (phase !== "Revoked" &&
+        [...waitsOn(c, id)].every((d) => finishable.has(d as TicketId)))
     );
   });
 }
 
 /**
  * Tickets transitively doomed by a revocation: a revoked ticket anywhere in the
- * dependency closure means this one can never unblock. One ascending pass,
- * because deps point strictly downward.
+ * dependency closure means this one can never unblock.
  */
 export function revokeDoomed(core: Core): ReadonlySet<TicketId> {
-  const doomed = new Set<TicketId>();
-  for (const id of liveTickets(core)) {
-    const deps = ticketAt(core, id).deps;
-    const behind = deps.some(
-      (d) => ticketAt(core, d).phase === "PRevoked" || doomed.has(d),
-    );
-    if (behind) doomed.add(id);
-  }
-  return doomed;
+  return sweep(core, (c, id, doomed) =>
+    [...ticketAt(c, id).deps].some(
+      (d) =>
+        ticketAt(c, d as TicketId).phase === "Revoked" ||
+        doomed.has(d as TicketId),
+    ),
+  );
 }
 
 /** Containment, which is how the two walks are compared against each other. */

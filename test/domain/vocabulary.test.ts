@@ -15,7 +15,12 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { decodeTrace, stateValue, type ItfTrace } from "../itf/decode.ts";
+import {
+  decodeTrace,
+  encodeValue,
+  stateValue,
+  type ItfTrace,
+} from "../itf/decode.ts";
 import {
   decodeCore,
   decodeStepRecord,
@@ -58,7 +63,7 @@ test("every golden ticket map decodes into Ticket and re-encodes identically", (
       const original = raw.states[state.index]?.[ticketsVar];
       const core = decodeCore(stateValue(state, ticketsVar));
       assert.deepEqual(
-        encodeCore(core),
+        encodeValue(encodeCore(core)),
         original,
         `${name} state ${String(state.index)}: the ticket map did not survive the round trip`,
       );
@@ -81,7 +86,7 @@ test("every golden step record decodes and re-encodes identically", () => {
       const original = raw.states[state.index]?.[stepVar];
       const record = decodeStepRecord(stateValue(state, stepVar));
       assert.deepEqual(
-        encodeStepRecord(record),
+        encodeValue(encodeStepRecord(record)),
         original,
         `${name} state ${String(state.index)}: the step record did not survive the round trip`,
       );

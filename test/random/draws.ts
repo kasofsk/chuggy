@@ -19,49 +19,53 @@
  * each other on every step taken.
  */
 
-import type { Config } from "../../src/domain/config.ts";
 import {
+  finalizationPricingChoices,
+  finalizerChoices,
   isValidProgram,
-  projects,
+  resumePricingChoices,
+  reworkPolicyChoices,
   stageChoices,
-  wrapUpChoices,
+  workFanoutChoices,
+  type Config,
 } from "../../src/domain/config.ts";
-import type { Core } from "../../src/domain/core.ts";
 import {
-  canArriveIn,
-  deliverableTaskIds,
   dependableIn,
-  depsDistinct,
   dispatchableIn,
-  doneIn,
-  draftsIn,
-  holdingIn,
+  executionBlockedReasons,
+  finalizationOutcomes,
+  finalizingIn,
+  outstandingTaskIdsIn,
   quietIn,
   readiesIn,
   reducibleEvalIn,
   reducibleWorkIn,
+  releasableIdsIn,
   retryablesIn,
   revocablesIn,
   taskPhaseIn,
-  wrapUpOutcomes,
-  wrapUpStartablesIn,
 } from "../../src/domain/enablement.ts";
-import type { ProjectId, TaskId, TicketId } from "../../src/domain/ids.ts";
-import type { Stage } from "../../src/domain/program.ts";
-import type { Verdict } from "../../src/domain/task.ts";
-import { wrapUpEquals } from "../../src/domain/wrapUp.ts";
-import type { WrapUp, WrapUpOutcome } from "../../src/domain/wrapUp.ts";
+import type {
+  Core,
+  FinalizationOutcome,
+  FinalizationPricing,
+  Finalizer,
+  Reason,
+  RetryPricing,
+  ReworkPolicy,
+  Stage,
+  Verdict,
+} from "../../src/domain/generated/modelTypes.ts";
+import { asTaskId, type TaskId, type TicketId } from "../../src/domain/ids.ts";
+import { reworkBudget } from "../../src/domain/pricing.ts";
 import type { Picks } from "../conformance/dispatch.ts";
-import { decodeValue, type ItfValue } from "../itf/decode.ts";
+import { decodeValue, encodeValue, type ItfValue } from "../itf/decode.ts";
 import {
-  decodeVerdict,
-  decodeWrapUpOutcome,
   encodeDeps,
   encodeInt,
+  encodeNullaryTag,
   encodeProgram,
-  encodeVerdict,
-  encodeWrapUp,
-  encodeWrapUpOutcome,
+  encodeSumValue,
 } from "../itf/vocabulary.ts";
 import { pickFrom, subsetFrom, type Random } from "./random.ts";
 
@@ -70,12 +74,15 @@ export interface Drawn {
   readonly ticket?: TicketId;
   readonly deps?: readonly TicketId[];
   readonly program?: readonly Stage[];
-  readonly project?: ProjectId;
-  readonly wrapUp?: WrapUp;
+  readonly workFanout?: number;
+  readonly reworkPolicy?: ReworkPolicy;
+  readonly finalizationPricing?: FinalizationPricing;
+  readonly resumePricing?: RetryPricing;
+  readonly finalizer?: Finalizer;
   readonly taskId?: TaskId;
   readonly verdict?: Verdict;
-  readonly moved?: boolean;
-  readonly outcome?: WrapUpOutcome;
+  readonly outcome?: FinalizationOutcome;
+  readonly reason?: Reason;
 }
 
 /** One action of the machine, as the walk takes it. */
@@ -87,7 +94,7 @@ export interface WalkAction {
 }
 
 /** The verdict draw the completion event ranges over, as the model's `taskDone` writes it. */
-const verdictDraws: readonly Verdict[] = ["VPass", "VFail"];
+const verdictDraws: readonly Verdict[] = ["Pass", "Fail"];
 
 /**
  * Every well-formed authorable program, grown one stage at a time exactly as
@@ -120,91 +127,130 @@ function overTicketSet(
   };
 }
 
-const arrive: WalkAction = {
-  action: "arrive",
-  enabledIn: (config, core) => canArriveIn(config, core),
+/**
+ * Release draws every value it freezes onto the ticket, which is what makes a
+ * walk reach tickets authored differently from one another rather than a fleet
+ * of identical ones.
+ */
+const releaseTicket: WalkAction = {
+  action: "releaseTicket",
+  enabledIn: (config, core) => releasableIdsIn(config, core).length > 0,
   drawIn: (config, core, random) => ({
+    ticket: pickFrom(random, releasableIdsIn(config, core)),
     deps: subsetFrom(random, dependableIn(core)),
     program: pickFrom(random, validProgramsIn(config)),
-    project: pickFrom(random, projects(config)),
-    wrapUp: pickFrom(random, wrapUpChoices(config)),
+    workFanout: pickFrom(random, workFanoutChoices(config)),
+    reworkPolicy: pickFrom(random, reworkPolicyChoices(config)),
+    finalizationPricing: pickFrom(random, finalizationPricingChoices(config)),
+    resumePricing: pickFrom(random, resumePricingChoices),
+    finalizer: pickFrom(random, finalizerChoices),
   }),
   permitsIn: (config, core, drawn) => {
-    const { deps, program, project, wrapUp } = drawn;
+    const {
+      ticket,
+      deps,
+      program,
+      workFanout,
+      reworkPolicy,
+      finalizationPricing,
+      resumePricing,
+      finalizer,
+    } = drawn;
     if (
+      ticket === undefined ||
       deps === undefined ||
       program === undefined ||
-      project === undefined ||
-      wrapUp === undefined
+      workFanout === undefined ||
+      reworkPolicy === undefined ||
+      finalizationPricing === undefined ||
+      resumePricing === undefined ||
+      finalizer === undefined
     ) {
       return false;
     }
     return (
+      releasableIdsIn(config, core).includes(ticket) &&
       deps.every((d) => dependableIn(core).includes(d)) &&
-      depsDistinct(deps) &&
+      new Set(deps).size === deps.length &&
       isValidProgram(config, program) &&
-      projects(config).includes(project) &&
-      wrapUpChoices(config).some((choice) => wrapUpEquals(choice, wrapUp))
+      workFanoutChoices(config).includes(workFanout) &&
+      reworkBudget(reworkPolicy) <= reworkBudget(config.reworkPolicy) &&
+      finalizationPricingChoices(config).some((choice) =>
+        choice === "DeadlineOnly"
+          ? finalizationPricing === "DeadlineOnly"
+          : finalizationPricing !== "DeadlineOnly" &&
+            finalizationPricing.value === choice.value,
+      ) &&
+      resumePricingChoices.includes(resumePricing) &&
+      finalizerChoices.includes(finalizer)
     );
   },
 };
 
 const dispatch: WalkAction = {
   action: "dispatch",
-  enabledIn: (config, core) => readiesIn(core).length > 0,
-  drawIn: (config, core, random) => ({
+  enabledIn: (_config, core) => readiesIn(core).length > 0,
+  drawIn: (_config, core, random) => ({
     ticket: pickFrom(random, readiesIn(core)),
   }),
-  permitsIn: (config, core, drawn) =>
+  permitsIn: (_config, core, drawn) =>
     drawn.ticket !== undefined &&
     readiesIn(core).includes(drawn.ticket) &&
     dispatchableIn(core, drawn.ticket),
 };
 
+/** Tickets with a task the fabric could still report on — the set `tid` is drawn from. */
+function reportableIn(core: Core): readonly TicketId[] {
+  return taskPhaseIn(core).filter(
+    (j) => outstandingTaskIdsIn(core, j).length > 0,
+  );
+}
+
 const taskDone: WalkAction = {
   action: "taskDone",
-  enabledIn: (config, core) => taskPhaseIn(core).length > 0,
-  drawIn: (config, core, random) => {
-    const ticket = pickFrom(random, taskPhaseIn(core));
+  enabledIn: (_config, core) => reportableIn(core).length > 0,
+  drawIn: (_config, core, random) => {
+    const ticket = pickFrom(random, reportableIn(core));
     return {
       ticket,
-      taskId: pickFrom(random, deliverableTaskIds(core, ticket)),
+      taskId: asTaskId(pickFrom(random, outstandingTaskIdsIn(core, ticket))),
       verdict: pickFrom(random, verdictDraws),
     };
   },
-  permitsIn: (config, core, drawn) =>
+  permitsIn: (_config, core, drawn) =>
     drawn.ticket !== undefined &&
     drawn.taskId !== undefined &&
     drawn.verdict !== undefined &&
-    taskPhaseIn(core).includes(drawn.ticket) &&
-    deliverableTaskIds(core, drawn.ticket).includes(drawn.taskId),
+    reportableIn(core).includes(drawn.ticket) &&
+    outstandingTaskIdsIn(core, drawn.ticket).includes(drawn.taskId),
 };
 
-const wrapUpStart: WalkAction = {
-  action: "wrapUpStart",
-  enabledIn: (config, core) => wrapUpStartablesIn(core).length > 0,
-  drawIn: (config, core, random) => ({
-    ticket: pickFrom(random, wrapUpStartablesIn(core)),
-    moved: random.coin(),
+const finalizationResult: WalkAction = {
+  action: "finalizationResult",
+  enabledIn: (_config, core) => finalizingIn(core).length > 0,
+  drawIn: (_config, core, random) => ({
+    ticket: pickFrom(random, finalizingIn(core)),
+    outcome: pickFrom(random, finalizationOutcomes),
   }),
-  permitsIn: (config, core, drawn) =>
-    drawn.ticket !== undefined &&
-    drawn.moved !== undefined &&
-    wrapUpStartablesIn(core).includes(drawn.ticket),
-};
-
-const wrapUpResolve: WalkAction = {
-  action: "wrapUpResolve",
-  enabledIn: (config, core) => holdingIn(core).length > 0,
-  drawIn: (config, core, random) => ({
-    ticket: pickFrom(random, holdingIn(core)),
-    outcome: pickFrom(random, wrapUpOutcomes(true)),
-  }),
-  permitsIn: (config, core, drawn) =>
+  permitsIn: (_config, core, drawn) =>
     drawn.ticket !== undefined &&
     drawn.outcome !== undefined &&
-    holdingIn(core).includes(drawn.ticket) &&
-    wrapUpOutcomes(true).includes(drawn.outcome),
+    finalizingIn(core).includes(drawn.ticket) &&
+    finalizationOutcomes.includes(drawn.outcome),
+};
+
+const executionBlocked: WalkAction = {
+  action: "executionBlocked",
+  enabledIn: (_config, core) => taskPhaseIn(core).length > 0,
+  drawIn: (_config, core, random) => ({
+    ticket: pickFrom(random, taskPhaseIn(core)),
+    reason: pickFrom(random, executionBlockedReasons),
+  }),
+  permitsIn: (_config, core, drawn) =>
+    drawn.ticket !== undefined &&
+    drawn.reason !== undefined &&
+    taskPhaseIn(core).includes(drawn.ticket) &&
+    executionBlockedReasons.includes(drawn.reason),
 };
 
 const settle: WalkAction = {
@@ -216,18 +262,15 @@ const settle: WalkAction = {
 
 /** The roster, in `step`'s order; the suite holds it against the model's own. */
 export const walkActions: readonly WalkAction[] = [
-  arrive,
-  overTicketSet("release", (config, core) => draftsIn(core)),
-  overTicketSet("revoke", (config, core) => revocablesIn(core)),
+  releaseTicket,
+  overTicketSet("revoke", (_config, core) => revocablesIn(core)),
   dispatch,
   taskDone,
-  overTicketSet("workReduce", (config, core) => reducibleWorkIn(core)),
-  overTicketSet("evalReduce", (config, core) => reducibleEvalIn(core)),
-  wrapUpStart,
-  wrapUpResolve,
-  overTicketSet("completeDuplicate", (config, core) => doneIn(core)),
-  overTicketSet("revalFail", (config, core) => readiesIn(core)),
-  overTicketSet("opRetry", retryablesIn),
+  overTicketSet("workReduce", (_config, core) => reducibleWorkIn(core)),
+  overTicketSet("evalReduce", (_config, core) => reducibleEvalIn(core)),
+  finalizationResult,
+  executionBlocked,
+  overTicketSet("resumeTicket", (_config, core) => retryablesIn(core)),
   settle,
 ];
 
@@ -250,15 +293,22 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
     encode: (inner: T) => unknown,
   ): unknown => (value === undefined ? undefined : encode(value));
   return {
-    deps_: opt(drawn.deps, encodeDeps),
+    deps_: opt(drawn.deps, (deps) => encodeDeps(new Set(deps))),
+    finalizationPricing_: opt(drawn.finalizationPricing, (pricing) =>
+      encodeSumValue(pricing, encodeInt),
+    ),
+    finalizer_: opt(drawn.finalizer, encodeNullaryTag),
     j: opt(drawn.ticket, encodeInt),
-    moved: drawn.moved,
-    out: opt(drawn.outcome, encodeWrapUpOutcome),
+    out: opt(drawn.outcome, encodeNullaryTag),
     prog: opt(drawn.program, encodeProgram),
-    project_: opt(drawn.project, encodeInt),
+    resumePricing_: opt(drawn.resumePricing, encodeNullaryTag),
+    reworkPolicy_: opt(drawn.reworkPolicy, (policy) =>
+      encodeSumValue(policy, encodeInt),
+    ),
     tid: opt(drawn.taskId, encodeInt),
-    v: opt(drawn.verdict, encodeVerdict),
-    wrapUp_: opt(drawn.wrapUp, encodeWrapUp),
+    v: opt(drawn.verdict, encodeNullaryTag),
+    why: opt(drawn.reason, encodeNullaryTag),
+    workFanout_: opt(drawn.workFanout, encodeInt),
   };
 }
 
@@ -266,18 +316,21 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
 export function drawnPicks(drawn: Drawn): Picks {
   const wire = drawnWire(drawn);
   const itf = (value: unknown): ItfValue | undefined =>
-    value === undefined ? undefined : decodeValue(value);
+    value === undefined
+      ? undefined
+      : decodeValue(encodeValue(value as ItfValue));
   return {
     ticket: itf(wire["j"]),
     deps: itf(wire["deps_"]),
     program: itf(wire["prog"]),
-    project: itf(wire["project_"]),
-    wrapUp: itf(wire["wrapUp_"]),
+    workFanout: itf(wire["workFanout_"]),
+    reworkPolicy: itf(wire["reworkPolicy_"]),
+    finalizationPricing: itf(wire["finalizationPricing_"]),
+    resumePricing: itf(wire["resumePricing_"]),
+    finalizer: itf(wire["finalizer_"]),
     taskId: itf(wire["tid"]),
     verdict: itf(wire["v"]),
-    moved: itf(wire["moved"]),
     outcome: itf(wire["out"]),
-    decodeVerdict,
-    decodeWrapUpOutcome,
+    reason: itf(wire["why"]),
   };
 }

@@ -27,12 +27,8 @@
  */
 
 import type { Config } from "../domain/config.ts";
-import {
-  initRecord,
-  type Core,
-  type Decision,
-  type StepRecord,
-} from "../domain/core.ts";
+import type { Core, StepRecord } from "../domain/generated/modelTypes.ts";
+import { initRecord, type Decision } from "../domain/core.ts";
 import type { StepView } from "../domain/invariants.ts";
 import {
   decisionEventEnabled,
@@ -75,7 +71,7 @@ function decideEnabled(
 ): Decision {
   if (!decisionEventEnabled(config, memoryCore(state), event)) {
     throw new Error(
-      `${step}: ${event.event} is refused at this state; the actor journals no decision the machine would not take`,
+      `${step}: ${event.type} is refused at this state; the actor journals no decision the machine would not take`,
     );
   }
   return execDecisionEvent(config, memoryCore(state), event);

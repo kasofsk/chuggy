@@ -37,11 +37,11 @@ const ROOT = join(import.meta.dirname, "..", "..");
  */
 const INSTANCE_OWES: Record<string, readonly string[]> = {
   mc_chuggy_budgeted: [
-    "ticket-escalated wrapup_budget_exhausted",
+    "ticket-escalated finalization_budget_exhausted",
     "ticket-escalated rework_budget_exhausted",
   ],
   mc_chuggy_deadline_only: ["ticket-escalated gas_exhausted"],
-  mc_chuggy_retryfree: ["arm:operator-retry, RetryFree pipeline flavor"],
+  mc_chuggy_retryfree: ["arm:ticket-resumed, RetryFree pipeline flavor"],
 };
 
 const corpus = loadCorpus();
