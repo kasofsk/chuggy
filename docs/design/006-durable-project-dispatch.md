@@ -114,8 +114,8 @@ resolved configuration, repository base, acceptance criteria, task policy and
 artifact inputs. Those fields cannot be edited afterward. A correction revokes
 the ticket and releases a new ticket, which may carry a non-semantic successor
 link. Presentation-only metadata may remain editable outside `Core`, but it
-must not influence selection, execution, evaluation or wrap-up; any field that
-does belongs in the immutable released revision.
+must not influence selection, execution, evaluation or finalization; any
+field that does belongs in the immutable released revision.
 
 `ReleaseTicket` names the expected native draft revision. Its transaction locks
 the draft and refuses a changed, deleted or already-released revision. It
@@ -279,17 +279,17 @@ rework creates a new task rather than resurrecting an attempt.
 Transparent retry is limited to workers whose enforced contract confines writes
 to attempt-scoped immutable output storage. They may read the pinned input
 bundle but cannot mutate the project repository, deploy, message or alter
-external services. Wrap-up retains its distinct prepare/commit permit because
-it can mutate Git. A future effectful task type requires its own idempotency and
-reconciliation protocol; ordinary retry safety is enforced by credentials and
-network policy, not worker instructions.
+external services. Finalization retains its distinct prepare/commit permit
+because it can mutate Git. A future effectful task type requires its own
+idempotency and reconciliation protocol; ordinary retry safety is enforced by
+credentials and network policy, not worker instructions.
 
 Worker result manifests use a strict versioned schema with bounded counts and
 sizes, normalized paths and verified digests. Attempt credentials allow only
 create-only writes in that attempt namespace. Control-plane services treat
 artifacts as opaque and never execute or unsafely render them. Evaluation uses
-the same sandboxed bundle boundary, and wrap-up constructs and validates a
-candidate in isolation rather than copying a workspace blindly. Resolved policy
+the same sandboxed bundle boundary, and the finalizer constructs and validates
+a candidate in isolation rather than copying a workspace blindly. Resolved policy
 may require malware, secret or other scans as recorded evidence. Invalid or
 conflicting output fails the attempt and may raise a security alert without
 altering project state.
@@ -305,13 +305,13 @@ Results distinguish declared handoff artifacts from attempt diagnostics. Only
 schema-valid, policy-approved handoffs become authoritative passed-task output
 and may enter the exact immutable input bundle of downstream work. Logs,
 traces, caches and raw workspaces do not flow through dependencies. Final
-ticket output contracts and evaluation or wrap-up validate required handoffs;
-large objects remain project-scoped digest references rather than journal
-payloads. New work consumes outputs only from dependencies that reached
-`Done`.
+ticket output contracts and evaluation or finalization validate required
+handoffs; large objects remain project-scoped digest references rather than
+journal payloads. New work consumes outputs only from dependencies that
+reached `Done`.
 
 Artifacts referenced by journal state, released bundles, handoffs, evaluation
-or wrap-up remain for the project's authoritative lifetime. Replay verifies
+or finalization remain for the project's authoritative lifetime. Replay verifies
 their stable project identities and digests without fetching bytes merely to
 reconstruct `Core`. Raw workspaces, staging objects, verbose logs and other
 diagnostics have shorter explicit retention classes, with bounded audit,
@@ -327,7 +327,8 @@ historical authority, capacity attribution or unresolved execution identity.
 
 Tenant-wide execution capacity is a separate scheduling authority. It may
 coordinate work from several projects without joining their journals or
-guarding their ticket transitions.
+guarding their ticket transitions. Its slot accounting is modeled separately
+in `model/capacity.qnt`, below the ticket grain.
 
 Tenant-wide suspension, deletion, access response and policy rollout are
 audited control-plane sagas, never cross-project domain transactions. Admission
@@ -352,7 +353,7 @@ Database time determines lease validity. The owner replays the project, creates
 one bounded in-process mailbox and retains the project while it is active.
 Idle projects may be relinquished and unloaded.
 
-Every authority-bearing lease, credential, callback, preparation, wrap-up
+Every authority-bearing lease, credential, callback, preparation, finalization
 attempt/permit, signed capability and external-resource label also carries a
 global unpredictable recovery epoch. A point-in-time restore creates a fresh,
 never-reused epoch before mutation; project-local counters restored from the
@@ -779,7 +780,7 @@ refused and prior history remains auditable.
 Only work outside the project transaction becomes an immutable focused consumer
 request identified by project, journal sequence, effect position and item
 position. The PostgreSQL adapter inserts execution registration, execution
-cancellation and wrap-up requests directly into their consumer-specific durable
+cancellation and finalizer requests directly into their consumer-specific durable
 tables in the deciding transaction; it does not relay them through a generic
 in-database outbox. A spawn request names each exact logical task, kind, stable
 capacity account and pinned task-configuration revision needed downstream; a
@@ -873,89 +874,90 @@ unresolved logical tasks and emits exact idempotent cancellation instructions;
 it does not wait for Kubernetes termination. The scheduler persists cancellation
 and releases its logical slot before reconciling physical workload deletion.
 
-External Git wrap-up has a distinct irreversible boundary. After reversible
-preparation, its executor must submit a project-scoped commit-permit request.
-The writer serializes that request against revocation. Revocation first refuses
-the permit and Git must not advance; permit first makes later revocation too
-late, after which the executor performs the exact conditional ref update and
-durably reports its outcome. Ambiguous Git response is reconciled from the
-target ref and immutable commit identity before another outcome is accepted.
-A granted permit cannot expire into safety or be abandoned until that
-reconciliation proves whether the ref advanced.
+Finalization is one narrow `Core` boundary. A released ticket declares
+`NoFinalizer | ManagedFinalizer`, frozen with the rest of its contract.
+Evaluation completion either reaches `Done` directly or enters the single
+non-revocable `Finalizing` phase and emits `RunFinalizer`. The only subsequent
+domain input is `FinalizationResult(Succeeded | Failed)`: success reaches
+`Done`, and conclusive failure takes the existing priced rework/escalation
+path under the ticket's finalization pricing. Entering `Finalizing` is the
+domain point of no return; revocation is legal before that entry and refused
+after it, and a revocation racing the evaluation completion that would enter
+`Finalizing` resolves by journal order like every other mailbox race.
 
-After permit, only conclusive outcomes enter the project. `WrapUpCommitted`
-moves the ticket to done when the target ref proves the authorized commit.
-`WrapUpAborted` follows the existing abstract wrap-up failure path only when the
-service proves the ref did not advance and abort is safe. Timeout, unreadable ref
-or contradictory evidence leaves the ticket in `WrapUpCommitting` under
-operational attention; ambiguity cannot expire the permit, enable revocation or
-authorize another attempt.
+Everything else about finalization is the finalizer service's durable,
+project-scoped operational state: queue order, preparation, approval, permits,
+Git operations, reconciliation and repository exclusivity. The platform
+exposes only constrained, platform-owned finalizers; the phase never runs
+arbitrary further work. Git promotion of the produced branch is the initial
+implementation, not a model type.
 
-Each preparation creates an immutable wrap-up attempt containing the exact
-candidate commit, observed target ref/base, relevant digests and its own digest.
-`WrapUpPrepared` identifies that attempt. A native gate references the same
-identity and digest, and approval materializes `CommitWrapUp` for exactly that
-candidate; preparation cannot mutate an existing attempt, and re-preparation
-creates another identity. Journal envelope metadata pins the attempt reference
-without placing Git identifiers in `Core`.
+The service keeps a distinct irreversible boundary at the Git grain. After
+reversible preparation, its executor must obtain a project-scoped commit
+permit before the exact conditional ref update; the permit serializes the
+update against project closure and deletion, and fences stale executors by
+generation and recovery epoch. An ambiguous Git response is reconciled from
+the target ref and the immutable candidate commit identity before any outcome
+is accepted. A granted permit cannot expire into safety or be abandoned until
+that reconciliation proves whether the ref advanced.
 
-A deterministic failure before any permit exists submits
-`WrapUpPreparationFailed`, valid only in `WrapUpPreparing` for the currently
-authorized focused request. Temporary or ambiguous errors remain operational
-retries. The decision leaves preparation, frees the repository slot and uses
-the same wrap-up failure helper and account as rejected approval or conclusive
-safe abort: it enters rework when affordable or `Escalated` with a native action
-when exhausted. Bounded failure evidence remains in the journal envelope.
+Only conclusive evidence enters the project. `FinalizationSucceeded` requires
+the target ref to prove the authorized commit. `FinalizationFailed` requires
+proof that the ref did not advance and that abandoning the attempt is safe; a
+deterministic preparation failure or merge conflict concludes the same way and
+is priced as ordinary finalization failure, entering rework when affordable or
+`Escalated` with a native action when exhausted. Timeout, an unreadable ref or
+contradictory evidence is an operational hold under attention, not a `Core`
+event: ambiguity cannot expire the permit or authorize another attempt, and
+the ticket remains in `Finalizing` until reconciliation concludes.
+
+Each preparation creates an immutable finalization attempt containing the
+exact candidate commit, observed target ref and base, relevant digests and its
+own digest. Preparation cannot mutate an existing attempt; re-preparation
+creates another identity. Where a platform finalizer requires human approval,
+the approval is a native action referencing that attempt identity and digest,
+owned by the service's records rather than a `Core` phase. Journal envelope
+metadata pins the attempt reference without placing Git identifiers in `Core`.
 
 Attempt, candidate, action and permit identities remain in durable focused
-request/native-action records rather than `Core`. At most one current request
-is authorized for a ticket and phase. The project writer validates every
-callback or approval against that record, its generation and recovery epoch
-before constructing a semantic decision input. Stale, duplicate, cancelled or
-mismatched results produce no journal entry. Only the validated logical outcome
-reaches the decider, and the journal cause retains the authorizing request or
-action identity. Takeover reconstructs this correlation from PostgreSQL rather
-than process memory.
+request/native-action records rather than `Core`. At most one current
+finalizer request is authorized per ticket. Only the finalizer service may
+submit `FinalizationResult`, and the project writer validates that submission
+against the authorizing `RunFinalizer` request, its generation and recovery
+epoch before constructing a semantic decision input. Stale, duplicate,
+cancelled or mismatched results produce no journal entry. Only the validated
+logical outcome reaches the decider, and the journal cause retains the
+authorizing request identity. Takeover reconstructs this correlation from
+PostgreSQL rather than process memory.
 
-`WrapUpQueued` is the native durable queue and emits no external enqueue instruction.
-When the repository slot is free, the coordinator submits
-`StartWrapUpPreparation`; the writer enters `WrapUpPreparing` and emits
-`PrepareWrapUp`. The singleton slot is derived from preparing, holding and
-committing phases. Revocation remains legal through preparing and holding and
-cancels reversible preparation, but is too late after entry to committing.
+The service orders its work in deterministic FIFO by the project sequence that
+entered `Finalizing`, with repository/ref exclusivity serializing attempts on
+the project's one repository. Agentic selection governs which ready ticket
+begins work, not the continuation order of already-finalizing tickets. A
+ticket that fails into rework and later returns receives a new queue position;
+no manual finalization reorder exists initially. The order is a durable
+service policy rather than a `Core` invariant: a transactional projection
+derives it from the journal, replay rebuilds it, and PostgreSQL concurrency
+tests—not ticket state—prove the policy.
 
-The coordinator grants that slot in deterministic FIFO order by the project
-sequence that entered `WrapUpQueued`. Agentic selection governs which ready
-ticket begins work, not the continuation order of already-active tickets. A
-ticket that leaves for rework and later returns receives a new queue position;
-no manual wrap-up reorder exists initially.
+Each project's sole repository belongs only to it, so finalization never
+coordinates a Git ref across project journals. Repository/ref serialization
+remains local to that project's finalization work. A repository cannot be
+attached to another project, and moving it requires closing/exporting the
+source and importing it under a new project identity rather than sharing live
+authority. Multi-repository projects require a later explicit project-local
+design rather than a generic resource graph now.
 
-FIFO is a durable coordinator policy rather than a `Core` invariant. A
-transactional projection derives each current queue-entry sequence from the
-journal. The coordinator chooses the minimum, and the project writer rechecks
-that it remains the oldest eligible ticket and the repository slot remains free
-immediately before `StartWrapUpPreparation`. Leaving removes the entry;
-re-entry derives a new sequence. Replay rebuilds the projection, while
-PostgreSQL concurrency tests—not ticket state—prove the policy.
-
-Each project's sole repository belongs only to it, so wrap-up never coordinates
-a Git ref across project journals. Repository/ref serialization remains local
-to that project's wrap-up work. A repository cannot be attached to another
-project, and moving it requires closing/exporting the source and importing it
-under a new project identity rather than sharing live authority. Multi-repository
-projects require a later explicit project-local design rather than a generic
-resource graph now.
-
-The permit is wrap-up-specific rather than a generic irreversible-effect
+The permit is finalization-specific rather than a generic irreversible-effect
 framework. The reusable rule is only that an external point of no return which
 determines domain truth requires a serialized permit; any future integration
 must earn its own typed protocol and reconciliation semantics.
 
-Wrap-up does not consume the execution scheduler's commercial task slots. Its
-service has separate bounded concurrency and repository/ref exclusivity; its
-operational retries create neither new logical tasks nor additional task-slot
-usage. Any later commercial merge/deploy throughput is a distinct entitlement
-rather than an overloaded task-capacity rule.
+Finalization does not consume the execution scheduler's commercial task slots.
+Its service has separate bounded concurrency and repository/ref exclusivity;
+its operational retries create neither new logical tasks nor additional
+task-slot usage. Any later commercial merge/deploy throughput is a distinct
+entitlement rather than an overloaded task-capacity rule.
 
 ## Ticket-model impact
 
@@ -970,16 +972,15 @@ selector state, capacity, execution status and delivery retries remain outside
 `Core` stores no opaque release-contract reference merely for provenance.
 `ReleaseTicket` materializes every value that can affect later domain decisions
 into the new ticket: its work fan-out, evaluation program, accounts and pricing
-rules, and wrap-up kind. Later deciders read those immutable ticket values and
+rules, and finalizer kind. Later deciders read those immutable ticket values and
 do not accept a mutable ambient `Config`. Repository, template, artifact and
 configuration identities and digests remain in the immutable release bundle
 and journal envelope outside `Core`.
 
 Phase constructors lose type-letter prefixes and state their role directly:
-`Pending`, `Working`, `Evaluating`, `WrapUpQueued`,
-`WrapUpPreparing`, `WrapUpAwaitingApproval`, `WrapUpCommitting`, `Done`,
-`Escalated` and `Revoked`. The proposal does not introduce prefixed names for
-new states while leaving the old phase vocabulary inconsistent.
+`Pending`, `Working`, `Evaluating`, `Finalizing`, `Done`, `Escalated` and
+`Revoked`. The proposal does not introduce prefixed names for new states while
+leaving the old phase vocabulary inconsistent.
 
 Task vocabulary follows the same rule: `Outstanding` and `Resolved` states;
 `Passed`, `Failed` and `Cancelled` outcomes; `Work` and `Evaluation` kinds; and
@@ -988,20 +989,20 @@ Where the formal language requires globally distinct constructors, semantic
 compound names replace type-letter prefixes.
 
 The rule applies to every model constructor, not only states: constructors name
-their meaning rather than abbreviating their type. Wrap-up, artifact,
-observation, resume, reason, combinator and pricing variants use names such as
-`NoWrapUp`, `ExclusiveWrapUp`, `WrapUpFailed`, `ProducedArtifact`,
+their meaning rather than abbreviating their type. Finalizer, artifact,
+resume, reason, combinator and pricing variants use names such as
+`NoFinalizer`, `ManagedFinalizer`, `FinalizationSucceeded`, `ProducedArtifact`,
 `UnanimousPass` and `BudgetedRework`. Descriptive qualification
 needed for globally unique Quint constructors is retained; opaque `W`, `WO`,
 `A`, `R`, `Rs`, `C` and `RW` prefixes are not.
 
 Project identity therefore leaves each ticket and the pure release event. With
-one exclusively owned repository per project, resource-bearing wrap-up policy
-becomes a nullary project-local `ExclusiveWrapUp`; its singleton lease is
-derived from tickets in preparing, awaiting-approval or committing phases.
-Project/resource constants and attempt attribution inside `Core` disappear,
-while infrastructure envelopes retain the tenant/project partition for routing,
-authorization and audit.
+one exclusively owned repository per project, the resource-bearing finalizer
+declaration becomes the nullary `NoFinalizer | ManagedFinalizer`; repository
+exclusivity is the finalizer service's own durable record rather than a lease
+derived from ticket phases. Project/resource constants and attempt attribution
+inside `Core` disappear, while infrastructure envelopes retain the
+tenant/project partition for routing, authorization and audit.
 
 `CompleteDuplicate` leaves the actor's persisted decision vocabulary. It models
 redelivery of a completion effect, which the immutable per-effect identity now
@@ -1027,35 +1028,30 @@ longer represent one coherent domain fact.
 `OpRetry` remains a domain transition because it resumes an escalated ticket,
 may spend gas and may create new logical work, but it becomes `ResumeTicket`.
 Its remaining targets are `NoResume`, `ResumeWorking`, `ResumeEvaluating` and
-`ResumeWrapUp`; infrastructure retry never invokes this event.
+`ResumeFinalizing`; infrastructure retry never invokes this event.
 
 The external effect vocabulary loses native-desk `CreateDraft` and `Complete`;
 the former disappears with domain arrival, including the interpreter's special
 rule for recovering its subject from post-state. `Revoke` becomes the explicit
 `CancelTicketWork` scheduler obligation, from which the transaction materializes
-exact cancellation requests. `OpenHumanTask` and `OpenGate` remain explicit
-model obligations but create native action records in the decision transaction.
-`EnqueueWrapUp` disappears because `WrapUpQueued` is the native queue;
-`StartWrapUpPreparation` acquires the project-local repository slot and emits
-`PrepareWrapUp` for reversible external Git work.
+exact cancellation requests. `OpenHumanTask` remains an explicit model
+obligation but creates a native action record in the decision transaction;
+`OpenGate` disappears with the wrap-up phases, since any approval a platform
+finalizer needs is the service's own native action. `EnqueueWrapUp` and the
+queue-shaped `Dequeue` input disappear with the service-owned durable queue;
+entry to `Finalizing` emits the single `RunFinalizer` obligation instead.
 
-Wrap-up gains an explicit point-of-no-return refinement for the commit permit.
-The model must make revocation legal before that point and too late afterward,
-so ticket state cannot claim revocation when the externally visible Git update
-has already been authorized to commit.
-
-The refinement adds `WrapUpPreparing` and `WrapUpCommitting`. Reversible
-preparation reports `WrapUpPrepared`: a still-valid candidate grants the permit
-and enters committing, while an invalidated candidate enters existing
-`WrapUpAwaitingApproval` and opens a native gate. Gate failure follows the existing
-rework path; gate success grants the permit, enters committing and emits
-`CommitWrapUp`. A still-valid prepared candidate likewise emits
-`CommitWrapUp` on entry to committing. That focused request is the sole
-authorization for the exact conditional Git ref update. The old queue-shaped
-`Dequeue` input becomes `StartWrapUpPreparation`. Only authoritative Git commit
-confirmation moves a wrap-up ticket from committing to `Done`; revocation is
-legal before committing and too late afterward. The termination measure and
-wrap-up proofs change model-first with these phases.
+Finalization keeps an explicit point-of-no-return refinement, moved to the
+phase boundary. Entering `Finalizing` is the domain point of no return: the
+model makes revocation legal before that entry and refused after it, so ticket
+state cannot claim revocation once the finalizer has been authorized to run.
+`RunFinalizer` is the sole authorization for the service's work, and only a
+validated `FinalizationResult` moves the ticket out—success to `Done`,
+conclusive failure to the priced rework path. The finer Git-grain
+discipline—reversible preparation, the commit permit, reconciliation of
+ambiguity—lives in the finalizer service's durable records and its own
+concurrency tests. The termination measure and finalization proofs change
+model-first with the single phase.
 
 The existing unpartitioned in-memory journal, cursor, wire bytes and golden
 fixtures are pre-production scaffolding rather than customer authority. They
@@ -1083,8 +1079,9 @@ Semantic ports do not require one network service each. The initial deployment
 has an authenticated web service for submission, reads, configuration and SSE;
 a dispatcher service for multiplexed project actors, continuations, selection
 requests and decision transactions; an execution service for registration,
-capacity, Kubernetes and completion; and a wrap-up service for Git preparation,
-commit permit and reconciliation. Detached selector workers may initially run
+capacity, Kubernetes and completion; and a finalizer service for Git
+preparation, commit permit and reconciliation. Detached selector workers may
+initially run
 inside the dispatcher deployment with separate concurrency and pool budgets.
 These module boundaries permit later separation without adding network hops
 before scale, isolation or rollout needs earn them.
@@ -1215,11 +1212,11 @@ evidence that the storage contract survives concurrency and process death.
 admission and selection, advances lifecycle and ownership epochs, fences the
 old owner and credentials, and permits one newly fenced logical writer to run
 only deletion-approved commands. That writer journals modeled revocations,
-requests execution and reversible wrap-up cancellation, consumes terminal
-resource-releasing reports, administratively cancels remaining pending
-operations and reconciles irreversible wrap-up. It cannot release, dispatch,
-resume or create work. After closure invariants hold, immutable `Retention`
-admits no writer.
+requests execution cancellation and reversible finalization abort, consumes
+terminal resource-releasing reports, administratively cancels remaining pending
+operations and reconciles irreversible finalization. It cannot release,
+dispatch, resume or create work. After closure invariants hold, immutable
+`Retention` admits no writer.
 
 An `IntegrityBlocked` project is not replayed merely to delete it and receives
 no fabricated terminal `Core`. Infrastructure quiesces its credentials,
@@ -1228,13 +1225,16 @@ manifest records that domain closure could not be established. The frozen
 journal then follows the retention and erasure policy as untrusted evidence.
 
 Entering `Deleting` fences the ordinary dispatcher owner. The closure writer
-revokes nonterminal tickets, requests cancellation of every execution that has not
-crossed an irreversible boundary, removes worker credentials and waits for
-scheduler attempts to become terminal and release capacity. Wrap-up in
-`Preparing` or `AwaitingApproval` may abort safely; `Committing` must reconcile
-to conclusively committed or aborted before repository evidence is removed.
-The deletion operation remains visibly pending during that hold. Retention and
-physical erasure begin only after authoritative work is quiescent.
+revokes nonterminal tickets outside `Finalizing`, requests cancellation of
+every execution that has not crossed an irreversible boundary, removes worker
+credentials and waits for scheduler attempts to become terminal and release
+capacity. A `Finalizing` ticket cannot be revoked: an attempt that never
+obtained the commit permit aborts safely and concludes `FinalizationFailed`,
+after which the closure writer revokes the ticket; an attempt past the permit
+must reconcile to a conclusive `FinalizationResult` before repository evidence
+is removed. The deletion operation remains visibly pending during that hold.
+Retention and physical erasure begin only after authoritative work is
+quiescent.
 
 Project deletion proceeds through `Deleting`, domain closure, operational
 cleanup, retention and final physical erasure. Suspension rejects new work and
@@ -1283,9 +1283,9 @@ required to keep the repository coherent:
 - project-local dependency admission, readiness and atomic transitive revoke
   closure independent of numeric ID order;
 - the unprefixed phase, task, verdict, policy, reason and effect vocabulary;
-- `WrapUpQueued`, `WrapUpPreparing`, `WrapUpAwaitingApproval` and
-  `WrapUpCommitting`, including `WrapUpPreparationFailed` and the irreversible
-  commit boundary;
+- one non-revocable `Finalizing` phase with the `RunFinalizer` obligation and
+  the `FinalizationResult` input, entry to the phase as the domain point of no
+  return;
 - `ExecutionBlocked` with bounded reasons including
   `TicketConfigIncompatible`, distinct from failed work;
 - removal of `Arrive`, draft state, transport-duplicate decisions,
@@ -1307,7 +1307,7 @@ The infrastructure tranche must provide durable relations equivalent to:
 - expected-head journal entries, current project state/projections and durable
   continuations;
 - selector requests/results, native actions/gates and access-controlled audit;
-- focused execution registration/cancellation, wrap-up preparation/commit and
+- focused execution registration/cancellation, finalizer preparation/commit and
   optional-integration requests;
 - scheduler logical tasks, physical attempts, capacity allocation and terminal
   result manifests;
@@ -1317,8 +1317,8 @@ The infrastructure tranche must provide durable relations equivalent to:
 
 At minimum, database constraints enforce composite project ownership, one
 effective journal cause, unique inbox source, permanent accepted idempotency,
-one terminal operation outcome, one current wrap-up request per authorized
-phase, deterministic effect/request identity, one terminal logical task result
+one terminal operation outcome, one current finalizer request per authorized
+ticket, deterministic effect/request identity, one terminal logical task result
 and non-reuse of project, ticket, task, execution, attempt and permit identity
 in their declared scopes.
 
@@ -1391,7 +1391,7 @@ first.
 | I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. |
 | I5 | I3 | Agentic selection: immutable selection views, detached requests/results, bounded deferral and one-shot manual dispatch. Selection failure never becomes a hidden FIFO dispatch policy. |
 | I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. |
-| I7 | I6 | Wrap-up preparation, native approval, commit permit and reconciliation. The reversible/irreversible boundary is proven with revoke-before-permit and revoke-after-permit races. |
+| I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, and sole `FinalizationResult` submission authority. Proven with revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. |
 | I8 | I0–I7 | Managed PostgreSQL deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions and permits. Old-epoch actors remain rejected after restore. |
 | I9 | I2–I8 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. |
-| I10 | I6–I9 | Deletion lifecycle: fenced closure writer, execution/wrap-up quiescence, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. |
+| I10 | I6–I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. |
