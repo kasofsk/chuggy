@@ -130,6 +130,53 @@ test("configuration revisions are immutable and parented inside one project", as
   );
 });
 
+test("configuration revision identity is project-local", async () => {
+  const first = await postgresHarnessProject(harness.store, "config-local-a");
+  const second = await postgresHarnessProject(harness.store, "config-local-b");
+  const revision = asConfigurationRevisionId(`shared-${randomUUID()}`);
+  const canonical = asCanonicalConfiguration("{}");
+  const store = postgresAuthoring(pool);
+
+  const results = await Promise.all(
+    [first, second].map(async (partition) =>
+      store.createConfiguration({
+        partition,
+        authority,
+        revision,
+        canonical,
+      }),
+    ),
+  );
+  assert.deepEqual(
+    results.map((result) => result.created),
+    ["Created", "Created"],
+  );
+});
+
+test("concurrent identical configuration creation is idempotent", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "config-concurrent",
+  );
+  const revision = asConfigurationRevisionId(`concurrent-${randomUUID()}`);
+  const input = {
+    partition,
+    authority,
+    revision,
+    canonical: asCanonicalConfiguration("{}"),
+  };
+  const store = postgresAuthoring(pool);
+  const results = await Promise.all([
+    store.createConfiguration(input),
+    store.createConfiguration(input),
+  ]);
+
+  assert.deepEqual(results.map((result) => result.created).sort(), [
+    "AlreadyExists",
+    "Created",
+  ]);
+});
+
 test("draft edits are versioned and deletion leaves an unreusable identity", async () => {
   const { partition, store, revision, draft } = await draftFixture();
   assert.deepEqual(
@@ -248,7 +295,8 @@ test("release journals the retained draft only while its revision is current", a
 test("an edit after acceptance durably refuses release without an entry", async () => {
   const fixture = await draftFixture();
   const submission = releaseSubmission(fixture);
-  await harness.inbox.accept(submission);
+  const acceptance = await harness.inbox.accept(submission);
+  assert.equal(acceptance.accepted, "Accepted");
   const input = await harness.discovery.next(fixture.partition);
   assert.ok(input !== undefined);
   await fixture.store.reviseDraft({
@@ -285,4 +333,25 @@ test("an edit after acceptance durably refuses release without an entry", async 
     ),
     [{ head: "0" }],
   );
+});
+
+test("release acceptance rejects a revision that was never retained", async () => {
+  const fixture = await draftFixture();
+  const valid = releaseSubmission(fixture);
+  const submission: Submission = {
+    ...valid,
+    command: {
+      version: 1,
+      command: "ReleaseDraft",
+      ticket: fixture.draft.ticket,
+      authoringVersion: fixture.draft.authoringVersion + 1,
+      configurationRevision: fixture.revision,
+    },
+  };
+
+  assert.equal(
+    (await harness.inbox.accept(submission)).accepted,
+    "InvalidCommand",
+  );
+  assert.equal(await harness.discovery.next(fixture.partition), undefined);
 });

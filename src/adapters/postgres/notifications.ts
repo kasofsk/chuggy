@@ -84,11 +84,13 @@ async function readNotifications(
       bounds.rows[0]?.earliest ?? null,
       "earliest notification",
     );
-    const latest =
-      optionalCounter(bounds.rows[0]?.latest ?? null, "latest notification") ??
-      after;
+    const latest = optionalCounter(
+      bounds.rows[0]?.latest ?? null,
+      "latest notification",
+    );
     if (earliest !== undefined && after < earliest - 1)
-      return { result: "Reset", cursor: latest };
+      return { result: "Reset", cursor: latest ?? 0 };
+    if (after > (latest ?? 0)) return { result: "Reset", cursor: latest ?? 0 };
     const found = await client.query<NotificationRow>(
       `SELECT ordinal,kind,resource,project_seq,authoring_version
          FROM project_notification

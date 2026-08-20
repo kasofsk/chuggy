@@ -34,6 +34,28 @@ test("public operations omit commands, authority, and storage coordination", () 
   assert.equal("fencingEpoch" in resource, false);
 });
 
+test("public operations expose an authoring-fence refusal", () => {
+  assert.deepEqual(
+    publicOperation({
+      operation: "release-race",
+      accepted_at: "2026-01-01T00:00:00Z",
+      state: "Refused",
+      decided_seq: null,
+      outcome_code: "AuthoringChanged",
+      refused_head: "3",
+      refused_lifecycle_generation: "2",
+    }),
+    {
+      operation: "release-race",
+      acceptedAt: "2026-01-01T00:00:00Z",
+      state: "Refused",
+      code: "AuthoringChanged",
+      refusedHead: 3,
+      refusedLifecycleGeneration: 2,
+    },
+  );
+});
+
 test("operation polling reads the durable public state", async () => {
   const partition = await postgresHarnessProject(
     subject.harness.store,

@@ -64,3 +64,21 @@ test("an expired cursor resets instead of pretending the stream is complete", as
     [{ earliest: "3", count: "1000" }],
   );
 });
+
+test("a cursor beyond the project log resets to its latest event", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "notify-future",
+  );
+  await subject.harness.query(
+    `SELECT ${notificationPublishFunction}($1,$2,'Draft','1',NULL,1)`,
+    [partition.tenant, partition.project],
+  );
+  assert.deepEqual(
+    await postgresNotifications(subject.pool).read(partition, {
+      after: 500,
+      limit: 10,
+    }),
+    { result: "Reset", cursor: 1 },
+  );
+});

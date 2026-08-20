@@ -46,7 +46,12 @@ function operationState(value: string): OperationState {
 }
 
 function refusalCode(value: string): OperationRefusalCode {
-  if (value === "NotEnabled" || value === "CommandUnreadable") return value;
+  if (
+    value === "NotEnabled" ||
+    value === "AuthoringChanged" ||
+    value === "CommandUnreadable"
+  )
+    return value;
   throw new Error(`native read: ${value} is not a public refusal code`);
 }
 

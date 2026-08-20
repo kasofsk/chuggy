@@ -1164,7 +1164,6 @@ const nativeAuthoring = [
        REFERENCES project (tenant,project),
      CONSTRAINT configuration_revision_parent_is_local FOREIGN KEY (tenant,project,parent)
        REFERENCES configuration_revision (tenant,project,revision),
-     CONSTRAINT configuration_revision_identity_is_global UNIQUE (revision),
      CONSTRAINT configuration_revision_content_is_bounded CHECK (length(canonical) BETWEEN 1 AND 65536)
    )`,
   `CREATE TABLE draft (
@@ -1195,19 +1194,20 @@ const nativeAuthoring = [
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE existing configuration_revision%ROWTYPE;
      BEGIN
-       SELECT * INTO existing FROM configuration_revision
-        WHERE tenant=in_tenant AND project=in_project AND revision=in_revision;
-       IF FOUND THEN
-         RETURN CASE WHEN existing.canonical=in_canonical AND existing.digest=in_digest
-           AND existing.parent IS NOT DISTINCT FROM in_parent THEN 'AlreadyExists' ELSE 'IdentityConflict' END;
-       END IF;
        IF in_parent IS NOT NULL AND NOT EXISTS (SELECT 1 FROM configuration_revision
           WHERE tenant=in_tenant AND project=in_project AND revision=in_parent) THEN RETURN 'ParentNotFound'; END IF;
        INSERT INTO configuration_revision
          (tenant,project,revision,parent,canonical,digest,authority_kind,authority_subject)
-       VALUES (in_tenant,in_project,in_revision,in_parent,in_canonical,in_digest,in_kind,in_subject);
-       PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Configuration',in_revision,NULL,NULL);
-       RETURN 'Created';
+       VALUES (in_tenant,in_project,in_revision,in_parent,in_canonical,in_digest,in_kind,in_subject)
+       ON CONFLICT (tenant,project,revision) DO NOTHING;
+       IF FOUND THEN
+         PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Configuration',in_revision,NULL,NULL);
+         RETURN 'Created';
+       END IF;
+       SELECT * INTO existing FROM configuration_revision
+        WHERE tenant=in_tenant AND project=in_project AND revision=in_revision;
+       RETURN CASE WHEN existing.canonical=in_canonical AND existing.digest=in_digest
+         AND existing.parent IS NOT DISTINCT FROM in_parent THEN 'AlreadyExists' ELSE 'IdentityConflict' END;
      END $$`,
   `CREATE FUNCTION ${draftCreateFunction}(in_tenant text,in_project text,in_configuration text,
       in_authoring text,in_kind text,in_subject text)
