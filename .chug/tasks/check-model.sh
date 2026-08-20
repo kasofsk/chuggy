@@ -18,6 +18,13 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
+# Every verdict below is read out of Quint's own output — the passing count, the
+# failure line, the error marker — so a colour escape in front of a numeral is
+# a suite that ran reported as one that did not. `NO_COLOR` is the switch and a
+# caller's `FORCE_COLOR` beats it.
+unset FORCE_COLOR
+export NO_COLOR=1
+
 QUINT_VERSION="0.32.0"
 
 if [ -x ./node_modules/.bin/quint ]; then

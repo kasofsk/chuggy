@@ -1,11 +1,13 @@
 # Durable project dispatch
 
-**Status: M0, G0 AND I0 LANDED** — issue #92 agreed these decisions and the
-tree now carries the first three rows of the landing table: `model/` proves the
-project-scoped `Core`, `src/generated/model-api.ts` is generated from
+**Status: M0, G0, I0 AND I1 LANDED** — issue #92 agreed these decisions and
+the tree now carries the first four rows of the landing table: `model/` proves
+the project-scoped `Core`, `src/generated/model-api.ts` is generated from
 `model/api.qnt`, and `src/adapters/postgres/` holds the lifecycle row, the
-ownership lease and the expected-head journal append, under
-`.chug/tasks/check-postgres.sh`. Operations, the inbox, the mailbox, the
+ownership lease, the expected-head journal append, the authority-scoped
+operation with its permanent idempotency, the ingress ordinal, the durable
+inbox and the readiness generation that indexes it, under
+`.chug/tasks/check-postgres.sh`. The decision transaction, the mailbox, the
 selection service, the scheduler and the durable consumer request tables are
 not built, so the body below still argues them.
 
@@ -380,8 +382,17 @@ projects' journals or ticket contents. Acceptance locks the project ingress
 counter/lifecycle row and atomically allocates the inbox ordinal, inserts the
 operation and inbox item, and upserts a new readiness generation. The inbox is
 authoritative and readiness is its discovery index. Activation verifies the
-inbox. Clearing readiness locks and proves no consumable item remains while a
-generation prevents an idle owner from erasing a concurrent wake-up. A repair
+inbox. Clearing readiness locks the readiness row and proves no consumable item
+remains, and that lock is what orders it against a concurrent acceptance rather
+than letting an idle owner erase a wake-up: an acceptance either commits first,
+leaving its item visible to the proof and its generation raised, or it has not
+yet reached its readiness upsert and blocks on the lock the clearing holds —
+where the proof finds nothing consumable, the clear commits, and the blocked
+upsert raises readiness again behind it. A generation additionally refuses a
+clear whose
+observation predates an acceptance, which matters because that observation is
+taken outside the clearing transaction, and is conservative where the operations
+accepted since have all been cancelled. A repair
 scan detects any inbox-bearing project missing readiness but is not required
 for correctness. Optional database notifications reduce latency but never
 replace bounded polling of the durable readiness relation.
@@ -1371,7 +1382,7 @@ first.
 | M0 | — | Project-scoped sparse-ID `Core`, vocabulary and transition migration | Landed |
 | G0 | M0 | Generated TypeScript model API declarations from issue #98 | Landed |
 | I0 | M0, G0 | PostgreSQL foundation: lifecycle rows, composite keys, roles, ownership lease and fencing epoch, expected-head journal append, recovery epoch | Landed |
-| I1 | I0 | Authority-scoped operation/idempotency rows, ingress ordinal, durable inbox/readiness and cancellation race. Acceptance atomically writes operation, inbox and readiness; a crash after acceptance remains discoverable without an active owner. | — |
+| I1 | I0 | Authority-scoped operation and idempotency rows, ingress ordinal, durable inbox and readiness generation, cancellation race | Landed |
 | I2 | I1 | The project decision transaction: replay/load, lifecycle/lease/head/revision fences, journal append, operation terminalization, inbox acknowledgement and primary projection update. Refusal has no journal entry; ambiguous commit resolves by durable read. | — |
 | I3 | I2 | Bounded project mailbox, priority/aging and durable deterministic continuations; focused native-action and consumer-request tables materialized in the deciding transaction. Process death cannot lose or duplicate a continuation or external request. | — |
 | I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. | — |
