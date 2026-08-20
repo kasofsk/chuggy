@@ -18,7 +18,7 @@ This is not a cost argument. The rehearsal costs roughly what the apply costs; i
 
 ## The rig
 
-k3s, as it already runs: a single node, with Flannel, Traefik, a hostPath-backed default storage class, and Flux reconciling. It stays. A Talos and Cilium rehearsal is a later phase of its own, before the apply — machine configuration, bootstrap and default-deny egress are what it exists to exercise — rather than a rebuild of a rig that already reconciles.
+k3s, as it already runs: a single node, with Flannel, Traefik, a hostPath-backed default storage class, and Flux reconciling. It stays. What D3 exercises is Kubernetes' own vocabulary — labels, taints, network policy — and k3s enforces policy itself rather than borrowing it from the CNI, so the isolation rehearsal needs no other distribution and no rebuild of a rig that already reconciles. Which OS the production nodes run is unsettled, and that question belongs with the apply.
 
 PostgreSQL is the StatefulSet already in the cluster, not an external server. What the rehearsal is about is the deployment's relationship with a server: which identity migrates, which roles log in, what the recovery path writes before anything else may. An external server answers none of those differently, and it removes the one question that only an in-cluster server poses, which is who on the network may reach it.
 
@@ -34,9 +34,9 @@ The recovery epoch is a control-plane write the dispatcher role provably cannot 
 
 ## What the rehearsal cannot see
 
-Said plainly, so nobody trusts it further than it goes: node-pool isolation, because one node makes work and system the same machine; default-deny egress, which needs the CNI the later phase brings; Talos machine configuration and bootstrap; CSI attach, detach and resize, because the rig's volumes are directories on a node; a real certificate chain; and every GCP row — the token exchange, disk provisioning, the registry pull credential, Cloud NAT's behaviour.
+Said plainly, so nobody trusts it further than it goes: that work and system are different machines, because one node makes them the same — D3's labels and taints express the split, and only a second node would prove it; node machine configuration and bootstrap, which first meet reality at the apply; CSI attach, detach and resize, because the rig's volumes are directories on a node; a real certificate chain; and every GCP row — the token exchange, disk provisioning, the registry pull credential, Cloud NAT's behaviour.
 
-The Talos phase reaches the isolation, egress and machine-configuration rows. The rest is the apply's, which is why the apply is still a row.
+D3 reaches the placement and egress rules themselves; the machines underneath them are the apply's, which is why the apply is still a row.
 
 ## The seams that stay seams
 
@@ -51,7 +51,7 @@ The rig must not become a design input. The seams that keep it out are these, an
 | D0 | The rig's PostgreSQL made real: per-service login roles, the membership grants, `.chug/tasks/check-postgres.sh` <!-- intent --> run against the rig's server, and the policy that makes it reachable only from authorized workloads | I0, I1 | Proposed |
 | D1 | The git service and the Flux loop: a git service over smart HTTP, the repository seeded, Flux reconciling from it | — | Proposed |
 | D2 | The durability rehearsal: a real dump and restore, a fresh epoch established before any mutation, an old-epoch actor refused afterwards | D0 | Proposed |
-| D3 | The Talos and Cilium rehearsal: a local Talos cluster, the pool labels and taints on genuinely separate nodes, default-deny egress | D1 | Proposed |
+| D3 | The isolation rehearsal, on the rig as it stands: the pool labels and taints placing work and system apart, default-deny egress on the job namespace, and the metadata endpoint refused by policy rather than by the rig's not having one | D1 | Proposed |
 | D4 | The GCP apply, issue #75 | D0, D1, D2, D3 | Proposed |
 
 D0 through D2 need nothing beyond I0 and I1, and `src/interpreter/secretSource.ts` <!-- intent --> is the only seam any of them touch.
