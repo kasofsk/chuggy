@@ -33,8 +33,8 @@
  *
  * IT ACCEPTS AND IT DOES NOT DECIDE. Nothing here consumes an inbox item,
  * appends a journal entry, terminalizes an operation from a decision or
- * updates a projection: that is the project decision transaction, which is
- * slice I2. Cancellation is the one path that terminalizes, because 006 makes
+ * updates a projection: that is `./projectDecision.ts`, and it is the
+ * dispatcher's. Cancellation is the one path that terminalizes, because 006 makes
  * it an infrastructure transaction that must remain available without a
  * healthy project writer.
  */

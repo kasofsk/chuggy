@@ -81,9 +81,12 @@ const tableWide: readonly string[] = [
   `${dispatcherRole} inbox_item SELECT`,
   `${dispatcherRole} journal_entry INSERT`,
   `${dispatcherRole} journal_entry SELECT`,
+  `${dispatcherRole} operation SELECT`,
   `${dispatcherRole} project SELECT`,
   `${dispatcherRole} project_readiness SELECT`,
   `${dispatcherRole} recovery_epoch SELECT`,
+  `${dispatcherRole} ticket_projection INSERT`,
+  `${dispatcherRole} ticket_projection SELECT`,
 ];
 
 /** Every privilege held on named columns, with the columns it names. */
@@ -103,16 +106,11 @@ const columnWise: readonly string[] = [
    * narrower grant.
    */
   `${apiRole} project_readiness UPDATE (generation, ready)`,
-  /**
-   * Ownership is the dispatcher's to move, so this grant also permits writing
-   * a superseded owner and fencing epoch back onto an `Active` project, which
-   * reinstates a fenced tenure by direct table write. kasofsk/chuggy#115
-   * decided against narrowing the grant — what closes it is a constraint on
-   * the values those columns may take, carried by a later slice — so this
-   * expected set is where it stays.
-   */
+  `${dispatcherRole} inbox_item UPDATE (consumable)`,
+  `${dispatcherRole} operation UPDATE (decided_seq, outcome_code, refused_head, refused_lifecycle_generation, settled_at, settled_authority_kind, settled_authority_subject, state)`,
   `${dispatcherRole} project UPDATE (fencing_epoch, head, lease_expires_at, owner, recovery_epoch)`,
   `${dispatcherRole} project_readiness UPDATE (ready)`,
+  `${dispatcherRole} ticket_projection UPDATE (phase, seq)`,
 ];
 
 /** Every routine either role may execute. */

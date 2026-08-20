@@ -34,10 +34,7 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { encodeEntry } from "../../src/interpreter/wire.ts";
-import {
-  postgresHarnessFirstEntry,
-  postgresHarnessJournal,
-} from "./harness.ts";
+import { postgresHarnessEntry, postgresHarnessJournal } from "./harness.ts";
 
 /** The partition these vectors were taken under, fixed so the digests can be written down. */
 const pinnedPartition: Partition = {
@@ -87,7 +84,7 @@ test("the chain those bytes produce is the one written down here", () => {
 });
 
 test("a chain built for one partition does not verify under another", () => {
-  const first = postgresHarnessFirstEntry();
+  const first = postgresHarnessEntry(0);
   const genesis = journalChainGenesis(pinnedPartition);
   const home = journalChainDigest(pinnedPartition, genesis, first);
   for (const other of otherPartitions) {

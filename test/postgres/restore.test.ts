@@ -18,13 +18,17 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import { projectWriterDecide } from "../../src/interpreter/projectWriter.ts";
 import {
+  postgresHarnessAccepted,
   postgresHarnessExpire,
+  postgresHarnessHistory,
   postgresHarnessJournal,
   postgresHarnessNewEpoch,
   postgresHarnessOpen,
   postgresHarnessOwner,
   postgresHarnessProject,
+  postgresHarnessWriter,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -40,21 +44,28 @@ after(async () => {
 
 test("a lease issued before a restore can neither commit nor renew after it", async () => {
   const partition = await postgresHarnessProject(harness.store, "restore");
-  const acquired = await harness.store.acquire(
+  const memory = await postgresHarnessHistory(
+    harness,
     partition,
-    postgresHarnessOwner("preRestore"),
-    3600,
+    "preRestore",
+    0,
   );
-  assert.ok(acquired.acquired === "Granted");
-  const stranded = acquired.lease;
-
-  const first = postgresHarnessJournal()[0];
-  assert.ok(first !== undefined);
+  const stranded = memory.lease;
+  const item = await postgresHarnessAccepted(
+    harness.inbox,
+    partition,
+    "restore",
+    0,
+  );
 
   await harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
 
-  const refused = await harness.store.append(stranded, first);
-  assert.equal(refused.appended, "Fenced");
+  const refused = await projectWriterDecide(
+    postgresHarnessWriter(harness),
+    memory,
+    item,
+  );
+  assert.equal(refused.decided.decided, "Fenced");
 
   const renewal = await harness.store.renew(stranded, 3600);
   assert.equal(renewal.renewed, "Fenced");
@@ -93,22 +104,18 @@ test("a lease taken after the restore carries the new epoch, and commits and rep
   const epoch = await harness.store.establishRecoveryEpoch(
     postgresHarnessNewEpoch(),
   );
-  const acquired = await harness.store.acquire(
+  const memory = await postgresHarnessHistory(
+    harness,
     partition,
-    postgresHarnessOwner("postRestore"),
-    3600,
+    "postRestore",
+    1,
   );
-  assert.ok(acquired.acquired === "Granted");
-  assert.equal(acquired.lease.recoveryEpoch, epoch);
+  assert.equal(memory.lease.recoveryEpoch, epoch);
+  assert.equal(memory.lease.head, 1);
 
-  const first = postgresHarnessJournal()[0];
-  assert.ok(first !== undefined);
-  const appended = await harness.store.append(acquired.lease, first);
-  assert.equal(appended.appended, "Committed");
-
-  const loaded = await harness.store.load(acquired.lease);
+  const loaded = await harness.store.load(memory.lease);
   assert.ok(loaded.parsed === "Ok");
-  assert.deepEqual(loaded.value, [first]);
+  assert.deepEqual(loaded.value, [postgresHarnessJournal()[0]]);
 });
 
 test("the stranded owner's project is acquired afresh under the current epoch", async () => {

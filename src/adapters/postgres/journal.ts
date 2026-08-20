@@ -1,12 +1,13 @@
 /**
- * The expected-head journal append, and the load that replays it.
+ * The journal write, and the load that replays it.
  *
- * ONE TRANSACTION CHECKS EVERYTHING AND THEN WRITES. Lifecycle, lease, fencing
- * epoch, recovery epoch and the expected head are all rechecked against the
- * locked partition row in the same transaction as the insert and the head
- * advance. A caller that verified them a moment earlier verified them against
- * a row another writer may since have taken, which is why the lease is an
- * argument rather than an assumption.
+ * THE WRITE IS NOT A TRANSACTION AND HAS NO CALLER BUT ONE. Lifecycle, lease,
+ * fencing epoch, recovery epoch and the expected head are rechecked against
+ * the locked partition row by `./decision.ts`, which then calls this in the
+ * same transaction as the operation outcome, the acknowledgement and the
+ * projection. Splitting the checks from the insert here would put them a
+ * commit apart, and a caller that verified them a moment earlier verified them
+ * against a row another writer may since have taken.
  *
  * THE HEAD AND THE SEQUENCE ARE THE SAME NUMBER. An entry's `seq` is the
  * project's head plus one, so the primary key that stores it is also the
@@ -16,7 +17,7 @@
  * error rather than a typed refusal.
  *
  * THE LOAD TAKES THE SAME LOCK AND THE SAME LEASE. It replays under the tenure
- * the append will commit in, so a lease the row no longer honours is refused
+ * the decision will commit in, so a lease the row no longer honours is refused
  * rather than served a prefix.
  *
  * THE ENTRY IS STORED AS THE WIRE TEXT THE PORT PARSES BACK. The domain event
@@ -43,8 +44,8 @@
 import type pg from "pg";
 
 import type { Entry } from "../../actor/journal.ts";
+import type { OperationId } from "../../interpreter/operationInbox.ts";
 import type {
-  Appended,
   Lease,
   Partition,
   ProjectStanding,
@@ -83,11 +84,17 @@ async function postgresJournalPrevious(
 }
 
 /** Inserts the entry and advances the head, which are one write as far as any reader is concerned. */
-async function postgresJournalWrite(
+export async function postgresJournalWrite(
   client: pg.PoolClient,
   lease: Lease,
   entry: Entry,
+  cause: OperationId,
 ): Promise<void> {
+  if (entry.seq !== lease.head + 1) {
+    throw new Error(
+      `postgres journal: entry ${String(entry.seq)} was offered against head ${String(lease.head)}`,
+    );
+  }
   const previous = await postgresJournalPrevious(
     client,
     lease.partition,
@@ -95,8 +102,9 @@ async function postgresJournalWrite(
   );
   await client.query(
     `INSERT INTO journal_entry
-       (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch, recovery_epoch)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+       (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch,
+        recovery_epoch, cause_operation)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       lease.partition.tenant,
       lease.partition.project,
@@ -107,40 +115,13 @@ async function postgresJournalWrite(
       lease.owner,
       lease.fencingEpoch,
       lease.recoveryEpoch,
+      cause,
     ],
   );
   await client.query(
     "UPDATE project SET head = $3 WHERE tenant = $1 AND project = $2",
     [lease.partition.tenant, lease.partition.project, entry.seq],
   );
-}
-
-/** Appends one entry if the lease is still honoured and the head is still where the caller left it. */
-export async function postgresJournalAppend(
-  pool: pg.Pool,
-  lease: Lease,
-  entry: Entry,
-): Promise<Appended> {
-  if (entry.seq !== lease.head + 1) {
-    throw new Error(
-      `postgres journal: entry ${String(entry.seq)} was offered against head ${String(lease.head)}`,
-    );
-  }
-  return postgresTransaction(pool, async (client) => {
-    const row = await postgresOwnershipLockKnown(client, lease.partition);
-    const standing = projectRowStanding(row);
-    if (standing.lifecycle !== "Active") {
-      return { appended: "NotActive", lifecycle: standing.lifecycle };
-    }
-    if (!(await postgresOwnershipHonours(client, row, lease))) {
-      return { appended: "Fenced", fencingEpoch: standing.fencingEpoch };
-    }
-    if (standing.head !== lease.head) {
-      return { appended: "StaleHead", head: standing.head };
-    }
-    await postgresJournalWrite(client, lease, entry);
-    return { appended: "Committed", head: entry.seq };
-  });
 }
 
 /** Every stored entry in sequence order, asserted to reach the head the locked row claims. */
@@ -172,7 +153,7 @@ async function postgresJournalEntries(
   return parseJournal(raw);
 }
 
-/** Replays the partition under the lease the append will carry, refusing one the row no longer honours. */
+/** Replays the partition under the lease the decision will present, refusing one the row no longer honours. */
 export async function postgresJournalLoad(
   pool: pg.Pool,
   lease: Lease,

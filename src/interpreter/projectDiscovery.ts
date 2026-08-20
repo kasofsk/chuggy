@@ -25,7 +25,7 @@
  * outcomes a caller must handle, not exceptions it may ignore.
  */
 
-import type { OperationId } from "./operationInbox.ts";
+import type { OperationCommand, OperationId } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 
 /** One project's discovery record: the partition with work waiting, and the generation that wake-up carries. */
@@ -34,11 +34,17 @@ export interface Readiness {
   readonly generation: number;
 }
 
-/** One durable inbox item, in the ordinal order acceptance allocated it. */
+/**
+ * One durable inbox item, in the ordinal order acceptance allocated it. It
+ * carries its operation's command because deciding it is what a writer
+ * consumes it for, and a second read to fetch that would be a second
+ * transaction the first one's answer could already be stale in.
+ */
 export interface InboxItem {
   readonly partition: Partition;
   readonly ordinal: number;
   readonly operation: OperationId;
+  readonly command: OperationCommand;
 }
 
 /**

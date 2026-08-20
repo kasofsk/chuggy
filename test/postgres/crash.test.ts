@@ -1,6 +1,6 @@
 /**
- * Process death at the durable seam: what an acknowledged append survives, and
- * what an unacknowledged one leaves behind.
+ * Process death at the durable seam: what an acknowledged decision survives,
+ * and what an unacknowledged one leaves behind.
  *
  * THE KILL IS `SIGKILL` AND THE CHILD NEVER EXITS ON ITS OWN. A process given
  * the chance to shut down cleanly proves that a clean shutdown is durable,
@@ -23,7 +23,13 @@
  * and then stopped existing — so those two cases replay nothing and take
  * nothing over.
  *
- * WHAT THE UNRESOLVED SEAMS ASSERT IS WEAKER THAN THEIR NAMES. `blocked` and
+ * THE COMMITTED SEAM IS AN AMBIGUOUS COMMIT WITH NOBODY LEFT TO ASK. The child
+ * commits and is removed before it can tell anyone, so the parent is in
+ * exactly the position 006 has a dispatcher reconnect and read the operation
+ * from — and the recorded outcome is what proves the commit rather than the
+ * memory of a process that no longer exists.
+ *
+ * WHAT THE UNRESOLVED SEAMS ASSERT IS WEAKER THAN THEIR NAMES. `undecided` and
  * `unaccepted` start a write they mean to be killed mid-flight, and the parent
  * kills on a line the child prints before the server has necessarily begun
  * waiting on the lock. Killed early, the case passes because nothing was
@@ -105,10 +111,10 @@ function crashWaitFor(child: ChildProcess, line: string): Promise<void> {
   });
 }
 
-test("every acknowledged append survives the process that made it", async () => {
+test("a commit nobody heard about is proved whole by the durable record alone", async () => {
   const partition = await postgresHarnessProject(harness.store, "crashcommit");
-  const journal = postgresHarnessJournal();
-  await crashAt(partition, "commit");
+  const journal = postgresHarnessJournal().slice(0, 1);
+  await crashAt(partition, "decided");
 
   const loaded = await harness.store.load(await takenOver(partition));
   assert.ok(loaded.parsed === "Ok");
@@ -117,49 +123,69 @@ test("every acknowledged append survives the process that made it", async () => 
 
   const standing = await harness.store.standing(partition);
   assert.ok(standing !== undefined);
-  assert.equal(standing.head, journal.length);
-});
-
-test("an append that never resolved leaves the head exactly where it was", async () => {
-  const partition = await postgresHarnessProject(harness.store, "crashblocked");
-  const journal = postgresHarnessJournal();
-  await crashAt(partition, "blocked");
-
-  const loaded = await harness.store.load(await takenOver(partition));
-  assert.ok(loaded.parsed === "Ok");
-  assert.equal(loaded.value.length, 1);
-  assert.deepEqual(loaded.value, journal.slice(0, 1));
-  assert.ok(journalLegalOn(refinementInstance, loaded.value));
-
-  const standing = await harness.store.standing(partition);
-  assert.ok(standing !== undefined);
   assert.equal(standing.head, 1);
-});
 
-test("an entry written but never committed leaves neither itself nor a head", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "crashinserted",
+  const submission = postgresHarnessCrashSubmission(partition);
+  assert.deepEqual(
+    await harness.query(
+      `SELECT o.state, o.decided_seq, i.consumable, p.phase, p.seq
+         FROM operation o
+         JOIN inbox_item i USING (tenant, project, operation)
+         JOIN ticket_projection p ON p.tenant = o.tenant AND p.project = o.project
+        WHERE o.operation = $1`,
+      [submission.operation],
+    ),
+    [
+      {
+        state: "Succeeded",
+        decided_seq: "1",
+        consumable: false,
+        phase: "Pending",
+        seq: "1",
+      },
+    ],
   );
-  const journal = postgresHarnessJournal();
-  await crashAt(partition, "inserted");
+});
+
+test("a decision that never resolved leaves a legal prefix and no half-written decision", async () => {
+  const partition = await postgresHarnessProject(harness.store, "crashblocked");
+  await crashAt(partition, "undecided");
 
   const loaded = await harness.store.load(await takenOver(partition));
   assert.ok(loaded.parsed === "Ok");
-  assert.deepEqual(loaded.value, journal.slice(0, 1));
+  assert.deepEqual(loaded.value, []);
   assert.ok(journalLegalOn(refinementInstance, loaded.value));
 
   const standing = await harness.store.standing(partition);
   assert.ok(standing !== undefined);
-  assert.equal(standing.head, 1);
+  assert.equal(standing.head, 0);
+
+  const submission = postgresHarnessCrashSubmission(partition);
+  const operation = await harness.inbox.operation(
+    partition,
+    submission.operation,
+  );
+  assert.equal(operation?.state, "Pending");
+  assert.deepEqual(
+    (await harness.discovery.consumable(partition, 10)).map(
+      (item) => item.operation,
+    ),
+    [submission.operation],
+  );
+  assert.deepEqual(
+    await harness.query(
+      "SELECT ticket FROM ticket_projection WHERE tenant = $1 AND project = $2",
+      [partition.tenant, partition.project],
+    ),
+    [],
+  );
 });
 
 test("a fresh process takes over a dead owner's project and resumes at its head", async () => {
   const partition = await postgresHarnessProject(harness.store, "crashresume");
-  const journal = postgresHarnessJournal();
-  await crashAt(partition, "commit");
+  await crashAt(partition, "decided");
 
-  assert.equal((await takenOver(partition)).head, journal.length);
+  assert.equal((await takenOver(partition)).head, 1);
 });
 
 test("a crash after acceptance leaves the work discoverable with no active owner", async () => {

@@ -4,7 +4,7 @@
  *
  * THE GUARANTEE 006 MAKES IS EXACTLY THIS ONE — that one project does not
  * serialize another, rather than unlimited throughput inside a project. So the
- * case that matters holds one partition's append stalled on its own row and
+ * case that matters holds one partition's decision stalled on its own row and
  * requires its neighbour's to commit inside a bound while it waits, and the
  * case beside it is that a partition fenced, suspended or unowned leaves its
  * neighbour untouched.
@@ -15,17 +15,21 @@ import { after, before, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { Entry } from "../../src/actor/journal.ts";
-import type {
-  Appended,
-  Lease,
-  Partition,
-} from "../../src/interpreter/projectStore.ts";
+import type { Lease, Partition } from "../../src/interpreter/projectStore.ts";
 import {
-  postgresHarnessFirstEntry,
+  projectWriterDecide,
+  type ProjectDecided,
+  type ProjectMemory,
+} from "../../src/interpreter/projectWriter.ts";
+import {
+  postgresHarnessAccepted,
   postgresHarnessHeld,
+  postgresHarnessHistory,
+  postgresHarnessJournal,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessRowLock,
+  postgresHarnessWriter,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -39,14 +43,21 @@ after(async () => {
   await harness.close();
 });
 
-/** A lease on a partition already provisioned, which is what a load and an append both need. */
-function held(partition: Partition, label: string): Promise<Lease> {
-  return postgresHarnessHeld(harness.store, partition, label);
+/** A provisioned partition already held by its own owner, with nothing decided yet. */
+async function heldProject(label: string): Promise<ProjectMemory> {
+  const partition = await postgresHarnessProject(harness.store, label);
+  return postgresHarnessHistory(harness, partition, label, 0);
 }
 
-/** A provisioned partition already held by its own owner. */
-async function heldProject(label: string): Promise<Lease> {
-  return held(await postgresHarnessProject(harness.store, label), label);
+/** Decides the fixture history's first entry for a partition this memory holds. */
+async function commitFirst(memory: ProjectMemory, label: string) {
+  const item = await postgresHarnessAccepted(
+    harness.inbox,
+    memory.lease.partition,
+    label,
+    0,
+  );
+  return projectWriterDecide(postgresHarnessWriter(harness), memory, item);
 }
 
 /** Every entry the lease's partition holds, asserted to have parsed. */
@@ -56,37 +67,51 @@ async function entriesOf(lease: Lease): Promise<readonly Entry[]> {
   return loaded.value;
 }
 
-/** How long the neighbouring append gets while the stall is held, which is what not waiting on the other means in time. */
+/** How long the neighbouring decision gets while the stall is held, which is what not waiting on the other means in time. */
 const neighbourWaitMsMax = 2_000;
 
-/** How many backends the blockade waits for, which is the one append the case left unawaited. */
-const stalledAppends = 1;
+/** How many backends the blockade waits for, which is the one decision the case left unawaited. */
+const stalledDecisions = 1;
 
-/** An append's outcome as a word, so a case can hold a stalled one without its rejection escaping. */
-function appendOutcome(appending: Promise<Appended>): Promise<string> {
-  return appending.then(
-    (appended) => appended.appended,
+/** A decision's outcome as a word, so a case can hold a stalled one without its rejection escaping. */
+function decideOutcome(deciding: Promise<ProjectDecided>): Promise<string> {
+  return deciding.then(
+    (step) => step.decided.decided,
     (failure: unknown) =>
       failure instanceof Error ? failure.message : String(failure),
   );
 }
 
-test("an append commits while another project's append is stalled on its own row", async () => {
+test("a decision commits while another project's decision is stalled on its own row", async () => {
   const stalled = await heldProject("stalled");
   const neighbour = await heldProject("neighbour");
-  const entry = postgresHarnessFirstEntry();
+  const writer = postgresHarnessWriter(harness);
+  const stalledItem = await postgresHarnessAccepted(
+    harness.inbox,
+    stalled.lease.partition,
+    "stalled",
+    0,
+  );
+  const neighbourItem = await postgresHarnessAccepted(
+    harness.inbox,
+    neighbour.lease.partition,
+    "neighbour",
+    0,
+  );
 
-  const lock = await postgresHarnessRowLock(stalled.partition);
-  const stalling = appendOutcome(harness.store.append(stalled, entry));
+  const lock = await postgresHarnessRowLock(stalled.lease.partition);
+  const stalling = decideOutcome(
+    projectWriterDecide(writer, stalled, stalledItem),
+  );
   try {
-    await lock.stalled(stalledAppends);
-    const appended = await Promise.race([
-      appendOutcome(harness.store.append(neighbour, entry)),
+    await lock.stalled(stalledDecisions);
+    const decided = await Promise.race([
+      decideOutcome(projectWriterDecide(writer, neighbour, neighbourItem)),
       delay(neighbourWaitMsMax, "still waiting on the stalled project", {
         ref: false,
       }),
     ]);
-    assert.equal(appended, "Committed");
+    assert.equal(decided, "Committed");
   } finally {
     await lock.release();
   }
@@ -96,40 +121,43 @@ test("an append commits while another project's append is stalled on its own row
 test("a load returns the partition's own entries and no other partition's", async () => {
   const left = await heldProject("ownleft");
   const right = await heldProject("ownright");
-  const entry = postgresHarnessFirstEntry();
-  await harness.store.append(left, entry);
+  const committed = await commitFirst(left, "ownleft");
+  assert.ok(committed.decided.decided === "Committed");
 
-  assert.deepEqual(await entriesOf(left), [entry]);
-  assert.deepEqual(await entriesOf(right), []);
+  assert.deepEqual(await entriesOf(committed.memory.lease), [
+    postgresHarnessJournal()[0],
+  ]);
+  assert.deepEqual(await entriesOf(right.lease), []);
 });
 
 test("fencing one project leaves its neighbour Active and its lease intact", async () => {
   const doomed = await heldProject("doomed");
   const spared = await heldProject("spared");
 
-  await harness.store.fence(doomed.partition, "Deleting");
+  await harness.store.fence(doomed.lease.partition, "Deleting");
 
-  const standing = await harness.store.standing(spared.partition);
+  const standing = await harness.store.standing(spared.lease.partition);
   assert.ok(standing !== undefined);
   assert.equal(standing.lifecycle, "Active");
-  assert.equal(standing.fencingEpoch, spared.fencingEpoch);
+  assert.equal(standing.fencingEpoch, spared.lease.fencingEpoch);
 
-  const appended = await harness.store.append(
-    spared,
-    postgresHarnessFirstEntry(),
-  );
-  assert.equal(appended.appended, "Committed");
+  const committed = await commitFirst(spared, "spared");
+  assert.equal(committed.decided.decided, "Committed");
 });
 
 test("two tenants may hold the same project name without sharing a partition", async () => {
   const left = await heldProject("samename");
   const shadow: Partition = {
-    tenant: left.partition.tenant.concat("-other") as Partition["tenant"],
-    project: left.partition.project,
+    tenant: left.lease.partition.tenant.concat("-other") as Partition["tenant"],
+    project: left.lease.partition.project,
   };
   await harness.store.createProject(shadow);
-  const other = await held(shadow, "samenameother");
-  await harness.store.append(left, postgresHarnessFirstEntry());
+  const other = await postgresHarnessHeld(
+    harness.store,
+    shadow,
+    "samenameother",
+  );
+  await commitFirst(left, "samename");
 
   assert.deepEqual(await entriesOf(other), []);
   const standing = await harness.store.standing(shadow);

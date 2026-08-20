@@ -36,6 +36,7 @@ import {
   postgresMigrate,
   postgresPool,
 } from "../../src/adapters/postgres/pool.ts";
+import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
 import {
@@ -47,7 +48,17 @@ import {
   type OperationInbox,
   type Submission,
 } from "../../src/interpreter/operationInbox.ts";
-import type { ProjectDiscovery } from "../../src/interpreter/projectDiscovery.ts";
+import type {
+  InboxItem,
+  ProjectDiscovery,
+} from "../../src/interpreter/projectDiscovery.ts";
+import type { ProjectDecision } from "../../src/interpreter/projectDecision.ts";
+import {
+  projectWriterDecide,
+  projectWriterLoad,
+  type ProjectMemory,
+  type ProjectWriter,
+} from "../../src/interpreter/projectWriter.ts";
 import {
   asOwnerId,
   asProjectId,
@@ -59,6 +70,7 @@ import {
   type ProjectStore,
   type RecoveryEpoch,
 } from "../../src/interpreter/projectStore.ts";
+import { encodeDecisionEventText } from "../../src/interpreter/wire.ts";
 
 /** The environment variable `.chug/tasks/check-postgres.sh` sets, named once. */
 export const postgresHarnessUrlVar = "CHUG_PG_URL";
@@ -89,6 +101,7 @@ export interface PostgresHarness {
   readonly store: ProjectStore;
   readonly inbox: OperationInbox;
   readonly discovery: ProjectDiscovery;
+  readonly decisions: ProjectDecision;
   readonly query: (
     sql: string,
     values?: readonly unknown[],
@@ -111,6 +124,7 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
     store,
     inbox: postgresOperationInbox(pool, postgresHarnessKeying()),
     discovery: postgresProjectDiscovery(pool),
+    decisions: postgresProjectDecision(pool),
     query: async (sql, values) =>
       (await pool.query(sql, values === undefined ? undefined : [...values]))
         .rows as readonly Record<string, unknown>[],
@@ -204,7 +218,8 @@ const postgresHarnessLeaseSecs = 60;
 
 /**
  * A lease on a provisioned partition, taken for an owner no other case is
- * using. Replaying a journal and appending to one each need a lease, so a case
+ * using. Replaying a journal and deciding against one each need a lease, so a
+ * case
  * that is about something else says it in one line; the submission and
  * discovery sides need none and take none.
  */
@@ -371,16 +386,6 @@ export function postgresHarnessSubmission(
 }
 
 /**
- * The submission the crash rig accepts, derived from the partition so the
- * parent names the operation its killed child wrote without a channel to it.
- */
-export function postgresHarnessCrashSubmission(
-  partition: Partition,
-): Submission {
-  return postgresHarnessSubmission(partition, "crash", partition.project);
-}
-
-/**
  * A history the machine would accept: one release, then its dispatch. Cases
  * share it so a change to what the actor journals moves one fixture rather
  * than four.
@@ -395,11 +400,121 @@ export function postgresHarnessJournal(): readonly Entry[] {
     .journal;
 }
 
-/** The first entry of that history, which is all a case appending exactly one entry needs. */
-export function postgresHarnessFirstEntry(): Entry {
-  const entry = postgresHarnessJournal()[0];
+/** The fixture history's entry at `index`, refusing an index the fixture is shorter than. */
+export function postgresHarnessEntry(index: number): Entry {
+  const entry = postgresHarnessJournal()[index];
   if (entry === undefined) {
-    throw new Error("postgres harness: the fixture journal has no first entry");
+    throw new Error(
+      `postgres harness: the fixture journal has no entry ${String(index)}`,
+    );
   }
   return entry;
+}
+
+/**
+ * A submission whose command is the fixture history's decision at `index`, so
+ * the accepted operation is one a writer can decide rather than refuse.
+ */
+export function postgresHarnessDecisionSubmission(
+  partition: Partition,
+  label: string,
+  index: number,
+  unique?: string,
+): Submission {
+  return {
+    ...postgresHarnessSubmission(partition, label, unique),
+    command: asOperationCommand(
+      encodeDecisionEventText(postgresHarnessEntry(index).event),
+    ),
+  };
+}
+
+/**
+ * The submission the crash rig accepts, derived from the partition so the
+ * parent names the operation its killed child wrote without a channel to it.
+ */
+export function postgresHarnessCrashSubmission(
+  partition: Partition,
+): Submission {
+  return postgresHarnessDecisionSubmission(
+    partition,
+    "crash",
+    0,
+    partition.project,
+  );
+}
+
+/** Accepts one submission and hands back the inbox item it created, which is what a writer decides. */
+export async function postgresHarnessAccept(
+  inbox: OperationInbox,
+  submission: Submission,
+): Promise<InboxItem> {
+  const accepted = await inbox.accept(submission);
+  if (accepted.accepted !== "Accepted") {
+    throw new Error(
+      `postgres harness: the acceptance was ${accepted.accepted}`,
+    );
+  }
+  return {
+    partition: submission.partition,
+    ordinal: accepted.operation.ordinal,
+    operation: submission.operation,
+    command: submission.command,
+  };
+}
+
+/** An accepted item carrying the fixture history's decision at `index`, which most cases start from. */
+export function postgresHarnessAccepted(
+  inbox: OperationInbox,
+  partition: Partition,
+  label: string,
+  index: number,
+): Promise<InboxItem> {
+  return postgresHarnessAccept(
+    inbox,
+    postgresHarnessDecisionSubmission(partition, label, index),
+  );
+}
+
+/** The writer over a harness's ports, which is what turns a loaded state and an item into a commit. */
+export function postgresHarnessWriter(harness: PostgresHarness): ProjectWriter {
+  return {
+    config: refinementInstance,
+    store: harness.store,
+    decisions: harness.decisions,
+  };
+}
+
+/**
+ * Accepts and decides the fixture history's first `count` decisions, and hands
+ * back the state the last commit left. Cases that need a project with a
+ * history start here rather than assembling one.
+ */
+export async function postgresHarnessHistory(
+  harness: PostgresHarness,
+  partition: Partition,
+  label: string,
+  count: number,
+): Promise<ProjectMemory> {
+  const writer = postgresHarnessWriter(harness);
+  let memory = await projectWriterLoad(
+    writer,
+    await postgresHarnessHeld(harness.store, partition, label),
+  );
+  for (let index = 0; index < count; index++) {
+    const item = await postgresHarnessAccepted(
+      harness.inbox,
+      partition,
+      `${label}-${String(index)}`,
+      index,
+    );
+    const step = await projectWriterDecide(writer, memory, item);
+    if (step.decided.decided !== "Committed") {
+      throw new Error(
+        `postgres harness: decision ${String(index)} was ${step.decided.decided}`,
+      );
+    }
+    memory = step.memory;
+  }
+  return memory;
 }

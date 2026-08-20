@@ -66,7 +66,7 @@ async function observed(partition: Partition): Promise<Readiness> {
   return found;
 }
 
-/** Cancels a submission, which is the one way this slice makes an item non-consumable. */
+/** Cancels a submission, which is one of the two ways an item stops being consumable. */
 async function withdraw(submission: Submission): Promise<void> {
   const cancelled = await harness.inbox.cancel({
     partition: submission.partition,
@@ -162,8 +162,18 @@ test("consumable items come back in ordinal order, bounded by the page asked for
   await accept(partition, "pagethree");
 
   assert.deepEqual(await harness.discovery.consumable(partition, 2), [
-    { partition, ordinal: 1, operation: first.operation },
-    { partition, ordinal: 2, operation: second.operation },
+    {
+      partition,
+      ordinal: 1,
+      operation: first.operation,
+      command: first.command,
+    },
+    {
+      partition,
+      ordinal: 2,
+      operation: second.operation,
+      command: second.command,
+    },
   ]);
   await assert.rejects(
     () => harness.discovery.consumable(partition, 0),
