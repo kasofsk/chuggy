@@ -2,10 +2,10 @@
  * The `ProjectStore` answered by PostgreSQL: the durable authority a
  * dispatcher holds one project partition under.
  *
- * IT ASSEMBLES AND DECIDES NOTHING. Ownership is `./ownership.ts`'s, the
- * append and the load are `./journal.ts`'s, and this file exists so the port
- * has one implementation to name rather than a caller assembling six functions
- * and getting the argument order wrong once. The split is by transaction:
+ * IT ASSEMBLES AND DECIDES NOTHING. Ownership is `./ownership.ts`'s and the
+ * load is `./journal.ts`'s, and this file exists so the port has one
+ * implementation to name rather than a caller assembling six functions and
+ * getting the argument order wrong once. The split is by transaction:
  * every function in one of those modules opens and closes its own, and none
  * of them is called from inside another's.
  *
@@ -29,7 +29,7 @@ import type {
   Renewed,
 } from "../../interpreter/projectStore.ts";
 import type { Parsed } from "../../interpreter/wire.ts";
-import { postgresJournalAppend, postgresJournalLoad } from "./journal.ts";
+import { postgresJournalLoad } from "./journal.ts";
 import {
   postgresOwnershipAcquire,
   postgresOwnershipCreate,
@@ -71,9 +71,6 @@ export function postgresProjectStore(pool: pg.Pool): ProjectStore {
 
     release: (lease: Lease): Promise<void> =>
       postgresOwnershipRelease(pool, lease),
-
-    append: (lease: Lease, entry: Entry) =>
-      postgresJournalAppend(pool, lease, entry),
 
     load: (partition: Partition): Promise<Parsed<readonly Entry[]>> =>
       postgresJournalLoad(pool, partition),

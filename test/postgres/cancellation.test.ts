@@ -2,13 +2,13 @@
  * Cancellation: what it settles, what it refuses, and what happens when it
  * arrives at the same moment as the decision it is trying to overtake.
  *
- * THE WRITER'S HALF IS DRIVEN AS SQL BECAUSE THERE IS NO WRITER YET. The
- * decision transaction is slice I2, and the claim under test here belongs to
- * this slice: whichever transaction takes the operation's row lock first
- * decides it, and the server refuses the second. So a case opens its own
- * transaction, takes that lock and terminalizes exactly as a writer will —
- * without a state predicate of its own, so the only thing standing between the
- * two outcomes is the trigger this slice installed.
+ * THE WRITER'S HALF IS DRIVEN AS SQL WHERE THE LOCK HAS TO BE HELD ACROSS THE
+ * CANCELLATION. The real decision transaction commits before it returns, so a
+ * case that needs the operation's row held while a cancellation queues behind
+ * it cannot use the port — it opens its own transaction and terminalizes
+ * exactly as the writer does, without a state predicate of its own, so the
+ * only thing standing between the two outcomes is the trigger. The last case
+ * races the real transaction instead, where holding nothing is the point.
  *
  * CANCELLATION TOUCHES NO PROJECT ROW, and one case proves it by holding that
  * row in another transaction while cancelling. 006 requires cancellation to
@@ -27,10 +27,14 @@ import {
   type Submission,
 } from "../../src/interpreter/operationInbox.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { projectWriterDecide } from "../../src/interpreter/projectWriter.ts";
 import {
+  postgresHarnessAccepted,
+  postgresHarnessHistory,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessSubmission,
+  postgresHarnessWriter,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -79,7 +83,8 @@ async function decide(
       operation,
     ]);
     await writer.query(
-      `UPDATE operation SET state = 'Succeeded', settled_at = now() WHERE ${where}`,
+      `UPDATE operation SET state = 'Succeeded', settled_at = now(), decided_seq = 1
+        WHERE ${where}`,
       [partition.tenant, partition.project, operation],
     );
     await writer.commit();
@@ -211,7 +216,8 @@ test("a writer holding the row first decides it, and the waiting cancellation is
 
   const cancelling = harness.inbox.cancel(cancellationOf(submission));
   await writer.query(
-    `UPDATE operation SET state = 'Succeeded', settled_at = now() WHERE ${where}`,
+    `UPDATE operation SET state = 'Succeeded', settled_at = now(), decided_seq = 1
+      WHERE ${where}`,
     keys,
   );
   await writer.commit();
@@ -263,15 +269,18 @@ test("the state column admits exactly the states this code declares", async () =
   const columns = `
     tenant, project, operation, authority_kind, authority_subject, admission,
     key_version, key_digest, payload_digest, command, lifecycle_generation,
-    state, settled_at
+    state, settled_at, decided_seq, outcome_code
   `;
   const rehearsal = await harness.begin();
   try {
     for (const state of allOperationStates) {
       const settled = state === "Pending" ? "NULL" : "now()";
+      const decided = state === "Succeeded" ? "1" : "NULL";
+      const code = state === "Refused" ? "'NotEnabled'" : "NULL";
       await rehearsal.query(
         `INSERT INTO operation (${columns})
-         VALUES ($1, $2, $3, 'k', 's', 'Ordinary', 'v', $4, 'p', '{}', 1, $5, ${settled})`,
+         VALUES ($1, $2, $3, 'k', 's', 'Ordinary', 'v', $4, 'p', '{}', 1, $5,
+                 ${settled}, ${decided}, ${code})`,
         [
           submission.partition.tenant,
           submission.partition.project,
@@ -293,4 +302,42 @@ test("the state column admits exactly the states this code declares", async () =
       ),
     /operation_state_is_known/,
   );
+});
+
+test("a real decision racing a cancellation resolves one way and journals only when it won", async () => {
+  const partition = await postgresHarnessProject(harness.store, "realrace");
+  const writer = postgresHarnessWriter(harness);
+  const memory = await postgresHarnessHistory(
+    harness,
+    partition,
+    "realrace",
+    0,
+  );
+  const item = await postgresHarnessAccepted(
+    harness.inbox,
+    partition,
+    "realrace",
+    0,
+  );
+
+  const [cancelled, step] = await Promise.all([
+    harness.inbox.cancel({
+      partition,
+      operation: item.operation,
+      authority: postgresHarnessSubmission(partition, "realrace").authority,
+    }),
+    projectWriterDecide(writer, memory, item),
+  ]);
+
+  const loaded = await harness.store.load(partition);
+  assert.ok(loaded.parsed === "Ok");
+  if (cancelled.cancelled === "Cancelled") {
+    assert.ok(step.decided.decided === "AlreadyTerminal");
+    assert.deepEqual(step.decided.outcome, { settled: "Cancelled" });
+    assert.deepEqual(loaded.value, []);
+  } else {
+    assert.equal(cancelled.cancelled, "NotPending");
+    assert.equal(step.decided.decided, "Committed");
+    assert.equal(loaded.value.length, 1);
+  }
 });

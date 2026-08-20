@@ -23,8 +23,8 @@
  * INSERT: provisioning is not a decision. Its composite key is
  * `(tenant, project)` and it is the parent every other relation here points
  * at. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
- * locking this row; the head is changed only by `append`, in the same
- * transaction as the entry it counts. Unfinished work is found by selecting
+ * locking this row; the head is changed only by the decision transaction, in
+ * the same transaction as the entry it counts. Unfinished work is found by selecting
  * active projects whose lease has expired by database time.
  *
  * `journal_entry` — the append-only decision log, partitioned by the composite
@@ -33,9 +33,9 @@
  * DELETE: a runtime that could rewrite history would make replay an opinion.
  * Its identity is that primary key, and `seq` is the project's head plus one,
  * so the identity and the concurrency control are the same value. It is
- * changed by `append` and by nothing else. Unfinished work does not exist for
- * it — an entry is committed or it was rolled back — which is the whole point
- * of putting the head in the same transaction.
+ * changed by the decision transaction and by nothing else. Unfinished work
+ * does not exist for it — an entry is committed or it was rolled back — which
+ * is the whole point of putting the head in the same transaction.
  *
  * WHY THE FENCE COLUMNS RIDE ON THE ENTRY. An entry records the owner, fencing
  * epoch and recovery epoch that authorized it, so a takeover or a restore can
@@ -65,10 +65,10 @@
  * partition and a reused one would answer another project's poll. Its
  * idempotency key is `(tenant, project, authority_kind, key_digest)`, unique
  * and permanent, which is what makes a retry find its original rather than
- * create a second. It is changed by acceptance and by cancellation, and a
- * trigger refuses any later change to a state or a settling authority already
- * terminal. Unfinished work is found by selecting `Pending` operations for a
- * partition.
+ * create a second. It is changed by acceptance, by cancellation and by the
+ * decision transaction, and a trigger refuses any later change at all to a row
+ * already terminal. Unfinished work is found by selecting `Pending` operations
+ * for a partition.
  *
  * WHY NO ROLE MAY WRITE A SETTLEMENT, BY EITHER VERB, AND CANCELLATION IS A
  * FUNCTION. 006 lets the API insert authorized operations and decide none of
@@ -98,22 +98,17 @@
  * because weakening a constraint for a caller that does not exist yet is
  * reaching forward into that slice.
  *
- * WHY THERE IS NO OUTCOME COLUMN YET. The only outcome I1 can write is
- * cancellation, whose code would restate `state`, and a stored duplicate of a
- * derivable fact is standing rule 3's finding. The stable refusal code and the
- * decided project sequence arrive with the decision transaction that produces
- * them.
- *
  * `inbox_item` — the project's durable inbox, in the ordinal order acceptance
  * allocated. Owned by the API role for insertion and, through the cancellation
- * function alone, for making an item non-consumable; acknowledgement is the
- * writer's and arrives with it. Its composite key is `(tenant, project)`, its
+ * function alone, for making an item non-consumable, and by the dispatcher
+ * role for the acknowledgement that does the same on the way out. Its composite key is `(tenant, project)`, its
  * identity is
  * `(tenant, project, ordinal)`, and its source key `(tenant, project,
  * operation)` is unique, which is the deduplication 006 requires before
  * ordinal allocation — every item I1 admits is an accepted operation's, and
  * a second source kind arrives with the slice that has one. It is changed by
- * acceptance and by cancellation. Unfinished work is found by selecting
+ * acceptance, by cancellation and by the decision transaction. Unfinished work
+ * is found by selecting
  * consumable items for a partition in ordinal order, which is also what
  * activation verifies the inbox with.
  *
@@ -129,13 +124,60 @@
  * lowers a flag rather than removing the row, because a generation that
  * restarted at one would let an owner holding a stale one erase the wake-up
  * that reused it — the stale observation the generation exists to refuse.
+ *
+ * `journal_entry.cause_operation` — the one durable cause an entry names, with
+ * its uniqueness over the partition. 006 lets a cause authorize at most one
+ * effective journal decision, and that constraint is what prevents a second
+ * entry when a commit whose result the writer never learned is retried. Every
+ * cause this tree admits yet is an accepted operation's, so the column names the
+ * operation rather than a kind and an identity; the typed cause kind arrives
+ * with the slice that has a second one.
+ *
+ * `operation.outcome_code`, `operation.decided_seq` — what a terminal
+ * operation says besides its state, and the columns the earlier tranche
+ * deferred to the transaction that produces them. Both are written by the
+ * dispatcher role alone, in the decision transaction, and neither is a
+ * duplicate of anything derivable: a client reads the sequence to read its own
+ * write, and a writer resolving an ambiguous commit reads whichever of them
+ * the recorded outcome carries.
+ *
+ * `ticket_projection` — the project-primary projection, one row per ticket,
+ * carrying the sequence that produced it. Owned by the dispatcher role, which
+ * is granted INSERT and UPDATE on the phase and the sequence and not on the
+ * key. Its composite key is `(tenant, project)` and its identity is
+ * `(tenant, project, ticket)`. It is changed by the decision transaction and
+ * by nothing else, and it has no unfinished work of its own: it commits with
+ * the entry that moved it, and it is rebuilt from the journal rather than
+ * repaired.
+ *
+ * WHY A PROJECTION AT ALL, WHEN STANDING RULE 3 REJECTS A STORED DUPLICATE.
+ * Because the fact it duplicates is derivable only by replaying a project
+ * partition into memory, and 006 requires normal reads to use PostgreSQL
+ * rather than enter the in-memory actor. It is explicitly not a second
+ * semantic authority: nothing decides from it, and a disagreement between it
+ * and a replay is the projection being wrong.
+ *
+ * WHY THE DISPATCHER READS `operation` AT ALL. It decides one, so it reads the
+ * command it carries and the state it is in; the read is table-wide because a
+ * column-level SELECT makes every query name its columns and the row it may
+ * not read is one this partition's own writer already holds the journal for.
+ *
+ * WHY THE DISPATCHER MAY WRITE A SETTLEMENT WHERE THE API MAY NOT. The API
+ * accepts work and decides none, so a grant that let it settle an operation
+ * would be a grant to decide one — which is why cancellation is a function.
+ * The dispatcher is the single writer: settling an operation is its own
+ * authority rather than a boundary it would be crossing, and a domain refusal
+ * settles one with no journal entry to pair the write against, so there is no
+ * pairing a constraint could enforce.
  */
 
+import { phaseTags } from "../../domain/generated/modelTypes.ts";
 import {
   authorityCharsMax,
   operationCommandCharsMax,
   operationIdentityCharsMax,
 } from "../../interpreter/operationInbox.ts";
+import { allRefusalCodes } from "../../interpreter/projectDecision.ts";
 
 /** One migration: the version that orders it, the name that reports it, and the statements it applies. */
 export interface Migration {
@@ -399,6 +441,78 @@ const inboxGrants = [
   `GRANT UPDATE (ready) ON project_readiness TO ${dispatcherRole}`,
 ];
 
+/** A closed set of text values as the SQL list a CHECK compares against. */
+function schemaTextSet(values: readonly string[]): string {
+  return values.map((value) => `'${value}'`).join(", ");
+}
+
+const decisionRelations = [
+  `ALTER TABLE journal_entry
+     ADD COLUMN cause_operation text NOT NULL,
+     ADD CONSTRAINT journal_entry_cause_is_effective
+       UNIQUE (tenant, project, cause_operation),
+     ADD CONSTRAINT journal_entry_has_its_cause
+       FOREIGN KEY (tenant, project, cause_operation)
+       REFERENCES operation (tenant, project, operation)`,
+  `ALTER TABLE operation
+     ADD COLUMN outcome_code text,
+     ADD COLUMN decided_seq  bigint,
+     ADD CONSTRAINT operation_outcome_is_whole CHECK (
+       (state = 'Refused') = (outcome_code IS NOT NULL)
+       AND (state = 'Succeeded') = (decided_seq IS NOT NULL)
+       AND coalesce(decided_seq, 1) >= 1
+     ),
+     ADD CONSTRAINT operation_outcome_code_is_known CHECK (
+       outcome_code IS NULL OR outcome_code IN (${schemaTextSet(allRefusalCodes)})
+     )`,
+  `CREATE TABLE ticket_projection (
+     tenant  text   NOT NULL,
+     project text   NOT NULL,
+     ticket  bigint NOT NULL,
+     phase   text   NOT NULL,
+     seq     bigint NOT NULL,
+     PRIMARY KEY (tenant, project, ticket),
+     CONSTRAINT ticket_projection_belongs_to_project
+       FOREIGN KEY (tenant, project) REFERENCES project (tenant, project),
+     CONSTRAINT ticket_projection_phase_is_known CHECK (
+       phase IN (${schemaTextSet(phaseTags)})
+     ),
+     CONSTRAINT ticket_projection_counters_are_positive CHECK (
+       ticket >= 1 AND seq >= 1
+     )
+   )`,
+];
+
+/**
+ * The trigger that stops a settled operation being written again at all. It is
+ * wider than the outcome the earlier version froze because the outcome now has
+ * columns beside `state`, and a rule that lists them is a rule the next column
+ * is added without.
+ */
+const decisionTerminality = [
+  `CREATE OR REPLACE FUNCTION operation_stays_terminal() RETURNS trigger
+     LANGUAGE plpgsql AS $$
+     BEGIN
+       IF OLD.state <> 'Pending' THEN
+         RAISE EXCEPTION
+           'operation % is already %, and an outcome is decided once', OLD.operation, OLD.state
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       RETURN NEW;
+     END
+     $$`,
+];
+
+const decisionGrants = [
+  `GRANT SELECT ON operation TO ${dispatcherRole}`,
+  `GRANT UPDATE (state, settled_at, settled_authority_kind,
+                 settled_authority_subject, outcome_code, decided_seq)
+     ON operation TO ${dispatcherRole}`,
+  `GRANT UPDATE (consumable) ON inbox_item TO ${dispatcherRole}`,
+  `GRANT SELECT, INSERT ON ticket_projection TO ${dispatcherRole}`,
+  `GRANT UPDATE (phase, seq) ON ticket_projection TO ${dispatcherRole}`,
+];
+
 /** Every migration in version order, which is the order the runner applies them in. */
 export const migrations: readonly Migration[] = [
   {
@@ -419,6 +533,15 @@ export const migrations: readonly Migration[] = [
       ...inboxTerminality,
       ...inboxCancellation,
       ...inboxGrants,
+    ],
+  },
+  {
+    version: 3,
+    name: "the project decision",
+    statements: [
+      ...decisionRelations,
+      ...decisionTerminality,
+      ...decisionGrants,
     ],
   },
 ];

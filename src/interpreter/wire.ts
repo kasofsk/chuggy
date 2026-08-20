@@ -15,10 +15,12 @@
  */
 
 import {
+  decodeDecisionEvent,
   decodeEntry,
+  encodeDecisionEvent,
   encodeEntry as encodeEntryValue,
 } from "../generated/model-api.ts";
-import type { Entry } from "../domain/generated/modelTypes.ts";
+import type { DecisionEvent, Entry } from "../domain/generated/modelTypes.ts";
 
 /** Writes one `Entry` as the text a store keeps. */
 export function encodeEntry(entry: Entry): string {
@@ -40,6 +42,24 @@ function parseRefusal(error: unknown): string {
 export function parseEntry(raw: unknown): Parsed<Entry> {
   try {
     return { parsed: "Ok", value: decodeEntry(raw) };
+  } catch (error: unknown) {
+    return { parsed: "Refused", why: parseRefusal(error) };
+  }
+}
+
+/** Writes one decision event as the text a command carries. */
+export function encodeDecisionEventText(event: DecisionEvent): string {
+  return JSON.stringify(encodeDecisionEvent(event));
+}
+
+/**
+ * Reads the text of one decision event, refusing anything the model does not
+ * describe. The JSON layer is inside the refusal because a command is a
+ * client's bytes, and unreadable bytes are an answer rather than a crash.
+ */
+export function parseDecisionEventText(text: string): Parsed<DecisionEvent> {
+  try {
+    return { parsed: "Ok", value: decodeDecisionEvent(JSON.parse(text)) };
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
   }

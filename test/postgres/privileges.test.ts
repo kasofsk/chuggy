@@ -62,9 +62,12 @@ const tableWide: readonly string[] = [
   `${dispatcherRole} inbox_item SELECT`,
   `${dispatcherRole} journal_entry INSERT`,
   `${dispatcherRole} journal_entry SELECT`,
+  `${dispatcherRole} operation SELECT`,
   `${dispatcherRole} project SELECT`,
   `${dispatcherRole} project_readiness SELECT`,
   `${dispatcherRole} recovery_epoch SELECT`,
+  `${dispatcherRole} ticket_projection INSERT`,
+  `${dispatcherRole} ticket_projection SELECT`,
 ];
 
 /** Every privilege held on named columns, with the columns it names. */
@@ -73,8 +76,11 @@ const columnWise: readonly string[] = [
   `${apiRole} operation INSERT (admission, authority_kind, authority_subject, command, key_digest, key_version, lifecycle_generation, operation, payload_digest, project, tenant)`,
   `${apiRole} project UPDATE (ingress_next)`,
   `${apiRole} project_readiness UPDATE (generation, ready)`,
+  `${dispatcherRole} inbox_item UPDATE (consumable)`,
+  `${dispatcherRole} operation UPDATE (decided_seq, outcome_code, settled_at, settled_authority_kind, settled_authority_subject, state)`,
   `${dispatcherRole} project UPDATE (fencing_epoch, head, lease_expires_at, owner, recovery_epoch)`,
   `${dispatcherRole} project_readiness UPDATE (ready)`,
+  `${dispatcherRole} ticket_projection UPDATE (phase, seq)`,
 ];
 
 /** Every routine either role may execute. */

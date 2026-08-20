@@ -101,14 +101,17 @@ test("the dispatcher role cannot move a project across the composite key", async
 });
 
 test("the dispatcher role may append an entry and move the head it counts", async () => {
-  const partition = await postgresHarnessProject(harness.store, "grants");
+  const submission = await acceptedFor("grants");
+  const partition = submission.partition;
   const epoch = await harness.store.currentRecoveryEpoch();
   assert.equal(
     await harness.attemptAs(
       dispatcherRole,
       `INSERT INTO journal_entry
-         (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch, recovery_epoch)
-       VALUES ('${partition.tenant}', '${partition.project}', 1, '{}', 'd', 'p', 'o', 1, '${epoch}')`,
+         (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch,
+          recovery_epoch, cause_operation)
+       VALUES ('${partition.tenant}', '${partition.project}', 1, '{}', 'd', 'p', 'o', 1,
+               '${epoch}', '${submission.operation}')`,
     ),
     undefined,
   );
@@ -154,7 +157,10 @@ const operationColumns = `
 test("the api role cannot append a journal entry, because it accepts work and decides none", async () => {
   const refusal = await harness.attemptAs(
     apiRole,
-    "INSERT INTO journal_entry (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch, recovery_epoch) VALUES ('t', 'p', 1, '{}', 'd', 'p', 'o', 1, 'e')",
+    `INSERT INTO journal_entry
+       (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch,
+        recovery_epoch, cause_operation)
+     VALUES ('t', 'p', 1, '{}', 'd', 'p', 'o', 1, 'e', 'c')`,
   );
   assert.match(String(refusal), /permission denied/);
 });
@@ -359,6 +365,32 @@ test("the dispatcher role may lower readiness and may not advance the generation
   const refusal = await harness.attemptAs(
     dispatcherRole,
     `UPDATE project_readiness SET generation = generation + 1 ${where}`,
+  );
+  assert.match(String(refusal), /permission denied/);
+});
+
+test("the dispatcher role may settle an operation, acknowledge its item and write a projection", async () => {
+  const submission = await acceptedFor("dispatcherdecide");
+  const partition = submission.partition;
+  const where = `WHERE tenant = '${partition.tenant}' AND project = '${partition.project}'`;
+  const permitted = [
+    `UPDATE operation SET state = 'Succeeded', settled_at = now(), decided_seq = 1,
+        settled_authority_kind = 'ProjectWriter', settled_authority_subject = 'owner'
+      ${where} AND operation = '${submission.operation}'`,
+    `UPDATE inbox_item SET consumable = false ${where}`,
+    `INSERT INTO ticket_projection (tenant, project, ticket, phase, seq)
+       VALUES ('${partition.tenant}', '${partition.project}', 1, 'Pending', 1)`,
+  ];
+  for (const statement of permitted) {
+    assert.equal(await harness.attemptAs(dispatcherRole, statement), undefined);
+  }
+});
+
+test("the dispatcher role cannot move a projection row across the key it is filed under", async () => {
+  const submission = await acceptedFor("dispatcherreproject");
+  const refusal = await harness.attemptAs(
+    dispatcherRole,
+    `UPDATE ticket_projection SET ticket = 2 WHERE tenant = '${submission.partition.tenant}'`,
   );
   assert.match(String(refusal), /permission denied/);
 });

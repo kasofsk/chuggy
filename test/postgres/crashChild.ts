@@ -7,12 +7,13 @@
  * orderly shutdown it did not ask for. A child that exited by itself would
  * prove that a clean close is durable, which is not the claim.
  *
- * `commit` acknowledges every append and then waits, so the parent kills a
- * process whose writes the store has already promised are durable. `blocked`
- * acknowledges the first, then starts a second append behind a row lock it
- * holds on another connection, so the parent kills a process whose write
- * cannot have committed. Between them they bound the answer: what was
- * acknowledged survives, and what was not leaves nothing.
+ * `decided` acknowledges a committed decision and then waits, so the parent
+ * kills a process holding a commit nobody else has heard about — which is the
+ * ambiguous commit exactly as a caller meets it. `undecided` starts the same
+ * decision behind a row lock it holds on another connection, so the parent
+ * kills a process whose write cannot have committed. Between them they bound
+ * the answer: what was acknowledged survives whole, and what was not leaves
+ * nothing.
  *
  * `accepted` and `unaccepted` are the same pair for the submission side, and
  * they take no lease at all — acceptance is the API's transaction and 006
@@ -24,6 +25,7 @@
 import { postgresOperationInbox } from "../../src/adapters/postgres/operationInbox.ts";
 import { postgresOwnershipLock } from "../../src/adapters/postgres/ownership.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
+import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
 import {
   asOwnerId,
@@ -33,8 +35,14 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import {
+  projectWriterDecide,
+  projectWriterLoad,
+  type ProjectWriter,
+} from "../../src/interpreter/projectWriter.ts";
+import { refinementInstance } from "../actor/harness.ts";
+import {
+  postgresHarnessAccept,
   postgresHarnessCrashSubmission,
-  postgresHarnessJournal,
   postgresHarnessKeying,
 } from "./harness.ts";
 
@@ -61,43 +69,42 @@ async function crashChildLease(
   return acquired.lease;
 }
 
-/** Appends under a lease, either acknowledging both entries or leaving the second behind a lock. */
-async function crashChildAppend(
+/** Decides the crash rig's one accepted operation, or leaves that decision behind a lock. */
+async function crashChildDecide(
   pool: ReturnType<typeof postgresPool>,
   partition: Partition,
   owner: string,
   seam: string,
 ): Promise<void> {
   const store = postgresProjectStore(pool);
-  const journal = postgresHarnessJournal();
-  const first = journal[0];
-  const second = journal[1];
-  if (first === undefined || second === undefined) {
-    throw new Error(
-      "crash child: the fixture journal is shorter than the seams need",
-    );
-  }
-  let lease = await crashChildLease(store, partition, owner);
-  const committed = await store.append(lease, first);
-  if (committed.appended !== "Committed") {
-    throw new Error(`crash child: the first append was ${committed.appended}`);
-  }
-  lease = { ...lease, head: committed.head };
-  crashChildSay(`committed ${String(committed.head)}`);
+  const writer: ProjectWriter = {
+    config: refinementInstance,
+    store,
+    decisions: postgresProjectDecision(pool),
+  };
+  const submission = postgresHarnessCrashSubmission(partition);
+  const item = await postgresHarnessAccept(
+    postgresOperationInbox(pool, postgresHarnessKeying()),
+    submission,
+  );
+  const memory = await projectWriterLoad(
+    writer,
+    await crashChildLease(store, partition, owner),
+  );
 
-  if (seam === "blocked") {
+  if (seam === "undecided") {
     const blocker = await pool.connect();
     await blocker.query("BEGIN");
     await postgresOwnershipLock(blocker, partition);
-    void store.append(lease, second);
+    void projectWriterDecide(writer, memory, item);
     crashChildSay("blocked");
     return;
   }
-  const also = await store.append(lease, second);
-  if (also.appended !== "Committed") {
-    throw new Error(`crash child: the second append was ${also.appended}`);
+  const step = await projectWriterDecide(writer, memory, item);
+  if (step.decided.decided !== "Committed") {
+    throw new Error(`crash child: the decision was ${step.decided.decided}`);
   }
-  crashChildSay(`committed ${String(also.head)}`);
+  crashChildSay(`committed ${String(step.decided.lease.head)}`);
 }
 
 /** Accepts with no lease, either acknowledging the acceptance or leaving it behind a lock. */
@@ -146,7 +153,7 @@ const partition: Partition = {
 if (seam === "accepted" || seam === "unaccepted") {
   await crashChildAccept(pool, partition, seam);
 } else {
-  await crashChildAppend(pool, partition, owner, seam);
+  await crashChildDecide(pool, partition, owner, seam);
 }
 
 crashChildSay("waiting");

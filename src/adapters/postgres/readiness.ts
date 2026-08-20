@@ -34,7 +34,10 @@
 
 import type pg from "pg";
 
-import { asOperationId } from "../../interpreter/operationInbox.ts";
+import {
+  asOperationCommand,
+  asOperationId,
+} from "../../interpreter/operationInbox.ts";
 import type {
   InboxItem,
   Readiness,
@@ -55,10 +58,11 @@ interface ReadinessRow {
   readonly generation: string;
 }
 
-/** One inbox row as PostgreSQL returns it. */
+/** One inbox row as PostgreSQL returns it, with the command its operation carries. */
 interface InboxRow {
   readonly ordinal: string;
   readonly operation: string;
+  readonly command: string;
 }
 
 /** Refuses a bound a caller left open, because an unbounded page is an unbounded read. */
@@ -95,9 +99,11 @@ export async function postgresReadinessConsumable(
   itemsMax: number,
 ): Promise<readonly InboxItem[]> {
   const found = await pool.query<InboxRow>(
-    `SELECT ordinal, operation FROM inbox_item
-      WHERE tenant = $1 AND project = $2 AND consumable
-      ORDER BY ordinal LIMIT $3`,
+    `SELECT i.ordinal, i.operation, o.command
+       FROM inbox_item i
+       JOIN operation o USING (tenant, project, operation)
+      WHERE i.tenant = $1 AND i.project = $2 AND i.consumable
+      ORDER BY i.ordinal LIMIT $3`,
     [
       partition.tenant,
       partition.project,
@@ -108,6 +114,7 @@ export async function postgresReadinessConsumable(
     partition,
     ordinal: projectRowCounter(row.ordinal, "inbox ordinal"),
     operation: asOperationId(row.operation),
+    command: asOperationCommand(row.command),
   }));
 }
 
