@@ -60,7 +60,9 @@ it a placement.
 `work-denies-all.yaml` selects every pod in the namespace and permits no
 destination in either direction. The rig's NetworkPolicy controller is k3s's
 embedded kube-router, which enforces ingress and egress alike. It programs one
-chain per pod, and `iptables-save` shows the whole of it:
+chain per pod, and `iptables-save` shows the whole of it — under a name
+kube-router regenerates on every resync, so a later dump carries the same rules
+under a different suffix and that is not drift:
 
 ```
 -A KUBE-POD-FW-DMK5BTVAK65PRJG4 -m comment --comment "rule for stateful firewall for pod" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
@@ -264,7 +266,7 @@ tcp  1.1.1.1:443          open     0.04s    wget: server returned error: HTTP/1.
 
 **That block is two runs, and says so because it cannot honestly be one.** The
 pod-network rows are from the policy as it stands. The host-network rows are
-from the earlier run that established this row, taken while the policy still
+from the earlier run that established this bound, taken while the policy still
 denied egress alone and while admission enforcement was lifted for the length
 of the measurement — the only state in which a host-network pod exists here at
 all. What the two shapes of the policy have in common is the only thing the
@@ -273,7 +275,7 @@ under either, so there is nothing for a `policyTypes` entry to change. The
 current listing still shows that — every jump into a pod firewall keyed on a
 pod's own address, and none on the node's.
 
-**The boundary this row draws is against pod-network traffic only.** What keeps
+**The boundary drawn here is against pod-network traffic only.** What keeps
 that from being one field away from irrelevant is the namespace's Pod Security
 labels, which refuse the field at admission:
 
@@ -304,11 +306,11 @@ The namespace's `default` ServiceAccount carries
 names no ServiceAccount — as a work pod does not — is handed no API credential.
 
 **This one is a namespace default, not a namespace control**, and the two are
-not the same strength. The egress policy holds by an empty `podSelector` and the
+not the same strength. `work-denies-all` holds by an empty `podSelector` and the
 Pod Security labels hold by admission refusal; neither can be talked out of by
 the workload. This one is a value the pod spec overrides, and `baseline`
 restricts neither the field nor the projected volume that reaches the same
-place:
+place — both routes, from the same manifest:
 
 ```
 $ kubectl -n chuggy-work exec work-probe -- ls /var/run/secrets
@@ -321,7 +323,18 @@ $ kubectl -n chuggy-work exec work-probe -- ls /var/run/secrets/kubernetes.io/se
 ca.crt
 namespace
 token
+$ sed -e 's|^spec:|spec:\n  volumes: [{name: t, projected: {sources: [{serviceAccountToken: {path: token}}]}}]|' \
+      -e 's|      command: .*|&\n      volumeMounts: [{name: t, mountPath: /var/run/secrets/projected}]|' \
+    deploy/rig/isolation/work-probe.yaml | kubectl replace --force -f -
+pod "work-probe" deleted
+pod/work-probe replaced
+$ kubectl -n chuggy-work exec work-probe -- ls /var/run/secrets/projected
+token
 ```
+
+The second pod sets no `automountServiceAccountToken` — each `sed` starts from
+the manifest as the tree carries it — so the namespace default is still off,
+`baseline` admits the volume, and the token arrives regardless.
 
 It denies the credential to a pod that does not ask, and a pod that asks is
 handed one. Closing it needs the treatment `hostNetwork` gets — refusal at
@@ -351,7 +364,7 @@ Said plainly, so nobody trusts it further than it goes.
   while `cni0` and every pod veth carry an `fe80::/64` link-local on one shared
   bridge. A work pod under the policy keeps its own link-local and reaches the
   node bridge over it — `ping6 ff02::1%eth0` draws a reply from `cni0` while
-  every IPv4 destination is refused. The boundary this row draws is IPv4-only;
+  every IPv4 destination is refused. The boundary drawn here is IPv4-only;
   nothing here bounds IPv6, and the GCP apply either policies it or disables it
   for the pod netns.
 - **That a raw socket cannot forge its way out.** Baseline PSA leaves
@@ -376,9 +389,18 @@ Said plainly, so nobody trusts it further than it goes.
   source and the neighbour's destination, so the work pod's own chain never
   runs. This one is read from the rules and the empty filter tables and was not
   measured; the layer-2 surface is otherwise unexamined here.
+- **That the policy decides every destination.** kube-router's `INPUT` chain
+  returns before any pod-firewall jump for a node-local destination on tcp or
+  udp `30000:32767`, so what a work pod sends there is never offered to the
+  policy at all. The two verdicts separate cleanly against the node's own
+  address with nothing listening on either port: `29999` is refused in the
+  policy's words and at its speed, while `31000` times out instead, dropped by
+  the host firewall with the policy never consulted. Nothing occupies that
+  range on this rig; on the GCP apply it is a NodePort range in use, and
+  nothing here bounds it.
 - **Anything about a host-network source, the node, or another namespace.**
 - **Anything about egress from the cluster's own infrastructure.** Flux, the
-  PostgreSQL StatefulSet and the ingress are untouched by this row.
+  PostgreSQL StatefulSet and the ingress are untouched by this rehearsal.
 
 ## Undoing it
 

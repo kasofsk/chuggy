@@ -14,6 +14,11 @@
 # leaves free to dial in — a pod in another namespace, which this rig's
 # rehearsal does not create.
 #
+# Adding it to the namespace under test cannot move the verdict it exists to
+# read: it names `Egress` alone, so it grants no ingress anywhere; its selector
+# matches this pod and no other; and every pod chain ends by clearing the
+# compliance mark, so nothing marked here survives into the called pod's chain.
+#
 # It is a fixture. `README.md` applies it, reads the dial with the ingress half
 # on and off, and deletes both objects afterwards.
 apiVersion: v1
