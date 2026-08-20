@@ -1,0 +1,25 @@
+# The namespace agent-authored work runs in, and nothing else does.
+#
+# It exists so that a policy with an empty pod selector has a boundary to be
+# empty within: `work-denies-egress.yaml` selects every pod here, so anything
+# scheduled into this namespace is denied egress whether or not whoever
+# scheduled it knew about the policy. A workload that needs the network belongs
+# in another namespace, not in an exception to this one.
+#
+# The Pod Security labels are what keep that policy meaningful. On this rig the
+# NetworkPolicy controller programs `--src-type LOCAL -j ACCEPT` above every
+# policy jump, so traffic whose source is a node address is exempt — and a pod
+# with `hostNetwork: true` has exactly that source. Without admission control
+# the egress policy would be one field away from being bypassed by the very
+# workload it is drawn around. The baseline profile refuses that field, along
+# with the host PID and IPC namespaces, host paths and privileged containers;
+# `README.md` shows it doing so. Baseline rather than restricted, because
+# restricted also demands a non-root user and a seccomp profile, which is a
+# statement about how work is built rather than about what it may reach.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chuggy-work
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
