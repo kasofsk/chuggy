@@ -4,11 +4,11 @@
 # it belongs in and the scheduler will not put it anywhere else. It carries no
 # toleration, because `README.md` explains why the rig's node carries no taint.
 #
-# `automountServiceAccountToken: false` is here because the rest of this
-# directory is an argument that this pod reaches nothing, and a mounted API
-# credential is something it reaches. Egress denial already refuses the API
-# server's address; this refuses the credential as well, so neither control is
-# the only one standing.
+# It names no `serviceAccountName`, so it takes the namespace's `default`, whose
+# `automountServiceAccountToken: false` (set in `namespace.yaml`) leaves this pod
+# no API credential to mount. That control is namespace-wide rather than a field
+# here, so it holds for anything scheduled into `chuggy-work`, not only for a pod
+# that thought to ask; `README.md` shows the credential absent.
 #
 # It sleeps rather than serving, and the sleep ends on its own: a probe that
 # outlives the rehearsal is residue on a shared rig.
@@ -19,7 +19,6 @@ metadata:
   namespace: chuggy-work
 spec:
   restartPolicy: Never
-  automountServiceAccountToken: false
   nodeSelector:
     chuggy.dev/pool: work
   containers:

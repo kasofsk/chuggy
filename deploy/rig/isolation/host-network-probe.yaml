@@ -17,7 +17,6 @@ metadata:
   namespace: chuggy-work
 spec:
   restartPolicy: Never
-  automountServiceAccountToken: false
   hostNetwork: true
   nodeSelector:
     chuggy.dev/pool: work

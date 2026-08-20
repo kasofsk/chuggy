@@ -1,16 +1,25 @@
-# Default-deny egress for every pod in the work namespace.
+# Default-deny both directions for every pod in the work namespace.
 #
-# An empty `podSelector` selects all of them, and `policyTypes: [Egress]` with
-# no `egress` rule is how the API spells "no destination is permitted": there is
-# no deny verb, only the absence of an allow. DNS is denied along with
-# everything else, deliberately — a job pod that cannot resolve a name has one
-# fewer way to be told where to go.
+# An empty `podSelector` selects all of them, and naming a `policyType` with no
+# matching rule is how the API spells "nothing is permitted in that direction":
+# there is no deny verb, only the absence of an allow. This is the upstream
+# default-deny-all recipe. DNS is denied along with everything else,
+# deliberately — a job pod that cannot resolve a name has one fewer way to be
+# told where to go.
 #
-# Ingress is left unrestricted, so `kubectl exec` and `kubectl logs` keep
-# working: both are served by the kubelet into the container rather than by the
-# pod opening a connection, so neither is egress and neither is what this
-# refuses. That is also what makes the rehearsal in `README.md` possible from
-# outside the namespace.
+# Egress alone is not enough. kube-router enforces statefully: a pod's chain
+# ACCEPTs `RELATED,ESTABLISHED` before it reaches the policy jump, so with
+# ingress left open any pod in any namespace could dial *into* a work pod and
+# every packet the work pod sent back on that connection would be ACCEPTed as
+# established — a full-duplex channel out of a namespace whose whole claim is
+# that code in it reaches nothing. Denying ingress closes the inbound half and
+# with it that return path.
+#
+# `kubectl exec` and `kubectl logs` are unaffected: both are served by the
+# kubelet into the container rather than by anything dialling the pod, so
+# neither is ingress in the pod-network sense this refuses — which is also why
+# leaving ingress open never helped them. The rehearsal in `README.md` runs
+# through `exec` and stays possible from outside the namespace.
 #
 # When a job legitimately needs a destination, it is added here as an `egress`
 # rule naming that destination, and it is not added by exempting the pod: a
@@ -24,4 +33,5 @@ metadata:
 spec:
   podSelector: {}
   policyTypes:
+    - Ingress
     - Egress

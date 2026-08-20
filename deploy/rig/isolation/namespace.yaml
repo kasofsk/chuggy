@@ -13,9 +13,18 @@
 # the egress policy would be one field away from being bypassed by the very
 # workload it is drawn around. The baseline profile refuses that field, along
 # with the host PID and IPC namespaces, host paths and privileged containers;
-# `README.md` shows it doing so. Baseline rather than restricted, because
-# restricted also demands a non-root user and a seccomp profile, which is a
-# statement about how work is built rather than about what it may reach.
+# `README.md` shows it doing so.
+#
+# Baseline rather than restricted. Restricted goes further in two ways that are
+# about how work is built — a non-root user and a seccomp profile — and one that
+# is about what it may reach: `capabilities.drop: [ALL]`, which removes
+# `CAP_NET_RAW`. Baseline keeps NET_RAW, so a work pod can open a raw socket and
+# forge another pod's source address; kube-router keys every jump on the source
+# IP with no catch-all, so a packet forged from a pod whose namespace has no
+# egress policy lands in that pod's default-allow chain and is masqueraded out.
+# That hole is knowingly retained — closing it is a per-workload
+# `securityContext`, not a namespace default — and `README.md` lists source
+# spoofing among what this does not prove.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -23,3 +32,17 @@ metadata:
   labels:
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/enforce-version: latest
+---
+# The namespace's `default` ServiceAccount, with token automounting off. Setting
+# it here rather than on each pod is what makes it a namespace control like the
+# egress policy and the Pod Security labels: anything scheduled into
+# `chuggy-work` that does not name its own ServiceAccount holds no API
+# credential, whether or not whoever scheduled it thought to ask. The `default`
+# SA is created by Kubernetes with the namespace; this manifest sets the one
+# field on it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: chuggy-work
+automountServiceAccountToken: false
