@@ -29,11 +29,22 @@ import { actorInit, journalStep } from "../../src/actor/state.ts";
 
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
+import type { IdempotencyKeying } from "../../src/adapters/postgres/keying.ts";
+import { postgresOperationInbox } from "../../src/adapters/postgres/operationInbox.ts";
 import {
   postgresMigrate,
   postgresPool,
 } from "../../src/adapters/postgres/pool.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+  asIdempotencyKey,
+  asOperationCommand,
+  asOperationId,
+  type OperationInbox,
+  type Submission,
+} from "../../src/interpreter/operationInbox.ts";
 import {
   asOwnerId,
   asProjectId,
@@ -59,9 +70,20 @@ export function postgresHarnessUrl(): string {
   return url;
 }
 
-/** One opened subject: the store, the pool beneath it, and the way to give both back. */
+/** One transaction a case drives itself, for the interleavings a port cannot be asked to produce. */
+export interface PostgresTransaction {
+  readonly query: (
+    sql: string,
+    values?: readonly unknown[],
+  ) => Promise<readonly Record<string, unknown>[]>;
+  readonly commit: () => Promise<void>;
+  readonly rollback: () => Promise<void>;
+}
+
+/** One opened subject: the store, the inbox, the pool beneath them, and the way to give it back. */
 export interface PostgresHarness {
   readonly store: ProjectStore;
+  readonly inbox: OperationInbox;
   readonly query: (
     sql: string,
     values?: readonly unknown[],
@@ -70,6 +92,7 @@ export interface PostgresHarness {
     role: string,
     sql: string,
   ) => Promise<string | undefined>;
+  readonly begin: () => Promise<PostgresTransaction>;
   readonly close: () => Promise<void>;
 }
 
@@ -81,10 +104,12 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
   await postgresHarnessEpoch(store);
   return {
     store,
+    inbox: postgresOperationInbox(pool, postgresHarnessKeying()),
     query: async (sql, values) =>
       (await pool.query(sql, values === undefined ? undefined : [...values]))
         .rows as readonly Record<string, unknown>[],
     attemptAs: (role, sql) => postgresHarnessAttemptAs(pool, role, sql),
+    begin: () => postgresHarnessBegin(pool),
     close: () => pool.end(),
   };
 }
@@ -150,6 +175,89 @@ export async function postgresHarnessProject(
   const partition = postgresHarnessPartition(label);
   await store.createProject(partition);
   return partition;
+}
+
+/**
+ * An open transaction a case drives statement by statement. It is how a case
+ * produces an interleaving the port has no seam for — a row lock held across
+ * another call, or the terminalization the decision transaction will make.
+ */
+async function postgresHarnessBegin(
+  pool: pg.Pool,
+): Promise<PostgresTransaction> {
+  const client = await pool.connect();
+  await client.query("BEGIN");
+  const finish = async (how: string): Promise<void> => {
+    try {
+      await client.query(how);
+    } finally {
+      client.release();
+    }
+  };
+  return {
+    query: async (sql, values) =>
+      (await client.query(sql, values === undefined ? undefined : [...values]))
+        .rows as readonly Record<string, unknown>[],
+    commit: () => finish("COMMIT"),
+    rollback: () => finish("ROLLBACK"),
+  };
+}
+
+/** The key version every case digests under unless it is rotating away from it. */
+export const postgresHarnessKeyVersionFirst = "keying-one";
+
+/** The version a rotating case makes current, while the first stays retained and looked up. */
+export const postgresHarnessKeyVersionLater = "keying-two";
+
+/**
+ * A keying set whose current version is the one named. Cases rotate by opening
+ * a second inbox on the later version, which is what proves a key accepted
+ * under the earlier one is still found.
+ */
+export function postgresHarnessKeying(
+  current = postgresHarnessKeyVersionFirst,
+): IdempotencyKeying {
+  return {
+    current,
+    versions: [
+      postgresHarnessKeyVersionFirst,
+      postgresHarnessKeyVersionLater,
+    ].map((version) => ({ version, secret: `secret-for-${version}` })),
+  };
+}
+
+/**
+ * A submission no other case is making, labelled so a failure names the case
+ * that made it. The uniqueness may be supplied rather than drawn, which is how
+ * the crash rig's parent and child name the same submission without a channel
+ * between them.
+ */
+export function postgresHarnessSubmission(
+  partition: Partition,
+  label: string,
+  unique: string = randomUUID(),
+): Submission {
+  return {
+    partition,
+    operation: asOperationId(`operation-${label}-${unique}`),
+    authority: {
+      kind: asAuthorityKind("UserMutation"),
+      subject: asAuthoritySubject(`subject-${label}`),
+    },
+    admission: "Ordinary",
+    key: asIdempotencyKey(`key-${label}-${unique}`),
+    command: asOperationCommand(`{"label":"${label}"}`),
+  };
+}
+
+/**
+ * The submission the crash rig accepts, derived from the partition so the
+ * parent names the operation its killed child wrote without a channel to it.
+ */
+export function postgresHarnessCrashSubmission(
+  partition: Partition,
+): Submission {
+  return postgresHarnessSubmission(partition, "crash", partition.project);
 }
 
 /**

@@ -11,6 +11,11 @@
  * THE PARENT RECONNECTS THROUGH A FRESH POOL. Reading back through the
  * connection the child never had is what makes this a statement about
  * PostgreSQL rather than about anything the adapter kept in memory.
+ *
+ * THE SUBMISSION SIDE IS THE SAME RIG WITH NO LEASE IN IT. 006 asks that a
+ * crash after acceptance leave the work discoverable without an active owner,
+ * and the only way to mean that is a process that took no ownership, accepted,
+ * and then stopped existing.
  */
 
 import assert from "node:assert/strict";
@@ -22,6 +27,7 @@ import { journalLegalOn } from "../../src/actor/journal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import {
+  postgresHarnessCrashSubmission,
   postgresHarnessOpen,
   postgresHarnessOwner,
   postgresHarnessJournal,
@@ -124,4 +130,67 @@ test("a fresh process takes over a dead owner's project and resumes at its head"
   );
   assert.ok(successor.acquired === "Granted");
   assert.equal(successor.lease.head, journal.length);
+});
+
+test("a crash after acceptance leaves the work discoverable with no active owner", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "crashaccepted",
+  );
+  await crashAt(partition, "accepted");
+
+  assert.deepEqual(
+    await harness.query(
+      "SELECT owner, head, ingress_next FROM project WHERE tenant = $1 AND project = $2",
+      [partition.tenant, partition.project],
+    ),
+    [{ owner: null, head: "0", ingress_next: "2" }],
+  );
+
+  const submission = postgresHarnessCrashSubmission(partition);
+  const operation = await harness.inbox.operation(
+    partition,
+    submission.operation,
+  );
+  assert.ok(operation !== undefined);
+  assert.equal(operation.state, "Pending");
+  assert.equal(operation.ordinal, 1);
+
+  const ready = await harness.inbox.ready(1_000);
+  assert.ok(ready.some((each) => each.partition.project === partition.project));
+  assert.deepEqual(
+    (await harness.inbox.consumable(partition, 10)).map(
+      (item) => item.operation,
+    ),
+    [submission.operation],
+  );
+});
+
+test("an acceptance that never resolved leaves no operation and no ordinal spent", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "crashunaccepted",
+  );
+  await crashAt(partition, "unaccepted");
+
+  const submission = postgresHarnessCrashSubmission(partition);
+  assert.equal(
+    await harness.inbox.operation(partition, submission.operation),
+    undefined,
+  );
+  assert.deepEqual(await harness.inbox.consumable(partition, 10), []);
+  assert.deepEqual(
+    await harness.query(
+      "SELECT ingress_next FROM project WHERE tenant = $1 AND project = $2",
+      [partition.tenant, partition.project],
+    ),
+    [{ ingress_next: "1" }],
+  );
+  assert.deepEqual(
+    await harness.query(
+      "SELECT 1 FROM project_readiness WHERE tenant = $1 AND project = $2",
+      [partition.tenant, partition.project],
+    ),
+    [],
+  );
 });

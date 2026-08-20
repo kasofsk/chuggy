@@ -46,7 +46,72 @@
  * THE DIGEST CHAIN IS STRUCTURAL AND ARRIVES NOW rather than when integrity
  * containment does, because 006 makes this the production format version one
  * and a chain added later is a migration over authoritative history.
+ *
+ * `project.ingress_next` — the per-project ingress counter, a column on the
+ * lifecycle row rather than a relation of its own because 006 has acceptance
+ * lock that row and allocate the ordinal in the same statement, and two rows
+ * would be two locks with an order to get wrong. Owned by the API role, which
+ * is granted UPDATE on this column and no other: allocating an ordinal is not
+ * a licence to move the head, the owner or the lifecycle. It is changed by
+ * acceptance alone, whose conditional UPDATE also decides admission, so a
+ * lifecycle transition committing first leaves the counter untouched.
+ *
+ * `operation` — one accepted mutation, its authority, its idempotency scope
+ * and its terminal state. Owned by the API role for insertion and
+ * cancellation and, from the decision transaction onward, by the dispatcher
+ * for its outcome. Its composite key is `(tenant, project)` and it points at
+ * `project`; its identity is `(tenant, project, operation)` with the opaque
+ * operation identity unique globally, because 006 mints those outside any
+ * partition and a reused one would answer another project's poll. Its
+ * idempotency key is `(tenant, project, authority_kind, key_digest)`, unique
+ * and permanent, which is what makes a retry find its original rather than
+ * create a second. It is changed by acceptance and by cancellation, and a
+ * trigger refuses any later change to a state already terminal. Unfinished
+ * work is found by selecting `Pending` operations for a partition.
+ *
+ * WHY THE IDEMPOTENCY TOMBSTONE IS THIS ROW AND NOT A SECOND ONE. The scope,
+ * the key digest and the payload digest belong to exactly one operation, and
+ * standing rule 3 rejects the copy a second relation would keep. 006 compacts
+ * a terminal operation's command body while the tombstone survives; that is a
+ * column set to null rather than a row that outlives its parent.
+ *
+ * WHY THERE IS NO OUTCOME COLUMN YET. The only outcome I1 can write is
+ * cancellation, whose code would restate `state`, and a stored duplicate of a
+ * derivable fact is standing rule 3's finding. The stable refusal code and the
+ * decided project sequence arrive with the decision transaction that produces
+ * them.
+ *
+ * `inbox_item` — the project's durable inbox, in the ordinal order acceptance
+ * allocated. Owned by the API role for insertion and for making an item
+ * non-consumable at cancellation; acknowledgement is the writer's and arrives
+ * with it. Its composite key is `(tenant, project)`, its identity is
+ * `(tenant, project, ordinal)`, and its source key `(tenant, project,
+ * operation)` is unique, which is the deduplication 006 requires before
+ * ordinal allocation — every item I1 admits is an accepted operation's, and
+ * a second source kind arrives with the slice that has one. It is changed by
+ * acceptance and by cancellation. Unfinished work is found by selecting
+ * consumable items for a partition in ordinal order, which is also what
+ * activation verifies the inbox with.
+ *
+ * `project_readiness` — the discovery index over that inbox, and the only
+ * thing fleet discovery reads. Owned by the API role, which raises it, and by
+ * the dispatcher role, which may lower `ready` and may not touch the
+ * generation. Its composite key and identity are both `(tenant, project)`. It
+ * is changed by acceptance, which raises readiness and advances the
+ * generation, and by an idle owner clearing it. Unfinished work is found by
+ * selecting the ready rows across the fleet.
+ *
+ * WHY THE ROW IS NEVER DELETED AND THE GENERATION NEVER RESTARTS. Clearing
+ * lowers a flag rather than removing the row, because a generation that
+ * restarted at one would let an owner holding a stale one erase the wake-up
+ * that reused it — which is the single race the generation exists to prevent.
  */
+
+import {
+  authorityCharsMax,
+  operationCommandCharsMax,
+  operationIdentityCharsMax,
+} from "../../interpreter/operationInbox.ts";
 
 /** One migration: the version that orders it, the name that reports it, and the statements it applies. */
 export interface Migration {
@@ -57,6 +122,9 @@ export interface Migration {
 
 /** The role every runtime dispatcher connects as, named once so the grants and the suite agree. */
 export const dispatcherRole = "chuggy_dispatcher";
+
+/** The role the authenticated API connects as, which accepts and cancels work and decides none of it. */
+export const apiRole = "chuggy_api";
 
 /** The ledger of applied migrations, which the runner creates before it reads anything. */
 export const migrationLedger = `
@@ -124,29 +192,159 @@ const foundationGrants = [
 ];
 
 /**
- * Creates the runtime role if this cluster has never seen it. `CREATE ROLE` has
+ * Creates a runtime role if this cluster has never seen it. `CREATE ROLE` has
  * no `IF NOT EXISTS`, and a role is a cluster-wide object a sibling database
  * may already have made — so the test is a check-then-act that the
  * database-scoped migration lock cannot serialize, and the handler is what
  * absorbs the sibling that won.
  */
-const foundationRole = `
+function roleStatement(role: string): string {
+  return `
   DO $$
   BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${dispatcherRole}') THEN
-      CREATE ROLE ${dispatcherRole} NOLOGIN;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${role}') THEN
+      CREATE ROLE ${role} NOLOGIN;
     END IF;
   EXCEPTION WHEN duplicate_object THEN
     NULL;
   END
   $$
 `;
+}
+
+const inboxRelations = [
+  `ALTER TABLE project
+     ADD COLUMN ingress_next bigint NOT NULL DEFAULT 1,
+     ADD CONSTRAINT project_ingress_is_positive CHECK (ingress_next >= 1)`,
+  `CREATE TABLE operation (
+     tenant                    text   NOT NULL,
+     project                   text   NOT NULL,
+     operation                 text   NOT NULL,
+     authority_kind            text   NOT NULL,
+     authority_subject         text   NOT NULL,
+     admission                 text   NOT NULL,
+     key_version               text   NOT NULL,
+     key_digest                text   NOT NULL,
+     payload_digest            text   NOT NULL,
+     command                   text   NOT NULL,
+     state                     text   NOT NULL DEFAULT 'Pending',
+     lifecycle_generation      bigint NOT NULL,
+     accepted_at               timestamptz NOT NULL DEFAULT now(),
+     settled_at                timestamptz,
+     settled_authority_kind    text,
+     settled_authority_subject text,
+     PRIMARY KEY (tenant, project, operation),
+     CONSTRAINT operation_belongs_to_project
+       FOREIGN KEY (tenant, project) REFERENCES project (tenant, project),
+     CONSTRAINT operation_identity_is_never_reused UNIQUE (operation),
+     CONSTRAINT operation_idempotency_is_scoped
+       UNIQUE (tenant, project, authority_kind, key_digest),
+     CONSTRAINT operation_state_is_known CHECK (
+       state IN ('Pending', 'Succeeded', 'Refused', 'Cancelled')
+     ),
+     CONSTRAINT operation_admission_is_known CHECK (
+       admission IN ('Ordinary', 'CorrectnessReducing')
+     ),
+     CONSTRAINT operation_settlement_is_whole CHECK (
+       (state = 'Pending') = (settled_at IS NULL)
+       AND (settled_authority_kind IS NULL) = (settled_authority_subject IS NULL)
+     ),
+     CONSTRAINT operation_text_is_bounded CHECK (
+       length(operation) <= ${operationIdentityCharsMax}
+       AND length(authority_kind) <= ${authorityCharsMax}
+       AND length(authority_subject) <= ${authorityCharsMax}
+       AND length(command) <= ${operationCommandCharsMax}
+     )
+   )`,
+  `CREATE TABLE inbox_item (
+     tenant      text   NOT NULL,
+     project     text   NOT NULL,
+     ordinal     bigint NOT NULL,
+     operation   text   NOT NULL,
+     consumable  boolean NOT NULL DEFAULT true,
+     enqueued_at timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant, project, ordinal),
+     CONSTRAINT inbox_item_source_is_unique UNIQUE (tenant, project, operation),
+     CONSTRAINT inbox_item_has_its_operation
+       FOREIGN KEY (tenant, project, operation)
+       REFERENCES operation (tenant, project, operation),
+     CONSTRAINT inbox_item_ordinal_is_positive CHECK (ordinal >= 1)
+   )`,
+  `CREATE TABLE project_readiness (
+     tenant     text    NOT NULL,
+     project    text    NOT NULL,
+     ready      boolean NOT NULL,
+     generation bigint  NOT NULL,
+     PRIMARY KEY (tenant, project),
+     CONSTRAINT project_readiness_belongs_to_project
+       FOREIGN KEY (tenant, project) REFERENCES project (tenant, project),
+     CONSTRAINT project_readiness_generation_is_positive CHECK (generation >= 1)
+   )`,
+  `CREATE INDEX inbox_item_consumable ON inbox_item (tenant, project, ordinal)
+     WHERE consumable`,
+  `CREATE INDEX project_readiness_ready ON project_readiness (tenant, project)
+     WHERE ready`,
+];
+
+/**
+ * The trigger that makes a terminal outcome final. A grant cannot say which
+ * value a column may take, so the rule that a cancelled operation is never
+ * later succeeded has to be the server's own, and it is what makes the
+ * cancellation race resolve one way rather than both.
+ */
+const inboxTerminality = [
+  `CREATE FUNCTION operation_stays_terminal() RETURNS trigger
+     LANGUAGE plpgsql AS $$
+     BEGIN
+       IF OLD.state <> 'Pending'
+          AND (NEW.state, NEW.settled_at) IS DISTINCT FROM (OLD.state, OLD.settled_at)
+       THEN
+         RAISE EXCEPTION
+           'operation % is already %, and an outcome is decided once', OLD.operation, OLD.state
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       RETURN NEW;
+     END
+     $$`,
+  `CREATE TRIGGER operation_outcome_is_decided_once
+     BEFORE UPDATE ON operation
+     FOR EACH ROW EXECUTE FUNCTION operation_stays_terminal()`,
+];
+
+const inboxGrants = [
+  `GRANT SELECT ON project TO ${apiRole}`,
+  `GRANT UPDATE (ingress_next) ON project TO ${apiRole}`,
+  `GRANT SELECT, INSERT ON operation TO ${apiRole}`,
+  `GRANT UPDATE (state, settled_at, settled_authority_kind, settled_authority_subject)
+     ON operation TO ${apiRole}`,
+  `GRANT SELECT, INSERT ON inbox_item TO ${apiRole}`,
+  `GRANT UPDATE (consumable) ON inbox_item TO ${apiRole}`,
+  `GRANT SELECT, INSERT ON project_readiness TO ${apiRole}`,
+  `GRANT UPDATE (ready, generation) ON project_readiness TO ${apiRole}`,
+  `GRANT SELECT ON inbox_item TO ${dispatcherRole}`,
+  `GRANT SELECT ON project_readiness TO ${dispatcherRole}`,
+  `GRANT UPDATE (ready) ON project_readiness TO ${dispatcherRole}`,
+];
 
 /** Every migration in version order, which is the order the runner applies them in. */
 export const migrations: readonly Migration[] = [
   {
     version: 1,
     name: "the project foundation",
-    statements: [foundationRole, ...foundationRelations, ...foundationGrants],
+    statements: [
+      roleStatement(dispatcherRole),
+      ...foundationRelations,
+      ...foundationGrants,
+    ],
+  },
+  {
+    version: 2,
+    name: "the project inbox",
+    statements: [
+      roleStatement(apiRole),
+      ...inboxRelations,
+      ...inboxTerminality,
+      ...inboxGrants,
+    ],
   },
 ];

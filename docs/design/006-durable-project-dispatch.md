@@ -1,11 +1,13 @@
 # Durable project dispatch
 
-**Status: M0, G0 AND I0 LANDED** — issue #92 agreed these decisions and the
-tree now carries the first three rows of the landing table: `model/` proves the
-project-scoped `Core`, `src/generated/model-api.ts` is generated from
+**Status: M0, G0, I0 AND I1 LANDED** — issue #92 agreed these decisions and
+the tree now carries the first four rows of the landing table: `model/` proves
+the project-scoped `Core`, `src/generated/model-api.ts` is generated from
 `model/api.qnt`, and `src/adapters/postgres/` holds the lifecycle row, the
-ownership lease and the expected-head journal append, under
-`.chug/tasks/check-postgres.sh`. Operations, the inbox, the mailbox, the
+ownership lease, the expected-head journal append, the authority-scoped
+operation with its permanent idempotency, the ingress ordinal, the durable
+inbox and the readiness generation that indexes it, under
+`.chug/tasks/check-postgres.sh`. The decision transaction, the mailbox, the
 selection service, the scheduler and the durable consumer request tables are
 not built, so the body below still argues them.
 
@@ -1371,7 +1373,7 @@ first.
 | M0 | — | Project-scoped sparse-ID `Core`, vocabulary and transition migration | Landed |
 | G0 | M0 | Generated TypeScript model API declarations from issue #98 | Landed |
 | I0 | M0, G0 | PostgreSQL foundation: lifecycle rows, composite keys, roles, ownership lease and fencing epoch, expected-head journal append, recovery epoch | Landed |
-| I1 | I0 | Authority-scoped operation/idempotency rows, ingress ordinal, durable inbox/readiness and cancellation race. Acceptance atomically writes operation, inbox and readiness; a crash after acceptance remains discoverable without an active owner. | — |
+| I1 | I0 | Authority-scoped operation and idempotency rows, ingress ordinal, durable inbox and readiness generation, cancellation race | Landed |
 | I2 | I1 | The project decision transaction: replay/load, lifecycle/lease/head/revision fences, journal append, operation terminalization, inbox acknowledgement and primary projection update. Refusal has no journal entry; ambiguous commit resolves by durable read. | — |
 | I3 | I2 | Bounded project mailbox, priority/aging and durable deterministic continuations; focused native-action and consumer-request tables materialized in the deciding transaction. Process death cannot lose or duplicate a continuation or external request. | — |
 | I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. | — |
