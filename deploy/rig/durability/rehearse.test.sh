@@ -1,10 +1,12 @@
 #!/bin/sh
-# Shell test for rehearse.sh, over what it names here and no more: the mode an
-# archive full of verifiers is held to, the digest and receipt comparisons
-# standing between `verify` and `destroy`, the derivation `epoch` holds the
-# establish to, the witness partition every later stage reads, what `teardown`
-# observes before it says anything, and what a status from a tool underneath is
-# worth by the time it leaves.
+# Shell test for rehearse.sh, over what it names here and no more: the stdin the
+# `kubectl` stub below does and does not take, the mode an archive full of
+# verifiers is held to, the digest and receipt comparisons standing between
+# `verify` and `destroy`, the inventory `restore` needs before it can say
+# anything about what came back, the derivation `epoch` holds the establish to,
+# the witness partition every later stage reads, what `teardown` observes before
+# it says anything, and what a status from a tool underneath is worth by the
+# time it leaves.
 #
 # WHY IT IS A SUITE AND NOT A RIG RUN. Every guard here was once written so that
 # the absence of the thing being checked read as agreement: a digest taken
@@ -62,9 +64,14 @@ esac
 
 # `kubectl exec` attaches stdin only when it is asked to, and the bare `exec`
 # calls in the script under test ask for none. A stub that drained stdin for
-# those would be draining the suite's own, which on a terminal never ends. The
-# remote command is cut off first, so a `-i` in it is not read as the flag.
-case " ${*%% -- *} " in
+# those would be draining the suite's own, which on a terminal never ends. So
+# the flag is looked for ahead of the `--` and a `-i` behind it is not one —
+# and the cut is taken on a plain variable, because `${*%%…}` is not a string
+# operation on the joined arguments: bash removes the suffix from each
+# positional parameter and joins afterwards, so an argument list in which no
+# single argument holds the pattern comes back whole and nothing is cut.
+invocation=" $* "
+case " ${invocation%% -- *} " in
 *' -i '*) cat > /dev/null ;;
 esac
 served="$CHUG_STUB_LOG.served"
@@ -124,6 +131,34 @@ calls() {
 }
 
 untouched="the cluster was reached 0 time(s)"
+
+# --- the stub's stdin, which is the suite's own ------------------------------
+
+# The stub takes stdin on the flag and not on the remote command behind the
+# `--`, and no other case here can see which: no remote command in the script
+# under test carries a ` -i ` for the flag test to mistake for one, so removing
+# that test would change nothing any case below reports. What a stub that took
+# a stdin it was never given does is not fail — it stalls, on a terminal for as
+# long as the terminal is open. These two hand it a file, so the one that
+# proves the drain cannot stall either.
+stub_stdin() { # <args...> — what the stub left of a stdin it was handed
+	OUT="$WORK/.out"
+	printf 'unread\n' > "$WORK/.stdin"
+	{
+		set +e
+		env CHUG_STUB_LOG="$WORK/.stdin.log" CHUG_STUB_REPLIES=/dev/null \
+			"$BIN/kubectl" "$@" > /dev/null 2>&1
+		RC=$?
+		set -e
+		printf 'the stub left: [%s]\n' "$(cat)"
+	} < "$WORK/.stdin" > "$OUT"
+}
+
+stub_stdin exec podname -- env CHUG_HOST=h sh -c 'exec pg_restore -i /tmp/x.dump'
+check "the stub leaves stdin alone for a -i behind the --" 0 "$RC" "the stub left: [unread]"
+
+stub_stdin exec -i podname -- sh -c 'exec psql'
+check "the stub takes stdin for a -i ahead of the --" 0 "$RC" "the stub left: []"
 
 # --- the archive: credential material before it is anything else -------------
 
@@ -268,10 +303,23 @@ run epoch
 check "epoch refuses a host with no uuid source" 2 "$RC" "no source of an unpredictable epoch"
 check "a host with no uuid source reaches nothing" 2 "$RC" "$untouched"
 
-# --- restore: the witness partition every later stage reads ------------------
+# --- restore: the inventory it compares against, and the witness partition ---
+
+# The comparison `restore` is for is against the inventory `snapshot` took, and
+# with that file gone `diff` reports a difference like any other. A one there
+# says the restore came back wrong; what is true is that nobody ever recorded
+# what right was, and by then the database has already been replaced.
+fresh_case
+printf 'a dump\n' > "$A/fixture.dump"
+printf 'tenant t\n' > "$A/witness-before.txt"
+printf 'tenant t\nproject p\n' > "$A/witness-partition.txt"
+run restore
+check "restore refuses when there is no live inventory to compare against" 2 "$RC" "no live inventory to compare against"
+check "restore with nothing to compare against reaches nothing" 2 "$RC" "$untouched"
 
 fresh_case
 printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|project|7\n' > "$A/inventory-live.txt"
 printf 'tenant t\n' > "$A/witness-before.txt"
 run restore
 check "restore refuses when snapshot recorded no partition" 2 "$RC" "there is no witness recorded in"
@@ -279,6 +327,7 @@ check "restore without a partition reaches nothing" 2 "$RC" "$untouched"
 
 fresh_case
 printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|project|7\n' > "$A/inventory-live.txt"
 printf 'tenant t\n' > "$A/witness-before.txt"
 printf 'tenant t\n' > "$A/witness-partition.txt"
 run restore
@@ -287,20 +336,22 @@ check "restore with half a partition reaches nothing" 2 "$RC" "$untouched"
 
 fresh_case
 printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|project|7\n' > "$A/inventory-live.txt"
 printf 'tenant t\n' > "$A/witness-before.txt"
 printf 'project p\n' > "$A/witness-partition.txt"
 run restore
 check "restore refuses a partition naming only the project" 2 "$RC" "names no partition"
 check "restore with the other half reaches nothing" 2 "$RC" "$untouched"
 
-# The mirror: both fields are there, so the stage goes on to the cluster and
-# fails on the comparison instead of on the partition.
+# The mirror: the inventory and both fields are there, so the stage goes on to
+# the cluster and fails on the comparison instead of before it.
 fresh_case
 printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|project|7\n' > "$A/inventory-live.txt"
 printf 'tenant t\n' > "$A/witness-before.txt"
 printf 'tenant t\nproject p\n' > "$A/witness-partition.txt"
 run restore
-check "restore accepts a partition naming both fields" 1 "$RC" "what came back is not what was dumped"
+check "restore accepts a live inventory and a partition naming both fields" 1 "$RC" "what came back is not what was dumped"
 
 # --- teardown: a line that reports what it observed --------------------------
 

@@ -478,6 +478,7 @@ stage_destroy() {
 
 stage_restore() {
 	[ -s "$dump_file" ] || cannot "there is no dump in $archive to restore"
+	[ -s "$live_inventory" ] || cannot "there is no live inventory to compare against; run snapshot first"
 	[ -s "$witness_before_file" ] || cannot "there is no witness recorded in $archive; run snapshot first"
 	read_witness_partition
 	kube cp "$dump_file" "$namespace/$client:/tmp/restore.dump"
