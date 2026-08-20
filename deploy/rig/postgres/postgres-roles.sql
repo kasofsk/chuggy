@@ -65,13 +65,13 @@
 --
 -- Usage:
 --   CHUG_PG_OWNER_PASSWORD=... \
---   CHUG_PG_DISPATCHER_PASSWORD=... \
+--   CHUG_PG_TICKET_SERVICE_PASSWORD=... \
 --   CHUG_PG_API_PASSWORD=... \
 --   psql -f deploy/rig/postgres/postgres-roles.sql
 
 \set ON_ERROR_STOP on
 \getenv owner_password CHUG_PG_OWNER_PASSWORD
-\getenv dispatcher_password CHUG_PG_DISPATCHER_PASSWORD
+\getenv ticket_service_password CHUG_PG_TICKET_SERVICE_PASSWORD
 \getenv api_password CHUG_PG_API_PASSWORD
 BEGIN;
 
@@ -79,47 +79,47 @@ BEGIN;
 -- would be the shorter conditional and psql does not interpolate a variable
 -- inside one, so the whole file is \gexec rather than two idioms.
 SELECT format('CREATE ROLE %I NOLOGIN', role_name)
-  FROM unnest(ARRAY['chuggy_dispatcher', 'chuggy_api']) AS role_name
+  FROM unnest(ARRAY['chuggy_ticket_service', 'chuggy_api']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
 
 -- The identities that log in: one per service, plus the one that migrates.
 SELECT format('CREATE ROLE %I LOGIN', role_name)
-  FROM unnest(ARRAY['chuggy_owner', 'chuggy_dispatcher_login', 'chuggy_api_login']) AS role_name
+  FROM unnest(ARRAY['chuggy_owner', 'chuggy_ticket_service_login', 'chuggy_api_login']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
 
 -- A group role gets PASSWORD NULL here and a login role gets its password
 -- below, which is the only attribute split between the two blocks.
-ALTER ROLE chuggy_dispatcher WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+ALTER ROLE chuggy_ticket_service WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_api WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_owner WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
-ALTER ROLE chuggy_dispatcher_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+ALTER ROLE chuggy_ticket_service_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_api_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 
 ALTER ROLE chuggy_owner PASSWORD :'owner_password';
-ALTER ROLE chuggy_dispatcher_login PASSWORD :'dispatcher_password';
+ALTER ROLE chuggy_ticket_service_login PASSWORD :'ticket_service_password';
 ALTER ROLE chuggy_api_login PASSWORD :'api_password';
 
 -- A service holds its capability through the group and never directly, so
 -- widening one is an edit to the migration's grants and to nothing here.
-GRANT chuggy_dispatcher TO chuggy_dispatcher_login;
+GRANT chuggy_ticket_service TO chuggy_ticket_service_login;
 GRANT chuggy_api TO chuggy_api_login;
-GRANT chuggy_dispatcher, chuggy_api TO chuggy_owner;
+GRANT chuggy_ticket_service, chuggy_api TO chuggy_owner;
 
 -- CONNECT is granted to PUBLIC on a stock database and revoked on a hardened
 -- one, so it is named rather than assumed. current_database() keeps the file
 -- from carrying a database name it would then have to agree with.
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_name)
-  FROM unnest(ARRAY['chuggy_owner', 'chuggy_dispatcher_login', 'chuggy_api_login']) AS role_name
+  FROM unnest(ARRAY['chuggy_owner', 'chuggy_ticket_service_login', 'chuggy_api_login']) AS role_name
 \gexec
 
 GRANT USAGE, CREATE ON SCHEMA public TO chuggy_owner;
-GRANT USAGE ON SCHEMA public TO chuggy_dispatcher, chuggy_api;
+GRANT USAGE ON SCHEMA public TO chuggy_ticket_service, chuggy_api;
 
 COMMIT;

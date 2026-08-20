@@ -3,17 +3,17 @@
  * PostgreSQL to make an authorized mutation durable, and to take it back.
  *
  * WHY A SECOND PORT AND NOT MORE OF `ProjectStore`. Acceptance is the API's
- * transaction and the append is the dispatcher's, and
+ * transaction and the append is the project ticket writer's, and
  * `docs/design/006-durable-project-dispatch.md` says runtime services do not
  * share an omnipotent credential. A port whose methods two roles answer is a
  * port no set of grants can describe, and the grant is where that boundary is
  * actually enforced — so the split here is by authority, and each side is
  * given only the calls its role is granted. `./projectDiscovery.ts` is the
- * dispatcher's side of the same relations, and the adapter for each takes its
+ * writer's side of the same relations, and the adapter for each takes its
  * own pool because in deployment those pools carry different credentials.
  *
  * WHY ACCEPTANCE IS ONE CALL. It writes the operation, the inbox ordinal, the
- * inbox item and the readiness generation in one transaction, and a port that
+ * decision input and the readiness generation in one transaction, and a port that
  * offered those separately would invite an implementation that allocated an
  * ordinal in one call and enqueued in the next — the acceptance that returns
  * an operation identity and then loses it.
@@ -31,15 +31,22 @@
  * existing operation to a retry whose access has not been verified, so the
  * port hands out nothing there is to leak.
  *
- * IT ACCEPTS AND IT DOES NOT DECIDE. Nothing here consumes an inbox item,
+ * IT ACCEPTS AND IT DOES NOT DECIDE. Nothing here consumes a decision input,
  * appends a journal entry, terminalizes an operation from a decision or
  * updates a projection: that is `./projectDecision.ts`, and it is the
- * dispatcher's. Cancellation is the one path that terminalizes, because 006 makes
+ * writer's. Cancellation is the one path that terminalizes, because 006 makes
  * it an infrastructure transaction that must remain available without a
  * healthy project writer.
  */
 
 import type { Lifecycle, Partition } from "./projectStore.ts";
+import type { TicketCommand } from "./ticketCommand.ts";
+export {
+  asOperationDecisionEvent,
+  type NativeActionResolution,
+  type OperationDecisionEvent,
+  type TicketCommand,
+} from "./ticketCommand.ts";
 
 declare const operationIdBrand: unique symbol;
 declare const authorityKindBrand: unique symbol;
@@ -61,7 +68,7 @@ export type AuthoritySubject = string & {
 /** A client's idempotency key, normalized and bounded here and stored nowhere. */
 export type IdempotencyKey = string & { readonly [idempotencyKeyBrand]: true };
 
-/** The canonical encoding of the command an operation carries, opaque until a writer parses it. */
+/** The canonical encoding of the parsed command an operation carries. */
 export type OperationCommand = string & {
   readonly [operationCommandBrand]: true;
 };
@@ -198,9 +205,45 @@ export interface Submission {
   readonly partition: Partition;
   readonly operation: OperationId;
   readonly authority: Authority;
-  readonly admission: AdmissionClass;
   readonly key: IdempotencyKey;
-  readonly command: OperationCommand;
+  readonly command: TicketCommand;
+}
+
+/** The immutable scheduling class trusted ingress derives from a typed command. */
+export type PriorityClass =
+  "Safety" | "Completion" | "Continuation" | "Ordinary";
+
+export const allPriorityClasses: readonly PriorityClass[] = [
+  "Safety",
+  "Completion",
+  "Continuation",
+  "Ordinary",
+];
+
+/** Trusted ingress policy. Callers never provide either classification. */
+export function classifyCommand(command: TicketCommand): {
+  readonly admission: AdmissionClass;
+  readonly priority: Exclude<PriorityClass, "Continuation">;
+} {
+  if (command.command === "ResolveNativeAction") {
+    return {
+      admission:
+        command.resolution === "Revoke" ? "CorrectnessReducing" : "Ordinary",
+      priority: command.resolution === "Revoke" ? "Safety" : "Ordinary",
+    };
+  }
+  switch (command.event.type) {
+    case "Revoke":
+      return { admission: "CorrectnessReducing", priority: "Safety" };
+    case "TaskDone":
+    case "ExecutionBlocked":
+    case "FinalizationResult":
+      return { admission: "CorrectnessReducing", priority: "Completion" };
+    case "ReleaseTicket":
+    case "Dispatch":
+    case "ResumeTicket":
+      return { admission: "Ordinary", priority: "Ordinary" };
+  }
 }
 
 /** One authorized cancellation of a pending operation, audited to the authority that asked for it. */
@@ -234,6 +277,9 @@ export type Accepted =
   | { readonly accepted: "Accepted"; readonly operation: OperationStanding }
   | { readonly accepted: "Original"; readonly operation: OperationStanding }
   | { readonly accepted: "IdempotencyConflict" }
+  | { readonly accepted: "InvalidCommand" }
+  | { readonly accepted: "Backpressure"; readonly retryAfterSeconds: number }
+  | { readonly accepted: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly accepted: "NotAdmitted"; readonly lifecycle: Lifecycle };
 
 /** What a cancellation found, distinguishing a repeat of itself from an operation a writer already decided. */
@@ -253,14 +299,14 @@ export type Cancelled =
 export interface OperationInbox {
   /**
    * Accepts one submission, allocating its ordinal and writing its operation,
-   * inbox item and readiness generation in one transaction under the locked
+   * decision input and readiness generation in one transaction under the locked
    * lifecycle row.
    */
   accept(submission: Submission): Promise<Accepted>;
 
   /**
-   * Cancels a still-pending operation and makes its inbox item
-   * non-consumable, under the same row lock a deciding writer takes.
+   * Cancels a still-pending operation under the same decision-input row lock a
+   * deciding writer takes.
    */
   cancel(cancellation: Cancellation): Promise<Cancelled>;
 

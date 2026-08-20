@@ -930,6 +930,21 @@ contradictory evidence is an operational hold under attention, not a `Core`
 event: ambiguity cannot expire the permit or authorize another attempt, and
 the ticket remains in `Finalizing` until reconciliation concludes.
 
+The I7 finalization-result envelope distinguishes a bounded typed failure kind
+from the pure `FinalizationFailed` outcome and pins immutable evidence sufficient
+for any resulting rework. For `MergeConflict`, that evidence names the
+finalization request and attempt with digest, candidate commit, observed target
+commit and merge base, and a project-owned structured conflict manifest with
+identity and digest. The decision that returns the ticket to `Working`
+materializes the fresh work set's input bundle from that exact evidence,
+together with the existing artifact, handoff and release-briefing references.
+Workers therefore receive a precise reconciliation objective against immutable
+Git identities; they never reconstruct it from current refs, finalizer logs or
+the bare `FinalizationFailed` value in `Core`. Large conflict detail remains in
+the referenced manifest rather than the journal or request row. Other typed
+finalization failures carry the evidence schema their rework requires, while
+all continue to reduce to the same priced domain outcome.
+
 Each preparation creates an immutable finalization attempt containing the
 exact candidate commit, observed target ref and base, relevant digests and its
 own digest. Preparation cannot mutate an existing attempt; re-preparation
@@ -1380,6 +1395,222 @@ not implementation detail. A new transition, an external irreversible action,
 or a change to the pure event payload goes back through model and design review
 first.
 
+### I3 decision record
+
+Issue #142 tracks implementation. The following decisions were agreed before
+implementation of I3. They refine
+the I3 landing row without changing the model. The deployable previously called
+the dispatcher is the **ticket service**, and its fenced project-local actor is
+the **`ProjectTicketWriter`**. PostgreSQL remains the durable authority. The
+selector proposes, the scheduler executes, and the finalizer concludes Git
+work; none of them writes ticket state.
+
+The project decision mailbox has four base priority classes, highest first:
+`Safety`, `Completion`, `Continuation` and `Ordinary`. Safety is the closed set
+of revocation and correctness-reducing controls; completion is an authorized
+task, execution-blocked or finalization result; continuation is internal only;
+and ordinary contains release, resume, native-action resolution, manual
+dispatch and selector results. The ticket service derives both priority and
+lifecycle admission from the authenticated typed ingress path. Neither is a
+caller-selected value or a consequence of authority kind alone. This policy is
+only for ticket decisions; it does not govern the execution scheduler.
+
+Ingress parses a versioned typed command envelope and validates its bounded
+structure before acceptance. Its closed command tag is what trusted policy maps
+to admission and priority, and the narrow acceptance function cross-checks the
+combination; callers supply none of those classifications. A malformed or
+unknown envelope creates no operation. A structurally valid command whose
+domain transition is not enabled is still accepted and refused only by the
+`ProjectTicketWriter` at its serialized position. I3 therefore removes the
+temporary path that accepted an opaque unreadable command merely to terminalize
+it later as `CommandUnreadable`; domain legality remains exclusively the
+writer's, while structural readability becomes an ingress fact.
+Authoritative `TaskDone`, `ExecutionBlocked` and `FinalizationResult` envelopes
+derive `CorrectnessReducing` admission as well as `Completion` priority. They
+remain durably admissible while ordinary work is stopped, although lifecycle
+policy may hold the accepted input rather than let a writer decide it.
+
+Within an effective priority class the lowest project inbox ordinal wins. With
+base ranks zero through three in the order above, effective rank is
+`max(0, baseRank - floor(databaseAge / agingInterval))`. One configurable
+interval is used initially. Selection reads only the lowest consumable ordinal
+from each of the four base classes, computes their effective ranks using
+database time, and chooses by effective rank then ordinal. The query is thus
+bounded independently of mailbox depth, preserves FIFO inside a base class and
+eventually places an old ordinary input ahead of newly arriving safety work.
+
+Ordinary submission has a soft project limit below a hard limit that reserves
+room for safety, already-authorized completions and continuations. Idempotency
+lookup precedes this check. New work stopped by it creates no operation,
+ordinal, input or tombstone and receives retryable transport backpressure, not
+a domain refusal. Scheduler admission must reserve room for every completion
+it can later submit. A `ProjectTicketWriter` processes a configured count or
+time quantum, selecting again after every commit, and yields with readiness
+still asserted when work remains. It never loads the whole mailbox.
+
+`decision_input` replaces `inbox_item` and is the sole processing-state
+authority. It stores the partition, project-local ordinal, typed identity,
+base priority, database creation time, accepted lifecycle generation, state
+and terminal evidence. Its states are `Pending`, `Journaled`, `Refused`,
+`Cancelled` and `Stale`, constrained by input kind; public operation state is
+derived from the joined input. Operation rows retain idempotency, authority,
+command and audit evidence, but no duplicate processing state or consumability
+flag. Journal entries name a typed decision input, and one input authorizes at
+most one entry. A journaled input and its entry reference the same composite
+`(tenant, project, input kind, input identity, decided sequence)` tuple in both
+directions through `DEFERRABLE INITIALLY DEFERRED` foreign keys. Input state
+requires a decided sequence exactly when it is `Journaled`, and journal cause
+identity is unique. The deferral permits either write order inside the decision
+transaction while requiring both directions to agree at commit; no input may
+claim a sequence without its exact entry and no entry may name an input that
+does not claim that sequence.
+
+The initial input kinds are operations and deterministic continuations;
+selection results add their subtype in I5. Every continuation, native action
+and focused service request has an immutable identity derived from tenant,
+project, authorizing journal sequence, effect position and kind. Those source
+fields remain explicit even if consumers receive an opaque deterministic
+alias. Creation is in the authorizing decision transaction, retries reproduce
+the same identity, and mutable delivery or result state never changes its
+payload or identity. Internal continuations allocate an ordinary project
+inbox ordinal and advance readiness generation in that same transaction.
+
+I3 has exactly two deterministic continuation kinds: `ReduceWork` and
+`ReduceEvaluation`, created when the corresponding final outstanding task
+settles. A continuation records ticket, enabling sequence, expected ticket
+version and phase, and a task-set generation or canonical digest. Matching
+fences run one reducer as a separate journaled decision; a legitimate
+intervening version settles it `Stale`. Before I9, a matching version with
+contradictory phase or task evidence raises a typed integrity contradiction,
+rolls back, stops that project's quantum and leaves the input pending. I9 adds
+durable containment and repair. A decision input has no individual claim
+lease: the project ownership lease already serializes its reader, and takeover
+simply resumes pending inputs.
+
+Outbound work uses dedicated relations, not a generic outbox:
+`native_action`, `execution_request` and `finalization_request` land in I3;
+`selection_request` and `selection_result` land together in I5. Common focused
+requests are immutable authorizations with semantic states `Open`,
+`Registered`, `Fulfilled` and `Invalidated`; worker claim lease and generation
+are separate operational fields. Registering a request and creating the
+consumer's owned durable work are one transaction. Temporary infrastructure
+failure leaves it open, and fulfillment means the authorized obligation
+concluded, not necessarily that its domain outcome succeeded.
+
+The five model effects map exhaustively and once: `SpawnWorkTasks` and
+`SpawnEvalTasks` create typed execution requests, `CancelTicketWork` creates an
+execution cancellation request, `RunFinalizer` creates a finalization request,
+and `OpenHumanTask` creates a native action. Unknown effects fail the decision.
+The pure decision plan derives projection changes, continuations, action
+changes and request rows from the cause, pre-state, decision record and
+post-state before the short database transaction; the adapter does not invent
+a second interpretation. A refusal plan contains none of them, a failed fence
+discards the whole plan, and memory advances only after the complete commit.
+
+Execution spawn requests have one child row for every newly outstanding
+logical task, including ticket-local task ID and typed kind/stage. Cancellation
+requests have one child row for every pre-state outstanding task retired by
+the decision; an empty cancellation is valid durable evidence of a no-op. The
+materializer checks these rows against the pre/post delta. I6 must fence
+registration by authorizing sequence so delayed spawn work cannot survive a
+later cancellation. A cancellation request is fulfilled when cancellation is
+durably registered, not when Kubernetes deletion finishes.
+
+A finalization request is created only when its subject enters `Finalizing`
+with `RunFinalizer`. It records the ticket, ticket version, request generation
+and source identity, with at most one current open request per ticket. Re-entry
+after rework creates a new identity and generation. It authorizes preparation,
+not a Git commit. I3 carries no speculative repository, ref, candidate,
+approval or permit columns; the slices that create immutable bundles and the
+I7 protocol add their fields and revision fences before consumption.
+
+A native action has `Open`, `Resolved` and `Withdrawn` states and at most one
+open row per ticket. A version-guarded `ResolveNativeAction` enters through an
+ordinary operation; its successful ticket decision closes that exact action as
+resolved. Any other valid transition that removes the condition closes it as
+withdrawn. Later escalation creates a new identity; nothing reopens an old
+action. Its typed, bounded columns carry kind, reason, permitted resolutions,
+required capability and version, never credentials or unrestricted content.
+The I3 action kind is `TicketEscalation`, its required capability is
+`ResolveTicket`, and its immutable authorizing journal sequence is its version.
+When the ticket's typed resume point permits recovery, the resolutions are
+`Resume` and `Revoke`; an irreversible escalation such as
+`DependencyRevoked` permits only `Revoke`. The application envelope
+`ResolveNativeAction(action identity, authorizing sequence, resolution)`
+validates the open action and maps the resolution to the existing pure
+`ResumeTicket` or `RevokeTicket` event. It adds no domain transition.
+
+A ticket's version is the latest journal sequence whose decision changed any
+field of that ticket. It is derived from history and projected, not stored in
+`Core`. Projection changes therefore include task-state, accounting, artifact
+and other ticket mutations even when phase is unchanged; the former phase-only
+delta is insufficient. Continuation, finalization, manual-dispatch and native-
+action fences name this version.
+
+The selector is an API client with a deliberately narrow service authority,
+not a ticket-command authority. Logically the `ProjectTicketWriter` creates an
+immutable request over an eligible-set digest; a detached selector claims it
+through the authenticated API and may return exactly one candidate or a
+bounded deferral tied to request, generation and digest. The writer alone
+validates and commits `Dispatch(ticket)`. The selector cannot create, release,
+revoke or directly dispatch tickets. An authoring agent is a distinct role and
+credential even if implemented by the same software. Selection requests move
+`Open` to `ResultSubmitted`, then `Applied`, `Deferred` or `Invalidated`; claim
+leases are separate. Selection-specific persistence remains wholly I5's.
+
+Only the ticket-service API accepts service-produced decision inputs. Selector
+workers have no PostgreSQL credentials. Scheduler and finalizer roles may
+register focused requests atomically with their own durable records, but submit
+ticket results through authenticated API ingress and cannot insert mailbox
+inputs directly. Result acceptance locks and validates its request and
+generation, writes the immutable result plus input and ordinal, raises
+readiness and marks the request result-submitted in one transaction. A retry
+returns the original input; a conflicting result is refused. Current domain
+applicability remains the later writer decision.
+
+Runtime roles have no direct insert grant on the typed input/mailbox boundary.
+Narrow functions such as `accept_operation`, `publish_continuation` and later
+`accept_selection_result` construct only their fixed kind. They have pinned
+search paths, no dynamic SQL, no public execute grant and a dedicated
+`NOLOGIN`, non-superuser owner rather than the migration superuser or a runtime
+role. Constraints still enforce bounded vocabulary, ownership, identity and
+references.
+
+Authority-bearing request data uses typed columns and child rows, not a generic
+JSON payload. Closed vocabularies have database checks; repeated bounded values
+use child tables; canonical immutable bundles carry digests. I3 adds no
+placeholder for revisions or resources that do not exist. The owning later
+slice adds each validity-critical field and its decision fence together.
+
+I3 migrates a populated I2 schema without losing operations or outcomes:
+create and backfill typed inputs, retarget journal causes, replace the inbox,
+verify counts and references, then drop operation-only columns and constraints.
+Tests cover pending, succeeded, refused and cancelled operations and existing
+journal causes. No compatibility view, legacy adapter, alias, dual write or
+legacy-only test survives. More generally, when a slice replaces a runtime
+type or implementation, all callers, tests, comments and vocabulary move in
+that slice; historical migrations alone remain as upgrade history.
+
+The cursor-driven emission implementation is removed completely in I3:
+`JournalStore`, `DeskPort`, `WorldPorts`, the effect executor, checkpoints and
+their crash-replay path. The transactionally materialized focused records are
+their only replacement. There is no compatibility bridge and no dual delivery.
+
+I3 introduces a typed `TicketServiceMetrics` port and brings I0 through I2 up
+to it. Metrics are best-effort observations and cannot affect transactions.
+Labels are closed bounded vocabularies and never tenant, project, ticket,
+operation, request or principal identities. Durations use a monotonic process
+clock; durable aging and deadlines use database time. I3 measures mailbox
+depth and oldest age by class, backpressure, decision latency/outcome, quantum
+exhaustion, continuation outcomes, focused request creation and native-action
+lifecycle. Issue #141 owns the larger observability and analytics architecture;
+that discussion does not make telemetry a domain authority.
+
+I3's focused rows are real even though their consumers arrive later. I6 adds
+scheduler tasks, attempts, results and cancellation processing; I7 adds
+finalizer preparation, permits and reconciliation. No placeholder selection
+schema lands before I5 and no later service is simulated in memory.
+
 | Slice | Depends on | What lands and its definition of done | Status |
 |---|---|---|---|
 | M0 | — | Project-scoped sparse-ID `Core`, vocabulary and transition migration | Landed |
@@ -1391,7 +1622,7 @@ first.
 | I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. | — |
 | I5 | I3 | Agentic selection: immutable selection views, detached requests/results, bounded deferral and one-shot manual dispatch. Selection failure never becomes a hidden FIFO dispatch policy. | — |
 | I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
-| I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, and sole `FinalizationResult` submission authority. Proven with revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
+| I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with merge-conflict rework receiving its exact immutable attempt/target/conflict manifest, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
 | I8 | I0–I7 | Managed PostgreSQL deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions and permits. Old-epoch actors remain rejected after restore. | — |
 | I9 | I2–I8 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. | — |
 | I10 | I6–I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. | — |

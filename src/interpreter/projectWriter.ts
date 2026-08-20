@@ -1,5 +1,5 @@
 /**
- * The project writer: what a dispatcher does between holding a lease and
+ * The project ticket writer: what the ticket service does between holding a lease and
  * holding a committed decision.
  *
  * MEMORY ADVANCES ONLY AFTER COMMIT, and that is the whole reason this module
@@ -15,13 +15,9 @@
  * reload. Both halves are here: nothing below awaits between the plan and the
  * commit, and nothing installs a plan the commit refused.
  *
- * A COMMAND IS THE DECISION EVENT IT ASKS FOR, and that is the smallest
- * command vocabulary this tree can have. 006's richer typed commands name a
- * draft revision, an observed ticket version or a selection digest, and each
- * arrives with the slice that has one to name; the parse below is where they
- * will branch. What is already true is the shape: a command that does not read
- * as something the machine could decide is refused durably rather than
- * retried, because no amount of retrying will make it parse.
+ * COMMANDS ARRIVE PARSED AND CLASSIFIED. Structural readability, admission and
+ * priority belong to authenticated ingress; this writer alone decides whether
+ * the requested domain transition is enabled at its serialized position.
  *
  * THE PROJECTION IS DERIVED, NEVER OBSERVED. Its rows are a function of the
  * replayed `Core` alone, so rebuilding them from the journal and folding the
@@ -30,7 +26,8 @@
  */
 
 import type { Entry } from "../actor/journal.ts";
-import { journalLegalOn, replayCore } from "../actor/journal.ts";
+import { genesis, journalLegalOn } from "../actor/journal.ts";
+import { ticketEquals } from "../actor/equality.ts";
 import {
   decisionEventEnabled,
   execDecisionEvent,
@@ -38,7 +35,9 @@ import {
 import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
 import type { Core } from "../domain/generated/modelTypes.ts";
-import type { InboxItem } from "./projectDiscovery.ts";
+import { asTicketId } from "../domain/ids.ts";
+import type { DecisionInput } from "./projectDiscovery.ts";
+import type { ProjectDiscovery, Readiness } from "./projectDiscovery.ts";
 import type {
   Decided,
   DecisionOutcome,
@@ -46,10 +45,18 @@ import type {
   TicketProjection,
 } from "./projectDecision.ts";
 import type { Lease, ProjectStore } from "./projectStore.ts";
-import { parseDecisionEventText } from "./wire.ts";
+import { materializationOf } from "./decisionPlan.ts";
+import {
+  checkedTicketServiceConfig,
+  observe,
+  silentTicketServiceMetrics,
+  ticketServiceDefaults,
+  type TicketServiceConfig,
+  type TicketServiceMetrics,
+} from "./ticketService.ts";
 
 /** Everything a writer calls out through: the authority it replays from, and the one it commits to. */
-export interface ProjectWriter {
+export interface ProjectTicketWriter {
   readonly config: Config;
   readonly store: ProjectStore;
   readonly decisions: ProjectDecision;
@@ -59,7 +66,10 @@ export interface ProjectWriter {
 export interface ProjectMemory {
   readonly lease: Lease;
   readonly core: Core;
+  readonly ticketVersions: ReadonlyMap<number, number>;
 }
+
+export class IntegrityContradiction extends Error {}
 
 /** A decision's outcome and the memory it leaves behind, which is the old one unless it committed. */
 export interface ProjectDecided {
@@ -83,9 +93,13 @@ export function projectionChanges(
   pre: Core,
   post: Core,
 ): readonly TicketProjection[] {
-  return projectionOf(post).filter(
-    (row) => pre.tickets.get(row.ticket)?.phase !== row.phase,
-  );
+  return projectionOf(post).filter((row) => {
+    const previous = pre.tickets.get(row.ticket);
+    return (
+      previous === undefined ||
+      !ticketEquals(previous, ticketAt(post, row.ticket))
+    );
+  });
 }
 
 /**
@@ -94,7 +108,7 @@ export function projectionChanges(
  * the writer's own book to be readable, which leaves no decision to take.
  */
 async function projectWriterJournal(
-  writer: ProjectWriter,
+  writer: ProjectTicketWriter,
   lease: Lease,
 ): Promise<readonly Entry[]> {
   const loaded = await writer.store.load(lease);
@@ -118,11 +132,19 @@ async function projectWriterJournal(
 
 /** Rebuilds the writer's state from the journal alone, which is all a takeover inherits. */
 export async function projectWriterLoad(
-  writer: ProjectWriter,
+  writer: ProjectTicketWriter,
   lease: Lease,
 ): Promise<ProjectMemory> {
   const journal = await projectWriterJournal(writer, lease);
-  return { lease, core: replayCore(writer.config, journal) };
+  const ticketVersions = new Map<number, number>();
+  let core: Core = genesis;
+  for (const entry of journal) {
+    const post = execDecisionEvent(writer.config, core, entry.event).post;
+    for (const projection of projectionChanges(core, post))
+      ticketVersions.set(projection.ticket, entry.seq);
+    core = post;
+  }
+  return { lease, core, ticketVersions };
 }
 
 /** A decision offered for commit, and the state it would install if it committed. */
@@ -131,32 +153,65 @@ interface ProjectPlan {
   readonly post: Core;
 }
 
+function continuationFenceOutcome(
+  memory: ProjectMemory,
+  source: Extract<DecisionInput["source"], { kind: "Continuation" }>,
+): DecisionOutcome | undefined {
+  const command = source.command;
+  if (command.type !== "WorkReduce" && command.type !== "EvalReduce")
+    throw new IntegrityContradiction("a continuation does not carry a reducer");
+  const ticketId = asTicketId(command.value);
+  if (memory.ticketVersions.get(ticketId) !== source.expectedTicketVersion)
+    return { outcome: "Stale" };
+  const ticket = ticketAt(memory.core, ticketId);
+  if (
+    ticket.phase !== source.expectedPhase ||
+    ticket.spawned !== source.taskSetGeneration
+  )
+    throw new IntegrityContradiction(
+      "continuation fences contradict authoritative ticket state",
+    );
+  return undefined;
+}
+
 /**
  * What one inbox item asks of the state in hand: a decision the machine would
  * take, or the refusal it earns. Nothing here reaches the world.
  */
 function projectWriterPlan(
-  writer: ProjectWriter,
+  writer: ProjectTicketWriter,
   memory: ProjectMemory,
-  item: InboxItem,
+  item: DecisionInput,
 ): ProjectPlan {
-  const parsed = parseDecisionEventText(item.command);
-  if (parsed.parsed === "Refused") {
-    return {
-      outcome: { outcome: "Refused", code: "CommandUnreadable" },
-      post: memory.core,
-    };
+  const command =
+    item.source.kind === "Operation"
+      ? item.source.resolvedEvent
+      : item.source.command;
+  if (item.source.kind === "Continuation") {
+    const fenceOutcome = continuationFenceOutcome(memory, item.source);
+    if (fenceOutcome !== undefined)
+      return { outcome: fenceOutcome, post: memory.core };
   }
-  if (!decisionEventEnabled(writer.config, memory.core, parsed.value)) {
+  if (
+    item.source.kind === "Operation" &&
+    item.source.nativeAction !== undefined &&
+    !item.source.nativeAction.open
+  ) {
     return {
       outcome: { outcome: "Refused", code: "NotEnabled" },
       post: memory.core,
     };
   }
-  const decision = execDecisionEvent(writer.config, memory.core, parsed.value);
+  if (!decisionEventEnabled(writer.config, memory.core, command)) {
+    return {
+      outcome: { outcome: "Refused", code: "NotEnabled" },
+      post: memory.core,
+    };
+  }
+  const decision = execDecisionEvent(writer.config, memory.core, command);
   const entry: Entry = {
     seq: memory.lease.head + 1,
-    event: parsed.value,
+    event: command,
     rec: decision.rec,
   };
   return {
@@ -164,6 +219,12 @@ function projectWriterPlan(
       outcome: "Journaled",
       entry,
       projection: projectionChanges(memory.core, decision.post),
+      materialization: materializationOf(
+        item,
+        memory.core,
+        decision.post,
+        entry,
+      ),
     },
     post: decision.post,
   };
@@ -174,16 +235,81 @@ function projectWriterPlan(
  * Every other outcome leaves the memory it was given exactly as it was.
  */
 export async function projectWriterDecide(
-  writer: ProjectWriter,
+  writer: ProjectTicketWriter,
   memory: ProjectMemory,
-  item: InboxItem,
+  item: DecisionInput,
 ): Promise<ProjectDecided> {
   const plan = projectWriterPlan(writer, memory, item);
   const decided = await writer.decisions.decide({
     lease: memory.lease,
-    cause: item.operation,
+    cause:
+      item.source.kind === "Operation"
+        ? { kind: "Operation", id: item.source.operation }
+        : { kind: "Continuation", id: item.source.continuation },
     outcome: plan.outcome,
   });
   if (decided.decided !== "Committed") return { memory, decided };
-  return { memory: { lease: decided.lease, core: plan.post }, decided };
+  const ticketVersions = new Map(memory.ticketVersions);
+  if (plan.outcome.outcome === "Journaled") {
+    for (const row of plan.outcome.projection)
+      ticketVersions.set(row.ticket, plan.outcome.entry.seq);
+  }
+  return {
+    memory: { lease: decided.lease, core: plan.post, ticketVersions },
+    decided,
+  };
+}
+
+export async function projectTicketWriterRun(
+  writer: ProjectTicketWriter,
+  discovery: ProjectDiscovery,
+  readiness: Readiness,
+  lease: Lease,
+  monotonicNow: () => number,
+  config: TicketServiceConfig = ticketServiceDefaults,
+  metrics: TicketServiceMetrics = silentTicketServiceMetrics,
+): Promise<ProjectMemory> {
+  const checked = checkedTicketServiceConfig(config);
+  let memory = await projectWriterLoad(writer, lease);
+  const started = monotonicNow();
+  for (let count = 0; count < checked.writerDecisionQuantum; count += 1) {
+    if (monotonicNow() - started >= checked.writerTimeQuantumMilliseconds) {
+      observe(() => {
+        metrics.quantumExhausted("Time");
+      });
+      return memory;
+    }
+    const input = await discovery.next(
+      lease.partition,
+      checked.agingIntervalSeconds,
+    );
+    if (input === undefined) {
+      await discovery.clearReadiness(readiness);
+      return memory;
+    }
+    let result: ProjectDecided;
+    try {
+      result = await projectWriterDecide(writer, memory, input);
+    } catch (error: unknown) {
+      if (error instanceof IntegrityContradiction) {
+        observe(() => {
+          metrics.continuation("Contradictory");
+        });
+        return memory;
+      }
+      throw error;
+    }
+    memory = result.memory;
+    if (
+      result.decided.decided !== "Committed" &&
+      result.decided.decided !== "Refused" &&
+      result.decided.decided !== "Stale"
+    ) {
+      return memory;
+    }
+  }
+  observe(() => {
+    metrics.quantumExhausted("Count");
+  });
+  return memory;
 }

@@ -1,5 +1,5 @@
 /**
- * Discovery: the readiness rows a fleet reads, the inbox items an activation
+ * Discovery: the readiness rows a fleet reads, the decision inputs an activation
  * verifies against, and the clearing an idle owner is allowed to do.
  *
  * DISCOVERY READS READINESS AND NOTHING ELSE. `docs/design/006-durable-project-dispatch.md`
@@ -15,7 +15,7 @@
  * rather than load-bearing.
  *
  * NO WAKE-UP IS ERASED, AND THE READINESS ROW LOCK IS WHAT ORDERS THE TWO
- * TRANSACTIONS. An acceptance writes its inbox item and its readiness upsert
+ * TRANSACTIONS. An acceptance writes its decision input and its readiness upsert
  * together, so either it commits before the clearing takes that lock — leaving
  * a raised generation and a visible item for the checks below to refuse on — or
  * it has not reached the upsert and blocks there. In that second branch the
@@ -36,14 +36,16 @@
 import type pg from "pg";
 
 import {
-  asOperationCommand,
   asOperationId,
+  allPriorityClasses,
+  type PriorityClass,
 } from "../../interpreter/operationInbox.ts";
 import type {
-  InboxItem,
+  DecisionInput,
   Readiness,
   ReadinessCleared,
 } from "../../interpreter/projectDiscovery.ts";
+import { parseTicketCommand } from "../../interpreter/wire.ts";
 import {
   asProjectId,
   asTenantId,
@@ -51,6 +53,11 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  observe,
+  silentTicketServiceMetrics,
+  type TicketServiceMetrics,
+} from "../../interpreter/ticketService.ts";
 
 /** One readiness row as PostgreSQL returns it. */
 interface ReadinessRow {
@@ -62,8 +69,105 @@ interface ReadinessRow {
 /** One inbox row as PostgreSQL returns it, with the command its operation carries. */
 interface InboxRow {
   readonly ordinal: string;
-  readonly operation: string;
-  readonly command: string;
+  readonly input_kind: string;
+  readonly input_id: string;
+  readonly base_priority: string;
+  readonly command: string | null;
+  readonly continuation_kind: string | null;
+  readonly ticket: string | null;
+  readonly expected_ticket_version: string | null;
+  readonly expected_phase: string | null;
+  readonly task_set_generation: string | null;
+}
+
+function priorityOf(value: string): PriorityClass {
+  const found = allPriorityClasses.find((candidate) => candidate === value);
+  if (found === undefined)
+    throw new Error(`decision input: unknown priority ${value}`);
+  return found;
+}
+
+async function operationSource(
+  pool: pg.Pool,
+  partition: Partition,
+  row: InboxRow,
+): Promise<DecisionInput["source"]> {
+  if (row.command === null)
+    throw new Error(`operation ${row.input_id} has no command`);
+  const parsed = parseTicketCommand(row.command);
+  if (parsed.parsed === "Refused")
+    throw new Error(`stored operation is unreadable: ${parsed.why}`);
+  if (parsed.value.command === "Decide") {
+    return {
+      kind: "Operation",
+      operation: asOperationId(row.input_id),
+      command: parsed.value,
+      resolvedEvent: parsed.value.event,
+    };
+  }
+  const action = await pool.query<{ ticket: string; state: string }>(
+    `SELECT a.ticket::text, a.state FROM native_action a
+      JOIN native_action_resolution r USING (tenant, project, action)
+     WHERE a.tenant=$1 AND a.project=$2 AND a.action=$3
+       AND a.authorizing_seq=$4 AND r.resolution=$5`,
+    [
+      partition.tenant,
+      partition.project,
+      parsed.value.action,
+      parsed.value.authorizingSeq,
+      parsed.value.resolution,
+    ],
+  );
+  const open = action.rows[0];
+  if (open === undefined)
+    throw new Error(
+      `native action ${parsed.value.action} is not open at the requested fence`,
+    );
+  const ticket = projectRowCounter(open.ticket, "native action ticket");
+  return {
+    kind: "Operation",
+    operation: asOperationId(row.input_id),
+    command: parsed.value,
+    resolvedEvent:
+      parsed.value.resolution === "Resume"
+        ? { type: "ResumeTicket", value: ticket }
+        : { type: "Revoke", value: ticket },
+    nativeAction: {
+      action: parsed.value.action,
+      authorizingSeq: parsed.value.authorizingSeq,
+      open: open.state === "Open",
+    },
+  };
+}
+
+function continuationSource(row: InboxRow): DecisionInput["source"] {
+  if (
+    row.continuation_kind === null ||
+    row.ticket === null ||
+    row.expected_ticket_version === null ||
+    row.expected_phase === null ||
+    row.task_set_generation === null
+  ) {
+    throw new Error(`continuation ${row.input_id} has incomplete fences`);
+  }
+  const ticket = projectRowCounter(row.ticket, "continuation ticket");
+  return {
+    kind: "Continuation",
+    continuation: row.input_id,
+    command:
+      row.continuation_kind === "ReduceWork"
+        ? { type: "WorkReduce", value: ticket }
+        : { type: "EvalReduce", value: ticket },
+    expectedTicketVersion: projectRowCounter(
+      row.expected_ticket_version,
+      "expected ticket version",
+    ),
+    expectedPhase: row.expected_phase,
+    taskSetGeneration: projectRowCounter(
+      row.task_set_generation,
+      "task-set generation",
+    ),
+  };
 }
 
 /** Refuses a bound a caller left open, because an unbounded page is an unbounded read. */
@@ -97,26 +201,69 @@ export async function postgresReadinessReady(
 export async function postgresReadinessConsumable(
   pool: pg.Pool,
   partition: Partition,
-  itemsMax: number,
-): Promise<readonly InboxItem[]> {
+  agingIntervalSeconds = 300,
+  metrics: TicketServiceMetrics = silentTicketServiceMetrics,
+): Promise<DecisionInput | undefined> {
+  if (!Number.isFinite(agingIntervalSeconds) || agingIntervalSeconds <= 0) {
+    throw new RangeError("aging interval must be positive");
+  }
   const found = await pool.query<InboxRow>(
-    `SELECT i.ordinal, i.operation, o.command
-       FROM inbox_item i
-       JOIN operation o USING (tenant, project, operation)
-      WHERE i.tenant = $1 AND i.project = $2 AND i.consumable
-      ORDER BY i.ordinal LIMIT $3`,
-    [
-      partition.tenant,
-      partition.project,
-      readinessBounded(itemsMax, "consumable items"),
-    ],
+    `WITH heads AS (
+       SELECT DISTINCT ON (d.base_priority)
+         d.ordinal, d.input_kind, d.input_id, d.base_priority, d.created_at
+       FROM decision_input d
+       WHERE d.tenant=$1 AND d.project=$2 AND d.state='Pending'
+       ORDER BY d.base_priority, d.ordinal
+     )
+     SELECT h.ordinal, h.input_kind, h.input_id, h.base_priority,
+            o.command, c.kind AS continuation_kind, c.ticket::text,
+            c.expected_ticket_version::text, c.expected_phase,
+            c.task_set_generation::text
+       FROM heads h
+       LEFT JOIN operation o ON h.input_kind='Operation' AND o.tenant=$1 AND o.project=$2 AND o.operation=h.input_id
+       LEFT JOIN project_continuation c ON h.input_kind='Continuation' AND c.tenant=$1 AND c.project=$2 AND c.continuation=h.input_id
+      ORDER BY greatest(0,
+        CASE h.base_priority WHEN 'Safety' THEN 0 WHEN 'Completion' THEN 1 WHEN 'Continuation' THEN 2 ELSE 3 END
+        - floor(extract(epoch FROM (statement_timestamp()-h.created_at))/$3)::integer), h.ordinal
+      LIMIT 1`,
+    [partition.tenant, partition.project, agingIntervalSeconds],
   );
-  return found.rows.map((row) => ({
+  const row = found.rows[0];
+  const depths = await pool.query<{
+    base_priority: string;
+    depth: string;
+    oldest_seconds: string;
+  }>(
+    `SELECT base_priority, count(*)::text AS depth,
+            extract(epoch FROM statement_timestamp()-min(created_at))::text AS oldest_seconds
+       FROM decision_input WHERE tenant=$1 AND project=$2 AND state='Pending'
+       GROUP BY base_priority`,
+    [partition.tenant, partition.project],
+  );
+  for (const depth of depths.rows) {
+    observe(() => {
+      metrics.mailbox(
+        priorityOf(depth.base_priority),
+        Number(depth.depth),
+        Number(depth.oldest_seconds),
+      );
+    });
+  }
+  if (row === undefined) return undefined;
+  const source =
+    row.input_kind === "Operation"
+      ? await operationSource(pool, partition, row)
+      : row.input_kind === "Continuation"
+        ? continuationSource(row)
+        : undefined;
+  if (source === undefined)
+    throw new Error(`decision input ${row.input_id} has unknown kind`);
+  return {
     partition,
     ordinal: projectRowCounter(row.ordinal, "inbox ordinal"),
-    operation: asOperationId(row.operation),
-    command: asOperationCommand(row.command),
-  }));
+    priority: priorityOf(row.base_priority),
+    source,
+  };
 }
 
 /** Whether the partition still holds an item a writer could consume. */
@@ -125,8 +272,8 @@ async function readinessWorkRemains(
   partition: Partition,
 ): Promise<boolean> {
   const remaining = await client.query(
-    `SELECT 1 FROM inbox_item
-      WHERE tenant = $1 AND project = $2 AND consumable LIMIT 1`,
+    `SELECT 1 FROM decision_input
+      WHERE tenant = $1 AND project = $2 AND state = 'Pending' LIMIT 1`,
     [partition.tenant, partition.project],
   );
   return remaining.rows.length > 0;

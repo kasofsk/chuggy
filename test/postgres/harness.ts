@@ -43,13 +43,14 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
   asIdempotencyKey,
-  asOperationCommand,
   asOperationId,
+  asOperationDecisionEvent,
   type OperationInbox,
+  type OperationId,
   type Submission,
 } from "../../src/interpreter/operationInbox.ts";
 import type {
-  InboxItem,
+  DecisionInput,
   ProjectDiscovery,
 } from "../../src/interpreter/projectDiscovery.ts";
 import type { ProjectDecision } from "../../src/interpreter/projectDecision.ts";
@@ -57,7 +58,7 @@ import {
   projectWriterDecide,
   projectWriterLoad,
   type ProjectMemory,
-  type ProjectWriter,
+  type ProjectTicketWriter,
 } from "../../src/interpreter/projectWriter.ts";
 import {
   asOwnerId,
@@ -70,7 +71,6 @@ import {
   type ProjectStore,
   type RecoveryEpoch,
 } from "../../src/interpreter/projectStore.ts";
-import { encodeDecisionEventText } from "../../src/interpreter/wire.ts";
 
 /** The environment variable `.chug/tasks/check-postgres.sh` sets, named once. */
 export const postgresHarnessUrlVar = "CHUG_PG_URL";
@@ -198,7 +198,7 @@ export async function postgresHarnessExpire(
   );
 }
 
-/** A dispatcher-instance identity no other case is using. */
+/** A ticket-service instance identity no other case is using. */
 export function postgresHarnessOwner(label: string): OwnerId {
   return asOwnerId(`owner-${label}-${randomUUID()}`);
 }
@@ -379,9 +379,14 @@ export function postgresHarnessSubmission(
       kind: asAuthorityKind("UserMutation"),
       subject: asAuthoritySubject(`subject-${label}`),
     },
-    admission: "Ordinary",
     key: asIdempotencyKey(`key-${label}-${unique}`),
-    command: asOperationCommand(`{"label":"${label}"}`),
+    command: {
+      version: 1,
+      command: "Decide",
+      event: asOperationDecisionEvent(
+        releaseTicketEvent(id(1), plainAuthoring),
+      ),
+    },
   };
 }
 
@@ -423,9 +428,11 @@ export function postgresHarnessDecisionSubmission(
 ): Submission {
   return {
     ...postgresHarnessSubmission(partition, label, unique),
-    command: asOperationCommand(
-      encodeDecisionEventText(postgresHarnessEntry(index).event),
-    ),
+    command: {
+      version: 1,
+      command: "Decide",
+      event: asOperationDecisionEvent(postgresHarnessEntry(index).event),
+    },
   };
 }
 
@@ -448,7 +455,7 @@ export function postgresHarnessCrashSubmission(
 export async function postgresHarnessAccept(
   inbox: OperationInbox,
   submission: Submission,
-): Promise<InboxItem> {
+): Promise<DecisionInput> {
   const accepted = await inbox.accept(submission);
   if (accepted.accepted !== "Accepted") {
     throw new Error(
@@ -458,9 +465,26 @@ export async function postgresHarnessAccept(
   return {
     partition: submission.partition,
     ordinal: accepted.operation.ordinal,
-    operation: submission.operation,
-    command: submission.command,
+    priority: "Ordinary",
+    source: {
+      kind: "Operation",
+      operation: submission.operation,
+      command: submission.command,
+      resolvedEvent:
+        submission.command.command === "Decide"
+          ? submission.command.event
+          : releaseTicketEvent(id(1), plainAuthoring),
+    },
   };
+}
+
+export function postgresHarnessInputOperation(
+  input: DecisionInput,
+): OperationId {
+  if (input.source.kind !== "Operation") {
+    throw new Error("postgres harness: expected an operation decision input");
+  }
+  return input.source.operation;
 }
 
 /** An accepted item carrying the fixture history's decision at `index`, which most cases start from. */
@@ -469,7 +493,7 @@ export function postgresHarnessAccepted(
   partition: Partition,
   label: string,
   index: number,
-): Promise<InboxItem> {
+): Promise<DecisionInput> {
   return postgresHarnessAccept(
     inbox,
     postgresHarnessDecisionSubmission(partition, label, index),
@@ -477,7 +501,9 @@ export function postgresHarnessAccepted(
 }
 
 /** The writer over a harness's ports, which is what turns a loaded state and an item into a commit. */
-export function postgresHarnessWriter(harness: PostgresHarness): ProjectWriter {
+export function postgresHarnessWriter(
+  harness: PostgresHarness,
+): ProjectTicketWriter {
   return {
     config: refinementInstance,
     store: harness.store,

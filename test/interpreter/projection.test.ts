@@ -8,9 +8,8 @@
  * rows it moved, and a rebuild writes them all. If the two ever disagree the
  * stored table is a second authority, whatever it is called.
  *
- * IT IS PURE, SO IT IS TESTED HERE. `test/postgres/decision.test.ts` asserts
- * that the stored rows equal the rebuild, which is the storage half; whether
- * the delta is the right delta needs no server at all.
+ * IT IS PURE, SO IT IS TESTED HERE. PostgreSQL transaction tests assert the
+ * stored sequence; whether the delta is right needs no server at all.
  *
  * THE DELTA IS NOT THE RECORD'S TRANSITIONS, and the last case is why. A
  * release transitions nothing — it creates a ticket that had no prior phase to
@@ -43,7 +42,7 @@ import {
 } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 
-/** A history long enough to release a ticket, move it, and then decide something that moves nothing. */
+/** A history long enough to release a ticket, move it, and then change its task ledger. */
 const history: readonly DecisionEvent[] = [
   releaseTicketEvent(id(1), plainAuthoring),
   dispatchEvent(id(1)),
@@ -83,7 +82,7 @@ test("folding what each decision changed reaches the table a rebuild reads", () 
   assert.equal(rebuilt.get(id(1)), "Working");
 });
 
-test("a decision reports only the tickets whose phase it moved", () => {
+test("a decision reports exactly the tickets whose complete state changed", () => {
   const released = journalStep(
     refinementInstance,
     actorInit(),
@@ -101,6 +100,15 @@ test("a decision reports only the tickets whose phase it moved", () => {
   assert.deepEqual(
     projectionChanges(dispatched.view.post, dispatched.view.post),
     [],
+  );
+  const completed = journalStep(
+    refinementInstance,
+    dispatched,
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+  );
+  assert.deepEqual(
+    projectionChanges(dispatched.view.post, completed.view.post),
+    [{ ticket: id(1), phase: "Working" }],
   );
 });
 

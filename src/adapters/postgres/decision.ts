@@ -1,6 +1,6 @@
 /**
- * The decision transaction: the journal entry, the operation outcome, the
- * inbox acknowledgement and the projection, or none of them.
+ * The decision transaction: the journal entry, the input outcome, the
+ * projection and focused work, or none of them.
  *
  * THE CAUSE IS LOCKED AND READ BEFORE ANY FENCE IS CHECKED. A writer whose
  * commit was acknowledged by nobody retries with the head it held before that
@@ -30,14 +30,14 @@
 import type pg from "pg";
 
 import { assertNever } from "../../domain/assertNever.ts";
-import type { OperationId } from "../../interpreter/operationInbox.ts";
 import {
   allRefusalCodes,
-  projectWriterAuthorityKind,
+  projectTicketWriterAuthorityKind,
   type Decided,
   type Decision,
+  type DecisionCause,
   type DecisionOutcome,
-  type OperationOutcome,
+  type DecisionInputOutcome,
   type RefusalCode,
   type TicketProjection,
 } from "../../interpreter/projectDecision.ts";
@@ -49,8 +49,9 @@ import {
 } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
+import { continuationFunction } from "./schema.ts";
 
-/** One operation row as the decision transaction reads it, under the lock it just took. */
+/** One decision-input row as the transaction reads it under its lock. */
 interface DecisionCauseRow {
   readonly state: string;
   readonly outcome_code: string | null;
@@ -68,50 +69,51 @@ function decisionRefusalCode(value: string): RefusalCode {
   return found;
 }
 
-/** What a settled operation says about itself, refusing a row whose state and outcome disagree. */
-function decisionOutcomeOf(row: DecisionCauseRow): OperationOutcome {
+/** What a settled input says about itself, refusing a row whose state and outcome disagree. */
+function decisionOutcomeOf(row: DecisionCauseRow): DecisionInputOutcome {
   if (row.state === "Cancelled") return { settled: "Cancelled" };
+  if (row.state === "Stale") return { settled: "Stale" };
   if (row.state === "Refused" && row.outcome_code !== null) {
     return { settled: "Refused", code: decisionRefusalCode(row.outcome_code) };
   }
-  if (row.state === "Succeeded" && row.decided_seq !== null) {
+  if (row.state === "Journaled" && row.decided_seq !== null) {
     return {
       settled: "Succeeded",
       seq: projectRowCounter(row.decided_seq, "decided sequence"),
     };
   }
   throw new Error(
-    `decision row: a ${row.state} operation carries no outcome, which no settlement writes`,
+    `decision row: a ${row.state} input carries no outcome, which no settlement writes`,
   );
 }
 
-/** Locks the cause and reads it, refusing a partition that has no such operation. */
+/** Locks the cause and reads it, refusing a partition that has no such input. */
 async function decisionLockCause(
   client: pg.PoolClient,
   partition: Partition,
-  cause: OperationId,
+  cause: DecisionCause,
 ): Promise<DecisionCauseRow> {
   const found = await client.query<DecisionCauseRow>(
-    `SELECT state, outcome_code, decided_seq FROM operation
-      WHERE tenant = $1 AND project = $2 AND operation = $3
+    `SELECT state, outcome_code, decided_seq FROM decision_input
+      WHERE tenant = $1 AND project = $2 AND input_kind = $3 AND input_id = $4
       FOR UPDATE`,
-    [partition.tenant, partition.project, cause],
+    [partition.tenant, partition.project, cause.kind, cause.id],
   );
   const row = found.rows[0];
   if (row === undefined) {
     throw new Error(
-      `postgres decision: ${partition.tenant}/${partition.project} has no operation ${cause} to decide`,
+      `postgres decision: ${partition.tenant}/${partition.project} has no ${cause.kind} ${cause.id} to decide`,
     );
   }
   return row;
 }
 
-/** Settles the operation and makes its inbox item non-consumable, which together are the acknowledgement. */
+/** Settles the decision input with its terminal evidence. */
 async function decisionSettle(
   client: pg.PoolClient,
   lease: Lease,
-  cause: OperationId,
-  settled: OperationOutcome,
+  cause: DecisionCause,
+  settled: DecisionInputOutcome,
   refusedAt: {
     readonly head: number;
     readonly lifecycleGeneration: number;
@@ -119,29 +121,25 @@ async function decisionSettle(
 ): Promise<void> {
   const succeeded = settled.settled === "Succeeded";
   await client.query(
-    `UPDATE operation
-        SET state = $4, settled_at = now(),
+    `UPDATE decision_input
+        SET state = $4, terminal_at = now(),
             settled_authority_kind = $5, settled_authority_subject = $6,
             decided_seq = $7, outcome_code = $8,
             refused_head = $9, refused_lifecycle_generation = $10
-      WHERE tenant = $1 AND project = $2 AND operation = $3`,
+      WHERE tenant = $1 AND project = $2 AND input_kind = $3 AND input_id = $11`,
     [
       lease.partition.tenant,
       lease.partition.project,
-      cause,
-      settled.settled,
-      projectWriterAuthorityKind,
+      cause.kind,
+      settled.settled === "Succeeded" ? "Journaled" : settled.settled,
+      projectTicketWriterAuthorityKind,
       lease.owner,
       succeeded ? settled.seq : null,
       settled.settled === "Refused" ? settled.code : null,
       settled.settled === "Refused" ? refusedAt?.head : null,
       settled.settled === "Refused" ? refusedAt?.lifecycleGeneration : null,
+      cause.id,
     ],
-  );
-  await client.query(
-    `UPDATE inbox_item SET consumable = false
-      WHERE tenant = $1 AND project = $2 AND operation = $3`,
-    [lease.partition.tenant, lease.partition.project, cause],
   );
 }
 
@@ -163,15 +161,224 @@ async function decisionProject(
   }
 }
 
+type JournaledOutcome = Extract<
+  DecisionOutcome,
+  { readonly outcome: "Journaled" }
+>;
+
+async function decisionExecution(
+  client: pg.PoolClient,
+  partition: Partition,
+  outcome: JournaledOutcome,
+): Promise<void> {
+  const seq = outcome.entry.seq;
+  for (const request of outcome.materialization.execution) {
+    await client.query(
+      `INSERT INTO execution_request
+       (tenant, project, request, authorizing_seq, effect_position, ticket,
+        ticket_version, kind) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        partition.tenant,
+        partition.project,
+        request.request,
+        seq,
+        request.effectPosition,
+        request.ticket,
+        request.ticketVersion,
+        request.kind,
+      ],
+    );
+    for (const task of request.tasks) {
+      await client.query(
+        `INSERT INTO execution_request_task
+         (tenant, project, request, task, kind, stage) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [
+          partition.tenant,
+          partition.project,
+          request.request,
+          task.task,
+          task.kind,
+          task.kind === "Evaluation" ? task.stage : null,
+        ],
+      );
+    }
+  }
+}
+
+async function decisionFinalization(
+  client: pg.PoolClient,
+  partition: Partition,
+  outcome: JournaledOutcome,
+): Promise<void> {
+  const seq = outcome.entry.seq;
+  for (const ticket of outcome.materialization.fulfillFinalizationFor) {
+    await client.query(
+      `UPDATE finalization_request SET state='Fulfilled'
+        WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
+      [partition.tenant, partition.project, ticket],
+    );
+  }
+  for (const request of outcome.materialization.finalization) {
+    await client.query(
+      `INSERT INTO finalization_request
+       (tenant, project, request, authorizing_seq, effect_position, ticket,
+        ticket_version, request_generation) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        partition.tenant,
+        partition.project,
+        request.request,
+        seq,
+        request.effectPosition,
+        request.ticket,
+        request.ticketVersion,
+        request.requestGeneration,
+      ],
+    );
+  }
+}
+
+async function decisionActions(
+  client: pg.PoolClient,
+  partition: Partition,
+  outcome: JournaledOutcome,
+): Promise<void> {
+  const seq = outcome.entry.seq;
+  const resolved = outcome.materialization.resolveAction;
+  for (const ticket of outcome.materialization.withdrawActionsFor) {
+    await client.query(
+      `UPDATE native_action SET state='Withdrawn'
+        WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
+      [partition.tenant, partition.project, ticket],
+    );
+  }
+  for (const action of outcome.materialization.actions) {
+    await client.query(
+      `INSERT INTO native_action
+       (tenant, project, action, authorizing_seq, effect_position, ticket,
+        action_version, kind, reason, required_capability)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        partition.tenant,
+        partition.project,
+        action.action,
+        seq,
+        action.effectPosition,
+        action.ticket,
+        action.version,
+        action.kind,
+        action.reason,
+        action.capability,
+      ],
+    );
+    for (const resolution of action.resolutions) {
+      await client.query(
+        `INSERT INTO native_action_resolution
+         (tenant, project, action, resolution) VALUES ($1,$2,$3,$4)`,
+        [partition.tenant, partition.project, action.action, resolution],
+      );
+    }
+  }
+  if (resolved !== undefined) {
+    const changed = await client.query(
+      `UPDATE native_action SET state='Resolved'
+        WHERE tenant=$1 AND project=$2 AND action=$3 AND authorizing_seq=$4 AND state='Open'
+        RETURNING action`,
+      [
+        partition.tenant,
+        partition.project,
+        resolved.action,
+        resolved.authorizingSeq,
+      ],
+    );
+    if (changed.rows.length !== 1)
+      throw new Error("native action resolution fence failed");
+  }
+}
+
+async function decisionContinuation(
+  client: pg.PoolClient,
+  partition: Partition,
+  outcome: JournaledOutcome,
+): Promise<void> {
+  const seq = outcome.entry.seq;
+  const continuation = outcome.materialization.continuation;
+  if (continuation !== undefined) {
+    const allocated = await client.query<{ ordinal: string }>(
+      `UPDATE project SET ingress_next=ingress_next+1
+        WHERE tenant=$1 AND project=$2 RETURNING (ingress_next-1)::text AS ordinal`,
+      [partition.tenant, partition.project],
+    );
+    const ordinal = allocated.rows[0]?.ordinal;
+    if (ordinal === undefined)
+      throw new Error("continuation project disappeared");
+    await client.query(
+      `INSERT INTO project_continuation
+       (tenant, project, continuation, kind, authorizing_seq, effect_position,
+        ticket, expected_ticket_version, expected_phase, task_set_generation)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        partition.tenant,
+        partition.project,
+        continuation.continuation,
+        continuation.kind,
+        seq,
+        outcome.entry.rec.effects.length,
+        continuation.ticket,
+        continuation.expectedTicketVersion,
+        continuation.expectedPhase,
+        continuation.taskSetGeneration,
+      ],
+    );
+    await client.query(`SELECT ${continuationFunction}($1,$2,$3,$4)`, [
+      partition.tenant,
+      partition.project,
+      ordinal,
+      continuation.continuation,
+    ]);
+    await client.query(
+      `INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES ($1,$2,true,1) ON CONFLICT (tenant,project)
+       DO UPDATE SET ready=true, generation=project_readiness.generation+1`,
+      [partition.tenant, partition.project],
+    );
+  }
+}
+
+async function decisionMaterialize(
+  client: pg.PoolClient,
+  lease: Lease,
+  outcome: JournaledOutcome,
+): Promise<void> {
+  await decisionExecution(client, lease.partition, outcome);
+  await decisionFinalization(client, lease.partition, outcome);
+  await decisionActions(client, lease.partition, outcome);
+  await decisionContinuation(client, lease.partition, outcome);
+}
+
 /** Writes everything the decision asks for, and answers with the lease its commit advanced. */
 async function decisionApply(
   client: pg.PoolClient,
   lease: Lease,
-  cause: OperationId,
+  cause: DecisionCause,
   outcome: DecisionOutcome,
   standing: ReturnType<typeof projectRowStanding>,
 ): Promise<Decided> {
   switch (outcome.outcome) {
+    case "Stale":
+      await client.query(
+        `UPDATE decision_input SET state='Stale', terminal_at=now(),
+          settled_authority_kind=$5, settled_authority_subject=$6
+         WHERE tenant=$1 AND project=$2 AND input_kind=$3 AND input_id=$4`,
+        [
+          lease.partition.tenant,
+          lease.partition.project,
+          cause.kind,
+          cause.id,
+          projectTicketWriterAuthorityKind,
+          lease.owner,
+        ],
+      );
+      return { decided: "Stale" };
     case "Refused":
       await decisionSettle(
         client,
@@ -201,6 +408,7 @@ async function decisionApply(
         null,
       );
       await decisionProject(client, lease.partition, seq, outcome.projection);
+      await decisionMaterialize(client, lease, outcome);
       return { decided: "Committed", lease: { ...lease, head: seq } };
     }
     default:

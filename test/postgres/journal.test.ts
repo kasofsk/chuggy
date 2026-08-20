@@ -103,20 +103,21 @@ test("each stored digest chains onto its predecessor, and the first onto the par
   }
 });
 
-test("every stored entry names the operation that caused it, and no cause names two", async () => {
+test("every stored entry names the decision input that caused it, and no cause names two", async () => {
   const partition = await postgresHarnessProject(harness.store, "cause");
   const journal = postgresHarnessJournal();
   await postgresHarnessHistory(harness, partition, "writer", journal.length);
 
   const causes = (await harness.query(
-    `SELECT j.seq, j.cause_operation, o.state, o.decided_seq
-       FROM journal_entry j JOIN operation o
-         ON o.tenant = j.tenant AND o.project = j.project AND o.operation = j.cause_operation
+    `SELECT j.seq, j.cause_id, i.state, i.decided_seq
+       FROM journal_entry j JOIN decision_input i
+         ON i.tenant = j.tenant AND i.project = j.project
+        AND i.input_kind = j.cause_kind AND i.input_id = j.cause_id
       WHERE j.tenant = $1 AND j.project = $2 ORDER BY j.seq`,
     [partition.tenant, partition.project],
   )) as readonly {
     seq: string;
-    cause_operation: string;
+    cause_id: string;
     state: string;
     decided_seq: string;
   }[];
@@ -125,13 +126,10 @@ test("every stored entry names the operation that caused it, and no cause names 
   assert.deepEqual(
     causes.map((row) => `${row.seq} ${row.state} ${row.decided_seq}`),
     journal.map(
-      (entry) => `${String(entry.seq)} Succeeded ${String(entry.seq)}`,
+      (entry) => `${String(entry.seq)} Journaled ${String(entry.seq)}`,
     ),
   );
-  assert.equal(
-    new Set(causes.map((row) => row.cause_operation)).size,
-    journal.length,
-  );
+  assert.equal(new Set(causes.map((row) => row.cause_id)).size, journal.length);
 });
 
 test("a stored row that is not JSON is refused by returning, not thrown on", async () => {
@@ -162,7 +160,7 @@ test("a stored row that is JSON but not an entry is refused by the schema", asyn
   assert.equal(loaded.parsed, "Refused");
 });
 
-test("a journal that no longer reaches its own head is thrown on, not refused", async () => {
+test("the database rejects a journal that no longer reaches its decision input", async () => {
   const journal = postgresHarnessJournal();
   assert.ok(journal.length > 1);
   for (const seq of [1, journal.length]) {
@@ -174,11 +172,13 @@ test("a journal that no longer reaches its own head is thrown on, not refused", 
       journal.length,
     );
 
-    await harness.query(
-      "DELETE FROM journal_entry WHERE tenant = $1 AND project = $2 AND seq = $3",
-      [partition.tenant, partition.project, seq],
+    await assert.rejects(
+      harness.query(
+        "DELETE FROM journal_entry WHERE tenant = $1 AND project = $2 AND seq = $3",
+        [partition.tenant, partition.project, seq],
+      ),
+      /violates foreign key constraint/,
     );
-
-    await assert.rejects(() => harness.store.load(memory.lease), /claims head/);
+    assert.equal((await harness.store.load(memory.lease)).parsed, "Ok");
   }
 });

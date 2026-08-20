@@ -21,6 +21,7 @@ import {
   encodeEntry as encodeEntryValue,
 } from "../generated/model-api.ts";
 import type { DecisionEvent, Entry } from "../domain/generated/modelTypes.ts";
+import type { TicketCommand } from "./ticketCommand.ts";
 
 /** Writes one `Entry` as the text a store keeps. */
 export function encodeEntry(entry: Entry): string {
@@ -60,6 +61,53 @@ export function encodeDecisionEventText(event: DecisionEvent): string {
 export function parseDecisionEventText(text: string): Parsed<DecisionEvent> {
   try {
     return { parsed: "Ok", value: decodeDecisionEvent(JSON.parse(text)) };
+  } catch (error: unknown) {
+    return { parsed: "Refused", why: parseRefusal(error) };
+  }
+}
+
+export function encodeTicketCommand(command: TicketCommand): string {
+  if (command.command === "Decide") {
+    return JSON.stringify({
+      version: 1,
+      command: "Decide",
+      event: encodeDecisionEvent(command.event),
+    });
+  }
+  return JSON.stringify(command);
+}
+
+export function parseTicketCommand(text: string): Parsed<TicketCommand> {
+  try {
+    const raw: unknown = JSON.parse(text);
+    if (typeof raw !== "object" || raw === null) {
+      throw new TypeError("command is not an object");
+    }
+    const record = raw as Record<string, unknown>;
+    if (record["version"] !== 1)
+      throw new TypeError("command version is not 1");
+    if (record["command"] === "Decide") {
+      const event = decodeDecisionEvent(record["event"]);
+      if (event.type === "WorkReduce" || event.type === "EvalReduce") {
+        throw new TypeError("reducers are internal continuation commands");
+      }
+      return {
+        parsed: "Ok",
+        value: { version: 1, command: "Decide", event },
+      };
+    }
+    if (
+      record["command"] === "ResolveNativeAction" &&
+      typeof record["action"] === "string" &&
+      record["action"].length > 0 &&
+      typeof record["authorizingSeq"] === "number" &&
+      Number.isSafeInteger(record["authorizingSeq"]) &&
+      record["authorizingSeq"] >= 1 &&
+      (record["resolution"] === "Resume" || record["resolution"] === "Revoke")
+    ) {
+      return { parsed: "Ok", value: record as TicketCommand };
+    }
+    throw new TypeError("command tag or fields are invalid");
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
   }

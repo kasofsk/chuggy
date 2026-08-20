@@ -46,13 +46,6 @@
  * the database could not answer at all, which is the one thing a dispatcher
  * cannot decide its way around.
  *
- * IT DOES NOT REPLACE `JournalStore`, and the two coexist deliberately. That
- * one is the unpartitioned in-memory log 006 calls pre-production scaffolding;
- * this one is the partitioned durable authority. The executor still drives the
- * old one because its cursor is the emission model 006 replaces with focused
- * consumer requests written inside the decision transaction — slice I3 — and
- * a store retired before its replacement exists leaves the effects the
- * conformance suites walk with nowhere to go.
  */
 
 import type { Entry } from "../actor/journal.ts";
