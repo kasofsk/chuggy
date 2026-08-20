@@ -22,10 +22,10 @@
 # forge a source address. Every jump kube-router programs is keyed on a pod's
 # own address with nothing beneath them to catch what matches none, so a forged
 # source only has to be routable back through the pod bridge — any address in
-# the node's pod CIDR, a pod's or nobody's — to be forwarded and masqueraded
-# out. That hole is knowingly retained — closing it is a per-workload
-# `securityContext`, not a namespace default — and `README.md` lists what it
-# reaches and what it does not.
+# the node's pod CIDR — to be forwarded and masqueraded out. That hole is
+# knowingly retained — closing it is a per-workload `securityContext`, not a
+# namespace default — and `README.md` lists what it reaches, what it does not,
+# and which of that was measured rather than read from the rules.
 apiVersion: v1
 kind: Namespace
 metadata:

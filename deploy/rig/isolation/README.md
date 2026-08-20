@@ -406,28 +406,64 @@ Said plainly, so nobody trusts it further than it goes.
 - **That the policy decides every destination.** kube-router's `INPUT` chain
   returns before any pod-firewall jump for a node-local destination on tcp or
   udp `30000:32767` — so a packet still bearing one when `filter` runs is never
-  offered to the policy at all. The two verdicts separate cleanly against the
-  node's own address with nothing listening on either port: `29999` is refused
-  in the policy's words and at its speed, while `31000` times out instead,
-  dropped by the host firewall with the policy never consulted.
+  offered to the policy at all.
 
-  **A NodePort in use is not that case**, and reading it as one inverts the
-  rule: kube-proxy DNATs such a port in `nat PREROUTING` — before the routing
-  decision, and before the `--dst-type LOCAL` match the `RETURN` is guarded by
-  — so the packet leaves that hook bearing a *pod* address, takes `FORWARD`
-  rather than `INPUT`, and meets the work pod's own `-s` jump. This rig has two
-  in the range, `kube-system/traefik`'s `30411` and `32500`. One port of each
-  kind, from the same pod in one block:
+  **Whether it still bears one is settled earlier**, in `nat PREROUTING`, and
+  reading the range itself as the hole inverts the rule. Both things that
+  publish a node port jump from that hook under the same `--dst-type LOCAL`
+  match the `RETURN` is guarded by, and both land a DNAT to a pod address:
+  kube-proxy for a NodePort, the CNI portmap plugin for a `hostPort`. Such a
+  packet leaves the hook bearing a *pod* address, takes `FORWARD` rather than
+  `INPUT`, and meets the work pod's own `-s` jump. Only a port neither of them
+  claims reaches that `RETURN` still node-local.
+
+  One port of each kind, against the node's own address: `29999` below the
+  range, `31000` unclaimed inside it, and `kube-system/traefik`'s NodePort
+  `30411` — the rig's other allocation is `32500`. The last is
+  `hostport-probe.yaml`'s `hostPort` `31001`, which the CNI publishes rather
+  than kube-proxy, and which serves so that a refusal below reads as one:
 
   ```
+  $ kubectl apply -f deploy/rig/isolation/hostport-probe.yaml
+  namespace/hostport-fixture created
+  pod/hostport-probe created
+  $ kubectl -n hostport-fixture wait --for=condition=Ready pod/hostport-probe
+  pod/hostport-probe condition met
+  $ wget -qO - http://192.168.0.114:31001/
+  hostport-probe-served-this
+  ```
+
+  From the work pod, under the policy, in one block:
+
+  ```sh
+  kubectl -n chuggy-work exec work-probe -- sh -c '
+    el() { awk -v s="$1" -v e="$2" "BEGIN{printf \"%.2fs\", e-s}"; }
+    for t in 192.168.0.114:29999 192.168.0.114:31000 192.168.0.114:30411 192.168.0.114:31001; do
+      h="${t%%:*}"; p="${t##*:}"; s="$(cut -d" " -f1 /proc/uptime)"
+      if nc -w 3 "$h" "$p" </dev/null >/dev/null 2>&1; then v=open; else v=failed; fi
+      e="$(cut -d" " -f1 /proc/uptime)"
+      printf "tcp  %-20s %-8s %-7s  %s\n" "$t" "$v" "$(el "$s" "$e")" \
+        "$(wget -T 3 -q -O /dev/null "http://$t/" 2>&1)"
+    done'
+  ```
+
+  ```
+  tcp  192.168.0.114:29999  failed   1.02s    wget: can't connect to remote host (192.168.0.114): Connection refused
   tcp  192.168.0.114:31000  failed   3.00s    wget: download timed out
-  tcp  192.168.0.114:30411  failed   1.04s    wget: can't connect to remote host (192.168.0.114): Connection refused
+  tcp  192.168.0.114:30411  failed   1.03s    wget: can't connect to remote host (192.168.0.114): Connection refused
+  tcp  192.168.0.114:31001  failed   1.02s    wget: can't connect to remote host (192.168.0.114): Connection refused
   ```
 
-  So the hole is the complement of what kube-proxy programs, not the range: a
-  node-local port in it that nothing DNATs — unallocated, a `hostPort`, or a
-  host daemon bound there. The GCP apply's allocated NodePorts are policed by
-  the same mechanism; the rest of its range is what nothing here bounds.
+  Then take the fixture back out with
+  `kubectl delete -f deploy/rig/isolation/hostport-probe.yaml`; nothing below
+  needs it.
+
+  `31000` is the only row the policy never saw. So the hole is the complement
+  of what *anything* DNATs, not the range: a node-local port in it that nothing
+  rewrites — unallocated, or a host daemon bound there. The GCP apply's
+  allocated NodePorts are policed by the same mechanism, and so is any
+  `hostPort` its workloads publish; the rest of its range is what nothing here
+  bounds.
 - **Anything about a host-network source, the node, or another namespace.**
 - **Anything about egress from the cluster's own infrastructure.** Flux, the
   PostgreSQL StatefulSet and the ingress are untouched by this rehearsal.
@@ -436,9 +472,12 @@ Said plainly, so nobody trusts it further than it goes.
 
 ```sh
 kubectl delete namespace chuggy-work
+kubectl delete -f deploy/rig/isolation/hostport-probe.yaml --ignore-not-found
 kubectl label node gtr chuggy.dev/pool-
 ```
 
-Nothing outside that namespace and that one node label was created or altered —
-not the Flux controllers, not `flux-system`, not `chuggy`, not `chuggy-git`,
-and nothing on the host.
+The second line is a catch for a run abandoned mid-way: the `hostPort` fixture
+carries its own namespace, and the bullet that applies it takes it out again.
+Nothing outside those two namespaces and that one node label was created or
+altered — not the Flux controllers, not `flux-system`, not `chuggy`, not
+`chuggy-git`, and nothing on the host.

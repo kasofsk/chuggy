@@ -1,0 +1,45 @@
+# A `hostPort` in the NodePort range, so that `README.md`'s last bullet has one
+# to dial. It publishes a node-local port the way a NodePort does not — the CNI
+# portmap plugin rather than kube-proxy — and the bullet exists to show that the
+# policy decides both alike.
+#
+# It is not in `chuggy-work` because it cannot be: the baseline profile
+# restricts `hostPort` exactly as it restricts `hostNetwork`, so the namespace
+# refuses the field at admission and a work pod cannot declare one either.
+#
+# Its namespace carries no NetworkPolicy, and that is the point rather than an
+# omission. Selected by nothing, this pod's firewall chain jumps to
+# kube-router's default-allow chain, which marks every packet compliant — so the
+# refusal `README.md` measures at this port is the *work* pod's own chain and
+# never this one's. It is the property `kube-system/traefik` has, and it is what
+# makes the row evidence of anything.
+#
+# It serves a byte for the reason `dial-probe.yaml` makes the work pod serve
+# one: a port with nothing behind it refuses in the same words. The dial is at
+# the node's address, so the fixture has to land on the node being dialled —
+# which on this rig is the only one there is.
+#
+# The namespace is here so that one `kubectl delete -f` takes the whole fixture
+# back out, which the section that applies it does.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hostport-fixture
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hostport-probe
+  namespace: hostport-fixture
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: busybox@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616
+      command:
+        - sh
+        - -c
+        - mkdir -p /www; echo hostport-probe-served-this > /www/index.html; httpd -f -p 8080 -h /www
+      ports:
+        - containerPort: 8080
+          hostPort: 31001
