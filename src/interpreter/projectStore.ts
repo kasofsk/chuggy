@@ -124,8 +124,8 @@ export const allLifecycles: readonly Lifecycle[] = [
 
 /**
  * A granted ownership of one project partition. It is the only thing that
- * authorizes an append, and holding one proves nothing on its own — the append
- * rechecks every field of it against the row.
+ * authorizes a decision, and holding one proves nothing on its own — the
+ * deciding transaction rechecks every field of it against the row.
  */
 export interface Lease {
   readonly partition: Partition;
