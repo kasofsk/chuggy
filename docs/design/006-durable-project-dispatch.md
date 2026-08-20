@@ -1426,8 +1426,14 @@ and terminal evidence. Its states are `Pending`, `Journaled`, `Refused`,
 derived from the joined input. Operation rows retain idempotency, authority,
 command and audit evidence, but no duplicate processing state or consumability
 flag. Journal entries name a typed decision input, and one input authorizes at
-most one entry. The exact bidirectional foreign-key shape between a journaled
-input and its entry remains to be decided.
+most one entry. A journaled input and its entry reference the same composite
+`(tenant, project, input kind, input identity, decided sequence)` tuple in both
+directions through `DEFERRABLE INITIALLY DEFERRED` foreign keys. Input state
+requires a decided sequence exactly when it is `Journaled`, and journal cause
+identity is unique. The deferral permits either write order inside the decision
+transaction while requiring both directions to agree at commit; no input may
+claim a sequence without its exact entry and no entry may name an input that
+does not claim that sequence.
 
 The initial input kinds are operations and deterministic continuations;
 selection results add their subtype in I5. Every continuation, native action
