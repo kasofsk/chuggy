@@ -43,9 +43,9 @@ function journalChainInput(parts: readonly string[]): string {
 }
 
 /**
- * The predecessor digest of the first entry in a partition. It is derived
- * rather than fixed, so a chain that lost its head cannot be mistaken for one
- * that never had entries, nor for another partition's.
+ * The predecessor digest of the first entry in a partition. It is derived from
+ * the partition rather than fixed, so a chain grafted from another one
+ * disagrees at its first entry.
  */
 export function journalChainGenesis(partition: Partition): string {
   return createHash("sha256")
