@@ -10,15 +10,32 @@
  *
  * EACH ATTEMPT IS ROLLED BACK, so a case that proves a permitted statement
  * leaves no row for the next case to find.
+ *
+ * TWO ROLES MEET AT THESE RELATIONS AND NEITHER MAY DO THE OTHER'S WORK. The
+ * API accepts and cancels and decides nothing; the dispatcher decides and
+ * accepts nothing. A column-level grant is the only thing separating them, and
+ * a column-level grant nobody tested is a whole-row grant nobody noticed.
+ *
+ * THE ONE THING NO GRANT CAN SEPARATE IS CANCELLING FROM DECIDING, because
+ * both write `state` on the same row. So the API role holds no `UPDATE` on
+ * `operation` at all and cancellation is a `SECURITY DEFINER` function, and
+ * the cases below drive both halves of that: the direct writes the role must
+ * be refused, and the one call it must be able to make.
  */
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { dispatcherRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  apiRole,
+  cancellationFunction,
+  dispatcherRole,
+} from "../../src/adapters/postgres/schema.ts";
+import type { Submission } from "../../src/interpreter/operationInbox.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessSubmission,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -110,4 +127,238 @@ test("the dispatcher role may append an entry and move the head it counts", asyn
     await harness.attemptAs(dispatcherRole, "SELECT epoch FROM recovery_epoch"),
     undefined,
   );
+});
+
+/** An accepted operation whose rows the role cases attempt statements against. */
+async function acceptedFor(label: string): Promise<Submission> {
+  const partition = await postgresHarnessProject(harness.store, label);
+  const submission = postgresHarnessSubmission(partition, label);
+  const outcome = await harness.inbox.accept(submission);
+  assert.ok(outcome.accepted === "Accepted");
+  return submission;
+}
+
+/** The columns an inserted operation must carry, as one values list a case can vary the row of. */
+function operationValues(submission: Submission, operation: string): string {
+  return `'${submission.partition.tenant}', '${submission.partition.project}', '${operation}',
+          '${submission.authority.kind}', '${submission.authority.subject}', 'Ordinary',
+          'v', 'digest-${operation}', 'payload', '{}', 1`;
+}
+
+/** The column list those values fill. */
+const operationColumns = `
+  tenant, project, operation, authority_kind, authority_subject, admission,
+  key_version, key_digest, payload_digest, command, lifecycle_generation
+`;
+
+test("the api role cannot append a journal entry, because it accepts work and decides none", async () => {
+  const refusal = await harness.attemptAs(
+    apiRole,
+    "INSERT INTO journal_entry (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch, recovery_epoch) VALUES ('t', 'p', 1, '{}', 'd', 'p', 'o', 1, 'e')",
+  );
+  assert.match(String(refusal), /permission denied/);
+});
+
+test("the api role cannot move the head, the ownership or the lifecycle it accepts under", async () => {
+  const submission = await acceptedFor("apifence");
+  const where = `WHERE tenant = '${submission.partition.tenant}'`;
+  for (const column of [
+    "head = 1",
+    "owner = 'someone'",
+    "lifecycle = 'Retention'",
+    "fencing_epoch = 99",
+  ]) {
+    const refusal = await harness.attemptAs(
+      apiRole,
+      `UPDATE project SET ${column} ${where}`,
+    );
+    assert.match(String(refusal), /permission denied/);
+  }
+});
+
+test("the api role cannot provision a project or mint a recovery epoch", async () => {
+  for (const statement of [
+    "INSERT INTO project (tenant, project, lifecycle) VALUES ('t', 'p', 'Active')",
+    "INSERT INTO recovery_epoch (epoch) VALUES ('forged')",
+  ]) {
+    const refusal = await harness.attemptAs(apiRole, statement);
+    assert.match(String(refusal), /permission denied/);
+  }
+});
+
+test("no role may drop an accepted operation or the inbox item that carries it", async () => {
+  const submission = await acceptedFor("apidelete");
+  const where = `WHERE operation = '${submission.operation}'`;
+  for (const role of [apiRole, dispatcherRole]) {
+    for (const relation of ["operation", "inbox_item"]) {
+      const refusal = await harness.attemptAs(
+        role,
+        `DELETE FROM ${relation} ${where}`,
+      );
+      assert.match(String(refusal), /permission denied/);
+    }
+  }
+});
+
+test("the api role may accept: allocate an ordinal, write the operation and its item, and raise readiness", async () => {
+  const submission = await acceptedFor("apiaccept");
+  const partition = submission.partition;
+  const fresh = `${submission.operation}-again`;
+  const permitted = [
+    `UPDATE project SET ingress_next = ingress_next + 1 WHERE tenant = '${partition.tenant}' AND project = '${partition.project}'`,
+    `INSERT INTO operation (${operationColumns}) VALUES (${operationValues(submission, fresh)})`,
+    `UPDATE project_readiness SET ready = true, generation = generation + 1 WHERE tenant = '${partition.tenant}'`,
+  ];
+  for (const statement of permitted) {
+    assert.equal(await harness.attemptAs(apiRole, statement), undefined);
+  }
+});
+
+test("the api role cannot accept an operation that is already decided", async () => {
+  const submission = await acceptedFor("apibornsettled");
+  const partition = submission.partition;
+  const fresh = `${submission.operation}-born`;
+  const refused = [
+    `INSERT INTO operation (${operationColumns}, state, settled_at)
+       VALUES (${operationValues(submission, fresh)}, 'Succeeded', now())`,
+    `INSERT INTO operation (${operationColumns}, state, settled_at)
+       VALUES (${operationValues(submission, fresh)}, 'Refused', now())`,
+    `INSERT INTO operation (${operationColumns}, settled_authority_subject)
+       VALUES (${operationValues(submission, fresh)}, 'someone')`,
+  ];
+  for (const statement of refused) {
+    const refusal = await harness.attemptAs(apiRole, statement);
+    assert.match(String(refusal), /permission denied/);
+  }
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `INSERT INTO operation (${operationColumns}) VALUES (${operationValues(submission, fresh)})`,
+    ),
+    undefined,
+  );
+  const standing = await harness.inbox.operation(
+    partition,
+    submission.operation,
+  );
+  assert.ok(standing !== undefined);
+  assert.equal(standing.state, "Pending");
+});
+
+test("the api role cannot enqueue an item no writer will ever discover", async () => {
+  const submission = await acceptedFor("apiunconsumable");
+  const partition = submission.partition;
+  const refusal = await harness.attemptAs(
+    apiRole,
+    `INSERT INTO inbox_item (tenant, project, ordinal, operation, consumable)
+       VALUES ('${partition.tenant}', '${partition.project}', 9999, '${submission.operation}-item', false)`,
+  );
+  assert.match(String(refusal), /permission denied/);
+});
+
+test("the api role may lock the lifecycle row it allocates an ordinal from", async () => {
+  const submission = await acceptedFor("apilock");
+  const partition = submission.partition;
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT tenant FROM project WHERE tenant = '${partition.tenant}' AND project = '${partition.project}' FOR UPDATE`,
+    ),
+    undefined,
+  );
+});
+
+/** The cancellation call, with the submission's own authority as the settling one. */
+function cancelCall(submission: Submission): string {
+  return `SELECT ${cancellationFunction}('${submission.partition.tenant}', '${submission.partition.project}',
+            '${submission.operation}', '${submission.authority.kind}', '${submission.authority.subject}')`;
+}
+
+test("the api role cannot decide a pending operation, by any write that would settle it", async () => {
+  const submission = await acceptedFor("apidecide");
+  const where = `WHERE operation = '${submission.operation}'`;
+  const refused = [
+    `UPDATE operation SET state = 'Succeeded', settled_at = now() ${where}`,
+    `UPDATE operation SET state = 'Refused', settled_at = now() ${where}`,
+    `UPDATE operation SET state = 'Cancelled', settled_at = now() ${where}`,
+    `UPDATE operation SET settled_authority_subject = 'someone' ${where}`,
+    `UPDATE inbox_item SET consumable = false ${where}`,
+  ];
+  for (const statement of refused) {
+    const refusal = await harness.attemptAs(apiRole, statement);
+    assert.match(String(refusal), /permission denied/);
+  }
+  assert.equal(
+    (await harness.inbox.operation(submission.partition, submission.operation))
+      ?.state,
+    "Pending",
+  );
+});
+
+test("the api role cancels through the function it is granted, and that is the whole of a cancellation", async () => {
+  const submission = await acceptedFor("apicancel");
+  const acting = await harness.begin();
+  try {
+    await acting.query(`SET LOCAL ROLE ${apiRole}`);
+    assert.deepEqual(await acting.query(cancelCall(submission)), [
+      { [cancellationFunction]: "Pending" },
+    ]);
+    assert.deepEqual(
+      await acting.query(
+        `SELECT o.state, i.consumable, o.settled_authority_subject
+           FROM operation o JOIN inbox_item i USING (tenant, project, operation)
+          WHERE o.operation = $1`,
+        [submission.operation],
+      ),
+      [
+        {
+          state: "Cancelled",
+          consumable: false,
+          settled_authority_subject: submission.authority.subject,
+        },
+      ],
+    );
+  } finally {
+    await acting.rollback();
+  }
+});
+
+test("the dispatcher role cannot cancel, because the function is granted to the api role alone", async () => {
+  const submission = await acceptedFor("dispatchercancel");
+  const refusal = await harness.attemptAs(
+    dispatcherRole,
+    cancelCall(submission),
+  );
+  assert.match(String(refusal), /permission denied/);
+});
+
+test("the dispatcher role cannot accept work: no operation, no ordinal, no inbox item", async () => {
+  const submission = await acceptedFor("dispatcheraccept");
+  const partition = submission.partition;
+  const refused = [
+    `INSERT INTO operation (${operationColumns}) VALUES (${operationValues(submission, `${submission.operation}-forged`)})`,
+    `UPDATE project SET ingress_next = ingress_next + 1 WHERE tenant = '${partition.tenant}'`,
+    `INSERT INTO inbox_item (tenant, project, ordinal, operation) VALUES ('${partition.tenant}', '${partition.project}', 9, '${submission.operation}')`,
+  ];
+  for (const statement of refused) {
+    const refusal = await harness.attemptAs(dispatcherRole, statement);
+    assert.match(String(refusal), /permission denied/);
+  }
+});
+
+test("the dispatcher role may lower readiness and may not advance the generation it reads", async () => {
+  const submission = await acceptedFor("dispatcherready");
+  const where = `WHERE tenant = '${submission.partition.tenant}'`;
+  for (const statement of [
+    `SELECT generation FROM project_readiness ${where} FOR UPDATE`,
+    `SELECT ordinal FROM inbox_item ${where} AND consumable`,
+    `UPDATE project_readiness SET ready = false ${where}`,
+  ]) {
+    assert.equal(await harness.attemptAs(dispatcherRole, statement), undefined);
+  }
+  const refusal = await harness.attemptAs(
+    dispatcherRole,
+    `UPDATE project_readiness SET generation = generation + 1 ${where}`,
+  );
+  assert.match(String(refusal), /permission denied/);
 });

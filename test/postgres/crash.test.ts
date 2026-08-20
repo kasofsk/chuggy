@@ -12,10 +12,24 @@
  * connection the child never had is what makes this a statement about
  * PostgreSQL rather than about anything the adapter kept in memory.
  *
- * READING BACK MEANS TAKING THE PROJECT OVER FIRST. A replay happens under a
- * lease, and the dead child's outlives it, so every case ages the row and
- * acquires before it reads — which is what a surviving replica would do, and
- * touches neither the entries nor the head the child left behind.
+ * READING A JOURNAL BACK MEANS TAKING THE PROJECT OVER FIRST. A replay happens
+ * under a lease, and the dead child's outlives it, so every case that replays
+ * ages the row and acquires before it reads — which is what a surviving replica
+ * would do, and touches neither the entries nor the head the child left behind.
+ *
+ * THE SUBMISSION SIDE IS THE SAME RIG WITH NO LEASE IN IT. 006 asks that a
+ * crash after acceptance leave the work discoverable without an active owner,
+ * and the only way to mean that is a process that took no ownership, accepted,
+ * and then stopped existing — so those two cases replay nothing and take
+ * nothing over.
+ *
+ * WHAT THE UNRESOLVED SEAMS ASSERT IS WEAKER THAN THEIR NAMES. `blocked` and
+ * `unaccepted` start a write they mean to be killed mid-flight, and the parent
+ * kills on a line the child prints before the server has necessarily begun
+ * waiting on the lock. Killed early, the case passes because nothing was
+ * written; killed late, it passes because the write rolled back. Both are the
+ * claim, so neither can fail falsely — but only the late kill exercises the
+ * rollback, and the case cannot say which one it took.
  */
 
 import assert from "node:assert/strict";
@@ -27,6 +41,7 @@ import { journalLegalOn } from "../../src/actor/journal.ts";
 import type { Lease, Partition } from "../../src/interpreter/projectStore.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import {
+  postgresHarnessCrashSubmission,
   postgresHarnessExpire,
   postgresHarnessHeld,
   postgresHarnessOpen,
@@ -145,4 +160,67 @@ test("a fresh process takes over a dead owner's project and resumes at its head"
   await crashAt(partition, "commit");
 
   assert.equal((await takenOver(partition)).head, journal.length);
+});
+
+test("a crash after acceptance leaves the work discoverable with no active owner", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "crashaccepted",
+  );
+  await crashAt(partition, "accepted");
+
+  assert.deepEqual(
+    await harness.query(
+      "SELECT owner, head, ingress_next FROM project WHERE tenant = $1 AND project = $2",
+      [partition.tenant, partition.project],
+    ),
+    [{ owner: null, head: "0", ingress_next: "2" }],
+  );
+
+  const submission = postgresHarnessCrashSubmission(partition);
+  const operation = await harness.inbox.operation(
+    partition,
+    submission.operation,
+  );
+  assert.ok(operation !== undefined);
+  assert.equal(operation.state, "Pending");
+  assert.equal(operation.ordinal, 1);
+
+  const ready = await harness.discovery.ready(1_000);
+  assert.ok(ready.some((each) => each.partition.project === partition.project));
+  assert.deepEqual(
+    (await harness.discovery.consumable(partition, 10)).map(
+      (item) => item.operation,
+    ),
+    [submission.operation],
+  );
+});
+
+test("an acceptance that never resolved leaves no operation and no ordinal spent", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "crashunaccepted",
+  );
+  await crashAt(partition, "unaccepted");
+
+  const submission = postgresHarnessCrashSubmission(partition);
+  assert.equal(
+    await harness.inbox.operation(partition, submission.operation),
+    undefined,
+  );
+  assert.deepEqual(await harness.discovery.consumable(partition, 10), []);
+  assert.deepEqual(
+    await harness.query(
+      "SELECT ingress_next FROM project WHERE tenant = $1 AND project = $2",
+      [partition.tenant, partition.project],
+    ),
+    [{ ingress_next: "1" }],
+  );
+  assert.deepEqual(
+    await harness.query(
+      "SELECT 1 FROM project_readiness WHERE tenant = $1 AND project = $2",
+      [partition.tenant, partition.project],
+    ),
+    [],
+  );
 });
