@@ -190,6 +190,31 @@ kubectl -n chuggy label pod probe chuggy.dev/postgres-client-
 as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher  # refused
 ```
 
+### The grant that removes the policy
+
+The ingress policy's header ends on a bypass that is another repo's to change,
+so it is the one claim in these two files that can go stale without this tree
+moving. `auth can-i` asks the API server and applies nothing:
+
+```sh
+kubectl -n chuggy auth can-i delete networkpolicies \
+  --as=system:serviceaccount:chuggy:dev2
+kubectl -n chuggy auth can-i get secrets \
+  --as=system:serviceaccount:chuggy:dev2
+```
+
+```
+yes
+yes
+```
+
+The first says an identity the rig declares can delete
+`postgres-admits-labelled-clients`, after which nothing selects the server for
+ingress and every pod-network client is admitted — `postgres-denies-egress`
+names Egress alone, so it does not isolate the pod in this direction. The second
+says the same identity reads both Secrets beside the server. A `no` on either
+means chuggy-fabric moved the binding, and the header is what to re-read.
+
 ### The credentials
 
 With the label back on, each login role once, with the password this procedure
