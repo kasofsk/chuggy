@@ -22,6 +22,16 @@ import type {
 import type { OperationInbox } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { TicketCommand } from "./ticketCommand.ts";
+import type {
+  AuthoringStore,
+  CanonicalConfiguration,
+  ConfigurationCreated,
+  ConfigurationRevisionId,
+  DraftCreated,
+  DraftDeleted,
+  DraftRevised,
+} from "./authoring.ts";
+import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
 
 declare const principalBrand: unique symbol;
 declare const instantBrand: unique symbol;
@@ -149,6 +159,10 @@ export type NativeCancellation =
   | { readonly result: "NotFound" }
   | { readonly result: "Found"; readonly cancellation: Cancelled };
 
+export type AuthorizedResult<Value> =
+  | { readonly result: "NotFound" }
+  | { readonly result: "Authorized"; readonly value: Value };
+
 export interface NativeWeb {
   submit(
     principal: Principal,
@@ -169,6 +183,106 @@ export interface NativeWeb {
     partition: Partition,
     operation: OperationId,
   ): Promise<NativeCancellation>;
+  createConfiguration(
+    principal: Principal,
+    input: {
+      readonly partition: Partition;
+      readonly revision: ConfigurationRevisionId;
+      readonly parent?: ConfigurationRevisionId;
+      readonly canonical: CanonicalConfiguration;
+    },
+  ): Promise<AuthorizedResult<ConfigurationCreated>>;
+  createDraft(
+    principal: Principal,
+    input: {
+      readonly partition: Partition;
+      readonly configurationRevision: ConfigurationRevisionId;
+      readonly authoring: ReleaseAuthoring;
+    },
+  ): Promise<AuthorizedResult<DraftCreated>>;
+  reviseDraft(
+    principal: Principal,
+    input: {
+      readonly partition: Partition;
+      readonly ticket: TicketId;
+      readonly expectedVersion: number;
+      readonly configurationRevision: ConfigurationRevisionId;
+      readonly authoring: ReleaseAuthoring;
+    },
+  ): Promise<AuthorizedResult<DraftRevised>>;
+  deleteDraft(
+    principal: Principal,
+    input: {
+      readonly partition: Partition;
+      readonly ticket: TicketId;
+      readonly expectedVersion: number;
+    },
+  ): Promise<AuthorizedResult<DraftDeleted>>;
+}
+
+type NativeAuthoringMethods = Pick<
+  NativeWeb,
+  "createConfiguration" | "createDraft" | "reviseDraft" | "deleteDraft"
+>;
+
+function nativeAuthoringMethods(
+  access: ProjectAccess,
+  authoring: AuthoringStore,
+): NativeAuthoringMethods {
+  return {
+    createConfiguration: async (principal, input) => {
+      const authority = await access.authorize(
+        principal,
+        input.partition,
+        "Mutate",
+      );
+      return authority === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await authoring.createConfiguration({ ...input, authority }),
+          };
+    },
+    createDraft: async (principal, input) => {
+      const authority = await access.authorize(
+        principal,
+        input.partition,
+        "Mutate",
+      );
+      return authority === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await authoring.createDraft({ ...input, authority }),
+          };
+    },
+    reviseDraft: async (principal, input) => {
+      const authority = await access.authorize(
+        principal,
+        input.partition,
+        "Mutate",
+      );
+      return authority === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await authoring.reviseDraft({ ...input, authority }),
+          };
+    },
+    deleteDraft: async (principal, input) => {
+      const authority = await access.authorize(
+        principal,
+        input.partition,
+        "Mutate",
+      );
+      return authority === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await authoring.deleteDraft({ ...input, authority }),
+          };
+    },
+  };
 }
 
 /** Builds the application boundary from authorization, read, and inbox ports. */
@@ -176,8 +290,10 @@ export function nativeWeb(
   access: ProjectAccess,
   reads: NativeReadStore,
   inbox: OperationInbox,
+  authoring: AuthoringStore,
 ): NativeWeb {
   return {
+    ...nativeAuthoringMethods(access, authoring),
     submit: async (principal, submission) => {
       const authority = await access.authorize(
         principal,

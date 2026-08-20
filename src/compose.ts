@@ -2,6 +2,7 @@ import type pg from "pg";
 
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
+import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -38,7 +39,12 @@ export function composeNativeWeb(
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
-  return nativeWeb(access, postgresNativeReads(apiPool), inbox);
+  return nativeWeb(
+    access,
+    postgresNativeReads(apiPool),
+    inbox,
+    postgresAuthoring(apiPool),
+  );
 }
 
 /** Wires the ticket-service contracts to separate API and writer credentials. */

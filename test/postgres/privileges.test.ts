@@ -112,6 +112,19 @@ test("the API cannot append history or create focused work", async () => {
   }
 });
 
+test("the API cannot bypass versioned authoring functions", async () => {
+  for (const statement of [
+    "INSERT INTO configuration_revision DEFAULT VALUES",
+    "INSERT INTO draft DEFAULT VALUES",
+    "INSERT INTO draft_revision DEFAULT VALUES",
+    "UPDATE draft SET state='Released'",
+    "UPDATE project SET ticket_next=ticket_next+1",
+  ]) {
+    const refusal = await harness.attemptAs(apiRole, statement);
+    assert.match(refusal ?? "", /permission denied/);
+  }
+});
+
 test("the API read credential cannot inspect private operation columns", async () => {
   for (const column of [
     "command",

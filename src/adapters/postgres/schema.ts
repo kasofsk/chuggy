@@ -213,6 +213,10 @@ export const apiRole = "chuggy_api";
 export const cancellationFunction = "cancel_pending_operation";
 export const acceptanceFunction = "accept_operation";
 export const continuationFunction = "publish_continuation";
+export const configurationCreateFunction = "create_configuration_revision";
+export const draftCreateFunction = "create_draft";
+export const draftReviseFunction = "revise_draft";
+export const draftDeleteFunction = "delete_draft";
 export const boundaryOwnerRole = "chuggy_boundary_owner";
 
 /** The ledger of applied migrations, which the runner creates before it reads anything. */
@@ -1125,6 +1129,134 @@ const nativeWebReads = [
      ON ticket_projection TO ${apiRole}`,
 ];
 
+const nativeAuthoring = [
+  `ALTER TABLE project ADD COLUMN ticket_next bigint NOT NULL DEFAULT 1,
+     ADD CONSTRAINT project_ticket_next_is_positive CHECK (ticket_next >= 1)`,
+  `CREATE TABLE configuration_revision (
+     tenant text NOT NULL, project text NOT NULL, revision text NOT NULL,
+     parent text, canonical text NOT NULL, digest text NOT NULL,
+     authority_kind text NOT NULL, authority_subject text NOT NULL,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant, project, revision),
+     CONSTRAINT configuration_revision_belongs_to_project FOREIGN KEY (tenant,project)
+       REFERENCES project (tenant,project),
+     CONSTRAINT configuration_revision_parent_is_local FOREIGN KEY (tenant,project,parent)
+       REFERENCES configuration_revision (tenant,project,revision),
+     CONSTRAINT configuration_revision_identity_is_global UNIQUE (revision),
+     CONSTRAINT configuration_revision_content_is_bounded CHECK (length(canonical) BETWEEN 1 AND 65536)
+   )`,
+  `CREATE TABLE draft (
+     tenant text NOT NULL, project text NOT NULL, ticket bigint NOT NULL,
+     authoring_version bigint NOT NULL, state text NOT NULL,
+     configuration_revision text NOT NULL,
+     PRIMARY KEY (tenant,project,ticket),
+     CONSTRAINT draft_belongs_to_project FOREIGN KEY (tenant,project) REFERENCES project (tenant,project),
+     CONSTRAINT draft_configuration_is_local FOREIGN KEY (tenant,project,configuration_revision)
+       REFERENCES configuration_revision (tenant,project,revision),
+     CONSTRAINT draft_ticket_is_positive CHECK (ticket >= 1 AND authoring_version >= 1),
+     CONSTRAINT draft_state_is_known CHECK (state IN ('Draft','Released','Deleted'))
+   )`,
+  `CREATE TABLE draft_revision (
+     tenant text NOT NULL, project text NOT NULL, ticket bigint NOT NULL,
+     authoring_version bigint NOT NULL, configuration_revision text NOT NULL,
+     authoring text NOT NULL, authority_kind text NOT NULL, authority_subject text NOT NULL,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant,project,ticket,authoring_version),
+     CONSTRAINT draft_revision_belongs_to_draft FOREIGN KEY (tenant,project,ticket)
+       REFERENCES draft (tenant,project,ticket),
+     CONSTRAINT draft_revision_configuration_is_local FOREIGN KEY (tenant,project,configuration_revision)
+       REFERENCES configuration_revision (tenant,project,revision),
+     CONSTRAINT draft_revision_content_is_bounded CHECK (length(authoring) BETWEEN 1 AND 65536)
+   )`,
+  `CREATE FUNCTION ${configurationCreateFunction}(in_tenant text,in_project text,in_revision text,
+      in_parent text,in_canonical text,in_digest text,in_kind text,in_subject text) RETURNS text
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE existing configuration_revision%ROWTYPE;
+     BEGIN
+       SELECT * INTO existing FROM configuration_revision
+        WHERE tenant=in_tenant AND project=in_project AND revision=in_revision;
+       IF FOUND THEN
+         RETURN CASE WHEN existing.canonical=in_canonical AND existing.digest=in_digest
+           AND existing.parent IS NOT DISTINCT FROM in_parent THEN 'AlreadyExists' ELSE 'IdentityConflict' END;
+       END IF;
+       IF in_parent IS NOT NULL AND NOT EXISTS (SELECT 1 FROM configuration_revision
+          WHERE tenant=in_tenant AND project=in_project AND revision=in_parent) THEN RETURN 'ParentNotFound'; END IF;
+       INSERT INTO configuration_revision
+         (tenant,project,revision,parent,canonical,digest,authority_kind,authority_subject)
+       VALUES (in_tenant,in_project,in_revision,in_parent,in_canonical,in_digest,in_kind,in_subject);
+       RETURN 'Created';
+     END $$`,
+  `CREATE FUNCTION ${draftCreateFunction}(in_tenant text,in_project text,in_configuration text,
+      in_authoring text,in_kind text,in_subject text)
+     RETURNS TABLE(result text,ticket bigint,authoring_version bigint,state text)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE minted bigint;
+     BEGIN
+       IF NOT EXISTS (SELECT 1 FROM configuration_revision WHERE tenant=in_tenant AND project=in_project AND revision=in_configuration)
+         THEN RETURN QUERY SELECT 'ConfigurationNotFound',NULL::bigint,NULL::bigint,NULL::text; RETURN; END IF;
+       UPDATE project SET ticket_next=ticket_next+1 WHERE tenant=in_tenant AND project=in_project AND lifecycle='Active'
+         RETURNING ticket_next-1 INTO minted;
+       IF minted IS NULL THEN RETURN QUERY SELECT 'ConfigurationNotFound',NULL::bigint,NULL::bigint,NULL::text; RETURN; END IF;
+       INSERT INTO draft VALUES (in_tenant,in_project,minted,1,'Draft',in_configuration);
+       INSERT INTO draft_revision (tenant,project,ticket,authoring_version,configuration_revision,authoring,authority_kind,authority_subject)
+         VALUES (in_tenant,in_project,minted,1,in_configuration,in_authoring,in_kind,in_subject);
+       RETURN QUERY SELECT 'Created',minted,1::bigint,'Draft'::text;
+     END $$`,
+  `CREATE FUNCTION ${draftReviseFunction}(in_tenant text,in_project text,in_ticket bigint,
+      in_expected bigint,in_configuration text,in_authoring text,in_kind text,in_subject text)
+     RETURNS TABLE(result text,authoring_version bigint,state text)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE current draft%ROWTYPE; next_version bigint;
+     BEGIN
+       SELECT * INTO current FROM draft WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket FOR UPDATE;
+       IF NOT FOUND THEN RETURN QUERY SELECT 'NotFound',NULL::bigint,NULL::text; RETURN; END IF;
+       IF current.state <> 'Draft' THEN RETURN QUERY SELECT 'NotDraft',current.authoring_version,current.state; RETURN; END IF;
+       IF current.authoring_version <> in_expected THEN RETURN QUERY SELECT 'Stale',current.authoring_version,current.state; RETURN; END IF;
+       IF NOT EXISTS (SELECT 1 FROM configuration_revision WHERE tenant=in_tenant AND project=in_project AND revision=in_configuration)
+         THEN RETURN QUERY SELECT 'ConfigurationNotFound',current.authoring_version,current.state; RETURN; END IF;
+       next_version := current.authoring_version+1;
+       INSERT INTO draft_revision (tenant,project,ticket,authoring_version,configuration_revision,authoring,authority_kind,authority_subject)
+         VALUES (in_tenant,in_project,in_ticket,next_version,in_configuration,in_authoring,in_kind,in_subject);
+       UPDATE draft SET authoring_version=next_version,configuration_revision=in_configuration
+        WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket;
+       RETURN QUERY SELECT 'Revised',next_version,'Draft'::text;
+     END $$`,
+  `CREATE FUNCTION ${draftDeleteFunction}(in_tenant text,in_project text,in_ticket bigint,
+      in_expected bigint,in_kind text,in_subject text)
+     RETURNS TABLE(result text,authoring_version bigint,state text)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE current draft%ROWTYPE;
+     BEGIN
+       SELECT * INTO current FROM draft WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket FOR UPDATE;
+       IF NOT FOUND THEN RETURN QUERY SELECT 'NotFound',NULL::bigint,NULL::text; RETURN; END IF;
+       IF current.state <> 'Draft' THEN RETURN QUERY SELECT 'NotDraft',current.authoring_version,current.state; RETURN; END IF;
+       IF current.authoring_version <> in_expected THEN RETURN QUERY SELECT 'Stale',current.authoring_version,current.state; RETURN; END IF;
+       INSERT INTO draft_revision (tenant,project,ticket,authoring_version,configuration_revision,authoring,authority_kind,authority_subject)
+         SELECT r.tenant,r.project,r.ticket,r.authoring_version+1,r.configuration_revision,r.authoring,in_kind,in_subject
+           FROM draft_revision r WHERE r.tenant=in_tenant AND r.project=in_project AND r.ticket=in_ticket
+            AND r.authoring_version=current.authoring_version;
+       UPDATE draft d SET state='Deleted',authoring_version=d.authoring_version+1
+        WHERE d.tenant=in_tenant AND d.project=in_project AND d.ticket=in_ticket;
+       RETURN QUERY SELECT 'Deleted',current.authoring_version+1,'Deleted'::text;
+     END $$`,
+  `ALTER FUNCTION ${configurationCreateFunction}(text,text,text,text,text,text,text,text) OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${draftCreateFunction}(text,text,text,text,text,text) OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text) OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${draftDeleteFunction}(text,text,bigint,bigint,text,text) OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ${configurationCreateFunction}(text,text,text,text,text,text,text,text),
+     ${draftCreateFunction}(text,text,text,text,text,text),
+     ${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text),
+     ${draftDeleteFunction}(text,text,bigint,bigint,text,text) FROM PUBLIC`,
+  `GRANT SELECT,INSERT ON configuration_revision,draft,draft_revision TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (ticket_next) ON project TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (authoring_version,state,configuration_revision) ON draft TO ${boundaryOwnerRole}`,
+  `GRANT EXECUTE ON FUNCTION ${configurationCreateFunction}(text,text,text,text,text,text,text,text),
+     ${draftCreateFunction}(text,text,text,text,text,text),
+     ${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text),
+     ${draftDeleteFunction}(text,text,bigint,bigint,text,text) TO ${apiRole}`,
+  `GRANT SELECT ON configuration_revision,draft,draft_revision TO ${apiRole},${ticketServiceRole}`,
+];
+
 /** Every migration in version order, which is the order the runner applies them in. */
 export const migrations: readonly Migration[] = [
   {
@@ -1170,5 +1302,10 @@ export const migrations: readonly Migration[] = [
     version: 6,
     name: "native web reads",
     statements: [...nativeWebReads],
+  },
+  {
+    version: 7,
+    name: "native versioned authoring",
+    statements: [...nativeAuthoring],
   },
 ];

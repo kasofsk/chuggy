@@ -15,6 +15,7 @@ import {
   type OperationInbox,
 } from "../../src/interpreter/operationInbox.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -66,7 +67,13 @@ function boundary(allowed: boolean): {
     },
     operation: () => Promise.resolve(undefined),
   };
-  return { web: nativeWeb(access, reads, inbox), calls };
+  const authoring: AuthoringStore = {
+    createConfiguration: () => Promise.resolve({ created: "ParentNotFound" }),
+    createDraft: () => Promise.resolve({ created: "ConfigurationNotFound" }),
+    reviseDraft: () => Promise.resolve({ revised: "NotFound" }),
+    deleteDraft: () => Promise.resolve({ deleted: "NotFound" }),
+  };
+  return { web: nativeWeb(access, reads, inbox, authoring), calls };
 }
 
 test("inaccessible and absent operation reads share the not-found shape", async () => {
