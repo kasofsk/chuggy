@@ -74,7 +74,7 @@ trap 'rm -rf "$work_dir"' EXIT
 
 # --- The two static credential classes --------------------------------------
 # The sync reader, and the operator's break-glass. Per-job tokens are the
-# dispatcher's to mint and are not rehearsed here.
+# ticket service's to mint and are not rehearsed here.
 if kubectl -n "$namespace" get secret git-sync > /dev/null 2>&1; then
 	sync_token="$(secret_password git-sync)"
 	operator_token="$(secret_password git-operator)"

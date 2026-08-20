@@ -248,14 +248,14 @@
 /// fairness" is a standing non-goal (domain.qnt decideDispatch).
 /// Note the ordinary action-level reading would not suffice either: the
 /// `dispatch` action's nondet pick ranges over readyTickets, so a run in
-/// which the agentic dispatcher forever prefers other tickets takes
+/// which the agentic selector forever prefers other tickets takes
 /// `dispatch` infinitely often and still starves one. Accepted 2026-08-14
 /// (davemo88): "if there is always more pressing work, that's a real
 /// possibility." A ticket that stops being chosen sits FLAT — it does not
 /// churn — which is the whole of what is owed.
 ///
 /// So: CHUGGY BOUNDS WORK, NOT WAITING. Waiting on an author
-/// to release a Pending, on the dispatcher to pick, and on the gate to free
+/// to release a Pending, on the selector to pick, and on the gate to free
 /// its slot (proposed R6) are all unbounded BY DECISION. The unconditional
 /// system-quiescence theorem is a strictly stronger claim and is NOT
 /// made here.

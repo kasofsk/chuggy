@@ -28,7 +28,7 @@
  * WHAT THE LOAD REQUIRES OF A HISTORY, AND WHAT IT LEAVES UNVERIFIED. Its own
  * replay precondition is that the stored entries reach the head the locked row
  * claims: a journal falling short of it — an entry taken from the middle, or
- * the tail cut off — is a torn store rather than an outcome a dispatcher
+ * the tail cut off — is a torn store rather than an outcome a ticket writer
  * decides its way around, so it throws rather than returning. That count is all
  * it requires, and an edit that preserves it and stays inside the schema loads
  * as `Ok` and replays as history: a changed payload, a swapped pair, one entry

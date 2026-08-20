@@ -75,12 +75,12 @@ test("I3 preserves every I2 operation outcome and its journal cause", async () =
         await subject.query(statement);
     }
     await seedI2(subject);
-    const migration = migrations[4];
-    assert.ok(migration !== undefined);
-    await subject.query("BEGIN");
-    for (const statement of migration.statements)
-      await subject.query(statement);
-    await subject.query("COMMIT");
+    for (const migration of migrations.slice(4)) {
+      await subject.query("BEGIN");
+      for (const statement of migration.statements)
+        await subject.query(statement);
+      await subject.query("COMMIT");
+    }
 
     assert.deepEqual(
       (

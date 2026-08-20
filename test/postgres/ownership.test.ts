@@ -123,7 +123,7 @@ test("release frees the project, and a released lease cannot release its success
   assert.equal(renewed.renewed, "Extended");
 });
 
-test("a fenced project admits no dispatcher, and fencing advances both counters", async () => {
+test("a fenced project admits no ticket writer, and fencing advances both counters", async () => {
   const partition = await postgresHarnessProject(harness.store, "fence");
   const lease = await granted(partition, "held");
   const fenced = await harness.store.fence(partition, "Suspended");

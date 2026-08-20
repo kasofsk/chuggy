@@ -197,7 +197,7 @@ test("what a ticket waits on is what its dependencies produced, read in id order
   );
 });
 
-test("the dispatcher needs a ready ticket with gas to charge", () => {
+test("the ticket writer needs a ready ticket with gas to charge", () => {
   const ready = coreOf([
     ticketOn(config, "ManagedFinalizer", { phase: "Pending" }),
   ]);

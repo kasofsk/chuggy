@@ -8,7 +8,7 @@
  *
  * `recovery_epoch` — the global, unpredictable, never-reused epoch a restore
  * advances before it permits any mutation. Owned by the control plane; the
- * dispatcher role may read it and may not write it, because a runtime that
+ * ticket-service role may read it and may not write it, because a runtime that
  * could mint an epoch could unfence itself. It has no project key by design:
  * it is global authority, and a per-project counter restored from the past is
  * exactly what it exists to defeat. Identity is the epoch text, unique, so a
@@ -18,8 +18,8 @@
  * and journal entry carries.
  *
  * `project` — one authoritative lifecycle and ownership row per partition.
- * Owned by the control plane for insertion and by the dispatcher role for the
- * ownership columns, which is why the dispatcher is granted UPDATE and not
+ * Owned by the control plane for insertion and by the ticket-service role for the
+ * ownership columns, which is why the runtime is granted UPDATE and not
  * INSERT: provisioning is not a decision. Its composite key is
  * `(tenant, project)` and it is the parent every other relation here points
  * at. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
@@ -29,7 +29,7 @@
  *
  * `journal_entry` — the append-only decision log, partitioned by the composite
  * key it carries into its own primary key `(tenant, project, seq)`. The
- * dispatcher role is granted INSERT and SELECT and deliberately not UPDATE or
+ * ticket-service role is granted INSERT and SELECT and deliberately not UPDATE or
  * DELETE: a runtime that could rewrite history would make replay an opinion.
  * Its identity is that primary key, and `seq` is the project's head plus one,
  * so the identity and the concurrency control are the same value. It is
@@ -58,7 +58,7 @@
  *
  * `operation` — one accepted mutation, its authority, its idempotency scope
  * and its terminal state. Owned by the API role for insertion and, from the
- * decision transaction onward, by the dispatcher for its outcome. Its
+ * decision transaction onward, by the project ticket writer for its outcome. Its
  * composite key is `(tenant, project)` and it points at
  * `project`; its identity is `(tenant, project, operation)` with the opaque
  * operation identity unique globally, because 006 mints those outside any
@@ -100,7 +100,7 @@
  *
  * `inbox_item` — the project's durable inbox, in the ordinal order acceptance
  * allocated. Owned by the API role for insertion and, through the cancellation
- * function alone, for making an item non-consumable, and by the dispatcher
+ * function alone, for making an item non-consumable, and by the ticket writer
  * role for the acknowledgement that does the same on the way out. Its composite key is `(tenant, project)`, its
  * identity is
  * `(tenant, project, ordinal)`, and its source key `(tenant, project,
@@ -114,7 +114,7 @@
  *
  * `project_readiness` — the discovery index over that inbox, and the only
  * thing fleet discovery reads. Owned by the API role, whose grant covers
- * `ready` and `generation`, and by the dispatcher role, whose grant covers
+ * `ready` and `generation`, and by the ticket-service role, whose grant covers
  * `ready` alone — so the separation the server holds is by column, and which
  * direction either role may move a column it holds is this adapter's. Its
  * composite key and identity are both `(tenant, project)`. It is changed by
@@ -142,13 +142,13 @@
  * `operation.refused_head`, `operation.refused_lifecycle_generation` — what a
  * terminal operation says besides its state, and the columns the earlier
  * tranche deferred to the transaction that produces them. They are written by
- * the dispatcher role alone, in the decision transaction, and neither is a
+ * the project ticket writer alone, in the decision transaction, and neither is a
  * duplicate of anything derivable: a client reads the sequence to read its own
  * write, and a writer resolving an ambiguous commit reads whichever of them
  * the recorded outcome carries.
  *
  * `ticket_projection` — the project-primary projection, one row per ticket,
- * carrying the sequence that produced it. Owned by the dispatcher role, which
+ * carrying the sequence that produced it. Owned by the ticket-service role, which
  * is granted INSERT and UPDATE on the phase and the sequence and not on the
  * key. Its composite key is `(tenant, project)` and its identity is
  * `(tenant, project, ticket)`. It is changed by the decision transaction and
@@ -163,22 +163,22 @@
  * semantic authority: nothing decides from it, and a disagreement between it
  * and a replay is the projection being wrong.
  *
- * WHY THE DISPATCHER READS `operation` AT ALL. It decides one, so it reads the
+ * WHY THE TICKET WRITER READS `operation` AT ALL. It decides one, so it reads the
  * command it carries and the state it is in; the read is table-wide because a
  * column-level SELECT makes every query name its columns and the row it may
  * not read is one this partition's own writer already holds the journal for.
  *
- * WHY THE DISPATCHER MAY WRITE A SETTLEMENT WHERE THE API MAY NOT. The API
+ * WHY THE TICKET WRITER MAY WRITE A SETTLEMENT WHERE THE API MAY NOT. The API
  * accepts work and decides none, so a grant that let it settle an operation
  * would be a grant to decide one — which is why cancellation is a function.
- * The dispatcher is the single writer: settling an operation is its own
+ * The `ProjectTicketWriter` is the single writer: settling an operation is its own
  * authority rather than a boundary it would be crossing, and a domain refusal
  * settles one with no journal entry to pair the write against, so there is no
  * pairing a constraint could enforce.
  *
- * WHY A TENURE CANNOT BE REINSTATED BY HAND. `chuggy_dispatcher` needs UPDATE
+ * WHY A TENURE CANNOT BE REINSTATED BY HAND. The ticket-service role needs UPDATE
  * on `owner`, `fencing_epoch` and `lease_expires_at` because any replica may
- * acquire a partition, and those three columns are also exactly what it takes
+ * acquire a partition, and those columns are also what it takes
  * to write a fenced owner back into an active project (kasofsk/chuggy#115). A
  * grant cannot say which values a column may take, so the rule is the server's
  * own: the fencing epoch never moves backwards, and any update leaving a live
@@ -203,8 +203,6 @@ export interface Migration {
   readonly statements: readonly string[];
 }
 
-/** The retired runtime role retained only while historical migrations are replayed. */
-const historicalDispatcherRole = "chuggy_dispatcher";
 /** The role every ticket-service runtime connects as. */
 export const ticketServiceRole = "chuggy_ticket_service";
 
@@ -277,7 +275,7 @@ const foundationRelations = [
 /**
  * What a runtime role may write, which is still wider than the fences over
  * it: the ownership columns and an INSERT let a direct table write install the
- * role as owner of a project another dispatcher holds, or place an entry at a
+ * role as owner of a project another ticket writer holds, or place an entry at a
  * seq the primary key has not taken and move `head` to match, because the
  * fences that would refuse those — lease validity, epoch currency, expected
  * head, lifecycle admission — all live in this adapter. Closing it takes a
@@ -286,11 +284,11 @@ const foundationRelations = [
  * that, and a later slice carries it.
  */
 const foundationGrants = [
-  `GRANT SELECT ON recovery_epoch TO ${historicalDispatcherRole}`,
-  `GRANT SELECT ON project TO ${historicalDispatcherRole}`,
+  `GRANT SELECT ON recovery_epoch TO ${ticketServiceRole}`,
+  `GRANT SELECT ON project TO ${ticketServiceRole}`,
   `GRANT UPDATE (head, owner, lease_expires_at, recovery_epoch, fencing_epoch)
-     ON project TO ${historicalDispatcherRole}`,
-  `GRANT SELECT, INSERT ON journal_entry TO ${historicalDispatcherRole}`,
+     ON project TO ${ticketServiceRole}`,
+  `GRANT SELECT, INSERT ON journal_entry TO ${ticketServiceRole}`,
 ];
 
 /**
@@ -485,9 +483,9 @@ const inboxGrants = [
   `GRANT INSERT (tenant, project, ready, generation)
      ON project_readiness TO ${apiRole}`,
   `GRANT UPDATE (ready, generation) ON project_readiness TO ${apiRole}`,
-  `GRANT SELECT ON inbox_item TO ${historicalDispatcherRole}`,
-  `GRANT SELECT ON project_readiness TO ${historicalDispatcherRole}`,
-  `GRANT UPDATE (ready) ON project_readiness TO ${historicalDispatcherRole}`,
+  `GRANT SELECT ON inbox_item TO ${ticketServiceRole}`,
+  `GRANT SELECT ON project_readiness TO ${ticketServiceRole}`,
+  `GRANT UPDATE (ready) ON project_readiness TO ${ticketServiceRole}`,
 ];
 
 /** A closed set of text values as the SQL list a CHECK compares against. */
@@ -597,14 +595,14 @@ const tenureFence = [
 ];
 
 const decisionGrants = [
-  `GRANT SELECT ON operation TO ${historicalDispatcherRole}`,
+  `GRANT SELECT ON operation TO ${ticketServiceRole}`,
   `GRANT UPDATE (state, settled_at, settled_authority_kind,
                  settled_authority_subject, outcome_code, decided_seq,
                  refused_head, refused_lifecycle_generation)
-     ON operation TO ${historicalDispatcherRole}`,
-  `GRANT UPDATE (consumable) ON inbox_item TO ${historicalDispatcherRole}`,
-  `GRANT SELECT, INSERT ON ticket_projection TO ${historicalDispatcherRole}`,
-  `GRANT UPDATE (phase, seq) ON ticket_projection TO ${historicalDispatcherRole}`,
+     ON operation TO ${ticketServiceRole}`,
+  `GRANT UPDATE (consumable) ON inbox_item TO ${ticketServiceRole}`,
+  `GRANT SELECT, INSERT ON ticket_projection TO ${ticketServiceRole}`,
+  `GRANT UPDATE (phase, seq) ON ticket_projection TO ${ticketServiceRole}`,
 ];
 
 /** I3 replaces the operation-only inbox with one typed, prioritized decision-input authority. */
@@ -724,8 +722,8 @@ const durableMailbox = [
   `REVOKE ALL ON FUNCTION decision_event_is_valid(jsonb) FROM PUBLIC`,
   `REVOKE ALL ON FUNCTION ticket_command_is_valid(jsonb) FROM PUBLIC`,
   `REVOKE ALL ON FUNCTION legacy_event(text) FROM PUBLIC`,
-  `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${historicalDispatcherRole}`,
-  `REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM ${historicalDispatcherRole}`,
+  `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${ticketServiceRole}`,
+  `REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM ${ticketServiceRole}`,
   `GRANT SELECT ON recovery_epoch, project, journal_entry, operation,
      project_readiness, ticket_projection TO ${ticketServiceRole}`,
   `GRANT UPDATE (head, owner, lease_expires_at, recovery_epoch, fencing_epoch, ingress_next)
@@ -1115,7 +1113,7 @@ export const migrations: readonly Migration[] = [
     version: 1,
     name: "the project foundation",
     statements: [
-      roleStatement(historicalDispatcherRole),
+      roleStatement(ticketServiceRole),
       ...foundationRelations,
       ...foundationGrants,
     ],

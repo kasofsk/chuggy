@@ -173,7 +173,7 @@ export function isBlockedIn(core: Core, id: TicketId): boolean {
 }
 
 /**
- * May the dispatcher launch this ticket? Ready, with gas to charge, since entry
+ * May the ticket writer dispatch this ticket? Ready, with gas to charge, since entry
  * to Working always meters — a Pending ticket has never spent gas, so the
  * second conjunct is implied and is stated so the enablement is one predicate.
  */

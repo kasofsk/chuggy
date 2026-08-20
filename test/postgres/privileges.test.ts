@@ -131,11 +131,11 @@ test("the security-definer owner is non-login and non-escalating", async () => {
   );
 });
 
-test("the retired dispatcher role has no database relation privileges", async () => {
+test("the retired dispatcher role no longer exists", async () => {
   assert.deepEqual(
     await harness.query(
-      `SELECT count(*)::text AS count FROM information_schema.role_table_grants
-      WHERE grantee='chuggy_dispatcher' AND table_schema='public'`,
+      `SELECT count(*)::text AS count FROM pg_roles
+       WHERE rolname='chuggy_dispatcher'`,
     ),
     [{ count: "0" }],
   );

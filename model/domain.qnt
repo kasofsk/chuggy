@@ -12,8 +12,8 @@
 /// then a mock, and then it is no longer a function.
 ///
 /// THE SHAPE OF A TICKET'S LIFE. It is released as a Pending, is released into the
-/// pipeline, and the dispatcher picks it out of the derived Ready set — which
-/// pick is the dispatcher's own agency, not scheduler noise, so any policy
+/// pipeline, and the selector picks it out of the derived Ready set — which
+/// pick is the selector's own agency, not scheduler noise, so any policy
 /// refines unrestricted choice. Work runs one task set per cycle. Evaluation
 /// runs the ticket's authored program, stage by stage, short-circuiting on a
 /// failure into the rework economy. Then the ticket finishes according to its
@@ -435,7 +435,7 @@ module chuggy_domain {
   pure def isBlockedIn(c: Core, j: int): bool =
     c.tickets.get(j).phase == Pending and not(depsDoneIn(c, j))
 
-  /// May the dispatcher launch ticket j? Ready (the derived waiting room)
+  /// May the ticket writer dispatch ticket j? Ready (the derived waiting room)
   /// with gas to charge — entry to Working always meters (standing rule
   /// 2). Pending tickets have never spent gas (release grants the full
   /// GAS and authoring charges nothing), so the gas conjunct is
@@ -474,20 +474,20 @@ module chuggy_domain {
       withTicket(c, j, { ...retireLive(c.tickets.get(j)), resumeAt: at, reason: why }),
       j, Escalated, label, ["OpenHumanTask"])
 
-  /// Ready -> Working: launch a cycle for the ticket THE DISPATCHER CHOSE.
+  /// Ready -> Working: launch a cycle for the ticket THE SELECTOR PROPOSED.
   /// Charges one gas — EVERY entry to Working does (standing rule 2: no
   /// free re-entry; gas is the account that makes the graph valid at all).
   /// Work is ONE task-set phase (one work task per cycle; Work is not staged), width
   /// N_TASKS, ids sequential within the ticket.
   ///
-  /// THE AGENTIC DISPATCHER ("agentic dispatcher modeled (not
-  /// FIFO)"): this decider is the dispatch decision made first-class — j
+  /// THE AGENTIC SELECTOR: this decider makes the accepted dispatch
+  /// proposal first-class — j
   /// is the CHOICE, and the chooser is the `dispatch` action's nondet pick
   /// among readyTickets. That pick is not incidental scheduler noise to be
-  /// refined away: the dispatcher is itself agentic rather than a FIFO pop,
+  /// refined away: the selector is itself agentic rather than a FIFO pop,
   /// so its choice is a genuine nondet outcome and ANY
   /// Ready ticket may be chosen next, and the `dispatch` StepRecord in the
-  /// trace IS the dispatcher's decision event — an implementation
+  /// trace IS the ticket writer's decision event — an implementation
   /// conforms with any policy (LLM-driven, priority, whatever) because
   /// every policy refines unrestricted choice among Ready tickets. No
   /// policy-hook parameter is introduced: with exactly one honest default
@@ -893,8 +893,8 @@ module chuggy_domain {
     apply(decideRevoke(core, j))
   }
 
-  /// Ready -> Working: THE AGENTIC DISPATCHER'S PICK. The
-  /// nondet choice below IS the dispatcher — an agentic component whose
+  /// Ready -> Working: THE AGENTIC SELECTOR'S PICK. The
+  /// nondet choice below IS the selector — an agentic component whose
   /// selection among Ready tickets is a real decision, not scheduler noise
   /// (see decideDispatch's header for the full agency note); the recorded
   /// `dispatch` step is its decision event in the golden trace.

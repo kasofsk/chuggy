@@ -15,8 +15,8 @@ below still argues them, and the revision fences a decision rechecks arrive
 with the slices that have a revision to name.
 
 Clients submit authenticated mutations to a durable PostgreSQL inbox. They do
-not locate or call a dispatcher process. A successful submission creates an
-asynchronous operation; a dispatcher later evaluates it at the project's
+not locate or call a ticket-service process. A successful submission creates an
+asynchronous operation; a `ProjectTicketWriter` later evaluates it at the project's
 serialized position. PostgreSQL is the durable authority, while Kubernetes
 places and supervises processes and workloads.
 
@@ -24,7 +24,7 @@ places and supervises processes and workloads.
 
 Each project owns one `Core`, one ordered journal and one active writer.
 Different projects may decide concurrently, including projects belonging to the
-same tenant. Project-scoped logical dispatchers are multiplexed across a shared
+same tenant. Project-scoped ticket writers are multiplexed across a shared
 runtime fleet: one replica may host many active project writers, but each writer
 loads and mutates only its project partition. There is no pod per project and no
 installation-wide decision loop.
@@ -116,7 +116,7 @@ An escalation caused by a revoked dependency is irreversible for that ticket:
 `ResumeTicket` refuses it because the prerequisite can never reach `Done`. The
 user may revoke the dependent and create a replacement with corrected
 dependencies. Other escalation reasons remain resumable only under their typed
-rules. The dispatcher never mutates a released ticket's dependency graph to
+rules. The ticket writer never mutates a released ticket's dependency graph to
 repair the condition.
 
 Release freezes the complete execution-relevant ticket contract: dependencies,
@@ -242,7 +242,7 @@ deleted-user marker. Exceptional legally required erasure and separately
 governed security evidence follow explicit retention processes rather than
 casual journal rewriting.
 
-When a database commit result is ambiguous, the dispatcher reconnects and
+When a database commit result is ambiguous, the ticket service reconnects and
 reads the operation rather than assuming failure. Journal append, operation
 outcome, inbox acknowledgement, projections and durable consumer requests are
 one transaction. A terminal operation proves the commit; a still-`Pending`
@@ -352,12 +352,12 @@ Project creation is a small tenant-control-plane provisioning lifecycle outside
 `Core`. It reserves the immutable project and repository identities, creates an
 idempotent repository-provisioning request, verifies the exclusive repository
 and scoped credentials, and only then marks the project active for ordinary
-mutations and dispatcher acquisition. Failure remains visible and retryable
+mutations and ticket-writer acquisition. Failure remains visible and retryable
 under the same identities; no ticket journal begins before activation.
 
 ## Durable ownership and fencing
 
-PostgreSQL grants time-bounded ownership of an active project to a dispatcher
+PostgreSQL grants time-bounded ownership of an active project to a ticket writer
 instance. Acquisition advances a project fencing epoch; renewal preserves it.
 Database time determines lease validity. The owner replays the project, creates
 one bounded in-process mailbox and retains the project while it is active.
@@ -407,9 +407,9 @@ layout and index changes follow measured storage behavior later and cannot
 alter project ownership or authorization semantics.
 
 Logical project ownership also holds no dedicated database connection.
-Dispatcher replicas use bounded pools and borrow connections only for short
+Ticket-service replicas use bounded pools and borrow connections only for short
 replay reads, ownership operations and decision transactions. Leases live in
-durable rows rather than connection-scoped locks. API, dispatcher, scheduler,
+durable rows rather than connection-scoped locks. API, ticket service, scheduler,
 effect and analytical workloads have separate pool budgets, and pool pressure
 limits actor activation before unbounded mailbox growth.
 
@@ -497,7 +497,7 @@ epoch that protect storage concurrency.
 
 Task configuration is authored as immutable project-owned revisions with
 canonical content, digest, parent and bounded authorship metadata. Creating a
-revision does not change dispatcher state. Attaching one as a draft's current
+revision does not change ticket-service state. Attaching one as a draft's current
 revision is an authoring operation guarded by authoring version;
 the attachment and its history never exist only as an unversioned mutable
 pointer.
@@ -577,7 +577,7 @@ latency, never domain enablement or replay.
 Acceptance assigns a stable project-local inbox ordinal through a short locked
 ingress-counter update separate from the project journal head. Different
 projects accept concurrently; same-project operations obtain a precise durable
-order without waiting for a dispatcher. Priority and aging may process a later
+order without waiting for a ticket writer. Priority and aging may process a later
 higher-class item first, while the lowest eligible ordinal wins within a class.
 Aborted or cancelled operations may leave harmless ordinal gaps, and an
 idempotent retry retains the original operation and ordinal.
@@ -1111,23 +1111,23 @@ Runtime services do not share an omnipotent database credential.
 
 Semantic ports do not require one network service each. The initial deployment
 has an authenticated web service for submission, reads, configuration and SSE;
-a dispatcher service for multiplexed project actors, continuations, selection
+a ticket service for multiplexed project actors and continuations, with selector
 requests and decision transactions; an execution service for registration,
 capacity, Kubernetes and completion; and a finalizer service for Git
 preparation, commit permit and reconciliation. Detached selector workers may
 initially run
-inside the dispatcher deployment with separate concurrency and pool budgets.
+inside the ticket-service deployment with separate concurrency and pool budgets.
 These module boundaries permit later separation without adding network hops
 before scale, isolation or rollout needs earn them.
 
-The shared dispatcher fleet is a trusted multi-tenant control-plane component.
+The shared ticket-service fleet is a trusted multi-tenant control-plane component.
 Project-scoped repositories, composite keys, transaction context and adversarial
 tests prevent accidental cross-project access, but the initial deployment does
-not claim that a fully compromised dispatcher process is confined to one
-tenant. Dispatcher pods run no user code, receive no worker credentials, use
+not claim that a fully compromised ticket-service process is confined to one
+tenant. Ticket-service pods run no user code, receive no worker credentials, use
 restricted network access and audit the instance and fencing epoch responsible
 for each decision. Agent and user-authored execution remains in separately
-isolated worker workloads. Hard per-tenant dispatcher identities or deployments
+isolated worker workloads. Hard per-tenant ticket-service identities or deployments
 are a future option rather than an initial guarantee.
 
 Workers form an untrusted execution plane. Each execution receives a short-lived
@@ -1141,7 +1141,7 @@ Profiles may select stronger runtime sandboxes, dedicated worker pools or
 tenant-dedicated placement without changing ticket `Core`. Prompt text and
 user-authored task configuration cannot weaken the selected profile. Namespace,
 workload-identity and storage isolation may be tightened per tenant or project
-as scale and customer requirements earn it; dedicated dispatcher pools remain
+as scale and customer requirements earn it; dedicated ticket-service pools remain
 a compatible future deployment option.
 
 ## Integrity containment
@@ -1258,7 +1258,7 @@ workers, allocations and external resources out of band; an audited deletion
 manifest records that domain closure could not be established. The frozen
 journal then follows the retention and erasure policy as untrusted evidence.
 
-Entering `Deleting` fences the ordinary dispatcher owner. The closure writer
+Entering `Deleting` fences the ordinary ticket-writer owner. The closure writer
 revokes nonterminal tickets outside `Finalizing`, requests cancellation of
 every execution that has not crossed an irreversible boundary, removes worker
 credentials and waits for scheduler attempts to become terminal and release
@@ -1374,7 +1374,7 @@ first.
 
 Landing was deliberately split: the formal model and the mirrors required to
 keep it coherent first, model-API generation separately under issue #98 second,
-and the durable PostgreSQL, API, dispatcher, scheduler and recovery
+and the durable PostgreSQL, API, ticket service, scheduler and recovery
 infrastructure only after both. That infrastructure work must not drive an
 unreviewed semantic change back into the model.
 
@@ -1400,7 +1400,7 @@ first.
 Issue #142 tracks implementation. The following decisions were agreed before
 implementation of I3. They refine
 the I3 landing row without changing the model. The deployable previously called
-the dispatcher is the **ticket service**, and its fenced project-local actor is
+the deployable is the **ticket service**, and its fenced project-local actor is
 the **`ProjectTicketWriter`**. PostgreSQL remains the durable authority. The
 selector proposes, the scheduler executes, and the finalizer concludes Git
 work; none of them writes ticket state.

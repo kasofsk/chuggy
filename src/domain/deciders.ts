@@ -196,7 +196,7 @@ export function decideRevoke(
 /**
  * Ready to Working, charging one gas as every entry to Working does. Which
  * Ready ticket runs next is an agentic pick rather than a queue position, so it
- * arrives as an argument and the recorded step IS the dispatcher's decision.
+ * arrives as an argument and the recorded step IS the ticket writer's decision.
  */
 export function decideDispatch(core: Core, id: TicketId): Decision {
   const ticket = ticketAt(core, id);

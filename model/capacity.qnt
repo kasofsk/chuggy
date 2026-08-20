@@ -24,7 +24,7 @@
 /// project or a wider account. It is an entitlement axis and never an
 /// identity one, which is why it cannot stand in for the project above.
 ///
-/// WHAT IT DOES NOT DECIDE: which ticket runs next. That is the dispatcher's
+/// WHAT IT DOES NOT DECIDE: which ticket runs next. That is the selector's
 /// pick among Ready tickets, priced in gas and journaled as its own decision.
 /// Capacity moves when a logical task is placed, never whether a ticket may
 /// advance.

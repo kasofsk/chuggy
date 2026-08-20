@@ -3,8 +3,8 @@
  * two total tables that say what each one means.
  *
  * A DECISION EVENT IS A FACT, NOT AN INSTRUCTION. It names a choice already
- * made at the writer's serialization point — which ticket the dispatcher
- * picked, which verdict a task reported — so replaying one re-decides nothing
+ * made at the writer's serialization point — which ticket the selector
+ * proposed, which verdict a task reported — so replaying one re-decides nothing
  * and consults nobody. That is what makes the journal a sufficient basis for
  * recovery.
  *
