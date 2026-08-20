@@ -4,15 +4,16 @@
 # WHAT IT HAS TO PROVE IS THAT ALL THREE EXITS ARE REACHABLE, because this gate
 # is the one place in the tree where "could not run" is the likely answer on a
 # developer's machine and is the answer most easily mistaken for a pass. So the
-# cases drive a missing suite, a missing docker and a red suite, and each is
-# required to answer with its own code.
+# cases drive a missing suite, a missing docker, a server that does not answer
+# and a red suite, and each is required to answer with its own code.
 #
 # THE CASES SUPPLY THEIR OWN SERVER URL AND THEIR FIXTURE SUITES IGNORE IT.
 # What is under test here is the gate's sequencing and its verdict, not the
-# adapter — the adapter is tested against a real server by the gate itself. A
-# fixture that connected would make this suite need a database to say anything
-# about a script, and then a machine without one could not check the script
-# either.
+# adapter — the adapter is tested against a real server by the gate itself. So
+# the URL they pass names a socket this file opens, which answers the gate's
+# reachability probe and nothing else: a fixture that needed a database to say
+# anything about a script would leave a machine without one unable to check the
+# script either.
 #
 # The clean line's figure is asserted against a fixture whose suites this file
 # writes, so the line cannot report a scope the run did not have. Its subject is
@@ -39,6 +40,37 @@ for tool in git find grep sort dirname mktemp sed; do
 		ln -sf "$(command -v "$tool")" "$BIN/$tool"
 	fi
 done
+
+# A socket that accepts and says nothing, which is all the gate's reachability
+# probe asks of a caller-supplied server, and is not a database.
+PORT_FILE="$WORK/.port"
+node -e '
+const fs = require("node:fs");
+const net = require("node:net");
+const server = net.createServer((socket) => socket.destroy());
+server.listen(0, "127.0.0.1", () => {
+  fs.writeFileSync(process.argv[1], String(server.address().port));
+});
+' "$PORT_FILE" &
+SOCKET=$!
+# The harness removes $WORK on exit; this adds the socket to what goes with it.
+trap 'kill "$SOCKET" 2>/dev/null || true; rm -rf "$WORK"' EXIT
+
+SOCKET_WAIT_SECS=10
+waited=0
+until [ -s "$PORT_FILE" ]; do
+	if [ "$waited" -ge "$SOCKET_WAIT_SECS" ]; then
+		echo "check-postgres.test.sh: LINTER ERROR — the fixture socket never opened"
+		exit 2
+	fi
+	sleep 1
+	waited=$((waited + 1))
+done
+ANSWERS="postgres://fixture@127.0.0.1:$(cat "$PORT_FILE")/ignored"
+
+# An address on the loopback that nothing is listening on, which is the shape of
+# a URL naming a server that is not running.
+SILENT="127.0.0.1:1"
 
 fixture() { # a throwaway repo with a test/postgres directory
 	fresh_repo "$R"
@@ -72,27 +104,48 @@ run_gate() { # <dir> [env=value...]
 
 fresh_repo "$R"
 git -C "$R" add -A 2>/dev/null || true
-run_gate "$R" CHUG_PG_URL=postgres://fixture/ignored
+run_gate "$R" "CHUG_PG_URL=$ANSWERS"
 check "no test/postgres directory is a could-not-run" 2 "$RC" "the glob matched nothing"
 
 # --- No server and no way to start one is a could-not-run --------------------
 #
 # The gate is run with a PATH holding node and the shell's own tools and no
-# docker, and with no CHUG_PG_URL, which is the state of a machine that has
-# never started a container.
+# docker, and with CHUG_PG_URL emptied rather than inherited: an operator who
+# had set it would otherwise send this case down the branch it exists to avoid,
+# and the gate's proof that its third exit is reachable would hold only on a
+# machine that had never set the variable the gate documents.
 
 fixture
 passing_suite "$R/test/postgres/one.test.ts"
 git -C "$R" add -A
-run_gate "$R" "PATH=$BIN" HOME="$HOME"
+run_gate "$R" "PATH=$BIN" HOME="$HOME" CHUG_PG_URL=
 check "no docker and no URL is a could-not-run" 2 "$RC" "no docker"
+
+# --- A server that does not answer is a could-not-run ------------------------
+#
+# The wait is set to nothing, so the case proves the verdict rather than the
+# patience.
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=postgres://fixture@$SILENT/ignored" CHUG_PG_READY_SECS=0
+check "a URL nothing answers is a could-not-run" 2 "$RC" "nothing answered at $SILENT"
+
+# --- A URL naming no host to reach is run against, not failed ----------------
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+git -C "$R" add -A
+run_gate "$R" CHUG_PG_URL=postgres:///ignored
+check "a URL with no host to probe is still run against" 0 "$RC" "1 suite(s) clean"
 
 # --- A red suite is a finding ------------------------------------------------
 
 fixture
 failing_suite "$R/test/postgres/red.test.ts"
 git -C "$R" add -A
-run_gate "$R" CHUG_PG_URL=postgres://fixture/ignored
+run_gate "$R" "CHUG_PG_URL=$ANSWERS"
 check "a red suite is a finding" 1 "$RC" "the suite went red against the server CHUG_PG_URL names"
 
 # --- A green run is clean, and says what it consumed --------------------------
@@ -101,7 +154,7 @@ fixture
 passing_suite "$R/test/postgres/one.test.ts"
 passing_suite "$R/test/postgres/two.test.ts"
 git -C "$R" add -A
-run_gate "$R" CHUG_PG_URL=postgres://fixture/ignored
+run_gate "$R" "CHUG_PG_URL=$ANSWERS"
 check "a green suite is clean" 0 "$RC" "clean against the server CHUG_PG_URL names"
 check "the clean line counts the suites it ran" 0 "$RC" "2 suite(s) clean"
 
