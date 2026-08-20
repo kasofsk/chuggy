@@ -95,10 +95,11 @@ kubectl apply -f deploy/rig/postgres/postgres-network-policy.yaml
 Two of them. A workload that needs the server carries
 `chuggy.dev/postgres-client: "true"` and lives in namespace `chuggy`, no other
 pod-network client may connect, and the server opens no connection to anywhere.
-What still reaches it is what never crosses the pod network — a shell in its
-own containers, a forwarded port, the node and anything sharing the node's
-network namespace — which the ingress policy's header sets out in full and no
-NetworkPolicy on this CNI can change.
+What still reaches it without the policy being touched is what never crosses
+the pod network — a shell in its own containers, a forwarded port, the node and
+anything sharing the node's network namespace — which the ingress policy's
+header sets out in full and no NetworkPolicy on this CNI can change. Who can
+remove the policy instead of evading it is in that header too.
 
 ## Prove it
 
