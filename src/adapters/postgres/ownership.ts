@@ -155,13 +155,12 @@ export async function postgresOwnershipStanding(
 }
 
 /** Refuses a duration no lease can be granted for, naming the argument rather than the row it would spoil. */
-function postgresOwnershipLeaseSecs(leaseSecs: number): number {
+function postgresOwnershipRequireLeaseSecs(leaseSecs: number): void {
   if (!Number.isFinite(leaseSecs) || leaseSecs <= 0) {
     throw new RangeError(
       `postgres ownership: leaseSecs is ${String(leaseSecs)}, and a lease is granted for a positive finite number of seconds`,
     );
   }
-  return leaseSecs;
 }
 
 /** Writes the granted lease onto the locked row and returns what it now grants. */
@@ -209,7 +208,7 @@ export async function postgresOwnershipAcquire(
   owner: OwnerId,
   leaseSecs: number,
 ): Promise<Acquired> {
-  postgresOwnershipLeaseSecs(leaseSecs);
+  postgresOwnershipRequireLeaseSecs(leaseSecs);
   return postgresTransaction(pool, async (client) => {
     const row = await postgresOwnershipLockKnown(client, partition);
     const standing = projectRowStanding(row);
@@ -233,7 +232,7 @@ export async function postgresOwnershipRenew(
   lease: Lease,
   leaseSecs: number,
 ): Promise<Renewed> {
-  postgresOwnershipLeaseSecs(leaseSecs);
+  postgresOwnershipRequireLeaseSecs(leaseSecs);
   return postgresTransaction(pool, async (client) => {
     const row = await postgresOwnershipLockKnown(client, lease.partition);
     const standing = projectRowStanding(row);

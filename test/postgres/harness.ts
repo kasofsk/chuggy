@@ -141,8 +141,9 @@ export function postgresHarnessPartition(label: string): Partition {
 
 /**
  * Puts the partition's lease expiry into the past, which is what a lapsed
- * tenure looks like to the server. A case that slept for a real expiry would be
- * slow and would still be racing the clock it slept against.
+ * tenure looks like to the server and is how every case here reaches one. A
+ * case that slept for a real expiry would be slow and would still be racing the
+ * clock it slept against, where this is the same fact decided by the database.
  */
 export async function postgresHarnessExpire(
   harness: PostgresHarness,

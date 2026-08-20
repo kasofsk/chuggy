@@ -101,7 +101,7 @@ export interface Partition {
   readonly project: ProjectId;
 }
 
-/** Every lifecycle, and the declaration `Lifecycle` is derived from, so a suite can iterate rather than restate. */
+/** Every lifecycle, and the declaration `Lifecycle` derives from, so narrowing a stored column has one list to check. */
 export const allLifecycles = [
   "Active",
   "Suspended",
@@ -182,7 +182,9 @@ export interface ProjectStore {
 
   /**
    * Takes ownership for `leaseSecs` of database time, advancing the fencing
-   * epoch so a former owner cannot commit after this returns.
+   * epoch so a former owner cannot commit after this returns. `leaseSecs` is a
+   * positive finite number of seconds, and an implementation refuses anything
+   * else before it touches storage.
    */
   acquire(
     partition: Partition,
@@ -190,7 +192,10 @@ export interface ProjectStore {
     leaseSecs: number,
   ): Promise<Acquired>;
 
-  /** Extends a held lease without advancing its fencing epoch, so an unbroken tenure keeps one identity. */
+  /**
+   * Extends a held lease without advancing its fencing epoch, so an unbroken
+   * tenure keeps one identity. `leaseSecs` is bounded exactly as `acquire`'s is.
+   */
   renew(lease: Lease, leaseSecs: number): Promise<Renewed>;
 
   /** Gives up a held lease early; a lease already fenced is left exactly as it is. */

@@ -2,10 +2,8 @@
  * Ownership: competing owners, lease takeover, and the fencing epoch that
  * separates a tenure from its successor.
  *
- * TIME IS MOVED BY AGEING THE ROW, never by waiting. Setting the expiry into
- * the past is the same fact a real expiry is, decided by the database exactly
- * as one would be, which is why `postgresHarnessExpire` is how every suite here
- * reaches a lapsed tenure.
+ * TIME IS MOVED BY AGEING THE ROW, never by waiting. `postgresHarnessExpire`
+ * is that move, and says why beside itself.
  */
 
 import assert from "node:assert/strict";

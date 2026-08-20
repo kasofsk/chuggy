@@ -239,3 +239,19 @@ test("a stored row that is JSON but not an entry is refused by the schema", asyn
   const loaded = await harness.store.load(lease);
   assert.equal(loaded.parsed, "Refused");
 });
+
+test("a journal that no longer reaches its own head is thrown on, not refused", async () => {
+  const journal = postgresHarnessJournal();
+  assert.ok(journal.length > 1);
+  for (const seq of [1, journal.length]) {
+    const partition = await postgresHarnessProject(harness.store, "torn");
+    const lease = await appendAll(await held(partition, "writer"), journal);
+
+    await harness.query(
+      "DELETE FROM journal_entry WHERE tenant = $1 AND project = $2 AND seq = $3",
+      [partition.tenant, partition.project, seq],
+    );
+
+    await assert.rejects(() => harness.store.load(lease), /claims head/);
+  }
+});
