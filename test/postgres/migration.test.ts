@@ -62,6 +62,10 @@ async function seedI2(subject: pg.Pool): Promise<void> {
       recovery_epoch,cause_operation)
      VALUES ('tenant','project',1,'{}','digest','genesis','owner',1,'epoch','succeeded')`,
   );
+  await subject.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+     VALUES ('tenant','project',1,'Pending',1)`,
+  );
 }
 
 test("I3 preserves every I2 operation outcome and its journal cause", async () => {
@@ -119,6 +123,10 @@ test("I3 preserves every I2 operation outcome and its journal cause", async () =
         )
       ).rows,
       [{ state: "Refused", outcome_code: "CommandUnreadable" }],
+    );
+    assert.deepEqual(
+      (await subject.query(`SELECT ticket_next FROM project`)).rows,
+      [{ ticket_next: "2" }],
     );
   } finally {
     await subject.end();

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
@@ -23,6 +23,7 @@ import {
 import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresHarnessHeld,
+  postgresHarnessDecisionSubmission,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessUrl,
@@ -89,6 +90,26 @@ function releaseSubmission(
   };
 }
 
+async function assertReleaseConfigurationPinned(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+): Promise<void> {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT release_configuration_revision,release_configuration_digest
+         FROM journal_entry WHERE tenant=$1 AND project=$2 AND seq=1`,
+      [fixture.partition.tenant, fixture.partition.project],
+    ),
+    [
+      {
+        release_configuration_revision: fixture.revision,
+        release_configuration_digest: createHash("sha256")
+          .update("{}")
+          .digest("hex"),
+      },
+    ],
+  );
+}
+
 test("configuration revisions are immutable and parented inside one project", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
@@ -125,6 +146,16 @@ test("configuration revisions are immutable and parented inside one project", as
       authority,
       revision,
       canonical: asCanonicalConfiguration('{"image":"worker:v2"}'),
+    }),
+    { created: "IdentityConflict" },
+  );
+  assert.deepEqual(
+    await store.createConfiguration({
+      partition,
+      authority,
+      revision,
+      parent: asConfigurationRevisionId(`missing-${randomUUID()}`),
+      canonical,
     }),
     { created: "IdentityConflict" },
   );
@@ -233,6 +264,53 @@ test("draft edits are versioned and deletion leaves an unreusable identity", asy
   );
 });
 
+test("a domain release advances the shared ticket identity allocator", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "authoring-existing-ticket",
+  );
+  const submission = postgresHarnessDecisionSubmission(
+    partition,
+    "existing-ticket",
+    0,
+  );
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(partition);
+  assert.ok(input !== undefined);
+  const lease = await postgresHarnessHeld(
+    harness.store,
+    partition,
+    "existing-ticket",
+  );
+  const writer = postgresHarnessWriter(harness);
+  assert.equal(
+    (
+      await projectWriterDecide(
+        writer,
+        await projectWriterLoad(writer, lease),
+        input,
+      )
+    ).decided.decided,
+    "Committed",
+  );
+
+  const store = postgresAuthoring(pool);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await store.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: asCanonicalConfiguration("{}"),
+  });
+  const created = await store.createDraft({
+    partition,
+    authority,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+  });
+  assert.equal(created.created === "Created" ? created.draft.ticket : 0, 2);
+});
+
 test("release journals the retained draft only while its revision is current", async () => {
   const fixture = await draftFixture();
   const submission = releaseSubmission(fixture);
@@ -262,6 +340,7 @@ test("release journals the retained draft only while its revision is current", a
     ),
     [{ state: "Released" }],
   );
+  await assertReleaseConfigurationPinned(fixture);
   assert.deepEqual(
     await harness.query(
       `SELECT kind,resource,project_seq,authoring_version

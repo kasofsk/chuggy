@@ -44,7 +44,10 @@
 import type pg from "pg";
 
 import type { Entry } from "../../actor/journal.ts";
-import type { DecisionCause } from "../../interpreter/projectDecision.ts";
+import type {
+  DecisionCause,
+  DraftReleaseFence,
+} from "../../interpreter/projectDecision.ts";
 import type {
   Lease,
   Partition,
@@ -89,6 +92,7 @@ export async function postgresJournalWrite(
   lease: Lease,
   entry: Entry,
   cause: DecisionCause,
+  release?: DraftReleaseFence,
 ): Promise<void> {
   if (entry.seq !== lease.head + 1) {
     throw new Error(
@@ -103,8 +107,9 @@ export async function postgresJournalWrite(
   await client.query(
     `INSERT INTO journal_entry
        (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch,
-        recovery_epoch, cause_kind, cause_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        recovery_epoch, cause_kind, cause_id, release_configuration_revision,
+        release_configuration_digest)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       lease.partition.tenant,
       lease.partition.project,
@@ -117,6 +122,8 @@ export async function postgresJournalWrite(
       lease.recoveryEpoch,
       cause.kind,
       cause.id,
+      release?.configurationRevision ?? null,
+      release?.configurationDigest ?? null,
     ],
   );
   await client.query(

@@ -387,13 +387,14 @@ async function decisionReleaseOutcome(
   const fence = decision.draftRelease;
   if (fence === undefined) return decision.outcome;
   const found = await client.query<{ matched: boolean }>(
-    `SELECT ${draftReleaseFunction}($1,$2,$3,$4,$5,$6) AS matched`,
+    `SELECT ${draftReleaseFunction}($1,$2,$3,$4,$5,$6,$7) AS matched`,
     [
       decision.lease.partition.tenant,
       decision.lease.partition.project,
       fence.ticket,
       fence.authoringVersion,
       fence.configurationRevision,
+      fence.configurationDigest,
       decision.outcome.outcome === "Journaled",
     ],
   );
@@ -438,6 +439,19 @@ async function notifyDecision(
       );
 }
 
+async function decisionAdvanceTicketIdentity(
+  client: pg.PoolClient,
+  partition: Partition,
+  outcome: Extract<DecisionOutcome, { outcome: "Journaled" }>,
+): Promise<void> {
+  if (outcome.entry.event.type !== "ReleaseTicket") return;
+  await client.query(
+    `UPDATE project SET ticket_next=greatest(ticket_next,$3)
+      WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project, outcome.entry.event.value.ticket + 1],
+  );
+}
+
 /** Writes everything the decision asks for, and answers with the lease its commit advanced. */
 async function decisionApply(
   client: pg.PoolClient,
@@ -445,6 +459,7 @@ async function decisionApply(
   cause: DecisionCause,
   outcome: DecisionOutcome,
   standing: ReturnType<typeof projectRowStanding>,
+  draftRelease: Decision["draftRelease"],
 ): Promise<Decided> {
   switch (outcome.outcome) {
     case "Stale":
@@ -480,7 +495,14 @@ async function decisionApply(
       return { decided: "Refused" };
     case "Journaled": {
       const seq = outcome.entry.seq;
-      await postgresJournalWrite(client, lease, outcome.entry, cause);
+      await postgresJournalWrite(
+        client,
+        lease,
+        outcome.entry,
+        cause,
+        draftRelease,
+      );
+      await decisionAdvanceTicketIdentity(client, lease.partition, outcome);
       await decisionSettle(
         client,
         lease,
@@ -528,6 +550,13 @@ export async function postgresDecisionCommit(
       return { decided: "StaleHead", head: standing.head };
     }
     const outcome = await decisionReleaseOutcome(client, decision);
-    return decisionApply(client, lease, decision.cause, outcome, standing);
+    return decisionApply(
+      client,
+      lease,
+      decision.cause,
+      outcome,
+      standing,
+      decision.draftRelease,
+    );
   });
 }
