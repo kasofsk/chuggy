@@ -95,10 +95,11 @@ kubectl apply -f deploy/rig/postgres/postgres-network-policy.yaml
 Two of them. A workload that needs the server carries
 `chuggy.dev/postgres-client: "true"` and lives in namespace `chuggy`, no other
 pod-network client may connect, and the server opens no connection to anywhere.
-What still reaches it is what never crosses the pod network — a shell in its
-own containers, a forwarded port, the node and anything sharing the node's
-network namespace — which the ingress policy's header sets out in full and no
-NetworkPolicy on this CNI can change.
+What still reaches it without the ingress policy being touched is what that
+policy never gets to decide — a shell in its own containers, a forwarded port,
+the node and anything sharing the node's network namespace — which its header
+sets out in full and no NetworkPolicy on this CNI can change. Who can remove
+the policy outright is in that header too.
 
 ## Prove it
 
@@ -188,6 +189,31 @@ as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher  # admi
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client-
 as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher  # refused
 ```
+
+### The grant that removes the policy
+
+The ingress policy's header ends on a bypass that is another repo's to change,
+so it is the one claim in these two files that can go stale without this tree
+moving. `auth can-i` asks the API server and applies nothing:
+
+```sh
+kubectl -n chuggy auth can-i delete networkpolicies \
+  --as=system:serviceaccount:chuggy:dev2
+kubectl -n chuggy auth can-i get secrets \
+  --as=system:serviceaccount:chuggy:dev2
+```
+
+```
+yes
+yes
+```
+
+The first says an identity the rig declares can delete
+`postgres-admits-labelled-clients`, after which nothing selects the server for
+ingress and every pod-network client is admitted — `postgres-denies-egress`
+names Egress alone, so it does not isolate the pod in this direction. The second
+says the same identity reads both Secrets beside the server. A `no` on either
+means chuggy-fabric moved the binding, and the header is what to re-read.
 
 ### The credentials
 
