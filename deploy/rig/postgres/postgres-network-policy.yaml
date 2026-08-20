@@ -1,0 +1,102 @@
+# Who on the network may reach the durable authority, and where the authority
+# may reach. Two questions, two policies, because one name cannot be true of
+# both and NetworkPolicies are additive anyway.
+#
+# WHAT SELECTING THE SERVER ISOLATES. A NetworkPolicy naming a pod makes that
+# pod deny every ingress the policy does not admit, so the rule below is the
+# whole of what may open a connection to PostgreSQL from the pod network: a pod
+# in this namespace carrying the client label, on the server's port. Every other
+# pod-network client is refused, which is the question an in-cluster server
+# poses and an external one does not. The boundary is drawn there and nowhere
+# else; what reaches the server without crossing that network is below.
+#
+# WHY A LABEL AND NOT A NAME. The workloads that connect do not exist yet — the
+# dispatcher and the API arrive with the slices that build them — and a policy
+# that named them would be a policy nothing could satisfy today and nobody would
+# revisit tomorrow. A label is the selector Kubernetes offers, and it is also
+# the honest one: authorization here is possession of a label, which is worth
+# saying out loud rather than mistaking for authentication. The database roles
+# are what actually separate one service from another.
+#
+# THREE BYPASSES OF THE SAME CLASS: each reaches the server without a packet
+# crossing the pod network, so no ingress rule here can see it, and none is
+# closable from this file.
+#
+#   A process inside the server's own pod — `kubectl exec`, `kubectl debug`, or
+#   the `postgres` process itself once something else is driving it. exec runs
+#   in the server's container and reaches it over the Unix socket; an ephemeral
+#   container shares the pod's network namespace and not its filesystem, and the
+#   socket directory is in the server image rather than on a volume, so `debug`
+#   lands on `127.0.0.1` instead. This image's pg_hba matches both with `trust`
+#   ahead of its `scram-sha-256` catch-all: an unauthenticated superuser, with
+#   no packet on the pod network. The exec subresource is a different RBAC grant
+#   from the port-forward one, so holding either is not holding the other; what
+#   bounds this path is who may exec in this namespace.
+#
+#   `kubectl port-forward`, which the kubelet serves from inside the pod's own
+#   network namespace, so the connection is already past the boundary when it
+#   is made.
+#
+#   The node, and every pod sharing its network namespace. kube-router programs
+#   the pod's own chain with an unconditional ACCEPT for a source address local
+#   to the node, ABOVE the jump to this policy's chain, so a host-network pod
+#   and any process on the box reach the server whatever they are labelled. The
+#   ACCEPT is the CNI's own and a NetworkPolicy cannot remove it; what bounds
+#   that path is who may run on the node, not this file.
+#
+# A verification that reached the server through a forwarded port, from inside
+# the server's containers, or from the node has said nothing about this policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-admits-labelled-clients
+  namespace: chuggy
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              chuggy.dev/postgres-client: "true"
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Where the durable authority may reach, which is nowhere.
+#
+# WHY DENY EVERY DESTINATION. PostgreSQL originates no outbound connection in
+# this deployment — no upstream it streams from, no archive destination, no
+# foreign data wrapper, no pg_hba line that resolves a name — so refusing every
+# destination costs the server nothing it does. What it buys is a bound on the
+# ways IN above: the two that land on a `trust` line arrive as an
+# unauthenticated superuser, and this is what such a foothold cannot then reach
+# — another service on the cluster, or anything off it. What it does not bound
+# is carrying the data out, because exec and port-forward are each a
+# bidirectional channel already and a reply leaving on one is not a connection
+# this policy sees.
+#
+# THE ABSENT `egress:` KEY IS THE RULE. Naming Egress in policyTypes and
+# writing no rule beneath it is what denies every destination; `egress: [{}]`
+# is the opposite policy and looks almost the same. kube-router keys the pod's
+# chain on the pod's own source address for this direction and the chain it
+# jumps to marks nothing compliant, so no destination is treated differently
+# from any other — including a cloud metadata endpoint on a rig that has none.
+#
+# REPLIES ARE NOT EGRESS. The pod's chain accepts RELATED,ESTABLISHED before it
+# consults any policy, so a connection the policy above admits is answered
+# whatever this one says. What stops here is a connection the server opens.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-denies-egress
+  namespace: chuggy
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Egress
