@@ -8,7 +8,7 @@
 # in this namespace carrying the client label, on the server's port. Every other
 # pod-network client is refused, which is the question an in-cluster server
 # poses and an external one does not. The boundary is drawn there and nowhere
-# else; what reaches the server without crossing that network is below.
+# else; what reaches the server without that rule deciding it is below.
 #
 # WHY A LABEL AND NOT A NAME. The workloads that connect do not exist yet — the
 # dispatcher and the API arrive with the slices that build them — and a policy
@@ -18,9 +18,8 @@
 # saying out loud rather than mistaking for authentication. The database roles
 # are what actually separate one service from another.
 #
-# THREE BYPASSES OF THE SAME CLASS: each reaches the server without a packet
-# crossing the pod network, so no ingress rule here can see it, and none is
-# closable from this file.
+# THREE BYPASSES OF THE SAME CLASS: no ingress rule below gets to decide any of
+# them, and each for a different reason, so none is closable from this file.
 #
 #   A process inside the server's own pod — `kubectl exec`, `kubectl debug`, or
 #   the `postgres` process itself once something else is driving it. exec runs
