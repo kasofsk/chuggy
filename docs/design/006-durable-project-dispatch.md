@@ -1410,6 +1410,10 @@ domain transition is not enabled is still accepted and refused only by the
 temporary path that accepted an opaque unreadable command merely to terminalize
 it later as `CommandUnreadable`; domain legality remains exclusively the
 writer's, while structural readability becomes an ingress fact.
+Authoritative `TaskDone`, `ExecutionBlocked` and `FinalizationResult` envelopes
+derive `CorrectnessReducing` admission as well as `Completion` priority. They
+remain durably admissible while ordinary work is stopped, although lifecycle
+policy may hold the accepted input rather than let a writer decide it.
 
 Within an effective priority class the lowest project inbox ordinal wins. With
 base ranks zero through three in the order above, effective rank is
@@ -1512,6 +1516,21 @@ resolved. Any other valid transition that removes the condition closes it as
 withdrawn. Later escalation creates a new identity; nothing reopens an old
 action. Its typed, bounded columns carry kind, reason, permitted resolutions,
 required capability and version, never credentials or unrestricted content.
+The I3 action kind is `TicketEscalation`, its required capability is
+`ResolveTicket`, and its immutable authorizing journal sequence is its version.
+When the ticket's typed resume point permits recovery, the resolutions are
+`Resume` and `Revoke`; an irreversible escalation such as
+`DependencyRevoked` permits only `Revoke`. The application envelope
+`ResolveNativeAction(action identity, authorizing sequence, resolution)`
+validates the open action and maps the resolution to the existing pure
+`ResumeTicket` or `RevokeTicket` event. It adds no domain transition.
+
+A ticket's version is the latest journal sequence whose decision changed any
+field of that ticket. It is derived from history and projected, not stored in
+`Core`. Projection changes therefore include task-state, accounting, artifact
+and other ticket mutations even when phase is unchanged; the former phase-only
+delta is insufficient. Continuation, finalization, manual-dispatch and native-
+action fences name this version.
 
 The selector is an API client with a deliberately narrow service authority,
 not a ticket-command authority. Logically the `ProjectTicketWriter` creates an
