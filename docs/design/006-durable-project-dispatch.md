@@ -1400,6 +1400,17 @@ lifecycle admission from the authenticated typed ingress path. Neither is a
 caller-selected value or a consequence of authority kind alone. This policy is
 only for ticket decisions; it does not govern the execution scheduler.
 
+Ingress parses a versioned typed command envelope and validates its bounded
+structure before acceptance. Its closed command tag is what trusted policy maps
+to admission and priority, and the narrow acceptance function cross-checks the
+combination; callers supply none of those classifications. A malformed or
+unknown envelope creates no operation. A structurally valid command whose
+domain transition is not enabled is still accepted and refused only by the
+`ProjectTicketWriter` at its serialized position. I3 therefore removes the
+temporary path that accepted an opaque unreadable command merely to terminalize
+it later as `CommandUnreadable`; domain legality remains exclusively the
+writer's, while structural readability becomes an ingress fact.
+
 Within an effective priority class the lowest project inbox ordinal wins. With
 base ranks zero through three in the order above, effective rank is
 `max(0, baseRank - floor(databaseAge / agingInterval))`. One configurable
