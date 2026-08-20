@@ -33,7 +33,9 @@ import {
 } from "../../src/adapters/postgres/schema.ts";
 import type { Submission } from "../../src/interpreter/operationInbox.ts";
 import {
+  postgresHarnessLease,
   postgresHarnessOpen,
+  postgresHarnessOwner,
   postgresHarnessProject,
   postgresHarnessSubmission,
   type PostgresHarness,
@@ -393,4 +395,67 @@ test("the dispatcher role cannot move a projection row across the key it is file
     `UPDATE ticket_projection SET ticket = 2 WHERE tenant = '${submission.partition.tenant}'`,
   );
   assert.match(String(refusal), /permission denied/);
+});
+
+test("no role may move a project's fencing epoch backwards", async () => {
+  const partition = await postgresHarnessProject(harness.store, "backwards");
+  const held = await postgresHarnessLease(harness.store, partition, "holder");
+  const refusal = await harness.attemptAs(
+    dispatcherRole,
+    `UPDATE project SET fencing_epoch = ${String(held.fencingEpoch - 1)}
+      WHERE tenant = '${partition.tenant}' AND project = '${partition.project}'`,
+  );
+  assert.match(String(refusal), /fencing epoch backwards/);
+});
+
+test("no role may write a fenced tenure back into an active project", async () => {
+  const partition = await postgresHarnessProject(harness.store, "reinstate");
+  const former = await postgresHarnessLease(harness.store, partition, "former");
+  await harness.query(
+    "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
+    [partition.tenant, partition.project],
+  );
+  const successor = await harness.store.acquire(
+    partition,
+    postgresHarnessOwner("successor"),
+    60,
+  );
+  assert.ok(successor.acquired === "Granted");
+
+  const where = `WHERE tenant = '${partition.tenant}' AND project = '${partition.project}'`;
+  for (const statement of [
+    `UPDATE project SET owner = '${former.owner}', fencing_epoch = ${String(former.fencingEpoch)},
+        lease_expires_at = now() + interval '1 hour' ${where}`,
+    `UPDATE project SET owner = '${former.owner}',
+        lease_expires_at = now() + interval '1 hour' ${where}`,
+  ]) {
+    const refusal = await harness.attemptAs(dispatcherRole, statement);
+    assert.match(String(refusal), /fencing epoch/);
+  }
+});
+
+test("no role may revive an expired tenure without advancing the epoch that ended it", async () => {
+  const partition = await postgresHarnessProject(harness.store, "revive");
+  const stale = await postgresHarnessLease(harness.store, partition, "stale");
+  await harness.query(
+    "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
+    [partition.tenant, partition.project],
+  );
+  const refusal = await harness.attemptAs(
+    dispatcherRole,
+    `UPDATE project SET lease_expires_at = now() + interval '1 hour'
+      WHERE tenant = '${partition.tenant}' AND project = '${partition.project}'`,
+  );
+  assert.match(String(refusal), /without advancing its fencing epoch/);
+
+  const renewed = await harness.store.renew(stale, 60);
+  assert.equal(renewed.renewed, "Fenced");
+});
+
+test("an unbroken tenure renews without advancing its fencing epoch", async () => {
+  const partition = await postgresHarnessProject(harness.store, "renewal");
+  const held = await postgresHarnessLease(harness.store, partition, "holder");
+  const renewed = await harness.store.renew(held, 60);
+  assert.ok(renewed.renewed === "Extended");
+  assert.equal(renewed.lease.fencingEpoch, held.fencingEpoch);
 });

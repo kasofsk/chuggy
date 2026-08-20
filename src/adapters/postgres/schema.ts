@@ -169,6 +169,17 @@
  * authority rather than a boundary it would be crossing, and a domain refusal
  * settles one with no journal entry to pair the write against, so there is no
  * pairing a constraint could enforce.
+ *
+ * WHY A TENURE CANNOT BE REINSTATED BY HAND. `chuggy_dispatcher` needs UPDATE
+ * on `owner`, `fencing_epoch` and `lease_expires_at` because any replica may
+ * acquire a partition, and those three columns are also exactly what it takes
+ * to write a fenced owner back into an active project (kasofsk/chuggy#115). A
+ * grant cannot say which values a column may take, so the rule is the server's
+ * own: the fencing epoch never moves backwards, and any update leaving a live
+ * lease that is not the continuation of the live tenure already there must
+ * advance it. Acquisition advances it, renewal continues one, release and
+ * fencing leave none — so the adapter is unchanged and the composed statement
+ * is refused.
  */
 
 import { phaseTags } from "../../domain/generated/modelTypes.ts";
@@ -503,6 +514,44 @@ const decisionTerminality = [
      $$`,
 ];
 
+/**
+ * The trigger that makes the fencing epoch the only way to obtain a tenure. A
+ * grant names columns and not values, so the rule that ownership is taken
+ * rather than written has to be the server's own.
+ */
+const tenureFence = [
+  `CREATE FUNCTION project_tenure_is_fenced() RETURNS trigger
+     LANGUAGE plpgsql AS $$
+     DECLARE
+       was_live boolean;
+       is_live  boolean;
+     BEGIN
+       IF NEW.fencing_epoch < OLD.fencing_epoch THEN
+         RAISE EXCEPTION
+           'project %/% would move its fencing epoch backwards, and a fence only advances',
+           OLD.tenant, OLD.project
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       was_live := OLD.owner IS NOT NULL AND OLD.lease_expires_at > now();
+       is_live  := NEW.owner IS NOT NULL AND NEW.lease_expires_at > now();
+       IF is_live AND NEW.fencing_epoch = OLD.fencing_epoch
+          AND NOT (was_live
+                   AND NEW.owner = OLD.owner
+                   AND NEW.recovery_epoch IS NOT DISTINCT FROM OLD.recovery_epoch)
+       THEN
+         RAISE EXCEPTION
+           'project %/% would take a tenure without advancing its fencing epoch',
+           OLD.tenant, OLD.project
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       RETURN NEW;
+     END
+     $$`,
+  `CREATE TRIGGER project_tenure_is_fenced
+     BEFORE UPDATE ON project
+     FOR EACH ROW EXECUTE FUNCTION project_tenure_is_fenced()`,
+];
+
 const decisionGrants = [
   `GRANT SELECT ON operation TO ${dispatcherRole}`,
   `GRANT UPDATE (state, settled_at, settled_authority_kind,
@@ -543,5 +592,10 @@ export const migrations: readonly Migration[] = [
       ...decisionTerminality,
       ...decisionGrants,
     ],
+  },
+  {
+    version: 4,
+    name: "the tenure fence",
+    statements: [...tenureFence],
   },
 ];
