@@ -3,11 +3,15 @@
 # restorable, destroy the database, restore it, and establish a fresh recovery
 # epoch before anything may mutate what came back.
 #
-# THE ORDER IS THE CONTROL. `verify` restores the dump into a scratch database
-# and refuses to agree unless the inventory matches; `destroy` refuses to run
-# until `verify` has left its receipt beside the dump. A rehearsal that loses
-# the data it was rehearsing the recovery of is the only failure this procedure
-# cannot walk back, so the one ordering it enforces is the one that prevents it.
+# THE ORDER IS THE CONTROL, and every stage that depends on an earlier one
+# refuses without its receipt. `verify` restores the dump into a scratch
+# database and refuses to agree unless the inventory matches; `destroy` refuses
+# until `verify` has left a receipt naming the digest of the dump that is
+# actually there; `epoch` and `fence` refuse until `restore` has left an
+# inventory, because both are claims about a database that came back and
+# neither can tell on its own that one did. The first of those is the one that
+# matters most: a rehearsal that loses the data it was rehearsing the recovery
+# of is the only failure here that cannot be walked back.
 #
 # EVERY CONNECTION IS A CLIENT POD'S, over the cluster network, authenticated
 # by the role's own password. `kubectl port-forward` is served inside the
@@ -28,18 +32,34 @@
 # repeatable half of. In particular `fence` establishes the divergence a
 # restore creates and the refusal that stops a stranded writer minting its way
 # out of it; the refusal that writer meets when it tries to append or renew is
-# the durable authority's own decision, and the operations-inbox slice is what
-# carries both that adapter and the suites asserting it.
+# the durable authority's own decision, and the adapter that makes it is not in
+# this tree yet, nor are the suites that assert it.
+#
+# THE WITNESS IS WHAT MAKES `fence` MEAN ANYTHING. Read over every owned
+# project, that stage's predicate comes true the moment a fresh epoch is
+# minted, whether or not anything was dumped, destroyed or restored — and a rig
+# that has been rehearsed against before is full of leases superseded long ago,
+# which the predicate holds over for free. So `snapshot` picks out one lease
+# that was BOTH under an unexpired term and under the epoch then current, and
+# writes the row down. `restore` requires that exact row back out of the dump,
+# owner and project-local fencing epoch and head and expiry alike, which is the
+# comparison a row-count inventory cannot make. `fence` then requires it to be
+# superseded while its term has still not run out, which is the state a
+# stranded writer is actually in.
+#
+# NOTHING HERE ARMS A WITNESS, and `snapshot` refuses when the rig carries
+# none. A control that manufactures the evidence it then checks is not a
+# control, and what takes a lease is the durable authority.
 #
 # Stages, in the order they are run:
 #   client    create the labelled client pod, and prove it reaches the server
-#   snapshot  record what the live database holds, before anything touches it
+#   snapshot  record what the live database holds, and pick the witness
 #   dump      take the globals and the database off the box
 #   verify    restore the dump into a scratch database and compare
 #   destroy   drop the database
-#   restore   recreate it from the dump, and compare again
-#   epoch     establish a fresh epoch, and show what moved before it did
-#   fence     report what the restored leases carry, and what they may do
+#   restore   recreate it from the dump, compare again, and re-read the witness
+#   epoch     establish a fresh epoch, and require it to be all that moved
+#   fence     report what the restored leases carry, and what the witness may do
 #   teardown  remove the client pod and the scratch database
 #
 # Env:
@@ -51,7 +71,14 @@
 # Usage:
 #   CHUG_RIG_ARCHIVE=<dir> ./deploy/rig/durability/rehearse.sh <stage>
 #
-# Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
+# EXITS 0 CLEAN, 1 ON A FINDING, 2 WHEN IT COULD NOT RUN — and two is only
+# ever this script's own preconditions: no kubectl, an archive that is unset or
+# unwritable or readable by others, or a stage run before the one whose receipt
+# it needs. Everything past those exits one, the cluster's own failures
+# included. A statement the server refused and a statement that never reached
+# it arrive here as the same status, and a script that cannot tell them apart
+# must not print a verdict that says it can. So a one is read before it is
+# believed: it says a finding, OR the rig went away under the run.
 set -eu
 export LC_ALL=C
 
@@ -78,7 +105,23 @@ kube() { kubectl --context "$context" -n "$namespace" "$@"; }
 
 command -v kubectl > /dev/null 2>&1 || cannot "no kubectl on PATH, so nothing ran"
 [ -n "$archive" ] || cannot "CHUG_RIG_ARCHIVE is unset, and this script will not choose where the only copy of a database lives"
-mkdir -p "$archive" || cannot "$archive is not writable"
+
+# The archive is credential material before it is anything else: `globals.sql`
+# carries every login role's SCRAM verifier and the dump carries the record. So
+# the umask is set here rather than inherited, and it covers the directory and
+# every file written into it alike — a directory nobody else may open is the
+# containment, and a file nobody else may read is what survives the directory
+# being moved or opened up later. An archive that already exists is checked
+# against that mode rather than assumed to have it. `mkdir -p` also agrees with
+# a directory that is already there, which says nothing about whether this
+# process may write in it, so that is asked separately.
+umask 077
+mkdir -p "$archive" || cannot "$archive could not be created"
+archive_mode="$(stat -c '%a' "$archive" 2> /dev/null || true)"
+[ -n "$archive_mode" ] || cannot "the mode of $archive could not be read, so nothing here can say who else may read the dump"
+[ "$archive_mode" = "700" ] || cannot "$archive is mode $archive_mode, and what goes into it carries every login role's verifier"
+: > "$archive/.writable" 2> /dev/null || cannot "$archive is not writable"
+rm -f "$archive/.writable"
 
 dump_file="$archive/$database.dump"
 globals_file="$archive/globals.sql"
@@ -88,6 +131,12 @@ live_inventory="$archive/inventory-live.txt"
 scratch_inventory="$archive/inventory-scratch.txt"
 restored_inventory="$archive/inventory-restored.txt"
 epoched_inventory="$archive/inventory-after-epoch.txt"
+expected_inventory="$archive/inventory-expected-after-epoch.txt"
+witness_partition_file="$archive/witness-partition.txt"
+witness_before_file="$archive/witness-before.txt"
+witness_restored_file="$archive/witness-restored.txt"
+witness_fenced_file="$archive/witness-fenced.txt"
+witness_standing_file="$archive/witness-standing.txt"
 
 # --- Talking to the server --------------------------------------------------
 # One shape for every connection: a psql in the client pod, as the named role,
@@ -161,6 +210,64 @@ SQL
 
 latest_epoch="SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1"
 
+# The sha256 of a file that has to be there, left in `digest`.
+#
+# NOT A PIPELINE, and that is the whole of it. `sha256sum "$f" | cut …` takes
+# the status of `cut`, which succeeds on the empty input a missing file gives
+# it; `set -e` sees a successful command, and the caller is left holding an
+# empty string it believes is a digest. Every comparison downstream then agrees
+# with itself — an empty needle is one every haystack contains.
+digest=""
+read_digest() { # <path>
+	[ -s "$1" ] || cannot "$1 is missing or empty, and nothing has a digest of nothing"
+	digest="$(sha256sum "$1")" || cannot "sha256sum could not read $1"
+	digest="${digest%% *}"
+	case "$digest" in
+	"" | *[!0-9a-f]*) cannot "sha256sum printed no digest for $1" ;;
+	esac
+}
+
+# The partition `snapshot` chose, left in `witness_tenant` and
+# `witness_project`.
+witness_tenant=""
+witness_project=""
+read_witness_partition() {
+	[ -s "$witness_partition_file" ] \
+		|| cannot "there is no witness recorded in $archive; run snapshot first"
+	witness_tenant=""
+	witness_project=""
+	while read -r field value; do
+		case "$field" in
+		tenant) witness_tenant="$value" ;;
+		project) witness_project="$value" ;;
+		esac
+	done < "$witness_partition_file"
+	{ [ -n "$witness_tenant" ] && [ -n "$witness_project" ]; } \
+		|| cannot "the witness recorded in $archive names no partition"
+}
+
+# The witness row, one `field value` line per column, so a later stage can ask
+# for the same block and diff it whole rather than compare fields it chose in
+# advance. Read as the owner role: a row the restore lost entirely has to show
+# up as a missing block and not as a privilege the runtime role lacks.
+witness_row() { # <tenant> <project>
+	client_psql chuggy_owner "$database" << SQL
+SELECT u FROM project p, LATERAL unnest(ARRAY[
+  'tenant ' || p.tenant::text,
+  'project ' || p.project::text,
+  'owner ' || coalesce(p.owner::text, '(none)'),
+  'lifecycle ' || p.lifecycle::text,
+  'lifecycle_generation ' || p.lifecycle_generation::text,
+  'fencing_epoch ' || p.fencing_epoch::text,
+  'head ' || p.head::text,
+  'recovery_epoch ' || coalesce(p.recovery_epoch::text, '(none)'),
+  'lease_expires_at ' || coalesce(p.lease_expires_at::text, '(none)')
+]) AS u
+ WHERE p.tenant = '$1' AND p.project = '$2'
+ ORDER BY u
+SQL
+}
+
 # --- The stages -------------------------------------------------------------
 
 stage_client() {
@@ -216,7 +323,33 @@ stage_snapshot() {
 		| client_psql chuggy_owner "$database" > "$archive/leases-before.txt"
 	held="$(grep -c '' < "$archive/leases-before.txt" || true)"
 	[ "$held" -gt 0 ] || cannot "no project is under lease, so a restore here would fence nobody and prove nothing"
+
+	# The witness: one lease that is BOTH unexpired and under the epoch now
+	# current. A lease already superseded when the dump is taken is fenced by
+	# nothing this procedure does, and one whose term has already run out is
+	# held by nobody to fence — so a stage asserting over every held lease
+	# asserts mostly over those, and the members that would refute it are the
+	# ones that have to be there. The latest expiry is preferred so the term
+	# outlasts the rehearsal.
+	client_psql chuggy_owner "$database" > "$witness_partition_file" << SQL
+SELECT unnest(ARRAY['tenant ' || w.tenant::text, 'project ' || w.project::text])
+  FROM (SELECT tenant, project
+          FROM project
+         WHERE owner IS NOT NULL
+           AND lease_expires_at > now()
+           AND recovery_epoch = ($latest_epoch)
+         ORDER BY lease_expires_at DESC
+         LIMIT 1) w
+SQL
+	[ -s "$witness_partition_file" ] \
+		|| cannot "no project holds an unexpired lease under the current recovery epoch, so this rehearsal would fence nobody who was live when it began; arm one and run snapshot again"
+	read_witness_partition
+	witness_row "$witness_tenant" "$witness_project" > "$witness_before_file"
+	[ -s "$witness_before_file" ] || cannot "the witness partition names no row"
+
 	say "the inventory, the epochs and the $held held lease(s) are recorded in $archive"
+	say "the witness is the lease this rehearsal has to fence:"
+	cat "$witness_before_file"
 }
 
 stage_dump() {
@@ -256,9 +389,15 @@ stage_verify() {
 	fi
 	echo "DROP DATABASE $scratch WITH (FORCE)" | client_psql postgres postgres
 
+	# The digest goes in on a line of its own and under a name, so `destroy` can
+	# read back the one field it needs and compare it whole. A receipt whose
+	# digest has to be found by searching the file is a receipt whose reader
+	# decides what counts as a match.
+	read_digest "$dump_file"
 	{
 		echo "this dump restored into a scratch database whose inventory matched the live one"
 		date -u +%Y-%m-%dT%H:%M:%SZ
+		echo "dump-sha256 $digest"
 		cat "$receipt_file"
 	} > "$verified_file"
 	say "the dump is restorable, and $verified_file says so"
@@ -266,8 +405,22 @@ stage_verify() {
 
 stage_destroy() {
 	[ -s "$verified_file" ] || cannot "no receipt in $archive; a dump nobody has restored is not a backup"
-	taken="$(sha256sum "$dump_file" | cut -d' ' -f1)"
-	grep -q "$taken" "$verified_file" || cannot "the receipt in $archive was written for a different dump"
+
+	# `verify` and `restore` each refuse without a dump, and so does this: it is
+	# the stage where the absence cannot be walked back, and the reachable way
+	# in is ordinary — the archive is credential material, and deleting the dump
+	# while leaving the receipt is exactly the half-tidy the warning invites.
+	# `read_digest` refuses on a missing dump instead of returning an empty
+	# string, and the receipt's digest is compared whole rather than looked for
+	# inside the file.
+	read_digest "$dump_file"
+	recorded=""
+	while read -r field value; do
+		[ "$field" = "dump-sha256" ] || continue
+		recorded="$value"
+	done < "$verified_file"
+	[ -n "$recorded" ] || cannot "the receipt in $archive names no digest; run verify again"
+	[ "$recorded" = "$digest" ] || cannot "the receipt in $archive was written for a different dump"
 
 	echo "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$database' AND pid <> pg_backend_pid()" \
 		| client_psql postgres postgres > /dev/null
@@ -282,6 +435,8 @@ stage_destroy() {
 
 stage_restore() {
 	[ -s "$dump_file" ] || cannot "there is no dump in $archive to restore"
+	[ -s "$witness_before_file" ] || cannot "there is no witness recorded in $archive; run snapshot first"
+	read_witness_partition
 	kube cp "$dump_file" "$namespace/$client:/tmp/restore.dump"
 	kube exec "$client" -- env CHUG_HOST="$service" sh -c '
 		set -eu
@@ -290,7 +445,19 @@ stage_restore() {
 	'
 	inventory "$database" > "$restored_inventory"
 	diff -u "$live_inventory" "$restored_inventory" || die "what came back is not what was dumped"
-	say "the database is back, and its inventory is the one $live_inventory recorded"
+
+	# The inventory counts rows and cannot see an ownership row that came back
+	# changed, because an UPDATE changes no count — and the ownership row is the
+	# one the fencing argument is about. So the witness is asked for again and
+	# compared whole, and this is the stage to do it in: the database it is read
+	# out of did not exist a moment ago, so the row is the dump's or it is
+	# nothing.
+	witness_row "$witness_tenant" "$witness_project" > "$witness_restored_file"
+	[ -s "$witness_restored_file" ] || die "the witness lease did not come back at all"
+	diff -u "$witness_before_file" "$witness_restored_file" \
+		|| die "the witness lease came back as something the dump did not hold"
+
+	say "the database is back, its inventory is the one $live_inventory recorded, and the witness lease came out of the dump unchanged"
 }
 
 stage_epoch() {
@@ -313,12 +480,30 @@ stage_epoch() {
 	cat "$archive/epoch-established.txt"
 
 	inventory "$database" > "$epoched_inventory"
+
+	# What the establish should have cost the inventory, worked out from the
+	# inventory itself: one more row in `recovery_epoch`, and nothing else moved
+	# at all. The first diff is the operator's view of the window and is
+	# EXPECTED to be non-empty, which is the only reason its status is dropped;
+	# the second is the assertion, and without it this stage prints the same
+	# success line on a run where the database did other things too.
+	grep -q '^rows|recovery_epoch|' "$restored_inventory" \
+		|| cannot "the post-restore inventory carries no recovery_epoch row count, so nothing here can say what the establish added"
+	awk -F'|' 'BEGIN { OFS = "|" } $1 == "rows" && $2 == "recovery_epoch" { $3 = $3 + 1 } { print }' \
+		"$restored_inventory" > "$expected_inventory"
+
 	say "everything the database did between coming back and the epoch being established:"
 	diff -u "$restored_inventory" "$epoched_inventory" || true
+	diff -u "$expected_inventory" "$epoched_inventory" \
+		|| die "recording the epoch is not all the database did between the restore and now"
 	say "the fresh epoch is $minted"
 }
 
 stage_fence() {
+	[ -s "$witness_before_file" ] || cannot "there is no witness recorded in $archive; run snapshot first"
+	[ -s "$restored_inventory" ] || cannot "there is no post-restore inventory, so no restore has been shown to have happened for this to be about"
+	read_witness_partition
+
 	say "what each restored lease carries, read as the runtime role reads it:"
 	echo "SELECT p.tenant, p.project, p.owner, p.fencing_epoch, p.recovery_epoch, e.epoch, (p.recovery_epoch = e.epoch), (p.lease_expires_at > now()) FROM project p CROSS JOIN ($latest_epoch) e (epoch) WHERE p.owner IS NOT NULL ORDER BY p.tenant, p.project" \
 		| client_psql chuggy_dispatcher_login "$database"
@@ -328,6 +513,51 @@ stage_fence() {
 	current="$(echo "SELECT count(*) FROM project WHERE owner IS NOT NULL AND recovery_epoch = ($latest_epoch)" | client_psql chuggy_dispatcher_login "$database")"
 	[ "$current" = "0" ] || die "$current of the $held restored lease(s) still carry the current epoch, so the restore fenced nobody"
 	say "none of the $held restored lease(s) carries the current epoch"
+
+	# That last sentence is nearly free, and here is the member it is not free
+	# over. The witness was live and current when the dump was taken; `restore`
+	# required it back out of the dump unchanged; it is read again here, after
+	# the establish, because the window between those two is the one an
+	# inventory of row counts cannot see into.
+	witness_row "$witness_tenant" "$witness_project" > "$witness_fenced_file"
+	[ -s "$witness_fenced_file" ] || die "the witness lease is gone from the restored database"
+	diff -u "$witness_before_file" "$witness_fenced_file" \
+		|| die "the witness lease is no longer the row the dump held, so something wrote to it after the restore"
+
+	# Each predicate comes back as a word this file chose, not as a boolean. A
+	# boolean reaches the shell spelled whichever way it was rendered — `t`
+	# through psql's own display, `true` once anything casts it — and a guard
+	# comparing against the wrong spelling reports the opposite of the row it
+	# just read.
+	client_psql chuggy_dispatcher_login "$database" > "$witness_standing_file" << SQL
+SELECT unnest(ARRAY[
+  'superseded ' || CASE WHEN p.recovery_epoch IS DISTINCT FROM e.epoch THEN 'yes' ELSE 'no' END,
+  'unexpired ' || CASE WHEN p.lease_expires_at > now() THEN 'yes' ELSE 'no' END,
+  'carries ' || coalesce(p.recovery_epoch::text, '(none)'),
+  'issued_under ' || e.epoch::text])
+  FROM project p CROSS JOIN ($latest_epoch) e (epoch)
+ WHERE p.tenant = '$witness_tenant' AND p.project = '$witness_project'
+SQL
+	cat "$witness_standing_file"
+	superseded=""
+	unexpired=""
+	while read -r field value; do
+		case "$field" in
+		superseded) superseded="$value" ;;
+		unexpired) unexpired="$value" ;;
+		esac
+	done < "$witness_standing_file"
+	case "$superseded" in
+	yes) : ;;
+	no) die "the witness lease still carries the epoch authority is issued under, so the one writer that was live is not fenced" ;;
+	*) cannot "the server did not say whether the witness lease is superseded" ;;
+	esac
+	case "$unexpired" in
+	yes) : ;;
+	no) die "the witness lease ran out during the rehearsal, so what is fenced here is a term nobody was still holding" ;;
+	*) cannot "the server did not say whether the witness lease has run out" ;;
+	esac
+	say "the witness came back from the dump holding an epoch no longer issued, and its term has still not run out"
 
 	# A fence is worth nothing if the writer it fences can mint its way past
 	# it, and that refusal is the server's rather than the adapter's.

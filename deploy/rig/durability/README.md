@@ -3,9 +3,9 @@
 Row D2 of the deployment rehearsal, on the local k3s rig: a real dump of the
 rig's PostgreSQL, verified restorable before anything is destroyed; the
 database destroyed; the database restored; a fresh recovery epoch established
-before anything may mutate what came back; and every owner that was live before
-the destruction still holding an epoch that is no longer the one authority is
-issued under.
+before anything may mutate what came back; and one nominated lease — live, and
+under the epoch that was current when the dump was taken — coming back out of
+that dump unchanged and superseded, while its term has still not run out.
 
 `rehearse.sh` is the procedure, one stage per verb, and this is the reading of
 it — what each stage is evidence for, what it is not evidence for, and how to
@@ -30,18 +30,38 @@ would be picking where a database lives while it does not exist anywhere else.
 `destroy` refuses to run unless `verify` has left a receipt in that directory
 naming the digest of the dump that is actually there.
 
+## What the rig has to be holding first
+
+`snapshot` refuses unless the database already carries a **witness**: a project
+under an unexpired lease, taken under the recovery epoch that is current at the
+moment `snapshot` runs. It writes that lease down, and the later stages are
+about that row.
+
+Without one, `fence` has nothing to say. Its predicate — no held lease carries
+the current epoch — comes true the instant a fresh epoch is minted, whether or
+not anything was dumped, destroyed or restored, and a rig that has been
+rehearsed against before is mostly leases superseded long ago, which satisfy it
+for free. The witness is the member that would refute it: it held the current
+epoch and an unexpired term going in, so it is only superseded coming out if
+the restore really did bring the counters back from before the epoch was
+minted.
+
+Nothing here arms a witness, and that is deliberate: a control that
+manufactures the evidence it then checks is not a control. What takes a lease
+is the durable authority, whose adapter is not in this tree yet — see below.
+
 ## What each stage is evidence for
 
 | Stage | What it establishes |
 |---|---|
 | `client` | a pod, labelled for the server's network policy, reaching the server as a real client — the address it prints is a pod's, so the session is not the loopback one a port-forward gives |
-| `snapshot` | what the live database held, as an inventory the later stages are compared against, and the leases that were live when it was taken |
+| `snapshot` | what the live database held, as an inventory the later stages are compared against; the leases that were live when it was taken; and the witness, picked out of them and written down |
 | `dump` | a custom-format dump and a globals dump, taken by the server's own tooling and written to a host that is not the rig |
 | `verify` | that dump restored into a scratch database on the same server, and its inventory compared line for line against the live one |
 | `destroy` | `DROP DATABASE`, and the server answering a later connection with the database not existing |
-| `restore` | the database recreated from the dump, and its inventory compared against the live one again |
-| `epoch` | an epoch already on record refused by the server, a fresh one established, and a diff showing that the only thing the database did between coming back and that establish was record the epoch |
-| `fence` | every restored lease carrying an epoch that is not the current one, and the runtime role refused the write that would let it mint its way out |
+| `restore` | the database recreated from the dump, its inventory compared against the live one again, and the witness row required back out of the dump exactly as it was written down |
+| `epoch` | an epoch already on record refused by the server, a fresh one established, and the post-establish inventory required to be the pre-establish one plus a row in `recovery_epoch` and nothing else |
+| `fence` | the witness superseded by the new epoch with its term still running, its row still the one the dump held, every restored lease carrying an epoch that is not the current one, and the runtime role refused the write that would let it mint its way out |
 
 The inventory is the comparison the verification rests on, so what is in it
 matters: the relations and their kinds, their owners, the routines and whether
@@ -56,24 +76,43 @@ edited.
 **Proved on a real server, by this procedure.** That a dump of this database
 restores into a database with the same inventory, taken before the original was
 destroyed. That `DROP DATABASE` removes it. That the dump restores it. That the
-recovery epoch is never reused, because the server refuses an epoch already on
-record rather than the script deciding it is a repeat. That a fresh epoch can
-be established before any other write, because the inventory taken immediately
-after the restore and the one taken immediately after the establish differ by
-exactly the epoch row. That no lease the restore brought back carries the
-current epoch. That the runtime role cannot establish an epoch, which is what
-stops a stranded writer from unfencing itself.
+witness lease comes back out of that dump carrying the owner, project-local
+fencing epoch, head and expiry it was written down with, and that the epoch
+established after the restore supersedes it while its term has still not run
+out — which is the state a stranded writer is in, and the one thing here that
+tells a restore apart from an epoch advance. That no lease the restore brought
+back carries the current epoch. That the recovery epoch is never reused,
+because the server refuses an epoch already on record rather than the script
+deciding it is a repeat. That the runtime role cannot establish an epoch, which
+is what stops a stranded writer from unfencing itself.
 
-**Proved, but by the durable authority rather than by this script.** That the
-stranded owner's append and renewal come back `Fenced`, that a successor finds
-the project `HeldByAnother` until the lease runs out, and that the
-re-acquisition carries the epoch established after the restore. Those are
-decisions the adapter makes by comparing the current epoch to the one the lease
-carries, and the operations-inbox slice carries both the adapter and the suites
-that assert them. What this rehearsal adds is that the comparison's two inputs
-really do diverge across a real dump, a real destruction and a real restore,
-rather than across an epoch advance standing in for one. Neither half is the
-claim on its own.
+**Proved as far as an inventory of row counts reaches, and no further.** That
+between the restore and the establish the database gained a row in
+`recovery_epoch` and changed nothing else the inventory holds — relations,
+owners, routines, triggers, constraints, grants, and a count per table. That
+comparison is asserted rather than printed: the expected post-establish
+inventory is derived from the pre-establish one and required to match it, so a
+run in which the database did other things fails instead of printing the same
+success line. What the inventory cannot see is an `UPDATE` of a row already
+there, which changes no count — and a mutation of the ownership row in that
+window is exactly what
+`docs/design/006-durable-project-dispatch.md` exists to close. For the witness
+that hole is shut, because `fence` reads its row again after the establish and
+refuses if anything about it moved. For every other row it is open, and this
+procedure does not close it.
+
+**Not proved here at all, because the adapter that decides it is not in this
+tree.** That the stranded owner's append and renewal come back `Fenced`, that a
+successor finds the project `HeldByAnother` until the term runs out, and that
+the re-acquisition carries the epoch established after the restore. Those are
+decisions the durable authority makes by comparing the current epoch to the one
+the lease carries. **The adapter and its suites are not in this tree yet**, and
+nothing in `rehearse.sh` calls them: no stage appends, renews or acquires. So a
+reader who runs the documented procedure gets the two inputs to that comparison
+and never the comparison itself. What the procedure does carry is that those
+inputs really do diverge across a real dump, a real destruction and a real
+restore rather than across an epoch advance standing in for one, and the
+witness is where that is carried. Neither half is the claim on its own.
 
 **Exercised, not proved.**
 
@@ -96,10 +135,14 @@ claim on its own.
 
 `docs/design/006-durable-project-dispatch.md` says acknowledged commits have no
 expected loss under process, instance and zonal failure. Nothing here is
-evidence for any of that, and the rehearsal must not be read as if it were. The
-deployment rehearsal's own design doc says why: that sentence is a claim about a
-production deployment's failure domains rather than an invariant any code
-satisfies, and it is bought at the apply.
+evidence for any of that, and the rehearsal must not be read as if it were.
+That sentence is a claim about a production deployment's failure domains — how
+many independent things have to fail together before an acknowledged commit is
+lost — rather than an invariant any code satisfies. It is bought by what a
+deployment replicates across, at the moment it is applied, and not by anything
+a program does. This rig has one node, so it has one failure domain, and no
+procedure run against it can establish that claim any more than it can conjure
+the second machine.
 
 What this rig leaves untouched, said plainly:
 
@@ -135,9 +178,14 @@ residue, and none of it is something to point at a database anyone depends on.
 
 `globals.sql` carries `CREATE ROLE` with each login role's SCRAM verifier, and
 the database dump carries everything in the database. The archive directory is
-credential material and a copy of the record, and nothing in this row encrypts
-it, rotates it or expires it. Where a deployment keeps a backup and who may
-read it is the secret source's question and not this rehearsal's.
+credential material and a copy of the record.
+
+So `rehearse.sh` creates it readable and writable by its owner alone, at a mode
+the ambient umask cannot widen, and an archive that already exists is checked
+against that mode rather than trusted — one the rest of the host can read is
+one it refuses to write a verifier into. Nothing beyond that: this row does not
+encrypt the archive, rotate it or expire it. Where a deployment keeps a backup
+and who may read it is the secret source's question and not this rehearsal's.
 
 ## Undoing it
 
