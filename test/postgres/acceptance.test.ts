@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { postgresOperationInbox } from "../../src/adapters/postgres/operationInbox.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import { idempotencyPayloadDigest } from "../../src/adapters/postgres/keying.ts";
+import {
+  asOperationCommand,
+  asOperationId,
+} from "../../src/interpreter/operationInbox.ts";
+import { encodeDecisionEventText } from "../../src/interpreter/wire.ts";
 import {
   postgresHarnessKeying,
   postgresHarnessOpen,
@@ -68,6 +73,32 @@ test("one key with a different typed command conflicts without allocating", asyn
     ),
     [{ count: "1" }],
   );
+});
+
+test("a canonical retry recognizes the payload digest stored by I2", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "accept-legacy-payload",
+  );
+  const submission = postgresHarnessSubmission(
+    partition,
+    "accept-legacy-payload",
+  );
+  await harness.inbox.accept(submission);
+  assert.equal(submission.command.command, "Decide");
+  const keying = postgresHarnessKeying();
+  const legacyDigest = idempotencyPayloadDigest(
+    keying,
+    keying.current,
+    { partition, authorityKind: submission.authority.kind },
+    asOperationCommand(encodeDecisionEventText(submission.command.event)),
+  );
+  await harness.query(
+    `UPDATE operation SET payload_digest=$4
+     WHERE tenant=$1 AND project=$2 AND operation=$3`,
+    [partition.tenant, partition.project, submission.operation, legacyDigest],
+  );
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Original");
 });
 
 test("ordinary work receives pre-acceptance backpressure at the soft bound", async () => {

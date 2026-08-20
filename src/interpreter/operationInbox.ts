@@ -227,7 +227,8 @@ export function classifyCommand(command: TicketCommand): {
 } {
   if (command.command === "ResolveNativeAction") {
     return {
-      admission: "CorrectnessReducing",
+      admission:
+        command.resolution === "Revoke" ? "CorrectnessReducing" : "Ordinary",
       priority: command.resolution === "Revoke" ? "Safety" : "Ordinary",
     };
   }

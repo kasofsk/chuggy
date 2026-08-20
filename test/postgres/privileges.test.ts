@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import {
+  acceptanceFunction,
   apiRole,
   boundaryOwnerRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { postgresHarnessOpen, type PostgresHarness } from "./harness.ts";
+import {
+  postgresHarnessOpen,
+  postgresHarnessProject,
+  type PostgresHarness,
+} from "./harness.ts";
 
 let harness: PostgresHarness;
 before(async () => {
@@ -55,6 +60,41 @@ test("the API cannot construct any part of an accepted operation directly", asyn
       [apiRole],
     ),
     [],
+  );
+});
+
+test("the API acceptance boundary rejects malformed command bytes", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "privilege-malformed-command",
+  );
+  for (const [operation, command] of [
+    ["non-json", "garbage"],
+    [
+      "missing-value",
+      '{"version":1,"command":"Decide","event":{"type":"Dispatch"}}',
+    ],
+    [
+      "missing-enum",
+      '{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"tid":1,"result":{"manifest":1,"digest":1,"schema":1}}}}',
+    ],
+  ]) {
+    const failure = await harness.attemptAs(
+      apiRole,
+      `SELECT * FROM ${acceptanceFunction}(
+        '${partition.tenant}', '${partition.project}', '${operation}', 'User', 'subject',
+        'v1', 'key-${operation}', 'payload', ARRAY['key-${operation}'], ARRAY['payload'],
+        '${command}', 10, 20)`,
+    );
+    assert.equal(failure, undefined);
+  }
+  assert.deepEqual(
+    await harness.query(
+      `SELECT count(*)::text AS count FROM operation
+       WHERE tenant=$1 AND project=$2`,
+      [partition.tenant, partition.project],
+    ),
+    [{ count: "0" }],
   );
 });
 

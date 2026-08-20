@@ -42,7 +42,6 @@ import type pg from "pg";
 import { assertNever } from "../../domain/assertNever.ts";
 
 import {
-  admissionLifecycles,
   allAdmissionClasses,
   allOperationStates,
   asAuthorityKind,
@@ -59,7 +58,10 @@ import {
   type OperationState,
   type Submission,
 } from "../../interpreter/operationInbox.ts";
-import { encodeTicketCommand } from "../../interpreter/wire.ts";
+import {
+  encodeDecisionEventText,
+  encodeTicketCommand,
+} from "../../interpreter/wire.ts";
 import {
   asProjectId,
   asTenantId,
@@ -162,6 +164,36 @@ function operationsScope(
   return { partition, authorityKind };
 }
 
+function operationsRetainedOffering(
+  keying: IdempotencyKeying,
+  scope: IdempotencyScope,
+  submission: Submission,
+  command: ReturnType<typeof asOperationCommand>,
+): { readonly keys: readonly string[]; readonly payloads: readonly string[] } {
+  const keys: string[] = [];
+  const payloads: string[] = [];
+  const keyDigests = idempotencyKeyDigests(keying, scope, submission.key);
+  for (const [index, { version }] of keying.versions.entries()) {
+    const keyDigest = keyDigests[index];
+    if (keyDigest === undefined)
+      throw new Error(`idempotency key version ${version} has no digest`);
+    keys.push(keyDigest);
+    payloads.push(idempotencyPayloadDigest(keying, version, scope, command));
+    if (submission.command.command === "Decide") {
+      keys.push(keyDigest);
+      payloads.push(
+        idempotencyPayloadDigest(
+          keying,
+          version,
+          scope,
+          asOperationCommand(encodeDecisionEventText(submission.command.event)),
+        ),
+      );
+    }
+  }
+  return { keys, payloads };
+}
+
 interface AcceptanceRow {
   readonly result: string;
   readonly operation: string | null;
@@ -260,17 +292,15 @@ export async function postgresOperationsAccept(
     );
     const command = asOperationCommand(encodeTicketCommand(submission.command));
     const classified = classifyCommand(submission.command);
-    const retainedKeys = idempotencyKeyDigests(keying, scope, submission.key);
-    const retainedPayloads = keying.versions.map(({ version }) =>
-      idempotencyPayloadDigest(keying, version, scope, command),
+    const retained = operationsRetainedOffering(
+      keying,
+      scope,
+      submission,
+      command,
     );
-    const native =
-      submission.command.command === "ResolveNativeAction"
-        ? submission.command
-        : undefined;
     const result = await client.query<AcceptanceRow>(
       `SELECT * FROM ${acceptanceFunction}($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10::text[],
-        $11,$12,$13,$14,$15::text[],$16,$17,$18,$19,$20)`,
+        $11,$12,$13)`,
       [
         submission.partition.tenant,
         submission.partition.project,
@@ -280,20 +310,11 @@ export async function postgresOperationsAccept(
         keying.current,
         idempotencyKeyDigestCurrent(keying, scope, submission.key),
         idempotencyPayloadDigest(keying, keying.current, scope, command),
-        retainedKeys,
-        retainedPayloads,
+        retained.keys,
+        retained.payloads,
         command,
-        submission.command.command === "Decide"
-          ? submission.command.event.type
-          : submission.command.command,
-        classified.priority,
-        classified.admission,
-        admissionLifecycles[classified.admission],
         config.ordinarySoftLimit,
         config.mailboxHardLimit,
-        native?.action ?? null,
-        native?.authorizingSeq ?? null,
-        native?.resolution ?? null,
       ],
     );
     const row = result.rows[0];

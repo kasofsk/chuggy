@@ -96,6 +96,24 @@ test("trusted classification reserves completion and safety traffic", () => {
   });
 });
 
+test("native-action resume is ordinary while revoke remains safety traffic", () => {
+  const command = {
+    version: 1 as const,
+    command: "ResolveNativeAction" as const,
+    action: "action",
+    authorizingSeq: 1,
+    resolution: "Resume" as const,
+  };
+  assert.deepEqual(classifyCommand(command), {
+    admission: "Ordinary",
+    priority: "Ordinary",
+  });
+  assert.deepEqual(classifyCommand({ ...command, resolution: "Revoke" }), {
+    admission: "CorrectnessReducing",
+    priority: "Safety",
+  });
+});
+
 test("dispatch materializes exact logical work tasks from the pure state delta", () => {
   const released = journalStep(
     refinementInstance,
