@@ -1,0 +1,26 @@
+# The hole the namespace's Pod Security labels close, so that closing it can be
+# watched rather than believed.
+#
+# This is the same probe as `work-probe.yaml` with one field added. Applied to a
+# namespace carrying `work-denies-all.yaml` but no Pod Security enforcement,
+# it reaches everything the policy refuses, because the rig's NetworkPolicy
+# controller exempts traffic whose source is a node address and `hostNetwork`
+# gives it one. Applied to the namespace as `namespace.yaml` defines it, the API
+# server refuses to create it at all.
+#
+# It is a fixture. `README.md` applies it to see both answers and deletes it
+# afterwards; nothing in the tree wants a host-network work pod to exist.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: host-network-probe
+  namespace: chuggy-work
+spec:
+  restartPolicy: Never
+  hostNetwork: true
+  nodeSelector:
+    chuggy.dev/pool: work
+  containers:
+    - name: probe
+      image: busybox@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616
+      command: ["sleep", "3600"]

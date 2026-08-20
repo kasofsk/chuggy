@@ -1,0 +1,28 @@
+# A job pod's shape, and the pod the rehearsal in `README.md` measures from.
+#
+# `nodeSelector` is the placement half of the split: a work pod states the pool
+# it belongs in and the scheduler will not put it anywhere else. It carries no
+# toleration, because `README.md` explains why the rig's node carries no taint.
+#
+# It names no `serviceAccountName`, so it takes the namespace's `default`, whose
+# `automountServiceAccountToken: false` (set in `namespace.yaml`) leaves this pod
+# no API credential to mount. That is a namespace default rather than a field
+# here, so it holds for a pod that never thought about it — but the pod spec
+# overrides it, and `README.md` shows this manifest doing so with one line
+# added.
+#
+# It sleeps rather than serving, and the sleep ends on its own: a probe that
+# outlives the rehearsal is residue on a shared rig.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: work-probe
+  namespace: chuggy-work
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    chuggy.dev/pool: work
+  containers:
+    - name: probe
+      image: busybox@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616
+      command: ["sleep", "3600"]

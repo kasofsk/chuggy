@@ -1,0 +1,54 @@
+# The namespace agent-authored work runs in, and nothing else does.
+#
+# It exists so that a policy with an empty pod selector has a boundary to be
+# empty within: `work-denies-all.yaml` selects every pod here, so anything
+# scheduled into this namespace is denied traffic in either direction whether or
+# not whoever scheduled it knew about the policy. A workload that needs the
+# network belongs in another namespace, not in an exception to this one.
+#
+# The Pod Security labels are what keep that policy meaningful. On this rig the
+# NetworkPolicy controller programs `--src-type LOCAL -j ACCEPT` above every
+# policy jump, so traffic whose source is a node address is exempt — and a pod
+# with `hostNetwork: true` has exactly that source. Without admission control
+# the policy would be one field away from being bypassed by the very workload it
+# is drawn around. The baseline profile refuses that field, along
+# with the host PID and IPC namespaces, host paths and privileged containers;
+# `README.md` shows it doing so.
+#
+# Baseline rather than restricted. Restricted goes further in two ways that are
+# about how work is built — a non-root user and a seccomp profile — and one that
+# is about what it may reach: `capabilities.drop: [ALL]`, which removes
+# `CAP_NET_RAW`. Baseline keeps NET_RAW, so a work pod can open a raw socket and
+# forge a source address. Every jump kube-router programs is keyed on a pod's
+# own address with nothing beneath them to catch what matches none, so a forged
+# source only has to be routable back through the pod bridge — any address in
+# the node's pod CIDR — to be forwarded and masqueraded out. That hole is
+# knowingly retained — closing it is a per-workload `securityContext`, not a
+# namespace default — and `README.md` lists what it reaches, what it does not,
+# and which of that was measured rather than read from the rules.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chuggy-work
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+---
+# The namespace's `default` ServiceAccount, with token automounting off. Setting
+# it here rather than on each pod makes it a namespace default: anything
+# scheduled into `chuggy-work` that does not name its own ServiceAccount is
+# handed no API credential without having to think to refuse one.
+#
+# A default is weaker than the two controls above, and is not one of them. The
+# pod spec wins: a pod carrying `automountServiceAccountToken: true`, or a
+# projected volume with a `serviceAccountToken` source, is mounted a token, and
+# neither Pod Security profile refuses either — the field is not something those
+# profiles decide. Closing it would take an admission policy this namespace does
+# not have; `README.md` shows the override working. The `default` SA is created
+# by Kubernetes with the namespace; this manifest sets the one field on it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: chuggy-work
+automountServiceAccountToken: false

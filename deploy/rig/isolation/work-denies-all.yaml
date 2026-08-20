@@ -1,0 +1,38 @@
+# Default-deny both directions for every pod in the work namespace.
+#
+# An empty `podSelector` selects all of them, and naming a `policyType` with no
+# matching rule is how the API spells "nothing is permitted in that direction":
+# there is no deny verb, only the absence of an allow. This is the upstream
+# default-deny-all recipe. DNS is denied along with everything else,
+# deliberately — a job pod that cannot resolve a name has one fewer way to be
+# told where to go.
+#
+# Egress alone is not enough. kube-router enforces statefully: a pod's chain
+# ACCEPTs `RELATED,ESTABLISHED` before it reaches the policy jump, so with
+# ingress left open any pod in any namespace could dial *into* a work pod and
+# every packet the work pod sent back on that connection would be ACCEPTed as
+# established — a full-duplex channel out of a namespace whose whole claim is
+# that code in it reaches nothing. Denying ingress closes the inbound half and
+# with it that return path; `README.md` dials in with this half off and on and
+# reads the byte that comes back out with it off.
+#
+# `kubectl exec` and `kubectl logs` are unaffected: both are served by the
+# kubelet into the container rather than by anything dialling the pod, so
+# neither is ingress in the pod-network sense this refuses — which is also why
+# leaving ingress open never helped them. The rehearsal in `README.md` runs
+# through `exec` and stays possible from outside the namespace.
+#
+# When a job legitimately needs a destination, it is added here as an `egress`
+# rule naming that destination, and it is not added by exempting the pod: a
+# label that removes a pod from this policy would be a label agent-authored code
+# could ask for.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: work-denies-all
+  namespace: chuggy-work
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
