@@ -30,6 +30,17 @@ would be picking where a database lives while it does not exist anywhere else.
 `destroy` refuses to run unless `verify` has left a receipt in that directory
 naming the digest of the dump that is actually there.
 
+`rehearse.test.sh` is the suite over the guards that refuse before anything
+reaches the cluster: the digest and receipt comparisons standing between
+`verify` and `destroy`, the derivation `epoch` holds the establish to, the
+witness partition every later stage reads, and what `teardown` says when no
+session can be opened. It runs against a stub `kubectl`, and the cases whose
+subject is a refusal that comes first require that nothing reached it.
+
+```sh
+./deploy/rig/durability/rehearse.test.sh
+```
+
 ## What the rig has to be holding first
 
 `snapshot` refuses unless the database already carries a **witness**: a project
@@ -41,10 +52,14 @@ Without one, `fence` has nothing to say. Its predicate — no held lease carries
 the current epoch — comes true the instant a fresh epoch is minted, whether or
 not anything was dumped, destroyed or restored, and a rig that has been
 rehearsed against before is mostly leases superseded long ago, which satisfy it
-for free. The witness is the member that would refute it: it held the current
-epoch and an unexpired term going in, so it is only superseded coming out if
-the restore really did bring the counters back from before the epoch was
-minted.
+for free. The witness is the one member the predicate is not free over: it was
+live and under the current epoch going in, so it is the row whose standing the
+operation actually changed. Supersession is still not evidence of a restore on
+its own — nothing in this procedure writes `project.recovery_epoch`, so the
+witness carries the epoch it was dumped under either way. What discriminates is
+the pair: `restore` requires that row back out of a database that did not exist
+a moment earlier, compared whole against what `snapshot` wrote down, and
+`fence` requires it superseded with its term still running.
 
 Nothing here arms a witness, and that is deliberate: a control that
 manufactures the evidence it then checks is not a control. What takes a lease
@@ -54,11 +69,11 @@ is the durable authority, whose adapter is not in this tree yet — see below.
 
 | Stage | What it establishes |
 |---|---|
-| `client` | a pod, labelled for the server's network policy, reaching the server as a real client — the address it prints is a pod's, so the session is not the loopback one a port-forward gives |
+| `client` | a pod, labelled for the server's network policy, reaching the server as a real client — the address the server reports for the session is required not to be the loopback one a port-forward gives |
 | `snapshot` | what the live database held, as an inventory the later stages are compared against; the leases that were live when it was taken; and the witness, picked out of them and written down |
 | `dump` | a custom-format dump and a globals dump, taken by the server's own tooling and written to a host that is not the rig |
 | `verify` | that dump restored into a scratch database on the same server, and its inventory compared line for line against the live one |
-| `destroy` | `DROP DATABASE`, and the server answering a later connection with the database not existing |
+| `destroy` | `DROP DATABASE`, the row required gone from `pg_database`, and a later connection asking for the database by name required to come back refused |
 | `restore` | the database recreated from the dump, its inventory compared against the live one again, and the witness row required back out of the dump exactly as it was written down |
 | `epoch` | an epoch already on record refused by the server, a fresh one established, and the post-establish inventory required to be the pre-establish one plus a row in `recovery_epoch` and nothing else |
 | `fence` | the witness superseded by the new epoch with its term still running, its row still the one the dump held, every restored lease carrying an epoch that is not the current one, and the runtime role refused the write that would let it mint its way out |
@@ -189,10 +204,12 @@ and who may read it is the secret source's question and not this rehearsal's.
 
 ## Undoing it
 
-`teardown` removes the client pod and the scratch database, and deliberately
-leaves the archive alone. Nothing else on the cluster or the host is created or
-altered: no namespace, no secret, no policy, no manifest, and nothing on the
-node.
+`teardown` drops the scratch database, reads `pg_database` back to require it
+gone, and then removes the client pod. Where no session can be opened to drop it
+— a second teardown, or a client pod that has already slept out its command —
+it says so rather than claiming the drop. It deliberately leaves the archive
+alone. Nothing else on the cluster or the host is created or altered: no
+namespace, no secret, no policy, no manifest, and nothing on the node.
 
 The archive is removed by hand, because a script that offered to delete the
 only copy of a database would be offering the one mistake this procedure is

@@ -60,7 +60,7 @@
 #   restore   recreate it from the dump, compare again, and re-read the witness
 #   epoch     establish a fresh epoch, and require it to be all that moved
 #   fence     report what the restored leases carry, and what the witness may do
-#   teardown  remove the client pod and the scratch database
+#   teardown  drop the scratch database, require it gone, remove the client pod
 #
 # Env:
 #   CHUG_RIG_ARCHIVE    where the dump is kept; required, no default
@@ -307,12 +307,21 @@ YAML
 	# unadmitted client cannot be told from an unlabelled one, so a pod that
 	# never gets in is reported as never getting in.
 	waited=0
-	until echo "SELECT current_user, inet_client_addr()" | client_psql postgres "$database" 2> /dev/null; do
+	until admitted="$(echo "SELECT current_user, inet_client_addr()" | client_psql postgres "$database" 2> /dev/null)"; do
 		[ "$waited" -lt 40 ] || die "the labelled client never reached the server"
 		waited=$((waited + 1))
 		sleep 2
 	done
-	say "the client is admitted, and the address it prints is a pod's rather than the loopback a forward would have shown"
+
+	# The address is compared rather than displayed. No routing this rig has can
+	# present the loopback here, which is exactly why a printed one would go
+	# unread for as long as it took to stop being true.
+	case "$admitted" in
+	*"|127.0.0.1") die "the server sees the loopback address, so this session is a forward's and says nothing about the role's password" ;;
+	*"|") cannot "the server reported no client address, so nothing here can tell a pod's session from a forward's" ;;
+	*"|"*) say "the client is admitted as $admitted, an address that is a pod's and not the loopback a forward would have shown" ;;
+	*) cannot "the server answered in a shape this script cannot read: $admitted" ;;
+	esac
 }
 
 stage_snapshot() {
@@ -430,7 +439,16 @@ stage_destroy() {
 		die "the database is still there"
 	fi
 	say "the database is gone, and the dump in $archive is now the only copy of it"
-	echo "SELECT 1" | client_psql_refusable postgres "$database"
+
+	# The row is out of `pg_database` above; this is the same fact as the server
+	# states it to a client that asks for the database by name, which is the
+	# shape an operator recognises. Compared rather than displayed, for the
+	# reason every other refusal here is.
+	refusal="$(echo "SELECT 1" | client_psql_refusable postgres "$database")"
+	case "$refusal" in
+	*"does not exist"*) say "and a connection to it is refused: $refusal" ;;
+	*) die "the database is out of pg_database and a connection asking for it by name was not refused" ;;
+	esac
 }
 
 stage_restore() {
@@ -462,8 +480,26 @@ stage_restore() {
 
 stage_epoch() {
 	[ -s "$restored_inventory" ] || cannot "there is no post-restore inventory, so nothing can say what moved before the epoch"
-	minted="epoch-$(cat /proc/sys/kernel/random/uuid 2> /dev/null || uuidgen)"
-	[ -n "$minted" ] || cannot "no source of an unpredictable epoch on this host"
+
+	# What the establish should cost the inventory, worked out from the
+	# inventory itself: one more row in `recovery_epoch`, and nothing else moved
+	# at all. Derived BEFORE the establish rather than after it, because a stage
+	# that cannot say what the establish should cost has to refuse while
+	# refusing is still free: a two exited after the INSERT would be reporting
+	# could-not-run with an epoch already on record.
+	grep -q '^rows|recovery_epoch|' "$restored_inventory" \
+		|| cannot "the post-restore inventory carries no recovery_epoch row count, so nothing here can say what the establish added"
+	awk -F'|' 'BEGIN { OFS = "|" } $1 == "rows" && $2 == "recovery_epoch" { $3 = $3 + 1 } { print }' \
+		"$restored_inventory" > "$expected_inventory"
+
+	# The identifier is refused before it is prefixed. `epoch-$(…)` is non-empty
+	# whatever the substitution did, so a guard over the prefixed string is one
+	# that cannot refuse; what a host with no uuid source would meet instead is
+	# `set -e` taking the substitution's status, which is not the two this
+	# script promises for its own preconditions.
+	identifier="$(cat /proc/sys/kernel/random/uuid 2> /dev/null || uuidgen 2> /dev/null || true)"
+	[ -n "$identifier" ] || cannot "no source of an unpredictable epoch on this host"
+	minted="epoch-$identifier"
 
 	# Non-reuse is the server's constraint, so it is put to the server rather
 	# than asserted here: an epoch already on record has to come back refused.
@@ -481,17 +517,10 @@ stage_epoch() {
 
 	inventory "$database" > "$epoched_inventory"
 
-	# What the establish should have cost the inventory, worked out from the
-	# inventory itself: one more row in `recovery_epoch`, and nothing else moved
-	# at all. The first diff is the operator's view of the window and is
-	# EXPECTED to be non-empty, which is the only reason its status is dropped;
-	# the second is the assertion, and without it this stage prints the same
-	# success line on a run where the database did other things too.
-	grep -q '^rows|recovery_epoch|' "$restored_inventory" \
-		|| cannot "the post-restore inventory carries no recovery_epoch row count, so nothing here can say what the establish added"
-	awk -F'|' 'BEGIN { OFS = "|" } $1 == "rows" && $2 == "recovery_epoch" { $3 = $3 + 1 } { print }' \
-		"$restored_inventory" > "$expected_inventory"
-
+	# The first diff is the operator's view of the window and is EXPECTED to be
+	# non-empty, which is the only reason its status is dropped; the second is
+	# the assertion, and without it this stage prints the same success line on a
+	# run where the database did other things too.
 	say "everything the database did between coming back and the epoch being established:"
 	diff -u "$restored_inventory" "$epoched_inventory" || true
 	diff -u "$expected_inventory" "$epoched_inventory" \
@@ -569,9 +598,23 @@ SQL
 }
 
 stage_teardown() {
-	echo "DROP DATABASE IF EXISTS $scratch WITH (FORCE)" | client_psql postgres postgres || true
+	# The drop's status is the client pod's as much as the server's: a teardown
+	# run twice, or one whose pod has already slept out its command, opens no
+	# session at all. So the drop is attempted, read back through the same
+	# connection while the pod is still up, and the line says which of those
+	# happened rather than naming an outcome nothing observed.
+	dropped=no
+	if echo "DROP DATABASE IF EXISTS $scratch WITH (FORCE)" | client_psql postgres postgres; then
+		survivor="$(echo "SELECT datname FROM pg_database WHERE datname = '$scratch'" | client_psql postgres postgres)"
+		[ -z "$survivor" ] || die "$scratch survived the drop and it is a copy of the record; the client pod is left up, so it can be dropped from there"
+		dropped=yes
+	fi
 	kube delete "pod/$client" --ignore-not-found
-	say "the client pod and the scratch database are gone, and the archive in $archive is untouched"
+	if [ "$dropped" = yes ]; then
+		say "the scratch database is dropped and gone from pg_database, the client pod is gone with it, and the archive in $archive is untouched"
+	else
+		say "the client pod is gone and the archive in $archive is untouched; no session could be opened to drop $scratch, so drop it by hand if it is there"
+	fi
 }
 
 case "${1:-}" in
