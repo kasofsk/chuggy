@@ -1,0 +1,66 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: rig
+  namespace: chuggy-git
+spec:
+  interval: 1m
+  timeout: 60s
+  ref:
+    branch: main
+  # In-cluster, so the sync read never leaves the pod network and never
+  # traverses the ingress that the operator push does.
+  url: http://git.chuggy-git.svc.cluster.local./rig.git
+  secretRef:
+    name: git-sync
+---
+# Without a serviceAccountName the kustomize-controller reconciles as its own
+# identity, which is bound to cluster-admin: a push to the default branch would
+# apply as cluster-admin over the whole cluster. This account carries only what
+# the reconciliation applies — the ConfigMap in ./deploy, in this namespace and
+# no other — so the operator token is worth exactly that reconciliation.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rig-reconciler
+  namespace: chuggy-git
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rig-reconciler
+  namespace: chuggy-git
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rig-reconciler
+  namespace: chuggy-git
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rig-reconciler
+subjects:
+  - kind: ServiceAccount
+    name: rig-reconciler
+    namespace: chuggy-git
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: rig
+  namespace: chuggy-git
+spec:
+  interval: 1m
+  timeout: 2m
+  path: ./deploy
+  prune: true
+  wait: true
+  serviceAccountName: rig-reconciler
+  sourceRef:
+    kind: GitRepository
+    name: rig

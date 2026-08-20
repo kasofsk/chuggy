@@ -1,7 +1,7 @@
 #!/bin/sh
 # Seed the rig's git service: mint the static credentials, create the bare
-# repository, and push the contents of `deploy/rig/repo/` onto its default
-# branch. Run it after `kubectl apply -k deploy/rig/bootstrap`; the git pod
+# repository, and push the contents of `deploy/rig/git/repo/` onto its default
+# branch. Run it after `kubectl apply -k deploy/rig/git/bootstrap`; the git pod
 # waits on the credential secret this script creates.
 #
 # Re-running is safe. The credentials are minted once and read back afterwards,
@@ -13,11 +13,10 @@ export LC_ALL=C
 
 namespace=chuggy-git
 repository=rig.git
-ingress_host=git.192.168.0.114.nip.io
 sync_user=sync
 operator_user=operator
 
-for tool in kubectl git openssl base64; do
+for tool in kubectl git openssl base64 curl; do
 	command -v "$tool" > /dev/null 2>&1 || {
 		echo "seed: no $tool on PATH, so nothing was seeded" >&2
 		exit 2
@@ -29,14 +28,34 @@ if [ -z "$root" ]; then
 	echo "seed: not a git checkout, so there is no repository content to push" >&2
 	exit 2
 fi
-seed_tree="$root/deploy/rig/repo"
+seed_tree="$root/deploy/rig/git/repo"
 [ -d "$seed_tree" ] || {
 	echo "seed: $seed_tree is missing, so there is nothing to push" >&2
 	exit 2
 }
 
+# The push traverses the ingress, whose host is the one nip.io literal in the
+# manifests. Read it back from the applied Ingress rather than restating it, so
+# the two cannot drift; a checkout without the Ingress applied cannot push.
+ingress_host="$(kubectl -n "$namespace" get ingress git \
+	-o jsonpath='{.spec.rules[0].host}' 2> /dev/null)"
+if [ -z "$ingress_host" ]; then
+	echo "seed: the git Ingress is not applied, so there is no host to push through" >&2
+	exit 2
+fi
+
 secret_password() {
-	kubectl -n "$namespace" get secret "$1" -o jsonpath='{.data.password}' | base64 -d
+	# A pipeline's status is its last command's, and `base64 -d` exits 0 on the
+	# empty stdin a failed `kubectl get` leaves. Without pipefail (not POSIX),
+	# that empty string would be minted as a valid credential — an empty
+	# password has a well-formed `{SHA}` digest — so the emptiness is the failure
+	# and it stops the run rather than seeding one.
+	password="$(kubectl -n "$namespace" get secret "$1" -o jsonpath='{.data.password}' | base64 -d)"
+	if [ -z "$password" ]; then
+		echo "seed: secret $1 has no password, so no credential can be read back from it" >&2
+		exit 2
+	fi
+	printf '%s' "$password"
 }
 
 # nginx validates a `{SHA}` entry against the base64 of the password's SHA-1.
@@ -76,6 +95,12 @@ kubectl -n "$namespace" create secret generic git-credentials \
 
 kubectl -n "$namespace" rollout status deployment/git --timeout=180s
 
+# --- The write wall ---------------------------------------------------------
+# A control that is not exercised is worse than none, so the read credential is
+# shown a push and refused before this run is trusted. The audit stands up its
+# own throwaway repository and needs nothing this script has yet pushed.
+"$root/deploy/rig/git/audit-credentials.sh"
+
 # --- The bare repository ----------------------------------------------------
 # git-http-backend serves repositories; it does not create them, so the first
 # one is made in the pod that will serve it.
@@ -92,9 +117,23 @@ kubectl -n "$namespace" exec "$pod" -- sh -c '
 ' sh "$repository"
 
 # --- The default branch -----------------------------------------------------
-remote="http://$operator_user:$operator_token@$ingress_host/$repository"
+# The remote URL carries the username but never the token: a credential in the
+# URL is in git's argv, readable in /proc for the life of the clone, and copied
+# into the clone's `.git/config`. The token is handed to git out of band by an
+# askpass helper that reads it from a file, both inside the 0700 work_dir the
+# trap removes.
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
+remote="http://$operator_user@$ingress_host/$repository"
+token_file="$work_dir/token"
+askpass="$work_dir/askpass"
+(
+	umask 077
+	printf '%s' "$operator_token" > "$token_file"
+	printf '#!/bin/sh\ncat %s\n' "$token_file" > "$askpass"
+)
+chmod 700 "$askpass"
+export GIT_ASKPASS="$askpass"
 export GIT_TERMINAL_PROMPT=0
 
 git clone -q "$remote" "$work_dir/clone"

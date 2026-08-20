@@ -1,9 +1,9 @@
 # The rig's git service and Flux loop
 
-Row D1 of the deployment rehearsal, on the local k3s rig: bare repositories
-served over smart HTTP by their own single-replica service, and Flux
-reconciling the cluster from a branch of one of them. A push to the default
-branch is the deploy.
+The git service and Flux loop for the local k3s rig: bare repositories served
+over smart HTTP by their own single-replica service, and Flux reconciling the
+cluster from a branch of one of them. A push to the default branch is the
+deploy.
 
 `bootstrap/` is applied by hand, out of band, because it is what carries the
 loop and cannot be carried by it. `repo/` is a picture of the served
@@ -12,24 +12,39 @@ what Flux then applies.
 
 ## Stand it up
 
+`bootstrap/` includes a `GitRepository` and a `Kustomization`, which are Flux
+kinds. Flux's controllers must already be in the cluster, or the apply errors
+on two unknown kinds, `seed.sh` still succeeds, and the loop is silently
+absent:
+
 ```sh
-kubectl apply -k deploy/rig/bootstrap
-./deploy/rig/seed.sh
+flux install
+kubectl get crd gitrepositories.source.toolkit.fluxcd.io \
+  kustomizations.kustomize.toolkit.fluxcd.io
+```
+
+Then:
+
+```sh
+kubectl apply -k deploy/rig/git/bootstrap
+./deploy/rig/git/seed.sh
 ```
 
 The git pod stays unready until `seed.sh` creates the credential secret it
 mounts. `seed.sh` mints the credentials, creates the bare repository inside the
 pod — `git-http-backend` serves repositories and does not create them — and
-pushes `deploy/rig/repo/` onto `main`. It is safe to re-run: the credentials
-are read back rather than rotated, and the push is skipped when the served tree
-already matches.
+pushes `deploy/rig/git/repo/` onto `main`. It is safe to re-run: the
+credentials are read back rather than rotated, and the push is skipped when the
+served tree already matches.
 
 ## The two credential classes
 
 Static, validated by nginx against htpasswd files with no other party standing.
-The sync reader may read; only the operator may move a branch, because the read
-advertisement and the write advertisement differ by query string and the
-credential file is selected from it.
+The sync reader may read; only the operator may move a branch. A push is any
+request `git-http-backend` would dispatch as one — a URL ending in
+`/git-receive-pack` — and nginx puts the writers file on exactly that location.
+The reader validates against writers there and against readers everywhere else;
+no query string enters the choice.
 
 | Secret | Who | May |
 |---|---|---|
@@ -46,9 +61,14 @@ kubectl -n chuggy-git get secret git-operator -o jsonpath='{.data.password}' | b
 Per-job tokens are the dispatcher's to mint at spawn, and the dispatcher does
 not exist yet. Neither does the backup bundle on default-branch movement.
 
+`seed.sh` proves the wall on every run: `audit-credentials.sh` stands up a
+throwaway repository and shows the read credential refused a push at the write
+endpoint and at every nested and query-string disguise of one. Run it alone
+with `./deploy/rig/git/audit-credentials.sh`.
+
 ## Deploy something
 
-Edit `deploy/rig/repo/deploy/`, then re-run `./deploy/rig/seed.sh`. Flux polls
+Edit `deploy/rig/git/repo/deploy/`, then re-run `./deploy/rig/git/seed.sh`. Flux polls
 the repository and applies what it finds; to stop waiting for the poll:
 
 ```sh
@@ -85,8 +105,8 @@ kubectl -n chuggy-git port-forward service/git 8080:80
   Deployment's strategy is `Recreate`. Raising `replicas` would corrupt them.
 - The image is a public one, pinned by digest. It is `nginx` plus `fcgiwrap`
   plus `git`, and this deployment replaces its entire nginx configuration; what
-  is consumed from it is the binaries. Owning the image is doc 014's P2, and
-  needs a registry the rig does not have.
+  is consumed from it is the binaries. Owning the image instead would need a
+  registry the rig does not have, and is deferred.
 
 ## What this does not prove
 

@@ -15,34 +15,34 @@ data:
     http {
       access_log /dev/stdout combined;
 
-      # The read advertisement and the write advertisement are the same URL and
-      # differ only by query string, so the credential file is chosen from it.
-      map $arg_service $git_credential_file {
-        default            /etc/nginx/auth/readers;
-        "git-receive-pack" /etc/nginx/auth/writers;
-      }
-
       server {
         listen *:8080;
         server_name _;
 
-        # A pack is as large as the history it carries.
-        client_max_body_size 0;
+        # A fetch negotiation is small; only a push carries a pack. So the body
+        # is bounded by default and lifted only on the write location below.
+        client_max_body_size 1m;
 
         location = /healthz {
           auth_basic off;
           return 200 "ok\n";
         }
 
-        location ~ ^/.+\.git/git-receive-pack$ {
+        # git-http-backend dispatches a push on any PATH_INFO ending in
+        # /git-receive-pack, so the write wall is placed on exactly that, keyed
+        # by nothing else. This static file is the whole of what holds a branch;
+        # the query string decides nothing, and the reader validates against
+        # readers on every other path.
+        location ~ /git-receive-pack$ {
           auth_basic "chuggy git";
           auth_basic_user_file /etc/nginx/auth/writers;
+          client_max_body_size 0;
           include /etc/nginx/git-backend.conf;
         }
 
         location ~ ^/.+\.git(/.*)?$ {
           auth_basic "chuggy git";
-          auth_basic_user_file $git_credential_file;
+          auth_basic_user_file /etc/nginx/auth/readers;
           include /etc/nginx/git-backend.conf;
         }
       }
