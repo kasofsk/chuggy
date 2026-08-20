@@ -115,6 +115,15 @@ const foundationRelations = [
      WHERE lifecycle = 'Active' AND owner IS NOT NULL`,
 ];
 
+/**
+ * What the runtime role may write, which is still wider than the fences over
+ * it: the ownership columns and an INSERT let a direct table write install the
+ * role as owner of a project another dispatcher holds, or place an entry at any
+ * seq and move `head` to match, because every fence lives in this adapter and
+ * none of them lives in the database. Closing it means ownership behind
+ * `SECURITY DEFINER` and no UPDATE at all, which changes the port's contract,
+ * and kasofsk/chuggy#115 carries that decision.
+ */
 const foundationGrants = [
   `GRANT SELECT ON recovery_epoch TO ${dispatcherRole}`,
   `GRANT SELECT ON project TO ${dispatcherRole}`,
