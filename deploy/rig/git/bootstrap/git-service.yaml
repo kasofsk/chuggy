@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: git-repos
+  namespace: chuggy-git
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git
+  namespace: chuggy-git
+spec:
+  replicas: 1
+  # The repositories are the system of record and the claim is ReadWriteOnce,
+  # so the old pod releases the volume before the new one binds it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: git
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: git
+    spec:
+      containers:
+        - name: git-http
+          image: ynohat/git-http-backend@sha256:b6f1e3e3cc06b8ae05fc22174808dfc3b4abd567cf8bc8c8bac311d83361b041
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: config
+              mountPath: /etc/nginx/git-backend.conf
+              subPath: git-backend.conf
+              readOnly: true
+            - name: auth
+              mountPath: /etc/nginx/auth
+              readOnly: true
+            - name: repos
+              mountPath: /git
+      volumes:
+        - name: config
+          configMap:
+            name: git-http
+        - name: auth
+          secret:
+            secretName: git-credentials
+        - name: repos
+          persistentVolumeClaim:
+            claimName: git-repos
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git
+  namespace: chuggy-git
+spec:
+  selector:
+    app.kubernetes.io/name: git
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: git
+  namespace: chuggy-git
+spec:
+  ingressClassName: traefik
+  rules:
+    # The sync reader reaches the Service directly; this host exists for the
+    # operator push, and resolves to the rig's node without a hosts entry.
+    - host: git.192.168.0.114.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: git
+                port:
+                  name: http

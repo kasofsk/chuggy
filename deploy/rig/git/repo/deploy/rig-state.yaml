@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rig-state
+data:
+  # Nothing reads this. It exists so that a push to the default branch has a
+  # visible consequence in the cluster, which is the only thing the loop can be
+  # observed doing before there is a workload to deploy.
+  marker: seed

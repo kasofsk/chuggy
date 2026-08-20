@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: git-http
+  namespace: chuggy-git
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /dev/stderr warn;
+    pid /run/nginx.pid;
+    user root;
+
+    events { worker_connections 256; }
+
+    http {
+      access_log /dev/stdout combined;
+
+      server {
+        listen *:8080;
+        server_name _;
+
+        # A fetch negotiation is small; only a push carries a pack. So the body
+        # is bounded by default and lifted only on the write location below.
+        client_max_body_size 1m;
+
+        location = /healthz {
+          auth_basic off;
+          return 200 "ok\n";
+        }
+
+        # git-http-backend dispatches a push on any PATH_INFO ending in
+        # /git-receive-pack, so the write wall is placed on exactly that, keyed
+        # by nothing else. This static file is the whole of what holds a branch,
+        # and the query string decides nothing. Every other path that reaches
+        # the backend validates against readers.
+        location ~ /git-receive-pack$ {
+          auth_basic "chuggy git";
+          auth_basic_user_file /etc/nginx/auth/writers;
+          # A legitimate push — an initial import, a repack — has no useful a
+          # priori size, and only the operator authenticated above can reach
+          # here. What bounds the repository is the claim it lands on, not a
+          # per-request cap, which many pushes under it would defeat anyway.
+          client_max_body_size 0;
+          include /etc/nginx/git-backend.conf;
+        }
+
+        location ~ ^/.+\.git(/.*)?$ {
+          auth_basic "chuggy git";
+          auth_basic_user_file /etc/nginx/auth/readers;
+          include /etc/nginx/git-backend.conf;
+        }
+      }
+    }
+  git-backend.conf: |
+    fastcgi_param SCRIPT_FILENAME /usr/libexec/git-core/git-http-backend;
+    include fastcgi_params;
+    fastcgi_param GIT_HTTP_EXPORT_ALL "";
+    fastcgi_param GIT_PROJECT_ROOT /git;
+    fastcgi_param PATH_INFO $uri;
+    fastcgi_param REMOTE_USER $remote_user;
+    fastcgi_read_timeout 300;
+    fastcgi_pass unix:/run/fcgi.sock;
