@@ -930,6 +930,21 @@ contradictory evidence is an operational hold under attention, not a `Core`
 event: ambiguity cannot expire the permit or authorize another attempt, and
 the ticket remains in `Finalizing` until reconciliation concludes.
 
+The I7 finalization-result envelope distinguishes a bounded typed failure kind
+from the pure `FinalizationFailed` outcome and pins immutable evidence sufficient
+for any resulting rework. For `MergeConflict`, that evidence names the
+finalization request and attempt with digest, candidate commit, observed target
+commit and merge base, and a project-owned structured conflict manifest with
+identity and digest. The decision that returns the ticket to `Working`
+materializes the fresh work set's input bundle from that exact evidence,
+together with the existing artifact, handoff and release-briefing references.
+Workers therefore receive a precise reconciliation objective against immutable
+Git identities; they never reconstruct it from current refs, finalizer logs or
+the bare `FinalizationFailed` value in `Core`. Large conflict detail remains in
+the referenced manifest rather than the journal or request row. Other typed
+finalization failures carry the evidence schema their rework requires, while
+all continue to reduce to the same priced domain outcome.
+
 Each preparation creates an immutable finalization attempt containing the
 exact candidate commit, observed target ref and base, relevant digests and its
 own digest. Preparation cannot mutate an existing attempt; re-preparation
@@ -1607,7 +1622,7 @@ schema lands before I5 and no later service is simulated in memory.
 | I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. | — |
 | I5 | I3 | Agentic selection: immutable selection views, detached requests/results, bounded deferral and one-shot manual dispatch. Selection failure never becomes a hidden FIFO dispatch policy. | — |
 | I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
-| I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, and sole `FinalizationResult` submission authority. Proven with revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
+| I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with merge-conflict rework receiving its exact immutable attempt/target/conflict manifest, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
 | I8 | I0–I7 | Managed PostgreSQL deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions and permits. Old-epoch actors remain rejected after restore. | — |
 | I9 | I2–I8 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. | — |
 | I10 | I6–I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. | — |
