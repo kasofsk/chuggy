@@ -15,6 +15,13 @@
 # anything about a script would leave a machine without one unable to check the
 # script either.
 #
+# THE SPELLINGS OF A UNIX SOCKET ARE DRIVEN SEPARATELY, because only the empty
+# authority leaves an empty host in the URL: the others put the path where a
+# host name goes, or in a parameter, and would be probed as if they named a
+# machine — a could-not-run against a server the caller has. A parameter naming
+# a machine is driven too, so the escape cannot widen into skipping the probe
+# whenever the URL carries one.
+#
 # The clean line's figure is asserted against a fixture whose suites this file
 # writes, so the line cannot report a scope the run did not have. Its subject is
 # asserted too, on the path these cases take: a verdict that named the image
@@ -133,12 +140,45 @@ run_gate "$R" "CHUG_PG_URL=postgres://fixture@$SILENT/ignored" CHUG_PG_READY_SEC
 check "a URL nothing answers is a could-not-run" 2 "$RC" "nothing answered at $SILENT"
 
 # --- A URL naming no host to reach is run against, not failed ----------------
+#
+# The wait is set to nothing throughout, so a spelling that regressed into
+# being probed reports the verdict here rather than holding the suite for the
+# gate's patience.
 
 fixture
 passing_suite "$R/test/postgres/one.test.ts"
 git -C "$R" add -A
-run_gate "$R" CHUG_PG_URL=postgres:///ignored
+run_gate "$R" CHUG_PG_URL=postgres:///ignored CHUG_PG_READY_SECS=0
 check "a URL with no host to probe is still run against" 0 "$RC" "1 suite(s) clean"
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+git -C "$R" add -A
+run_gate "$R" CHUG_PG_URL=postgres://%2Fvar%2Frun%2Fpostgresql/ignored CHUG_PG_READY_SECS=0
+check "a socket spelled in the authority is still run against" 0 "$RC" "1 suite(s) clean"
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=postgres://fixture@$SILENT/ignored?host=/var/run/postgresql" CHUG_PG_READY_SECS=0
+check "a socket named by the host parameter is still run against" 0 "$RC" "1 suite(s) clean"
+
+# --- A host parameter naming a machine is probed, not escaped ----------------
+#
+# The authority answers and the parameter does not, so the verdict says which
+# of the two the probe took.
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=$ANSWERS?host=127.0.0.1&port=1" CHUG_PG_READY_SECS=0
+check "a host parameter naming a machine is probed" 2 "$RC" "nothing answered at 127.0.0.1:1"
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=postgres://fixture@$SILENT/ignored?host=" CHUG_PG_READY_SECS=0
+check "an empty host parameter names nothing and the authority stands" 2 "$RC" "nothing answered at $SILENT"
 
 # --- A red suite is a finding ------------------------------------------------
 

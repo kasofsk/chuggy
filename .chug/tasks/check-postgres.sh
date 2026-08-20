@@ -35,9 +35,11 @@
 # waits on `pg_isready` before it runs anything, and a caller's own server is
 # probed for the same reason: a suite that could not connect did not execute
 # either, and calling that a red suite is a finding about a run that never
-# happened. The probe opens a socket to the host and port the URL names, so it
-# is blind to a server that accepts and then refuses the credentials; and a URL
-# naming no host to open one to — a local socket, or not a URL at all — is run
+# happened. The probe opens a socket to the address the client will connect to,
+# which is the `host` and `port` parameters where the URL carries them and the
+# percent-decoded authority where it does not, so it is blind to a server that
+# accepts and then refuses the credentials; and a URL naming no address to open
+# one to — a local socket, however it is spelled, or not a URL at all — is run
 # against rather than failed, because finding no address is not evidence that
 # nothing is there.
 #
@@ -96,6 +98,12 @@ suite_count="$(printf '%s\n' "$suites" | grep -c '' || true)"
 # Whether the URL names a server that answers, printing the host and port that
 # were tried: a message may carry those, and not the rest of a URL, which is a
 # password.
+#
+# The address is resolved the way the client resolves it: a `host` parameter
+# with a value in it overrides the authority, and an authority that is not
+# overridden is percent-decoded. Either may hold an absolute path, which is a
+# unix socket rather than a machine, and is the second thing there is no
+# address to open.
 postgres_probe() { # <url> <milliseconds>
 	node -e '
 const net = require("node:net");
@@ -105,9 +113,19 @@ try {
 } catch {
   process.exit(0);
 }
-const host = at.hostname.replace(/^\[|\]$/g, "");
-if (host === "") process.exit(0);
-const port = Number(at.port || process.env.PGPORT || 5432);
+let named = at.searchParams.get("host");
+if (!named) {
+  try {
+    named = decodeURIComponent(at.hostname);
+  } catch {
+    named = at.hostname;
+  }
+}
+const host = named.replace(/^\[|\]$/g, "");
+if (host === "" || host.charAt(0) === "/") process.exit(0);
+const port = Number(
+  at.searchParams.get("port") || at.port || process.env.PGPORT || 5432,
+);
 process.stdout.write(host + ":" + String(port));
 process.exitCode = 1;
 const socket = net.connect(port, host);
