@@ -1,7 +1,7 @@
 # Durable project dispatch
 
-**Status: M0, G0, I0, I1, I2 AND I3 LANDED** — issue #92 agreed these decisions and
-the tree now carries the first six rows of the landing table: `model/` proves
+**Status: M0, G0, I0, I1, I2, I3 AND I4 LANDED** — issue #92 agreed these decisions and
+the tree now carries the first seven rows of the landing table: `model/` proves
 the project-scoped `Core`, `src/generated/model-api.ts` is generated from
 `model/api.qnt`, and `src/adapters/postgres/` holds the lifecycle row, the
 ownership lease, the authority-scoped operation with its permanent
@@ -10,9 +10,8 @@ generation that indexes it, and the decision transaction that fences a writer,
 writes the entry under its one durable cause, settles the operation,
 acknowledges the item and moves the primary projection, under
 `.chug/tasks/check-postgres.sh`. The selection service and scheduler are not
-built, and the web read, authoring and notification surfaces are not built, so
-the body below still argues them. The revision fences a decision rechecks
-arrive with the slices that have a revision to name.
+built, so the body below still argues them. The revision fences a decision
+rechecks arrive with the slices that have a revision to name.
 
 Clients submit authenticated mutations to a durable PostgreSQL inbox. They do
 not locate or call a ticket-service process. A successful submission creates an
@@ -1699,7 +1698,7 @@ HTTP framework dependency to the inner application contract.
 | I1 | I0 | Authority-scoped operation and idempotency rows, ingress ordinal, durable inbox and readiness generation, cancellation race | Landed |
 | I2 | I1 | The project decision transaction: replay and load, lifecycle, lease and expected-head fences, journal entry under one durable cause, operation terminalization, inbox acknowledgement and primary projection update, with refusal writing no entry and an ambiguous commit resolved by durable read | Landed |
 | I3 | I2 | Bounded project mailbox, priority and aging, durable deterministic continuations, focused native-action and consumer-request tables | Landed |
-| I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. | — |
+| I4 | I3 | Authenticated native reads, operation polling and cancellation, versioned configuration and draft authoring, revision-fenced release, bounded access-controlled SSE notifications | Landed |
 | I5 | I3 | Agentic selection: immutable selection views, detached requests/results, bounded deferral and one-shot manual dispatch. Selection failure never becomes a hidden FIFO dispatch policy. | — |
 | I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
 | I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with merge-conflict rework receiving its exact immutable attempt/target/conflict manifest, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
