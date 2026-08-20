@@ -29,14 +29,15 @@
  * claims: a journal falling short of it — an entry taken from the middle, or
  * the tail cut off — is a torn store rather than an outcome a dispatcher
  * decides its way around, so it throws rather than returning. That count is all
- * it requires, and an edit preserving it loads as `Ok` and replays as history:
- * a changed payload, a swapped pair, one entry substituted for another. The
- * digests are written here so that format version one carries them, because a
- * chain added later is a migration over authoritative history; recomputing and
- * comparing them is project-local integrity containment, which 006 places at
- * slice I9 along with what a project fails closed into when the comparison
- * disagrees — and the count check is that slice arriving nowhere early, only
- * the load refusing to replay a history it can already see is incomplete.
+ * it requires, and an edit that preserves it and stays inside the schema loads
+ * as `Ok` and replays as history: a changed payload, a swapped pair, one entry
+ * substituted for another. The digests are written here so that format version
+ * one carries them, because a chain added later is a migration over
+ * authoritative history; recomputing and comparing them is project-local
+ * integrity containment, which 006 places at slice I9 along with what a project
+ * fails closed into when the comparison disagrees — and the count check is that
+ * slice arriving nowhere early, only the load refusing to replay a history it
+ * can already see is incomplete.
  */
 
 import type pg from "pg";
