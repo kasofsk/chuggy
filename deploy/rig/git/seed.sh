@@ -65,6 +65,13 @@ credential_digest() {
 	printf '%s' "$1" | openssl sha1 -binary | openssl base64
 }
 
+# Every secret this script writes goes here: 0700 from mktemp, removed by the
+# trap on any exit. A token given to a command in argv is readable in /proc for
+# that command's lifetime, so the minting below and the push at the end both
+# hand theirs over in a file rather than on a command line.
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+
 # --- The two static credential classes --------------------------------------
 # The sync reader, and the operator's break-glass. Per-job tokens are the
 # dispatcher's to mint and are not rehearsed here.
@@ -75,12 +82,17 @@ if kubectl -n "$namespace" get secret git-sync > /dev/null 2>&1; then
 else
 	sync_token="$(openssl rand -hex 32)"
 	operator_token="$(openssl rand -hex 32)"
+	(
+		umask 077
+		printf '%s' "$sync_token" > "$work_dir/sync-token"
+		printf '%s' "$operator_token" > "$work_dir/operator-token"
+	)
 	kubectl -n "$namespace" create secret generic git-sync \
 		--from-literal=username="$sync_user" \
-		--from-literal=password="$sync_token" > /dev/null
+		--from-file=password="$work_dir/sync-token" > /dev/null
 	kubectl -n "$namespace" create secret generic git-operator \
 		--from-literal=username="$operator_user" \
-		--from-literal=password="$operator_token" > /dev/null
+		--from-file=password="$work_dir/operator-token" > /dev/null
 	echo "seed: minted the sync and operator credentials"
 fi
 
@@ -118,12 +130,9 @@ kubectl -n "$namespace" exec "$pod" -- sh -c '
 
 # --- The default branch -----------------------------------------------------
 # The remote URL carries the username but never the token: a credential in the
-# URL is in git's argv, readable in /proc for the life of the clone, and copied
-# into the clone's `.git/config`. The token is handed to git out of band by an
-# askpass helper that reads it from a file, both inside the 0700 work_dir the
-# trap removes.
-work_dir="$(mktemp -d)"
-trap 'rm -rf "$work_dir"' EXIT
+# URL outlives the command that carried it, copied into the clone's
+# `.git/config`. The token is handed to git out of band by an askpass helper
+# that reads it from a file.
 remote="http://$operator_user@$ingress_host/$repository"
 token_file="$work_dir/token"
 askpass="$work_dir/askpass"
@@ -141,6 +150,8 @@ git clone -q "$remote" "$work_dir/clone"
 # defaults it, and the branch this pushes to is not a local default.
 git -C "$work_dir/clone" rev-parse --verify --quiet HEAD > /dev/null \
 	|| git -C "$work_dir/clone" symbolic-ref HEAD refs/heads/main
+# The Kustomization reconciles ./deploy, so that is the directory synced and
+# the only one the seed tree carries.
 rm -rf "$work_dir/clone/deploy"
 cp -R "$seed_tree/deploy" "$work_dir/clone/deploy"
 git -C "$work_dir/clone" add -A

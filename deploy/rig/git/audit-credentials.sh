@@ -16,9 +16,12 @@
 #
 # A refusal is nginx returning 401/403 before the backend; anything else means
 # the reader was authenticated at a push endpoint, whether or not a repository
-# happened to be there. Each attempt is a genuine ref creation against a bare
-# repo this script stands up and tears down, so a pass is the ref never
-# appearing, not merely a status code.
+# happened to be there. Each attempt is a genuine ref creation, and every
+# repository an attempt was aimed at is swept afterwards for the ref it tried
+# to create, so a pass is the ref never appearing rather than merely a status
+# code. The nested repository is this script's own and is torn down whole; the
+# control is aimed at the served repository, which is not, so there only the
+# refs an attempt could have created are removed.
 #
 # Run it after `seed.sh`; `seed.sh` runs it for you. Exits 0 clean, 1 on a
 # finding, 2 when it could not run. Two is not a pass.
@@ -59,9 +62,19 @@ if [ -z "$pod" ]; then
 fi
 
 work_dir="$(mktemp -d)"
+# Removal is the trap's job rather than the sweep's, so an attempt that lands a
+# ref is undone even when the run dies before it reaches the sweep. The probe
+# repository is this script's own and goes whole; the served one is not, so
+# only the refs an attempt could have created come out of it.
 cleanup() {
 	rm -rf "$work_dir"
-	kubectl -n "$namespace" exec "$pod" -- rm -rf "/git/probe.git" > /dev/null 2>&1 || true
+	kubectl -n "$namespace" exec "$pod" -- sh -c '
+		rm -rf /git/probe.git
+		git -C "/git/$1" for-each-ref --format="%(refname)" "refs/heads/audit-*" \
+			| while read -r ref; do
+				git -C "/git/$1" update-ref -d "$ref"
+			done
+	' sh "$repository" > /dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -131,10 +144,15 @@ attempt "nested path" "/$probe/git-receive-pack" "refs/heads/audit-nested"
 attempt "percent-encoded service" "/$probe/git-receive-pack?service=git%2Dreceive%2Dpack" "refs/heads/audit-percent"
 attempt "duplicated service" "/$probe/git-receive-pack?service=git-upload-pack&service=git-receive-pack" "refs/heads/audit-dup"
 
-# Belt to the status codes' suspenders: no attempt may have moved a ref.
-moved="$(kubectl -n "$namespace" exec "$pod" -- \
-	sh -c 'git -C "/git/$1" for-each-ref --format="%(refname)" "refs/heads/audit-*" 2> /dev/null || true' \
-	sh "$probe")"
+# Belt to the status codes' suspenders: no attempt may have moved a ref, in
+# either repository the attempts were aimed at. Naming the repository in each
+# line is what keeps this from reporting a sweep narrower than the attempts.
+moved="$(kubectl -n "$namespace" exec "$pod" -- sh -c '
+	for repo in "$@"; do
+		git -C "/git/$repo" for-each-ref --format="$repo %(refname)" \
+			"refs/heads/audit-*" 2> /dev/null || true
+	done
+' sh "$repository" "$probe")"
 if [ -n "$moved" ]; then
 	echo "audit: the read credential created refs on the server:" >&2
 	echo "$moved" >&2
@@ -145,4 +163,4 @@ if [ "$findings" -ne 0 ]; then
 	echo "audit: the read credential reached a push endpoint — the write wall does not hold" >&2
 	exit 1
 fi
-echo "audit: refused at every endpoint, no ref moved — the write wall holds"
+echo "audit: refused at every endpoint, no ref moved in $repository or $probe — the write wall holds"

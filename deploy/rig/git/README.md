@@ -6,9 +6,9 @@ cluster from a branch of one of them. A push to the default branch is the
 deploy.
 
 `bootstrap/` is applied by hand, out of band, because it is what carries the
-loop and cannot be carried by it. `repo/` is a picture of the served
-repository's working tree — what `seed.sh` pushes onto its default branch, and
-what Flux then applies.
+loop and cannot be carried by it. `repo/deploy/` is a picture of the served
+repository's `deploy/` directory — what `seed.sh` pushes onto its default
+branch, and the one path the `Kustomization` reconciles.
 
 ## Stand it up
 

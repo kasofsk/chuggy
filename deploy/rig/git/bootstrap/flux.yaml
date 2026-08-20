@@ -16,9 +16,9 @@ spec:
 ---
 # Without a serviceAccountName the kustomize-controller reconciles as its own
 # identity, which is bound to cluster-admin: a push to the default branch would
-# apply as cluster-admin over the whole cluster. This account carries only what
-# the reconciliation applies — the ConfigMap in ./deploy, in this namespace and
-# no other — so the operator token is worth exactly that reconciliation.
+# apply as cluster-admin over the whole cluster. This account reaches only the
+# objects ./deploy carries, so the operator token is worth exactly that
+# reconciliation and not the configuration that authorizes it.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -31,9 +31,21 @@ metadata:
   name: rig-reconciler
   namespace: chuggy-git
 rules:
+  # Named for what ./deploy applies. Anything that can overwrite or remove a
+  # live object is scoped to those names, because the namespace also holds
+  # git-http — the nginx configuration the write wall is made of — and a
+  # type-scoped rule here would let a push to the default branch rewrite it.
   - apiGroups: [""]
     resources: [configmaps]
-    verbs: [get, list, watch, create, update, patch, delete]
+    resourceNames: [rig-state]
+    verbs: [get, update, patch, delete]
+  # Server-side apply authorizes a missing object as create as well as patch,
+  # and RBAC cannot scope create by name. It is the one verb that stays
+  # namespace-wide, and it reaches no object that already exists: the API
+  # server rejects a create on a live name before any write.
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [create]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
