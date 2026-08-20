@@ -3,6 +3,7 @@ import type pg from "pg";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
 import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
+import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -44,6 +45,7 @@ export function composeNativeWeb(
     postgresNativeReads(apiPool),
     inbox,
     postgresAuthoring(apiPool),
+    postgresNotifications(apiPool),
   );
 }
 

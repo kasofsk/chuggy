@@ -218,6 +218,7 @@ export const draftCreateFunction = "create_draft";
 export const draftReviseFunction = "revise_draft";
 export const draftDeleteFunction = "delete_draft";
 export const draftReleaseFunction = "release_draft_fenced";
+export const notificationPublishFunction = "publish_project_notification";
 export const boundaryOwnerRole = "chuggy_boundary_owner";
 
 /** The ledger of applied migrations, which the runner creates before it reads anything. */
@@ -1097,6 +1098,7 @@ const durableMailbox = [
        UPDATE decision_input SET state='Cancelled', terminal_at=now(),
          settled_authority_kind=in_authority_kind, settled_authority_subject=in_authority_subject
         WHERE tenant=in_tenant AND project=in_project AND input_kind='Operation' AND input_id=in_operation;
+       PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Operation',in_operation,NULL,NULL);
        RETURN locked_state;
      END $$`,
   `ALTER FUNCTION ${acceptanceFunction}(text,text,text,text,text,text,text,text,text[],text[],text,bigint,bigint) OWNER TO ${boundaryOwnerRole}`,
@@ -1204,6 +1206,7 @@ const nativeAuthoring = [
        INSERT INTO configuration_revision
          (tenant,project,revision,parent,canonical,digest,authority_kind,authority_subject)
        VALUES (in_tenant,in_project,in_revision,in_parent,in_canonical,in_digest,in_kind,in_subject);
+       PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Configuration',in_revision,NULL,NULL);
        RETURN 'Created';
      END $$`,
   `CREATE FUNCTION ${draftCreateFunction}(in_tenant text,in_project text,in_configuration text,
@@ -1220,6 +1223,7 @@ const nativeAuthoring = [
        INSERT INTO draft VALUES (in_tenant,in_project,minted,1,'Draft',in_configuration);
        INSERT INTO draft_revision (tenant,project,ticket,authoring_version,configuration_revision,authoring,authority_kind,authority_subject)
          VALUES (in_tenant,in_project,minted,1,in_configuration,in_authoring,in_kind,in_subject);
+       PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Draft',minted::text,NULL,1);
        RETURN QUERY SELECT 'Created',minted,1::bigint,'Draft'::text;
      END $$`,
   `CREATE FUNCTION ${draftReviseFunction}(in_tenant text,in_project text,in_ticket bigint,
@@ -1239,6 +1243,7 @@ const nativeAuthoring = [
          VALUES (in_tenant,in_project,in_ticket,next_version,in_configuration,in_authoring,in_kind,in_subject);
        UPDATE draft SET authoring_version=next_version,configuration_revision=in_configuration
         WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket;
+       PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Draft',in_ticket::text,NULL,next_version);
        RETURN QUERY SELECT 'Revised',next_version,'Draft'::text;
      END $$`,
   `CREATE FUNCTION ${draftDeleteFunction}(in_tenant text,in_project text,in_ticket bigint,
@@ -1257,6 +1262,7 @@ const nativeAuthoring = [
             AND r.authoring_version=current.authoring_version;
        UPDATE draft d SET state='Deleted',authoring_version=d.authoring_version+1
         WHERE d.tenant=in_tenant AND d.project=in_project AND d.ticket=in_ticket;
+       PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Draft',in_ticket::text,NULL,current.authoring_version+1);
        RETURN QUERY SELECT 'Deleted',current.authoring_version+1,'Deleted'::text;
      END $$`,
   `CREATE FUNCTION ${draftReleaseFunction}(in_tenant text,in_project text,in_ticket bigint,
@@ -1290,6 +1296,47 @@ const nativeAuthoring = [
      ${draftDeleteFunction}(text,text,bigint,bigint,text,text) TO ${apiRole}`,
   `GRANT EXECUTE ON FUNCTION ${draftReleaseFunction}(text,text,bigint,bigint,text,boolean) TO ${ticketServiceRole}`,
   `GRANT SELECT ON configuration_revision,draft,draft_revision TO ${apiRole},${ticketServiceRole}`,
+];
+
+const durableNotifications = [
+  `ALTER TABLE project ADD COLUMN notification_next bigint NOT NULL DEFAULT 1,
+     ADD CONSTRAINT project_notification_next_is_positive CHECK (notification_next >= 1)`,
+  `CREATE TABLE project_notification (
+     tenant text NOT NULL, project text NOT NULL, ordinal bigint NOT NULL,
+     kind text NOT NULL, resource text NOT NULL, project_seq bigint,
+     authoring_version bigint, created_at timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant,project,ordinal),
+     CONSTRAINT project_notification_belongs_to_project FOREIGN KEY (tenant,project)
+       REFERENCES project (tenant,project),
+     CONSTRAINT project_notification_kind_is_known CHECK
+       (kind IN ('Operation','Ticket','Draft','Configuration')),
+     CONSTRAINT project_notification_values_are_bounded CHECK
+       (ordinal >= 1 AND length(resource) BETWEEN 1 AND 256
+        AND coalesce(project_seq,1) >= 1 AND coalesce(authoring_version,1) >= 1)
+   )`,
+  `CREATE FUNCTION ${notificationPublishFunction}(in_tenant text,in_project text,in_kind text,
+      in_resource text,in_project_seq bigint,in_authoring_version bigint) RETURNS bigint
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE allocated bigint; retention_max constant bigint := 1000;
+     BEGIN
+       UPDATE project SET notification_next=notification_next+1
+        WHERE tenant=in_tenant AND project=in_project
+        RETURNING notification_next-1 INTO allocated;
+       IF allocated IS NULL THEN RAISE EXCEPTION 'notification project is absent'; END IF;
+       INSERT INTO project_notification
+         (tenant,project,ordinal,kind,resource,project_seq,authoring_version)
+       VALUES (in_tenant,in_project,allocated,in_kind,in_resource,in_project_seq,in_authoring_version);
+       DELETE FROM project_notification
+        WHERE tenant=in_tenant AND project=in_project AND ordinal <= allocated-retention_max;
+       RETURN allocated;
+     END $$`,
+  `ALTER FUNCTION ${notificationPublishFunction}(text,text,text,text,bigint,bigint) OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ${notificationPublishFunction}(text,text,text,text,bigint,bigint) FROM PUBLIC`,
+  `GRANT SELECT,INSERT,DELETE ON project_notification TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (notification_next) ON project TO ${boundaryOwnerRole}`,
+  `GRANT EXECUTE ON FUNCTION ${notificationPublishFunction}(text,text,text,text,bigint,bigint)
+     TO ${ticketServiceRole}`,
+  `GRANT SELECT ON project_notification TO ${apiRole}`,
 ];
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -1342,5 +1389,10 @@ export const migrations: readonly Migration[] = [
     version: 7,
     name: "native versioned authoring",
     statements: [...nativeAuthoring],
+  },
+  {
+    version: 8,
+    name: "bounded durable project notifications",
+    statements: [...durableNotifications],
   },
 ];

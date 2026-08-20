@@ -21,6 +21,7 @@ import { releaseTicketEvent } from "../../src/actor/decisionEvent.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
+import type { NotificationStore } from "../../src/interpreter/notifications.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -73,12 +74,29 @@ function boundary(allowed: boolean): {
     operation: () => Promise.resolve(undefined),
   };
   const authoring: AuthoringStore = {
+    configuration: () => {
+      calls.push("read:configuration");
+      return Promise.resolve(undefined);
+    },
+    draft: () => {
+      calls.push("read:draft");
+      return Promise.resolve(undefined);
+    },
     createConfiguration: () => Promise.resolve({ created: "ParentNotFound" }),
     createDraft: () => Promise.resolve({ created: "ConfigurationNotFound" }),
     reviseDraft: () => Promise.resolve({ revised: "NotFound" }),
     deleteDraft: () => Promise.resolve({ deleted: "NotFound" }),
   };
-  return { web: nativeWeb(access, reads, inbox, authoring), calls };
+  const notifications: NotificationStore = {
+    read: () => {
+      calls.push("read:notifications");
+      return Promise.resolve({ result: "Events", cursor: 0, events: [] });
+    },
+  };
+  return {
+    web: nativeWeb(access, reads, inbox, authoring, notifications),
+    calls,
+  };
 }
 
 test("inaccessible and absent operation reads share the not-found shape", async () => {
@@ -125,4 +143,28 @@ test("the public boundary refuses a raw release before inbox acceptance", async 
     acceptance: { accepted: "InvalidCommand" },
   });
   assert.deepEqual(calls, ["authorize:Mutate"]);
+});
+
+test("every notification page reauthorizes before reading", async () => {
+  const denied = boundary(false);
+  assert.deepEqual(
+    await denied.web.notifications(principal, partition, {
+      after: 0,
+      limit: 10,
+    }),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
+  const allowed = boundary(true);
+  await allowed.web.notifications(principal, partition, {
+    after: 0,
+    limit: 10,
+  });
+  assert.deepEqual(allowed.calls, ["authorize:Read", "read:notifications"]);
+});
+
+test("authoring reads conceal inaccessible resources", async () => {
+  const denied = boundary(false);
+  assert.equal(await denied.web.draft(principal, partition, id(1)), undefined);
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
 });

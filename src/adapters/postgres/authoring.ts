@@ -45,7 +45,7 @@ async function readDraft(
   pool: pg.Pool,
   partition: Partition,
   ticket: number,
-): Promise<DraftResource> {
+): Promise<DraftResource | undefined> {
   const found = await pool.query<DraftRow>(
     `SELECT d.ticket,d.authoring_version,d.state,d.configuration_revision,r.authoring
        FROM draft d JOIN draft_revision r USING (tenant,project,ticket,authoring_version)
@@ -53,8 +53,7 @@ async function readDraft(
     [partition.tenant, partition.project, ticket],
   );
   const row = found.rows[0];
-  if (row === undefined)
-    throw new Error("authoring transition returned an absent draft");
+  if (row === undefined) return undefined;
   return {
     partition,
     ticket: asTicketId(projectRowCounter(row.ticket, "draft ticket")),
@@ -74,7 +73,7 @@ async function readConfiguration(
   pool: pg.Pool,
   partition: Partition,
   revision: string,
-): Promise<ConfigurationRevisionResource> {
+): Promise<ConfigurationRevisionResource | undefined> {
   const found = await pool.query<{
     parent: string | null;
     canonical: string;
@@ -85,8 +84,7 @@ async function readConfiguration(
     [partition.tenant, partition.project, revision],
   );
   const row = found.rows[0];
-  if (row === undefined)
-    throw new Error("configuration transition returned an absent revision");
+  if (row === undefined) return undefined;
   const resource = {
     partition,
     revision: asConfigurationRevisionId(revision),
@@ -100,6 +98,28 @@ async function readConfiguration(
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+async function requiredDraft(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: number,
+): Promise<DraftResource> {
+  const draft = await readDraft(pool, partition, ticket);
+  if (draft === undefined)
+    throw new Error("authoring transition returned an absent draft");
+  return draft;
+}
+
+async function requiredConfiguration(
+  pool: pg.Pool,
+  partition: Partition,
+  revision: string,
+): Promise<ConfigurationRevisionResource> {
+  const configuration = await readConfiguration(pool, partition, revision);
+  if (configuration === undefined)
+    throw new Error("configuration transition returned an absent revision");
+  return configuration;
 }
 
 function nonDraftState(value: string): "Released" | "Deleted" {
@@ -142,7 +162,11 @@ async function createConfiguration(
     throw new Error(`configuration transition returned ${String(result)}`);
   return {
     created: result,
-    revision: await readConfiguration(pool, input.partition, input.revision),
+    revision: await requiredConfiguration(
+      pool,
+      input.partition,
+      input.revision,
+    ),
   };
 }
 
@@ -168,7 +192,7 @@ async function createDraft(
     throw new Error("draft creation returned no ticket");
   return {
     created: "Created",
-    draft: await readDraft(pool, input.partition, Number(row.ticket)),
+    draft: await requiredDraft(pool, input.partition, Number(row.ticket)),
   };
 }
 
@@ -209,7 +233,7 @@ async function reviseDraft(
     throw new Error(`draft revision returned ${row.result}`);
   return {
     revised: "Revised",
-    draft: await readDraft(pool, input.partition, input.ticket),
+    draft: await requiredDraft(pool, input.partition, input.ticket),
   };
 }
 
@@ -246,13 +270,16 @@ async function deleteDraft(
     throw new Error(`draft deletion returned ${row.result}`);
   return {
     deleted: "Deleted",
-    draft: await readDraft(pool, input.partition, input.ticket),
+    draft: await requiredDraft(pool, input.partition, input.ticket),
   };
 }
 
 /** Answers the native authoring port through constrained server functions. */
 export function postgresAuthoring(pool: pg.Pool): AuthoringStore {
   return {
+    configuration: (partition, revision) =>
+      readConfiguration(pool, partition, revision),
+    draft: (partition, ticket) => readDraft(pool, partition, ticket),
     createConfiguration: (input) => createConfiguration(pool, input),
     createDraft: (input) => createDraft(pool, input),
     reviseDraft: (input) => reviseDraft(pool, input),

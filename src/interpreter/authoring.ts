@@ -153,6 +153,14 @@ export type DraftDeleted =
     };
 
 export interface AuthoringStore {
+  configuration(
+    partition: Partition,
+    revision: ConfigurationRevisionId,
+  ): Promise<ConfigurationRevisionResource | undefined>;
+  draft(
+    partition: Partition,
+    ticket: TicketId,
+  ): Promise<DraftResource | undefined>;
   createConfiguration(input: {
     readonly partition: Partition;
     readonly authority: Authority;

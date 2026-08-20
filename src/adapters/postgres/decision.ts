@@ -49,7 +49,11 @@ import {
 } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
-import { continuationFunction, draftReleaseFunction } from "./schema.ts";
+import {
+  continuationFunction,
+  draftReleaseFunction,
+  notificationPublishFunction,
+} from "./schema.ts";
 
 /** One decision-input row as the transaction reads it under its lock. */
 interface DecisionCauseRow {
@@ -355,6 +359,27 @@ async function decisionMaterialize(
   await decisionContinuation(client, lease.partition, outcome);
 }
 
+async function publishNotification(
+  client: pg.PoolClient,
+  partition: Partition,
+  kind: "Operation" | "Ticket" | "Draft",
+  resource: string,
+  projectSequence: number | null,
+  authoringVersion: number | null,
+): Promise<void> {
+  await client.query(
+    `SELECT ${notificationPublishFunction}($1,$2,$3,$4,$5,$6)`,
+    [
+      partition.tenant,
+      partition.project,
+      kind,
+      resource,
+      projectSequence,
+      authoringVersion,
+    ],
+  );
+}
+
 async function decisionReleaseOutcome(
   client: pg.PoolClient,
   decision: Decision,
@@ -372,9 +397,45 @@ async function decisionReleaseOutcome(
       decision.outcome.outcome === "Journaled",
     ],
   );
-  return found.rows[0]?.matched === true
-    ? decision.outcome
-    : { outcome: "Refused", code: "AuthoringChanged" };
+  if (found.rows[0]?.matched !== true)
+    return { outcome: "Refused", code: "AuthoringChanged" };
+  if (decision.outcome.outcome === "Journaled")
+    await publishNotification(
+      client,
+      decision.lease.partition,
+      "Draft",
+      String(fence.ticket),
+      null,
+      fence.authoringVersion,
+    );
+  return decision.outcome;
+}
+
+async function notifyDecision(
+  client: pg.PoolClient,
+  partition: Partition,
+  cause: DecisionCause,
+  outcome: DecisionOutcome,
+): Promise<void> {
+  if (cause.kind === "Operation")
+    await publishNotification(
+      client,
+      partition,
+      "Operation",
+      cause.id,
+      outcome.outcome === "Journaled" ? outcome.entry.seq : null,
+      null,
+    );
+  if (outcome.outcome === "Journaled")
+    for (const row of outcome.projection)
+      await publishNotification(
+        client,
+        partition,
+        "Ticket",
+        String(row.ticket),
+        outcome.entry.seq,
+        null,
+      );
 }
 
 /** Writes everything the decision asks for, and answers with the lease its commit advanced. */
@@ -415,6 +476,7 @@ async function decisionApply(
           lifecycleGeneration: standing.lifecycleGeneration,
         },
       );
+      await notifyDecision(client, lease.partition, cause, outcome);
       return { decided: "Refused" };
     case "Journaled": {
       const seq = outcome.entry.seq;
@@ -431,6 +493,7 @@ async function decisionApply(
       );
       await decisionProject(client, lease.partition, seq, outcome.projection);
       await decisionMaterialize(client, lease, outcome);
+      await notifyDecision(client, lease.partition, cause, outcome);
       return { decided: "Committed", lease: { ...lease, head: seq } };
     }
     default:

@@ -215,6 +215,34 @@ test("release journals the retained draft only while its revision is current", a
     ),
     [{ state: "Released" }],
   );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT kind,resource,project_seq,authoring_version
+         FROM project_notification WHERE tenant=$1 AND project=$2 AND ordinal>=3
+        ORDER BY ordinal`,
+      [fixture.partition.tenant, fixture.partition.project],
+    ),
+    [
+      {
+        kind: "Draft",
+        resource: String(fixture.draft.ticket),
+        project_seq: null,
+        authoring_version: "1",
+      },
+      {
+        kind: "Operation",
+        resource: submission.operation,
+        project_seq: "1",
+        authoring_version: null,
+      },
+      {
+        kind: "Ticket",
+        resource: String(fixture.draft.ticket),
+        project_seq: "1",
+        authoring_version: null,
+      },
+    ],
+  );
 });
 
 test("an edit after acceptance durably refuses release without an entry", async () => {

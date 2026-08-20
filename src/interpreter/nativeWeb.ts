@@ -26,12 +26,20 @@ import type {
   AuthoringStore,
   CanonicalConfiguration,
   ConfigurationCreated,
+  ConfigurationRevisionResource,
   ConfigurationRevisionId,
   DraftCreated,
   DraftDeleted,
+  DraftResource,
   DraftRevised,
 } from "./authoring.ts";
 import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
+import {
+  checkedNotificationCursor,
+  type NotificationBatch,
+  type NotificationCursor,
+  type NotificationStore,
+} from "./notifications.ts";
 
 declare const principalBrand: unique symbol;
 declare const instantBrand: unique symbol;
@@ -219,11 +227,31 @@ export interface NativeWeb {
       readonly expectedVersion: number;
     },
   ): Promise<AuthorizedResult<DraftDeleted>>;
+  notifications(
+    principal: Principal,
+    partition: Partition,
+    cursor: NotificationCursor,
+  ): Promise<AuthorizedResult<NotificationBatch>>;
+  configuration(
+    principal: Principal,
+    partition: Partition,
+    revision: ConfigurationRevisionId,
+  ): Promise<ConfigurationRevisionResource | undefined>;
+  draft(
+    principal: Principal,
+    partition: Partition,
+    ticket: TicketId,
+  ): Promise<DraftResource | undefined>;
 }
 
 type NativeAuthoringMethods = Pick<
   NativeWeb,
-  "createConfiguration" | "createDraft" | "reviseDraft" | "deleteDraft"
+  | "configuration"
+  | "draft"
+  | "createConfiguration"
+  | "createDraft"
+  | "reviseDraft"
+  | "deleteDraft"
 >;
 
 function nativeAuthoringMethods(
@@ -231,6 +259,14 @@ function nativeAuthoringMethods(
   authoring: AuthoringStore,
 ): NativeAuthoringMethods {
   return {
+    configuration: async (principal, partition, revision) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : authoring.configuration(partition, revision),
+    draft: async (principal, partition, ticket) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : authoring.draft(partition, ticket),
     createConfiguration: async (principal, input) => {
       const authority = await access.authorize(
         principal,
@@ -292,6 +328,7 @@ export function nativeWeb(
   reads: NativeReadStore,
   inbox: OperationInbox,
   authoring: AuthoringStore,
+  notifications: NotificationStore,
 ): NativeWeb {
   return {
     ...nativeAuthoringMethods(access, authoring),
@@ -332,5 +369,15 @@ export function nativeWeb(
         cancellation: await inbox.cancel({ partition, operation, authority }),
       };
     },
+    notifications: async (principal, partition, cursor) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await notifications.read(
+              partition,
+              checkedNotificationCursor(cursor),
+            ),
+          },
   };
 }
