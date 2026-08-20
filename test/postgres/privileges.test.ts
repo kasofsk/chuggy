@@ -39,8 +39,9 @@
  *
  * WHAT IT STILL CANNOT SEE. A null ACL column is default privileges rather
  * than none, and `aclexplode` returns no rows for one — so a routine created
- * without revoking `PUBLIC`'s default EXECUTE is invisible to the routine set
- * below.
+ * without revoking `PUBLIC`'s default EXECUTE would be invisible to the
+ * routine set below. Every routine `schema.ts` creates revokes it, which is
+ * what leaves that limit without an instance behind it.
  *
  * A CHANGE HERE IS A CHANGE TO THE AUTHORITY BOUNDARY. If a slice legitimately
  * widens a grant, this list moves with it in the same commit, and the diff is
@@ -94,10 +95,12 @@ const columnWise: readonly string[] = [
   /**
    * Acceptance raises readiness and advances the generation, so this grant
    * also permits lowering `ready` over a consumable item — an enqueued
-   * submission no writer discovers — and rewinding the generation a stale
-   * observation is refused by. Raising is the adapter's discipline rather than
-   * the server's, kasofsk/chuggy#121 is open on what makes it the server's,
-   * and this expected set moves only if the answer is a narrower grant.
+   * submission no writer discovers until something raises readiness again —
+   * and rewinding the generation a stale observation is refused by. Direction
+   * is the adapter's discipline rather than the server's here and for the
+   * dispatcher's `ready` below, kasofsk/chuggy#121 is open on what makes it
+   * the server's, and this expected set moves only if the answer is a
+   * narrower grant.
    */
   `${apiRole} project_readiness UPDATE (generation, ready)`,
   /**
@@ -124,8 +127,7 @@ const granteeName = "coalesce(g.rolname, 'PUBLIC')";
 const granteeWhere = `${granteeName} IN ($1, $2) OR x.grantee = 0`;
 
 /**
- * Confines a read to the schema the migrations write in, which is the schema
- * `cancel_pending_operation` pins its `search_path` to. Admitting PUBLIC
+ * Confines a read to the schema the migrations create in. Admitting PUBLIC
  * without this admits every catalogue and `information_schema` grant, which is
  * a page of rows about relations this tree did not create.
  */
@@ -276,30 +278,24 @@ test("neither runtime role is a member of anything, and nothing is a member of t
 
 /**
  * A `SECURITY DEFINER` body carries its owner's privileges, and nothing
- * chooses that owner: it is whichever role applied the migration, so the name
- * cannot be written down here and kasofsk/chuggy#134 carries the production
- * answer. What is written down is the pair that must hold either way, and the
- * offending owner's attributes are what a failure prints.
+ * chooses that owner: it is whichever role applied the migration, which no
+ * expectation here can name and kasofsk/chuggy#134 carries the production
+ * answer for. What holds whoever it was is that it is not a runtime role — an
+ * owner that was would leave the definer rights buying nothing — and the
+ * owner's attributes are what a failure prints.
  */
-test("cancellation runs as the migrating role, and neither runtime role owns it", async () => {
+test("cancellation does not run as either runtime role, whoever owns it", async () => {
   const rows = (await harness.query(
-    `SELECT ${roleAttributes("o")},
-            o.rolname <> current_user AS foreign_owner,
-            o.rolname IN ($2, $3) AS runtime_owner
+    `SELECT ${roleAttributes("o")}, o.rolname IN ($2, $3) AS runtime_owner
        FROM pg_proc p
        ${inAuditSchema("p.pronamespace")}
        JOIN pg_roles o ON o.oid = p.proowner
       WHERE p.proname = $1`,
     [cancellationFunction, apiRole, dispatcherRole],
-  )) as readonly (RoleAttributeRow & {
-    foreign_owner: boolean;
-    runtime_owner: boolean;
-  })[];
+  )) as readonly (RoleAttributeRow & { runtime_owner: boolean })[];
   assert.equal(rows.length, 1, "the cancellation function has one owner");
   assert.deepEqual(
-    rows
-      .filter((row) => row.foreign_owner || row.runtime_owner)
-      .map(attributeLine),
+    rows.filter((row) => row.runtime_owner).map(attributeLine),
     [],
   );
 });

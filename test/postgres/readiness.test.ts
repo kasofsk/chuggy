@@ -9,12 +9,12 @@
  * being reproduced rather than a coincidence being tolerated.
  *
  * THE TWO HALVES ANSWER DIFFERENT CASES AND ARE ASSERTED SEPARATELY. The
- * emptiness proof refuses a clear over an inbox still holding work, and under
- * the readiness row lock it is also what lets a clear racing a live acceptance
- * commit without erasing it — the blocked upsert raises readiness again behind
- * the clear. The generation is what refuses a clear whose observation was taken
- * before an acceptance, including the case whose inbox really is empty again
- * because everything accepted since was cancelled.
+ * emptiness proof refuses a clear over an inbox still holding work; where a
+ * clear races a live acceptance it correctly finds nothing consumable and the
+ * clear commits, and what keeps the wake-up is the blocked upsert raising
+ * readiness again behind it. The generation is what refuses a clear whose
+ * observation was taken before an acceptance, including the case whose inbox
+ * really is empty again because everything accepted since was cancelled.
  */
 
 import assert from "node:assert/strict";

@@ -119,9 +119,9 @@
  *
  * `project_readiness` — the discovery index over that inbox, and the only
  * thing fleet discovery reads. Owned by the API role, whose grant covers
- * `ready` and `generation` in both directions, and by the dispatcher role,
- * whose grant covers `ready` alone — so of the two halves of the separation
- * only the dispatcher's is the server's, and the API's is this adapter's. Its
+ * `ready` and `generation`, and by the dispatcher role, whose grant covers
+ * `ready` alone — so the separation the server holds is by column, and which
+ * direction either role may move a column it holds is this adapter's. Its
  * composite key and identity are both `(tenant, project)`. It is changed by
  * acceptance, which raises readiness and advances the generation, and by an
  * idle owner clearing it. Unfinished work is found by selecting the ready rows
@@ -333,9 +333,12 @@ const inboxRelations = [
 
 /**
  * The trigger that makes a terminal outcome final, settling authority
- * included. A grant cannot say which value a column may take, so the rule that
+ * included: a grant cannot say which value a column may take, so the rule that
  * a cancelled operation is never later succeeded — or later re-audited to
- * somebody else — has to be the server's own.
+ * somebody else — has to be the server's own. Its EXECUTE is revoked from
+ * PUBLIC as the cancellation function's is, which changes nothing a caller can
+ * do with a trigger function and leaves the privilege audit an explicit ACL to
+ * read where a default is a column it cannot see.
  */
 const inboxTerminality = [
   `CREATE FUNCTION operation_stays_terminal() RETURNS trigger
@@ -353,6 +356,7 @@ const inboxTerminality = [
        RETURN NEW;
      END
      $$`,
+  `REVOKE EXECUTE ON FUNCTION operation_stays_terminal() FROM PUBLIC`,
   `CREATE TRIGGER operation_outcome_is_decided_once
      BEFORE UPDATE ON operation
      FOR EACH ROW EXECUTE FUNCTION operation_stays_terminal()`,
@@ -399,14 +403,14 @@ const inboxCancellation = [
 ];
 
 /**
- * What the accepting role may write, which is wider than the discipline over
- * it: `UPDATE (ready, generation)` lets a direct table write lower `ready` over
- * a consumable item — an enqueued submission no writer ever discovers — or
- * rewind the generation a stale observation is refused by, because raising is
- * this adapter's rule and no grant states it. A narrower grant cannot draw that
- * line, since acceptance writes both columns and an idle owner writes one of
- * them back; kasofsk/chuggy#121 is open on what does, and a later slice carries
- * it.
+ * What either role may write, which is wider than the discipline over it: both
+ * grants permit lowering `ready` over a consumable item — an enqueued
+ * submission no writer discovers until something raises readiness again — and
+ * the API's also permits rewinding the generation a stale observation is
+ * refused by, because direction is this adapter's rule and no grant states it.
+ * A narrower grant cannot draw that line, since acceptance writes both columns
+ * and an idle owner writes one of them back; kasofsk/chuggy#121 is open on what
+ * does, and a later slice carries it.
  */
 const inboxGrants = [
   `GRANT SELECT ON project TO ${apiRole}`,
