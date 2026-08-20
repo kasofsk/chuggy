@@ -53,11 +53,26 @@ export CHUG_PG_OWNER_PASSWORD="$(secret chuggy-postgres-credentials owner-passwo
 export CHUG_PG_DISPATCHER_PASSWORD="$(secret chuggy-postgres-credentials dispatcher-password)"
 export CHUG_PG_API_PASSWORD="$(secret chuggy-postgres-credentials api-password)"
 
+: "${PGPASSWORD:?the superuser password did not read back}" \
+  "${CHUG_PG_OWNER_PASSWORD:?owner-password did not read back}" \
+  "${CHUG_PG_DISPATCHER_PASSWORD:?dispatcher-password did not read back}" \
+  "${CHUG_PG_API_PASSWORD:?api-password did not read back}" &&
 psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy -f deploy/rig/postgres/postgres-roles.sql
 ```
 
 It is one transaction: it lands whole or not at all, and re-running it rotates
 the passwords.
+
+A lookup that fails reaches psql as an empty password rather than as a failure:
+a pipeline's status is its last command's, `base64 -d` exits 0 on the empty
+stdin a failed `kubectl get` leaves, and `export` discards a command
+substitution's status besides. `postgres-roles.sql` clears a role's password
+when handed an empty one, so that transaction lands whole as well, over roles
+that can then authenticate with nothing — and the step after it still connects,
+because it reaches the server over this forwarded port, which `Prove it` shows
+is trust-matched. So the emptiness is the failure, and the `:?` expansions
+refuse it while psql is still unreached and the operator can still see which
+lookup came back empty.
 
 ## Migrate
 
