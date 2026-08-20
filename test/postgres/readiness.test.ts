@@ -8,10 +8,12 @@
  * port takes it as an argument — and an acceptance in between is the failure
  * being reproduced rather than a coincidence being tolerated.
  *
- * EMPTINESS ALONE WOULD NOT DO IT. A clear that only proved the inbox empty
- * would prove it against a read taken before the acceptance it is racing, so
- * both halves are asserted separately: a consumable item refuses the clear,
- * and so does a generation the owner never saw.
+ * THE TWO HALVES ANSWER DIFFERENT CASES AND ARE ASSERTED SEPARATELY. The
+ * emptiness proof runs under the readiness row lock an acceptance also takes,
+ * so it is what refuses a clear racing a live acceptance; the generation is
+ * what refuses a clear whose observation was taken before one, including the
+ * case whose inbox really is empty again because everything accepted since was
+ * cancelled.
  */
 
 import assert from "node:assert/strict";

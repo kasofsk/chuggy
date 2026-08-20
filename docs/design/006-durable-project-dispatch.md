@@ -382,8 +382,14 @@ projects' journals or ticket contents. Acceptance locks the project ingress
 counter/lifecycle row and atomically allocates the inbox ordinal, inserts the
 operation and inbox item, and upserts a new readiness generation. The inbox is
 authoritative and readiness is its discovery index. Activation verifies the
-inbox. Clearing readiness locks and proves no consumable item remains while a
-generation prevents an idle owner from erasing a concurrent wake-up. A repair
+inbox. Clearing readiness locks the readiness row and proves no consumable item
+remains, and that proof under that lock is what prevents an idle owner erasing a
+concurrent wake-up: an acceptance either commits first, leaving its item visible
+to the proof, or it has not yet reached its readiness upsert and blocks on the
+lock the clearing holds. A generation additionally refuses a clear whose
+observation predates an acceptance, which matters because that observation is
+taken outside the clearing transaction, and is conservative where the operations
+accepted since have all been cancelled. A repair
 scan detects any inbox-bearing project missing readiness but is not required
 for correctness. Optional database notifications reduce latency but never
 replace bounded polling of the durable readiness relation.

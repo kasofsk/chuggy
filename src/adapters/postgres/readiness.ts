@@ -14,12 +14,22 @@
  * clearing has to prove the inbox empty and why a repair scan is optional
  * rather than load-bearing.
  *
- * CLEARING LOCKS THE READINESS ROW AND CHECKS THE GENERATION THE OWNER SAW.
- * An acceptance raising readiness takes that same row lock, so the two
- * serialize: whichever commits first, an owner that observed the earlier
- * generation is refused rather than erasing a wake-up it never looked at. The
- * emptiness proof alone would not do it — an item accepted after the owner's
- * last look is both consumable and invisible to a check that ran before it.
+ * THE EMPTINESS PROOF IS WHAT EXCLUDES AN ERASED WAKE-UP, and it does so
+ * because it runs under the readiness row lock an acceptance also takes. An
+ * acceptance writes its inbox item and its readiness generation in one
+ * transaction, so either it commits before the clearing takes that lock — and
+ * its item is visible to the proof, which refuses — or it has not reached the
+ * upsert and blocks on the lock the clearing holds. There is no third
+ * position: an item invisible to the proof is an uncommitted one, and its own
+ * transaction has still to pass through that lock.
+ *
+ * THE GENERATION IS FOR THE OBSERVATION TAKEN OUTSIDE THAT TRANSACTION. An
+ * owner clears against a readiness it read at some earlier moment, and the
+ * generation is what refuses a clear whose evidence predates an acceptance —
+ * including the case where everything accepted since was cancelled and the
+ * inbox really is empty again, where clearing would in fact have been correct.
+ * That refusal is conservative and costs one retry, which is why both checks
+ * stay: each is independently red on deletion.
  */
 
 import type pg from "pg";

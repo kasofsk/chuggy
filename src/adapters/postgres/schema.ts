@@ -124,7 +124,7 @@
  * WHY THE ROW IS NEVER DELETED AND THE GENERATION NEVER RESTARTS. Clearing
  * lowers a flag rather than removing the row, because a generation that
  * restarted at one would let an owner holding a stale one erase the wake-up
- * that reused it — which is the single race the generation exists to prevent.
+ * that reused it — the stale observation the generation exists to refuse.
  */
 
 import {
