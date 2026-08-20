@@ -1,0 +1,43 @@
+# Who on the network may reach the durable authority.
+#
+# WHAT SELECTING THE SERVER ISOLATES. A NetworkPolicy naming a pod makes that
+# pod deny every ingress the policy does not admit, so the rule below is the
+# whole of what may open a connection to PostgreSQL: a pod in this namespace
+# carrying the client label, on the server's port. Everything else in the
+# cluster is refused, which is the question an in-cluster server poses and an
+# external one does not.
+#
+# WHY A LABEL AND NOT A NAME. The workloads that connect do not exist yet — the
+# dispatcher and the API arrive with the slices that build them — and a policy
+# that named them would be a policy nothing could satisfy today and nobody would
+# revisit tomorrow. A label is the selector Kubernetes offers, and it is also
+# the honest one: authorization here is possession of a label, which is worth
+# saying out loud rather than mistaking for authentication. The database roles
+# are what actually separate one service from another.
+#
+# WHAT IT DOES NOT CONSTRAIN. Egress: the rehearsal cannot do default-deny
+# egress, which needs a CNI the rig has not got, and a policy that claimed an
+# egress rule here would be claiming enforcement this cluster cannot give. Also
+# `kubectl port-forward`, which the kubelet serves from inside the pod's own
+# network namespace and which therefore never crosses the boundary this file
+# draws. A verification that reached the server through a forwarded port has
+# said nothing about this policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-admits-labelled-clients
+  namespace: chuggy
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              chuggy.dev/postgres-client: "true"
+      ports:
+        - protocol: TCP
+          port: 5432
