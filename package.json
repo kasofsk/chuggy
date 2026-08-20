@@ -5,6 +5,7 @@
     "@eslint/js": "^10.0.1",
     "@informalsystems/quint": "0.32.0",
     "@types/node": "^26.2.0",
+    "@types/pg": "^8.23.1",
     "dependency-cruiser": "^18.2.0",
     "eslint": "^10.8.1",
     "prettier": "^3.9.6",
@@ -16,6 +17,7 @@
     "check": "./.chug/tasks/ci.sh"
   },
   "dependencies": {
+    "pg": "^8.23.0",
     "zod": "^4.4.3"
   }
 }

@@ -12,9 +12,11 @@
 # precondition rather than a measurement of what any stage read.
 #
 # THE UNIT STAGE RUNS THE SUITES NO OTHER GATE OWNS. `check-conformance.sh`
-# replays the corpus and `check-random.sh` walks the seeded sweep, each over
-# its own directory; discovering those here as well replays and walks twice per
-# `ci.sh` run. So this stage subtracts their directories from the tracked
+# replays the corpus, `check-random.sh` walks the seeded sweep and
+# `check-postgres.sh` drives a real server, each over its own directory;
+# discovering those here as well would replay and walk twice per `ci.sh` run,
+# and would fail every check on a machine with no database. So this stage
+# subtracts their directories from the tracked
 # suites rather than naming the ones it wants — a suite added anywhere else
 # runs here without being listed, and a directory nothing covers is a glob
 # matching nothing rather than a quiet pass. The clean line reports the split,
@@ -90,7 +92,7 @@ fi
 # The pattern mirrors how those gates find their own work — the directory
 # itself, not below it — so a suite nested deeper than they look is this
 # stage's, which is what keeps the two halves a partition.
-owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$'
+owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$|^test/postgres/[^/]*\.test\.ts$'
 unit_suites="$(printf '%s\n' "$suites" | grep -Ev "$owned" || true)"
 if [ -z "$unit_suites" ]; then
 	echo "check-source: LINTER ERROR — every tracked suite belongs to another gate; this stage would run nothing"
@@ -108,7 +110,7 @@ unset IFS
 set +f
 
 stage "  unit     " node --test --test-reporter=dot "$@"
-echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance and check-random"
+echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance, check-random and check-postgres"
 
 echo "check-source: $failed stage(s) failed, $ran run"
 [ "$failed" -eq 0 ]
