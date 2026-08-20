@@ -41,8 +41,11 @@ rules:
     verbs: [get, update, patch, delete]
   # Server-side apply authorizes a missing object as create as well as patch,
   # and RBAC cannot scope create by name. It is the one verb that stays
-  # namespace-wide, and it reaches no object that already exists: the API
-  # server rejects a create on a live name before any write.
+  # namespace-wide, and its bound is a live object rather than a name: the API
+  # server rejects a create on an existing name before any write, so what stays
+  # in reach is a name nothing currently holds. This account carries no pod or
+  # deployment verb, so it cannot make such a creation take effect. The delete
+  # above is what prune spends, so prune reaches rig-state and nothing else.
   - apiGroups: [""]
     resources: [configmaps]
     verbs: [create]

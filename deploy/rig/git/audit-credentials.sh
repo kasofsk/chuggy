@@ -14,14 +14,18 @@
 #   - the same with a duplicated `service`, where nginx takes the first and the
 #     backend the last.
 #
-# A refusal is nginx returning 401/403 before the backend; anything else means
-# the reader was authenticated at a push endpoint, whether or not a repository
-# happened to be there. Each attempt is a genuine ref creation, and every
-# repository an attempt was aimed at is swept afterwards for the ref it tried
-# to create, so a pass is the ref never appearing rather than merely a status
-# code. The nested repository is this script's own and is torn down whole; the
-# control is aimed at the served repository, which is not, so there only the
-# refs an attempt could have created are removed.
+# A refusal is nginx returning 401/403 before the backend; any other status
+# means the reader was authenticated at a push endpoint, whether or not a
+# repository happened to be there. An unanswered request or a 5xx is neither of
+# those — it is the ingress or the pod failing rather than the wall deciding —
+# so the run stops at 2 rather than reporting a wall it never exercised.
+#
+# Each attempt is a genuine ref creation, and every repository an attempt was
+# aimed at is swept afterwards for the ref it tried to create, so a pass is the
+# ref never appearing rather than merely a status code. The nested repository is
+# this script's own and is torn down whole; the control is aimed at the served
+# repository, which is not, so there only the refs an attempt could have created
+# are removed.
 #
 # Run it after `seed.sh`; `seed.sh` runs it for you. Exits 0 clean, 1 on a
 # finding, 2 when it could not run. Two is not a pass.
@@ -30,7 +34,11 @@ export LC_ALL=C
 
 namespace=chuggy-git
 repository=rig.git
-probe=probe.git/inner
+# Nested so the probe's push endpoint does not end in `.git/git-receive-pack`.
+# The root is named separately because it is what stand-up and teardown remove:
+# a literal there would outlive a rename and orphan the repository.
+probe_root=probe.git
+probe="$probe_root/inner"
 sync_user=sync
 
 for tool in kubectl git curl base64; do
@@ -69,21 +77,29 @@ work_dir="$(mktemp -d)"
 cleanup() {
 	rm -rf "$work_dir"
 	kubectl -n "$namespace" exec "$pod" -- sh -c '
-		rm -rf /git/probe.git
+		rm -rf "/git/$2"
 		git -C "/git/$1" for-each-ref --format="%(refname)" "refs/heads/audit-*" \
 			| while read -r ref; do
 				git -C "/git/$1" update-ref -d "$ref"
 			done
-	' sh "$repository" > /dev/null 2>&1 || true
+	' sh "$repository" "$probe_root" > /dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-# A bare repo carrying one commit, nested so its push endpoint does not end in
-# `.git/git-receive-pack`, and the tip the read credential will try to point a
-# new ref at.
+# The token goes to curl in a file rather than in `-u`, where it would be
+# readable in /proc for the request's life — the rule seed.sh states for the
+# credentials it mints. The value is hex from `openssl rand`, so curl's quoted
+# form carries it without escaping.
+(
+	umask 077
+	printf 'user = "%s:%s"\n' "$sync_user" "$sync_token" > "$work_dir/curlrc"
+)
+
+# A bare repo carrying one commit, and the tip the read credential will try to
+# point a new ref at.
 tip="$(kubectl -n "$namespace" exec "$pod" -- sh -c '
 	set -eu
-	rm -rf /git/probe.git
+	rm -rf "/git/$2"
 	git init --bare -q "/git/$1"
 	git -C "/git/$1" config http.receivepack true
 	git -C "/git/$1" symbolic-ref HEAD refs/heads/main
@@ -95,7 +111,7 @@ tip="$(kubectl -n "$namespace" exec "$pod" -- sh -c '
 	git -C "$wd" push -q "/git/$1" main
 	rm -rf "$wd"
 	git -C "/git/$1" rev-parse refs/heads/main
-' sh "$probe")"
+' sh "$probe" "$probe_root")"
 if [ -z "$tip" ]; then
 	echo "audit: could not stand up the probe repository" >&2
 	exit 2
@@ -123,19 +139,29 @@ attempt() {
 	printf '0000' >> "$body"
 	cat "$work_dir/empty.pack" >> "$body"
 
+	# A curl that never gets an answer exits non-zero and writes 000, and that
+	# is a verdict this script has to reach rather than an exit code it dies of.
 	code="$(curl -s -o /dev/null -w '%{http_code}' \
-		-u "$sync_user:$sync_token" -X POST \
+		-K "$work_dir/curlrc" -X POST \
 		-H 'Content-Type: application/x-git-receive-pack-request' \
-		--data-binary "@$body" "http://$ingress_host$url")"
+		--data-binary "@$body" "http://$ingress_host$url" || true)"
 
 	case "$code" in
 	401 | 403) verdict="refused ($code)" ;;
-	*) verdict="AUTHENTICATED ($code)" ;;
+	'' | 000 | 5??)
+		# The ingress or the pod failing, not the wall deciding: a rolling pod
+		# answers 502 with nothing authenticated, so calling it a breach would
+		# be a finding the wall never earned, and calling it a refusal would be
+		# a pass it never earned either.
+		echo "audit: $url answered ${code:-nothing}, so nothing was exercised" >&2
+		exit 2
+		;;
+	*)
+		verdict="AUTHENTICATED ($code)"
+		findings=$((findings + 1))
+		;;
 	esac
 	printf '  %-28s %-42s %s\n' "$label" "$url" "$verdict"
-	if [ "$code" != 401 ] && [ "$code" != 403 ]; then
-		findings=$((findings + 1))
-	fi
 }
 
 echo "audit: the read credential must be refused a push at every /git-receive-pack:"

@@ -13,14 +13,16 @@ branch, and the one path the `Kustomization` reconciles.
 ## Stand it up
 
 `bootstrap/` includes a `GitRepository` and a `Kustomization`, which are Flux
-kinds. Flux's controllers must already be in the cluster, or the apply errors
-on two unknown kinds, `seed.sh` still succeeds, and the loop is silently
-absent:
+kinds. Flux's controllers must already be in the cluster and serving the API
+versions `bootstrap/` names, or the apply errors on two unknown kinds, `seed.sh`
+still succeeds, and the loop is silently absent. The check asks for the
+versions, because a Flux old enough to carry the kinds but not those versions
+fails the same way:
 
 ```sh
 flux install
-kubectl get crd gitrepositories.source.toolkit.fluxcd.io \
-  kustomizations.kustomize.toolkit.fluxcd.io
+kubectl explain gitrepository --api-version=source.toolkit.fluxcd.io/v1
+kubectl explain kustomization --api-version=kustomize.toolkit.fluxcd.io/v1
 ```
 
 Then:
@@ -33,7 +35,7 @@ kubectl apply -k deploy/rig/git/bootstrap
 The git pod stays unready until `seed.sh` creates the credential secret it
 mounts. `seed.sh` mints the credentials, creates the bare repository inside the
 pod — `git-http-backend` serves repositories and does not create them — and
-pushes `deploy/rig/git/repo/` onto `main`. It is safe to re-run: the
+pushes `deploy/rig/git/repo/deploy/` onto `main`. It is safe to re-run: the
 credentials are read back rather than rotated, and the push is skipped when the
 served tree already matches.
 
@@ -43,8 +45,8 @@ Static, validated by nginx against htpasswd files with no other party standing.
 The sync reader may read; only the operator may move a branch. A push is any
 request `git-http-backend` would dispatch as one — a URL ending in
 `/git-receive-pack` — and nginx puts the writers file on exactly that location.
-The reader validates against writers there and against readers everywhere else;
-no query string enters the choice.
+The reader validates against writers there and against readers on every other
+path that reaches the backend; no query string enters the choice.
 
 | Secret | Who | May |
 |---|---|---|
@@ -117,6 +119,10 @@ kubectl -n chuggy-git port-forward service/git 8080:80
   anything about surviving the loss of a machine.
 - **The reconciled object is a marker.** A ConfigMap changing is evidence that
   the loop closes, not that any workload deploys.
+- **Only repository paths are guarded.** Anything else falls through to nginx's
+  built-in document root, so `GET /` is answered unauthenticated with whatever
+  the image ships there. Nothing under `/git` is reachable that way — it is
+  served only through the two locations above — but the surface is not nothing.
 
 ## Undoing it
 

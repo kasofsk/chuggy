@@ -1,8 +1,8 @@
 #!/bin/sh
 # Seed the rig's git service: mint the static credentials, create the bare
-# repository, and push the contents of `deploy/rig/git/repo/` onto its default
-# branch. Run it after `kubectl apply -k deploy/rig/git/bootstrap`; the git pod
-# waits on the credential secret this script creates.
+# repository, and push the contents of `deploy/rig/git/repo/deploy/` onto its
+# default branch. Run it after `kubectl apply -k deploy/rig/git/bootstrap`; the
+# git pod waits on the credential secret this script creates.
 #
 # Re-running is safe. The credentials are minted once and read back afterwards,
 # and the push is skipped when the repository already carries the same tree.
@@ -129,23 +129,31 @@ kubectl -n "$namespace" exec "$pod" -- sh -c '
 ' sh "$repository"
 
 # --- The default branch -----------------------------------------------------
-# The remote URL carries the username but never the token: a credential in the
-# URL outlives the command that carried it, copied into the clone's
-# `.git/config`. The token is handed to git out of band by an askpass helper
-# that reads it from a file.
+# The token never outlives the command that carried it, and there are three
+# ways it would. Not the URL: a credential there is copied into the clone's
+# `.git/config`, so the remote carries the username alone. Not argv, readable
+# in /proc for the command's life: an askpass helper reads the token from a
+# file. And not a credential helper — git calls each configured one's `store`
+# on a successful request, and `credential.helper=store` writes the token to
+# plaintext `~/.git-credentials`, outside the directory the trap removes.
+# `GIT_ASKPASS` does not suppress helpers, which are consulted before it, so
+# both authenticated commands reset the list with an empty
+# `-c credential.helper=`.
 remote="http://$operator_user@$ingress_host/$repository"
-token_file="$work_dir/token"
+# The helper reads the path out of the environment rather than carrying it as
+# text, so a `TMPDIR` that would need shell quoting cannot break it.
+export SEED_TOKEN_FILE="$work_dir/token"
 askpass="$work_dir/askpass"
 (
 	umask 077
-	printf '%s' "$operator_token" > "$token_file"
-	printf '#!/bin/sh\ncat %s\n' "$token_file" > "$askpass"
+	printf '%s' "$operator_token" > "$SEED_TOKEN_FILE"
+	printf '#!/bin/sh\ncat "$SEED_TOKEN_FILE"\n' > "$askpass"
 )
 chmod 700 "$askpass"
 export GIT_ASKPASS="$askpass"
 export GIT_TERMINAL_PROMPT=0
 
-git clone -q "$remote" "$work_dir/clone"
+git -c credential.helper= clone -q "$remote" "$work_dir/clone"
 # A clone of a repository with no commits leaves HEAD wherever the local git
 # defaults it, and the branch this pushes to is not a local default.
 git -C "$work_dir/clone" rev-parse --verify --quiet HEAD > /dev/null \
@@ -163,5 +171,5 @@ git -C "$work_dir/clone" \
 	-c user.name="$operator_user" \
 	-c user.email="$operator_user@$ingress_host" \
 	commit -qm "seed the rig's deploy directory"
-git -C "$work_dir/clone" push -q origin HEAD:main
+git -C "$work_dir/clone" -c credential.helper= push -q origin HEAD:main
 echo "seed: pushed $repository"
