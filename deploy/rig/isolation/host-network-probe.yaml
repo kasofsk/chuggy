@@ -2,7 +2,7 @@
 # watched rather than believed.
 #
 # This is the same probe as `work-probe.yaml` with one field added. Applied to a
-# namespace carrying `work-denies-egress.yaml` but no Pod Security enforcement,
+# namespace carrying `work-denies-all.yaml` but no Pod Security enforcement,
 # it reaches everything the policy refuses, because the rig's NetworkPolicy
 # controller exempts traffic whose source is a node address and `hostNetwork`
 # gives it one. Applied to the namespace as `namespace.yaml` defines it, the API

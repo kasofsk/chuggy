@@ -1,0 +1,47 @@
+# The caller the ingress half needs, so that closing it can be watched rather
+# than argued.
+#
+# A pod cannot observe its own ingress being refused: `work-denies-all.yaml`
+# rejects an inbound connection on the *called* pod's chain, so the direction
+# only shows from the dialling side. This is `work-probe.yaml` with a label,
+# plus the one policy that lets it dial at all — every pod in this namespace is
+# denied egress, this one included, so without the exemption it would be refused
+# by its own chain and prove nothing about the work pod's.
+#
+# That exemption is exactly the shape `work-denies-all.yaml` refuses to grant a
+# workload: a label that removes a pod from the deny. It is here because it is
+# what makes this pod a stand-in for the one thing the deployed policy still
+# leaves free to dial in — a pod in another namespace, which this rig's
+# rehearsal does not create.
+#
+# It is a fixture. `README.md` applies it, reads the dial with the ingress half
+# on and off, and deletes both objects afterwards.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dial-probe
+  namespace: chuggy-work
+  labels:
+    chuggy.dev/probe: dialer
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    chuggy.dev/pool: work
+  containers:
+    - name: probe
+      image: busybox@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616
+      command: ["sleep", "3600"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dial-probe-may-egress
+  namespace: chuggy-work
+spec:
+  podSelector:
+    matchLabels:
+      chuggy.dev/probe: dialer
+  policyTypes:
+    - Egress
+  egress:
+    - {}

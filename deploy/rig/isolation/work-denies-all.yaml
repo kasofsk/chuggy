@@ -13,7 +13,8 @@
 # every packet the work pod sent back on that connection would be ACCEPTed as
 # established — a full-duplex channel out of a namespace whose whole claim is
 # that code in it reaches nothing. Denying ingress closes the inbound half and
-# with it that return path.
+# with it that return path; `README.md` dials in with this half off and on and
+# reads the byte that comes back out with it off.
 #
 # `kubectl exec` and `kubectl logs` are unaffected: both are served by the
 # kubelet into the container rather than by anything dialling the pod, so
@@ -28,7 +29,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: work-denies-egress
+  name: work-denies-all
   namespace: chuggy-work
 spec:
   podSelector: {}

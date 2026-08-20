@@ -6,9 +6,10 @@
 #
 # It names no `serviceAccountName`, so it takes the namespace's `default`, whose
 # `automountServiceAccountToken: false` (set in `namespace.yaml`) leaves this pod
-# no API credential to mount. That control is namespace-wide rather than a field
-# here, so it holds for anything scheduled into `chuggy-work`, not only for a pod
-# that thought to ask; `README.md` shows the credential absent.
+# no API credential to mount. That is a namespace default rather than a field
+# here, so it holds for a pod that never thought about it — but the pod spec
+# overrides it, and `README.md` shows this manifest doing so with one line
+# added.
 #
 # It sleeps rather than serving, and the sleep ends on its own: a probe that
 # outlives the rehearsal is residue on a shared rig.
