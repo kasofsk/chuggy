@@ -1,43 +1,33 @@
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
-import type pg from "pg";
+import { test } from "node:test";
 
 import { postgresNotifications } from "../../src/adapters/postgres/notifications.ts";
-import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { notificationPublishFunction } from "../../src/adapters/postgres/schema.ts";
 import {
-  postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessSubmission,
-  postgresHarnessUrl,
-  type PostgresHarness,
 } from "./harness.ts";
+import { postgresReadHarness } from "./readHarness.ts";
 
-let harness: PostgresHarness;
-let pool: pg.Pool;
-before(async () => {
-  harness = await postgresHarnessOpen();
-  pool = postgresPool(postgresHarnessUrl());
-});
-after(async () => {
-  await pool.end();
-  await harness.close();
-});
+const subject = postgresReadHarness();
 
 test("cancellation publishes only an operation identity", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    subject.harness.store,
     "notify-cancel",
   );
   const submission = postgresHarnessSubmission(partition, "notify-cancel");
-  await harness.inbox.accept(submission);
-  await harness.inbox.cancel({
+  await subject.harness.inbox.accept(submission);
+  await subject.harness.inbox.cancel({
     partition,
     operation: submission.operation,
     authority: submission.authority,
   });
   assert.deepEqual(
-    await postgresNotifications(pool).read(partition, { after: 0, limit: 10 }),
+    await postgresNotifications(subject.pool).read(partition, {
+      after: 0,
+      limit: 10,
+    }),
     {
       result: "Events",
       cursor: 1,
@@ -49,18 +39,24 @@ test("cancellation publishes only an operation identity", async () => {
 });
 
 test("an expired cursor resets instead of pretending the stream is complete", async () => {
-  const partition = await postgresHarnessProject(harness.store, "notify-gap");
-  await harness.query(
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "notify-gap",
+  );
+  await subject.harness.query(
     `SELECT ${notificationPublishFunction}($1,$2,'Draft',g::text,NULL,g)
        FROM generate_series(1,1002) AS generated(g)`,
     [partition.tenant, partition.project],
   );
   assert.deepEqual(
-    await postgresNotifications(pool).read(partition, { after: 0, limit: 10 }),
+    await postgresNotifications(subject.pool).read(partition, {
+      after: 0,
+      limit: 10,
+    }),
     { result: "Reset", cursor: 1002 },
   );
   assert.deepEqual(
-    await harness.query(
+    await subject.harness.query(
       `SELECT min(ordinal)::text AS earliest,count(*)::text AS count
          FROM project_notification WHERE tenant=$1 AND project=$2`,
       [partition.tenant, partition.project],
