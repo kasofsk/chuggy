@@ -70,15 +70,19 @@
  * terminal. Unfinished work is found by selecting `Pending` operations for a
  * partition.
  *
- * WHY NO ROLE MAY WRITE `state` AND CANCELLATION IS A FUNCTION. 006 lets the
- * API insert authorized operations and decide none of them, and allows one
- * narrowly constrained transaction to move a still-pending operation to
- * cancelled. A grant on the column is not that constraint: `UPDATE operation
- * SET state = 'Succeeded'` on a pending row satisfies every column-level grant
- * a cancellation needs, and the terminality trigger cannot refuse it because
- * the row it fires on is not yet terminal. So the API role holds no `UPDATE`
- * on this relation at all, and cancellation is a `SECURITY DEFINER` function
- * it is granted `EXECUTE` on — which also makes the transition, the settlement
+ * WHY NO ROLE MAY WRITE A SETTLEMENT, BY EITHER VERB, AND CANCELLATION IS A
+ * FUNCTION. 006 lets the API insert authorized operations and decide none of
+ * them, and allows one narrowly constrained transaction to move a
+ * still-pending operation to cancelled. A grant on the column is not that
+ * constraint, and the hole has two halves. `UPDATE operation SET state =
+ * 'Succeeded'` on a pending row satisfies every column-level grant a
+ * cancellation needs, and the terminality trigger cannot refuse it because the
+ * row it fires on is not yet terminal. A table-level `INSERT` is the same hole
+ * spelled the other way: the settlement columns are columns like any other, no
+ * CHECK refuses a row born `Succeeded`, and a `BEFORE UPDATE` trigger never
+ * runs on an insert. So the API role holds no `UPDATE` on this relation at
+ * all, its `INSERT` names the columns acceptance writes and not one more, and
+ * cancellation is a `SECURITY DEFINER` function it is granted `EXECUTE` on — which also makes the transition, the settlement
  * columns and the inbox flag one call rather than three grants that only
  * together add up to a cancellation. A role-aware trigger would be the other
  * shape and it is broken in deployment: a service connects as a login role
@@ -277,6 +281,8 @@ const inboxRelations = [
        AND length(authority_kind) <= ${authorityCharsMax}
        AND length(authority_subject) <= ${authorityCharsMax}
        AND length(command) <= ${operationCommandCharsMax}
+       AND coalesce(length(settled_authority_kind), 0) <= ${authorityCharsMax}
+       AND coalesce(length(settled_authority_subject), 0) <= ${authorityCharsMax}
      )
    )`,
   `CREATE TABLE inbox_item (
@@ -379,8 +385,13 @@ const inboxCancellation = [
 const inboxGrants = [
   `GRANT SELECT ON project TO ${apiRole}`,
   `GRANT UPDATE (ingress_next) ON project TO ${apiRole}`,
-  `GRANT SELECT, INSERT ON operation TO ${apiRole}`,
-  `GRANT SELECT, INSERT ON inbox_item TO ${apiRole}`,
+  `GRANT SELECT ON operation TO ${apiRole}`,
+  `GRANT INSERT (tenant, project, operation, authority_kind, authority_subject,
+                 admission, key_version, key_digest, payload_digest, command,
+                 lifecycle_generation)
+     ON operation TO ${apiRole}`,
+  `GRANT SELECT ON inbox_item TO ${apiRole}`,
+  `GRANT INSERT (tenant, project, ordinal, operation) ON inbox_item TO ${apiRole}`,
   `GRANT SELECT, INSERT ON project_readiness TO ${apiRole}`,
   `GRANT UPDATE (ready, generation) ON project_readiness TO ${apiRole}`,
   `GRANT SELECT ON inbox_item TO ${dispatcherRole}`,

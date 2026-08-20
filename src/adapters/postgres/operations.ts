@@ -46,6 +46,8 @@
 
 import type pg from "pg";
 
+import { assertNever } from "../../domain/assertNever.ts";
+
 import {
   admissionLifecycles,
   allAdmissionClasses,
@@ -416,13 +418,23 @@ export async function postgresOperationsCancel(
   return postgresTransaction(pool, async (client) => {
     const locked = await operationsWithdraw(client, cancellation);
     if (locked === undefined) return { cancelled: "Unknown" };
-    if (locked === "Succeeded" || locked === "Refused") {
-      return { cancelled: "NotPending", state: locked };
+    switch (locked) {
+      case "Succeeded":
+      case "Refused":
+        return { cancelled: "NotPending", state: locked };
+      case "Pending":
+        return {
+          cancelled: "Cancelled",
+          operation: await operationsSettled(client, cancellation),
+        };
+      case "Cancelled":
+        return {
+          cancelled: "AlreadyCancelled",
+          operation: await operationsSettled(client, cancellation),
+        };
+      default:
+        return assertNever(locked);
     }
-    const operation = await operationsSettled(client, cancellation);
-    return locked === "Pending"
-      ? { cancelled: "Cancelled", operation }
-      : { cancelled: "AlreadyCancelled", operation };
   });
 }
 

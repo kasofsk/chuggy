@@ -214,6 +214,60 @@ test("the api role may accept: allocate an ordinal, write the operation and its 
   }
 });
 
+test("the api role cannot accept an operation that is already decided", async () => {
+  const submission = await acceptedFor("apibornsettled");
+  const partition = submission.partition;
+  const fresh = `${submission.operation}-born`;
+  const refused = [
+    `INSERT INTO operation (${operationColumns}, state, settled_at)
+       VALUES (${operationValues(submission, fresh)}, 'Succeeded', now())`,
+    `INSERT INTO operation (${operationColumns}, state, settled_at)
+       VALUES (${operationValues(submission, fresh)}, 'Refused', now())`,
+    `INSERT INTO operation (${operationColumns}, settled_authority_subject)
+       VALUES (${operationValues(submission, fresh)}, 'someone')`,
+  ];
+  for (const statement of refused) {
+    const refusal = await harness.attemptAs(apiRole, statement);
+    assert.match(String(refusal), /permission denied/);
+  }
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `INSERT INTO operation (${operationColumns}) VALUES (${operationValues(submission, fresh)})`,
+    ),
+    undefined,
+  );
+  const standing = await harness.inbox.operation(
+    partition,
+    submission.operation,
+  );
+  assert.ok(standing !== undefined);
+  assert.equal(standing.state, "Pending");
+});
+
+test("the api role cannot enqueue an item no writer will ever discover", async () => {
+  const submission = await acceptedFor("apiunconsumable");
+  const partition = submission.partition;
+  const refusal = await harness.attemptAs(
+    apiRole,
+    `INSERT INTO inbox_item (tenant, project, ordinal, operation, consumable)
+       VALUES ('${partition.tenant}', '${partition.project}', 9999, '${submission.operation}-item', false)`,
+  );
+  assert.match(String(refusal), /permission denied/);
+});
+
+test("the api role may lock the lifecycle row it allocates an ordinal from", async () => {
+  const submission = await acceptedFor("apilock");
+  const partition = submission.partition;
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT tenant FROM project WHERE tenant = '${partition.tenant}' AND project = '${partition.project}' FOR UPDATE`,
+    ),
+    undefined,
+  );
+});
+
 /** The cancellation call, with the submission's own authority as the settling one. */
 function cancelCall(submission: Submission): string {
   return `SELECT ${cancellationFunction}('${submission.partition.tenant}', '${submission.partition.project}',
