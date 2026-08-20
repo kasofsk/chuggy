@@ -1,9 +1,11 @@
 -- The identities a chuggy deployment owns, and the privileges no migration can
 -- grant itself.
 --
--- RUN AS A SUPERUSER, AGAINST THE TARGET DATABASE, BEFORE ANYTHING MIGRATES. A
--- role is cluster-wide and a schema grant is not, so both halves below land
--- only when the connection is to the database the relations will live in.
+-- RUN AS A SUPERUSER, AGAINST THE TARGET DATABASE, ON POSTGRESQL 16 OR NEWER,
+-- BEFORE ANYTHING MIGRATES. A role is cluster-wide and a schema grant is not,
+-- so both halves below land only when the connection is to the database the
+-- relations will live in. The version floor is not this file's syntax; it is
+-- what makes the CREATEROLE argument below true, and it is argued there.
 --
 -- WHY THE MIGRATING IDENTITY IS NOT THE SUPERUSER. Cancellation is a
 -- SECURITY DEFINER function and executes with the privileges of whoever created
@@ -17,7 +19,12 @@
 -- migration that adds a group role would otherwise fail at start-up on every
 -- cluster where this file was not re-run first, which is a coupling between a
 -- future migration and a deployment step that nothing checks. CREATEROLE is not
--- superuser, which is the property the SECURITY DEFINER function turns on.
+-- superuser, which is the property the SECURITY DEFINER function turns on —
+-- and that separation is what PostgreSQL 16 introduced. Before it a CREATEROLE
+-- role could grant itself membership in any non-superuser role, and
+-- `pg_execute_server_program` is one of those and is a shell as the server's
+-- own OS user: on an older cluster chuggy_owner would be superuser-equivalent
+-- by a single GRANT and the argument above would be false, not merely weaker.
 --
 -- WHY THE GROUP ROLES ARE CREATED HERE AS WELL. A membership grant needs the
 -- group to exist, and a deployment issues credentials before the process that
@@ -45,15 +52,22 @@
 -- transactional, roles and grants included.
 --
 -- IDEMPOTENT, AND AUTHORITATIVE ABOUT ATTRIBUTES. Creation is conditional, the
--- ALTER statements restate every attribute rather than the ones being changed,
--- and a repeated grant is a no-op. Re-running it rotates the passwords and
--- takes back an attribute someone granted by hand.
+-- ALTER statements restate every attribute ALTER ROLE can set rather than the
+-- ones being changed, and a repeated grant is a no-op. Re-running it rotates
+-- the passwords and takes back an attribute someone granted by hand.
+--
+-- That has to include the two that do not read as security attributes, because
+-- they are the two that lock a role OUT rather than widen it: a CONNECTION
+-- LIMIT of zero refuses every connection, and a VALID UNTIL in the past
+-- refuses every password. Neither is touched by setting a password, so a file
+-- that rotated credentials without restating them would report success over a
+-- role that still cannot authenticate.
 --
 -- Usage:
 --   CHUG_PG_OWNER_PASSWORD=... \
 --   CHUG_PG_DISPATCHER_PASSWORD=... \
 --   CHUG_PG_API_PASSWORD=... \
---   psql -f deploy/rig/postgres-roles.sql
+--   psql -f deploy/rig/postgres/postgres-roles.sql
 
 \set ON_ERROR_STOP on
 \getenv owner_password CHUG_PG_OWNER_PASSWORD
@@ -75,11 +89,18 @@ SELECT format('CREATE ROLE %I LOGIN', role_name)
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
 
-ALTER ROLE chuggy_dispatcher WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-ALTER ROLE chuggy_api WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-ALTER ROLE chuggy_owner WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS;
-ALTER ROLE chuggy_dispatcher_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-ALTER ROLE chuggy_api_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+-- A group role gets PASSWORD NULL here and a login role gets its password
+-- below, which is the only attribute split between the two blocks.
+ALTER ROLE chuggy_dispatcher WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
+ALTER ROLE chuggy_api WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
+ALTER ROLE chuggy_owner WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 VALID UNTIL 'infinity';
+ALTER ROLE chuggy_dispatcher_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 VALID UNTIL 'infinity';
+ALTER ROLE chuggy_api_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 
 ALTER ROLE chuggy_owner PASSWORD :'owner_password';
 ALTER ROLE chuggy_dispatcher_login PASSWORD :'dispatcher_password';

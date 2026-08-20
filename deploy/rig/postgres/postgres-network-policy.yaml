@@ -1,0 +1,58 @@
+# Who on the network may reach the durable authority.
+#
+# WHAT SELECTING THE SERVER ISOLATES. A NetworkPolicy naming a pod makes that
+# pod deny every ingress the policy does not admit, so the rule below is the
+# whole of what may open a connection to PostgreSQL from the pod network: a pod
+# in this namespace carrying the client label, on the server's port. Every other
+# pod-network client is refused, which is the question an in-cluster server
+# poses and an external one does not. The boundary is drawn there and nowhere
+# else; what reaches the server without crossing that network is below.
+#
+# WHY A LABEL AND NOT A NAME. The workloads that connect do not exist yet — the
+# dispatcher and the API arrive with the slices that build them — and a policy
+# that named them would be a policy nothing could satisfy today and nobody would
+# revisit tomorrow. A label is the selector Kubernetes offers, and it is also
+# the honest one: authorization here is possession of a label, which is worth
+# saying out loud rather than mistaking for authentication. The database roles
+# are what actually separate one service from another.
+#
+# WHAT IT DOES NOT CONSTRAIN. Egress: the rehearsal cannot do default-deny
+# egress, which needs a CNI the rig has not got, and a policy that claimed an
+# egress rule here would be claiming enforcement this cluster cannot give.
+#
+# Then two bypasses of the same class: each reaches the server without a packet
+# crossing the pod network, so no ingress rule here can see it, and neither is
+# closable from this file.
+#
+#   `kubectl port-forward`, which the kubelet serves from inside the pod's own
+#   network namespace, so the connection is already past the boundary when it
+#   is made.
+#
+#   The node, and every pod sharing its network namespace. kube-router programs
+#   the pod's own chain with an unconditional ACCEPT for a source address local
+#   to the node, ABOVE the jump to this policy's chain, so a host-network pod
+#   and any process on the box reach the server whatever they are labelled. The
+#   ACCEPT is the CNI's own and a NetworkPolicy cannot remove it; what bounds
+#   that path is who may run on the node, not this file.
+#
+# A verification that reached the server through a forwarded port, or from the
+# node, has said nothing about this policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-admits-labelled-clients
+  namespace: chuggy
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              chuggy.dev/postgres-client: "true"
+      ports:
+        - protocol: TCP
+          port: 5432
