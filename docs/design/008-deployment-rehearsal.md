@@ -14,7 +14,7 @@ This is not a cost argument; it is bought for the order.
 
 ## What the rehearsal may not claim
 
-006 also says acknowledged commits have "no expected loss under process, instance and zonal failure". A single machine cannot make that true, and the rehearsal must not pretend otherwise. That sentence is a claim about the production deployment; it is not an invariant any code satisfies, and nothing in `src/` can get it right or wrong. So the rehearsal's verdicts are confined to the mechanisms 006 does put in the code — ownership, fencing, the recovery epoch, the restore path. Zonal durability is bought at the apply and nowhere earlier.
+006 also says acknowledged commits have "no expected loss under process, instance and zonal failure". A single machine cannot make that true, and the rehearsal must not pretend otherwise. That sentence is a claim about the production deployment; it is not an invariant any code satisfies, and nothing in `src/` can get it right or wrong. So the rehearsal's durability verdicts are confined to the mechanisms 006 does put in the code — ownership, fencing, the recovery epoch, the restore path. Zonal durability is bought at the apply and nowhere earlier.
 
 ## The rig
 
@@ -36,11 +36,11 @@ The recovery epoch is a control-plane write the dispatcher role provably cannot 
 
 ## What the rehearsal cannot see
 
-Said plainly, so nobody trusts it further than it goes: that work and system are different machines, because one node makes them the same — D3's labels and nodeSelector express the split, and only a second node would prove it; node machine configuration and bootstrap, which first meet reality at the apply; CSI attach, detach and resize, because the rig's volumes are directories on a node; a real certificate chain; and every GCP row — the token exchange, disk provisioning, the registry pull credential, Cloud NAT's behaviour.
+Said plainly, so nobody trusts it further than it goes: that work and system are different machines, because one node makes them the same — D3's labels and nodeSelector express the split, and only a second node would prove it; node machine configuration and bootstrap, which first meet reality at the apply; CSI attach, detach and resize, because the rig's volumes are directories on a node; which mechanism answers reachability in production, because issue #75 leaves managed versus in-cluster PostgreSQL to the operator and D0's policy transfers only to the in-cluster choice; a real certificate chain; and the GCP row — the token exchange, disk provisioning, the registry pull credential, Cloud NAT's behaviour.
 
 D3 reaches the placement and egress rules themselves; the machines underneath them are the apply's, which is why the apply is still a row.
 
-D3 lands the labels and the nodeSelector, and deliberately not the taint. A work-pool `NoSchedule` taint on the only node forces every system workload on it to carry a toleration — Flux's controllers, the PostgreSQL StatefulSet — which is the inverse of what the production split wants, and a manifest the apply would then have to undo. The taint belongs to the pool split the apply builds. A second node joining the rig would make the split real here as well, and the row leaves that open rather than committing to it.
+D3 lands the labels and the nodeSelector, and deliberately not the taint. A work-pool `NoSchedule` taint on the only node forces every system workload on it to carry a toleration — k3s's own coredns, Traefik, metrics-server and local-path-provisioner, Flux's controllers, the PostgreSQL StatefulSet — which is the inverse of what the production split wants, and a manifest the apply would then have to undo. The taint belongs to the pool split the apply builds. A second node joining the rig would make the split real here as well, and the row leaves that open rather than committing to it.
 
 ## The seams that stay seams
 
@@ -58,7 +58,7 @@ The rig must not become a design input. What holds today is not a seam but an ab
 | D3 | The isolation rehearsal, on the rig as it stands: the pool labels and a nodeSelector placing work and system apart, default-deny egress on the job namespace, and the metadata endpoint refused by policy rather than by the rig's not having one | — | Proposed |
 | D4 | The GCP apply, issues #75 and #76 | D0, D1, D2, D3 | Proposed |
 
-D2 is 006's I8, taken early and taken in part. 006 places I8 behind I0 through I7, and what puts it there is its second half — the managed deployment, and the inventory and reconciliation of Git repositories, blobs, executions and permits, which needs the finalizer and the scheduler to have produced any. Its first half — backup and restore, a fresh recovery epoch, and old-epoch actors still rejected after one — needs only a database that has an epoch, which is I0 and I1. D2 takes that half and leaves the rest with I8.
+D2 is 006's I8, taken early and taken in part. 006 places I8 behind I0 through I7, and what puts it there is its second half — the managed deployment, and the inventory and reconciliation of Git repositories, blobs, executions and permits, which needs the finalizer and the scheduler to have produced any. Its first half — backup and restore, a fresh recovery epoch, and old-epoch actors still rejected after one — needs only a database that has an epoch, which is I0. D2 takes that half and leaves the rest with I8.
 
 The only input any of D0 through D2 takes from this tree is a connection string, and I0 already makes it an argument; D1 needs not even that. The credential D0 issues is a deployment secret rather than a read through a secret source.
 
