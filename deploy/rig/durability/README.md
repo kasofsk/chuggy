@@ -30,12 +30,13 @@ would be picking where a database lives while it does not exist anywhere else.
 `destroy` refuses to run unless `verify` has left a receipt in that directory
 naming the digest of the dump that is actually there.
 
-`rehearse.test.sh` is the suite over the guards that refuse before anything
-reaches the cluster: the digest and receipt comparisons standing between
-`verify` and `destroy`, the derivation `epoch` holds the establish to, the
-witness partition every later stage reads, and what `teardown` says when no
-session can be opened. It runs against a stub `kubectl`, and the cases whose
-subject is a refusal that comes first require that nothing reached it.
+`rehearse.test.sh` is the suite over what it names and no more: the mode an
+archive full of verifiers is held to, the digest and receipt comparisons
+standing between `verify` and `destroy`, the derivation `epoch` holds the
+establish to, the witness partition every later stage reads, what `teardown`
+observes before it says anything, and what a status from a tool underneath is
+worth by the time it leaves. It runs against a stub `kubectl`, and the cases
+whose subject is a refusal that comes first require that nothing reached it.
 
 ```sh
 ./deploy/rig/durability/rehearse.test.sh
@@ -94,12 +95,12 @@ destroyed. That `DROP DATABASE` removes it. That the dump restores it. That the
 witness lease comes back out of that dump carrying the owner, project-local
 fencing epoch, head and expiry it was written down with, and that the epoch
 established after the restore supersedes it while its term has still not run
-out — which is the state a stranded writer is in, and the one thing here that
-tells a restore apart from an epoch advance. That no lease the restore brought
-back carries the current epoch. That the recovery epoch is never reused,
-because the server refuses an epoch already on record rather than the script
-deciding it is a repeat. That the runtime role cannot establish an epoch, which
-is what stops a stranded writer from unfencing itself.
+out — which is the state a stranded writer is in. Only the two together tell a
+restore apart from an epoch advance; neither does on its own. That no lease the
+restore brought back carries the current epoch. That the recovery epoch is
+never reused, because the server refuses an epoch already on record rather than
+the script deciding it is a repeat. That the runtime role cannot establish an
+epoch, which is what stops a stranded writer from unfencing itself.
 
 **Proved as far as an inventory of row counts reaches, and no further.** That
 between the restore and the establish the database gained a row in

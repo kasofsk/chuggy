@@ -71,14 +71,21 @@
 # Usage:
 #   CHUG_RIG_ARCHIVE=<dir> ./deploy/rig/durability/rehearse.sh <stage>
 #
-# EXITS 0 CLEAN, 1 ON A FINDING, 2 WHEN IT COULD NOT RUN — and two is only
-# ever this script's own preconditions: no kubectl, an archive that is unset or
-# unwritable or readable by others, or a stage run before the one whose receipt
-# it needs. Everything past those exits one, the cluster's own failures
-# included. A statement the server refused and a statement that never reached
-# it arrive here as the same status, and a script that cannot tell them apart
-# must not print a verdict that says it can. So a one is read before it is
-# believed: it says a finding, OR the rig went away under the run.
+# EXITS 0 CLEAN, 1 ON A FINDING, 2 WHEN IT COULD NOT RUN, and `leave` below is
+# what makes that true rather than the call sites. Two is a refusal this script
+# chose — something it needs is missing, unreadable or out of order — and
+# nothing else can reach it. The statuses underneath are not this script's:
+# `psql` exits 2 on a connection it could not make and 3 on a statement the
+# server refused under ON_ERROR_STOP, `kubectl exec` propagates the remote
+# status, and `set -e` carries it out. Unnormalised, a connection lost at the
+# read-back after `DROP DATABASE` would arrive as the two a reader takes for a
+# refusal that touched nothing.
+#
+# WHAT A STATUS CANNOT SAY IS WHETHER ANYTHING WAS DESTROYED, and no status
+# here pretends to. That is the stage's to say: `restore` refusing for want of
+# a dump is a two, and by then the database is already gone. And a one says a
+# finding OR the rig went away under the run, so it is read before it is
+# believed.
 set -eu
 export LC_ALL=C
 
@@ -96,10 +103,28 @@ die() {
 	echo "rehearsal: $*" >&2
 	exit 1
 }
+
+# A refusal leaves by a status none of the tools under this script returns, and
+# `leave` is where it becomes the two the header promises. Exiting two directly
+# would put `cannot` in a race with `psql`, which spends the same status on a
+# connection it could not make — and `cannot` would lose that race in silence.
+# Going out through a status rather than a flag is what keeps a refusal raised
+# inside a subshell or a command substitution from arriving as a finding.
+refused_status=97
 cannot() {
 	echo "rehearsal: $*" >&2
-	exit 2
+	exit "$refused_status"
 }
+leave() {
+	rc=$?
+	trap - EXIT
+	case "$rc" in
+	0) exit 0 ;;
+	"$refused_status") exit 2 ;;
+	*) exit 1 ;;
+	esac
+}
+trap leave EXIT
 
 kube() { kubectl --context "$context" -n "$namespace" "$@"; }
 

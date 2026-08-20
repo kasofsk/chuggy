@@ -1,6 +1,10 @@
 #!/bin/sh
-# Shell test for rehearse.sh, over the guards that refuse before anything
-# reaches the cluster, and over what `teardown` says when no session opens.
+# Shell test for rehearse.sh, over what it names here and no more: the mode an
+# archive full of verifiers is held to, the digest and receipt comparisons
+# standing between `verify` and `destroy`, the derivation `epoch` holds the
+# establish to, the witness partition every later stage reads, what `teardown`
+# observes before it says anything, and what a status from a tool underneath is
+# worth by the time it leaves.
 #
 # WHY IT IS A SUITE AND NOT A RIG RUN. Every guard here was once written so that
 # the absence of the thing being checked read as agreement: a digest taken
@@ -39,20 +43,36 @@ cat > "$BIN/kubectl" << 'STUB'
 # The cluster as far as this suite lets the script see it. Every invocation is
 # appended to the log, and an `exec` takes the next line of the replies file as
 # what the server said: `-` for nothing at all, `!` for a call that never
-# landed. It decides nothing a server decides; it supplies an answer so the
-# shell around it can be judged.
+# landed, `!` and a number for one that came back with a status of its own. It
+# decides nothing a server decides; it supplies an answer so the shell around
+# it can be judged.
 set -u
-printf '%s\n' "$*" >> "$CHUG_STUB_LOG"
+
+# One line per invocation, so the log's length is how many calls were made and
+# its order is the order they were made in. A remote command arrives carrying
+# its own newlines, and unflattened it would count as several calls.
+{
+	printf '%s' "$*" | tr '\n' ' '
+	printf '\n'
+} >> "$CHUG_STUB_LOG"
 case " $* " in
 *' exec '*) ;;
 *) exit 0 ;;
 esac
-cat > /dev/null
+
+# `kubectl exec` attaches stdin only when it is asked to, and the bare `exec`
+# calls in the script under test ask for none. A stub that drained stdin for
+# those would be draining the suite's own, which on a terminal never ends. The
+# remote command is cut off first, so a `-i` in it is not read as the flag.
+case " ${*%% -- *} " in
+*' -i '*) cat > /dev/null ;;
+esac
 served="$CHUG_STUB_LOG.served"
 printf 'x\n' >> "$served"
 reply="$(sed -n "$(wc -l < "$served")p" "$CHUG_STUB_REPLIES" 2> /dev/null || true)"
 case "$reply" in
 '!') exit 1 ;;
+'!'[0-9]*) exit "${reply#!}" ;;
 '-' | '') ;;
 *) printf '%s\n' "$reply" ;;
 esac
@@ -94,7 +114,29 @@ also() { # <path> — fold a file the run wrote into what the assertions read
 	fi
 }
 
+# The verbs the stub was called with, in call order — `kube` puts the context
+# and the namespace ahead of the verb, so the verb is the field after the
+# namespace. Folded into the output as one line because an assertion here is a
+# substring of what the run printed, and an order is not a substring of
+# anything until something states it.
+calls() {
+	echo "the calls, in order: $(awk '{ for (i = 1; i < NF; i++) if ($i == "-n") { print $(i + 2); break } }' "$LOG" | tr '\n' ' ')" >> "$OUT"
+}
+
 untouched="the cluster was reached 0 time(s)"
+
+# --- the archive: credential material before it is anything else -------------
+
+# `globals.sql` carries every login role's SCRAM verifier, so the mode of the
+# directory it is written into is what stands between the dump and the rest of
+# the host. It refuses before a stage is so much as dispatched. Every other
+# case here is its mirror: none of them reaches a guard without `fresh_case`
+# having made the mode right.
+fresh_case
+chmod 755 "$A"
+run destroy
+check "an archive the rest of the host can read is refused" 2 "$RC" "carries every login role's verifier"
+check "a widened archive reaches nothing" 2 "$RC" "$untouched"
 
 # --- destroy: the ordering this script exists to enforce ---------------------
 
@@ -167,6 +209,27 @@ printf 'dump-sha256 %s\n' "$(sha256sum "$A/fixture.dump" | cut -d' ' -f1)" > "$A
 printf -- '-\n-\n-\nFATAL:  database "fixture" does not exist\n' > "$REPLIES"
 run destroy
 check "destroy takes the refusal the server gives it" 0 "$RC" "a connection to it is refused"
+
+# --- the statuses underneath, which are not this script's to spend -----------
+
+# `psql` spends 2 on a connection it could not make and 3 on a statement the
+# server refused under ON_ERROR_STOP; `kubectl exec` propagates the remote
+# status and `set -e` carries it out. A 2 arriving that way is the status this
+# script spends on a refusal that touched nothing — and here it arrives at the
+# read-back after `DROP DATABASE`, where nothing could be further from true.
+fresh_case
+printf 'a dump\n' > "$A/fixture.dump"
+printf 'dump-sha256 %s\n' "$(sha256sum "$A/fixture.dump" | cut -d' ' -f1)" > "$A/verified.txt"
+printf -- '!2\n' > "$REPLIES"
+run destroy
+check "a connection destroy could not make leaves as a finding" 1 "$RC" "the cluster was reached 1 time(s)"
+
+fresh_case
+printf 'a dump\n' > "$A/fixture.dump"
+printf 'dump-sha256 %s\n' "$(sha256sum "$A/fixture.dump" | cut -d' ' -f1)" > "$A/verified.txt"
+printf -- '!3\n' > "$REPLIES"
+run destroy
+check "a statement the server refused leaves as a finding" 1 "$RC" "the cluster was reached 1 time(s)"
 
 # --- epoch: the derivation the establish is held to --------------------------
 
@@ -241,10 +304,15 @@ check "restore accepts a partition naming both fields" 1 "$RC" "what came back i
 
 # --- teardown: a line that reports what it observed --------------------------
 
+# The order is the property, not the line: the read-back is only worth anything
+# through a session the pod is still up to serve, and the refusal on a surviving
+# scratch database is only true because the pod outlives it.
 fresh_case
 printf -- '-\n-\n' > "$REPLIES"
 run teardown
-check "teardown reads the drop back before the pod goes" 0 "$RC" "gone from pg_database"
+calls
+check "teardown reads the drop back before the pod goes" 0 "$RC" "the calls, in order: exec exec delete"
+check "teardown says the drop is gone from pg_database" 0 "$RC" "gone from pg_database"
 
 fresh_case
 printf -- '-\nfixture_restore_check\n' > "$REPLIES"
@@ -254,6 +322,8 @@ check "teardown refuses a scratch database that survived the drop" 1 "$RC" "surv
 fresh_case
 printf -- '!\n' > "$REPLIES"
 run teardown
+calls
 check "teardown says so when no session can be opened" 0 "$RC" "no session could be opened to drop"
+check "teardown reads nothing back through a session that never opened" 0 "$RC" "the calls, in order: exec delete"
 
 done_ "rehearse.test.sh"
