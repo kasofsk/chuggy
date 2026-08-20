@@ -34,7 +34,11 @@
 # THE CASES RUN ONE AT A TIME. They share a database and some of them establish
 # a global recovery epoch, which is by design a fact about the whole database;
 # running them concurrently would let one case fence another's lease and report
-# it as the adapter's fault.
+# it as the adapter's fault. One case also waits on `pg_locks`, which is
+# cluster-wide rather than database-scoped — so two runs of this gate against
+# the same reused container would observe each other's queued transactions.
+# Within a run the serial order excludes that; across concurrent runs it does
+# not, and nothing here tries to.
 #
 # Env:
 #   CHUG_PG_URL        test against this server instead, skipping the

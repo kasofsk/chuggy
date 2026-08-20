@@ -16,6 +16,14 @@
  * crash after acceptance leave the work discoverable without an active owner,
  * and the only way to mean that is a process that took no ownership, accepted,
  * and then stopped existing.
+ *
+ * WHAT THE UNRESOLVED SEAMS ASSERT IS WEAKER THAN THEIR NAMES. `blocked` and
+ * `unaccepted` start a write they mean to be killed mid-flight, and the parent
+ * kills on a line the child prints before the server has necessarily begun
+ * waiting on the lock. Killed early, the case passes because nothing was
+ * written; killed late, it passes because the write rolled back. Both are the
+ * claim, so neither can fail falsely — but only the late kill exercises the
+ * rollback, and the case cannot say which one it took.
  */
 
 import assert from "node:assert/strict";
