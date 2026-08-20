@@ -1656,6 +1656,17 @@ identity. A released or deleted draft refuses later edits. The API role reaches
 these transitions through constrained server functions rather than table-wide
 update grants.
 
+The public release command is `ReleaseDraft`, naming the draft's ticket,
+observed authoring version and attached task-configuration revision. Public
+`Decide` commands cannot carry a `ReleaseTicket` event once I4b lands. Mailbox
+resolution reads the immutable named revision and produces the complete
+`ReleaseTicket` candidate used by the pure writer, but that read grants no
+authority: the deciding transaction locks the draft, rechecks the same version,
+attachment and `Draft` state, then marks it `Released` in the transaction that
+journals the candidate. A failed fence durably refuses the operation without
+an entry. Thus the journal retains the fully resolved domain fact while no
+caller can bypass or race native authoring state.
+
 Task-configuration revisions are immutable, project-owned, canonically encoded
 and content-digested. Creation validates structural bounds and prohibited
 secret-bearing fields before persistence. Attaching one to a draft is a typed
