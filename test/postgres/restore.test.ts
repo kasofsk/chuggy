@@ -63,6 +63,28 @@ test("a lease issued before a restore can neither commit nor renew after it", as
   assert.deepEqual(loaded.value, []);
 });
 
+test("a lease issued before a restore cannot release the project either", async () => {
+  const partition = await postgresHarnessProject(harness.store, "stranded");
+  const acquired = await harness.store.acquire(
+    partition,
+    postgresHarnessOwner("preRestore"),
+    3600,
+  );
+  assert.ok(acquired.acquired === "Granted");
+
+  await harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
+  await harness.store.release(acquired.lease);
+
+  const successor = await harness.store.acquire(
+    partition,
+    postgresHarnessOwner("successor"),
+    3600,
+  );
+  assert.equal(successor.acquired, "HeldByAnother");
+  assert.ok(successor.acquired === "HeldByAnother");
+  assert.equal(successor.owner, acquired.lease.owner);
+});
+
 test("a lease taken after the restore carries the new epoch and commits", async () => {
   const partition = await postgresHarnessProject(harness.store, "reissued");
   const epoch = await harness.store.establishRecoveryEpoch(
