@@ -70,19 +70,24 @@ if [ -z "$pod" ]; then
 fi
 
 work_dir="$(mktemp -d)"
-# Removal is the trap's job rather than the sweep's, so an attempt that lands a
-# ref is undone even when the run dies before it reaches the sweep. The probe
-# repository is this script's own and goes whole; the served one is not, so
-# only the refs an attempt could have created come out of it.
+# Every ref an attempt is about to try, and the whole of what comes out of the
+# served repository. Removal is the trap's job rather than the sweep's, so a ref
+# that landed is undone even when the run dies before the sweep; and it is by
+# name rather than by `refs/heads/audit-*` because the served repository is the
+# rig's, where a branch under that prefix may be an operator's. The probe
+# repository is this script's own and goes whole.
+attempted_refs=
 cleanup() {
 	rm -rf "$work_dir"
 	kubectl -n "$namespace" exec "$pod" -- sh -c '
-		rm -rf "/git/$2"
-		git -C "/git/$1" for-each-ref --format="%(refname)" "refs/heads/audit-*" \
-			| while read -r ref; do
-				git -C "/git/$1" update-ref -d "$ref"
-			done
-	' sh "$repository" "$probe_root" > /dev/null 2>&1 || true
+		repository="$1"
+		probe_root="$2"
+		shift 2
+		rm -rf "/git/$probe_root"
+		for ref in "$@"; do
+			git -C "/git/$repository" update-ref -d "$ref"
+		done
+	' sh "$repository" "$probe_root" $attempted_refs > /dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -131,6 +136,9 @@ attempt() {
 	label="$1"
 	url="$2"
 	ref="$3"
+	# Recorded before the request rather than after it, so a ref an unanswered
+	# attempt still created is one the trap removes.
+	attempted_refs="$attempted_refs $ref"
 	body="$work_dir/body"
 	printf '%s %s %s\000report-status\n' "$zero" "$tip" "$ref" > "$work_dir/cmd"
 	len=$(($(wc -c < "$work_dir/cmd") + 4))
