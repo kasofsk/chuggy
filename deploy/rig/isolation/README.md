@@ -448,8 +448,8 @@ Said plainly, so nobody trusts it further than it goes.
   ```
 
   ```
-  tcp  192.168.0.114:29999  failed   1.02s    wget: can't connect to remote host (192.168.0.114): Connection refused
-  tcp  192.168.0.114:31000  failed   3.00s    wget: download timed out
+  tcp  192.168.0.114:29999  failed   1.06s    wget: can't connect to remote host (192.168.0.114): Connection refused
+  tcp  192.168.0.114:31000  failed   3.01s    wget: download timed out
   tcp  192.168.0.114:30411  failed   1.03s    wget: can't connect to remote host (192.168.0.114): Connection refused
   tcp  192.168.0.114:31001  failed   1.02s    wget: can't connect to remote host (192.168.0.114): Connection refused
   ```

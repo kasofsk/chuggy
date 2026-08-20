@@ -1,7 +1,7 @@
-# A `hostPort` in the NodePort range, so that `README.md`'s last bullet has one
-# to dial. It publishes a node-local port the way a NodePort does not — the CNI
-# portmap plugin rather than kube-proxy — and the bullet exists to show that the
-# policy decides both alike.
+# A `hostPort` in the NodePort range, so that `README.md`'s bullet **That the
+# policy decides every destination** has one to dial. It publishes a node-local
+# port the way a NodePort does not — the CNI portmap plugin rather than
+# kube-proxy — and the bullet exists to show that the policy decides both alike.
 #
 # It is not in `chuggy-work` because it cannot be: the baseline profile
 # restricts `hostPort` exactly as it restricts `hostNetwork`, so the namespace
@@ -14,13 +14,15 @@
 # never this one's. It is the property `kube-system/traefik` has, and it is what
 # makes the row evidence of anything.
 #
-# It serves a byte for the reason `dial-probe.yaml` makes the work pod serve
-# one: a port with nothing behind it refuses in the same words. The dial is at
-# the node's address, so the fixture has to land on the node being dialled —
-# which on this rig is the only one there is.
+# It serves a byte for the reason `README.md` gives for making the work pod
+# serve one: a port with nothing behind it refuses in the same words. The dial
+# is at the node's address, so the fixture has to land on the node being
+# dialled — which on this rig is the only one there is.
 #
 # The namespace is here so that one `kubectl delete -f` takes the whole fixture
-# back out, which the section that applies it does.
+# back out, which the section that applies it does. It also ends on its own,
+# because the namespace sweep that ends the rehearsal does not reach outside
+# `chuggy-work`, and this pod holds a node-scoped port for as long as it runs.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -39,7 +41,7 @@ spec:
       command:
         - sh
         - -c
-        - mkdir -p /www; echo hostport-probe-served-this > /www/index.html; httpd -f -p 8080 -h /www
+        - mkdir -p /www; echo hostport-probe-served-this > /www/index.html; httpd -p 8080 -h /www; sleep 3600
       ports:
         - containerPort: 8080
           hostPort: 31001
