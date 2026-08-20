@@ -2,10 +2,8 @@
  * Ownership: competing owners, lease takeover, and the fencing epoch that
  * separates a tenure from its successor.
  *
- * TIME IS MOVED BY AGEING THE ROW, never by waiting. A case that slept for a
- * lease to expire would be slow and would still be racing the clock it slept
- * against; setting the expiry into the past is the same fact, decided by the
- * database exactly as a real expiry would be.
+ * TIME IS MOVED BY AGEING THE ROW, never by waiting. `postgresHarnessExpire`
+ * is that move, and says why beside itself.
  */
 
 import assert from "node:assert/strict";
@@ -13,6 +11,8 @@ import { after, before, test } from "node:test";
 
 import type { Lease, Partition } from "../../src/interpreter/projectStore.ts";
 import {
+  postgresHarnessExpire,
+  postgresHarnessHeld,
   postgresHarnessOpen,
   postgresHarnessOwner,
   postgresHarnessProject,
@@ -30,21 +30,9 @@ after(async () => {
   await harness.close();
 });
 
-/** Puts the partition's lease expiry into the past, which is what a lapsed tenure looks like to the server. */
-async function expire(partition: Partition): Promise<void> {
-  await harness.query(
-    "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
-    [partition.tenant, partition.project],
-  );
-}
-
 /** Acquires and asserts the grant, so a case that is about something else reads as one line. */
-async function granted(partition: Partition, label: string): Promise<Lease> {
-  const owner = postgresHarnessOwner(label);
-  const acquired = await harness.store.acquire(partition, owner, 60);
-  assert.equal(acquired.acquired, "Granted");
-  assert.ok(acquired.acquired === "Granted");
-  return acquired.lease;
+function granted(partition: Partition, label: string): Promise<Lease> {
+  return postgresHarnessHeld(harness.store, partition, label);
 }
 
 test("a fresh project is Active with an empty journal, and provisioning it twice is one project", async () => {
@@ -106,7 +94,7 @@ test("renewal extends the lease and preserves its fencing epoch", async () => {
 test("takeover after expiry advances the epoch, and the former owner cannot renew", async () => {
   const partition = await postgresHarnessProject(harness.store, "takeover");
   const former = await granted(partition, "former");
-  await expire(partition);
+  await postgresHarnessExpire(harness, partition);
   const successor = await granted(partition, "successor");
   assert.equal(successor.fencingEpoch, former.fencingEpoch + 1);
   const fenced = await harness.store.renew(former, 60);
@@ -150,6 +138,28 @@ test("a fenced project admits no dispatcher, and fencing advances both counters"
   assert.equal(refused.acquired, "NotActive");
   assert.ok(refused.acquired === "NotActive");
   assert.equal(refused.lifecycle, "Suspended");
+});
+
+test("a duration no lease can be granted for names the argument, not the row it would spoil", async () => {
+  const partition = await postgresHarnessProject(harness.store, "duration");
+  const held = await granted(partition, "steady");
+  for (const leaseSecs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await assert.rejects(
+      () =>
+        harness.store.acquire(
+          partition,
+          postgresHarnessOwner("hopeful"),
+          leaseSecs,
+        ),
+      /leaseSecs/,
+    );
+    await assert.rejects(
+      () => harness.store.renew(held, leaseSecs),
+      /leaseSecs/,
+    );
+  }
+  const renewed = await harness.store.renew(held, 60);
+  assert.equal(renewed.renewed, "Extended");
 });
 
 test("a partition nothing provisioned has no standing and cannot be acquired", async () => {

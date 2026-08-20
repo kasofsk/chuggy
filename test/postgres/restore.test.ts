@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import {
+  postgresHarnessExpire,
   postgresHarnessJournal,
   postgresHarnessNewEpoch,
   postgresHarnessOpen,
@@ -58,9 +59,11 @@ test("a lease issued before a restore can neither commit nor renew after it", as
   const renewal = await harness.store.renew(stranded, 3600);
   assert.equal(renewal.renewed, "Fenced");
 
-  const loaded = await harness.store.load(partition);
-  assert.ok(loaded.parsed === "Ok");
-  assert.deepEqual(loaded.value, []);
+  const stored = await harness.query(
+    "SELECT seq FROM journal_entry WHERE tenant = $1 AND project = $2",
+    [partition.tenant, partition.project],
+  );
+  assert.deepEqual(stored, []);
 });
 
 test("a lease issued before a restore cannot release the project either", async () => {
@@ -85,7 +88,7 @@ test("a lease issued before a restore cannot release the project either", async 
   assert.equal(successor.owner, acquired.lease.owner);
 });
 
-test("a lease taken after the restore carries the new epoch and commits", async () => {
+test("a lease taken after the restore carries the new epoch, and commits and replays under it", async () => {
   const partition = await postgresHarnessProject(harness.store, "reissued");
   const epoch = await harness.store.establishRecoveryEpoch(
     postgresHarnessNewEpoch(),
@@ -102,6 +105,10 @@ test("a lease taken after the restore carries the new epoch and commits", async 
   assert.ok(first !== undefined);
   const appended = await harness.store.append(acquired.lease, first);
   assert.equal(appended.appended, "Committed");
+
+  const loaded = await harness.store.load(acquired.lease);
+  assert.ok(loaded.parsed === "Ok");
+  assert.deepEqual(loaded.value, [first]);
 });
 
 test("the stranded owner's project is acquired afresh under the current epoch", async () => {
@@ -123,10 +130,7 @@ test("the stranded owner's project is acquired afresh under the current epoch", 
   );
   assert.ok(successor.acquired === "HeldByAnother");
 
-  await harness.query(
-    "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
-    [partition.tenant, partition.project],
-  );
+  await postgresHarnessExpire(harness, partition);
   const taken = await harness.store.acquire(
     partition,
     postgresHarnessOwner("successor"),

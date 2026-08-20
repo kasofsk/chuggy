@@ -22,8 +22,8 @@ import type {
 } from "../../src/interpreter/projectStore.ts";
 import {
   postgresHarnessFirstEntry,
+  postgresHarnessHeld,
   postgresHarnessOpen,
-  postgresHarnessOwner,
   postgresHarnessProject,
   postgresHarnessRowLock,
   type PostgresHarness,
@@ -39,21 +39,19 @@ after(async () => {
   await harness.close();
 });
 
-/** A provisioned partition already held by its own owner. */
-async function heldProject(label: string): Promise<Lease> {
-  const partition = await postgresHarnessProject(harness.store, label);
-  const acquired = await harness.store.acquire(
-    partition,
-    postgresHarnessOwner(label),
-    60,
-  );
-  assert.ok(acquired.acquired === "Granted");
-  return acquired.lease;
+/** A lease on a partition already provisioned, which is what a load and an append both need. */
+function held(partition: Partition, label: string): Promise<Lease> {
+  return postgresHarnessHeld(harness.store, partition, label);
 }
 
-/** Every entry the partition holds, asserted to have parsed. */
-async function entriesOf(partition: Partition): Promise<readonly Entry[]> {
-  const loaded = await harness.store.load(partition);
+/** A provisioned partition already held by its own owner. */
+async function heldProject(label: string): Promise<Lease> {
+  return held(await postgresHarnessProject(harness.store, label), label);
+}
+
+/** Every entry the lease's partition holds, asserted to have parsed. */
+async function entriesOf(lease: Lease): Promise<readonly Entry[]> {
+  const loaded = await harness.store.load(lease);
   assert.ok(loaded.parsed === "Ok");
   return loaded.value;
 }
@@ -101,8 +99,8 @@ test("a load returns the partition's own entries and no other partition's", asyn
   const entry = postgresHarnessFirstEntry();
   await harness.store.append(left, entry);
 
-  assert.deepEqual(await entriesOf(left.partition), [entry]);
-  assert.deepEqual(await entriesOf(right.partition), []);
+  assert.deepEqual(await entriesOf(left), [entry]);
+  assert.deepEqual(await entriesOf(right), []);
 });
 
 test("fencing one project leaves its neighbour Active and its lease intact", async () => {
@@ -130,9 +128,10 @@ test("two tenants may hold the same project name without sharing a partition", a
     project: left.partition.project,
   };
   await harness.store.createProject(shadow);
+  const other = await held(shadow, "samenameother");
   await harness.store.append(left, postgresHarnessFirstEntry());
 
-  assert.deepEqual(await entriesOf(shadow), []);
+  assert.deepEqual(await entriesOf(other), []);
   const standing = await harness.store.standing(shadow);
   assert.ok(standing !== undefined);
   assert.equal(standing.head, 0);

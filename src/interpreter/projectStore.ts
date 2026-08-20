@@ -10,11 +10,11 @@
  * which is exactly the race `docs/design/006-durable-project-dispatch.md`
  * forbids when it says every decision commit checks both the observed journal
  * head and the current fencing epoch. So the lease is an argument to `append`,
- * and no caller can hold one without having proved it. `load` names a partition
- * and reports no head, so the same race is an obligation on the caller there:
- * replay under the lease the append will carry, because a prefix read before
- * acquisition is missing whatever the previous owner committed after it, and an
- * entry computed from that state extends a journal it never saw.
+ * and to `load` for the same reason: a replay that ran before acquisition is
+ * missing whatever the previous owner committed after it, and an entry computed
+ * from that state extends a journal it never saw. Taking the lease is what makes
+ * replay-then-acquire unrepresentable rather than merely discouraged, since the
+ * adapter rechecks it against the same locked row the append will recheck.
  *
  * NO CLOCK CROSSES THIS BOUNDARY. Database time determines lease validity, so
  * a lease carries a duration to grant and never an instant to compare; the
@@ -101,21 +101,20 @@ export interface Partition {
   readonly project: ProjectId;
 }
 
-/**
- * A project's operational availability, which is not ticket state and never
- * appears in `Core`. Only `Active` admits a dispatcher.
- */
-export type Lifecycle =
-  "Active" | "Suspended" | "IntegrityBlocked" | "Deleting" | "Retention";
-
-/** Every lifecycle, in the order this file declares them, so a suite can iterate rather than restate. */
-export const allLifecycles: readonly Lifecycle[] = [
+/** Every lifecycle, and the declaration `Lifecycle` derives from, so narrowing a stored column has one list to check. */
+export const allLifecycles = [
   "Active",
   "Suspended",
   "IntegrityBlocked",
   "Deleting",
   "Retention",
-];
+] as const;
+
+/**
+ * A project's operational availability, which is not ticket state and never
+ * appears in `Core`. Only `Active` admits a dispatcher.
+ */
+export type Lifecycle = (typeof allLifecycles)[number];
 
 /**
  * A granted ownership of one project partition. It is the only thing that
@@ -183,7 +182,9 @@ export interface ProjectStore {
 
   /**
    * Takes ownership for `leaseSecs` of database time, advancing the fencing
-   * epoch so a former owner cannot commit after this returns.
+   * epoch so a former owner cannot commit after this returns. `leaseSecs` is a
+   * positive finite number of seconds, and an implementation refuses anything
+   * else before it touches storage.
    */
   acquire(
     partition: Partition,
@@ -191,7 +192,10 @@ export interface ProjectStore {
     leaseSecs: number,
   ): Promise<Acquired>;
 
-  /** Extends a held lease without advancing its fencing epoch, so an unbroken tenure keeps one identity. */
+  /**
+   * Extends a held lease without advancing its fencing epoch, so an unbroken
+   * tenure keeps one identity. `leaseSecs` is bounded exactly as `acquire`'s is.
+   */
   renew(lease: Lease, leaseSecs: number): Promise<Renewed>;
 
   /** Gives up a held lease early; a lease already fenced is left exactly as it is. */
@@ -204,12 +208,12 @@ export interface ProjectStore {
   append(lease: Lease, entry: Entry): Promise<Appended>;
 
   /**
-   * Every stored entry for the partition in sequence order, parsed at this
-   * boundary and refused rather than thrown. A caller that will append acquires
-   * first and replays under that lease, since a prefix read before acquisition
-   * says nothing about what the journal held when the lease was granted.
+   * Every stored entry for the lease's partition in sequence order, replayed
+   * under the lease the append will carry and parsed at this boundary. A lease
+   * the row no longer honours is refused rather than served a prefix, because
+   * entries read outside a tenure say nothing about what that tenure begins on.
    */
-  load(partition: Partition): Promise<Parsed<readonly Entry[]>>;
+  load(lease: Lease): Promise<Parsed<readonly Entry[]>>;
 
   /**
    * Advances the lifecycle generation and the fencing epoch and clears

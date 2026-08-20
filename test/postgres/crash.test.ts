@@ -12,10 +12,16 @@
  * connection the child never had is what makes this a statement about
  * PostgreSQL rather than about anything the adapter kept in memory.
  *
+ * READING A JOURNAL BACK MEANS TAKING THE PROJECT OVER FIRST. A replay happens
+ * under a lease, and the dead child's outlives it, so every case that replays
+ * ages the row and acquires before it reads — which is what a surviving replica
+ * would do, and touches neither the entries nor the head the child left behind.
+ *
  * THE SUBMISSION SIDE IS THE SAME RIG WITH NO LEASE IN IT. 006 asks that a
  * crash after acceptance leave the work discoverable without an active owner,
  * and the only way to mean that is a process that took no ownership, accepted,
- * and then stopped existing.
+ * and then stopped existing — so those two cases replay nothing and take
+ * nothing over.
  *
  * WHAT THE UNRESOLVED SEAMS ASSERT IS WEAKER THAN THEIR NAMES. `blocked` and
  * `unaccepted` start a write they mean to be killed mid-flight, and the parent
@@ -32,10 +38,12 @@ import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { journalLegalOn } from "../../src/actor/journal.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import type { Lease, Partition } from "../../src/interpreter/projectStore.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import {
   postgresHarnessCrashSubmission,
+  postgresHarnessExpire,
+  postgresHarnessHeld,
   postgresHarnessOpen,
   postgresHarnessOwner,
   postgresHarnessJournal,
@@ -53,6 +61,12 @@ before(async () => {
 after(async () => {
   await harness.close();
 });
+
+/** Ages the dead child's lease out and acquires the project, which is what a successor replica does. */
+async function takenOver(partition: Partition): Promise<Lease> {
+  await postgresHarnessExpire(harness, partition);
+  return postgresHarnessHeld(harness.store, partition, "successor");
+}
 
 /** One child, run to the line it announces its seam with, then killed where it stands. */
 async function crashAt(partition: Partition, seam: string): Promise<void> {
@@ -96,7 +110,7 @@ test("every acknowledged append survives the process that made it", async () => 
   const journal = postgresHarnessJournal();
   await crashAt(partition, "commit");
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(await takenOver(partition));
   assert.ok(loaded.parsed === "Ok");
   assert.deepEqual(loaded.value, journal);
   assert.ok(journalLegalOn(refinementInstance, loaded.value));
@@ -111,7 +125,7 @@ test("an append that never resolved leaves the head exactly where it was", async
   const journal = postgresHarnessJournal();
   await crashAt(partition, "blocked");
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(await takenOver(partition));
   assert.ok(loaded.parsed === "Ok");
   assert.equal(loaded.value.length, 1);
   assert.deepEqual(loaded.value, journal.slice(0, 1));
@@ -130,7 +144,7 @@ test("an entry written but never committed leaves neither itself nor a head", as
   const journal = postgresHarnessJournal();
   await crashAt(partition, "inserted");
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(await takenOver(partition));
   assert.ok(loaded.parsed === "Ok");
   assert.deepEqual(loaded.value, journal.slice(0, 1));
   assert.ok(journalLegalOn(refinementInstance, loaded.value));
@@ -145,17 +159,7 @@ test("a fresh process takes over a dead owner's project and resumes at its head"
   const journal = postgresHarnessJournal();
   await crashAt(partition, "commit");
 
-  await harness.query(
-    "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
-    [partition.tenant, partition.project],
-  );
-  const successor = await harness.store.acquire(
-    partition,
-    postgresHarnessOwner("successor"),
-    60,
-  );
-  assert.ok(successor.acquired === "Granted");
-  assert.equal(successor.lease.head, journal.length);
+  assert.equal((await takenOver(partition)).head, journal.length);
 });
 
 test("a crash after acceptance leaves the work discoverable with no active owner", async () => {

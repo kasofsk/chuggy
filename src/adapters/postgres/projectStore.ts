@@ -6,8 +6,9 @@
  * append and the load are `./journal.ts`'s, and this file exists so the port
  * has one implementation to name rather than a caller assembling six functions
  * and getting the argument order wrong once. The split is by transaction:
- * every function in one of those modules opens and closes its own, and none
- * of them is called from inside another's.
+ * every function this file names opens and closes its own, and the helpers
+ * those modules share take the client rather than the pool, so the row lock a
+ * load or an append holds is the one its own transaction took.
  *
  * THE POOL IS THE CALLER'S. A store that opened its own connection would put a
  * deployment choice inside the adapter, and `src/compose.ts` is the only file
@@ -75,8 +76,8 @@ export function postgresProjectStore(pool: pg.Pool): ProjectStore {
     append: (lease: Lease, entry: Entry) =>
       postgresJournalAppend(pool, lease, entry),
 
-    load: (partition: Partition): Promise<Parsed<readonly Entry[]>> =>
-      postgresJournalLoad(pool, partition),
+    load: (lease: Lease): Promise<Parsed<readonly Entry[]>> =>
+      postgresJournalLoad(pool, lease),
 
     fence: (
       partition: Partition,

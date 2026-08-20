@@ -11,8 +11,12 @@
  *
  * WHY THE CHAIN AND NOT A PER-ROW DIGEST. A per-row digest catches an edited
  * payload and nothing else; chaining each digest onto its predecessor also
- * catches truncation, reordering and a restore spliced onto the wrong
- * history, which are the failures a backup actually produces.
+ * catches an entry removed from the middle, entries reordered, and a chain
+ * spliced in from another partition. A journal cut short at its tail is not one
+ * of them — a prefix of a valid chain is a valid chain — and is caught by the
+ * apparatus around it instead: the head the project row claims, which the load
+ * requires the entries to reach, and the recovery epoch, which fences the
+ * writers a restore rewound.
  *
  * WHY THE PARTITION IS IN THE HASH. A chain over entries alone is self
  * consistent wherever it is kept, so rows copied into another tenant or
