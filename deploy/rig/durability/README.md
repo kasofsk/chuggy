@@ -30,13 +30,9 @@ would be picking where a database lives while it does not exist anywhere else.
 `destroy` refuses to run unless `verify` has left a receipt in that directory
 naming the digest of the dump that is actually there.
 
-`rehearse.test.sh` is the suite over what it names and no more: the mode an
-archive full of verifiers is held to, the digest and receipt comparisons
-standing between `verify` and `destroy`, the derivation `epoch` holds the
-establish to, the witness partition every later stage reads, what `teardown`
-observes before it says anything, and what a status from a tool underneath is
-worth by the time it leaves. It runs against a stub `kubectl`, and the cases
-whose subject is a refusal that comes first require that nothing reached it.
+`rehearse.test.sh` is the suite, and its own header names what it covers and no
+more. It runs against a stub `kubectl`, and the cases whose subject is a refusal
+that comes first require that nothing reached it.
 
 ```sh
 ./deploy/rig/durability/rehearse.test.sh
