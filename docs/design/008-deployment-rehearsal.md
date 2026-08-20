@@ -26,7 +26,7 @@ This holds of slices I0 and I1 and of nothing on `main` yet — the adapter it d
 
 The migration runs at start-up under an advisory lock and creates the tables and the group roles together, so the identity that runs it needs role creation. It must not be a superuser: cancellation is `SECURITY DEFINER`, so its body runs with the privileges of whoever owns it, and a superuser owner turns any future weakness in that body into a superuser escalation. The group roles do not log in. A deployment therefore has to create a login role per service, grant it the membership, and issue its credentials — and nothing in this tree does that at any layer, so the rehearsal is where it first becomes something that runs rather than something that is described. No extension is required; digests are computed in the process.
 
-The recovery epoch is a control-plane write the dispatcher role provably cannot make, so a fresh database and every restore alike need a path that establishes a never-reused epoch before the first mutation. Nothing here invokes a dump or a restore either. Those two belong in one row: a restore that cannot fence the writer it restored is not a restore.
+The recovery epoch is a control-plane write the ticket-service role provably cannot make, so a fresh database and every restore alike need a path that establishes a never-reused epoch before the first mutation. Nothing here invokes a dump or a restore either. Those two belong in one row: a restore that cannot fence the writer it restored is not a restore.
 
 ## What no process reads
 
@@ -60,4 +60,4 @@ D2 is 006's I8, taken early and taken in part. 006 places I8 behind I0 through I
 
 The only input any of D0 through D2 takes from this tree is a connection string, and I0 already makes it an argument; D1 needs not even that. The credential D0 issues is a deployment secret rather than a read through a secret source.
 
-Deploying the dispatcher and driving a real ticket through work is deliberately not a row. It needs the decision transaction, the mailbox and the scheduler — slices I2, I3 and I6 — and issue #77 already carries those dependencies. Putting it here would move the dependency without satisfying it.
+Deploying the ticket service and driving a real ticket through work is deliberately not a row. It needs the decision transaction, the mailbox and the scheduler — slices I2, I3 and I6 — and issue #77 already carries those dependencies. Putting it here would move the dependency without satisfying it.

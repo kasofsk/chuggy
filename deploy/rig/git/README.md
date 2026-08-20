@@ -60,7 +60,7 @@ Read a token back with:
 kubectl -n chuggy-git get secret git-operator -o jsonpath='{.data.password}' | base64 -d
 ```
 
-Per-job tokens are the dispatcher's to mint at spawn, and the dispatcher does
+Per-job tokens are the ticket service's to mint at spawn, and the ticket service does
 not exist yet. Neither does the backup bundle on default-branch movement.
 
 `seed.sh` proves the wall on every run: `audit-credentials.sh` stands up a

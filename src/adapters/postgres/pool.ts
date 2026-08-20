@@ -8,7 +8,7 @@
  * how long it will wait for one answer. The middle one is not optional
  * either — an unbounded queue for a connection is how pool pressure stops
  * limiting activation and starts hiding it.
- * 006 adds the reason the first matters here — dispatcher replicas borrow
+ * 006 adds the reason the first matters here — ticket-service replicas borrow
  * connections only for short replay reads and decision transactions, and pool
  * pressure is meant to limit actor activation rather than queue behind an
  * unbounded pool.
@@ -47,7 +47,7 @@ export interface PostgresLimits {
   readonly statementTimeoutMs: number;
 }
 
-/** The limits a dispatcher runs with when a deployment names none. */
+/** The limits a ticket-service process uses when a deployment names none. */
 export const postgresLimitsDefault: PostgresLimits = {
   connectionsMax: 8,
   connectionWaitMs: 5_000,

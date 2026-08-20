@@ -1,5 +1,5 @@
 /**
- * The durable project authority: what a dispatcher needs of PostgreSQL before
+ * The durable project authority: what a ticket-service writer needs of PostgreSQL before
  * it may decide anything for one project partition.
  *
  * WHY ONE PORT AND NOT THREE. Ownership, the journal and the recovery epoch
@@ -32,7 +32,7 @@
  * says so for this directory.
  *
  * NOT EVERY METHOD IS THE RUNTIME'S. `acquire`, `renew`, `release`, `load`,
- * `standing` and `currentRecoveryEpoch` are what a dispatcher holds.
+ * `standing` and `currentRecoveryEpoch` are what a ticket-service writer holds.
  * `establishRecoveryEpoch`, `createProject` and `fence` are the control
  * plane's, and the runtime database role is granted nothing that would let it
  * run them — provisioning is not a decision, and suspension is out-of-band
@@ -43,7 +43,7 @@
  * EVERY REFUSAL IS A VALUE. Losing a race, holding a stale head, arriving
  * after a takeover and finding a project that is not active are outcomes a
  * caller must handle, not exceptions it may ignore. A thrown error here means
- * the database could not answer at all, which is the one thing a dispatcher
+ * the database could not answer at all, which is the one thing a ticket writer
  * cannot decide its way around.
  *
  */
@@ -62,7 +62,7 @@ export type TenantId = string & { readonly [tenantIdBrand]: true };
 /** A project's identity: globally unique and opaque, and the partition key every call carries. */
 export type ProjectId = string & { readonly [projectIdBrand]: true };
 
-/** A dispatcher instance's identity, which is what a lease is granted to and fenced against. */
+/** A ticket-service writer instance's identity, which is what a lease is granted to and fenced against. */
 export type OwnerId = string & { readonly [ownerIdBrand]: true };
 
 /**
@@ -88,7 +88,7 @@ export function asProjectId(value: string): ProjectId {
   return asOpaqueIdentity(value, "project id") as ProjectId;
 }
 
-/** Brands an opaque dispatcher-instance identity. */
+/** Brands an opaque ticket-writer instance identity. */
 export function asOwnerId(value: string): OwnerId {
   return asOpaqueIdentity(value, "owner id") as OwnerId;
 }
@@ -115,7 +115,7 @@ export const allLifecycles = [
 
 /**
  * A project's operational availability, which is not ticket state and never
- * appears in `Core`. Only `Active` admits a dispatcher.
+ * appears in `Core`. Only `Active` admits a project ticket writer.
  */
 export type Lifecycle = (typeof allLifecycles)[number];
 
@@ -132,7 +132,7 @@ export interface Lease {
   readonly head: number;
 }
 
-/** What an acquisition attempt found: the lease, a live owner that is not this one, or a project no dispatcher may hold. */
+/** What an acquisition attempt found: the lease, a live owner that is not this one, or a project no ticket writer may hold. */
 export type Acquired =
   | { readonly acquired: "Granted"; readonly lease: Lease }
   | { readonly acquired: "HeldByAnother"; readonly owner: OwnerId }
