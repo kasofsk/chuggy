@@ -112,6 +112,35 @@ test("the API cannot append history or create focused work", async () => {
   }
 });
 
+test("the API read credential cannot inspect private operation columns", async () => {
+  for (const column of [
+    "command",
+    "authority_subject",
+    "key_digest",
+    "payload_digest",
+  ]) {
+    const refusal = await harness.attemptAs(
+      apiRole,
+      `SELECT ${column} FROM operation LIMIT 1`,
+    );
+    assert.match(refusal ?? "", /permission denied/);
+  }
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT operation,accepted_at FROM operation LIMIT 1",
+    ),
+    undefined,
+  );
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT ticket,phase,seq FROM ticket_projection LIMIT 1",
+    ),
+    undefined,
+  );
+});
+
 test("the security-definer owner is non-login and non-escalating", async () => {
   assert.deepEqual(
     await harness.query(

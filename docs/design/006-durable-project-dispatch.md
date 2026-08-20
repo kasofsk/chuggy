@@ -1,7 +1,7 @@
 # Durable project dispatch
 
-**Status: M0, G0, I0, I1 AND I2 LANDED** — issue #92 agreed these decisions and
-the tree now carries the first five rows of the landing table: `model/` proves
+**Status: M0, G0, I0, I1, I2 AND I3 LANDED** — issue #92 agreed these decisions and
+the tree now carries the first six rows of the landing table: `model/` proves
 the project-scoped `Core`, `src/generated/model-api.ts` is generated from
 `model/api.qnt`, and `src/adapters/postgres/` holds the lifecycle row, the
 ownership lease, the authority-scoped operation with its permanent
@@ -9,10 +9,10 @@ idempotency, the ingress ordinal, the durable inbox and the readiness
 generation that indexes it, and the decision transaction that fences a writer,
 writes the entry under its one durable cause, settles the operation,
 acknowledges the item and moves the primary projection, under
-`.chug/tasks/check-postgres.sh`. The mailbox, the selection service, the
-scheduler and the durable consumer request tables are not built, so the body
-below still argues them, and the revision fences a decision rechecks arrive
-with the slices that have a revision to name.
+`.chug/tasks/check-postgres.sh`. The selection service and scheduler are not
+built, and the web read, authoring and notification surfaces are not built, so
+the body below still argues them. The revision fences a decision rechecks
+arrive with the slices that have a revision to name.
 
 Clients submit authenticated mutations to a durable PostgreSQL inbox. They do
 not locate or call a ticket-service process. A successful submission creates an
@@ -1611,6 +1611,75 @@ scheduler tasks, attempts, results and cancellation processing; I7 adds
 finalizer preparation, permits and reconciliation. No placeholder selection
 schema lands before I5 and no later service is simulated in memory.
 
+### I4 decision record
+
+I4 is an authenticated application boundary over durable API-owned state. It
+does not load `Core`, acquire a project lease, append a journal entry or update
+a ticket projection. Mutation submission and cancellation call the existing
+`OperationInbox`; project and ticket reads use projections; authoring writes
+only native draft and configuration relations. The API database role cannot
+write a decision outcome or a project-primary projection, and a transport
+handler receives no lower-level port through which it could do so.
+
+Authorization is a port of the web application, not a flag trusted from a
+request. Every operation read, cancellation, ordinary projection read and SSE
+connection asks it for current access to the named project. An unknown resource
+and a resource in a project the caller cannot currently access have one
+not-found result. Authorization is rechecked before cancellation and before an
+SSE session emits after any wait; an established connection is not a retained
+grant. Elevated audit reads use a distinct capability and are not an alternate
+ordinary-resource path.
+
+The public operation representation is derived from the operation and decision
+input rows. It exposes identity, acceptance time, public state and bounded
+non-authoritative hold/progress metadata while pending. Success exposes the
+decided project sequence; refusal exposes its stable safe code and decision
+head/generation evidence; cancellation exposes no invented journal sequence.
+It never exposes the stored command, authority subject, idempotency digest,
+lease, provider or stack detail. Polling this representation is the canonical
+completion protocol, including after an SSE gap.
+
+Project reads return a project watermark and ticket rows whose own sequence is
+no greater than it. A successful operation's decided sequence is therefore a
+read-your-write lower bound: a read below it is retried rather than returned as
+if current. List pagination is by stable project-local identity with an
+explicit projection watermark, never by phase or update time. Reads do not ask
+the ticket writer to activate a project.
+
+Drafts are API-owned native records. Creating one atomically allocates its
+never-reused project-local ticket identity and authoring version one. Every
+typed edit compares the observed authoring version and, on success, writes the
+next immutable draft revision and advances the draft pointer in one
+transaction. A stale edit is a value, not a merge. Deletion writes the ticket
+identity tombstone and advances the authoring history; it does not free the
+identity. A released or deleted draft refuses later edits. The API role reaches
+these transitions through constrained server functions rather than table-wide
+update grants.
+
+Task-configuration revisions are immutable, project-owned, canonically encoded
+and content-digested. Creation validates structural bounds and prohibited
+secret-bearing fields before persistence. Attaching one to a draft is a typed
+authoring edit under the same observed-version comparison; attaching a revision
+from another project is structurally impossible through the composite foreign
+key. Semantic release readiness remains advisory here and authoritative only
+at the serialized release decision.
+
+SSE is an acceleration over a bounded durable project notification log, not
+PostgreSQL `NOTIFY` as authority. Each notification contains only its monotone
+project-local notification ordinal, kind, resource identity and the relevant
+project sequence or authoring version. Decision notifications are inserted in
+the deciding transaction; operation cancellation and authoring notifications
+are inserted in their own state-changing transaction. Delivery may duplicate,
+reorder across reconnects or stop. A cursor older than retained history returns
+a reset marker and closes so the client refreshes projections and operations.
+
+I4 lands in three ordered tranches. I4a adds the authorization application
+contract, safe operation resources and projection reads over the existing I3
+schema. I4b adds versioned draft and configuration authoring. I4c adds the
+transactional bounded notification log and SSE cursor contract. Each tranche
+includes adversarial authorization and database-role tests; no tranche adds an
+HTTP framework dependency to the inner application contract.
+
 | Slice | Depends on | What lands and its definition of done | Status |
 |---|---|---|---|
 | M0 | — | Project-scoped sparse-ID `Core`, vocabulary and transition migration | Landed |
@@ -1618,7 +1687,7 @@ schema lands before I5 and no later service is simulated in memory.
 | I0 | M0, G0 | PostgreSQL foundation: lifecycle rows, composite keys, roles, ownership lease and fencing epoch, expected-head journal append, recovery epoch | Landed |
 | I1 | I0 | Authority-scoped operation and idempotency rows, ingress ordinal, durable inbox and readiness generation, cancellation race | Landed |
 | I2 | I1 | The project decision transaction: replay and load, lifecycle, lease and expected-head fences, journal entry under one durable cause, operation terminalization, inbox acknowledgement and primary projection update, with refusal writing no entry and an ambiguous commit resolved by durable read | Landed |
-| I3 | I2 | Bounded project mailbox, priority/aging and durable deterministic continuations; focused native-action and consumer-request tables materialized in the deciding transaction. Process death cannot lose or duplicate a continuation or external request. | — |
+| I3 | I2 | Bounded project mailbox, priority and aging, durable deterministic continuations, focused native-action and consumer-request tables | Landed |
 | I4 | I3 | Native web reads, operation polling/cancellation, configuration/draft authoring and access-controlled SSE. These are projection/operation clients only; they never decide a project transition. | — |
 | I5 | I3 | Agentic selection: immutable selection views, detached requests/results, bounded deferral and one-shot manual dispatch. Selection failure never becomes a hidden FIFO dispatch policy. | — |
 | I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
