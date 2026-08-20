@@ -163,15 +163,21 @@ kubectl apply -f deploy/rig/isolation/dial-probe.yaml
 kubectl -n chuggy-work exec work-probe -- sh -c '
   mkdir -p /tmp/www; echo work-probe-served-this > /tmp/www/index.html
   httpd -p 8080 -h /tmp/www'
+ip="$(kubectl -n chuggy-work get pod work-probe -o jsonpath='{.status.podIP}')"
 kubectl -n chuggy-work exec dial-probe -- sh -c '
   el() { awk -v s="$1" -v e="$2" "BEGIN{printf \"%.2fs\", e-s}"; }
-  t=10.42.1.72:8080; h="${t%%:*}"; p="${t##*:}"
+  t="$0:8080"; h="${t%%:*}"; p="${t##*:}"
   s="$(cut -d" " -f1 /proc/uptime)"
   if nc -w 3 "$h" "$p" </dev/null >/dev/null 2>&1; then v=open; else v=failed; fi
   e="$(cut -d" " -f1 /proc/uptime)"
   printf "tcp  %-20s %-8s %-7s  %s\n" "$t" "$v" "$(el "$s" "$e")" \
-    "$(wget -T 3 -q -O - "http://$t/" 2>&1)"'
+    "$(wget -T 3 -q -O - "http://$t/" 2>&1)"' "$ip"
 ```
+
+The address is read rather than written down: a re-created pod gets a new one,
+and a dial at a stale address returns the silent timeout this whole document
+exists to tell apart from a refusal. The rows below carry the address that run
+had.
 
 With the policy as this tree carries it, the dial is refused:
 
@@ -197,7 +203,13 @@ tcp  10.42.1.72:8080      failed   1.01s    wget: can't connect to remote host (
 ```
 
 Neither pod restarted across the three; the policy object is the only thing that
-changed.
+changed. Then take the fixture back out — its exemption is a standing egress
+grant, the one shape `work-denies-all.yaml` refuses a workload, and nothing
+below needs it:
+
+```sh
+kubectl delete -f deploy/rig/isolation/dial-probe.yaml
+```
 
 ## The metadata endpoint, and why the obvious reading of it is worthless
 
@@ -376,7 +388,9 @@ Said plainly, so nobody trusts it further than it goes.
   unpoliced namespace holds lands in that pod's default-allow chain, and one
   nobody holds at all matches no jump, falls through to flannel's
   `-s 10.42.0.0/16 -j ACCEPT` under a `FORWARD` policy of `ACCEPT`, and is
-  masqueraded off the node just the same.
+  masqueraded off the node just the same. What was measured is a raw socket
+  bearing another *pod's* address; the unheld-address fall-through is read from
+  the rules and was not.
   So this does not close by policying every namespace, which is the reading to
   guard against. Egress denial binds a pod's own source, not a forged one.
 - **Anything below IP.** `CAP_NET_RAW` is `AF_PACKET`, not only raw IP, and
@@ -391,13 +405,29 @@ Said plainly, so nobody trusts it further than it goes.
   measured; the layer-2 surface is otherwise unexamined here.
 - **That the policy decides every destination.** kube-router's `INPUT` chain
   returns before any pod-firewall jump for a node-local destination on tcp or
-  udp `30000:32767`, so what a work pod sends there is never offered to the
-  policy at all. The two verdicts separate cleanly against the node's own
-  address with nothing listening on either port: `29999` is refused in the
-  policy's words and at its speed, while `31000` times out instead, dropped by
-  the host firewall with the policy never consulted. Nothing occupies that
-  range on this rig; on the GCP apply it is a NodePort range in use, and
-  nothing here bounds it.
+  udp `30000:32767` — so a packet still bearing one when `filter` runs is never
+  offered to the policy at all. The two verdicts separate cleanly against the
+  node's own address with nothing listening on either port: `29999` is refused
+  in the policy's words and at its speed, while `31000` times out instead,
+  dropped by the host firewall with the policy never consulted.
+
+  **A NodePort in use is not that case**, and reading it as one inverts the
+  rule: kube-proxy DNATs such a port in `nat PREROUTING` — before the routing
+  decision, and before the `--dst-type LOCAL` match the `RETURN` is guarded by
+  — so the packet leaves that hook bearing a *pod* address, takes `FORWARD`
+  rather than `INPUT`, and meets the work pod's own `-s` jump. This rig has two
+  in the range, `kube-system/traefik`'s `30411` and `32500`. One port of each
+  kind, from the same pod in one block:
+
+  ```
+  tcp  192.168.0.114:31000  failed   3.00s    wget: download timed out
+  tcp  192.168.0.114:30411  failed   1.04s    wget: can't connect to remote host (192.168.0.114): Connection refused
+  ```
+
+  So the hole is the complement of what kube-proxy programs, not the range: a
+  node-local port in it that nothing DNATs — unallocated, a `hostPort`, or a
+  host daemon bound there. The GCP apply's allocated NodePorts are policed by
+  the same mechanism; the rest of its range is what nothing here bounds.
 - **Anything about a host-network source, the node, or another namespace.**
 - **Anything about egress from the cluster's own infrastructure.** Flux, the
   PostgreSQL StatefulSet and the ingress are untouched by this rehearsal.
