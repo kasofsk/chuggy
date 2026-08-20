@@ -50,7 +50,7 @@ The rig must not become a design input. What holds today is not a seam but an ab
 
 | # | What lands | Depends on | Status |
 |---|---|---|---|
-| D0 | The rig's PostgreSQL made real: per-service login roles, the membership grants, `.chug/tasks/check-postgres.sh` <!-- intent --> run against the rig's server, and the policy that makes it reachable only from authorized workloads | I0, I1 | Proposed |
+| D0 | The rig's PostgreSQL made real: per-service login roles, the membership grants, `.chug/tasks/check-postgres.sh` run against the rig's server, and the policy that makes it reachable only from authorized workloads | I0, I1 | Proposed |
 | D1 | The git service and the Flux loop: a git service over smart HTTP, the repository seeded, Flux reconciling from it | — | Proposed |
 | D2 | The durability rehearsal: a real dump and restore, a fresh epoch established before any mutation, an old-epoch actor refused afterwards | D0 | Proposed |
 | D3 | The isolation rehearsal, on the rig as it stands: the pool labels and a nodeSelector placing work and system apart, default-deny egress on the job namespace, and the metadata endpoint refused by policy rather than by the rig's not having one | — | Proposed |
