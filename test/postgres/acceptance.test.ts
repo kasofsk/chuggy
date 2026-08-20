@@ -56,7 +56,7 @@ async function accepted(submission: Submission): Promise<number> {
 
 /** The ordinals a partition's consumable items carry, in the order the inbox returns them. */
 async function ordinalsOf(partition: Partition): Promise<readonly number[]> {
-  const items = await harness.inbox.consumable(partition, 100);
+  const items = await harness.discovery.consumable(partition, 100);
   return items.map((item) => item.ordinal);
 }
 
@@ -71,7 +71,7 @@ test("acceptance writes the operation, its inbox item and a readiness generation
   assert.equal(outcome.operation.lifecycleGeneration, 1);
 
   assert.deepEqual(await ordinalsOf(partition), [1]);
-  const ready = await harness.inbox.ready(100);
+  const ready = await harness.discovery.ready(100);
   const found = ready.find(
     (each) => each.partition.project === partition.project,
   );
@@ -94,7 +94,7 @@ test("ordinals rise by one within a project and every acceptance advances readin
     3,
   );
 
-  const ready = await harness.inbox.ready(100);
+  const ready = await harness.discovery.ready(100);
   const found = ready.find(
     (each) => each.partition.project === partition.project,
   );
@@ -134,7 +134,7 @@ test("an idempotent retry returns the original operation and allocates no second
   assert.deepEqual(again.operation, first.operation);
   assert.deepEqual(await ordinalsOf(partition), [1]);
 
-  const ready = await harness.inbox.ready(100);
+  const ready = await harness.discovery.ready(100);
   const found = ready.find(
     (each) => each.partition.project === partition.project,
   );
@@ -281,6 +281,51 @@ test("an operation identity is never reused, not even by another project", async
     () => harness.inbox.accept(elsewhere),
     /operation_identity_is_never_reused/,
   );
+});
+
+/** How many round trips a case will spend waiting for the server to report a queued transaction. */
+const queuedRoundTripsMax = 1_000;
+
+/**
+ * Waits until the server reports a transaction queued on a row lock, which is
+ * how a case knows the acceptance it started has reached the statement that
+ * blocks. The gate runs these suites one at a time, so the only queued
+ * transaction is the one this case started.
+ */
+async function queuedOnARow(): Promise<void> {
+  for (let attempt = 0; attempt < queuedRoundTripsMax; attempt += 1) {
+    const waiting = await harness.query(
+      "SELECT 1 FROM pg_locks WHERE NOT granted",
+    );
+    if (waiting.length > 0) return;
+  }
+  throw new Error("acceptance: nothing ever queued on a row lock");
+}
+
+test("a refusal names the lifecycle it was refused by, not one that committed while it waited", async () => {
+  const partition = await postgresHarnessProject(harness.store, "reactivating");
+  await harness.store.fence(partition, "Suspended");
+  const fencing = await harness.begin();
+  const keys = [partition.tenant, partition.project];
+  await fencing.query(
+    "SELECT 1 FROM project WHERE tenant = $1 AND project = $2 FOR UPDATE",
+    keys,
+  );
+
+  const accepting = harness.inbox.accept(
+    postgresHarnessSubmission(partition, "reactivating"),
+  );
+  await queuedOnARow();
+  await fencing.query(
+    `UPDATE project SET lifecycle = 'Active', lifecycle_generation = lifecycle_generation + 1
+      WHERE tenant = $1 AND project = $2`,
+    keys,
+  );
+  await fencing.commit();
+
+  const outcome = await accepting;
+  assert.ok(outcome.accepted === "Accepted");
+  assert.equal(outcome.operation.lifecycleGeneration, 3);
 });
 
 test("a submission for a project nothing provisioned is refused rather than accepted", async () => {

@@ -3,13 +3,19 @@
  * mutation durable and the one that takes it back.
  *
  * ACCEPTANCE IS ONE TRANSACTION AND THE ORDINAL IS ALLOCATED BY THE STATEMENT
- * THAT CHECKS ADMISSION. A conditional `UPDATE` of the ingress counter takes a
- * row lock on the lifecycle row, re-evaluates its condition against whatever a
- * racing lifecycle transition committed while it waited, and returns the
- * ordinal it just allocated — so a suspension that commits first leaves no
- * operation behind it, and one that commits second finds the operation already
- * accounted for. A separate read of the lifecycle followed by an update would
- * decide against a row another transaction had since changed.
+ * THAT CHECKS ADMISSION. A conditional `UPDATE` of the ingress counter
+ * re-evaluates its condition against whatever a racing lifecycle transition
+ * committed while it waited, and returns the ordinal it just allocated — so a
+ * suspension that commits first leaves no operation behind it, and one that
+ * commits second finds the operation already accounted for.
+ *
+ * THE LIFECYCLE ROW IS LOCKED BEFORE THAT STATEMENT AND NOT BY IT. A
+ * conditional `UPDATE` whose `WHERE` does not match locks nothing, so a
+ * refusal that then read the lifecycle would be reading a row a racing fence
+ * was free to change in between — and would report `NotAdmitted` against a
+ * lifecycle that admits the class. Taking the row lock first costs an accepted
+ * submission nothing, because it holds that row to commit either way, and it
+ * is what lets the refusal name the row it was actually refused by.
  *
  * THE IDEMPOTENCY LOOKUP COMES FIRST AND THE CLAIM IS THE OPERATION INSERT.
  * The lookup offers every retained key version, because a key accepted before
@@ -29,6 +35,13 @@
  * without a healthy project writer — and it races that writer on the one row
  * lock they share, with the server's own trigger refusing whichever of them
  * arrives second.
+ *
+ * IT ALSO TAKES THAT LOCK INSIDE THE SERVER RATHER THAN AROUND IT. The whole
+ * transition belongs to `./schema.ts`'s cancellation function, because the API
+ * role is granted no `UPDATE` on `operation` at all — which is what stops a
+ * caller deciding one — and a role that may not update the relation may not
+ * lock its rows either. So this file calls that function and reports the state
+ * it found, and the row it reads afterwards is a row it already holds.
  */
 
 import type pg from "pg";
@@ -64,6 +77,7 @@ import {
 import { postgresOwnershipLockKnown } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
+import { cancellationFunction } from "./schema.ts";
 
 /** One operation row with the ordinal of the inbox item it was accepted into. */
 export interface OperationRow {
@@ -289,18 +303,6 @@ async function operationsEnqueue(
   );
 }
 
-/** The lifecycle a refused acceptance reports, read from the row it was refused by. */
-async function operationsRefusedBy(
-  client: pg.PoolClient,
-  submission: Submission,
-): Promise<Accepted> {
-  const row = await postgresOwnershipLockKnown(client, submission.partition);
-  return {
-    accepted: "NotAdmitted",
-    lifecycle: projectRowStanding(row).lifecycle,
-  };
-}
-
 /** Accepts one submission, writing its operation, inbox item and readiness generation together. */
 export async function postgresOperationsAccept(
   pool: pg.Pool,
@@ -312,8 +314,17 @@ export async function postgresOperationsAccept(
     if (existing !== undefined) {
       return operationsRepeated(keying, existing, submission);
     }
+    const locked = await postgresOwnershipLockKnown(
+      client,
+      submission.partition,
+    );
     const allocated = await operationsAllocate(client, submission);
-    if (allocated === undefined) return operationsRefusedBy(client, submission);
+    if (allocated === undefined) {
+      return {
+        accepted: "NotAdmitted",
+        lifecycle: projectRowStanding(locked).lifecycle,
+      };
+    }
     if (
       !(await operationsClaim(client, keying, submission, allocated.generation))
     ) {
@@ -352,19 +363,17 @@ function operationsRow(result: pg.QueryResult<OperationRow>): OperationRow {
   return row;
 }
 
-/** Marks the locked operation cancelled and its inbox item non-consumable, in that order. */
+/**
+ * Runs the whole cancellation and reports the state the operation was in when
+ * the server locked it, or undefined when this partition has no such
+ * operation.
+ */
 async function operationsWithdraw(
   client: pg.PoolClient,
   cancellation: Cancellation,
-): Promise<OperationStanding> {
-  const cancelled = await client.query<OperationRow>(
-    `UPDATE operation o
-        SET state = 'Cancelled', settled_at = now(),
-            settled_authority_kind = $4, settled_authority_subject = $5
-       FROM inbox_item i
-      WHERE o.tenant = $1 AND o.project = $2 AND o.operation = $3
-        AND i.tenant = o.tenant AND i.project = o.project AND i.operation = o.operation
-      RETURNING ${operationRowColumns}`,
+): Promise<OperationState | undefined> {
+  const called = await client.query<{ locked: string | null }>(
+    `SELECT ${cancellationFunction}($1, $2, $3, $4, $5) AS locked`,
     [
       cancellation.partition.tenant,
       cancellation.partition.project,
@@ -373,16 +382,30 @@ async function operationsWithdraw(
       cancellation.authority.subject,
     ],
   );
-  await client.query(
-    `UPDATE inbox_item SET consumable = false
-      WHERE tenant = $1 AND project = $2 AND operation = $3`,
+  const row = called.rows[0];
+  if (row === undefined || called.rows.length !== 1) {
+    throw new Error(
+      `postgres operations: a cancellation answered with ${String(called.rows.length)} rows`,
+    );
+  }
+  return row.locked === null ? undefined : operationRowState(row.locked);
+}
+
+/** What the operation says about itself under the lock the cancellation just took on it. */
+async function operationsSettled(
+  client: pg.PoolClient,
+  cancellation: Cancellation,
+): Promise<OperationStanding> {
+  const found = await client.query<OperationRow>(
+    `SELECT ${operationRowColumns} FROM ${operationRowFrom}
+      WHERE o.tenant = $1 AND o.project = $2 AND o.operation = $3`,
     [
       cancellation.partition.tenant,
       cancellation.partition.project,
       cancellation.operation,
     ],
   );
-  return operationRowStanding(operationsRow(cancelled));
+  return operationRowStanding(operationsRow(found));
 }
 
 /** Cancels a still-pending operation, under the row lock a deciding writer takes on the same row. */
@@ -391,30 +414,15 @@ export async function postgresOperationsCancel(
   cancellation: Cancellation,
 ): Promise<Cancelled> {
   return postgresTransaction(pool, async (client) => {
-    const found = await client.query<OperationRow>(
-      `SELECT ${operationRowColumns} FROM ${operationRowFrom}
-        WHERE o.tenant = $1 AND o.project = $2 AND o.operation = $3
-        FOR UPDATE OF o`,
-      [
-        cancellation.partition.tenant,
-        cancellation.partition.project,
-        cancellation.operation,
-      ],
-    );
-    const row = found.rows[0];
-    if (row === undefined) return { cancelled: "Unknown" };
-    const state = operationRowState(row.state);
-    if (state === "Cancelled") {
-      return {
-        cancelled: "AlreadyCancelled",
-        operation: operationRowStanding(row),
-      };
+    const locked = await operationsWithdraw(client, cancellation);
+    if (locked === undefined) return { cancelled: "Unknown" };
+    if (locked === "Succeeded" || locked === "Refused") {
+      return { cancelled: "NotPending", state: locked };
     }
-    if (state !== "Pending") return { cancelled: "NotPending", state };
-    return {
-      cancelled: "Cancelled",
-      operation: await operationsWithdraw(client, cancellation),
-    };
+    const operation = await operationsSettled(client, cancellation);
+    return locked === "Pending"
+      ? { cancelled: "Cancelled", operation }
+      : { cancelled: "AlreadyCancelled", operation };
   });
 }
 

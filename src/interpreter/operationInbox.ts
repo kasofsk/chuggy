@@ -1,7 +1,6 @@
 /**
  * The durable submission side of one project partition: what the API needs of
- * PostgreSQL to make an authorized mutation durable, and what a dispatcher
- * needs to find it again without an owner.
+ * PostgreSQL to make an authorized mutation durable, and to take it back.
  *
  * WHY A SECOND PORT AND NOT MORE OF `ProjectStore`. Acceptance is the API's
  * transaction and the append is the dispatcher's, and
@@ -9,15 +8,15 @@
  * share an omnipotent credential. A port whose methods two roles answer is a
  * port no set of grants can describe, and the grant is where that boundary is
  * actually enforced — so the split here is by authority, and each side is
- * given only the calls its role is granted.
+ * given only the calls its role is granted. `./projectDiscovery.ts` is the
+ * dispatcher's side of the same relations, and the adapter for each takes its
+ * own pool because in deployment those pools carry different credentials.
  *
- * WHY THESE CALLS ARE ONE PORT ANYWAY. Acceptance writes the operation, the
- * inbox ordinal, the inbox item and the readiness generation in one
- * transaction; discovery reads the readiness that acceptance wrote and proves
- * itself against the inbox that authorizes it. Splitting them would invite an
- * implementation that allocated an ordinal in one call and enqueued in the
- * next, which is the acceptance that returns an operation identity and then
- * loses it.
+ * WHY ACCEPTANCE IS ONE CALL. It writes the operation, the inbox ordinal, the
+ * inbox item and the readiness generation in one transaction, and a port that
+ * offered those separately would invite an implementation that allocated an
+ * ordinal in one call and enqueued in the next — the acceptance that returns
+ * an operation identity and then loses it.
  *
  * A PLAINTEXT KEY CROSSES THIS BOUNDARY AND NEVER RETURNS. `asIdempotencyKey`
  * normalizes and bounds it here; the adapter stores only a versioned keyed
@@ -26,9 +25,8 @@
  * operation.
  *
  * EVERY REFUSAL IS A VALUE, as in `./projectStore.ts`. A conflicting
- * idempotency key, a lifecycle that admits no such class, an operation already
- * terminal and a readiness generation another acceptance superseded are all
- * outcomes a caller must handle. A conflict deliberately carries no operation
+ * idempotency key, a lifecycle that admits no such class and an operation
+ * already terminal are all outcomes a caller must handle. A conflict deliberately carries no operation
  * identity: authorization is the caller's and 006 forbids disclosing an
  * existing operation to a retry whose access has not been verified, so the
  * port hands out nothing there is to leak.
@@ -240,32 +238,9 @@ export type Cancelled =
   | { readonly cancelled: "NotPending"; readonly state: OperationState }
   | { readonly cancelled: "Unknown" };
 
-/** One project's discovery record: the partition with work waiting, and the generation that wake-up carries. */
-export interface Readiness {
-  readonly partition: Partition;
-  readonly generation: number;
-}
-
-/** One durable inbox item, in the ordinal order acceptance allocated it. */
-export interface InboxItem {
-  readonly partition: Partition;
-  readonly ordinal: number;
-  readonly operation: OperationId;
-}
-
 /**
- * What clearing readiness found. `Superseded` is an acceptance that arrived
- * after the owner observed its generation, and `WorkRemains` is a consumable
- * item the owner had not accounted for.
- */
-export type ReadinessCleared =
-  | { readonly cleared: "Cleared" }
-  | { readonly cleared: "Superseded"; readonly generation: number }
-  | { readonly cleared: "WorkRemains" };
-
-/**
- * The durable inbox for project partitions. Every call but `ready` names its
- * partition, and `ready` reads only readiness metadata across the fleet.
+ * The durable inbox for project partitions, from the submitting side. Every
+ * call names its partition, and none of them reads across two.
  */
 export interface OperationInbox {
   /**
@@ -286,20 +261,4 @@ export interface OperationInbox {
     partition: Partition,
     operation: OperationId,
   ): Promise<OperationStanding | undefined>;
-
-  /** At most `partitionsMax` projects with work waiting, which is all fleet discovery reads. */
-  ready(partitionsMax: number): Promise<readonly Readiness[]>;
-
-  /** At most `itemsMax` consumable items in ordinal order, which is what activation verifies the inbox with. */
-  consumable(
-    partition: Partition,
-    itemsMax: number,
-  ): Promise<readonly InboxItem[]>;
-
-  /**
-   * Clears readiness if the generation is still the one observed and no
-   * consumable item remains, so an idle owner cannot erase a concurrent
-   * wake-up.
-   */
-  clearReadiness(readiness: Readiness): Promise<ReadinessCleared>;
 }

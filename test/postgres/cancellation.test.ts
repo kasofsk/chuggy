@@ -108,7 +108,7 @@ test("cancelling a pending operation settles it and makes its inbox item non-con
   assert.equal(outcome.operation.ordinal, 1);
   assert.equal(await stateOf(submission), "Cancelled");
   assert.deepEqual(
-    await harness.inbox.consumable(submission.partition, 10),
+    await harness.discovery.consumable(submission.partition, 10),
     [],
   );
   assert.deepEqual(
@@ -129,7 +129,7 @@ test("cancellation leaves readiness alone, because lowering it is the owner's pr
   const submission = await pending("cancelready");
   await harness.inbox.cancel(cancellationOf(submission));
 
-  const ready = await harness.inbox.ready(100);
+  const ready = await harness.discovery.ready(100);
   const found = ready.find(
     (each) => each.partition.project === submission.partition.project,
   );
@@ -164,19 +164,37 @@ test("an operation this partition never accepted is unknown", async () => {
   assert.equal(outcome.cancelled, "Unknown");
 });
 
-test("a settled operation cannot be settled again, whoever asks", async () => {
+test("a settled operation cannot be settled again or re-audited, whoever asks", async () => {
   const submission = await pending("terminal");
   await harness.inbox.cancel(cancellationOf(submission));
 
-  await assert.rejects(
-    () =>
-      harness.query(
-        "UPDATE operation SET state = 'Succeeded' WHERE operation = $1",
-        [submission.operation],
-      ),
-    /decided once/,
+  const rewrites = [
+    "state = 'Succeeded'",
+    "settled_at = now()",
+    "settled_authority_kind = 'Somebody'",
+    "settled_authority_subject = 'somebody-else'",
+  ];
+  for (const rewrite of rewrites) {
+    await assert.rejects(
+      () =>
+        harness.query(`UPDATE operation SET ${rewrite} WHERE operation = $1`, [
+          submission.operation,
+        ]),
+      /decided once/,
+    );
+  }
+  assert.deepEqual(
+    await harness.query(
+      "SELECT state, settled_authority_subject FROM operation WHERE operation = $1",
+      [submission.operation],
+    ),
+    [
+      {
+        state: "Cancelled",
+        settled_authority_subject: submission.authority.subject,
+      },
+    ],
   );
-  assert.equal(await stateOf(submission), "Cancelled");
   assert.equal(await decide(submission.partition, submission.operation), false);
 });
 

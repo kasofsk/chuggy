@@ -24,12 +24,12 @@
 
 import type pg from "pg";
 
-import {
-  asOperationId,
-  type InboxItem,
-  type Readiness,
-  type ReadinessCleared,
-} from "../../interpreter/operationInbox.ts";
+import { asOperationId } from "../../interpreter/operationInbox.ts";
+import type {
+  InboxItem,
+  Readiness,
+  ReadinessCleared,
+} from "../../interpreter/projectDiscovery.ts";
 import {
   asProjectId,
   asTenantId,

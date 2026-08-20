@@ -17,10 +17,8 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import type {
-  Readiness,
-  Submission,
-} from "../../src/interpreter/operationInbox.ts";
+import type { Submission } from "../../src/interpreter/operationInbox.ts";
+import type { Readiness } from "../../src/interpreter/projectDiscovery.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   postgresHarnessOpen,
@@ -54,7 +52,7 @@ async function accept(
 async function discovered(
   partition: Partition,
 ): Promise<Readiness | undefined> {
-  const ready = await harness.inbox.ready(1_000);
+  const ready = await harness.discovery.ready(1_000);
   return ready.find((each) => each.partition.project === partition.project);
 }
 
@@ -87,7 +85,7 @@ test("discovery finds a project with work and stops finding it once readiness is
   const readiness = await observed(partition);
   assert.equal(readiness.generation, 1);
 
-  assert.deepEqual(await harness.inbox.clearReadiness(readiness), {
+  assert.deepEqual(await harness.discovery.clearReadiness(readiness), {
     cleared: "Cleared",
   });
   assert.equal(await discovered(partition), undefined);
@@ -96,8 +94,11 @@ test("discovery finds a project with work and stops finding it once readiness is
 test("discovery is bounded by the page a caller asks for", async () => {
   await emptied("boundedone");
   await emptied("boundedtwo");
-  assert.equal((await harness.inbox.ready(1)).length, 1);
-  await assert.rejects(() => harness.inbox.ready(0), /is not a positive bound/);
+  assert.equal((await harness.discovery.ready(1)).length, 1);
+  await assert.rejects(
+    () => harness.discovery.ready(0),
+    /is not a positive bound/,
+  );
 });
 
 test("clearing is refused while a consumable item remains", async () => {
@@ -105,7 +106,7 @@ test("clearing is refused while a consumable item remains", async () => {
   await accept(partition, "remains");
   const readiness = await observed(partition);
 
-  assert.deepEqual(await harness.inbox.clearReadiness(readiness), {
+  assert.deepEqual(await harness.discovery.clearReadiness(readiness), {
     cleared: "WorkRemains",
   });
   assert.deepEqual(await observed(partition), readiness);
@@ -116,13 +117,13 @@ test("clearing cannot erase a wake-up accepted since the owner observed it", asy
   const readiness = await observed(partition);
   await accept(partition, "wokeit");
 
-  assert.deepEqual(await harness.inbox.clearReadiness(readiness), {
+  assert.deepEqual(await harness.discovery.clearReadiness(readiness), {
     cleared: "Superseded",
     generation: readiness.generation + 1,
   });
   const still = await observed(partition);
   assert.equal(still.generation, readiness.generation + 1);
-  assert.equal((await harness.inbox.consumable(partition, 10)).length, 1);
+  assert.equal((await harness.discovery.consumable(partition, 10)).length, 1);
 });
 
 test("a stale observation is refused even when the inbox it saw is still empty", async () => {
@@ -130,8 +131,8 @@ test("a stale observation is refused even when the inbox it saw is still empty",
   const readiness = await observed(partition);
   await withdraw(await accept(partition, "stalelater"));
 
-  assert.deepEqual(await harness.inbox.consumable(partition, 10), []);
-  assert.deepEqual(await harness.inbox.clearReadiness(readiness), {
+  assert.deepEqual(await harness.discovery.consumable(partition, 10), []);
+  assert.deepEqual(await harness.discovery.clearReadiness(readiness), {
     cleared: "Superseded",
     generation: readiness.generation + 1,
   });
@@ -144,11 +145,11 @@ test("a clear and an acceptance racing each other leave the project ready", asyn
 
   await Promise.all([
     accept(partition, "racingaccept"),
-    harness.inbox.clearReadiness(readiness),
+    harness.discovery.clearReadiness(readiness),
   ]);
 
   assert.notEqual(await discovered(partition), undefined);
-  assert.equal((await harness.inbox.consumable(partition, 10)).length, 1);
+  assert.equal((await harness.discovery.consumable(partition, 10)).length, 1);
 });
 
 test("consumable items come back in ordinal order, bounded by the page asked for", async () => {
@@ -157,12 +158,12 @@ test("consumable items come back in ordinal order, bounded by the page asked for
   const second = await accept(partition, "pagetwo");
   await accept(partition, "pagethree");
 
-  assert.deepEqual(await harness.inbox.consumable(partition, 2), [
+  assert.deepEqual(await harness.discovery.consumable(partition, 2), [
     { partition, ordinal: 1, operation: first.operation },
     { partition, ordinal: 2, operation: second.operation },
   ]);
   await assert.rejects(
-    () => harness.inbox.consumable(partition, 0),
+    () => harness.discovery.consumable(partition, 0),
     /is not a positive bound/,
   );
 });
@@ -170,7 +171,7 @@ test("consumable items come back in ordinal order, bounded by the page asked for
 test("clearing readiness a project never had is a failure rather than a quiet success", async () => {
   const partition = await postgresHarnessProject(harness.store, "neverready");
   await assert.rejects(
-    () => harness.inbox.clearReadiness({ partition, generation: 1 }),
+    () => harness.discovery.clearReadiness({ partition, generation: 1 }),
     /never been made ready/,
   );
 });

@@ -3,17 +3,18 @@
  * one project partition.
  *
  * IT ASSEMBLES AND DECIDES NOTHING, exactly as `./projectStore.ts` does not.
- * Acceptance and cancellation are `./operations.ts`'s, discovery and clearing
- * are `./readiness.ts`'s, and this file exists so the port has one
- * implementation to name. The split is by transaction: every function in those
- * modules opens and closes its own, and none of them is called from inside
+ * Every statement is `./operations.ts`'s, and this file exists so the port has
+ * one implementation to name. The split is by transaction: every function in
+ * that module opens and closes its own, and none of them is called from inside
  * another's.
  *
  * THE POOL AND THE KEYING SET ARE BOTH THE CALLER'S. Where the connection
  * comes from is a deployment choice `src/compose.ts` alone may make, and so is
  * where the idempotency secrets come from — an adapter that read either from
  * its environment would be making that choice inside the layer that must not
- * have one.
+ * have one. This pool is the API role's; the dispatcher's is
+ * `./projectDiscovery.ts`'s, because 006 gives runtime services separate
+ * credentials and one pool answering both ports would undo that.
  */
 
 import type pg from "pg";
@@ -22,12 +23,9 @@ import type {
   Accepted,
   Cancellation,
   Cancelled,
-  InboxItem,
   OperationId,
   OperationInbox,
   OperationStanding,
-  Readiness,
-  ReadinessCleared,
   Submission,
 } from "../../interpreter/operationInbox.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -37,11 +35,6 @@ import {
   postgresOperationsCancel,
   postgresOperationsRead,
 } from "./operations.ts";
-import {
-  postgresReadinessClear,
-  postgresReadinessConsumable,
-  postgresReadinessReady,
-} from "./readiness.ts";
 
 /** The inbox over a pool and a keying set the composition root supplied. */
 export function postgresOperationInbox(
@@ -60,17 +53,5 @@ export function postgresOperationInbox(
       operation: OperationId,
     ): Promise<OperationStanding | undefined> =>
       postgresOperationsRead(pool, partition, operation),
-
-    ready: (partitionsMax: number): Promise<readonly Readiness[]> =>
-      postgresReadinessReady(pool, partitionsMax),
-
-    consumable: (
-      partition: Partition,
-      itemsMax: number,
-    ): Promise<readonly InboxItem[]> =>
-      postgresReadinessConsumable(pool, partition, itemsMax),
-
-    clearReadiness: (readiness: Readiness): Promise<ReadinessCleared> =>
-      postgresReadinessClear(pool, readiness),
   };
 }

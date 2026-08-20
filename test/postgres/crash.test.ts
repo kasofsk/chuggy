@@ -156,10 +156,10 @@ test("a crash after acceptance leaves the work discoverable with no active owner
   assert.equal(operation.state, "Pending");
   assert.equal(operation.ordinal, 1);
 
-  const ready = await harness.inbox.ready(1_000);
+  const ready = await harness.discovery.ready(1_000);
   assert.ok(ready.some((each) => each.partition.project === partition.project));
   assert.deepEqual(
-    (await harness.inbox.consumable(partition, 10)).map(
+    (await harness.discovery.consumable(partition, 10)).map(
       (item) => item.operation,
     ),
     [submission.operation],
@@ -178,7 +178,7 @@ test("an acceptance that never resolved leaves no operation and no ordinal spent
     await harness.inbox.operation(partition, submission.operation),
     undefined,
   );
-  assert.deepEqual(await harness.inbox.consumable(partition, 10), []);
+  assert.deepEqual(await harness.discovery.consumable(partition, 10), []);
   assert.deepEqual(
     await harness.query(
       "SELECT ingress_next FROM project WHERE tenant = $1 AND project = $2",

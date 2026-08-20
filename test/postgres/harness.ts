@@ -35,6 +35,7 @@ import {
   postgresMigrate,
   postgresPool,
 } from "../../src/adapters/postgres/pool.ts";
+import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
 import {
   asAuthorityKind,
@@ -45,6 +46,7 @@ import {
   type OperationInbox,
   type Submission,
 } from "../../src/interpreter/operationInbox.ts";
+import type { ProjectDiscovery } from "../../src/interpreter/projectDiscovery.ts";
 import {
   asOwnerId,
   asProjectId,
@@ -80,10 +82,11 @@ export interface PostgresTransaction {
   readonly rollback: () => Promise<void>;
 }
 
-/** One opened subject: the store, the inbox, the pool beneath them, and the way to give it back. */
+/** One opened subject: the store, the two inbox ports, the pool beneath them, and the way to give it back. */
 export interface PostgresHarness {
   readonly store: ProjectStore;
   readonly inbox: OperationInbox;
+  readonly discovery: ProjectDiscovery;
   readonly query: (
     sql: string,
     values?: readonly unknown[],
@@ -105,6 +108,7 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
   return {
     store,
     inbox: postgresOperationInbox(pool, postgresHarnessKeying()),
+    discovery: postgresProjectDiscovery(pool),
     query: async (sql, values) =>
       (await pool.query(sql, values === undefined ? undefined : [...values]))
         .rows as readonly Record<string, unknown>[],

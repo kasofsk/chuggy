@@ -57,23 +57,42 @@
  * lifecycle transition committing first leaves the counter untouched.
  *
  * `operation` — one accepted mutation, its authority, its idempotency scope
- * and its terminal state. Owned by the API role for insertion and
- * cancellation and, from the decision transaction onward, by the dispatcher
- * for its outcome. Its composite key is `(tenant, project)` and it points at
+ * and its terminal state. Owned by the API role for insertion and, from the
+ * decision transaction onward, by the dispatcher for its outcome. Its
+ * composite key is `(tenant, project)` and it points at
  * `project`; its identity is `(tenant, project, operation)` with the opaque
  * operation identity unique globally, because 006 mints those outside any
  * partition and a reused one would answer another project's poll. Its
  * idempotency key is `(tenant, project, authority_kind, key_digest)`, unique
  * and permanent, which is what makes a retry find its original rather than
  * create a second. It is changed by acceptance and by cancellation, and a
- * trigger refuses any later change to a state already terminal. Unfinished
- * work is found by selecting `Pending` operations for a partition.
+ * trigger refuses any later change to a state or a settling authority already
+ * terminal. Unfinished work is found by selecting `Pending` operations for a
+ * partition.
+ *
+ * WHY NO ROLE MAY WRITE `state` AND CANCELLATION IS A FUNCTION. 006 lets the
+ * API insert authorized operations and decide none of them, and allows one
+ * narrowly constrained transaction to move a still-pending operation to
+ * cancelled. A grant on the column is not that constraint: `UPDATE operation
+ * SET state = 'Succeeded'` on a pending row satisfies every column-level grant
+ * a cancellation needs, and the terminality trigger cannot refuse it because
+ * the row it fires on is not yet terminal. So the API role holds no `UPDATE`
+ * on this relation at all, and cancellation is a `SECURITY DEFINER` function
+ * it is granted `EXECUTE` on — which also makes the transition, the settlement
+ * columns and the inbox flag one call rather than three grants that only
+ * together add up to a cancellation. A role-aware trigger would be the other
+ * shape and it is broken in deployment: a service connects as a login role
+ * that inherits `chuggy_api`, so `current_user` names the login role and the
+ * check never fires.
  *
  * WHY THE IDEMPOTENCY TOMBSTONE IS THIS ROW AND NOT A SECOND ONE. The scope,
  * the key digest and the payload digest belong to exactly one operation, and
  * standing rule 3 rejects the copy a second relation would keep. 006 compacts
- * a terminal operation's command body while the tombstone survives; that is a
- * column set to null rather than a row that outlives its parent.
+ * a terminal operation's command body while the tombstone survives, which is a
+ * change to this row rather than a row that outlives its parent — and
+ * `command` is `NOT NULL` until the slice that compacts one makes it nullable,
+ * because weakening a constraint for a caller that does not exist yet is
+ * reaching forward into that slice.
  *
  * WHY THERE IS NO OUTCOME COLUMN YET. The only outcome I1 can write is
  * cancellation, whose code would restate `state`, and a stored duplicate of a
@@ -82,9 +101,10 @@
  * them.
  *
  * `inbox_item` — the project's durable inbox, in the ordinal order acceptance
- * allocated. Owned by the API role for insertion and for making an item
- * non-consumable at cancellation; acknowledgement is the writer's and arrives
- * with it. Its composite key is `(tenant, project)`, its identity is
+ * allocated. Owned by the API role for insertion and, through the cancellation
+ * function alone, for making an item non-consumable; acknowledgement is the
+ * writer's and arrives with it. Its composite key is `(tenant, project)`, its
+ * identity is
  * `(tenant, project, ordinal)`, and its source key `(tenant, project,
  * operation)` is unique, which is the deduplication 006 requires before
  * ordinal allocation — every item I1 admits is an accepted operation's, and
@@ -125,6 +145,9 @@ export const dispatcherRole = "chuggy_dispatcher";
 
 /** The role the authenticated API connects as, which accepts and cancels work and decides none of it. */
 export const apiRole = "chuggy_api";
+
+/** The whole of a cancellation, named once so the grant, the adapter and the suite agree on it. */
+export const cancellationFunction = "cancel_pending_operation";
 
 /** The ledger of applied migrations, which the runner creates before it reads anything. */
 export const migrationLedger = `
@@ -287,17 +310,19 @@ const inboxRelations = [
 ];
 
 /**
- * The trigger that makes a terminal outcome final. A grant cannot say which
- * value a column may take, so the rule that a cancelled operation is never
- * later succeeded has to be the server's own, and it is what makes the
- * cancellation race resolve one way rather than both.
+ * The trigger that makes a terminal outcome final, settling authority
+ * included. A grant cannot say which value a column may take, so the rule that
+ * a cancelled operation is never later succeeded — or later re-audited to
+ * somebody else — has to be the server's own.
  */
 const inboxTerminality = [
   `CREATE FUNCTION operation_stays_terminal() RETURNS trigger
      LANGUAGE plpgsql AS $$
      BEGIN
        IF OLD.state <> 'Pending'
-          AND (NEW.state, NEW.settled_at) IS DISTINCT FROM (OLD.state, OLD.settled_at)
+          AND (NEW.state, NEW.settled_at, NEW.settled_authority_kind, NEW.settled_authority_subject)
+              IS DISTINCT FROM
+              (OLD.state, OLD.settled_at, OLD.settled_authority_kind, OLD.settled_authority_subject)
        THEN
          RAISE EXCEPTION
            'operation % is already %, and an outcome is decided once', OLD.operation, OLD.state
@@ -311,14 +336,51 @@ const inboxTerminality = [
      FOR EACH ROW EXECUTE FUNCTION operation_stays_terminal()`,
 ];
 
+/**
+ * The whole of a cancellation as one call the API role is granted, because the
+ * grants that would let a caller assemble it by hand are the grants that let it
+ * decide an operation instead. Its `search_path` is pinned on the definition: a
+ * `SECURITY DEFINER` body runs as the owner, so a caller who could put a schema
+ * of its own in front of `operation` would be writing rows this function's
+ * privileges signed for.
+ */
+const inboxCancellation = [
+  `CREATE FUNCTION ${cancellationFunction}(
+     in_tenant text, in_project text, in_operation text,
+     in_authority_kind text, in_authority_subject text)
+     RETURNS text
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+     DECLARE
+       locked_state text;
+     BEGIN
+       SELECT state INTO locked_state FROM operation
+         WHERE tenant = in_tenant AND project = in_project AND operation = in_operation
+         FOR UPDATE;
+       IF NOT FOUND THEN
+         RETURN NULL;
+       END IF;
+       IF locked_state <> 'Pending' THEN
+         RETURN locked_state;
+       END IF;
+       UPDATE operation
+          SET state = 'Cancelled', settled_at = now(),
+              settled_authority_kind = in_authority_kind,
+              settled_authority_subject = in_authority_subject
+        WHERE tenant = in_tenant AND project = in_project AND operation = in_operation;
+       UPDATE inbox_item SET consumable = false
+        WHERE tenant = in_tenant AND project = in_project AND operation = in_operation;
+       RETURN locked_state;
+     END
+     $$`,
+  `REVOKE EXECUTE ON FUNCTION ${cancellationFunction}(text, text, text, text, text) FROM PUBLIC`,
+  `GRANT EXECUTE ON FUNCTION ${cancellationFunction}(text, text, text, text, text) TO ${apiRole}`,
+];
+
 const inboxGrants = [
   `GRANT SELECT ON project TO ${apiRole}`,
   `GRANT UPDATE (ingress_next) ON project TO ${apiRole}`,
   `GRANT SELECT, INSERT ON operation TO ${apiRole}`,
-  `GRANT UPDATE (state, settled_at, settled_authority_kind, settled_authority_subject)
-     ON operation TO ${apiRole}`,
   `GRANT SELECT, INSERT ON inbox_item TO ${apiRole}`,
-  `GRANT UPDATE (consumable) ON inbox_item TO ${apiRole}`,
   `GRANT SELECT, INSERT ON project_readiness TO ${apiRole}`,
   `GRANT UPDATE (ready, generation) ON project_readiness TO ${apiRole}`,
   `GRANT SELECT ON inbox_item TO ${dispatcherRole}`,
@@ -344,6 +406,7 @@ export const migrations: readonly Migration[] = [
       roleStatement(apiRole),
       ...inboxRelations,
       ...inboxTerminality,
+      ...inboxCancellation,
       ...inboxGrants,
     ],
   },
