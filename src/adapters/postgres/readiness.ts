@@ -14,14 +14,15 @@
  * clearing has to prove the inbox empty and why a repair scan is optional
  * rather than load-bearing.
  *
- * THE EMPTINESS PROOF IS WHAT EXCLUDES AN ERASED WAKE-UP, and it does so
- * because it runs under the readiness row lock an acceptance also takes. An
- * acceptance writes its inbox item and its readiness generation in one
- * transaction, so either it commits before the clearing takes that lock — and
- * its item is visible to the proof, which refuses — or it has not reached the
- * upsert and blocks on the lock the clearing holds. There is no third
- * position: an item invisible to the proof is an uncommitted one, and its own
- * transaction has still to pass through that lock.
+ * NO WAKE-UP IS ERASED, AND THE READINESS ROW LOCK IS WHAT ORDERS THE TWO
+ * TRANSACTIONS. An acceptance writes its inbox item and its readiness upsert
+ * together, so either it commits before the clearing takes that lock — leaving
+ * a raised generation and a visible item for the checks below to refuse on — or
+ * it has not reached the upsert and blocks there. In that second branch the
+ * emptiness proof correctly finds nothing consumable and the clear commits;
+ * what keeps the wake-up is the blocked upsert raising `ready` again behind it.
+ * There is no third position, because an item invisible to the proof is an
+ * uncommitted one whose transaction has still to pass through that lock.
  *
  * THE GENERATION IS FOR THE OBSERVATION TAKEN OUTSIDE THAT TRANSACTION. An
  * owner clears against a readiness it read at some earlier moment, and the

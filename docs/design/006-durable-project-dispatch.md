@@ -383,10 +383,13 @@ counter/lifecycle row and atomically allocates the inbox ordinal, inserts the
 operation and inbox item, and upserts a new readiness generation. The inbox is
 authoritative and readiness is its discovery index. Activation verifies the
 inbox. Clearing readiness locks the readiness row and proves no consumable item
-remains, and that proof under that lock is what prevents an idle owner erasing a
-concurrent wake-up: an acceptance either commits first, leaving its item visible
-to the proof, or it has not yet reached its readiness upsert and blocks on the
-lock the clearing holds. A generation additionally refuses a clear whose
+remains, and that lock is what orders it against a concurrent acceptance rather
+than letting an idle owner erase a wake-up: an acceptance either commits first,
+leaving its item visible to the proof and its generation raised, or it has not
+yet reached its readiness upsert and blocks on the lock the clearing holds —
+where the proof finds nothing consumable, the clear commits, and the blocked
+upsert raises readiness again behind it. A generation additionally refuses a
+clear whose
 observation predates an acceptance, which matters because that observation is
 taken outside the clearing transaction, and is conservative where the operations
 accepted since have all been cancelled. A repair

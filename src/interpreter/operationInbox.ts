@@ -79,12 +79,20 @@ export const authorityCharsMax = 256;
 export const operationCommandCharsMax = 65_536;
 
 /**
- * Refuses text a bounded column cannot hold. An opaque client string with no
- * cap is an unbounded row, which house rule 9 forbids and no later slice can
- * retrofit onto rows already written.
+ * Refuses text a bounded column cannot hold, and text that is not text: an
+ * opaque client string with no cap is an unbounded row, and one carrying an
+ * unpaired surrogate is a value every UTF-8 encoding of it folds to the
+ * replacement character, so two such strings share one digest and one stored
+ * row. House rule 9 forbids the first and no later slice can retrofit either
+ * onto rows already written.
  */
 function asBoundedText(value: string, what: string, charsMax: number): string {
   if (value.length === 0) throw new RangeError(`${what}: a value is empty`);
+  if (!value.isWellFormed()) {
+    throw new RangeError(
+      `${what}: an unpaired surrogate is not a value a digest can separate`,
+    );
+  }
   if (value.length > charsMax) {
     throw new RangeError(
       `${what}: ${String(value.length)} characters is past the ${String(charsMax)} a stored row holds`,

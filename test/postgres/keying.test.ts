@@ -136,6 +136,19 @@ test("a key is normalized to one spelling before it is digested", () => {
   );
 });
 
+test("two lone surrogates are refused rather than folded onto one digest", () => {
+  const first = "\uD800";
+  const second = "\uD801";
+  assert.notEqual(first, second);
+  assert.equal(
+    Buffer.from(first, "utf8").toString("hex"),
+    Buffer.from(second, "utf8").toString("hex"),
+  );
+  assert.throws(() => asIdempotencyKey(first), /unpaired surrogate/);
+  assert.throws(() => asIdempotencyKey(second), /unpaired surrogate/);
+  assert.throws(() => asOperationCommand(first), /unpaired surrogate/);
+});
+
 test("an unbounded client string never becomes an unbounded row", () => {
   assert.throws(() => asIdempotencyKey(""), /is empty/);
   assert.throws(

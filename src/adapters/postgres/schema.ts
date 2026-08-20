@@ -118,17 +118,22 @@
  * activation verifies the inbox with.
  *
  * `project_readiness` — the discovery index over that inbox, and the only
- * thing fleet discovery reads. Owned by the API role, which raises it, and by
- * the dispatcher role, which may lower `ready` and may not touch the
- * generation. Its composite key and identity are both `(tenant, project)`. It
- * is changed by acceptance, which raises readiness and advances the
- * generation, and by an idle owner clearing it. Unfinished work is found by
- * selecting the ready rows across the fleet.
+ * thing fleet discovery reads. Owned by the API role, whose grant covers
+ * `ready` and `generation` in both directions, and by the dispatcher role,
+ * whose grant covers `ready` alone — so of the two halves of the separation
+ * only the dispatcher's is the server's, and the API's is this adapter's. Its
+ * composite key and identity are both `(tenant, project)`. It is changed by
+ * acceptance, which raises readiness and advances the generation, and by an
+ * idle owner clearing it. Unfinished work is found by selecting the ready rows
+ * across the fleet.
  *
- * WHY THE ROW IS NEVER DELETED AND THE GENERATION NEVER RESTARTS. Clearing
+ * WHY THE ROW IS NEVER DELETED AND THE GENERATION IS ONLY ADVANCED. Clearing
  * lowers a flag rather than removing the row, because a generation that
  * restarted at one would let an owner holding a stale one erase the wake-up
- * that reused it — the stale observation the generation exists to refuse.
+ * that reused it — the stale observation the generation exists to refuse. That
+ * is a discipline every writer here keeps rather than a rule the server
+ * applies, and the note beside `inboxGrants` says what the grant permits
+ * instead.
  */
 
 import {
@@ -211,7 +216,7 @@ const foundationRelations = [
 ];
 
 /**
- * What the runtime role may write, which is still wider than the fences over
+ * What a runtime role may write, which is still wider than the fences over
  * it: the ownership columns and an INSERT let a direct table write install the
  * role as owner of a project another dispatcher holds, or place an entry at a
  * seq the primary key has not taken and move `head` to match, because the
@@ -356,10 +361,10 @@ const inboxTerminality = [
 /**
  * The whole of a cancellation as one call the API role is granted, because the
  * grants that would let a caller assemble it by hand are the grants that let it
- * decide an operation instead. Its `search_path` is pinned on the definition: a
- * `SECURITY DEFINER` body runs as the owner, so a caller who could put a schema
- * of its own in front of `operation` would be writing rows this function's
- * privileges signed for.
+ * decide an operation instead. A `SECURITY DEFINER` body runs as its owner —
+ * whichever role applied the migration, which nothing here decides — so the
+ * `search_path` is pinned on the definition against a caller shadowing
+ * `operation`, and kasofsk/chuggy#134 carries who owns it in production.
  */
 const inboxCancellation = [
   `CREATE FUNCTION ${cancellationFunction}(
@@ -393,6 +398,16 @@ const inboxCancellation = [
   `GRANT EXECUTE ON FUNCTION ${cancellationFunction}(text, text, text, text, text) TO ${apiRole}`,
 ];
 
+/**
+ * What the accepting role may write, which is wider than the discipline over
+ * it: `UPDATE (ready, generation)` lets a direct table write lower `ready` over
+ * a consumable item — an enqueued submission no writer ever discovers — or
+ * rewind the generation a stale observation is refused by, because raising is
+ * this adapter's rule and no grant states it. A narrower grant cannot draw that
+ * line, since acceptance writes both columns and an idle owner writes one of
+ * them back; kasofsk/chuggy#121 is open on what does, and a later slice carries
+ * it.
+ */
 const inboxGrants = [
   `GRANT SELECT ON project TO ${apiRole}`,
   `GRANT UPDATE (ingress_next) ON project TO ${apiRole}`,
@@ -403,7 +418,9 @@ const inboxGrants = [
      ON operation TO ${apiRole}`,
   `GRANT SELECT ON inbox_item TO ${apiRole}`,
   `GRANT INSERT (tenant, project, ordinal, operation) ON inbox_item TO ${apiRole}`,
-  `GRANT SELECT, INSERT ON project_readiness TO ${apiRole}`,
+  `GRANT SELECT ON project_readiness TO ${apiRole}`,
+  `GRANT INSERT (tenant, project, ready, generation)
+     ON project_readiness TO ${apiRole}`,
   `GRANT UPDATE (ready, generation) ON project_readiness TO ${apiRole}`,
   `GRANT SELECT ON inbox_item TO ${dispatcherRole}`,
   `GRANT SELECT ON project_readiness TO ${dispatcherRole}`,
