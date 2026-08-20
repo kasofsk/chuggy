@@ -123,6 +123,13 @@ kubectl -n chuggy-git port-forward service/git 8080:80
   built-in document root, so `GET /` is answered unauthenticated with whatever
   the image ships there. Nothing under `/git` is reachable that way — it is
   served only through the two locations above — but the surface is not nothing.
+- **Nothing bounds the namespace.** `deploy/rig/git/bootstrap/namespace.yaml`
+  carries no Pod Security labels and nothing here draws a NetworkPolicy, so the
+  basic-auth wall is the whole of the control in either direction: every pod on
+  the cluster network reaches that wall, and the git pod — root, above — reaches
+  every destination the node does. Nothing refuses a privileged or host-network
+  pod scheduled into the namespace, either. The rig's `chuggy-work` namespace
+  draws both; this one draws neither.
 
 ## Undoing it
 
