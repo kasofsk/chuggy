@@ -238,3 +238,12 @@ export function postgresHarnessJournal(): readonly Entry[] {
   return journalStep(refinementInstance, released, dispatchEvent(id(1)))
     .journal;
 }
+
+/** The first entry of that history, which is all a case appending exactly one entry needs. */
+export function postgresHarnessFirstEntry(): Entry {
+  const entry = postgresHarnessJournal()[0];
+  if (entry === undefined) {
+    throw new Error("postgres harness: the fixture journal has no first entry");
+  }
+  return entry;
+}

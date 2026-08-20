@@ -21,20 +21,13 @@ import type {
   Partition,
 } from "../../src/interpreter/projectStore.ts";
 import {
+  postgresHarnessFirstEntry,
   postgresHarnessOpen,
   postgresHarnessOwner,
-  postgresHarnessJournal,
   postgresHarnessProject,
   postgresHarnessRowLock,
   type PostgresHarness,
 } from "./harness.ts";
-
-/** The first entry of the shared fixture history, which is all these cases need. */
-function postgresHarnessFirstEntry(): Entry {
-  const entry = postgresHarnessJournal()[0];
-  assert.ok(entry !== undefined);
-  return entry;
-}
 
 let harness: PostgresHarness;
 

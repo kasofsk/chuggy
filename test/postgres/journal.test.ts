@@ -20,6 +20,7 @@ import {
 import type { Lease, Partition } from "../../src/interpreter/projectStore.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import {
+  postgresHarnessFirstEntry,
   postgresHarnessOpen,
   postgresHarnessOwner,
   postgresHarnessJournal,
@@ -82,9 +83,10 @@ test("a stale head is refused, and the refusal carries the head the writer shoul
   const lease = await held(partition, "writer");
   await appendAll(lease, journal);
 
-  const first = journal[0];
-  assert.ok(first !== undefined);
-  const refused = await harness.store.append(lease, first);
+  const refused = await harness.store.append(
+    lease,
+    postgresHarnessFirstEntry(),
+  );
   assert.equal(refused.appended, "StaleHead");
   assert.ok(refused.appended === "StaleHead");
   assert.equal(refused.head, journal.length);
@@ -93,8 +95,7 @@ test("a stale head is refused, and the refusal carries the head the writer shoul
 test("two appends racing at one head commit exactly one", async () => {
   const partition = await postgresHarnessProject(harness.store, "race");
   const lease = await held(partition, "writer");
-  const first = postgresHarnessJournal()[0];
-  assert.ok(first !== undefined);
+  const first = postgresHarnessFirstEntry();
 
   const [left, right] = await Promise.all([
     harness.store.append(lease, first),
@@ -113,9 +114,10 @@ test("a fenced writer cannot commit, even holding a lease that was once valid", 
   );
   const successor = await held(partition, "successor");
 
-  const first = postgresHarnessJournal()[0];
-  assert.ok(first !== undefined);
-  const refused = await harness.store.append(former, first);
+  const refused = await harness.store.append(
+    former,
+    postgresHarnessFirstEntry(),
+  );
   assert.equal(refused.appended, "Fenced");
   assert.ok(refused.appended === "Fenced");
   assert.equal(refused.fencingEpoch, successor.fencingEpoch);
@@ -127,9 +129,10 @@ test("a suspended project accepts no entry from the writer that held it", async 
   const lease = await held(partition, "writer");
   await harness.store.fence(partition, "IntegrityBlocked");
 
-  const first = postgresHarnessJournal()[0];
-  assert.ok(first !== undefined);
-  const refused = await harness.store.append(lease, first);
+  const refused = await harness.store.append(
+    lease,
+    postgresHarnessFirstEntry(),
+  );
   assert.equal(refused.appended, "NotActive");
   assert.ok(refused.appended === "NotActive");
   assert.equal(refused.lifecycle, "IntegrityBlocked");
