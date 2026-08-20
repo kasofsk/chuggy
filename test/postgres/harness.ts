@@ -40,6 +40,7 @@ import {
   asProjectId,
   asRecoveryEpoch,
   asTenantId,
+  type Lease,
   type OwnerId,
   type Partition,
   type ProjectStore,
@@ -138,6 +139,21 @@ export function postgresHarnessPartition(label: string): Partition {
   };
 }
 
+/**
+ * Puts the partition's lease expiry into the past, which is what a lapsed
+ * tenure looks like to the server. A case that slept for a real expiry would be
+ * slow and would still be racing the clock it slept against.
+ */
+export async function postgresHarnessExpire(
+  harness: PostgresHarness,
+  partition: Partition,
+): Promise<void> {
+  await harness.query(
+    "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
+    [partition.tenant, partition.project],
+  );
+}
+
 /** A dispatcher-instance identity no other case is using. */
 export function postgresHarnessOwner(label: string): OwnerId {
   return asOwnerId(`owner-${label}-${randomUUID()}`);
@@ -151,6 +167,32 @@ export async function postgresHarnessProject(
   const partition = postgresHarnessPartition(label);
   await store.createProject(partition);
   return partition;
+}
+
+/** How long a case's lease runs for: long enough that no case races its own expiry. */
+const postgresHarnessLeaseSecs = 60;
+
+/**
+ * A lease on a provisioned partition, taken for an owner no other case is
+ * using. Every read and every append needs one, so a case that is about
+ * something else says it in one line.
+ */
+export async function postgresHarnessHeld(
+  store: ProjectStore,
+  partition: Partition,
+  label: string,
+): Promise<Lease> {
+  const acquired = await store.acquire(
+    partition,
+    postgresHarnessOwner(label),
+    postgresHarnessLeaseSecs,
+  );
+  if (acquired.acquired !== "Granted") {
+    throw new Error(
+      `postgres harness: the lease on ${partition.tenant}/${partition.project} for ${label} was ${acquired.acquired}`,
+    );
+  }
+  return acquired.lease;
 }
 
 /** How long a case waits for calls it did not await to reach the lock that stalls them. */

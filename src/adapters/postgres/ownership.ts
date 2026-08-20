@@ -19,6 +19,12 @@
  * restore establishes a new global epoch and then permits mutation, so a lease
  * stamped from a value read a moment earlier would carry authority the restore
  * had already withdrawn.
+ *
+ * A DURATION IS CHECKED BEFORE A TRANSACTION IS OPENED. Zero, a negative and a
+ * non-finite second all reach `make_interval` and come back as a row that
+ * granted a lease and reports none, which arrives at the caller as a server
+ * anomaly rather than as the argument it was; the check names the argument
+ * instead, at the entry, before anything is written.
  */
 
 import type pg from "pg";
@@ -148,6 +154,16 @@ export async function postgresOwnershipStanding(
   return row === undefined ? undefined : projectRowStanding(row);
 }
 
+/** Refuses a duration no lease can be granted for, naming the argument rather than the row it would spoil. */
+function postgresOwnershipLeaseSecs(leaseSecs: number): number {
+  if (!Number.isFinite(leaseSecs) || leaseSecs <= 0) {
+    throw new RangeError(
+      `postgres ownership: leaseSecs is ${String(leaseSecs)}, and a lease is granted for a positive finite number of seconds`,
+    );
+  }
+  return leaseSecs;
+}
+
 /** Writes the granted lease onto the locked row and returns what it now grants. */
 async function postgresOwnershipGrant(
   client: pg.PoolClient,
@@ -169,7 +185,7 @@ async function postgresOwnershipGrant(
   const lease = projectRowLease(postgresOwnershipRow(granted));
   if (lease === undefined) {
     throw new Error(
-      "postgres ownership: the row accepted a lease and then reported none, which no interleaving allows",
+      `postgres ownership: ${partition.tenant}/${partition.project} accepted a lease and then reported none`,
     );
   }
   return lease;
@@ -193,6 +209,7 @@ export async function postgresOwnershipAcquire(
   owner: OwnerId,
   leaseSecs: number,
 ): Promise<Acquired> {
+  postgresOwnershipLeaseSecs(leaseSecs);
   return postgresTransaction(pool, async (client) => {
     const row = await postgresOwnershipLockKnown(client, partition);
     const standing = projectRowStanding(row);
@@ -216,6 +233,7 @@ export async function postgresOwnershipRenew(
   lease: Lease,
   leaseSecs: number,
 ): Promise<Renewed> {
+  postgresOwnershipLeaseSecs(leaseSecs);
   return postgresTransaction(pool, async (client) => {
     const row = await postgresOwnershipLockKnown(client, lease.partition);
     const standing = projectRowStanding(row);
@@ -233,7 +251,7 @@ export async function postgresOwnershipRenew(
     const current = projectRowLease(postgresOwnershipRow(extended));
     if (current === undefined) {
       throw new Error(
-        "postgres ownership: an extended lease reported itself expired, which no interleaving allows",
+        `postgres ownership: an extended lease on ${lease.partition.tenant}/${lease.partition.project} reported itself expired`,
       );
     }
     return { renewed: "Extended", lease: current };

@@ -20,9 +20,10 @@ import {
 import type { Lease, Partition } from "../../src/interpreter/projectStore.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import {
+  postgresHarnessExpire,
   postgresHarnessFirstEntry,
+  postgresHarnessHeld,
   postgresHarnessOpen,
-  postgresHarnessOwner,
   postgresHarnessJournal,
   postgresHarnessProject,
   type PostgresHarness,
@@ -39,14 +40,8 @@ after(async () => {
 });
 
 /** Acquires the partition, so a case that is about appending reads as one line. */
-async function held(partition: Partition, label: string): Promise<Lease> {
-  const acquired = await harness.store.acquire(
-    partition,
-    postgresHarnessOwner(label),
-    60,
-  );
-  assert.ok(acquired.acquired === "Granted");
-  return acquired.lease;
+function held(partition: Partition, label: string): Promise<Lease> {
+  return postgresHarnessHeld(harness.store, partition, label);
 }
 
 /** Appends the whole journal, threading each commit's head into the next lease. */
@@ -70,7 +65,7 @@ test("an append commits, advances the head, and loads back as a legal journal", 
   const lease = await appendAll(await held(partition, "writer"), journal);
   assert.equal(lease.head, journal.length);
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(lease);
   assert.equal(loaded.parsed, "Ok");
   assert.ok(loaded.parsed === "Ok");
   assert.deepEqual(loaded.value, journal);
@@ -108,10 +103,7 @@ test("two appends racing at one head commit exactly one", async () => {
 test("a fenced writer cannot commit, even holding a lease that was once valid", async () => {
   const partition = await postgresHarnessProject(harness.store, "fenced");
   const former = await held(partition, "former");
-  await harness.query(
-    "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
-    [partition.tenant, partition.project],
-  );
+  await postgresHarnessExpire(harness, partition);
   const successor = await held(partition, "successor");
 
   const refused = await harness.store.append(
@@ -121,7 +113,20 @@ test("a fenced writer cannot commit, even holding a lease that was once valid", 
   assert.equal(refused.appended, "Fenced");
   assert.ok(refused.appended === "Fenced");
   assert.equal(refused.fencingEpoch, successor.fencingEpoch);
-  assert.deepEqual((await harness.store.load(partition)).parsed, "Ok");
+  assert.deepEqual((await harness.store.load(successor)).parsed, "Ok");
+});
+
+test("a load under a fenced lease is refused, not served the prefix it would replay", async () => {
+  const partition = await postgresHarnessProject(harness.store, "loadfenced");
+  const former = await held(partition, "former");
+  await appendAll(former, postgresHarnessJournal());
+  await postgresHarnessExpire(harness, partition);
+  await held(partition, "successor");
+
+  const refused = await harness.store.load(former);
+  assert.equal(refused.parsed, "Refused");
+  assert.ok(refused.parsed === "Refused");
+  assert.match(refused.why, /no longer honoured/);
 });
 
 test("a suspended project accepts no entry from the writer that held it", async () => {
@@ -208,14 +213,14 @@ test("a journal grafted onto another partition disagrees at its first entry", as
 test("a stored row that is not JSON is refused by returning, not thrown on", async () => {
   const partition = await postgresHarnessProject(harness.store, "notjson");
   const journal = postgresHarnessJournal();
-  await appendAll(await held(partition, "writer"), journal);
+  const lease = await appendAll(await held(partition, "writer"), journal);
 
   await harness.query(
     "UPDATE journal_entry SET entry = 'not json' WHERE tenant = $1 AND project = $2 AND seq = 1",
     [partition.tenant, partition.project],
   );
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(lease);
   assert.equal(loaded.parsed, "Refused");
   assert.ok(loaded.parsed === "Refused");
   assert.match(loaded.why, /not JSON/);
@@ -224,13 +229,13 @@ test("a stored row that is not JSON is refused by returning, not thrown on", asy
 test("a stored row that is JSON but not an entry is refused by the schema", async () => {
   const partition = await postgresHarnessProject(harness.store, "notentry");
   const journal = postgresHarnessJournal();
-  await appendAll(await held(partition, "writer"), journal);
+  const lease = await appendAll(await held(partition, "writer"), journal);
 
   await harness.query(
     `UPDATE journal_entry SET entry = '{"seq":1}' WHERE tenant = $1 AND project = $2 AND seq = 1`,
     [partition.tenant, partition.project],
   );
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(lease);
   assert.equal(loaded.parsed, "Refused");
 });

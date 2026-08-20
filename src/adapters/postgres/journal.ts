@@ -15,6 +15,12 @@
  * entry numbered anything else has a bug rather than a stale view, and gets an
  * error rather than a typed refusal.
  *
+ * THE LOAD TAKES THE SAME LOCK AND THE SAME LEASE. It replays under the tenure
+ * the append will commit in, so a lease the row no longer honours is refused
+ * rather than served a prefix, and the entries it returns are asserted to reach
+ * the head the locked row claims — a journal shorter than its own head is a torn
+ * store rather than an outcome a dispatcher decides its way around.
+ *
  * THE ENTRY IS STORED AS THE WIRE TEXT THE PORT PARSES BACK. The domain event
  * never becomes a database type, so the load passes the same schema the
  * in-memory store's does, and a row that no longer parses is refused by
@@ -37,6 +43,7 @@ import type {
   Appended,
   Lease,
   Partition,
+  ProjectStanding,
 } from "../../interpreter/projectStore.ts";
 import {
   encodeEntry,
@@ -132,15 +139,21 @@ export async function postgresJournalAppend(
   });
 }
 
-/** Every stored entry for the partition in sequence order, parsed here and refused rather than thrown. */
-export async function postgresJournalLoad(
-  pool: pg.Pool,
-  partition: Partition,
+/** Every stored entry in sequence order, asserted to reach the head the locked row claims. */
+async function postgresJournalEntries(
+  client: pg.PoolClient,
+  standing: ProjectStanding,
 ): Promise<Parsed<readonly Entry[]>> {
-  const found = await pool.query<{ entry: string }>(
+  const { tenant, project } = standing.partition;
+  const found = await client.query<{ entry: string }>(
     "SELECT entry FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq",
-    [partition.tenant, partition.project],
+    [tenant, project],
   );
+  if (found.rows.length !== standing.head) {
+    throw new Error(
+      `postgres journal: ${tenant}/${project} claims head ${String(standing.head)} over ${String(found.rows.length)} stored entries`,
+    );
+  }
   const raw: unknown[] = [];
   for (const row of found.rows) {
     try {
@@ -153,4 +166,22 @@ export async function postgresJournalLoad(
     }
   }
   return parseJournal(raw);
+}
+
+/** Replays the partition under the lease the append will carry, refusing one the row no longer honours. */
+export async function postgresJournalLoad(
+  pool: pg.Pool,
+  lease: Lease,
+): Promise<Parsed<readonly Entry[]>> {
+  return postgresTransaction(pool, async (client) => {
+    const row = await postgresOwnershipLockKnown(client, lease.partition);
+    if (!(await postgresOwnershipHonours(client, row, lease))) {
+      const { tenant, project } = lease.partition;
+      return {
+        parsed: "Refused",
+        why: `the lease on ${tenant}/${project} is no longer honoured, so a replay under it would begin outside its tenure`,
+      };
+    }
+    return postgresJournalEntries(client, projectRowStanding(row));
+  });
 }
