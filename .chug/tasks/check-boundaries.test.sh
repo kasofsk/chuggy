@@ -226,6 +226,30 @@ printf '%s\n' 'import { one } from "../src/adapters/one.ts"' 'import { x } from 
 seal
 check "one adapter may not REACH another through a shared helper" 1 "$RC" "no-adapter-sees-another:"
 
+# An adapter is a directory as often as it is a file, and the modules under one
+# directory are one adapter. The exclusion the capture group builds has to cover
+# the whole directory, or an adapter split across files is a violation of itself.
+fixture
+mkdir -p "$R/src/adapters/one"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const rows = 2' > "$R/src/adapters/one/rows.ts"
+printf '%s\n' 'import { rows } from "./rows.ts"' 'export const store = rows' > "$R/src/adapters/one/store.ts"
+printf '%s\n' 'import { store } from "../src/adapters/one/store.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = store + x' > "$R/test/a.test.ts"
+seal
+check "the modules of one adapter directory are one adapter" 0 "$RC" "graph clean"
+
+# The exclusion is built from the directory name, so a sibling whose name begins
+# with it is a different adapter and the rule still reaches it. Nothing else in
+# this tree fires, so an exclusion that ran past the segment leaves it clean.
+fixture
+mkdir -p "$R/src/adapters/one"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const legacy = 2' > "$R/src/adapters/oneLegacy.ts"
+printf '%s\n' 'import { legacy } from "../oneLegacy.ts"' 'export const store = legacy' > "$R/src/adapters/one/store.ts"
+printf '%s\n' 'import { store } from "../src/adapters/one/store.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = store + x' > "$R/test/a.test.ts"
+seal
+check "an adapter directory may not import the adapter its name prefixes" 1 "$RC" "no-adapter-sees-another:"
+
 # --- nothing-imports-the-composition-root ------------------------------------
 
 fixture

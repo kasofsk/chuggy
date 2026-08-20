@@ -16,6 +16,7 @@ import {
   postgresHarnessOpen,
   postgresHarnessOwner,
   postgresHarnessProject,
+  postgresHarnessRowLock,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -71,6 +72,25 @@ test("a competing owner is refused while the lease is live", async () => {
   assert.equal(refused.acquired, "HeldByAnother");
   assert.ok(refused.acquired === "HeldByAnother");
   assert.equal(refused.owner, held.owner);
+});
+
+test("two replicas racing one free project are told Granted and HeldByAnother", async () => {
+  const partition = await postgresHarnessProject(harness.store, "race");
+  const lock = await postgresHarnessRowLock(partition);
+  const racers = [
+    harness.store.acquire(partition, postgresHarnessOwner("racerleft"), 60),
+    harness.store.acquire(partition, postgresHarnessOwner("racerright"), 60),
+  ];
+  try {
+    await lock.stalled(racers.length);
+  } finally {
+    await lock.release();
+  }
+
+  const outcomes = (await Promise.all(racers))
+    .map((raced) => raced.acquired)
+    .sort();
+  assert.deepEqual(outcomes, ["Granted", "HeldByAnother"]);
 });
 
 test("renewal extends the lease and preserves its fencing epoch", async () => {

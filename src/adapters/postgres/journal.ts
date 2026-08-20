@@ -51,13 +51,13 @@ import {
 import { postgresTransaction } from "./pool.ts";
 import { projectRowStanding } from "./rows.ts";
 
-/** The digest the next entry chains onto: the head entry's, or the genesis label at an empty journal. */
+/** The digest the next entry chains onto: the head entry's, or the partition's genesis at an empty journal. */
 async function postgresJournalPrevious(
   client: pg.PoolClient,
   partition: Partition,
   head: number,
 ): Promise<string> {
-  if (head === 0) return journalChainGenesis;
+  if (head === 0) return journalChainGenesis(partition);
   const found = await client.query<{ entry_digest: string }>(
     "SELECT entry_digest FROM journal_entry WHERE tenant = $1 AND project = $2 AND seq = $3",
     [partition.tenant, partition.project, head],
@@ -91,7 +91,7 @@ async function postgresJournalWrite(
       lease.partition.project,
       entry.seq,
       encodeEntry(entry),
-      journalChainDigest(previous, entry),
+      journalChainDigest(lease.partition, previous, entry),
       previous,
       lease.owner,
       lease.fencingEpoch,

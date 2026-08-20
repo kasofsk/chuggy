@@ -247,7 +247,7 @@ export async function postgresOwnershipRelease(
 ): Promise<void> {
   await postgresTransaction(pool, async (client) => {
     const row = await postgresOwnershipLockKnown(client, lease.partition);
-    if (!projectRowHonours(row, lease)) return;
+    if (!(await postgresOwnershipHonours(client, row, lease))) return;
     await client.query(
       `UPDATE project
           SET owner = NULL, lease_expires_at = NULL, recovery_epoch = NULL

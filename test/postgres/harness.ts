@@ -17,6 +17,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type pg from "pg";
 
@@ -181,6 +182,77 @@ export async function postgresHarnessProject(
   return partition;
 }
 
+/** How long a case waits for calls it did not await to reach the lock that stalls them. */
+const postgresHarnessStallWaitMsMax = 5_000;
+
+/** How often that wait asks, which is what bounds the loop asking. */
+const postgresHarnessStallAskMs = 25;
+
+/** A project row held locked: what has stalled behind it, and the way to give it back. */
+export interface PostgresRowLock {
+  readonly stalled: (backends: number) => Promise<void>;
+  readonly release: () => Promise<void>;
+}
+
+/**
+ * Locks the partition's project row on a connection of its own, so a case can
+ * stall a call that borrows from the harness pool without starving the pool
+ * the rest of the case draws from.
+ */
+export async function postgresHarnessRowLock(
+  partition: Partition,
+): Promise<PostgresRowLock> {
+  const blockade = postgresPool(postgresHarnessUrl());
+  const blocker = await blockade.connect();
+  const release = async (): Promise<void> => {
+    await blocker.query("ROLLBACK").catch(() => undefined);
+    blocker.release();
+    await blockade.end();
+  };
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query(
+      "SELECT tenant FROM project WHERE tenant = $1 AND project = $2 FOR UPDATE",
+      [partition.tenant, partition.project],
+    );
+    return {
+      stalled: (backends) => postgresHarnessStalled(blockade, backends),
+      release,
+    };
+  } catch (failure) {
+    await release();
+    throw failure;
+  }
+}
+
+/**
+ * Resolves once that many backends are waiting on a lock, which is how a case
+ * knows the calls it did not await have reached the row the blockade holds. It
+ * asks on a connection of the blockade pool rather than on the locked one,
+ * because a transaction caches its statistics snapshot and would answer with
+ * whatever it saw the first time it asked.
+ */
+async function postgresHarnessStalled(
+  blockade: pg.Pool,
+  backends: number,
+): Promise<void> {
+  for (
+    let waitedMs = 0;
+    waitedMs < postgresHarnessStallWaitMsMax;
+    waitedMs += postgresHarnessStallAskMs
+  ) {
+    const found = await blockade.query<{ stalled: number }>(
+      `SELECT count(*)::int AS stalled FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+    );
+    if ((found.rows[0]?.stalled ?? 0) >= backends) return;
+    await delay(postgresHarnessStallAskMs);
+  }
+  throw new Error(
+    `postgres harness: fewer than ${String(backends)} backends stalled behind the row lock, so a case is asserting against a race it never set up`,
+  );
+}
+
 /**
  * An open transaction a case drives statement by statement. It is how a case
  * produces an interleaving the port has no seam for — a row lock held across
@@ -277,4 +349,13 @@ export function postgresHarnessJournal(): readonly Entry[] {
   );
   return journalStep(refinementInstance, released, dispatchEvent(id(1)))
     .journal;
+}
+
+/** The first entry of that history, which is all a case appending exactly one entry needs. */
+export function postgresHarnessFirstEntry(): Entry {
+  const entry = postgresHarnessJournal()[0];
+  if (entry === undefined) {
+    throw new Error("postgres harness: the fixture journal has no first entry");
+  }
+  return entry;
 }

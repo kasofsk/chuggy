@@ -4,30 +4,30 @@
  *
  * THE GUARANTEE 006 MAKES IS EXACTLY THIS ONE — that one project does not
  * serialize another, rather than unlimited throughput inside a project. So the
- * case that matters is two partitions committing concurrently, and the case
- * beside it is that a partition fenced, suspended or unowned leaves its
+ * case that matters holds one partition's append stalled on its own row and
+ * requires its neighbour's to commit inside a bound while it waits, and the
+ * case beside it is that a partition fenced, suspended or unowned leaves its
  * neighbour untouched.
  */
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type { Entry } from "../../src/actor/journal.ts";
-import type { Lease, Partition } from "../../src/interpreter/projectStore.ts";
+import type {
+  Appended,
+  Lease,
+  Partition,
+} from "../../src/interpreter/projectStore.ts";
 import {
+  postgresHarnessFirstEntry,
   postgresHarnessOpen,
   postgresHarnessOwner,
-  postgresHarnessJournal,
   postgresHarnessProject,
+  postgresHarnessRowLock,
   type PostgresHarness,
 } from "./harness.ts";
-
-/** The first entry of the shared fixture history, which is all these cases need. */
-function postgresHarnessFirstEntry(): Entry {
-  const entry = postgresHarnessJournal()[0];
-  assert.ok(entry !== undefined);
-  return entry;
-}
 
 let harness: PostgresHarness;
 
@@ -58,17 +58,41 @@ async function entriesOf(partition: Partition): Promise<readonly Entry[]> {
   return loaded.value;
 }
 
-test("two projects commit concurrently and neither waits on the other", async () => {
-  const left = await heldProject("left");
-  const right = await heldProject("right");
+/** How long the neighbouring append gets while the stall is held, which is what not waiting on the other means in time. */
+const neighbourWaitMsMax = 2_000;
+
+/** How many backends the blockade waits for, which is the one append the case left unawaited. */
+const stalledAppends = 1;
+
+/** An append's outcome as a word, so a case can hold a stalled one without its rejection escaping. */
+function appendOutcome(appending: Promise<Appended>): Promise<string> {
+  return appending.then(
+    (appended) => appended.appended,
+    (failure: unknown) =>
+      failure instanceof Error ? failure.message : String(failure),
+  );
+}
+
+test("an append commits while another project's append is stalled on its own row", async () => {
+  const stalled = await heldProject("stalled");
+  const neighbour = await heldProject("neighbour");
   const entry = postgresHarnessFirstEntry();
 
-  const [one, two] = await Promise.all([
-    harness.store.append(left, entry),
-    harness.store.append(right, entry),
-  ]);
-  assert.equal(one.appended, "Committed");
-  assert.equal(two.appended, "Committed");
+  const lock = await postgresHarnessRowLock(stalled.partition);
+  const stalling = appendOutcome(harness.store.append(stalled, entry));
+  try {
+    await lock.stalled(stalledAppends);
+    const appended = await Promise.race([
+      appendOutcome(harness.store.append(neighbour, entry)),
+      delay(neighbourWaitMsMax, "still waiting on the stalled project", {
+        ref: false,
+      }),
+    ]);
+    assert.equal(appended, "Committed");
+  } finally {
+    await lock.release();
+  }
+  assert.equal(await stalling, "Committed");
 });
 
 test("a load returns the partition's own entries and no other partition's", async () => {

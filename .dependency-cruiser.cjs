@@ -85,13 +85,16 @@ module.exports = {
         "job. Reachability again, and for the same reason: the interesting " +
         "violation is a shared helper between two stubs rather than one stub " +
         "importing another by name. The capture group is what lets a rule " +
-        "over a directory exclude the file it started from.",
+        "over a directory exclude the adapter it started from, and the " +
+        "segment anchor is what keeps that exclusion inside it: an adapter " +
+        "is a directory as readily as a file, and an unanchored name excuses " +
+        "every sibling it is a prefix of.",
       severity: "error",
       from: { path: "^src/adapters/([^/]+)" },
       to: {
         reachable: true,
         path: "^src/adapters/",
-        pathNot: "^src/adapters/$1",
+        pathNot: "^src/adapters/$1(/|$)",
       },
     },
     {

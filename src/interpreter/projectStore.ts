@@ -10,7 +10,11 @@
  * which is exactly the race `docs/design/006-durable-project-dispatch.md`
  * forbids when it says every decision commit checks both the observed journal
  * head and the current fencing epoch. So the lease is an argument to `append`,
- * and no caller can hold one without having proved it.
+ * and no caller can hold one without having proved it. `load` names a partition
+ * and reports no head, so the same race is an obligation on the caller there:
+ * replay under the lease the append will carry, because a prefix read before
+ * acquisition is missing whatever the previous owner committed after it, and an
+ * entry computed from that state extends a journal it never saw.
  *
  * NO CLOCK CROSSES THIS BOUNDARY. Database time determines lease validity, so
  * a lease carries a duration to grant and never an instant to compare; the
@@ -199,7 +203,12 @@ export interface ProjectStore {
    */
   append(lease: Lease, entry: Entry): Promise<Appended>;
 
-  /** Every stored entry for the partition in sequence order, parsed at this boundary and refused rather than thrown. */
+  /**
+   * Every stored entry for the partition in sequence order, parsed at this
+   * boundary and refused rather than thrown. A caller that will append acquires
+   * first and replays under that lease, since a prefix read before acquisition
+   * says nothing about what the journal held when the lease was granted.
+   */
   load(partition: Partition): Promise<Parsed<readonly Entry[]>>;
 
   /**

@@ -122,6 +122,24 @@ test("an append that never resolved leaves the head exactly where it was", async
   assert.equal(standing.head, 1);
 });
 
+test("an entry written but never committed leaves neither itself nor a head", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "crashinserted",
+  );
+  const journal = postgresHarnessJournal();
+  await crashAt(partition, "inserted");
+
+  const loaded = await harness.store.load(partition);
+  assert.ok(loaded.parsed === "Ok");
+  assert.deepEqual(loaded.value, journal.slice(0, 1));
+  assert.ok(journalLegalOn(refinementInstance, loaded.value));
+
+  const standing = await harness.store.standing(partition);
+  assert.ok(standing !== undefined);
+  assert.equal(standing.head, 1);
+});
+
 test("a fresh process takes over a dead owner's project and resumes at its head", async () => {
   const partition = await postgresHarnessProject(harness.store, "crashresume");
   const journal = postgresHarnessJournal();
