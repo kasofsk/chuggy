@@ -70,6 +70,12 @@ const columnWise: readonly string[] = [
   `${apiRole} operation INSERT (admission, authority_kind, authority_subject, command, key_digest, key_version, lifecycle_generation, operation, payload_digest, project, tenant)`,
   `${apiRole} project UPDATE (ingress_next)`,
   `${apiRole} project_readiness UPDATE (generation, ready)`,
+  /**
+   * Ownership is the dispatcher's to move, so this grant also permits writing
+   * a superseded owner and fencing epoch back onto an `Active` project, which
+   * reinstates a fenced tenure by direct table write. Whether that is
+   * acceptable for the initial deployment is open in kasofsk/chuggy#115.
+   */
   `${dispatcherRole} project UPDATE (fencing_epoch, head, lease_expires_at, owner, recovery_epoch)`,
   `${dispatcherRole} project_readiness UPDATE (ready)`,
 ];
