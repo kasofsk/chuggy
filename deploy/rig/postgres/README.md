@@ -21,13 +21,17 @@ it. You will need the superuser's password and three passwords to issue.
 ## Issue the credentials
 
 Where a deployment keeps these is the secret source's question. The rig keeps
-them in a Secret beside the server:
+them in a Secret beside the server. The generated values reach it on stdin
+rather than through `kubectl`'s argument list, for the reason `The pod` below
+gives:
 
 ```sh
 kubectl -n chuggy create secret generic chuggy-postgres-credentials \
-  --from-literal=owner-password="$(head -c 32 /dev/urandom | base64 | tr -d '=+/')" \
-  --from-literal=dispatcher-password="$(head -c 32 /dev/urandom | base64 | tr -d '=+/')" \
-  --from-literal=api-password="$(head -c 32 /dev/urandom | base64 | tr -d '=+/')"
+  --from-env-file=/dev/stdin <<EOF
+owner-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+dispatcher-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+api-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+EOF
 ```
 
 ## Create the roles
@@ -64,7 +68,7 @@ variable the next one reads and there is nothing here to invoke.
 As `chuggy_owner` and as nobody else, over the same forwarded port:
 
 ```sh
-CHUG_PG_URL="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy"
+export CHUG_PG_URL="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy"
 ```
 
 ## Apply the policies
