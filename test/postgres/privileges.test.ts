@@ -73,8 +73,10 @@ const columnWise: readonly string[] = [
   /**
    * Ownership is the dispatcher's to move, so this grant also permits writing
    * a superseded owner and fencing epoch back onto an `Active` project, which
-   * reinstates a fenced tenure by direct table write. Whether that is
-   * acceptable for the initial deployment is open in kasofsk/chuggy#115.
+   * reinstates a fenced tenure by direct table write. kasofsk/chuggy#115
+   * decided against narrowing the grant — what closes it is a constraint on
+   * the values those columns may take, carried by a later slice — so this
+   * expected set is where it stays.
    */
   `${dispatcherRole} project UPDATE (fencing_epoch, head, lease_expires_at, owner, recovery_epoch)`,
   `${dispatcherRole} project_readiness UPDATE (ready)`,
