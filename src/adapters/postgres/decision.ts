@@ -49,7 +49,7 @@ import {
 } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
-import { continuationFunction } from "./schema.ts";
+import { continuationFunction, draftReleaseFunction } from "./schema.ts";
 
 /** One decision-input row as the transaction reads it under its lock. */
 interface DecisionCauseRow {
@@ -355,6 +355,28 @@ async function decisionMaterialize(
   await decisionContinuation(client, lease.partition, outcome);
 }
 
+async function decisionReleaseOutcome(
+  client: pg.PoolClient,
+  decision: Decision,
+): Promise<DecisionOutcome> {
+  const fence = decision.draftRelease;
+  if (fence === undefined) return decision.outcome;
+  const found = await client.query<{ matched: boolean }>(
+    `SELECT ${draftReleaseFunction}($1,$2,$3,$4,$5,$6) AS matched`,
+    [
+      decision.lease.partition.tenant,
+      decision.lease.partition.project,
+      fence.ticket,
+      fence.authoringVersion,
+      fence.configurationRevision,
+      decision.outcome.outcome === "Journaled",
+    ],
+  );
+  return found.rows[0]?.matched === true
+    ? decision.outcome
+    : { outcome: "Refused", code: "AuthoringChanged" };
+}
+
 /** Writes everything the decision asks for, and answers with the lease its commit advanced. */
 async function decisionApply(
   client: pg.PoolClient,
@@ -442,12 +464,7 @@ export async function postgresDecisionCommit(
     if (standing.head !== lease.head) {
       return { decided: "StaleHead", head: standing.head };
     }
-    return decisionApply(
-      client,
-      lease,
-      decision.cause,
-      decision.outcome,
-      standing,
-    );
+    const outcome = await decisionReleaseOutcome(client, decision);
+    return decisionApply(client, lease, decision.cause, outcome, standing);
   });
 }

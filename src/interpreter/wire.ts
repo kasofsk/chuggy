@@ -97,6 +97,19 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       };
     }
     if (
+      record["command"] === "ReleaseDraft" &&
+      typeof record["ticket"] === "number" &&
+      Number.isSafeInteger(record["ticket"]) &&
+      record["ticket"] >= 1 &&
+      typeof record["authoringVersion"] === "number" &&
+      Number.isSafeInteger(record["authoringVersion"]) &&
+      record["authoringVersion"] >= 1 &&
+      typeof record["configurationRevision"] === "string" &&
+      record["configurationRevision"].length > 0
+    ) {
+      return { parsed: "Ok", value: record as TicketCommand };
+    }
+    if (
       record["command"] === "ResolveNativeAction" &&
       typeof record["action"] === "string" &&
       record["action"].length > 0 &&

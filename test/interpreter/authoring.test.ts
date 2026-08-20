@@ -3,10 +3,16 @@ import { test } from "node:test";
 
 import {
   asCanonicalConfiguration,
+  asConfigurationRevisionId,
   encodeDraftAuthoring,
   parseDraftAuthoring,
 } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring } from "../actor/harness.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import {
+  encodeTicketCommand,
+  parseTicketCommand,
+} from "../../src/interpreter/wire.ts";
 
 test("draft authoring round-trips through the generated domain codec", () => {
   assert.deepEqual(
@@ -29,4 +35,18 @@ test("configuration must be canonical, bounded, and secret-free", () => {
     /secret-bearing/,
   );
   assert.throws(() => asCanonicalConfiguration("not-json"), SyntaxError);
+});
+
+test("ReleaseDraft round-trips as a revision-fenced public command", () => {
+  const command = {
+    version: 1 as const,
+    command: "ReleaseDraft" as const,
+    ticket: asTicketId(7),
+    authoringVersion: 3,
+    configurationRevision: asConfigurationRevisionId("config-3"),
+  };
+  assert.deepEqual(parseTicketCommand(encodeTicketCommand(command)), {
+    parsed: "Ok",
+    value: command,
+  });
 });

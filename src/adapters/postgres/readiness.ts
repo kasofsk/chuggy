@@ -46,6 +46,10 @@ import type {
   ReadinessCleared,
 } from "../../interpreter/projectDiscovery.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
+import type { TicketCommand } from "../../interpreter/ticketCommand.ts";
+import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
+import { releaseTicketEvent } from "../../actor/decisionEvent.ts";
+import { asTicketId } from "../../domain/ids.ts";
 import {
   asProjectId,
   asTenantId,
@@ -87,6 +91,45 @@ function priorityOf(value: string): PriorityClass {
   return found;
 }
 
+async function releaseDraftSource(
+  pool: pg.Pool,
+  partition: Partition,
+  operation: string,
+  command: Extract<TicketCommand, { readonly command: "ReleaseDraft" }>,
+): Promise<DecisionInput["source"]> {
+  const revision = await pool.query<{ authoring: string }>(
+    `SELECT authoring FROM draft_revision
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND authoring_version=$4
+        AND configuration_revision=$5`,
+    [
+      partition.tenant,
+      partition.project,
+      command.ticket,
+      command.authoringVersion,
+      command.configurationRevision,
+    ],
+  );
+  const found = revision.rows[0];
+  if (found === undefined)
+    throw new Error(
+      `release draft ${String(command.ticket)} has no retained revision`,
+    );
+  return {
+    kind: "Operation",
+    operation: asOperationId(operation),
+    command,
+    resolvedEvent: releaseTicketEvent(
+      asTicketId(command.ticket),
+      parseDraftAuthoring(found.authoring),
+    ),
+    draftRelease: {
+      ticket: command.ticket,
+      authoringVersion: command.authoringVersion,
+      configurationRevision: command.configurationRevision,
+    },
+  };
+}
+
 async function operationSource(
   pool: pg.Pool,
   partition: Partition,
@@ -104,6 +147,9 @@ async function operationSource(
       command: parsed.value,
       resolvedEvent: parsed.value.event,
     };
+  }
+  if (parsed.value.command === "ReleaseDraft") {
+    return releaseDraftSource(pool, partition, row.input_id, parsed.value);
   }
   const action = await pool.query<{ ticket: string; state: string }>(
     `SELECT a.ticket::text, a.state FROM native_action a

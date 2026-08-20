@@ -217,6 +217,7 @@ export const configurationCreateFunction = "create_configuration_revision";
 export const draftCreateFunction = "create_draft";
 export const draftReviseFunction = "revise_draft";
 export const draftDeleteFunction = "delete_draft";
+export const draftReleaseFunction = "release_draft_fenced";
 export const boundaryOwnerRole = "chuggy_boundary_owner";
 
 /** The ledger of applied migrations, which the runner creates before it reads anything. */
@@ -704,6 +705,12 @@ const durableMailbox = [
        IF command->>'command' = 'Decide' THEN
          RETURN decision_event_is_valid(command->'event');
        END IF;
+       IF command->>'command' = 'ReleaseDraft' THEN
+         RETURN command_integer(command->'ticket') AND (command->>'ticket')::numeric >= 1
+           AND command_integer(command->'authoringVersion') AND (command->>'authoringVersion')::numeric >= 1
+           AND jsonb_typeof(command->'configurationRevision')='string'
+           AND length(command->>'configurationRevision') BETWEEN 1 AND 256;
+       END IF;
        RETURN command->>'command' = 'ResolveNativeAction'
          AND jsonb_typeof(command->'action') = 'string'
          AND length(command->>'action') BETWEEN 1 AND 256
@@ -944,6 +951,8 @@ const durableMailbox = [
        IF command_value->>'command' = 'Decide'
           AND jsonb_typeof(command_value->'event') = 'object' THEN
          command_tag := command_value->'event'->>'type';
+       ELSIF command_value->>'command' = 'ReleaseDraft' THEN
+         command_tag := 'ReleaseDraft';
        ELSIF command_value->>'command' = 'ResolveNativeAction'
           AND jsonb_typeof(command_value->'action') = 'string'
           AND length(command_value->>'action') BETWEEN 1 AND 256
@@ -971,7 +980,7 @@ const durableMailbox = [
          priority := 'Safety'; admission_class := 'CorrectnessReducing';
        ELSIF command_tag IN ('TaskDone', 'ExecutionBlocked', 'FinalizationResult') THEN
          priority := 'Completion'; admission_class := 'CorrectnessReducing';
-       ELSIF command_tag IN ('ReleaseTicket', 'Dispatch', 'ResumeTicket') OR
+       ELSIF command_tag IN ('ReleaseTicket', 'ReleaseDraft', 'Dispatch', 'ResumeTicket') OR
              (command_tag = 'ResolveNativeAction' AND action_resolution = 'Resume') THEN
          priority := 'Ordinary'; admission_class := 'Ordinary';
        ELSE
@@ -1012,6 +1021,17 @@ const durableMailbox = [
           WHERE a.tenant=in_tenant AND a.project=in_project AND a.action=action_id
             AND a.state='Open' AND a.authorizing_seq=authorizing_sequence
             AND r.resolution=action_resolution FOR UPDATE OF a)
+       THEN
+         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+       IF command_tag='ReleaseDraft' AND NOT EXISTS (
+         SELECT 1 FROM draft_revision r
+          WHERE r.tenant=in_tenant AND r.project=in_project
+            AND r.ticket=(command_value->>'ticket')::bigint
+            AND r.authoring_version=(command_value->>'authoringVersion')::bigint
+            AND r.configuration_revision=command_value->>'configurationRevision')
        THEN
          RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
            NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
@@ -1239,14 +1259,28 @@ const nativeAuthoring = [
         WHERE d.tenant=in_tenant AND d.project=in_project AND d.ticket=in_ticket;
        RETURN QUERY SELECT 'Deleted',current.authoring_version+1,'Deleted'::text;
      END $$`,
+  `CREATE FUNCTION ${draftReleaseFunction}(in_tenant text,in_project text,in_ticket bigint,
+      in_expected bigint,in_configuration text,in_commit boolean) RETURNS boolean
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE current draft%ROWTYPE;
+     BEGIN
+       SELECT * INTO current FROM draft WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket FOR UPDATE;
+       IF NOT FOUND OR current.state <> 'Draft' OR current.authoring_version <> in_expected
+          OR current.configuration_revision <> in_configuration THEN RETURN false; END IF;
+       IF in_commit THEN UPDATE draft SET state='Released'
+         WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket; END IF;
+       RETURN true;
+     END $$`,
   `ALTER FUNCTION ${configurationCreateFunction}(text,text,text,text,text,text,text,text) OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION ${draftCreateFunction}(text,text,text,text,text,text) OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION ${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text) OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION ${draftDeleteFunction}(text,text,bigint,bigint,text,text) OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${draftReleaseFunction}(text,text,bigint,bigint,text,boolean) OWNER TO ${boundaryOwnerRole}`,
   `REVOKE ALL ON FUNCTION ${configurationCreateFunction}(text,text,text,text,text,text,text,text),
      ${draftCreateFunction}(text,text,text,text,text,text),
      ${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text),
-     ${draftDeleteFunction}(text,text,bigint,bigint,text,text) FROM PUBLIC`,
+     ${draftDeleteFunction}(text,text,bigint,bigint,text,text),
+     ${draftReleaseFunction}(text,text,bigint,bigint,text,boolean) FROM PUBLIC`,
   `GRANT SELECT,INSERT ON configuration_revision,draft,draft_revision TO ${boundaryOwnerRole}`,
   `GRANT UPDATE (ticket_next) ON project TO ${boundaryOwnerRole}`,
   `GRANT UPDATE (authoring_version,state,configuration_revision) ON draft TO ${boundaryOwnerRole}`,
@@ -1254,6 +1288,7 @@ const nativeAuthoring = [
      ${draftCreateFunction}(text,text,text,text,text,text),
      ${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text),
      ${draftDeleteFunction}(text,text,bigint,bigint,text,text) TO ${apiRole}`,
+  `GRANT EXECUTE ON FUNCTION ${draftReleaseFunction}(text,text,bigint,bigint,text,boolean) TO ${ticketServiceRole}`,
   `GRANT SELECT ON configuration_revision,draft,draft_revision TO ${apiRole},${ticketServiceRole}`,
 ];
 

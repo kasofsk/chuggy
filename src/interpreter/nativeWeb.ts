@@ -65,7 +65,8 @@ export interface ProjectAccess {
   ): Promise<Authority | undefined>;
 }
 
-export type OperationRefusalCode = "NotEnabled" | "CommandUnreadable";
+export type OperationRefusalCode =
+  "NotEnabled" | "AuthoringChanged" | "CommandUnreadable";
 
 interface OperationResourceBase {
   readonly operation: OperationId;
@@ -301,6 +302,15 @@ export function nativeWeb(
         "Mutate",
       );
       if (authority === undefined) return { result: "NotFound" };
+      if (
+        submission.command.command === "Decide" &&
+        submission.command.event.type === "ReleaseTicket"
+      ) {
+        return {
+          result: "Authorized",
+          acceptance: { accepted: "InvalidCommand" },
+        };
+      }
       const accepted: Submission = { ...submission, authority };
       return { result: "Authorized", acceptance: await inbox.accept(accepted) };
     },

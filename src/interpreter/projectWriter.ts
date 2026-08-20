@@ -247,6 +247,10 @@ export async function projectWriterDecide(
         ? { kind: "Operation", id: item.source.operation }
         : { kind: "Continuation", id: item.source.continuation },
     outcome: plan.outcome,
+    ...(item.source.kind === "Operation" &&
+    item.source.draftRelease !== undefined
+      ? { draftRelease: item.source.draftRelease }
+      : {}),
   });
   if (decided.decided !== "Committed") return { memory, decided };
   const ticketVersions = new Map(memory.ticketVersions);

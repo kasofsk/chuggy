@@ -12,12 +12,21 @@ import {
 import {
   asAuthorityKind,
   asAuthoritySubject,
+  asIdempotencyKey,
+  asOperationId,
+  type Submission,
 } from "../../src/interpreter/operationInbox.ts";
+import {
+  projectWriterDecide,
+  projectWriterLoad,
+} from "../../src/interpreter/projectWriter.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import {
+  postgresHarnessHeld,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessUrl,
+  postgresHarnessWriter,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -59,6 +68,25 @@ async function draftFixture() {
   if (created.created !== "Created")
     throw new Error("draft fixture was not created");
   return { partition, store, revision, draft: created.draft };
+}
+
+function releaseSubmission(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+): Submission {
+  const unique = randomUUID();
+  return {
+    partition: fixture.partition,
+    operation: asOperationId(`release-${unique}`),
+    authority,
+    key: asIdempotencyKey(`release-${unique}`),
+    command: {
+      version: 1,
+      command: "ReleaseDraft",
+      ticket: fixture.draft.ticket,
+      authoringVersion: fixture.draft.authoringVersion,
+      configurationRevision: fixture.revision,
+    },
+  };
 }
 
 test("configuration revisions are immutable and parented inside one project", async () => {
@@ -155,5 +183,78 @@ test("draft edits are versioned and deletion leaves an unreusable identity", asy
   assert.equal(
     next.created === "Created" ? next.draft.ticket : 0,
     draft.ticket + 1,
+  );
+});
+
+test("release journals the retained draft only while its revision is current", async () => {
+  const fixture = await draftFixture();
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  const lease = await postgresHarnessHeld(
+    harness.store,
+    fixture.partition,
+    "draft-release",
+  );
+  const writer = postgresHarnessWriter(harness);
+  const result = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(writer, lease),
+    input,
+  );
+  assert.equal(result.decided.decided, "Committed");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT state FROM draft WHERE tenant=$1 AND project=$2 AND ticket=$3",
+      [
+        fixture.partition.tenant,
+        fixture.partition.project,
+        fixture.draft.ticket,
+      ],
+    ),
+    [{ state: "Released" }],
+  );
+});
+
+test("an edit after acceptance durably refuses release without an entry", async () => {
+  const fixture = await draftFixture();
+  const submission = releaseSubmission(fixture);
+  await harness.inbox.accept(submission);
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  await fixture.store.reviseDraft({
+    partition: fixture.partition,
+    authority,
+    ticket: fixture.draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: fixture.revision,
+    authoring: plainAuthoring,
+  });
+  const lease = await postgresHarnessHeld(
+    harness.store,
+    fixture.partition,
+    "draft-race",
+  );
+  const writer = postgresHarnessWriter(harness);
+  const result = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(writer, lease),
+    input,
+  );
+  assert.equal(result.decided.decided, "Refused");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT state,outcome_code FROM decision_input WHERE input_id=$1",
+      [submission.operation],
+    ),
+    [{ state: "Refused", outcome_code: "AuthoringChanged" }],
+  );
+  assert.deepEqual(
+    await harness.query(
+      "SELECT head FROM project WHERE tenant=$1 AND project=$2",
+      [fixture.partition.tenant, fixture.partition.project],
+    ),
+    [{ head: "0" }],
   );
 });

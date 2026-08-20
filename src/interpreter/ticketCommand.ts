@@ -1,4 +1,5 @@
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
+import type { TicketId } from "../domain/ids.ts";
 
 export type OperationDecisionEvent = Exclude<
   DecisionEvent,
@@ -28,4 +29,11 @@ export type TicketCommand =
       readonly action: string;
       readonly authorizingSeq: number;
       readonly resolution: NativeActionResolution;
+    }
+  | {
+      readonly version: 1;
+      readonly command: "ReleaseDraft";
+      readonly ticket: TicketId;
+      readonly authoringVersion: number;
+      readonly configurationRevision: string;
     };
