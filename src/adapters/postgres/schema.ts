@@ -121,9 +121,10 @@ const foundationRelations = [
  * role as owner of a project another dispatcher holds, or place an entry at a
  * seq the primary key has not taken and move `head` to match, because the
  * fences that would refuse those — lease validity, epoch currency, expected
- * head, lifecycle admission — all live in this adapter. Closing it means
- * ownership behind `SECURITY DEFINER` and no UPDATE at all, which changes the
- * port's contract, and kasofsk/chuggy#115 carries that decision.
+ * head, lifecycle admission — all live in this adapter. Closing it takes a
+ * constraint in the database on what those columns may become rather than a
+ * narrower grant on which of them may be written; kasofsk/chuggy#115 settled
+ * that, and a later slice carries it.
  */
 const foundationGrants = [
   `GRANT SELECT ON recovery_epoch TO ${dispatcherRole}`,
