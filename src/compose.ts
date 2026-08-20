@@ -1,36 +1,40 @@
-/**
- * The composition root: the only file that constructs an adapter, and the only
- * one nothing else may import.
- *
- * Both halves are enforced in `.dependency-cruiser.cjs` and neither is a style
- * preference. Constructing an adapter anywhere else would put a choice of
- * deployment inside a layer that must not have one; being imported by anything
- * would make this a module in the graph rather than its root, and the moment it
- * is in the graph the layers below can reach an adapter through it.
- *
- * It needs no exclusion from `no-orphan-module` and has none: an orphan there is
- * a module with no dependents AND no dependencies, and this one is all
- * dependencies. Nothing imports it, so what checks it is the compiler rather
- * than a suite — a stub that stopped satisfying its port fails to compile here,
- * which is the only claim this file makes.
- */
+import type pg from "pg";
 
-import { deskStub } from "./adapters/deskStub.ts";
-import { fabricStub } from "./adapters/fabricStub.ts";
-import { finalizerStub } from "./adapters/finalizerStub.ts";
-import { journalStoreStub } from "./adapters/journalStoreStub.ts";
-import type { Config } from "./domain/config.ts";
-import type { Executor } from "./interpreter/executor.ts";
+import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
+import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
+import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
+import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
+import type { IdempotencyKeying } from "./adapters/postgres/keying.ts";
+import type { OperationInbox } from "./interpreter/operationInbox.ts";
+import type { ProjectDecision } from "./interpreter/projectDecision.ts";
+import type { ProjectDiscovery } from "./interpreter/projectDiscovery.ts";
+import type { ProjectStore } from "./interpreter/projectStore.ts";
+import {
+  silentTicketServiceMetrics,
+  ticketServiceDefaults,
+  type TicketServiceConfig,
+  type TicketServiceMetrics,
+} from "./interpreter/ticketService.ts";
 
-/** Wires the executor against the stub adapters, which is every deployment choice this tree has yet made. */
-export function compose(config: Config): Executor {
+export interface TicketService {
+  readonly inbox: OperationInbox;
+  readonly discovery: ProjectDiscovery;
+  readonly decisions: ProjectDecision;
+  readonly projects: ProjectStore;
+}
+
+/** Wires the ticket-service contracts to separate API and writer credentials. */
+export function composeTicketService(
+  apiPool: pg.Pool,
+  writerPool: pg.Pool,
+  keying: IdempotencyKeying,
+  config: TicketServiceConfig = ticketServiceDefaults,
+  metrics: TicketServiceMetrics = silentTicketServiceMetrics,
+): TicketService {
   return {
-    config,
-    store: journalStoreStub(),
-    ports: {
-      fabric: fabricStub(),
-      finalizer: finalizerStub(),
-      desk: deskStub(),
-    },
+    inbox: postgresOperationInbox(apiPool, keying, config, metrics),
+    discovery: postgresProjectDiscovery(writerPool, metrics),
+    decisions: postgresProjectDecision(writerPool, metrics),
+    projects: postgresProjectStore(writerPool),
   };
 }

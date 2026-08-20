@@ -40,6 +40,13 @@
  */
 
 import type { Lifecycle, Partition } from "./projectStore.ts";
+import type { TicketCommand } from "./ticketCommand.ts";
+export {
+  asOperationDecisionEvent,
+  type NativeActionResolution,
+  type OperationDecisionEvent,
+  type TicketCommand,
+} from "./ticketCommand.ts";
 
 declare const operationIdBrand: unique symbol;
 declare const authorityKindBrand: unique symbol;
@@ -198,9 +205,44 @@ export interface Submission {
   readonly partition: Partition;
   readonly operation: OperationId;
   readonly authority: Authority;
-  readonly admission: AdmissionClass;
   readonly key: IdempotencyKey;
-  readonly command: OperationCommand;
+  readonly command: TicketCommand;
+}
+
+/** The immutable scheduling class trusted ingress derives from a typed command. */
+export type PriorityClass =
+  "Safety" | "Completion" | "Continuation" | "Ordinary";
+
+export const allPriorityClasses: readonly PriorityClass[] = [
+  "Safety",
+  "Completion",
+  "Continuation",
+  "Ordinary",
+];
+
+/** Trusted ingress policy. Callers never provide either classification. */
+export function classifyCommand(command: TicketCommand): {
+  readonly admission: AdmissionClass;
+  readonly priority: Exclude<PriorityClass, "Continuation">;
+} {
+  if (command.command === "ResolveNativeAction") {
+    return {
+      admission: "CorrectnessReducing",
+      priority: command.resolution === "Revoke" ? "Safety" : "Ordinary",
+    };
+  }
+  switch (command.event.type) {
+    case "Revoke":
+      return { admission: "CorrectnessReducing", priority: "Safety" };
+    case "TaskDone":
+    case "ExecutionBlocked":
+    case "FinalizationResult":
+      return { admission: "CorrectnessReducing", priority: "Completion" };
+    case "ReleaseTicket":
+    case "Dispatch":
+    case "ResumeTicket":
+      return { admission: "Ordinary", priority: "Ordinary" };
+  }
 }
 
 /** One authorized cancellation of a pending operation, audited to the authority that asked for it. */
@@ -234,6 +276,9 @@ export type Accepted =
   | { readonly accepted: "Accepted"; readonly operation: OperationStanding }
   | { readonly accepted: "Original"; readonly operation: OperationStanding }
   | { readonly accepted: "IdempotencyConflict" }
+  | { readonly accepted: "InvalidCommand" }
+  | { readonly accepted: "Backpressure"; readonly retryAfterSeconds: number }
+  | { readonly accepted: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly accepted: "NotAdmitted"; readonly lifecycle: Lifecycle };
 
 /** What a cancellation found, distinguishing a repeat of itself from an operation a writer already decided. */

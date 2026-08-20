@@ -12,6 +12,7 @@
  */
 
 import type pg from "pg";
+import { performance } from "node:perf_hooks";
 
 import type {
   Decided,
@@ -19,11 +20,67 @@ import type {
   ProjectDecision,
 } from "../../interpreter/projectDecision.ts";
 import { postgresDecisionCommit } from "./decision.ts";
+import {
+  observe,
+  silentTicketServiceMetrics,
+  type DecisionMetricOutcome,
+  type TicketServiceMetrics,
+} from "../../interpreter/ticketService.ts";
 
-/** The decision transaction over a pool the composition root opened for the dispatcher role. */
-export function postgresProjectDecision(pool: pg.Pool): ProjectDecision {
+function repeat(count: number, observation: () => void): void {
+  for (let index = 0; index < count; index += 1) observe(observation);
+}
+
+/** The decision transaction over a pool opened for the ticket-service role. */
+export function postgresProjectDecision(
+  pool: pg.Pool,
+  metrics: TicketServiceMetrics = silentTicketServiceMetrics,
+): ProjectDecision {
   return {
-    decide: (decision: Decision): Promise<Decided> =>
-      postgresDecisionCommit(pool, decision),
+    decide: async (decision: Decision): Promise<Decided> => {
+      const started = performance.now();
+      const decided = await postgresDecisionCommit(pool, decision);
+      const outcome: DecisionMetricOutcome =
+        decided.decided === "Committed" ? "Journaled" : decided.decided;
+      observe(() => {
+        metrics.decision(outcome, performance.now() - started);
+      });
+      if (
+        decided.decided === "Committed" &&
+        decision.outcome.outcome === "Journaled"
+      ) {
+        const materialization = decision.outcome.materialization;
+        repeat(materialization.execution.length, () => {
+          metrics.focusedRequest("Execution");
+        });
+        repeat(materialization.finalization.length, () => {
+          metrics.focusedRequest("Finalization");
+        });
+        repeat(materialization.actions.length, () => {
+          metrics.nativeAction("Opened");
+        });
+        if (materialization.resolveAction !== undefined) {
+          observe(() => {
+            metrics.nativeAction("Resolved");
+          });
+        }
+        if (materialization.continuation !== undefined) {
+          observe(() => {
+            metrics.continuation("Created");
+          });
+        }
+      }
+      if (decision.cause.kind === "Continuation") {
+        if (decided.decided === "Committed")
+          observe(() => {
+            metrics.continuation("Journaled");
+          });
+        if (decided.decided === "Stale")
+          observe(() => {
+            metrics.continuation("Stale");
+          });
+      }
+      return decided;
+    },
   };
 }

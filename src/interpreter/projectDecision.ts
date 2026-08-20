@@ -54,26 +54,81 @@ import type { Lease, Lifecycle } from "./projectStore.ts";
  * 006 requires a stable safe code, and an open one is a code a client cannot
  * branch on.
  */
-export type RefusalCode = "CommandUnreadable" | "NotEnabled";
+export type RefusalCode = "NotEnabled";
 
 /** Every refusal code, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
-export const allRefusalCodes: readonly RefusalCode[] = [
-  "CommandUnreadable",
-  "NotEnabled",
-];
+export const allRefusalCodes: readonly RefusalCode[] = ["NotEnabled"];
 
 /**
  * The authority a project writer settles an operation under. A refusal has no
  * journal entry to record the owner on, so this and the settled subject are
  * the only audit trail it leaves.
  */
-export const projectWriterAuthorityKind: AuthorityKind =
-  asAuthorityKind("ProjectWriter");
+export const projectTicketWriterAuthorityKind: AuthorityKind = asAuthorityKind(
+  "ProjectTicketWriter",
+);
+
+export type DecisionCause =
+  | { readonly kind: "Operation"; readonly id: OperationId }
+  | { readonly kind: "Continuation"; readonly id: string };
 
 /** One row of the primary projection: where a ticket currently stands. */
 export interface TicketProjection {
   readonly ticket: TicketId;
   readonly phase: Phase;
+}
+
+export interface ExecutionRequestPlan {
+  readonly request: string;
+  readonly effectPosition: number;
+  readonly ticket: TicketId;
+  readonly ticketVersion: number;
+  readonly kind: "SpawnWork" | "SpawnEvaluation" | "CancelTicketWork";
+  readonly tasks: readonly (
+    | { readonly task: number; readonly kind: "Work" }
+    | {
+        readonly task: number;
+        readonly kind: "Evaluation";
+        readonly stage: number;
+      }
+  )[];
+}
+
+export interface NativeActionPlan {
+  readonly action: string;
+  readonly effectPosition: number;
+  readonly ticket: TicketId;
+  readonly version: number;
+  readonly kind: "TicketEscalation";
+  readonly reason: string;
+  readonly capability: "ResolveTicket";
+  readonly resolutions: readonly ("Resume" | "Revoke")[];
+}
+
+export interface DecisionMaterialization {
+  readonly continuation?: {
+    readonly continuation: string;
+    readonly kind: "ReduceWork" | "ReduceEvaluation";
+    readonly ticket: TicketId;
+    readonly expectedTicketVersion: number;
+    readonly expectedPhase: Phase;
+    readonly taskSetGeneration: number;
+  };
+  readonly actions: readonly NativeActionPlan[];
+  readonly execution: readonly ExecutionRequestPlan[];
+  readonly finalization: readonly {
+    readonly request: string;
+    readonly effectPosition: number;
+    readonly ticket: TicketId;
+    readonly ticketVersion: number;
+    readonly requestGeneration: number;
+  }[];
+  readonly fulfillFinalizationFor: readonly TicketId[];
+  readonly resolveAction?: {
+    readonly action: string;
+    readonly authorizingSeq: number;
+    readonly open: boolean;
+  };
 }
 
 /**
@@ -86,13 +141,15 @@ export type DecisionOutcome =
       readonly outcome: "Journaled";
       readonly entry: Entry;
       readonly projection: readonly TicketProjection[];
+      readonly materialization: DecisionMaterialization;
     }
-  | { readonly outcome: "Refused"; readonly code: RefusalCode };
+  | { readonly outcome: "Refused"; readonly code: RefusalCode }
+  | { readonly outcome: "Stale" };
 
 /** One decision offered for commit: what authorizes it, what caused it, and what it writes. */
 export interface Decision {
   readonly lease: Lease;
-  readonly cause: OperationId;
+  readonly cause: DecisionCause;
   readonly outcome: DecisionOutcome;
 }
 
@@ -101,10 +158,11 @@ export interface Decision {
  * commit is resolved by reading. A success carries the sequence it decided at
  * so a client reads its own write and a writer resumes at the right head.
  */
-export type OperationOutcome =
+export type DecisionInputOutcome =
   | { readonly settled: "Succeeded"; readonly seq: number }
   | { readonly settled: "Refused"; readonly code: RefusalCode }
-  | { readonly settled: "Cancelled" };
+  | { readonly settled: "Cancelled" }
+  | { readonly settled: "Stale" };
 
 /**
  * What a decision found. `Committed` carries the lease the commit advanced, so
@@ -113,7 +171,11 @@ export type OperationOutcome =
 export type Decided =
   | { readonly decided: "Committed"; readonly lease: Lease }
   | { readonly decided: "Refused" }
-  | { readonly decided: "AlreadyTerminal"; readonly outcome: OperationOutcome }
+  | { readonly decided: "Stale" }
+  | {
+      readonly decided: "AlreadyTerminal";
+      readonly outcome: DecisionInputOutcome;
+    }
   | { readonly decided: "StaleHead"; readonly head: number }
   | { readonly decided: "Fenced"; readonly fencingEpoch: number }
   | { readonly decided: "NotActive"; readonly lifecycle: Lifecycle };

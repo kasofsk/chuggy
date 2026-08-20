@@ -44,7 +44,7 @@
 import type pg from "pg";
 
 import type { Entry } from "../../actor/journal.ts";
-import type { OperationId } from "../../interpreter/operationInbox.ts";
+import type { DecisionCause } from "../../interpreter/projectDecision.ts";
 import type {
   Lease,
   Partition,
@@ -88,7 +88,7 @@ export async function postgresJournalWrite(
   client: pg.PoolClient,
   lease: Lease,
   entry: Entry,
-  cause: OperationId,
+  cause: DecisionCause,
 ): Promise<void> {
   if (entry.seq !== lease.head + 1) {
     throw new Error(
@@ -103,8 +103,8 @@ export async function postgresJournalWrite(
   await client.query(
     `INSERT INTO journal_entry
        (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch,
-        recovery_epoch, cause_operation)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        recovery_epoch, cause_kind, cause_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       lease.partition.tenant,
       lease.partition.project,
@@ -115,7 +115,8 @@ export async function postgresJournalWrite(
       lease.owner,
       lease.fencingEpoch,
       lease.recoveryEpoch,
-      cause,
+      cause.kind,
+      cause.id,
     ],
   );
   await client.query(

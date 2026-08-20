@@ -174,7 +174,7 @@ client_psql() { # <role> <database>
 		case "$CHUG_ROLE" in
 		postgres) PGPASSWORD="$PGSUPERPASSWORD" ;;
 		chuggy_owner) PGPASSWORD="$PGOWNERPASSWORD" ;;
-		chuggy_dispatcher_login) PGPASSWORD="$PGDISPATCHERPASSWORD" ;;
+		chuggy_ticket_service_login) PGPASSWORD="$PGTICKETSERVICEPASSWORD" ;;
 		*)
 			echo "no password is issued to $CHUG_ROLE" >&2
 			exit 2
@@ -318,11 +318,11 @@ spec:
             secretKeyRef:
               name: chuggy-postgres-credentials
               key: owner-password
-        - name: PGDISPATCHERPASSWORD
+        - name: PGTICKETSERVICEPASSWORD
           valueFrom:
             secretKeyRef:
               name: chuggy-postgres-credentials
-              key: dispatcher-password
+              key: ticket-service-password
 YAML
 	kube wait --for=condition=Ready "pod/$client" --timeout=180s
 	kube label --overwrite "pod/$client" chuggy.dev/postgres-client=true
@@ -561,11 +561,11 @@ stage_fence() {
 
 	say "what each restored lease carries, read as the runtime role reads it:"
 	echo "SELECT p.tenant, p.project, p.owner, p.fencing_epoch, p.recovery_epoch, e.epoch, (p.recovery_epoch = e.epoch), (p.lease_expires_at > now()) FROM project p CROSS JOIN ($latest_epoch) e (epoch) WHERE p.owner IS NOT NULL ORDER BY p.tenant, p.project" \
-		| client_psql chuggy_dispatcher_login "$database"
+		| client_psql chuggy_ticket_service_login "$database"
 
-	held="$(echo "SELECT count(*) FROM project WHERE owner IS NOT NULL" | client_psql chuggy_dispatcher_login "$database")"
+	held="$(echo "SELECT count(*) FROM project WHERE owner IS NOT NULL" | client_psql chuggy_ticket_service_login "$database")"
 	[ "$held" -gt 0 ] || cannot "the restored database holds no lease, so this stage would agree with itself"
-	current="$(echo "SELECT count(*) FROM project WHERE owner IS NOT NULL AND recovery_epoch = ($latest_epoch)" | client_psql chuggy_dispatcher_login "$database")"
+	current="$(echo "SELECT count(*) FROM project WHERE owner IS NOT NULL AND recovery_epoch = ($latest_epoch)" | client_psql chuggy_ticket_service_login "$database")"
 	[ "$current" = "0" ] || die "$current of the $held restored lease(s) still carry the current epoch, so the restore fenced nobody"
 	say "none of the $held restored lease(s) carries the current epoch"
 
@@ -584,7 +584,7 @@ stage_fence() {
 	# through psql's own display, `true` once anything casts it — and a guard
 	# comparing against the wrong spelling reports the opposite of the row it
 	# just read.
-	client_psql chuggy_dispatcher_login "$database" > "$witness_standing_file" << SQL
+	client_psql chuggy_ticket_service_login "$database" > "$witness_standing_file" << SQL
 SELECT unnest(ARRAY[
   'superseded ' || CASE WHEN p.recovery_epoch IS DISTINCT FROM e.epoch THEN 'yes' ELSE 'no' END,
   'unexpired ' || CASE WHEN p.lease_expires_at > now() THEN 'yes' ELSE 'no' END,
@@ -616,7 +616,7 @@ SQL
 
 	# A fence is worth nothing if the writer it fences can mint its way past
 	# it, and that refusal is the server's rather than the adapter's.
-	refusal="$(echo "INSERT INTO recovery_epoch (epoch) VALUES ('epoch-minted-by-the-runtime')" | client_psql_refusable chuggy_dispatcher_login "$database")"
+	refusal="$(echo "INSERT INTO recovery_epoch (epoch) VALUES ('epoch-minted-by-the-runtime')" | client_psql_refusable chuggy_ticket_service_login "$database")"
 	case "$refusal" in
 	*"permission denied"*) say "the runtime role cannot unfence itself: $refusal" ;;
 	*) die "the runtime role was allowed to establish a recovery epoch" ;;

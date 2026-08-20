@@ -25,7 +25,12 @@
  * outcomes a caller must handle, not exceptions it may ignore.
  */
 
-import type { OperationCommand, OperationId } from "./operationInbox.ts";
+import type { DecisionEvent } from "../actor/decisionEvent.ts";
+import type {
+  OperationId,
+  PriorityClass,
+  TicketCommand,
+} from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 
 /** One project's discovery record: the partition with work waiting, and the generation that wake-up carries. */
@@ -40,11 +45,30 @@ export interface Readiness {
  * consumes it for, and a second read to fetch that would be a second
  * transaction the first one's answer could already be stale in.
  */
-export interface InboxItem {
+export interface DecisionInput {
   readonly partition: Partition;
   readonly ordinal: number;
-  readonly operation: OperationId;
-  readonly command: OperationCommand;
+  readonly priority: PriorityClass;
+  readonly source:
+    | {
+        readonly kind: "Operation";
+        readonly operation: OperationId;
+        readonly command: TicketCommand;
+        readonly resolvedEvent: DecisionEvent;
+        readonly nativeAction?: {
+          readonly action: string;
+          readonly authorizingSeq: number;
+          readonly open: boolean;
+        };
+      }
+    | {
+        readonly kind: "Continuation";
+        readonly continuation: string;
+        readonly command: DecisionEvent;
+        readonly expectedTicketVersion: number;
+        readonly expectedPhase: string;
+        readonly taskSetGeneration: number;
+      };
 }
 
 /**
@@ -66,10 +90,10 @@ export interface ProjectDiscovery {
   ready(partitionsMax: number): Promise<readonly Readiness[]>;
 
   /** At most `itemsMax` consumable items in ordinal order, which is what activation verifies the inbox with. */
-  consumable(
+  next(
     partition: Partition,
-    itemsMax: number,
-  ): Promise<readonly InboxItem[]>;
+    agingIntervalSeconds?: number,
+  ): Promise<DecisionInput | undefined>;
 
   /**
    * Clears readiness if the generation is still the one observed and no

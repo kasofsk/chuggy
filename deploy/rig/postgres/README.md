@@ -29,7 +29,7 @@ gives:
 kubectl -n chuggy create secret generic chuggy-postgres-credentials \
   --from-env-file=/dev/stdin <<EOF
 owner-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
-dispatcher-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+ticket-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 api-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 EOF
 ```
@@ -50,12 +50,12 @@ kubectl -n chuggy port-forward svc/postgres 55440:5432 & forward=$!
 secret() { kubectl -n chuggy get secret "$1" -o jsonpath="{.data.$2}" | base64 -d; }
 export PGPASSWORD="$(secret postgres-superuser password)"
 export CHUG_PG_OWNER_PASSWORD="$(secret chuggy-postgres-credentials owner-password)"
-export CHUG_PG_DISPATCHER_PASSWORD="$(secret chuggy-postgres-credentials dispatcher-password)"
+export CHUG_PG_TICKET_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials ticket-service-password)"
 export CHUG_PG_API_PASSWORD="$(secret chuggy-postgres-credentials api-password)"
 
 : "${PGPASSWORD:?the superuser password did not read back}" \
   "${CHUG_PG_OWNER_PASSWORD:?owner-password did not read back}" \
-  "${CHUG_PG_DISPATCHER_PASSWORD:?dispatcher-password did not read back}" \
+  "${CHUG_PG_TICKET_SERVICE_PASSWORD:?ticket-service-password did not read back}" \
   "${CHUG_PG_API_PASSWORD:?api-password did not read back}" &&
 psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy -f deploy/rig/postgres/postgres-roles.sql
 ```
@@ -145,9 +145,9 @@ spec:
         - name: CHUG_PG_OWNER_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: owner-password }
-        - name: CHUG_PG_DISPATCHER_PASSWORD
+        - name: CHUG_PG_TICKET_SERVICE_PASSWORD
           valueFrom:
-            secretKeyRef: { name: chuggy-postgres-credentials, key: dispatcher-password }
+            secretKeyRef: { name: chuggy-postgres-credentials, key: ticket-service-password }
         - name: CHUG_PG_API_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: api-password }
@@ -182,11 +182,11 @@ revoked.
 ### The network half
 
 ```sh
-as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher  # refused
+as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service  # refused
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
-as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher  # admitted
+as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service  # admitted
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client-
-as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher  # refused
+as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service  # refused
 ```
 
 ### The credentials
@@ -197,8 +197,8 @@ issued it:
 ```sh
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
 
-as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_dispatcher
-as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher
+as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_ticket_service
+as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service
 as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_api
 ```
 

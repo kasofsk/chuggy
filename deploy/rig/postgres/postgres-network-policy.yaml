@@ -11,7 +11,7 @@
 # else; what reaches the server without crossing that network is below.
 #
 # WHY A LABEL AND NOT A NAME. The workloads that connect do not exist yet — the
-# dispatcher and the API arrive with the slices that build them — and a policy
+# ticket service and the API arrive with the slices that build them — and a policy
 # that named them would be a policy nothing could satisfy today and nobody would
 # revisit tomorrow. A label is the selector Kubernetes offers, and it is also
 # the honest one: authorization here is possession of a label, which is worth

@@ -188,7 +188,7 @@
  * is refused.
  */
 
-import { phaseTags } from "../../domain/generated/modelTypes.ts";
+import { phaseTags, reasonTags } from "../../domain/generated/modelTypes.ts";
 import {
   authorityCharsMax,
   operationCommandCharsMax,
@@ -203,14 +203,19 @@ export interface Migration {
   readonly statements: readonly string[];
 }
 
-/** The role every runtime dispatcher connects as, named once so the grants and the suite agree. */
-export const dispatcherRole = "chuggy_dispatcher";
+/** The retired runtime role retained only while historical migrations are replayed. */
+const historicalDispatcherRole = "chuggy_dispatcher";
+/** The role every ticket-service runtime connects as. */
+export const ticketServiceRole = "chuggy_ticket_service";
 
 /** The role the authenticated API connects as, which accepts and cancels work and decides none of it. */
 export const apiRole = "chuggy_api";
 
 /** The whole of a cancellation, named once so the grant, the adapter and the suite agree on it. */
 export const cancellationFunction = "cancel_pending_operation";
+export const acceptanceFunction = "accept_operation";
+export const continuationFunction = "publish_continuation";
+export const boundaryOwnerRole = "chuggy_boundary_owner";
 
 /** The ledger of applied migrations, which the runner creates before it reads anything. */
 export const migrationLedger = `
@@ -281,11 +286,11 @@ const foundationRelations = [
  * that, and a later slice carries it.
  */
 const foundationGrants = [
-  `GRANT SELECT ON recovery_epoch TO ${dispatcherRole}`,
-  `GRANT SELECT ON project TO ${dispatcherRole}`,
+  `GRANT SELECT ON recovery_epoch TO ${historicalDispatcherRole}`,
+  `GRANT SELECT ON project TO ${historicalDispatcherRole}`,
   `GRANT UPDATE (head, owner, lease_expires_at, recovery_epoch, fencing_epoch)
-     ON project TO ${dispatcherRole}`,
-  `GRANT SELECT, INSERT ON journal_entry TO ${dispatcherRole}`,
+     ON project TO ${historicalDispatcherRole}`,
+  `GRANT SELECT, INSERT ON journal_entry TO ${historicalDispatcherRole}`,
 ];
 
 /**
@@ -480,9 +485,9 @@ const inboxGrants = [
   `GRANT INSERT (tenant, project, ready, generation)
      ON project_readiness TO ${apiRole}`,
   `GRANT UPDATE (ready, generation) ON project_readiness TO ${apiRole}`,
-  `GRANT SELECT ON inbox_item TO ${dispatcherRole}`,
-  `GRANT SELECT ON project_readiness TO ${dispatcherRole}`,
-  `GRANT UPDATE (ready) ON project_readiness TO ${dispatcherRole}`,
+  `GRANT SELECT ON inbox_item TO ${historicalDispatcherRole}`,
+  `GRANT SELECT ON project_readiness TO ${historicalDispatcherRole}`,
+  `GRANT UPDATE (ready) ON project_readiness TO ${historicalDispatcherRole}`,
 ];
 
 /** A closed set of text values as the SQL list a CHECK compares against. */
@@ -592,14 +597,345 @@ const tenureFence = [
 ];
 
 const decisionGrants = [
-  `GRANT SELECT ON operation TO ${dispatcherRole}`,
+  `GRANT SELECT ON operation TO ${historicalDispatcherRole}`,
   `GRANT UPDATE (state, settled_at, settled_authority_kind,
                  settled_authority_subject, outcome_code, decided_seq,
                  refused_head, refused_lifecycle_generation)
-     ON operation TO ${dispatcherRole}`,
-  `GRANT UPDATE (consumable) ON inbox_item TO ${dispatcherRole}`,
-  `GRANT SELECT, INSERT ON ticket_projection TO ${dispatcherRole}`,
-  `GRANT UPDATE (phase, seq) ON ticket_projection TO ${dispatcherRole}`,
+     ON operation TO ${historicalDispatcherRole}`,
+  `GRANT UPDATE (consumable) ON inbox_item TO ${historicalDispatcherRole}`,
+  `GRANT SELECT, INSERT ON ticket_projection TO ${historicalDispatcherRole}`,
+  `GRANT UPDATE (phase, seq) ON ticket_projection TO ${historicalDispatcherRole}`,
+];
+
+/** I3 replaces the operation-only inbox with one typed, prioritized decision-input authority. */
+const durableMailbox = [
+  roleStatement(boundaryOwnerRole),
+  roleStatement(ticketServiceRole),
+  `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${historicalDispatcherRole}`,
+  `REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM ${historicalDispatcherRole}`,
+  `GRANT SELECT ON recovery_epoch, project, journal_entry, operation,
+     project_readiness, ticket_projection TO ${ticketServiceRole}`,
+  `GRANT UPDATE (head, owner, lease_expires_at, recovery_epoch, fencing_epoch, ingress_next)
+     ON project TO ${ticketServiceRole}`,
+  `GRANT INSERT ON journal_entry, ticket_projection TO ${ticketServiceRole}`,
+  `GRANT UPDATE (ready) ON project_readiness TO ${ticketServiceRole}`,
+  `GRANT UPDATE (phase, seq) ON ticket_projection TO ${ticketServiceRole}`,
+  `ALTER ROLE ${boundaryOwnerRole} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
+  `GRANT ${boundaryOwnerRole} TO CURRENT_USER`,
+  `GRANT USAGE, CREATE ON SCHEMA public TO ${boundaryOwnerRole}`,
+  `CREATE TABLE decision_input (
+     tenant text NOT NULL, project text NOT NULL, ordinal bigint NOT NULL,
+     input_kind text NOT NULL, input_id text NOT NULL,
+     base_priority text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+     lifecycle_generation bigint NOT NULL, state text NOT NULL DEFAULT 'Pending',
+     decided_seq bigint, outcome_code text, refused_head bigint,
+     refused_lifecycle_generation bigint, terminal_at timestamptz,
+     settled_authority_kind text, settled_authority_subject text,
+     PRIMARY KEY (tenant, project, ordinal),
+     CONSTRAINT decision_input_identity_is_unique UNIQUE (tenant, project, input_kind, input_id),
+     CONSTRAINT decision_input_decision_tuple_is_unique UNIQUE (tenant, project, input_kind, input_id, decided_seq),
+     CONSTRAINT decision_input_belongs_to_project FOREIGN KEY (tenant, project) REFERENCES project (tenant, project),
+     CONSTRAINT decision_input_ordinal_is_positive CHECK (ordinal >= 1 AND lifecycle_generation >= 1),
+     CONSTRAINT decision_input_kind_is_known CHECK (input_kind IN ('Operation', 'Continuation')),
+     CONSTRAINT decision_input_priority_is_known CHECK (base_priority IN ('Safety', 'Completion', 'Continuation', 'Ordinary')),
+     CONSTRAINT decision_input_state_is_known CHECK (state IN ('Pending', 'Journaled', 'Refused', 'Cancelled', 'Stale')),
+     CONSTRAINT decision_input_kind_state_agree CHECK (
+       (input_kind = 'Operation' AND state IN ('Pending', 'Journaled', 'Refused', 'Cancelled')) OR
+       (input_kind = 'Continuation' AND state IN ('Pending', 'Journaled', 'Stale'))),
+     CONSTRAINT decision_input_outcome_is_whole CHECK (
+       (state = 'Journaled') = (decided_seq IS NOT NULL) AND
+       (state = 'Refused') = (outcome_code IS NOT NULL) AND
+       (state = 'Refused') = (refused_head IS NOT NULL) AND
+       (state = 'Refused') = (refused_lifecycle_generation IS NOT NULL) AND
+       (state IN ('Pending')) = (terminal_at IS NULL) AND
+       (settled_authority_kind IS NULL) = (settled_authority_subject IS NULL) AND
+       coalesce(decided_seq, 1) >= 1)
+   )`,
+  `INSERT INTO decision_input
+     (tenant, project, ordinal, input_kind, input_id, base_priority, created_at,
+      lifecycle_generation, state, decided_seq, outcome_code, refused_head,
+      refused_lifecycle_generation, terminal_at, settled_authority_kind, settled_authority_subject)
+   SELECT o.tenant, o.project, i.ordinal, 'Operation', o.operation,
+          CASE
+            WHEN o.command LIKE '%"type":"Revoke"%' THEN 'Safety'
+            WHEN o.command LIKE '%"type":"TaskDone"%' OR o.command LIKE '%"type":"ExecutionBlocked"%'
+              OR o.command LIKE '%"type":"FinalizationResult"%' THEN 'Completion'
+            ELSE 'Ordinary' END,
+          o.accepted_at, o.lifecycle_generation,
+          CASE o.state WHEN 'Succeeded' THEN 'Journaled' ELSE o.state END,
+          o.decided_seq, o.outcome_code, o.refused_head, o.refused_lifecycle_generation,
+          o.settled_at, o.settled_authority_kind, o.settled_authority_subject
+     FROM operation o JOIN inbox_item i USING (tenant, project, operation)`,
+  `DO $$ BEGIN
+     IF (SELECT count(*) FROM operation) <> (SELECT count(*) FROM decision_input WHERE input_kind = 'Operation')
+     THEN RAISE EXCEPTION 'I3 operation input backfill lost rows'; END IF;
+   END $$`,
+  `ALTER TABLE journal_entry ADD COLUMN cause_kind text, ADD COLUMN cause_id text`,
+  `UPDATE journal_entry SET cause_kind = 'Operation', cause_id = cause_operation`,
+  `ALTER TABLE journal_entry ALTER COLUMN cause_kind SET NOT NULL, ALTER COLUMN cause_id SET NOT NULL`,
+  `ALTER TABLE journal_entry DROP CONSTRAINT journal_entry_cause_is_effective,
+     DROP CONSTRAINT journal_entry_has_its_cause,
+     ADD CONSTRAINT journal_entry_cause_is_effective UNIQUE (tenant, project, cause_kind, cause_id),
+     ADD CONSTRAINT journal_entry_input_sequence_is_unique
+       UNIQUE (tenant, project, cause_kind, cause_id, seq),
+     ADD CONSTRAINT journal_entry_has_its_input
+       FOREIGN KEY (tenant, project, cause_kind, cause_id, seq)
+       REFERENCES decision_input (tenant, project, input_kind, input_id, decided_seq)
+       DEFERRABLE INITIALLY DEFERRED`,
+  `ALTER TABLE decision_input ADD CONSTRAINT decision_input_has_its_entry
+       FOREIGN KEY (tenant, project, input_kind, input_id, decided_seq)
+       REFERENCES journal_entry (tenant, project, cause_kind, cause_id, seq)
+       DEFERRABLE INITIALLY DEFERRED`,
+  `ALTER TABLE journal_entry DROP COLUMN cause_operation`,
+  `DROP TRIGGER operation_outcome_is_decided_once ON operation`,
+  `DROP FUNCTION operation_stays_terminal()`,
+  `ALTER TABLE operation ADD COLUMN command_tag text`,
+  `UPDATE operation SET command_tag = CASE
+       WHEN command LIKE '%ReleaseTicket%' THEN 'ReleaseTicket'
+       WHEN command LIKE '%Revoke%' THEN 'Revoke'
+       WHEN command LIKE '%Dispatch%' THEN 'Dispatch'
+       WHEN command LIKE '%TaskDone%' THEN 'TaskDone'
+       WHEN command LIKE '%FinalizationResult%' THEN 'FinalizationResult'
+       WHEN command LIKE '%ExecutionBlocked%' THEN 'ExecutionBlocked'
+       WHEN command LIKE '%ResumeTicket%' THEN 'ResumeTicket'
+       ELSE 'LegacyUnknown' END`,
+  `ALTER TABLE operation ALTER COLUMN command_tag SET NOT NULL`,
+  `GRANT INSERT (command_tag) ON operation TO ${apiRole}`,
+  `ALTER TABLE operation DROP CONSTRAINT operation_outcome_is_whole,
+     DROP CONSTRAINT operation_outcome_code_is_known,
+     DROP CONSTRAINT operation_state_is_known,
+     DROP CONSTRAINT operation_settlement_is_whole,
+     DROP COLUMN state, DROP COLUMN lifecycle_generation, DROP COLUMN settled_at,
+     DROP COLUMN settled_authority_kind, DROP COLUMN settled_authority_subject,
+     DROP COLUMN outcome_code, DROP COLUMN decided_seq, DROP COLUMN refused_head,
+     DROP COLUMN refused_lifecycle_generation`,
+  `DROP TABLE inbox_item`,
+  `CREATE INDEX decision_input_safety_head ON decision_input (tenant, project, ordinal) WHERE state = 'Pending' AND base_priority = 'Safety'`,
+  `CREATE INDEX decision_input_completion_head ON decision_input (tenant, project, ordinal) WHERE state = 'Pending' AND base_priority = 'Completion'`,
+  `CREATE INDEX decision_input_continuation_head ON decision_input (tenant, project, ordinal) WHERE state = 'Pending' AND base_priority = 'Continuation'`,
+  `CREATE INDEX decision_input_ordinary_head ON decision_input (tenant, project, ordinal) WHERE state = 'Pending' AND base_priority = 'Ordinary'`,
+  `CREATE TABLE project_continuation (
+     tenant text NOT NULL, project text NOT NULL, continuation text NOT NULL,
+     kind text NOT NULL, authorizing_seq bigint NOT NULL, effect_position integer NOT NULL,
+     ticket bigint NOT NULL, expected_ticket_version bigint NOT NULL,
+     expected_phase text NOT NULL, task_set_generation bigint NOT NULL,
+     PRIMARY KEY (tenant, project, continuation),
+     UNIQUE (tenant, project, authorizing_seq, effect_position, kind),
+     FOREIGN KEY (tenant, project, authorizing_seq) REFERENCES journal_entry (tenant, project, seq),
+     CHECK (kind IN ('ReduceWork', 'ReduceEvaluation')),
+     CHECK (authorizing_seq >= 1 AND effect_position >= 0 AND ticket >= 1 AND expected_ticket_version >= 1 AND task_set_generation >= 1),
+     CHECK (expected_phase IN (${schemaTextSet(phaseTags)}))
+   )`,
+  `CREATE TABLE native_action (
+     tenant text NOT NULL, project text NOT NULL, action text NOT NULL,
+     authorizing_seq bigint NOT NULL, effect_position integer NOT NULL,
+     ticket bigint NOT NULL, action_version bigint NOT NULL, kind text NOT NULL,
+     reason text NOT NULL, required_capability text NOT NULL,
+     state text NOT NULL DEFAULT 'Open',
+     PRIMARY KEY (tenant, project, action),
+     UNIQUE (tenant, project, authorizing_seq, effect_position),
+     FOREIGN KEY (tenant, project, authorizing_seq) REFERENCES journal_entry (tenant, project, seq),
+     CHECK (state IN ('Open', 'Resolved', 'Withdrawn')),
+     CHECK (kind = 'TicketEscalation'),
+     CHECK (required_capability = 'ResolveTicket'),
+     CHECK (reason IN (${schemaTextSet(reasonTags)})),
+     CHECK (authorizing_seq >= 1 AND effect_position >= 0 AND ticket >= 1 AND action_version = authorizing_seq)
+   )`,
+  `CREATE UNIQUE INDEX native_action_one_open ON native_action (tenant, project, ticket) WHERE state = 'Open'`,
+  `CREATE TABLE native_action_resolution (
+     tenant text NOT NULL, project text NOT NULL, action text NOT NULL, resolution text NOT NULL,
+     PRIMARY KEY (tenant, project, action, resolution),
+     FOREIGN KEY (tenant, project, action) REFERENCES native_action (tenant, project, action)
+     ,CHECK (resolution IN ('Resume', 'Revoke'))
+   )`,
+  `CREATE TABLE execution_request (
+     tenant text NOT NULL, project text NOT NULL, request text NOT NULL,
+     authorizing_seq bigint NOT NULL, effect_position integer NOT NULL,
+     ticket bigint NOT NULL, ticket_version bigint NOT NULL, kind text NOT NULL,
+     state text NOT NULL DEFAULT 'Open', claim_owner text, claim_generation bigint NOT NULL DEFAULT 0,
+     claim_expires_at timestamptz,
+     PRIMARY KEY (tenant, project, request),
+     UNIQUE (tenant, project, authorizing_seq, effect_position, kind),
+     FOREIGN KEY (tenant, project, authorizing_seq) REFERENCES journal_entry (tenant, project, seq),
+     CHECK (kind IN ('SpawnWork', 'SpawnEvaluation', 'CancelTicketWork')),
+     CHECK (state IN ('Open', 'Registered', 'Fulfilled', 'Invalidated')),
+     CHECK ((claim_owner IS NULL) = (claim_expires_at IS NULL)),
+     CHECK (authorizing_seq >= 1 AND effect_position >= 0 AND ticket >= 1 AND ticket_version = authorizing_seq AND claim_generation >= 0)
+   )`,
+  `CREATE TABLE execution_request_task (
+     tenant text NOT NULL, project text NOT NULL, request text NOT NULL,
+     task bigint NOT NULL, kind text NOT NULL, stage bigint,
+     PRIMARY KEY (tenant, project, request, task),
+     FOREIGN KEY (tenant, project, request) REFERENCES execution_request (tenant, project, request),
+     CHECK (kind IN ('Work', 'Evaluation')),
+     CHECK ((kind = 'Work' AND stage IS NULL) OR (kind = 'Evaluation' AND stage IS NOT NULL AND stage >= 0)),
+     CHECK (task >= 1)
+   )`,
+  `CREATE TABLE finalization_request (
+     tenant text NOT NULL, project text NOT NULL, request text NOT NULL,
+     authorizing_seq bigint NOT NULL, effect_position integer NOT NULL,
+     ticket bigint NOT NULL, ticket_version bigint NOT NULL, request_generation bigint NOT NULL,
+     state text NOT NULL DEFAULT 'Open', claim_owner text, claim_generation bigint NOT NULL DEFAULT 0,
+     claim_expires_at timestamptz,
+     PRIMARY KEY (tenant, project, request),
+     UNIQUE (tenant, project, authorizing_seq, effect_position),
+     FOREIGN KEY (tenant, project, authorizing_seq) REFERENCES journal_entry (tenant, project, seq),
+     CHECK (state IN ('Open', 'Registered', 'Fulfilled', 'Invalidated')),
+     CHECK ((claim_owner IS NULL) = (claim_expires_at IS NULL)),
+     CHECK (authorizing_seq >= 1 AND effect_position >= 0 AND ticket >= 1 AND ticket_version = authorizing_seq AND request_generation >= 1 AND claim_generation >= 0)
+   )`,
+  `CREATE UNIQUE INDEX finalization_request_one_open ON finalization_request (tenant, project, ticket) WHERE state = 'Open'`,
+  `CREATE FUNCTION ${acceptanceFunction}(
+      in_tenant text, in_project text, in_operation text,
+      in_authority_kind text, in_authority_subject text,
+      in_key_version text, in_key_digest text, in_payload_digest text,
+      in_retained_key_digests text[], in_retained_payload_digests text[],
+      in_command text, in_command_tag text, in_priority text, in_admission text,
+      in_admitted_lifecycles text[], in_ordinary_soft_limit bigint, in_hard_limit bigint,
+      in_action text, in_authorizing_seq bigint, in_resolution text)
+     RETURNS TABLE(result text, operation text, ordinal bigint, state text,
+       authority_kind text, admission text, lifecycle_generation bigint, lifecycle text)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+     DECLARE project_lifecycle text; project_generation bigint; next_ordinal bigint;
+       pending_total bigint; pending_ordinary bigint; existing record;
+     BEGIN
+       IF cardinality(in_retained_key_digests) <> cardinality(in_retained_payload_digests)
+          OR NOT (
+            (in_command_tag='Revoke' AND in_priority='Safety' AND in_admission='CorrectnessReducing') OR
+            (in_command_tag IN ('TaskDone','ExecutionBlocked','FinalizationResult') AND in_priority='Completion' AND in_admission='CorrectnessReducing') OR
+            (in_command_tag='ResolveNativeAction' AND in_admission='CorrectnessReducing'
+              AND ((in_resolution='Revoke' AND in_priority='Safety') OR (in_resolution='Resume' AND in_priority='Ordinary'))) OR
+            (in_command_tag IN ('ReleaseTicket','Dispatch','ResumeTicket') AND in_priority='Ordinary' AND in_admission='Ordinary'))
+       THEN
+         RAISE EXCEPTION 'untrusted operation classification';
+       END IF;
+
+       SELECT p.lifecycle, p.lifecycle_generation INTO STRICT project_lifecycle, project_generation
+         FROM project p WHERE p.tenant=in_tenant AND p.project=in_project FOR UPDATE;
+
+       SELECT o.operation, d.ordinal, d.state, o.authority_kind, o.admission,
+              d.lifecycle_generation, offered.payload_digest AS offered_payload, o.payload_digest
+         INTO existing
+         FROM unnest(in_retained_key_digests, in_retained_payload_digests)
+              AS offered(key_digest, payload_digest)
+         JOIN operation o ON o.tenant=in_tenant AND o.project=in_project
+              AND o.authority_kind=in_authority_kind AND o.key_digest=offered.key_digest
+         JOIN decision_input d ON d.tenant=o.tenant AND d.project=o.project
+              AND d.input_kind='Operation' AND d.input_id=o.operation
+         LIMIT 1;
+       IF FOUND THEN
+         IF existing.payload_digest IS DISTINCT FROM existing.offered_payload THEN
+           RETURN QUERY SELECT 'IdempotencyConflict'::text, NULL::text, NULL::bigint,
+             NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         ELSE
+           RETURN QUERY SELECT 'Original'::text, existing.operation::text,
+             existing.ordinal::bigint, existing.state::text, existing.authority_kind::text,
+             existing.admission::text, existing.lifecycle_generation::bigint, NULL::text;
+         END IF;
+         RETURN;
+       END IF;
+
+       IF in_command_tag='ResolveNativeAction' AND NOT EXISTS (
+         SELECT 1 FROM native_action a JOIN native_action_resolution r
+           USING (tenant, project, action)
+          WHERE a.tenant=in_tenant AND a.project=in_project AND a.action=in_action
+            AND a.state='Open' AND a.authorizing_seq=in_authorizing_seq
+            AND r.resolution=in_resolution FOR UPDATE OF a)
+       THEN
+         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+
+       SELECT count(*), count(*) FILTER (WHERE d.base_priority='Ordinary')
+         INTO pending_total, pending_ordinary FROM decision_input d
+        WHERE d.tenant=in_tenant AND d.project=in_project AND d.state='Pending';
+       IF pending_total >= in_hard_limit THEN
+         RETURN QUERY SELECT 'Unavailable'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+       IF in_priority='Ordinary' AND pending_ordinary >= in_ordinary_soft_limit THEN
+         RETURN QUERY SELECT 'Backpressure'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+       IF NOT project_lifecycle = ANY(in_admitted_lifecycles) THEN
+         RETURN QUERY SELECT 'NotAdmitted'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, project_lifecycle;
+         RETURN;
+       END IF;
+
+       UPDATE project p SET ingress_next=p.ingress_next+1
+        WHERE p.tenant=in_tenant AND p.project=in_project
+        RETURNING p.ingress_next-1 INTO next_ordinal;
+       INSERT INTO operation
+         (tenant, project, operation, authority_kind, authority_subject, admission,
+          key_version, key_digest, payload_digest, command, command_tag)
+       VALUES (in_tenant, in_project, in_operation, in_authority_kind, in_authority_subject,
+          in_admission, in_key_version, in_key_digest, in_payload_digest, in_command, in_command_tag);
+       INSERT INTO decision_input (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
+       VALUES (in_tenant, in_project, next_ordinal, 'Operation', in_operation, in_priority, project_generation);
+       INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES (in_tenant, in_project, true, 1)
+       ON CONFLICT (tenant, project) DO UPDATE
+         SET ready=true, generation=project_readiness.generation+1;
+       RETURN QUERY SELECT 'Accepted'::text, in_operation, next_ordinal, 'Pending'::text,
+         in_authority_kind, in_admission, project_generation, NULL::text;
+     END $$`,
+  `CREATE FUNCTION ${continuationFunction}(in_tenant text, in_project text, in_ordinal bigint,
+      in_continuation text) RETURNS void
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+     BEGIN
+       INSERT INTO decision_input (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
+       SELECT in_tenant, in_project, in_ordinal, 'Continuation', in_continuation, 'Continuation', lifecycle_generation
+         FROM project WHERE tenant=in_tenant AND project=in_project;
+     END $$`,
+  `CREATE OR REPLACE FUNCTION ${cancellationFunction}(
+     in_tenant text, in_project text, in_operation text,
+     in_authority_kind text, in_authority_subject text) RETURNS text
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+     DECLARE locked_state text;
+     BEGIN
+       SELECT state INTO locked_state FROM decision_input
+        WHERE tenant=in_tenant AND project=in_project AND input_kind='Operation' AND input_id=in_operation FOR UPDATE;
+       IF NOT FOUND THEN RETURN NULL; END IF;
+       IF locked_state <> 'Pending' THEN RETURN CASE locked_state WHEN 'Journaled' THEN 'Succeeded' ELSE locked_state END; END IF;
+       UPDATE decision_input SET state='Cancelled', terminal_at=now(),
+         settled_authority_kind=in_authority_kind, settled_authority_subject=in_authority_subject
+        WHERE tenant=in_tenant AND project=in_project AND input_kind='Operation' AND input_id=in_operation;
+       RETURN locked_state;
+     END $$`,
+  `ALTER FUNCTION ${acceptanceFunction}(text,text,text,text,text,text,text,text,text[],text[],text,text,text,text,text[],bigint,bigint,text,bigint,text) OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${continuationFunction}(text,text,bigint,text) OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${cancellationFunction}(text,text,text,text,text) OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ${acceptanceFunction}(text,text,text,text,text,text,text,text,text[],text[],text,text,text,text,text[],bigint,bigint,text,bigint,text) FROM PUBLIC`,
+  `REVOKE ALL ON FUNCTION ${continuationFunction}(text,text,bigint,text) FROM PUBLIC`,
+  `REVOKE ALL ON FUNCTION ${cancellationFunction}(text,text,text,text,text) FROM PUBLIC`,
+  `GRANT SELECT, INSERT ON operation, decision_input, project, project_readiness,
+     native_action, native_action_resolution TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (ingress_next) ON project TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (ready, generation) ON project_readiness TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (state) ON native_action TO ${boundaryOwnerRole}`,
+  `GRANT USAGE ON SCHEMA public TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (state, terminal_at, settled_authority_kind, settled_authority_subject) ON decision_input TO ${boundaryOwnerRole}`,
+  `GRANT EXECUTE ON FUNCTION ${acceptanceFunction}(text,text,text,text,text,text,text,text,text[],text[],text,text,text,text,text[],bigint,bigint,text,bigint,text) TO ${apiRole}`,
+  `GRANT EXECUTE ON FUNCTION ${continuationFunction}(text,text,bigint,text) TO ${ticketServiceRole}`,
+  `GRANT EXECUTE ON FUNCTION ${cancellationFunction}(text,text,text,text,text) TO ${apiRole}`,
+  `REVOKE INSERT ON decision_input FROM ${apiRole}, ${ticketServiceRole}`,
+  `REVOKE INSERT ON operation FROM ${apiRole}`,
+  `REVOKE UPDATE (ingress_next) ON project FROM ${apiRole}`,
+  `REVOKE INSERT, UPDATE ON project_readiness FROM ${apiRole}`,
+  `GRANT SELECT ON decision_input, project_continuation, native_action, native_action_resolution,
+     execution_request, execution_request_task, finalization_request TO ${ticketServiceRole}`,
+  `GRANT UPDATE (state, decided_seq, outcome_code, refused_head, refused_lifecycle_generation,
+     terminal_at, settled_authority_kind, settled_authority_subject) ON decision_input TO ${ticketServiceRole}`,
+  `GRANT INSERT ON native_action, native_action_resolution, execution_request,
+     execution_request_task, finalization_request, project_continuation TO ${ticketServiceRole}`,
+  `GRANT UPDATE (state) ON native_action TO ${ticketServiceRole}`,
+  `GRANT UPDATE (state) ON finalization_request TO ${ticketServiceRole}`,
+  `REVOKE CREATE ON SCHEMA public FROM ${boundaryOwnerRole}`,
+  `REVOKE ${boundaryOwnerRole} FROM CURRENT_USER`,
 ];
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -608,7 +944,7 @@ export const migrations: readonly Migration[] = [
     version: 1,
     name: "the project foundation",
     statements: [
-      roleStatement(dispatcherRole),
+      roleStatement(historicalDispatcherRole),
       ...foundationRelations,
       ...foundationGrants,
     ],
@@ -637,5 +973,10 @@ export const migrations: readonly Migration[] = [
     version: 4,
     name: "the tenure fence",
     statements: [...tenureFence],
+  },
+  {
+    version: 5,
+    name: "the durable prioritized decision mailbox",
+    statements: [...durableMailbox],
   },
 ];

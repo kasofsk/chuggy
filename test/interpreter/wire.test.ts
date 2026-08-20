@@ -37,7 +37,6 @@ import {
 import { recordEquals } from "../../src/actor/equality.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
-import { journalStoreStub } from "../../src/adapters/journalStoreStub.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
   encodeEntry,
@@ -201,8 +200,7 @@ test("a row is refused, with the field named, for each way the wire can lie", ()
 
 /**
  * The model types a record's effects as strings, so the wire carries any of
- * them and the vocabulary is enforced one layer out, where an emission is
- * planned — `test/interpreter/subject.test.ts` holds that refusal.
+ * them and the vocabulary is enforced by the pure decision planner.
  */
 test("an effect string outside the vocabulary passes the wire, which does not know the vocabulary", () => {
   const read = accepted(
@@ -233,42 +231,4 @@ test("a whole journal is refused when it is not a list of rows, and by the index
     both.value.map((entry) => entry.seq),
     [1, 2],
   );
-});
-
-test("the store refuses a row it cannot read as JSON before the schema is asked", async () => {
-  const store = journalStoreStub();
-  await store.append(journaledRelease());
-  store.rows[0] = "{ not json";
-  const loaded = await store.load();
-  assert.equal(loaded.parsed, "Refused");
-  assert.ok(loaded.parsed === "Refused");
-  assert.match(loaded.why, /not JSON/);
-});
-
-test("the store refuses a stored row edited into a shape the machine does not write", async () => {
-  const store = journalStoreStub();
-  const written = journaledRelease();
-  await store.append(written);
-  store.rows[0] = JSON.stringify({
-    ...JSON.parse(encodeEntry(written)),
-    rec: {
-      ...written.rec,
-      transitions: [{ ticket: 1, from: "PParked", to: "Done" }],
-    },
-  });
-  const loaded = await store.load();
-  assert.equal(loaded.parsed, "Refused");
-  assert.ok(loaded.parsed === "Refused");
-  assert.match(loaded.why, /"transitions"/);
-});
-
-test("an untouched store reads back what it was given", async () => {
-  const store = journalStoreStub();
-  const written = journaledRelease();
-  await store.append(written);
-  const loaded = await store.load();
-  assert.ok(loaded.parsed === "Ok");
-  assert.equal(loaded.value.length, 1);
-  assert.deepEqual(loaded.value[0]?.event, written.event);
-  assert.ok(recordEquals(loaded.value[0]?.rec ?? plainRecord, written.rec));
 });

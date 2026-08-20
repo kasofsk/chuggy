@@ -1,6 +1,6 @@
 /**
  * The `ProjectStore` answered by PostgreSQL: the durable authority a
- * dispatcher holds one project partition under.
+ * ticket service holds one project partition under.
  *
  * IT ASSEMBLES AND DECIDES NOTHING. Ownership is `./ownership.ts`'s and the
  * load is `./journal.ts`'s, and this file exists so the port has one
