@@ -149,7 +149,7 @@ test("an entry offered at the wrong sequence is the writer's bug, not a refusal"
   );
 });
 
-test("each stored digest chains onto its predecessor, and the first onto genesis", async () => {
+test("each stored digest chains onto its predecessor, and the first onto the partition's genesis", async () => {
   const partition = await postgresHarnessProject(harness.store, "chain");
   const journal = postgresHarnessJournal();
   await appendAll(await held(partition, "writer"), journal);
@@ -160,14 +160,49 @@ test("each stored digest chains onto its predecessor, and the first onto genesis
   )) as readonly { entry_digest: string; prev_digest: string }[];
 
   assert.equal(stored.length, journal.length);
-  let previous = journalChainGenesis;
+  let previous = journalChainGenesis(partition);
   for (const [at, row] of stored.entries()) {
     const entry = journal[at];
     assert.ok(entry !== undefined);
     assert.equal(row.prev_digest, previous);
-    assert.equal(row.entry_digest, journalChainDigest(previous, entry));
+    assert.equal(
+      row.entry_digest,
+      journalChainDigest(partition, previous, entry),
+    );
     previous = row.entry_digest;
   }
+});
+
+test("a journal grafted onto another partition disagrees at its first entry", async () => {
+  const home = await postgresHarnessProject(harness.store, "graft");
+  const away = await postgresHarnessProject(harness.store, "grafted");
+  const journal = postgresHarnessJournal();
+  await appendAll(await held(home, "writer"), journal);
+
+  await harness.query(
+    `INSERT INTO journal_entry
+       (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch, recovery_epoch)
+     SELECT $3, $4, seq, entry, entry_digest, prev_digest, owner, fencing_epoch, recovery_epoch
+       FROM journal_entry WHERE tenant = $1 AND project = $2`,
+    [home.tenant, home.project, away.tenant, away.project],
+  );
+  await harness.query(
+    "UPDATE project SET head = $3 WHERE tenant = $1 AND project = $2",
+    [away.tenant, away.project, journal.length],
+  );
+
+  const stored = (await harness.query(
+    "SELECT entry_digest, prev_digest FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq",
+    [away.tenant, away.project],
+  )) as readonly { entry_digest: string; prev_digest: string }[];
+  const first = stored[0];
+  const entry = journal[0];
+  assert.ok(first !== undefined && entry !== undefined);
+  assert.notEqual(first.prev_digest, journalChainGenesis(away));
+  assert.notEqual(
+    first.entry_digest,
+    journalChainDigest(away, first.prev_digest, entry),
+  );
 });
 
 test("a stored row that is not JSON is refused by returning, not thrown on", async () => {

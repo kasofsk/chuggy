@@ -13,25 +13,68 @@
  * payload and nothing else; chaining each digest onto its predecessor also
  * catches truncation, reordering and a restore spliced onto the wrong
  * history, which are the failures a backup actually produces.
+ *
+ * WHY THE PARTITION IS IN THE HASH. A chain over entries alone is self
+ * consistent wherever it is kept, so rows copied into another tenant or
+ * project with the key columns rewritten and the head moved to match verify
+ * exactly as they did at home — and a mismatched restore is one of the things
+ * 006 gives the chain to detect. The genesis is derived from the partition and
+ * every digest carries it, so a grafted chain disagrees at its first entry
+ * rather than wherever a verifier happens to start.
+ *
+ * WHAT IS HASHED IS SELF-DELIMITING. Each part is written after its own
+ * length, because identities joined by a separator let one pair of them
+ * produce another pair's bytes, and a digest is only as good as the input
+ * nothing else can imitate.
  */
 
 import { createHash } from "node:crypto";
 
 import type { Entry } from "../../actor/journal.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import { encodeEntry } from "../../interpreter/wire.ts";
 
-/**
- * The predecessor digest of the first entry in a project. It is a fixed label
- * rather than an empty string so a chain that lost its head cannot be mistaken
- * for one that never had entries.
- */
-export const journalChainGenesis = "chuggy:journal:genesis:v1";
+/** Names the format these digests are of, so a chain cannot be read as a later one's. */
+const journalChainFormat = "chuggy:journal:v1";
 
-/** The digest of one entry given its predecessor's, which is what makes the chain a chain. */
-export function journalChainDigest(previous: string, entry: Entry): string {
+/** Joins the parts as bytes no other list of parts produces, by writing each after its length. */
+function journalChainInput(parts: readonly string[]): string {
+  return parts.map((part) => `${String(part.length)}:${part}`).join("");
+}
+
+/**
+ * The predecessor digest of the first entry in a partition. It is derived
+ * rather than fixed, so a chain that lost its head cannot be mistaken for one
+ * that never had entries, nor for another partition's.
+ */
+export function journalChainGenesis(partition: Partition): string {
   return createHash("sha256")
-    .update(previous)
-    .update("\n")
-    .update(encodeEntry(entry))
+    .update(
+      journalChainInput([
+        journalChainFormat,
+        "genesis",
+        partition.tenant,
+        partition.project,
+      ]),
+    )
+    .digest("hex");
+}
+
+/** The digest of one entry given its predecessor's, bound to the partition whose chain it is. */
+export function journalChainDigest(
+  partition: Partition,
+  previous: string,
+  entry: Entry,
+): string {
+  return createHash("sha256")
+    .update(
+      journalChainInput([
+        journalChainFormat,
+        partition.tenant,
+        partition.project,
+        previous,
+        encodeEntry(entry),
+      ]),
+    )
     .digest("hex");
 }

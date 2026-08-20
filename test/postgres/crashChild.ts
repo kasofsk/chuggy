@@ -86,7 +86,7 @@ async function crashChildInsert(
       lease.partition.project,
       entry.seq,
       encodeEntry(entry),
-      journalChainDigest(previous, entry),
+      journalChainDigest(lease.partition, previous, entry),
       previous,
       lease.owner,
       lease.fencingEpoch,
