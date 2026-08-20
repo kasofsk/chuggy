@@ -223,6 +223,25 @@ export function materializationOf(
       entry.event.type === "FinalizationResult"
         ? [asTicketId(entry.event.value.ticket)]
         : [],
+    withdrawActionsFor:
+      input.source.kind === "Operation" &&
+      input.source.nativeAction !== undefined
+        ? []
+        : [
+            ...new Set(
+              entry.rec.transitions.map((transition) => transition.ticket),
+            ),
+          ]
+            .map(asTicketId)
+            .filter((ticket) => {
+              const before = pre.tickets.get(ticket);
+              const after = post.tickets.get(ticket);
+              return (
+                before?.phase === "Escalated" &&
+                after !== undefined &&
+                after.phase !== "Escalated"
+              );
+            }),
     ...(input.source.kind === "Operation" &&
     input.source.nativeAction !== undefined
       ? { resolveAction: input.source.nativeAction }

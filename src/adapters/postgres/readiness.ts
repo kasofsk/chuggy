@@ -1,5 +1,5 @@
 /**
- * Discovery: the readiness rows a fleet reads, the inbox items an activation
+ * Discovery: the readiness rows a fleet reads, the decision inputs an activation
  * verifies against, and the clearing an idle owner is allowed to do.
  *
  * DISCOVERY READS READINESS AND NOTHING ELSE. `docs/design/006-durable-project-dispatch.md`
@@ -15,7 +15,7 @@
  * rather than load-bearing.
  *
  * NO WAKE-UP IS ERASED, AND THE READINESS ROW LOCK IS WHAT ORDERS THE TWO
- * TRANSACTIONS. An acceptance writes its inbox item and its readiness upsert
+ * TRANSACTIONS. An acceptance writes its decision input and its readiness upsert
  * together, so either it commits before the clearing takes that lock — leaving
  * a raised generation and a visible item for the checks below to refuse on — or
  * it has not reached the upsert and blocks there. In that second branch the

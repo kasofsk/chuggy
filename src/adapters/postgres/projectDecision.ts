@@ -6,7 +6,7 @@
  * Every statement is `./decision.ts`'s, and this file exists so the port has
  * one implementation to name.
  *
- * THE POOL IS THE DISPATCHER'S AND IT IS NOT THE INBOX'S, for the reason
+ * THE POOL IS THE TICKET SERVICE'S AND IT IS NOT THE API'S, for the reason
  * `./projectDiscovery.ts` states: 006 gives runtime services separate
  * credentials, and one pool answering both ports would undo that.
  */
@@ -64,6 +64,9 @@ export function postgresProjectDecision(
             metrics.nativeAction("Resolved");
           });
         }
+        repeat(materialization.withdrawActionsFor.length, () => {
+          metrics.nativeAction("Withdrawn");
+        });
         if (materialization.continuation !== undefined) {
           observe(() => {
             metrics.continuation("Created");

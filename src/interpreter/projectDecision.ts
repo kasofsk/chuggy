@@ -1,9 +1,9 @@
 /**
  * The project decision transaction: the one commit that turns an accepted
- * operation into a journaled decision or into a durable refusal.
+ * decision input into a journaled decision or into a durable refusal.
  *
- * WHY THIS IS ONE CALL AND NOT SIX. The journal entry, the operation outcome,
- * the inbox acknowledgement and the projection are one transaction in
+ * WHY THIS IS ONE CALL AND NOT SIX. The journal entry, the input outcome and
+ * the projection are one transaction in
  * `docs/design/006-durable-project-dispatch.md`, and a port offering them
  * separately would invite an implementation that journaled a decision and then
  * failed to settle the operation that authorized it — a project whose head has
@@ -13,7 +13,7 @@
  * present a decision without presenting what authorizes it.
  *
  * WHY IT IS NOT A METHOD ON `./projectStore.ts`. That port is answered by the
- * dispatcher role as this one is, so authority does not split them — the
+ * ticket-service role as this one is, so authority does not split them — the
  * module graph does. A decision names the operation that caused it, operation
  * identity is `./operationInbox.ts`'s, and that module already reads
  * `./projectStore.ts`; putting the decision there would make the two import
@@ -29,7 +29,7 @@
  * are looked at, and a still-pending operation falls through to the fences and
  * is decided again.
  *
- * A REFUSAL WRITES NO ENTRY. It settles the operation, acknowledges the item
+ * A REFUSAL WRITES NO ENTRY. It settles the decision input
  * and moves nothing else, so the head, the projection and the journal are
  * exactly as they were — which is what makes a refusal replayable as an
  * absence rather than as a decision the machine did not take.
@@ -124,6 +124,7 @@ export interface DecisionMaterialization {
     readonly requestGeneration: number;
   }[];
   readonly fulfillFinalizationFor: readonly TicketId[];
+  readonly withdrawActionsFor: readonly TicketId[];
   readonly resolveAction?: {
     readonly action: string;
     readonly authorizingSeq: number;

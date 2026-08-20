@@ -1,10 +1,10 @@
 /**
- * The durable discovery side of a project fleet: how a dispatcher finds a
+ * The durable discovery side of a project fleet: how a ticket-service writer finds a
  * project with work waiting, what it verifies that readiness against, and what
  * it must prove before it stops being found.
  *
  * WHY THIS IS NOT PART OF `OperationInbox`. Acceptance and cancellation are
- * the API's transactions and these three are a dispatcher's, and
+ * the API's transactions and these three are a writer's, and
  * `docs/design/006-durable-project-dispatch.md` says runtime services do not
  * share an omnipotent credential. A port whose methods two roles answer is a
  * port no set of grants can describe — the grant is where that boundary is
@@ -21,7 +21,7 @@
  * neither reads anything of a project but its readiness and its inbox.
  *
  * EVERY REFUSAL IS A VALUE, as in `./projectStore.ts`. A generation another
- * acceptance superseded and an inbox item the owner had not accounted for are
+ * acceptance superseded and a decision input the owner had not accounted for are
  * outcomes a caller must handle, not exceptions it may ignore.
  */
 
@@ -40,7 +40,7 @@ export interface Readiness {
 }
 
 /**
- * One durable inbox item, in the ordinal order acceptance allocated it. It
+ * One durable decision input, in the ordinal order acceptance allocated it. It
  * carries its operation's command because deciding it is what a writer
  * consumes it for, and a second read to fetch that would be a second
  * transaction the first one's answer could already be stale in.

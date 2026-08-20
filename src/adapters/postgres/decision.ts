@@ -1,6 +1,6 @@
 /**
- * The decision transaction: the journal entry, the operation outcome, the
- * inbox acknowledgement and the projection, or none of them.
+ * The decision transaction: the journal entry, the input outcome, the
+ * projection and focused work, or none of them.
  *
  * THE CAUSE IS LOCKED AND READ BEFORE ANY FENCE IS CHECKED. A writer whose
  * commit was acknowledged by nobody retries with the head it held before that
@@ -51,7 +51,7 @@ import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
 import { continuationFunction } from "./schema.ts";
 
-/** One operation row as the decision transaction reads it, under the lock it just took. */
+/** One decision-input row as the transaction reads it under its lock. */
 interface DecisionCauseRow {
   readonly state: string;
   readonly outcome_code: string | null;
@@ -69,7 +69,7 @@ function decisionRefusalCode(value: string): RefusalCode {
   return found;
 }
 
-/** What a settled operation says about itself, refusing a row whose state and outcome disagree. */
+/** What a settled input says about itself, refusing a row whose state and outcome disagree. */
 function decisionOutcomeOf(row: DecisionCauseRow): DecisionInputOutcome {
   if (row.state === "Cancelled") return { settled: "Cancelled" };
   if (row.state === "Stale") return { settled: "Stale" };
@@ -83,11 +83,11 @@ function decisionOutcomeOf(row: DecisionCauseRow): DecisionInputOutcome {
     };
   }
   throw new Error(
-    `decision row: a ${row.state} operation carries no outcome, which no settlement writes`,
+    `decision row: a ${row.state} input carries no outcome, which no settlement writes`,
   );
 }
 
-/** Locks the cause and reads it, refusing a partition that has no such operation. */
+/** Locks the cause and reads it, refusing a partition that has no such input. */
 async function decisionLockCause(
   client: pg.PoolClient,
   partition: Partition,
@@ -108,7 +108,7 @@ async function decisionLockCause(
   return row;
 }
 
-/** Settles the operation and makes its inbox item non-consumable, which together are the acknowledgement. */
+/** Settles the decision input with its terminal evidence. */
 async function decisionSettle(
   client: pg.PoolClient,
   lease: Lease,
@@ -244,20 +244,12 @@ async function decisionActions(
 ): Promise<void> {
   const seq = outcome.entry.seq;
   const resolved = outcome.materialization.resolveAction;
-  for (const projection of outcome.projection) {
-    if (projection.phase !== "Escalated") {
-      await client.query(
-        `UPDATE native_action SET state='Withdrawn'
-          WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'
-            AND ($4::text IS NULL OR action <> $4)`,
-        [
-          partition.tenant,
-          partition.project,
-          projection.ticket,
-          resolved?.action ?? null,
-        ],
-      );
-    }
+  for (const ticket of outcome.materialization.withdrawActionsFor) {
+    await client.query(
+      `UPDATE native_action SET state='Withdrawn'
+        WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
+      [partition.tenant, partition.project, ticket],
+    );
   }
   for (const action of outcome.materialization.actions) {
     await client.query(

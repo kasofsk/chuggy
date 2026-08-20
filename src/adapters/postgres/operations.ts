@@ -20,11 +20,10 @@
  * rotation without receiving either plaintext keys or digest secrets. The
  * project lock serializes the lookup and current-key claim within a partition.
  *
- * NOTHING HERE CONSUMES. The inbox item is written consumable and only
- * cancellation lowers that flag; acknowledging one is the decision
- * transaction's, and so is any terminal state but `Cancelled`.
+ * NOTHING HERE CONSUMES. Acceptance publishes a pending decision input;
+ * cancellation or the decision transaction alone may terminalize it.
  *
- * CANCELLATION LOCKS THE OPERATION ROW AND NOTHING ELSE. It takes no lease, no
+ * CANCELLATION LOCKS THE DECISION INPUT AND NOTHING ELSE. It takes no lease, no
  * lifecycle and no project row, because 006 requires it to remain available
  * without a healthy project writer — and it races that writer on the one row
  * lock they share, with the server's own trigger refusing whichever of them
@@ -82,7 +81,7 @@ import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowLifecycle } from "./rows.ts";
 import { acceptanceFunction, cancellationFunction } from "./schema.ts";
 
-/** One operation row with the ordinal of the inbox item it was accepted into. */
+/** One operation row with the ordinal of its decision input. */
 export interface OperationRow {
   readonly tenant: string;
   readonly project: string;
@@ -102,7 +101,7 @@ const operationRowColumns = `
   o.key_version, o.payload_digest, d.lifecycle_generation, d.ordinal
 `;
 
-/** An operation is read with its inbox item, because its ordinal is what the item carries. */
+/** An operation is read with its decision input, which owns processing state and ordinal. */
 const operationRowFrom = `
   operation o
   JOIN decision_input d
@@ -131,11 +130,11 @@ function operationRowAdmission(value: string): AdmissionClass {
   return found;
 }
 
-/** What the row says about itself, refusing an accepted operation that reached no inbox item. */
+/** What the row says about itself, refusing an operation with no decision input. */
 export function operationRowStanding(row: OperationRow): OperationStanding {
   if (row.ordinal === null) {
     throw new Error(
-      `operation row: ${row.operation} was accepted with no inbox item, which no acceptance writes`,
+      `operation row: ${row.operation} was accepted with no decision input`,
     );
   }
   return {
@@ -144,7 +143,7 @@ export function operationRowStanding(row: OperationRow): OperationStanding {
       project: asProjectId(row.project),
     },
     operation: asOperationId(row.operation),
-    ordinal: projectRowCounter(row.ordinal, "inbox ordinal"),
+    ordinal: projectRowCounter(row.ordinal, "decision-input ordinal"),
     state: operationRowState(row.state),
     authorityKind: asAuthorityKind(row.authority_kind),
     admission: operationRowAdmission(row.admission),
@@ -246,7 +245,7 @@ function acceptanceResult(
   }
 }
 
-/** Accepts one submission, writing its operation, inbox item and readiness generation together. */
+/** Accepts one submission, writing its operation, decision input and readiness generation together. */
 export async function postgresOperationsAccept(
   pool: pg.Pool,
   keying: IdempotencyKeying,

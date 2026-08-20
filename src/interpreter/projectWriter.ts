@@ -15,13 +15,9 @@
  * reload. Both halves are here: nothing below awaits between the plan and the
  * commit, and nothing installs a plan the commit refused.
  *
- * A COMMAND IS THE DECISION EVENT IT ASKS FOR, and that is the smallest
- * command vocabulary this tree can have. 006's richer typed commands name a
- * draft revision, an observed ticket version or a selection digest, and each
- * arrives with the slice that has one to name; the parse below is where they
- * will branch. What is already true is the shape: a command that does not read
- * as something the machine could decide is refused durably rather than
- * retried, because no amount of retrying will make it parse.
+ * COMMANDS ARRIVE PARSED AND CLASSIFIED. Structural readability, admission and
+ * priority belong to authenticated ingress; this writer alone decides whether
+ * the requested domain transition is enabled at its serialized position.
  *
  * THE PROJECTION IS DERIVED, NEVER OBSERVED. Its rows are a function of the
  * replayed `Core` alone, so rebuilding them from the journal and folding the
@@ -51,6 +47,7 @@ import type {
 import type { Lease, ProjectStore } from "./projectStore.ts";
 import { materializationOf } from "./decisionPlan.ts";
 import {
+  checkedTicketServiceConfig,
   observe,
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -272,10 +269,11 @@ export async function projectTicketWriterRun(
   config: TicketServiceConfig = ticketServiceDefaults,
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
 ): Promise<ProjectMemory> {
+  const checked = checkedTicketServiceConfig(config);
   let memory = await projectWriterLoad(writer, lease);
   const started = monotonicNow();
-  for (let count = 0; count < config.writerDecisionQuantum; count += 1) {
-    if (monotonicNow() - started >= config.writerTimeQuantumMilliseconds) {
+  for (let count = 0; count < checked.writerDecisionQuantum; count += 1) {
+    if (monotonicNow() - started >= checked.writerTimeQuantumMilliseconds) {
       observe(() => {
         metrics.quantumExhausted("Time");
       });
@@ -283,7 +281,7 @@ export async function projectTicketWriterRun(
     }
     const input = await discovery.next(
       lease.partition,
-      config.agingIntervalSeconds,
+      checked.agingIntervalSeconds,
     );
     if (input === undefined) {
       await discovery.clearReadiness(readiness);

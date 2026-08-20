@@ -3,7 +3,9 @@ import { test } from "node:test";
 
 import {
   dispatchEvent,
+  executionBlockedEvent,
   releaseTicketEvent,
+  revokeEvent,
   taskDoneEvent,
 } from "../../src/actor/decisionEvent.ts";
 import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
@@ -116,6 +118,38 @@ test("dispatch materializes exact logical work tasks from the pure state delta",
   assert.equal(planned.execution.length, 1);
   assert.equal(planned.execution[0]?.kind, "SpawnWork");
   assert.equal(planned.execution[0]?.tasks.length, plainAuthoring.workFanout);
+});
+
+test("a decision leaving escalation withdraws its open native action", () => {
+  const released = journalStep(
+    refinementInstance,
+    actorInit(),
+    releaseTicketEvent(id(1), plainAuthoring),
+  );
+  const working = journalStep(
+    refinementInstance,
+    released,
+    dispatchEvent(id(1)),
+  );
+  const escalated = journalStep(
+    refinementInstance,
+    working,
+    executionBlockedEvent(id(1), "TicketConfigIncompatible"),
+  );
+  const revoked = journalStep(
+    refinementInstance,
+    escalated,
+    revokeEvent(id(1)),
+  );
+  const entry = revoked.journal.at(-1);
+  assert.ok(entry !== undefined);
+  const planned = materializationOf(
+    input(asOperationDecisionEvent(entry.event)),
+    memoryCore(escalated),
+    memoryCore(revoked),
+    entry,
+  );
+  assert.deepEqual(planned.withdrawActionsFor, [id(1)]);
 });
 
 test("telemetry failures cannot escape into ticket-service correctness", () => {
