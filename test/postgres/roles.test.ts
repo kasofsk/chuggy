@@ -33,7 +33,7 @@ import {
 } from "../../src/adapters/postgres/schema.ts";
 import type { Submission } from "../../src/interpreter/operationInbox.ts";
 import {
-  postgresHarnessLease,
+  postgresHarnessHeld,
   postgresHarnessOpen,
   postgresHarnessOwner,
   postgresHarnessProject,
@@ -399,7 +399,7 @@ test("the dispatcher role cannot move a projection row across the key it is file
 
 test("no role may move a project's fencing epoch backwards", async () => {
   const partition = await postgresHarnessProject(harness.store, "backwards");
-  const held = await postgresHarnessLease(harness.store, partition, "holder");
+  const held = await postgresHarnessHeld(harness.store, partition, "holder");
   const refusal = await harness.attemptAs(
     dispatcherRole,
     `UPDATE project SET fencing_epoch = ${String(held.fencingEpoch - 1)}
@@ -410,7 +410,7 @@ test("no role may move a project's fencing epoch backwards", async () => {
 
 test("no role may write a fenced tenure back into an active project", async () => {
   const partition = await postgresHarnessProject(harness.store, "reinstate");
-  const former = await postgresHarnessLease(harness.store, partition, "former");
+  const former = await postgresHarnessHeld(harness.store, partition, "former");
   await harness.query(
     "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
     [partition.tenant, partition.project],
@@ -436,7 +436,7 @@ test("no role may write a fenced tenure back into an active project", async () =
 
 test("no role may revive an expired tenure without advancing the epoch that ended it", async () => {
   const partition = await postgresHarnessProject(harness.store, "revive");
-  const stale = await postgresHarnessLease(harness.store, partition, "stale");
+  const stale = await postgresHarnessHeld(harness.store, partition, "stale");
   await harness.query(
     "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
     [partition.tenant, partition.project],
@@ -454,7 +454,7 @@ test("no role may revive an expired tenure without advancing the epoch that ende
 
 test("an unbroken tenure renews without advancing its fencing epoch", async () => {
   const partition = await postgresHarnessProject(harness.store, "renewal");
-  const held = await postgresHarnessLease(harness.store, partition, "holder");
+  const held = await postgresHarnessHeld(harness.store, partition, "holder");
   const renewed = await harness.store.renew(held, 60);
   assert.ok(renewed.renewed === "Extended");
   assert.equal(renewed.lease.fencingEpoch, held.fencingEpoch);

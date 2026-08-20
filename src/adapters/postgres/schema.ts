@@ -113,17 +113,22 @@
  * activation verifies the inbox with.
  *
  * `project_readiness` — the discovery index over that inbox, and the only
- * thing fleet discovery reads. Owned by the API role, which raises it, and by
- * the dispatcher role, which may lower `ready` and may not touch the
- * generation. Its composite key and identity are both `(tenant, project)`. It
- * is changed by acceptance, which raises readiness and advances the
- * generation, and by an idle owner clearing it. Unfinished work is found by
- * selecting the ready rows across the fleet.
+ * thing fleet discovery reads. Owned by the API role, whose grant covers
+ * `ready` and `generation`, and by the dispatcher role, whose grant covers
+ * `ready` alone — so the separation the server holds is by column, and which
+ * direction either role may move a column it holds is this adapter's. Its
+ * composite key and identity are both `(tenant, project)`. It is changed by
+ * acceptance, which raises readiness and advances the generation, and by an
+ * idle owner clearing it. Unfinished work is found by selecting the ready rows
+ * across the fleet.
  *
- * WHY THE ROW IS NEVER DELETED AND THE GENERATION NEVER RESTARTS. Clearing
+ * WHY THE ROW IS NEVER DELETED AND THE GENERATION IS ONLY ADVANCED. Clearing
  * lowers a flag rather than removing the row, because a generation that
  * restarted at one would let an owner holding a stale one erase the wake-up
- * that reused it — the stale observation the generation exists to refuse.
+ * that reused it — the stale observation the generation exists to refuse. That
+ * is a discipline every writer here keeps rather than a rule the server
+ * applies, and the note beside `inboxGrants` says what the grant permits
+ * instead.
  *
  * `journal_entry.cause_operation` — the one durable cause an entry names, with
  * its uniqueness over the partition. 006 lets a cause authorize at most one
@@ -263,6 +268,17 @@ const foundationRelations = [
      WHERE lifecycle = 'Active' AND owner IS NOT NULL`,
 ];
 
+/**
+ * What a runtime role may write, which is still wider than the fences over
+ * it: the ownership columns and an INSERT let a direct table write install the
+ * role as owner of a project another dispatcher holds, or place an entry at a
+ * seq the primary key has not taken and move `head` to match, because the
+ * fences that would refuse those — lease validity, epoch currency, expected
+ * head, lifecycle admission — all live in this adapter. Closing it takes a
+ * constraint in the database on what those columns may become rather than a
+ * narrower grant on which of them may be written; kasofsk/chuggy#115 settled
+ * that, and a later slice carries it.
+ */
 const foundationGrants = [
   `GRANT SELECT ON recovery_epoch TO ${dispatcherRole}`,
   `GRANT SELECT ON project TO ${dispatcherRole}`,
@@ -370,9 +386,12 @@ const inboxRelations = [
 
 /**
  * The trigger that makes a terminal outcome final, settling authority
- * included. A grant cannot say which value a column may take, so the rule that
+ * included: a grant cannot say which value a column may take, so the rule that
  * a cancelled operation is never later succeeded — or later re-audited to
- * somebody else — has to be the server's own.
+ * somebody else — has to be the server's own. Its EXECUTE is revoked from
+ * PUBLIC as the cancellation function's is, which changes nothing a caller can
+ * do with a trigger function and leaves the privilege audit an explicit ACL to
+ * read where a default is a column it cannot see.
  */
 const inboxTerminality = [
   `CREATE FUNCTION operation_stays_terminal() RETURNS trigger
@@ -390,6 +409,7 @@ const inboxTerminality = [
        RETURN NEW;
      END
      $$`,
+  `REVOKE EXECUTE ON FUNCTION operation_stays_terminal() FROM PUBLIC`,
   `CREATE TRIGGER operation_outcome_is_decided_once
      BEFORE UPDATE ON operation
      FOR EACH ROW EXECUTE FUNCTION operation_stays_terminal()`,
@@ -398,10 +418,10 @@ const inboxTerminality = [
 /**
  * The whole of a cancellation as one call the API role is granted, because the
  * grants that would let a caller assemble it by hand are the grants that let it
- * decide an operation instead. Its `search_path` is pinned on the definition: a
- * `SECURITY DEFINER` body runs as the owner, so a caller who could put a schema
- * of its own in front of `operation` would be writing rows this function's
- * privileges signed for.
+ * decide an operation instead. A `SECURITY DEFINER` body runs as its owner —
+ * whichever role applied the migration, which nothing here decides — so the
+ * `search_path` is pinned on the definition against a caller shadowing
+ * `operation`, and kasofsk/chuggy#134 carries who owns it in production.
  */
 const inboxCancellation = [
   `CREATE FUNCTION ${cancellationFunction}(
@@ -435,6 +455,16 @@ const inboxCancellation = [
   `GRANT EXECUTE ON FUNCTION ${cancellationFunction}(text, text, text, text, text) TO ${apiRole}`,
 ];
 
+/**
+ * What either role may write, which is wider than the discipline over it: both
+ * grants permit lowering `ready` over a consumable item — an enqueued
+ * submission no writer discovers until something raises readiness again — and
+ * the API's also permits rewinding the generation a stale observation is
+ * refused by, because direction is this adapter's rule and no grant states it.
+ * A narrower grant cannot draw that line, since acceptance writes both columns
+ * and an idle owner writes one of them back; kasofsk/chuggy#121 is open on what
+ * does, and a later slice carries it.
+ */
 const inboxGrants = [
   `GRANT SELECT ON project TO ${apiRole}`,
   `GRANT UPDATE (ingress_next) ON project TO ${apiRole}`,
@@ -445,7 +475,9 @@ const inboxGrants = [
      ON operation TO ${apiRole}`,
   `GRANT SELECT ON inbox_item TO ${apiRole}`,
   `GRANT INSERT (tenant, project, ordinal, operation) ON inbox_item TO ${apiRole}`,
-  `GRANT SELECT, INSERT ON project_readiness TO ${apiRole}`,
+  `GRANT SELECT ON project_readiness TO ${apiRole}`,
+  `GRANT INSERT (tenant, project, ready, generation)
+     ON project_readiness TO ${apiRole}`,
   `GRANT UPDATE (ready, generation) ON project_readiness TO ${apiRole}`,
   `GRANT SELECT ON inbox_item TO ${dispatcherRole}`,
   `GRANT SELECT ON project_readiness TO ${dispatcherRole}`,

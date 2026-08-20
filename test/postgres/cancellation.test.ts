@@ -329,7 +329,7 @@ test("a real decision racing a cancellation resolves one way and journals only w
     projectWriterDecide(writer, memory, item),
   ]);
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(memory.lease);
   assert.ok(loaded.parsed === "Ok");
   if (cancelled.cancelled === "Cancelled") {
     assert.ok(step.decided.decided === "AlreadyTerminal");

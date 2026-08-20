@@ -17,6 +17,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type pg from "pg";
 
@@ -181,6 +182,22 @@ export function postgresHarnessPartition(label: string): Partition {
   };
 }
 
+/**
+ * Puts the partition's lease expiry into the past, which is what a lapsed
+ * tenure looks like to the server and is how every case here reaches one. A
+ * case that slept for a real expiry would be slow and would still be racing the
+ * clock it slept against, where this is the same fact decided by the database.
+ */
+export async function postgresHarnessExpire(
+  harness: PostgresHarness,
+  partition: Partition,
+): Promise<void> {
+  await harness.query(
+    "UPDATE project SET lease_expires_at = now() - interval '1 second' WHERE tenant = $1 AND project = $2",
+    [partition.tenant, partition.project],
+  );
+}
+
 /** A dispatcher-instance identity no other case is using. */
 export function postgresHarnessOwner(label: string): OwnerId {
   return asOwnerId(`owner-${label}-${randomUUID()}`);
@@ -194,6 +211,105 @@ export async function postgresHarnessProject(
   const partition = postgresHarnessPartition(label);
   await store.createProject(partition);
   return partition;
+}
+
+/** How long a case's lease runs for: long enough that no case races its own expiry. */
+const postgresHarnessLeaseSecs = 60;
+
+/**
+ * A lease on a provisioned partition, taken for an owner no other case is
+ * using. Replaying a journal and deciding against one each need a lease, so a
+ * case
+ * that is about something else says it in one line; the submission and
+ * discovery sides need none and take none.
+ */
+export async function postgresHarnessHeld(
+  store: ProjectStore,
+  partition: Partition,
+  label: string,
+): Promise<Lease> {
+  const acquired = await store.acquire(
+    partition,
+    postgresHarnessOwner(label),
+    postgresHarnessLeaseSecs,
+  );
+  if (acquired.acquired !== "Granted") {
+    throw new Error(
+      `postgres harness: the lease on ${partition.tenant}/${partition.project} for ${label} was ${acquired.acquired}`,
+    );
+  }
+  return acquired.lease;
+}
+
+/** How long a case waits for calls it did not await to reach the lock that stalls them. */
+const postgresHarnessStallWaitMsMax = 5_000;
+
+/** How often that wait asks, which is what bounds the loop asking. */
+const postgresHarnessStallAskMs = 25;
+
+/** A project row held locked: what has stalled behind it, and the way to give it back. */
+export interface PostgresRowLock {
+  readonly stalled: (backends: number) => Promise<void>;
+  readonly release: () => Promise<void>;
+}
+
+/**
+ * Locks the partition's project row on a connection of its own, so a case can
+ * stall a call that borrows from the harness pool without starving the pool
+ * the rest of the case draws from.
+ */
+export async function postgresHarnessRowLock(
+  partition: Partition,
+): Promise<PostgresRowLock> {
+  const blockade = postgresPool(postgresHarnessUrl());
+  const blocker = await blockade.connect();
+  const release = async (): Promise<void> => {
+    await blocker.query("ROLLBACK").catch(() => undefined);
+    blocker.release();
+    await blockade.end();
+  };
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query(
+      "SELECT tenant FROM project WHERE tenant = $1 AND project = $2 FOR UPDATE",
+      [partition.tenant, partition.project],
+    );
+    return {
+      stalled: (backends) => postgresHarnessStalled(blockade, backends),
+      release,
+    };
+  } catch (failure) {
+    await release();
+    throw failure;
+  }
+}
+
+/**
+ * Resolves once that many backends are waiting on a lock, which is how a case
+ * knows the calls it did not await have reached the row the blockade holds. It
+ * asks on a connection of the blockade pool rather than on the locked one,
+ * because a transaction caches its statistics snapshot and would answer with
+ * whatever it saw the first time it asked.
+ */
+async function postgresHarnessStalled(
+  blockade: pg.Pool,
+  backends: number,
+): Promise<void> {
+  for (
+    let waitedMs = 0;
+    waitedMs < postgresHarnessStallWaitMsMax;
+    waitedMs += postgresHarnessStallAskMs
+  ) {
+    const found = await blockade.query<{ stalled: number }>(
+      `SELECT count(*)::int AS stalled FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+    );
+    if ((found.rows[0]?.stalled ?? 0) >= backends) return;
+    await delay(postgresHarnessStallAskMs);
+  }
+  throw new Error(
+    `postgres harness: fewer than ${String(backends)} backends stalled behind the row lock, so a case is asserting against a race it never set up`,
+  );
 }
 
 /**
@@ -383,7 +499,7 @@ export async function postgresHarnessHistory(
   const writer = postgresHarnessWriter(harness);
   let memory = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, label),
+    await postgresHarnessHeld(harness.store, partition, label),
   );
   for (let index = 0; index < count; index++) {
     const item = await postgresHarnessAccepted(
@@ -401,21 +517,4 @@ export async function postgresHarnessHistory(
     memory = step.memory;
   }
   return memory;
-}
-
-/** A partition this owner holds, so a case that is about deciding reads as one line. */
-export async function postgresHarnessLease(
-  store: ProjectStore,
-  partition: Partition,
-  label: string,
-): Promise<Lease> {
-  const acquired = await store.acquire(
-    partition,
-    postgresHarnessOwner(label),
-    60,
-  );
-  if (acquired.acquired !== "Granted") {
-    throw new Error(`postgres harness: the lease was ${acquired.acquired}`);
-  }
-  return acquired.lease;
 }

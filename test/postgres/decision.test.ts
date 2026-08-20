@@ -45,7 +45,7 @@ import {
   postgresHarnessEntry,
   postgresHarnessHistory,
   postgresHarnessJournal,
-  postgresHarnessLease,
+  postgresHarnessHeld,
   postgresHarnessOpen,
   postgresHarnessOwner,
   postgresHarnessProject,
@@ -93,7 +93,7 @@ async function operationRow(
 test("a decision commits its entry, its outcome, its acknowledgement and its projection together", async () => {
   const partition = await postgresHarnessProject(harness.store, "commit");
   const writer = postgresHarnessWriter(harness);
-  const lease = await postgresHarnessLease(harness.store, partition, "writer");
+  const lease = await postgresHarnessHeld(harness.store, partition, "writer");
   const memory = await projectWriterLoad(writer, lease);
   const item = await postgresHarnessAccepted(
     harness.inbox,
@@ -126,7 +126,7 @@ test("a decision that cannot write its entry leaves no outcome, no acknowledgeme
   const writer = postgresHarnessWriter(harness);
   const memory = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, "writer"),
+    await postgresHarnessHeld(harness.store, partition, "writer"),
   );
   const blocker = await postgresHarnessAccepted(
     harness.inbox,
@@ -182,7 +182,7 @@ test("a domain refusal settles and acknowledges its operation and writes no jour
   const writer = postgresHarnessWriter(harness);
   const memory = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, "writer"),
+    await postgresHarnessHeld(harness.store, partition, "writer"),
   );
   const item = await postgresHarnessAccepted(
     harness.inbox,
@@ -203,7 +203,7 @@ test("a domain refusal settles and acknowledges its operation and writes no jour
     settled_authority_subject: memory.lease.owner,
     consumable: false,
   });
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(memory.lease);
   assert.ok(loaded.parsed === "Ok");
   assert.deepEqual(loaded.value, []);
   assert.deepEqual(
@@ -217,7 +217,7 @@ test("a command the machine cannot read is refused durably rather than retried",
   const writer = postgresHarnessWriter(harness);
   const memory = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, "writer"),
+    await postgresHarnessHeld(harness.store, partition, "writer"),
   );
   const item = await postgresHarnessAccept(
     harness.inbox,
@@ -237,7 +237,7 @@ test("a suspended project refuses a decision from the writer that held it", asyn
   const writer = postgresHarnessWriter(harness);
   const memory = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, "writer"),
+    await postgresHarnessHeld(harness.store, partition, "writer"),
   );
   const item = await postgresHarnessAccepted(
     harness.inbox,
@@ -259,7 +259,7 @@ test("a fenced writer cannot decide, even holding a lease that was once valid", 
   const writer = postgresHarnessWriter(harness);
   const memory = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, "former"),
+    await postgresHarnessHeld(harness.store, partition, "former"),
   );
   const item = await postgresHarnessAccepted(
     harness.inbox,
@@ -291,7 +291,7 @@ test("a stale head is refused, and the refusal carries the head the writer shoul
   const writer = postgresHarnessWriter(harness);
   const stale = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, "writer"),
+    await postgresHarnessHeld(harness.store, partition, "writer"),
   );
   const first = await postgresHarnessAccepted(
     harness.inbox,
@@ -316,12 +316,42 @@ test("a stale head is refused, and the refusal carries the head the writer shoul
   assert.equal((await operationRow(second.operation))?.["state"], "Pending");
 });
 
+test("two decisions racing at one head commit exactly one", async () => {
+  const partition = await postgresHarnessProject(harness.store, "race");
+  const writer = postgresHarnessWriter(harness);
+  const memory = await projectWriterLoad(
+    writer,
+    await postgresHarnessHeld(harness.store, partition, "writer"),
+  );
+  const left = await postgresHarnessAccepted(
+    harness.inbox,
+    partition,
+    "raceleft",
+    0,
+  );
+  const right = await postgresHarnessAccepted(
+    harness.inbox,
+    partition,
+    "raceright",
+    0,
+  );
+
+  const [one, two] = await Promise.all([
+    projectWriterDecide(writer, memory, left),
+    projectWriterDecide(writer, memory, right),
+  ]);
+  assert.deepEqual([one.decided.decided, two.decided.decided].sort(), [
+    "Committed",
+    "StaleHead",
+  ]);
+});
+
 test("a decision retried at the head it committed from answers with the outcome it never heard", async () => {
   const partition = await postgresHarnessProject(harness.store, "ambiguous");
   const writer = postgresHarnessWriter(harness);
   const memory = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, "writer"),
+    await postgresHarnessHeld(harness.store, partition, "writer"),
   );
   const item = await postgresHarnessAccepted(
     harness.inbox,
@@ -338,7 +368,7 @@ test("a decision retried at the head it committed from answers with the outcome 
   assert.deepEqual(retried.decided.outcome, { settled: "Succeeded", seq: 1 });
   assert.equal(retried.memory.lease.head, 0);
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(memory.lease);
   assert.ok(loaded.parsed === "Ok");
   assert.equal(loaded.value.length, 1);
 });
@@ -348,7 +378,7 @@ test("a refusal retried the same way answers with the code it recorded", async (
   const writer = postgresHarnessWriter(harness);
   const memory = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, "writer"),
+    await postgresHarnessHeld(harness.store, partition, "writer"),
   );
   const item = await postgresHarnessAccepted(
     harness.inbox,
@@ -374,7 +404,7 @@ test("an operation cancelled while the writer was deciding is never journaled", 
   const writer = postgresHarnessWriter(harness);
   const memory = await projectWriterLoad(
     writer,
-    await postgresHarnessLease(harness.store, partition, "writer"),
+    await postgresHarnessHeld(harness.store, partition, "writer"),
   );
   const submission = postgresHarnessDecisionSubmission(
     partition,
@@ -396,7 +426,7 @@ test("an operation cancelled while the writer was deciding is never journaled", 
   const step = await projectWriterDecide(writer, memory, item);
   assert.ok(step.decided.decided === "AlreadyTerminal");
   assert.deepEqual(step.decided.outcome, { settled: "Cancelled" });
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(memory.lease);
   assert.ok(loaded.parsed === "Ok");
   assert.deepEqual(loaded.value, []);
 });
@@ -439,7 +469,7 @@ test("a fresh load replays to the writer's own state, and the projection agrees 
     journal.length,
   );
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(memory.lease);
   assert.ok(loaded.parsed === "Ok");
   assert.ok(journalLegalOn(refinementInstance, loaded.value));
   const replayed = replayCore(refinementInstance, loaded.value);

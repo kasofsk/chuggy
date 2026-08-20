@@ -28,6 +28,9 @@ ln -sf "$(command -v git)" "$GITBIN/git"
 # sets STUB_RC_<sub> and STUB_OUT_<sub> after building the repo; a `test` call
 # reports one passing test by default, because a `quint test` that selects
 # nothing prints no such line and the gate must tell the two apart.
+#
+# It colours its verdict line under FORCE_COLOR the way quint does, so what the
+# gate reads is what a caller's environment would have made of it.
 model_repo() { # <quint-version>
 	rm -rf "$R"
 	mkdir -p "$R/model/mc" "$R/model/tests" "$R/node_modules/.bin"
@@ -43,6 +46,7 @@ if [ "\$1" = "--version" ]; then echo "$1"; exit 0; fi
 sub="\$1"
 eval "out=\\\${STUB_OUT_\$sub-}"
 eval "rc=\\\${STUB_RC_\$sub-0}"
+if [ -n "\${FORCE_COLOR-}" ]; then out="\$(printf '\\033[32m')\$out"; fi
 if [ -n "\$out" ]; then echo "\$out"; fi
 exit "\$rc"
 STUB
@@ -68,6 +72,18 @@ run_in_repo() {
 model_repo 0.32.0
 run_in_repo
 check "a clean model run exits 0" 0 "$RC" "0 failure(s), 13 test(s) run"
+
+# A CALLER'S FORCE_COLOR MUST NOT REACH QUINT. Every verdict is read out of
+# Quint's own text, so a colour escape in front of the passing count reads as a
+# suite that selected nothing — a clean model reported as a wall of findings,
+# out of an environment variable the gate never set. `NO_COLOR` does not answer
+# it, because FORCE_COLOR beats NO_COLOR and the stub above behaves that way.
+model_repo 0.32.0
+FORCE_COLOR=1
+export FORCE_COLOR
+run_in_repo
+unset FORCE_COLOR
+check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "13 test(s) run"
 
 # A SUITE THAT SELECTED NOTHING IS NOT A SUITE THAT PASSED. Quint runs only the
 # names its match selects and exits 0 when that is none of them, so a renamed

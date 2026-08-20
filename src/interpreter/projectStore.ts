@@ -9,8 +9,13 @@
  * an implementation that checks ownership in one call and acts in the next,
  * which is exactly the race `docs/design/006-durable-project-dispatch.md`
  * forbids when it says every decision commit checks both the observed journal
- * head and the current fencing epoch. So the lease is an argument, and no
- * caller can hold one without having proved it.
+ * head and the current fencing epoch. So the lease is an argument — to `load`
+ * too, because a replay that ran before acquisition is missing whatever the
+ * previous owner committed after it, and an entry computed from that state
+ * extends a journal it never saw. Taking the lease is what makes
+ * replay-then-acquire unrepresentable rather than merely discouraged, since
+ * the adapter rechecks it against the same locked row the deciding transaction
+ * will recheck.
  *
  * NOTHING HERE APPENDS. An entry names exactly one durable cause and settles
  * it in the same transaction, so a method that wrote an entry alone would be a
@@ -106,21 +111,20 @@ export interface Partition {
   readonly project: ProjectId;
 }
 
-/**
- * A project's operational availability, which is not ticket state and never
- * appears in `Core`. Only `Active` admits a dispatcher.
- */
-export type Lifecycle =
-  "Active" | "Suspended" | "IntegrityBlocked" | "Deleting" | "Retention";
-
-/** Every lifecycle, in the order this file declares them, so a suite can iterate rather than restate. */
-export const allLifecycles: readonly Lifecycle[] = [
+/** Every lifecycle, and the declaration `Lifecycle` derives from, so narrowing a stored column has one list to check. */
+export const allLifecycles = [
   "Active",
   "Suspended",
   "IntegrityBlocked",
   "Deleting",
   "Retention",
-];
+] as const;
+
+/**
+ * A project's operational availability, which is not ticket state and never
+ * appears in `Core`. Only `Active` admits a dispatcher.
+ */
+export type Lifecycle = (typeof allLifecycles)[number];
 
 /**
  * A granted ownership of one project partition. It is the only thing that
@@ -177,7 +181,9 @@ export interface ProjectStore {
 
   /**
    * Takes ownership for `leaseSecs` of database time, advancing the fencing
-   * epoch so a former owner cannot commit after this returns.
+   * epoch so a former owner cannot commit after this returns. `leaseSecs` is a
+   * positive finite number of seconds, and an implementation refuses anything
+   * else before it touches storage.
    */
   acquire(
     partition: Partition,
@@ -185,14 +191,23 @@ export interface ProjectStore {
     leaseSecs: number,
   ): Promise<Acquired>;
 
-  /** Extends a held lease without advancing its fencing epoch, so an unbroken tenure keeps one identity. */
+  /**
+   * Extends a held lease without advancing its fencing epoch, so an unbroken
+   * tenure keeps one identity. `leaseSecs` is bounded exactly as `acquire`'s is.
+   */
   renew(lease: Lease, leaseSecs: number): Promise<Renewed>;
 
   /** Gives up a held lease early; a lease already fenced is left exactly as it is. */
   release(lease: Lease): Promise<void>;
 
-  /** Every stored entry for the partition in sequence order, parsed at this boundary and refused rather than thrown. */
-  load(partition: Partition): Promise<Parsed<readonly Entry[]>>;
+  /**
+   * Every stored entry for the lease's partition in sequence order, replayed
+   * under the lease the decision will present and parsed at this boundary. A
+   * lease the row no longer honours is refused rather than served a prefix,
+   * because entries read outside a tenure say nothing about what that tenure
+   * begins on.
+   */
+  load(lease: Lease): Promise<Parsed<readonly Entry[]>>;
 
   /**
    * Advances the lifecycle generation and the fencing epoch and clears

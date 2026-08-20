@@ -16,40 +16,60 @@
  * entry numbered anything else has a bug rather than a stale view, and gets an
  * error rather than a typed refusal.
  *
+ * THE LOAD TAKES THE SAME LOCK AND THE SAME LEASE. It replays under the tenure
+ * the decision will commit in, so a lease the row no longer honours is refused
+ * rather than served a prefix.
+ *
  * THE ENTRY IS STORED AS THE WIRE TEXT THE PORT PARSES BACK. The domain event
  * never becomes a database type, so the load passes the same schema the
  * in-memory store's does, and a row that no longer parses is refused by
  * returning rather than thrown on.
  *
- * WHAT THE LOAD DOES NOT DO IS VERIFY THE CHAIN. It checks shape, not
- * integrity: an edit that stays inside the schema — a ticket identity changed,
- * an entry removed from the middle — loads as `Ok` and replays as history. The
- * digests are written here so that format version one carries them, because a
- * chain added later is a migration over authoritative history; recomputing and
- * comparing them is project-local integrity containment, which 006 places at
- * slice I9 along with what a project fails closed into when the comparison
- * disagrees.
+ * WHAT THE LOAD REQUIRES OF A HISTORY, AND WHAT IT LEAVES UNVERIFIED. Its own
+ * replay precondition is that the stored entries reach the head the locked row
+ * claims: a journal falling short of it — an entry taken from the middle, or
+ * the tail cut off — is a torn store rather than an outcome a dispatcher
+ * decides its way around, so it throws rather than returning. That count is all
+ * it requires, and an edit that preserves it and stays inside the schema loads
+ * as `Ok` and replays as history: a changed payload, a swapped pair, one entry
+ * substituted for another. The digests are written here so that format version
+ * one carries them, because a chain added later is a migration over
+ * authoritative history; recomputing and comparing them is project-local
+ * integrity containment, which 006 places at slice I9 along with what a project
+ * fails closed into when the comparison disagrees — and the count check is that
+ * slice arriving nowhere early, only the load refusing to replay a history it
+ * can already see is incomplete.
  */
 
 import type pg from "pg";
 
 import type { Entry } from "../../actor/journal.ts";
 import type { OperationId } from "../../interpreter/operationInbox.ts";
-import type { Lease, Partition } from "../../interpreter/projectStore.ts";
+import type {
+  Lease,
+  Partition,
+  ProjectStanding,
+} from "../../interpreter/projectStore.ts";
 import {
   encodeEntry,
   parseJournal,
   type Parsed,
 } from "../../interpreter/wire.ts";
 import { journalChainDigest, journalChainGenesis } from "./digest.ts";
+import {
+  postgresOwnershipHonours,
+  postgresOwnershipLockKnown,
+} from "./ownership.ts";
+import { postgresTransaction } from "./pool.ts";
+import { projectRowStanding } from "./rows.ts";
 
-/** The digest the next entry chains onto: the head entry's, or the genesis label at an empty journal. */
+/** The digest the next entry chains onto: the head entry's, or the partition's genesis at an empty journal. */
 async function postgresJournalPrevious(
   client: pg.PoolClient,
   partition: Partition,
   head: number,
 ): Promise<string> {
-  if (head === 0) return journalChainGenesis;
+  if (head === 0) return journalChainGenesis(partition);
   const found = await client.query<{ entry_digest: string }>(
     "SELECT entry_digest FROM journal_entry WHERE tenant = $1 AND project = $2 AND seq = $3",
     [partition.tenant, partition.project, head],
@@ -90,7 +110,7 @@ export async function postgresJournalWrite(
       lease.partition.project,
       entry.seq,
       encodeEntry(entry),
-      journalChainDigest(previous, entry),
+      journalChainDigest(lease.partition, previous, entry),
       previous,
       lease.owner,
       lease.fencingEpoch,
@@ -104,15 +124,21 @@ export async function postgresJournalWrite(
   );
 }
 
-/** Every stored entry for the partition in sequence order, parsed here and refused rather than thrown. */
-export async function postgresJournalLoad(
-  pool: pg.Pool,
-  partition: Partition,
+/** Every stored entry in sequence order, asserted to reach the head the locked row claims. */
+async function postgresJournalEntries(
+  client: pg.PoolClient,
+  standing: ProjectStanding,
 ): Promise<Parsed<readonly Entry[]>> {
-  const found = await pool.query<{ entry: string }>(
+  const { tenant, project } = standing.partition;
+  const found = await client.query<{ entry: string }>(
     "SELECT entry FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq",
-    [partition.tenant, partition.project],
+    [tenant, project],
   );
+  if (found.rows.length !== standing.head) {
+    throw new Error(
+      `postgres journal: ${tenant}/${project} claims head ${String(standing.head)} over ${String(found.rows.length)} stored entries`,
+    );
+  }
   const raw: unknown[] = [];
   for (const row of found.rows) {
     try {
@@ -125,4 +151,22 @@ export async function postgresJournalLoad(
     }
   }
   return parseJournal(raw);
+}
+
+/** Replays the partition under the lease the decision will present, refusing one the row no longer honours. */
+export async function postgresJournalLoad(
+  pool: pg.Pool,
+  lease: Lease,
+): Promise<Parsed<readonly Entry[]>> {
+  return postgresTransaction(pool, async (client) => {
+    const row = await postgresOwnershipLockKnown(client, lease.partition);
+    if (!(await postgresOwnershipHonours(client, row, lease))) {
+      const { tenant, project } = lease.partition;
+      return {
+        parsed: "Refused",
+        why: `the lease on ${tenant}/${project} is no longer honoured, so a replay under it would begin outside its tenure`,
+      };
+    }
+    return postgresJournalEntries(client, projectRowStanding(row));
+  });
 }

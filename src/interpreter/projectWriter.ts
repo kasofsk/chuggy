@@ -97,10 +97,10 @@ async function projectWriterJournal(
   writer: ProjectWriter,
   lease: Lease,
 ): Promise<readonly Entry[]> {
-  const loaded = await writer.store.load(lease.partition);
+  const loaded = await writer.store.load(lease);
   if (loaded.parsed === "Refused") {
     throw new Error(
-      `project writer: the stored journal did not parse — ${loaded.why}`,
+      `project writer: the journal could not be replayed — ${loaded.why}`,
     );
   }
   if (!journalLegalOn(writer.config, loaded.value)) {

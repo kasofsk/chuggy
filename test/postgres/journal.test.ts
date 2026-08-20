@@ -10,7 +10,9 @@
  *
  * THE FENCES ARE `decision.test.ts`'S. An entry is written only by the
  * decision transaction now, so what stops one from being written is a claim
- * about that transaction rather than about this file's subject.
+ * about that transaction rather than about this file's subject. The load's own
+ * fence stays here: it refuses a lease the row no longer honours, and that is
+ * a claim about the load.
  */
 
 import assert from "node:assert/strict";
@@ -23,6 +25,8 @@ import {
 } from "../../src/adapters/postgres/digest.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import {
+  postgresHarnessExpire,
+  postgresHarnessHeld,
   postgresHarnessHistory,
   postgresHarnessJournal,
   postgresHarnessOpen,
@@ -51,14 +55,31 @@ test("a committed history advances the head and loads back as a legal journal", 
   );
   assert.equal(memory.lease.head, journal.length);
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(memory.lease);
   assert.equal(loaded.parsed, "Ok");
   assert.ok(loaded.parsed === "Ok");
   assert.deepEqual(loaded.value, journal);
   assert.ok(journalLegalOn(refinementInstance, loaded.value));
 });
 
-test("each stored digest chains onto its predecessor, and the first onto genesis", async () => {
+test("a load under a fenced lease is refused, not served the prefix it would replay", async () => {
+  const partition = await postgresHarnessProject(harness.store, "loadfenced");
+  const memory = await postgresHarnessHistory(
+    harness,
+    partition,
+    "former",
+    postgresHarnessJournal().length,
+  );
+  await postgresHarnessExpire(harness, partition);
+  await postgresHarnessHeld(harness.store, partition, "successor");
+
+  const refused = await harness.store.load(memory.lease);
+  assert.equal(refused.parsed, "Refused");
+  assert.ok(refused.parsed === "Refused");
+  assert.match(refused.why, /no longer honoured/);
+});
+
+test("each stored digest chains onto its predecessor, and the first onto the partition's genesis", async () => {
   const partition = await postgresHarnessProject(harness.store, "chain");
   const journal = postgresHarnessJournal();
   await postgresHarnessHistory(harness, partition, "writer", journal.length);
@@ -69,12 +90,15 @@ test("each stored digest chains onto its predecessor, and the first onto genesis
   )) as readonly { entry_digest: string; prev_digest: string }[];
 
   assert.equal(stored.length, journal.length);
-  let previous = journalChainGenesis;
+  let previous = journalChainGenesis(partition);
   for (const [at, row] of stored.entries()) {
     const entry = journal[at];
     assert.ok(entry !== undefined);
     assert.equal(row.prev_digest, previous);
-    assert.equal(row.entry_digest, journalChainDigest(previous, entry));
+    assert.equal(
+      row.entry_digest,
+      journalChainDigest(partition, previous, entry),
+    );
     previous = row.entry_digest;
   }
 });
@@ -112,14 +136,14 @@ test("every stored entry names the operation that caused it, and no cause names 
 
 test("a stored row that is not JSON is refused by returning, not thrown on", async () => {
   const partition = await postgresHarnessProject(harness.store, "notjson");
-  await postgresHarnessHistory(harness, partition, "writer", 1);
+  const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
 
   await harness.query(
     "UPDATE journal_entry SET entry = 'not json' WHERE tenant = $1 AND project = $2 AND seq = 1",
     [partition.tenant, partition.project],
   );
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(memory.lease);
   assert.equal(loaded.parsed, "Refused");
   assert.ok(loaded.parsed === "Refused");
   assert.match(loaded.why, /not JSON/);
@@ -127,13 +151,34 @@ test("a stored row that is not JSON is refused by returning, not thrown on", asy
 
 test("a stored row that is JSON but not an entry is refused by the schema", async () => {
   const partition = await postgresHarnessProject(harness.store, "notentry");
-  await postgresHarnessHistory(harness, partition, "writer", 1);
+  const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
 
   await harness.query(
     `UPDATE journal_entry SET entry = '{"seq":1}' WHERE tenant = $1 AND project = $2 AND seq = 1`,
     [partition.tenant, partition.project],
   );
 
-  const loaded = await harness.store.load(partition);
+  const loaded = await harness.store.load(memory.lease);
   assert.equal(loaded.parsed, "Refused");
+});
+
+test("a journal that no longer reaches its own head is thrown on, not refused", async () => {
+  const journal = postgresHarnessJournal();
+  assert.ok(journal.length > 1);
+  for (const seq of [1, journal.length]) {
+    const partition = await postgresHarnessProject(harness.store, "torn");
+    const memory = await postgresHarnessHistory(
+      harness,
+      partition,
+      "writer",
+      journal.length,
+    );
+
+    await harness.query(
+      "DELETE FROM journal_entry WHERE tenant = $1 AND project = $2 AND seq = $3",
+      [partition.tenant, partition.project, seq],
+    );
+
+    await assert.rejects(() => harness.store.load(memory.lease), /claims head/);
+  }
 });
