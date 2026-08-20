@@ -2,13 +2,10 @@
  * The whole privilege set both runtime roles hold, read back from the server
  * and compared against a set written down here.
  *
- * WHY THIS EXISTS. Three review rounds on this slice each found a grant wider
- * than the sentence above it: `UPDATE` on the project row, then `UPDATE` on
- * the operation, then `INSERT` on the operation and its inbox item. Every fix
- * was correct and every one left the adjacent hole, because a fix aimed at a
- * finding does not close a class. The class is that a table-level grant
- * reaches every column while the prose beside it describes the columns the
- * code happens to write, and no amount of reading catches that reliably.
+ * WHY THIS EXISTS. A table-level grant reaches every column, while the prose
+ * beside it names only the columns the code happens to write — so a grant
+ * written without its column list reads exactly like the narrow one it was
+ * meant to be.
  *
  * WHY THE EXPECTED SET IS WRITTEN OUT LONGHAND rather than derived from
  * `schema.ts`. A test that built its expectation from the same constants that
