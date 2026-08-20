@@ -22,14 +22,16 @@
 # crossing the pod network, so no ingress rule here can see it, and none is
 # closable from this file.
 #
-#   A process inside the server's own containers — `kubectl exec`, `kubectl
-#   debug`, or the `postgres` process itself once something else is driving it.
-#   It reaches the server over the Unix socket, which this image's pg_hba
-#   matches with `local all all trust` ahead of its `scram-sha-256` catch-all:
-#   an unauthenticated superuser, with no packet on any network. The exec
-#   subresource is a different RBAC grant from the port-forward one, so holding
-#   either is not holding the other; what bounds this path is who may exec in
-#   this namespace.
+#   A process inside the server's own pod — `kubectl exec`, `kubectl debug`, or
+#   the `postgres` process itself once something else is driving it. exec runs
+#   in the server's container and reaches it over the Unix socket; an ephemeral
+#   container shares the pod's network namespace and not its filesystem, and the
+#   socket directory is in the server image rather than on a volume, so `debug`
+#   lands on `127.0.0.1` instead. This image's pg_hba matches both with `trust`
+#   ahead of its `scram-sha-256` catch-all: an unauthenticated superuser, with
+#   no packet on the pod network. The exec subresource is a different RBAC grant
+#   from the port-forward one, so holding either is not holding the other; what
+#   bounds this path is who may exec in this namespace.
 #
 #   `kubectl port-forward`, which the kubelet serves from inside the pod's own
 #   network namespace, so the connection is already past the boundary when it
@@ -71,8 +73,11 @@ spec:
 # foreign data wrapper, no pg_hba line that resolves a name — so refusing every
 # destination costs the server nothing it does. What it buys is a bound on the
 # ways IN above: the two that land on a `trust` line arrive as an
-# unauthenticated superuser, and this is what such a foothold cannot then do
-# with what it reads.
+# unauthenticated superuser, and this is what such a foothold cannot then reach
+# — another service on the cluster, or anything off it. What it does not bound
+# is carrying the data out, because exec and port-forward are each a
+# bidirectional channel already and a reply leaving on one is not a connection
+# this policy sees.
 #
 # THE ABSENT `egress:` KEY IS THE RULE. Naming Egress in policyTypes and
 # writing no rule beneath it is what denies every destination; `egress: [{}]`

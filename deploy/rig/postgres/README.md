@@ -41,7 +41,7 @@ unauthenticated superuser on the server whatever this step does — this image's
 passwords, not the server.
 
 ```sh
-kubectl -n chuggy port-forward svc/postgres 55440:5432 &
+kubectl -n chuggy port-forward svc/postgres 55440:5432 & forward=$!
 
 secret() { kubectl -n chuggy get secret "$1" -o jsonpath="{.data.$2}" | base64 -d; }
 export PGPASSWORD="$(secret postgres-superuser password)"
@@ -85,8 +85,9 @@ NetworkPolicy on this CNI can change.
 
 ### What the forwarded port is not evidence of
 
-Every step above ran through `kubectl port-forward`, and two things follow from
-where the kubelet serves it — inside the server pod's own network namespace.
+Every step above that reached the database ran through `kubectl port-forward` —
+issuing the credentials never touched it — and two things follow from where the
+kubelet serves it, inside the server pod's own network namespace.
 
 It never crosses the boundary the ingress policy draws, so it witnesses nothing
 about that policy. And PostgreSQL sees the connection arrive from `127.0.0.1`,
@@ -109,32 +110,64 @@ takes effect between one call and the next — and it holds the address, the
 route and the credentials still, so the label is the only thing that changed.
 
 ```sh
-kubectl -n chuggy run probe --image=postgres:18.3-trixie --restart=Never --command -- sleep 900
+kubectl -n chuggy apply -f - <<'YAML'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe
+  namespace: chuggy
+spec:
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: postgres:18.3-trixie
+      command: [sleep, "900"]
+      env:
+        - name: CHUG_PG_OWNER_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: owner-password }
+        - name: CHUG_PG_DISPATCHER_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: dispatcher-password }
+        - name: CHUG_PG_API_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: api-password }
+YAML
 kubectl -n chuggy wait --for=condition=Ready pod/probe
 
 as() {
-  kubectl -n chuggy exec probe -- env PGPASSWORD="$2" \
-    psql "postgres://$1@postgres.chuggy.svc.cluster.local:5432/chuggy?connect_timeout=5" \
-    -At -c "SELECT 'admitted as ' || current_user
-                || ' from ' || inet_client_addr()
-                || ', in $3: ' || pg_has_role(current_user, '$3', 'USAGE')"
+  kubectl -n chuggy exec -i probe -- sh -c '
+    PGPASSWORD="$(printenv "$2")" psql \
+      "postgres://$1@postgres.chuggy.svc.cluster.local:5432/chuggy?connect_timeout=5" -At -f -
+  ' _ "$1" "$2" <<SQL
+SELECT 'admitted as ' || current_user
+    || ' from ' || inet_client_addr()
+    || ', in $3: ' || pg_has_role(current_user, '$3', 'USAGE')
+SQL
 }
 ```
 
+The pod reads the Secret and the second argument names the variable to read
+rather than carrying its value, because `postgres-roles.sql`'s rule about
+argument lists is this host's rule too: an argument to `kubectl` is in this
+host's process table for anyone to read, and in the exec request's query string
+besides. The Secret's own key names are hyphenated and `sh` will not import
+those, so the pod renames them one by one instead of taking them `envFrom`.
+
 The third argument is the group the call asserts membership in, and it is there
 because the rest of the line does not need one: `current_user` and
-`inet_client_addr()` are executable by PUBLIC, and `CONNECT` is held directly
-as well as through the group, so a call without `pg_has_role` prints the same
-text with every membership revoked.
+`inet_client_addr()` are executable by PUBLIC, and `CONNECT` is held directly,
+so a call without `pg_has_role` prints the same text with every membership
+revoked.
 
 ### The network half
 
 ```sh
-as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD" chuggy_dispatcher  # refused
+as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher  # refused
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
-as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD" chuggy_dispatcher  # admitted
+as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher  # admitted
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client-
-as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD" chuggy_dispatcher  # refused
+as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher  # refused
 ```
 
 ### The credentials
@@ -145,9 +178,9 @@ issued it:
 ```sh
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
 
-as chuggy_owner "$CHUG_PG_OWNER_PASSWORD" chuggy_dispatcher
-as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD" chuggy_dispatcher
-as chuggy_api_login "$CHUG_PG_API_PASSWORD" chuggy_api
+as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_dispatcher
+as chuggy_dispatcher_login CHUG_PG_DISPATCHER_PASSWORD chuggy_dispatcher
+as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_api
 ```
 
 Each names the role it authenticated as and a client address that is the
@@ -163,9 +196,16 @@ membership are exercised by nothing.
 ### The egress half
 
 The second policy is proved on a pod that never restarts either — the server
-itself. The verdict and the timing come from a TCP connect, and a connect that
-runs out its own clock is reported as its own verdict rather than folded into
-either of the other two:
+itself. `Apply the policies` put it in force, so the state change starts by
+taking it off again:
+
+```sh
+kubectl -n chuggy delete networkpolicy postgres-denies-egress
+```
+
+The verdict and the timing come from a TCP connect, and a connect that runs out
+its own clock is reported as its own verdict rather than folded into either of
+the other two:
 
 ```sh
 kubectl -n chuggy exec postgres-0 -- bash -c '
@@ -182,7 +222,7 @@ kubectl -n chuggy exec postgres-0 -- bash -c '
   printf "dns  %-20s %-8s %ss  %s\n" kubernetes.default - "$((e - s))" "$d"'
 ```
 
-Before the policy, the database reaches the API server, the cluster's DNS and
+Without the policy, the database reaches the API server, the cluster's DNS and
 the open internet:
 
 ```
@@ -193,7 +233,12 @@ tcp  169.254.169.254:80   TIMEOUT  3s
 dns  kubernetes.default   -        0s  10.43.0.1       kubernetes.default.svc.cluster.local
 ```
 
-With it applied, same pod, no restart between them:
+Run the credentials block here too, then put the policy back — same pod, no
+restart between them:
+
+```sh
+kubectl apply -f deploy/rig/postgres/postgres-network-policy.yaml
+```
 
 ```
 tcp  10.43.0.1:443        REFUSED  1s  Connection refused
@@ -209,13 +254,10 @@ no metadata service**, so nothing answers there in either state. Its two lines
 show the rule is destination-blind, not that a metadata service would have been
 refused.
 
-Then rerun the credentials block: every call is admitted as before. A
-connection the ingress policy admits is still answered, because the pod's chain
-accepts an established flow before it consults either policy.
-
-```sh
-kubectl -n chuggy delete pod probe
-```
+Then rerun the credentials block: every call is admitted, exactly as it was in
+the window above with this policy absent. A connection the ingress policy
+admits is answered whichever way this one stands, because the pod's chain
+accepts an established flow before it consults either.
 
 ### The database half
 
@@ -225,6 +267,16 @@ the adapter makes about what the server does, including the one that matters
 here: what each group role is refused. It leaves its partitions behind in
 whatever database it is pointed at, which is a rehearsal's residue and not
 something to point at a database anyone depends on.
+
+### Done with them
+
+The probe carries the Secret, so it does not outlive the proofs; the forwarded
+port is this host's rather than the cluster's, so nothing below reverses it.
+
+```sh
+kubectl -n chuggy delete pod probe
+kill "$forward"
+```
 
 ## Reversing it
 
@@ -236,4 +288,6 @@ kubectl -n chuggy delete secret chuggy-postgres-credentials
 The roles are deliberately not reversed by a command here. Dropping a role that
 owns relations drops nothing and fails until the relations are reassigned, and
 a runbook that offered a one-line undo for that would be offering to lose the
-database.
+database. So the Secret goes and the roles stay, and deleting it discards the
+only copy of a password three roles still have — recoverable only by re-running
+`Issue the credentials` and `Create the roles`, which issues different ones.
