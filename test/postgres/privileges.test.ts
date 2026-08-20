@@ -107,7 +107,7 @@ const columnWise: readonly string[] = [
    */
   `${apiRole} project_readiness UPDATE (generation, ready)`,
   `${dispatcherRole} inbox_item UPDATE (consumable)`,
-  `${dispatcherRole} operation UPDATE (decided_seq, outcome_code, settled_at, settled_authority_kind, settled_authority_subject, state)`,
+  `${dispatcherRole} operation UPDATE (decided_seq, outcome_code, refused_head, refused_lifecycle_generation, settled_at, settled_authority_kind, settled_authority_subject, state)`,
   `${dispatcherRole} project UPDATE (fencing_epoch, head, lease_expires_at, owner, recovery_epoch)`,
   `${dispatcherRole} project_readiness UPDATE (ready)`,
   `${dispatcherRole} ticket_projection UPDATE (phase, seq)`,

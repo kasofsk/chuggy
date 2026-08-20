@@ -269,7 +269,8 @@ test("the state column admits exactly the states this code declares", async () =
   const columns = `
     tenant, project, operation, authority_kind, authority_subject, admission,
     key_version, key_digest, payload_digest, command, lifecycle_generation,
-    state, settled_at, decided_seq, outcome_code
+    state, settled_at, decided_seq, outcome_code, refused_head,
+    refused_lifecycle_generation
   `;
   const rehearsal = await harness.begin();
   try {
@@ -277,10 +278,13 @@ test("the state column admits exactly the states this code declares", async () =
       const settled = state === "Pending" ? "NULL" : "now()";
       const decided = state === "Succeeded" ? "1" : "NULL";
       const code = state === "Refused" ? "'NotEnabled'" : "NULL";
+      const refusedHead = state === "Refused" ? "0" : "NULL";
+      const refusedGeneration = state === "Refused" ? "1" : "NULL";
       await rehearsal.query(
         `INSERT INTO operation (${columns})
          VALUES ($1, $2, $3, 'k', 's', 'Ordinary', 'v', $4, 'p', '{}', 1, $5,
-                 ${settled}, ${decided}, ${code})`,
+                 ${settled}, ${decided}, ${code}, ${refusedHead},
+                 ${refusedGeneration})`,
         [
           submission.partition.tenant,
           submission.partition.project,

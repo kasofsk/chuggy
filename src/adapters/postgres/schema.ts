@@ -138,10 +138,11 @@
  * operation rather than a kind and an identity; the typed cause kind arrives
  * with the slice that has a second one.
  *
- * `operation.outcome_code`, `operation.decided_seq` — what a terminal
- * operation says besides its state, and the columns the earlier tranche
- * deferred to the transaction that produces them. Both are written by the
- * dispatcher role alone, in the decision transaction, and neither is a
+ * `operation.outcome_code`, `operation.decided_seq`,
+ * `operation.refused_head`, `operation.refused_lifecycle_generation` — what a
+ * terminal operation says besides its state, and the columns the earlier
+ * tranche deferred to the transaction that produces them. They are written by
+ * the dispatcher role alone, in the decision transaction, and neither is a
  * duplicate of anything derivable: a client reads the sequence to read its own
  * write, and a writer resolving an ambiguous commit reads whichever of them
  * the recorded outcome carries.
@@ -500,10 +501,16 @@ const decisionRelations = [
   `ALTER TABLE operation
      ADD COLUMN outcome_code text,
      ADD COLUMN decided_seq  bigint,
+     ADD COLUMN refused_head bigint,
+     ADD COLUMN refused_lifecycle_generation bigint,
      ADD CONSTRAINT operation_outcome_is_whole CHECK (
        (state = 'Refused') = (outcome_code IS NOT NULL)
+       AND (state = 'Refused') = (refused_head IS NOT NULL)
+       AND (state = 'Refused') = (refused_lifecycle_generation IS NOT NULL)
        AND (state = 'Succeeded') = (decided_seq IS NOT NULL)
        AND coalesce(decided_seq, 1) >= 1
+       AND coalesce(refused_head, 0) >= 0
+       AND coalesce(refused_lifecycle_generation, 1) >= 1
      ),
      ADD CONSTRAINT operation_outcome_code_is_known CHECK (
        outcome_code IS NULL OR outcome_code IN (${schemaTextSet(allRefusalCodes)})
@@ -587,7 +594,8 @@ const tenureFence = [
 const decisionGrants = [
   `GRANT SELECT ON operation TO ${dispatcherRole}`,
   `GRANT UPDATE (state, settled_at, settled_authority_kind,
-                 settled_authority_subject, outcome_code, decided_seq)
+                 settled_authority_subject, outcome_code, decided_seq,
+                 refused_head, refused_lifecycle_generation)
      ON operation TO ${dispatcherRole}`,
   `GRANT UPDATE (consumable) ON inbox_item TO ${dispatcherRole}`,
   `GRANT SELECT, INSERT ON ticket_projection TO ${dispatcherRole}`,

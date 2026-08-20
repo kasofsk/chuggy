@@ -81,7 +81,8 @@ async function operationRow(
   operation: string,
 ): Promise<Record<string, unknown> | undefined> {
   const rows = await harness.query(
-    `SELECT o.state, o.outcome_code, o.decided_seq, o.settled_authority_kind,
+    `SELECT o.state, o.outcome_code, o.decided_seq, o.refused_head,
+            o.refused_lifecycle_generation, o.settled_authority_kind,
             o.settled_authority_subject, i.consumable
        FROM operation o JOIN inbox_item i USING (tenant, project, operation)
       WHERE o.operation = $1`,
@@ -111,6 +112,8 @@ test("a decision commits its entry, its outcome, its acknowledgement and its pro
     state: "Succeeded",
     outcome_code: null,
     decided_seq: "1",
+    refused_head: null,
+    refused_lifecycle_generation: null,
     settled_authority_kind: "ProjectWriter",
     settled_authority_subject: lease.owner,
     consumable: false,
@@ -160,6 +163,8 @@ test("a decision that cannot write its entry leaves no outcome, no acknowledgeme
     state: "Pending",
     outcome_code: null,
     decided_seq: null,
+    refused_head: null,
+    refused_lifecycle_generation: null,
     settled_authority_kind: null,
     settled_authority_subject: null,
     consumable: true,
@@ -199,6 +204,8 @@ test("a domain refusal settles and acknowledges its operation and writes no jour
     state: "Refused",
     outcome_code: "NotEnabled",
     decided_seq: null,
+    refused_head: "0",
+    refused_lifecycle_generation: "1",
     settled_authority_kind: "ProjectWriter",
     settled_authority_subject: memory.lease.owner,
     consumable: false,
@@ -500,6 +507,11 @@ test("a command naming a decision the state has moved past is refused rather tha
     (await operationRow(item.operation))?.["outcome_code"],
     "NotEnabled",
   );
+  assert.equal((await operationRow(item.operation))?.["refused_head"], "2");
+  assert.equal(
+    (await operationRow(item.operation))?.["refused_lifecycle_generation"],
+    "1",
+  );
   assert.equal(memory.lease.head, 2);
 });
 
@@ -511,7 +523,8 @@ test("the outcome columns admit exactly the vocabulary this code declares", asyn
   const columns = `
     tenant, project, operation, authority_kind, authority_subject, admission,
     key_version, key_digest, payload_digest, command, lifecycle_generation,
-    state, settled_at, decided_seq, outcome_code
+    state, settled_at, decided_seq, outcome_code, refused_head,
+    refused_lifecycle_generation
   `;
   const born = (
     state: string,
@@ -521,7 +534,9 @@ test("the outcome columns admit exactly the vocabulary this code declares", asyn
     harness.query(
       `INSERT INTO operation (${columns})
        VALUES ($1, $2, $3, 'k', 's', 'Ordinary', 'v', $4, 'p', '{}', 1, '${state}',
-               now(), ${decided}, ${code})`,
+               now(), ${decided}, ${code},
+               ${state === "Refused" ? "0" : "NULL"},
+               ${state === "Refused" ? "1" : "NULL"})`,
       [
         partition.tenant,
         partition.project,

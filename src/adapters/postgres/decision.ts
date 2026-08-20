@@ -112,13 +112,18 @@ async function decisionSettle(
   lease: Lease,
   cause: OperationId,
   settled: OperationOutcome,
+  refusedAt: {
+    readonly head: number;
+    readonly lifecycleGeneration: number;
+  } | null,
 ): Promise<void> {
   const succeeded = settled.settled === "Succeeded";
   await client.query(
     `UPDATE operation
         SET state = $4, settled_at = now(),
             settled_authority_kind = $5, settled_authority_subject = $6,
-            decided_seq = $7, outcome_code = $8
+            decided_seq = $7, outcome_code = $8,
+            refused_head = $9, refused_lifecycle_generation = $10
       WHERE tenant = $1 AND project = $2 AND operation = $3`,
     [
       lease.partition.tenant,
@@ -129,6 +134,8 @@ async function decisionSettle(
       lease.owner,
       succeeded ? settled.seq : null,
       settled.settled === "Refused" ? settled.code : null,
+      settled.settled === "Refused" ? refusedAt?.head : null,
+      settled.settled === "Refused" ? refusedAt?.lifecycleGeneration : null,
     ],
   );
   await client.query(
@@ -162,21 +169,37 @@ async function decisionApply(
   lease: Lease,
   cause: OperationId,
   outcome: DecisionOutcome,
+  standing: ReturnType<typeof projectRowStanding>,
 ): Promise<Decided> {
   switch (outcome.outcome) {
     case "Refused":
-      await decisionSettle(client, lease, cause, {
-        settled: "Refused",
-        code: outcome.code,
-      });
+      await decisionSettle(
+        client,
+        lease,
+        cause,
+        {
+          settled: "Refused",
+          code: outcome.code,
+        },
+        {
+          head: standing.head,
+          lifecycleGeneration: standing.lifecycleGeneration,
+        },
+      );
       return { decided: "Refused" };
     case "Journaled": {
       const seq = outcome.entry.seq;
       await postgresJournalWrite(client, lease, outcome.entry, cause);
-      await decisionSettle(client, lease, cause, {
-        settled: "Succeeded",
-        seq,
-      });
+      await decisionSettle(
+        client,
+        lease,
+        cause,
+        {
+          settled: "Succeeded",
+          seq,
+        },
+        null,
+      );
       await decisionProject(client, lease.partition, seq, outcome.projection);
       return { decided: "Committed", lease: { ...lease, head: seq } };
     }
@@ -211,6 +234,12 @@ export async function postgresDecisionCommit(
     if (standing.head !== lease.head) {
       return { decided: "StaleHead", head: standing.head };
     }
-    return decisionApply(client, lease, decision.cause, decision.outcome);
+    return decisionApply(
+      client,
+      lease,
+      decision.cause,
+      decision.outcome,
+      standing,
+    );
   });
 }
