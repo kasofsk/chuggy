@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: git-http
+  namespace: chuggy-git
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /dev/stderr warn;
+    pid /run/nginx.pid;
+    user root;
+
+    events { worker_connections 256; }
+
+    http {
+      access_log /dev/stdout combined;
+
+      # The read advertisement and the write advertisement are the same URL and
+      # differ only by query string, so the credential file is chosen from it.
+      map $arg_service $git_credential_file {
+        default            /etc/nginx/auth/readers;
+        "git-receive-pack" /etc/nginx/auth/writers;
+      }
+
+      server {
+        listen *:8080;
+        server_name _;
+
+        # A pack is as large as the history it carries.
+        client_max_body_size 0;
+
+        location = /healthz {
+          auth_basic off;
+          return 200 "ok\n";
+        }
+
+        location ~ ^/.+\.git/git-receive-pack$ {
+          auth_basic "chuggy git";
+          auth_basic_user_file /etc/nginx/auth/writers;
+          include /etc/nginx/git-backend.conf;
+        }
+
+        location ~ ^/.+\.git(/.*)?$ {
+          auth_basic "chuggy git";
+          auth_basic_user_file $git_credential_file;
+          include /etc/nginx/git-backend.conf;
+        }
+      }
+    }
+  git-backend.conf: |
+    fastcgi_param SCRIPT_FILENAME /usr/libexec/git-core/git-http-backend;
+    include fastcgi_params;
+    fastcgi_param GIT_HTTP_EXPORT_ALL "";
+    fastcgi_param GIT_PROJECT_ROOT /git;
+    fastcgi_param PATH_INFO $uri;
+    fastcgi_param REMOTE_USER $remote_user;
+    fastcgi_read_timeout 300;
+    fastcgi_pass unix:/run/fcgi.sock;
