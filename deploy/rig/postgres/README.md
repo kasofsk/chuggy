@@ -3,8 +3,8 @@
 Two files and the order to apply them in. `postgres-roles.sql` creates the
 identities a deployment owns and the migration cannot create for itself;
 `postgres-network-policy.yaml` decides who on the cluster network may open a
-connection to the server. Each argues itself in its own header, and this is the
-procedure.
+connection to the server, and where the server may open one. Each argues itself
+in its own header, and this is the procedure.
 
 The migration is not here. It runs at start-up from the slice that carries the
 schema, and what this procedure owes it is an identity to run as. That slice is
@@ -34,7 +34,11 @@ kubectl -n chuggy create secret generic chuggy-postgres-credentials \
 
 Through a forwarded port rather than `kubectl exec`, so that the passwords stay
 in this host's environment instead of appearing in the server pod's argument
-list, where anyone with a shell in that pod can read them.
+list, where anyone with a shell in that pod can read them. That shell is an
+unauthenticated superuser on the server whatever this step does — this image's
+`pg_hba.conf` matches the Unix socket with `local all all trust`, ahead of its
+`scram-sha-256` catch-all — so what the choice keeps out of reach is the
+passwords, not the server.
 
 ```sh
 kubectl -n chuggy port-forward svc/postgres 55440:5432 &
@@ -63,17 +67,19 @@ As `chuggy_owner` and as nobody else, over the same forwarded port:
 CHUG_PG_URL="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy"
 ```
 
-## Apply the policy
+## Apply the policies
 
 ```sh
 kubectl apply -f deploy/rig/postgres/postgres-network-policy.yaml
 ```
 
-A workload that needs the server carries `chuggy.dev/postgres-client: "true"`
-and lives in namespace `chuggy`. No other pod-network client may connect, and
-that is the whole of what the policy decides: the node and anything sharing its
-network namespace reach the server regardless, which the policy's own header
-sets out and no NetworkPolicy on this CNI can change.
+Two of them. A workload that needs the server carries
+`chuggy.dev/postgres-client: "true"` and lives in namespace `chuggy`, no other
+pod-network client may connect, and the server opens no connection to anywhere.
+What still reaches it is what never crosses the pod network — a shell in its
+own containers, a forwarded port, the node and anything sharing the node's
+network namespace — which the ingress policy's header sets out in full and no
+NetworkPolicy on this CNI can change.
 
 ## Prove it
 
@@ -82,21 +88,21 @@ sets out and no NetworkPolicy on this CNI can change.
 Every step above ran through `kubectl port-forward`, and two things follow from
 where the kubelet serves it — inside the server pod's own network namespace.
 
-It never crosses the boundary the policy draws, so it witnesses nothing about
-the policy. And PostgreSQL sees the connection arrive from `127.0.0.1`, which
-this image's `pg_hba.conf` matches with `host all all 127.0.0.1/32 trust`
+It never crosses the boundary the ingress policy draws, so it witnesses nothing
+about that policy. And PostgreSQL sees the connection arrive from `127.0.0.1`,
+which this image's `pg_hba.conf` matches with `host all all 127.0.0.1/32 trust`
 *ahead* of its `scram-sha-256` catch-all — so over that port every role is
 admitted with any password, or none. Running the role script there is fine, and
 the statements land; what it cannot do is tell you a password this procedure
 issued is the password the role has.
 
-So both halves below run from a pod instead, over the cluster network, where
-the catch-all is the line that matches.
+So the two halves below that authenticate run from a pod instead, over the
+cluster network, where the catch-all is the line that matches.
 
 ### The pod
 
-One pod, used for both, and one rather than two: the policy controller learns a
-*new* pod's labels on its own schedule, so a freshly created pod that connects
+One pod for both of them, and one rather than two: the policy controller learns
+a *new* pod's labels on its own schedule, so a freshly created pod connecting
 the instant it starts is refused whatever its label says, and the run reads as
 a policy that admits nobody. Relabelling a pod the controller already knows
 takes effect between one call and the next — and it holds the address, the
@@ -109,18 +115,26 @@ kubectl -n chuggy wait --for=condition=Ready pod/probe
 as() {
   kubectl -n chuggy exec probe -- env PGPASSWORD="$2" \
     psql "postgres://$1@postgres.chuggy.svc.cluster.local:5432/chuggy?connect_timeout=5" \
-    -At -c "SELECT 'admitted as ' || current_user || ' from ' || inet_client_addr()"
+    -At -c "SELECT 'admitted as ' || current_user
+                || ' from ' || inet_client_addr()
+                || ', in $3: ' || pg_has_role(current_user, '$3', 'USAGE')"
 }
 ```
+
+The third argument is the group the call asserts membership in, and it is there
+because the rest of the line does not need one: `current_user` and
+`inet_client_addr()` are executable by PUBLIC, and `CONNECT` is held directly
+as well as through the group, so a call without `pg_has_role` prints the same
+text with every membership revoked.
 
 ### The network half
 
 ```sh
-as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD"          # refused
+as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD" chuggy_dispatcher  # refused
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
-as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD"          # admitted
+as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD" chuggy_dispatcher  # admitted
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client-
-as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD"          # refused
+as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD" chuggy_dispatcher  # refused
 ```
 
 ### The credentials
@@ -131,19 +145,77 @@ issued it:
 ```sh
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
 
-as chuggy_owner "$CHUG_PG_OWNER_PASSWORD"
-as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD"
-as chuggy_api_login "$CHUG_PG_API_PASSWORD"
-
-kubectl -n chuggy delete pod probe
+as chuggy_owner "$CHUG_PG_OWNER_PASSWORD" chuggy_dispatcher
+as chuggy_dispatcher_login "$CHUG_PG_DISPATCHER_PASSWORD" chuggy_dispatcher
+as chuggy_api_login "$CHUG_PG_API_PASSWORD" chuggy_api
 ```
 
 Each names the role it authenticated as and a client address that is the
 probe's rather than `127.0.0.1`, which is what makes it a password check rather
-than a trust match. Nothing else in this procedure is: the gate below reaches
-the group roles with `SET LOCAL ROLE` on a connection it already holds, so it
-never authenticates as a login role at all. Without these three calls the
-passwords, the LOGIN attribute and the membership are exercised by nothing.
+than a trust match; nothing else in this procedure is one, because the gate
+below reaches the group roles with `SET LOCAL ROLE` on a connection it already
+holds and never authenticates as a login role at all. And each ends in `true`
+for a group the role holds only through the grant `postgres-roles.sql` made:
+revoke that grant and the same call prints `false` with every other field
+unchanged. Without these three calls the passwords, the LOGIN attribute and the
+membership are exercised by nothing.
+
+### The egress half
+
+The second policy is proved on a pod that never restarts either — the server
+itself. The verdict and the timing come from a TCP connect, and a connect that
+runs out its own clock is reported as its own verdict rather than folded into
+either of the other two:
+
+```sh
+kubectl -n chuggy exec postgres-0 -- bash -c '
+  for t in 10.43.0.1:443 10.43.0.10:53 1.1.1.1:443 169.254.169.254:80; do
+    h="${t%%:*}"; p="${t##*:}"; s="$(date +%s)"
+    r="$(timeout 3 bash -c "exec 3<>/dev/tcp/$h/$p" 2>&1)" && rc=0 || rc=$?
+    e="$(date +%s)"
+    case "$rc" in 0) v=open;; 124) v=TIMEOUT;; *) v=REFUSED;; esac
+    printf "tcp  %-20s %-8s %ss  %s\n" "$t" "$v" "$((e - s))" "${r##*: }"
+  done
+  s="$(date +%s)"
+  d="$(timeout 3 getent hosts kubernetes.default.svc.cluster.local 2>&1)" || d="no answer"
+  e="$(date +%s)"
+  printf "dns  %-20s %-8s %ss  %s\n" kubernetes.default - "$((e - s))" "$d"'
+```
+
+Before the policy, the database reaches the API server, the cluster's DNS and
+the open internet:
+
+```
+tcp  10.43.0.1:443        open     0s
+tcp  10.43.0.10:53        open     0s
+tcp  1.1.1.1:443          open     0s
+tcp  169.254.169.254:80   TIMEOUT  3s
+dns  kubernetes.default   -        0s  10.43.0.1       kubernetes.default.svc.cluster.local
+```
+
+With it applied, same pod, no restart between them:
+
+```
+tcp  10.43.0.1:443        REFUSED  1s  Connection refused
+tcp  10.43.0.10:53        REFUSED  1s  Connection refused
+tcp  1.1.1.1:443          REFUSED  1s  Connection refused
+tcp  169.254.169.254:80   REFUSED  1s  Connection refused
+dns  kubernetes.default   -        3s  no answer
+```
+
+Nothing began or stopped listening at any of those addresses; the policy is
+what changed. The metadata address is the one not to over-read — **this rig has
+no metadata service**, so nothing answers there in either state. Its two lines
+show the rule is destination-blind, not that a metadata service would have been
+refused.
+
+Then rerun the credentials block: every call is admitted as before. A
+connection the ingress policy admits is still answered, because the pod's chain
+accepts an established flow before it consults either policy.
+
+```sh
+kubectl -n chuggy delete pod probe
+```
 
 ### The database half
 
@@ -157,7 +229,7 @@ something to point at a database anyone depends on.
 ## Reversing it
 
 ```sh
-kubectl -n chuggy delete networkpolicy postgres-admits-labelled-clients
+kubectl -n chuggy delete networkpolicy postgres-admits-labelled-clients postgres-denies-egress
 kubectl -n chuggy delete secret chuggy-postgres-credentials
 ```
 
