@@ -4,10 +4,12 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@informalsystems/quint": "0.32.0",
+    "@ts-safeql/eslint-plugin": "^5.4.1",
     "@types/node": "^26.2.0",
     "@types/pg": "^8.23.1",
     "dependency-cruiser": "^18.2.0",
     "eslint": "^10.8.1",
+    "libpg-query": "^17.7.4",
     "prettier": "^3.9.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0"
@@ -17,6 +19,7 @@
     "check": "./.chug/tasks/ci.sh"
   },
   "dependencies": {
+    "@ts-safeql/sql-tag": "^0.2.2",
     "pg": "^8.23.0",
     "zod": "^4.4.3"
   }
