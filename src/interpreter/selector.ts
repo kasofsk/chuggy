@@ -77,11 +77,18 @@ export interface SelectorStateStore {
   project(partition: Partition): Promise<SelectorProjectState | undefined>;
 }
 
+/** Every attention state, and the declaration `attention` derives from, so narrowing a stored column has one list to check. */
+export const allSelectorAttentions = [
+  "Monitoring",
+  "Attention",
+  "Stopped",
+] as const;
+
 export interface SelectorProjectState {
   readonly partition: Partition;
   readonly notificationCursor: number;
   readonly recoveryEpoch?: string;
-  readonly attention: "Monitoring" | "Attention" | "Stopped";
+  readonly attention: (typeof allSelectorAttentions)[number];
 }
 
 export interface SelectorObservationSource {

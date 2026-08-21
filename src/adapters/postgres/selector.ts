@@ -2,13 +2,14 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { asOperationId } from "../../interpreter/operationInbox.ts";
-import type {
-  SelectorDelivery,
-  SelectorInteraction,
-  SelectorProposal,
-  SelectorProjectState,
-  SelectorStateStore,
-  StoredSelectorInteraction,
+import {
+  allSelectorAttentions,
+  type SelectorDelivery,
+  type SelectorInteraction,
+  type SelectorProposal,
+  type SelectorProjectState,
+  type SelectorStateStore,
+  type StoredSelectorInteraction,
 } from "../../interpreter/selector.ts";
 import {
   asProjectId,
@@ -53,9 +54,10 @@ function encode(value: unknown): string {
 }
 
 function selectorAttention(value: string): SelectorProjectState["attention"] {
-  if (value === "Monitoring" || value === "Attention" || value === "Stopped")
-    return value;
-  throw new Error(`selector project row: unknown attention ${value}`);
+  const found = allSelectorAttentions.find((attention) => attention === value);
+  if (found === undefined)
+    throw new Error(`selector project row: unknown attention ${value}`);
+  return found;
 }
 
 function checkedSelectorLimit(limit: number, what: string): number {

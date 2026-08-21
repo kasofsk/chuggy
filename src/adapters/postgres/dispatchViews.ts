@@ -11,6 +11,7 @@ import {
   checkedDispatchViewQuery,
   dispatchViewDigest,
 } from "../../interpreter/dispatchView.ts";
+import { finalizerChoices, resumePricingChoices } from "../../domain/config.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
   asProjectId,
@@ -46,13 +47,17 @@ interface CandidateRow {
 function candidateResumePricing(
   value: string,
 ): DispatchCandidate["resumePricing"] {
-  if (value === "RetryCharged" || value === "RetryFree") return value;
-  throw new Error(`dispatch candidate row: unknown resume pricing ${value}`);
+  const found = resumePricingChoices.find((choice) => choice === value);
+  if (found === undefined)
+    throw new Error(`dispatch candidate row: unknown resume pricing ${value}`);
+  return found;
 }
 
 function candidateFinalizer(value: string): DispatchCandidate["finalizer"] {
-  if (value === "NoFinalizer" || value === "ManagedFinalizer") return value;
-  throw new Error(`dispatch candidate row: unknown finalizer ${value}`);
+  const found = finalizerChoices.find((choice) => choice === value);
+  if (found === undefined)
+    throw new Error(`dispatch candidate row: unknown finalizer ${value}`);
+  return found;
 }
 
 function candidateOf(
