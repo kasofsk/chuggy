@@ -130,4 +130,18 @@ test("the complete envelope digest covers cause and release configuration", () =
     }),
     digest,
   );
+  assert.notEqual(
+    journalEnvelopeDigest(pinnedPartition, previous, {
+      ...envelope,
+      eventSchemaVersion: 2,
+    }),
+    digest,
+  );
+  assert.notEqual(
+    journalEnvelopeDigest(pinnedPartition, previous, {
+      ...envelope,
+      decisionSemanticsVersion: 2,
+    }),
+    digest,
+  );
 });

@@ -1190,6 +1190,8 @@ const nativeAuthoring = [
      ADD COLUMN integrity_version integer NOT NULL DEFAULT 1,
      ADD COLUMN configuration_revision text,
      ADD COLUMN configuration_digest text,
+     ADD COLUMN event_schema_version integer NOT NULL DEFAULT 1,
+     ADD COLUMN decision_semantics_version integer NOT NULL DEFAULT 1,
      ADD CONSTRAINT journal_configuration_is_whole CHECK
        ((configuration_revision IS NULL)=(configuration_digest IS NULL)),
      ADD CONSTRAINT journal_configuration_is_required_for_v2 CHECK
@@ -1198,6 +1200,9 @@ const nativeAuthoring = [
        (tenant,project,configuration_revision,configuration_digest)
        REFERENCES configuration_revision (tenant,project,revision,digest),
      ADD CONSTRAINT journal_integrity_version_is_known CHECK (integrity_version IN (1,2))`,
+  `ALTER TABLE journal_entry
+     ADD CONSTRAINT journal_event_schema_version_is_positive CHECK (event_schema_version >= 1),
+     ADD CONSTRAINT journal_decision_semantics_version_is_positive CHECK (decision_semantics_version >= 1)`,
   `ALTER TABLE ticket_projection
      ADD COLUMN configuration_revision text,
      ADD COLUMN configuration_digest text,

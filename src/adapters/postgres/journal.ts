@@ -35,6 +35,7 @@
  */
 
 import type pg from "pg";
+import { createHash } from "node:crypto";
 
 import type { Entry } from "../../actor/journal.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
@@ -74,6 +75,9 @@ interface StoredJournalRow {
   readonly cause_id: string;
   readonly configuration_revision: string | null;
   readonly configuration_digest: string | null;
+  readonly configuration_canonical: string | null;
+  readonly event_schema_version: number;
+  readonly decision_semantics_version: number;
 }
 
 function storedJournalRowVerified(
@@ -87,6 +91,8 @@ function storedJournalRowVerified(
     return journalChainDigest(partition, previous, entry) === row.entry_digest;
   }
   if (row.integrity_version !== 2) return false;
+  if (row.event_schema_version !== 1 || row.decision_semantics_version !== 1)
+    return false;
   const cause: DecisionCause | undefined =
     row.cause_kind === "Operation"
       ? { kind: "Operation", id: asOperationId(row.cause_id) }
@@ -103,12 +109,15 @@ function storedJournalRowVerified(
   return (
     cause !== undefined &&
     configuration !== undefined &&
+    row.configuration_canonical !== null &&
+    createHash("sha256").update(row.configuration_canonical).digest("hex") ===
+      configuration.configurationDigest &&
     journalEnvelopeDigest(partition, previous, {
       entry,
       cause,
       configuration,
-      eventSchemaVersion: 1,
-      decisionSemanticsVersion: 1,
+      eventSchemaVersion: row.event_schema_version,
+      decisionSemanticsVersion: row.decision_semantics_version,
     }) === row.entry_digest
   );
 }
@@ -120,9 +129,13 @@ async function storedJournalRows(
   const { tenant, project } = partition;
   return (
     await client.query<StoredJournalRow>(
-      `SELECT entry,entry_digest,prev_digest,integrity_version,cause_kind,cause_id,
-       configuration_revision,configuration_digest
-       FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq`,
+      `SELECT j.entry,j.entry_digest,j.prev_digest,j.integrity_version,j.cause_kind,j.cause_id,
+       j.configuration_revision,j.configuration_digest,c.canonical AS configuration_canonical,
+       j.event_schema_version,j.decision_semantics_version
+       FROM journal_entry j LEFT JOIN configuration_revision c
+         ON c.tenant=j.tenant AND c.project=j.project
+        AND c.revision=j.configuration_revision AND c.digest=j.configuration_digest
+       WHERE j.tenant = $1 AND j.project = $2 ORDER BY j.seq`,
       [tenant, project],
     )
   ).rows;
@@ -177,8 +190,9 @@ export async function postgresJournalWrite(
     `INSERT INTO journal_entry
        (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch,
         recovery_epoch, cause_kind, cause_id, configuration_revision,
-        configuration_digest, integrity_version)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 2)`,
+        configuration_digest, event_schema_version, decision_semantics_version,
+        integrity_version)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 2)`,
     [
       lease.partition.tenant,
       lease.partition.project,
@@ -193,6 +207,8 @@ export async function postgresJournalWrite(
       cause.id,
       configuration.configurationRevision,
       configuration.configurationDigest,
+      envelope.eventSchemaVersion,
+      envelope.decisionSemanticsVersion,
     ],
   );
   await client.query(

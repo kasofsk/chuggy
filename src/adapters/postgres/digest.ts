@@ -48,8 +48,8 @@ export interface JournalIntegrityEnvelope {
   readonly entry: Entry;
   readonly cause: DecisionCause;
   readonly configuration: ConfigurationPin;
-  readonly eventSchemaVersion: 1;
-  readonly decisionSemanticsVersion: 1;
+  readonly eventSchemaVersion: number;
+  readonly decisionSemanticsVersion: number;
 }
 
 /** Joins the parts as bytes no other list of parts produces, by writing each after its length. */

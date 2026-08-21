@@ -95,6 +95,49 @@ test("load refuses a v2 row whose format discriminator is downgraded", async () 
   assert.match(loaded.why, /integrity verification/);
 });
 
+test("load refuses unsupported event and decision semantic versions", async () => {
+  for (const column of [
+    "event_schema_version",
+    "decision_semantics_version",
+  ] as const) {
+    const partition = await postgresHarnessProject(
+      harness.store,
+      `unsupported-${column}`,
+    );
+    const memory = await postgresHarnessHistory(
+      harness,
+      partition,
+      "writer",
+      1,
+    );
+    await harness.query(
+      `UPDATE journal_entry SET ${column}=2 WHERE tenant=$1 AND project=$2 AND seq=1`,
+      [partition.tenant, partition.project],
+    );
+    const loaded = await harness.store.load(memory.lease);
+    assert.equal(loaded.parsed, "Refused");
+    assert.ok(loaded.parsed === "Refused");
+    assert.match(loaded.why, /integrity verification/);
+  }
+});
+
+test("load re-verifies the retained configuration content", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "configuration-content-tamper",
+  );
+  const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
+  await harness.query(
+    `UPDATE configuration_revision SET canonical='{"image":"tampered","version":1}'
+      WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  );
+  const loaded = await harness.store.load(memory.lease);
+  assert.equal(loaded.parsed, "Refused");
+  assert.ok(loaded.parsed === "Refused");
+  assert.match(loaded.why, /integrity verification/);
+});
+
 test("a load under a fenced lease is refused, not served the prefix it would replay", async () => {
   const partition = await postgresHarnessProject(harness.store, "loadfenced");
   const memory = await postgresHarnessHistory(
@@ -119,7 +162,8 @@ test("each stored digest chains onto its predecessor, and the first onto the par
 
   const stored = (await harness.query(
     `SELECT seq,entry_digest,prev_digest,cause_kind,cause_id,
-       configuration_revision,configuration_digest
+       configuration_revision,configuration_digest,event_schema_version,
+       decision_semantics_version
        FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq`,
     [partition.tenant, partition.project],
   )) as readonly {
@@ -129,6 +173,8 @@ test("each stored digest chains onto its predecessor, and the first onto the par
     cause_id: string;
     configuration_revision: string | null;
     configuration_digest: string | null;
+    event_schema_version: 1;
+    decision_semantics_version: 1;
   }[];
 
   assert.equal(stored.length, journal.length);
@@ -146,8 +192,8 @@ test("each stored digest chains onto its predecessor, and the first onto the par
           configurationRevision: row.configuration_revision ?? "",
           configurationDigest: row.configuration_digest ?? "",
         },
-        eventSchemaVersion: 1,
-        decisionSemanticsVersion: 1,
+        eventSchemaVersion: row.event_schema_version,
+        decisionSemanticsVersion: row.decision_semantics_version,
       }),
     );
     previous = row.entry_digest;
