@@ -2301,11 +2301,14 @@ not recovery's, so it has no recovery query.
 `finalization_request` is I3's and I7 alters it rather than replacing it. It
 gains the `recovery_epoch` its claim is fenced by, the partial index that
 makes a claimable row findable, and the claim-column grants that turn three
-dead columns live. Claim, register, fulfil and invalidate are its
-transactions and the finalizer is the one writer of all four; the ticket
-service keeps the `state` grant it already holds for fulfilment inside the
-decision transaction. Its unfinished work is open rows past their claim
-expiry, and live rows under a stale epoch.
+dead columns live. Claim, register, invalidate and release are the
+finalizer's transactions and fulfilment is the ticket service's, inside the
+decision transaction that concludes the ticket — which is the `state` grant
+it already holds and the reason the two writers are not one. That division
+also widens a predicate: `Registered` was unreachable while nothing consumed
+the queue, so the index keeping one open request per ticket was written over
+`Open` alone, and it now spans both live states. Its unfinished work is open
+rows past their claim expiry, and live rows under a stale epoch.
 
 There is no finalization-queue projection and building one would be a
 finding. The queue is `finalization_request` ordered by `authorizing_seq`,
