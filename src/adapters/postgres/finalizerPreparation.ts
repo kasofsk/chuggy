@@ -18,8 +18,8 @@
  * AN ATTEMPT AND ITS BUNDLE COMMIT TOGETHER. The bundle is what the candidate's
  * commit message names, so an attempt whose bundle was not written would point
  * at a reference nobody can resolve; both rows are written in one transaction
- * and the attempt's own digest covers the bundle identity and digest, which is
- * what ties them without a column duplicating either.
+ * and the attempt names the bundle it pinned, so a rework materialized from
+ * that attempt carries its references forward rather than re-deriving them.
  *
  * NOTHING HERE UPDATES ANYTHING. `finalization_attempt`, `input_bundle` and
  * `input_bundle_reference` each carry a trigger refusing every UPDATE and
@@ -62,6 +62,7 @@ import {
   asAttemptId,
   asExecutionId,
 } from "../../interpreter/schedulerIdentity.ts";
+import { postgresInputBundleWrite } from "./inputBundle.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   finalizerLiveRequestStates,
@@ -167,35 +168,6 @@ export async function finalizerPreparationGathering(
   };
 }
 
-/** Writes the bundle one preparation pinned, with its references in the order they were named. */
-async function finalizerPreparationBundle(
-  client: pg.PoolClient,
-  record: AttemptRecord,
-): Promise<void> {
-  const { partition } = record.claim;
-  const { bundle } = record;
-  await client.query(
-    `INSERT INTO input_bundle (tenant, project, bundle, digest)
-     VALUES ($1,$2,$3,$4)`,
-    [partition.tenant, partition.project, bundle.bundle, bundle.digest],
-  );
-  await client.query(
-    `INSERT INTO input_bundle_reference
-       (tenant, project, bundle, ordinal, reference_kind, reference_id)
-     SELECT $1, $2, $3, ordinal, kind, reference
-       FROM unnest($4::integer[], $5::text[], $6::text[])
-         AS r(ordinal, kind, reference)`,
-    [
-      partition.tenant,
-      partition.project,
-      bundle.bundle,
-      bundle.references.map((_reference, index) => index + 1),
-      bundle.references.map((reference) => reference.kind),
-      bundle.references.map((reference) => reference.reference),
-    ],
-  );
-}
-
 /**
  * Writes the immutable attempt and the bundle it pinned in one transaction. The
  * claim is rechecked under the request row's lock, so an attempt cannot be
@@ -222,14 +194,15 @@ export async function finalizerPreparationRecord(
     ],
   );
   if (held.rowCount !== 1) return { recorded: "Fenced" };
-  await finalizerPreparationBundle(client, record);
+  await postgresInputBundleWrite(client, claim.partition, record.bundle);
   await client.query(
     `INSERT INTO finalization_attempt
-       (tenant, project, attempt, request, ticket, repository, target_ref,
+       (tenant, project, attempt, request, ticket, repository, input_bundle,
+        input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind,
         conflict_manifest, conflict_manifest_digest, attempt_digest)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
     [
       claim.partition.tenant,
       claim.partition.project,
@@ -237,6 +210,8 @@ export async function finalizerPreparationRecord(
       claim.request,
       claim.ticket,
       record.repository,
+      record.bundle.bundle,
+      record.bundle.digest,
       record.target.ref,
       record.target.commit,
       record.strategy,

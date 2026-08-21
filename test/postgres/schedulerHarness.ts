@@ -544,10 +544,12 @@ export async function schedulerRivalRequest(
   await rig.harness.query(
     `INSERT INTO execution_request
        (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
-        kind,capacity_account,configuration_revision,configuration_digest)
+        kind,capacity_account,configuration_revision,configuration_digest,
+        input_bundle,input_bundle_digest)
      SELECT q.tenant,q.project,$4,q.authorizing_seq,q.effect_position+1,q.ticket,
             q.ticket_version,'SpawnEvaluation',q.capacity_account,
-            q.configuration_revision,q.configuration_digest
+            q.configuration_revision,q.configuration_digest,
+            q.input_bundle,q.input_bundle_digest
        FROM execution_request q
       WHERE q.tenant=$1 AND q.project=$2 AND q.request=$3`,
     [

@@ -42,6 +42,7 @@ import type {
   PriorityClass,
   StoredTicketCommand,
 } from "./operationInbox.ts";
+import type { FinalizationEvidence } from "./finalizerPreparation.ts";
 import type { NativeActionAnswer } from "./projectDecision.ts";
 import type { Partition } from "./projectStore.ts";
 
@@ -79,6 +80,7 @@ export interface DecisionInput {
           readonly request: string;
           readonly requestGeneration: number;
           readonly open: boolean;
+          readonly evidence?: FinalizationEvidence;
         };
       }
     | {

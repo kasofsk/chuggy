@@ -2111,12 +2111,12 @@ completion authority away, so a briefed worker cannot conclude its own task
 even where policy granted it: it reports a manifest and the scheduler submits
 the completion.
 
-Two of this document's requirements are deliberately met only in part. A
-registration pins no input bundle: it pins the spawn request's identity and the
-revision that request pinned, and the bundle relation waits for the slice that
-gives it references of its own to hold. Artifact verification is a typed port
-here and its project-owned storage adapter is not, so what that port confirms
-against arrives with the slice that builds it.
+Two of this document's requirements were deliberately met only in part, and I7
+closes both. A registration pinned no input bundle: it pinned the spawn
+request's identity and the revision that request pinned, and the bundle relation
+waited for the slice that gives it references of its own to hold. Artifact
+verification was a typed port here and its project-owned storage adapter was
+not, so what that port confirms against arrived with the slice that builds it.
 
 I7 consumes none of these relations and adds its own preparation, permit and
 reconciliation records with the sole `FinalizationResult` authority;
@@ -2274,8 +2274,11 @@ at. It is the finalizer's, keyed `(tenant, project, attempt)` with `attempt`
 alone unique and never reused, foreign-keyed to its project and to the
 request that authorized it. It pins the candidate commit, the observed target
 ref and base, the pinned configuration revision and its digest, the strategy,
-and its own digest over canonical bytes binding the attempt to the request it
-answers. Preparation is the only transaction that writes one and there is no
+the input bundle the candidate was built from, and its own digest over
+canonical bytes binding the attempt to the request it answers. The bundle is a
+column rather than a digest fold alone, because a rework materialized from this
+attempt carries that bundle's references forward and a reference nobody can
+resolve is not evidence. Preparation is the only transaction that writes one and there is no
 update path at all — re-preparation creates another identity, which is what
 makes an attempt evidence rather than a working note. Its unfinished work is
 attempts with no terminal permit and no concluded result, bounded and ordered.
@@ -2314,6 +2317,13 @@ bundle would leave that claim unenforced, which is the failure mode I6's own
 review rounds kept naming. An unreferenced bundle is retention's concern and
 not recovery's, so it has no recovery query.
 
+A bundle identity is derived from the journal sequence and effect position that
+minted it, exactly as every other focused request's is, so a retried decision
+reproduces the identity instead of a second bundle — which is why the identity
+is unique per project rather than globally. A reference carries a digest where
+the object it names is content addressed, because "the failed attempt and its
+digest" is one reference and not two.
+
 `finalization_request` is I3's and I7 alters it rather than replacing it. It
 gains the `recovery_epoch` its claim is fenced by, the partial index that
 makes a claimable row findable, and the claim-column grants that turn three
@@ -2339,10 +2349,15 @@ The finalizer holds no privilege on `operation`, `decision_input`,
 `submit_finalization_result`. That is not a convenience over a permission it
 already has; it is the whole of why a conclusion cannot be forged, and it is
 I6's settlement-column rule applied at a different seam. Every relation this
-migration adds is explicitly revoked from every prior role, and the new role
-is explicitly revoked from every prior slice's relations — the scheduler's
-revoke list already names `finalization_request`, which is the pattern to
-follow rather than to rediscover.
+migration adds is explicitly revoked from every prior role and then narrowed
+back where a prior role's own transaction needs it: the ticket service writes
+`input_bundle` and reads `finalization_attempt`, because the transaction that
+returns a ticket to `Working` materializes the rework bundle from that
+attempt's immutable evidence. The revoke is what makes each of those a stated
+read rather than an inherited one, and the new role is explicitly revoked from
+every prior slice's relations — the scheduler's revoke list already names
+`finalization_request`, which is the pattern to follow rather than to
+rediscover.
 
 `submit_finalization_result` is the one door: `SECURITY DEFINER`, owned by
 `chuggy_boundary_owner` and hardened as `accept_operation`,
@@ -2354,6 +2369,13 @@ caller's: the envelope is built from durable rows, and a result disagreeing
 with the authorizing request, its generation or the recovery epoch is refused
 without a journal entry, as this document already requires of stale,
 duplicate, cancelled and mismatched results.
+
+The envelope pins the attempt and no Git identifier at all. A request may have
+several attempts and only the one this result concluded on is evidence a rework
+may be built from, so the attempt reference is what the envelope carries and the
+commits, the strategy and the conflict manifest stay on the immutable attempt
+the deciding transaction then reads — a copy in the envelope would be a stored
+duplicate of a row that cannot change.
 
 #### Approval is a native action, and that deviates
 

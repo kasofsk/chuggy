@@ -355,7 +355,6 @@ test("each relation carries exactly the indexes its recovery and its identities 
       "finalization_attempt_prepared",
       "finalization_reconciliation_held",
       "finalization_reconciliation_pkey",
-      "input_bundle_identity_is_never_reused",
       "input_bundle_is_referenceable",
       "input_bundle_pkey",
       "input_bundle_reference_is_declared_once",

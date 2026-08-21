@@ -148,7 +148,6 @@ test("no prior role reaches any relation migration eleven adds", async () => {
 test("the ticket service reaches only the bundle relations of what migration eleven adds", async () => {
   for (const relation of [
     "project_repository",
-    "finalization_attempt",
     "commit_permit",
     "finalization_reconciliation",
   ]) {
@@ -159,6 +158,19 @@ test("the ticket service reaches only the bundle relations of what migration ele
         statement,
       );
     }
+  }
+  const [read, ...written] = await everyVerb("finalization_attempt");
+  assert.equal(
+    await harness.attemptAs(ticketServiceRole, read ?? ""),
+    undefined,
+    "the evidence a rework bundle is materialized from is readable",
+  );
+  for (const statement of written) {
+    assert.match(
+      (await harness.attemptAs(ticketServiceRole, statement)) ?? "",
+      postgresHarnessDenial("finalization_attempt"),
+      statement,
+    );
   }
   for (const relation of ["input_bundle", "input_bundle_reference"]) {
     assert.equal(
@@ -272,7 +284,7 @@ test("the finalizer's write surface is exactly the columns its moves need", asyn
         table_name: "finalization_attempt",
         privilege_type: "INSERT",
         columns:
-          "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,outcome,prepared_at,project,repository,request,strategy,target_commit,target_ref,tenant,ticket",
+          "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,repository,request,strategy,target_commit,target_ref,tenant,ticket",
       },
       {
         table_name: "finalization_reconciliation",
@@ -299,7 +311,8 @@ test("the finalizer's write surface is exactly the columns its moves need", asyn
       {
         table_name: "input_bundle_reference",
         privilege_type: "INSERT",
-        columns: "bundle,ordinal,project,reference_id,reference_kind,tenant",
+        columns:
+          "bundle,ordinal,project,reference_digest,reference_id,reference_kind,tenant",
       },
     ],
   );

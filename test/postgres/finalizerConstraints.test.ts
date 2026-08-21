@@ -18,6 +18,7 @@ import {
   allReconciliationVerdicts,
 } from "../../src/interpreter/finalizer.ts";
 import {
+  finalizerBundle,
   finalizerCommit,
   finalizerDigest,
   finalizerGrantPermit,
@@ -34,9 +35,11 @@ let rig: FinalizerRig;
 let project: FinalizerProject;
 let attempt: string;
 let permit: string;
+let attemptBundle: { bundle: string; digest: string };
 before(async () => {
   rig = await finalizerRigOpen();
   project = await finalizerProject(rig, "constraints");
+  attemptBundle = await finalizerBundle(rig, project, "constraints");
   attempt = await finalizerPrepare(rig, project, "constraints");
   permit = await finalizerGrantPermit(rig, project, attempt, "constraints");
 });
@@ -62,16 +65,19 @@ function attemptRow(
 ): Promise<string> {
   return rig.refusal(
     `INSERT INTO finalization_attempt
-       (tenant, project, attempt, request, ticket, repository, target_ref,
+       (tenant, project, attempt, request, ticket, repository, input_bundle,
+        input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind,
         conflict_manifest, conflict_manifest_digest, attempt_digest)
-     VALUES ($1,$2,$3,$4,$5,$6,'refs/heads/main',$7,$8,$9,$10,false,$11,$12,$13,$14,$15,$16)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,$10,$11,$12,false,$13,$14,$15,$16,$17,$18)`,
     keys(
       identity,
       project.request,
       project.ticket,
       project.repository,
+      attemptBundle.bundle,
+      attemptBundle.digest,
       finalizerCommit(),
       strategy,
       project.configurationRevision,
@@ -245,12 +251,20 @@ test("an attempt names a request, a repository and a configuration that were ret
     assert.match(
       await rig.refusal(
         `INSERT INTO finalization_attempt
-           (tenant, project, attempt, request, ticket, repository, target_ref,
+           (tenant, project, attempt, request, ticket, repository, input_bundle,
+            input_bundle_digest, target_ref,
             target_commit, strategy, configuration_revision, configuration_digest,
             approval_required, outcome, candidate_commit, attempt_digest)
-         VALUES ($1,$2,$3,$4,1,$5,'refs/heads/main',$8,'Merge',$6,$7,false,
+         VALUES ($1,$2,$3,$4,1,$5,$11,$12,'refs/heads/main',$8,'Merge',$6,$7,false,
                  'Prepared',$9,$10)`,
-        [...values, finalizerCommit(), finalizerCommit(), finalizerDigest()],
+        [
+          ...values,
+          finalizerCommit(),
+          finalizerCommit(),
+          finalizerDigest(),
+          attemptBundle.bundle,
+          attemptBundle.digest,
+        ],
       ),
       new RegExp(constraint, "u"),
       constraint,
@@ -260,13 +274,15 @@ test("an attempt names a request, a repository and a configuration that were ret
 
 test("an attempt identity is never reused, in this project or another", async () => {
   const other = await finalizerProject(rig, "constraints-other");
+  const elsewhere = await finalizerBundle(rig, other, "constraints-other");
   assert.match(
     await rig.refusal(
       `INSERT INTO finalization_attempt
-         (tenant, project, attempt, request, ticket, repository, target_ref,
+         (tenant, project, attempt, request, ticket, repository, input_bundle,
+          input_bundle_digest, target_ref,
           target_commit, strategy, configuration_revision, configuration_digest,
           approval_required, outcome, candidate_commit, attempt_digest)
-       VALUES ($1,$2,$3,$4,$5,$6,'refs/heads/main',$7,'Merge',$8,$9,false,
+       VALUES ($1,$2,$3,$4,$5,$6,$12,$13,'refs/heads/main',$7,'Merge',$8,$9,false,
                'Prepared',$10,$11)`,
       [
         other.partition.tenant,
@@ -280,6 +296,8 @@ test("an attempt identity is never reused, in this project or another", async ()
         other.configurationDigest,
         finalizerCommit(),
         finalizerDigest(),
+        elsewhere.bundle,
+        elsewhere.digest,
       ],
     ),
     /finalization_attempt_identity_is_never_reused/u,
@@ -473,7 +491,51 @@ test("a bundle is written once, digested, and its references are a bounded close
       constraint,
     );
   }
+  assert.match(
+    await rig.ownerRefusal(
+      `INSERT INTO input_bundle_reference
+         (tenant, project, bundle, ordinal, reference_kind, reference_id, reference_digest)
+       VALUES ($1,$2,$3,1,'Artifact','reference','not-a-digest')`,
+      keys(bundle),
+    ),
+    /input_bundle_reference_digest_is_hex/u,
+  );
   assert.equal(allInputBundleReferenceKinds.includes("Artifact"), true);
+});
+
+test("an attempt and a registration each pin a bundle that was retained", async () => {
+  assert.match(
+    await rig.refusal(
+      `INSERT INTO finalization_attempt
+         (tenant, project, attempt, request, ticket, repository, input_bundle,
+          input_bundle_digest, target_ref, target_commit, strategy,
+          configuration_revision, configuration_digest, approval_required,
+          outcome, candidate_commit, attempt_digest)
+       VALUES ($1,$2,$3,$4,$5,$6,'no-such-bundle',$7,'refs/heads/main',$8,'Merge',
+               $9,$10,false,'Prepared',$11,$12)`,
+      keys(
+        finalizerIdentity("nobundle"),
+        project.request,
+        project.ticket,
+        project.repository,
+        attemptBundle.digest,
+        finalizerCommit(),
+        project.configurationRevision,
+        project.configurationDigest,
+        finalizerCommit(),
+        finalizerDigest(),
+      ),
+    ),
+    /finalization_attempt_has_its_bundle/u,
+  );
+  assert.match(
+    await rig.ownerRefusal(
+      `UPDATE execution_request SET input_bundle=NULL, input_bundle_digest=NULL
+        WHERE tenant=$1 AND project=$2 AND kind='SpawnWork'`,
+      keys(),
+    ),
+    /execution_request_pins_its_bundle/u,
+  );
 });
 
 test("a request's claim is fenced by an epoch and one stays live per ticket", async () => {

@@ -211,6 +211,8 @@ function checkedFinalizationSubmission(
     record["version"] !== 1 ||
     typeof record["request"] !== "string" ||
     record["request"].length === 0 ||
+    typeof record["attempt"] !== "string" ||
+    record["attempt"].length === 0 ||
     typeof generation !== "number" ||
     !Number.isSafeInteger(generation) ||
     generation < 1 ||

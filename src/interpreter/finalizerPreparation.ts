@@ -53,8 +53,9 @@ import {
   type FinalizationClaim,
   type FinalizationFailureKind,
   type GitObjectId,
+  type InputBundle,
   type InputBundleId,
-  type InputBundleReferenceKind,
+  type InputBundleReference,
   type IntegrationStrategy,
   type ObservedTarget,
   type RepositoryId,
@@ -336,19 +337,6 @@ export interface FinalizerIdentityFactory {
   next(partition: Partition): PreparationIdentity;
 }
 
-/** One reference an input bundle pins, which is never a log and never a secret. */
-export interface InputBundleReference {
-  readonly kind: InputBundleReferenceKind;
-  readonly reference: string;
-}
-
-/** The immutable references one preparation pinned, under the canonical digest of them. */
-export interface InputBundle {
-  readonly bundle: InputBundleId;
-  readonly digest: string;
-  readonly references: readonly InputBundleReference[];
-}
-
 /**
  * One preparation offered to the durable authority. It is written once, and the
  * schema has no update path at all, so a second preparation is another identity.
@@ -417,7 +405,10 @@ export interface FinalizerPreparationStore {
 }
 
 /** The label that separates this construction from any other digest this tree computes. */
-const finalizationDigestFormat = "chuggy:finalization:v1";
+export const finalizationDigestFormat = "chuggy:finalization:v1";
+
+/** The part that separates a bundle's canonical bytes from an attempt's, which a backfill spells too. */
+export const inputBundleCanonicalPart = "bundle";
 
 /** Length-prefixes each part, so no opaque value can spell out a boundary. */
 function finalizationParts(parts: readonly string[]): CanonicalFinalization {
@@ -434,12 +425,16 @@ export function canonicalInputBundle(
 ): CanonicalFinalization {
   return finalizationParts([
     finalizationDigestFormat,
-    "bundle",
+    inputBundleCanonicalPart,
     partition.tenant,
     partition.project,
     bundle,
     String(references.length),
-    ...references.flatMap((reference) => [reference.kind, reference.reference]),
+    ...references.flatMap((reference) => [
+      reference.kind,
+      reference.reference,
+      reference.digest ?? "",
+    ]),
   ]);
 }
 
@@ -481,6 +476,21 @@ export interface ConflictManifest {
   readonly target: ObservedTarget;
   readonly base?: GitObjectId;
   readonly conflict: ConflictSummary;
+}
+
+/**
+ * The immutable evidence one concluded failure left, read from the attempt the
+ * submission pinned. `preparation` is what that attempt's own bundle held, so a
+ * rework bundle carries the artifact, handoff and briefing references forward
+ * rather than re-deriving them from rows the deciding transaction cannot read.
+ */
+export interface FinalizationEvidence {
+  readonly attempt: FinalizationAttemptId;
+  readonly attemptDigest: string;
+  readonly targetCommit: GitObjectId;
+  readonly conflictManifest?: ProjectArtifactId;
+  readonly conflictManifestDigest?: string;
+  readonly preparation: readonly InputBundleReference[];
 }
 
 /** The schema version a conflict manifest is written at, and the only one this module writes. */

@@ -126,14 +126,15 @@ export type TicketCommand =
 
 /**
  * The finalizer's own submission, which its authenticated boundary builds from
- * durable rows. It names the request it answers, the request generation and the
- * epoch it was made under, so a writer can fence it before constructing an
- * event.
+ * durable rows. It names the request it answers, the attempt it concluded on,
+ * the request generation and the epoch it was made under, so a writer can fence
+ * it and find its evidence before constructing an event.
  */
 export interface FinalizationSubmission {
   readonly version: 1;
   readonly command: "SubmitFinalizationResult";
   readonly request: string;
+  readonly attempt: string;
   readonly requestGeneration: number;
   readonly recoveryEpoch: string;
   readonly outcome: FinalizationOutcome;

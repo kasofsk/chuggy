@@ -252,7 +252,10 @@ export type InputBundleReferenceKind =
   | "Artifact"
   | "Handoff"
   | "ConfigurationRevision"
-  | "Repository";
+  | "Repository"
+  | "FinalizationAttempt"
+  | "ConflictManifest"
+  | "TargetCommit";
 
 /** Every reference kind, so a suite and a database CHECK iterate rather than restate. */
 export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
@@ -262,10 +265,31 @@ export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
     "Handoff",
     "ConfigurationRevision",
     "Repository",
+    "FinalizationAttempt",
+    "ConflictManifest",
+    "TargetCommit",
   ];
 
 /** The most references one bundle holds, so a bundle cannot grow into a payload. */
 export const inputBundleReferencesMax = 1_024;
+
+/**
+ * One reference an input bundle pins, which is never a log and never a secret.
+ * The digest is present exactly where the referenced object is content
+ * addressed, so a holder can tell the object it was pinned at from any later one.
+ */
+export interface InputBundleReference {
+  readonly kind: InputBundleReferenceKind;
+  readonly reference: string;
+  readonly digest?: string;
+}
+
+/** The immutable references one transaction pinned, under the canonical digest of them. */
+export interface InputBundle {
+  readonly bundle: InputBundleId;
+  readonly digest: string;
+  readonly references: readonly InputBundleReference[];
+}
 
 /** The closed vocabulary a git act reports instead of free text, so a label is never a payload. */
 export type GitEvidence =

@@ -91,7 +91,9 @@ import {
   type GitRefName,
   type HeldPermit,
   type IntegrationStrategy,
+  type InputBundle,
   type InputBundleId,
+  type InputBundleReference,
   type ObservedTarget,
   type RepositoryBinding,
   inputBundleReferencesMax,
@@ -106,8 +108,6 @@ import {
   type FinalizerIdentityFactory,
   type FinalizerPreparationStore,
   type HandoffContentPort,
-  type InputBundle,
-  type InputBundleReference,
   type PinnedConfiguration,
   type PreparationIdentity,
   type ProjectArtifactPort,
@@ -421,6 +421,7 @@ function finalizerBundleOf(
     {
       kind: "ConfigurationRevision",
       reference: pinned.configuration.revision,
+      digest: pinned.configuration.digest,
     },
     ...pinned.manifests.map((manifest) => ({
       kind: "ResultManifest" as const,

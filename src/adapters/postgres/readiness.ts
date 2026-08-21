@@ -65,6 +65,17 @@ import {
 } from "../../interpreter/ticketCommand.ts";
 import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
 import {
+  allInputBundleReferenceKinds,
+  asFinalizationAttemptId,
+  asGitObjectId,
+  inputBundleReferencesMax,
+} from "../../interpreter/finalizer.ts";
+import {
+  asProjectArtifactId,
+  type FinalizationEvidence,
+} from "../../interpreter/finalizerPreparation.ts";
+import { finalizerRowValue } from "./finalizerRows.ts";
+import {
   finalizationResultEvent,
   releaseTicketEvent,
 } from "../../actor/decisionEvent.ts";
@@ -158,6 +169,78 @@ async function releaseDraftSource(
   };
 }
 
+/** One failed attempt's row, with the bundle the preparation it belongs to pinned. */
+interface FinalizationAttemptRow {
+  readonly attempt_digest: string;
+  readonly target_commit: string;
+  readonly conflict_manifest: string | null;
+  readonly conflict_manifest_digest: string | null;
+  readonly input_bundle: string;
+}
+
+/**
+ * The immutable evidence a failed result concluded on, read from the attempt
+ * the submission pinned rather than from the request's latest one. A succeeded
+ * result spawns no work, so nothing is gathered for one.
+ */
+async function finalizationEvidenceOf(
+  pool: pg.Pool,
+  partition: Partition,
+  command: FinalizationSubmission,
+): Promise<FinalizationEvidence | undefined> {
+  if (command.outcome !== "FinalizationFailed") return undefined;
+  const found = await pool.query<FinalizationAttemptRow>(
+    `SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
+            a.conflict_manifest_digest, a.input_bundle
+       FROM finalization_attempt a
+      WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3 AND a.request=$4`,
+    [partition.tenant, partition.project, command.attempt, command.request],
+  );
+  const attempt = found.rows[0];
+  if (attempt === undefined)
+    throw new Error(
+      `finalization attempt ${command.attempt} does not answer this request`,
+    );
+  const pinned = await pool.query<{
+    reference_kind: string;
+    reference_id: string;
+    reference_digest: string | null;
+  }>(
+    `SELECT reference_kind, reference_id, reference_digest
+       FROM input_bundle_reference
+      WHERE tenant=$1 AND project=$2 AND bundle=$3
+      ORDER BY ordinal LIMIT $4`,
+    [
+      partition.tenant,
+      partition.project,
+      attempt.input_bundle,
+      inputBundleReferencesMax,
+    ],
+  );
+  return {
+    attempt: asFinalizationAttemptId(command.attempt),
+    attemptDigest: attempt.attempt_digest,
+    targetCommit: asGitObjectId(attempt.target_commit),
+    ...(attempt.conflict_manifest === null
+      ? {}
+      : { conflictManifest: asProjectArtifactId(attempt.conflict_manifest) }),
+    ...(attempt.conflict_manifest_digest === null
+      ? {}
+      : { conflictManifestDigest: attempt.conflict_manifest_digest }),
+    preparation: pinned.rows.map((row) => ({
+      kind: finalizerRowValue(
+        allInputBundleReferenceKinds,
+        row.reference_kind,
+        "bundle reference kind",
+      ),
+      reference: row.reference_id,
+      ...(row.reference_digest === null
+        ? {}
+        : { digest: row.reference_digest }),
+    })),
+  };
+}
+
 /**
  * The `RunFinalizer` request a submitted result claims to answer, and whether it
  * is still the request that authorizes it. A result whose request has settled,
@@ -194,6 +277,7 @@ async function finalizationRequestSource(
       `finalization request ${command.request} does not authorize this result`,
     );
   const ticket = projectRowCounter(request.ticket, "finalization ticket");
+  const evidence = await finalizationEvidenceOf(pool, partition, command);
   return {
     kind: "Operation",
     operation: asOperationId(operation),
@@ -209,6 +293,7 @@ async function finalizationRequestSource(
           request.request_generation,
           "finalization request generation",
         ) === command.requestGeneration,
+      ...(evidence === undefined ? {} : { evidence }),
     },
   };
 }

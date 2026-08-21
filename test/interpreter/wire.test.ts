@@ -267,6 +267,7 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
     version: 1,
     command: "SubmitFinalizationResult",
     request: "6:0:RunFinalizer",
+    attempt: "attempt-1",
     requestGeneration: 6,
     recoveryEpoch: "epoch-1",
     outcome: "FinalizationSucceeded",
@@ -280,6 +281,7 @@ test("the finalizer's own envelope is read only by the parse a writer reads its 
   for (const broken of [
     { ...submitted, version: 2 },
     { ...submitted, request: "" },
+    { ...submitted, attempt: "" },
     { ...submitted, requestGeneration: 0 },
     { ...submitted, requestGeneration: 1.5 },
     { ...submitted, recoveryEpoch: "" },

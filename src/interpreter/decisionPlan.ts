@@ -7,10 +7,17 @@ import { asTicketId, type TicketId } from "../domain/ids.ts";
 import { tasksInIdOrder } from "../domain/task.ts";
 import { reducibleEvalIn, reducibleWorkIn } from "../domain/enablement.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
-import type {
-  DecisionMaterialization,
-  ExecutionRequestPlan,
-  NativeActionPlan,
+import {
+  inputBundleReferencesMax,
+  type InputBundleReference,
+} from "./finalizer.ts";
+import {
+  inputBundleIdentityKind,
+  type ConfigurationPin,
+  type DecisionMaterialization,
+  type ExecutionRequestBundle,
+  type ExecutionRequestPlan,
+  type NativeActionPlan,
 } from "./projectDecision.ts";
 
 function identity(entry: Entry, effectPosition: number, kind: string): string {
@@ -39,7 +46,29 @@ function requestTasks(tasks: readonly Task[]): ExecutionRequestPlan["tasks"] {
   );
 }
 
+/**
+ * The bundle a spawn pins, carrying the evidence of the finalization that
+ * caused it where one did. A cancellation authorizes no work, so it pins none.
+ */
+function executionRequestBundle(
+  input: DecisionInput,
+  entry: Entry,
+  effectPosition: number,
+): ExecutionRequestBundle {
+  const evidence =
+    input.source.kind === "Operation" &&
+    entry.event.type === "FinalizationResult" &&
+    entry.event.value.out === "FinalizationFailed"
+      ? input.source.finalizationRequest?.evidence
+      : undefined;
+  return {
+    bundle: identity(entry, effectPosition, inputBundleIdentityKind),
+    ...(evidence === undefined ? {} : { evidence }),
+  };
+}
+
 function executionRequest(
+  input: DecisionInput,
   entry: Entry,
   effectPosition: number,
   pre: Core,
@@ -72,6 +101,7 @@ function executionRequest(
         ticket,
         ticketVersion: entry.seq,
         kind,
+        bundle: executionRequestBundle(input, entry, effectPosition),
         tasks: requestTasks(created),
       };
     }
@@ -129,6 +159,7 @@ function nativeAction(
 }
 
 function effectPlans(
+  input: DecisionInput,
   entry: Entry,
   pre: Core,
   post: Core,
@@ -147,7 +178,9 @@ function effectPlans(
       case "SpawnWorkTasks":
       case "SpawnEvalTasks":
       case "CancelTicketWork":
-        execution.push(executionRequest(entry, effectPosition, pre, post));
+        execution.push(
+          executionRequest(input, entry, effectPosition, pre, post),
+        );
         break;
       case "OpenHumanTask":
         actions.push(nativeAction(entry, effectPosition, post));
@@ -178,6 +211,61 @@ function effectPlans(
   return { execution, actions, finalization };
 }
 
+/**
+ * The references one spawn's bundle pins, in the order a holder reads them and
+ * with no reference declared twice. A failed finalization contributes the exact
+ * immutable identities its evidence named, so a worker forms its reconciliation
+ * objective from the bundle rather than from whatever a ref holds now.
+ */
+export function inputBundleReferencesOf(
+  configuration: ConfigurationPin,
+  bundle: ExecutionRequestBundle,
+): readonly InputBundleReference[] {
+  const evidence = bundle.evidence;
+  const named: readonly InputBundleReference[] = [
+    {
+      kind: "ConfigurationRevision",
+      reference: configuration.configurationRevision,
+      digest: configuration.configurationDigest,
+    },
+    ...(evidence === undefined
+      ? []
+      : [
+          ...evidence.preparation,
+          {
+            kind: "FinalizationAttempt" as const,
+            reference: evidence.attempt,
+            digest: evidence.attemptDigest,
+          },
+          { kind: "TargetCommit" as const, reference: evidence.targetCommit },
+          ...(evidence.conflictManifest === undefined
+            ? []
+            : [
+                {
+                  kind: "ConflictManifest" as const,
+                  reference: evidence.conflictManifest,
+                  ...(evidence.conflictManifestDigest === undefined
+                    ? {}
+                    : { digest: evidence.conflictManifestDigest }),
+                },
+              ]),
+        ]),
+  ];
+  const seen = new Set<string>();
+  const references = named.filter((reference) => {
+    const key = `${reference.kind}:${reference.reference}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (references.length > inputBundleReferencesMax) {
+    throw new RangeError(
+      `decision plan: ${String(references.length)} references is past the most one bundle pins`,
+    );
+  }
+  return references;
+}
+
 /** Derives every durable consequence of one pure ticket decision. */
 export function materializationOf(
   input: DecisionInput,
@@ -185,7 +273,7 @@ export function materializationOf(
   post: Core,
   entry: Entry,
 ): DecisionMaterialization {
-  const effects = effectPlans(entry, pre, post);
+  const effects = effectPlans(input, entry, pre, post);
 
   const eventTicket =
     entry.event.type === "TaskDone"

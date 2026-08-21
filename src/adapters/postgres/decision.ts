@@ -41,6 +41,13 @@
  * cancellation request carries none of them: it retires work rather than
  * authorizing any, and a column it does not need is a column a later reader
  * would have to decide the meaning of.
+ *
+ * AND IT PINS THE BUNDLE ITS WORKERS CONSUME, WRITTEN IN THIS SAME TRANSACTION.
+ * 006 has the transaction that spawns a work set materialize that set's input
+ * bundle from the exact references at that decision, and a decision returning a
+ * ticket to `Working` after a finalization failed adds the immutable evidence
+ * that failure named. So a worker forms its reconciliation objective from the
+ * bundle rather than from current refs, finalizer logs or the bare outcome.
  */
 
 import { createHash } from "node:crypto";
@@ -67,6 +74,12 @@ import {
 } from "../../interpreter/projectDecision.ts";
 import type { Lease, Partition } from "../../interpreter/projectStore.ts";
 import type { DispatchCandidate } from "../../interpreter/dispatchView.ts";
+import { asInputBundleId } from "../../interpreter/finalizer.ts";
+import { inputBundleReferencesOf } from "../../interpreter/decisionPlan.ts";
+import {
+  postgresInputBundleOf,
+  postgresInputBundleWrite,
+} from "./inputBundle.ts";
 import { postgresJournalWrite } from "./journal.ts";
 import {
   postgresOwnershipHonours,
@@ -311,14 +324,24 @@ async function decisionExecution(
   const seq = outcome.entry.seq;
   for (const request of outcome.materialization.execution) {
     const spawns = request.kind !== "CancelTicketWork";
+    const bundle =
+      request.bundle === undefined
+        ? undefined
+        : postgresInputBundleOf(
+            partition,
+            asInputBundleId(request.bundle.bundle),
+            inputBundleReferencesOf(configuration, request.bundle),
+          );
+    if (bundle !== undefined)
+      await postgresInputBundleWrite(client, partition, bundle);
     await client.query(
       `INSERT INTO execution_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
         ticket_version, kind, capacity_account, configuration_revision,
-        configuration_digest)
+        configuration_digest, input_bundle, input_bundle_digest)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
                CASE WHEN $9::boolean THEN ${accountIdentityFunction}($1,$2) END,
-               $10,$11)`,
+               $10,$11,$12,$13)`,
       [
         partition.tenant,
         partition.project,
@@ -331,6 +354,8 @@ async function decisionExecution(
         spawns,
         spawns ? configuration.configurationRevision : null,
         spawns ? configuration.configurationDigest : null,
+        bundle?.bundle ?? null,
+        bundle?.digest ?? null,
       ],
     );
     for (const task of request.tasks) {

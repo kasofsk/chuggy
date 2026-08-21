@@ -266,7 +266,15 @@ import {
   operationCommandCharsMax,
   operationIdentityCharsMax,
 } from "../../interpreter/operationInbox.ts";
-import { allRefusalCodes } from "../../interpreter/projectDecision.ts";
+import {
+  finalizationDigestFormat,
+  inputBundleCanonicalPart,
+} from "../../interpreter/finalizerPreparation.ts";
+import {
+  allRefusalCodes,
+  inputBundleIdentityKind,
+  spawnRequestKinds,
+} from "../../interpreter/projectDecision.ts";
 import {
   allNativeActionKinds,
   allNativeActionResolutions,
@@ -2372,6 +2380,25 @@ const nativeActionPairing = allNativeActionKinds
   )
   .join("\n              OR ");
 
+/**
+ * The bundle identity a registration predating I7 is given, spelled exactly as
+ * the deciding transaction spells one so a replayed decision reproduces it.
+ */
+export const retrofitBundleIdentity = `r.authorizing_seq::text || ':'
+     || r.effect_position::text || ':${inputBundleIdentityKind}'`;
+
+/**
+ * The canonical bytes of that bundle's one reference, digested as
+ * `canonicalInputBundle` digests it: each part length-prefixed, in order.
+ */
+export const retrofitBundleDigest = `encode(sha256(convert_to((
+       SELECT string_agg(length(part)::text || ':' || part, '' ORDER BY position)
+         FROM unnest(ARRAY['${finalizationDigestFormat}', '${inputBundleCanonicalPart}',
+                           r.tenant, r.project, ${retrofitBundleIdentity}, '1',
+                           'ConfigurationRevision', r.configuration_revision,
+                           r.configuration_digest])
+              WITH ORDINALITY AS parts(part, position)), 'UTF8')), 'hex')`;
+
 /** The relations, triggers and boundaries the finalizer owns, which I7 adds. */
 const durableFinalizer = [
   roleStatement(finalizerRole),
@@ -2404,7 +2431,6 @@ const durableFinalizer = [
      digest     text NOT NULL,
      created_at timestamptz NOT NULL DEFAULT now(),
      PRIMARY KEY (tenant, project, bundle),
-     CONSTRAINT input_bundle_identity_is_never_reused UNIQUE (bundle),
      CONSTRAINT input_bundle_belongs_to_project
        FOREIGN KEY (tenant, project) REFERENCES project (tenant, project),
      CONSTRAINT input_bundle_is_referenceable UNIQUE (tenant, project, bundle, digest),
@@ -2420,6 +2446,7 @@ const durableFinalizer = [
      ordinal        integer NOT NULL,
      reference_kind text    NOT NULL,
      reference_id   text    NOT NULL,
+     reference_digest text,
      PRIMARY KEY (tenant, project, bundle, ordinal),
      CONSTRAINT input_bundle_reference_has_its_bundle
        FOREIGN KEY (tenant, project, bundle) REFERENCES input_bundle (tenant, project, bundle),
@@ -2430,8 +2457,46 @@ const durableFinalizer = [
      CONSTRAINT input_bundle_reference_count_is_bounded CHECK (
        ordinal BETWEEN 1 AND ${inputBundleReferencesMax}),
      CONSTRAINT input_bundle_reference_identity_is_bounded CHECK (
-       length(reference_id) BETWEEN 1 AND ${finalizerIdentityCharsMax})
+       length(reference_id) BETWEEN 1 AND ${finalizerIdentityCharsMax}),
+     CONSTRAINT input_bundle_reference_digest_is_hex CHECK (
+       reference_digest IS NULL
+       OR reference_digest ~ '^[0-9a-f]{${artifactDigestChars}}$')
    )`,
+
+  `ALTER TABLE execution_request
+     ADD COLUMN input_bundle        text,
+     ADD COLUMN input_bundle_digest text`,
+  `INSERT INTO input_bundle (tenant, project, bundle, digest)
+     SELECT r.tenant, r.project, ${retrofitBundleIdentity},
+            ${retrofitBundleDigest}
+       FROM execution_request r
+      WHERE r.kind IN (${schemaTextSet(spawnRequestKinds)})`,
+  `INSERT INTO input_bundle_reference
+     (tenant, project, bundle, ordinal, reference_kind, reference_id, reference_digest)
+     SELECT r.tenant, r.project, ${retrofitBundleIdentity}, 1,
+            'ConfigurationRevision', r.configuration_revision, r.configuration_digest
+       FROM execution_request r
+      WHERE r.kind IN (${schemaTextSet(spawnRequestKinds)})`,
+  `UPDATE execution_request r
+      SET input_bundle = b.bundle, input_bundle_digest = b.digest
+     FROM input_bundle b
+    WHERE b.tenant = r.tenant AND b.project = r.project
+      AND b.bundle = ${retrofitBundleIdentity}
+      AND r.kind IN (${schemaTextSet(spawnRequestKinds)})`,
+  `DO $$ BEGIN
+     IF EXISTS (SELECT 1 FROM execution_request
+                 WHERE (kind IN (${schemaTextSet(spawnRequestKinds)}))
+                   <> (input_bundle IS NOT NULL AND input_bundle_digest IS NOT NULL))
+     THEN RAISE EXCEPTION 'I7 found a registration whose input bundle the backfill did not pin';
+     END IF;
+   END $$`,
+  `ALTER TABLE execution_request
+     ADD CONSTRAINT execution_request_pins_its_bundle CHECK (
+       (kind IN (${schemaTextSet(spawnRequestKinds)})) = (input_bundle IS NOT NULL)
+       AND (input_bundle IS NULL) = (input_bundle_digest IS NULL)),
+     ADD CONSTRAINT execution_request_bundle_is_retained
+       FOREIGN KEY (tenant, project, input_bundle, input_bundle_digest)
+       REFERENCES input_bundle (tenant, project, bundle, digest)`,
 
   `CREATE TABLE finalization_attempt (
      tenant                 text    NOT NULL,
@@ -2440,6 +2505,8 @@ const durableFinalizer = [
      request                text    NOT NULL,
      ticket                 bigint  NOT NULL,
      repository             text    NOT NULL,
+     input_bundle           text    NOT NULL,
+     input_bundle_digest    text    NOT NULL,
      target_ref             text    NOT NULL,
      target_commit          text    NOT NULL,
      strategy               text    NOT NULL,
@@ -2463,6 +2530,9 @@ const durableFinalizer = [
      CONSTRAINT finalization_attempt_has_its_repository
        FOREIGN KEY (tenant, project, repository)
        REFERENCES project_repository (tenant, project, repository),
+     CONSTRAINT finalization_attempt_has_its_bundle
+       FOREIGN KEY (tenant, project, input_bundle, input_bundle_digest)
+       REFERENCES input_bundle (tenant, project, bundle, digest),
      CONSTRAINT finalization_attempt_configuration_is_retained
        FOREIGN KEY (tenant, project, configuration_revision, configuration_digest)
        REFERENCES configuration_revision (tenant, project, revision, digest),
@@ -2680,6 +2750,8 @@ const durableFinalizerBoundaries = [
            AND command->>'version' = '1'
            AND jsonb_typeof(command->'request') = 'string'
            AND length(command->>'request') BETWEEN 1 AND ${finalizerIdentityCharsMax}
+           AND jsonb_typeof(command->'attempt') = 'string'
+           AND length(command->>'attempt') BETWEEN 1 AND ${finalizerIdentityCharsMax}
            AND command_integer(command->'requestGeneration')
            AND (command->>'requestGeneration')::numeric >= 1
            AND jsonb_typeof(command->'recoveryEpoch') = 'string'
@@ -2821,7 +2893,7 @@ const durableFinalizerBoundaries = [
        END IF;
        command_value := jsonb_build_object('version', 1,
          'command', 'SubmitFinalizationResult', 'request', in_request,
-         'requestGeneration', in_request_generation,
+         'attempt', in_attempt, 'requestGeneration', in_request_generation,
          'recoveryEpoch', in_recovery_epoch, 'outcome', in_outcome);
        IF ticket_command_is_valid(command_value) IS NOT TRUE THEN
          RAISE EXCEPTION 'the finalization result this boundary built is not one the mailbox admits'
@@ -2932,6 +3004,7 @@ const durableFinalizerBoundaries = [
      FROM ${finalizerRole}`,
 
   `GRANT SELECT, INSERT ON input_bundle, input_bundle_reference TO ${ticketServiceRole}`,
+  `GRANT SELECT ON finalization_attempt TO ${ticketServiceRole}`,
 
   `GRANT SELECT ON finalization_request, finalization_attempt, commit_permit,
      finalization_reconciliation, recovery_epoch, ticket_projection

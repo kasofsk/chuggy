@@ -55,6 +55,7 @@ import {
 } from "./operationInbox.ts";
 import type { Lease, Lifecycle } from "./projectStore.ts";
 import type { DispatchCandidate } from "./dispatchView.ts";
+import type { FinalizationEvidence } from "./finalizerPreparation.ts";
 import type {
   EscalationResolution,
   NativeActionResolution,
@@ -111,12 +112,32 @@ export interface TicketProjection {
   readonly phase: Phase;
 }
 
+/**
+ * The bundle a spawn request pins, minted from the same journal position the
+ * request is, so a retried decision reproduces the identity rather than a second
+ * bundle. A cancellation authorizes no work and pins none.
+ */
+export interface ExecutionRequestBundle {
+  readonly bundle: string;
+  readonly evidence?: FinalizationEvidence;
+}
+
+/** The kind part of a spawn bundle's derived identity, which the schema's backfill spells too. */
+export const inputBundleIdentityKind = "InputBundle";
+
+/** The request kinds that authorize work, which are the ones that pin a bundle. */
+export const spawnRequestKinds: readonly ExecutionRequestPlan["kind"][] = [
+  "SpawnWork",
+  "SpawnEvaluation",
+];
+
 export interface ExecutionRequestPlan {
   readonly request: string;
   readonly effectPosition: number;
   readonly ticket: TicketId;
   readonly ticketVersion: number;
   readonly kind: "SpawnWork" | "SpawnEvaluation" | "CancelTicketWork";
+  readonly bundle?: ExecutionRequestBundle;
   readonly tasks: readonly (
     | { readonly task: number; readonly kind: "Work" }
     | {

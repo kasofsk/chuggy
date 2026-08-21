@@ -41,6 +41,7 @@
  * passing on a value nothing checked.
  */
 
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
@@ -68,12 +69,18 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
-import type { FinalizerService } from "../../src/interpreter/finalizerRun.ts";
+import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
+import {
+  finalizerPass,
+  type FinalizerPassReport,
+  type FinalizerService,
+} from "../../src/interpreter/finalizerRun.ts";
 import {
   allGitObjectIdChars,
   asFinalizationAttemptId,
   asFinalizerOwnerId,
   asInputBundleId,
+  asRepositoryCredential,
   checkedFinalizerConfig,
   finalizerDefaults,
   type AncestryProved,
@@ -129,6 +136,7 @@ export interface FinalizerRig {
   readonly harness: PostgresHarness;
   readonly pool: pg.Pool;
   readonly artifactRoot: string;
+  readonly gitRoot: string;
   readonly as: (
     sql: string,
     values?: readonly unknown[],
@@ -162,6 +170,7 @@ export async function finalizerRigOpen(): Promise<FinalizerRig> {
   const harness = await postgresHarnessOpen();
   const pool = finalizerRolePool();
   const artifactRoot = mkdtempSync(join(tmpdir(), "chuggy-artifacts-"));
+  const gitRoot = mkdtempSync(join(tmpdir(), "chuggy-remotes-"));
   const as = async (
     sql: string,
     values?: readonly unknown[],
@@ -172,6 +181,7 @@ export async function finalizerRigOpen(): Promise<FinalizerRig> {
     harness,
     pool,
     artifactRoot,
+    gitRoot,
     as,
     refusal: (sql, values) => finalizerRefused(() => as(sql, values), sql),
     ownerRefusal: (sql, values) =>
@@ -180,8 +190,142 @@ export async function finalizerRigOpen(): Promise<FinalizerRig> {
       await pool.end();
       await harness.close();
       rmSync(artifactRoot, { recursive: true, force: true });
+      rmSync(gitRoot, { recursive: true, force: true });
     },
   };
+}
+
+/** Runs one git verb in a fixture repository, which is how a case moves the remote. */
+export function finalizerGitVerb(
+  directory: string,
+  ...args: readonly string[]
+): string {
+  return execFileSync("git", ["-C", directory, ...args], {
+    encoding: "utf8",
+  }).trim();
+}
+
+/** One bare origin and the clone a case commits through. */
+export interface FinalizerRemote {
+  readonly origin: string;
+  readonly seed: string;
+}
+
+/** Commits one file in the seed and pushes it, which is what moves the target. */
+export function finalizerRemoteCommit(
+  remote: FinalizerRemote,
+  path: string,
+  content: string,
+  message: string,
+): string {
+  writeFileSync(join(remote.seed, path), content);
+  finalizerGitVerb(remote.seed, "add", "-A");
+  finalizerGitVerb(
+    remote.seed,
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-qm",
+    message,
+  );
+  finalizerGitVerb(remote.seed, "push", "-q", remote.origin, "main:main");
+  return finalizerGitVerb(remote.seed, "rev-parse", "HEAD");
+}
+
+/** A bare origin with one commit on `main`, and the clone a case pushes through. */
+export function finalizerRemoteOpen(
+  rig: FinalizerRig,
+  label: string,
+): FinalizerRemote {
+  const directory = mkdtempSync(join(rig.gitRoot, `${label}-`));
+  const remote = {
+    origin: join(directory, "origin.git"),
+    seed: join(directory, "seed"),
+  };
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote.origin]);
+  execFileSync("git", ["init", "-q", "-b", "main", remote.seed]);
+  finalizerGitVerb(remote.seed, "config", "user.name", "fixture");
+  finalizerGitVerb(remote.seed, "config", "user.email", "fixture@example.test");
+  finalizerRemoteCommit(remote, "base.txt", "base\n", "base");
+  return remote;
+}
+
+/** The real git adapter over one remote, with a credential no filesystem remote asks for. */
+export function finalizerRemotePort(rig: FinalizerRig): GitPromotionPort {
+  return gitPromotion({
+    scratchDirectory: join(rig.gitRoot, "adapter"),
+    identity: { name: "chug", email: "chug@example.test" },
+    environment: process.env,
+    credentials: {
+      credential: () =>
+        Promise.resolve({
+          resolved: "Credential",
+          credential: asRepositoryCredential("unused"),
+        }),
+    },
+  });
+}
+
+/**
+ * A port that lets one case act in the window between the observation a candidate
+ * is built over and the re-reading the integration is answered against.
+ */
+export function finalizerMovingPort(
+  port: GitPromotionPort,
+  move: () => void,
+): GitPromotionPort {
+  return {
+    ...port,
+    prepareCandidate: async (preparation) => {
+      const prepared = await port.prepareCandidate(preparation);
+      move();
+      return prepared;
+    },
+  };
+}
+
+/** Invalidates every live request but this project's, so a pass draws one claim. */
+export async function finalizerQuiesce(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+): Promise<void> {
+  await rig.as(
+    `UPDATE finalization_request SET state='Invalidated'
+      WHERE state IN ('Open','Registered')
+        AND NOT (tenant=$1 AND project=$2 AND request=$3)`,
+    [project.partition.tenant, project.partition.project, project.request],
+  );
+}
+
+/** One pass, under an owner no other case is using. */
+export function finalizerPassOnce(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  git: GitPromotionPort,
+  label: string,
+): Promise<FinalizerPassReport> {
+  return finalizerPass(
+    finalizerService(rig, git),
+    asFinalizerOwnerId(`owner-${label}`),
+    asRecoveryEpoch(project.epoch),
+  );
+}
+
+/** A finalizing project bound to one real bare repository, with everything else quiesced. */
+export async function finalizerSubject(
+  rig: FinalizerRig,
+  label: string,
+  handoffs: readonly FinalizerHandoff[],
+): Promise<{
+  project: FinalizerProject;
+  remote: FinalizerRemote;
+  work: FinalizerWork;
+}> {
+  const remote = finalizerRemoteOpen(rig, label);
+  const project = await finalizerProject(rig, label, remote.origin);
+  await finalizerQuiesce(rig, project);
+  const work = await finalizerPassedWork(rig, project, label, handoffs);
+  return { project, remote, work };
 }
 
 /** The most decisions one fixture drains, which is what bounds the loop draining them. */
@@ -379,6 +523,33 @@ export interface FinalizerAttempt {
   readonly approvalRequired?: boolean;
 }
 
+/** Writes one bundle as the finalizer, which is what an attempt has to pin one of. */
+export async function finalizerBundle(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  label: string,
+): Promise<{ bundle: string; digest: string }> {
+  const bundle = finalizerIdentity(`bundle-${label}`);
+  const digest = finalizerDigest();
+  await rig.as(
+    `INSERT INTO input_bundle (tenant, project, bundle, digest) VALUES ($1,$2,$3,$4)`,
+    [project.partition.tenant, project.partition.project, bundle, digest],
+  );
+  await rig.as(
+    `INSERT INTO input_bundle_reference
+       (tenant, project, bundle, ordinal, reference_kind, reference_id, reference_digest)
+     VALUES ($1,$2,$3,1,'ConfigurationRevision',$4,$5)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      bundle,
+      project.configurationRevision,
+      project.configurationDigest,
+    ],
+  );
+  return { bundle, digest };
+}
+
 /** Writes one attempt as the finalizer, which is the role that owns preparations. */
 export async function finalizerPrepare(
   rig: FinalizerRig,
@@ -388,12 +559,14 @@ export async function finalizerPrepare(
 ): Promise<string> {
   const identity = attempt.attempt ?? finalizerIdentity(`attempt-${label}`);
   const outcome = attempt.outcome ?? "Prepared";
+  const bundle = await finalizerBundle(rig, project, label);
   await rig.as(
     `INSERT INTO finalization_attempt
-       (tenant, project, attempt, request, ticket, repository, target_ref,
+       (tenant, project, attempt, request, ticket, repository, input_bundle,
+        input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind, attempt_digest)
-     VALUES ($1,$2,$3,$4,$5,$6,'refs/heads/main',$7,'Merge',$8,$9,$10,$11,$12,$13,$14)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -401,6 +574,8 @@ export async function finalizerPrepare(
       project.request,
       project.ticket,
       project.repository,
+      bundle.bundle,
+      bundle.digest,
       attempt.target ?? finalizerCommit(),
       project.configurationRevision,
       project.configurationDigest,
