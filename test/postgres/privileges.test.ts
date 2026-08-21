@@ -355,7 +355,7 @@ test("the scheduler reads execution and capacity, and of the project only its li
   );
   assert.equal(
     read.find((row) => row.relation === "project")?.columns,
-    "lifecycle,lifecycle_generation,project,tenant",
+    "lifecycle,lifecycle_generation,manifest_next,project,tenant",
   );
 });
 

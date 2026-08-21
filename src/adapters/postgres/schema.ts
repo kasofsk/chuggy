@@ -1752,6 +1752,9 @@ const durableExecutionScheduler = [
  * roles reach it through. The boundary owner owns what its `SECURITY DEFINER`
  * bodies call and reads what they read, and the scheduler is granted the move
  * table because its own status updates are what fire the trigger consulting it.
+ * It is granted `SELECT` on the manifest counter it is granted `UPDATE` on for
+ * the same kind of reason: allocating an ordinal reads the column it advances,
+ * and a column grant that covers only the write is refused at the read.
  */
 const durableExecutionSchedulerBoundaries = [
   `CREATE FUNCTION ${statusMoveFunction}(before text, after text) RETURNS boolean
@@ -2010,7 +2013,8 @@ const durableExecutionSchedulerBoundaries = [
   `GRANT UPDATE (status, outcome, blocked_reason, result_manifest, completion_operation,
      terminal_at) ON execution TO ${boundaryOwnerRole}`,
 
-  `GRANT SELECT (tenant, project, lifecycle, lifecycle_generation) ON project TO ${schedulerRole}`,
+  `GRANT SELECT (tenant, project, lifecycle, lifecycle_generation, manifest_next)
+     ON project TO ${schedulerRole}`,
   `GRANT UPDATE (manifest_next) ON project TO ${schedulerRole}`,
   `GRANT SELECT ON recovery_epoch, execution_cluster, capacity_account TO ${schedulerRole}`,
   `GRANT SELECT ON execution_request, execution_request_task TO ${schedulerRole}`,
