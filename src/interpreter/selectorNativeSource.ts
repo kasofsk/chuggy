@@ -41,7 +41,7 @@ export function selectorNativeSource(
       native.operation(principal, partition, operation),
   };
 }
-type SelectorNativeApi = Pick<
+export type SelectorNativeApi = Pick<
   NativeWeb,
   "projectInventory" | "notifications" | "dispatchView" | "submit" | "operation"
 >;

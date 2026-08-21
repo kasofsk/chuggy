@@ -25,7 +25,10 @@ import {
   type SelectorRunResult,
   type SelectorRuntimeConfig,
 } from "./interpreter/selectorRuntime.ts";
-import { selectorNativeSource } from "./interpreter/selectorNativeSource.ts";
+import {
+  selectorNativeSource,
+  type SelectorNativeApi,
+} from "./interpreter/selectorNativeSource.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -62,7 +65,7 @@ export interface SelectorService {
 }
 
 export interface SelectorServiceRuntime {
-  readonly native: NativeWeb;
+  readonly native: SelectorNativeApi;
   readonly principal: Principal;
   readonly policy: SelectorPolicy;
   readonly identities: SelectorIdentityFactory;

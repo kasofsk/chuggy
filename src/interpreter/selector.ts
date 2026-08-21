@@ -228,7 +228,15 @@ export type SelectorTerminalOutcome =
 
 export type SelectorDeliveryResult =
   | { readonly result: "Delivered"; readonly decision: string }
-  | { readonly result: "Retry"; readonly decision: string };
+  | {
+      readonly result: "Retry";
+      readonly decision: string;
+      readonly failure?: string;
+    };
+
+function failureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "selector submission failed";
+}
 
 /** Delivers durable proposals at least once; operation idempotency absorbs ambiguous retries. */
 export async function deliverSelectorProposal(
@@ -239,8 +247,12 @@ export async function deliverSelectorProposal(
   let accepted: Accepted;
   try {
     accepted = await ticketService.submit(delivery);
-  } catch {
-    return { result: "Retry", decision: delivery.decision };
+  } catch (error) {
+    return {
+      result: "Retry",
+      decision: delivery.decision,
+      failure: failureMessage(error),
+    };
   }
   if (accepted.accepted === "Accepted" || accepted.accepted === "Original") {
     await store.submitted(delivery.decision);
@@ -264,7 +276,8 @@ export async function reconcileSelectorProposal(
     delivery.partition,
     delivery.operation,
   );
-  if (outcome === undefined) return false;
+  if (outcome === undefined)
+    throw new Error("selector accepted operation is unavailable");
   if (outcome.state === "Pending") return false;
   await store.terminal(delivery.decision, outcome);
   return true;

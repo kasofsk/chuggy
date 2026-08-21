@@ -39,12 +39,12 @@ export type SelectorRunFailure =
   | {
       readonly phase: "Delivery" | "Reconciliation";
       readonly decision: string;
-      readonly error: unknown;
+      readonly message: string;
     }
   | {
       readonly phase: "Observation";
       readonly partition: Partition;
-      readonly error: unknown;
+      readonly message: string;
     };
 
 export interface SelectorRuntimeConfig {
@@ -69,23 +69,8 @@ function initialState(partition: Partition): SelectorProjectState {
   return { partition, notificationCursor: 0, attention: "Monitoring" };
 }
 
-function nextInventoryCursor(
-  previous: Partition | undefined,
-  projects: readonly Partition[],
-  limit: number,
-  failures: readonly SelectorRunFailure[],
-): Partition | undefined {
-  const failed = failures.find((failure) => failure.phase === "Observation");
-  if (failed !== undefined) {
-    const index = projects.findIndex(
-      (partition) =>
-        partition.tenant === failed.partition.tenant &&
-        partition.project === failed.partition.project,
-    );
-    if (index === 0) return previous;
-    if (index > 0) return projects[index - 1];
-  }
-  return projects.length < limit ? undefined : projects.at(-1);
+function failureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "selector runtime failed";
 }
 
 async function deliverPending(
@@ -97,13 +82,20 @@ async function deliverPending(
   let delivered = 0;
   for (const delivery of await store.pending(limit)) {
     try {
-      if (
-        (await deliverSelectorProposal(store, source, delivery)).result ===
-        "Delivered"
-      )
-        delivered += 1;
+      const result = await deliverSelectorProposal(store, source, delivery);
+      if (result.result === "Delivered") delivered += 1;
+      else if (result.failure !== undefined)
+        failures.push({
+          phase: "Delivery",
+          decision: delivery.decision,
+          message: result.failure,
+        });
     } catch (error) {
-      failures.push({ phase: "Delivery", decision: delivery.decision, error });
+      failures.push({
+        phase: "Delivery",
+        decision: delivery.decision,
+        message: failureMessage(error),
+      });
     }
   }
   return delivered;
@@ -124,7 +116,7 @@ async function reconcileSubmitted(
       failures.push({
         phase: "Reconciliation",
         decision: delivery.decision,
-        error,
+        message: failureMessage(error),
       });
     }
   }
@@ -152,7 +144,11 @@ async function observeProjects(
       );
       if (proposal !== undefined) proposed += 1;
     } catch (error) {
-      failures.push({ phase: "Observation", partition, error });
+      failures.push({
+        phase: "Observation",
+        partition,
+        message: failureMessage(error),
+      });
     }
   }
   return proposed;
@@ -193,7 +189,6 @@ export async function selectorRunOnce(
   );
   const inventoryCursor = await store.inventoryCursor();
   const projects = await source.projects(inventoryCursor, projectsMax);
-  const failuresBeforeObservation = failures.length;
   const proposed = await observeProjects(
     store,
     source,
@@ -203,12 +198,7 @@ export async function selectorRunOnce(
     failures,
   );
   await store.saveInventoryCursor(
-    nextInventoryCursor(
-      inventoryCursor,
-      projects,
-      projectsMax,
-      failures.slice(failuresBeforeObservation),
-    ),
+    projects.length < projectsMax ? undefined : projects.at(-1),
   );
   return {
     observed: projects.length,

@@ -7,6 +7,7 @@ import {
   deliverSelectorProposal,
   reconcileSelectorProposal,
   type SelectorDelivery,
+  type SelectorPolicy,
   type SelectorStateStore,
 } from "../../src/interpreter/selector.ts";
 import { selectorHistory } from "../../src/interpreter/selectorHistory.ts";
@@ -53,6 +54,18 @@ const delivery: SelectorDelivery = {
   },
 };
 
+const selectorIdentities = {
+  next: (current: typeof partition) => ({
+    operation: asOperationId(`operation-${current.project}`),
+    selectorDecisionReference: "next-decision",
+  }),
+};
+const smallRuntimeConfig = {
+  projectsMax: 2,
+  deliveriesMax: 1,
+  reconciliationsMax: 1,
+};
+
 function stateStore(
   onTerminal: (outcome: unknown) => void,
 ): SelectorStateStore {
@@ -70,6 +83,31 @@ function stateStore(
     },
     history: () => Promise.resolve([]),
     project: () => Promise.resolve(undefined),
+  };
+}
+
+function waitingPolicy(current: () => typeof partition): SelectorPolicy {
+  return {
+    decide: (observation) =>
+      Promise.resolve({
+        interaction: {
+          decision: "next-decision",
+          partition: current(),
+          instructionsVersion: "instructions",
+          instructions: "wait",
+          observedView: observation.candidates,
+          context: {},
+          toolActivity: [],
+          result: {},
+          implementationRevision: "implementation",
+          modelRevision: "model",
+          policyRevision: "policy",
+          accounting: {},
+          startedAt: "2026-08-21T00:00:00.000Z",
+          completedAt: "2026-08-21T00:00:01.000Z",
+        },
+        attention: "Monitoring",
+      }),
   };
 }
 
@@ -151,6 +189,8 @@ test("ambiguous proposal delivery retries through ordinary operation idempotency
     delivery,
   );
   assert.equal(ambiguous.result, "Retry");
+  if (ambiguous.result === "Retry")
+    assert.equal(ambiguous.failure, "connection lost");
   const retried = await deliverSelectorProposal(
     store,
     {
@@ -195,6 +235,17 @@ test("accepted selector delivery reconciles its terminal operation outcome", asy
   );
   assert.equal(reconciled, true);
   assert.deepEqual(terminal, outcome);
+});
+
+test("a missing accepted operation is an observable reconciliation failure", async () => {
+  await assert.rejects(
+    reconcileSelectorProposal(
+      stateStore(() => undefined),
+      { operation: () => Promise.resolve(undefined) },
+      delivery,
+    ),
+    /accepted operation is unavailable/,
+  );
 });
 
 test("selector delivery does not disguise a state-store failure as a retry", async () => {
@@ -316,68 +367,98 @@ test("a failing project cannot starve durable proposal delivery", async () => {
   assert.equal(submitted, 1);
 });
 
-test("selector inventory progress stops before a failed project", async () => {
+test("a failed project does not pin the fleet inventory page", async () => {
   const second = {
     tenant: partition.tenant,
     project: asProjectId("second-project"),
   };
-  let saved: typeof partition | undefined;
+  const third = {
+    tenant: partition.tenant,
+    project: asProjectId("third-project"),
+  };
+  let cursor: typeof partition | undefined;
+  let observing = partition;
+  const observedPages: (typeof partition | undefined)[] = [];
+  const store = {
+    ...stateStore(() => undefined),
+    inventoryCursor: () => Promise.resolve(cursor),
+    saveInventoryCursor: (next: typeof cursor) => {
+      cursor = next;
+      return Promise.resolve();
+    },
+  };
+  const source = {
+    projects: (after: typeof cursor) => {
+      observedPages.push(after);
+      return Promise.resolve(
+        after === undefined ? [partition, second] : [third],
+      );
+    },
+    notifications: (current: typeof partition) => {
+      observing = current;
+      return current.project === second.project
+        ? Promise.reject(new Error("notifications unavailable"))
+        : Promise.resolve({ result: "Events", cursor: 0, events: [] } as const);
+    },
+    dispatchView: (current: typeof partition) =>
+      Promise.resolve({
+        result: "Page",
+        token: { ...delivery.command.observedViewToken, ...current },
+        candidates: [],
+        notificationCursor: 0,
+      } as const),
+    submit: () => Promise.reject(new Error("unexpected submission")),
+    operation: () => Promise.resolve(undefined),
+  };
+  const policy = waitingPolicy(() => observing);
+  const first = await selectorRunOnce(
+    store,
+    source,
+    policy,
+    selectorIdentities,
+    smallRuntimeConfig,
+  );
+  const secondRun = await selectorRunOnce(
+    store,
+    source,
+    policy,
+    selectorIdentities,
+    smallRuntimeConfig,
+  );
+  assert.equal(first.failures.length, 1);
+  assert.equal(secondRun.observed, 1);
+  assert.deepEqual(observedPages, [undefined, second]);
+  assert.equal(cursor, undefined);
+});
+
+test("selector runtime reports an ambiguous submission while retaining it", async () => {
   const result = await selectorRunOnce(
     {
       ...stateStore(() => undefined),
-      saveInventoryCursor: (cursor) => {
-        saved = cursor;
-        return Promise.resolve();
-      },
+      pending: () => Promise.resolve([delivery]),
     },
     {
-      projects: () => Promise.resolve([partition, second]),
-      notifications: (current) =>
-        current.project === second.project
-          ? Promise.reject(new Error("notifications unavailable"))
-          : Promise.resolve({ result: "Events", cursor: 0, events: [] }),
-      dispatchView: (current) =>
-        Promise.resolve({
-          result: "Page",
-          token: { ...delivery.command.observedViewToken, ...current },
-          candidates: [],
-          notificationCursor: 0,
-        }),
-      submit: () => Promise.reject(new Error("unexpected submission")),
+      projects: () => Promise.resolve([]),
+      notifications: () =>
+        Promise.resolve({ result: "Events", cursor: 0, events: [] }),
+      dispatchView: () => Promise.resolve({ result: "Reset" }),
+      submit: () => Promise.reject(new Error("ticket API unavailable")),
       operation: () => Promise.resolve(undefined),
     },
+    { decide: () => Promise.reject(new Error("unexpected policy call")) },
     {
-      decide: (observation) =>
-        Promise.resolve({
-          interaction: {
-            decision: "next-decision",
-            partition,
-            instructionsVersion: "instructions",
-            instructions: "wait",
-            observedView: observation.candidates,
-            context: {},
-            toolActivity: [],
-            result: {},
-            implementationRevision: "implementation",
-            modelRevision: "model",
-            policyRevision: "policy",
-            accounting: {},
-            startedAt: "2026-08-21T00:00:00.000Z",
-            completedAt: "2026-08-21T00:00:01.000Z",
-          },
-          attention: "Monitoring",
-        }),
-    },
-    {
-      next: (current) => ({
-        operation: asOperationId(`operation-${current.project}`),
-        selectorDecisionReference: "next-decision",
+      next: () => ({
+        operation: delivery.operation,
+        selectorDecisionReference: delivery.decision,
       }),
     },
-    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
   );
   assert.equal(result.failures.length, 1);
-  assert.deepEqual(saved, partition);
+  assert.deepEqual(result.failures[0], {
+    phase: "Delivery",
+    decision: delivery.decision,
+    message: "ticket API unavailable",
+  });
 });
 
 test("selector native source uses the authenticated API and stable delivery identity", async () => {
