@@ -59,24 +59,29 @@ export interface SelectorStateStore {
     interaction: SelectorInteraction,
     state: SelectorProjectState,
     planningIntent?: unknown,
-  ): Promise<void>;
+  ): Promise<boolean>;
   record(
     proposal: SelectorProposal,
     state: SelectorProjectState,
-  ): Promise<void>;
+  ): Promise<boolean>;
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
   submitted(decision: string): Promise<void>;
   terminal(decision: string, outcome: unknown): Promise<void>;
   history(
     partition: Partition,
-    after: string | undefined,
+    after: number | undefined,
     limit: number,
-  ): Promise<readonly SelectorInteraction[]>;
+  ): Promise<readonly SelectorInteractionRecord[]>;
   project(partition: Partition): Promise<SelectorProjectState | undefined>;
 }
 
+export interface SelectorInteractionRecord extends SelectorInteraction {
+  readonly ordinal: number;
+}
+
 export interface SelectorReviewFeedback {
+  readonly ordinal: number;
   readonly selectorDecision: string;
   readonly outcome: "Approved" | "Rejected";
   readonly reviewer: Authority;
@@ -87,6 +92,7 @@ export interface SelectorReviewFeedback {
 export interface SelectorProjectState {
   readonly partition: Partition;
   readonly notificationCursor: number;
+  readonly revision: number;
   readonly recoveryEpoch?: string;
   readonly attention: "Monitoring" | "Attention" | "Stopped";
   readonly workingMemory: unknown;
@@ -200,33 +206,49 @@ export type SelectorSettingsUpdate =
   | { readonly updated: true; readonly settings: SelectorRuntimeSettings }
   | { readonly updated: false; readonly settings: SelectorRuntimeSettings };
 
+export interface SelectorSettingsRevision {
+  readonly settings: SelectorRuntimeSettings;
+  readonly administrator: Authority;
+  readonly recordedAt: string;
+}
+
 /** Platform-owned, hot-reloadable selector controls with optimistic concurrency. */
 export interface SelectorRuntimeSettingsSource {
   settings(): Promise<SelectorRuntimeSettings>;
 }
 
 export interface SelectorRuntimeControlStore extends SelectorRuntimeSettingsSource {
-  pause(expectedRevision: number): Promise<SelectorSettingsUpdate>;
-  unpause(expectedRevision: number): Promise<SelectorSettingsUpdate>;
+  pause(
+    expectedRevision: number,
+    administrator: Authority,
+  ): Promise<SelectorSettingsUpdate>;
+  unpause(
+    expectedRevision: number,
+    administrator: Authority,
+  ): Promise<SelectorSettingsUpdate>;
   setDispatchMode(
     expectedRevision: number,
     dispatchMode: SelectorRuntimeSettings["dispatchMode"],
+    administrator: Authority,
   ): Promise<SelectorSettingsUpdate>;
   updateBasePrompt(
     expectedRevision: number,
     basePrompt: string,
+    administrator: Authority,
   ): Promise<SelectorSettingsUpdate>;
   updatePolicyControls(
     expectedRevision: number,
     controls: SelectorPolicyControls,
+    administrator: Authority,
   ): Promise<SelectorSettingsUpdate>;
   history(
     afterRevision: number,
     limit: number,
-  ): Promise<readonly SelectorRuntimeSettings[]>;
+  ): Promise<readonly SelectorSettingsRevision[]>;
   rollback(
     expectedRevision: number,
     targetRevision: number,
+    administrator: Authority,
   ): Promise<SelectorSettingsUpdate>;
   drainStatus(): Promise<SelectorDrainStatus>;
 }
@@ -438,6 +460,7 @@ export async function runSelectorCycle(
   const nextState: SelectorProjectState = {
     partition: state.partition,
     notificationCursor: observation.notificationCursor,
+    revision: state.revision,
     recoveryEpoch: observation.token.recoveryEpoch,
     attention: result.attention,
     workingMemory: result.workingMemory,
@@ -463,8 +486,7 @@ export async function runSelectorCycle(
       ? {}
       : { planningIntent: result.planningIntent }),
   };
-  await store.record(proposal, nextState);
-  return proposal;
+  return (await store.record(proposal, nextState)) ? proposal : undefined;
 }
 
 /** Polls current state after every wake-up or cursor reset and never mixes view watermarks. */

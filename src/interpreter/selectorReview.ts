@@ -22,7 +22,7 @@ export interface SelectorProposalReviewStore {
   ): Promise<boolean>;
   reviewFeedback(
     partition: Partition,
-    after: string | undefined,
+    after: number | undefined,
     limit: number,
   ): Promise<readonly SelectorReviewFeedback[]>;
 }
@@ -59,7 +59,7 @@ export interface SelectorProposalReviews {
   feedback(
     principal: Principal,
     partition: Partition,
-    after: string | undefined,
+    after: number | undefined,
     limit: number,
   ): Promise<
     | { readonly result: "NotFound" }

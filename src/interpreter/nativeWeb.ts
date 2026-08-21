@@ -85,7 +85,12 @@ export interface ProjectInventory {
     principal: Principal,
     after: Partition | undefined,
     limit: number,
-  ): Promise<readonly Partition[]>;
+  ): Promise<ProjectInventoryPage>;
+}
+
+export interface ProjectInventoryPage {
+  readonly projects: readonly Partition[];
+  readonly nextAfter?: Partition;
 }
 
 export type OperationRefusalCode =
@@ -259,7 +264,7 @@ export interface NativeWeb {
     principal: Principal,
     after: Partition | undefined,
     limit: number,
-  ): Promise<readonly Partition[]>;
+  ): Promise<ProjectInventoryPage>;
   configuration(
     principal: Principal,
     partition: Partition,

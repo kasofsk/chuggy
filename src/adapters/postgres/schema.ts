@@ -1494,8 +1494,9 @@ const durableDispatch = [
    )`,
   `CREATE TABLE selector_project_state (
      tenant text NOT NULL, project text NOT NULL, notification_cursor bigint NOT NULL DEFAULT 0,
-     recovery_epoch text, attention text NOT NULL DEFAULT 'Monitoring', updated_at timestamptz NOT NULL DEFAULT now(),
-     PRIMARY KEY (tenant,project), CHECK (notification_cursor >= 0),
+     recovery_epoch text, attention text NOT NULL DEFAULT 'Monitoring', revision bigint NOT NULL DEFAULT 0,
+     updated_at timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant,project), CHECK (notification_cursor >= 0 AND revision >= 0),
      CHECK (attention IN ('Monitoring','Attention','Stopped')),
      CHECK (recovery_epoch IS NULL OR length(recovery_epoch) BETWEEN 1 AND 256)
    )`,
@@ -1505,7 +1506,8 @@ const durableDispatch = [
    )`,
   `INSERT INTO selector_inventory_state (singleton) VALUES (1)`,
   `CREATE TABLE selector_interaction (
-     selector_decision text PRIMARY KEY, tenant text NOT NULL, project text NOT NULL,
+     selector_decision text PRIMARY KEY, ordinal bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+     tenant text NOT NULL, project text NOT NULL,
      instructions_version text NOT NULL, instructions text NOT NULL, observed_view text NOT NULL,
      context text NOT NULL, tool_activity text NOT NULL, result text NOT NULL,
      implementation_revision text NOT NULL, model_revision text NOT NULL, policy_revision text NOT NULL,
@@ -1633,13 +1635,18 @@ export const migrations: readonly Migration[] = [
       `CREATE TABLE selector_runtime_settings_history (
          revision bigint PRIMARY KEY, mode text NOT NULL, dispatch_mode text NOT NULL,
          base_prompt text NOT NULL,
-         controls text NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(),
+         controls text NOT NULL, administrator_kind text NOT NULL,
+         administrator_subject text NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(),
          CHECK (revision >= 1), CHECK (mode IN ('Running','Paused')),
          CHECK (dispatch_mode IN ('Automatic','ApprovalRequired')),
-         CHECK (length(base_prompt) BETWEEN 1 AND 65536 AND length(controls) BETWEEN 2 AND 65536)
+         CHECK (length(base_prompt) BETWEEN 1 AND 65536 AND length(controls) BETWEEN 2 AND 65536),
+         CHECK (length(administrator_kind) BETWEEN 1 AND 256),
+         CHECK (length(administrator_subject) BETWEEN 1 AND 256)
        )`,
-      `INSERT INTO selector_runtime_settings_history (revision,mode,dispatch_mode,base_prompt,controls)
-         SELECT revision,mode,dispatch_mode,base_prompt,controls FROM selector_runtime_settings`,
+      `INSERT INTO selector_runtime_settings_history
+         (revision,mode,dispatch_mode,base_prompt,controls,administrator_kind,administrator_subject)
+         SELECT revision,mode,dispatch_mode,base_prompt,controls,'System','migration'
+           FROM selector_runtime_settings`,
       `ALTER TABLE selector_project_state ADD COLUMN working_memory text NOT NULL DEFAULT '{}'
          CHECK (length(working_memory) <= 65536)`,
       `ALTER TABLE selector_interaction ADD COLUMN observed_token text`,
@@ -1658,10 +1665,11 @@ export const migrations: readonly Migration[] = [
          ADD CHECK (reviewer_subject IS NULL OR length(reviewer_subject) BETWEEN 1 AND 256)`,
       `CREATE FUNCTION enforce_selector_proposal_initial_state() RETURNS trigger
          LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-         DECLARE configured_mode text;
+         DECLARE configured_mode text; running_mode text;
          BEGIN
-           SELECT dispatch_mode INTO STRICT configured_mode
-             FROM selector_runtime_settings WHERE singleton=1;
+           SELECT mode,dispatch_mode INTO STRICT running_mode,configured_mode
+             FROM selector_runtime_settings WHERE singleton=1 FOR SHARE;
+           IF running_mode='Paused' THEN RETURN NULL; END IF;
            NEW.state=CASE configured_mode WHEN 'Automatic' THEN 'Pending'
              ELSE 'AwaitingApproval' END;
            NEW.outcome=NULL;
@@ -1735,7 +1743,8 @@ export const migrations: readonly Migration[] = [
          OWNER TO ${boundaryOwnerRole}`,
       `CREATE FUNCTION ${selectorSettingsFunction}(
          expected_revision bigint,new_mode text,new_dispatch_mode text,
-         new_base_prompt text,new_controls text)
+         new_base_prompt text,new_controls text,in_administrator_kind text,
+         in_administrator_subject text)
          RETURNS TABLE(revision bigint,mode text,dispatch_mode text,base_prompt text,controls text)
          LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
          BEGIN
@@ -1751,19 +1760,21 @@ export const migrations: readonly Migration[] = [
                current.base_prompt,current.controls
            ), recorded AS (
              INSERT INTO selector_runtime_settings_history
-               (revision,mode,dispatch_mode,base_prompt,controls)
+               (revision,mode,dispatch_mode,base_prompt,controls,
+                administrator_kind,administrator_subject)
              SELECT updated.revision,updated.mode,updated.dispatch_mode,
-               updated.base_prompt,updated.controls FROM updated
+               updated.base_prompt,updated.controls,in_administrator_kind,
+               in_administrator_subject FROM updated
            ) SELECT updated.revision,updated.mode,updated.dispatch_mode,
                updated.base_prompt,updated.controls FROM updated;
          END $$`,
-      `ALTER FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text)
+      `ALTER FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text,text,text)
          OWNER TO ${boundaryOwnerRole}`,
       `GRANT SELECT,UPDATE ON selector_runtime_settings TO ${boundaryOwnerRole}`,
       `GRANT INSERT ON selector_runtime_settings_history TO ${boundaryOwnerRole}`,
       `GRANT SELECT,UPDATE ON selector_proposal_delivery TO ${boundaryOwnerRole}`,
-      `REVOKE ALL ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text) FROM PUBLIC`,
-      `GRANT EXECUTE ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text)
+      `REVOKE ALL ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text,text,text) FROM PUBLIC`,
+      `GRANT EXECUTE ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text,text,text)
          TO ${selectorControlRole}`,
       `GRANT SELECT ON selector_runtime_settings TO ${selectorServiceRole},${selectorControlRole}`,
       `GRANT SELECT ON selector_runtime_settings_history TO ${selectorControlRole}`,
@@ -1782,6 +1793,8 @@ export const migrations: readonly Migration[] = [
       `GRANT EXECUTE ON FUNCTION ${selectorClaimFunction}(integer),
          ${selectorDeliveryFunction}(text,text,text) TO ${selectorServiceRole}`,
       `GRANT SELECT ON selector_proposal_delivery TO ${selectorReviewRole}`,
+      `GRANT SELECT (selector_decision,ordinal,tenant,project)
+         ON selector_interaction TO ${selectorReviewRole}`,
       `GRANT EXECUTE ON FUNCTION ${selectorReviewFunction}(text,text,text,text,text,text,text)
          TO ${selectorReviewRole}`,
     ],

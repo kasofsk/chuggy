@@ -68,6 +68,24 @@ const selectorInteractionContext = {
   },
 } as const;
 
+const selectorAdministrator = {
+  kind: asAuthorityKind("Administrator"),
+  subject: asAuthoritySubject("selector-admin"),
+};
+
+const governedSelectorControls = {
+  modelAllowlist: ["selector-model"],
+  toolAllowlist: ["project-capacity", "cluster-summary"],
+  limits: {
+    tokensPerDecision: 4096,
+    millisecondsPerDecision: 60_000,
+    toolCallsPerDecision: 10,
+    concurrentDecisions: 2,
+    selectionsPerMinute: 30,
+  },
+  operationalContextMaxAgeMs: 15_000,
+} as const;
+
 function selectorTestInteraction(partition: Partition, decision: string) {
   return {
     decision,
@@ -106,6 +124,20 @@ function selectorTestProposal(partition: Partition, decision: string) {
       },
       selectorDecisionReference: decision,
     },
+  } as const;
+}
+
+function selectorTestState(
+  partition: Partition,
+  revision: number,
+  notificationCursor = revision,
+) {
+  return {
+    partition,
+    notificationCursor,
+    revision,
+    attention: "Monitoring",
+    workingMemory: {},
   } as const;
 }
 
@@ -314,6 +346,7 @@ test("selector provenance and its observed cursor roll back together", async () 
         {
           partition,
           notificationCursor: 17,
+          revision: 0,
           attention: "Monitoring",
           workingMemory: {},
         },
@@ -327,6 +360,7 @@ test("selector provenance and its observed cursor roll back together", async () 
     await state.recordInteraction(interaction, {
       partition,
       notificationCursor: 17,
+      revision: 0,
       attention: "Monitoring",
       workingMemory: {},
     });
@@ -335,6 +369,7 @@ test("selector provenance and its observed cursor roll back together", async () 
     await state.recordInteraction(interaction, {
       partition,
       notificationCursor: 99,
+      revision: 1,
       attention: "Attention",
       workingMemory: { conflicting: true },
     });
@@ -345,6 +380,7 @@ test("selector provenance and its observed cursor roll back together", async () 
         {
           partition,
           notificationCursor: 99,
+          revision: 1,
           attention: "Attention",
           workingMemory: { conflicting: true },
         },
@@ -357,18 +393,97 @@ test("selector provenance and its observed cursor roll back together", async () 
   }
 });
 
+test("selector state fencing and audit ordinals survive out-of-order identities", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-selector-ordering",
+  );
+  const pool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(pool);
+  const laterSorting = selectorTestInteraction(
+    partition,
+    `z-${crypto.randomUUID()}`,
+  );
+  const earlierSorting = selectorTestInteraction(
+    partition,
+    `a-${crypto.randomUUID()}`,
+  );
+  try {
+    assert.equal(
+      await state.recordInteraction(
+        laterSorting,
+        selectorTestState(partition, 0),
+      ),
+      true,
+    );
+    assert.equal(
+      await state.recordInteraction(
+        earlierSorting,
+        selectorTestState(partition, 1),
+      ),
+      true,
+    );
+    assert.equal(
+      await state.recordInteraction(
+        selectorTestInteraction(partition, `stale-${crypto.randomUUID()}`),
+        selectorTestState(partition, 1, 99),
+      ),
+      false,
+    );
+    const first = await state.history(partition, undefined, 1);
+    const second = await state.history(partition, first[0]?.ordinal, 1);
+    assert.equal(first[0]?.decision, laterSorting.decision);
+    assert.equal(second[0]?.decision, earlierSorting.decision);
+    assert.equal((await state.project(partition))?.notificationCursor, 1);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("a database-linearized pause suppresses proposal creation", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-pause-fence",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const controlPool = postgresRolePool(selectorControlRole);
+  const state = postgresSelectorState(selectorPool);
+  const control = postgresSelectorRuntimeControl(controlPool);
+  const initial = await control.settings();
+  const paused = await control.pause(initial.revision, selectorAdministrator);
+  assert.equal(paused.updated, true);
+  const decision = `paused-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision),
+        selectorTestState(partition, 0),
+      ),
+      false,
+    );
+    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+    assert.deepEqual(await state.pending(10), []);
+  } finally {
+    const current = await control.settings();
+    await control.unpause(current.revision, selectorAdministrator);
+    await selectorPool.end();
+    await controlPool.end();
+  }
+});
+
 test("selector controls hot-reload with a revision fence", async () => {
   const pool = postgresRolePool(selectorControlRole);
   const control = postgresSelectorRuntimeControl(pool);
   try {
     const initial = await control.settings();
-    const paused = await control.pause(initial.revision);
+    const paused = await control.pause(initial.revision, selectorAdministrator);
     assert.equal(paused.updated, true);
     assert.equal(paused.settings.mode, "Paused");
 
     const stale = await control.updateBasePrompt(
       initial.revision,
       "this update raced with pause",
+      selectorAdministrator,
     );
     assert.equal(stale.updated, false);
     assert.equal(stale.settings.revision, paused.settings.revision);
@@ -376,6 +491,7 @@ test("selector controls hot-reload with a revision fence", async () => {
     const prompted = await control.updateBasePrompt(
       paused.settings.revision,
       "prefer tickets that unblock the largest dependency closure",
+      selectorAdministrator,
     );
     assert.equal(prompted.updated, true);
     assert.equal(
@@ -386,41 +502,41 @@ test("selector controls hot-reload with a revision fence", async () => {
     const reviewed = await control.setDispatchMode(
       prompted.settings.revision,
       "ApprovalRequired",
+      selectorAdministrator,
     );
     assert.equal(reviewed.updated, true);
     assert.equal(reviewed.settings.dispatchMode, "ApprovalRequired");
 
     const governed = await control.updatePolicyControls(
       reviewed.settings.revision,
-      {
-        modelAllowlist: ["selector-model"],
-        toolAllowlist: ["project-capacity", "cluster-summary"],
-        limits: {
-          tokensPerDecision: 4096,
-          millisecondsPerDecision: 60_000,
-          toolCallsPerDecision: 10,
-          concurrentDecisions: 2,
-          selectionsPerMinute: 30,
-        },
-        operationalContextMaxAgeMs: 15_000,
-      },
+      governedSelectorControls,
+      selectorAdministrator,
     );
     assert.equal(governed.updated, true);
     assert.deepEqual(governed.settings.modelAllowlist, ["selector-model"]);
 
     const history = await control.history(initial.revision - 1, 20);
-    assert.ok(
-      history.some((settings) => settings.revision === initial.revision),
+    const promptedRevision = history.find(
+      (revision) => revision.settings.revision === prompted.settings.revision,
+    );
+    assert.deepEqual(promptedRevision?.administrator, selectorAdministrator);
+    assert.equal(
+      Number.isFinite(Date.parse(promptedRevision?.recordedAt ?? "")),
+      true,
     );
     const restored = await control.rollback(
       governed.settings.revision,
       initial.revision,
+      selectorAdministrator,
     );
     assert.equal(restored.updated, true);
     assert.equal(restored.settings.basePrompt, initial.basePrompt);
     assert.equal(restored.settings.dispatchMode, initial.dispatchMode);
 
-    const running = await control.unpause(restored.settings.revision);
+    const running = await control.unpause(
+      restored.settings.revision,
+      selectorAdministrator,
+    );
     assert.equal(running.updated, true);
     assert.equal(running.settings.mode, "Running");
     const drain = await control.drainStatus();
@@ -445,6 +561,7 @@ test("proposal review retains reviewer authority and readable feedback", async (
   const approvalSettings = await control.setDispatchMode(
     originalSettings.revision,
     "ApprovalRequired",
+    selectorAdministrator,
   );
   assert.equal(approvalSettings.updated, true);
   const decision = `review-${crypto.randomUUID()}`;
@@ -452,6 +569,7 @@ test("proposal review retains reviewer authority and readable feedback", async (
     await state.record(selectorTestProposal(partition, decision), {
       partition,
       notificationCursor: 0,
+      revision: 0,
       attention: "Monitoring",
       workingMemory: {},
     });
@@ -470,6 +588,7 @@ test("proposal review retains reviewer authority and readable feedback", async (
     );
     const feedback = await reviews.reviewFeedback(partition, undefined, 10);
     assert.deepEqual(feedback[0], {
+      ordinal: feedback[0]?.ordinal,
       selectorDecision: decision,
       outcome: "Approved",
       reviewer,
@@ -481,6 +600,7 @@ test("proposal review retains reviewer authority and readable feedback", async (
     await control.setDispatchMode(
       currentSettings.revision,
       originalSettings.dispatchMode,
+      selectorAdministrator,
     );
     await selectorPool.end();
     await reviewPool.end();

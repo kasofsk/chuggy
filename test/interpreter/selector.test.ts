@@ -135,8 +135,8 @@ function stateStore(
   return {
     inventoryCursor: () => Promise.resolve(undefined),
     saveInventoryCursor: () => Promise.resolve(),
-    recordInteraction: () => Promise.resolve(),
-    record: () => Promise.resolve(),
+    recordInteraction: () => Promise.resolve(true),
+    record: () => Promise.resolve(true),
     pending: () => Promise.resolve([]),
     submittedDeliveries: () => Promise.resolve([]),
     submitted: () => Promise.resolve(),
@@ -155,6 +155,7 @@ test("selector observation resumes from a reset cursor and pins every view page"
     {
       partition,
       notificationCursor: 3,
+      revision: 0,
       attention: "Monitoring",
       workingMemory: {},
     },
@@ -191,6 +192,7 @@ test("selector observation discards a view when a later page resets", async () =
     {
       partition,
       notificationCursor: 0,
+      revision: 0,
       attention: "Monitoring",
       workingMemory: {},
     },
@@ -348,7 +350,8 @@ test("inventory progress follows scanned projects when a permit is unavailable",
       },
     },
     {
-      projects: () => Promise.resolve([first, second]),
+      projects: () =>
+        Promise.resolve({ projects: [first, second], nextAfter: second }),
       acquireDecisionPermit: (scope) =>
         Promise.resolve(scope === first ? undefined : "permit"),
       releaseDecisionPermit: () => Promise.resolve(),
@@ -395,7 +398,7 @@ test("a pause observed after permit acquisition prevents a new decision", async 
     stateStore(() => undefined),
     {
       ...promptObservationSource(),
-      projects: () => Promise.resolve([partition]),
+      projects: () => Promise.resolve({ projects: [partition] }),
       acquireDecisionPermit: () => Promise.resolve("permit"),
       releaseDecisionPermit: () => {
         releases += 1;
@@ -444,6 +447,7 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
     {
       partition,
       notificationCursor: 0,
+      revision: 0,
       attention: "Monitoring",
       workingMemory: {},
     },
@@ -452,7 +456,7 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
       ...stateStore(() => undefined),
       recordInteraction: (interaction) => {
         recorded = interaction.instructions;
-        return Promise.resolve();
+        return Promise.resolve(true);
       },
     },
     {
@@ -478,6 +482,7 @@ test("the runtime deadline ends a policy call that never returns", async () => {
       {
         partition,
         notificationCursor: 0,
+        revision: 0,
         attention: "Monitoring",
         workingMemory: {},
       },
@@ -565,7 +570,17 @@ test("selector configuration changes require platform administration", async () 
     setDispatchMode: () => unchanged,
     updateBasePrompt: () => unchanged,
     updatePolicyControls: () => unchanged,
-    history: () => Promise.resolve([runtimeSettings]),
+    history: () =>
+      Promise.resolve([
+        {
+          settings: runtimeSettings,
+          administrator: {
+            kind: asAuthorityKind("System"),
+            subject: asAuthoritySubject("test"),
+          },
+          recordedAt: "2026-08-21T12:00:00.000Z",
+        },
+      ]),
     rollback: () => unchanged,
     drainStatus: () =>
       Promise.resolve({
@@ -579,7 +594,14 @@ test("selector configuration changes require platform administration", async () 
   const administration = selectorRuntimeAdministration(
     {
       authorize: (principal) =>
-        Promise.resolve(principal === asPrincipal("admin")),
+        Promise.resolve(
+          principal === asPrincipal("admin")
+            ? {
+                kind: asAuthorityKind("Administrator"),
+                subject: asAuthoritySubject("admin"),
+              }
+            : undefined,
+        ),
     },
     store,
   );

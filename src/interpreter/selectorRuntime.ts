@@ -1,4 +1,5 @@
 import type { Partition } from "./projectStore.ts";
+import type { ProjectInventoryPage } from "./nativeWeb.ts";
 import {
   deliverSelectorProposal,
   reconcileSelectorProposal,
@@ -22,7 +23,7 @@ export interface SelectorRuntimeSource
   projects(
     after: Partition | undefined,
     limit: number,
-  ): Promise<readonly Partition[]>;
+  ): Promise<ProjectInventoryPage>;
   acquireDecisionPermit(
     partition: Partition,
     limits: {
@@ -66,6 +67,7 @@ function initialState(partition: Partition): SelectorProjectState {
   return {
     partition,
     notificationCursor: 0,
+    revision: 0,
     attention: "Monitoring",
     workingMemory: {},
   };
@@ -139,10 +141,11 @@ export async function selectorRunOnce(
     "selector project bound",
   );
   const inventoryCursor = await store.inventoryCursor();
-  const projects =
+  const inventory =
     initialSettings.mode === "Paused"
-      ? []
+      ? { projects: [] }
       : await source.projects(inventoryCursor, projectsMax);
+  const projects = inventory.projects;
   const progress = await observeProjects(
     projects,
     store,
@@ -152,10 +155,10 @@ export async function selectorRunOnce(
     control,
   );
   const { scanned, observed, proposed } = progress;
-  if (scanned > 0)
+  if (scanned > 0 || inventory.nextAfter !== undefined)
     await store.saveInventoryCursor(
-      scanned === projects.length && projects.length < projectsMax
-        ? undefined
+      scanned === projects.length
+        ? inventory.nextAfter
         : projects.at(scanned - 1),
     );
   let delivered = 0;
