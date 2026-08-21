@@ -120,6 +120,34 @@ check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
 # something.
 check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
 
+# --- The lint stage is the server-free half ----------------------------------
+#
+# The gate empties CHUG_SAFEQL_DATABASE_URL for its lint stage, so an operator
+# who exports it shell-wide cannot make check-source need a database. The
+# fixture carries a correctly tagged query and the variable names an address
+# nothing answers: without the emptying, the checker would activate, fail to
+# connect, and turn the stage red. This case bypasses run_in, whose own
+# emptying isolates the other cases from the machine rather than proving the
+# gate.
+
+fixture
+clean_source
+mkdir -p "$R/src/adapters/postgres"
+{
+	printf '%s\n' 'import { sql } from "@ts-safeql/sql-tag";'
+	printf '%s\n' 'import type pg from "pg";'
+	printf '%s\n' 'export async function tagged(client: pg.PoolClient): Promise<void> {'
+	printf '%s\n' '  await client.query<{ one: number }>(sql`SELECT 1 AS one`);'
+	printf '%s\n' '}'
+} > "$R/src/adapters/postgres/tagged.ts"
+git -C "$R" add -A
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_SAFEQL_DATABASE_URL="postgres://fixture@127.0.0.1:1/void" "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed"
+
 # --- What the unit stage runs ------------------------------------------------
 #
 # `check-conformance.sh`, `check-random.sh` and `check-postgres.sh` own their

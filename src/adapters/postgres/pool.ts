@@ -1,6 +1,7 @@
 /**
- * The connection pool and the migration runner: everything the other modules
- * in this adapter need from `pg` that is not a statement about a relation.
+ * The connection pool, the migration runner and the shared query plumbing:
+ * everything the other modules in this adapter need that is not a statement
+ * about a relation.
  *
  * THE POOL IS BOUNDED AND SO IS EVERY WAIT. House rule 9 asks for an explicit
  * limit on anything that can grow, and a database client has three: how many
@@ -83,6 +84,18 @@ export function postgresPool(
   });
   pool.on("error", onIdleFailure);
   return pool;
+}
+
+/**
+ * An identity on a string whose declared type is narrower than string: the
+ * query checker rewrites a union-typed parameter comparison into a form
+ * whose parse depends on the whitespace around the operator, and a plain
+ * string never takes that path. Every union-typed comparison wraps, because
+ * a site today's parser happens to survive is one reformat away from a red
+ * check-queries.
+ */
+export function textParameter(value: string): string {
+  return value;
 }
 
 /**

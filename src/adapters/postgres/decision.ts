@@ -56,7 +56,7 @@ import {
   postgresOwnershipHonours,
   postgresOwnershipLockKnown,
 } from "./ownership.ts";
-import { postgresTransaction } from "./pool.ts";
+import { postgresTransaction, textParameter } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
 
 /** One decision-input row as the transaction reads it under its lock. */
@@ -104,7 +104,7 @@ async function decisionLockCause(
   const found = await client.query<DecisionCauseRow>(
     sql`SELECT state, outcome_code, decided_seq FROM decision_input
       WHERE tenant = ${partition.tenant} AND project = ${partition.project}
-        AND input_kind = ${String(cause.kind)} AND input_id = ${cause.id}
+        AND input_kind = ${textParameter(cause.kind)} AND input_id = ${cause.id}
       FOR UPDATE`,
   );
   const row = found.rows[0];
@@ -139,7 +139,7 @@ async function decisionSettle(
             refused_head = ${settled.settled === "Refused" ? (refusedAt?.head ?? null) : null},
             refused_lifecycle_generation = ${settled.settled === "Refused" ? (refusedAt?.lifecycleGeneration ?? null) : null}
       WHERE tenant = ${lease.partition.tenant} AND project = ${lease.partition.project}
-        AND input_kind = ${String(cause.kind)} AND input_id = ${cause.id}`,
+        AND input_kind = ${textParameter(cause.kind)} AND input_id = ${cause.id}`,
   );
 }
 
@@ -549,7 +549,7 @@ async function decisionApply(
           settled_authority_kind=${projectTicketWriterAuthorityKind},
           settled_authority_subject=${lease.owner}
          WHERE tenant=${lease.partition.tenant} AND project=${lease.partition.project}
-           AND input_kind=${String(cause.kind)} AND input_id=${cause.id}`,
+           AND input_kind=${textParameter(cause.kind)} AND input_id=${cause.id}`,
       );
       return { decided: "Stale" };
     case "Refused":

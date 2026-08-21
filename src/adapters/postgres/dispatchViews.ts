@@ -43,6 +43,18 @@ interface CandidateRow {
   readonly configuration_canonical: string;
 }
 
+function candidateResumePricing(
+  value: string,
+): DispatchCandidate["resumePricing"] {
+  if (value === "RetryCharged" || value === "RetryFree") return value;
+  throw new Error(`dispatch candidate row: unknown resume pricing ${value}`);
+}
+
+function candidateFinalizer(value: string): DispatchCandidate["finalizer"] {
+  if (value === "NoFinalizer" || value === "ManagedFinalizer") return value;
+  throw new Error(`dispatch candidate row: unknown finalizer ${value}`);
+}
+
 function candidateOf(
   row: CandidateRow,
   dependencies: readonly {
@@ -68,8 +80,8 @@ function candidateOf(
     finalizationPricing: JSON.parse(
       row.finalization_pricing,
     ) as DispatchCandidate["finalizationPricing"],
-    resumePricing: row.resume_pricing as DispatchCandidate["resumePricing"],
-    finalizer: row.finalizer as DispatchCandidate["finalizer"],
+    resumePricing: candidateResumePricing(row.resume_pricing),
+    finalizer: candidateFinalizer(row.finalizer),
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     configurationCanonical: row.configuration_canonical,

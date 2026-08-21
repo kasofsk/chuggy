@@ -98,6 +98,37 @@ const noAmbientDraws = (subject) => [
   },
 ];
 
+// A query the checker cannot see is a claim nothing checks: an untagged
+// string reaches the server as SQL and never reaches SafeQL. So untagged
+// query strings in the adapter are findings unconditionally — no server
+// needed — with transaction control exempt everywhere and the migration
+// executor's variables exempt only where the caller passes their names.
+const adapterQueriesTagged = (runtimeExemption) => [
+  "error",
+  {
+    selector:
+      "CallExpression[callee.property.name='query'][arguments.0.type='TemplateLiteral']",
+    message:
+      "adapter queries are sql-tagged: an untagged template is invisible to check-queries.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='query'][arguments.0.type='TaggedTemplateExpression']:not([arguments.0.tag.name='sql'])",
+    message:
+      "adapter queries use the sql tag from @ts-safeql/sql-tag; another tag is not checked.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='query'][arguments.0.type='Literal']:not([arguments.0.value=/^(BEGIN|COMMIT|ROLLBACK|BEGIN ISOLATION LEVEL [A-Z ]+|SET TRANSACTION [A-Z, ]+)$/])",
+    message:
+      "adapter queries are sql-tagged: a plain string is invisible to check-queries. Transaction control is the exemption.",
+  },
+  {
+    selector: `CallExpression[callee.property.name='query'][arguments.0.type!='Literal'][arguments.0.type!='TemplateLiteral'][arguments.0.type!='TaggedTemplateExpression']${runtimeExemption}`,
+    message: "a query assembled at runtime cannot be checked.",
+  },
+];
+
 export default tseslint.config(
   {
     ignores: ["node_modules/**", "model/**", "docs/**", ".chug/**"],
@@ -203,41 +234,18 @@ export default tseslint.config(
       "no-restricted-properties": noAmbientDraws("the interpreter"),
     },
   },
-  // A query the checker cannot see is a claim nothing checks: an untagged
-  // string reaches the server as SQL and never reaches SafeQL. So untagged
-  // query strings in the adapter are findings unconditionally — no server
-  // needed — with transaction control and the migration executor's variables
-  // as the enumerated exemptions.
+  // Untagged query strings are findings everywhere in the adapter; only the
+  // migration executor's own file may hand `.query` its named variables.
   {
     files: ["src/adapters/postgres/**/*.ts"],
+    rules: { "no-restricted-syntax": adapterQueriesTagged("") },
+  },
+  {
+    files: ["src/adapters/postgres/pool.ts"],
     rules: {
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector:
-            "CallExpression[callee.property.name='query'][arguments.0.type='TemplateLiteral']",
-          message:
-            "adapter queries are sql-tagged: an untagged template is invisible to check-queries.",
-        },
-        {
-          selector:
-            "CallExpression[callee.property.name='query'][arguments.0.type='TaggedTemplateExpression']:not([arguments.0.tag.name='sql'])",
-          message:
-            "adapter queries use the sql tag from @ts-safeql/sql-tag; another tag is not checked.",
-        },
-        {
-          selector:
-            "CallExpression[callee.property.name='query'][arguments.0.type='Literal']:not([arguments.0.value=/^(BEGIN|COMMIT|ROLLBACK|BEGIN ISOLATION LEVEL [A-Z ]+|SET TRANSACTION [A-Z, ]+)$/])",
-          message:
-            "adapter queries are sql-tagged: a plain string is invisible to check-queries. Transaction control is the exemption.",
-        },
-        {
-          selector:
-            "CallExpression[callee.property.name='query'][arguments.0.type!='Literal'][arguments.0.type!='TemplateLiteral'][arguments.0.type!='TaggedTemplateExpression']:not([arguments.0.name=/^(statement|migrationLedger)$/])",
-          message:
-            "a query assembled at runtime cannot be checked; the migration executor is the exemption.",
-        },
-      ],
+      "no-restricted-syntax": adapterQueriesTagged(
+        ":not([arguments.0.name=/^(statement|migrationLedger)$/])",
+      ),
     },
   },
   // The adapter's queries, verified against the database the variable names.

@@ -52,6 +52,12 @@ function encode(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function selectorAttention(value: string): SelectorProjectState["attention"] {
+  if (value === "Monitoring" || value === "Attention" || value === "Stopped")
+    return value;
+  throw new Error(`selector project row: unknown attention ${value}`);
+}
+
 function checkedSelectorLimit(limit: number, what: string): number {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
     throw new RangeError(`${what} limit must be between 1 and 100`);
@@ -92,7 +98,7 @@ async function readSelectorProject(
         ...(row.recovery_epoch === null
           ? {}
           : { recoveryEpoch: row.recovery_epoch }),
-        attention: row.attention as SelectorProjectState["attention"],
+        attention: selectorAttention(row.attention),
       };
 }
 
@@ -153,7 +159,7 @@ async function lockSelectorProject(
     ...(row.recovery_epoch === null
       ? {}
       : { recoveryEpoch: row.recovery_epoch }),
-    attention: row.attention as SelectorProjectState["attention"],
+    attention: selectorAttention(row.attention),
   });
 }
 
