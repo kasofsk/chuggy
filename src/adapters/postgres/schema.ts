@@ -1600,4 +1600,43 @@ export const migrations: readonly Migration[] = [
     name: "selector-independent durable dispatch",
     statements: [...durableDispatch],
   },
+  {
+    version: 10,
+    name: "hot-reloadable selector controls",
+    statements: [
+      `CREATE TABLE selector_runtime_settings (
+         singleton integer PRIMARY KEY DEFAULT 1, revision bigint NOT NULL DEFAULT 1,
+         mode text NOT NULL DEFAULT 'Running', dispatch_mode text NOT NULL DEFAULT 'Automatic',
+         base_prompt text NOT NULL, controls text NOT NULL,
+         updated_at timestamptz NOT NULL DEFAULT now(),
+         CHECK (singleton=1), CHECK (revision >= 1),
+         CHECK (mode IN ('Running','Paused')),
+         CHECK (dispatch_mode IN ('Automatic','ApprovalRequired')),
+         CHECK (length(base_prompt) BETWEEN 1 AND 65536 AND length(controls) BETWEEN 2 AND 65536)
+       )`,
+      `INSERT INTO selector_runtime_settings (singleton,base_prompt,controls) VALUES
+         (1,'Select at most one currently dispatchable ticket. Use the supplied project view and advisory operational context. Prefer work that unblocks other tickets, respect explicit urgency and dependencies, and wait when evidence or safe capacity is insufficient. Use only authorized selector tools and record the evidence used for the decision.',
+         '{"modelAllowlist":["*"],"toolAllowlist":["*"],"limits":{"tokensPerDecision":8192,"millisecondsPerDecision":120000,"toolCallsPerDecision":20,"concurrentDecisions":4,"selectionsPerMinute":60},"operationalContextMaxAgeMs":30000}')`,
+      `CREATE TABLE selector_runtime_settings_history (
+         revision bigint PRIMARY KEY, mode text NOT NULL, dispatch_mode text NOT NULL,
+         base_prompt text NOT NULL,
+         controls text NOT NULL, recorded_at timestamptz NOT NULL DEFAULT now(),
+         CHECK (revision >= 1), CHECK (mode IN ('Running','Paused')),
+         CHECK (dispatch_mode IN ('Automatic','ApprovalRequired')),
+         CHECK (length(base_prompt) BETWEEN 1 AND 65536 AND length(controls) BETWEEN 2 AND 65536)
+       )`,
+      `INSERT INTO selector_runtime_settings_history (revision,mode,dispatch_mode,base_prompt,controls)
+         SELECT revision,mode,dispatch_mode,base_prompt,controls FROM selector_runtime_settings`,
+      `ALTER TABLE selector_project_state ADD COLUMN working_memory text NOT NULL DEFAULT '{}'
+         CHECK (length(working_memory) <= 65536)`,
+      `ALTER TABLE selector_interaction ADD COLUMN observed_token text`,
+      `ALTER TABLE selector_proposal_delivery
+         ADD COLUMN review_feedback text, ADD COLUMN reviewed_at timestamptz,
+         DROP CONSTRAINT selector_proposal_delivery_state_check,
+         ADD CHECK (state IN ('AwaitingApproval','Pending','Submitted','Terminal')),
+         ADD CHECK (review_feedback IS NULL OR length(review_feedback) <= 65536)`,
+      `GRANT SELECT,UPDATE ON selector_runtime_settings TO ${selectorServiceRole}`,
+      `GRANT SELECT,INSERT ON selector_runtime_settings_history TO ${selectorServiceRole}`,
+    ],
+  },
 ];

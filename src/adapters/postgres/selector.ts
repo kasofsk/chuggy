@@ -6,6 +6,10 @@ import type {
   SelectorInteraction,
   SelectorProposal,
   SelectorProjectState,
+  SelectorPolicyControls,
+  SelectorRuntimeControl,
+  SelectorRuntimeSettings,
+  SelectorSettingsUpdate,
   SelectorStateStore,
 } from "../../interpreter/selector.ts";
 import {
@@ -51,6 +55,206 @@ function checkedSelectorLimit(limit: number, what: string): number {
   return limit;
 }
 
+function checkedPolicyControls(
+  controls: SelectorPolicyControls,
+): SelectorPolicyControls {
+  for (const [what, values] of [
+    ["model allowlist", controls.modelAllowlist],
+    ["tool allowlist", controls.toolAllowlist],
+  ] as const) {
+    if (
+      values.length > 64 ||
+      values.some((value) => value.length < 1 || value.length > 256)
+    )
+      throw new RangeError(`${what} must contain at most 64 bounded names`);
+  }
+  const bounds = {
+    ...controls.limits,
+    operationalContextMaxAgeMs: controls.operationalContextMaxAgeMs,
+  };
+  for (const [what, value] of Object.entries(bounds))
+    if (!Number.isSafeInteger(value) || value < 1)
+      throw new RangeError(`${what} must be a positive safe integer`);
+  return controls;
+}
+
+function settingsOf(row: {
+  readonly revision: string;
+  readonly mode: SelectorRuntimeSettings["mode"];
+  readonly dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
+  readonly base_prompt: string;
+  readonly controls: string;
+}): SelectorRuntimeSettings {
+  const controls = JSON.parse(row.controls) as SelectorPolicyControls;
+  return {
+    revision: Number(row.revision),
+    mode: row.mode,
+    dispatchMode: row.dispatch_mode,
+    basePrompt: row.base_prompt,
+    ...controls,
+  };
+}
+
+async function readSettings(pool: pg.Pool): Promise<SelectorRuntimeSettings> {
+  const found = await pool.query<{
+    revision: string;
+    mode: SelectorRuntimeSettings["mode"];
+    dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
+    base_prompt: string;
+    controls: string;
+  }>(
+    "SELECT revision::text,mode,dispatch_mode,base_prompt,controls FROM selector_runtime_settings WHERE singleton=1",
+  );
+  const row = found.rows[0];
+  if (row === undefined)
+    throw new Error("selector runtime settings are absent");
+  return settingsOf(row);
+}
+
+async function updateSettings(
+  pool: pg.Pool,
+  expectedRevision: number,
+  update: {
+    readonly mode?: SelectorRuntimeSettings["mode"];
+    readonly dispatchMode?: SelectorRuntimeSettings["dispatchMode"];
+    readonly basePrompt?: string;
+    readonly controls?: SelectorPolicyControls;
+  },
+): Promise<SelectorSettingsUpdate> {
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
+    throw new RangeError(
+      "selector settings revision must be a positive safe integer",
+    );
+  if (
+    "basePrompt" in update &&
+    (update.basePrompt.length < 1 || update.basePrompt.length > 65_536)
+  )
+    throw new RangeError(
+      "selector base prompt must contain between 1 and 65536 characters",
+    );
+  const found = await pool.query<{
+    revision: string;
+    mode: SelectorRuntimeSettings["mode"];
+    dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
+    base_prompt: string;
+    controls: string;
+  }>(
+    `WITH updated AS (UPDATE selector_runtime_settings SET
+       revision=revision+1,mode=COALESCE($2,mode),dispatch_mode=COALESCE($3,dispatch_mode),
+       base_prompt=COALESCE($4,base_prompt),controls=COALESCE($5,controls),updated_at=now()
+       WHERE singleton=1 AND revision=$1
+       RETURNING revision,mode,dispatch_mode,base_prompt,controls),
+     recorded AS (INSERT INTO selector_runtime_settings_history
+       (revision,mode,dispatch_mode,base_prompt,controls)
+       SELECT revision,mode,dispatch_mode,base_prompt,controls FROM updated)
+     SELECT revision::text,mode,dispatch_mode,base_prompt,controls FROM updated`,
+    [
+      expectedRevision,
+      "mode" in update ? update.mode : null,
+      "dispatchMode" in update ? update.dispatchMode : null,
+      "basePrompt" in update ? update.basePrompt : null,
+      "controls" in update
+        ? encode(checkedPolicyControls(update.controls))
+        : null,
+    ],
+  );
+  const row = found.rows[0];
+  if (row !== undefined) {
+    return { updated: true, settings: settingsOf(row) };
+  }
+  return { updated: false, settings: await readSettings(pool) };
+}
+
+async function settingsHistory(
+  pool: pg.Pool,
+  afterRevision: number,
+  limit: number,
+) {
+  checkedSelectorLimit(limit, "selector settings history");
+  const found = await pool.query<{
+    revision: string;
+    mode: SelectorRuntimeSettings["mode"];
+    dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
+    base_prompt: string;
+    controls: string;
+  }>(
+    `SELECT revision::text,mode,dispatch_mode,base_prompt,controls
+     FROM selector_runtime_settings_history WHERE revision>$1 ORDER BY revision LIMIT $2`,
+    [afterRevision, limit],
+  );
+  return found.rows.map(settingsOf);
+}
+
+async function rollbackSettings(
+  pool: pg.Pool,
+  expectedRevision: number,
+  targetRevision: number,
+) {
+  const found = await pool.query<{
+    mode: SelectorRuntimeSettings["mode"];
+    dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
+    base_prompt: string;
+    controls: string;
+  }>(
+    `SELECT mode,dispatch_mode,base_prompt,controls FROM selector_runtime_settings_history WHERE revision=$1`,
+    [targetRevision],
+  );
+  const target = found.rows[0];
+  if (target === undefined)
+    throw new RangeError("selector settings revision does not exist");
+  return updateSettings(pool, expectedRevision, {
+    mode: target.mode,
+    dispatchMode: target.dispatch_mode,
+    basePrompt: target.base_prompt,
+    controls: JSON.parse(target.controls) as SelectorPolicyControls,
+  });
+}
+
+export function postgresSelectorRuntimeControl(
+  pool: pg.Pool,
+): SelectorRuntimeControl {
+  return {
+    settings: () => readSettings(pool),
+    pause: (revision) => updateSettings(pool, revision, { mode: "Paused" }),
+    unpause: (revision) => updateSettings(pool, revision, { mode: "Running" }),
+    setDispatchMode: (revision, dispatchMode) =>
+      updateSettings(pool, revision, { dispatchMode }),
+    updateBasePrompt: (revision, basePrompt) =>
+      updateSettings(pool, revision, { basePrompt }),
+    updatePolicyControls: (revision, controls) =>
+      updateSettings(pool, revision, { controls }),
+    history: (afterRevision, limit) =>
+      settingsHistory(pool, afterRevision, limit),
+    rollback: (expectedRevision, targetRevision) =>
+      rollbackSettings(pool, expectedRevision, targetRevision),
+    drainStatus: async () => {
+      const settings = await readSettings(pool);
+      const found = await pool.query<{
+        state: "AwaitingApproval" | "Pending" | "Submitted";
+        count: string;
+      }>(
+        `SELECT state,count(*)::text FROM selector_proposal_delivery
+         WHERE state IN ('AwaitingApproval','Pending','Submitted') GROUP BY state`,
+      );
+      const count = (state: "AwaitingApproval" | "Pending" | "Submitted") =>
+        Number(found.rows.find((row) => row.state === state)?.count ?? 0);
+      const awaitingApproval = count("AwaitingApproval");
+      const pendingDeliveries = count("Pending");
+      const submittedDeliveries = count("Submitted");
+      return {
+        mode: settings.mode,
+        awaitingApproval,
+        pendingDeliveries,
+        submittedDeliveries,
+        drained:
+          awaitingApproval === 0 &&
+          pendingDeliveries === 0 &&
+          submittedDeliveries === 0,
+      };
+    },
+  };
+}
+
 async function readSelectorProject(
   pool: pg.Pool,
   partition: Partition,
@@ -59,8 +263,9 @@ async function readSelectorProject(
     notification_cursor: string;
     recovery_epoch: string | null;
     attention: SelectorProjectState["attention"];
+    working_memory: string;
   }>(
-    `SELECT notification_cursor::text,recovery_epoch,attention
+    `SELECT notification_cursor::text,recovery_epoch,attention,working_memory
        FROM selector_project_state WHERE tenant=$1 AND project=$2`,
     [partition.tenant, partition.project],
   );
@@ -74,6 +279,7 @@ async function readSelectorProject(
           ? {}
           : { recoveryEpoch: row.recovery_epoch }),
         attention: row.attention,
+        workingMemory: JSON.parse(row.working_memory) as unknown,
       };
 }
 
@@ -83,16 +289,17 @@ async function writeSelectorProject(
 ): Promise<void> {
   await pool.query(
     `INSERT INTO selector_project_state
-     (tenant,project,notification_cursor,recovery_epoch,attention)
-     VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant,project) DO UPDATE SET
+     (tenant,project,notification_cursor,recovery_epoch,attention,working_memory)
+     VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (tenant,project) DO UPDATE SET
      notification_cursor=EXCLUDED.notification_cursor,recovery_epoch=EXCLUDED.recovery_epoch,
-     attention=EXCLUDED.attention,updated_at=now()`,
+     attention=EXCLUDED.attention,working_memory=EXCLUDED.working_memory,updated_at=now()`,
     [
       state.partition.tenant,
       state.partition.project,
       state.notificationCursor,
       state.recoveryEpoch ?? null,
       state.attention,
+      encode(state.workingMemory),
     ],
   );
 }
@@ -136,6 +343,22 @@ async function pendingDeliveries(
   return found.rows.map(deliveryOf);
 }
 
+async function awaitingApproval(
+  pool: pg.Pool,
+  partition: Partition,
+  limit: number,
+): Promise<readonly SelectorDelivery[]> {
+  checkedSelectorLimit(limit, "selector proposal review");
+  const found = await pool.query<DeliveryRow>(
+    `SELECT selector_decision,tenant,project,operation,command,attempts::text
+     FROM selector_proposal_delivery
+     WHERE tenant=$1 AND project=$2 AND state='AwaitingApproval'
+     ORDER BY selector_decision LIMIT $3`,
+    [partition.tenant, partition.project, limit],
+  );
+  return found.rows.map(deliveryOf);
+}
+
 async function readInventoryCursor(
   pool: pg.Pool,
 ): Promise<Partition | undefined> {
@@ -171,10 +394,10 @@ async function recordSelectorState(
   await postgresTransaction(pool, async (client) => {
     await client.query(
       `INSERT INTO selector_interaction
-       (selector_decision,tenant,project,instructions_version,instructions,observed_view,
+       (selector_decision,tenant,project,instructions_version,instructions,observed_view,observed_token,
         context,tool_activity,result,implementation_revision,model_revision,policy_revision,
         accounting,started_at,completed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT (selector_decision) DO NOTHING`,
       [
         interaction.decision,
@@ -183,6 +406,9 @@ async function recordSelectorState(
         interaction.instructionsVersion,
         interaction.instructions,
         encode(interaction.observedView),
+        interaction.observedToken === undefined
+          ? null
+          : encode(interaction.observedToken),
         encode(interaction.context),
         encode(interaction.toolActivity),
         encode(interaction.result),
@@ -209,7 +435,7 @@ async function recordSelectorState(
     if (proposal !== undefined)
       await client.query(
         `INSERT INTO selector_proposal_delivery
-       (selector_decision,tenant,project,operation,command) VALUES ($1,$2,$3,$4,$5)
+       (selector_decision,tenant,project,operation,command,state) VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (selector_decision) DO NOTHING`,
         [
           interaction.decision,
@@ -217,10 +443,67 @@ async function recordSelectorState(
           interaction.partition.project,
           proposal.operation,
           encode(proposal.command),
+          proposal.deliveryMode === "Automatic"
+            ? "Pending"
+            : "AwaitingApproval",
         ],
       );
     await writeSelectorProject(client, state);
   });
+}
+
+async function readSelectorHistory(
+  pool: pg.Pool,
+  partition: Partition,
+  after: string | undefined,
+  limit: number,
+): Promise<readonly SelectorInteraction[]> {
+  checkedSelectorLimit(limit, "selector history");
+  const found = await pool.query<{
+    selector_decision: string;
+    instructions_version: string;
+    instructions: string;
+    observed_view: string;
+    observed_token: string | null;
+    context: string;
+    tool_activity: string;
+    result: string;
+    implementation_revision: string;
+    model_revision: string;
+    policy_revision: string;
+    accounting: string;
+    started_at: Date;
+    completed_at: Date;
+  }>(
+    `SELECT * FROM selector_interaction WHERE tenant=$1 AND project=$2
+     AND selector_decision>$3 ORDER BY selector_decision LIMIT $4`,
+    [partition.tenant, partition.project, after ?? "", limit],
+  );
+  return found.rows.map((row): SelectorInteraction => ({
+    decision: row.selector_decision,
+    partition,
+    instructionsVersion: row.instructions_version,
+    instructions: row.instructions,
+    observedView: JSON.parse(
+      row.observed_view,
+    ) as SelectorInteraction["observedView"],
+    ...(row.observed_token === null
+      ? {}
+      : {
+          observedToken: JSON.parse(row.observed_token) as NonNullable<
+            SelectorInteraction["observedToken"]
+          >,
+        }),
+    context: JSON.parse(row.context) as SelectorInteraction["context"],
+    toolActivity: JSON.parse(row.tool_activity) as readonly unknown[],
+    result: JSON.parse(row.result) as unknown,
+    implementationRevision: row.implementation_revision,
+    modelRevision: row.model_revision,
+    policyRevision: row.policy_revision,
+    accounting: JSON.parse(row.accounting) as unknown,
+    startedAt: row.started_at.toISOString(),
+    completedAt: row.completed_at.toISOString(),
+  }));
 }
 
 export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
@@ -246,46 +529,34 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
         [decision, encode(outcome)],
       );
     },
-    history: async (partition: Partition, after, limit) => {
-      checkedSelectorLimit(limit, "selector history");
-      const found = await pool.query<{
-        selector_decision: string;
-        instructions_version: string;
-        instructions: string;
-        observed_view: string;
-        context: string;
-        tool_activity: string;
-        result: string;
-        implementation_revision: string;
-        model_revision: string;
-        policy_revision: string;
-        accounting: string;
-        started_at: Date;
-        completed_at: Date;
-      }>(
-        `SELECT * FROM selector_interaction WHERE tenant=$1 AND project=$2
-          AND selector_decision>$3 ORDER BY selector_decision LIMIT $4`,
-        [partition.tenant, partition.project, after ?? "", limit],
-      );
-      return found.rows.map((row): SelectorInteraction => ({
-        decision: row.selector_decision,
-        partition,
-        instructionsVersion: row.instructions_version,
-        instructions: row.instructions,
-        observedView: JSON.parse(
-          row.observed_view,
-        ) as SelectorInteraction["observedView"],
-        context: JSON.parse(row.context) as unknown,
-        toolActivity: JSON.parse(row.tool_activity) as readonly unknown[],
-        result: JSON.parse(row.result) as unknown,
-        implementationRevision: row.implementation_revision,
-        modelRevision: row.model_revision,
-        policyRevision: row.policy_revision,
-        accounting: JSON.parse(row.accounting) as unknown,
-        startedAt: row.started_at.toISOString(),
-        completedAt: row.completed_at.toISOString(),
-      }));
-    },
+    history: (partition, after, limit) =>
+      readSelectorHistory(pool, partition, after, limit),
     project: (partition) => readSelectorProject(pool, partition),
+    awaitingApproval: (partition, limit) =>
+      awaitingApproval(pool, partition, limit),
+    approve: async (partition, decision, feedback) => {
+      const changed = await pool.query(
+        `UPDATE selector_proposal_delivery SET state='Pending',review_feedback=$2,
+         reviewed_at=now(),retry_at=now() WHERE selector_decision=$1 AND tenant=$3
+         AND project=$4 AND state='AwaitingApproval'`,
+        [decision, feedback ?? null, partition.tenant, partition.project],
+      );
+      return changed.rowCount === 1;
+    },
+    reject: async (partition, decision, feedback) => {
+      const changed = await pool.query(
+        `UPDATE selector_proposal_delivery SET state='Terminal',review_feedback=$2,
+         reviewed_at=now(),outcome=$3 WHERE selector_decision=$1 AND tenant=$4
+         AND project=$5 AND state='AwaitingApproval'`,
+        [
+          decision,
+          feedback ?? null,
+          encode({ state: "RejectedByUser", feedback }),
+          partition.tenant,
+          partition.project,
+        ],
+      );
+      return changed.rowCount === 1;
+    },
   };
 }

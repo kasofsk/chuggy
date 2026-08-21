@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { observeSelectorProject } from "../../src/interpreter/selector.ts";
+import {
+  observeSelectorProject,
+  runSelectorCycle,
+  type SelectorRuntimeSettings,
+} from "../../src/interpreter/selector.ts";
 import {
   deliverSelectorProposal,
   reconcileSelectorProposal,
@@ -12,8 +16,12 @@ import {
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   asAuthorityKind,
+  asAuthoritySubject,
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
+import { selectorRunOnce } from "../../src/interpreter/selectorRuntime.ts";
+import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
+import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -41,6 +49,67 @@ const delivery: SelectorDelivery = {
   },
 };
 
+const operationalContext = {
+  observedAt: "2026-08-21T12:00:00.000Z",
+  observedAtEpochMs: 1_777_000_000_000,
+  reviewFeedback: [],
+  activeWork: [],
+  projectCapacity: {
+    account: "project",
+    allocated: 0,
+    limit: 4,
+    available: 4,
+  },
+  clusterCapacity: {
+    visibility: "AuthorizedAggregate",
+    allocated: 2,
+    limit: 10,
+    available: 8,
+    pressure: "Normal",
+  },
+  executionBacklog: { queued: 0, ceiling: 100, dispatchAllowed: true },
+} as const;
+
+const runtimeSettings: SelectorRuntimeSettings = {
+  revision: 1,
+  mode: "Running",
+  dispatchMode: "Automatic",
+  basePrompt: "prompt",
+  modelAllowlist: ["*"],
+  toolAllowlist: ["*"],
+  limits: {
+    tokensPerDecision: 8192,
+    millisecondsPerDecision: 120_000,
+    toolCallsPerDecision: 20,
+    concurrentDecisions: 4,
+    selectionsPerMinute: 60,
+  },
+  operationalContextMaxAgeMs: 30_000,
+};
+
+function promptObservationSource() {
+  return {
+    notifications: () =>
+      Promise.resolve({ result: "Events", cursor: 1, events: [] } as const),
+    currentTimeEpochMs: () =>
+      Promise.resolve(operationalContext.observedAtEpochMs),
+    operationalContext: () => Promise.resolve(operationalContext),
+    dispatchView: () =>
+      Promise.resolve({
+        result: "Page",
+        token: {
+          ...partition,
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 1,
+          digest: "c".repeat(64),
+        },
+        candidates: [],
+        notificationCursor: 1,
+      } as const),
+  };
+}
+
 function stateStore(
   onTerminal: (outcome: unknown) => void,
 ): SelectorStateStore {
@@ -58,15 +127,26 @@ function stateStore(
     },
     history: () => Promise.resolve([]),
     project: () => Promise.resolve(undefined),
+    awaitingApproval: () => Promise.resolve([]),
+    approve: () => Promise.resolve(false),
+    reject: () => Promise.resolve(false),
   };
 }
 
 test("selector observation resumes from a reset cursor and pins every view page", async () => {
   const watermarks: (number | undefined)[] = [];
   const observed = await observeSelectorProject(
-    { partition, notificationCursor: 3, attention: "Monitoring" },
+    {
+      partition,
+      notificationCursor: 3,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
     {
       notifications: () => Promise.resolve({ result: "Reset", cursor: 12 }),
+      currentTimeEpochMs: () =>
+        Promise.resolve(operationalContext.observedAtEpochMs),
+      operationalContext: () => Promise.resolve(operationalContext),
       dispatchView: (_partition, query) => {
         watermarks.push(query.watermark);
         return Promise.resolve({
@@ -91,10 +171,18 @@ test("selector observation resumes from a reset cursor and pins every view page"
 test("selector observation discards a view when a later page resets", async () => {
   let page = 0;
   const observed = await observeSelectorProject(
-    { partition, notificationCursor: 0, attention: "Monitoring" },
+    {
+      partition,
+      notificationCursor: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
     {
       notifications: () =>
         Promise.resolve({ result: "Events", cursor: 0, events: [] } as const),
+      currentTimeEpochMs: () =>
+        Promise.resolve(operationalContext.observedAtEpochMs),
+      operationalContext: () => Promise.resolve(operationalContext),
       dispatchView: () => {
         page += 1;
         if (page === 2) return Promise.resolve({ result: "Reset" } as const);
@@ -171,4 +259,159 @@ test("accepted selector delivery reconciles its terminal operation outcome", asy
   );
   assert.equal(reconciled, true);
   assert.deepEqual(terminal, { state: "Refused", code: "SelectionChanged" });
+});
+
+test("a paused runtime creates no new observations but still drains durable work", async () => {
+  let pendingReads = 0;
+  const store = {
+    ...stateStore(() => undefined),
+    pending: () => {
+      pendingReads += 1;
+      return Promise.resolve([]);
+    },
+  };
+  const result = await selectorRunOnce(
+    store,
+    {
+      projects: () =>
+        Promise.reject(new Error("paused runtime listed projects")),
+      acquireDecisionPermit: () =>
+        Promise.reject(new Error("paused runtime acquired a permit")),
+      releaseDecisionPermit: () =>
+        Promise.reject(new Error("paused runtime released a permit")),
+      notifications: () =>
+        Promise.reject(new Error("paused runtime observed a project")),
+      currentTimeEpochMs: () =>
+        Promise.reject(new Error("paused runtime read the clock")),
+      dispatchView: () =>
+        Promise.reject(new Error("paused runtime read a view")),
+      operationalContext: () =>
+        Promise.reject(new Error("paused runtime read operational context")),
+      submit: () => Promise.reject(new Error("there was no pending delivery")),
+      operation: () =>
+        Promise.reject(new Error("there was no submitted delivery")),
+    },
+    {
+      decide: () =>
+        Promise.reject(new Error("paused runtime invoked its policy")),
+    },
+    {
+      next: () => ({
+        operation: asOperationId("unused"),
+        selectorDecisionReference: "unused",
+      }),
+    },
+    {
+      settings: () =>
+        Promise.resolve({ ...runtimeSettings, revision: 4, mode: "Paused" }),
+      pause: () => Promise.reject(new Error("not used")),
+      unpause: () => Promise.reject(new Error("not used")),
+      setDispatchMode: () => Promise.reject(new Error("not used")),
+      updateBasePrompt: () => Promise.reject(new Error("not used")),
+      updatePolicyControls: () => Promise.reject(new Error("not used")),
+      history: () => Promise.reject(new Error("not used")),
+      rollback: () => Promise.reject(new Error("not used")),
+      drainStatus: () => Promise.reject(new Error("not used")),
+    },
+  );
+  assert.deepEqual(result, {
+    observed: 0,
+    proposed: 0,
+    delivered: 0,
+    reconciled: 0,
+  });
+  assert.equal(pendingReads, 1);
+});
+
+test("a selector decision uses and records one hot-loaded prompt revision", async () => {
+  const settings: SelectorRuntimeSettings = {
+    ...runtimeSettings,
+    revision: 7,
+    basePrompt: "prioritize tickets that unblock dependants",
+  };
+  let recorded = "";
+  await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    promptObservationSource(),
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: (interaction) => {
+        recorded = interaction.instructions;
+        return Promise.resolve();
+      },
+    },
+    {
+      decide: (observation, current) =>
+        Promise.resolve({
+          interaction: {
+            decision: "prompt-decision",
+            partition,
+            instructionsVersion: String(current.revision),
+            instructions: current.basePrompt,
+            observedView: observation.candidates,
+            observedToken: observation.token,
+            context: {
+              operationalContext: observation.operationalContext,
+              workingMemory: observation.workingMemory,
+            },
+            toolActivity: [],
+            result: { waiting: true },
+            implementationRevision: "implementation-1",
+            modelRevision: "model-1",
+            policyRevision: "policy-1",
+            accounting: {},
+            startedAt: "2026-08-21T12:00:00.000Z",
+            completedAt: "2026-08-21T12:00:01.000Z",
+          },
+          attention: "Monitoring",
+          workingMemory: { note: "watch the dependency closure" },
+        }),
+    },
+    {
+      operation: asOperationId("prompt-operation"),
+      selectorDecisionReference: "prompt-decision",
+    },
+    settings,
+  );
+  assert.equal(recorded, settings.basePrompt);
+});
+
+test("proposal review requires dispatch authority and preserves feedback", async () => {
+  let approvedFeedback: string | undefined;
+  const reviews = selectorProposalReviews(
+    {
+      authorize: (_principal, _partition, access) =>
+        Promise.resolve(
+          access === "DispatchTicket"
+            ? {
+                kind: asAuthorityKind("User"),
+                subject: asAuthoritySubject("reviewer"),
+              }
+            : undefined,
+        ),
+    },
+    {
+      ...stateStore(() => undefined),
+      awaitingApproval: () => Promise.resolve([delivery]),
+      approve: (_partition, _decision, feedback) => {
+        approvedFeedback = feedback;
+        return Promise.resolve(true);
+      },
+    },
+  );
+  const listed = await reviews.pending(asPrincipal("reviewer"), partition, 10);
+  assert.equal(listed.result, "Found");
+  const approved = await reviews.approve(
+    asPrincipal("reviewer"),
+    partition,
+    delivery.decision,
+    "start this after the database migration",
+  );
+  assert.deepEqual(approved, { result: "Changed" });
+  assert.equal(approvedFeedback, "start this after the database migration");
 });

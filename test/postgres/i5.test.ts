@@ -3,7 +3,10 @@ import { after, before, test } from "node:test";
 
 import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
+import {
+  postgresSelectorRuntimeControl,
+  postgresSelectorState,
+} from "../../src/adapters/postgres/selector.ts";
 import {
   apiRole,
   selectorServiceRole,
@@ -27,6 +30,30 @@ before(async () => {
 after(async () => {
   await harness.close();
 });
+
+const selectorInteractionContext = {
+  workingMemory: {},
+  operationalContext: {
+    observedAt: "2026-08-20T12:00:00.000Z",
+    observedAtEpochMs: 1_777_000_000_000,
+    reviewFeedback: [],
+    activeWork: [],
+    projectCapacity: {
+      account: "project",
+      allocated: 0,
+      limit: 1,
+      available: 1,
+    },
+    clusterCapacity: {
+      visibility: "AuthorizedAggregate",
+      allocated: 0,
+      limit: 1,
+      available: 1,
+      pressure: "Normal",
+    },
+    executionBacklog: { queued: 0, ceiling: 10, dispatchAllowed: true },
+  },
+} as const;
 
 test("a release atomically materializes a digest-fenced current dispatch view", async () => {
   const partition = await postgresHarnessProject(harness.store, "i5-view");
@@ -187,7 +214,7 @@ test("selector provenance and its observed cursor roll back together", async () 
     instructionsVersion: "instructions-1",
     instructions: "choose a dispatchable ticket",
     observedView: [],
-    context: {},
+    context: selectorInteractionContext,
     toolActivity: [],
     result: { waiting: true },
     implementationRevision: "implementation-1",
@@ -201,7 +228,12 @@ test("selector provenance and its observed cursor roll back together", async () 
     await assert.rejects(
       state.recordInteraction(
         interaction,
-        { partition, notificationCursor: 17, attention: "Monitoring" },
+        {
+          partition,
+          notificationCursor: 17,
+          attention: "Monitoring",
+          workingMemory: {},
+        },
         "x".repeat(65_537),
       ),
       /selector_planning_intent.*check|violates check constraint/,
@@ -213,9 +245,83 @@ test("selector provenance and its observed cursor roll back together", async () 
       partition,
       notificationCursor: 17,
       attention: "Monitoring",
+      workingMemory: {},
     });
     assert.equal((await state.project(partition))?.notificationCursor, 17);
     assert.equal((await state.history(partition, undefined, 10)).length, 1);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("selector controls hot-reload with a revision fence", async () => {
+  const pool = postgresPool(postgresHarnessUrl());
+  const control = postgresSelectorRuntimeControl(pool);
+  try {
+    const initial = await control.settings();
+    const paused = await control.pause(initial.revision);
+    assert.equal(paused.updated, true);
+    assert.equal(paused.settings.mode, "Paused");
+
+    const stale = await control.updateBasePrompt(
+      initial.revision,
+      "this update raced with pause",
+    );
+    assert.equal(stale.updated, false);
+    assert.equal(stale.settings.revision, paused.settings.revision);
+
+    const prompted = await control.updateBasePrompt(
+      paused.settings.revision,
+      "prefer tickets that unblock the largest dependency closure",
+    );
+    assert.equal(prompted.updated, true);
+    assert.equal(
+      prompted.settings.basePrompt,
+      "prefer tickets that unblock the largest dependency closure",
+    );
+
+    const reviewed = await control.setDispatchMode(
+      prompted.settings.revision,
+      "ApprovalRequired",
+    );
+    assert.equal(reviewed.updated, true);
+    assert.equal(reviewed.settings.dispatchMode, "ApprovalRequired");
+
+    const governed = await control.updatePolicyControls(
+      reviewed.settings.revision,
+      {
+        modelAllowlist: ["selector-model"],
+        toolAllowlist: ["project-capacity", "cluster-summary"],
+        limits: {
+          tokensPerDecision: 4096,
+          millisecondsPerDecision: 60_000,
+          toolCallsPerDecision: 10,
+          concurrentDecisions: 2,
+          selectionsPerMinute: 30,
+        },
+        operationalContextMaxAgeMs: 15_000,
+      },
+    );
+    assert.equal(governed.updated, true);
+    assert.deepEqual(governed.settings.modelAllowlist, ["selector-model"]);
+
+    const history = await control.history(initial.revision - 1, 20);
+    assert.ok(
+      history.some((settings) => settings.revision === initial.revision),
+    );
+    const restored = await control.rollback(
+      governed.settings.revision,
+      initial.revision,
+    );
+    assert.equal(restored.updated, true);
+    assert.equal(restored.settings.basePrompt, initial.basePrompt);
+    assert.equal(restored.settings.dispatchMode, initial.dispatchMode);
+
+    const running = await control.unpause(restored.settings.revision);
+    assert.equal(running.updated, true);
+    assert.equal(running.settings.mode, "Running");
+    const drain = await control.drainStatus();
+    assert.equal(typeof drain.drained, "boolean");
   } finally {
     await pool.end();
   }
