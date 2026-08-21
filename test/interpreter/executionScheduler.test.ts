@@ -96,6 +96,25 @@ test("no bound may be zero, negative or fractional", () => {
   }
 });
 
+test("a bound the configuration never names is refused rather than assumed", () => {
+  for (const name of bounds) {
+    const missing = Object.fromEntries(
+      Object.entries(executionSchedulerDefaults).filter(
+        ([named]) => named !== name,
+      ),
+    ) as ExecutionSchedulerConfig;
+    assert.throws(
+      () => checkedExecutionSchedulerConfig(missing, ticketServiceDefaults),
+      (error: unknown) => {
+        assert.ok(error instanceof RangeError);
+        assert.match(error.message, new RegExp(`\\b${name}\\b`, "u"));
+        return true;
+      },
+      `a configuration naming no ${name} was accepted`,
+    );
+  }
+});
+
 test("a bound past the safe integers is refused rather than silently rounded", () => {
   assert.throws(
     () =>

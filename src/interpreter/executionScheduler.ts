@@ -748,6 +748,17 @@ export const executionSchedulerDefaults: ExecutionSchedulerConfig = {
 };
 
 /**
+ * Every bound a configuration must name, read from the defaults so that a bound
+ * added to the interface has a default and a required name at once. Reading the
+ * offered configuration's own keys instead would check the bounds it happens to
+ * carry rather than the ones it owes, and a deployment that named none would
+ * pass.
+ */
+const executionSchedulerBounds = Object.keys(
+  executionSchedulerDefaults,
+) as readonly (keyof ExecutionSchedulerConfig)[];
+
+/**
  * Refuses a configuration whose bounds are not positive safe integers, and one
  * whose project backlog ceiling reserves no mailbox room for the completions
  * that backlog can submit. It takes both configurations because the
@@ -757,7 +768,8 @@ export function checkedExecutionSchedulerConfig(
   config: ExecutionSchedulerConfig,
   service: TicketServiceConfig,
 ): ExecutionSchedulerConfig {
-  for (const [name, value] of Object.entries(config)) {
+  for (const name of executionSchedulerBounds) {
+    const value: number = config[name];
     if (!Number.isSafeInteger(value) || value <= 0) {
       throw new RangeError(
         `execution scheduler configuration: ${name} must be a positive safe integer`,
