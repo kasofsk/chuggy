@@ -375,14 +375,14 @@ test("each relation carries exactly the indexes its recovery and its identities 
         WHERE schemaname='public' AND tablename='finalization_request'
           AND indexname IN ('finalization_request_claimable',
             'finalization_request_claim_expiry','finalization_request_epoch',
-            'finalization_request_one_open')
+            'finalization_request_one_live','finalization_request_one_open')
         ORDER BY indexname`,
     ),
     [
       { held: "finalization_request_claim_expiry" },
       { held: "finalization_request_claimable" },
       { held: "finalization_request_epoch" },
-      { held: "finalization_request_one_open" },
+      { held: "finalization_request_one_live" },
     ],
   );
 });

@@ -20,6 +20,12 @@
  * polls and `consumable` is what an activation verifies itself against, and
  * neither reads anything of a project but its readiness and its inbox.
  *
+ * A SUBMISSION AUTHORIZED ELSEWHERE IS FENCED HERE. `nativeAction` and
+ * `finalizationRequest` each carry the durable row their command names and
+ * whether it is still the row that authorizes it, because a writer deciding at
+ * its serialized position must refuse a submission whose authority moved
+ * between acceptance and decision.
+ *
  * EVERY REFUSAL IS A VALUE, as in `./projectStore.ts`. A generation another
  * acceptance superseded and a decision input the owner had not accounted for are
  * outcomes a caller must handle, not exceptions it may ignore.
@@ -29,7 +35,7 @@ import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type {
   OperationId,
   PriorityClass,
-  TicketCommand,
+  StoredTicketCommand,
 } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 
@@ -53,7 +59,7 @@ export interface DecisionInput {
     | {
         readonly kind: "Operation";
         readonly operation: OperationId;
-        readonly command: TicketCommand;
+        readonly command: StoredTicketCommand;
         readonly resolvedEvent: DecisionEvent;
         readonly draftRelease?: {
           readonly ticket: number;
@@ -65,6 +71,11 @@ export interface DecisionInput {
         readonly nativeAction?: {
           readonly action: string;
           readonly authorizingSeq: number;
+          readonly open: boolean;
+        };
+        readonly finalizationRequest?: {
+          readonly request: string;
+          readonly requestGeneration: number;
           readonly open: boolean;
         };
       }

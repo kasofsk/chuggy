@@ -136,6 +136,7 @@ function viewWith(overrides: ViewOverrides): FinalizationView {
       ticket,
       authorizingSeq: 1,
       requestGeneration: 1,
+      claimGeneration: 1,
       state: "Open",
       recoveryEpoch: epoch,
       owner: asFinalizerOwnerId("finalizer-1"),

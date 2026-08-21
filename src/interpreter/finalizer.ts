@@ -1,7 +1,8 @@
 /**
  * The finalizer's own vocabulary: the durable finalization one claimed request
- * drives, the ports the finalizer service reaches Git and its credentials
- * through, and the pure pass that says what a claimed request may do next.
+ * drives, the ports the finalizer service reaches Git, its credentials and its
+ * own durable rows through, and the pure pass that says what a claimed request
+ * may do next.
  *
  * NOTHING HERE DECIDES A TICKET. The finalizer submits `FinalizationResult`
  * through one narrow authenticated boundary and cannot append a journal entry,
@@ -310,6 +311,7 @@ export interface FinalizationClaim {
   readonly ticket: TicketId;
   readonly authorizingSeq: number;
   readonly requestGeneration: number;
+  readonly claimGeneration: number;
   readonly state: FinalizationRequestState;
   readonly recoveryEpoch: RecoveryEpoch;
   readonly owner: FinalizerOwnerId;
@@ -745,4 +747,61 @@ export function checkedFinalizerConfig(
     }
   }
   return config;
+}
+
+/** One conclusion offered to the one authenticated door, naming the attempt that produced it. */
+export interface FinalizationOffer {
+  readonly claim: FinalizationClaim;
+  readonly attempt: FinalizationAttemptId;
+  readonly conclusion: FinalizationConclusion;
+}
+
+/**
+ * What the door answered. Every arm but `Submitted` and `AlreadySubmitted`
+ * wrote no journal entry, no operation and no decision input.
+ */
+export type FinalizationSubmitted =
+  | { readonly submitted: "Submitted"; readonly operation: string }
+  | { readonly submitted: "AlreadySubmitted"; readonly operation: string }
+  | { readonly submitted: "UnknownRequest" }
+  | { readonly submitted: "BindingMismatch" }
+  | { readonly submitted: "NotAdmitted" };
+
+/**
+ * The durable finalization authority for one installation, which the finalizer
+ * role reaches and nothing else does. It orders requests, holds them, gathers
+ * what the pure pass reads and submits a conclusion through one door.
+ */
+export interface FinalizerStore {
+  /**
+   * Takes a bounded lease on at most `requestsMax` unclaimed or lapsed requests
+   * in `authorizing_seq` order, refusing every claim under a superseded epoch.
+   */
+  claimRequests(
+    owner: FinalizerOwnerId,
+    epoch: RecoveryEpoch,
+    requestsMax: number,
+    leaseSecs: number,
+  ): Promise<readonly FinalizationClaim[]>;
+
+  /** Extends a claim still held at its own generation under the current epoch. */
+  extendClaim(claim: FinalizationClaim, leaseSecs: number): Promise<boolean>;
+
+  /** Everything the pure pass reads of the durable rows, gathered before it runs. */
+  durableView(claim: FinalizationClaim): Promise<FinalizationView | undefined>;
+
+  /**
+   * Offers one conclusion to `submit_finalization_result`, and invalidates the
+   * request when the project will admit no result for it ever again.
+   */
+  submitResult(offer: FinalizationOffer): Promise<FinalizationSubmitted>;
+
+  /** Gives back the claim on a request that has settled, so no lease outlives its work. */
+  settleClaim(claim: FinalizationClaim): Promise<boolean>;
+
+  /** Reopens at most `requestsMax` claims whose lease has run out, and drops the leases on settled rows. */
+  reclaimLapsed(epoch: RecoveryEpoch, requestsMax: number): Promise<number>;
+
+  /** Reopens at most `requestsMax` claims held under an epoch a restore superseded. */
+  reclaimStaleEpoch(epoch: RecoveryEpoch, requestsMax: number): Promise<number>;
 }

@@ -352,7 +352,8 @@ async function decisionFinalization(
   for (const ticket of outcome.materialization.fulfillFinalizationFor) {
     await client.query(
       `UPDATE finalization_request SET state='Fulfilled'
-        WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
+        WHERE tenant=$1 AND project=$2 AND ticket=$3
+          AND state IN ('Open', 'Registered')`,
       [partition.tenant, partition.project, ticket],
     );
   }

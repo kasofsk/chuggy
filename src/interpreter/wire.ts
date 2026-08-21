@@ -20,8 +20,16 @@ import {
   encodeDecisionEvent,
   encodeEntry as encodeEntryValue,
 } from "../generated/model-api.ts";
-import type { DecisionEvent, Entry } from "../domain/generated/modelTypes.ts";
-import type { TicketCommand } from "./ticketCommand.ts";
+import {
+  finalizationOutcomeTags,
+  type DecisionEvent,
+  type Entry,
+} from "../domain/generated/modelTypes.ts";
+import type {
+  FinalizationSubmission,
+  StoredTicketCommand,
+  TicketCommand,
+} from "./ticketCommand.ts";
 import {
   checkedSelectorDecisionReference,
   dispatchViewSchemaVersion,
@@ -148,7 +156,8 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       if (
         event.type === "WorkReduce" ||
         event.type === "EvalReduce" ||
-        event.type === "ReleaseTicket"
+        event.type === "ReleaseTicket" ||
+        event.type === "FinalizationResult"
       ) {
         throw new TypeError("event is not a public decision command");
       }
@@ -184,6 +193,51 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       return { parsed: "Ok", value: record as TicketCommand };
     }
     throw new TypeError("command tag or fields are invalid");
+  } catch (error: unknown) {
+    return { parsed: "Refused", why: parseRefusal(error) };
+  }
+}
+
+/** Reads the fields of the finalizer's envelope, refusing one whose fences are not whole. */
+function checkedFinalizationSubmission(
+  record: Record<string, unknown>,
+): FinalizationSubmission {
+  const generation = record["requestGeneration"];
+  const outcome = record["outcome"];
+  if (
+    record["version"] !== 1 ||
+    typeof record["request"] !== "string" ||
+    record["request"].length === 0 ||
+    typeof generation !== "number" ||
+    !Number.isSafeInteger(generation) ||
+    generation < 1 ||
+    typeof record["recoveryEpoch"] !== "string" ||
+    record["recoveryEpoch"].length === 0 ||
+    !finalizationOutcomeTags.some((tag) => tag === outcome)
+  ) {
+    throw new TypeError("finalization submission fields are invalid");
+  }
+  return record as unknown as FinalizationSubmission;
+}
+
+/**
+ * Reads one stored command, which is either a public envelope or the finalizer
+ * boundary's own. Only a writer reading its inbox calls this; ingress parses the
+ * public set alone.
+ */
+export function parseStoredTicketCommand(
+  text: string,
+): Parsed<StoredTicketCommand> {
+  let record: Record<string, unknown> | undefined;
+  try {
+    const raw: unknown = JSON.parse(text);
+    if (typeof raw === "object" && raw !== null) {
+      record = raw as Record<string, unknown>;
+    }
+    if (record?.["command"] !== "SubmitFinalizationResult") {
+      return parseTicketCommand(text);
+    }
+    return { parsed: "Ok", value: checkedFinalizationSubmission(record) };
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
   }

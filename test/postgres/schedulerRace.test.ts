@@ -147,6 +147,14 @@ async function registeredMidFlight(project: SchedulerProject): Promise<void> {
   );
 }
 
+/**
+ * How many requests the case about skipping takes out of the way first.
+ * `claimRequests` is installation-wide and the suites share one database, so a
+ * case that looks for its own request among one bounded draw has to empty the
+ * queue of everything the suites before it left open.
+ */
+const claimDrainMax = 1_024;
+
 /** Admits and launches one registration, and hands back the attempt that was opened. */
 async function placedAttempt(
   project: SchedulerProject,
@@ -172,6 +180,12 @@ async function placedAttempt(
 }
 
 test("a request another process holds is skipped rather than waited for", async () => {
+  await rig.store.claimRequests(
+    schedulerOwner("skipdrain"),
+    ["SpawnWork"],
+    claimDrainMax,
+    30,
+  );
   const held = await schedulerProject(rig, "skiplocked");
   const free = await schedulerProject(rig, "skipfree");
   const blockade = await schedulerBlockade(

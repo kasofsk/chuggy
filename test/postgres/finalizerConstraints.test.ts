@@ -432,7 +432,7 @@ test("a bundle is written once, digested, and its references are a bounded close
   assert.equal(allInputBundleReferenceKinds.includes("Artifact"), true);
 });
 
-test("a request's claim is fenced by an epoch and one stays open per ticket", async () => {
+test("a request's claim is fenced by an epoch and one stays live per ticket", async () => {
   assert.match(
     await rig.refusal(
       `UPDATE finalization_request SET claim_owner='owner', claim_expires_at=now()
@@ -454,7 +454,28 @@ test("a request's claim is fenced by an epoch and one stays open per ticket", as
         project.ticket,
       ),
     ),
-    /finalization_request_one_open/u,
+    /finalization_request_one_live/u,
+  );
+  await rig.as(
+    `UPDATE finalization_request SET state='Registered', claim_owner='holder',
+        claim_expires_at=now()+interval '60 seconds', recovery_epoch=$4
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [...keys(project.request), project.epoch],
+  );
+  assert.match(
+    await rig.ownerRefusal(
+      `INSERT INTO finalization_request
+         (tenant, project, request, authorizing_seq, effect_position, ticket,
+          ticket_version, request_generation)
+       VALUES ($1,$2,$3,$4,$5,$6,$4,1)`,
+      keys(
+        finalizerIdentity("request-held"),
+        project.authorizingSeq,
+        2,
+        project.ticket,
+      ),
+    ),
+    /finalization_request_one_live/u,
   );
 });
 

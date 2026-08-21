@@ -131,28 +131,34 @@ export interface FinalizerProject {
   readonly repository: string;
   readonly configurationRevision: string;
   readonly configurationDigest: string;
+  readonly memory: ProjectMemory;
+}
+
+/** What draining the queue left: the state the last decision installed, and what each one was. */
+export interface FinalizerDrained {
+  readonly memory: ProjectMemory;
+  readonly decided: readonly string[];
 }
 
 /**
  * Decides everything the project's queue currently holds, which is how a
  * continuation the last commit emitted reaches the writer that must consume it.
+ * A refusal is one of the answers a writer gives, so a fenced input drains and
+ * is reported rather than raising.
  */
-async function finalizerDrain(
+export async function finalizerDrain(
   harness: PostgresHarness,
   partition: Partition,
   memory: ProjectMemory,
-): Promise<ProjectMemory> {
+): Promise<FinalizerDrained> {
   const writer = postgresHarnessWriter(harness);
   let carried = memory;
+  const decided: string[] = [];
   for (let drained = 0; drained < finalizerDecisionsMax; drained++) {
     const input = await harness.discovery.next(partition, 300);
-    if (input === undefined) return carried;
+    if (input === undefined) return { memory: carried, decided };
     const step = await projectWriterDecide(writer, carried, input);
-    if (step.decided.decided !== "Committed") {
-      throw new Error(
-        `finalizer harness: a queued decision was ${step.decided.decided}`,
-      );
-    }
+    decided.push(step.decided.decided);
     carried = step.memory;
   }
   throw new Error(
@@ -181,7 +187,12 @@ async function finalizerReport(
   if (accepted.accepted !== "Accepted") {
     throw new Error(`finalizer harness: the report was ${accepted.accepted}`);
   }
-  return finalizerDrain(harness, partition, memory);
+  const drained = await finalizerDrain(harness, partition, memory);
+  const refused = drained.decided.find((each) => each !== "Committed");
+  if (refused !== undefined) {
+    throw new Error(`finalizer harness: a queued decision was ${refused}`);
+  }
+  return drained.memory;
 }
 
 /** The repository, configuration and epoch a prepared attempt is bound to. */
@@ -229,8 +240,14 @@ export async function finalizerProject(
     label,
     postgresHarnessJournal().length,
   );
-  const memory = await finalizerReport(rig.harness, partition, first, label, 1);
-  await finalizerReport(rig.harness, partition, memory, label, 2);
+  const worked = await finalizerReport(rig.harness, partition, first, label, 1);
+  const memory = await finalizerReport(
+    rig.harness,
+    partition,
+    worked,
+    label,
+    2,
+  );
   const found = (await rig.harness.query(
     `SELECT request, ticket::text AS ticket, authorizing_seq::text AS seq,
             request_generation::text AS generation
@@ -259,6 +276,7 @@ export async function finalizerProject(
     repository: bound.repository,
     configurationRevision: bound.revision,
     configurationDigest: bound.digest,
+    memory,
   };
 }
 
@@ -350,6 +368,32 @@ export async function finalizerClaim(
   if (claimed.length !== 1) {
     throw new Error("finalizer harness: the request was not claimable");
   }
+}
+
+/**
+ * One prepared attempt whose promotion the target ref proved and whose permit is
+ * spent, which is the evidence a succeeded result is refused without.
+ */
+export async function finalizerPromote(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  label: string,
+): Promise<string> {
+  const candidate = finalizerCommit();
+  const attempt = await finalizerPrepare(rig, project, label, { candidate });
+  const permit = await finalizerGrantPermit(rig, project, attempt, label);
+  await rig.as(
+    `INSERT INTO finalization_reconciliation
+       (tenant, project, permit, candidate_commit, target_ref, verdict, observed_commit)
+     VALUES ($1,$2,$3,$4,'refs/heads/main','Promoted',$4)`,
+    [project.partition.tenant, project.partition.project, permit, candidate],
+  );
+  await rig.as(
+    `UPDATE commit_permit SET state='Concluded', concluded_at=now()
+      WHERE tenant=$1 AND project=$2 AND permit=$3`,
+    [project.partition.tenant, project.partition.project, permit],
+  );
+  return attempt;
 }
 
 /** Grants the one permit that authorizes the one irreversible act, as the finalizer. */

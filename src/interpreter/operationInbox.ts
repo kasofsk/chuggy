@@ -44,8 +44,10 @@ import type { Lifecycle, Partition } from "./projectStore.ts";
 import type { TicketCommand } from "./ticketCommand.ts";
 export {
   asOperationDecisionEvent,
+  type FinalizationSubmission,
   type NativeActionResolution,
   type OperationDecisionEvent,
+  type StoredTicketCommand,
   type TicketCommand,
 } from "./ticketCommand.ts";
 
@@ -221,7 +223,6 @@ export function classifyCommand(command: TicketCommand): {
       return { admission: "CorrectnessReducing", priority: "Safety" };
     case "TaskDone":
     case "ExecutionBlocked":
-    case "FinalizationResult":
       return { admission: "CorrectnessReducing", priority: "Completion" };
     case "Dispatch":
     case "ResumeTicket":

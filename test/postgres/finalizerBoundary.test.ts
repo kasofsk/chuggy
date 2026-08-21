@@ -20,6 +20,7 @@ import {
   finalizerCommit,
   finalizerGrantPermit,
   finalizerIdentity,
+  finalizerPromote,
   finalizerPrepare,
   finalizerProject,
   finalizerRigOpen,
@@ -104,21 +105,7 @@ async function promoted(
 ): Promise<{ project: FinalizerProject; attempt: string }> {
   const project = await finalizerProject(rig, label);
   await finalizerClaim(rig, project, finalizerIdentity(`owner-${label}`));
-  const candidate = finalizerCommit();
-  const attempt = await finalizerPrepare(rig, project, label, { candidate });
-  const permit = await finalizerGrantPermit(rig, project, attempt, label);
-  await rig.as(
-    `INSERT INTO finalization_reconciliation
-       (tenant, project, permit, candidate_commit, target_ref, verdict, observed_commit)
-     VALUES ($1,$2,$3,$4,'refs/heads/main','Promoted',$4)`,
-    [project.partition.tenant, project.partition.project, permit, candidate],
-  );
-  await rig.as(
-    `UPDATE commit_permit SET state='Concluded', concluded_at=now()
-      WHERE tenant=$1 AND project=$2 AND permit=$3`,
-    [project.partition.tenant, project.partition.project, permit],
-  );
-  return { project, attempt };
+  return { project, attempt: await finalizerPromote(rig, project, label) };
 }
 
 test("a succeeded result the durable rows support is submitted exactly once", async () => {

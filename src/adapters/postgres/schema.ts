@@ -187,6 +187,15 @@
  * fencing leave none — so the adapter is unchanged and the composed statement
  * is refused.
  *
+ * `FinalizationResult` IS NOT A COMMAND THE MAILBOX TAKES FROM A CALLER. The
+ * public grammar keeps the event out of a `Decide` the way it has always kept
+ * `ReleaseTicket` out, and `submit_finalization_result` writes its own envelope
+ * naming the request, its generation and the epoch instead — so the event a
+ * writer journals is one it derives from durable rows rather than one anybody
+ * supplied. `public_ticket_command_is_valid` is the grammar migration five
+ * wrote, unchanged and renamed, and the validator of that name is now the
+ * wrapper around it that both rules live in.
+ *
  * WHICH LOCKS THIS FILE'S BODIES TAKE. `submit_finalization_result` takes two —
  * the finalization request it is answering, then the project whose mailbox it
  * writes into — and `request_finalization_approval` takes the first of those
@@ -2497,6 +2506,10 @@ const durableFinalizer = [
      ON finalization_request (claim_expires_at) WHERE claim_owner IS NOT NULL`,
   `CREATE INDEX finalization_request_epoch
      ON finalization_request (recovery_epoch) WHERE claim_owner IS NOT NULL`,
+  `DROP INDEX finalization_request_one_open`,
+  `CREATE UNIQUE INDEX finalization_request_one_live
+     ON finalization_request (tenant, project, ticket)
+     WHERE state IN ('Open', 'Registered')`,
 
   `ALTER TABLE native_action ADD COLUMN attempt text`,
   `DO $$
@@ -2544,6 +2557,31 @@ const durableFinalizer = [
  * anything is granted on it.
  */
 const durableFinalizerBoundaries = [
+  `ALTER FUNCTION ticket_command_is_valid(jsonb)
+     RENAME TO public_ticket_command_is_valid`,
+  `CREATE FUNCTION ticket_command_is_valid(command jsonb) RETURNS boolean
+     LANGUAGE plpgsql IMMUTABLE AS $$
+     BEGIN
+       IF command IS NULL OR jsonb_typeof(command) <> 'object' THEN
+         RETURN false;
+       END IF;
+       IF command->>'command' = 'SubmitFinalizationResult' THEN
+         RETURN jsonb_typeof(command->'version') = 'number'
+           AND command->>'version' = '1'
+           AND jsonb_typeof(command->'request') = 'string'
+           AND length(command->>'request') BETWEEN 1 AND ${finalizerIdentityCharsMax}
+           AND command_integer(command->'requestGeneration')
+           AND (command->>'requestGeneration')::numeric >= 1
+           AND jsonb_typeof(command->'recoveryEpoch') = 'string'
+           AND length(command->>'recoveryEpoch') BETWEEN 1 AND ${finalizerIdentityCharsMax}
+           AND command->>'outcome' IN (${schemaTextSet(finalizationOutcomeTags)});
+       END IF;
+       RETURN public_ticket_command_is_valid(command)
+         AND command->'event'->>'type' IS DISTINCT FROM 'FinalizationResult';
+     END $$`,
+  `ALTER FUNCTION ticket_command_is_valid(jsonb) OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ticket_command_is_valid(jsonb) FROM PUBLIC`,
+
   `CREATE FUNCTION durable_row_is_written_once() RETURNS trigger
      LANGUAGE plpgsql AS $$
      BEGIN
@@ -2671,9 +2709,10 @@ const durableFinalizerBoundaries = [
        IF project_lifecycle = 'Retention' THEN
          RETURN QUERY SELECT 'NotAdmitted'::text, NULL::text, NULL::bigint; RETURN;
        END IF;
-       command_value := jsonb_build_object('version', 1, 'command', 'Decide', 'event',
-         jsonb_build_object('type', 'FinalizationResult', 'value',
-           jsonb_build_object('ticket', bound.ticket, 'out', in_outcome)));
+       command_value := jsonb_build_object('version', 1,
+         'command', 'SubmitFinalizationResult', 'request', in_request,
+         'requestGeneration', in_request_generation,
+         'recoveryEpoch', in_recovery_epoch, 'outcome', in_outcome);
        IF ticket_command_is_valid(command_value) IS NOT TRUE THEN
          RAISE EXCEPTION 'the finalization result this boundary built is not one the mailbox admits'
            USING ERRCODE = 'integrity_constraint_violation';

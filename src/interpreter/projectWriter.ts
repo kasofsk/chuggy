@@ -325,8 +325,8 @@ function projectWriterPlan(
   }
   if (
     item.source.kind === "Operation" &&
-    item.source.nativeAction !== undefined &&
-    !item.source.nativeAction.open
+    (item.source.nativeAction?.open === false ||
+      item.source.finalizationRequest?.open === false)
   ) {
     return {
       outcome: { outcome: "Refused", code: "NotEnabled" },

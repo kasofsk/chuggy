@@ -2154,26 +2154,29 @@ domain outcome. A golden that moves during this slice means the slice has
 become a model change, which is an escalation and not an implementation
 decision.
 
-Two things are wrong in the tree today rather than merely unbuilt, and this
-slice owns both. `FinalizationResult` is an ordinary public `Decide` command
-that the command schema accepts and the web authority maps to plain `Mutate`,
-so any principal holding `Mutate` on a partition may conclude any finalizing
-ticket, and the project writer fences that submission against nothing: not
-the authorizing request, not its generation, not the recovery epoch. And the
-scheduler refuses a configuration whose project backlog reserves no mailbox
-room for the completions it may later submit, while an open finalization
-request — also a `Completion`-priority operation when it concludes — sits
-outside `execution_backlog` and outside anything that reserves room for it.
-Both close in the first tranche, because both are the sole-authority claim
-this document already makes.
+Two things are wrong in the tree rather than merely unbuilt, and this slice
+owns both. The first was that `FinalizationResult` was an ordinary public
+`Decide` command the command schema accepted and the web authority mapped to
+plain `Mutate`, so any principal holding `Mutate` on a partition could
+conclude any finalizing ticket, and the project writer fenced that submission
+against nothing: not the authorizing request, not its generation, not the
+recovery epoch. It is closed, and what it is closed by is the rule's only
+statement now: `src/interpreter/ticketCommand.ts`, `ticket_command_is_valid`
+in `src/adapters/postgres/schema.ts`, and the fence in
+`src/adapters/postgres/readiness.ts`. The second is still open: the scheduler
+refuses a configuration whose project backlog reserves no mailbox room for the
+completions it may later submit, while an open finalization request — also a
+`Completion`-priority operation when it concludes — sits outside
+`execution_backlog` and outside anything that reserves room for it. Both are
+the first tranche's, because both are the sole-authority claim this document
+already makes.
 
-Neither defect can be observed today, and the reason is worth stating: a
-ticket that enters `Finalizing` is a permanent hold. Nothing reads
-`finalization_request`, its claim columns are granted to no role, its
-`Registered` and `Invalidated` states have no producer, and the partial
-unique index that keeps one open request per ticket blocks the second one
-forever. The producer landed in I3 with no consumer, which is the seam I7
-arrives on.
+Neither defect could be observed before this slice, and the reason is worth
+stating: a ticket that entered `Finalizing` was a permanent hold. Nothing read
+`finalization_request`, its claim columns were granted to no role, its
+`Registered` and `Invalidated` states had no producer, and the partial unique
+index that keeps one live request per ticket blocked the second one forever.
+The producer landed in I3 with no consumer, which is the seam I7 arrives on.
 
 #### The slice lands in two tranches and the row flips once
 
