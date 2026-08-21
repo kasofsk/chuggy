@@ -27,6 +27,8 @@ interface DeliveryRow {
   readonly attempts: string;
 }
 
+class SelectorStateChanged extends Error {}
+
 function deliveryOf(row: DeliveryRow): SelectorDelivery {
   const parsed = parseTicketCommand(row.command);
   if (parsed.parsed === "Refused" || parsed.value.command !== "ProposeDispatch")
@@ -116,6 +118,11 @@ async function lockSelectorProject(
   client: pg.PoolClient,
   expected: SelectorProjectState,
 ): Promise<boolean> {
+  await client.query(
+    `INSERT INTO selector_project_state (tenant,project)
+     VALUES ($1,$2) ON CONFLICT (tenant,project) DO NOTHING`,
+    [expected.partition.tenant, expected.partition.project],
+  );
   const found = await client.query<{
     notification_cursor: string;
     recovery_epoch: string | null;
@@ -127,11 +134,7 @@ async function lockSelectorProject(
   );
   const row = found.rows[0];
   if (row === undefined)
-    return (
-      expected.notificationCursor === 0 &&
-      expected.recoveryEpoch === undefined &&
-      expected.attention === "Monitoring"
-    );
+    throw new Error("selector project state disappeared while locked");
   return sameSelectorState(expected, {
     partition: expected.partition,
     notificationCursor: projectRowCounter(
@@ -314,15 +317,21 @@ async function recordSelectorState(
   planningIntent?: unknown,
   proposal?: SelectorProposal,
 ): Promise<boolean> {
-  return postgresTransaction(pool, async (client) => {
-    if (!(await lockSelectorProject(client, previous))) return false;
-    await storeInteraction(client, interaction);
-    if (planningIntent !== undefined)
-      await storePlanning(client, interaction, planningIntent);
-    if (proposal !== undefined) await storeDelivery(client, proposal);
-    await writeSelectorProject(client, next);
-    return true;
-  });
+  try {
+    return await postgresTransaction(pool, async (client) => {
+      await storeInteraction(client, interaction);
+      if (!(await lockSelectorProject(client, previous)))
+        throw new SelectorStateChanged();
+      if (planningIntent !== undefined)
+        await storePlanning(client, interaction, planningIntent);
+      if (proposal !== undefined) await storeDelivery(client, proposal);
+      await writeSelectorProject(client, next);
+      return true;
+    });
+  } catch (error) {
+    if (error instanceof SelectorStateChanged) return false;
+    throw error;
+  }
 }
 
 export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {

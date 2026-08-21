@@ -1410,8 +1410,9 @@ const durableDispatch = [
        EXCEPTION WHEN others THEN RETURN QUERY SELECT 'InvalidCommand'::text,NULL::text,NULL::bigint,
          NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN; END;
        IF jsonb_typeof(command_value) IS DISTINCT FROM 'object'
+          OR jsonb_typeof(command_value->'version') IS DISTINCT FROM 'number'
           OR command_value->>'version' IS DISTINCT FROM '1'
-          OR command_value->>'command' IS NULL
+          OR jsonb_typeof(command_value->'command') IS DISTINCT FROM 'string'
           OR command_value->>'command' NOT IN ('ManualDispatch','ProposeDispatch')
           OR jsonb_typeof(command_value->'ticket') IS DISTINCT FROM 'number'
           OR coalesce(command_value->>'ticket','') !~ '^[1-9][0-9]*$'
@@ -1441,15 +1442,20 @@ const durableDispatch = [
        END IF;
        IF command_value->>'command'='ProposeDispatch' AND (
           token_fields<>6
+          OR jsonb_typeof(command_value->'observedViewToken'->'tenant') IS DISTINCT FROM 'string'
+          OR jsonb_typeof(command_value->'observedViewToken'->'project') IS DISTINCT FROM 'string'
           OR command_value->'observedViewToken'->>'tenant' IS DISTINCT FROM in_tenant
           OR command_value->'observedViewToken'->>'project' IS DISTINCT FROM in_project
+          OR jsonb_typeof(command_value->'observedViewToken'->'recoveryEpoch') IS DISTINCT FROM 'string'
           OR coalesce(length(command_value->'observedViewToken'->>'recoveryEpoch'),0)
              NOT BETWEEN 1 AND 256
           OR jsonb_typeof(command_value->'observedViewToken'->'schemaVersion') IS DISTINCT FROM 'number'
           OR command_value->'observedViewToken'->>'schemaVersion' IS DISTINCT FROM '1'
           OR jsonb_typeof(command_value->'observedViewToken'->'watermark') IS DISTINCT FROM 'number'
           OR coalesce(command_value->'observedViewToken'->>'watermark','') !~ '^(0|[1-9][0-9]*)$'
+          OR jsonb_typeof(command_value->'observedViewToken'->'digest') IS DISTINCT FROM 'string'
           OR coalesce(command_value->'observedViewToken'->>'digest','') !~ '^[0-9a-f]{64}$'
+          OR jsonb_typeof(command_value->'selectorDecisionReference') IS DISTINCT FROM 'string'
           OR coalesce(length(command_value->>'selectorDecisionReference'),0) NOT BETWEEN 1 AND 256) THEN
          RETURN QUERY SELECT 'InvalidCommand'::text,NULL::text,NULL::bigint,
            NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN;

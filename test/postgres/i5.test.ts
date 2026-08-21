@@ -11,6 +11,7 @@ import {
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { projectWriterDecide } from "../../src/interpreter/projectWriter.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   postgresHarnessHistory,
   postgresHarnessOpen,
@@ -28,6 +29,72 @@ before(async () => {
 after(async () => {
   await harness.close();
 });
+
+function invalidDispatchCommands(): readonly unknown[] {
+  return [
+    {
+      version: "1",
+      command: "ManualDispatch",
+      ticket: 1,
+      expectedTicketVersion: 1,
+    },
+    {
+      version: 1,
+      command: "ProposeDispatch",
+      ticket: 1,
+      expectedTicketVersion: 1,
+    },
+    {
+      version: 1,
+      command: "ProposeDispatch",
+      ticket: 1,
+      expectedTicketVersion: "9".repeat(40),
+      observedViewToken: {
+        tenant: "tenant",
+        project: "project",
+        recoveryEpoch: "epoch",
+        schemaVersion: 1,
+        watermark: 0,
+        digest: "a".repeat(64),
+      },
+      selectorDecisionReference: "decision",
+    },
+    {
+      version: 1,
+      command: "ProposeDispatch",
+      ticket: 1,
+      expectedTicketVersion: 1,
+      observedViewToken: {
+        tenant: "tenant",
+        project: "project",
+        recoveryEpoch: 7,
+        schemaVersion: 1,
+        watermark: 0,
+        digest: "a".repeat(64),
+      },
+      selectorDecisionReference: 7,
+    },
+  ];
+}
+
+function selectorInteraction(partition: Partition, decision: string) {
+  return {
+    decision,
+    partition,
+    instructionsVersion: "instructions-1",
+    instructions: "wait",
+    observedView: [],
+    context: {},
+    toolActivity: [],
+    result: { waiting: true },
+    implementationRevision: "implementation-1",
+    modelRevision: "model-1",
+    policyRevision: "policy-1",
+    accounting: {},
+    startedAt: "2026-08-20T12:00:00.000Z",
+    completedAt: "2026-08-20T12:00:01.000Z",
+  } as const;
+}
 
 test("a release atomically materializes a digest-fenced current dispatch view", async () => {
   const partition = await postgresHarnessProject(harness.store, "i5-view");
@@ -61,31 +128,8 @@ test("a release atomically materializes a digest-fenced current dispatch view", 
 
 test("the SQL dispatch constructor rejects incomplete and overflowing proposals", async () => {
   const pool = postgresPool(postgresHarnessUrl());
-  const invalid = [
-    {
-      version: 1,
-      command: "ProposeDispatch",
-      ticket: 1,
-      expectedTicketVersion: 1,
-    },
-    {
-      version: 1,
-      command: "ProposeDispatch",
-      ticket: 1,
-      expectedTicketVersion: "9".repeat(40),
-      observedViewToken: {
-        tenant: "tenant",
-        project: "project",
-        recoveryEpoch: "epoch",
-        schemaVersion: 1,
-        watermark: 0,
-        digest: "a".repeat(64),
-      },
-      selectorDecisionReference: "decision",
-    },
-  ];
   try {
-    for (const command of invalid) {
+    for (const command of invalidDispatchCommands()) {
       const result = await pool.query<{ result: string }>(
         `SELECT result FROM ${dispatchAcceptanceFunction}(
           $1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10::text[],$11,$12,$13)`,
@@ -286,7 +330,7 @@ test("selector provenance and its observed cursor roll back together", async () 
     await assert.rejects(
       state.recordInteraction(
         { ...interaction, result: { waiting: false } },
-        { partition, notificationCursor: 17, attention: "Monitoring" },
+        { partition, notificationCursor: 0, attention: "Monitoring" },
         { partition, notificationCursor: 18, attention: "Monitoring" },
       ),
       /contradicts retained provenance/,
@@ -312,27 +356,10 @@ test("selector history pages by durable insertion order, not opaque identity", a
   );
   const pool = postgresPool(postgresHarnessUrl());
   const state = postgresSelectorState(pool);
-  const interaction = (decision: string) =>
-    ({
-      decision,
-      partition,
-      instructionsVersion: "instructions-1",
-      instructions: "wait",
-      observedView: [],
-      context: {},
-      toolActivity: [],
-      result: { waiting: true },
-      implementationRevision: "implementation-1",
-      modelRevision: "model-1",
-      policyRevision: "policy-1",
-      accounting: {},
-      startedAt: "2026-08-20T12:00:00.000Z",
-      completedAt: "2026-08-20T12:00:01.000Z",
-    }) as const;
   try {
     assert.equal(
       await state.recordInteraction(
-        interaction(`z-${crypto.randomUUID()}`),
+        selectorInteraction(partition, `z-${crypto.randomUUID()}`),
         { partition, notificationCursor: 0, attention: "Monitoring" },
         { partition, notificationCursor: 1, attention: "Monitoring" },
       ),
@@ -342,7 +369,7 @@ test("selector history pages by durable insertion order, not opaque identity", a
     assert.equal(first.length, 1);
     assert.equal(
       await state.recordInteraction(
-        interaction(`a-${crypto.randomUUID()}`),
+        selectorInteraction(partition, `a-${crypto.randomUUID()}`),
         { partition, notificationCursor: 1, attention: "Monitoring" },
         { partition, notificationCursor: 2, attention: "Monitoring" },
       ),
@@ -351,6 +378,49 @@ test("selector history pages by durable insertion order, not opaque identity", a
     const second = await state.history(partition, first[0]?.ordinal, 1);
     assert.equal(second.length, 1);
     assert.match(second[0]?.decision ?? "", /^a-/);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("concurrent first selector observations have exactly one CAS winner", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-selector-first-race",
+  );
+  const pool = postgresPool(postgresHarnessUrl());
+  const state = postgresSelectorState(pool);
+  try {
+    const previous = {
+      partition,
+      notificationCursor: 0,
+      attention: "Monitoring",
+    } as const;
+    const results = await Promise.all([
+      state.recordInteraction(
+        selectorInteraction(partition, `first-${crypto.randomUUID()}`),
+        previous,
+        {
+          ...previous,
+          notificationCursor: 1,
+        },
+      ),
+      state.recordInteraction(
+        selectorInteraction(partition, `second-${crypto.randomUUID()}`),
+        previous,
+        {
+          ...previous,
+          notificationCursor: 2,
+        },
+      ),
+    ]);
+    assert.deepEqual([...results].sort(), [false, true]);
+    assert.ok(
+      [1, 2].includes(
+        (await state.project(partition))?.notificationCursor ?? 0,
+      ),
+    );
+    assert.equal((await state.history(partition, undefined, 10)).length, 1);
   } finally {
     await pool.end();
   }
