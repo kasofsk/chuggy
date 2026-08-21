@@ -2364,8 +2364,22 @@ after a preparation the finalizer performed, and I7 journals no effect that
 could create one, so an approval nobody may open is an approval that waits
 forever. The door keeps the role's privilege on `native_action` at `SELECT`
 and no more, which is the arrangement that lets it submit a result while
-holding no write on the mailbox. Requesting is the whole of what it does; who
-may resolve one is I4's capability check, unchanged.
+holding no write on the mailbox. Requesting is the whole of what it does, and
+`ApproveFinalization` is the capability that authorizes an answer.
+
+An answer needs a vocabulary I4 does not have. `Resume` and `Revoke` are an
+*escalation's* resolutions and each names a domain command, so each requires
+the `Escalated` phase that a finalizing ticket is not in: an approval resolved
+either way would be a decision the decider refuses. `native_action_resolution`
+therefore gains `Approve` and `Decline`, and they are the first resolutions
+that name no domain command at all — resolving a `FinalizationApproval`
+settles its operation and records the answer the finalizer reads, and
+constructs no decision input. That is not an exception carved for this slice
+but the same sentence the model already carries: approval is operational
+protocol rather than `Core` state, so nothing in `Core` may learn that a
+finalizer was approved, and a command that changes no `Core` state has
+nothing to journal. The ticket service remains the only writer of the row and
+the finalizer still only reads it.
 
 #### Ordering, stated once
 
