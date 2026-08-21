@@ -14,9 +14,16 @@
  * THE REQUEST IS WRITTEN BY THE PART THAT OWNS IT. A finalization request is
  * I3's, materialized by the decision transaction that moved a ticket into
  * `Finalizing`, so this harness drives the real writer through release,
- * dispatch, work and evaluation rather than inserting the row it wants. What
- * the finalizer's own relations hold is written by hand, because the adapter
- * that will own them does not exist in this commit.
+ * dispatch, work and evaluation rather than inserting the row it wants. An
+ * attempt is written by hand because nothing constructs a candidate yet, and a
+ * permit is offered both ways: written by hand where a case needs one to exist,
+ * and asked of the real transaction where the grant is what is under test.
+ *
+ * THE GIT PORT IS A FAKE AND THE DURABLE AUTHORITY IS NOT. Substitution belongs
+ * at the port, and the answers that matter here — a refused update, an ambiguous
+ * one, an unreadable ref — are exactly the ones a real remote will not produce
+ * on demand. The store underneath is the real adapter against the real server,
+ * so nothing the fake says can make a durable move agree with it.
  *
  * COMMITS AND DIGESTS ARE REAL WIDTHS AND NOT PLACEHOLDERS. Every commit
  * identity a case writes matches the object-id pattern the DDL carries and
@@ -36,10 +43,20 @@ import {
   finalizerRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
+import type { FinalizerService } from "../../src/interpreter/finalizerRun.ts";
 import {
   allGitObjectIdChars,
   asFinalizerOwnerId,
+  checkedFinalizerConfig,
+  finalizerDefaults,
+  type AncestryProved,
+  type CandidatePromoted,
+  type CandidatePromotion,
   type FinalizationClaim,
+  type GitPromotionPort,
+  type ObservedTarget,
+  type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
 import { artifactDigestChars } from "../../src/interpreter/resultManifest.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
@@ -437,6 +454,78 @@ export async function finalizerRequestApproval(
     ],
   );
   return asked[0] ?? { result: "no row" };
+}
+
+/**
+ * The Git port a pass calls out through, answering whatever the case last told
+ * it to and recording the acts it was asked for. Preparation and integration
+ * raise, because a pass that reached them would be doing the work this commit
+ * does not have the artifact content for.
+ */
+export interface FinalizerGitFake extends GitPromotionPort {
+  readonly acts: string[];
+  target: TargetObserved;
+  promotion: CandidatePromoted;
+  ancestry: AncestryProved;
+  beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
+}
+
+/** A Git port whose every answer one case chooses, over the target it names. */
+export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
+  const fake: FinalizerGitFake = {
+    acts: [],
+    target: { observed: "Target", target },
+    promotion: { promoted: "Advanced" },
+    ancestry: { proved: "Ancestor", observed: target.commit },
+    observeTarget: () => {
+      fake.acts.push("observe");
+      return Promise.resolve(fake.target);
+    },
+    prepareCandidate: () => {
+      throw new Error("finalizer harness: the pass asked for a preparation");
+    },
+    integrateCandidate: () => {
+      throw new Error("finalizer harness: the pass asked for an integration");
+    },
+    promoteCandidate: async (promotion) => {
+      fake.acts.push("promote");
+      await fake.beforePromotion?.(promotion);
+      return fake.promotion;
+    },
+    proveCandidateAncestry: () => {
+      fake.acts.push("prove");
+      return Promise.resolve(fake.ancestry);
+    },
+  };
+  return fake;
+}
+
+/**
+ * The service one case drives: the real durable authority over the finalizer's
+ * own role, and the remote the case scripts. The composition root wires the same
+ * two and nothing may import it, so this states the pair a second time.
+ */
+export function finalizerService(
+  rig: FinalizerRig,
+  git: GitPromotionPort,
+): FinalizerService {
+  return {
+    store: postgresFinalizer(rig.pool),
+    git,
+    config: checkedFinalizerConfig(finalizerDefaults),
+  };
+}
+
+/** Puts one claim's lease in the past, which is what a crashed holder leaves behind. */
+export async function finalizerExpireClaim(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+): Promise<void> {
+  await rig.as(
+    `UPDATE finalization_request SET claim_expires_at = now() - interval '1 hour'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [project.partition.tenant, project.partition.project, project.request],
+  );
 }
 
 /** Grants the one permit that authorizes the one irreversible act, as the finalizer. */

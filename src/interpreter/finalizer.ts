@@ -788,6 +788,63 @@ export function checkedFinalizerConfig(
   return config;
 }
 
+/** One permit asked for, naming the claim that fences it and the attempt it would authorize. */
+export interface PermitRequest {
+  readonly claim: FinalizationClaim;
+  readonly attempt: FinalizationAttemptId;
+}
+
+/**
+ * Why no permit was granted. Every arm is a durable fact the caller reads and
+ * none of them is a failure, so a refused grant leaves the finalization exactly
+ * where it stood.
+ */
+export type PermitRefusal =
+  | "Fenced"
+  | "ProjectClosed"
+  | "PermitLive"
+  | "PermitSpent"
+  | "AttemptUnprepared";
+
+/** Every refusal, so a suite iterates rather than restates. */
+export const allPermitRefusals: readonly PermitRefusal[] = [
+  "Fenced",
+  "ProjectClosed",
+  "PermitLive",
+  "PermitSpent",
+  "AttemptUnprepared",
+];
+
+/** What asking for the one permit found, the granted permit itself or the refusal that stands. */
+export type PermitGranted =
+  | { readonly granted: "Permit"; readonly permit: CommitPermit }
+  | { readonly granted: "Refused"; readonly refusal: PermitRefusal };
+
+/** One reading of the target ref, offered for the permit it concludes. */
+export interface ReconciliationRecord {
+  readonly partition: Partition;
+  readonly recoveryEpoch: RecoveryEpoch;
+  readonly reconciliation: FinalizationReconciliation;
+}
+
+/**
+ * What recording a reading did to the permit it was read for. `Held` is the
+ * unreadable ref durably written down, which is why a hold is never an absence.
+ */
+export type Reconciled =
+  | { readonly recorded: "Concluded" }
+  | { readonly recorded: "Held" }
+  | { readonly recorded: "Refused" };
+
+/** One permit a reading could not settle, carrying everything a re-reading needs. */
+export interface HeldPermit {
+  readonly partition: Partition;
+  readonly permit: CommitPermitId;
+  readonly repository: RepositoryBinding;
+  readonly target: GitRefName;
+  readonly candidate: GitObjectId;
+}
+
 /** One conclusion offered to the one authenticated door, naming the attempt that produced it. */
 export interface FinalizationOffer {
   readonly claim: FinalizationClaim;
@@ -828,6 +885,25 @@ export interface FinalizerStore {
 
   /** Everything the pure pass reads of the durable rows, gathered before it runs. */
   durableView(claim: FinalizationClaim): Promise<FinalizationView | undefined>;
+
+  /**
+   * Grants the one permit that authorizes the one irreversible act, fenced by
+   * the claim, the recovery epoch and the project's lifecycle generation.
+   */
+  grantPermit(request: PermitRequest): Promise<PermitGranted>;
+
+  /**
+   * Records what the target ref proved, spending the permit in the same
+   * transaction where the reading concluded and leaving it granted where it did
+   * not.
+   */
+  recordReconciliation(record: ReconciliationRecord): Promise<Reconciled>;
+
+  /** The permits at most `permitsMax` of whose readings could not settle, in key order. */
+  heldPermits(
+    epoch: RecoveryEpoch,
+    permitsMax: number,
+  ): Promise<readonly HeldPermit[]>;
 
   /**
    * Offers one conclusion to `submit_finalization_result`, and invalidates the

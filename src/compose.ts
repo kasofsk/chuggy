@@ -29,6 +29,14 @@ import {
   selectorNativeSource,
   type SelectorNativeApi,
 } from "./interpreter/selectorNativeSource.ts";
+import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
+import {
+  checkedFinalizerConfig,
+  finalizerDefaults,
+  type FinalizerConfig,
+  type GitPromotionPort,
+} from "./interpreter/finalizer.ts";
+import type { FinalizerService } from "./interpreter/finalizerRun.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -92,6 +100,23 @@ export function composeSelectorService(
         runtime.identities,
         config,
       ),
+  };
+}
+
+/**
+ * Wires the finalizer's durable authority to its finalizer-role credentials and
+ * the Git port its caller composes, which is where a credential is answered from
+ * and never the environment.
+ */
+export function composeFinalizerService(
+  finalizerPool: pg.Pool,
+  git: GitPromotionPort,
+  config: FinalizerConfig = finalizerDefaults,
+): FinalizerService {
+  return {
+    store: postgresFinalizer(finalizerPool),
+    git,
+    config: checkedFinalizerConfig(config),
   };
 }
 

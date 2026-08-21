@@ -31,10 +31,12 @@
  * that will admit no result at all — because a request no submission can ever
  * fulfil is a request no later claim should draw again.
  *
- * NOTHING HERE PERFORMS A GIT ACT. Nothing gathered here reaches
- * `GitPromotionPort`, so no view carries an observed target and the pure pass
- * holds rather than concluding. A durable move that assumed a promotion had
- * happened would forge the one outcome the repository is the only authority on.
+ * NOTHING HERE PERFORMS A GIT ACT. No view gathered here carries an observed
+ * target, because reading the remote is the pass's own work through a port this
+ * adapter does not hold; the permit and the reading it concludes are
+ * `./finalizerPermit.ts`, and each is a transaction that opens and commits with
+ * no remote call inside it. A durable move that assumed a promotion had happened
+ * would forge the one outcome the repository is the only authority on.
  *
  * AN APPROVAL IS READ AND NEVER WRITTEN. The action a finalizer opens is the
  * ticket service's row and this role holds `SELECT` on it and no more, so the
@@ -91,13 +93,18 @@ import {
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  finalizerPermitGrant,
+  finalizerPermitHolds,
+  finalizerPermitReconcile,
+} from "./finalizerPermit.ts";
+import {
+  finalizerBounded,
+  finalizerLiveRequestStates,
+  finalizerRowValue,
+  finalizerSettledRequestStates,
+} from "./finalizerRows.ts";
 import { finalizationFunction, finalizerRole } from "./schema.ts";
-
-/** The states a request is still working through, which a claim and a submission both need it to be in. */
-const liveRequestStates = "'Open', 'Registered'";
-
-/** The states no claim outlives, which is where a lease is dropped rather than reopened. */
-const settledRequestStates = "'Fulfilled', 'Invalidated'";
 
 /** The states migration three gave a native action, so a column narrows rather than restates. */
 const allNativeActionStates: readonly ApprovalAction["state"][] = [
@@ -151,28 +158,6 @@ interface ViewRow {
 interface SubmissionRow {
   readonly result: string;
   readonly operation: string | null;
-}
-
-/** Refuses a bound no work can be drawn under, naming the argument rather than the row. */
-function finalizerBounded(value: number, what: string): void {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new RangeError(
-      `postgres finalizer: ${what} of ${String(value)} is not a positive bound`,
-    );
-  }
-}
-
-/** Narrows a column to the closed set the port declares, refusing what no migration can have written. */
-function finalizerRowValue<Value extends string>(
-  admitted: readonly Value[],
-  value: string,
-  what: string,
-): Value {
-  const found = admitted.find((each) => each === value);
-  if (found === undefined) {
-    throw new Error(`finalizer row: ${value} is not a ${what} this code knows`);
-  }
-  return found;
 }
 
 /** What one claimed row grants its holder. */
@@ -256,7 +241,7 @@ async function finalizerExtendClaim(
         SET claim_expires_at = now() + make_interval(secs => $6::double precision)
       WHERE tenant = $1 AND project = $2 AND request = $3
         AND claim_owner = $4 AND claim_generation = $5
-        AND recovery_epoch = $7 AND state IN (${liveRequestStates})`,
+        AND recovery_epoch = $7 AND state IN (${finalizerLiveRequestStates})`,
     [
       claim.partition.tenant,
       claim.partition.project,
@@ -283,7 +268,7 @@ async function finalizerSettleClaim(
             claim_generation = claim_generation + 1
       WHERE tenant = $1 AND project = $2 AND request = $3
         AND claim_owner = $4 AND claim_generation = $5
-        AND state IN (${settledRequestStates})`,
+        AND state IN (${finalizerSettledRequestStates})`,
     [
       claim.partition.tenant,
       claim.partition.project,
@@ -561,7 +546,7 @@ async function finalizerInvalidate(
   await client.query(
     `UPDATE finalization_request SET state = 'Invalidated'
       WHERE tenant = $1 AND project = $2 AND request = $3
-        AND state IN (${liveRequestStates})`,
+        AND state IN (${finalizerLiveRequestStates})`,
     [claim.partition.tenant, claim.partition.project, claim.request],
   );
 }
@@ -638,6 +623,20 @@ export function postgresFinalizer(pool: pg.Pool): FinalizerStore {
       postgresTransaction(pool, (client) =>
         finalizerDurableView(client, claim),
       ),
+    grantPermit: (request) =>
+      postgresTransaction(pool, (client) =>
+        finalizerPermitGrant(client, request),
+      ),
+    recordReconciliation: (record) =>
+      postgresTransaction(pool, (client) =>
+        finalizerPermitReconcile(client, record),
+      ),
+    heldPermits: (epoch, permitsMax) => {
+      finalizerBounded(permitsMax, "permitsMax");
+      return postgresTransaction(pool, (client) =>
+        finalizerPermitHolds(client, epoch, permitsMax),
+      );
+    },
     submitResult: (offer) =>
       postgresTransaction(pool, (client) =>
         finalizerSubmitResult(client, offer),
