@@ -59,7 +59,7 @@ declare const recoveryEpochBrand: unique symbol;
 /** A tenant's identity: globally unique, opaque, and never interpreted here. */
 export type TenantId = string & { readonly [tenantIdBrand]: true };
 
-/** A project's identity: globally unique and opaque, and the partition key every call carries. */
+/** A project's identity: opaque, unique within its tenant, and half of the partition key every call carries. */
 export type ProjectId = string & { readonly [projectIdBrand]: true };
 
 /** A ticket-service writer instance's identity, which is what a lease is granted to and fenced against. */

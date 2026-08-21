@@ -571,7 +571,12 @@ test("a reaping sweep and a report on the attempt it ends do not deadlock each o
       WHERE tenant=$1 AND project=$2 AND attempt=$3 FOR UPDATE`,
     [project.partition.tenant, project.partition.project, attempt.attempt],
   );
-  const reaping = schedulerOutcome(rig.store.reapLapsedAttempts(epoch));
+  const reaping = schedulerOutcome(
+    rig.store.reapLapsedAttempts(
+      epoch,
+      executionSchedulerDefaults.attemptsPerPassMax,
+    ),
+  );
   let reporting: Promise<unknown>;
   try {
     await blockade.stalled(oneStalledCall);
@@ -639,7 +644,12 @@ test("a worker whose reaped attempt reports is fenced rather than settled", asyn
       WHERE tenant=$1 AND project=$2 AND attempt=$3`,
     [project.partition.tenant, project.partition.project, attempt.attempt],
   );
-  assert.ok((await rig.store.reapLapsedAttempts(epoch)) >= 1);
+  assert.ok(
+    (await rig.store.reapLapsedAttempts(
+      epoch,
+      executionSchedulerDefaults.attemptsPerPassMax,
+    )) >= 1,
+  );
   assert.deepEqual(
     await rig.store.terminalize(schedulerReport(attempt, "Pass")),
     {
