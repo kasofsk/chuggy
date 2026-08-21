@@ -53,6 +53,7 @@ import {
   type Parsed,
 } from "../../interpreter/wire.ts";
 import {
+  journalChainDigest,
   journalChainGenesis,
   journalEnvelopeDigest,
   type JournalIntegrityEnvelope,
@@ -73,6 +74,43 @@ interface StoredJournalRow {
   readonly cause_id: string;
   readonly configuration_revision: string | null;
   readonly configuration_digest: string | null;
+}
+
+function storedJournalRowVerified(
+  row: StoredJournalRow,
+  partition: Partition,
+  previous: string,
+  entry: Entry,
+): boolean {
+  if (row.prev_digest !== previous) return false;
+  if (row.integrity_version === 1) {
+    return journalChainDigest(partition, previous, entry) === row.entry_digest;
+  }
+  if (row.integrity_version !== 2) return false;
+  const cause: DecisionCause | undefined =
+    row.cause_kind === "Operation"
+      ? { kind: "Operation", id: asOperationId(row.cause_id) }
+      : row.cause_kind === "Continuation"
+        ? { kind: "Continuation", id: row.cause_id }
+        : undefined;
+  const configuration =
+    row.configuration_revision !== null && row.configuration_digest !== null
+      ? {
+          configurationRevision: row.configuration_revision,
+          configurationDigest: row.configuration_digest,
+        }
+      : undefined;
+  return (
+    cause !== undefined &&
+    configuration !== undefined &&
+    journalEnvelopeDigest(partition, previous, {
+      entry,
+      cause,
+      configuration,
+      eventSchemaVersion: 1,
+      decisionSemanticsVersion: 1,
+    }) === row.entry_digest
+  );
 }
 
 async function storedJournalRows(
@@ -184,38 +222,11 @@ async function postgresJournalEntries(
       if (parsed.parsed === "Refused") return parsed;
       const entry = parsed.value[0];
       if (entry === undefined) throw new Error("parsed journal row is absent");
-      if (row.integrity_version === 2) {
-        const cause: DecisionCause | undefined =
-          row.cause_kind === "Operation"
-            ? { kind: "Operation", id: asOperationId(row.cause_id) }
-            : row.cause_kind === "Continuation"
-              ? { kind: "Continuation", id: row.cause_id }
-              : undefined;
-        const configuration =
-          row.configuration_revision !== null &&
-          row.configuration_digest !== null
-            ? {
-                configurationRevision: row.configuration_revision,
-                configurationDigest: row.configuration_digest,
-              }
-            : undefined;
-        if (
-          cause === undefined ||
-          configuration === undefined ||
-          row.prev_digest !== previous ||
-          journalEnvelopeDigest(standing.partition, previous, {
-            entry,
-            cause,
-            configuration,
-            eventSchemaVersion: 1,
-            decisionSemanticsVersion: 1,
-          }) !== row.entry_digest
-        ) {
-          return {
-            parsed: "Refused",
-            why: "a stored journal envelope failed integrity verification",
-          };
-        }
+      if (!storedJournalRowVerified(row, standing.partition, previous, entry)) {
+        return {
+          parsed: "Refused",
+          why: "a stored journal envelope failed integrity verification",
+        };
       }
       raw.push(decoded);
       previous = row.entry_digest;

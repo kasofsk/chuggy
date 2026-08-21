@@ -79,6 +79,22 @@ test("load refuses a changed complete-envelope digest", async () => {
   assert.match(loaded.why, /integrity verification/);
 });
 
+test("load refuses a v2 row whose format discriminator is downgraded", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "format-downgrade",
+  );
+  const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
+  await harness.query(
+    "UPDATE journal_entry SET integrity_version=1 WHERE tenant=$1 AND project=$2 AND seq=1",
+    [partition.tenant, partition.project],
+  );
+  const loaded = await harness.store.load(memory.lease);
+  assert.equal(loaded.parsed, "Refused");
+  assert.ok(loaded.parsed === "Refused");
+  assert.match(loaded.why, /integrity verification/);
+});
+
 test("a load under a fenced lease is refused, not served the prefix it would replay", async () => {
   const partition = await postgresHarnessProject(harness.store, "loadfenced");
   const memory = await postgresHarnessHistory(
