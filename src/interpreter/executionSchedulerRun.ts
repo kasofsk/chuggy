@@ -34,6 +34,24 @@
  * crash leaves a workload whose attempt is already fenced, which can report
  * nothing either way and which inventory reconciles.
  *
+ * A WORKER IS BRIEFED BEFORE IT IS PLACED, AND THE PORT HAS NO SHAPE FOR AN
+ * UNBRIEFED ONE. `WorkerPlacement` carries the composed invocation, so placing
+ * without a briefing is not an order this code can express — the same device
+ * cancellation uses. Composing it needs the pinned revision read back and the
+ * runtime facts gathered, and both are read before `./taskBriefing.ts` decides
+ * anything, which is what keeps the decision itself pure and synchronous.
+ *
+ * A CONFIGURATION THAT CANNOT BE BRIEFED IS THE SAME TWO INABILITIES AGAIN. A
+ * revision that is gone, one whose digest is not the pinned one, and a practice
+ * no catalog blesses are each a definitive inability to run the immutable
+ * contract, so they take the `TicketConfigIncompatible` arm of the reason
+ * vocabulary the model already bounds. An authoring store or a workspace that
+ * cannot be read right now is a hold, and withdraws the attempt without
+ * spending the safe retry budget. Both record the evidence the mandatory policy
+ * phase already has, because briefing composition happens inside it and a
+ * second label for the same phase would be a vocabulary this tree's stored
+ * rows do not carry.
+ *
  * A LOST ATTEMPT SPENDS THE BUDGET AND A WITHDRAWN ONE DOES NOT. An attempt
  * that ran and vanished is the bounded retry 006 permits; one the fabric never
  * took is not an attempt at the work at all. When the budget is spent the
@@ -49,7 +67,10 @@
 import { observe } from "./ticketService.ts";
 import {
   checkedExecutionSchedulerConfig,
+  taskPurposeForKind,
+  type AttemptEvidence,
   type AttemptOpening,
+  type BlockedReason,
   type ExecutionPolicy,
   type ExecutionProfile,
   type ExecutionSchedulerConfig,
@@ -62,12 +83,25 @@ import {
   type ClusterId,
 } from "./executionScheduler.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
+import {
+  composeTaskInvocation,
+  type PinnedConfigurationPort,
+  type PinnedTaskConfiguration,
+  type PracticeCatalog,
+  type RuntimeFacts,
+  type RuntimeFactsPort,
+  type TaskInvocation,
+} from "./taskBriefing.ts";
+import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 
 /** Everything a scheduler pass calls out through, and the bounds it works within. */
 export interface ExecutionSchedulerService {
   readonly store: ExecutionSchedulerStore;
   readonly workers: WorkerLaunchPort;
   readonly policy: ExecutionPolicy;
+  readonly configurations: PinnedConfigurationPort;
+  readonly runtimeFacts: RuntimeFactsPort;
+  readonly practices: PracticeCatalog;
   readonly config: ExecutionSchedulerConfig;
   readonly metrics: ExecutionSchedulerMetrics;
 }
@@ -162,21 +196,41 @@ export async function executionSchedulerAdmit(
   return admitted;
 }
 
-/** The profile this execution may run under, or the durable move its refusal earns. */
-async function schedulerProfileFor(
+/** Withdraws the attempt and retires the execution, which is what a definitive inability earns. */
+async function schedulerBlock(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
   attempt: PhysicalAttempt,
-): Promise<ExecutionProfile | undefined> {
+  evidence: AttemptEvidence,
+  reason: BlockedReason,
+): Promise<void> {
+  await service.store.attemptEnded(attempt, "Withdrawn", evidence);
+  await service.store.blockExecution(
+    execution.partition,
+    execution.execution,
+    reason,
+  );
+}
+
+/** What policy granted this execution, or the durable move its refusal earns. */
+async function schedulerPolicyFor(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+  attempt: PhysicalAttempt,
+): Promise<
+  | { readonly profile: ExecutionProfile; readonly grant: PolicyAuthorityGrant }
+  | undefined
+> {
   const resolved = await service.policy.profileFor(execution);
   switch (resolved.resolved) {
     case "Profile":
-      return resolved.profile;
+      return { profile: resolved.profile, grant: resolved.grant };
     case "Denied":
-      await service.store.attemptEnded(attempt, "Withdrawn", "PolicyDenied");
-      await service.store.blockExecution(
-        execution.partition,
-        execution.execution,
+      await schedulerBlock(
+        service,
+        execution,
+        attempt,
+        "PolicyDenied",
         resolved.reason,
       );
       return undefined;
@@ -190,14 +244,127 @@ async function schedulerProfileFor(
   }
 }
 
+/** Why a briefing could not be gathered, which is the two inabilities once more. */
+type BriefingUnready =
+  { readonly gathered: "Missing" } | { readonly gathered: "Unavailable" };
+
+/** Reads back exactly the revision this execution pinned, never a moving ticket row. */
+async function schedulerConfiguration(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<PinnedTaskConfiguration | BriefingUnready> {
+  const read = await service.configurations.configuration(
+    execution.partition,
+    execution,
+  );
+  switch (read.read) {
+    case "Configuration":
+      return read.configuration;
+    case "Missing":
+      return { gathered: "Missing" };
+    case "Unavailable":
+      return { gathered: "Unavailable" };
+  }
+}
+
+/** Gathers what the fabric can observe of this execution's workspace. */
+async function schedulerRuntimeFacts(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<RuntimeFacts | BriefingUnready> {
+  const read = await service.runtimeFacts.facts(
+    execution.partition,
+    execution.execution,
+  );
+  switch (read.read) {
+    case "Facts":
+      return read.facts;
+    case "Unavailable":
+      return { gathered: "Unavailable" };
+  }
+}
+
+/** The durable move an ungatherable briefing input earns, one arm each. */
+async function schedulerUnready(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+  attempt: PhysicalAttempt,
+  unready: BriefingUnready,
+): Promise<void> {
+  switch (unready.gathered) {
+    case "Missing":
+      await schedulerBlock(
+        service,
+        execution,
+        attempt,
+        "PolicyDenied",
+        "TicketConfigIncompatible",
+      );
+      return;
+    case "Unavailable":
+      await service.store.attemptEnded(
+        attempt,
+        "Withdrawn",
+        "PolicyUnavailable",
+      );
+      return;
+  }
+}
+
+/** What a placement needs before it may be asked for: the profile, and the composed invocation. */
+interface TaskLaunch {
+  readonly profile: ExecutionProfile;
+  readonly invocation: TaskInvocation;
+}
+
+/** Resolves policy, gathers the pinned briefing inputs and composes one invocation. */
+async function schedulerPrepare(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+  attempt: PhysicalAttempt,
+): Promise<TaskLaunch | undefined> {
+  const policy = await schedulerPolicyFor(service, execution, attempt);
+  if (policy === undefined) return undefined;
+  const configuration = await schedulerConfiguration(service, execution);
+  if ("gathered" in configuration) {
+    await schedulerUnready(service, execution, attempt, configuration);
+    return undefined;
+  }
+  const runtime = await schedulerRuntimeFacts(service, execution);
+  if ("gathered" in runtime) {
+    await schedulerUnready(service, execution, attempt, runtime);
+    return undefined;
+  }
+  const composed = composeTaskInvocation(service.practices, {
+    purpose: taskPurposeForKind(execution.taskKind),
+    pin: execution,
+    configuration,
+    runtime,
+    grant: policy.grant,
+  });
+  switch (composed.composed) {
+    case "Composed":
+      return { profile: policy.profile, invocation: composed.invocation };
+    case "Blocked":
+      await schedulerBlock(
+        service,
+        execution,
+        attempt,
+        "PolicyDenied",
+        "TicketConfigIncompatible",
+      );
+      return undefined;
+  }
+}
+
 /** Places one opened attempt, or records the durable evidence of why it was not placed. */
 async function schedulerPlace(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
   attempt: PhysicalAttempt,
 ): Promise<boolean> {
-  const profile = await schedulerProfileFor(service, execution, attempt);
-  if (profile === undefined) return false;
+  const launch = await schedulerPrepare(service, execution, attempt);
+  if (launch === undefined) return false;
   const placed = await service.workers.place({
     partition: execution.partition,
     execution: execution.execution,
@@ -210,7 +377,8 @@ async function schedulerPlace(
     sourceRequest: execution.sourceRequest,
     configurationRevision: execution.configurationRevision,
     configurationDigest: execution.configurationDigest,
-    profile,
+    profile: launch.profile,
+    invocation: launch.invocation,
   });
   observe(() => {
     service.metrics.placement(placed.placed);
@@ -219,10 +387,11 @@ async function schedulerPlace(
     case "Placed":
       return service.store.attemptPlaced(attempt, placed.workload);
     case "Denied":
-      await service.store.attemptEnded(attempt, "Withdrawn", "PlacementDenied");
-      await service.store.blockExecution(
-        execution.partition,
-        execution.execution,
+      await schedulerBlock(
+        service,
+        execution,
+        attempt,
+        "PlacementDenied",
         placed.reason,
       );
       return false;

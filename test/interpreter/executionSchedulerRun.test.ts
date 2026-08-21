@@ -31,6 +31,7 @@ import {
   type RequestClaim,
   type WorkerLaunchPort,
   type WorkerPlaced,
+  type WorkerPlacement,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
   executionSchedulerAdmit,
@@ -40,6 +41,18 @@ import {
   executionSchedulerRegister,
   type ExecutionSchedulerService,
 } from "../../src/interpreter/executionSchedulerRun.ts";
+import {
+  blessedPracticeCatalog,
+  type ConfigurationRead,
+  type PinnedTaskConfiguration,
+  type RuntimeFacts,
+  type RuntimeFactsRead,
+} from "../../src/interpreter/taskBriefing.ts";
+import {
+  taskAuthorityGrant,
+  type PolicyAuthorityGrant,
+} from "../../src/interpreter/taskAuthority.ts";
+import type { ConfigurationPin } from "../../src/interpreter/projectDecision.ts";
 import {
   asProjectId,
   asRecoveryEpoch,
@@ -134,11 +147,36 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
   };
 }
 
-/** A service whose policy and fabric answer exactly what a case is about. */
+const grant: PolicyAuthorityGrant = {
+  tools: ["editor", "shell"],
+  credentials: ["workspace"],
+  network: false,
+  filesystem: "WriteWorkspace",
+  mayCompleteTask: true,
+};
+
+const configuration: PinnedTaskConfiguration = {
+  configurationRevision: "revision",
+  configurationDigest: "digest",
+  brief: {
+    motivation: ["The importer drops rows and reports a success."],
+    acceptanceCriteria: ["A dropped row is reported as a failure."],
+    constraints: [],
+  },
+  practices: ["AcceptanceCriteria"],
+  work: { instructions: [] },
+  review: { instructions: [] },
+};
+
+const noFacts: RuntimeFacts = { changedFiles: [], handoff: [] };
+
+/** A service whose policy, configuration store and fabric answer what a case is about. */
 function serviceWith(
   calls: string[],
   resolved: ProfileResolved,
   placed: WorkerPlaced,
+  read: ConfigurationRead = { read: "Configuration", configuration },
+  facts: RuntimeFactsRead = { read: "Facts", facts: noFacts },
 ): ExecutionSchedulerService {
   const policy: ExecutionPolicy = {
     profileFor: () => Promise.resolve(resolved),
@@ -154,6 +192,9 @@ function serviceWith(
     store: recordingStore(calls),
     workers,
     policy,
+    configurations: { configuration: () => Promise.resolve(read) },
+    runtimeFacts: { facts: () => Promise.resolve(facts) },
+    practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
     metrics: silentExecutionSchedulerMetrics,
   };
@@ -162,6 +203,7 @@ function serviceWith(
 const runnable: ProfileResolved = {
   resolved: "Profile",
   profile: { profile: "standard", runtimeVersion: "1" },
+  grant,
 };
 
 const placedOk: WorkerPlaced = {
@@ -414,4 +456,138 @@ test("registration claims only spawn kinds and counts what it created", async ()
     1,
   );
   assert.deepEqual(kinds, [["SpawnWork", "SpawnEvaluation"]]);
+});
+
+/** A service that keeps every placement it was asked for, so a briefing can be read back. */
+function placingService(
+  calls: string[],
+  into: WorkerPlacement[],
+  read: ConfigurationRead = { read: "Configuration", configuration },
+  facts: RuntimeFactsRead = { read: "Facts", facts: noFacts },
+): ExecutionSchedulerService {
+  const service = serviceWith(calls, runnable, placedOk, read, facts);
+  return {
+    ...service,
+    workers: {
+      ...service.workers,
+      place: (placement) => {
+        into.push(placement);
+        return Promise.resolve(placedOk);
+      },
+    },
+  };
+}
+
+test("a launched worker is handed the briefing its pinned revision composes to", async () => {
+  const placements: WorkerPlacement[] = [];
+  await executionSchedulerLaunch(placingService([], placements), epoch);
+  const placement = placements[0];
+  assert.ok(placement !== undefined);
+  assert.equal(placement.invocation.briefing.purpose, "Work");
+  assert.equal(
+    placement.invocation.provenance.configurationRevision,
+    execution.configurationRevision,
+  );
+  assert.ok(
+    placement.invocation.briefing.text.includes(
+      "A dropped row is reported as a failure.",
+    ),
+  );
+});
+
+test("an evaluation task is briefed from the review template", async () => {
+  const placements: WorkerPlacement[] = [];
+  const service = placingService([], placements);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    unlaunched: () =>
+      Promise.resolve([{ ...execution, taskKind: "Evaluation", stage: 1 }]),
+  };
+  await executionSchedulerLaunch({ ...service, store }, epoch);
+  assert.equal(placements[0]?.invocation.briefing.purpose, "Review");
+});
+
+test("a launched worker holds no authority to complete its own task", async () => {
+  const placements: WorkerPlacement[] = [];
+  await executionSchedulerLaunch(placingService([], placements), epoch);
+  const authority = placements[0]?.invocation.authority;
+  assert.ok(authority !== undefined);
+  assert.equal(grant.mayCompleteTask, true);
+  assert.equal(taskAuthorityGrant(authority).mayCompleteTask, false);
+});
+
+test("the configuration is asked for by the revision the execution pinned", async () => {
+  const asked: ConfigurationPin[] = [];
+  const service = serviceWith([], runnable, placedOk);
+  const configurations = {
+    configuration: (_partition: unknown, pin: ConfigurationPin) => {
+      asked.push(pin);
+      return Promise.resolve<ConfigurationRead>({
+        read: "Configuration",
+        configuration,
+      });
+    },
+  };
+  await executionSchedulerLaunch({ ...service, configurations }, epoch);
+  assert.deepEqual(
+    asked.map((pin) => [pin.configurationRevision, pin.configurationDigest]),
+    [[execution.configurationRevision, execution.configurationDigest]],
+  );
+});
+
+test("a second attempt renders the briefing the first one was given", async () => {
+  const placements: WorkerPlacement[] = [];
+  const service = placingService([], placements);
+  await executionSchedulerLaunch(service, epoch);
+  await executionSchedulerLaunch(service, epoch);
+  assert.equal(placements.length, 2);
+  assert.equal(
+    placements[0]?.invocation.briefing.text,
+    placements[1]?.invocation.briefing.text,
+  );
+});
+
+test("a pinned revision that is gone blocks the ticket as incompatible", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk, { read: "Missing" });
+  assert.equal(await executionSchedulerLaunch(service, epoch), 0);
+  assert.deepEqual(calls, [
+    "ended:Withdrawn:PolicyDenied",
+    "blocked:TicketConfigIncompatible",
+  ]);
+});
+
+test("an authoring store that cannot be read holds the attempt instead", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk, {
+    read: "Unavailable",
+  });
+  assert.equal(await executionSchedulerLaunch(service, epoch), 0);
+  assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("runtime facts that cannot be gathered hold the attempt instead", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(
+    calls,
+    runnable,
+    placedOk,
+    { read: "Configuration", configuration },
+    { read: "Unavailable" },
+  );
+  assert.equal(await executionSchedulerLaunch(service, epoch), 0);
+  assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("a practice no catalog blesses blocks the ticket rather than briefing without it", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk, {
+    read: "Configuration",
+    configuration: { ...configuration, practices: ["NotBlessed"] },
+  });
+  assert.equal(await executionSchedulerLaunch(service, epoch), 0);
+  assert.deepEqual(calls, [
+    "ended:Withdrawn:PolicyDenied",
+    "blocked:TicketConfigIncompatible",
+  ]);
 });

@@ -53,9 +53,12 @@
 
 import type { Reason } from "../domain/generated/modelTypes.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
+import type { TaskPurpose } from "./briefingTemplate.ts";
 import type { OperationId } from "./operationInbox.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { ResultManifest, ResultManifestId } from "./resultManifest.ts";
+import type { TaskInvocation } from "./taskBriefing.ts";
+import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 export {
   asAttemptId,
   asCapacityAccountId,
@@ -106,6 +109,16 @@ export const allExecutionOutcomes: readonly ExecutionOutcome[] = [
 
 /** The kind of logical task an execution runs, mirroring the spawn request's child rows. */
 export type ExecutionTaskKind = "Work" | "Evaluation";
+
+/** Which briefing template a logical task's kind is briefed from, which is total and never a lookup. */
+export function taskPurposeForKind(kind: ExecutionTaskKind): TaskPurpose {
+  switch (kind) {
+    case "Work":
+      return "Work";
+    case "Evaluation":
+      return "Review";
+  }
+}
 
 /** What an account may reserve and may borrow up to, as `model/capacity.qnt` states it. */
 export interface Entitlement {
@@ -565,7 +578,12 @@ export interface ExecutionProfile {
   readonly runtimeVersion: string;
 }
 
-/** One placement asked of the fabric, carrying only what an untrusted worker may be told. */
+/**
+ * One placement asked of the fabric, carrying only what an untrusted worker may
+ * be told. The invocation is what the worker is briefed with and what it may
+ * do; a placement that named a briefing and no authority, or the other way
+ * round, is not a shape this port has.
+ */
 export interface WorkerPlacement {
   readonly partition: Partition;
   readonly execution: ExecutionId;
@@ -579,6 +597,7 @@ export interface WorkerPlacement {
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly profile: ExecutionProfile;
+  readonly invocation: TaskInvocation;
 }
 
 /**
@@ -600,9 +619,17 @@ export interface ExecutionPolicy {
   profileFor(execution: LogicalExecution): Promise<ProfileResolved>;
 }
 
-/** What resolving the execution profile found, which is where 006's two inabilities part. */
+/**
+ * What resolving the execution profile found, which is where 006's two
+ * inabilities part. The grant travels with the profile because they are one
+ * policy answer, and asking twice is asking a policy that may have moved.
+ */
 export type ProfileResolved =
-  | { readonly resolved: "Profile"; readonly profile: ExecutionProfile }
+  | {
+      readonly resolved: "Profile";
+      readonly profile: ExecutionProfile;
+      readonly grant: PolicyAuthorityGrant;
+    }
   | { readonly resolved: "Denied"; readonly reason: BlockedReason }
   | { readonly resolved: "Unavailable" };
 
