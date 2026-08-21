@@ -25,6 +25,17 @@
  * THE PROJECTION IS UPSERTED BY THE ROWS THE DECISION CHANGED. Its sequence is
  * the entry's, which is what lets a read say which decision it is looking at,
  * and a ticket the decision left alone keeps the sequence that last moved it.
+ *
+ * A SPAWN REQUEST PINS ITS CAPACITY ACCOUNT AND CONFIGURATION HERE, in the
+ * transaction that authorizes it, because 006 has a spawn request name the
+ * stable capacity account and pinned task-configuration revision a consumer
+ * needs and forbids that consumer to reconstruct historical intent from a
+ * moving ticket row. The account is the project, which is 006's initial
+ * choice; the revision and digest are the same pin this transaction writes
+ * onto the entry and the projection, so the three cannot disagree. A
+ * cancellation request carries none of them: it retires work rather than
+ * authorizing any, and a column it does not need is a column a later reader
+ * would have to decide the meaning of.
  */
 
 import { createHash } from "node:crypto";
@@ -243,15 +254,24 @@ async function decisionExecution(
   client: pg.PoolClient,
   partition: Partition,
   outcome: JournaledOutcome,
+  configuration: ConfigurationPin,
 ): Promise<void> {
   const seq = outcome.entry.seq;
   for (const request of outcome.materialization.execution) {
+    const spawns = request.kind !== "CancelTicketWork";
     await client.query(
       sql`INSERT INTO execution_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
-        ticket_version, kind)
+        ticket_version, kind, capacity_account, configuration_revision,
+        configuration_digest)
        VALUES (${partition.tenant},${partition.project},${request.request},${seq},
-               ${request.effectPosition},${request.ticket},${request.ticketVersion},${request.kind})`,
+               ${request.effectPosition},${request.ticket},${request.ticketVersion},
+               ${request.kind},
+               CASE WHEN ${spawns}::boolean
+                 THEN project_capacity_account(${partition.tenant},${partition.project})
+               END,
+               ${spawns ? configuration.configurationRevision : null},
+               ${spawns ? configuration.configurationDigest : null})`,
     );
     for (const task of request.tasks) {
       await client.query(
@@ -374,8 +394,9 @@ async function decisionMaterialize(
   client: pg.PoolClient,
   lease: Lease,
   outcome: JournaledOutcome,
+  configuration: ConfigurationPin,
 ): Promise<void> {
-  await decisionExecution(client, lease.partition, outcome);
+  await decisionExecution(client, lease.partition, outcome, configuration);
   await decisionFinalization(client, lease.partition, outcome);
   await decisionActions(client, lease.partition, outcome);
   await decisionContinuation(client, lease.partition, outcome);
@@ -528,7 +549,7 @@ async function decisionApplyJournaled(
       outcome.entry.seq,
       outcome.dispatchView,
     );
-  await decisionMaterialize(client, lease, outcome);
+  await decisionMaterialize(client, lease, outcome, configuration);
   await notifyDecision(client, lease.partition, cause, outcome);
   return { decided: "Committed", lease: { ...lease, head: seq } };
 }

@@ -5,9 +5,12 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { idempotencyPayloadDigest } from "../../src/adapters/postgres/keying.ts";
 import {
   asOperationCommand,
+  asOperationDecisionEvent,
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
 import { encodeDecisionEventText } from "../../src/interpreter/wire.ts";
+import { dispatchEvent } from "../../src/actor/decisionEvent.ts";
+import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessKeying,
   postgresHarnessEntry,
@@ -192,6 +195,29 @@ test("native-action resolution is accepted only against its open versioned reque
   });
   assert.equal(
     await harness.inbox.operation(partition, fenced.operation),
+    undefined,
+  );
+});
+
+test("a decision carrying a dispatch event is refused and allocates nothing", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "accept-dispatch-decision",
+  );
+  const submission = postgresHarnessSubmission(partition, "dispatch-decision");
+  const dispatchDecision = {
+    ...submission,
+    command: {
+      version: 1 as const,
+      command: "Decide" as const,
+      event: asOperationDecisionEvent(dispatchEvent(id(1))),
+    },
+  };
+  assert.deepEqual(await harness.inbox.accept(dispatchDecision), {
+    accepted: "InvalidCommand",
+  });
+  assert.equal(
+    await harness.inbox.operation(partition, dispatchDecision.operation),
     undefined,
   );
 });

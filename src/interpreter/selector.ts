@@ -190,6 +190,15 @@ export async function runSelectorCycle(
     : undefined;
 }
 
+/**
+ * The most view pages one observation walks. The walk follows a cursor the
+ * ticket service hands back, so a source that keeps handing one back would walk
+ * for as long as it kept doing so and grow the candidate list with it; the
+ * bound is what makes both finite, and the observed view is at most this many
+ * pages of the view's own limit.
+ */
+export const selectorViewPagesMax = 100;
+
 /** Polls current state after every wake-up or cursor reset and never mixes view watermarks. */
 export async function observeSelectorProject(
   state: SelectorProjectState,
@@ -203,7 +212,11 @@ export async function observeSelectorProject(
   const candidates: DispatchCandidate[] = [];
   let after: DispatchCandidate["ticket"] | undefined;
   let token: DispatchViewToken | undefined;
+  let walked = 0;
   do {
+    if (walked === selectorViewPagesMax)
+      throw new RangeError("selector dispatch view outran its page bound");
+    walked += 1;
     const page = await source.dispatchView(state.partition, {
       ...(after === undefined ? {} : { after }),
       limit: pageLimit,

@@ -60,7 +60,7 @@ declare const recoveryEpochBrand: unique symbol;
 /** A tenant's identity: globally unique, opaque, and never interpreted here. */
 export type TenantId = string & { readonly [tenantIdBrand]: true };
 
-/** A project's identity: globally unique and opaque, and the partition key every call carries. */
+/** A project's identity: opaque, unique within its tenant, and half of the partition key every call carries. */
 export type ProjectId = string & { readonly [projectIdBrand]: true };
 
 /** A ticket-service writer instance's identity, which is what a lease is granted to and fenced against. */
@@ -73,9 +73,21 @@ export type OwnerId = string & { readonly [ownerIdBrand]: true };
  */
 export type RecoveryEpoch = string & { readonly [recoveryEpochBrand]: true };
 
-/** Brands an opaque identity, refusing the empty string a missing value arrives as. */
+/**
+ * Brands an opaque identity, refusing the empty string a missing value arrives
+ * as and the unpaired surrogate no digest can separate. The partition is
+ * length-prefixed into the canonical bytes of every result manifest, and every
+ * UTF-8 encoding folds an unpaired surrogate to one replacement character — so
+ * two identities differing only there would share one digest, exactly as
+ * `./schedulerIdentity.ts` says of the four parts beside them.
+ */
 function asOpaqueIdentity(value: string, what: string): string {
   if (value.length === 0) throw new RangeError(`${what}: an identity is empty`);
+  if (!value.isWellFormed()) {
+    throw new RangeError(
+      `${what}: an unpaired surrogate is not a value a digest can separate`,
+    );
+  }
   return value;
 }
 

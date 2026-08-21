@@ -6,7 +6,15 @@ function inaccessible(what: string): never {
   throw new Error(`selector source cannot access ${what}`);
 }
 
-/** Adapts the authenticated ticket-service API to the selector runtime port. */
+/**
+ * Adapts the authenticated ticket-service API to the selector runtime port.
+ *
+ * A BACKLOGGED PROJECT CROSSES AS BACKPRESSURE RATHER THAN AS AN INACCESSIBLE
+ * ONE. The guard is the scheduler pausing dispatch and it hands back the delay
+ * to wait, so the delivery is deferred by that hint and stays pending. Throwing
+ * it as inaccessibility would reach the runtime as a submission failure, which
+ * discards the hint and never defers the delivery at all.
+ */
 export function selectorNativeSource(
   native: SelectorNativeApi,
   principal: Principal,
@@ -33,6 +41,11 @@ export function selectorNativeSource(
         key: asIdempotencyKey(delivery.decision),
         command: delivery.command,
       });
+      if (result.result === "Backlogged")
+        return {
+          accepted: "Backpressure",
+          retryAfterSeconds: result.retryAfterSeconds,
+        };
       return result.result === "Authorized"
         ? result.acceptance
         : inaccessible("proposal submission");
