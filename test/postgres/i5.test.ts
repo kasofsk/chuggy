@@ -422,6 +422,7 @@ test("selector delivery retry leases use the configured bounded delay", async ()
       ],
     );
     assert.equal((await state.pending(1)).length, 1);
+    await state.retry(decision, 60_000);
     const lease = await pool.query<{ remaining: number }>(
       `SELECT extract(epoch FROM retry_at-clock_timestamp())::float8 AS remaining
          FROM selector_proposal_delivery WHERE selector_decision=$1`,
@@ -429,6 +430,30 @@ test("selector delivery retry leases use the configured bounded delay", async ()
     );
     assert.ok((lease.rows[0]?.remaining ?? 0) > 3);
     assert.ok((lease.rows[0]?.remaining ?? 99) <= 5);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("selector bounded queries have scheduling and project-history indexes", async () => {
+  const pool = postgresPool(postgresHarnessUrl());
+  try {
+    const indexes = await pool.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE schemaname=current_schema()
+        AND indexname = ANY($1::text[])`,
+      [
+        [
+          "selector_delivery_pending_due",
+          "selector_delivery_submitted_due",
+          "selector_interaction_project_history",
+        ],
+      ],
+    );
+    assert.deepEqual(indexes.rows.map(({ indexname }) => indexname).sort(), [
+      "selector_delivery_pending_due",
+      "selector_delivery_submitted_due",
+      "selector_interaction_project_history",
+    ]);
   } finally {
     await pool.end();
   }

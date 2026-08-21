@@ -1567,6 +1567,14 @@ const durableDispatch = [
      CHECK (length(operation) BETWEEN 1 AND 256 AND length(command) <= 65536
        AND (outcome IS NULL OR length(outcome) <= 65536))
    )`,
+  `CREATE INDEX selector_delivery_pending_due
+     ON selector_proposal_delivery (retry_at,selector_decision)
+     WHERE state='Pending'`,
+  `CREATE INDEX selector_delivery_submitted_due
+     ON selector_proposal_delivery (reconcile_at,selector_decision)
+     WHERE state='Submitted'`,
+  `CREATE INDEX selector_interaction_project_history
+     ON selector_interaction (tenant,project,ordinal)`,
   `GRANT SELECT ON dispatch_view,dispatch_candidate,dispatch_candidate_dependency TO ${apiRole}`,
   `GRANT SELECT,INSERT,UPDATE,DELETE ON selector_project_state,selector_inventory_state,selector_interaction,
      selector_planning_intent,selector_proposal_delivery TO ${selectorServiceRole}`,

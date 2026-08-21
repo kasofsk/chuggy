@@ -172,6 +172,7 @@ async function deferDelivery(
   pool: pg.Pool,
   decision: string,
   delayMilliseconds: number,
+  retry: SelectorRetryConfig,
 ): Promise<void> {
   if (
     !Number.isSafeInteger(delayMilliseconds) ||
@@ -183,7 +184,7 @@ async function deferDelivery(
     `UPDATE selector_proposal_delivery
         SET retry_at=GREATEST(retry_at,now()+$2 * interval '1 millisecond')
       WHERE selector_decision=$1 AND state='Pending'`,
-    [decision, delayMilliseconds],
+    [decision, Math.min(delayMilliseconds, retry.maximumDelayMilliseconds)],
   );
 }
 
@@ -501,7 +502,7 @@ function selectorStateWithRetry(
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit, retry),
     submitted: (decision) => markSubmitted(pool, decision),
     retry: (decision, delayMilliseconds) =>
-      deferDelivery(pool, decision, delayMilliseconds),
+      deferDelivery(pool, decision, delayMilliseconds, retry),
     terminal: (decision, outcome) => markTerminal(pool, decision, outcome),
     history: (partition, after, limit) =>
       readSelectorHistory(pool, partition, after, limit),
