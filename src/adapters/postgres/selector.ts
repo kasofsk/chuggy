@@ -240,7 +240,7 @@ async function quarantinedAttempts(
   checkedSelectorLimit(limit, "selector attempt reconciliation");
   const found = await pool.query<{ attempt: string }>(
     sql`SELECT attempt FROM selector_attempt
-     WHERE state IN ('Starting','Running','Terminating','Quarantined')
+     WHERE state='Quarantined'
      ORDER BY updated_at,attempt LIMIT ${limit}`,
   );
   return found.rows.map((row) => row.attempt);

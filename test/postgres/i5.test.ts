@@ -761,6 +761,53 @@ test("submitted proposal reconciliation claims do not starve later work", async 
   }
 });
 
+test("attempt reconciliation cannot claim another runtime's active attempt", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-active-attempt-isolation",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  const attempt = `active-${crypto.randomUUID()}`;
+  const token = {
+    ...partition,
+    recoveryEpoch: "epoch",
+    schemaVersion: 1,
+    watermark: 0,
+    digest: "b".repeat(64),
+  } as const;
+  try {
+    assert.equal(
+      await state.allocateAttempt(attempt, partition, {
+        concurrentDecisions: 100,
+        selectionsPerMinute: 100_000,
+      }),
+      true,
+    );
+    assert.deepEqual(await state.quarantinedAttempts(100), []);
+    await state.runningAttempt(
+      attempt,
+      {
+        token,
+        candidates: [],
+        notificationCursor: 0,
+        operationalContext: selectorInteractionContext.operationalContext,
+        workingMemory: {},
+        nextCandidateScan: { state: "Exhausted", token },
+      },
+      1,
+    );
+    assert.deepEqual(await state.quarantinedAttempts(100), []);
+    await state.quarantineAttempt(attempt);
+    assert.deepEqual(await state.quarantinedAttempts(100), [attempt]);
+  } finally {
+    await state
+      .terminateAttempt(attempt, "test cleanup")
+      .catch(() => undefined);
+    await selectorPool.end();
+  }
+});
+
 test("a selector interaction atomically replaces or clears current planning", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
