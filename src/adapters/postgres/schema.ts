@@ -242,6 +242,8 @@ export const selectorClaimFunction = "claim_selector_deliveries";
 export const selectorDeliveryFunction = "advance_selector_delivery";
 export const selectorAttemptAllocateFunction = "allocate_selector_attempt";
 export const selectorAttemptAdvanceFunction = "advance_selector_attempt";
+export const selectorAttemptReconcileFunction =
+  "claim_selector_attempt_reconciliation";
 export const selectorHostReadinessFunction = "set_selector_host_readiness";
 
 /** The whole of a cancellation, named once so the grant, the adapter and the suite agree on it. */
@@ -2546,6 +2548,7 @@ export const migrations: readonly Migration[] = [
          observation_digest text, terminal_evidence text,
          created_at timestamptz NOT NULL DEFAULT now(),
          updated_at timestamptz NOT NULL DEFAULT now(),
+         lease_expires_at timestamptz NOT NULL DEFAULT now(),
          FOREIGN KEY (tenant,project) REFERENCES project (tenant,project),
          CHECK (length(attempt) BETWEEN 1 AND 256),
          CHECK (state IN ('Starting','Running','Terminating','Completed','Terminated','Quarantined')),
@@ -2587,13 +2590,14 @@ export const migrations: readonly Migration[] = [
          REFERENCES selector_attempt(attempt)`,
       `CREATE FUNCTION ${selectorAttemptAllocateFunction}(
          in_attempt text,in_tenant text,in_project text,
-         concurrent_limit integer,rate_limit integer)
+         concurrent_limit integer,rate_limit integer,decision_milliseconds integer)
          RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER
          SET search_path=pg_catalog,public,pg_temp AS $$
          BEGIN
            IF length(in_attempt) NOT BETWEEN 1 AND 256
               OR concurrent_limit NOT BETWEEN 1 AND 100
-              OR rate_limit NOT BETWEEN 1 AND 100000 THEN
+              OR rate_limit NOT BETWEEN 1 AND 100000
+              OR decision_milliseconds NOT BETWEEN 1 AND 3600000 THEN
              RAISE EXCEPTION 'invalid selector attempt allocation';
            END IF;
            PERFORM pg_advisory_xact_lock(1936028274);
@@ -2605,12 +2609,29 @@ export const migrations: readonly Migration[] = [
                     WHERE acquired_at >= now()-interval '1 minute') >= rate_limit THEN
              RETURN false;
            END IF;
-           INSERT INTO selector_attempt (attempt,tenant,project,state)
-             VALUES (in_attempt,in_tenant,in_project,'Starting');
+           INSERT INTO selector_attempt (attempt,tenant,project,state,lease_expires_at)
+             VALUES (in_attempt,in_tenant,in_project,'Starting',
+               now()+greatest(decision_milliseconds*2,decision_milliseconds+300000)*interval '1 millisecond');
            INSERT INTO selector_decision_permit (attempt) VALUES (in_attempt);
            RETURN true;
          END $$`,
-      `ALTER FUNCTION ${selectorAttemptAllocateFunction}(text,text,text,integer,integer)
+      `ALTER FUNCTION ${selectorAttemptAllocateFunction}(text,text,text,integer,integer,integer)
+         OWNER TO ${boundaryOwnerRole}`,
+      `CREATE FUNCTION ${selectorAttemptReconcileFunction}(attempt_limit integer)
+         RETURNS TABLE(attempt text) LANGUAGE plpgsql SECURITY DEFINER
+         SET search_path=pg_catalog,public,pg_temp AS $$
+         BEGIN
+           IF attempt_limit NOT BETWEEN 1 AND 100 THEN
+             RAISE EXCEPTION 'invalid selector attempt reconciliation bound';
+           END IF;
+           PERFORM pg_advisory_xact_lock(1936028274);
+           UPDATE selector_attempt SET state='Quarantined',updated_at=now()
+             WHERE state IN ('Starting','Running') AND lease_expires_at<=now();
+           RETURN QUERY SELECT candidate.attempt FROM selector_attempt candidate
+             WHERE candidate.state='Quarantined'
+             ORDER BY candidate.updated_at,candidate.attempt LIMIT attempt_limit;
+         END $$`,
+      `ALTER FUNCTION ${selectorAttemptReconcileFunction}(integer)
          OWNER TO ${boundaryOwnerRole}`,
       `CREATE FUNCTION ${selectorAttemptAdvanceFunction}(
          in_attempt text,in_transition text,in_evidence text)
@@ -2692,12 +2713,14 @@ export const migrations: readonly Migration[] = [
       `GRANT INSERT ON selector_observation TO ${selectorServiceRole}`,
       `GRANT UPDATE (settings_revision,observation_digest) ON selector_attempt
          TO ${selectorServiceRole}`,
-      `REVOKE ALL ON FUNCTION ${selectorAttemptAllocateFunction}(text,text,text,integer,integer),
+      `REVOKE ALL ON FUNCTION ${selectorAttemptAllocateFunction}(text,text,text,integer,integer,integer),
          ${selectorAttemptAdvanceFunction}(text,text,text),
+         ${selectorAttemptReconcileFunction}(integer),
          ${selectorHostReadinessFunction}(boolean),enforce_selector_automatic_readiness(),
          enforce_selector_proposal_attempt() FROM PUBLIC`,
-      `GRANT EXECUTE ON FUNCTION ${selectorAttemptAllocateFunction}(text,text,text,integer,integer),
+      `GRANT EXECUTE ON FUNCTION ${selectorAttemptAllocateFunction}(text,text,text,integer,integer,integer),
          ${selectorAttemptAdvanceFunction}(text,text,text),
+         ${selectorAttemptReconcileFunction}(integer),
          ${selectorHostReadinessFunction}(boolean) TO ${selectorServiceRole}`,
       `ALTER TABLE selector_runtime_settings ALTER COLUMN dispatch_mode SET DEFAULT 'ApprovalRequired'`,
       `UPDATE selector_runtime_settings SET dispatch_mode='ApprovalRequired',revision=revision+1,

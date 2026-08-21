@@ -143,6 +143,7 @@ async function observeProject(
       {
         concurrentDecisions: settings.limits.concurrentDecisions,
         selectionsPerMinute: settings.limits.selectionsPerMinute,
+        millisecondsPerDecision: settings.limits.millisecondsPerDecision,
       },
     );
   } catch {

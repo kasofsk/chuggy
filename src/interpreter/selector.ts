@@ -67,7 +67,7 @@ export interface SelectorStateStore {
     partition: Partition,
     limits: Pick<
       SelectorRuntimeSettings["limits"],
-      "concurrentDecisions" | "selectionsPerMinute"
+      "concurrentDecisions" | "selectionsPerMinute" | "millisecondsPerDecision"
     >,
   ): Promise<boolean>;
   runningAttempt(

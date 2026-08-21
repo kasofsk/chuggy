@@ -170,12 +170,14 @@ async function allocateAttempt(
   limits: {
     readonly concurrentDecisions: number;
     readonly selectionsPerMinute: number;
+    readonly millisecondsPerDecision: number;
   },
 ): Promise<boolean> {
   const found = await pool.query<{ allocated: boolean | null }>(
     sql`SELECT allocate_selector_attempt(
       ${attempt},${partition.tenant},${partition.project},
-      ${limits.concurrentDecisions},${limits.selectionsPerMinute})::boolean AS allocated`,
+      ${limits.concurrentDecisions},${limits.selectionsPerMinute},
+      ${limits.millisecondsPerDecision})::boolean AS allocated`,
   );
   return found.rows[0]?.allocated ?? false;
 }
@@ -238,12 +240,14 @@ async function quarantinedAttempts(
   limit: number,
 ): Promise<readonly string[]> {
   checkedSelectorLimit(limit, "selector attempt reconciliation");
-  const found = await pool.query<{ attempt: string }>(
-    sql`SELECT attempt FROM selector_attempt
-     WHERE state='Quarantined'
-     ORDER BY updated_at,attempt LIMIT ${limit}`,
+  const found = await pool.query<{ attempt: string | null }>(
+    sql`SELECT attempt FROM claim_selector_attempt_reconciliation(${limit})`,
   );
-  return found.rows.map((row) => row.attempt);
+  return found.rows.map((row) => {
+    if (row.attempt === null)
+      throw new Error("selector attempt reconciliation returned no identity");
+    return row.attempt;
+  });
 }
 
 interface DeliveryRow {

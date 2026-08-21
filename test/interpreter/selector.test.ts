@@ -639,6 +639,50 @@ test("unconfirmed attempt reconciliation yields to newer attempts", async () => 
   assert.equal(deferred, 1);
 });
 
+test("one failed attempt inspection does not starve later quarantines", async () => {
+  const inspected: string[] = [];
+  const rotated: string[] = [];
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      quarantinedAttempts: () => Promise.resolve(["poisoned", "healthy"]),
+      quarantineAttempt: (attempt) => {
+        rotated.push(attempt);
+        return Promise.resolve();
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [] }),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    {
+      ...policyHost(() => Promise.resolve(waitingExecution())),
+      reconcileQuarantined: (attempt) => {
+        inspected.push(attempt);
+        return attempt === "poisoned"
+          ? Promise.reject(new Error("inspection unavailable"))
+          : Promise.resolve({
+              status: "Terminated",
+              attempt,
+              proof: "healthy attempt is absent",
+            });
+      },
+    },
+    {
+      next: () => ({
+        operation: asOperationId("unused"),
+        selectorDecisionReference: "unused",
+      }),
+    },
+    { settings: () => Promise.resolve(runtimeSettings) },
+  );
+  assert.deepEqual(inspected, ["poisoned", "healthy"]);
+  assert.deepEqual(rotated, ["poisoned"]);
+  assert.deepEqual(result.failures, [{ phase: "AttemptReconciliation" }]);
+});
+
 test("a selector decision uses and records one hot-loaded prompt revision", async () => {
   const settings: SelectorRuntimeSettings = {
     ...runtimeSettings,

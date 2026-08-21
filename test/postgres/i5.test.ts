@@ -781,6 +781,7 @@ test("attempt reconciliation cannot claim another runtime's active attempt", asy
       await state.allocateAttempt(attempt, partition, {
         concurrentDecisions: 100,
         selectionsPerMinute: 100_000,
+        millisecondsPerDecision: 60_000,
       }),
       true,
     );
@@ -798,7 +799,13 @@ test("attempt reconciliation cannot claim another runtime's active attempt", asy
       1,
     );
     assert.deepEqual(await state.quarantinedAttempts(100), []);
-    await state.quarantineAttempt(attempt);
+    const administration = postgresPool(postgresHarnessUrl());
+    await administration.query(
+      `UPDATE selector_attempt SET lease_expires_at=now()-interval '1 second'
+         WHERE attempt=$1`,
+      [attempt],
+    );
+    await administration.end();
     assert.deepEqual(await state.quarantinedAttempts(100), [attempt]);
   } finally {
     await state

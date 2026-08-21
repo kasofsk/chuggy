@@ -748,6 +748,16 @@ reconciliation or observation of unrelated projects. Policy output cannot
 manufacture terminal evidence. Project deletion and disaster-recovery inventory
 include these attempts and cannot silently release their permits.
 
+An active attempt carries a durable lease longer than its configured decision
+deadline and bounded cancellation grace. A supervisor may move `Starting` or
+`Running` to `Quarantined` only after that lease expires; before expiry, another
+runtime cannot inspect or settle the attempt. The state transition fences a
+late owner because completion still requires `Running`. Deployments run at most
+one selector observer for a given project. That single-observer rule is an
+operational convention rather than a database uniqueness constraint; the
+project-state revision remains the final optimistic fence if the convention is
+violated.
+
 A selector observation is also a durable aggregate rather than one large JSON
 field. Its immutable header pins project, recovery epoch, dispatchable-view
 token and digest, settings and prompt revisions, operational-context time and a

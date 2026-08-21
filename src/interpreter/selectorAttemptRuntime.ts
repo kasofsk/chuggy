@@ -40,13 +40,21 @@ export async function reconcileSelectorAttempts(
   policy: SelectorPolicyHost,
   limit = 100,
 ): Promise<void> {
+  let failed = false;
   for (const attempt of await store.quarantinedAttempts(limit)) {
-    const reconciliation = await policy.reconcileQuarantined(attempt);
-    if (
-      reconciliation.status === "Terminated" &&
-      reconciliation.attempt === attempt
-    )
-      await store.terminateAttempt(attempt, reconciliation.proof);
-    else await store.quarantineAttempt(attempt);
+    try {
+      const reconciliation = await policy.reconcileQuarantined(attempt);
+      if (
+        reconciliation.status === "Terminated" &&
+        reconciliation.attempt === attempt
+      )
+        await store.terminateAttempt(attempt, reconciliation.proof);
+      else await store.quarantineAttempt(attempt);
+    } catch {
+      failed = true;
+      await store.quarantineAttempt(attempt).catch(() => undefined);
+    }
   }
+  if (failed)
+    throw new Error("one or more selector attempts did not reconcile");
 }
