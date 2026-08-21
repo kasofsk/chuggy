@@ -236,6 +236,16 @@ test("a fenced reporter is refused without a second durable move", async () => {
   assert.deepEqual(calls, ["terminalize:2:Pass"]);
 });
 
+test("a report into a project that admits no writer is its own answer", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, { terminalized: "NotAdmitted" });
+  assert.deepEqual(
+    await executionSchedulerIngest(service, submissionOf(report("Pass"))),
+    { ingested: "NotAdmitted" },
+  );
+  assert.deepEqual(calls, ["terminalize:2:Pass"]);
+});
+
 test("a late report for retired work leaves the domain alone", async () => {
   const calls: string[] = [];
   const service = serviceWith(calls, { terminalized: "Cancelled" });

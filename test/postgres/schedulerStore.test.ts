@@ -617,7 +617,15 @@ test("a project in retention admits no completion and keeps no result", async ()
   await rig.harness.store.fence(project.partition, "Retention");
   assert.deepEqual(
     await rig.store.terminalize(schedulerReport(attempt, "Pass")),
-    { terminalized: "Cancelled" },
+    { terminalized: "NotAdmitted" },
+  );
+  assert.deepEqual(
+    await rig.store.blockExecution(
+      project.partition,
+      attempt.execution,
+      "ExecutionPolicyDenied",
+    ),
+    { blocked: "NotAdmitted" },
   );
   assert.deepEqual(
     await rig.harness.query(

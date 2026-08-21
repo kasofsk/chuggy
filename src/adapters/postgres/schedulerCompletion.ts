@@ -474,11 +474,16 @@ async function schedulerSettle(
   return schedulerTerminalized(client, execution, outcome, submitted);
 }
 
-/** The state a registration is in before any terminal work is attempted against it. */
+/**
+ * The state a registration is in before any terminal work is attempted against
+ * it. `Retired` is this task's own end and `NotAdmitted` the project's, which
+ * the completion boundary distinguishes and so does every caller here.
+ */
 type TerminalStanding =
   | { readonly standing: "Open"; readonly execution: LogicalExecution }
   | { readonly standing: "Settled"; readonly execution: LogicalExecution }
-  | { readonly standing: "Retired" };
+  | { readonly standing: "Retired" }
+  | { readonly standing: "NotAdmitted" };
 
 /** Locks the registration and the project, and says whether either has already ended this. */
 async function schedulerTerminalStanding(
@@ -498,7 +503,7 @@ async function schedulerTerminalStanding(
   }
   return (await schedulerProjectAdmits(client, partition))
     ? { standing: "Open", execution: found }
-    : { standing: "Retired" };
+    : { standing: "NotAdmitted" };
 }
 
 /** Settles one logical task from a verified report, or says which absorption applied instead. */
@@ -514,6 +519,8 @@ export async function schedulerTerminalize(
   switch (standing.standing) {
     case "Retired":
       return { terminalized: "Cancelled" };
+    case "NotAdmitted":
+      return { terminalized: "NotAdmitted" };
     case "Settled":
       return schedulerAbsorb(client, standing.execution, report.manifest);
     case "Open":
@@ -596,6 +603,8 @@ export async function schedulerRetriesExhausted(
   switch (standing.standing) {
     case "Retired":
       return { terminalized: "Cancelled" };
+    case "NotAdmitted":
+      return { terminalized: "NotAdmitted" };
     case "Settled":
       return schedulerSettledAlready(standing.execution);
     case "Open":
@@ -650,6 +659,8 @@ export async function schedulerBlockExecution(
   switch (standing.standing) {
     case "Retired":
       return { blocked: "Cancelled" };
+    case "NotAdmitted":
+      return { blocked: "NotAdmitted" };
     case "Settled":
       return schedulerBlockedAlready(standing.execution);
     case "Open":
@@ -670,10 +681,18 @@ export async function schedulerBlockExecution(
     "Blocked",
     submitted,
   );
-  return settled.terminalized === "Terminalized" ||
+  if (
+    settled.terminalized === "Terminalized" ||
     settled.terminalized === "AlreadyTerminal"
-    ? { blocked: "Blocked", operation: settled.operation }
-    : { blocked: "Cancelled" };
+  ) {
+    return { blocked: "Blocked", operation: settled.operation };
+  }
+  if (settled.terminalized === "Conflicting") {
+    return { blocked: "Conflicting", incident: settled.incident };
+  }
+  throw new Error(
+    `postgres scheduler: blocking execution ${execution} under a locked open row answered ${settled.terminalized}`,
+  );
 }
 
 /** What a settled registration says to a second denial under the same ticket. */

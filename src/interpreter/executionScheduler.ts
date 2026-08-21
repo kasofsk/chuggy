@@ -436,7 +436,11 @@ export interface AttemptReport extends FencedAttempt {
   readonly manifest: ResultManifest;
 }
 
-/** What a terminal report found, distinguishing the first outcome from every later claim. */
+/**
+ * What a terminal report found, distinguishing the first outcome from every
+ * later claim. `Cancelled` is a fact about this logical task and `NotAdmitted`
+ * one about the whole project, which are different holds on different things.
+ */
 export type Terminalized =
   | {
       readonly terminalized: "Terminalized";
@@ -450,6 +454,7 @@ export type Terminalized =
     }
   | { readonly terminalized: "Fenced" }
   | { readonly terminalized: "Cancelled" }
+  | { readonly terminalized: "NotAdmitted" }
   | { readonly terminalized: "Conflicting"; readonly incident: string };
 
 /**
@@ -460,7 +465,9 @@ export type Blocked =
   | { readonly blocked: "Blocked"; readonly operation: OperationId }
   | { readonly blocked: "AlreadyBlocked"; readonly operation: OperationId }
   | { readonly blocked: "AlreadyTerminal"; readonly outcome: ExecutionOutcome }
-  | { readonly blocked: "Cancelled" };
+  | { readonly blocked: "Cancelled" }
+  | { readonly blocked: "NotAdmitted" }
+  | { readonly blocked: "Conflicting"; readonly incident: string };
 
 /** A definitive inability to run the immutable contract, which the model bounds. */
 export type BlockedReason = Extract<

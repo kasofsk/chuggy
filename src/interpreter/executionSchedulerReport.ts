@@ -80,10 +80,11 @@ export interface AttemptSubmission extends FencedAttempt {
 }
 
 /**
- * What ingesting one report settled. The three arms that change nothing are
- * kept apart because they are different facts about the installation: a fenced
+ * What ingesting one report settled. The arms that change nothing are kept
+ * apart because they are different facts about the installation: a fenced
  * reporter has been superseded, a stale one is reporting on work the domain has
- * already retired, and a contradictory one is an integrity incident.
+ * already retired, one that is not admitted belongs to a project that has
+ * stopped taking any writer at all, and a contradictory one is an incident.
  */
 export type ReportIngested =
   | {
@@ -98,6 +99,7 @@ export type ReportIngested =
     }
   | { readonly ingested: "Fenced" }
   | { readonly ingested: "Stale" }
+  | { readonly ingested: "NotAdmitted" }
   | { readonly ingested: "Conflicting"; readonly incident: string }
   | {
       readonly ingested: "Malformed";
@@ -214,6 +216,8 @@ export async function executionSchedulerIngest(
       return { ingested: "Fenced" };
     case "Cancelled":
       return { ingested: "Stale" };
+    case "NotAdmitted":
+      return { ingested: "NotAdmitted" };
     case "Conflicting":
       observe(() => {
         service.metrics.incident("ConflictingResult");
