@@ -11,16 +11,12 @@ import {
 import {
   asAuthorityKind,
   asAuthoritySubject,
-  asIdempotencyKey,
   asOperationId,
   type OperationInbox,
 } from "../../src/interpreter/operationInbox.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
-import { releaseTicketEvent } from "../../src/actor/decisionEvent.ts";
-import { plainAuthoring } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
-import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
 
 const partition = {
@@ -122,27 +118,6 @@ test("cancellation reauthorizes before reading or writing", async () => {
     "read:operation",
     "cancel:internal-subject",
   ]);
-});
-
-test("the public boundary refuses a raw release before inbox acceptance", async () => {
-  const { web, calls } = boundary(true);
-  const result = await web.submit(principal, {
-    partition,
-    operation,
-    key: asIdempotencyKey("release"),
-    command: {
-      version: 1,
-      command: "Decide",
-      event: asOperationDecisionEvent(
-        releaseTicketEvent(id(1), plainAuthoring),
-      ),
-    },
-  });
-  assert.deepEqual(result, {
-    result: "Authorized",
-    acceptance: { accepted: "InvalidCommand" },
-  });
-  assert.deepEqual(calls, ["authorize:Mutate"]);
 });
 
 test("every notification page reauthorizes before reading", async () => {

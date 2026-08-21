@@ -55,6 +55,7 @@ export interface DecisionInput {
         readonly operation: OperationId;
         readonly command: TicketCommand;
         readonly resolvedEvent: DecisionEvent;
+        readonly releaseRefusal?: "ConfigurationInvalid";
         readonly draftRelease?: {
           readonly ticket: number;
           readonly authoringVersion: number;

@@ -12,6 +12,7 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import {
   postgresHarnessDecisionSubmission,
+  postgresHarnessReleaseSubmission,
   postgresHarnessHeld,
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -89,11 +90,14 @@ test("journal, input outcome, projection and focused execution request commit to
   let memory = await projectWriterLoad(writer, lease);
 
   for (const index of [0, 1]) {
-    const submission = postgresHarnessDecisionSubmission(
-      partition,
-      `decision-${String(index)}`,
-      index,
-    );
+    const submission =
+      index === 0
+        ? await postgresHarnessReleaseSubmission(
+            harness,
+            partition,
+            "decision-0",
+          )
+        : postgresHarnessDecisionSubmission(partition, "decision-1", index);
     assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
     const input = await harness.discovery.next(partition, 300);
     assert.ok(input !== undefined);

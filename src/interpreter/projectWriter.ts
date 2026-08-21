@@ -187,6 +187,15 @@ function projectWriterPlan(
     item.source.kind === "Operation"
       ? item.source.resolvedEvent
       : item.source.command;
+  if (
+    item.source.kind === "Operation" &&
+    item.source.releaseRefusal !== undefined
+  ) {
+    return {
+      outcome: { outcome: "Refused", code: item.source.releaseRefusal },
+      post: memory.core,
+    };
+  }
   if (item.source.kind === "Continuation") {
     const fenceOutcome = continuationFenceOutcome(memory, item.source);
     if (fenceOutcome !== undefined)

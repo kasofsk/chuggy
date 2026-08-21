@@ -54,12 +54,14 @@ import type { Lease, Lifecycle } from "./projectStore.ts";
  * 006 requires a stable safe code, and an open one is a code a client cannot
  * branch on.
  */
-export type RefusalCode = "NotEnabled" | "AuthoringChanged";
+export type RefusalCode =
+  "NotEnabled" | "AuthoringChanged" | "ConfigurationInvalid";
 
 /** Every refusal code, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
 export const allRefusalCodes: readonly RefusalCode[] = [
   "NotEnabled",
   "AuthoringChanged",
+  "ConfigurationInvalid",
 ];
 
 export interface DraftReleaseFence {

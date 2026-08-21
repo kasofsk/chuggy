@@ -50,6 +50,7 @@ import { parseTicketCommand } from "../../interpreter/wire.ts";
 import type { TicketCommand } from "../../interpreter/ticketCommand.ts";
 import {
   asCanonicalConfiguration,
+  releaseConfigurationReadiness,
   parseDraftAuthoring,
 } from "../../interpreter/authoring.ts";
 import { releaseTicketEvent } from "../../actor/decisionEvent.ts";
@@ -125,12 +126,13 @@ async function releaseDraftSource(
     throw new Error(
       `release draft ${String(command.ticket)} has no retained revision`,
     );
-  asCanonicalConfiguration(found.canonical);
+  const canonical = asCanonicalConfiguration(found.canonical);
   const digest = createHash("sha256").update(found.canonical).digest("hex");
   if (digest !== found.digest)
     throw new Error(
       `release draft ${String(command.ticket)} has a configuration digest mismatch`,
     );
+  const readiness = releaseConfigurationReadiness(canonical);
   return {
     kind: "Operation",
     operation: asOperationId(operation),
@@ -145,6 +147,9 @@ async function releaseDraftSource(
       configurationRevision: command.configurationRevision,
       configurationDigest: found.digest,
     },
+    ...(readiness.readiness === "Incomplete"
+      ? { releaseRefusal: "ConfigurationInvalid" as const }
+      : {}),
   };
 }
 

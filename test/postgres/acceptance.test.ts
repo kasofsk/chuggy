@@ -10,6 +10,7 @@ import {
 import { encodeDecisionEventText } from "../../src/interpreter/wire.ts";
 import {
   postgresHarnessKeying,
+  postgresHarnessEntry,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessSubmission,
@@ -192,5 +193,15 @@ test("native-action resolution is accepted only against its open versioned reque
   assert.equal(
     await harness.inbox.operation(partition, fenced.operation),
     undefined,
+  );
+});
+
+test("durable command validation rejects a raw ReleaseTicket", async () => {
+  const release = postgresHarnessEntry(0).event;
+  assert.deepEqual(
+    await harness.query("SELECT ticket_command_is_valid($1::jsonb) AS valid", [
+      JSON.stringify({ version: 1, command: "Decide", event: release }),
+    ]),
+    [{ valid: false }],
   );
 });

@@ -704,7 +704,8 @@ const durableMailbox = [
          RETURN false;
        END IF;
        IF command->>'command' = 'Decide' THEN
-         RETURN decision_event_is_valid(command->'event');
+         RETURN decision_event_is_valid(command->'event')
+           AND command->'event'->>'type' <> 'ReleaseTicket';
        END IF;
        IF command->>'command' = 'ReleaseDraft' THEN
          RETURN command_integer(command->'ticket') AND (command->>'ticket')::numeric >= 1
@@ -981,7 +982,7 @@ const durableMailbox = [
          priority := 'Safety'; admission_class := 'CorrectnessReducing';
        ELSIF command_tag IN ('TaskDone', 'ExecutionBlocked', 'FinalizationResult') THEN
          priority := 'Completion'; admission_class := 'CorrectnessReducing';
-       ELSIF command_tag IN ('ReleaseTicket', 'ReleaseDraft', 'Dispatch', 'ResumeTicket') OR
+       ELSIF command_tag IN ('ReleaseDraft', 'Dispatch', 'ResumeTicket') OR
              (command_tag = 'ResolveNativeAction' AND action_resolution = 'Resume') THEN
          priority := 'Ordinary'; admission_class := 'Ordinary';
        ELSE
@@ -1173,13 +1174,15 @@ const nativeAuthoring = [
      CONSTRAINT configuration_revision_content_is_bounded CHECK (length(canonical) BETWEEN 1 AND 65536)
    )`,
   `ALTER TABLE journal_entry
+     ADD COLUMN integrity_version integer NOT NULL DEFAULT 1,
      ADD COLUMN release_configuration_revision text,
      ADD COLUMN release_configuration_digest text,
      ADD CONSTRAINT journal_release_configuration_is_whole CHECK
        ((release_configuration_revision IS NULL)=(release_configuration_digest IS NULL)),
      ADD CONSTRAINT journal_release_configuration_is_retained FOREIGN KEY
        (tenant,project,release_configuration_revision,release_configuration_digest)
-       REFERENCES configuration_revision (tenant,project,revision,digest)`,
+       REFERENCES configuration_revision (tenant,project,revision,digest),
+     ADD CONSTRAINT journal_integrity_version_is_known CHECK (integrity_version IN (1,2))`,
   `CREATE TABLE draft (
      tenant text NOT NULL, project text NOT NULL, ticket bigint NOT NULL,
      authoring_version bigint NOT NULL, state text NOT NULL,
@@ -1206,15 +1209,18 @@ const nativeAuthoring = [
   `CREATE FUNCTION ${configurationCreateFunction}(in_tenant text,in_project text,in_revision text,
       in_parent text,in_canonical text,in_digest text,in_kind text,in_subject text) RETURNS text
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-     DECLARE existing configuration_revision%ROWTYPE;
+     DECLARE existing configuration_revision%ROWTYPE; inserted boolean := false;
      BEGIN
        BEGIN
          INSERT INTO configuration_revision
            (tenant,project,revision,parent,canonical,digest,authority_kind,authority_subject)
          VALUES (in_tenant,in_project,in_revision,in_parent,in_canonical,in_digest,in_kind,in_subject)
-         ON CONFLICT (tenant,project,revision) DO NOTHING;
-       EXCEPTION WHEN foreign_key_violation THEN RETURN 'ParentNotFound'; END;
-       IF FOUND THEN
+         ON CONFLICT (tenant,project,revision) DO NOTHING RETURNING true INTO inserted;
+       EXCEPTION
+         WHEN foreign_key_violation THEN RETURN 'ParentNotFound';
+         WHEN unique_violation THEN NULL;
+       END;
+       IF inserted THEN
          PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Configuration',in_revision,NULL,NULL);
          RETURN 'Created';
        END IF;

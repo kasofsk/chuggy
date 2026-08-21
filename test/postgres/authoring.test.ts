@@ -23,7 +23,7 @@ import {
 import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresHarnessHeld,
-  postgresHarnessDecisionSubmission,
+  postgresHarnessReleaseSubmission,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessUrl,
@@ -47,7 +47,9 @@ const authority = {
   subject: asAuthoritySubject("author"),
 };
 
-async function draftFixture() {
+async function draftFixture(
+  canonical = asCanonicalConfiguration('{"image":"worker:v1"}'),
+) {
   const partition = await postgresHarnessProject(
     harness.store,
     "authoring-draft",
@@ -58,7 +60,7 @@ async function draftFixture() {
     partition,
     authority,
     revision,
-    canonical: asCanonicalConfiguration("{}"),
+    canonical,
   });
   const created = await store.createDraft({
     partition,
@@ -103,7 +105,7 @@ async function assertReleaseConfigurationPinned(
       {
         release_configuration_revision: fixture.revision,
         release_configuration_digest: createHash("sha256")
-          .update("{}")
+          .update('{"image":"worker:v1"}')
           .digest("hex"),
       },
     ],
@@ -269,10 +271,10 @@ test("a domain release advances the shared ticket identity allocator", async () 
     harness.store,
     "authoring-existing-ticket",
   );
-  const submission = postgresHarnessDecisionSubmission(
+  const submission = await postgresHarnessReleaseSubmission(
+    harness,
     partition,
     "existing-ticket",
-    0,
   );
   assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
   const input = await harness.discovery.next(partition);
@@ -368,6 +370,40 @@ test("release journals the retained draft only while its revision is current", a
         authoring_version: null,
       },
     ],
+  );
+});
+
+test("semantic configuration failure durably refuses release without an entry", async () => {
+  const fixture = await draftFixture(asCanonicalConfiguration("{}"));
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  const lease = await postgresHarnessHeld(
+    harness.store,
+    fixture.partition,
+    "invalid-configuration",
+  );
+  const writer = postgresHarnessWriter(harness);
+  const result = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(writer, lease),
+    input,
+  );
+  assert.equal(result.decided.decided, "Refused");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT state,outcome_code FROM decision_input WHERE input_id=$1",
+      [submission.operation],
+    ),
+    [{ state: "Refused", outcome_code: "ConfigurationInvalid" }],
+  );
+  assert.deepEqual(
+    await harness.query(
+      "SELECT head FROM project WHERE tenant=$1 AND project=$2",
+      [fixture.partition.tenant, fixture.partition.project],
+    ),
+    [{ head: "0" }],
   );
 });
 

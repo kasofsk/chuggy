@@ -241,7 +241,6 @@ export function classifyCommand(command: TicketCommand): {
     case "ExecutionBlocked":
     case "FinalizationResult":
       return { admission: "CorrectnessReducing", priority: "Completion" };
-    case "ReleaseTicket":
     case "Dispatch":
     case "ResumeTicket":
       return { admission: "Ordinary", priority: "Ordinary" };

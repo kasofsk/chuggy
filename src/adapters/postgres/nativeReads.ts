@@ -49,6 +49,7 @@ function refusalCode(value: string): OperationRefusalCode {
   if (
     value === "NotEnabled" ||
     value === "AuthoringChanged" ||
+    value === "ConfigurationInvalid" ||
     value === "CommandUnreadable"
   )
     return value;

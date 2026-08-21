@@ -88,8 +88,12 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       throw new TypeError("command version is not 1");
     if (record["command"] === "Decide") {
       const event = decodeDecisionEvent(record["event"]);
-      if (event.type === "WorkReduce" || event.type === "EvalReduce") {
-        throw new TypeError("reducers are internal continuation commands");
+      if (
+        event.type === "WorkReduce" ||
+        event.type === "EvalReduce" ||
+        event.type === "ReleaseTicket"
+      ) {
+        throw new TypeError("event is not a public decision command");
       }
       return {
         parsed: "Ok",

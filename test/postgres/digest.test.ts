@@ -27,6 +27,7 @@ import { test } from "node:test";
 import {
   journalChainDigest,
   journalChainGenesis,
+  journalEnvelopeDigest,
 } from "../../src/adapters/postgres/digest.ts";
 import {
   asProjectId,
@@ -35,6 +36,7 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import { encodeEntry } from "../../src/interpreter/wire.ts";
 import { postgresHarnessEntry, postgresHarnessJournal } from "./harness.ts";
+import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 
 /** The partition these vectors were taken under, fixed so the digests can be written down. */
 const pinnedPartition: Partition = {
@@ -95,4 +97,34 @@ test("a chain built for one partition does not verify under another", () => {
     );
     assert.notEqual(journalChainDigest(other, genesis, first), home);
   }
+});
+
+test("the complete envelope digest covers cause and release configuration", () => {
+  const entry = postgresHarnessEntry(0);
+  const previous = journalChainGenesis(pinnedPartition);
+  const envelope = {
+    entry,
+    cause: { kind: "Operation" as const, id: asOperationId("operation") },
+    release: {
+      configurationRevision: "config-1",
+      configurationDigest: "digest-1",
+    },
+    eventSchemaVersion: 1 as const,
+    decisionSemanticsVersion: 1 as const,
+  };
+  const digest = journalEnvelopeDigest(pinnedPartition, previous, envelope);
+  assert.notEqual(
+    journalEnvelopeDigest(pinnedPartition, previous, {
+      ...envelope,
+      cause: { kind: "Operation", id: asOperationId("other-operation") },
+    }),
+    digest,
+  );
+  assert.notEqual(
+    journalEnvelopeDigest(pinnedPartition, previous, {
+      ...envelope,
+      release: { ...envelope.release, configurationDigest: "digest-2" },
+    }),
+    digest,
+  );
 });

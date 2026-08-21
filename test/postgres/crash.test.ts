@@ -5,7 +5,7 @@ import {
   projectWriterLoad,
 } from "../../src/interpreter/projectWriter.ts";
 import {
-  postgresHarnessDecisionSubmission,
+  postgresHarnessReleaseSubmission,
   postgresHarnessHeld,
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -34,7 +34,11 @@ test("an ambiguous commit is resolved from the terminal input before stale-head 
   const writer = postgresHarnessWriter(harness);
   const memory = await projectWriterLoad(writer, lease);
   await harness.inbox.accept(
-    postgresHarnessDecisionSubmission(partition, "ambiguous-input", 0),
+    await postgresHarnessReleaseSubmission(
+      harness,
+      partition,
+      "ambiguous-input",
+    ),
   );
   const input = await harness.discovery.next(partition, 300);
   assert.ok(input !== undefined);
@@ -64,10 +68,10 @@ test("rollback before commit leaves the input pending for takeover", async () =>
     harness.store,
     "rollback-input",
   );
-  const submission = postgresHarnessDecisionSubmission(
+  const submission = await postgresHarnessReleaseSubmission(
+    harness,
     partition,
     "rollback-input",
-    0,
   );
   await harness.inbox.accept(submission);
   const transaction = await harness.begin();

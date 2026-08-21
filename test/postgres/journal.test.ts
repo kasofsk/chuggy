@@ -20,10 +20,11 @@ import { after, before, test } from "node:test";
 
 import { journalLegalOn } from "../../src/actor/journal.ts";
 import {
-  journalChainDigest,
   journalChainGenesis,
+  journalEnvelopeDigest,
 } from "../../src/adapters/postgres/digest.ts";
 import { refinementInstance } from "../actor/harness.ts";
+import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import {
   postgresHarnessExpire,
   postgresHarnessHeld,
@@ -62,6 +63,22 @@ test("a committed history advances the head and loads back as a legal journal", 
   assert.ok(journalLegalOn(refinementInstance, loaded.value));
 });
 
+test("load refuses a changed complete-envelope digest", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "envelope-tamper",
+  );
+  const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
+  await harness.query(
+    "UPDATE journal_entry SET entry_digest=$4 WHERE tenant=$1 AND project=$2 AND seq=$3",
+    [partition.tenant, partition.project, 1, "0".repeat(64)],
+  );
+  const loaded = await harness.store.load(memory.lease);
+  assert.equal(loaded.parsed, "Refused");
+  assert.ok(loaded.parsed === "Refused");
+  assert.match(loaded.why, /integrity verification/);
+});
+
 test("a load under a fenced lease is refused, not served the prefix it would replay", async () => {
   const partition = await postgresHarnessProject(harness.store, "loadfenced");
   const memory = await postgresHarnessHistory(
@@ -85,9 +102,18 @@ test("each stored digest chains onto its predecessor, and the first onto the par
   await postgresHarnessHistory(harness, partition, "writer", journal.length);
 
   const stored = (await harness.query(
-    "SELECT seq, entry_digest, prev_digest FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq",
+    `SELECT seq,entry_digest,prev_digest,cause_kind,cause_id,
+       release_configuration_revision,release_configuration_digest
+       FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq`,
     [partition.tenant, partition.project],
-  )) as readonly { entry_digest: string; prev_digest: string }[];
+  )) as readonly {
+    entry_digest: string;
+    prev_digest: string;
+    cause_kind: "Operation";
+    cause_id: string;
+    release_configuration_revision: string | null;
+    release_configuration_digest: string | null;
+  }[];
 
   assert.equal(stored.length, journal.length);
   let previous = journalChainGenesis(partition);
@@ -97,7 +123,21 @@ test("each stored digest chains onto its predecessor, and the first onto the par
     assert.equal(row.prev_digest, previous);
     assert.equal(
       row.entry_digest,
-      journalChainDigest(partition, previous, entry),
+      journalEnvelopeDigest(partition, previous, {
+        entry,
+        cause: { kind: row.cause_kind, id: asOperationId(row.cause_id) },
+        ...(row.release_configuration_revision === null ||
+        row.release_configuration_digest === null
+          ? {}
+          : {
+              release: {
+                configurationRevision: row.release_configuration_revision,
+                configurationDigest: row.release_configuration_digest,
+              },
+            }),
+        eventSchemaVersion: 1,
+        decisionSemanticsVersion: 1,
+      }),
     );
     previous = row.entry_digest;
   }

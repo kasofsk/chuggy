@@ -6,6 +6,7 @@ import {
   asConfigurationRevisionId,
   encodeDraftAuthoring,
   parseDraftAuthoring,
+  releaseConfigurationReadiness,
 } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -35,6 +36,26 @@ test("configuration must be canonical, bounded, and secret-free", () => {
     /secret-bearing/,
   );
   assert.throws(() => asCanonicalConfiguration("not-json"), SyntaxError);
+});
+
+test("release readiness is stricter than structurally valid draft configuration", () => {
+  assert.deepEqual(
+    releaseConfigurationReadiness(asCanonicalConfiguration("{}")),
+    {
+      readiness: "Incomplete",
+    },
+  );
+  assert.equal(
+    releaseConfigurationReadiness(
+      asCanonicalConfiguration('{"image":"worker:v1"}'),
+    ).readiness,
+    "Ready",
+  );
+});
+
+test("a raw ReleaseTicket is not a public Decide command", () => {
+  const raw = `{"version":1,"command":"Decide","event":${encodeDraftAuthoring(plainAuthoring)}}`;
+  assert.equal(parseTicketCommand(raw).parsed, "Refused");
 });
 
 test("ReleaseDraft round-trips as a revision-fenced public command", () => {

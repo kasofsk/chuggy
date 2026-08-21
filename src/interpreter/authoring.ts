@@ -21,6 +21,17 @@ export type CanonicalConfiguration = string & {
   readonly [canonicalConfigurationBrand]: true;
 };
 
+export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
+  readonly image: string;
+};
+
+export type ReleaseConfigurationReadiness =
+  | {
+      readonly readiness: "Ready";
+      readonly configuration: ReleaseConfiguration;
+    }
+  | { readonly readiness: "Incomplete" };
+
 function boundedText(value: string, what: string, maximum: number): string {
   if (value.length === 0) throw new RangeError(`${what}: a value is empty`);
   if (!value.isWellFormed())
@@ -54,6 +65,26 @@ export function asCanonicalConfiguration(
       "canonical configuration: keys and values are not canonically encoded",
     );
   return bounded as CanonicalConfiguration;
+}
+
+/** Applies the release-time semantic minimum without restricting draft authoring. */
+export function releaseConfigurationReadiness(
+  configuration: CanonicalConfiguration,
+): ReleaseConfigurationReadiness {
+  const value: unknown = JSON.parse(configuration);
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    typeof (value as Record<string, unknown>)["image"] !== "string" ||
+    (value as Record<string, unknown>)["image"] === ""
+  ) {
+    return { readiness: "Incomplete" };
+  }
+  return {
+    readiness: "Ready",
+    configuration: value as ReleaseConfiguration,
+  };
 }
 
 const prohibitedConfigurationKeys = /(?:password|secret|token|credential)/iu;

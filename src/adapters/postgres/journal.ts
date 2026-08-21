@@ -25,25 +25,19 @@
  * in-memory store's does, and a row that no longer parses is refused by
  * returning rather than thrown on.
  *
- * WHAT THE LOAD REQUIRES OF A HISTORY, AND WHAT IT LEAVES UNVERIFIED. Its own
- * replay precondition is that the stored entries reach the head the locked row
- * claims: a journal falling short of it — an entry taken from the middle, or
- * the tail cut off — is a torn store rather than an outcome a ticket writer
- * decides its way around, so it throws rather than returning. That count is all
- * it requires, and an edit that preserves it and stays inside the schema loads
- * as `Ok` and replays as history: a changed payload, a swapped pair, one entry
- * substituted for another. The digests are written here so that format version
- * one carries them, because a chain added later is a migration over
- * authoritative history; recomputing and comparing them is project-local
- * integrity containment, which 006 places at slice I9 along with what a project
- * fails closed into when the comparison disagrees — and the count check is that
- * slice arriving nowhere early, only the load refusing to replay a history it
- * can already see is incomplete.
+ * WHAT THE LOAD REQUIRES OF A HISTORY. Stored entries must reach the locked
+ * head. Version-two rows must also form the complete-envelope chain written by
+ * this adapter, including their direct cause and release configuration. Rows
+ * predating that envelope retain version one: their stored digest remains the
+ * predecessor of later rows, but cannot retroactively attest to fields it never
+ * covered. Turning a verification failure into project-local containment is
+ * still I9's responsibility; this boundary refuses to replay the bad record.
  */
 
 import type pg from "pg";
 
 import type { Entry } from "../../actor/journal.ts";
+import { asOperationId } from "../../interpreter/operationInbox.ts";
 import type {
   DecisionCause,
   DraftReleaseFence,
@@ -58,13 +52,43 @@ import {
   parseJournal,
   type Parsed,
 } from "../../interpreter/wire.ts";
-import { journalChainDigest, journalChainGenesis } from "./digest.ts";
+import {
+  journalChainGenesis,
+  journalEnvelopeDigest,
+  type JournalIntegrityEnvelope,
+} from "./digest.ts";
 import {
   postgresOwnershipHonours,
   postgresOwnershipLockKnown,
 } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowStanding } from "./rows.ts";
+
+interface StoredJournalRow {
+  readonly entry: string;
+  readonly entry_digest: string;
+  readonly prev_digest: string;
+  readonly integrity_version: number;
+  readonly cause_kind: string;
+  readonly cause_id: string;
+  readonly release_configuration_revision: string | null;
+  readonly release_configuration_digest: string | null;
+}
+
+async function storedJournalRows(
+  client: pg.PoolClient,
+  partition: Partition,
+): Promise<readonly StoredJournalRow[]> {
+  const { tenant, project } = partition;
+  return (
+    await client.query<StoredJournalRow>(
+      `SELECT entry,entry_digest,prev_digest,integrity_version,cause_kind,cause_id,
+       release_configuration_revision,release_configuration_digest
+       FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq`,
+      [tenant, project],
+    )
+  ).rows;
+}
 
 /** The digest the next entry chains onto: the head entry's, or the partition's genesis at an empty journal. */
 async function postgresJournalPrevious(
@@ -104,18 +128,30 @@ export async function postgresJournalWrite(
     lease.partition,
     lease.head,
   );
+  if ((entry.event.type === "ReleaseTicket") !== (release !== undefined)) {
+    throw new Error(
+      "postgres journal: a release entry and its configuration provenance must be written together",
+    );
+  }
+  const envelope: JournalIntegrityEnvelope = {
+    entry,
+    cause,
+    ...(release === undefined ? {} : { release }),
+    eventSchemaVersion: 1,
+    decisionSemanticsVersion: 1,
+  };
   await client.query(
     `INSERT INTO journal_entry
        (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch,
         recovery_epoch, cause_kind, cause_id, release_configuration_revision,
-        release_configuration_digest)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        release_configuration_digest, integrity_version)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 2)`,
     [
       lease.partition.tenant,
       lease.partition.project,
       entry.seq,
       encodeEntry(entry),
-      journalChainDigest(lease.partition, previous, entry),
+      journalEnvelopeDigest(lease.partition, previous, envelope),
       previous,
       lease.owner,
       lease.fencingEpoch,
@@ -138,19 +174,56 @@ async function postgresJournalEntries(
   standing: ProjectStanding,
 ): Promise<Parsed<readonly Entry[]>> {
   const { tenant, project } = standing.partition;
-  const found = await client.query<{ entry: string }>(
-    "SELECT entry FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq",
-    [tenant, project],
-  );
-  if (found.rows.length !== standing.head) {
+  const rows = await storedJournalRows(client, standing.partition);
+  if (rows.length !== standing.head) {
     throw new Error(
-      `postgres journal: ${tenant}/${project} claims head ${String(standing.head)} over ${String(found.rows.length)} stored entries`,
+      `postgres journal: ${tenant}/${project} claims head ${String(standing.head)} over ${String(rows.length)} stored entries`,
     );
   }
   const raw: unknown[] = [];
-  for (const row of found.rows) {
+  let previous = journalChainGenesis(standing.partition);
+  for (const row of rows) {
     try {
-      raw.push(JSON.parse(row.entry) as unknown);
+      const decoded = JSON.parse(row.entry) as unknown;
+      const parsed = parseJournal([decoded]);
+      if (parsed.parsed === "Refused") return parsed;
+      const entry = parsed.value[0];
+      if (entry === undefined) throw new Error("parsed journal row is absent");
+      if (row.integrity_version === 2) {
+        const cause: DecisionCause | undefined =
+          row.cause_kind === "Operation"
+            ? { kind: "Operation", id: asOperationId(row.cause_id) }
+            : row.cause_kind === "Continuation"
+              ? { kind: "Continuation", id: row.cause_id }
+              : undefined;
+        const release =
+          row.release_configuration_revision !== null &&
+          row.release_configuration_digest !== null
+            ? {
+                configurationRevision: row.release_configuration_revision,
+                configurationDigest: row.release_configuration_digest,
+              }
+            : undefined;
+        if (
+          cause === undefined ||
+          (entry.event.type === "ReleaseTicket") !== (release !== undefined) ||
+          row.prev_digest !== previous ||
+          journalEnvelopeDigest(standing.partition, previous, {
+            entry,
+            cause,
+            ...(release === undefined ? {} : { release }),
+            eventSchemaVersion: 1,
+            decisionSemanticsVersion: 1,
+          }) !== row.entry_digest
+        ) {
+          return {
+            parsed: "Refused",
+            why: "a stored journal envelope failed integrity verification",
+          };
+        }
+      }
+      raw.push(decoded);
+      previous = row.entry_digest;
     } catch {
       return {
         parsed: "Refused",
