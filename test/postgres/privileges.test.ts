@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import {
   acceptanceFunction,
+  accountIdentityFunction,
   apiRole,
   boundaryOwnerRole,
   cancellationFunction,
@@ -22,6 +23,17 @@ before(async () => {
 });
 after(async () => {
   await harness.close();
+});
+
+test("only the writer may name the account a spawn request pins", async () => {
+  const naming = `SELECT ${accountIdentityFunction}('tenant','project')`;
+  assert.equal(await harness.attemptAs(ticketServiceRole, naming), undefined);
+  for (const role of [apiRole, schedulerRole]) {
+    assert.match(
+      (await harness.attemptAs(role, naming)) ?? "",
+      /permission denied/,
+    );
+  }
 });
 
 test("runtime roles cannot construct decision inputs directly", async () => {

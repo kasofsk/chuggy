@@ -25,6 +25,7 @@ import { after, before, test } from "node:test";
 
 import {
   activeWorkFunction,
+  accountIdentityFunction,
   backlogFunction,
   completionFunction,
   digestFoldFunction,
@@ -173,9 +174,10 @@ async function schedulerFixture(label: string): Promise<SchedulerFixture> {
     [cluster, schedulerClusterSlots],
   );
   const repointed = await harness.query(
-    `UPDATE capacity_account SET cluster=$2, reserved=$3, maximum=$4
-      WHERE account=$1 RETURNING account`,
+    `UPDATE capacity_account SET cluster=$3, reserved=$4, maximum=$5
+      WHERE account=${accountIdentityFunction}($1,$2) RETURNING account`,
     [
+      partition.tenant,
       partition.project,
       cluster,
       schedulerAccountReserved,
@@ -216,7 +218,7 @@ async function schedulerRegister(
   await harness.query(
     `INSERT INTO execution (tenant,project,execution,ticket,task,source_request,
        account,cluster,configuration_revision,configuration_digest)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+     VALUES ($1,$2,$3,$4,$5,$6,${accountIdentityFunction}($1,$2),$7,$8,$9)`,
     [
       fixture.partition.tenant,
       fixture.partition.project,
@@ -224,7 +226,6 @@ async function schedulerRegister(
       fixture.ticket,
       task,
       fixture.request,
-      fixture.partition.project,
       fixture.cluster,
       fixture.revision,
       fixture.digest,
@@ -485,7 +486,7 @@ test("an execution cannot be registered for work the project never authorized", 
     harness.query(
       `INSERT INTO execution (tenant,project,execution,ticket,task,source_request,
          account,cluster,configuration_revision,configuration_digest)
-       VALUES ($1,$2,$3,$4,$5,$6,$2,$7,$8,$9)`,
+       VALUES ($1,$2,$3,$4,$5,$6,${accountIdentityFunction}($1,$2),$7,$8,$9)`,
       [
         fixture.partition.tenant,
         fixture.partition.project,
@@ -517,7 +518,7 @@ test("a value outside the interpreter's vocabulary is refused by the roster that
     [
       `INSERT INTO execution (tenant,project,execution,ticket,task,source_request,account,
          cluster,configuration_revision,configuration_digest,status)
-       VALUES ($1,$2,$3,$4,$5,$6,$2,$7,$8,$9,'Paused')`,
+       VALUES ($1,$2,$3,$4,$5,$6,${accountIdentityFunction}($1,$2),$7,$8,$9,'Paused')`,
       [
         ...partition,
         `execution-paused-${randomUUID()}`,

@@ -44,6 +44,18 @@
  * refuse to do anything at all under a superseded recovery epoch, because a
  * restore withdraws the authority a scheduler was holding before it.
  *
+ * ROWS ARE TAKEN IN ONE ORDER: REQUEST, THEN EXECUTION, THEN PROJECT, THEN
+ * ATTEMPT. A worker reporting on a task while the same pass cancels its ticket
+ * is two transactions over the same three rows, and two orders between them is
+ * a deadlock the server resolves by aborting one — which discards the rest of a
+ * pass that has no retry. So a cancellation retires the registrations before it
+ * fences their attempts, attempt accounting takes the registration's row before
+ * the attempt's, and the reaping sweep locks the registrations it is about to
+ * charge before it ends anything. `schedulerFenceOldEpochs` takes attempt rows
+ * and nothing else, which is the last name in the order and therefore no side
+ * of a cycle. The order is what makes the deadlock unreachable rather than
+ * merely rare, which no retry can do.
+ *
  * NOTHING HERE READS A CLOCK. Every lease, expiry and backoff is a duration
  * handed to the server, which is the only party whose clock the durable state
  * is allowed to depend on.
@@ -222,6 +234,34 @@ async function schedulerLockRequest(
   return row;
 }
 
+/**
+ * Locks every request authorizing work under this claim's ticket, in request
+ * order, and answers the state of the claim's own. Taking all of them before any
+ * registration is read is what makes a registration committing alongside a
+ * cancellation visible to it rather than missed: a registration holds its own
+ * request row for the whole of its transaction, so a cancellation that is past
+ * this call is a cancellation no registration for the ticket is still inside.
+ */
+async function schedulerLockTicketRequests(
+  client: pg.PoolClient,
+  claim: RequestClaim,
+): Promise<RequestRow> {
+  const found = await client.query<RequestRow & { request: string }>(
+    `SELECT request, state, authorizing_seq::text AS authorizing_seq
+       FROM execution_request
+      WHERE tenant = $1 AND project = $2 AND ticket = $3
+      ORDER BY request FOR UPDATE`,
+    [claim.partition.tenant, claim.partition.project, claim.ticket],
+  );
+  const row = found.rows.find((each) => each.request === claim.request);
+  if (row === undefined) {
+    throw new Error(
+      `postgres scheduler: ${claim.partition.tenant}/${claim.partition.project} has no request ${claim.request}`,
+    );
+  }
+  return row;
+}
+
 /** Moves the request to the delivery state named and gives its claim back. */
 async function schedulerRequestState(
   client: pg.PoolClient,
@@ -371,40 +411,49 @@ async function schedulerRegisterSpawn(
     : { registered: "AlreadyRegistered", created: 0 };
 }
 
-/** Fences every attempt still able to report under the ticket this cancellation names. */
-async function schedulerFenceTicket(
-  client: pg.PoolClient,
-  claim: RequestClaim,
-): Promise<readonly string[]> {
-  const fenced = await client.query<{ attempt: string }>(
-    `UPDATE execution_attempt a
-        SET state = 'Superseded', generation = a.generation + 1,
-            evidence = 'Fenced', ended_at = now(),
-            lease_owner = NULL, lease_expires_at = NULL
-       FROM execution e
-      WHERE e.tenant = a.tenant AND e.project = a.project AND e.execution = a.execution
-        AND e.tenant = $1 AND e.project = $2 AND e.ticket = $3
-        AND e.status NOT IN (${settledStatuses})
-        AND a.state IN (${liveAttemptStates})
-      RETURNING a.attempt`,
-    [claim.partition.tenant, claim.partition.project, claim.ticket],
-  );
-  return fenced.rows.map((row) => row.attempt);
+/** One retired registration: the row whose slot was released, and what authorized it. */
+interface RetiredRow {
+  readonly execution: string;
+  readonly source_request: string;
 }
 
 /** Retires every logical task under the ticket, releasing one slot for each. */
 async function schedulerRetireTicket(
   client: pg.PoolClient,
   claim: RequestClaim,
-): Promise<readonly string[]> {
-  const retired = await client.query<{ source_request: string }>(
+): Promise<readonly RetiredRow[]> {
+  const retired = await client.query<RetiredRow>(
     `UPDATE execution SET status = 'Cancelled', terminal_at = now()
       WHERE tenant = $1 AND project = $2 AND ticket = $3
         AND status NOT IN (${settledStatuses})
-      RETURNING source_request`,
+      RETURNING execution, source_request`,
     [claim.partition.tenant, claim.partition.project, claim.ticket],
   );
-  return retired.rows.map((row) => row.source_request);
+  return retired.rows;
+}
+
+/** Fences every attempt still able to report under the registrations just retired. */
+async function schedulerFenceRetired(
+  client: pg.PoolClient,
+  claim: RequestClaim,
+  retired: readonly RetiredRow[],
+): Promise<readonly string[]> {
+  const fenced = await client.query<{ attempt: string }>(
+    `UPDATE execution_attempt a
+        SET state = 'Superseded', generation = a.generation + 1,
+            evidence = 'Fenced', ended_at = now(),
+            lease_owner = NULL, lease_expires_at = NULL
+      WHERE a.tenant = $1 AND a.project = $2
+        AND a.execution = ANY($3::text[])
+        AND a.state IN (${liveAttemptStates})
+      RETURNING a.attempt`,
+    [
+      claim.partition.tenant,
+      claim.partition.project,
+      retired.map((row) => row.execution),
+    ],
+  );
+  return fenced.rows.map((row) => row.attempt);
 }
 
 /** Invalidates the spawn requests an earlier sequence authorized for this retired ticket. */
@@ -432,12 +481,12 @@ async function schedulerRegisterCancellation(
   client: pg.PoolClient,
   claim: RequestClaim,
 ): Promise<CancellationRegistered> {
-  const request = await schedulerLockRequest(client, claim);
+  const request = await schedulerLockTicketRequests(client, claim);
   if (request.state !== "Open") return { cancelled: "AlreadyFulfilled" };
-  const workloads = await schedulerFenceTicket(client, claim);
   const retired = await schedulerRetireTicket(client, claim);
+  const workloads = await schedulerFenceRetired(client, claim, retired);
   await schedulerInvalidateSpawns(client, claim);
-  for (const source of new Set(retired)) {
+  for (const source of new Set(retired.map((row) => row.source_request))) {
     await schedulerFulfilRequest(client, claim.partition, source);
   }
   await schedulerRequestState(client, claim, "Fulfilled");
@@ -497,16 +546,22 @@ async function schedulerAdmit(
                              AND x.status IN (${slotHolders})) h ON true
       WHERE e.cluster = $1 AND e.status = 'Queued' AND h.held < a.maximum
       ORDER BY (greatest(a.reserved - h.held, 0) > 0) DESC,
-               e.registered_at, e.execution LIMIT 1`,
+               e.registered_at, e.execution LIMIT 1
+      FOR UPDATE OF e`,
     [cluster],
   );
   const row = candidate.rows[0];
   if (row === undefined) return schedulerNoCandidate(client, cluster);
-  await client.query(
+  const taken = await client.query(
     `UPDATE execution SET status = 'Admitted'
       WHERE tenant = $1 AND project = $2 AND execution = $3 AND status = 'Queued'`,
     [row.tenant, row.project, row.execution],
   );
+  if (taken.rowCount !== 1) {
+    throw new Error(
+      `postgres scheduler: execution ${row.execution} was locked queued and then took no slot`,
+    );
+  }
   return { admitted: "Admitted", execution: asExecutionId(row.execution) };
 }
 
@@ -633,12 +688,25 @@ async function schedulerOpenAttempt(
   return { opened: "Opened", attempt: attemptRowPhysical(written) };
 }
 
+/** Takes the registration's own row lock, which every attempt move is made under. */
+async function schedulerLockAttemptExecution(
+  client: pg.PoolClient,
+  attempt: FencedAttempt,
+): Promise<void> {
+  await client.query(
+    `SELECT 1 FROM execution
+      WHERE tenant = $1 AND project = $2 AND execution = $3 FOR UPDATE`,
+    [attempt.partition.tenant, attempt.partition.project, attempt.execution],
+  );
+}
+
 /** Records that the worker port placed the attempt, moving the execution to `Running`. */
 async function schedulerAttemptPlaced(
   client: pg.PoolClient,
   attempt: FencedAttempt,
   workload: WorkloadId,
 ): Promise<boolean> {
+  await schedulerLockAttemptExecution(client, attempt);
   const placed = await client.query(
     `UPDATE execution_attempt SET state = 'Running', workload = $6
       WHERE tenant = $1 AND project = $2 AND execution = $3 AND attempt = $4
@@ -668,6 +736,7 @@ async function schedulerAttemptEnded(
   loss: AttemptLoss,
   evidence: AttemptEvidence,
 ): Promise<boolean> {
+  await schedulerLockAttemptExecution(client, attempt);
   const ended = await client.query(
     `UPDATE execution_attempt
         SET state = $6, evidence = $7, ended_at = now(),
@@ -707,19 +776,29 @@ async function schedulerReapLapsedAttempts(
 ): Promise<number> {
   if ((await postgresOwnershipEpoch(client)) !== epoch) return 0;
   const reaped = await client.query<{ reaped: string }>(
-    `WITH lapsed AS (
-       UPDATE execution_attempt
-          SET state = 'Lost', evidence = 'LeaseExpired', ended_at = now(),
-              lease_owner = NULL, lease_expires_at = NULL
-        WHERE state IN (${liveAttemptStates}) AND lease_expires_at <= now()
-        RETURNING tenant, project, execution),
+    `WITH held AS (
+       SELECT e.tenant, e.project, e.execution, e.status FROM execution e
+        WHERE EXISTS (SELECT 1 FROM execution_attempt a
+                       WHERE a.tenant = e.tenant AND a.project = e.project
+                         AND a.execution = e.execution
+                         AND a.state IN (${liveAttemptStates})
+                         AND a.lease_expires_at <= now())
+        ORDER BY e.tenant, e.project, e.execution FOR UPDATE),
      spent AS (
        UPDATE execution e
           SET retries_spent = e.retries_spent + 1, placement_backoff_from = now()
-         FROM lapsed l
-        WHERE e.tenant = l.tenant AND e.project = l.project AND e.execution = l.execution
-          AND e.status NOT IN (${settledStatuses})
-        RETURNING e.execution)
+         FROM held h
+        WHERE e.tenant = h.tenant AND e.project = h.project AND e.execution = h.execution
+          AND h.status NOT IN (${settledStatuses})
+        RETURNING e.execution),
+     lapsed AS (
+       UPDATE execution_attempt a
+          SET state = 'Lost', evidence = 'LeaseExpired', ended_at = now(),
+              lease_owner = NULL, lease_expires_at = NULL
+         FROM held h
+        WHERE a.tenant = h.tenant AND a.project = h.project AND a.execution = h.execution
+          AND a.state IN (${liveAttemptStates}) AND a.lease_expires_at <= now()
+        RETURNING a.attempt)
      SELECT count(*)::text AS reaped FROM lapsed`,
   );
   return projectRowCounter(reaped.rows[0]?.reaped ?? "0", "reaped attempts");

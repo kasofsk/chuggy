@@ -254,13 +254,15 @@ export const backlogFunction = "execution_backlog";
 export const statusMoveFunction = "execution_status_move_is_legal";
 export const digestFoldFunction = "result_digest_fold";
 export const accountProvisionFunction = "project_draws_a_capacity_account";
+export const accountIdentityFunction = "project_capacity_account";
 
 /**
  * The account row a project draws on when nothing else has said otherwise,
  * written once so the backfill for the projects predating this migration and
  * the trigger for the ones after it cannot state two entitlements. An account
- * is not an identity axis, so two tenants holding one project name draw on one
- * account and the trigger takes that conflict as nothing to do.
+ * is not an identity axis, so the default one is named for the project drawing
+ * on it and `ON CONFLICT DO NOTHING` means it is already provisioned rather
+ * than that somebody else took the name.
  */
 const capacityAccountDefaults = [
   `'${executionCapacityDefaults.cluster}'`,
@@ -1449,12 +1451,25 @@ const durableExecutionScheduler = [
   `GRANT ${boundaryOwnerRole} TO CURRENT_USER`,
   `GRANT CREATE ON SCHEMA public TO ${boundaryOwnerRole}`,
 
+  /**
+   * A project's identity is its tenant and its project together, so the account
+   * named for one carries both. The encoding is length-prefixed rather than
+   * delimiter-joined because both halves are opaque text: a delimiter one of
+   * them contains would let two projects spell one account name, which is one
+   * entitlement two tenants would spend against.
+   */
+  `CREATE FUNCTION ${accountIdentityFunction}(in_tenant text, in_project text)
+     RETURNS text LANGUAGE sql IMMUTABLE STRICT AS $$
+       SELECT octet_length(in_tenant)::text || ':' || in_tenant
+           || octet_length(in_project)::text || ':' || in_project
+     $$`,
+
   `ALTER TABLE execution_request
      ADD COLUMN capacity_account       text,
      ADD COLUMN configuration_revision text,
      ADD COLUMN configuration_digest   text`,
   `UPDATE execution_request r
-      SET capacity_account = r.project,
+      SET capacity_account = ${accountIdentityFunction}(r.tenant, r.project),
           configuration_revision = j.configuration_revision,
           configuration_digest = j.configuration_digest
      FROM journal_entry j
@@ -1514,13 +1529,13 @@ const durableExecutionScheduler = [
      VALUES ('${executionCapacityDefaults.cluster}',
              ${executionCapacityDefaults.clusterSlotsMax}, 1)`,
   `INSERT INTO capacity_account (account, cluster, reserved, maximum, policy_revision)
-     SELECT p.project, ${capacityAccountDefaults}
+     SELECT ${accountIdentityFunction}(p.tenant, p.project), ${capacityAccountDefaults}
        FROM project p ON CONFLICT (account) DO NOTHING`,
   `CREATE FUNCTION ${accountProvisionFunction}() RETURNS trigger
      LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
      BEGIN
        INSERT INTO capacity_account (account, cluster, reserved, maximum, policy_revision)
-       VALUES (NEW.project, ${capacityAccountDefaults})
+       VALUES (${accountIdentityFunction}(NEW.tenant, NEW.project), ${capacityAccountDefaults})
        ON CONFLICT (account) DO NOTHING;
        RETURN NULL;
      END $$`,
@@ -1713,8 +1728,15 @@ const durableExecutionScheduler = [
   `CREATE TRIGGER execution_result_artifact_is_written_once
      BEFORE UPDATE OR DELETE ON execution_result_artifact
      FOR EACH ROW EXECUTE FUNCTION execution_result_is_immutable()`,
+  /**
+   * The body runs as whoever wrote the row rather than as the boundary owner,
+   * so the schemas it resolves names in are that caller's. `TEMPORARY` is a
+   * privilege every role holds by default and a temporary schema is searched
+   * ahead of `public`, so an unpinned path lets the writer stand an empty
+   * `execution_attempt` in front of the real one and read back no fence.
+   */
   `CREATE FUNCTION execution_result_reporter_is_unfenced() RETURNS trigger
-     LANGUAGE plpgsql AS $$
+     LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
      DECLARE reporter text;
      BEGIN
        SELECT a.state INTO reporter FROM execution_attempt a
@@ -1779,7 +1801,7 @@ const durableExecutionSchedulerBoundaries = [
          WHEN 'Cancelled' THEN after = 'Cancelled'
        END $$`,
   `CREATE FUNCTION execution_moves_legally() RETURNS trigger
-     LANGUAGE plpgsql AS $$
+     LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
      DECLARE reported text;
      BEGIN
        IF OLD.status IN ('Terminal', 'Cancelled') THEN
@@ -1975,7 +1997,8 @@ const durableExecutionSchedulerBoundaries = [
                       count(*) FILTER (WHERE e.status = 'Running')   AS running
                  FROM execution e
                 WHERE e.tenant = in_tenant AND e.project = in_project) own
-         LEFT JOIN capacity_account a ON a.account = in_project
+         LEFT JOIN capacity_account a
+                ON a.account = ${accountIdentityFunction}(in_tenant, in_project)
          LEFT JOIN execution_cluster c ON c.cluster = a.cluster
          LEFT JOIN LATERAL (SELECT count(*) AS active FROM execution x
                              WHERE x.cluster = a.cluster
@@ -2006,6 +2029,9 @@ const durableExecutionSchedulerBoundaries = [
   `ALTER FUNCTION ${statusMoveFunction}(text,text) OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION ${digestFoldFunction}(text) OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION ${accountProvisionFunction}() OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${accountIdentityFunction}(text,text) OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ${accountIdentityFunction}(text,text) FROM PUBLIC`,
+  `GRANT EXECUTE ON FUNCTION ${accountIdentityFunction}(text,text) TO ${ticketServiceRole}`,
   `REVOKE ALL ON FUNCTION ${completionFunction}(text,text,text,bigint,bigint,integer,text,text,text,text,text,text) FROM PUBLIC`,
   `REVOKE ALL ON FUNCTION ${activeWorkFunction}(text,text) FROM PUBLIC`,
   `REVOKE ALL ON FUNCTION ${backlogFunction}(text,text) FROM PUBLIC`,

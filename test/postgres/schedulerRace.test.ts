@@ -27,6 +27,7 @@
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
@@ -115,6 +116,33 @@ async function registerAll(project: SchedulerProject, label: string) {
       project.request,
       schedulerOwner(label),
     ),
+  );
+}
+
+/**
+ * The registrations a spawn would commit, written directly. A real one holds its
+ * request row for the whole of its transaction, which is the row a case wanting
+ * work to appear mid-cancellation has to be holding itself — so the rows are
+ * written the way the registration writes them and the case controls when they
+ * commit.
+ */
+async function registeredMidFlight(project: SchedulerProject): Promise<void> {
+  await rig.harness.query(
+    `INSERT INTO execution (tenant,project,execution,ticket,task,source_request,
+       account,cluster,configuration_revision,configuration_digest)
+     SELECT q.tenant,q.project,$4||'-'||t.task::text,q.ticket,t.task,q.request,
+            q.capacity_account,$5,q.configuration_revision,q.configuration_digest
+       FROM execution_request q
+       JOIN execution_request_task t
+         ON t.tenant=q.tenant AND t.project=q.project AND t.request=q.request
+      WHERE q.tenant=$1 AND q.project=$2 AND q.request=$3`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      `execution-midflight-${randomUUID()}`,
+      project.cluster,
+    ],
   );
 }
 
@@ -307,23 +335,34 @@ test("two reports racing on one execution settle it once", async () => {
 test("a registration and the cancellation of its ticket leave no live work either way", async () => {
   const project = await schedulerProject(rig, "regcancel", { tasks: 2 });
   const cancellation = await schedulerRevoke(rig, project, "regcancel");
-  const spawnClaim = await schedulerClaimFor(
-    rig,
-    project.partition,
-    project.request,
-    schedulerOwner("regcancel-spawn"),
+  const blockade = await schedulerBlockade(
+    `SELECT request FROM execution_request
+      WHERE tenant=$1 AND project=$2 AND request=$3 FOR NO KEY UPDATE`,
+    [project.partition.tenant, project.partition.project, project.request],
   );
-  const cancelClaim = await schedulerClaimFor(
-    rig,
-    project.partition,
-    cancellation,
-    schedulerOwner("regcancel-cancel"),
+  const cancelling = schedulerOutcome(
+    rival.registerCancellation(
+      await schedulerClaimFor(
+        rig,
+        project.partition,
+        cancellation,
+        schedulerOwner("regcancel-cancel"),
+      ),
+    ),
   );
-  const registering = schedulerOutcome(rig.store.registerSpawn(spawnClaim));
-  const cancelling = schedulerOutcome(rival.registerCancellation(cancelClaim));
-  await registering;
-  await cancelling;
+  try {
+    await blockade.stalled(oneStalledCall);
+    await registeredMidFlight(project);
+  } finally {
+    await blockade.release();
+  }
+  assert.deepEqual(await cancelling, {
+    cancelled: "Registered",
+    fenced: project.tasks,
+    workloads: [],
+  });
   const rows = await schedulerExecutions(rig, project.partition);
+  assert.equal(rows.length, project.tasks);
   assert.deepEqual(
     rows.filter((row) => row.status !== "Cancelled"),
     [],
@@ -334,6 +373,287 @@ test("a registration and the cancellation of its ticket leave no live work eithe
     states[project.request] === "Invalidated" ||
       states[project.request] === "Fulfilled",
     `the spawn request was ${String(states[project.request])}`,
+  );
+});
+
+test("a launch and the cancellation of its ticket leave no live work either way", async () => {
+  const project = await schedulerProject(rig, "launchcancel", { tasks: 1 });
+  await registerAll(project, "launchcancel");
+  const admitted = await rig.store.admit(project.cluster);
+  assert.ok(admitted.admitted === "Admitted");
+  const cancellation = await schedulerRevoke(rig, project, "launchcancel");
+  const blockade = await schedulerBlockade(
+    "SELECT execution FROM execution WHERE tenant=$1 AND project=$2 AND execution=$3 FOR UPDATE",
+    [project.partition.tenant, project.partition.project, admitted.execution],
+  );
+  const launching = schedulerOutcome(
+    rig.store.openAttempt({
+      partition: project.partition,
+      execution: admitted.execution,
+      epoch: project.epoch,
+      ...attemptBounds,
+    }),
+  );
+  let cancelling: Promise<unknown>;
+  try {
+    await blockade.stalled(oneStalledCall);
+    cancelling = schedulerOutcome(
+      rival.registerCancellation(
+        await schedulerClaimFor(
+          rig,
+          project.partition,
+          cancellation,
+          schedulerOwner("launchcancel"),
+        ),
+      ),
+    );
+    await blockade.stalled(twoStalledCalls);
+  } finally {
+    await blockade.release();
+  }
+  const opened = await launching;
+  assert.ok(typeof opened === "object" && opened.opened === "Opened");
+  assert.deepEqual(await cancelling, {
+    cancelled: "Registered",
+    fenced: 1,
+    workloads: [opened.attempt.attempt],
+  });
+  assert.deepEqual(
+    await rig.harness.query(
+      "SELECT state, evidence FROM execution_attempt WHERE tenant=$1 AND project=$2",
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ state: "Superseded", evidence: "Fenced" }],
+  );
+});
+
+/** A project holding one placed attempt and the cancellation request for its ticket. */
+async function reportedAgainstCancellation(label: string) {
+  const project = await schedulerProject(rig, label, { tasks: 1 });
+  await registerAll(project, label);
+  const attempt = await placedAttempt(project, label);
+  const cancelling = await schedulerClaimFor(
+    rig,
+    project.partition,
+    await schedulerRevoke(rig, project, label),
+    schedulerOwner(label),
+  );
+  return { project, attempt, cancelling };
+}
+
+/** How many scheduler completions one project has been given. */
+async function completionsOf(project: SchedulerProject) {
+  return rig.harness.query(
+    `SELECT count(*)::text AS count FROM operation
+      WHERE tenant=$1 AND project=$2 AND authority_kind='ExecutionScheduler'`,
+    [project.partition.tenant, project.partition.project],
+  );
+}
+
+test("a report queued behind a cancellation is cancelled rather than deadlocked", async () => {
+  const { project, attempt, cancelling } =
+    await reportedAgainstCancellation("cancelfirst");
+  const blockade = await schedulerBlockade(
+    `SELECT attempt FROM execution_attempt
+      WHERE tenant=$1 AND project=$2 AND attempt=$3 FOR UPDATE`,
+    [project.partition.tenant, project.partition.project, attempt.attempt],
+  );
+  const cancelled = schedulerOutcome(rival.registerCancellation(cancelling));
+  let reporting: Promise<unknown>;
+  try {
+    await blockade.stalled(oneStalledCall);
+    reporting = schedulerOutcome(
+      rig.store.terminalize(schedulerReport(attempt, "Pass")),
+    );
+    await blockade.stalled(twoStalledCalls);
+  } finally {
+    await blockade.release();
+  }
+  assert.deepEqual(await cancelled, {
+    cancelled: "Registered",
+    fenced: 1,
+    workloads: [attempt.attempt],
+  });
+  assert.deepEqual(await reporting, { terminalized: "Cancelled" });
+  assert.deepEqual(
+    (await schedulerExecutions(rig, project.partition)).map(
+      (row) => row.status,
+    ),
+    ["Cancelled"],
+  );
+  assert.deepEqual(await completionsOf(project), [{ count: "0" }]);
+});
+
+test("a cancellation queued behind a report retires nothing rather than deadlocking", async () => {
+  const { project, attempt, cancelling } =
+    await reportedAgainstCancellation("reportfirst");
+  const blockade = await schedulerBlockade(
+    `SELECT attempt FROM execution_attempt
+      WHERE tenant=$1 AND project=$2 AND attempt=$3 FOR UPDATE`,
+    [project.partition.tenant, project.partition.project, attempt.attempt],
+  );
+  const reporting = schedulerOutcome(
+    rig.store.terminalize(schedulerReport(attempt, "Pass")),
+  );
+  let cancelled: Promise<unknown>;
+  try {
+    await blockade.stalled(oneStalledCall);
+    cancelled = schedulerOutcome(rival.registerCancellation(cancelling));
+    await blockade.stalled(twoStalledCalls);
+  } finally {
+    await blockade.release();
+  }
+  const settled = await reporting;
+  assert.ok(
+    typeof settled === "object" && settled.terminalized === "Terminalized",
+    `the report was ${JSON.stringify(settled)}`,
+  );
+  assert.deepEqual(await cancelled, {
+    cancelled: "Registered",
+    fenced: 0,
+    workloads: [],
+  });
+  assert.deepEqual(
+    (await schedulerExecutions(rig, project.partition)).map(
+      (row) => row.status,
+    ),
+    ["Terminal"],
+  );
+  assert.deepEqual(await completionsOf(project), [{ count: "1" }]);
+});
+
+test("an attempt ending under the cancellation of its ticket answers rather than deadlocking", async () => {
+  const { project, attempt, cancelling } =
+    await reportedAgainstCancellation("endcancel");
+  const blockade = await schedulerBlockade(
+    "SELECT execution FROM execution WHERE tenant=$1 AND project=$2 AND execution=$3 FOR UPDATE",
+    [project.partition.tenant, project.partition.project, attempt.execution],
+  );
+  const cancelled = schedulerOutcome(rival.registerCancellation(cancelling));
+  let ending: Promise<unknown>;
+  try {
+    await blockade.stalled(oneStalledCall);
+    ending = schedulerOutcome(
+      rig.store.attemptEnded(attempt, "Lost", "PlacementDenied"),
+    );
+    await blockade.stalled(twoStalledCalls);
+  } finally {
+    await blockade.release();
+  }
+  assert.deepEqual(await cancelled, {
+    cancelled: "Registered",
+    fenced: 1,
+    workloads: [attempt.attempt],
+  });
+  assert.equal(await ending, false);
+  assert.deepEqual(
+    await rig.harness.query(
+      "SELECT state, evidence FROM execution_attempt WHERE tenant=$1 AND project=$2",
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ state: "Superseded", evidence: "Fenced" }],
+  );
+});
+
+test("a reaping sweep and a report on the attempt it ends do not deadlock each other", async () => {
+  const project = await schedulerProject(rig, "reapreport", { tasks: 1 });
+  await registerAll(project, "reapreport");
+  const attempt = await placedAttempt(project, "reapreport");
+  const epoch = await rig.harness.store.currentRecoveryEpoch();
+  await rig.harness.query(
+    `UPDATE execution_attempt SET lease_expires_at = now() - interval '1 second'
+      WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+    [project.partition.tenant, project.partition.project, attempt.attempt],
+  );
+  const blockade = await schedulerBlockade(
+    `SELECT attempt FROM execution_attempt
+      WHERE tenant=$1 AND project=$2 AND attempt=$3 FOR UPDATE`,
+    [project.partition.tenant, project.partition.project, attempt.attempt],
+  );
+  const reaping = schedulerOutcome(rig.store.reapLapsedAttempts(epoch));
+  let reporting: Promise<unknown>;
+  try {
+    await blockade.stalled(oneStalledCall);
+    reporting = schedulerOutcome(
+      rival.terminalize(schedulerReport(attempt, "Pass")),
+    );
+    await blockade.stalled(twoStalledCalls);
+  } finally {
+    await blockade.release();
+  }
+  const reaped = await reaping;
+  assert.ok(
+    typeof reaped === "number" && reaped >= 1,
+    `reaping answered ${String(reaped)}`,
+  );
+  assert.deepEqual(await reporting, { terminalized: "Fenced" });
+  assert.equal(
+    (await rig.store.execution(project.partition, attempt.execution))
+      ?.retriesSpent,
+    1,
+  );
+});
+
+test("an admission whose only candidate is cancelled under it takes no slot", async () => {
+  const project = await schedulerProject(rig, "admitcancel", { tasks: 1 });
+  await registerAll(project, "admitcancel");
+  const [candidate] = await schedulerExecutions(rig, project.partition);
+  assert.ok(candidate !== undefined);
+  const named = [
+    project.partition.tenant,
+    project.partition.project,
+    candidate.execution,
+  ];
+  const blockade = await schedulerBlockade(
+    "SELECT execution FROM execution WHERE tenant=$1 AND project=$2 AND execution=$3 FOR UPDATE",
+    named,
+  );
+  const admitting = schedulerOutcome(rig.store.admit(project.cluster));
+  try {
+    await blockade.stalled(oneStalledCall);
+    await blockade.commit(
+      `UPDATE execution SET status='Cancelled', terminal_at=now()
+        WHERE tenant=$1 AND project=$2 AND execution=$3`,
+      named,
+    );
+  } finally {
+    await blockade.release();
+  }
+  assert.deepEqual(await admitting, { admitted: "NoCandidate" });
+  assert.deepEqual(
+    (await schedulerExecutions(rig, project.partition)).map(
+      (row) => row.status,
+    ),
+    ["Cancelled"],
+  );
+});
+
+test("a worker whose reaped attempt reports is fenced rather than settled", async () => {
+  const project = await schedulerProject(rig, "reaped", { tasks: 1 });
+  await registerAll(project, "reaped");
+  const attempt = await placedAttempt(project, "reaped");
+  const epoch = await rig.harness.store.currentRecoveryEpoch();
+  await rig.harness.query(
+    `UPDATE execution_attempt SET lease_expires_at = now() - interval '1 second'
+      WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+    [project.partition.tenant, project.partition.project, attempt.attempt],
+  );
+  assert.ok((await rig.store.reapLapsedAttempts(epoch)) >= 1);
+  assert.deepEqual(
+    await rig.store.terminalize(schedulerReport(attempt, "Pass")),
+    {
+      terminalized: "Fenced",
+    },
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT
+         (SELECT count(*) FROM execution_result WHERE tenant=$1 AND project=$2)::text AS results,
+         (SELECT count(*) FROM operation WHERE tenant=$1 AND project=$2
+           AND authority_kind='ExecutionScheduler')::text AS completions`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ results: "0", completions: "0" }],
   );
 });
 

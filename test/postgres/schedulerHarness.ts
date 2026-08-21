@@ -44,7 +44,11 @@ import type pg from "pg";
 import { revokeEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { apiRole, schedulerRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  accountIdentityFunction,
+  apiRole,
+  schedulerRole,
+} from "../../src/adapters/postgres/schema.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   asClusterId,
@@ -192,9 +196,10 @@ async function schedulerCapacityFor(
     );
   }
   const repointed = await rig.harness.query(
-    `UPDATE capacity_account SET cluster=$2, reserved=$3, maximum=$4
-      WHERE account=$1 RETURNING account`,
+    `UPDATE capacity_account SET cluster=$3, reserved=$4, maximum=$5
+      WHERE account=${accountIdentityFunction}($1,$2) RETURNING account`,
     [
+      partition.tenant,
       partition.project,
       cluster,
       capacity.reserved ?? 0,
@@ -411,13 +416,16 @@ const schedulerStallAskMs = 25;
 export interface SchedulerBlockade {
   readonly stalled: (backends: number) => Promise<void>;
   readonly killStalled: () => Promise<number>;
+  readonly commit: (sql: string, values: readonly unknown[]) => Promise<void>;
   readonly release: () => Promise<void>;
 }
 
 /**
  * Holds one lock on a connection of its own, so a case can stall a store call
  * that borrows from the store's pool without starving the pool the rest of the
- * case draws from. It can also kill what it stalled.
+ * case draws from. It can also kill what it stalled, or change the row under it
+ * and commit — which is the only way to give a stalled caller a different answer
+ * than the one it read before it queued.
  */
 export async function schedulerBlockade(
   sql: string,
@@ -446,6 +454,13 @@ export async function schedulerBlockade(
                 AND pid <> pg_backend_pid()`,
           )
         ).rowCount ?? 0,
+      commit: async (sql, values) => {
+        await blocker.query(sql, [...values]);
+        await blocker.query("COMMIT");
+        held = false;
+        blocker.release();
+        await blockade.end();
+      },
       release,
     };
   } catch (failure) {

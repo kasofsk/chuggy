@@ -68,6 +68,7 @@ import {
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
 import {
+  accountIdentityFunction,
   continuationFunction,
   draftReleaseFunction,
   notificationPublishFunction,
@@ -241,7 +242,10 @@ async function decisionExecution(
       `INSERT INTO execution_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
         ticket_version, kind, capacity_account, configuration_revision,
-        configuration_digest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        configuration_digest)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
+               CASE WHEN $9::boolean THEN ${accountIdentityFunction}($1,$2) END,
+               $10,$11)`,
       [
         partition.tenant,
         partition.project,
@@ -251,7 +255,7 @@ async function decisionExecution(
         request.ticket,
         request.ticketVersion,
         request.kind,
-        spawns ? partition.project : null,
+        spawns,
         spawns ? configuration.configurationRevision : null,
         spawns ? configuration.configurationDigest : null,
       ],

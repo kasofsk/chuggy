@@ -16,6 +16,7 @@
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import {
@@ -25,7 +26,9 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { asWorkloadId } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
+  accountIdentityFunction,
   backlogFunction,
   schedulerRole,
 } from "../../src/adapters/postgres/schema.ts";
@@ -117,8 +120,9 @@ test("a project provisioned after the migration draws a capacity account", async
   const project = await schedulerProject(rig, "provisioned");
   assert.deepEqual(
     await rig.harness.query(
-      "SELECT policy_revision::text AS revision FROM capacity_account WHERE account=$1",
-      [project.partition.project],
+      `SELECT policy_revision::text AS revision FROM capacity_account
+        WHERE account=${accountIdentityFunction}($1,$2)`,
+      [project.partition.tenant, project.partition.project],
     ),
     [{ revision: "1" }],
   );
@@ -126,6 +130,76 @@ test("a project provisioned after the migration draws a capacity account", async
     (await registerAll(project, "provisioned")).registered,
     "Registered",
   );
+});
+
+test("two tenants holding one project name draw on entitlements of their own", async () => {
+  const shared = asProjectId(`project-shared-${randomUUID()}`);
+  const partitions = [
+    { tenant: asTenantId(`tenant-earlier-${randomUUID()}`), project: shared },
+    { tenant: asTenantId(`tenant-later-${randomUUID()}`), project: shared },
+  ];
+  for (const partition of partitions) {
+    await rig.harness.store.createProject(partition);
+  }
+  const drawn = `SELECT a.account, a.maximum::text AS maximum FROM project p
+                   JOIN capacity_account a
+                     ON a.account = ${accountIdentityFunction}(p.tenant, p.project)
+                  WHERE p.project = $1 ORDER BY p.tenant`;
+  const provisioned = (await rig.harness.query(drawn, [shared])) as readonly {
+    account: string;
+  }[];
+  assert.equal(provisioned.length, partitions.length);
+  assert.notEqual(provisioned[0]?.account, provisioned[1]?.account);
+
+  await rig.harness.query(
+    `UPDATE capacity_account SET maximum = 1
+      WHERE account = ${accountIdentityFunction}($1,$2)`,
+    [partitions[0]?.tenant, shared],
+  );
+  assert.deepEqual(
+    (await rig.harness.query(drawn, [shared])).map(
+      (row) => (row as { maximum: string }).maximum,
+    ),
+    ["1", String(executionCapacityDefaults.accountMaximum)],
+  );
+});
+
+test("a temporary relation shadowing the attempts does not blind the reporter fence", async () => {
+  const project = await schedulerProject(rig, "shadowed", { tasks: 1 });
+  await registerAll(project, "shadowed");
+  const attempt = await placedAttempt(project, "shadowed");
+  const named = [
+    project.partition.tenant,
+    project.partition.project,
+    attempt.execution,
+    attempt.attempt,
+  ];
+  await rig.harness.query(
+    `UPDATE execution_attempt
+        SET state='Superseded', generation=generation+1, evidence='Fenced',
+            ended_at=now(), lease_owner=NULL, lease_expires_at=NULL
+      WHERE tenant=$1 AND project=$2 AND execution=$3 AND attempt=$4`,
+    named,
+  );
+  const session = await rig.harness.begin();
+  try {
+    await session.query(
+      `CREATE TEMP TABLE execution_attempt
+         (tenant text, project text, execution text, attempt text, state text)`,
+    );
+    await assert.rejects(
+      session.query(
+        `INSERT INTO execution_result
+           (tenant,project,manifest,execution,attempt,manifest_ordinal,
+            schema_version,digest,verdict)
+         VALUES ($1,$2,$5,$3,$4,1,1,repeat('a',64),'Fail')`,
+        [...named, `manifest-shadowed-${randomUUID()}`],
+      ),
+      /was fenced/,
+    );
+  } finally {
+    await session.rollback();
+  }
 });
 
 test("the scheduler allocates a manifest ordinal from the counter it advances", async () => {

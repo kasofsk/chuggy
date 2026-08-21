@@ -17,8 +17,10 @@
  * the completion operation commit together or not at all, so the crash window
  * between holding a verified result and telling anyone about it does not exist
  * — a recovery query for it would be an integrity check that must return
- * nothing. The execution row is locked first and the project row second, which
- * is the order the function itself takes them in, so the two cannot deadlock.
+ * nothing. Its rows are taken in `./scheduler.ts`'s order — the authorizing
+ * request, the execution, the project, the attempt — and the completion
+ * boundary takes the execution and then the project inside that, so neither the
+ * function nor a concurrent cancellation can deadlock against it.
  *
  * ABSORPTION IS DECIDED UNDER THE LOCK AND BELOW THE JOURNAL. A redelivery of
  * the manifest already recorded yields the operation already recorded; a report
@@ -403,26 +405,6 @@ async function schedulerAbsorb(
   };
 }
 
-/** Whether the attempt named is still the current unfenced reporter at the claimed generation. */
-async function schedulerReporterIsCurrent(
-  client: pg.PoolClient,
-  report: AttemptReport,
-): Promise<boolean> {
-  const found = await client.query(
-    `SELECT 1 FROM execution_attempt
-      WHERE tenant = $1 AND project = $2 AND execution = $3 AND attempt = $4
-        AND generation = $5 AND state IN ('Placing', 'Running')`,
-    [
-      report.partition.tenant,
-      report.partition.project,
-      report.execution,
-      report.attempt,
-      report.generation,
-    ],
-  );
-  return found.rows.length === 1;
-}
-
 /** Whether the sealed manifest is bound to exactly the attempt that is reporting it. */
 function schedulerManifestBinds(report: AttemptReport): boolean {
   const binding = report.manifest.binding;
@@ -434,12 +416,17 @@ function schedulerManifestBinds(report: AttemptReport): boolean {
   );
 }
 
-/** Ends the reporting attempt, which is the last thing it is permitted to do. */
+/**
+ * Ends the reporting attempt, which is the last thing it is permitted to do,
+ * and says whether it was still entitled to. The move is the whole of the fence:
+ * asking first and moving after would be two answers to one question, and the
+ * one the answer was read from is not the one the row is written under.
+ */
 async function schedulerReporterReported(
   client: pg.PoolClient,
   report: AttemptReport,
-): Promise<void> {
-  await client.query(
+): Promise<boolean> {
+  const reported = await client.query(
     `UPDATE execution_attempt
         SET state = 'Reported', ended_at = now(),
             lease_owner = NULL, lease_expires_at = NULL
@@ -453,6 +440,7 @@ async function schedulerReporterReported(
       report.generation,
     ],
   );
+  return reported.rowCount === 1;
 }
 
 /** Retains the manifest and submits the completion it settles, in the transaction already open. */
@@ -485,12 +473,35 @@ type TerminalStanding =
   | { readonly standing: "Retired" }
   | { readonly standing: "NotAdmitted" };
 
+/**
+ * Locks the request that authorized this registration, which the settlement
+ * fulfills once every task under it has ended. It is taken before the
+ * registration itself because a cancellation takes its ticket's requests before
+ * the registrations under them, and two transactions taking one pair of rows in
+ * two orders is the deadlock neither of them can see coming.
+ */
+async function schedulerLockSourceRequest(
+  client: pg.PoolClient,
+  partition: Partition,
+  execution: ExecutionId,
+): Promise<void> {
+  await client.query(
+    `SELECT q.request FROM execution_request q
+       JOIN execution e ON e.tenant = q.tenant AND e.project = q.project
+                       AND e.source_request = q.request
+      WHERE e.tenant = $1 AND e.project = $2 AND e.execution = $3
+      FOR UPDATE OF q`,
+    [partition.tenant, partition.project, execution],
+  );
+}
+
 /** Locks the registration and the project, and says whether either has already ended this. */
 async function schedulerTerminalStanding(
   client: pg.PoolClient,
   partition: Partition,
   execution: ExecutionId,
 ): Promise<TerminalStanding> {
+  await schedulerLockSourceRequest(client, partition, execution);
   const found = await schedulerLockExecution(client, partition, execution);
   if (found === undefined) {
     throw new Error(
@@ -540,10 +551,9 @@ export async function schedulerTerminalize(
       ),
     };
   }
-  if (!(await schedulerReporterIsCurrent(client, report))) {
+  if (!(await schedulerReporterReported(client, report))) {
     return { terminalized: "Fenced" };
   }
-  await schedulerReporterReported(client, report);
   return schedulerSettle(client, standing.execution, report.manifest);
 }
 
