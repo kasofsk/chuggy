@@ -2428,13 +2428,22 @@ unreachable where a retry only makes it rare.
 #### What holds, and what a person may do about it
 
 Timeout, an unreadable ref and contradictory evidence are one answer: a
-durable hold on the permit, surfaced through the attention and planning read
-model I5 built. The ticket stays in `Finalizing`, the permit does not expire,
+durable hold, recorded on the reconciliation as a state rather than left as
+an absent row. The ticket stays in `Finalizing`, the permit does not expire,
 and no further attempt is authorized. An operator action supplies *evidence*
 — re-read the ref, confirm the ancestry — and never an outcome; the hold ends
 when reconciliation concludes. A person can unblock the reading and not the
 verdict, which is the same rule that forbids administrative resolution
 fabricating domain truth.
+
+Nothing shows them the hold yet, and this record claimed otherwise until the
+tree was read: `selector_project_state.attention` is the selector's own
+policy over notifications and the dispatch view, and no read anywhere in the
+ticket service reads a `native_action` — so an escalation's native action has
+been invisible since I3 and a finalization hold would be no worse served. The
+hold is therefore built as the durable state a reader needs and the reader is
+not I7's to invent, because a read model that surfaced only finalization
+would be the wrong shape for the thing it is half of.
 
 The typed failure kinds are `MergeConflict` and `PreparationFailed`, and no
 others, because those are the two with a producer. Both reduce to the same
