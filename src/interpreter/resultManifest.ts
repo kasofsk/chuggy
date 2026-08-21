@@ -9,11 +9,14 @@
  * form — and `docs/design/006-durable-project-dispatch.md`'s normalized paths
  * are paths that arrived normalized rather than paths that were made so.
  *
- * AN UNSEALED MANIFEST IS NOT REPRESENTABLE. `ResultManifest` carries a brand
- * only `acceptResultManifest` can produce, and the scheduler's terminal
- * transaction takes that type — so a result that skipped validation cannot be
- * offered to it, and the fail-closed rule is the compiler's rather than a
- * convention.
+ * AN UNSEALED MANIFEST CANNOT BE ASSEMBLED. `ResultManifest` carries a seal only
+ * `acceptResultManifest` can produce, and the scheduler's terminal transaction
+ * takes that type — so a record built field by field cannot be offered to it,
+ * and that much of the fail-closed rule is the compiler's rather than a
+ * convention. What the type does not decide is a COPY of a sealed manifest with
+ * a field replaced: it carries the seal along with the digest the original
+ * fields hashed to, so the digest rather than the type is what settles whether
+ * two values are one result, and `manifestsAgree` is where that is asked.
  *
  * HANDOFFS AND DIAGNOSTICS ARE TWO FIELDS RATHER THAN A ROLE COLUMN. 006 gives
  * them different authority — only a handoff is authoritative passed-task output

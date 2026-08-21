@@ -358,6 +358,27 @@ test("the same rows under another attempt or project digest differently", () => 
   }
 });
 
+test("a partition identity the digest cannot separate is refused where it is branded", () => {
+  const encoder = new TextEncoder();
+  assert.deepEqual(
+    encoder.encode("\uD800"),
+    encoder.encode("\uFFFD"),
+    "the two identities encode differently, so this proves nothing",
+  );
+  for (const brand of [asTenantId, asProjectId]) {
+    assert.throws(
+      () => brand("\uD800"),
+      (error: unknown) => {
+        assert.ok(error instanceof RangeError);
+        assert.match(error.message, /unpaired surrogate/u);
+        return true;
+      },
+    );
+    assert.throws(() => brand("project\uDFFF-two"), RangeError);
+  }
+  assert.equal(asProjectId("\uFFFD").length, 1);
+});
+
 test("the digest handed back is the digest function applied to the canonical bytes", () => {
   const sealed = accepted(report("Pass", [row("out/a")], [row("log/a")]));
   assert.equal(sealed.digest, digestOf(canonicalResultManifest(sealed)));
