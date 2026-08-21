@@ -263,14 +263,19 @@ test("a backend killed inside the terminal transaction leaves no half-settled ta
   await registerAll(project, "crash");
   const attempt = await placedAttempt(project, "crash");
   const blockade = await schedulerBlockade(
-    "SELECT request FROM execution_request WHERE tenant=$1 AND project=$2 AND request=$3 FOR UPDATE",
-    [project.partition.tenant, project.partition.project, project.request],
+    `SELECT ready FROM project_readiness
+      WHERE tenant=$1 AND project=$2 FOR UPDATE`,
+    [project.partition.tenant, project.partition.project],
   );
   const settling = schedulerOutcome(
     rig.store.terminalize(schedulerReport(attempt, "Pass")),
   );
   try {
     await blockade.stalled(oneStalledCall);
+    assert.ok(
+      await blockade.stalledHolds("execution_result", "RowExclusiveLock"),
+      "the transaction was killed before it wrote its manifest, so the window this case is about was never entered",
+    );
     assert.equal(await blockade.killStalled(), oneStalledCall);
     assert.equal(typeof (await settling), "string");
   } finally {
@@ -463,6 +468,15 @@ test("a report queued behind a cancellation is cancelled rather than deadlocked"
   let reporting: Promise<unknown>;
   try {
     await blockade.stalled(oneStalledCall);
+    assert.equal(
+      await blockade.stalledHolds("execution_attempt", "RowExclusiveLock"),
+      false,
+      "the cancellation queued at its write rather than at the ordered lock that leads it",
+    );
+    assert.ok(
+      await blockade.stalledHolds("execution_attempt", "RowShareLock"),
+      "the cancellation queued holding no ordered lock on the attempts it is about to fence",
+    );
     reporting = schedulerOutcome(
       rig.store.terminalize(schedulerReport(attempt, "Pass")),
     );
@@ -534,6 +548,15 @@ test("an attempt ending under the cancellation of its ticket answers rather than
   let ending: Promise<unknown>;
   try {
     await blockade.stalled(oneStalledCall);
+    assert.equal(
+      await blockade.stalledHolds("execution", "RowExclusiveLock"),
+      false,
+      "the cancellation queued at its write rather than at the ordered lock that leads it",
+    );
+    assert.ok(
+      await blockade.stalledHolds("execution", "RowShareLock"),
+      "the cancellation queued holding no ordered lock on the registrations it is about to retire",
+    );
     ending = schedulerOutcome(
       rig.store.attemptEnded(attempt, "Lost", "PlacementDenied"),
     );
@@ -580,6 +603,10 @@ test("a reaping sweep and a report on the attempt it ends do not deadlock each o
   let reporting: Promise<unknown>;
   try {
     await blockade.stalled(oneStalledCall);
+    assert.ok(
+      await blockade.stalledHolds("execution", "RowShareLock"),
+      "the sweep reached an attempt without holding its registration, which is not the order a cancellation takes the same pair in",
+    );
     reporting = schedulerOutcome(
       rival.terminalize(schedulerReport(attempt, "Pass")),
     );
@@ -764,6 +791,65 @@ test("a restore fences the previous epoch's worker and offers its execution agai
       .terminalized,
     "Terminalized",
   );
+});
+
+/** The attempt bound a case uses when what it is about is the bound itself. */
+const oneAttemptPerPass = 1;
+
+/** Every attempt one project holds, in the order they were opened. */
+async function ownAttempts(project: SchedulerProject) {
+  return (
+    await rig.harness.query(
+      `SELECT state FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 ORDER BY attempt_number`,
+      [project.partition.tenant, project.partition.project],
+    )
+  ).map((row) => row["state"]);
+}
+
+test("a reaping sweep ends no more attempts in one pass than the bound it is given", async () => {
+  const project = await schedulerProject(rig, "reapbound", { tasks: 2 });
+  await registerAll(project, "reapbound");
+  await placedAttempt(project, "reapbound-first");
+  await placedAttempt(project, "reapbound-second");
+  const epoch = await rig.harness.store.currentRecoveryEpoch();
+  await rig.harness.query(
+    `UPDATE execution_attempt SET lease_expires_at = now() - interval '1 second'
+      WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  );
+  assert.equal(
+    await rig.store.reapLapsedAttempts(epoch, oneAttemptPerPass),
+    oneAttemptPerPass,
+  );
+  assert.ok(
+    (await rig.store.reapLapsedAttempts(
+      epoch,
+      executionSchedulerDefaults.attemptsPerPassMax,
+    )) >= 1,
+  );
+  assert.deepEqual(await ownAttempts(project), ["Lost", "Lost"]);
+});
+
+test("an epoch fence supersedes no more attempts in one pass than the bound it is given", async () => {
+  const project = await schedulerProject(rig, "fencebound", { tasks: 2 });
+  await registerAll(project, "fencebound");
+  await placedAttempt(project, "fencebound-first");
+  await placedAttempt(project, "fencebound-second");
+  const after = await rig.harness.store.establishRecoveryEpoch(
+    postgresHarnessNewEpoch(),
+  );
+  assert.equal(
+    await rig.store.fenceOldEpochAttempts(after, oneAttemptPerPass),
+    oneAttemptPerPass,
+  );
+  assert.ok(
+    (await rig.store.fenceOldEpochAttempts(
+      after,
+      executionSchedulerDefaults.attemptsPerPassMax,
+    )) >= 1,
+  );
+  assert.deepEqual(await ownAttempts(project), ["Superseded", "Superseded"]);
 });
 
 test("an account at its maximum is denied while the cluster and its neighbour still admit", async () => {

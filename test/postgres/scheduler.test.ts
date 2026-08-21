@@ -56,12 +56,14 @@ import {
 } from "../../src/interpreter/resultManifest.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
+  postgresHarnessDenial,
   postgresHarnessHistory,
   postgresHarnessJournal,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessUrl,
   type PostgresHarness,
+  type PostgresTransaction,
 } from "./harness.ts";
 
 let harness: PostgresHarness;
@@ -568,57 +570,125 @@ test("a value outside the interpreter's vocabulary is refused by the roster that
   }
 });
 
+/**
+ * The attempt-number band the roster case writes in. Its rows are made and
+ * unmade one at a time, because one registration may hold only one attempt that
+ * is still able to report and two of the states are that.
+ */
+const schedulerRosterAttemptFrom = 1000;
+
+/** Each attempt state in turn, as the column that stored it answered. */
+async function schedulerStoredStates(
+  scratch: PostgresTransaction,
+  fixture: SchedulerFixture,
+  execution: string,
+): Promise<readonly string[]> {
+  const partition = [fixture.partition.tenant, fixture.partition.project];
+  const stored: string[] = [];
+  for (const [at, state] of allAttemptStates.entries()) {
+    const numbered = schedulerRosterAttemptFrom + at;
+    const written = await scratch.query(
+      `INSERT INTO execution_attempt (tenant,project,execution,attempt,attempt_number,
+         recovery_epoch,state,ended_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,
+         CASE WHEN $7 IN ('Placing','Running') THEN NULL ELSE now() END)
+       RETURNING state`,
+      [
+        ...partition,
+        execution,
+        `attempt-${state}-${randomUUID()}`,
+        numbered,
+        fixture.epoch,
+        state,
+      ],
+    );
+    stored.push(String(written[0]?.["state"]));
+    await scratch.query(
+      `DELETE FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND attempt_number=$3`,
+      [...partition, numbered],
+    );
+  }
+  return stored;
+}
+
+/** Every incident kind in turn, read back from the rows that took them. */
+async function schedulerStoredKinds(
+  scratch: PostgresTransaction,
+  fixture: SchedulerFixture,
+): Promise<readonly string[]> {
+  const partition = [fixture.partition.tenant, fixture.partition.project];
+  for (const kind of allSchedulerIncidentKinds) {
+    await scratch.query(
+      `INSERT INTO scheduler_incident (tenant,project,incident,kind,evidence)
+       VALUES ($1,$2,$3,$4,'evidence')`,
+      [...partition, `incident-${kind}-${randomUUID()}`, kind],
+    );
+  }
+  return (
+    await scratch.query(
+      `SELECT kind FROM scheduler_incident
+        WHERE tenant=$1 AND project=$2 ORDER BY kind`,
+      partition,
+    )
+  ).map((row) => String(row["kind"]));
+}
+
+/** Every artifact role in turn, read back in the order they were declared. */
+async function schedulerStoredRoles(
+  scratch: PostgresTransaction,
+  fixture: SchedulerFixture,
+  result: SchedulerResult,
+): Promise<readonly string[]> {
+  const partition = [fixture.partition.tenant, fixture.partition.project];
+  for (const [at, role] of allArtifactRoles.entries()) {
+    await scratch.query(
+      `INSERT INTO execution_result_artifact (tenant,project,manifest,ordinal,role,path,digest,bytes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,0)`,
+      [
+        ...partition,
+        result.manifest,
+        at + 1,
+        role,
+        `out/${role}.txt`,
+        result.digest,
+      ],
+    );
+  }
+  return (
+    await scratch.query(
+      `SELECT role FROM execution_result_artifact
+        WHERE tenant=$1 AND project=$2 AND manifest=$3 ORDER BY ordinal`,
+      [...partition, result.manifest],
+    )
+  ).map((row) => String(row["role"]));
+}
+
 test("every attempt state, incident kind and artifact role the interpreter names is one the server stores", async () => {
   const fixture = await schedulerFixture("rosters");
   const execution = await schedulerRegister(fixture, "rosters");
   const attempt = await schedulerAttempt(fixture, execution, "rosters");
   const result = await schedulerResult(fixture, execution, attempt, "rosters");
   const spare = await schedulerRegister(fixture, "rosters-spare", 1);
-  const partition = [fixture.partition.tenant, fixture.partition.project];
+  for (const roster of [
+    allAttemptStates,
+    allSchedulerIncidentKinds,
+    allArtifactRoles,
+  ] as readonly (readonly string[])[]) {
+    assert.notEqual(roster.length, 0);
+  }
   const scratch = await harness.begin();
   try {
-    for (const [at, state] of allAttemptStates.entries()) {
-      await scratch.query(
-        `INSERT INTO execution_attempt (tenant,project,execution,attempt,attempt_number,
-           recovery_epoch,state,ended_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,
-           CASE WHEN $7 IN ('Placing','Running') THEN NULL ELSE now() END)`,
-        [
-          ...partition,
-          spare,
-          `attempt-${state}-${randomUUID()}`,
-          1000 + at,
-          fixture.epoch,
-          state,
-        ],
-      );
-      await scratch.query(
-        `DELETE FROM execution_attempt
-          WHERE tenant=$1 AND project=$2 AND attempt_number=$3`,
-        [...partition, 1000 + at],
-      );
-    }
-    for (const kind of allSchedulerIncidentKinds) {
-      await scratch.query(
-        `INSERT INTO scheduler_incident (tenant,project,incident,kind,evidence)
-         VALUES ($1,$2,$3,$4,'evidence')`,
-        [...partition, `incident-${kind}-${randomUUID()}`, kind],
-      );
-    }
-    for (const [at, role] of allArtifactRoles.entries()) {
-      await scratch.query(
-        `INSERT INTO execution_result_artifact (tenant,project,manifest,ordinal,role,path,digest,bytes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,0)`,
-        [
-          ...partition,
-          result.manifest,
-          at + 1,
-          role,
-          `out/${role}.txt`,
-          result.digest,
-        ],
-      );
-    }
+    assert.deepEqual(await schedulerStoredStates(scratch, fixture, spare), [
+      ...allAttemptStates,
+    ]);
+    assert.deepEqual(
+      await schedulerStoredKinds(scratch, fixture),
+      [...allSchedulerIncidentKinds].sort(),
+    );
+    assert.deepEqual(await schedulerStoredRoles(scratch, fixture, result), [
+      ...allArtifactRoles,
+    ]);
   } finally {
     await scratch.rollback();
   }
@@ -1351,6 +1421,6 @@ test("the scheduler submits a completion through the boundary and settles nothin
           AND project='${fixture.partition.project}'
           AND execution='${reported.execution}'`,
     )) ?? "",
-    /permission denied/,
+    postgresHarnessDenial("execution"),
   );
 });

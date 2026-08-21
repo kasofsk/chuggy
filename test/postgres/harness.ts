@@ -143,9 +143,23 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
 }
 
 /**
- * Runs one statement as `role` and rolls it back, answering with the refusal
- * the server gave or undefined when it allowed the statement. The transaction
- * is always rolled back, so a case proves a grant without leaving a row behind.
+ * The refusal a server gives when `object` is the thing the role may not reach.
+ * A case matching the bare phrase would also accept a refusal about something
+ * else the statement touched on the way — a function body reading a table the
+ * caller cannot read is refused in exactly those words, and the grant the case
+ * is about has already regressed by then.
+ */
+export function postgresHarnessDenial(object: string): RegExp {
+  return new RegExp(`permission denied for \\w+ ${object}\\b`);
+}
+
+/**
+ * Runs one statement as `role` inside a transaction it always rolls back,
+ * answering with the refusal the server gave or undefined when it allowed the
+ * statement. Becoming the role is not part of that attempt — `SET LOCAL ROLE`
+ * is refused in the same words a statement is, so a helper catching both would
+ * answer `permission denied to set role` to every case asserting that a role
+ * may not write, and each would report green with nothing attempted at all.
  */
 async function postgresHarnessAttemptAs(
   pool: pg.Pool,
@@ -156,10 +170,20 @@ async function postgresHarnessAttemptAs(
   try {
     await client.query("BEGIN");
     await client.query(`SET LOCAL ROLE ${role}`);
-    await client.query(sql);
-    return undefined;
-  } catch (refusal) {
-    return refusal instanceof Error ? refusal.message : String(refusal);
+    const became = await client.query<{ whoami: string }>(
+      "SELECT current_user AS whoami",
+    );
+    if (became.rows[0]?.whoami !== role) {
+      throw new Error(
+        `postgres harness: asking to be ${role} left the session as ${String(became.rows[0]?.whoami)}`,
+      );
+    }
+    try {
+      await client.query(sql);
+      return undefined;
+    } catch (refusal) {
+      return refusal instanceof Error ? refusal.message : String(refusal);
+    }
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();

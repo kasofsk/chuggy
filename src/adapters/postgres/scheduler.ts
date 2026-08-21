@@ -45,16 +45,27 @@
  * restore withdraws the authority a scheduler was holding before it.
  *
  * ROWS ARE TAKEN IN ONE ORDER: REQUEST, THEN EXECUTION, THEN PROJECT, THEN
- * ATTEMPT. A worker reporting on a task while the same pass cancels its ticket
- * is two transactions over the same three rows, and two orders between them is
- * a deadlock the server resolves by aborting one — which discards the rest of a
- * pass that has no retry. So a cancellation retires the registrations before it
- * fences their attempts, attempt accounting takes the registration's row before
- * the attempt's, and the reaping sweep locks the registrations it is about to
- * charge before it ends anything. `schedulerFenceOldEpochs` takes attempt rows
- * and nothing else, which is the last name in the order and therefore no side
- * of a cycle. The order is what makes the deadlock unreachable rather than
- * merely rare, which no retry can do.
+ * ATTEMPT — AND WITHIN EACH OF THOSE, IN KEY ORDER. A worker reporting on a
+ * task while the same pass cancels its ticket is two transactions over the same
+ * rows, and two orders between them is a deadlock the server resolves by
+ * aborting one — which discards the rest of a pass that has no retry. An order
+ * over classes alone is not enough for that: a transaction taking several rows
+ * of one class takes them in whatever order its plan produces, so two sweeps
+ * over one pair of attempts can still hold each other's next row. So every
+ * statement here that can touch more than one row of a class takes those rows
+ * first, in an `ORDER BY` over their key, under `FOR UPDATE` — registrations by
+ * `(tenant, project, execution)` and attempts by that and their own identity —
+ * and only then writes them. The order is what makes the deadlock unreachable
+ * rather than merely rare, which no retry can do.
+ *
+ * EVERY SWEEP IS BOUNDED PER PASS AND RESUMES WHERE IT STOPPED. Fencing an old
+ * epoch's attempts and reaping lapsed leases are both over the whole
+ * installation, so a restore of a large one would otherwise be a single
+ * statement rewriting every live attempt, exceeding the statement timeout,
+ * aborting, and being retried identically by every later pass — an installation
+ * where nothing is ever fenced at all. Both take the bound the caller declares,
+ * apply it to the ordered lock that leads them, and leave the rest to the next
+ * pass.
  *
  * NOTHING HERE READS A CLOCK. Every lease, expiry and backoff is a duration
  * handed to the server, which is the only party whose clock the durable state
@@ -81,6 +92,7 @@ import {
   type FencedAttempt,
   type LogicalExecution,
   type RequestClaim,
+  type SchedulerIncidentKind,
   type SchedulerOwnerId,
   type SpawnRegistered,
   type WorkloadId,
@@ -129,6 +141,27 @@ const settledStatuses = "'Terminal', 'Cancelled'";
 
 /** The attempt states an attempt may still report from. */
 const liveAttemptStates = "'Placing', 'Running'";
+
+/** One registration named the way an installation-wide sweep has to name it. */
+interface SchedulerRowKey {
+  readonly tenant: string;
+  readonly project: string;
+  readonly execution: string;
+}
+
+/**
+ * The same keys as three parallel arrays, which is how a statement carries a set
+ * of composite keys the server can join against.
+ */
+function schedulerRowKeys(
+  rows: readonly SchedulerRowKey[],
+): [readonly string[], readonly string[], readonly string[]] {
+  return [
+    rows.map((row) => row.tenant),
+    rows.map((row) => row.project),
+    rows.map((row) => row.execution),
+  ];
+}
 
 /** One claimed request row. */
 interface ClaimRow {
@@ -365,6 +398,33 @@ async function schedulerUnregisteredTasks(
   return projectRowCounter(found.rows[0]?.owed ?? "0", "unregistered tasks");
 }
 
+/**
+ * Records the contradiction a registration reached and takes the request out of
+ * the open set, because a request whose logical task another one owns cannot be
+ * delivered by any later attempt at it, and leaving it `Open` would only hand it
+ * to the next claim after this one's lease lapsed, to reach the same
+ * contradiction and write the same incident again. `Invalidated` is the delivery
+ * state for a request that will not be registered, and the incident beside it is
+ * the record of why.
+ */
+async function schedulerContradicted(
+  client: pg.PoolClient,
+  claim: RequestClaim,
+  kind: SchedulerIncidentKind,
+  evidence: string,
+  subject: { readonly execution?: string } = {},
+): Promise<SpawnRegistered> {
+  const incident = await schedulerRecordIncident(
+    client,
+    claim.partition,
+    kind,
+    evidence,
+    subject,
+  );
+  await schedulerRequestState(client, claim, "Invalidated");
+  return { registered: "Conflicting", incident };
+}
+
 /** Creates or finds the exact logical executions one spawn request authorized. */
 async function schedulerRegisterSpawn(
   client: pg.PoolClient,
@@ -381,28 +441,22 @@ async function schedulerRegisterSpawn(
   }
   const conflict = await schedulerRegistrationConflict(client, claim);
   if (conflict !== undefined) {
-    return {
-      registered: "Conflicting",
-      incident: await schedulerRecordIncident(
-        client,
-        claim.partition,
-        "ConflictingRegistration",
-        schedulerEvidence.ConflictingRegistration,
-        { execution: conflict },
-      ),
-    };
+    return schedulerContradicted(
+      client,
+      claim,
+      "ConflictingRegistration",
+      schedulerEvidence.ConflictingRegistration,
+      { execution: conflict },
+    );
   }
   const created = await schedulerCreateExecutions(client, claim);
   if ((await schedulerUnregisteredTasks(client, claim)) > 0) {
-    return {
-      registered: "Conflicting",
-      incident: await schedulerRecordIncident(
-        client,
-        claim.partition,
-        "ImpossibleState",
-        schedulerEvidence.PartialRegistration,
-      ),
-    };
+    return schedulerContradicted(
+      client,
+      claim,
+      "ImpossibleState",
+      schedulerEvidence.PartialRegistration,
+    );
   }
   await schedulerRequestState(client, claim, "Registered");
   await schedulerFulfilRequest(client, claim.partition, claim.request);
@@ -417,11 +471,24 @@ interface RetiredRow {
   readonly source_request: string;
 }
 
-/** Retires every logical task under the ticket, releasing one slot for each. */
+/**
+ * Retires every logical task under the ticket, releasing one slot for each. The
+ * registrations are taken in key order before anything is written, because a
+ * bare `UPDATE` takes them in its plan's order — which for a ticket whose tasks
+ * came from two spawn requests is not the order the reaping sweep reaches the
+ * same rows in.
+ */
 async function schedulerRetireTicket(
   client: pg.PoolClient,
   claim: RequestClaim,
 ): Promise<readonly RetiredRow[]> {
+  await client.query(
+    `SELECT e.execution FROM execution e
+      WHERE e.tenant = $1 AND e.project = $2 AND e.ticket = $3
+        AND e.status NOT IN (${settledStatuses})
+      ORDER BY e.tenant, e.project, e.execution FOR UPDATE`,
+    [claim.partition.tenant, claim.partition.project, claim.ticket],
+  );
   const retired = await client.query<RetiredRow>(
     `UPDATE execution SET status = 'Cancelled', terminal_at = now()
       WHERE tenant = $1 AND project = $2 AND ticket = $3
@@ -432,12 +499,28 @@ async function schedulerRetireTicket(
   return retired.rows;
 }
 
-/** Fences every attempt still able to report under the registrations just retired. */
+/**
+ * Fences every attempt still able to report under the registrations just
+ * retired, taking them in key order first so this sweep and the two
+ * installation-wide ones reach a shared pair of attempts the same way round.
+ */
 async function schedulerFenceRetired(
   client: pg.PoolClient,
   claim: RequestClaim,
   retired: readonly RetiredRow[],
 ): Promise<readonly string[]> {
+  await client.query(
+    `SELECT a.attempt FROM execution_attempt a
+      WHERE a.tenant = $1 AND a.project = $2
+        AND a.execution = ANY($3::text[])
+        AND a.state IN (${liveAttemptStates})
+      ORDER BY a.tenant, a.project, a.execution, a.attempt FOR UPDATE`,
+    [
+      claim.partition.tenant,
+      claim.partition.project,
+      retired.map((row) => row.execution),
+    ],
+  );
   const fenced = await client.query<{ attempt: string }>(
     `UPDATE execution_attempt a
         SET state = 'Superseded', generation = a.generation + 1,
@@ -769,39 +852,69 @@ async function schedulerAttemptEnded(
   return true;
 }
 
-/** Ends every live attempt whose lease has run out, spending the budget an attempt that ran spends. */
+/**
+ * Ends at most `attemptsMax` live attempts whose lease has run out, charging the
+ * budget an attempt that ran spends to exactly the registrations whose attempt
+ * this pass ends. The registrations are locked before their attempts and both in
+ * key order, and the bound is applied to the registrations — one of which can
+ * hold only one live attempt, so it bounds the attempts too.
+ */
 async function schedulerReapLapsedAttempts(
   client: pg.PoolClient,
   epoch: RecoveryEpoch,
+  attemptsMax: number,
 ): Promise<number> {
+  schedulerRequirePositive(attemptsMax, "attemptsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return 0;
-  const reaped = await client.query<{ reaped: string }>(
-    `WITH held AS (
-       SELECT e.tenant, e.project, e.execution, e.status FROM execution e
-        WHERE EXISTS (SELECT 1 FROM execution_attempt a
-                       WHERE a.tenant = e.tenant AND a.project = e.project
-                         AND a.execution = e.execution
-                         AND a.state IN (${liveAttemptStates})
-                         AND a.lease_expires_at <= now())
-        ORDER BY e.tenant, e.project, e.execution FOR UPDATE),
-     spent AS (
-       UPDATE execution e
-          SET retries_spent = e.retries_spent + 1, placement_backoff_from = now()
-         FROM held h
-        WHERE e.tenant = h.tenant AND e.project = h.project AND e.execution = h.execution
-          AND h.status NOT IN (${settledStatuses})
-        RETURNING e.execution),
-     lapsed AS (
-       UPDATE execution_attempt a
-          SET state = 'Lost', evidence = 'LeaseExpired', ended_at = now(),
-              lease_owner = NULL, lease_expires_at = NULL
-         FROM held h
-        WHERE a.tenant = h.tenant AND a.project = h.project AND a.execution = h.execution
-          AND a.state IN (${liveAttemptStates}) AND a.lease_expires_at <= now()
-        RETURNING a.attempt)
-     SELECT count(*)::text AS reaped FROM lapsed`,
+  const held = await client.query<SchedulerRowKey>(
+    `SELECT e.tenant, e.project, e.execution FROM execution e
+      WHERE EXISTS (SELECT 1 FROM execution_attempt a
+                     WHERE a.tenant = e.tenant AND a.project = e.project
+                       AND a.execution = e.execution
+                       AND a.state IN (${liveAttemptStates})
+                       AND a.lease_expires_at <= now())
+      ORDER BY e.tenant, e.project, e.execution
+      LIMIT $1 FOR UPDATE`,
+    [attemptsMax],
   );
-  return projectRowCounter(reaped.rows[0]?.reaped ?? "0", "reaped attempts");
+  if (held.rows.length === 0) return 0;
+  const lapsed = await client.query<SchedulerRowKey & { attempt: string }>(
+    `SELECT a.tenant, a.project, a.execution, a.attempt FROM execution_attempt a
+       JOIN unnest($1::text[], $2::text[], $3::text[]) AS h(tenant, project, execution)
+         ON a.tenant = h.tenant AND a.project = h.project AND a.execution = h.execution
+      WHERE a.state IN (${liveAttemptStates}) AND a.lease_expires_at <= now()
+      ORDER BY a.tenant, a.project, a.execution, a.attempt FOR UPDATE OF a`,
+    schedulerRowKeys(held.rows),
+  );
+  if (lapsed.rows.length === 0) return 0;
+  await client.query(
+    `UPDATE execution e
+        SET retries_spent = e.retries_spent + 1, placement_backoff_from = now()
+       FROM unnest($1::text[], $2::text[], $3::text[]) AS h(tenant, project, execution)
+      WHERE e.tenant = h.tenant AND e.project = h.project AND e.execution = h.execution
+        AND e.status NOT IN (${settledStatuses})`,
+    schedulerRowKeys(lapsed.rows),
+  );
+  return schedulerEndLapsed(
+    client,
+    lapsed.rows.map((row) => row.attempt),
+  );
+}
+
+/** Ends the attempts named, which the caller has already locked in key order. */
+async function schedulerEndLapsed(
+  client: pg.PoolClient,
+  attempts: readonly string[],
+): Promise<number> {
+  if (attempts.length === 0) return 0;
+  const ended = await client.query(
+    `UPDATE execution_attempt
+        SET state = 'Lost', evidence = 'LeaseExpired', ended_at = now(),
+            lease_owner = NULL, lease_expires_at = NULL
+      WHERE attempt = ANY($1::text[])`,
+    [[...attempts]],
+  );
+  return ended.rowCount ?? 0;
 }
 
 /** At most `executionsMax` executions that own a slot and have no live attempt. */
@@ -825,18 +938,32 @@ async function schedulerUnlaunched(
   return waiting.rows.map(executionRowLogical);
 }
 
-/** Marks every attempt issued under an older recovery epoch unable to report. */
+/**
+ * Marks at most `attemptsMax` attempts issued under an older recovery epoch
+ * unable to report, taking them in key order so a concurrent sweep over the same
+ * pair reaches them the same way round, and leaving the rest to a later pass.
+ */
 async function schedulerFenceOldEpochs(
   client: pg.PoolClient,
   epoch: RecoveryEpoch,
+  attemptsMax: number,
 ): Promise<number> {
+  schedulerRequirePositive(attemptsMax, "attemptsMax");
+  const superseded = await client.query<{ attempt: string }>(
+    `SELECT a.attempt FROM execution_attempt a
+      WHERE a.state IN (${liveAttemptStates}) AND a.recovery_epoch <> $1
+      ORDER BY a.tenant, a.project, a.execution, a.attempt
+      LIMIT $2 FOR UPDATE`,
+    [epoch, attemptsMax],
+  );
+  if (superseded.rows.length === 0) return 0;
   const fenced = await client.query(
     `UPDATE execution_attempt
         SET state = 'Superseded', generation = generation + 1,
             evidence = 'Fenced', ended_at = now(),
             lease_owner = NULL, lease_expires_at = NULL
-      WHERE state IN (${liveAttemptStates}) AND recovery_epoch <> $1`,
-    [epoch],
+      WHERE attempt = ANY($1::text[])`,
+    [superseded.rows.map((row) => row.attempt)],
   );
   return fenced.rowCount ?? 0;
 }
@@ -899,17 +1026,17 @@ export function postgresExecutionScheduler(
       ),
     execution: (partition, execution) =>
       schedulerExecution(pool, partition, execution),
-    reapLapsedAttempts: (epoch) =>
+    reapLapsedAttempts: (epoch, attemptsMax) =>
       postgresTransaction(pool, (client) =>
-        schedulerReapLapsedAttempts(client, epoch),
+        schedulerReapLapsedAttempts(client, epoch, attemptsMax),
       ),
     unlaunched: (epoch, executionsMax) =>
       postgresTransaction(pool, (client) =>
         schedulerUnlaunched(client, epoch, executionsMax),
       ),
-    fenceOldEpochAttempts: (epoch) =>
+    fenceOldEpochAttempts: (epoch, attemptsMax) =>
       postgresTransaction(pool, (client) =>
-        schedulerFenceOldEpochs(client, epoch),
+        schedulerFenceOldEpochs(client, epoch, attemptsMax),
       ),
   };
 }

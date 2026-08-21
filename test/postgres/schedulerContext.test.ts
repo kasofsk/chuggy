@@ -36,6 +36,7 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import type { ExecutionContextRead } from "../../src/interpreter/schedulerContext.ts";
+import { postgresHarnessDenial } from "./harness.ts";
 import {
   schedulerClaimFor,
   schedulerExecutions,
@@ -248,7 +249,7 @@ test("the ingress credential may ask, and may not read what it asks about", asyn
         apiRole,
         `SELECT count(*) FROM ${relation}`,
       )) ?? "",
-      /permission denied/,
+      postgresHarnessDenial(relation),
     );
   }
 });

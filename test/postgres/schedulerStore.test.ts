@@ -299,13 +299,19 @@ test("a logical task another request already holds is a conflicting registration
   );
   const registered = await registerAll(project, "conflict");
   assert.equal(registered.registered, "Conflicting");
-  assert.deepEqual(
-    await rig.harness.query(
+  const incidents = async () =>
+    rig.harness.query(
       "SELECT kind FROM scheduler_incident WHERE tenant=$1 AND project=$2",
       [project.partition.tenant, project.partition.project],
-    ),
-    [{ kind: "ConflictingRegistration" }],
-  );
+    );
+  assert.deepEqual(await incidents(), [{ kind: "ConflictingRegistration" }]);
+
+  const states = await schedulerRequestStates(rig, project.partition);
+  assert.equal(states[project.request], "Invalidated");
+  assert.deepEqual(await registerAll(project, "conflict-again"), {
+    registered: "Superseded",
+  });
+  assert.deepEqual(await incidents(), [{ kind: "ConflictingRegistration" }]);
 });
 
 test("admission takes one slot and refuses past the cluster ceiling", async () => {
@@ -506,13 +512,38 @@ test("a lost attempt spends the retry budget and a withdrawn one does not", asyn
     placementBackoffSecs: 1,
   });
   assert.equal(next.opened, "BackingOff");
+
+  await rig.harness.query(
+    `UPDATE execution SET placement_backoff_from=NULL
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [project.partition.tenant, project.partition.project, attempt.execution],
+  );
+  const relaunched = await rig.store.openAttempt({
+    partition: project.partition,
+    execution: attempt.execution,
+    epoch: project.epoch,
+    ...attemptBounds,
+  });
+  assert.ok(
+    relaunched.opened === "Opened",
+    `the replacement attempt was ${relaunched.opened}`,
+  );
+  assert.equal(
+    await rig.store.attemptEnded(relaunched.attempt, "Lost", "Vanished"),
+    true,
+  );
+  assert.equal(
+    (await rig.store.execution(project.partition, attempt.execution))
+      ?.retriesSpent,
+    1,
+  );
 });
 
 test("an exhausted retry budget settles one failed completion with an empty manifest", async () => {
   const project = await schedulerProject(rig, "exhausted", { tasks: 1 });
   await registerAll(project, "exhausted");
   const attempt = await placedAttempt(project, "exhausted");
-  await rig.store.attemptEnded(attempt, "Lost", "Vanished");
+  assert.equal(await rig.store.attemptEnded(attempt, "Lost", "Vanished"), true);
   await rig.harness.query(
     `UPDATE execution SET retries_spent=3, placement_backoff_from=NULL
       WHERE tenant=$1 AND project=$2 AND execution=$3`,

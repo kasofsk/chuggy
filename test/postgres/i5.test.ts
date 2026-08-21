@@ -13,6 +13,7 @@ import {
 import { projectWriterDecide } from "../../src/interpreter/projectWriter.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
+  postgresHarnessDenial,
   postgresHarnessHistory,
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -273,13 +274,16 @@ test("runtime roles cannot cross the selector and ticket-service storage boundar
       role,
       "INSERT INTO selector_project_state (tenant,project) VALUES ('t','p')",
     );
-    assert.match(refusal ?? "", /permission denied/);
+    assert.match(
+      refusal ?? "",
+      postgresHarnessDenial("selector_project_state"),
+    );
   }
   const ticketRefusal = await harness.attemptAs(
     selectorServiceRole,
     "SELECT * FROM journal_entry LIMIT 1",
   );
-  assert.match(ticketRefusal ?? "", /permission denied/);
+  assert.match(ticketRefusal ?? "", postgresHarnessDenial("journal_entry"));
 });
 
 test("selector provenance and its observed cursor roll back together", async () => {

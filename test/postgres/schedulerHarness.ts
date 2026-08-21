@@ -415,6 +415,7 @@ const schedulerStallAskMs = 25;
 /** A lock held on a connection of its own: what has stalled behind it, and how it ends. */
 export interface SchedulerBlockade {
   readonly stalled: (backends: number) => Promise<void>;
+  readonly stalledHolds: (relation: string, mode: string) => Promise<boolean>;
   readonly killStalled: () => Promise<number>;
   readonly commit: (sql: string, values: readonly unknown[]) => Promise<void>;
   readonly release: () => Promise<void>;
@@ -446,6 +447,8 @@ export async function schedulerBlockade(
     await blocker.query(sql, [...values]);
     return {
       stalled: (backends) => schedulerStalled(blockade, backends),
+      stalledHolds: (relation, mode) =>
+        schedulerStalledHolds(blockade, relation, mode),
       killStalled: async () =>
         (
           await blockade.query(
@@ -467,6 +470,30 @@ export async function schedulerBlockade(
     await release();
     throw failure;
   }
+}
+
+/**
+ * Whether the backend stalled behind this blockade already holds `relation` in
+ * `mode`. It is how a case says where in its transaction the stalled call had
+ * got to, which is the difference between a claim about an interleaving and a
+ * claim about a transaction that had done nothing yet: what a case reads after
+ * killing a backend at its first statement is equally true of a transaction
+ * that was never entered, and what it reads about lock order is equally true of
+ * a caller that takes no lock at all.
+ */
+async function schedulerStalledHolds(
+  blockade: pg.Pool,
+  relation: string,
+  mode: string,
+): Promise<boolean> {
+  const held = await blockade.query<{ held: number }>(
+    `SELECT count(*)::int AS held FROM pg_locks l
+       JOIN pg_stat_activity a ON a.pid = l.pid
+      WHERE a.datname = current_database() AND a.wait_event_type = 'Lock'
+        AND l.relation = $1::regclass AND l.mode = $2 AND l.granted`,
+    [relation, mode],
+  );
+  return (held.rows[0]?.held ?? 0) > 0;
 }
 
 /** Resolves once that many backends are waiting on a lock in this database. */
