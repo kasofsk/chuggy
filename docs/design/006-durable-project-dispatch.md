@@ -1876,9 +1876,8 @@ separate model-first change.
 rather than project state: keyed by `cluster` and by `account`, carrying no
 composite project key and holding no unfinished work. Both carry a
 `policy_revision`, because a release pins the stable account identity while
-admission applies the current versioned entitlement, so allocation may change
-without rewriting ticket history. The scheduler reads both and writes neither,
-so it cannot provision the account it needs; a project made after the
+admission applies the current entitlement. The scheduler reads both and writes
+neither, so it cannot provision the account it needs; a project made after the
 migration would otherwise have none, and its first registration would fail the
 foreign key tying an execution to the account it draws on. An `AFTER INSERT`
 trigger on `project` provisions it, `SECURITY DEFINER` and owned by
@@ -1902,10 +1901,9 @@ rows with no live attempt for launch, everything outside `Terminal` and
 `Cancelled` for a project's live work.
 
 The role's grants are why a settlement cannot be forged rather than merely
-discouraged. It may write `status`, `attempt_next`, `retries_spent`,
-`placement_backoff_from` and `terminal_at` and nothing else, while a move to
-`Terminal` needs the `outcome` and `completion_operation` that
-`execution_outcome_is_whole` insists on and the role cannot write. Every
+discouraged: it may write the columns that account for an execution's progress
+and none that name its outcome, while a move to `Terminal` needs the `outcome`
+and `completion_operation` that `execution_outcome_is_whole` insists on. Every
 settlement goes through the completion boundary because a constraint says so.
 
 Admission serializes on a transaction-scoped advisory lock keyed by the
@@ -1937,10 +1935,10 @@ insert and nobody's to change, their triggers raising on update and delete
 alike because a manifest that could be edited is not evidence; one result per
 execution and one per attempt are unique constraints, which makes a second
 contradictory manifest impossible rather than detectable. `manifest_ordinal`
-is project-local and is the value the journaled input carries; the digest is
-the control plane's and never the worker's, taken over canonical bytes binding
-the manifest to its execution and attempt, so one grafted elsewhere disagrees
-with itself. The transaction that writes it is the terminal transaction and
+is project-local and is what the journaled input carries; the digest is the
+control plane's and never the worker's, taken over canonical bytes binding the
+manifest to its execution and attempt, so one grafted elsewhere disagrees with
+itself. The transaction that writes it is the terminal transaction and
 there is no other, so this relation has no recovery query of its own: a
 recorded result whose execution has not reached `Terminal` is not a crash
 window to sweep but an integrity check that must return nothing.
@@ -1950,10 +1948,9 @@ this document already requires. It is the scheduler's to insert and read,
 keyed `(tenant, project, incident)` and foreign-keyed to its project, carrying
 a closed kind and a bounded evidence label rather than free text. It is
 written in the transaction that detected the contradiction and holds no work
-of its own, so its recovery query is an operator reading a project's recent
-incidents and nothing is blocked by one. Identical redelivery is absorbed and
-a late result for retired or revoked work is auditable staleness; only a
-second terminal claim contradicting the first is an incident.
+of its own, so it has no recovery query but an operator's read and nothing is
+blocked by one. Only a second terminal claim contradicting the first is an
+incident, which is what keeps the relation narrow.
 
 I3's `execution_request` gains the mutable delivery fields I6 consumes and the
 immutable pins it needs. The pins are the capacity account and the
@@ -1963,8 +1960,7 @@ authorizes exist, `Registered` to `Fulfilled` once every registration under it
 has settled, and to `Invalidated` when a cancellation for that ticket has
 already retired the work it would have created — while a cancellation request
 moves `Open` straight to `Fulfilled` once the retirement is durable, and not
-once the workload is gone. Those are the only columns any role may update, and
-the project writer that inserted the request never touches it again.
+once the workload is gone. Those are the only columns any role may update.
 Registration fences on the authorizing sequence and not on the delivery state,
 so a spawn claimed before a revocation and registered after it finds its tasks
 fenced rather than resurrecting revoked work. Unfinished delivery is the
@@ -1972,17 +1968,16 @@ request's own state: an `Open` request whose claim is absent or lapsed is work
 no process holds.
 
 Completion crosses one boundary and that boundary is `submit_task_completion`:
-a `SECURITY DEFINER` function owned by the same dedicated `NOLOGIN`
-non-superuser `chuggy_boundary_owner` I3 gave `accept_operation` and
-`publish_continuation`, and hardened the same way. Granting the scheduler
-execute on it is not an exception to the rule that it submits through
-authenticated ingress and never inserts mailbox inputs directly; it is how
-that rule is enforced, because the role holds no privilege whatever on
-`operation`, `decision_input`, `journal_entry` or `ticket_projection`, and
-authentication is the database role itself. This adapter shares one PostgreSQL
-between scheduler and inbox; an adapter whose two do not share a transaction
-boundary needs a completion outbox and relay, implementing this same semantic
-port rather than a different authority.
+a `SECURITY DEFINER` function owned by the `chuggy_boundary_owner` I3 gave
+`accept_operation` and `publish_continuation`, and hardened the same way.
+Granting the scheduler execute on it is not an exception to the rule that it
+submits through authenticated ingress and never inserts mailbox inputs
+directly; it is how that rule is enforced, because the role holds no privilege
+whatever on `operation`, `decision_input`, `journal_entry` or
+`ticket_projection`, and authentication is the database role itself. This
+adapter shares one PostgreSQL between scheduler and inbox; an adapter whose
+two do not share a transaction boundary needs a completion outbox and relay,
+implementing this same semantic port rather than a different authority.
 
 Validation of the binding is the function's and never the caller's, and the
 envelope is built from durable rows rather than from arguments: a claim
@@ -1992,24 +1987,29 @@ recorded result is refused, and only one that agrees becomes
 `ticket_command_is_valid` as every other ingress. The model's result reference
 is positive integers, so the authoritative digest is folded over a bounded
 prefix; the fold is deliberately not injective, because the authority remains
-the full digest and manifest identity on the execution row. An
-`ExecutionBlocked` completion carries the ticket, one bounded reason and no
-manifest.
+the full digest and manifest identity on the execution row, and an
+`ExecutionBlocked` completion carries a bounded reason and no manifest at all.
 
-That function is the whole terminal transaction, which is why it is one
-function and not three. Under the locked execution and project rows the
-verified manifest, the ingress ordinal, the operation under authority kind
+That function is the authenticated boundary the completion crosses rather than
+every statement of the terminal transaction: the adapter opens the transaction
+and writes the verified manifest in it, then crosses that one door without
+leaving the transaction. Under the locked execution and project rows the
+manifest, the ingress ordinal, the operation under authority kind
 `ExecutionScheduler` with `CorrectnessReducing` admission, the
 `Completion`-priority decision input, the readiness advance and the move to
 `Terminal` land together or not at all — and because slot ownership is derived
-from status, that last move is what releases the capacity slot. So the window
-between holding a verified result and telling anyone about it is removed
-rather than shortened. The operation's idempotency key is the execution
-identity, so one logical task yields one completion and no more, and a
-resubmission is answered with the operation already recorded, which is how
-identical redelivery is absorbed below the journal at the immutable effect
-identity. A project in `Retention` is not admitted, and current domain
-applicability stays the writer's later decision.
+from status, that last move is what releases the capacity slot. The window
+between holding a verified result and telling anyone is removed rather than
+shortened. The operation's idempotency key is the execution identity, so one
+logical task yields one completion and no more, and a resubmission is answered
+with the operation already recorded — identical redelivery absorbed below the
+journal at the immutable effect identity. A project that no longer admits is
+answered as itself and not as a cancellation, because a completion arriving
+into `Retention` and a late result for work already retired are different
+facts, stated separately here and answered separately at the boundary;
+terminalization, blocking and ingestion each carry that arm, as blocking does
+for a refused completion. Current domain applicability stays the writer's
+later decision.
 
 The two inabilities are kept apart at the port rather than the call site,
 which is why the policy and placement ports answer with three arms and not a
@@ -2033,19 +2033,28 @@ reserves nothing, alters no eligibility and is excluded from the strict
 dispatchable-view digest, so a proposal must survive it changing underneath.
 `execution_backlog` is the opposite: the hard backlog guard is authoritative,
 consulted at ingress after authorization and before the inbox accepts, and
-pauses automatic and manual dispatch through the same call. It is retryable
-infrastructure backpressure and not `Core` state, ticket eligibility or a
-selector reservation, and it preserves headroom by being narrow rather than by
-reserving — only a `Dispatch` decision needs scheduler headroom, so every
-other decision stays admissible while dispatch is paused.
+pauses automatic and manual dispatch through the same call. It weighs a
+project ceiling and an installation one and names which stopped a dispatch,
+because a project filling its own backlog and an installation filling the
+cluster's are different backpressures; both bounds are the scheduler's
+`projectBacklogMax` and `installationBacklogMax` and no adapter keeps a copy,
+since the guard is the scheduler's authority wherever it is mounted. It is
+retryable infrastructure backpressure and not `Core` state, ticket eligibility
+or a selector reservation, and it preserves headroom by being narrow rather
+than by reserving — only a `Dispatch` decision needs scheduler headroom, so
+every other decision stays admissible while dispatch is paused.
 
 Scheduler diagnostics carry closed bounded vocabularies and no identities, and
-nothing here persists a rendered prompt, a credential, an unrestricted log,
-source material or arbitrary model output. Telemetry is not an authority.
+the provenance a briefing retains is a type with no field a prompt, a
+credential, a log, source material or model output could be put in. Telemetry
+is not an authority by construction: the sink is sealed behind an unexported
+symbol and every observation answers nothing, so no expression exists in which
+a metric returns a value a branch could read, and a sink that throws at every
+observation leaves every durable answer identical.
 
-I6 briefs the worker it launches: issue #143 names it in its own title, and
-the accepted proposal of issue #97 settles its shape. A template owns a role
-and ticket data fills its slots: the roles are `Work` and `Review`, one brief
+I6 briefs the worker it launches — issue #143's title names it — and the
+accepted proposal of issue #97 settles the shape. A template owns a role and
+ticket data fills its slots: the roles are `Work` and `Review`, one brief
 drawn from the pinned configuration serves both, and only the purpose-specific
 block and the practices scoped to that role differ. Practices resolve through
 a finite trusted catalog, each carrying an instruction and a scope; one that
@@ -2054,16 +2063,13 @@ a reason the model already has, so briefing needs no model change. The section
 order is one array the renderer drops empty sections from, so an absent
 optional section cannot reorder its neighbours. A retry renders the same
 briefing because the input is content-addressed: `PinnedConfigurationPort` has
-no spelling for "current", it is asked for the revision the execution row
-pinned at registration, and what comes back is refused unless its own revision
-and digest are that one, so a rewritten revision is a refusal rather than a
-different prompt and the bounded runtime facts the adapter gathers are the
-only moving input. What is retained is provenance, a type with no field a
-prompt, a credential or source material could be put in. What the templates
-say is authored rather than derived — issue #97 fixes the sections and
+no spelling for "current", is asked for the revision the execution row pinned,
+and refuses what comes back unless its revision and digest are that one — so a
+rewritten revision is a refusal rather than a different prompt, and the
+bounded runtime facts the adapter gathers are the only moving input. What the
+templates say is authored rather than derived — #97 fixes the sections and
 deliberately not their wording — so it is versioned by
-`briefingTemplateVersion` and is the part of this a reviewer should argue
-with.
+`briefingTemplateVersion` and is the part a reviewer should argue with.
 
 Composition can only narrow authority, and that is a property of the shape
 rather than a rule for callers to keep. `TaskAuthority` holds what structured
@@ -2082,15 +2088,14 @@ completion authority away, so a briefed worker cannot conclude its own task
 even where policy granted it: it reports a manifest and the scheduler submits
 the completion.
 
-I6 adds no input-bundle relation: a bundle today would hold the request's own
-ticket, task set, provenance and pinned revision and a digest derived from
-them, so a registration pins the request identity and the revision instead,
-and the relation arrives with the slice that gives it references of its own to
-hold. Artifact verification is a typed port here and its project-owned storage
-adapter is not; the completion boundary is reached only after that port
-confirms every required result durably present with matching digest and
-schema, so an incomplete upload cannot yield a successful verdict and
-permanent loss is a definitive execution failure.
+I6 adds no input-bundle relation: a bundle today would only duplicate what the
+request already holds, so a registration pins the request identity and the
+pinned revision instead, and the relation arrives with the slice that gives it
+references of its own to hold. Artifact verification is a typed port here and
+its project-owned storage adapter is not; the completion boundary is reached
+only after that port confirms every required result durably present with
+matching digest and schema, so an incomplete upload cannot yield a successful
+verdict and permanent loss is a definitive execution failure.
 
 I7 consumes none of these relations and adds its own preparation, permit and
 reconciliation records with the sole `FinalizationResult` authority;
