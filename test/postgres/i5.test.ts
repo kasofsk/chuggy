@@ -6,6 +6,7 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
 import {
   apiRole,
+  dispatchAcceptanceFunction,
   selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
@@ -42,6 +43,70 @@ test("a release atomically materializes a digest-fenced current dispatch view", 
     assert.equal(page.candidates.length, 1);
     assert.equal(page.candidates[0]?.ticketVersion, memory.lease.head);
     assert.match(page.token.digest, /^[0-9a-f]{64}$/);
+    await pool.query(
+      "UPDATE dispatch_view SET digest=$3 WHERE tenant=$1 AND project=$2",
+      [partition.tenant, partition.project, "f".repeat(64)],
+    );
+    assert.deepEqual(
+      await postgresDispatchViews(pool).read(partition, {
+        limit: 10,
+        token: page.token,
+      }),
+      { result: "Reset" },
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the SQL dispatch constructor rejects incomplete and overflowing proposals", async () => {
+  const pool = postgresPool(postgresHarnessUrl());
+  const invalid = [
+    {
+      version: 1,
+      command: "ProposeDispatch",
+      ticket: 1,
+      expectedTicketVersion: 1,
+    },
+    {
+      version: 1,
+      command: "ProposeDispatch",
+      ticket: 1,
+      expectedTicketVersion: "9".repeat(40),
+      observedViewToken: {
+        tenant: "tenant",
+        project: "project",
+        recoveryEpoch: "epoch",
+        schemaVersion: 1,
+        watermark: 0,
+        digest: "a".repeat(64),
+      },
+      selectorDecisionReference: "decision",
+    },
+  ];
+  try {
+    for (const command of invalid) {
+      const result = await pool.query<{ result: string }>(
+        `SELECT result FROM ${dispatchAcceptanceFunction}(
+          $1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10::text[],$11,$12,$13)`,
+        [
+          "tenant",
+          "project",
+          crypto.randomUUID(),
+          "Selector",
+          "selector",
+          "key-version",
+          "key-digest",
+          "payload-digest",
+          [],
+          [],
+          JSON.stringify(command),
+          10,
+          20,
+        ],
+      );
+      assert.equal(result.rows[0]?.result, "InvalidCommand");
+    }
   } finally {
     await pool.end();
   }
@@ -201,6 +266,7 @@ test("selector provenance and its observed cursor roll back together", async () 
     await assert.rejects(
       state.recordInteraction(
         interaction,
+        { partition, notificationCursor: 0, attention: "Monitoring" },
         { partition, notificationCursor: 17, attention: "Monitoring" },
         "x".repeat(65_537),
       ),
@@ -209,13 +275,82 @@ test("selector provenance and its observed cursor roll back together", async () 
     assert.equal(await state.project(partition), undefined);
     assert.deepEqual(await state.history(partition, undefined, 10), []);
 
-    await state.recordInteraction(interaction, {
-      partition,
-      notificationCursor: 17,
-      attention: "Monitoring",
-    });
+    await state.recordInteraction(
+      interaction,
+      { partition, notificationCursor: 0, attention: "Monitoring" },
+      { partition, notificationCursor: 17, attention: "Monitoring" },
+    );
     assert.equal((await state.project(partition))?.notificationCursor, 17);
     assert.equal((await state.history(partition, undefined, 10)).length, 1);
+
+    await assert.rejects(
+      state.recordInteraction(
+        { ...interaction, result: { waiting: false } },
+        { partition, notificationCursor: 17, attention: "Monitoring" },
+        { partition, notificationCursor: 18, attention: "Monitoring" },
+      ),
+      /contradicts retained provenance/,
+    );
+    assert.equal((await state.project(partition))?.notificationCursor, 17);
+
+    const stale = await state.recordInteraction(
+      { ...interaction, decision: `${decision}-stale` },
+      { partition, notificationCursor: 0, attention: "Monitoring" },
+      { partition, notificationCursor: 99, attention: "Monitoring" },
+    );
+    assert.equal(stale, false);
+    assert.equal((await state.project(partition))?.notificationCursor, 17);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("selector history pages by durable insertion order, not opaque identity", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-selector-history",
+  );
+  const pool = postgresPool(postgresHarnessUrl());
+  const state = postgresSelectorState(pool);
+  const interaction = (decision: string) =>
+    ({
+      decision,
+      partition,
+      instructionsVersion: "instructions-1",
+      instructions: "wait",
+      observedView: [],
+      context: {},
+      toolActivity: [],
+      result: { waiting: true },
+      implementationRevision: "implementation-1",
+      modelRevision: "model-1",
+      policyRevision: "policy-1",
+      accounting: {},
+      startedAt: "2026-08-20T12:00:00.000Z",
+      completedAt: "2026-08-20T12:00:01.000Z",
+    }) as const;
+  try {
+    assert.equal(
+      await state.recordInteraction(
+        interaction(`z-${crypto.randomUUID()}`),
+        { partition, notificationCursor: 0, attention: "Monitoring" },
+        { partition, notificationCursor: 1, attention: "Monitoring" },
+      ),
+      true,
+    );
+    const first = await state.history(partition, undefined, 1);
+    assert.equal(first.length, 1);
+    assert.equal(
+      await state.recordInteraction(
+        interaction(`a-${crypto.randomUUID()}`),
+        { partition, notificationCursor: 1, attention: "Monitoring" },
+        { partition, notificationCursor: 2, attention: "Monitoring" },
+      ),
+      true,
+    );
+    const second = await state.history(partition, first[0]?.ordinal, 1);
+    assert.equal(second.length, 1);
+    assert.match(second[0]?.decision ?? "", /^a-/);
   } finally {
     await pool.end();
   }

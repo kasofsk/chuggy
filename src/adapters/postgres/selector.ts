@@ -7,6 +7,7 @@ import type {
   SelectorProposal,
   SelectorProjectState,
   SelectorStateStore,
+  StoredSelectorInteraction,
 } from "../../interpreter/selector.ts";
 import {
   asProjectId,
@@ -15,6 +16,7 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
+import { projectRowCounter } from "./rows.ts";
 
 interface DeliveryRow {
   readonly selector_decision: string;
@@ -97,6 +99,52 @@ async function writeSelectorProject(
   );
 }
 
+function sameSelectorState(
+  left: SelectorProjectState,
+  right: SelectorProjectState,
+): boolean {
+  return (
+    left.partition.tenant === right.partition.tenant &&
+    left.partition.project === right.partition.project &&
+    left.notificationCursor === right.notificationCursor &&
+    left.recoveryEpoch === right.recoveryEpoch &&
+    left.attention === right.attention
+  );
+}
+
+async function lockSelectorProject(
+  client: pg.PoolClient,
+  expected: SelectorProjectState,
+): Promise<boolean> {
+  const found = await client.query<{
+    notification_cursor: string;
+    recovery_epoch: string | null;
+    attention: SelectorProjectState["attention"];
+  }>(
+    `SELECT notification_cursor::text,recovery_epoch,attention
+       FROM selector_project_state WHERE tenant=$1 AND project=$2 FOR UPDATE`,
+    [expected.partition.tenant, expected.partition.project],
+  );
+  const row = found.rows[0];
+  if (row === undefined)
+    return (
+      expected.notificationCursor === 0 &&
+      expected.recoveryEpoch === undefined &&
+      expected.attention === "Monitoring"
+    );
+  return sameSelectorState(expected, {
+    partition: expected.partition,
+    notificationCursor: projectRowCounter(
+      row.notification_cursor,
+      "selector notification cursor",
+    ),
+    ...(row.recovery_epoch === null
+      ? {}
+      : { recoveryEpoch: row.recovery_epoch }),
+    attention: row.attention,
+  });
+}
+
 async function markSubmitted(pool: pg.Pool, decision: string): Promise<void> {
   await pool.query(
     `UPDATE selector_proposal_delivery SET state='Submitted'
@@ -161,65 +209,119 @@ async function writeInventoryCursor(
   );
 }
 
+async function storeInteraction(
+  client: pg.PoolClient,
+  interaction: SelectorInteraction,
+): Promise<void> {
+  const stored = await client.query(
+    `INSERT INTO selector_interaction
+     (selector_decision,tenant,project,instructions_version,instructions,observed_view,
+      context,tool_activity,result,implementation_revision,model_revision,policy_revision,
+      accounting,started_at,completed_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+     ON CONFLICT (selector_decision) DO UPDATE SET selector_decision=EXCLUDED.selector_decision
+     WHERE selector_interaction.tenant IS NOT DISTINCT FROM EXCLUDED.tenant
+       AND selector_interaction.project IS NOT DISTINCT FROM EXCLUDED.project
+       AND selector_interaction.instructions_version IS NOT DISTINCT FROM EXCLUDED.instructions_version
+       AND selector_interaction.instructions IS NOT DISTINCT FROM EXCLUDED.instructions
+       AND selector_interaction.observed_view IS NOT DISTINCT FROM EXCLUDED.observed_view
+       AND selector_interaction.context IS NOT DISTINCT FROM EXCLUDED.context
+       AND selector_interaction.tool_activity IS NOT DISTINCT FROM EXCLUDED.tool_activity
+       AND selector_interaction.result IS NOT DISTINCT FROM EXCLUDED.result
+       AND selector_interaction.implementation_revision IS NOT DISTINCT FROM EXCLUDED.implementation_revision
+       AND selector_interaction.model_revision IS NOT DISTINCT FROM EXCLUDED.model_revision
+       AND selector_interaction.policy_revision IS NOT DISTINCT FROM EXCLUDED.policy_revision
+       AND selector_interaction.accounting IS NOT DISTINCT FROM EXCLUDED.accounting
+       AND selector_interaction.started_at IS NOT DISTINCT FROM EXCLUDED.started_at
+       AND selector_interaction.completed_at IS NOT DISTINCT FROM EXCLUDED.completed_at
+     RETURNING selector_decision`,
+    [
+      interaction.decision,
+      interaction.partition.tenant,
+      interaction.partition.project,
+      interaction.instructionsVersion,
+      interaction.instructions,
+      encode(interaction.observedView),
+      encode(interaction.context),
+      encode(interaction.toolActivity),
+      encode(interaction.result),
+      interaction.implementationRevision,
+      interaction.modelRevision,
+      interaction.policyRevision,
+      encode(interaction.accounting),
+      interaction.startedAt,
+      interaction.completedAt,
+    ],
+  );
+  if (stored.rowCount !== 1)
+    throw new Error(
+      "selector decision reference contradicts retained provenance",
+    );
+}
+
+async function storePlanning(
+  client: pg.PoolClient,
+  interaction: SelectorInteraction,
+  planningIntent: unknown,
+): Promise<void> {
+  const stored = await client.query(
+    `INSERT INTO selector_planning_intent (tenant,project,selector_decision,intent)
+     VALUES ($1,$2,$3,$4) ON CONFLICT (tenant,project) DO UPDATE SET
+     selector_decision=EXCLUDED.selector_decision,intent=EXCLUDED.intent,updated_at=now()
+     WHERE selector_planning_intent.selector_decision<>EXCLUDED.selector_decision
+        OR selector_planning_intent.intent=EXCLUDED.intent RETURNING selector_decision`,
+    [
+      interaction.partition.tenant,
+      interaction.partition.project,
+      interaction.decision,
+      encode(planningIntent),
+    ],
+  );
+  if (stored.rowCount !== 1)
+    throw new Error("selector decision contradicts retained planning intent");
+}
+
+async function storeDelivery(
+  client: pg.PoolClient,
+  proposal: SelectorProposal,
+): Promise<void> {
+  const stored = await client.query(
+    `INSERT INTO selector_proposal_delivery
+     (selector_decision,tenant,project,operation,command) VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (selector_decision) DO UPDATE SET selector_decision=EXCLUDED.selector_decision
+     WHERE selector_proposal_delivery.tenant IS NOT DISTINCT FROM EXCLUDED.tenant
+       AND selector_proposal_delivery.project IS NOT DISTINCT FROM EXCLUDED.project
+       AND selector_proposal_delivery.operation IS NOT DISTINCT FROM EXCLUDED.operation
+       AND selector_proposal_delivery.command IS NOT DISTINCT FROM EXCLUDED.command
+     RETURNING selector_decision`,
+    [
+      proposal.interaction.decision,
+      proposal.interaction.partition.tenant,
+      proposal.interaction.partition.project,
+      proposal.operation,
+      encode(proposal.command),
+    ],
+  );
+  if (stored.rowCount !== 1)
+    throw new Error("selector decision contradicts retained delivery");
+}
+
 async function recordSelectorState(
   pool: pg.Pool,
   interaction: SelectorInteraction,
-  state: SelectorProjectState,
+  previous: SelectorProjectState,
+  next: SelectorProjectState,
   planningIntent?: unknown,
   proposal?: SelectorProposal,
-): Promise<void> {
-  await postgresTransaction(pool, async (client) => {
-    await client.query(
-      `INSERT INTO selector_interaction
-       (selector_decision,tenant,project,instructions_version,instructions,observed_view,
-        context,tool_activity,result,implementation_revision,model_revision,policy_revision,
-        accounting,started_at,completed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-       ON CONFLICT (selector_decision) DO NOTHING`,
-      [
-        interaction.decision,
-        interaction.partition.tenant,
-        interaction.partition.project,
-        interaction.instructionsVersion,
-        interaction.instructions,
-        encode(interaction.observedView),
-        encode(interaction.context),
-        encode(interaction.toolActivity),
-        encode(interaction.result),
-        interaction.implementationRevision,
-        interaction.modelRevision,
-        interaction.policyRevision,
-        encode(interaction.accounting),
-        interaction.startedAt,
-        interaction.completedAt,
-      ],
-    );
+): Promise<boolean> {
+  return postgresTransaction(pool, async (client) => {
+    if (!(await lockSelectorProject(client, previous))) return false;
+    await storeInteraction(client, interaction);
     if (planningIntent !== undefined)
-      await client.query(
-        `INSERT INTO selector_planning_intent (tenant,project,selector_decision,intent)
-         VALUES ($1,$2,$3,$4) ON CONFLICT (tenant,project) DO UPDATE SET
-         selector_decision=EXCLUDED.selector_decision,intent=EXCLUDED.intent,updated_at=now()`,
-        [
-          interaction.partition.tenant,
-          interaction.partition.project,
-          interaction.decision,
-          encode(planningIntent),
-        ],
-      );
-    if (proposal !== undefined)
-      await client.query(
-        `INSERT INTO selector_proposal_delivery
-       (selector_decision,tenant,project,operation,command) VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (selector_decision) DO NOTHING`,
-        [
-          interaction.decision,
-          interaction.partition.tenant,
-          interaction.partition.project,
-          proposal.operation,
-          encode(proposal.command),
-        ],
-      );
-    await writeSelectorProject(client, state);
+      await storePlanning(client, interaction, planningIntent);
+    if (proposal !== undefined) await storeDelivery(client, proposal);
+    await writeSelectorProject(client, next);
+    return true;
   });
 }
 
@@ -227,13 +329,14 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
   return {
     inventoryCursor: () => readInventoryCursor(pool),
     saveInventoryCursor: (cursor) => writeInventoryCursor(pool, cursor),
-    recordInteraction: (interaction, state, planningIntent) =>
-      recordSelectorState(pool, interaction, state, planningIntent),
-    record: (proposal, state) =>
+    recordInteraction: (interaction, previous, next, planningIntent) =>
+      recordSelectorState(pool, interaction, previous, next, planningIntent),
+    record: (proposal, previous, next) =>
       recordSelectorState(
         pool,
         proposal.interaction,
-        state,
+        previous,
+        next,
         proposal.planningIntent,
         proposal,
       ),
@@ -249,6 +352,7 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     history: async (partition: Partition, after, limit) => {
       checkedSelectorLimit(limit, "selector history");
       const found = await pool.query<{
+        ordinal: string;
         selector_decision: string;
         instructions_version: string;
         instructions: string;
@@ -264,10 +368,11 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
         completed_at: Date;
       }>(
         `SELECT * FROM selector_interaction WHERE tenant=$1 AND project=$2
-          AND selector_decision>$3 ORDER BY selector_decision LIMIT $4`,
-        [partition.tenant, partition.project, after ?? "", limit],
+          AND ordinal>$3 ORDER BY ordinal LIMIT $4`,
+        [partition.tenant, partition.project, after ?? 0, limit],
       );
-      return found.rows.map((row): SelectorInteraction => ({
+      return found.rows.map((row): StoredSelectorInteraction => ({
+        ordinal: projectRowCounter(row.ordinal, "selector interaction ordinal"),
         decision: row.selector_decision,
         partition,
         instructionsVersion: row.instructions_version,

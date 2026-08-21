@@ -13,7 +13,7 @@ export interface SelectorHistory {
   read(
     principal: Principal,
     partition: Partition,
-    after: string | undefined,
+    after: number | undefined,
     limit: number,
   ): Promise<SelectorHistoryResult>;
 }

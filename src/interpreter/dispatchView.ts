@@ -51,7 +51,7 @@ export interface DispatchView extends DispatchViewToken {
 export interface DispatchViewQuery {
   readonly after?: TicketId;
   readonly limit: number;
-  readonly watermark?: number;
+  readonly token?: DispatchViewToken;
 }
 
 export type DispatchViewPage =
@@ -157,12 +157,13 @@ export function checkedDispatchViewQuery(
       `dispatch view limit must be between 1 and ${String(dispatchViewPageLimitMax)}`,
     );
   if (
-    query.watermark !== undefined &&
-    (!Number.isSafeInteger(query.watermark) || query.watermark < 0)
+    query.token !== undefined &&
+    (!Number.isSafeInteger(query.token.watermark) ||
+      query.token.watermark < 0 ||
+      query.token.schemaVersion !== dispatchViewSchemaVersion ||
+      !/^[0-9a-f]{64}$/.test(query.token.digest))
   )
-    throw new RangeError(
-      "dispatch view watermark must be a non-negative safe integer",
-    );
+    throw new RangeError("dispatch view token is malformed");
   return query;
 }
 

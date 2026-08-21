@@ -47,8 +47,8 @@ function stateStore(
   return {
     inventoryCursor: () => Promise.resolve(undefined),
     saveInventoryCursor: () => Promise.resolve(),
-    recordInteraction: () => Promise.resolve(),
-    record: () => Promise.resolve(),
+    recordInteraction: () => Promise.resolve(true),
+    record: () => Promise.resolve(true),
     pending: () => Promise.resolve([]),
     submittedDeliveries: () => Promise.resolve([]),
     submitted: () => Promise.resolve(),
@@ -68,7 +68,7 @@ test("selector observation resumes from a reset cursor and pins every view page"
     {
       notifications: () => Promise.resolve({ result: "Reset", cursor: 12 }),
       dispatchView: (_partition, query) => {
-        watermarks.push(query.watermark);
+        watermarks.push(query.token?.watermark);
         return Promise.resolve({
           result: "Page",
           token: {
@@ -90,23 +90,28 @@ test("selector observation resumes from a reset cursor and pins every view page"
 
 test("selector observation discards a view when a later page resets", async () => {
   let page = 0;
+  let firstToken: typeof delivery.command.observedViewToken | undefined;
   const observed = await observeSelectorProject(
     { partition, notificationCursor: 0, attention: "Monitoring" },
     {
       notifications: () =>
         Promise.resolve({ result: "Events", cursor: 0, events: [] } as const),
-      dispatchView: () => {
+      dispatchView: (_partition, query) => {
         page += 1;
-        if (page === 2) return Promise.resolve({ result: "Reset" } as const);
+        if (page === 2) {
+          assert.deepEqual(query.token, firstToken);
+          return Promise.resolve({ result: "Reset" } as const);
+        }
+        firstToken = {
+          ...partition,
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 1,
+          digest: "b".repeat(64),
+        };
         return Promise.resolve({
           result: "Page",
-          token: {
-            ...partition,
-            recoveryEpoch: "epoch",
-            schemaVersion: 1,
-            watermark: 1,
-            digest: "b".repeat(64),
-          },
+          token: firstToken,
           candidates: [],
           nextAfter: asTicketId(1),
           notificationCursor: 0,

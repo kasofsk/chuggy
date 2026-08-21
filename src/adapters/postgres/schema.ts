@@ -1403,32 +1403,61 @@ const durableDispatch = [
      RETURNS TABLE(result text,operation text,ordinal bigint,state text,authority_kind text,
        admission text,lifecycle_generation bigint,lifecycle text)
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-     DECLARE command_value jsonb; ticket_value bigint; accepted record;
+     DECLARE command_value jsonb; ticket_value bigint; expected_version bigint;
+       view_watermark bigint; command_fields bigint; token_fields bigint; accepted record;
      BEGIN
        BEGIN command_value:=in_command::jsonb;
        EXCEPTION WHEN others THEN RETURN QUERY SELECT 'InvalidCommand'::text,NULL::text,NULL::bigint,
          NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN; END;
-       IF command_value->>'version'<>'1'
+       IF jsonb_typeof(command_value) IS DISTINCT FROM 'object'
+          OR command_value->>'version' IS DISTINCT FROM '1'
+          OR command_value->>'command' IS NULL
           OR command_value->>'command' NOT IN ('ManualDispatch','ProposeDispatch')
-          OR jsonb_typeof(command_value->'ticket')<>'number'
-          OR (command_value->>'ticket') !~ '^[1-9][0-9]*$'
-          OR jsonb_typeof(command_value->'expectedTicketVersion')<>'number'
-          OR (command_value->>'expectedTicketVersion') !~ '^[1-9][0-9]*$' THEN
+          OR jsonb_typeof(command_value->'ticket') IS DISTINCT FROM 'number'
+          OR coalesce(command_value->>'ticket','') !~ '^[1-9][0-9]*$'
+          OR jsonb_typeof(command_value->'expectedTicketVersion') IS DISTINCT FROM 'number'
+          OR coalesce(command_value->>'expectedTicketVersion','') !~ '^[1-9][0-9]*$' THEN
+         RETURN QUERY SELECT 'InvalidCommand'::text,NULL::text,NULL::bigint,
+           NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN;
+       END IF;
+       SELECT count(*) INTO command_fields FROM jsonb_object_keys(command_value);
+       IF (command_value->>'command'='ManualDispatch' AND command_fields<>4)
+          OR (command_value->>'command'='ProposeDispatch' AND command_fields<>6) THEN
          RETURN QUERY SELECT 'InvalidCommand'::text,NULL::text,NULL::bigint,
            NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN;
        END IF;
        BEGIN ticket_value:=(command_value->>'ticket')::bigint;
+         expected_version:=(command_value->>'expectedTicketVersion')::bigint;
        EXCEPTION WHEN numeric_value_out_of_range THEN RETURN QUERY SELECT 'InvalidCommand'::text,
          NULL::text,NULL::bigint,NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN; END;
-       IF command_value->>'command'='ProposeDispatch' AND (
-          jsonb_typeof(command_value->'observedViewToken')<>'object'
-          OR command_value->'observedViewToken'->>'tenant'<>in_tenant
-          OR command_value->'observedViewToken'->>'project'<>in_project
-          OR command_value->'observedViewToken'->>'schemaVersion'<>'1'
-          OR (command_value->'observedViewToken'->>'digest') !~ '^[0-9a-f]{64}$'
-          OR length(command_value->>'selectorDecisionReference') NOT BETWEEN 1 AND 256) THEN
+       IF command_value->>'command'='ProposeDispatch'
+          AND jsonb_typeof(command_value->'observedViewToken') IS DISTINCT FROM 'object' THEN
          RETURN QUERY SELECT 'InvalidCommand'::text,NULL::text,NULL::bigint,
            NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN;
+       END IF;
+       IF command_value->>'command'='ProposeDispatch' THEN
+         SELECT count(*) INTO token_fields
+           FROM jsonb_object_keys(command_value->'observedViewToken');
+       END IF;
+       IF command_value->>'command'='ProposeDispatch' AND (
+          token_fields<>6
+          OR command_value->'observedViewToken'->>'tenant' IS DISTINCT FROM in_tenant
+          OR command_value->'observedViewToken'->>'project' IS DISTINCT FROM in_project
+          OR coalesce(length(command_value->'observedViewToken'->>'recoveryEpoch'),0)
+             NOT BETWEEN 1 AND 256
+          OR jsonb_typeof(command_value->'observedViewToken'->'schemaVersion') IS DISTINCT FROM 'number'
+          OR command_value->'observedViewToken'->>'schemaVersion' IS DISTINCT FROM '1'
+          OR jsonb_typeof(command_value->'observedViewToken'->'watermark') IS DISTINCT FROM 'number'
+          OR coalesce(command_value->'observedViewToken'->>'watermark','') !~ '^(0|[1-9][0-9]*)$'
+          OR coalesce(command_value->'observedViewToken'->>'digest','') !~ '^[0-9a-f]{64}$'
+          OR coalesce(length(command_value->>'selectorDecisionReference'),0) NOT BETWEEN 1 AND 256) THEN
+         RETURN QUERY SELECT 'InvalidCommand'::text,NULL::text,NULL::bigint,
+           NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN;
+       END IF;
+       IF command_value->>'command'='ProposeDispatch' THEN
+         BEGIN view_watermark:=(command_value->'observedViewToken'->>'watermark')::bigint;
+         EXCEPTION WHEN numeric_value_out_of_range THEN RETURN QUERY SELECT 'InvalidCommand'::text,
+           NULL::text,NULL::bigint,NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN; END;
        END IF;
        SELECT * INTO accepted FROM ${acceptanceFunction}(
          in_tenant,in_project,in_operation,in_authority_kind,in_authority_subject,
@@ -1494,6 +1523,7 @@ const durableDispatch = [
    )`,
   `INSERT INTO selector_inventory_state (singleton) VALUES (1)`,
   `CREATE TABLE selector_interaction (
+     ordinal bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
      selector_decision text PRIMARY KEY, tenant text NOT NULL, project text NOT NULL,
      instructions_version text NOT NULL, instructions text NOT NULL, observed_view text NOT NULL,
      context text NOT NULL, tool_activity text NOT NULL, result text NOT NULL,
@@ -1531,6 +1561,7 @@ const durableDispatch = [
   `GRANT SELECT ON dispatch_view,dispatch_candidate,dispatch_candidate_dependency TO ${apiRole}`,
   `GRANT SELECT,INSERT,UPDATE,DELETE ON selector_project_state,selector_inventory_state,selector_interaction,
      selector_planning_intent,selector_proposal_delivery TO ${selectorServiceRole}`,
+  `GRANT USAGE,SELECT ON SEQUENCE selector_interaction_ordinal_seq TO ${selectorServiceRole}`,
   `GRANT SELECT,INSERT,UPDATE,DELETE ON dispatch_view,dispatch_candidate,
      dispatch_candidate_dependency TO ${ticketServiceRole}`,
   `INSERT INTO project_readiness (tenant,project,ready,generation)

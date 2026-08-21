@@ -21,6 +21,10 @@ export interface SelectorInteraction {
   readonly completedAt: string;
 }
 
+export interface StoredSelectorInteraction extends SelectorInteraction {
+  readonly ordinal: number;
+}
+
 export interface SelectorProposal {
   readonly interaction: SelectorInteraction;
   readonly operation: OperationId;
@@ -47,22 +51,24 @@ export interface SelectorStateStore {
   saveInventoryCursor(cursor: Partition | undefined): Promise<void>;
   recordInteraction(
     interaction: SelectorInteraction,
-    state: SelectorProjectState,
+    previous: SelectorProjectState,
+    next: SelectorProjectState,
     planningIntent?: unknown,
-  ): Promise<void>;
+  ): Promise<boolean>;
   record(
     proposal: SelectorProposal,
-    state: SelectorProjectState,
-  ): Promise<void>;
+    previous: SelectorProjectState,
+    next: SelectorProjectState,
+  ): Promise<boolean>;
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
   submitted(decision: string): Promise<void>;
   terminal(decision: string, outcome: unknown): Promise<void>;
   history(
     partition: Partition,
-    after: string | undefined,
+    after: number | undefined,
     limit: number,
-  ): Promise<readonly SelectorInteraction[]>;
+  ): Promise<readonly StoredSelectorInteraction[]>;
   project(partition: Partition): Promise<SelectorProjectState | undefined>;
 }
 
@@ -146,11 +152,13 @@ export async function runSelectorCycle(
     attention: result.attention,
   };
   if (selected === undefined) {
-    await store.recordInteraction(
+    const recorded = await store.recordInteraction(
       result.interaction,
+      state,
       nextState,
       result.planningIntent,
     );
+    if (!recorded) return undefined;
     return undefined;
   }
   const proposal: SelectorProposal = {
@@ -165,8 +173,9 @@ export async function runSelectorCycle(
       ? {}
       : { planningIntent: result.planningIntent }),
   };
-  await store.record(proposal, nextState);
-  return proposal;
+  return (await store.record(proposal, state, nextState))
+    ? proposal
+    : undefined;
 }
 
 /** Polls current state after every wake-up or cursor reset and never mixes view watermarks. */
@@ -186,7 +195,7 @@ export async function observeSelectorProject(
     const page = await source.dispatchView(state.partition, {
       ...(after === undefined ? {} : { after }),
       limit: pageLimit,
-      ...(token === undefined ? {} : { watermark: token.watermark }),
+      ...(token === undefined ? {} : { token }),
     });
     if (page.result === "Reset") return undefined;
     token ??= page.token;

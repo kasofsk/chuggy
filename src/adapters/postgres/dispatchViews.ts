@@ -95,6 +95,22 @@ async function viewHeader(
   return found.rows[0];
 }
 
+function tokenMatches(
+  token: NonNullable<DispatchViewQuery["token"]>,
+  partition: Partition,
+  current: HeaderRow,
+  watermark: number,
+): boolean {
+  return (
+    token.tenant === partition.tenant &&
+    token.project === partition.project &&
+    token.recoveryEpoch === current.recovery_epoch &&
+    token.schemaVersion === current.schema_version &&
+    token.watermark === watermark &&
+    token.digest === current.digest
+  );
+}
+
 async function readDispatchView(
   pool: pg.Pool,
   partition: Partition,
@@ -111,7 +127,10 @@ async function readDispatchView(
       "dispatch view watermark",
     );
     if (!current.has_view && watermark > 0) return { result: "Reset" };
-    if (query.watermark !== undefined && query.watermark !== watermark)
+    if (
+      query.token !== undefined &&
+      !tokenMatches(query.token, partition, current, watermark)
+    )
       return { result: "Reset" };
     const found = await client.query<CandidateRow>(
       `SELECT ticket::text,ticket_version::text,work_fanout::text,program,
