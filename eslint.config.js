@@ -60,8 +60,9 @@
 // variable against a migrated database of its own and gets the same
 // diagnostics inline, with `--fix` writing the inferred row type at the call
 // site. The unconditional block beside it is the half that needs no server:
-// a query written as an untagged string is invisible to SafeQL, so untagged
-// strings there are findings on every run.
+// a query written as an untagged string, or written on a handle the checker
+// does not read, is invisible to SafeQL either way, so both are findings on
+// every run.
 
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
@@ -99,10 +100,12 @@ const noAmbientDraws = (subject) => [
 ];
 
 // A query the checker cannot see is a claim nothing checks: an untagged
-// string reaches the server as SQL and never reaches SafeQL. So untagged
-// query strings in the adapter are findings unconditionally — no server
-// needed — with transaction control exempt everywhere and the migration
-// executor's variables exempt only where the caller passes their names.
+// string reaches the server as SQL and never reaches SafeQL, and so does a
+// tagged one on a handle the checker's wrapper pattern does not name. So
+// untagged query strings and unnamed handles in the adapter are findings
+// unconditionally — no server needed — with transaction control exempt
+// everywhere and the migration executor's variables exempt only where the
+// caller passes their names.
 const adapterQueriesTagged = (runtimeExemption) => [
   "error",
   {
@@ -126,6 +129,12 @@ const adapterQueriesTagged = (runtimeExemption) => [
   {
     selector: `CallExpression[callee.property.name='query'][arguments.0.type!='Literal'][arguments.0.type!='TemplateLiteral'][arguments.0.type!='TaggedTemplateExpression']${runtimeExemption}`,
     message: "a query assembled at runtime cannot be checked.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='query']:not([callee.object.name=/^(client|pool)$/])",
+    message:
+      "check-queries reads the queries on the client and pool handles; one on another handle is checked by nothing.",
   },
 ];
 
@@ -234,8 +243,9 @@ export default tseslint.config(
       "no-restricted-properties": noAmbientDraws("the interpreter"),
     },
   },
-  // Untagged query strings are findings everywhere in the adapter; only the
-  // migration executor's own file may hand `.query` its named variables.
+  // Untagged query strings and unread handles are findings everywhere in the
+  // adapter; only the migration executor's own file may hand `.query` its
+  // named variables.
   {
     files: ["src/adapters/postgres/**/*.ts"],
     rules: { "no-restricted-syntax": adapterQueriesTagged("") },
