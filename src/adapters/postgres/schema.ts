@@ -1719,6 +1719,24 @@ const durableExecutionScheduler = [
   `CREATE TRIGGER execution_result_artifact_is_written_once
      BEFORE UPDATE OR DELETE ON execution_result_artifact
      FOR EACH ROW EXECUTE FUNCTION execution_result_is_immutable()`,
+  `CREATE FUNCTION execution_result_reporter_is_unfenced() RETURNS trigger
+     LANGUAGE plpgsql AS $$
+     DECLARE reporter text;
+     BEGIN
+       SELECT a.state INTO reporter FROM execution_attempt a
+        WHERE a.tenant = NEW.tenant AND a.project = NEW.project
+          AND a.execution = NEW.execution AND a.attempt = NEW.attempt;
+       IF reporter = 'Superseded' THEN
+         RAISE EXCEPTION
+           'attempt % was fenced, and a fenced reporter''s manifest is not evidence',
+           NEW.attempt USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       RETURN NEW;
+     END $$`,
+  `REVOKE EXECUTE ON FUNCTION execution_result_reporter_is_unfenced() FROM PUBLIC`,
+  `CREATE TRIGGER execution_result_comes_from_an_unfenced_attempt
+     BEFORE INSERT ON execution_result
+     FOR EACH ROW EXECUTE FUNCTION execution_result_reporter_is_unfenced()`,
   `ALTER TABLE execution ADD CONSTRAINT execution_result_is_its_own
      FOREIGN KEY (tenant, project, execution, result_manifest)
      REFERENCES execution_result (tenant, project, execution, manifest)`,

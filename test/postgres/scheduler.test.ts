@@ -800,6 +800,30 @@ test("an attempt cannot write after it is fenced, nor move its generation backwa
   );
 });
 
+test("a fenced attempt's manifest is refused, and the attempt beside it is not", async () => {
+  const fixture = await schedulerFixture("unfenced");
+  const execution = await schedulerRegister(fixture, "unfenced");
+  const superseded = await schedulerAttempt(
+    fixture,
+    execution,
+    "unfenced-old",
+    "Superseded",
+  );
+  await assert.rejects(
+    schedulerResult(fixture, execution, superseded, "unfenced-old"),
+    /was fenced, and a fenced reporter's manifest is not evidence/,
+  );
+  const current = await schedulerAttempt(fixture, execution, "unfenced-new");
+  await schedulerResult(fixture, execution, current, "unfenced-new");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT attempt FROM execution_result WHERE tenant=$1 AND project=$2",
+      [fixture.partition.tenant, fixture.partition.project],
+    ),
+    [{ attempt: current }],
+  );
+});
+
 test("a result manifest and its artifacts are written once", async () => {
   const fixture = await schedulerFixture("immutable");
   const reported = await schedulerReported(fixture, "immutable");
