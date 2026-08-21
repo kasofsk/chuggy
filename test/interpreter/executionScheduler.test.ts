@@ -6,6 +6,11 @@
  * `./capacity.test.ts` holds the arithmetic to `model/capacity.qnt`. What is
  * left here is what the model has no opinion about, which is every operational
  * bound a deployment chooses.
+ *
+ * ONE OF THOSE BOUNDS IS NOT THE SCHEDULER'S ALONE. A project backlog ceiling
+ * is a promise about the mailbox the completions it authorizes will land in, so
+ * the cases below drive it against the ticket-service configuration it has to
+ * reserve room within rather than against itself.
  */
 
 import assert from "node:assert/strict";
@@ -22,6 +27,10 @@ import {
   type Entitlement,
   type ExecutionSchedulerConfig,
 } from "../../src/interpreter/executionScheduler.ts";
+import {
+  mailboxCompletionRoom,
+  ticketServiceDefaults,
+} from "../../src/interpreter/ticketService.ts";
 
 /** Every bound a deployment names, read from the defaults so a field added later is covered. */
 const bounds = Object.keys(
@@ -55,7 +64,10 @@ function registration(account: string): CapacityExecution {
 
 test("the defaults are a configuration a pass may run on", () => {
   assert.equal(
-    checkedExecutionSchedulerConfig(executionSchedulerDefaults),
+    checkedExecutionSchedulerConfig(
+      executionSchedulerDefaults,
+      ticketServiceDefaults,
+    ),
     executionSchedulerDefaults,
   );
   assert.ok(
@@ -68,7 +80,11 @@ test("no bound may be zero, negative or fractional", () => {
   for (const name of bounds) {
     for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       assert.throws(
-        () => checkedExecutionSchedulerConfig(configWith(name, value)),
+        () =>
+          checkedExecutionSchedulerConfig(
+            configWith(name, value),
+            ticketServiceDefaults,
+          ),
         (error: unknown) => {
           assert.ok(error instanceof RangeError);
           assert.match(error.message, new RegExp(`\\b${name}\\b`, "u"));
@@ -85,9 +101,56 @@ test("a bound past the safe integers is refused rather than silently rounded", (
     () =>
       checkedExecutionSchedulerConfig(
         configWith("attemptLeaseSecs", Number.MAX_SAFE_INTEGER + 2),
+        ticketServiceDefaults,
       ),
     RangeError,
   );
+});
+
+test("the backlog ceiling leaves the mailbox room for every completion it admits", () => {
+  const room = mailboxCompletionRoom(ticketServiceDefaults);
+  assert.ok(
+    executionSchedulerDefaults.projectBacklogMax < room,
+    "the default ceiling already outgrows the room, so this proves nothing",
+  );
+  for (const ceiling of [room, room + 1]) {
+    assert.throws(
+      () =>
+        checkedExecutionSchedulerConfig(
+          configWith("projectBacklogMax", ceiling),
+          ticketServiceDefaults,
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof RangeError);
+        assert.match(error.message, /reserves no mailbox room/u);
+        return true;
+      },
+      `a ceiling of ${String(ceiling)} was accepted against a room of ${String(room)}`,
+    );
+  }
+  assert.equal(
+    checkedExecutionSchedulerConfig(
+      configWith("projectBacklogMax", room - 1),
+      ticketServiceDefaults,
+    ).projectBacklogMax,
+    room - 1,
+  );
+});
+
+test("a wider mailbox is what widens the ceiling, rather than the ceiling itself", () => {
+  const wider = {
+    ...ticketServiceDefaults,
+    mailboxHardLimit: ticketServiceDefaults.mailboxHardLimit * 4,
+  };
+  const ceiling = configWith(
+    "projectBacklogMax",
+    mailboxCompletionRoom(ticketServiceDefaults),
+  );
+  assert.throws(
+    () => checkedExecutionSchedulerConfig(ceiling, ticketServiceDefaults),
+    RangeError,
+  );
+  assert.equal(checkedExecutionSchedulerConfig(ceiling, wider), ceiling);
 });
 
 test("an account the policy revision does not cover has no entitlement to assume", () => {

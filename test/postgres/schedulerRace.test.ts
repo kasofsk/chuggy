@@ -33,6 +33,7 @@ import { after, before, test } from "node:test";
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
 import {
   asWorkloadId,
+  executionSchedulerDefaults,
   type ExecutionSchedulerStore,
   type PhysicalAttempt,
 } from "../../src/interpreter/executionScheduler.ts";
@@ -675,11 +676,19 @@ test("an attempt whose lease lapsed is ended and its execution offered again", a
     "the launch read reaped the lapsed lease itself, which is a write",
   );
   assert.equal(
-    await rig.store.reapLapsedAttempts(postgresHarnessNewEpoch()),
+    await rig.store.reapLapsedAttempts(
+      postgresHarnessNewEpoch(),
+      executionSchedulerDefaults.attemptsPerPassMax,
+    ),
     0,
     "reaping ran under an epoch that is not the installation's",
   );
-  assert.ok((await rig.store.reapLapsedAttempts(epoch)) >= 1);
+  assert.ok(
+    (await rig.store.reapLapsedAttempts(
+      epoch,
+      executionSchedulerDefaults.attemptsPerPassMax,
+    )) >= 1,
+  );
   const waiting = await ownWaiting(project, epoch);
   assert.deepEqual(
     waiting.map((row) => row.execution),
@@ -710,7 +719,12 @@ test("a restore fences the previous epoch's worker and offers its execution agai
     postgresHarnessNewEpoch(),
   );
 
-  assert.ok((await rig.store.fenceOldEpochAttempts(after)) >= 1);
+  assert.ok(
+    (await rig.store.fenceOldEpochAttempts(
+      after,
+      executionSchedulerDefaults.attemptsPerPassMax,
+    )) >= 1,
+  );
   assert.deepEqual(
     await rig.harness.query(
       "SELECT state, evidence FROM execution_attempt WHERE tenant=$1 AND project=$2 AND attempt=$3",

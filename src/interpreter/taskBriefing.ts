@@ -42,8 +42,9 @@
  *
  * A REFUSAL IS `TicketConfigIncompatible` AND THE FAULT SAYS WHICH. The reason
  * vocabulary is the model's and is closed; `BriefingFault` is this module's
- * bounded diagnostic beside it, so a blocked ticket can be explained without
- * widening what `Core` understands.
+ * bounded diagnostic beside it, and `./executionSchedulerRun.ts` observes it at
+ * the block it causes — so a blocked ticket can be explained without widening
+ * what `Core` understands.
  */
 
 import type { ConfigurationPin } from "./projectDecision.ts";

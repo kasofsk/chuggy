@@ -56,6 +56,19 @@
  * same metric as the move they absorbed rather than by a separate one that could
  * disagree with it about how many there were.
  *
+ * A BACKLOG CEILING IS A PROMISE ABOUT A MAILBOX, so the configuration that
+ * states one is checked against the configuration that bounds the other. Every
+ * execution a project's backlog holds may later submit exactly one completion,
+ * and a completion is admitted above the ordinary ceiling rather than refused —
+ * so a backlog ceiling wider than the room the mailbox keeps above that ceiling
+ * lets one project's finished work fill its own mailbox and stop every ordinary
+ * ingress behind it, a cancellation included. 006 puts the obligation on
+ * admission rather than on the completion boundary, because refusing a
+ * completion would hold the slot the completion was going to release; so the
+ * reservation is made where the work is admitted, and
+ * `checkedExecutionSchedulerConfig` is where a deployment that has not made it
+ * is refused before it runs a pass.
+ *
  * A BLOCK RETIRES ONE EXECUTION AND NOT ITS SIBLINGS. `ExecutionBlocked`
  * escalates the whole ticket in `Core`, but the decider emits only
  * `OpenHumanTask`, so no cancellation obligation reaches this scheduler for the
@@ -70,10 +83,11 @@ import type { Reason } from "../domain/generated/modelTypes.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
 import type { OperationId } from "./operationInbox.ts";
-import { observe } from "./ticketService.ts";
+import { mailboxCompletionRoom, observe } from "./ticketService.ts";
+import type { TicketServiceConfig } from "./ticketService.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { ResultManifest, ResultManifestId } from "./resultManifest.ts";
-import type { TaskInvocation } from "./taskBriefing.ts";
+import type { BriefingFault, TaskInvocation } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 export {
   asAttemptId,
@@ -586,10 +600,13 @@ export interface ExecutionSchedulerStore {
   ): Promise<LogicalExecution | undefined>;
 
   /**
-   * Ends every attempt whose lease has run out, spending the safe retry budget
-   * the way any attempt that ran and vanished does.
+   * Ends at most `attemptsMax` attempts whose lease has run out, spending the
+   * safe retry budget the way any attempt that ran and vanished does.
    */
-  reapLapsedAttempts(epoch: RecoveryEpoch): Promise<number>;
+  reapLapsedAttempts(
+    epoch: RecoveryEpoch,
+    attemptsMax: number,
+  ): Promise<number>;
 
   /** At most `executionsMax` executions that own a slot and have no live attempt. */
   unlaunched(
@@ -597,8 +614,14 @@ export interface ExecutionSchedulerStore {
     executionsMax: number,
   ): Promise<readonly LogicalExecution[]>;
 
-  /** Marks every attempt issued under an older recovery epoch unable to report. */
-  fenceOldEpochAttempts(epoch: RecoveryEpoch): Promise<number>;
+  /**
+   * Marks at most `attemptsMax` attempts issued under an older recovery epoch
+   * unable to report, which a later pass resumes where this one stopped.
+   */
+  fenceOldEpochAttempts(
+    epoch: RecoveryEpoch,
+    attemptsMax: number,
+  ): Promise<number>;
 }
 
 /** The execution profile a worker runs under, resolved from policy and never weakened by authored content. */
@@ -692,13 +715,15 @@ export const executionCapacityDefaults = {
 /**
  * The scheduler's bounded configuration, every value of it an operational
  * choice. The two backlog ceilings live here because the guard that reads them
- * is the scheduler's authority wherever it is mounted.
+ * is the scheduler's authority wherever it is mounted, and both sweeps share one
+ * per-pass bound because both of them end attempts.
  */
 export interface ExecutionSchedulerConfig {
   readonly requestClaimLeaseSecs: number;
   readonly requestsPerPassMax: number;
   readonly attemptLeaseSecs: number;
   readonly attemptRetriesMax: number;
+  readonly attemptsPerPassMax: number;
   readonly placementBackoffSecs: number;
   readonly admissionsPerPassMax: number;
   readonly launchesPerPassMax: number;
@@ -713,17 +738,24 @@ export const executionSchedulerDefaults: ExecutionSchedulerConfig = {
   requestsPerPassMax: 32,
   attemptLeaseSecs: 300,
   attemptRetriesMax: 3,
+  attemptsPerPassMax: 256,
   placementBackoffSecs: 15,
   admissionsPerPassMax: 32,
   launchesPerPassMax: 32,
-  projectBacklogMax: 5_000,
+  projectBacklogMax: 200,
   installationBacklogMax: 5_000,
   backlogRetryAfterSeconds: 5,
 };
 
-/** Refuses a configuration whose bounds are not positive safe integers. */
+/**
+ * Refuses a configuration whose bounds are not positive safe integers, and one
+ * whose project backlog ceiling reserves no mailbox room for the completions
+ * that backlog can submit. It takes both configurations because the
+ * relationship between them is the thing being checked.
+ */
 export function checkedExecutionSchedulerConfig(
   config: ExecutionSchedulerConfig,
+  service: TicketServiceConfig,
 ): ExecutionSchedulerConfig {
   for (const [name, value] of Object.entries(config)) {
     if (!Number.isSafeInteger(value) || value <= 0) {
@@ -731,6 +763,11 @@ export function checkedExecutionSchedulerConfig(
         `execution scheduler configuration: ${name} must be a positive safe integer`,
       );
     }
+  }
+  if (config.projectBacklogMax >= mailboxCompletionRoom(service)) {
+    throw new RangeError(
+      "execution scheduler configuration: projectBacklogMax reserves no mailbox room for the completions it can submit",
+    );
   }
   return config;
 }
@@ -755,6 +792,7 @@ export interface ExecutionSchedulerMetrics {
   reaping(attempts: number): void;
   admission(outcome: Admitted["admitted"]): void;
   attemptOpened(outcome: AttemptOpened["opened"]): void;
+  briefing(fault: BriefingFault): void;
   placement(outcome: WorkerPlaced["placed"]): void;
   attemptEnded(loss: AttemptLoss, evidence: AttemptEvidence): void;
   manifest(outcome: "Accepted" | "Rejected"): void;
@@ -787,6 +825,7 @@ export const silentExecutionSchedulerMetrics: ExecutionSchedulerMetrics = {
   reaping: () => undefined,
   admission: () => undefined,
   attemptOpened: () => undefined,
+  briefing: () => undefined,
   placement: () => undefined,
   attemptEnded: () => undefined,
   manifest: () => undefined,

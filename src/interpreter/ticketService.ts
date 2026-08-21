@@ -38,6 +38,16 @@ export function checkedTicketServiceConfig(
   return config;
 }
 
+/**
+ * The room between the ordinary ceiling and the hard one, which is what a
+ * completion is admitted into once ordinary work has stopped being taken. It is
+ * the bound anything that authorizes a completion in advance has to reserve
+ * within, so it is stated here beside the two limits it is derived from.
+ */
+export function mailboxCompletionRoom(config: TicketServiceConfig): number {
+  return config.mailboxHardLimit - config.ordinarySoftLimit;
+}
+
 export type DecisionMetricOutcome =
   | "Journaled"
   | "Refused"

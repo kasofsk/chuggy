@@ -3,10 +3,14 @@
  * a claim on durable work and holding a durable result.
  *
  * EVERY PASS IS BOUNDED AND EVERY STEP IS A DURABLE MOVE. House rule 9 asks
- * for an explicit limit on anything that can grow, so a pass registers,
- * cancels, admits and launches at most its configured count and returns; the
- * loop that calls it again is a deployment's. Nothing here retries in place,
- * because a retry that outlives a process is a row rather than a loop.
+ * for an explicit limit on anything that can grow, so a pass fences, reaps,
+ * registers, cancels, admits and launches at most its configured count and
+ * returns; the loop that calls it again is a deployment's. Nothing here retries
+ * in place, because a retry that outlives a process is a row rather than a
+ * loop. The two sweeps are bounded like every other step, which is what keeps a
+ * cluster-wide outage from locking every affected row in one transaction: each
+ * is idempotent, so a takeover with more attempts to fence than one pass may
+ * take finishes across the passes that follow.
  *
  * THE TWO INABILITIES ARE KEPT APART, which is the whole reason the policy and
  * placement ports answer with three arms rather than a boolean.
@@ -22,7 +26,7 @@
  * attempt it could report a manifest and a completion under. Fencing first is
  * what makes the rest of the pass safe to run at all: an old-generation worker
  * may finish its local work afterwards and can do nothing with it. It is
- * idempotent, so every pass after the first fences nothing.
+ * idempotent, so a pass that finds nothing left to fence fences nothing.
  *
  * REAPING A LAPSED LEASE IS A MOVE AND IS ASKED FOR AS ONE. An attempt whose
  * lease has run out is no longer live but its row still says it is, so nothing
@@ -31,6 +35,14 @@
  * port method whose name promises a question and whose body spends a retry
  * budget. So the launch step reaps first and then reads, and a caller can see
  * both.
+ *
+ * A WORKLOAD THE DURABLE ROW WOULD NOT TAKE IS DELETED WHERE IT WAS PLACED. An
+ * attempt fenced between the placement and the record leaves a worker running
+ * for a generation that may no longer report, so the same pass asks the fabric
+ * to delete it; leaving it would let the next pass place a second worker for one
+ * logical task, which is the thing the attempt fence exists to prevent. The
+ * durable answer still comes first, so a deletion lost to a crash leaves a
+ * workload whose attempt is already fenced.
  *
  * CANCELLATION IS DURABLE BEFORE THE FABRIC HEARS OF IT, and the port's shape
  * is what enforces that rather than the order of two statements: the
@@ -58,7 +70,9 @@
  * spending the safe retry budget. Both record the evidence the mandatory policy
  * phase already has, because briefing composition happens inside it and a
  * second label for the same phase would be a vocabulary this tree's stored
- * rows do not carry.
+ * rows do not carry. Which of them it was is observed as the composition's own
+ * bounded fault, so a rewritten pinned revision and an over-long line are not
+ * one undifferentiated refusal to whoever has to explain the blocked ticket.
  *
  * A LOST ATTEMPT SPENDS THE BUDGET AND A WITHDRAWN ONE DOES NOT. An attempt
  * that ran and vanished is the bounded retry 006 permits; one the fabric never
@@ -93,6 +107,7 @@ import {
   type ClusterId,
 } from "./executionScheduler.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
+import type { TicketServiceConfig } from "./ticketService.ts";
 import {
   composeTaskInvocation,
   type PinnedConfigurationPort,
@@ -113,6 +128,7 @@ export interface ExecutionSchedulerService {
   readonly runtimeFacts: RuntimeFactsPort;
   readonly practices: PracticeCatalog;
   readonly config: ExecutionSchedulerConfig;
+  readonly ticketService: TicketServiceConfig;
   readonly metrics: SchedulerTelemetry;
 }
 
@@ -144,7 +160,14 @@ export async function executionSchedulerFence(
   service: ExecutionSchedulerService,
   epoch: RecoveryEpoch,
 ): Promise<number> {
-  const fenced = await service.store.fenceOldEpochAttempts(epoch);
+  const config = checkedExecutionSchedulerConfig(
+    service.config,
+    service.ticketService,
+  );
+  const fenced = await service.store.fenceOldEpochAttempts(
+    epoch,
+    config.attemptsPerPassMax,
+  );
   recordScheduler(service.metrics, (metrics) => {
     metrics.fencing("Epoch", fenced);
   });
@@ -156,7 +179,10 @@ export async function executionSchedulerRegister(
   service: ExecutionSchedulerService,
   owner: SchedulerOwnerId,
 ): Promise<number> {
-  const config = checkedExecutionSchedulerConfig(service.config);
+  const config = checkedExecutionSchedulerConfig(
+    service.config,
+    service.ticketService,
+  );
   const claims = await service.store.claimRequests(
     owner,
     ["SpawnWork", "SpawnEvaluation"],
@@ -182,7 +208,10 @@ export async function executionSchedulerCancel(
   service: ExecutionSchedulerService,
   owner: SchedulerOwnerId,
 ): Promise<number> {
-  const config = checkedExecutionSchedulerConfig(service.config);
+  const config = checkedExecutionSchedulerConfig(
+    service.config,
+    service.ticketService,
+  );
   const claims = await service.store.claimRequests(
     owner,
     ["CancelTicketWork"],
@@ -195,7 +224,7 @@ export async function executionSchedulerCancel(
     recordScheduler(service.metrics, (metrics) => {
       metrics.cancellation(outcome.cancelled);
       if (outcome.cancelled === "Registered") {
-        metrics.fencing("Cancellation", outcome.fenced);
+        metrics.fencing("Cancellation", outcome.workloads.length);
       }
     });
     if (outcome.cancelled !== "Registered") continue;
@@ -212,7 +241,10 @@ export async function executionSchedulerAdmit(
   service: ExecutionSchedulerService,
   cluster: ClusterId,
 ): Promise<number> {
-  const config = checkedExecutionSchedulerConfig(service.config);
+  const config = checkedExecutionSchedulerConfig(
+    service.config,
+    service.ticketService,
+  );
   let admitted = 0;
   for (let taken = 0; taken < config.admissionsPerPassMax; taken += 1) {
     const outcome = await service.store.admit(cluster);
@@ -383,6 +415,9 @@ async function schedulerPrepare(
     case "Composed":
       return { profile: policy.profile, invocation: composed.invocation };
     case "Blocked":
+      recordScheduler(service.metrics, (metrics) => {
+        metrics.briefing(composed.fault);
+      });
       await schedulerBlock(
         service,
         execution,
@@ -421,8 +456,16 @@ async function schedulerPlace(
     metrics.placement(placed.placed);
   });
   switch (placed.placed) {
-    case "Placed":
-      return service.store.attemptPlaced(attempt, placed.workload);
+    case "Placed": {
+      const recorded = await service.store.attemptPlaced(
+        attempt,
+        placed.workload,
+      );
+      if (!recorded) {
+        await service.workers.delete(execution.partition, attempt.attempt);
+      }
+      return recorded;
+    }
     case "Denied":
       await schedulerBlock(
         service,
@@ -449,7 +492,10 @@ async function schedulerLaunchOne(
   execution: LogicalExecution,
   epoch: RecoveryEpoch,
 ): Promise<boolean> {
-  const config = checkedExecutionSchedulerConfig(service.config);
+  const config = checkedExecutionSchedulerConfig(
+    service.config,
+    service.ticketService,
+  );
   const opening: AttemptOpening = {
     partition: execution.partition,
     execution: execution.execution,
@@ -486,8 +532,14 @@ export async function executionSchedulerLaunch(
   service: ExecutionSchedulerService,
   epoch: RecoveryEpoch,
 ): Promise<number> {
-  const config = checkedExecutionSchedulerConfig(service.config);
-  const reaped = await service.store.reapLapsedAttempts(epoch);
+  const config = checkedExecutionSchedulerConfig(
+    service.config,
+    service.ticketService,
+  );
+  const reaped = await service.store.reapLapsedAttempts(
+    epoch,
+    config.attemptsPerPassMax,
+  );
   recordScheduler(service.metrics, (metrics) => {
     metrics.reaping(reaped);
   });

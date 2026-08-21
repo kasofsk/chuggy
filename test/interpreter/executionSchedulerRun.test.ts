@@ -60,6 +60,7 @@ import {
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { recordingMetrics, throwingMetrics } from "./schedulerSinks.ts";
 
@@ -199,6 +200,7 @@ function serviceWith(
     runtimeFacts: { facts: () => Promise.resolve(facts) },
     practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
+    ticketService: ticketServiceDefaults,
     metrics: silentSchedulerTelemetry,
   };
 }
@@ -443,7 +445,7 @@ function passService(calls: string[]): ExecutionSchedulerService {
     ...cancellingStore(calls, {
       cancelled: "Registered",
       fenced: 3,
-      workloads: [],
+      workloads: [asAttemptId("attempt-one"), asAttemptId("attempt-two")],
     }),
     fenceOldEpochAttempts: () => Promise.resolve(4),
     claimRequests: (_owner, kinds) =>
@@ -483,7 +485,7 @@ test("a pass observes every step it took, in the order it took them", async () =
   assert.deepEqual(seen, [
     "fencing:Epoch:4",
     "cancellation:Registered",
-    "fencing:Cancellation:3",
+    "fencing:Cancellation:2",
     "registration:Registered",
     "admission:Admitted",
     "admission:ClusterFull",
@@ -532,6 +534,71 @@ test("a definitive denial is observed as one ended attempt and one retired task"
     "attemptEnded:Withdrawn:PolicyDenied",
     "blocking:Blocked:ExecutionPolicyDenied",
   ]);
+});
+
+test("the fencing observation counts attempts where the report counts tasks", async () => {
+  const seen: string[] = [];
+  const service = serviceWith([], runnable, placedOk);
+  const store = cancellingStore([], {
+    cancelled: "Registered",
+    fenced: 3,
+    workloads: [asAttemptId("attempt-one"), asAttemptId("attempt-two")],
+  });
+  const cancelled = await executionSchedulerCancel(
+    { ...service, store, metrics: schedulerTelemetry(recordingMetrics(seen)) },
+    owner,
+  );
+  assert.equal(cancelled, 3);
+  assert.deepEqual(seen, ["cancellation:Registered", "fencing:Cancellation:2"]);
+});
+
+test("each sweep is asked for at most the count a pass is configured to take", async () => {
+  const swept: string[] = [];
+  const service = passService([]);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    fenceOldEpochAttempts: (_epoch, attemptsMax) => {
+      swept.push(`fence:${String(attemptsMax)}`);
+      return Promise.resolve(0);
+    },
+    reapLapsedAttempts: (_epoch, attemptsMax) => {
+      swept.push(`reap:${String(attemptsMax)}`);
+      return Promise.resolve(0);
+    },
+  };
+  const bound = String(executionSchedulerDefaults.attemptsPerPassMax);
+  await executionSchedulerPass({ ...service, store }, owner, epoch, cluster);
+  assert.deepEqual(swept, [`fence:${bound}`, `reap:${bound}`]);
+});
+
+test("a pass refuses a configuration that reserves no room for its completions", async () => {
+  const service = passService([]);
+  await assert.rejects(
+    executionSchedulerPass(
+      {
+        ...service,
+        config: { ...executionSchedulerDefaults, projectBacklogMax: 100_000 },
+      },
+      owner,
+      epoch,
+      cluster,
+    ),
+    RangeError,
+  );
+});
+
+test("a workload the durable row would not take is deleted where it was placed", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    attemptPlaced: (_attempt, workload) => {
+      calls.push(`placed:${workload}`);
+      return Promise.resolve(false);
+    },
+  };
+  assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
+  assert.deepEqual(calls, ["placed:workload-one", "deleted:attempt-one"]);
 });
 
 test("registration claims only spawn kinds and counts what it created", async () => {
@@ -681,6 +748,39 @@ test("runtime facts that cannot be gathered hold the attempt instead", async () 
   );
   assert.equal(await executionSchedulerLaunch(service, epoch), 0);
   assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("which briefing fault refused a ticket is observed at the block it caused", async () => {
+  const seen: string[] = [];
+  const service = serviceWith([], runnable, placedOk, {
+    read: "Configuration",
+    configuration: { ...configuration, configurationDigest: "rewritten" },
+  });
+  await executionSchedulerLaunch(
+    { ...service, metrics: schedulerTelemetry(recordingMetrics(seen)) },
+    epoch,
+  );
+  assert.deepEqual(seen, [
+    "reaping:0",
+    "attemptOpened:Opened",
+    "briefing:DigestMismatch",
+    "attemptEnded:Withdrawn:PolicyDenied",
+    "blocking:Blocked:TicketConfigIncompatible",
+  ]);
+});
+
+test("a typo and a rewritten revision are not one undifferentiated refusal", async () => {
+  const seen: string[] = [];
+  const service = serviceWith([], runnable, placedOk, {
+    read: "Configuration",
+    configuration: { ...configuration, practices: ["NotBlessed"] },
+  });
+  await executionSchedulerLaunch(
+    { ...service, metrics: schedulerTelemetry(recordingMetrics(seen)) },
+    epoch,
+  );
+  assert.ok(seen.includes("briefing:UnknownPractice"));
+  assert.equal(seen.includes("briefing:DigestMismatch"), false);
 });
 
 test("a practice no catalog blesses blocks the ticket rather than briefing without it", async () => {
