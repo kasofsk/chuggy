@@ -67,6 +67,11 @@
  *
  * NOTHING HERE READS A CLOCK. Every lease and expiry is a duration handed to the
  * store, which asks the database what time it is.
+ *
+ * THE REPORT COUNTS HOLDS AND THE SINK NAMES THEM. Every hold goes through
+ * `finalizerHold`, which is what keeps the count and the observations in
+ * agreement; nothing branches on either, because a sealed sink answers nothing
+ * and cannot be read back.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -113,6 +118,11 @@ import {
   type ProjectArtifactPort,
   type TicketHandoff,
 } from "./finalizerPreparation.ts";
+import {
+  recordFinalizer,
+  type FinalizerHoldReason,
+  type FinalizerTelemetry,
+} from "./finalizerTelemetry.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 
@@ -125,6 +135,7 @@ export interface FinalizerService {
   readonly identities: FinalizerIdentityFactory;
   readonly digestOf: FinalizationDigestFunction;
   readonly config: FinalizerConfig;
+  readonly metrics: FinalizerTelemetry;
 }
 
 /** What one bounded pass moved, which is what a deployment's loop paces itself by. */
@@ -183,6 +194,22 @@ interface FinalizerCandidate {
   readonly attempt: FinalizationAttempt;
 }
 
+/**
+ * Counts one finalization the pass left exactly where it found it, and names
+ * why. Every hold in this module goes through here, so the report's count and
+ * the observations cannot disagree.
+ */
+function finalizerHold(
+  service: FinalizerService,
+  tally: FinalizerTally,
+  reason: FinalizerHoldReason,
+): void {
+  tally.holds += 1;
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.holding(reason);
+  });
+}
+
 /** Reopens the claims a takeover and a lapsed lease each condemn, both bounded. */
 export async function finalizerFence(
   service: FinalizerService,
@@ -197,6 +224,10 @@ export async function finalizerFence(
     epoch,
     config.requestsPerPassMax,
   );
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.reopening("Epoch", stale);
+    metrics.reopening("Lapsed", lapsed);
+  });
   return stale + lapsed;
 }
 
@@ -231,7 +262,12 @@ async function finalizerRecordReading(
       ...reading,
     },
   });
-  if (recorded.recorded !== "Concluded") tally.holds += 1;
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.reconciliation(reading.verdict);
+    if (recorded.recorded === "Concluded") metrics.permit("Concluded");
+  });
+  if (recorded.recorded !== "Concluded")
+    finalizerHold(service, tally, "ReconciliationUnrecorded");
 }
 
 /** Re-proves the readings that could not settle, so a hold ends where the ref becomes readable. */
@@ -354,10 +390,13 @@ async function finalizerPromote(
     attempt: pinned.attempt.attempt,
   });
   if (granted.granted === "Refused") {
-    tally.holds += 1;
+    finalizerHold(service, tally, "PermitRefused");
     return;
   }
   const permit = granted.permit.permit;
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.permit("Granted");
+  });
   const promoted = await service.git.promoteCandidate({
     repository: pinned.repository,
     permit,
@@ -365,6 +404,9 @@ async function finalizerPromote(
     candidate: pinned.candidate,
   });
   const subject = finalizerSubjectOf(view, permit);
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.promotion(promoted.promoted);
+  });
   switch (promoted.promoted) {
     case "Advanced":
       await finalizerRecordReading(
@@ -477,7 +519,13 @@ async function finalizerRecordAttempt(
   tally: FinalizerTally,
 ): Promise<void> {
   const recorded = await service.store.recordAttempt(record);
-  if (recorded.recorded !== "Attempt") tally.holds += 1;
+  if (recorded.recorded !== "Attempt") {
+    finalizerHold(service, tally, "AttemptFenced");
+    return;
+  }
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.attempt(record.outcome, record.failureKind);
+  });
 }
 
 /** Records the deterministic failure a preparation reached before any candidate existed. */
@@ -523,7 +571,7 @@ async function finalizerConflicted(
     ),
   });
   if (written.written !== "Artifact") {
-    tally.holds += 1;
+    finalizerHold(service, tally, "ManifestUnavailable");
     return;
   }
   await finalizerRecordAttempt(
@@ -548,9 +596,12 @@ async function finalizerIntegrated(
   integrated: CandidateIntegrated,
   tally: FinalizerTally,
 ): Promise<void> {
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.integration(integrated.integrated);
+  });
   switch (integrated.integrated) {
     case "Failed":
-      tally.holds += 1;
+      finalizerHold(service, tally, "IntegrationUnanswered");
       return;
     case "Candidate":
       await finalizerRecordAttempt(
@@ -597,12 +648,12 @@ async function finalizerBuild(
     files,
   });
   if (prepared.prepared !== "Candidate") {
-    tally.holds += 1;
+    finalizerHold(service, tally, "CandidateUnbuilt");
     return;
   }
   const observed = await service.git.observeTarget(subject.repository);
   if (observed.observed !== "Target") {
-    tally.holds += 1;
+    finalizerHold(service, tally, "TargetUnobserved");
     return;
   }
   const integrated = await service.git.integrateCandidate({
@@ -640,7 +691,7 @@ async function finalizerPrepare(
   const gathering = await service.store.handoffGathering(view.claim);
   const accepted = handoffAccepted(gathering);
   if (accepted.accepted === "NoPassedWork") {
-    tally.holds += 1;
+    finalizerHold(service, tally, "NoPassedWork");
     return;
   }
   const handoff: TicketHandoff | undefined =
@@ -677,7 +728,7 @@ async function finalizerPrepare(
     artifacts: handoff.artifacts,
   });
   if (read.read === "Unavailable") {
-    tally.holds += 1;
+    finalizerHold(service, tally, "HandoffUnavailable");
     return;
   }
   if (read.read === "Rejected") {
@@ -698,8 +749,11 @@ async function finalizerAwaitApproval(
     claim: view.claim,
     attempt,
   });
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.approval(asked.asked);
+  });
   if (asked.asked === "Requested") tally.approvals += 1;
-  else tally.holds += 1;
+  else finalizerHold(service, tally, "ApprovalUnopened");
 }
 
 /** Offers the one conclusion to the one authenticated door. */
@@ -719,6 +773,9 @@ async function finalizerConclude(
     claim: view.claim,
     attempt: attempt.attempt,
     conclusion,
+  });
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.conclusion(conclusion.outcome, submitted.submitted);
   });
   if (
     submitted.submitted === "Submitted" ||
@@ -743,11 +800,14 @@ async function finalizerAdvance(
       await service.store.settleClaim(claim);
       return;
     case "Hold":
-      tally.holds += 1;
+      finalizerHold(service, tally, decision.hold);
       return;
     case "Prepare":
       if (tally.preparations >= config.preparationsPerPassMax) return;
       tally.preparations += 1;
+      recordFinalizer(service.metrics, (metrics) => {
+        metrics.preparation(decision.restartsSpent);
+      });
       await finalizerPrepare(service, view, decision.target, tally);
       return;
     case "AwaitApproval":
@@ -795,6 +855,9 @@ export async function finalizerPass(
     config.requestsPerPassMax,
     config.requestClaimLeaseSecs,
   );
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.claiming(claims.length, config.requestsPerPassMax);
+  });
   for (const claim of claims) await finalizerAdvance(service, claim, tally);
   return { reopened, ...tally };
 }

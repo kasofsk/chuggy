@@ -50,6 +50,10 @@ import {
   type FinalizerIdentityFactory,
 } from "./interpreter/finalizerPreparation.ts";
 import type { FinalizerService } from "./interpreter/finalizerRun.ts";
+import {
+  silentFinalizerTelemetry,
+  type FinalizerTelemetry,
+} from "./interpreter/finalizerTelemetry.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -149,6 +153,7 @@ export function composeFinalizerService(
   finalizerPool: pg.Pool,
   runtime: FinalizerServiceRuntime,
   config: FinalizerConfig = finalizerDefaults,
+  metrics: FinalizerTelemetry = silentFinalizerTelemetry,
 ): FinalizerService {
   const artifacts = artifactStore({
     ...runtime.artifacts,
@@ -162,6 +167,7 @@ export function composeFinalizerService(
     identities: finalizerIdentities(),
     digestOf: finalizerDigestOf,
     config: checkedFinalizerConfig(config),
+    metrics,
   };
 }
 

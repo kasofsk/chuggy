@@ -16,8 +16,6 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -33,6 +31,7 @@ import {
   recordingMetrics,
   throwingMetrics,
 } from "./schedulerSinks.ts";
+import { telemetryEmitted } from "./telemetrySinks.ts";
 
 /** Whether the compiler will let the first type stand where the second is wanted. */
 type Assignable<A, B> = [A] extends [B] ? true : false;
@@ -122,28 +121,8 @@ test("the sink a caller supplies no telemetry for accepts every observation", ()
   });
 });
 
-const sourceRoot = join(import.meta.dirname, "..", "..", "src");
-
-/** Every observation named at a call site in a source that holds a sealed sink. */
-function emittedObservations(): ReadonlySet<string> {
-  const emitted = new Set<string>();
-  for (const entry of readdirSync(sourceRoot, {
-    recursive: true,
-    encoding: "utf8",
-  })) {
-    if (!entry.endsWith(".ts")) continue;
-    const source = readFileSync(join(sourceRoot, entry), "utf8");
-    if (!source.includes("recordScheduler(")) continue;
-    for (const match of source.matchAll(/\bmetrics\.(\w+)\(/g)) {
-      const name = match[1];
-      if (name !== undefined) emitted.add(name);
-    }
-  }
-  return emitted;
-}
-
 test("every observation the scheduler declares is emitted by something", () => {
-  const emitted = emittedObservations();
+  const emitted = telemetryEmitted("recordScheduler");
   assert.ok(emitted.size > 0, "no call site was read, so this proves nothing");
   assert.deepEqual(
     allSchedulerObservations.filter((name) => !emitted.has(name)),

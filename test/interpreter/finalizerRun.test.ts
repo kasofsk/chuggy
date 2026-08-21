@@ -64,6 +64,18 @@ import {
   type ProjectArtifactWritten,
 } from "../../src/interpreter/finalizerPreparation.ts";
 import {
+  finalizerTelemetry,
+  silentFinalizerMetrics,
+  silentFinalizerTelemetry,
+  type FinalizerMetrics,
+  type FinalizerTelemetry,
+} from "../../src/interpreter/finalizerTelemetry.ts";
+import {
+  telemetryObservations,
+  telemetryRecording,
+  telemetryThrowing,
+} from "./telemetrySinks.ts";
+import {
   asArtifactDigest,
   asArtifactPath,
   asResultManifestId,
@@ -82,6 +94,11 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+
+/** Every observation the finalizer declares, read off the sink that ignores them all. */
+const declared: readonly string[] = telemetryObservations(
+  silentFinalizerMetrics,
+);
 
 /** The epoch every claim in this suite is fenced by. */
 const epoch = asRecoveryEpoch("epoch-run");
@@ -163,6 +180,7 @@ interface FinalizerRecorder extends FinalizerStore, FinalizerPreparationStore {
   readonly asks: ApprovalAsk[];
   gathering: HandoffGathering;
   asked: ApprovalAsked;
+  granted?: PermitGranted;
 }
 
 /** One passed work execution every preparation fixture reads its revision from. */
@@ -216,10 +234,12 @@ function recordingStore(
       ),
     grantPermit: (request): Promise<PermitGranted> => {
       own.grants.push(request);
-      return Promise.resolve({
-        granted: "Permit",
-        permit: permitOf(request.claim.request),
-      });
+      return Promise.resolve(
+        own.granted ?? {
+          granted: "Permit",
+          permit: permitOf(request.claim.request),
+        },
+      );
     },
     recordReconciliation: (record): Promise<Reconciled> => {
       own.readings.push(record);
@@ -364,6 +384,7 @@ function serviceOf(
   git: GitPromotionPort,
   bounds: Partial<typeof finalizerDefaults> = {},
   artifacts: ArtifactRecorder = recordingArtifacts(),
+  metrics: FinalizerTelemetry = silentFinalizerTelemetry,
 ): FinalizerService {
   return {
     store,
@@ -373,6 +394,7 @@ function serviceOf(
     identities: countingIdentities(),
     digestOf,
     config: { ...finalizerDefaults, ...bounds },
+    metrics,
   };
 }
 
@@ -703,4 +725,73 @@ test("an unreadable remote after the candidate is built records nothing at all",
   assert.equal(report.holds, 1);
   assert.deepEqual(git.integrations, []);
   assert.deepEqual(store.attempts, []);
+});
+
+test("a promotion is observed by the arm it came back on, and the permit by its states", async () => {
+  const seen: string[] = [];
+  const store = recordingStore([promotableView("request-observed")]);
+  const report = await passOver(
+    serviceOf(
+      store,
+      recordingGit(),
+      {},
+      recordingArtifacts(),
+      finalizerTelemetry(telemetryRecording<FinalizerMetrics>(declared, seen)),
+    ),
+  );
+  assert.equal(report.promotions, 1);
+  assert.deepEqual(seen, [
+    "reopening:Epoch:0",
+    "reopening:Lapsed:0",
+    `claiming:1:${String(finalizerDefaults.requestsPerPassMax)}`,
+    "permit:Granted",
+    "promotion:Advanced",
+    "reconciliation:Promoted",
+    "permit:Concluded",
+  ]);
+});
+
+test("a refused permit grant is a hold that says so, which no report could", async () => {
+  const seen: string[] = [];
+  const store = recordingStore([promotableView("request-refused")]);
+  store.granted = { granted: "Refused", refusal: "PermitLive" };
+  const report = await passOver(
+    serviceOf(
+      store,
+      recordingGit(),
+      {},
+      recordingArtifacts(),
+      finalizerTelemetry(telemetryRecording<FinalizerMetrics>(declared, seen)),
+    ),
+  );
+  assert.equal(report.holds, 1);
+  assert.equal(
+    seen.filter((each) => each.startsWith("holding:")).length,
+    report.holds,
+  );
+  assert.deepEqual(
+    seen.filter((each) => each.startsWith("holding:")),
+    ["holding:PermitRefused"],
+  );
+});
+
+test("a sink that fails at every observation cannot fail the pass it observed", async () => {
+  const thrown: string[] = [];
+  const failing = await passOver(
+    serviceOf(
+      recordingStore([promotableView("request-loud")]),
+      recordingGit(),
+      {},
+      recordingArtifacts(),
+      finalizerTelemetry(telemetryThrowing<FinalizerMetrics>(declared, thrown)),
+    ),
+  );
+  const silent = await passOver(
+    serviceOf(
+      recordingStore([promotableView("request-quiet")]),
+      recordingGit(),
+    ),
+  );
+  assert.deepEqual(failing, silent);
+  assert.ok(thrown.length > 0, "no observation was attempted");
 });

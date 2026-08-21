@@ -99,6 +99,10 @@ import {
   type FinalizerIdentityFactory,
 } from "../../src/interpreter/finalizerPreparation.ts";
 import {
+  silentFinalizerTelemetry,
+  type FinalizerTelemetry,
+} from "../../src/interpreter/finalizerTelemetry.ts";
+import {
   artifactDigestChars,
   asArtifactPath,
 } from "../../src/interpreter/resultManifest.ts";
@@ -752,6 +756,7 @@ export function finalizerDigestOf(canonical: CanonicalFinalization): string {
 export function finalizerService(
   rig: FinalizerRig,
   git: GitPromotionPort,
+  metrics: FinalizerTelemetry = silentFinalizerTelemetry,
 ): FinalizerService {
   const artifacts = artifactStore({ root: rig.artifactRoot });
   return {
@@ -762,6 +767,7 @@ export function finalizerService(
     identities: finalizerIdentities(),
     digestOf: finalizerDigestOf,
     config: checkedFinalizerConfig(finalizerDefaults),
+    metrics,
   };
 }
 
