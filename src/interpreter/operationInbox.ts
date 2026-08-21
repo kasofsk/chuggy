@@ -225,7 +225,11 @@ export function classifyCommand(command: TicketCommand): {
   readonly admission: AdmissionClass;
   readonly priority: Exclude<PriorityClass, "Continuation">;
 } {
-  if (command.command === "ReleaseDraft")
+  if (
+    command.command === "ReleaseDraft" ||
+    command.command === "ManualDispatch" ||
+    command.command === "ProposeDispatch"
+  )
     return { admission: "Ordinary", priority: "Ordinary" };
   if (command.command === "ResolveNativeAction") {
     return {

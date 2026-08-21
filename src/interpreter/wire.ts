@@ -22,6 +22,11 @@ import {
 } from "../generated/model-api.ts";
 import type { DecisionEvent, Entry } from "../domain/generated/modelTypes.ts";
 import type { TicketCommand } from "./ticketCommand.ts";
+import {
+  checkedSelectorDecisionReference,
+  dispatchViewSchemaVersion,
+} from "./dispatchView.ts";
+import { asTicketId } from "../domain/ids.ts";
 
 /** Writes one `Entry` as the text a store keeps. */
 export function encodeEntry(entry: Entry): string {
@@ -77,6 +82,58 @@ export function encodeTicketCommand(command: TicketCommand): string {
   return JSON.stringify(command);
 }
 
+function parsedDispatchCommand(
+  record: Record<string, unknown>,
+): TicketCommand | undefined {
+  const ticket = record["ticket"];
+  const expectedTicketVersion = record["expectedTicketVersion"];
+  if (
+    typeof ticket !== "number" ||
+    !Number.isSafeInteger(ticket) ||
+    ticket < 1 ||
+    typeof expectedTicketVersion !== "number" ||
+    !Number.isSafeInteger(expectedTicketVersion) ||
+    expectedTicketVersion < 1
+  )
+    return undefined;
+  if (record["command"] === "ManualDispatch")
+    return {
+      version: 1,
+      command: "ManualDispatch",
+      ticket: asTicketId(ticket),
+      expectedTicketVersion,
+    };
+  if (record["command"] !== "ProposeDispatch") return undefined;
+  const token = record["observedViewToken"];
+  const reference = record["selectorDecisionReference"];
+  if (
+    typeof token !== "object" ||
+    token === null ||
+    typeof reference !== "string"
+  )
+    throw new TypeError(
+      "proposal token or selector decision reference is invalid",
+    );
+  const view = token as Record<string, unknown>;
+  if (
+    typeof view["tenant"] !== "string" ||
+    view["tenant"].length === 0 ||
+    typeof view["project"] !== "string" ||
+    view["project"].length === 0 ||
+    typeof view["recoveryEpoch"] !== "string" ||
+    view["recoveryEpoch"].length === 0 ||
+    view["schemaVersion"] !== dispatchViewSchemaVersion ||
+    typeof view["watermark"] !== "number" ||
+    !Number.isSafeInteger(view["watermark"]) ||
+    view["watermark"] < 0 ||
+    typeof view["digest"] !== "string" ||
+    !/^[0-9a-f]{64}$/.test(view["digest"])
+  )
+    throw new TypeError("proposal view token is invalid");
+  checkedSelectorDecisionReference(reference);
+  return record as TicketCommand;
+}
+
 export function parseTicketCommand(text: string): Parsed<TicketCommand> {
   try {
     const raw: unknown = JSON.parse(text);
@@ -100,6 +157,8 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
         value: { version: 1, command: "Decide", event },
       };
     }
+    const dispatch = parsedDispatchCommand(record);
+    if (dispatch !== undefined) return { parsed: "Ok", value: dispatch };
     if (
       record["command"] === "ReleaseDraft" &&
       typeof record["ticket"] === "number" &&

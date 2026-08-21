@@ -391,7 +391,7 @@ export function postgresHarnessSubmission(
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(dispatchEvent(id(1))),
+      event: asOperationDecisionEvent({ type: "ResumeTicket", value: id(1) }),
     },
   };
 }
@@ -438,11 +438,19 @@ export function postgresHarnessDecisionSubmission(
     );
   return {
     ...postgresHarnessSubmission(partition, label, unique),
-    command: {
-      version: 1,
-      command: "Decide",
-      event: asOperationDecisionEvent(postgresHarnessEntry(index).event),
-    },
+    command:
+      postgresHarnessEntry(index).event.type === "Dispatch"
+        ? {
+            version: 1,
+            command: "ManualDispatch",
+            ticket: id(1),
+            expectedTicketVersion: index,
+          }
+        : {
+            version: 1,
+            command: "Decide",
+            event: asOperationDecisionEvent(postgresHarnessEntry(index).event),
+          },
   };
 }
 

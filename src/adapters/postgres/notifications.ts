@@ -31,7 +31,8 @@ function notificationKind(value: string): NotificationKind {
     value === "Operation" ||
     value === "Ticket" ||
     value === "Draft" ||
-    value === "Configuration"
+    value === "Configuration" ||
+    value === "Project"
   )
     return value;
   throw new Error(`notification row: unknown kind ${value}`);

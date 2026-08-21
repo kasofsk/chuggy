@@ -60,6 +60,7 @@ export interface DecisionInput {
           readonly authoringVersion: number;
           readonly configurationRevision: string;
           readonly configurationDigest: string;
+          readonly configurationCanonical: string;
         };
         readonly nativeAction?: {
           readonly action: string;
