@@ -6,13 +6,26 @@ import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
-import { postgresSelectorState } from "./adapters/postgres/selector.ts";
+import {
+  postgresSelectorState,
+  type SelectorRetryConfig,
+} from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
 import {
   selectorHistory,
   type SelectorHistory,
 } from "./interpreter/selectorHistory.ts";
-import type { SelectorStateStore } from "./interpreter/selector.ts";
+import type {
+  SelectorPolicy,
+  SelectorStateStore,
+} from "./interpreter/selector.ts";
+import {
+  selectorRunOnce,
+  type SelectorIdentityFactory,
+  type SelectorRunResult,
+  type SelectorRuntimeConfig,
+} from "./interpreter/selectorRuntime.ts";
+import { selectorNativeSource } from "./interpreter/selectorNativeSource.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -21,6 +34,7 @@ import type { OperationInbox } from "./interpreter/operationInbox.ts";
 import {
   nativeWeb,
   type NativeWeb,
+  type Principal,
   type ProjectAccess,
   type ProjectInventory,
 } from "./interpreter/nativeWeb.ts";
@@ -44,15 +58,37 @@ export interface TicketService {
 export interface SelectorService {
   readonly state: SelectorStateStore;
   readonly history: SelectorHistory;
+  runOnce(config?: SelectorRuntimeConfig): Promise<SelectorRunResult>;
+}
+
+export interface SelectorServiceRuntime {
+  readonly native: NativeWeb;
+  readonly principal: Principal;
+  readonly policy: SelectorPolicy;
+  readonly identities: SelectorIdentityFactory;
+  readonly retry?: SelectorRetryConfig;
 }
 
 /** Wires selector-owned durability and project-authorized semantic history reads. */
 export function composeSelectorService(
   selectorPool: pg.Pool,
   access: ProjectAccess,
+  runtime: SelectorServiceRuntime,
 ): SelectorService {
-  const state = postgresSelectorState(selectorPool);
-  return { state, history: selectorHistory(access, state) };
+  const state = postgresSelectorState(selectorPool, runtime.retry);
+  const source = selectorNativeSource(runtime.native, runtime.principal);
+  return {
+    state,
+    history: selectorHistory(access, state),
+    runOnce: (config) =>
+      selectorRunOnce(
+        state,
+        source,
+        runtime.policy,
+        runtime.identities,
+        config,
+      ),
+  };
 }
 
 /** Wires the authenticated web application to API-role PostgreSQL ports. */

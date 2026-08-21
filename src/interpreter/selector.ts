@@ -236,21 +236,22 @@ export async function deliverSelectorProposal(
   ticketService: SelectorTicketService,
   delivery: SelectorDelivery,
 ): Promise<SelectorDeliveryResult> {
+  let accepted: Accepted;
   try {
-    const accepted = await ticketService.submit(delivery);
-    if (accepted.accepted === "Accepted" || accepted.accepted === "Original") {
-      await store.submitted(delivery.decision);
-      return { result: "Delivered", decision: delivery.decision };
-    }
-    if (
-      accepted.accepted === "IdempotencyConflict" ||
-      accepted.accepted === "InvalidCommand"
-    )
-      await store.terminal(delivery.decision, accepted);
-    return { result: "Retry", decision: delivery.decision };
+    accepted = await ticketService.submit(delivery);
   } catch {
     return { result: "Retry", decision: delivery.decision };
   }
+  if (accepted.accepted === "Accepted" || accepted.accepted === "Original") {
+    await store.submitted(delivery.decision);
+    return { result: "Delivered", decision: delivery.decision };
+  }
+  if (
+    accepted.accepted === "IdempotencyConflict" ||
+    accepted.accepted === "InvalidCommand"
+  )
+    await store.terminal(delivery.decision, accepted);
+  return { result: "Retry", decision: delivery.decision };
 }
 
 /** Reconciles an accepted proposal without interpreting ticket-service outcome semantics. */

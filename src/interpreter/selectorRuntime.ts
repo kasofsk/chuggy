@@ -32,7 +32,20 @@ export interface SelectorRunResult {
   readonly proposed: number;
   readonly delivered: number;
   readonly reconciled: number;
+  readonly failures: readonly SelectorRunFailure[];
 }
+
+export type SelectorRunFailure =
+  | {
+      readonly phase: "Delivery" | "Reconciliation";
+      readonly decision: string;
+      readonly error: unknown;
+    }
+  | {
+      readonly phase: "Observation";
+      readonly partition: Partition;
+      readonly error: unknown;
+    };
 
 export interface SelectorRuntimeConfig {
   readonly projectsMax: number;
@@ -56,10 +69,30 @@ function initialState(partition: Partition): SelectorProjectState {
   return { partition, notificationCursor: 0, attention: "Monitoring" };
 }
 
+function nextInventoryCursor(
+  previous: Partition | undefined,
+  projects: readonly Partition[],
+  limit: number,
+  failures: readonly SelectorRunFailure[],
+): Partition | undefined {
+  const failed = failures.find((failure) => failure.phase === "Observation");
+  if (failed !== undefined) {
+    const index = projects.findIndex(
+      (partition) =>
+        partition.tenant === failed.partition.tenant &&
+        partition.project === failed.partition.project,
+    );
+    if (index === 0) return previous;
+    if (index > 0) return projects[index - 1];
+  }
+  return projects.length < limit ? undefined : projects.at(-1);
+}
+
 async function deliverPending(
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   limit: number,
+  failures: SelectorRunFailure[],
 ): Promise<number> {
   let delivered = 0;
   for (const delivery of await store.pending(limit)) {
@@ -69,8 +102,8 @@ async function deliverPending(
         "Delivered"
       )
         delivered += 1;
-    } catch {
-      continue;
+    } catch (error) {
+      failures.push({ phase: "Delivery", decision: delivery.decision, error });
     }
   }
   return delivered;
@@ -80,14 +113,19 @@ async function reconcileSubmitted(
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   limit: number,
+  failures: SelectorRunFailure[],
 ): Promise<number> {
   let reconciled = 0;
   for (const delivery of await store.submittedDeliveries(limit)) {
     try {
       if (await reconcileSelectorProposal(store, source, delivery))
         reconciled += 1;
-    } catch {
-      continue;
+    } catch (error) {
+      failures.push({
+        phase: "Reconciliation",
+        decision: delivery.decision,
+        error,
+      });
     }
   }
   return reconciled;
@@ -99,6 +137,7 @@ async function observeProjects(
   policy: SelectorPolicy,
   identities: SelectorIdentityFactory,
   projects: readonly Partition[],
+  failures: SelectorRunFailure[],
 ): Promise<number> {
   let proposed = 0;
   for (const partition of projects) {
@@ -112,8 +151,8 @@ async function observeProjects(
         identities.next(partition),
       );
       if (proposal !== undefined) proposed += 1;
-    } catch {
-      continue;
+    } catch (error) {
+      failures.push({ phase: "Observation", partition, error });
     }
   }
   return proposed;
@@ -139,23 +178,43 @@ export async function selectorRunOnce(
     config.reconciliationsMax,
     "selector reconciliation bound",
   );
-  const delivered = await deliverPending(store, source, deliveriesMax);
+  const failures: SelectorRunFailure[] = [];
+  const delivered = await deliverPending(
+    store,
+    source,
+    deliveriesMax,
+    failures,
+  );
   const reconciled = await reconcileSubmitted(
     store,
     source,
     reconciliationsMax,
+    failures,
   );
   const inventoryCursor = await store.inventoryCursor();
   const projects = await source.projects(inventoryCursor, projectsMax);
-  await store.saveInventoryCursor(
-    projects.length < projectsMax ? undefined : projects.at(-1),
-  );
+  const failuresBeforeObservation = failures.length;
   const proposed = await observeProjects(
     store,
     source,
     policy,
     identities,
     projects,
+    failures,
   );
-  return { observed: projects.length, proposed, delivered, reconciled };
+  await store.saveInventoryCursor(
+    nextInventoryCursor(
+      inventoryCursor,
+      projects,
+      projectsMax,
+      failures.slice(failuresBeforeObservation),
+    ),
+  );
+  return {
+    observed: projects.length,
+    proposed,
+    delivered,
+    reconciled,
+    failures,
+  };
 }

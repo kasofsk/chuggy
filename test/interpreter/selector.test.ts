@@ -11,6 +11,7 @@ import {
 } from "../../src/interpreter/selector.ts";
 import { selectorHistory } from "../../src/interpreter/selectorHistory.ts";
 import { selectorRunOnce } from "../../src/interpreter/selectorRuntime.ts";
+import { selectorNativeSource } from "../../src/interpreter/selectorNativeSource.ts";
 import {
   asPrincipal,
   asPublicInstant,
@@ -196,6 +197,34 @@ test("accepted selector delivery reconciles its terminal operation outcome", asy
   assert.deepEqual(terminal, outcome);
 });
 
+test("selector delivery does not disguise a state-store failure as a retry", async () => {
+  await assert.rejects(
+    deliverSelectorProposal(
+      {
+        ...stateStore(() => undefined),
+        submitted: () => Promise.reject(new Error("state unavailable")),
+      },
+      {
+        submit: () =>
+          Promise.resolve({
+            accepted: "Original",
+            operation: {
+              partition,
+              operation: delivery.operation,
+              ordinal: 1,
+              state: "Pending",
+              authorityKind: asAuthorityKind("Selector"),
+              admission: "Ordinary",
+              lifecycleGeneration: 1,
+            },
+          }),
+      },
+      delivery,
+    ),
+    /state unavailable/,
+  );
+});
+
 test("authorized selector history exposes its durable continuation cursor", async () => {
   const store = {
     ...stateStore(() => undefined),
@@ -282,5 +311,113 @@ test("a failing project cannot starve durable proposal delivery", async () => {
   );
   assert.equal(result.delivered, 1);
   assert.equal(result.proposed, 0);
+  assert.equal(result.failures.length, 1);
+  assert.equal(result.failures[0]?.phase, "Observation");
   assert.equal(submitted, 1);
+});
+
+test("selector inventory progress stops before a failed project", async () => {
+  const second = {
+    tenant: partition.tenant,
+    project: asProjectId("second-project"),
+  };
+  let saved: typeof partition | undefined;
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      saveInventoryCursor: (cursor) => {
+        saved = cursor;
+        return Promise.resolve();
+      },
+    },
+    {
+      projects: () => Promise.resolve([partition, second]),
+      notifications: (current) =>
+        current.project === second.project
+          ? Promise.reject(new Error("notifications unavailable"))
+          : Promise.resolve({ result: "Events", cursor: 0, events: [] }),
+      dispatchView: (current) =>
+        Promise.resolve({
+          result: "Page",
+          token: { ...delivery.command.observedViewToken, ...current },
+          candidates: [],
+          notificationCursor: 0,
+        }),
+      submit: () => Promise.reject(new Error("unexpected submission")),
+      operation: () => Promise.resolve(undefined),
+    },
+    {
+      decide: (observation) =>
+        Promise.resolve({
+          interaction: {
+            decision: "next-decision",
+            partition,
+            instructionsVersion: "instructions",
+            instructions: "wait",
+            observedView: observation.candidates,
+            context: {},
+            toolActivity: [],
+            result: {},
+            implementationRevision: "implementation",
+            modelRevision: "model",
+            policyRevision: "policy",
+            accounting: {},
+            startedAt: "2026-08-21T00:00:00.000Z",
+            completedAt: "2026-08-21T00:00:01.000Z",
+          },
+          attention: "Monitoring",
+        }),
+    },
+    {
+      next: (current) => ({
+        operation: asOperationId(`operation-${current.project}`),
+        selectorDecisionReference: "next-decision",
+      }),
+    },
+    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.equal(result.failures.length, 1);
+  assert.deepEqual(saved, partition);
+});
+
+test("selector native source uses the authenticated API and stable delivery identity", async () => {
+  const principal = asPrincipal("selector-principal");
+  let submittedKey: string | undefined;
+  const source = selectorNativeSource(
+    {
+      projectInventory: (foundPrincipal) => {
+        assert.equal(foundPrincipal, principal);
+        return Promise.resolve([partition]);
+      },
+      notifications: () =>
+        Promise.resolve({
+          result: "Authorized",
+          value: { result: "Events", cursor: 0, events: [] },
+        }),
+      dispatchView: () =>
+        Promise.resolve({
+          result: "Authorized",
+          value: {
+            result: "Page",
+            token: delivery.command.observedViewToken,
+            candidates: [],
+            notificationCursor: 0,
+          },
+        }),
+      submit: (_principal, submission) => {
+        submittedKey = submission.key;
+        return Promise.resolve({
+          result: "Authorized",
+          acceptance: { accepted: "InvalidCommand" },
+        });
+      },
+      operation: () => Promise.resolve(undefined),
+    },
+    principal,
+  );
+  assert.deepEqual(await source.projects(undefined, 1), [partition]);
+  assert.deepEqual(await source.submit(delivery), {
+    accepted: "InvalidCommand",
+  });
+  assert.equal(submittedKey, delivery.decision);
 });

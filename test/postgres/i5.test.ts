@@ -382,6 +382,58 @@ test("selector terminal outcomes are exactly idempotent", async () => {
   }
 });
 
+test("selector delivery retry leases use the configured bounded delay", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-retry");
+  const pool = postgresPool(postgresHarnessUrl());
+  const state = postgresSelectorState(pool, {
+    baseDelayMilliseconds: 5_000,
+    maximumDelayMilliseconds: 5_000,
+  });
+  const decision = `retry-${crypto.randomUUID()}`;
+  try {
+    await state.recordInteraction(
+      selectorInteraction(partition, decision),
+      { partition, notificationCursor: 0, attention: "Monitoring" },
+      { partition, notificationCursor: 1, attention: "Monitoring" },
+    );
+    await pool.query(
+      `INSERT INTO selector_proposal_delivery
+       (selector_decision,tenant,project,operation,command)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [
+        decision,
+        partition.tenant,
+        partition.project,
+        crypto.randomUUID(),
+        JSON.stringify({
+          version: 1,
+          command: "ProposeDispatch",
+          ticket: 1,
+          expectedTicketVersion: 1,
+          observedViewToken: {
+            ...partition,
+            recoveryEpoch: "epoch",
+            schemaVersion: 1,
+            watermark: 1,
+            digest: "a".repeat(64),
+          },
+          selectorDecisionReference: decision,
+        }),
+      ],
+    );
+    assert.equal((await state.pending(1)).length, 1);
+    const lease = await pool.query<{ remaining: number }>(
+      `SELECT extract(epoch FROM retry_at-clock_timestamp())::float8 AS remaining
+         FROM selector_proposal_delivery WHERE selector_decision=$1`,
+      [decision],
+    );
+    assert.ok((lease.rows[0]?.remaining ?? 0) > 3);
+    assert.ok((lease.rows[0]?.remaining ?? 99) <= 5);
+  } finally {
+    await pool.end();
+  }
+});
+
 test("selector cursors reject malformed and inexact counters", async () => {
   const partition = await postgresHarnessProject(harness.store, "i5-counters");
   const pool = postgresPool(postgresHarnessUrl());

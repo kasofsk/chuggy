@@ -203,16 +203,21 @@ async function submittedDeliveries(
 async function pendingDeliveries(
   pool: pg.Pool,
   limit: number,
+  retry: SelectorRetryConfig,
 ): Promise<readonly SelectorDelivery[]> {
   checkedSelectorLimit(limit, "selector delivery");
   const found = await pool.query<DeliveryRow>(
     `UPDATE selector_proposal_delivery
-      SET attempts=attempts+1,retry_at=now()+interval '30 seconds'
+      SET attempts=attempts+1,
+          retry_at=now()+LEAST(
+            $2::double precision * power(2::double precision,LEAST(attempts,20)::double precision),
+            $3::double precision
+          ) * interval '1 millisecond'
       WHERE selector_decision IN
         (SELECT selector_decision FROM selector_proposal_delivery
           WHERE state='Pending' AND retry_at<=now() ORDER BY retry_at LIMIT $1 FOR UPDATE SKIP LOCKED)
       RETURNING selector_decision,tenant,project,operation,command,attempts::text`,
-    [limit],
+    [limit, retry.baseDelayMilliseconds, retry.maximumDelayMilliseconds],
   );
   return found.rows.map(deliveryOf);
 }
@@ -364,7 +369,82 @@ async function recordSelectorState(
   }
 }
 
-export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
+export interface SelectorRetryConfig {
+  readonly baseDelayMilliseconds: number;
+  readonly maximumDelayMilliseconds: number;
+}
+
+export const selectorRetryDefaults: SelectorRetryConfig = {
+  baseDelayMilliseconds: 30_000,
+  maximumDelayMilliseconds: 15 * 60_000,
+};
+
+function checkedRetryConfig(config: SelectorRetryConfig): SelectorRetryConfig {
+  if (
+    !Number.isSafeInteger(config.baseDelayMilliseconds) ||
+    config.baseDelayMilliseconds < 1 ||
+    !Number.isSafeInteger(config.maximumDelayMilliseconds) ||
+    config.maximumDelayMilliseconds < config.baseDelayMilliseconds ||
+    config.maximumDelayMilliseconds > 24 * 60 * 60_000
+  )
+    throw new RangeError(
+      "selector retry delays must be positive bounded milliseconds with maximum at least base",
+    );
+  return config;
+}
+
+async function readSelectorHistory(
+  pool: pg.Pool,
+  partition: Partition,
+  after: number | undefined,
+  limit: number,
+): Promise<readonly StoredSelectorInteraction[]> {
+  checkedSelectorLimit(limit, "selector history");
+  const found = await pool.query<{
+    ordinal: string;
+    selector_decision: string;
+    instructions_version: string;
+    instructions: string;
+    observed_view: string;
+    context: string;
+    tool_activity: string;
+    result: string;
+    implementation_revision: string;
+    model_revision: string;
+    policy_revision: string;
+    accounting: string;
+    started_at: Date;
+    completed_at: Date;
+  }>(
+    `SELECT * FROM selector_interaction WHERE tenant=$1 AND project=$2
+      AND ordinal>$3 ORDER BY ordinal LIMIT $4`,
+    [partition.tenant, partition.project, checkedSelectorCursor(after), limit],
+  );
+  return found.rows.map((row): StoredSelectorInteraction => ({
+    ordinal: projectRowCounter(row.ordinal, "selector interaction ordinal"),
+    decision: row.selector_decision,
+    partition,
+    instructionsVersion: row.instructions_version,
+    instructions: row.instructions,
+    observedView: JSON.parse(
+      row.observed_view,
+    ) as SelectorInteraction["observedView"],
+    context: JSON.parse(row.context) as unknown,
+    toolActivity: JSON.parse(row.tool_activity) as readonly unknown[],
+    result: JSON.parse(row.result) as unknown,
+    implementationRevision: row.implementation_revision,
+    modelRevision: row.model_revision,
+    policyRevision: row.policy_revision,
+    accounting: JSON.parse(row.accounting) as unknown,
+    startedAt: row.started_at.toISOString(),
+    completedAt: row.completed_at.toISOString(),
+  }));
+}
+
+function selectorStateWithRetry(
+  pool: pg.Pool,
+  retry: SelectorRetryConfig,
+): SelectorStateStore {
   return {
     inventoryCursor: () => readInventoryCursor(pool),
     saveInventoryCursor: (cursor) => writeInventoryCursor(pool, cursor),
@@ -379,57 +459,19 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
         proposal.planningIntent,
         proposal,
       ),
-    pending: (limit) => pendingDeliveries(pool, limit),
+    pending: (limit) => pendingDeliveries(pool, limit, retry),
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
     submitted: (decision) => markSubmitted(pool, decision),
     terminal: (decision, outcome) => markTerminal(pool, decision, outcome),
-    history: async (partition: Partition, after, limit) => {
-      checkedSelectorLimit(limit, "selector history");
-      const found = await pool.query<{
-        ordinal: string;
-        selector_decision: string;
-        instructions_version: string;
-        instructions: string;
-        observed_view: string;
-        context: string;
-        tool_activity: string;
-        result: string;
-        implementation_revision: string;
-        model_revision: string;
-        policy_revision: string;
-        accounting: string;
-        started_at: Date;
-        completed_at: Date;
-      }>(
-        `SELECT * FROM selector_interaction WHERE tenant=$1 AND project=$2
-          AND ordinal>$3 ORDER BY ordinal LIMIT $4`,
-        [
-          partition.tenant,
-          partition.project,
-          checkedSelectorCursor(after),
-          limit,
-        ],
-      );
-      return found.rows.map((row): StoredSelectorInteraction => ({
-        ordinal: projectRowCounter(row.ordinal, "selector interaction ordinal"),
-        decision: row.selector_decision,
-        partition,
-        instructionsVersion: row.instructions_version,
-        instructions: row.instructions,
-        observedView: JSON.parse(
-          row.observed_view,
-        ) as SelectorInteraction["observedView"],
-        context: JSON.parse(row.context) as unknown,
-        toolActivity: JSON.parse(row.tool_activity) as readonly unknown[],
-        result: JSON.parse(row.result) as unknown,
-        implementationRevision: row.implementation_revision,
-        modelRevision: row.model_revision,
-        policyRevision: row.policy_revision,
-        accounting: JSON.parse(row.accounting) as unknown,
-        startedAt: row.started_at.toISOString(),
-        completedAt: row.completed_at.toISOString(),
-      }));
-    },
+    history: (partition, after, limit) =>
+      readSelectorHistory(pool, partition, after, limit),
     project: (partition) => readSelectorProject(pool, partition),
   };
+}
+
+export function postgresSelectorState(
+  pool: pg.Pool,
+  retryConfig: SelectorRetryConfig = selectorRetryDefaults,
+): SelectorStateStore {
+  return selectorStateWithRetry(pool, checkedRetryConfig(retryConfig));
 }
