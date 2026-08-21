@@ -21,6 +21,11 @@
  * or whose epoch a restore superseded is carried closed for the writer to
  * refuse.
  *
+ * AN APPROVAL ANSWER RESOLVES TO NO EVENT. `Approve` and `Decline` name no
+ * domain command, so the source built for one carries the answer and no
+ * `resolvedEvent`, and the join onto the offered resolutions is what proves the
+ * action asked that question rather than the other one.
+ *
  * NO WAKE-UP IS ERASED, AND THE READINESS ROW LOCK IS WHAT ORDERS THE TWO
  * TRANSACTIONS. An acceptance writes its decision input and its readiness upsert
  * together, so either it commits before the clearing takes that lock — leaving
@@ -53,9 +58,10 @@ import type {
   ReadinessCleared,
 } from "../../interpreter/projectDiscovery.ts";
 import { parseStoredTicketCommand } from "../../interpreter/wire.ts";
-import type {
-  FinalizationSubmission,
-  TicketCommand,
+import {
+  isApprovalResolution,
+  type FinalizationSubmission,
+  type TicketCommand,
 } from "../../interpreter/ticketCommand.ts";
 import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
 import {
@@ -232,19 +238,24 @@ async function nativeActionSource(
       `native action ${command.action} is not open at the requested fence`,
     );
   const ticket = projectRowCounter(open.ticket, "native action ticket");
-  return {
-    kind: "Operation",
+  const answered = {
+    kind: "Operation" as const,
     operation: asOperationId(operation),
     command,
+    nativeAction: {
+      action: command.action,
+      authorizingSeq: command.authorizingSeq,
+      resolution: command.resolution,
+      open: open.state === "Open",
+    },
+  };
+  if (isApprovalResolution(command.resolution)) return answered;
+  return {
+    ...answered,
     resolvedEvent:
       command.resolution === "Resume"
         ? { type: "ResumeTicket", value: ticket }
         : { type: "Revoke", value: ticket },
-    nativeAction: {
-      action: command.action,
-      authorizingSeq: command.authorizingSeq,
-      open: open.state === "Open",
-    },
   };
 }
 

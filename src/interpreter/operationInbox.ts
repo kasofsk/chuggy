@@ -41,10 +41,11 @@
 
 import { asBoundedText } from "./boundedText.ts";
 import type { Lifecycle, Partition } from "./projectStore.ts";
-import type { TicketCommand } from "./ticketCommand.ts";
+import { safetyResolution, type TicketCommand } from "./ticketCommand.ts";
 export {
   asOperationDecisionEvent,
   type FinalizationSubmission,
+  type NativeActionKind,
   type NativeActionResolution,
   type OperationDecisionEvent,
   type StoredTicketCommand,
@@ -169,13 +170,19 @@ export const admissionLifecycles: Readonly<
   CorrectnessReducing: ["Active", "Suspended", "IntegrityBlocked", "Deleting"],
 };
 
-/** An operation begins pending and ends succeeded, refused or cancelled; nothing else is public. */
-export type OperationState = "Pending" | "Succeeded" | "Refused" | "Cancelled";
+/**
+ * An operation begins pending and ends succeeded, answered, refused or
+ * cancelled; nothing else is public. `Answered` is the terminal state of a
+ * command that named no domain event, so it carries no decided sequence.
+ */
+export type OperationState =
+  "Pending" | "Succeeded" | "Answered" | "Refused" | "Cancelled";
 
 /** Every operation state, in the order this file declares them, so a suite can iterate rather than restate. */
 export const allOperationStates: readonly OperationState[] = [
   "Pending",
   "Succeeded",
+  "Answered",
   "Refused",
   "Cancelled",
 ];
@@ -212,10 +219,10 @@ export function classifyCommand(command: TicketCommand): {
   )
     return { admission: "Ordinary", priority: "Ordinary" };
   if (command.command === "ResolveNativeAction") {
+    const reducing = command.resolution === safetyResolution;
     return {
-      admission:
-        command.resolution === "Revoke" ? "CorrectnessReducing" : "Ordinary",
-      priority: command.resolution === "Revoke" ? "Safety" : "Ordinary",
+      admission: reducing ? "CorrectnessReducing" : "Ordinary",
+      priority: reducing ? "Safety" : "Ordinary",
     };
   }
   switch (command.event.type) {

@@ -36,9 +36,11 @@
  * than concluding. A durable move that assumed a promotion had happened would
  * forge the one outcome the repository is the only authority on.
  *
- * NOTHING HERE READS AN ANSWER TO AN APPROVAL. The action a finalizer opens is
- * the ticket service's row, and the resolution that answers one records nothing
- * this role can read yet, so every standing gathered here is pending.
+ * AN APPROVAL IS READ AND NEVER WRITTEN. The action a finalizer opens is the
+ * ticket service's row and this role holds `SELECT` on it and no more, so the
+ * standing gathered here is whatever answer that writer recorded — and the
+ * action read is the one naming the attempt in hand, so a superseded ask
+ * answers for the candidate it was about and not for this one.
  *
  * THE GLOBAL LOCK ORDER IS REQUEST, THEN REPOSITORY, THEN PROJECT, THEN PERMIT,
  * THEN ATTEMPT, and within each class in key order. The sweeps take their
@@ -67,6 +69,8 @@ import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
+  approvalStandingOf,
+  type ApprovalAction,
   type ApprovalStanding,
   type CommitPermitId,
   type FinalizationAttempt,
@@ -77,6 +81,7 @@ import {
   type FinalizerOwnerId,
   type FinalizerStore,
 } from "../../interpreter/finalizer.ts";
+import { nativeActionResolutions } from "../../interpreter/ticketCommand.ts";
 import {
   asProjectId,
   asRecoveryEpoch,
@@ -94,8 +99,12 @@ const liveRequestStates = "'Open', 'Registered'";
 /** The states no claim outlives, which is where a lease is dropped rather than reopened. */
 const settledRequestStates = "'Fulfilled', 'Invalidated'";
 
-/** Where an approval stands, which nothing this role may read yet records an answer to. */
-const approvalUnanswered: ApprovalStanding = "Pending";
+/** The states migration three gave a native action, so a column narrows rather than restates. */
+const allNativeActionStates: readonly ApprovalAction["state"][] = [
+  "Open",
+  "Resolved",
+  "Withdrawn",
+];
 
 /** One claimed request row. */
 interface ClaimRow {
@@ -133,6 +142,8 @@ interface ViewRow {
   readonly reconciled_candidate: string | null;
   readonly reconciled_ref: string | null;
   readonly observed_commit: string | null;
+  readonly approval_state: string | null;
+  readonly approval_resolution: string | null;
   readonly attempts_made: string;
 }
 
@@ -334,6 +345,7 @@ const viewColumns = `
   p.lifecycle_generation::text AS lifecycle_generation, p.state AS permit_state,
   r.verdict, r.candidate_commit AS reconciled_candidate,
   r.target_ref AS reconciled_ref, r.observed_commit,
+  n.state AS approval_state, n.resolution AS approval_resolution,
   c.made::text AS attempts_made
 `;
 
@@ -350,6 +362,8 @@ const viewFrom = `
     ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
   LEFT JOIN finalization_reconciliation r
     ON r.tenant = p.tenant AND r.project = p.project AND r.permit = p.permit
+  LEFT JOIN native_action n
+    ON n.tenant = a.tenant AND n.project = a.project AND n.attempt = a.attempt
   LEFT JOIN LATERAL (
     SELECT count(*) AS made FROM finalization_attempt y
      WHERE y.tenant = f.tenant AND y.project = f.project AND y.request = f.request) c
@@ -443,6 +457,27 @@ function finalizerRowReconciliation(
   };
 }
 
+/** Where the approval for the attempt in hand stands, pending until an answer is recorded. */
+function finalizerRowApproval(row: ViewRow): ApprovalStanding {
+  if (row.approval_state === null) return approvalStandingOf(undefined);
+  return approvalStandingOf({
+    state: finalizerRowValue(
+      allNativeActionStates,
+      row.approval_state,
+      "action state",
+    ),
+    ...(row.approval_resolution === null
+      ? {}
+      : {
+          resolution: finalizerRowValue(
+            nativeActionResolutions.FinalizationApproval,
+            row.approval_resolution,
+            "approval answer",
+          ),
+        }),
+  });
+}
+
 /** The permit that authorizes the one irreversible act, absent until it is granted. */
 function finalizerRowPermit(
   row: ViewRow,
@@ -512,7 +547,7 @@ async function finalizerDurableView(
           },
         }),
     ...(attempt === undefined ? {} : { attempt }),
-    approval: approvalUnanswered,
+    approval: finalizerRowApproval(row),
     ...finalizerRowPermit(row),
     attemptsMade: projectRowCounter(row.attempts_made, "attempts made"),
   };

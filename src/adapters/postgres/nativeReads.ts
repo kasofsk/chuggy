@@ -92,6 +92,7 @@ export function publicOperation(row: PublicOperationRow): OperationResource {
           "refused lifecycle generation",
         ),
       };
+    case "Answered":
     case "Cancelled":
       return { ...base, state };
   }

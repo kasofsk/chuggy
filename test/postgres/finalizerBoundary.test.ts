@@ -11,10 +11,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import {
-  approvalRequestFunction,
-  finalizationFunction,
-} from "../../src/adapters/postgres/schema.ts";
+import { finalizationFunction } from "../../src/adapters/postgres/schema.ts";
 import {
   finalizerClaim,
   finalizerCommit,
@@ -23,6 +20,7 @@ import {
   finalizerPromote,
   finalizerPrepare,
   finalizerProject,
+  finalizerRequestApproval,
   finalizerRigOpen,
   type FinalizerProject,
   type FinalizerRig,
@@ -86,17 +84,7 @@ async function ask(
   action: string,
   epoch = project.epoch,
 ): Promise<Record<string, unknown>> {
-  const rows = await rig.as(
-    `SELECT result, action FROM ${approvalRequestFunction}($1,$2,$3,$4,$5)`,
-    [
-      project.partition.tenant,
-      project.partition.project,
-      attempt,
-      action,
-      epoch,
-    ],
-  );
-  return rows[0] ?? { result: "no row" };
+  return finalizerRequestApproval(rig, project, attempt, action, epoch);
 }
 
 /** A project whose claimed request has one promoted, concluded attempt behind it. */

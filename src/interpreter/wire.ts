@@ -25,10 +25,11 @@ import {
   type DecisionEvent,
   type Entry,
 } from "../domain/generated/modelTypes.ts";
-import type {
-  FinalizationSubmission,
-  StoredTicketCommand,
-  TicketCommand,
+import {
+  allNativeActionResolutions,
+  type FinalizationSubmission,
+  type StoredTicketCommand,
+  type TicketCommand,
 } from "./ticketCommand.ts";
 import {
   checkedSelectorDecisionReference,
@@ -188,7 +189,9 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       typeof record["authorizingSeq"] === "number" &&
       Number.isSafeInteger(record["authorizingSeq"]) &&
       record["authorizingSeq"] >= 1 &&
-      (record["resolution"] === "Resume" || record["resolution"] === "Revoke")
+      allNativeActionResolutions.some(
+        (resolution) => resolution === record["resolution"],
+      )
     ) {
       return { parsed: "Ok", value: record as TicketCommand };
     }

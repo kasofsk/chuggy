@@ -26,6 +26,11 @@
  * its serialized position must refuse a submission whose authority moved
  * between acceptance and decision.
  *
+ * A COMMAND NAMING NO DOMAIN EVENT CARRIES NO `resolvedEvent`. The two answers
+ * a finalization approval admits change no `Core` state, so the source assembled
+ * for one carries the answer alone and there is nothing for a decider to be
+ * offered.
+ *
  * EVERY REFUSAL IS A VALUE, as in `./projectStore.ts`. A generation another
  * acceptance superseded and a decision input the owner had not accounted for are
  * outcomes a caller must handle, not exceptions it may ignore.
@@ -37,6 +42,7 @@ import type {
   PriorityClass,
   StoredTicketCommand,
 } from "./operationInbox.ts";
+import type { NativeActionAnswer } from "./projectDecision.ts";
 import type { Partition } from "./projectStore.ts";
 
 /** One project's discovery record: the partition with work waiting, and the generation that wake-up carries. */
@@ -60,7 +66,7 @@ export interface DecisionInput {
         readonly kind: "Operation";
         readonly operation: OperationId;
         readonly command: StoredTicketCommand;
-        readonly resolvedEvent: DecisionEvent;
+        readonly resolvedEvent?: DecisionEvent;
         readonly draftRelease?: {
           readonly ticket: number;
           readonly authoringVersion: number;
@@ -68,11 +74,7 @@ export interface DecisionInput {
           readonly configurationDigest: string;
           readonly configurationCanonical: string;
         };
-        readonly nativeAction?: {
-          readonly action: string;
-          readonly authorizingSeq: number;
-          readonly open: boolean;
-        };
+        readonly nativeAction?: NativeActionAnswer;
         readonly finalizationRequest?: {
           readonly request: string;
           readonly requestGeneration: number;

@@ -31,12 +31,22 @@ import type pg from "pg";
 
 import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { finalizerRole } from "../../src/adapters/postgres/schema.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
-import { allGitObjectIdChars } from "../../src/interpreter/finalizer.ts";
+import {
+  approvalRequestFunction,
+  finalizerRole,
+} from "../../src/adapters/postgres/schema.ts";
+import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import {
+  allGitObjectIdChars,
+  asFinalizerOwnerId,
+  type FinalizationClaim,
+} from "../../src/interpreter/finalizer.ts";
 import { artifactDigestChars } from "../../src/interpreter/resultManifest.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  asRecoveryEpoch,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 import {
   projectWriterDecide,
   type ProjectMemory,
@@ -350,13 +360,13 @@ export async function finalizerClaim(
   rig: FinalizerRig,
   project: FinalizerProject,
   owner: string,
-): Promise<void> {
+): Promise<FinalizationClaim> {
   const claimed = await rig.as(
     `UPDATE finalization_request
         SET state='Registered', claim_owner=$4, claim_generation=claim_generation+1,
             claim_expires_at=now()+interval '60 seconds', recovery_epoch=$5
       WHERE tenant=$1 AND project=$2 AND request=$3 AND state='Open'
-      RETURNING request`,
+      RETURNING claim_generation::text AS claim_generation`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -365,9 +375,21 @@ export async function finalizerClaim(
       project.epoch,
     ],
   );
-  if (claimed.length !== 1) {
+  const row = claimed[0];
+  if (claimed.length !== 1 || row === undefined) {
     throw new Error("finalizer harness: the request was not claimable");
   }
+  return {
+    partition: project.partition,
+    request: project.request,
+    ticket: asTicketId(project.ticket),
+    authorizingSeq: project.authorizingSeq,
+    requestGeneration: project.requestGeneration,
+    claimGeneration: Number(row["claim_generation"]),
+    state: "Registered",
+    recoveryEpoch: asRecoveryEpoch(project.epoch),
+    owner: asFinalizerOwnerId(owner),
+  };
 }
 
 /**
@@ -394,6 +416,27 @@ export async function finalizerPromote(
     [project.partition.tenant, project.partition.project, permit],
   );
   return attempt;
+}
+
+/** Asks for the approval of one prepared attempt, through the one door that may open it. */
+export async function finalizerRequestApproval(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  attempt: string,
+  action: string,
+  epoch: string = project.epoch,
+): Promise<Record<string, unknown>> {
+  const asked = await rig.as(
+    `SELECT result, action FROM ${approvalRequestFunction}($1,$2,$3,$4,$5)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      attempt,
+      action,
+      epoch,
+    ],
+  );
+  return asked[0] ?? { result: "no row" };
 }
 
 /** Grants the one permit that authorizes the one irreversible act, as the finalizer. */

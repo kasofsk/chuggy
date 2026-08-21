@@ -54,6 +54,7 @@
 import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
+import type { ApprovalResolution } from "./ticketCommand.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 
 declare const finalizationAttemptIdBrand: unique symbol;
@@ -368,6 +369,27 @@ export const allApprovalStandings: readonly ApprovalStanding[] = [
   "Granted",
   "Declined",
 ];
+
+/** What the ticket-service-owned action a finalizer opened currently says. */
+export interface ApprovalAction {
+  readonly state: "Open" | "Resolved" | "Withdrawn";
+  readonly resolution?: ApprovalResolution;
+}
+
+/**
+ * Where the approval for one prepared candidate stands. An action nobody has
+ * answered and one the revision fence withdrew are both pending, because the
+ * question either is still open or will be asked again against a new candidate.
+ */
+export function approvalStandingOf(
+  action: ApprovalAction | undefined,
+): ApprovalStanding {
+  if (action === undefined || action.state !== "Resolved") return "Pending";
+  if (action.resolution === undefined) {
+    throw new Error("approval: a resolved action records no answer");
+  }
+  return action.resolution === "Approve" ? "Granted" : "Declined";
+}
 
 /** Everything the pure pass reads, gathered before it runs so nothing is awaited inside it. */
 export interface FinalizationView {

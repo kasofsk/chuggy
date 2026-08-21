@@ -2381,12 +2381,24 @@ either way would be a decision the decider refuses. `native_action_resolution`
 therefore gains `Approve` and `Decline`, and they are the first resolutions
 that name no domain command at all — resolving a `FinalizationApproval`
 settles its operation and records the answer the finalizer reads, and
-constructs no decision input. That is not an exception carved for this slice
-but the same sentence the model already carries: approval is operational
-protocol rather than `Core` state, so nothing in `Core` may learn that a
-finalizer was approved, and a command that changes no `Core` state has
-nothing to journal. The ticket service remains the only writer of the row and
-the finalizer still only reads it.
+constructs no event for a decider and no journal entry. That is not an
+exception carved for this slice but the same sentence the model already
+carries: approval is operational protocol rather than `Core` state, so nothing
+in `Core` may learn that a finalizer was approved, and a command that changes
+no `Core` state has nothing to journal. The ticket service remains the only
+writer of the row and the finalizer still only reads it.
+
+The answer is still an ordinary mailbox operation, and the earlier reading of
+that sentence — that it reaches no decision input at all — is refuted by the
+tree it was written against: an operation with no decision input is one no
+client can poll and no retry can find its original by, because both read the
+input's state and this schema keeps no second copy of it. So the answer is
+accepted, ordered and decided at its serialized position like any other
+ordinary command, and what it lacks is the event: the writer settles it
+`Answered`, a terminal state that carries no decided sequence because there is
+no decision for a sequence to name. Deciding it there is what serializes the
+answer against a phase exit withdrawing the ask, which a settlement at the
+ingress door could not have done.
 
 #### Ordering, stated once
 

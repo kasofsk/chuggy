@@ -21,6 +21,13 @@ import {
 } from "../../src/interpreter/operationInbox.ts";
 import { observe } from "../../src/interpreter/ticketService.ts";
 import {
+  allNativeActionKinds,
+  allNativeActionResolutions,
+  isApprovalResolution,
+  nativeActionResolutions,
+  safetyResolution,
+} from "../../src/interpreter/ticketCommand.ts";
+import {
   encodeTicketCommand,
   parseTicketCommand,
 } from "../../src/interpreter/wire.ts";
@@ -112,6 +119,40 @@ test("native-action resume is ordinary while revoke remains safety traffic", () 
     admission: "CorrectnessReducing",
     priority: "Safety",
   });
+});
+
+test("every answer but the safety one is ordinary, and each belongs to one question", () => {
+  const command = {
+    version: 1 as const,
+    command: "ResolveNativeAction" as const,
+    action: "action",
+    authorizingSeq: 1,
+  };
+  for (const resolution of allNativeActionResolutions) {
+    const offered = { ...command, resolution };
+    assert.deepEqual(parseTicketCommand(encodeTicketCommand(offered)), {
+      parsed: "Ok",
+      value: offered,
+    });
+    const reducing = resolution === safetyResolution;
+    assert.deepEqual(
+      classifyCommand({ ...command, resolution }),
+      {
+        admission: reducing ? "CorrectnessReducing" : "Ordinary",
+        priority: reducing ? "Safety" : "Ordinary",
+      },
+      resolution,
+    );
+    const asking = allNativeActionKinds.filter((kind) =>
+      nativeActionResolutions[kind].some((each) => each === resolution),
+    );
+    assert.deepEqual(asking.length, 1, resolution);
+    assert.equal(
+      isApprovalResolution(resolution),
+      asking[0] === "FinalizationApproval",
+      resolution,
+    );
+  }
 });
 
 test("dispatch materializes exact logical work tasks from the pure state delta", () => {

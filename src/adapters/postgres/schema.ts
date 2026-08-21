@@ -209,6 +209,17 @@
  * writes. The uniqueness the same relation carried over an effect position
  * moves with it: an effect materializes one action, and an approval no effect
  * produced is unique by the attempt it names instead.
+ *
+ * A QUESTION AND ITS ANSWERS ARE ONE ROSTER, AND THE SERVER HOLDS THEM TO IT.
+ * `src/interpreter/ticketCommand.ts` pairs each action kind with the answers it
+ * admits, and `native_action_resolution_pairs_with_its_kind` refuses a row
+ * offering the other kind's answer — which a CHECK cannot see, because the kind
+ * is on the action and the answer is on a row of its own.
+ *
+ * AN ANSWERED OPERATION IS TERMINAL WITH NO ENTRY BEHIND IT. `Approve` and
+ * `Decline` name no domain command, so the input that carried one settles
+ * `Answered`: the state a decision input reaches without a decided sequence, and
+ * the one public operation state that carries no sequence for a client to read.
  */
 
 import {
@@ -256,6 +267,12 @@ import {
   operationIdentityCharsMax,
 } from "../../interpreter/operationInbox.ts";
 import { allRefusalCodes } from "../../interpreter/projectDecision.ts";
+import {
+  allNativeActionKinds,
+  allNativeActionResolutions,
+  nativeActionResolutions,
+  safetyResolution,
+} from "../../interpreter/ticketCommand.ts";
 
 /** One migration: the version that orders it, the name that reports it, and the statements it applies. */
 export interface Migration {
@@ -710,6 +727,208 @@ const decisionGrants = [
   `GRANT UPDATE (phase, seq) ON ticket_projection TO ${ticketServiceRole}`,
 ];
 
+/**
+ * The answers acceptance classifies as ordinary work, which is every answer but
+ * the one that reduces outstanding correctness risk.
+ */
+const acceptanceOrdinaryResolutions = allNativeActionResolutions.filter(
+  (resolution) => resolution !== safetyResolution,
+);
+
+/**
+ * The body of acceptance, installed by the migration that wrote it and
+ * reinstalled by the one that widened the answers its grammar admits. There is
+ * one body, so the two installations cannot become two grammars.
+ */
+const acceptanceBody = `FUNCTION ${acceptanceFunction}(
+      in_tenant text, in_project text, in_operation text,
+      in_authority_kind text, in_authority_subject text,
+      in_key_version text, in_key_digest text, in_payload_digest text,
+      in_retained_key_digests text[], in_retained_payload_digests text[],
+      in_command text, in_ordinary_soft_limit bigint, in_hard_limit bigint)
+     RETURNS TABLE(result text, operation text, ordinal bigint, state text,
+       authority_kind text, admission text, lifecycle_generation bigint, lifecycle text)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+     DECLARE project_lifecycle text; project_generation bigint; next_ordinal bigint;
+       pending_total bigint; pending_ordinary bigint; existing record;
+       command_value jsonb; command_tag text; priority text; admission_class text;
+       action_id text; authorizing_sequence bigint; action_resolution text;
+     BEGIN
+       IF cardinality(in_retained_key_digests) <> cardinality(in_retained_payload_digests) THEN
+         RAISE EXCEPTION 'idempotency digest arrays disagree';
+       END IF;
+
+       BEGIN
+         command_value := in_command::jsonb;
+       EXCEPTION WHEN others THEN
+         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END;
+       IF ticket_command_is_valid(command_value) IS NOT TRUE THEN
+         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+       IF command_value->>'command' = 'Decide'
+          AND jsonb_typeof(command_value->'event') = 'object' THEN
+         command_tag := command_value->'event'->>'type';
+       ELSIF command_value->>'command' = 'ReleaseDraft' THEN
+         command_tag := 'ReleaseDraft';
+       ELSIF command_value->>'command' = 'ResolveNativeAction'
+          AND jsonb_typeof(command_value->'action') = 'string'
+          AND length(command_value->>'action') BETWEEN 1 AND 256
+          AND jsonb_typeof(command_value->'authorizingSeq') = 'number'
+          AND (command_value->>'authorizingSeq') ~ '^[1-9][0-9]*$'
+          AND command_value->>'resolution' IN (${schemaTextSet(allNativeActionResolutions)}) THEN
+         command_tag := 'ResolveNativeAction';
+         action_id := command_value->>'action';
+         BEGIN
+           authorizing_sequence := (command_value->>'authorizingSeq')::bigint;
+         EXCEPTION WHEN numeric_value_out_of_range THEN
+           RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
+             NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+           RETURN;
+         END;
+         action_resolution := command_value->>'resolution';
+       ELSE
+         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+
+       IF command_tag = 'Revoke' OR
+          (command_tag = 'ResolveNativeAction' AND action_resolution = '${safetyResolution}') THEN
+         priority := 'Safety'; admission_class := 'CorrectnessReducing';
+       ELSIF command_tag IN ('TaskDone', 'ExecutionBlocked', 'FinalizationResult') THEN
+         priority := 'Completion'; admission_class := 'CorrectnessReducing';
+       ELSIF command_tag IN ('ReleaseDraft', 'Dispatch', 'ResumeTicket') OR
+             (command_tag = 'ResolveNativeAction' AND action_resolution IN (${schemaTextSet(acceptanceOrdinaryResolutions)})) THEN
+         priority := 'Ordinary'; admission_class := 'Ordinary';
+       ELSE
+         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+
+       SELECT p.lifecycle, p.lifecycle_generation INTO STRICT project_lifecycle, project_generation
+         FROM project p WHERE p.tenant=in_tenant AND p.project=in_project FOR UPDATE;
+
+       SELECT o.operation, d.ordinal, d.state, o.authority_kind, o.admission,
+              d.lifecycle_generation, offered.payload_digest AS offered_payload, o.payload_digest
+         INTO existing
+         FROM unnest(in_retained_key_digests, in_retained_payload_digests)
+              AS offered(key_digest, payload_digest)
+         JOIN operation o ON o.tenant=in_tenant AND o.project=in_project
+              AND o.authority_kind=in_authority_kind AND o.key_digest=offered.key_digest
+         JOIN decision_input d ON d.tenant=o.tenant AND d.project=o.project
+              AND d.input_kind='Operation' AND d.input_id=o.operation
+         ORDER BY (o.payload_digest = offered.payload_digest) DESC
+         LIMIT 1;
+       IF FOUND THEN
+         IF existing.payload_digest IS DISTINCT FROM existing.offered_payload THEN
+           RETURN QUERY SELECT 'IdempotencyConflict'::text, NULL::text, NULL::bigint,
+             NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         ELSE
+           RETURN QUERY SELECT 'Original'::text, existing.operation::text,
+             existing.ordinal::bigint, existing.state::text, existing.authority_kind::text,
+             existing.admission::text, existing.lifecycle_generation::bigint, NULL::text;
+         END IF;
+         RETURN;
+       END IF;
+
+       IF command_tag='ResolveNativeAction' AND NOT EXISTS (
+         SELECT 1 FROM native_action a JOIN native_action_resolution r
+           USING (tenant, project, action)
+          WHERE a.tenant=in_tenant AND a.project=in_project AND a.action=action_id
+            AND a.state='Open' AND a.authorizing_seq=authorizing_sequence
+            AND r.resolution=action_resolution FOR UPDATE OF a)
+       THEN
+         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+       IF command_tag='ReleaseDraft' AND NOT EXISTS (
+         SELECT 1 FROM draft_revision r
+          WHERE r.tenant=in_tenant AND r.project=in_project
+            AND r.ticket=(command_value->>'ticket')::bigint
+            AND r.authoring_version=(command_value->>'authoringVersion')::bigint
+            AND r.configuration_revision=command_value->>'configurationRevision')
+       THEN
+         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+
+       SELECT count(*), count(*) FILTER (WHERE d.base_priority='Ordinary')
+         INTO pending_total, pending_ordinary FROM decision_input d
+        WHERE d.tenant=in_tenant AND d.project=in_project AND d.state='Pending';
+       IF pending_total >= in_hard_limit THEN
+         RETURN QUERY SELECT 'Unavailable'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+       IF priority='Ordinary' AND pending_ordinary >= in_ordinary_soft_limit THEN
+         RETURN QUERY SELECT 'Backpressure'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
+         RETURN;
+       END IF;
+       IF NOT (project_lifecycle = 'Active' OR
+          (admission_class = 'CorrectnessReducing' AND
+           project_lifecycle IN ('Suspended', 'IntegrityBlocked', 'Deleting'))) THEN
+         RETURN QUERY SELECT 'NotAdmitted'::text, NULL::text, NULL::bigint,
+           NULL::text, NULL::text, NULL::text, NULL::bigint, project_lifecycle;
+         RETURN;
+       END IF;
+
+       UPDATE project p SET ingress_next=p.ingress_next+1
+        WHERE p.tenant=in_tenant AND p.project=in_project
+        RETURNING p.ingress_next-1 INTO next_ordinal;
+       INSERT INTO operation
+         (tenant, project, operation, authority_kind, authority_subject, admission,
+          key_version, key_digest, payload_digest, command, command_tag)
+       VALUES (in_tenant, in_project, in_operation, in_authority_kind, in_authority_subject,
+          admission_class, in_key_version, in_key_digest, in_payload_digest, in_command, command_tag);
+       INSERT INTO decision_input (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
+       VALUES (in_tenant, in_project, next_ordinal, 'Operation', in_operation, priority, project_generation);
+       INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES (in_tenant, in_project, true, 1)
+       ON CONFLICT (tenant, project) DO UPDATE
+         SET ready=true, generation=project_readiness.generation+1;
+       RETURN QUERY SELECT 'Accepted'::text, in_operation, next_ordinal, 'Pending'::text,
+         in_authority_kind, admission_class, project_generation, NULL::text;
+     END $$`;
+
+/**
+ * The public command grammar's body, installed by the migration that wrote it
+ * and reinstalled under its later name by the one that widened the answers a
+ * resolution may carry. There is one body, so the two cannot become two grammars.
+ */
+const publicCommandGrammarBody = `(command jsonb) RETURNS boolean
+     LANGUAGE plpgsql IMMUTABLE AS $$
+     BEGIN
+       IF command IS NULL OR jsonb_typeof(command) <> 'object'
+          OR jsonb_typeof(command->'version') <> 'number'
+          OR command->>'version' <> '1' THEN
+         RETURN false;
+       END IF;
+       IF command->>'command' = 'Decide' THEN
+         RETURN decision_event_is_valid(command->'event')
+           AND command->'event'->>'type' <> 'ReleaseTicket';
+       END IF;
+       IF command->>'command' = 'ReleaseDraft' THEN
+         RETURN command_integer(command->'ticket') AND (command->>'ticket')::numeric >= 1
+           AND command_integer(command->'authoringVersion') AND (command->>'authoringVersion')::numeric >= 1
+           AND jsonb_typeof(command->'configurationRevision')='string'
+           AND length(command->>'configurationRevision') BETWEEN 1 AND 256;
+       END IF;
+       RETURN command->>'command' = 'ResolveNativeAction'
+         AND jsonb_typeof(command->'action') = 'string'
+         AND length(command->>'action') BETWEEN 1 AND 256
+         AND command_integer(command->'authorizingSeq')
+         AND (command->>'authorizingSeq')::numeric >= 1
+         AND command->>'resolution' IN (${schemaTextSet(allNativeActionResolutions)});
+     END $$`;
 /** I3 replaces the operation-only inbox with one typed, prioritized decision-input authority. */
 const durableMailbox = [
   roleStatement(boundaryOwnerRole),
@@ -794,31 +1013,7 @@ const durableMailbox = [
        END LOOP;
        RETURN true;
      END $$`,
-  `CREATE FUNCTION ticket_command_is_valid(command jsonb) RETURNS boolean
-     LANGUAGE plpgsql IMMUTABLE AS $$
-     BEGIN
-       IF command IS NULL OR jsonb_typeof(command) <> 'object'
-          OR jsonb_typeof(command->'version') <> 'number'
-          OR command->>'version' <> '1' THEN
-         RETURN false;
-       END IF;
-       IF command->>'command' = 'Decide' THEN
-         RETURN decision_event_is_valid(command->'event')
-           AND command->'event'->>'type' <> 'ReleaseTicket';
-       END IF;
-       IF command->>'command' = 'ReleaseDraft' THEN
-         RETURN command_integer(command->'ticket') AND (command->>'ticket')::numeric >= 1
-           AND command_integer(command->'authoringVersion') AND (command->>'authoringVersion')::numeric >= 1
-           AND jsonb_typeof(command->'configurationRevision')='string'
-           AND length(command->>'configurationRevision') BETWEEN 1 AND 256;
-       END IF;
-       RETURN command->>'command' = 'ResolveNativeAction'
-         AND jsonb_typeof(command->'action') = 'string'
-         AND length(command->>'action') BETWEEN 1 AND 256
-         AND command_integer(command->'authorizingSeq')
-         AND (command->>'authorizingSeq')::numeric >= 1
-         AND command->>'resolution' IN ('Resume', 'Revoke');
-     END $$`,
+  `CREATE FUNCTION ticket_command_is_valid${publicCommandGrammarBody}`,
   `CREATE FUNCTION legacy_event(command text) RETURNS jsonb
      LANGUAGE plpgsql IMMUTABLE AS $$
      BEGIN
@@ -980,7 +1175,7 @@ const durableMailbox = [
      tenant text NOT NULL, project text NOT NULL, action text NOT NULL, resolution text NOT NULL,
      PRIMARY KEY (tenant, project, action, resolution),
      FOREIGN KEY (tenant, project, action) REFERENCES native_action (tenant, project, action)
-     ,CHECK (resolution IN ('Resume', 'Revoke'))
+     ,CHECK (resolution IN (${schemaTextSet(nativeActionResolutions.TicketEscalation)}))
    )`,
   `CREATE TABLE execution_request (
      tenant text NOT NULL, project text NOT NULL, request text NOT NULL,
@@ -1019,164 +1214,7 @@ const durableMailbox = [
      CHECK (authorizing_seq >= 1 AND effect_position >= 0 AND ticket >= 1 AND ticket_version = authorizing_seq AND request_generation >= 1 AND claim_generation >= 0)
    )`,
   `CREATE UNIQUE INDEX finalization_request_one_open ON finalization_request (tenant, project, ticket) WHERE state = 'Open'`,
-  `CREATE FUNCTION ${acceptanceFunction}(
-      in_tenant text, in_project text, in_operation text,
-      in_authority_kind text, in_authority_subject text,
-      in_key_version text, in_key_digest text, in_payload_digest text,
-      in_retained_key_digests text[], in_retained_payload_digests text[],
-      in_command text, in_ordinary_soft_limit bigint, in_hard_limit bigint)
-     RETURNS TABLE(result text, operation text, ordinal bigint, state text,
-       authority_kind text, admission text, lifecycle_generation bigint, lifecycle text)
-     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-     DECLARE project_lifecycle text; project_generation bigint; next_ordinal bigint;
-       pending_total bigint; pending_ordinary bigint; existing record;
-       command_value jsonb; command_tag text; priority text; admission_class text;
-       action_id text; authorizing_sequence bigint; action_resolution text;
-     BEGIN
-       IF cardinality(in_retained_key_digests) <> cardinality(in_retained_payload_digests) THEN
-         RAISE EXCEPTION 'idempotency digest arrays disagree';
-       END IF;
-
-       BEGIN
-         command_value := in_command::jsonb;
-       EXCEPTION WHEN others THEN
-         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
-           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-         RETURN;
-       END;
-       IF ticket_command_is_valid(command_value) IS NOT TRUE THEN
-         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
-           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-         RETURN;
-       END IF;
-       IF command_value->>'command' = 'Decide'
-          AND jsonb_typeof(command_value->'event') = 'object' THEN
-         command_tag := command_value->'event'->>'type';
-       ELSIF command_value->>'command' = 'ReleaseDraft' THEN
-         command_tag := 'ReleaseDraft';
-       ELSIF command_value->>'command' = 'ResolveNativeAction'
-          AND jsonb_typeof(command_value->'action') = 'string'
-          AND length(command_value->>'action') BETWEEN 1 AND 256
-          AND jsonb_typeof(command_value->'authorizingSeq') = 'number'
-          AND (command_value->>'authorizingSeq') ~ '^[1-9][0-9]*$'
-          AND command_value->>'resolution' IN ('Resume', 'Revoke') THEN
-         command_tag := 'ResolveNativeAction';
-         action_id := command_value->>'action';
-         BEGIN
-           authorizing_sequence := (command_value->>'authorizingSeq')::bigint;
-         EXCEPTION WHEN numeric_value_out_of_range THEN
-           RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
-             NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-           RETURN;
-         END;
-         action_resolution := command_value->>'resolution';
-       ELSE
-         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
-           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-         RETURN;
-       END IF;
-
-       IF command_tag = 'Revoke' OR
-          (command_tag = 'ResolveNativeAction' AND action_resolution = 'Revoke') THEN
-         priority := 'Safety'; admission_class := 'CorrectnessReducing';
-       ELSIF command_tag IN ('TaskDone', 'ExecutionBlocked', 'FinalizationResult') THEN
-         priority := 'Completion'; admission_class := 'CorrectnessReducing';
-       ELSIF command_tag IN ('ReleaseDraft', 'Dispatch', 'ResumeTicket') OR
-             (command_tag = 'ResolveNativeAction' AND action_resolution = 'Resume') THEN
-         priority := 'Ordinary'; admission_class := 'Ordinary';
-       ELSE
-         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
-           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-         RETURN;
-       END IF;
-
-       SELECT p.lifecycle, p.lifecycle_generation INTO STRICT project_lifecycle, project_generation
-         FROM project p WHERE p.tenant=in_tenant AND p.project=in_project FOR UPDATE;
-
-       SELECT o.operation, d.ordinal, d.state, o.authority_kind, o.admission,
-              d.lifecycle_generation, offered.payload_digest AS offered_payload, o.payload_digest
-         INTO existing
-         FROM unnest(in_retained_key_digests, in_retained_payload_digests)
-              AS offered(key_digest, payload_digest)
-         JOIN operation o ON o.tenant=in_tenant AND o.project=in_project
-              AND o.authority_kind=in_authority_kind AND o.key_digest=offered.key_digest
-         JOIN decision_input d ON d.tenant=o.tenant AND d.project=o.project
-              AND d.input_kind='Operation' AND d.input_id=o.operation
-         ORDER BY (o.payload_digest = offered.payload_digest) DESC
-         LIMIT 1;
-       IF FOUND THEN
-         IF existing.payload_digest IS DISTINCT FROM existing.offered_payload THEN
-           RETURN QUERY SELECT 'IdempotencyConflict'::text, NULL::text, NULL::bigint,
-             NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-         ELSE
-           RETURN QUERY SELECT 'Original'::text, existing.operation::text,
-             existing.ordinal::bigint, existing.state::text, existing.authority_kind::text,
-             existing.admission::text, existing.lifecycle_generation::bigint, NULL::text;
-         END IF;
-         RETURN;
-       END IF;
-
-       IF command_tag='ResolveNativeAction' AND NOT EXISTS (
-         SELECT 1 FROM native_action a JOIN native_action_resolution r
-           USING (tenant, project, action)
-          WHERE a.tenant=in_tenant AND a.project=in_project AND a.action=action_id
-            AND a.state='Open' AND a.authorizing_seq=authorizing_sequence
-            AND r.resolution=action_resolution FOR UPDATE OF a)
-       THEN
-         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
-           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-         RETURN;
-       END IF;
-       IF command_tag='ReleaseDraft' AND NOT EXISTS (
-         SELECT 1 FROM draft_revision r
-          WHERE r.tenant=in_tenant AND r.project=in_project
-            AND r.ticket=(command_value->>'ticket')::bigint
-            AND r.authoring_version=(command_value->>'authoringVersion')::bigint
-            AND r.configuration_revision=command_value->>'configurationRevision')
-       THEN
-         RETURN QUERY SELECT 'InvalidCommand'::text, NULL::text, NULL::bigint,
-           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-         RETURN;
-       END IF;
-
-       SELECT count(*), count(*) FILTER (WHERE d.base_priority='Ordinary')
-         INTO pending_total, pending_ordinary FROM decision_input d
-        WHERE d.tenant=in_tenant AND d.project=in_project AND d.state='Pending';
-       IF pending_total >= in_hard_limit THEN
-         RETURN QUERY SELECT 'Unavailable'::text, NULL::text, NULL::bigint,
-           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-         RETURN;
-       END IF;
-       IF priority='Ordinary' AND pending_ordinary >= in_ordinary_soft_limit THEN
-         RETURN QUERY SELECT 'Backpressure'::text, NULL::text, NULL::bigint,
-           NULL::text, NULL::text, NULL::text, NULL::bigint, NULL::text;
-         RETURN;
-       END IF;
-       IF NOT (project_lifecycle = 'Active' OR
-          (admission_class = 'CorrectnessReducing' AND
-           project_lifecycle IN ('Suspended', 'IntegrityBlocked', 'Deleting'))) THEN
-         RETURN QUERY SELECT 'NotAdmitted'::text, NULL::text, NULL::bigint,
-           NULL::text, NULL::text, NULL::text, NULL::bigint, project_lifecycle;
-         RETURN;
-       END IF;
-
-       UPDATE project p SET ingress_next=p.ingress_next+1
-        WHERE p.tenant=in_tenant AND p.project=in_project
-        RETURNING p.ingress_next-1 INTO next_ordinal;
-       INSERT INTO operation
-         (tenant, project, operation, authority_kind, authority_subject, admission,
-          key_version, key_digest, payload_digest, command, command_tag)
-       VALUES (in_tenant, in_project, in_operation, in_authority_kind, in_authority_subject,
-          admission_class, in_key_version, in_key_digest, in_payload_digest, in_command, command_tag);
-       INSERT INTO decision_input (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
-       VALUES (in_tenant, in_project, next_ordinal, 'Operation', in_operation, priority, project_generation);
-       INSERT INTO project_readiness (tenant, project, ready, generation)
-       VALUES (in_tenant, in_project, true, 1)
-       ON CONFLICT (tenant, project) DO UPDATE
-         SET ready=true, generation=project_readiness.generation+1;
-       RETURN QUERY SELECT 'Accepted'::text, in_operation, next_ordinal, 'Pending'::text,
-         in_authority_kind, admission_class, project_generation, NULL::text;
-     END $$`,
+  `CREATE ${acceptanceBody}`,
   `CREATE FUNCTION ${continuationFunction}(in_tenant text, in_project text, in_ordinal bigint,
       in_continuation text) RETURNS void
      LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
@@ -2322,6 +2360,18 @@ const durableExecutionSchedulerBoundaries = [
   `REVOKE ${boundaryOwnerRole} FROM CURRENT_USER`,
 ];
 
+/**
+ * The pairing every offered answer satisfies, as the disjunction a trigger
+ * evaluates. A question and the answers it admits are one roster, so a row
+ * offering an escalation's answer to an approval is refused by the server.
+ */
+const nativeActionPairing = allNativeActionKinds
+  .map(
+    (kind) =>
+      `(asked = '${kind}' AND NEW.resolution IN (${schemaTextSet(nativeActionResolutions[kind])}))`,
+  )
+  .join("\n              OR ");
+
 /** The relations, triggers and boundaries the finalizer owns, which I7 adds. */
 const durableFinalizer = [
   roleStatement(finalizerRole),
@@ -2511,7 +2561,7 @@ const durableFinalizer = [
      ON finalization_request (tenant, project, ticket)
      WHERE state IN ('Open', 'Registered')`,
 
-  `ALTER TABLE native_action ADD COLUMN attempt text`,
+  `ALTER TABLE native_action ADD COLUMN attempt text, ADD COLUMN resolution text`,
   `DO $$
      DECLARE named text;
      BEGIN
@@ -2529,7 +2579,26 @@ const durableFinalizer = [
        LOOP
          EXECUTE format('ALTER TABLE native_action DROP CONSTRAINT %I', named);
        END LOOP;
+       FOR named IN
+         SELECT c.conname FROM pg_constraint c
+          WHERE c.conrelid = 'native_action_resolution'::regclass AND c.contype = 'c'
+       LOOP
+         EXECUTE format(
+           'ALTER TABLE native_action_resolution DROP CONSTRAINT %I', named);
+       END LOOP;
      END $$`,
+  `UPDATE native_action a SET resolution = o.command::jsonb->>'resolution'
+     FROM operation o
+     JOIN decision_input d ON d.tenant = o.tenant AND d.project = o.project
+          AND d.input_kind = 'Operation' AND d.input_id = o.operation
+          AND d.state = 'Journaled'
+    WHERE o.tenant = a.tenant AND o.project = a.project
+      AND o.command_tag = 'ResolveNativeAction'
+      AND o.command::jsonb->>'action' = a.action
+      AND a.state = 'Resolved' AND a.resolution IS NULL`,
+  `ALTER TABLE native_action_resolution
+     ADD CONSTRAINT native_action_resolution_is_known CHECK (
+       resolution IN (${schemaTextSet(allNativeActionResolutions)}))`,
   `CREATE UNIQUE INDEX native_action_effect_is_materialized_once
      ON native_action (tenant, project, authorizing_seq, effect_position)
      WHERE attempt IS NULL`,
@@ -2537,16 +2606,41 @@ const durableFinalizer = [
      ON native_action (tenant, project, attempt) WHERE attempt IS NOT NULL`,
   `ALTER TABLE native_action
      ADD CONSTRAINT native_action_kind_is_known CHECK (
-       kind IN ('TicketEscalation', 'FinalizationApproval')),
+       kind IN (${schemaTextSet(allNativeActionKinds)})),
      ADD CONSTRAINT native_action_capability_is_known CHECK (
        required_capability IN ('ResolveTicket', 'ApproveFinalization')),
      ADD CONSTRAINT native_action_kind_names_its_capability CHECK (
        (kind = 'TicketEscalation') = (required_capability = 'ResolveTicket')
        AND (kind = 'FinalizationApproval') = (required_capability = 'ApproveFinalization')
        AND (kind = 'FinalizationApproval') = (attempt IS NOT NULL)),
+     ADD CONSTRAINT native_action_answer_is_whole CHECK (
+       (state = 'Resolved') = (resolution IS NOT NULL)),
+     ADD CONSTRAINT native_action_answers_with_one_it_offered
+       FOREIGN KEY (tenant, project, action, resolution)
+       REFERENCES native_action_resolution (tenant, project, action, resolution),
      ADD CONSTRAINT native_action_attempt_is_its_own
        FOREIGN KEY (tenant, project, attempt)
        REFERENCES finalization_attempt (tenant, project, attempt)`,
+
+  `CREATE FUNCTION native_action_resolution_pairs_with_its_kind() RETURNS trigger
+     LANGUAGE plpgsql AS $$
+     DECLARE asked text;
+     BEGIN
+       SELECT n.kind INTO asked FROM native_action n
+        WHERE n.tenant = NEW.tenant AND n.project = NEW.project
+          AND n.action = NEW.action;
+       IF NOT (${nativeActionPairing}) THEN
+         RAISE EXCEPTION '% is not an answer a % asks for', NEW.resolution, asked
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       RETURN NEW;
+     END $$`,
+  `REVOKE EXECUTE ON FUNCTION native_action_resolution_pairs_with_its_kind() FROM PUBLIC`,
+  `ALTER FUNCTION native_action_resolution_pairs_with_its_kind()
+     OWNER TO ${boundaryOwnerRole}`,
+  `CREATE TRIGGER native_action_resolution_pairs_with_its_kind
+     BEFORE INSERT OR UPDATE ON native_action_resolution
+     FOR EACH ROW EXECUTE FUNCTION native_action_resolution_pairs_with_its_kind()`,
 ];
 
 /**
@@ -2557,8 +2651,20 @@ const durableFinalizer = [
  * anything is granted on it.
  */
 const durableFinalizerBoundaries = [
+  `ALTER TABLE decision_input
+     DROP CONSTRAINT decision_input_state_is_known,
+     DROP CONSTRAINT decision_input_kind_state_agree,
+     ADD CONSTRAINT decision_input_state_is_known CHECK (
+       state IN ('Pending', 'Journaled', 'Answered', 'Refused', 'Cancelled', 'Stale')),
+     ADD CONSTRAINT decision_input_kind_state_agree CHECK (
+       (input_kind = 'Operation' AND
+        state IN ('Pending', 'Journaled', 'Answered', 'Refused', 'Cancelled')) OR
+       (input_kind = 'Continuation' AND state IN ('Pending', 'Journaled', 'Stale')))`,
+  `CREATE OR REPLACE ${acceptanceBody}`,
+  `GRANT UPDATE (resolution) ON native_action TO ${ticketServiceRole}`,
   `ALTER FUNCTION ticket_command_is_valid(jsonb)
      RENAME TO public_ticket_command_is_valid`,
+  `CREATE OR REPLACE FUNCTION public_ticket_command_is_valid${publicCommandGrammarBody}`,
   `CREATE FUNCTION ticket_command_is_valid(command jsonb) RETURNS boolean
      LANGUAGE plpgsql IMMUTABLE AS $$
      BEGIN
@@ -2791,6 +2897,9 @@ const durableFinalizerBoundaries = [
        VALUES (in_tenant, in_project, in_action, bound.authorizing_seq,
           bound.effect_position, bound.ticket, bound.authorizing_seq,
           'FinalizationApproval', 'NoReason', 'ApproveFinalization', in_attempt);
+       INSERT INTO native_action_resolution (tenant, project, action, resolution)
+       SELECT in_tenant, in_project, in_action,
+              unnest(ARRAY[${schemaTextSet(nativeActionResolutions.FinalizationApproval)}]);
        RETURN QUERY SELECT 'Requested'::text, in_action;
      END $$`,
   `ALTER FUNCTION ${approvalRequestFunction}(text,text,text,text,text)

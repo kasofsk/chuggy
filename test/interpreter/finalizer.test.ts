@@ -15,6 +15,7 @@ import { test } from "node:test";
 import {
   allApprovalStandings,
   allCommitPermitStates,
+  approvalStandingOf,
   allFinalizationFailureKinds,
   allFinalizationHoldKinds,
   allFinalizationRequestStates,
@@ -321,6 +322,24 @@ test("a failed attempt concludes as the one priced failure, carrying its kind", 
       },
     );
   }
+});
+
+test("a standing is the answer recorded, and an unanswered or withdrawn ask is pending", () => {
+  assert.equal(approvalStandingOf(undefined), "Pending");
+  assert.equal(approvalStandingOf({ state: "Open" }), "Pending");
+  assert.equal(approvalStandingOf({ state: "Withdrawn" }), "Pending");
+  assert.equal(
+    approvalStandingOf({ state: "Resolved", resolution: "Approve" }),
+    "Granted",
+  );
+  assert.equal(
+    approvalStandingOf({ state: "Resolved", resolution: "Decline" }),
+    "Declined",
+  );
+  assert.throws(
+    () => approvalStandingOf({ state: "Resolved" }),
+    /records no answer/u,
+  );
 });
 
 test("approval is awaited only where the pinned revision required it", () => {

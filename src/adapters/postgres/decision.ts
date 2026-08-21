@@ -22,6 +22,11 @@
  * settling authority is recorded because a refusal has no entry to carry the
  * owner and the fencing epoch that produced it.
  *
+ * AN ANSWERED ACTION IS THAT SAME SHAPE WITH ONE ROW MORE. An approval answer
+ * names no domain command, so the transaction records which answer was given
+ * and settles the input, and writes no entry, no projection and no focused work
+ * — which is the whole of what keeps approval out of `Core`.
+ *
  * THE PROJECTION IS UPSERTED BY THE ROWS THE DECISION CHANGED. Its sequence is
  * the entry's, which is what lets a read say which decision it is looking at,
  * and a ticket the decision left alone keeps the sequence that last moved it.
@@ -56,6 +61,7 @@ import {
   type DecisionCause,
   type DecisionOutcome,
   type DecisionInputOutcome,
+  type NativeActionAnswer,
   type RefusalCode,
   type TicketProjection,
 } from "../../interpreter/projectDecision.ts";
@@ -96,6 +102,7 @@ function decisionRefusalCode(value: string): RefusalCode {
 /** What a settled input says about itself, refusing a row whose state and outcome disagree. */
 function decisionOutcomeOf(row: DecisionCauseRow): DecisionInputOutcome {
   if (row.state === "Cancelled") return { settled: "Cancelled" };
+  if (row.state === "Answered") return { settled: "Answered" };
   if (row.state === "Stale") return { settled: "Stale" };
   if (row.state === "Refused" && row.outcome_code !== null) {
     return { settled: "Refused", code: decisionRefusalCode(row.outcome_code) };
@@ -376,6 +383,31 @@ async function decisionFinalization(
   }
 }
 
+/**
+ * Records which of the answers an open action offered was given, at the fence
+ * that authorized it. A row that stopped being open is a fence the caller lost.
+ */
+async function decisionAnswerAction(
+  client: pg.PoolClient,
+  partition: Partition,
+  answer: NativeActionAnswer,
+): Promise<void> {
+  const changed = await client.query(
+    `UPDATE native_action SET state='Resolved', resolution=$5
+      WHERE tenant=$1 AND project=$2 AND action=$3 AND authorizing_seq=$4 AND state='Open'
+      RETURNING action`,
+    [
+      partition.tenant,
+      partition.project,
+      answer.action,
+      answer.authorizingSeq,
+      answer.resolution,
+    ],
+  );
+  if (changed.rows.length !== 1)
+    throw new Error("native action resolution fence failed");
+}
+
 async function decisionActions(
   client: pg.PoolClient,
   partition: Partition,
@@ -417,21 +449,8 @@ async function decisionActions(
       );
     }
   }
-  if (resolved !== undefined) {
-    const changed = await client.query(
-      `UPDATE native_action SET state='Resolved'
-        WHERE tenant=$1 AND project=$2 AND action=$3 AND authorizing_seq=$4 AND state='Open'
-        RETURNING action`,
-      [
-        partition.tenant,
-        partition.project,
-        resolved.action,
-        resolved.authorizingSeq,
-      ],
-    );
-    if (changed.rows.length !== 1)
-      throw new Error("native action resolution fence failed");
-  }
+  if (resolved !== undefined)
+    await decisionAnswerAction(client, partition, resolved);
 }
 
 async function decisionContinuation(
@@ -709,6 +728,11 @@ async function decisionApply(
       );
       await notifyDecision(client, lease.partition, cause, outcome);
       return { decided: "Refused" };
+    case "Answered":
+      await decisionAnswerAction(client, lease.partition, outcome.answer);
+      await decisionSettle(client, lease, cause, { settled: "Answered" }, null);
+      await notifyDecision(client, lease.partition, cause, outcome);
+      return { decided: "Answered" };
     case "Journaled":
       return decisionApplyJournaled(
         client,
