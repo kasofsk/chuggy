@@ -26,7 +26,10 @@ import {
 
 /** Every string the template states, in an order this file fixes rather than reads. */
 function templateWording(): readonly string[] {
-  const wording: string[] = [...briefingSectionOrder, ...briefingTemplateSections];
+  const wording: string[] = [
+    ...briefingSectionOrder,
+    ...briefingTemplateSections,
+  ];
   for (const [label, text] of Object.entries(briefingLabels).sort()) {
     wording.push(label, text);
   }
@@ -54,10 +57,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [
-      1,
-      "c13bb3c0d94ef8d57db686756ec871958c4c3be005bc97f7feeed7e965f1cac8",
-    ],
+    [1, "c13bb3c0d94ef8d57db686756ec871958c4c3be005bc97f7feeed7e965f1cac8"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });

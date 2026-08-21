@@ -3,13 +3,14 @@
  * sequence of sections a briefing is made of, and the standing wording each
  * role's own sections carry.
  *
- * THE WORDING BELOW IS AUTHORED AND IS A FIRST WORDING. Issue #97 fixes the
- * ownership, the sections and their order and deliberately does not choose what
- * the templates say; nothing in this tree can derive that, so it is written
- * here to be read, argued with and replaced. `briefingTemplateVersion` is what
- * a later wording moves, and every rendered briefing records the version it was
- * rendered from — so a prompt that turns out to have been badly worded can be
- * found rather than guessed at.
+ * THE WORDING BELOW IS AUTHORED AND NOTHING DERIVES IT. It is data this module
+ * states rather than a function of anything else in the tree, so the only thing
+ * that can be true of it mechanically is that it has not changed without saying
+ * so: `briefingTemplateVersion` is the revision every rendered briefing records,
+ * and `test/interpreter/briefingTemplate.test.ts` pins a digest of every string
+ * below beside it, so an edit that leaves the version where it is fails there.
+ * A briefing whose wording turns out to be wrong is therefore found by its
+ * recorded version rather than guessed at.
  *
  * A TEMPLATE OWNS A ROLE AND TICKET DATA FILLS ITS SLOTS, which is the shape
  * #97 settles against a caller assembling a sequence of blocks. The two
@@ -24,11 +25,11 @@
  * reorder its neighbours: filtering preserves relative order, so the rendered
  * sequence is always this one with members removed.
  *
- * THE ROLE VOCABULARY IS `Work` AND `Review`. #97 floats `Code` and `Review` as
- * one plausible first vocabulary and does not choose; #143 asks for `Work` and
- * `Review`, and #97's own practice scope is already spelled `Work`, `Review`
- * and `Both`. Two spellings of one distinction is the thing worth avoiding, so
- * this is the one the tree uses and a reviewer may overrule it.
+ * THE ROLE VOCABULARY IS `Work` AND `Review`, and it is the same one
+ * `./taskBriefing.ts` scopes a practice by and `./executionScheduler.ts` maps a
+ * task kind onto. One spelling serves all three, so a practice scoped `Review`
+ * and a briefing written for `Review` are the same value rather than two that
+ * have to be kept in step.
  */
 
 /** The role a briefing is written for, which is also the role a practice is scoped to. */
