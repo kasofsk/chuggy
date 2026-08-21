@@ -56,6 +56,7 @@ import { tmpdir } from "node:os";
 import type pg from "pg";
 
 import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
+import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   accountIdentityFunction,
@@ -109,6 +110,7 @@ import {
 import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
 import {
   asRecoveryEpoch,
+  type Lifecycle,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import {
@@ -381,6 +383,29 @@ export async function finalizerDrain(
   );
 }
 
+/** Offers one decision command the way a person or a fabric does, and answers what acceptance said. */
+export async function finalizerAccept(
+  harness: PostgresHarness,
+  partition: Partition,
+  label: string,
+  event: DecisionEvent,
+): Promise<string> {
+  const accepted = await harness.inbox.accept({
+    ...postgresHarnessSubmission(partition, label),
+    command: {
+      version: 1,
+      command: "Decide",
+      event: asOperationDecisionEvent(event),
+    },
+  });
+  return accepted.accepted;
+}
+
+/** The completion one passed task reports, which is what an evaluation is driven by. */
+export function finalizerTaskDone(task: number): DecisionEvent {
+  return taskDoneEvent(id(1), asTaskId(task), "Pass", plainResult);
+}
+
 /** Accepts one reported task and decides it along with everything it enqueues. */
 async function finalizerReport(
   harness: PostgresHarness,
@@ -389,18 +414,14 @@ async function finalizerReport(
   label: string,
   task: number,
 ): Promise<ProjectMemory> {
-  const accepted = await harness.inbox.accept({
-    ...postgresHarnessSubmission(partition, label),
-    command: {
-      version: 1,
-      command: "Decide",
-      event: asOperationDecisionEvent(
-        taskDoneEvent(id(1), asTaskId(task), "Pass", plainResult),
-      ),
-    },
-  });
-  if (accepted.accepted !== "Accepted") {
-    throw new Error(`finalizer harness: the report was ${accepted.accepted}`);
+  const accepted = await finalizerAccept(
+    harness,
+    partition,
+    label,
+    finalizerTaskDone(task),
+  );
+  if (accepted !== "Accepted") {
+    throw new Error(`finalizer harness: the report was ${accepted}`);
   }
   const drained = await finalizerDrain(harness, partition, memory);
   const refused = drained.decided.find((each) => each !== "Committed");
@@ -441,6 +462,27 @@ async function finalizerBind(
 }
 
 /**
+ * A project whose ticket is one passed task short of `Finalizing`, which is
+ * where a case that races the entry has to start.
+ */
+export async function finalizerEntering(
+  rig: FinalizerRig,
+  label: string,
+): Promise<{ partition: Partition; memory: ProjectMemory }> {
+  const partition = await postgresHarnessProject(rig.harness.store, label);
+  const first = await postgresHarnessHistory(
+    rig.harness,
+    partition,
+    label,
+    postgresHarnessJournal().length,
+  );
+  return {
+    partition,
+    memory: await finalizerReport(rig.harness, partition, first, label, 1),
+  };
+}
+
+/**
  * A project whose ticket a real decision put into `Finalizing`, with the
  * repository binding a preparation needs. Everything up to the request is the
  * writer's own work, so the request under test is one a decision authorized.
@@ -450,18 +492,12 @@ export async function finalizerProject(
   label: string,
   repository?: string,
 ): Promise<FinalizerProject> {
-  const partition = await postgresHarnessProject(rig.harness.store, label);
-  const first = await postgresHarnessHistory(
-    rig.harness,
-    partition,
-    label,
-    postgresHarnessJournal().length,
-  );
-  const worked = await finalizerReport(rig.harness, partition, first, label, 1);
+  const entering = await finalizerEntering(rig, label);
+  const partition = entering.partition;
   const memory = await finalizerReport(
     rig.harness,
     partition,
-    worked,
+    entering.memory,
     label,
     2,
   );
@@ -959,6 +995,42 @@ export async function finalizerPassedWork(
   );
   await finalizerDeclareHandoffs(rig, project, work, handoffs);
   return work;
+}
+
+/** How many entries one project's journal holds, which every refusal must leave alone. */
+export async function finalizerEntries(
+  rig: FinalizerRig,
+  partition: Partition,
+): Promise<number> {
+  const counted = (await rig.harness.query(
+    `SELECT count(*)::text AS held FROM journal_entry WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  )) as readonly { held: string }[];
+  return Number(counted[0]?.held ?? "-1");
+}
+
+/** The phase the project writer's projection currently holds one ticket in. */
+export async function finalizerPhase(
+  rig: FinalizerRig,
+  partition: Partition,
+): Promise<unknown> {
+  const found = await rig.harness.query(
+    `SELECT phase FROM ticket_projection WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  );
+  return found[0]?.["phase"];
+}
+
+/** Moves one project's lifecycle, which is the marker a closure leaves while it runs. */
+export async function finalizerLifecycle(
+  rig: FinalizerRig,
+  partition: Partition,
+  lifecycle: Lifecycle,
+): Promise<void> {
+  await rig.harness.query(
+    `UPDATE project SET lifecycle=$3 WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project, lifecycle],
+  );
 }
 
 /** Puts one claim's lease in the past, which is what a crashed holder leaves behind. */

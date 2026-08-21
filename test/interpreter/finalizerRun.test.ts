@@ -16,6 +16,7 @@ import { test } from "node:test";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
+  allClosingLifecycles,
   asCommitPermitId,
   asFinalizationAttemptId,
   asFinalizerOwnerId,
@@ -370,6 +371,7 @@ function countingIdentities(): FinalizerIdentityFactory {
 /** One view of a claimed request that is ready to promote. */
 function promotableView(request: string): FinalizationView {
   return {
+    lifecycle: "Active",
     claim: claimOf(request),
     repository: binding,
     attempt: attemptOf(request),
@@ -489,6 +491,7 @@ test("an ask already standing holds rather than opening a second question", asyn
 
 test("a settled request gives its claim back and moves nothing else", async () => {
   const settled: FinalizationView = {
+    lifecycle: "Active",
     claim: { ...claimOf("request-one"), state: "Fulfilled" },
     repository: binding,
     approval: "Pending",
@@ -505,6 +508,7 @@ test("a settled request gives its claim back and moves nothing else", async () =
 /** One view of a claimed request that has no attempt yet, which is what prepares one. */
 function preparableView(request: string): FinalizationView {
   return {
+    lifecycle: "Active",
     claim: claimOf(request),
     repository: binding,
     observedTarget: attemptOf(request).target,
@@ -692,6 +696,38 @@ test("a handoff naming the repository itself is refused before any blob is writt
 
 test("a ticket whose passed work has no result at all is a hold and never a failure", async () => {
   const store = recordingStore([preparableView("request-one")]);
+  store.gathering = { work: [], artifacts: [] };
+  const report = await passOver(serviceOf(store, recordingGit()));
+  assert.equal(report.holds, 1);
+  assert.deepEqual(store.attempts, []);
+});
+
+test("a closing project's abort reaches no remote, asks for no permit and prices one failure", async () => {
+  for (const lifecycle of allClosingLifecycles) {
+    const store = recordingStore([
+      { ...promotableView("request-one"), lifecycle },
+    ]);
+    const git = recordingGit();
+    const report = await passOver(serviceOf(store, git));
+    assert.deepEqual(git.promotions, [], lifecycle);
+    assert.deepEqual(git.preparations, [], lifecycle);
+    assert.deepEqual(store.grants, [], lifecycle);
+    assert.equal(report.promotions, 0, lifecycle);
+    assert.equal(store.attempts.length, 1, lifecycle);
+    assert.equal(store.attempts[0]?.outcome, "Failed", lifecycle);
+    assert.equal(
+      store.attempts[0]?.failureKind,
+      "PreparationFailed",
+      lifecycle,
+    );
+    assert.equal(store.attempts[0]?.candidate, undefined, lifecycle);
+  }
+});
+
+test("a closing project whose passed work is gone holds rather than pricing a failure", async () => {
+  const store = recordingStore([
+    { ...promotableView("request-one"), lifecycle: "Deleting" },
+  ]);
   store.gathering = { work: [], artifacts: [] };
   const report = await passOver(serviceOf(store, recordingGit()));
   assert.equal(report.holds, 1);

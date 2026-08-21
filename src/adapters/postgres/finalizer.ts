@@ -86,6 +86,7 @@ import {
 import type { FinalizerPreparationStore } from "../../interpreter/finalizerPreparation.ts";
 import { nativeActionResolutions } from "../../interpreter/ticketCommand.ts";
 import {
+  allLifecycles,
   asProjectId,
   asRecoveryEpoch,
   asTenantId,
@@ -134,6 +135,7 @@ interface ClaimRow {
 /** One gathered view row: the request, its binding, its latest attempt, and what followed from it. */
 interface ViewRow {
   readonly state: string;
+  readonly lifecycle: string;
   readonly repository: string | null;
   readonly binding_epoch: string | null;
   readonly attempt: string | null;
@@ -328,7 +330,7 @@ async function finalizerReclaim(
 
 /** The columns one claimed request's whole durable view is read from. */
 const viewColumns = `
-  f.state, b.repository, b.recovery_epoch AS binding_epoch,
+  f.state, j.lifecycle, b.repository, b.recovery_epoch AS binding_epoch,
   a.attempt, a.target_ref, a.target_commit, a.strategy,
   a.configuration_revision, a.configuration_digest, a.approval_required,
   a.outcome, a.candidate_commit, a.failure_kind, a.attempt_digest,
@@ -343,6 +345,7 @@ const viewColumns = `
 /** The joins that reach every row one claimed request's view is gathered from. */
 const viewFrom = `
   finalization_request f
+  JOIN project j ON j.tenant = f.tenant AND j.project = f.project
   LEFT JOIN project_repository b
     ON b.tenant = f.tenant AND b.project = f.project
   LEFT JOIN LATERAL (
@@ -528,6 +531,7 @@ async function finalizerDurableView(
         "delivery state",
       ),
     },
+    lifecycle: finalizerRowValue(allLifecycles, row.lifecycle, "lifecycle"),
     ...(row.repository === null || row.binding_epoch === null
       ? {}
       : {

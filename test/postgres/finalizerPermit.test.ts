@@ -15,6 +15,13 @@
  * fake, because a refused update and an ambiguous one are the answers a real
  * remote will not produce on demand.
  *
+ * AN OLD-EPOCH EXECUTOR IS FENCED WHILE IT IS STILL ALIVE. The case that proves
+ * it holds the permit row in an open transaction and says so — a third
+ * connection is refused that row with `NOWAIT` — before the takeover advances
+ * the epoch, so it is a claim about an executor mid-flight rather than about one
+ * that had already stopped. What that executor may then do is asserted by the
+ * journal it did not write, not by the tags its calls returned.
+ *
  * EVERY CASE QUIESCES THE DATABASE IT SHARES. The suites in this directory run
  * against one database and a pass draws work installation-wide, so a case that
  * left a live request would be advanced by the next case's pass and counted in
@@ -26,11 +33,14 @@ import { after, before, test } from "node:test";
 
 import type pg from "pg";
 
+import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import {
   asFinalizationAttemptId,
   asFinalizerOwnerId,
   asGitObjectId,
   asGitRefName,
+  finalizationNext,
+  finalizerDefaults,
   type ObservedTarget,
 } from "../../src/interpreter/finalizer.ts";
 import {
@@ -47,7 +57,9 @@ import {
   finalizerGrantPermit,
   finalizerPrepare,
   finalizerProject,
+  finalizerPromote,
   finalizerRigOpen,
+  finalizerRolePool,
   finalizerService,
   type FinalizerGitFake,
   type FinalizerProject,
@@ -73,6 +85,12 @@ const queueWaitSecsMax = 10;
 
 /** How often the wait asks the server where that backend is. */
 const queuePollMillis = 25;
+
+/** How many rows a successor's recovery sweep and redraw take at a time. */
+const recoveryRowsMax = 64;
+
+/** How long the successor's own claim runs for, which is longer than any case runs. */
+const successorLeaseSecs = 60;
 
 /** One permit row as a case reads it back. */
 type PermitState = {
@@ -166,6 +184,49 @@ async function prepared(
   return finalizerPrepare(rig, project, label, { target, candidate });
 }
 
+/**
+ * A process with none of the retired one's memory takes the request over under
+ * the current epoch and concludes it, which is the positive control that leaves
+ * the superseded epoch as the only reason the retired one was refused.
+ */
+async function permitSuccessorConcludes(
+  project: FinalizerProject,
+  attempt: string,
+): Promise<void> {
+  const successorPool = finalizerRolePool();
+  try {
+    const successor = postgresFinalizer(successorPool);
+    const current = await rig.harness.store.currentRecoveryEpoch();
+    assert.ok(
+      (await successor.reclaimStaleEpoch(current, recoveryRowsMax)) >= 1,
+    );
+    const redrawn = (
+      await successor.claimRequests(
+        asFinalizerOwnerId(`owner-successor-${project.partition.project}`),
+        current,
+        recoveryRowsMax,
+        successorLeaseSecs,
+      )
+    ).find((each) => each.request === project.request);
+    assert.ok(redrawn !== undefined, "the successor drew no claim of its own");
+    assert.deepEqual(
+      await successor.submitResult({
+        claim: redrawn,
+        attempt: asFinalizationAttemptId(attempt),
+        conclusion: { outcome: "FinalizationSucceeded" },
+      }),
+      {
+        submitted: "Submitted",
+        operation: await submittedOperationOf(project),
+      },
+      "the same rows were refused only for the epoch the old executor held",
+    );
+    assert.equal(await submissionsOf(project), 1);
+  } finally {
+    await successorPool.end();
+  }
+}
+
 /** The two halves of the advisory key the permit transaction takes for one project. */
 type PermitLockKey = { readonly namespace: number; readonly project: number };
 
@@ -203,6 +264,53 @@ async function permitLockKey(
   const row = found[0];
   if (row === undefined) throw new Error("finalizer permit: no lock key");
   return { namespace: permitLockNamespace, project: row.keyed };
+}
+
+/** How many entries one project's journal holds, which a fenced move may not change. */
+async function entriesOf(project: FinalizerProject): Promise<number> {
+  const counted = (await rig.harness.query(
+    `SELECT count(*)::text AS held FROM journal_entry WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly { held: string }[];
+  return Number(counted[0]?.held ?? "-1");
+}
+
+/** How many conclusions reached this project's mailbox through the one door. */
+async function submissionsOf(project: FinalizerProject): Promise<number> {
+  const counted = (await rig.harness.query(
+    `SELECT count(*)::text AS made FROM operation
+      WHERE tenant=$1 AND project=$2 AND authority_kind='Finalizer'`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly { made: string }[];
+  return Number(counted[0]?.made ?? "-1");
+}
+
+/** The operation the one door minted for this project's conclusion. */
+async function submittedOperationOf(
+  project: FinalizerProject,
+): Promise<string | undefined> {
+  const found = (await rig.harness.query(
+    `SELECT operation FROM operation
+      WHERE tenant=$1 AND project=$2 AND authority_kind='Finalizer'`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly { operation: string }[];
+  return found[0]?.operation;
+}
+
+/**
+ * Whether some other transaction is holding that permit row right now, which is
+ * how a case says where the executor it is fencing had actually reached.
+ */
+async function permitRowIsHeld(
+  project: FinalizerProject,
+  permit: string,
+): Promise<boolean> {
+  const asking = await rig.ownerRefusal(
+    `SELECT state FROM commit_permit
+      WHERE tenant=$1 AND project=$2 AND permit=$3 FOR UPDATE NOWAIT`,
+    [project.partition.tenant, project.partition.project, permit],
+  );
+  return /could not obtain lock/u.test(asking);
 }
 
 /** Takes the project's own advisory key on a connection the case holds open. */
@@ -550,4 +658,102 @@ test("a takeover leaves an old-epoch executor unable to take or use a permit", a
   );
   assert.equal((await permitsOf(project))[0]?.state, "Granted");
   assert.equal(await readingOf(project), undefined);
+});
+
+test("an executor still alive on its permit row concludes nothing once the epoch moves", async () => {
+  const project = await subject("alive");
+  const claim = await finalizerClaim(rig, project, "owner-alive");
+  const attempt = await finalizerPromote(rig, project, "alive");
+  const permit = (await permitsOf(project))[0];
+  assert.equal(
+    permit?.state,
+    "Concluded",
+    "the finalization is not concludable",
+  );
+  const store = finalizerService(
+    rig,
+    finalizerGit(targetAt(finalizerCommit())),
+  ).store;
+  const entries = await entriesOf(project);
+
+  const alive = await rig.pool.connect();
+  let refusals: readonly unknown[];
+  try {
+    await alive.query("BEGIN");
+    await alive.query(
+      `SELECT state FROM commit_permit
+        WHERE tenant=$1 AND project=$2 AND permit=$3 FOR UPDATE`,
+      [project.partition.tenant, project.partition.project, permit?.permit],
+    );
+    assert.equal(
+      await permitRowIsHeld(project, permit?.permit ?? ""),
+      true,
+      "the old-epoch executor was not holding its permit row",
+    );
+    await rig.harness.store.establishRecoveryEpoch(
+      asRecoveryEpoch(`epoch-alive-${project.partition.project}`),
+    );
+    refusals = [
+      await store.submitResult({
+        claim,
+        attempt: asFinalizationAttemptId(attempt),
+        conclusion: { outcome: "FinalizationSucceeded" },
+      }),
+      await store.extendClaim(claim, 60),
+      await store.settleClaim(claim),
+    ];
+  } finally {
+    await alive.query("ROLLBACK").catch(() => undefined);
+    alive.release();
+  }
+  assert.deepEqual(refusals, [{ submitted: "BindingMismatch" }, false, false]);
+  assert.equal(await entriesOf(project), entries);
+  assert.equal(await submissionsOf(project), 0);
+  await permitSuccessorConcludes(project, attempt);
+});
+
+test("the process that took over reconstructs the correlation from the rows alone", async () => {
+  const current = await rig.harness.store.currentRecoveryEpoch();
+  const project = await finalizerProject(rig, "takeover");
+  await quiesce(project);
+  const claim = await finalizerClaim(rig, project, "owner-takeover");
+  const candidate = finalizerCommit();
+  const attempt = await finalizerPrepare(rig, project, "takeover", {
+    candidate,
+  });
+  const permit = await finalizerGrantPermit(rig, project, attempt, "takeover");
+  await rig.as(
+    `UPDATE finalization_request SET claim_expires_at = now() - interval '1 hour'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [project.partition.tenant, project.partition.project, project.request],
+  );
+
+  const successorPool = finalizerRolePool();
+  try {
+    const successor = postgresFinalizer(successorPool);
+    assert.ok((await successor.reclaimLapsed(current, recoveryRowsMax)) >= 1);
+    const redrawn = (
+      await successor.claimRequests(
+        asFinalizerOwnerId("owner-successor"),
+        current,
+        recoveryRowsMax,
+        successorLeaseSecs,
+      )
+    ).find((each) => each.request === project.request);
+    assert.ok(redrawn !== undefined, "the successor drew no claim of its own");
+    assert.notEqual(redrawn.claimGeneration, claim.claimGeneration);
+    const view = await successor.durableView(redrawn);
+    assert.equal(view?.attempt?.attempt, attempt);
+    assert.equal(view?.attempt?.candidate, candidate);
+    assert.equal(view?.permit?.permit, permit);
+    assert.equal(view?.permit?.state, "Granted");
+    assert.equal(view?.reconciliation, undefined);
+    assert.ok(view !== undefined);
+    assert.deepEqual(finalizationNext(finalizerDefaults, view), {
+      decide: "Reconcile",
+      permit,
+    });
+  } finally {
+    await successorPool.end();
+  }
 });

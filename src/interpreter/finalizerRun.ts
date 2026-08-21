@@ -65,6 +65,14 @@
  * the plainer reason that an attempt pinning no configuration revision is a row
  * the schema will not hold.
  *
+ * A CLOSING PROJECT IS ABORTED AND NEVER PROMOTED. A lifecycle that will admit
+ * no further irreversible act makes the abort the only move left before the
+ * permit: the finalization records the deterministic failure it aborted to and
+ * concludes it, having asked for no permit and written to no remote, which is
+ * what makes the abort reversible. Past the permit nothing changes at all — the
+ * reading of the ref still has to conclude, because the repository is the only
+ * authority on whether it advanced and no erasure may precede that reading.
+ *
  * NOTHING HERE READS A CLOCK. Every lease and expiry is a duration handed to the
  * store, which asks the database what time it is.
  *
@@ -673,6 +681,76 @@ async function finalizerBuild(
 }
 
 /**
+ * Everything one preparation or one abort pins, gathered before any of it is
+ * written down, and the handoff where the ticket's work declared one.
+ */
+async function finalizerGathered(
+  service: FinalizerService,
+  view: FinalizationView,
+  target: ObservedTarget,
+  tally: FinalizerTally,
+): Promise<
+  { subject: FinalizerPreparation; handoff?: TicketHandoff } | undefined
+> {
+  const repository = view.repository;
+  if (repository === undefined) {
+    throw new Error(
+      "finalizer pass: an attempt was authorized against no bound repository",
+    );
+  }
+  const gathering = await service.store.handoffGathering(view.claim);
+  const accepted = handoffAccepted(gathering);
+  if (accepted.accepted === "NoPassedWork") {
+    finalizerHold(service, tally, "NoPassedWork");
+    return undefined;
+  }
+  const handoff: TicketHandoff | undefined =
+    accepted.accepted === "Handoff" ? accepted.handoff : undefined;
+  const configuration =
+    accepted.accepted === "Handoff"
+      ? accepted.handoff.configuration
+      : accepted.configuration;
+  const identity = service.identities.next(view.claim.partition);
+  return {
+    subject: {
+      view,
+      repository,
+      identity,
+      bundle: finalizerBundleOf(
+        service,
+        view.claim,
+        identity.bundle,
+        repository,
+        {
+          configuration,
+          manifests: [...new Set(gathering.work.map((each) => each.manifest))],
+        },
+      ),
+      target,
+      configuration,
+      approvalRequired: handoff?.approvalRequired ?? false,
+    },
+    ...(handoff === undefined ? {} : { handoff }),
+  };
+}
+
+/**
+ * Records the failure a finalization aborts to when its project will never
+ * authorize the act again. No permit is asked for and no remote is written to,
+ * which is what makes the abort reversible.
+ */
+async function finalizerAbort(
+  service: FinalizerService,
+  view: FinalizationView,
+  target: ObservedTarget,
+  tally: FinalizerTally,
+): Promise<void> {
+  const gathered = await finalizerGathered(service, view, target, tally);
+  if (gathered === undefined) return;
+  await finalizerPreparationFailed(service, gathered.subject, target, tally);
+}
+
+/**
  * Turns one ticket's verified handoff artifacts into a candidate, or records the
  * deterministic reason they could not become one.
  */
@@ -682,43 +760,9 @@ async function finalizerPrepare(
   target: ObservedTarget,
   tally: FinalizerTally,
 ): Promise<void> {
-  const repository = view.repository;
-  if (repository === undefined) {
-    throw new Error(
-      "finalizer pass: a preparation was authorized against no bound repository",
-    );
-  }
-  const gathering = await service.store.handoffGathering(view.claim);
-  const accepted = handoffAccepted(gathering);
-  if (accepted.accepted === "NoPassedWork") {
-    finalizerHold(service, tally, "NoPassedWork");
-    return;
-  }
-  const handoff: TicketHandoff | undefined =
-    accepted.accepted === "Handoff" ? accepted.handoff : undefined;
-  const configuration =
-    accepted.accepted === "Handoff"
-      ? accepted.handoff.configuration
-      : accepted.configuration;
-  const identity = service.identities.next(view.claim.partition);
-  const subject: FinalizerPreparation = {
-    view,
-    repository,
-    identity,
-    bundle: finalizerBundleOf(
-      service,
-      view.claim,
-      identity.bundle,
-      repository,
-      {
-        configuration,
-        manifests: [...new Set(gathering.work.map((each) => each.manifest))],
-      },
-    ),
-    target,
-    configuration,
-    approvalRequired: handoff?.approvalRequired ?? false,
-  };
+  const gathered = await finalizerGathered(service, view, target, tally);
+  if (gathered === undefined) return;
+  const { subject, handoff } = gathered;
   if (handoff === undefined) {
     await finalizerPreparationFailed(service, subject, target, tally);
     return;
@@ -809,6 +853,11 @@ async function finalizerAdvance(
         metrics.preparation(decision.restartsSpent);
       });
       await finalizerPrepare(service, view, decision.target, tally);
+      return;
+    case "Abort":
+      if (tally.preparations >= config.preparationsPerPassMax) return;
+      tally.preparations += 1;
+      await finalizerAbort(service, view, decision.target, tally);
       return;
     case "AwaitApproval":
       await finalizerAwaitApproval(service, view, decision.attempt, tally);

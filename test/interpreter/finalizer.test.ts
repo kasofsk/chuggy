@@ -14,6 +14,7 @@ import { test } from "node:test";
 
 import {
   allApprovalStandings,
+  allClosingLifecycles,
   allCommitPermitStates,
   approvalStandingOf,
   allFinalizationFailureKinds,
@@ -44,6 +45,7 @@ import {
   type ReconciliationVerdict,
 } from "../../src/interpreter/finalizer.ts";
 import {
+  allLifecycles,
   asProjectId,
   asRecoveryEpoch,
   asTenantId,
@@ -131,6 +133,7 @@ type ViewOverrides = {
  */
 function viewWith(overrides: ViewOverrides): FinalizationView {
   const smallest: FinalizationView = {
+    lifecycle: "Active",
     claim: {
       partition,
       request: "request-1",
@@ -320,6 +323,119 @@ test("a failed attempt concludes as the one priced failure, carrying its kind", 
         decide: "Conclude",
         conclusion: { outcome: "FinalizationFailed", kind },
       },
+    );
+  }
+});
+
+test("a closing project aborts every finalization that holds no permit", () => {
+  for (const lifecycle of allClosingLifecycles) {
+    for (const attempt of [undefined, prepared]) {
+      assert.deepEqual(
+        finalizationNext(
+          finalizerDefaults,
+          viewWith({
+            lifecycle,
+            attempt,
+            attemptsMade: attempt === undefined ? 0 : 1,
+          }),
+        ),
+        { decide: "Abort", target },
+        `${lifecycle}/${attempt === undefined ? "no attempt" : "prepared"}`,
+      );
+    }
+  }
+});
+
+test("a lifecycle that is not closing prepares and promotes exactly as before", () => {
+  for (const lifecycle of allLifecycles.filter(
+    (each) => !allClosingLifecycles.includes(each),
+  )) {
+    assert.equal(
+      finalizationNext(finalizerDefaults, viewWith({ lifecycle })).decide,
+      "Prepare",
+      lifecycle,
+    );
+    assert.equal(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ lifecycle, attempt: prepared, attemptsMade: 1 }),
+      ).decide,
+      "Promote",
+      lifecycle,
+    );
+  }
+});
+
+test("a closing project past the permit reads the ref before anything is erased", () => {
+  for (const lifecycle of allClosingLifecycles) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          lifecycle,
+          attempt: prepared,
+          attemptsMade: 1,
+          permit: permitIn("Granted"),
+        }),
+      ),
+      { decide: "Reconcile", permit: permitId },
+      lifecycle,
+    );
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          lifecycle,
+          attempt: prepared,
+          attemptsMade: 1,
+          permit: permitIn("Granted"),
+          reconciliation: reconciliationOf("Unreadable"),
+        }),
+      ),
+      { decide: "Hold", hold: "ReconciliationUnreadable" },
+      lifecycle,
+    );
+  }
+});
+
+test("a closing project's abort is recorded once and then concluded, never re-aborted", () => {
+  for (const lifecycle of allClosingLifecycles) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          lifecycle,
+          attempt: attemptFailed("PreparationFailed"),
+          attemptsMade: 1,
+        }),
+      ),
+      {
+        decide: "Conclude",
+        conclusion: {
+          outcome: "FinalizationFailed",
+          kind: "PreparationFailed",
+        },
+      },
+      lifecycle,
+    );
+  }
+});
+
+test("a closing project whose ref moved after a refused update aborts rather than restarting", () => {
+  for (const lifecycle of allClosingLifecycles) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          lifecycle,
+          attempt: prepared,
+          attemptsMade: 1,
+          permit: permitIn("Concluded"),
+          reconciliation: reconciliationOf("NotPromoted"),
+        }),
+      ),
+      { decide: "Abort", target },
+      lifecycle,
     );
   }
 });

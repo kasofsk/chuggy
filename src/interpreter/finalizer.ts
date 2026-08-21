@@ -40,6 +40,13 @@
  * them: a hold spends nothing and refunds nothing, so a finalizer's own
  * re-preparations stay invisible to `Core`.
  *
+ * A CLOSING PROJECT ABORTS BEFORE THE PERMIT AND RECONCILES AFTER IT. A
+ * lifecycle that will never authorize the act again makes another preparation
+ * pointless, so a finalization holding no permit records the failure it aborted
+ * to and concludes it; one holding a permit reads the ref first, because the
+ * repository is the only authority on whether it already advanced and evidence
+ * cannot be erased before it has been read.
+ *
  * THE GLOBAL LOCK ORDER IS REQUEST, THEN REPOSITORY, THEN PROJECT, THEN PERMIT,
  * THEN ATTEMPT, and within each class in key order. Every transaction taking
  * more than one of them takes them in that order, because a declared order
@@ -55,7 +62,7 @@ import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { ApprovalResolution } from "./ticketCommand.ts";
-import type { Partition, RecoveryEpoch } from "./projectStore.ts";
+import type { Lifecycle, Partition, RecoveryEpoch } from "./projectStore.ts";
 
 declare const finalizationAttemptIdBrand: unique symbol;
 declare const commitPermitIdBrand: unique symbol;
@@ -415,9 +422,19 @@ export function approvalStandingOf(
   return action.resolution === "Approve" ? "Granted" : "Declined";
 }
 
+/**
+ * The lifecycles under which the one irreversible act will never be authorized
+ * again, so a finalization holding no permit aborts rather than waits.
+ */
+export const allClosingLifecycles: readonly Lifecycle[] = [
+  "Deleting",
+  "Retention",
+];
+
 /** Everything the pure pass reads, gathered before it runs so nothing is awaited inside it. */
 export interface FinalizationView {
   readonly claim: FinalizationClaim;
+  readonly lifecycle: Lifecycle;
   readonly repository?: RepositoryBinding;
   readonly observedTarget?: ObservedTarget;
   readonly attempt?: FinalizationAttempt;
@@ -468,6 +485,7 @@ export type FinalizationDecision =
       readonly decide: "AwaitApproval";
       readonly attempt: FinalizationAttemptId;
     }
+  | { readonly decide: "Abort"; readonly target: ObservedTarget }
   | { readonly decide: "Promote"; readonly attempt: FinalizationAttemptId }
   | { readonly decide: "Reconcile"; readonly permit: CommitPermitId }
   | { readonly decide: "Conclude"; readonly conclusion: FinalizationConclusion }
@@ -536,6 +554,9 @@ function finalizationNextRestart(
 ): FinalizationDecision {
   const target = view.observedTarget;
   if (target === undefined) return { decide: "Hold", hold: "TargetUnreadable" };
+  if (allClosingLifecycles.includes(view.lifecycle)) {
+    return { decide: "Abort", target };
+  }
   const restartsSpent = view.attemptsMade > 0 ? view.attemptsMade - 1 : 0;
   if (restartsSpent >= config.preparationRestartsMax) {
     return { decide: "Hold", hold: "PreparationRestartsExhausted" };
@@ -578,22 +599,32 @@ function finalizationNextUnderPermit(
   return { decide: "Hold", hold: "ContradictoryEvidence" };
 }
 
-/** What a finalization that has obtained no permit may do next, the revision fence included. */
+/**
+ * What a finalization that has obtained no permit may do next, the revision
+ * fence and the closure abort included. A failure already recorded is concluded
+ * before anything is read of the remote, because the evidence is the rows.
+ */
 function finalizationNextBeforePermit(
   config: FinalizerConfig,
   view: FinalizationView,
 ): FinalizationDecision {
-  const target = view.observedTarget;
-  if (target === undefined) return { decide: "Hold", hold: "TargetUnreadable" };
   const attempt = view.attempt;
-  if (attempt === undefined) {
-    return { decide: "Prepare", target, restartsSpent: 0 };
-  }
-  if (attempt.outcome === "Failed" && attempt.failureKind !== undefined) {
+  if (attempt?.outcome === "Failed" && attempt.failureKind !== undefined) {
     return {
       decide: "Conclude",
       conclusion: { outcome: "FinalizationFailed", kind: attempt.failureKind },
     };
+  }
+  const aborting = view.observedTarget ?? attempt?.target;
+  if (allClosingLifecycles.includes(view.lifecycle)) {
+    return aborting === undefined
+      ? { decide: "Hold", hold: "TargetUnreadable" }
+      : { decide: "Abort", target: aborting };
+  }
+  const target = view.observedTarget;
+  if (target === undefined) return { decide: "Hold", hold: "TargetUnreadable" };
+  if (attempt === undefined) {
+    return { decide: "Prepare", target, restartsSpent: 0 };
   }
   if (
     attempt.target.commit !== target.commit ||

@@ -2503,11 +2503,23 @@ the machine and not the daemon.
 
 Project closure during `Finalizing` has two arms and I7 builds one of them.
 An attempt that never obtained the permit aborts reversibly and concludes
-failed, and I7 builds that abort request and the reconcile-before-erasure
-hold that an attempt past the permit must satisfy. The fenced closure writer
-that calls them is I10's row and stays there; until it exists, a revocation
-of a finalizing ticket is refused at the writer, as it is today. Stating this
-here is the alternative to discovering it in a review round.
+failed, and I7 builds that abort and the reconcile-before-erasure hold that an
+attempt past the permit must satisfy. This record called the abort a request
+the closure writer calls and the tree refutes that: the ticket service holds
+`SELECT` on `finalization_attempt` and no privilege at all on `commit_permit`,
+so it can write neither the failed attempt a conclusion must bind to nor the
+permit's conclusion, and granting it either would make a second writer of the
+finalizer's own evidence. The abort is therefore the finalizer's own move,
+decided by `finalizationNext` from the project lifecycle its view now gathers:
+no permit is asked for and no remote is written to, which is what makes it
+reversible. The hold is the permit that already cannot be abandoned before its
+reconciliation concludes, so a closing project past the permit reads the ref
+and nothing else changes. The fenced closure writer is I10's row and stays
+there, and the read of `commit_permit` its quiescence query needs is a grant
+that arrives with that transaction, because a grant no transaction uses is an
+unverified control. Until it exists, a revocation of a finalizing ticket is
+refused at the writer, as it is today. Stating this here is the alternative to
+discovering it in a review round.
 
 I8 advances the recovery epoch on restore, which is why the permit and the
 repository binding each name the epoch they were issued under: an old-epoch

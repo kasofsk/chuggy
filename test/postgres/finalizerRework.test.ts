@@ -1,6 +1,12 @@
 /**
- * What a concluded finalization failure becomes: the input bundle the deciding
- * transaction materializes for the work set it spawns.
+ * What a concluded finalization becomes: nothing at all where the integration
+ * was clean, and the input bundle the deciding transaction materializes for the
+ * work set it spawns where it was not.
+ *
+ * THE PRICING IS READ AND NOT INFERRED FROM THE PHASE. A clean integration that
+ * had quietly spent the finalization account, and a conflict that had not, would
+ * both leave the phase every weaker assertion looks at, so the cases replay the
+ * journal and read the ticket's own accounts either side of the decision.
  *
  * THE WHOLE PATH IS REAL. A real bare repository produces the conflict, the
  * real finalizer submits through the real door, and the real project writer
@@ -16,9 +22,17 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 
+import {
+  artifactOwnedFile,
+  artifactProjectDirectory,
+} from "../../src/adapters/artifacts/artifactKey.ts";
 import { finalizerRowValue } from "../../src/adapters/postgres/finalizerRows.ts";
+import { ticketAt } from "../../src/domain/core.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import type { Ticket } from "../../src/domain/generated/modelTypes.ts";
 import {
   retrofitBundleDigest,
   retrofitBundleIdentity,
@@ -136,6 +150,7 @@ async function reworked(label: string): Promise<{
   remote: FinalizerRemote;
   attempt: ReworkAttempt;
   bundle: ReworkBundle;
+  priced: Ticket;
 }> {
   const { project, remote } = await finalizerSubject(rig, label, [
     { path: "base.txt", content: "candidate\n" },
@@ -164,7 +179,25 @@ async function reworked(label: string): Promise<{
     remote,
     attempt: await reworkAttemptOf(project),
     bundle: await reworkBundleOf(project),
+    priced: ticketAt(drained.memory.core, asTicketId(project.ticket)),
   };
+}
+
+/** What the ticket the project's history released was priced at before any finalization. */
+function reworkPricedBefore(project: FinalizerProject): Ticket {
+  return ticketAt(project.memory.core, asTicketId(project.ticket));
+}
+
+/** The spawn registrations this project holds, which is what a rework adds one to. */
+async function reworkSpawnsOf(
+  project: FinalizerProject,
+): Promise<readonly string[]> {
+  const rows = (await rig.harness.query(
+    `SELECT request FROM execution_request
+      WHERE tenant=$1 AND project=$2 AND kind='SpawnWork' ORDER BY authorizing_seq`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly { request: string }[];
+  return rows.map((row) => row.request);
 }
 
 /** The one reference of that kind, refusing a bundle that named it twice or not at all. */
@@ -179,8 +212,68 @@ function reworkReference(
   return named[0];
 }
 
+test("a clean automatic integration concludes without pricing a rework or leaving the phase", async () => {
+  const { project, remote } = await finalizerSubject(rig, "clean", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const before = reworkPricedBefore(project);
+  const spawns = await reworkSpawnsOf(project);
+  const moving = finalizerMovingPort(finalizerRemotePort(rig), () => {
+    finalizerRemoteCommit(remote, "other.txt", "other\n", "other");
+  });
+  assert.equal(
+    (await finalizerPassOnce(rig, project, moving, "clean")).preparations,
+    1,
+  );
+  const port = finalizerRemotePort(rig);
+  for (const round of ["promote", "conclude"]) {
+    assert.equal(await reworkPhaseOf(project), "Finalizing", round);
+    await finalizerExpireClaim(rig, project);
+    const pass = await finalizerPassOnce(rig, project, port, `clean-${round}`);
+    assert.equal(pass.holds, 0, round);
+  }
+  const attempt = (await rig.harness.query(
+    `SELECT candidate_commit, target_commit FROM finalization_attempt
+      WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly { candidate_commit: string; target_commit: string }[];
+  assert.equal(attempt.length, 1);
+  assert.notEqual(attempt[0]?.candidate_commit, attempt[0]?.target_commit);
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    attempt[0]?.candidate_commit,
+  );
+
+  const drained = await finalizerDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  assert.deepEqual(drained.decided, ["Committed"]);
+  const priced = ticketAt(drained.memory.core, asTicketId(project.ticket));
+  assert.equal(priced.phase, "Done");
+  assert.equal(priced.completions, before.completions + 1);
+  assert.equal(priced.finalizationLeft, before.finalizationLeft, "priced");
+  assert.equal(priced.gasLeft, before.gasLeft, "metered");
+  assert.equal(priced.reworkLeft, before.reworkLeft, "reworked");
+  assert.deepEqual(await reworkSpawnsOf(project), spawns);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT count(*)::text AS made FROM input_bundle_reference
+        WHERE tenant=$1 AND project=$2
+          AND reference_kind IN ('FinalizationAttempt','ConflictManifest')`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ made: "0" }],
+  );
+});
+
 test("a concluded merge conflict returns the ticket to work with a bundle naming its evidence", async () => {
-  const { project, attempt, bundle } = await reworked("rework");
+  const { project, attempt, bundle, priced } = await reworked("rework");
+  const before = reworkPricedBefore(project);
+  assert.equal(priced.finalizationLeft, before.finalizationLeft - 1, "priced");
+  assert.equal(priced.gasLeft, before.gasLeft - 1, "metered");
+  assert.equal(priced.reworkLeft, before.reworkLeft, "the eval account paid");
   assert.equal(await reworkPhaseOf(project), "Working");
   assert.deepEqual(reworkReference(bundle, "FinalizationAttempt"), {
     reference_kind: "FinalizationAttempt",
@@ -240,6 +333,49 @@ test("the bundle's digest is over exactly the references it stored", async () =>
         "utf8",
       )
       .digest("hex"),
+  );
+});
+
+test("the objective is formed from the bundle alone, with no ref read and no finalizer row", async () => {
+  const { project, remote, bundle } = await reworked("rework-objective");
+  const conflict = reworkReference(bundle, "ConflictManifest");
+  const named = reworkReference(bundle, "TargetCommit");
+  assert.ok(conflict !== undefined && named !== undefined);
+  const stored = readFileSync(
+    artifactOwnedFile(
+      artifactProjectDirectory(
+        rig.artifactRoot,
+        project.partition.tenant,
+        project.partition.project,
+      ),
+      conflict.reference_id,
+    ),
+  );
+  assert.equal(
+    createHash("sha256").update(stored).digest("hex"),
+    conflict.reference_digest,
+    "the manifest is not the one the bundle pinned",
+  );
+  const objective = JSON.parse(stored.toString("utf8")) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(
+    objective["attempt"],
+    reworkReference(bundle, "FinalizationAttempt")?.reference_id,
+  );
+  assert.equal(objective["targetCommit"], named.reference_id);
+  assert.equal(objective["strategy"], "Merge");
+  assert.deepEqual(objective["conflictingPaths"], ["base.txt"]);
+  assert.equal(
+    objective["mergeBase"],
+    finalizerGitVerb(remote.seed, "rev-parse", "HEAD~1"),
+  );
+  finalizerRemoteCommit(remote, "later.txt", "later\n", "later");
+  assert.notEqual(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    objective["targetCommit"],
+    "the objective is only as stable as the ref it was read from",
   );
 });
 
