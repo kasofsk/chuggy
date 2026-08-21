@@ -217,28 +217,36 @@ test("a digest is refused unless it is lower-case hexadecimal of fixed width", (
   }
 });
 
+/** One path per path rejection, which is what makes both roster claims below decidable. */
+const pathCases: readonly (readonly [string, ManifestRejection])[] = [
+  ["out/\ud800", "PathNotWellFormed"],
+  ["", "PathEmpty"],
+  ["o".repeat(artifactPathCharsMax + 1), "PathTooLong"],
+  [`out/e${String.fromCharCode(0x301)}`, "PathNotNormalForm"],
+  [`out/a${String.fromCharCode(1)}b`, "PathHasControlCharacter"],
+  ["out\\a", "PathHasBackslash"],
+  ["/out/a", "PathAbsolute"],
+  ["out//a", "PathEmptySegment"],
+  ["out/../a", "PathDotSegment"],
+  [
+    Array.from({ length: artifactPathSegmentsMax + 1 }, () => "a").join("/"),
+    "PathTooDeep",
+  ],
+  [`out/${"a".repeat(artifactPathSegmentCharsMax + 1)}`, "PathSegmentTooLong"],
+  ["out/ a", "PathHasEdgeWhitespace"],
+];
+
+/** The code one path is refused with, which is how a path case reaches the boundary. */
+function pathRejection(path: string): ManifestRejection {
+  return rejection(
+    report("Pass", [{ path, digest: digestFor(path), bytes: 1 }]),
+  );
+}
+
 test("every path rejection is reachable and is reported in the checker's order", () => {
-  const deep = Array.from({ length: artifactPathSegmentsMax + 1 }, () => "a");
-  const cases: readonly [string, ManifestRejection][] = [
-    ["out/\ud800", "PathNotWellFormed"],
-    ["", "PathEmpty"],
-    ["o".repeat(artifactPathCharsMax + 1), "PathTooLong"],
-    [`out/e${String.fromCharCode(0x301)}`, "PathNotNormalForm"],
-    [`out/a${String.fromCharCode(1)}b`, "PathHasControlCharacter"],
-    ["out\\a", "PathHasBackslash"],
-    ["/out/a", "PathAbsolute"],
-    ["out//a", "PathEmptySegment"],
-    ["out/../a", "PathDotSegment"],
-    [deep.join("/"), "PathTooDeep"],
-    [
-      `out/${"a".repeat(artifactPathSegmentCharsMax + 1)}`,
-      "PathSegmentTooLong",
-    ],
-    ["out/ a", "PathHasEdgeWhitespace"],
-  ];
-  for (const [path, code] of cases) {
+  for (const [path, code] of pathCases) {
     assert.equal(
-      rejection(report("Pass", [{ path, digest: digestFor(path), bytes: 1 }])),
+      pathRejection(path),
       code,
       `${JSON.stringify(path)} was not refused as ${code}`,
     );
@@ -286,31 +294,105 @@ test("a duplicate path is refused across both lists and across case", () => {
   );
 });
 
-test("the rejection roster lists every code without repeating one", () => {
+test("a row that is not a row of the schema is missing its fields", () => {
+  assert.equal(
+    rejection(
+      JSON.stringify({
+        version: 1,
+        verdict: "Pass",
+        handoffs: ["out/a"],
+        diagnostics: [],
+      }),
+    ),
+    "MissingField",
+  );
+  assert.equal(
+    rejection(
+      JSON.stringify({
+        version: 1,
+        verdict: "Pass",
+        handoffs: [{ path: 1, digest: digestFor("out/a"), bytes: 1 }],
+        diagnostics: [],
+      }),
+    ),
+    "MissingField",
+  );
+  assert.equal(
+    rejection(
+      JSON.stringify({
+        version: 1,
+        verdict: "Pass",
+        handoffs: {},
+        diagnostics: [],
+      }),
+    ),
+    "MissingField",
+  );
+});
+
+/** Every rejection a body of the wire form can be refused with, gathered from bodies. */
+function everyRejectionReached(): ReadonlySet<ManifestRejection> {
+  const handoffs = Array.from({ length: manifestHandoffsMax }, (_unused, at) =>
+    row(`out/${String(at)}`),
+  );
+  const large = Array.from(
+    { length: Math.floor(manifestBytesMax / artifactBytesMax) + 1 },
+    (_unused, at) => row(`out/${String(at)}`, artifactBytesMax),
+  );
+  return new Set<ManifestRejection>([
+    ...pathCases.map(([path]) => pathRejection(path)),
+    rejection("x".repeat(resultManifestTextCharsMax + 1)),
+    rejection("not json"),
+    rejection(report("Pass", [{ ...row("out/a"), extra: 1 }])),
+    rejection(
+      JSON.stringify({
+        version: 1,
+        verdict: "Pass",
+        handoffs: ["out/a"],
+        diagnostics: [],
+      }),
+    ),
+    rejection(
+      JSON.stringify({
+        version: 2,
+        verdict: "Pass",
+        handoffs: [],
+        diagnostics: [],
+      }),
+    ),
+    rejection(report("Skip", [])),
+    rejection(report("Pass", [...handoffs, row("out/extra")])),
+    rejection(
+      report(
+        "Pass",
+        [],
+        Array.from({ length: manifestDiagnosticsMax + 1 }, (_unused, at) =>
+          row(`log/${String(at)}`),
+        ),
+      ),
+    ),
+    rejection(report("Fail", [row("out/a")])),
+    rejection(report("Pass", [row("out/a", -1)])),
+    rejection(report("Pass", [row("out/a", artifactBytesMax + 1)])),
+    rejection(report("Pass", large)),
+    rejection(
+      report("Pass", [
+        { path: "out/a", digest: digestFor("out/a").toUpperCase(), bytes: 1 },
+      ]),
+    ),
+    rejection(report("Pass", [row("out/a"), row("out/a")])),
+  ]);
+}
+
+test("every rejection the roster names is reachable from an untrusted report", () => {
   assert.equal(
     new Set(allManifestRejections).size,
     allManifestRejections.length,
   );
-  for (const code of [
-    "TextTooLong",
-    "TextUnreadable",
-    "UnexpectedField",
-    "UnsupportedSchemaVersion",
-    "UnknownVerdict",
-    "TooManyHandoffs",
-    "TooManyDiagnostics",
-    "HandoffsOnFailedVerdict",
-    "ArtifactBytesNotCounted",
-    "ArtifactTooLarge",
-    "ManifestTooLarge",
-    "ArtifactDigestMalformed",
-    "DuplicatePath",
-  ] as const) {
-    assert.ok(
-      allManifestRejections.includes(code),
-      `${code} is not on the roster`,
-    );
-  }
+  assert.deepEqual(
+    [...everyRejectionReached()].sort(),
+    [...allManifestRejections].sort(),
+  );
 });
 
 test("the digest is a function of the set rather than of the order it arrived in", () => {
