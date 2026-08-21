@@ -25,17 +25,6 @@
  * THE PROJECTION IS UPSERTED BY THE ROWS THE DECISION CHANGED. Its sequence is
  * the entry's, which is what lets a read say which decision it is looking at,
  * and a ticket the decision left alone keeps the sequence that last moved it.
- *
- * A SPAWN REQUEST PINS ITS CAPACITY ACCOUNT AND CONFIGURATION HERE, in the
- * transaction that authorizes it, because 006 has a spawn request name the
- * stable capacity account and pinned task-configuration revision a consumer
- * needs and forbids that consumer to reconstruct historical intent from a
- * moving ticket row. The account is the project, which is 006's initial
- * choice; the revision and digest are the same pin this transaction writes
- * onto the entry and the projection, so the three cannot disagree. A
- * cancellation request carries none of them: it retires work rather than
- * authorizing any, and a column it does not need is a column a later reader
- * would have to decide the meaning of.
  */
 
 import { createHash } from "node:crypto";
@@ -61,13 +50,18 @@ import {
   type TicketProjection,
 } from "../../interpreter/projectDecision.ts";
 import type { Lease, Partition } from "../../interpreter/projectStore.ts";
-import type { DispatchCandidate } from "../../interpreter/dispatchView.ts";
+import {
+  encodeDispatchFinalizationPricing,
+  encodeDispatchProgram,
+  encodeDispatchReworkPolicy,
+  type DispatchCandidate,
+} from "../../interpreter/dispatchView.ts";
 import { postgresJournalWrite } from "./journal.ts";
 import {
   postgresOwnershipHonours,
   postgresOwnershipLockKnown,
 } from "./ownership.ts";
-import { postgresTransaction, postgresTextParameter } from "./pool.ts";
+import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
 
 /** One decision-input row as the transaction reads it under its lock. */
@@ -115,7 +109,7 @@ async function decisionLockCause(
   const found = await client.query<DecisionCauseRow>(
     sql`SELECT state, outcome_code, decided_seq FROM decision_input
       WHERE tenant = ${partition.tenant} AND project = ${partition.project}
-        AND input_kind = ${postgresTextParameter(cause.kind)} AND input_id = ${cause.id}
+        AND input_kind = ${String(cause.kind)} AND input_id = ${cause.id}
       FOR UPDATE`,
   );
   const row = found.rows[0];
@@ -150,7 +144,7 @@ async function decisionSettle(
             refused_head = ${settled.settled === "Refused" ? (refusedAt?.head ?? null) : null},
             refused_lifecycle_generation = ${settled.settled === "Refused" ? (refusedAt?.lifecycleGeneration ?? null) : null}
       WHERE tenant = ${lease.partition.tenant} AND project = ${lease.partition.project}
-        AND input_kind = ${postgresTextParameter(cause.kind)} AND input_id = ${cause.id}`,
+        AND input_kind = ${String(cause.kind)} AND input_id = ${cause.id}`,
   );
 }
 
@@ -202,8 +196,10 @@ async function replaceDispatchView(
         configuration_digest,configuration_canonical)
        VALUES (${lease.partition.tenant},${lease.partition.project},${candidate.ticket},
                ${candidate.ticketVersion},${candidate.workFanout},
-               ${JSON.stringify(candidate.program)},${JSON.stringify(candidate.reworkPolicy)},
-               ${JSON.stringify(candidate.finalizationPricing)},${candidate.resumePricing},
+               ${JSON.stringify(encodeDispatchProgram(candidate.program))},
+               ${JSON.stringify(encodeDispatchReworkPolicy(candidate.reworkPolicy))},
+               ${JSON.stringify(encodeDispatchFinalizationPricing(candidate.finalizationPricing))},
+               ${candidate.resumePricing},
                ${candidate.finalizer},${candidate.configurationRevision},
                ${candidate.configurationDigest},${candidate.configurationCanonical})`,
     );
@@ -258,20 +254,17 @@ async function decisionExecution(
 ): Promise<void> {
   const seq = outcome.entry.seq;
   for (const request of outcome.materialization.execution) {
-    const spawns = request.kind !== "CancelTicketWork";
     await client.query(
       sql`INSERT INTO execution_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
         ticket_version, kind, capacity_account, configuration_revision,
         configuration_digest)
        VALUES (${partition.tenant},${partition.project},${request.request},${seq},
-               ${request.effectPosition},${request.ticket},${request.ticketVersion},
-               ${request.kind},
-               CASE WHEN ${spawns}::boolean
-                 THEN project_capacity_account(${partition.tenant},${partition.project})
-               END,
-               ${spawns ? configuration.configurationRevision : null},
-               ${spawns ? configuration.configurationDigest : null})`,
+               ${request.effectPosition},${request.ticket},${request.ticketVersion},${request.kind},
+               CASE WHEN ${request.kind}='CancelTicketWork' THEN NULL
+                    ELSE project_capacity_account(${partition.tenant},${partition.project}) END,
+               ${request.kind === "CancelTicketWork" ? null : configuration.configurationRevision},
+               ${request.kind === "CancelTicketWork" ? null : configuration.configurationDigest})`,
     );
     for (const task of request.tasks) {
       await client.query(
@@ -570,7 +563,7 @@ async function decisionApply(
           settled_authority_kind=${projectTicketWriterAuthorityKind},
           settled_authority_subject=${lease.owner}
          WHERE tenant=${lease.partition.tenant} AND project=${lease.partition.project}
-           AND input_kind=${postgresTextParameter(cause.kind)} AND input_id=${cause.id}`,
+           AND input_kind=${String(cause.kind)} AND input_id=${cause.id}`,
       );
       return { decided: "Stale" };
     case "Refused":

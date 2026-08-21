@@ -1,5 +1,5 @@
-import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
+import { sql } from "@ts-safeql/sql-tag";
 
 import type { ProjectInventoryStore } from "../../interpreter/projectInventory.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";

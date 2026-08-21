@@ -1,16 +1,15 @@
 import type { Principal, ProjectAccess } from "./nativeWeb.ts";
 import type { Partition } from "./projectStore.ts";
 import type {
+  SelectorInteractionRecord,
   SelectorStateStore,
-  StoredSelectorInteraction,
 } from "./selector.ts";
 
 export type SelectorHistoryResult =
   | { readonly result: "NotFound" }
   | {
       readonly result: "Found";
-      readonly interactions: readonly StoredSelectorInteraction[];
-      readonly nextAfter?: number;
+      readonly interactions: readonly SelectorInteractionRecord[];
     };
 
 export interface SelectorHistory {
@@ -31,14 +30,9 @@ export function selectorHistory(
     read: async (principal, partition, after, limit) =>
       (await access.authorize(principal, partition, "Read")) === undefined
         ? { result: "NotFound" }
-        : await (async () => {
-            const interactions = await store.history(partition, after, limit);
-            const nextAfter = interactions.at(-1)?.ordinal;
-            return {
-              result: "Found" as const,
-              interactions,
-              ...(nextAfter === undefined ? {} : { nextAfter }),
-            };
-          })(),
+        : {
+            result: "Found",
+            interactions: await store.history(partition, after, limit),
+          },
   };
 }

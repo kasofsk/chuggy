@@ -6,15 +6,6 @@
  * cancellation deliberately share the same not-found result for absent and
  * inaccessible resources. This layer coordinates ports; it neither loads the
  * project actor nor owns a database transaction.
- *
- * THE EXECUTION-BACKLOG GUARD IS CHECKED HERE AND ONLY OVER DISPATCH. It is
- * the scheduler's authority rather than this layer's, and it is retryable
- * infrastructure backpressure applied before durable acceptance rather than a
- * domain refusal: a backlogged project creates no operation, ordinal, input or
- * tombstone. Completion, cancellation, revocation and every other
- * correctness-reducing submission passes it untouched, which is how headroom
- * for them is preserved, and scheduler completions never reach this boundary
- * at all.
  */
 
 import type { Phase } from "../domain/generated/modelTypes.ts";
@@ -99,7 +90,12 @@ export interface ProjectInventory {
     principal: Principal,
     after: Partition | undefined,
     limit: number,
-  ): Promise<readonly Partition[]>;
+  ): Promise<ProjectInventoryPage>;
+}
+
+export interface ProjectInventoryPage {
+  readonly projects: readonly Partition[];
+  readonly nextAfter?: Partition;
 }
 
 export type OperationRefusalCode =
@@ -280,7 +276,7 @@ export interface NativeWeb {
     principal: Principal,
     after: Partition | undefined,
     limit: number,
-  ): Promise<readonly Partition[]>;
+  ): Promise<ProjectInventoryPage>;
   configuration(
     principal: Principal,
     partition: Partition,
@@ -383,11 +379,6 @@ function nativeAuthoringMethods(
   };
 }
 
-/**
- * The one write this boundary takes. The command decides which access it is
- * authorized under, and a dispatch is weighed against scheduler headroom after
- * that authority is resolved and before the inbox makes anything durable.
- */
 function nativeSubmitMethod(
   access: ProjectAccess,
   inbox: OperationInbox,

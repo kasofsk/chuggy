@@ -7,8 +7,9 @@ import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
 import {
+  postgresSelectorProposalReviews,
+  postgresSelectorRuntimeControl,
   postgresSelectorState,
-  type SelectorRetryConfig,
 } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
 import {
@@ -16,7 +17,8 @@ import {
   type SelectorHistory,
 } from "./interpreter/selectorHistory.ts";
 import type {
-  SelectorPolicy,
+  SelectorPolicyHost,
+  SelectorRuntimeSettingsSource,
   SelectorStateStore,
 } from "./interpreter/selector.ts";
 import {
@@ -24,11 +26,21 @@ import {
   type SelectorIdentityFactory,
   type SelectorRunResult,
   type SelectorRuntimeConfig,
+  type SelectorRuntimeSource,
 } from "./interpreter/selectorRuntime.ts";
 import {
-  selectorNativeSource,
-  type SelectorNativeApi,
-} from "./interpreter/selectorNativeSource.ts";
+  selectorRuntimeAdministration,
+  type SelectorAdministrationAccess,
+  type SelectorRuntimeAdministration,
+} from "./interpreter/selectorAdmin.ts";
+import {
+  selectorProposalReviews,
+  type SelectorProposalReviews,
+} from "./interpreter/selectorReview.ts";
+import {
+  selectorPlanning,
+  type SelectorPlanning,
+} from "./interpreter/selectorPlanning.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -37,14 +49,13 @@ import type { OperationInbox } from "./interpreter/operationInbox.ts";
 import {
   nativeWeb,
   type NativeWeb,
-  type Principal,
   type ProjectAccess,
   type ProjectInventory,
 } from "./interpreter/nativeWeb.ts";
 import type { ProjectDecision } from "./interpreter/projectDecision.ts";
-import type { ExecutionBacklogGuard } from "./interpreter/schedulerContext.ts";
 import type { ProjectDiscovery } from "./interpreter/projectDiscovery.ts";
 import type { ProjectStore } from "./interpreter/projectStore.ts";
+import type { ExecutionBacklogGuard } from "./interpreter/schedulerContext.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -62,36 +73,54 @@ export interface TicketService {
 export interface SelectorService {
   readonly state: SelectorStateStore;
   readonly history: SelectorHistory;
-  runOnce(config?: SelectorRuntimeConfig): Promise<SelectorRunResult>;
+  readonly settings: SelectorRuntimeSettingsSource;
+  readonly administration: SelectorRuntimeAdministration;
+  readonly reviews: SelectorProposalReviews;
+  readonly planning: SelectorPlanning;
 }
 
-export interface SelectorServiceRuntime {
-  readonly native: SelectorNativeApi;
-  readonly principal: Principal;
-  readonly policy: SelectorPolicy;
-  readonly identities: SelectorIdentityFactory;
-  readonly retry?: SelectorRetryConfig;
+export interface SelectorRuntimeService {
+  runOnce(): Promise<SelectorRunResult>;
+}
+
+/** Wires the independently operated selector runtime to its owned persistence. */
+export function composeSelectorRuntime(
+  selectorPool: pg.Pool,
+  source: SelectorRuntimeSource,
+  policy: SelectorPolicyHost,
+  identities: SelectorIdentityFactory,
+  config?: SelectorRuntimeConfig,
+): SelectorRuntimeService {
+  const store = postgresSelectorState(selectorPool);
+  const settings = postgresSelectorRuntimeControl(selectorPool);
+  return {
+    runOnce: () =>
+      selectorRunOnce(store, source, policy, identities, settings, config),
+  };
 }
 
 /** Wires selector-owned durability and project-authorized semantic history reads. */
 export function composeSelectorService(
   selectorPool: pg.Pool,
+  selectorControlPool: pg.Pool,
+  selectorReviewPool: pg.Pool,
   access: ProjectAccess,
-  runtime: SelectorServiceRuntime,
+  administrationAccess: SelectorAdministrationAccess,
 ): SelectorService {
-  const state = postgresSelectorState(selectorPool, runtime.retry);
-  const source = selectorNativeSource(runtime.native, runtime.principal);
+  const state = postgresSelectorState(selectorPool);
   return {
     state,
     history: selectorHistory(access, state),
-    runOnce: (config) =>
-      selectorRunOnce(
-        state,
-        source,
-        runtime.policy,
-        runtime.identities,
-        config,
-      ),
+    settings: postgresSelectorRuntimeControl(selectorPool),
+    administration: selectorRuntimeAdministration(
+      administrationAccess,
+      postgresSelectorRuntimeControl(selectorControlPool),
+    ),
+    reviews: selectorProposalReviews(
+      access,
+      postgresSelectorProposalReviews(selectorReviewPool),
+    ),
+    planning: selectorPlanning(access, state),
   };
 }
 

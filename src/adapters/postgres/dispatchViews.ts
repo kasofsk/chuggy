@@ -9,9 +9,11 @@ import type {
 } from "../../interpreter/dispatchView.ts";
 import {
   checkedDispatchViewQuery,
+  decodeDispatchFinalizationPricing,
+  decodeDispatchProgram,
+  decodeDispatchReworkPolicy,
   dispatchViewDigest,
 } from "../../interpreter/dispatchView.ts";
-import { finalizerChoices, resumePricingChoices } from "../../domain/config.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
   asProjectId,
@@ -44,20 +46,16 @@ interface CandidateRow {
   readonly configuration_canonical: string;
 }
 
-function candidateResumePricing(
+function decodeResumePricing(
   value: string,
 ): DispatchCandidate["resumePricing"] {
-  const found = resumePricingChoices.find((choice) => choice === value);
-  if (found === undefined)
-    throw new Error(`dispatch candidate row: unknown resume pricing ${value}`);
-  return found;
+  if (value === "RetryCharged" || value === "RetryFree") return value;
+  throw new TypeError("dispatch resume pricing is malformed");
 }
 
-function candidateFinalizer(value: string): DispatchCandidate["finalizer"] {
-  const found = finalizerChoices.find((choice) => choice === value);
-  if (found === undefined)
-    throw new Error(`dispatch candidate row: unknown finalizer ${value}`);
-  return found;
+function decodeFinalizer(value: string): DispatchCandidate["finalizer"] {
+  if (value === "NoFinalizer" || value === "ManagedFinalizer") return value;
+  throw new TypeError("dispatch finalizer is malformed");
 }
 
 function candidateOf(
@@ -78,15 +76,15 @@ function candidateOf(
       .filter((edge) => Number(edge.ticket) === ticket)
       .map((edge) => projectRowCounter(edge.dependency, "dispatch dependency")),
     workFanout: projectRowCounter(row.work_fanout, "dispatch work fanout"),
-    program: JSON.parse(row.program) as DispatchCandidate["program"],
-    reworkPolicy: JSON.parse(
-      row.rework_policy,
-    ) as DispatchCandidate["reworkPolicy"],
-    finalizationPricing: JSON.parse(
-      row.finalization_pricing,
-    ) as DispatchCandidate["finalizationPricing"],
-    resumePricing: candidateResumePricing(row.resume_pricing),
-    finalizer: candidateFinalizer(row.finalizer),
+    program: decodeDispatchProgram(JSON.parse(row.program) as unknown),
+    reworkPolicy: decodeDispatchReworkPolicy(
+      JSON.parse(row.rework_policy) as unknown,
+    ),
+    finalizationPricing: decodeDispatchFinalizationPricing(
+      JSON.parse(row.finalization_pricing) as unknown,
+    ),
+    resumePricing: decodeResumePricing(row.resume_pricing),
+    finalizer: decodeFinalizer(row.finalizer),
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     configurationCanonical: row.configuration_canonical,
@@ -112,22 +110,6 @@ async function viewHeader(
   return found.rows[0];
 }
 
-function tokenMatches(
-  token: NonNullable<DispatchViewQuery["token"]>,
-  partition: Partition,
-  current: HeaderRow,
-  watermark: number,
-): boolean {
-  return (
-    token.tenant === partition.tenant &&
-    token.project === partition.project &&
-    token.recoveryEpoch === current.recovery_epoch &&
-    token.schemaVersion === current.schema_version &&
-    token.watermark === watermark &&
-    token.digest === current.digest
-  );
-}
-
 async function readDispatchView(
   pool: pg.Pool,
   partition: Partition,
@@ -144,10 +126,7 @@ async function readDispatchView(
       "dispatch view watermark",
     );
     if (!current.has_view && watermark > 0) return { result: "Reset" };
-    if (
-      query.token !== undefined &&
-      !tokenMatches(query.token, partition, current, watermark)
-    )
+    if (query.watermark !== undefined && query.watermark !== watermark)
       return { result: "Reset" };
     const found = await client.query<CandidateRow>(
       sql`SELECT ticket::text,ticket_version::text,work_fanout::text,program,
