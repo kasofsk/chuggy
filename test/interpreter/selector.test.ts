@@ -8,6 +8,7 @@ import {
   type SelectorRuntimeControlStore,
   type SelectorRuntimeSettings,
   type SelectorPolicyExecution,
+  type JsonValue,
 } from "../../src/interpreter/selector.ts";
 import {
   deliverSelectorProposal,
@@ -92,7 +93,7 @@ const runtimeSettings: SelectorRuntimeSettings = {
 };
 
 function waitingExecution(
-  workingMemory: unknown = {},
+  workingMemory: JsonValue = {},
 ): SelectorPolicyExecution {
   return {
     result: { attention: "Monitoring", workingMemory },
@@ -466,7 +467,7 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
     {
       decide: (request) => {
         constrainedPrompt = request.instructions.content;
-        allowedModels = request.controls.modelAllowlist;
+        allowedModels = request.enforcement.models;
         return Promise.resolve(
           waitingExecution({ note: "watch the dependency closure" }),
         );
@@ -512,48 +513,238 @@ test("current selector planning is project-authorized and cursor-free", async ()
   });
 });
 
-test("the runtime deadline ends a policy call that never returns", async () => {
+test("the runtime deadline detaches a policy call that ignores cancellation", async () => {
   let aborted = false;
-  let settled = false;
-  await assert.rejects(
-    runSelectorCycle(
-      {
-        partition,
-        notificationCursor: 0,
-        revision: 0,
-        attention: "Monitoring",
-        workingMemory: {},
+  let recordedFailure: JsonValue | undefined;
+  const result = await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    {
+      ...promptObservationSource(),
+      decisionDeadline: () =>
+        Promise.reject(new Error("decision deadline exceeded")),
+    },
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: (interaction) => {
+        recordedFailure = interaction.result;
+        return Promise.resolve(true);
       },
-      {
-        ...promptObservationSource(),
-        decisionDeadline: () =>
-          Promise.reject(new Error("decision deadline exceeded")),
-      },
-      stateStore(() => undefined),
-      {
-        decide: (_request, signal) =>
-          new Promise((_resolve, reject) => {
-            signal.addEventListener("abort", () => {
-              aborted = true;
-              settled = true;
-              reject(
-                signal.reason instanceof Error
-                  ? signal.reason
-                  : new Error("selector policy aborted"),
-              );
-            });
-          }),
-      },
-      {
-        operation: asOperationId("timed-operation"),
-        selectorDecisionReference: "timed-decision",
-      },
-      runtimeSettings,
-    ),
-    /deadline exceeded/,
+    },
+    {
+      decide: (_request, signal) =>
+        new Promise(() => {
+          signal.addEventListener("abort", () => {
+            aborted = true;
+          });
+        }),
+    },
+    {
+      operation: asOperationId("timed-operation"),
+      selectorDecisionReference: "timed-decision",
+    },
+    runtimeSettings,
   );
+  assert.equal(result, undefined);
   assert.equal(aborted, true);
-  assert.equal(settled, true);
+  assert.deepEqual(recordedFailure, {
+    outcome: "Failed",
+    code: "DeadlineExceeded",
+  });
+});
+
+test("policy enforcement is immutable and rejects unavailable capabilities", async () => {
+  let mutationRejected = false;
+  let observationMutationRejected = false;
+  await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    promptObservationSource(),
+    stateStore(() => undefined),
+    {
+      decide: (request) => {
+        assert.throws(() => {
+          request.enforcement.authorizeModel("forbidden");
+        });
+        assert.throws(() => {
+          request.enforcement.authorizeTool("forbidden");
+        });
+        try {
+          (request.enforcement.models as string[]).push("forbidden");
+        } catch {
+          mutationRejected = true;
+        }
+        try {
+          (request.observation.candidates as unknown[]).push({});
+        } catch {
+          observationMutationRejected = true;
+        }
+        return Promise.resolve(waitingExecution());
+      },
+    },
+    {
+      operation: asOperationId("enforcement-operation"),
+      selectorDecisionReference: "enforcement-decision",
+    },
+    { ...runtimeSettings, modelAllowlist: ["model-1"], toolAllowlist: [] },
+  );
+  assert.equal(mutationRejected, true);
+  assert.equal(observationMutationRejected, true);
+  assert.deepEqual(runtimeSettings.modelAllowlist, ["*"]);
+});
+
+test("invalid policy JSON is recorded as a bounded failed interaction", async () => {
+  let recordedFailure: JsonValue | undefined;
+  await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    promptObservationSource(),
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: (interaction) => {
+        recordedFailure = interaction.result;
+        return Promise.resolve(true);
+      },
+    },
+    {
+      decide: () =>
+        Promise.resolve(
+          waitingExecution({ invalid: BigInt(1) } as unknown as JsonValue),
+        ),
+    },
+    {
+      operation: asOperationId("invalid-json-operation"),
+      selectorDecisionReference: "invalid-json-decision",
+    },
+    runtimeSettings,
+  );
+  assert.deepEqual(recordedFailure, {
+    outcome: "Failed",
+    code: "InvalidResult",
+  });
+});
+
+test("one project failure does not block later projects or durable delivery", async () => {
+  const broken = { tenant: partition.tenant, project: asProjectId("broken") };
+  const healthy = { tenant: partition.tenant, project: asProjectId("healthy") };
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      pending: () => Promise.resolve([delivery]),
+    },
+    {
+      projects: () => Promise.resolve({ projects: [broken, healthy] }),
+      acquireDecisionPermit: (scope) => Promise.resolve(scope.project),
+      releaseDecisionPermit: () => Promise.resolve(),
+      notifications: (scope) =>
+        scope === broken
+          ? Promise.reject(new Error("broken project feed"))
+          : Promise.resolve({ result: "Events", cursor: 1, events: [] }),
+      decisionDeadline: () => new Promise<never>(() => undefined),
+      currentTimeEpochMs: () =>
+        Promise.resolve(operationalContext.observedAtEpochMs),
+      dispatchView: (scope) =>
+        Promise.resolve({
+          result: "Page",
+          token: {
+            ...scope,
+            recoveryEpoch: "epoch",
+            schemaVersion: 1,
+            watermark: 1,
+            digest: "f".repeat(64),
+          },
+          candidates: [],
+          notificationCursor: 1,
+        }),
+      operationalContext: () => Promise.resolve(operationalContext),
+      submit: () =>
+        Promise.resolve({
+          accepted: "Original",
+          operation: {
+            partition,
+            operation: delivery.operation,
+            ordinal: 1,
+            state: "Pending",
+            authorityKind: asAuthorityKind("Selector"),
+            admission: "Ordinary",
+            lifecycleGeneration: 1,
+          },
+        }),
+      operation: () => Promise.resolve(undefined),
+    },
+    { decide: () => Promise.resolve(waitingExecution()) },
+    {
+      next: (scope) => ({
+        operation: asOperationId(`operation-${scope.project}`),
+        selectorDecisionReference: `decision-${scope.project}`,
+      }),
+    },
+    { settings: () => Promise.resolve(runtimeSettings) },
+    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.equal(result.observed, 1);
+  assert.equal(result.delivered, 1);
+});
+
+test("one reconciliation failure does not abandon the rest of its claim", async () => {
+  const later = {
+    ...delivery,
+    decision: "later-decision",
+    operation: asOperationId("later-operation"),
+  };
+  let terminal = 0;
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => {
+        terminal += 1;
+      }),
+      submittedDeliveries: () => Promise.resolve([delivery, later]),
+    },
+    {
+      projects: () =>
+        Promise.reject(new Error("paused selector listed projects")),
+      acquireDecisionPermit: () => Promise.resolve(undefined),
+      releaseDecisionPermit: () => Promise.resolve(),
+      notifications: () => Promise.reject(new Error("no observation")),
+      decisionDeadline: () => new Promise<never>(() => undefined),
+      currentTimeEpochMs: () => Promise.resolve(0),
+      dispatchView: () => Promise.resolve({ result: "Reset" }),
+      operationalContext: () => Promise.resolve(operationalContext),
+      submit: () => Promise.reject(new Error("no pending delivery")),
+      operation: (_scope, operation) =>
+        operation === delivery.operation
+          ? Promise.reject(new Error("temporary operation read failure"))
+          : Promise.resolve({ state: "Succeeded" }),
+    },
+    { decide: () => Promise.resolve(waitingExecution()) },
+    {
+      next: () => ({
+        operation: asOperationId("unused"),
+        selectorDecisionReference: "unused",
+      }),
+    },
+    {
+      settings: () => Promise.resolve({ ...runtimeSettings, mode: "Paused" }),
+    },
+    { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 2 },
+  );
+  assert.equal(result.reconciled, 1);
+  assert.equal(terminal, 1);
 });
 
 test("proposal review requires dispatch authority and preserves feedback", async () => {

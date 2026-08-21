@@ -7,6 +7,7 @@ import {
   type Authority,
 } from "../../interpreter/operationInbox.ts";
 import type {
+  JsonValue,
   SelectorDelivery,
   SelectorInteraction,
   SelectorInteractionRecord,
@@ -317,7 +318,7 @@ async function readSelectorProject(
           ? {}
           : { recoveryEpoch: row.recovery_epoch }),
         attention: row.attention,
-        workingMemory: JSON.parse(row.working_memory) as unknown,
+        workingMemory: JSON.parse(row.working_memory) as JsonValue,
       };
 }
 
@@ -589,7 +590,7 @@ async function readPlanningIntent(
     ? undefined
     : {
         selectorDecision: row.selector_decision,
-        intent: JSON.parse(row.intent) as unknown,
+        intent: JSON.parse(row.intent) as JsonValue,
         updatedAt: row.updated_at.toISOString(),
       };
 }
@@ -642,12 +643,12 @@ async function readSelectorHistory(
           >,
         }),
     context: JSON.parse(row.context) as SelectorInteraction["context"],
-    toolActivity: JSON.parse(row.tool_activity) as readonly unknown[],
-    result: JSON.parse(row.result) as unknown,
+    toolActivity: JSON.parse(row.tool_activity) as readonly JsonValue[],
+    result: JSON.parse(row.result) as JsonValue,
     implementationRevision: row.implementation_revision,
     modelRevision: row.model_revision,
     policyRevision: row.policy_revision,
-    accounting: JSON.parse(row.accounting) as unknown,
+    accounting: JSON.parse(row.accounting) as JsonValue,
     startedAt: row.started_at.toISOString(),
     completedAt: row.completed_at.toISOString(),
   }));

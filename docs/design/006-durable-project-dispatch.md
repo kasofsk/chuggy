@@ -718,10 +718,13 @@ and recorded interactions pin the prompt and settings revision they used. A dry
 run may replay a recorded observation through a candidate revision without
 creating a proposal or delivery.
 
-The trusted policy host applies model and tool allowlists and execution budgets
-before exposing either capability to a decision. Post-execution accounting and
-provenance checks are defense in depth, not the mechanism that prevents a
-forbidden model or tool call.
+The trusted policy host receives an immutable enforcement capability which
+mediates model and tool authorization and pins execution budgets before either
+capability is exposed to a decision. Post-execution accounting and provenance
+checks use a separate immutable snapshot as defense in depth, not as the
+mechanism that prevents a forbidden model or tool call. A decision deadline
+does not depend on cooperative model cancellation; late completion is detached
+and cannot resume or create a proposal.
 
 Dispatch mode is independently `Automatic` or `ApprovalRequired`. In automatic
 mode a durable proposal proceeds to ticket-service delivery. In approval mode it
@@ -741,6 +744,10 @@ summarize in-flight work, deferred considerations and user feedback, but it is
 transparent operational context—not a ticket fact, reservation or authority.
 Each recorded interaction also atomically replaces or clears the current
 project-visible planning intent.
+Completed, refused, timed-out and malformed policy attempts cross the selector
+boundary as bounded JSON and retain a durable semantic outcome. A failed
+attempt advances only selector-owned observation and attention state and never
+creates a proposal.
 
 Several tickets in one project may be logically working concurrently. Each
 additional dispatch requires a fresh agentic choice or manual override. The
@@ -1904,7 +1911,10 @@ transaction is introduced, and a ticket-service operation never depends on
 selector storage to decide or replay it. Selector audit later reconciles the
 operation outcome for presentation. Submitted deliveries use independently
 claimed, retry-scheduled reconciliation work so one pending or temporarily
-unreadable operation cannot monopolize a bounded reconciliation batch.
+unreadable operation cannot monopolize a bounded reconciliation batch. Project
+observation and individual reconciliation failures are isolated: they do not
+prevent later projects from being observed or already-durable proposal delivery
+and reconciliation from continuing in the same bounded runtime quantum.
 
 Selector state is recovered and deleted under its owning service. I8 restore
 causes pre-restore view tokens to fail their recovery-epoch fence and causes the

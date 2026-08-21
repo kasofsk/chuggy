@@ -100,6 +100,7 @@ async function observeProjects(
       continue;
     }
     let proposal: SelectorProposal | undefined;
+    let completed = false;
     try {
       const confirmedSettings = await control.settings();
       if (
@@ -116,11 +117,14 @@ async function observeProjects(
         identities.next(partition),
         confirmedSettings,
       );
+      completed = true;
+    } catch {
+      proposal = undefined;
     } finally {
-      await source.releaseDecisionPermit(permit);
+      await source.releaseDecisionPermit(permit).catch(() => undefined);
     }
     scanned += 1;
-    observed += 1;
+    if (completed) observed += 1;
     if (proposal !== undefined) proposed += 1;
   }
   return { scanned, observed, proposed };
@@ -135,48 +139,67 @@ export async function selectorRunOnce(
   control: SelectorRuntimeSettingsSource,
   config: SelectorRuntimeConfig = selectorRuntimeDefaults,
 ): Promise<SelectorRunResult> {
-  const initialSettings = await control.settings();
   const projectsMax = checkedBound(
     config.projectsMax,
     "selector project bound",
   );
-  const inventoryCursor = await store.inventoryCursor();
-  const inventory =
-    initialSettings.mode === "Paused"
-      ? { projects: [] }
-      : await source.projects(inventoryCursor, projectsMax);
-  const projects = inventory.projects;
-  const progress = await observeProjects(
-    projects,
-    store,
-    source,
-    policy,
-    identities,
-    control,
-  );
-  const { scanned, observed, proposed } = progress;
-  if (scanned > 0 || inventory.nextAfter !== undefined)
-    await store.saveInventoryCursor(
-      scanned === projects.length
-        ? inventory.nextAfter
-        : projects.at(scanned - 1),
+  let observed = 0;
+  let proposed = 0;
+  try {
+    const initialSettings = await control.settings();
+    const inventoryCursor = await store.inventoryCursor();
+    const inventory =
+      initialSettings.mode === "Paused"
+        ? { projects: [] }
+        : await source.projects(inventoryCursor, projectsMax);
+    const projects = inventory.projects;
+    const progress = await observeProjects(
+      projects,
+      store,
+      source,
+      policy,
+      identities,
+      control,
     );
+    observed = progress.observed;
+    proposed = progress.proposed;
+    if (progress.scanned > 0 || inventory.nextAfter !== undefined)
+      await store.saveInventoryCursor(
+        progress.scanned === projects.length
+          ? inventory.nextAfter
+          : projects.at(progress.scanned - 1),
+      );
+  } catch {
+    /** A later quantum retries project inventory and observation from durable state. */
+  }
   let delivered = 0;
-  for (const delivery of await store.pending(
-    checkedBound(config.deliveriesMax, "selector delivery bound"),
-  )) {
-    if (
-      (await deliverSelectorProposal(store, source, delivery)).result ===
-      "Delivered"
-    )
-      delivered += 1;
+  try {
+    for (const delivery of await store.pending(
+      checkedBound(config.deliveriesMax, "selector delivery bound"),
+    )) {
+      if (
+        (await deliverSelectorProposal(store, source, delivery)).result ===
+        "Delivered"
+      )
+        delivered += 1;
+    }
+  } catch {
+    /** Delivery claims become eligible for retry without changing proposal intent. */
   }
   let reconciled = 0;
-  for (const delivery of await store.submittedDeliveries(
-    checkedBound(config.reconciliationsMax, "selector reconciliation bound"),
-  )) {
-    if (await reconcileSelectorProposal(store, source, delivery))
-      reconciled += 1;
+  try {
+    for (const delivery of await store.submittedDeliveries(
+      checkedBound(config.reconciliationsMax, "selector reconciliation bound"),
+    )) {
+      try {
+        if (await reconcileSelectorProposal(store, source, delivery))
+          reconciled += 1;
+      } catch {
+        /** The reconciliation claim's retry time bounds the next attempt. */
+      }
+    }
+  } catch {
+    /** Claim acquisition is retried by a later runtime quantum. */
   }
   return { observed, proposed, delivered, reconciled };
 }

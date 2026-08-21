@@ -9,6 +9,14 @@ import type { Partition } from "./projectStore.ts";
 import type { NotificationBatch, NotificationCursor } from "./notifications.ts";
 import type { DispatchViewPage, DispatchViewQuery } from "./dispatchView.ts";
 
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
+
 export interface SelectorInteraction {
   readonly decision: string;
   readonly partition: Partition;
@@ -18,14 +26,14 @@ export interface SelectorInteraction {
   readonly observedToken?: DispatchViewToken;
   readonly context: {
     readonly operationalContext: SelectorOperationalContext;
-    readonly workingMemory: unknown;
+    readonly workingMemory: JsonValue;
   };
-  readonly toolActivity: readonly unknown[];
-  readonly result: unknown;
+  readonly toolActivity: readonly JsonValue[];
+  readonly result: JsonValue;
   readonly implementationRevision: string;
   readonly modelRevision: string;
   readonly policyRevision: string;
-  readonly accounting: unknown;
+  readonly accounting: JsonValue;
   readonly startedAt: string;
   readonly completedAt: string;
 }
@@ -37,7 +45,7 @@ export interface SelectorProposal {
     TicketCommand,
     { readonly command: "ProposeDispatch" }
   >;
-  readonly planningIntent?: unknown;
+  readonly planningIntent?: JsonValue;
   readonly deliveryMode: "Automatic" | "ApprovalRequired";
 }
 
@@ -58,7 +66,7 @@ export interface SelectorStateStore {
   recordInteraction(
     interaction: SelectorInteraction,
     state: SelectorProjectState,
-    planningIntent?: unknown,
+    planningIntent?: JsonValue,
   ): Promise<boolean>;
   record(
     proposal: SelectorProposal,
@@ -67,7 +75,7 @@ export interface SelectorStateStore {
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
   submitted(decision: string): Promise<void>;
-  terminal(decision: string, outcome: unknown): Promise<void>;
+  terminal(decision: string, outcome: JsonValue): Promise<void>;
   history(
     partition: Partition,
     after: number | undefined,
@@ -94,7 +102,7 @@ export interface SelectorReviewFeedback {
 
 export interface SelectorPlanningIntent {
   readonly selectorDecision: string;
-  readonly intent: unknown;
+  readonly intent: JsonValue;
   readonly updatedAt: string;
 }
 
@@ -104,7 +112,7 @@ export interface SelectorProjectState {
   readonly revision: number;
   readonly recoveryEpoch?: string;
   readonly attention: "Monitoring" | "Attention" | "Stopped";
-  readonly workingMemory: unknown;
+  readonly workingMemory: JsonValue;
 }
 
 export interface SelectorObservationSource {
@@ -156,14 +164,14 @@ export interface SelectorObservation {
   readonly candidates: readonly DispatchCandidate[];
   readonly notificationCursor: number;
   readonly operationalContext: SelectorOperationalContext;
-  readonly workingMemory: unknown;
+  readonly workingMemory: JsonValue;
 }
 
 export interface SelectorPolicyResult {
   readonly selectedTicket?: DispatchCandidate["ticket"];
-  readonly planningIntent?: unknown;
+  readonly planningIntent?: JsonValue;
   readonly attention: SelectorProjectState["attention"];
-  readonly workingMemory: unknown;
+  readonly workingMemory: JsonValue;
 }
 
 /** Provenance measured by the trusted policy host, never authored by the model result. */
@@ -172,7 +180,7 @@ export interface SelectorPolicyExecution {
   readonly implementationRevision: string;
   readonly modelRevision: string;
   readonly policyRevision: string;
-  readonly toolActivity: readonly unknown[];
+  readonly toolActivity: readonly JsonValue[];
   readonly accounting: {
     readonly tokens: number;
     readonly durationMs: number;
@@ -268,11 +276,18 @@ export interface SelectorPolicyRequest {
     readonly revision: number;
     readonly content: string;
   };
-  /** Hard execution constraints, applied before model and tool invocation. */
-  readonly controls: SelectorPolicyControls;
+  readonly enforcement: SelectorPolicyEnforcement;
 }
 
-/** Trusted sandbox boundary; model and tool access exists only behind this port. */
+export interface SelectorPolicyEnforcement {
+  readonly models: readonly string[];
+  readonly tools: readonly string[];
+  readonly limits: Readonly<SelectorRuntimeSettings["limits"]>;
+  authorizeModel(name: string): void;
+  authorizeTool(name: string): void;
+}
+
+/** Model and tool access is mediated by the supplied enforcement capability. */
 export interface SelectorPolicyHost {
   decide(
     request: SelectorPolicyRequest,
@@ -284,23 +299,89 @@ function allowed(name: string, allowlist: readonly string[]): boolean {
   return allowlist.includes("*") || allowlist.includes(name);
 }
 
+class SelectorControlViolation extends Error {}
+class SelectorDeadlineExceeded extends Error {}
+
+function policyEnforcement(
+  settings: SelectorRuntimeSettings,
+): SelectorPolicyEnforcement {
+  const models = Object.freeze([...settings.modelAllowlist]);
+  const tools = Object.freeze([...settings.toolAllowlist]);
+  const limits = Object.freeze({ ...settings.limits });
+  return Object.freeze({
+    models,
+    tools,
+    limits,
+    authorizeModel: (name: string) => {
+      if (!allowed(name, models))
+        throw new SelectorControlViolation("selector model is not authorized");
+    },
+    authorizeTool: (name: string) => {
+      if (!allowed(name, tools))
+        throw new SelectorControlViolation("selector tool is not authorized");
+    },
+  });
+}
+
+function freezeJson(value: JsonValue): JsonValue {
+  if (typeof value !== "object" || value === null) return value;
+  for (const member of Object.values(value)) freezeJson(member);
+  return Object.freeze(value);
+}
+
+function checkedJson(
+  value: unknown,
+  what: string,
+  bytesMax = 65_536,
+): JsonValue {
+  let encoded: string | undefined;
+  try {
+    encoded = JSON.stringify(value, (_key, member: unknown) => {
+      if (typeof member === "number" && !Number.isFinite(member))
+        throw new TypeError(`${what} contains a non-finite number`);
+      if (
+        member === undefined ||
+        typeof member === "bigint" ||
+        typeof member === "function" ||
+        typeof member === "symbol"
+      )
+        throw new TypeError(`${what} contains a non-JSON value`);
+      return member;
+    });
+  } catch {
+    throw new TypeError(`${what} must be bounded JSON`);
+  }
+  if (
+    encoded === undefined ||
+    new TextEncoder().encode(encoded).byteLength > bytesMax
+  )
+    throw new RangeError(`${what} must be bounded JSON`);
+  return freezeJson(JSON.parse(encoded) as JsonValue);
+}
+
 function enforcePolicyControls(
   execution: SelectorPolicyExecution,
   settings: SelectorRuntimeSettings,
 ): void {
   if (!allowed(execution.modelRevision, settings.modelAllowlist))
-    throw new Error("selector policy used a model outside its allowlist");
+    throw new SelectorControlViolation(
+      "selector policy used a model outside its allowlist",
+    );
   if (execution.toolActivity.length > settings.limits.toolCallsPerDecision)
-    throw new Error("selector policy exceeded its tool-call budget");
+    throw new SelectorControlViolation(
+      "selector policy exceeded its tool-call budget",
+    );
   for (const activity of execution.toolActivity) {
     if (
       typeof activity !== "object" ||
       activity === null ||
       !("tool" in activity) ||
-      typeof activity.tool !== "string" ||
-      !allowed(activity.tool, settings.toolAllowlist)
+      typeof activity["tool"] !== "string" ||
+      !allowed(activity["tool"], settings.toolAllowlist)
     )
-      throw new Error("selector policy used a tool outside its allowlist");
+      throw new SelectorControlViolation(
+        "selector policy used a tool outside its allowlist",
+      );
   }
   const tokens = execution.accounting.tokens;
   if (
@@ -308,14 +389,39 @@ function enforcePolicyControls(
     tokens < 0 ||
     tokens > settings.limits.tokensPerDecision
   )
-    throw new Error("selector policy exceeded its token budget");
+    throw new SelectorControlViolation(
+      "selector policy exceeded its token budget",
+    );
   const elapsed = execution.accounting.durationMs;
   if (
     !Number.isFinite(elapsed) ||
     elapsed < 0 ||
     elapsed > settings.limits.millisecondsPerDecision
   )
-    throw new Error("selector policy exceeded its duration budget");
+    throw new SelectorControlViolation(
+      "selector policy exceeded its duration budget",
+    );
+}
+
+function checkedPolicyExecution(
+  execution: SelectorPolicyExecution,
+  settings: SelectorRuntimeSettings,
+): SelectorPolicyExecution {
+  enforcePolicyControls(execution, settings);
+  return {
+    ...execution,
+    result: checkedJson(
+      execution.result,
+      "selector result",
+    ) as unknown as SelectorPolicyResult,
+    toolActivity: execution.toolActivity.map((activity) =>
+      checkedJson(activity, "selector tool activity"),
+    ),
+    accounting: checkedJson(
+      execution.accounting,
+      "selector accounting",
+    ) as unknown as SelectorPolicyExecution["accounting"],
+  };
 }
 
 /** Replays a recorded semantic input without recording or delivering its result. */
@@ -371,11 +477,11 @@ function selectorInteraction(
       workingMemory: observation.workingMemory,
     },
     toolActivity: execution.toolActivity,
-    result: execution.result,
+    result: checkedJson(execution.result, "selector result"),
     implementationRevision: execution.implementationRevision,
     modelRevision: execution.modelRevision,
     policyRevision: execution.policyRevision,
-    accounting: execution.accounting,
+    accounting: checkedJson(execution.accounting, "selector accounting"),
     startedAt: execution.startedAt,
     completedAt: execution.completedAt,
   };
@@ -390,30 +496,34 @@ async function executeSelectorPolicy(
   const cancellation = new AbortController();
   const decision = policy.decide(
     {
-      observation,
+      observation: checkedJson(
+        observation,
+        "selector observation",
+        196_608,
+      ) as unknown as SelectorObservation,
       instructions: {
         revision: settings.revision,
         content: settings.basePrompt,
       },
-      controls: {
-        modelAllowlist: settings.modelAllowlist,
-        toolAllowlist: settings.toolAllowlist,
-        limits: settings.limits,
-        operationalContextMaxAgeMs: settings.operationalContextMaxAgeMs,
-      },
+      enforcement: policyEnforcement(settings),
     },
     cancellation.signal,
   );
   try {
     const execution = await Promise.race([
       decision,
-      source.decisionDeadline(settings.limits.millisecondsPerDecision),
+      source
+        .decisionDeadline(settings.limits.millisecondsPerDecision)
+        .catch(() => {
+          throw new SelectorDeadlineExceeded(
+            "selector policy deadline exceeded",
+          );
+        }),
     ]);
-    enforcePolicyControls(execution, settings);
-    return execution;
+    return checkedPolicyExecution(execution, settings);
   } catch (error) {
     cancellation.abort(error);
-    await decision.catch(() => undefined);
+    void decision.catch(() => undefined);
     throw error;
   }
 }
@@ -453,35 +563,82 @@ function selectedCandidate(
   return selected;
 }
 
-/** Runs one independently timed selector observation and durably records waiting or delivery. */
-export async function runSelectorCycle(
-  state: SelectorProjectState,
-  source: SelectorObservationSource,
-  store: SelectorStateStore,
-  policy: SelectorPolicyHost,
+function policyFailureCode(error: unknown): string {
+  return error instanceof SelectorDeadlineExceeded
+    ? "DeadlineExceeded"
+    : error instanceof SelectorControlViolation
+      ? "ControlViolation"
+      : error instanceof TypeError || error instanceof RangeError
+        ? "InvalidResult"
+        : "PolicyFailed";
+}
+
+function failedSelectorInteraction(
+  observation: SelectorObservation,
   identity: SelectorCycleIdentity,
   settings: SelectorRuntimeSettings,
-): Promise<SelectorProposal | undefined> {
-  const observation = await observeSelectorProject(state, source);
-  if (observation === undefined) return undefined;
-  if (!observationMatchesProject(observation, state.partition))
-    throw new Error("selector observation crossed its project boundary");
-  const observedAt = observation.operationalContext.observedAtEpochMs;
-  const currentTime = await source.currentTimeEpochMs();
-  if (
-    !operationalContextIsFresh(
-      observedAt,
-      currentTime,
-      settings.operationalContextMaxAgeMs,
-    )
-  )
-    return undefined;
-  const execution = await executeSelectorPolicy(
-    source,
-    policy,
-    observation,
-    settings,
+  partition: Partition,
+  error: unknown,
+  completedAt: string,
+): SelectorInteraction {
+  return {
+    decision: identity.selectorDecisionReference,
+    partition,
+    instructionsVersion: String(settings.revision),
+    instructions: settings.basePrompt,
+    observedView: observation.candidates,
+    observedToken: observation.token,
+    context: {
+      operationalContext: observation.operationalContext,
+      workingMemory: observation.workingMemory,
+    },
+    toolActivity: [],
+    result: { outcome: "Failed", code: policyFailureCode(error) },
+    implementationRevision: "Unavailable",
+    modelRevision: "Unavailable",
+    policyRevision: "Unavailable",
+    accounting: { tokens: 0, durationMs: 0 },
+    startedAt: completedAt,
+    completedAt,
+  };
+}
+
+async function recordFailedSelectorCycle(
+  store: SelectorStateStore,
+  state: SelectorProjectState,
+  observation: SelectorObservation,
+  identity: SelectorCycleIdentity,
+  settings: SelectorRuntimeSettings,
+  error: unknown,
+): Promise<void> {
+  await store.recordInteraction(
+    failedSelectorInteraction(
+      observation,
+      identity,
+      settings,
+      state.partition,
+      error,
+      observation.operationalContext.observedAt,
+    ),
+    {
+      partition: state.partition,
+      notificationCursor: observation.notificationCursor,
+      revision: state.revision,
+      recoveryEpoch: observation.token.recoveryEpoch,
+      attention: "Attention",
+      workingMemory: observation.workingMemory,
+    },
   );
+}
+
+async function recordCompletedSelectorCycle(
+  store: SelectorStateStore,
+  state: SelectorProjectState,
+  observation: SelectorObservation,
+  identity: SelectorCycleIdentity,
+  settings: SelectorRuntimeSettings,
+  execution: SelectorPolicyExecution,
+): Promise<SelectorProposal | undefined> {
   const result = execution.result;
   const interaction = selectorInteraction(
     execution,
@@ -521,6 +678,58 @@ export async function runSelectorCycle(
       : { planningIntent: result.planningIntent }),
   };
   return (await store.record(proposal, nextState)) ? proposal : undefined;
+}
+
+/** Runs one independently timed selector observation and durably records waiting or delivery. */
+export async function runSelectorCycle(
+  state: SelectorProjectState,
+  source: SelectorObservationSource,
+  store: SelectorStateStore,
+  policy: SelectorPolicyHost,
+  identity: SelectorCycleIdentity,
+  settings: SelectorRuntimeSettings,
+): Promise<SelectorProposal | undefined> {
+  const observation = await observeSelectorProject(state, source);
+  if (observation === undefined) return undefined;
+  if (!observationMatchesProject(observation, state.partition))
+    throw new Error("selector observation crossed its project boundary");
+  const observedAt = observation.operationalContext.observedAtEpochMs;
+  const currentTime = await source.currentTimeEpochMs();
+  if (
+    !operationalContextIsFresh(
+      observedAt,
+      currentTime,
+      settings.operationalContextMaxAgeMs,
+    )
+  )
+    return undefined;
+  let execution: SelectorPolicyExecution;
+  try {
+    execution = await executeSelectorPolicy(
+      source,
+      policy,
+      observation,
+      settings,
+    );
+  } catch (error) {
+    await recordFailedSelectorCycle(
+      store,
+      state,
+      observation,
+      identity,
+      settings,
+      error,
+    );
+    return undefined;
+  }
+  return recordCompletedSelectorCycle(
+    store,
+    state,
+    observation,
+    identity,
+    settings,
+    execution,
+  );
 }
 
 /** Polls current state after every wake-up or cursor reset and never mixes view watermarks. */
@@ -609,7 +818,10 @@ export async function reconcileSelectorProposal(
       ? (outcome as { readonly state?: unknown }).state
       : undefined;
   if (state === "Pending") return false;
-  await store.terminal(delivery.decision, outcome);
+  await store.terminal(
+    delivery.decision,
+    checkedJson(outcome, "selector operation outcome"),
+  );
   return true;
 }
 
