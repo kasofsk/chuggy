@@ -34,6 +34,15 @@
  * open a heading of its own, and it could gain nothing by it if it could —
  * headings are not read back and authority is not prose.
  *
+ * A RENDERED BRIEFING CARRIES A SEAL, AND THE SEAL IS A COMPILE-TIME CLAIM. Its
+ * value is not exported, so a literal assembled out of headings and lines is
+ * not a `RenderedBriefing`: the compiler refuses it for the missing field, and
+ * no expression outside this module supplies one. It is not a runtime check,
+ * because a module already holding a briefing this module rendered can spread
+ * it into a value carrying the same seal. Nothing reads the seal back, so such
+ * a value is inert — what a launch acts on is the authority beside the
+ * briefing, and `./taskAuthority.ts` holds that behind a key of its own.
+ *
  * WHAT IS RETAINED IS `BriefingProvenance` AND NOTHING ELSE. It holds the
  * template version, the pinned revision and digest, the resolved practice
  * identities and each rendered section's identity and size. There is no field
@@ -433,12 +442,12 @@ export interface BriefingSection {
 }
 
 /**
- * The seal a rendered briefing carries. It is not exported, so no other module
- * can assemble a sequence of blocks and call it a briefing.
+ * The seal a rendered briefing carries, whose value this module does not
+ * export. What it does and does not prevent is in the header above.
  */
 const briefingSeal = Symbol("chuggy:rendered-briefing");
 
-/** One rendered briefing, sealed so nothing outside this module can claim to be one. */
+/** One rendered briefing, sealed so a bare sequence of blocks cannot be offered as one. */
 export interface RenderedBriefing {
   readonly seal: typeof briefingSeal;
   readonly purpose: TaskPurpose;

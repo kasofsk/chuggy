@@ -159,6 +159,12 @@ const grant: PolicyAuthorityGrant = {
   mayCompleteTask: true,
 };
 
+/** The line only the work block carries, so a briefing says which block it read. */
+const workInstruction = "Change the importer and nothing beside it.";
+
+/** The line only the review block carries, for the same reason. */
+const reviewInstruction = "Walk the call paths the change reaches.";
+
 const configuration: PinnedTaskConfiguration = {
   configurationRevision: "revision",
   configurationDigest: "digest",
@@ -168,8 +174,8 @@ const configuration: PinnedTaskConfiguration = {
     constraints: [],
   },
   practices: ["AcceptanceCriteria"],
-  work: { instructions: [] },
-  review: { instructions: [] },
+  work: { instructions: [workInstruction] },
+  review: { instructions: [reviewInstruction] },
 };
 
 const noFacts: RuntimeFacts = { changedFiles: [], handoff: [] };
@@ -664,6 +670,11 @@ test("a launched worker is handed the briefing its pinned revision composes to",
       "A dropped row is reported as a failure.",
     ),
   );
+  assert.ok(placement.invocation.briefing.text.includes(workInstruction));
+  assert.equal(
+    placement.invocation.briefing.text.includes(reviewInstruction),
+    false,
+  );
 });
 
 test("an evaluation task is briefed from the review template", async () => {
@@ -675,7 +686,11 @@ test("an evaluation task is briefed from the review template", async () => {
       Promise.resolve([{ ...execution, taskKind: "Evaluation", stage: 1 }]),
   };
   await executionSchedulerLaunch({ ...service, store }, epoch);
-  assert.equal(placements[0]?.invocation.briefing.purpose, "Review");
+  const briefing = placements[0]?.invocation.briefing;
+  assert.ok(briefing !== undefined);
+  assert.equal(briefing.purpose, "Review");
+  assert.ok(briefing.text.includes(reviewInstruction));
+  assert.equal(briefing.text.includes(workInstruction), false);
 });
 
 test("a launched worker holds no authority to complete its own task", async () => {

@@ -39,6 +39,7 @@ import {
   type BriefingSection,
   type BriefingView,
   type PurposeBlock,
+  type RenderedBriefing,
   type RuntimeFacts,
   type TaskInvocation,
   type TicketBrief,
@@ -80,6 +81,7 @@ function viewOf(parts: {
   readonly brief?: TicketBrief;
   readonly practices?: readonly string[];
   readonly block?: PurposeBlock;
+  readonly blockReview?: PurposeBlock;
   readonly authority?: AuthorityRequest;
   readonly runtime?: RuntimeFacts;
   readonly grant?: PolicyAuthorityGrant;
@@ -94,7 +96,7 @@ function viewOf(parts: {
       brief: parts.brief ?? brief,
       practices: parts.practices ?? [],
       work: block,
-      review: block,
+      review: parts.blockReview ?? block,
       ...(parts.authority === undefined ? {} : { authority: parts.authority }),
     },
     runtime: parts.runtime ?? noFacts,
@@ -118,6 +120,22 @@ function blockedFault(view: BriefingView): BriefingFault {
     assert.fail("composition was not blocked");
   return outcome.fault;
 }
+
+/** Whether the compiler will let the first type stand where the second is wanted. */
+type Assignable<A, B> = [A] extends [B] ? true : false;
+
+test("a sequence of blocks is not a briefing until this module seals one", () => {
+  const unsealedIsNotBriefing: Assignable<
+    Omit<RenderedBriefing, "seal">,
+    RenderedBriefing
+  > = false;
+  const renderedIsBriefing: Assignable<
+    ReturnType<typeof renderBriefing>,
+    RenderedBriefing
+  > = true;
+  assert.equal(unsealedIsNotBriefing, false);
+  assert.equal(renderedIsBriefing, true);
+});
 
 /** Every subset of these section identities, which is the whole presence space. */
 function subsetsOf(
@@ -218,6 +236,52 @@ test("both roles are briefed with the same ticket brief", () => {
       review.sections.find((each) => each.section === section)?.lines,
     );
   }
+});
+
+/** The purpose-specific lines one composed briefing carries, or nothing when it has none. */
+function purposeLines(view: BriefingView): readonly string[] | undefined {
+  return composed(view).briefing.sections.find(
+    (section) => section.section === "PurposeInstructions",
+  )?.lines;
+}
+
+test("each role is briefed from its own block and never the other's", () => {
+  const view = viewOf({
+    block: {
+      instructions: ["Change the importer and nothing beside it."],
+      authority: { tools: ["editor"] },
+    },
+    blockReview: {
+      instructions: ["Say which acceptance criterion each hunk meets."],
+      authority: { tools: ["shell"] },
+    },
+  });
+  assert.deepEqual(purposeLines({ ...view, purpose: "Work" }), [
+    "Change the importer and nothing beside it.",
+  ]);
+  assert.deepEqual(purposeLines({ ...view, purpose: "Review" }), [
+    "Say which acceptance criterion each hunk meets.",
+  ]);
+  assert.deepEqual(
+    taskAuthorityGrant(composed({ ...view, purpose: "Work" }).authority).tools,
+    ["editor"],
+  );
+  assert.deepEqual(
+    taskAuthorityGrant(composed({ ...view, purpose: "Review" }).authority)
+      .tools,
+    ["shell"],
+  );
+});
+
+test("a fault in one role's block does not refuse the other role's briefing", () => {
+  const view = viewOf({
+    block: { instructions: ["Change the importer and nothing beside it."] },
+    blockReview: { instructions: [""] },
+  });
+  assert.equal(blockedFault({ ...view, purpose: "Review" }), "EmptyLine");
+  assert.deepEqual(purposeLines({ ...view, purpose: "Work" }), [
+    "Change the importer and nothing beside it.",
+  ]);
 });
 
 test("a practice reaches only the roles its scope names", () => {
