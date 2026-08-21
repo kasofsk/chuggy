@@ -1,3 +1,4 @@
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { asOperationId } from "../../interpreter/operationInbox.ts";
@@ -24,7 +25,7 @@ interface DeliveryRow {
   readonly project: string;
   readonly operation: string;
   readonly command: string;
-  readonly attempts: string;
+  readonly attempts: string | null;
 }
 
 class SelectorStateChanged extends Error {}
@@ -33,6 +34,8 @@ function deliveryOf(row: DeliveryRow): SelectorDelivery {
   const parsed = parseTicketCommand(row.command);
   if (parsed.parsed === "Refused" || parsed.value.command !== "ProposeDispatch")
     throw new Error("selector delivery contains an unreadable proposal");
+  if (row.attempts === null)
+    throw new Error("selector delivery row carries no attempt count");
   return {
     decision: row.selector_decision,
     partition: {
@@ -71,11 +74,11 @@ async function readSelectorProject(
   const found = await pool.query<{
     notification_cursor: string;
     recovery_epoch: string | null;
-    attention: SelectorProjectState["attention"];
+    attention: string;
   }>(
-    `SELECT notification_cursor::text,recovery_epoch,attention
-       FROM selector_project_state WHERE tenant=$1 AND project=$2`,
-    [partition.tenant, partition.project],
+    sql`SELECT notification_cursor::text,recovery_epoch,attention
+       FROM selector_project_state
+      WHERE tenant=${partition.tenant} AND project=${partition.project}`,
   );
   const row = found.rows[0];
   return row === undefined
@@ -89,7 +92,7 @@ async function readSelectorProject(
         ...(row.recovery_epoch === null
           ? {}
           : { recoveryEpoch: row.recovery_epoch }),
-        attention: row.attention,
+        attention: row.attention as SelectorProjectState["attention"],
       };
 }
 
@@ -98,18 +101,12 @@ async function writeSelectorProject(
   state: SelectorProjectState,
 ): Promise<void> {
   await pool.query(
-    `INSERT INTO selector_project_state
+    sql`INSERT INTO selector_project_state
      (tenant,project,notification_cursor,recovery_epoch,attention)
-     VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant,project) DO UPDATE SET
+     VALUES (${state.partition.tenant},${state.partition.project},${state.notificationCursor},${state.recoveryEpoch ?? null},${String(state.attention)})
+     ON CONFLICT (tenant,project) DO UPDATE SET
      notification_cursor=EXCLUDED.notification_cursor,recovery_epoch=EXCLUDED.recovery_epoch,
      attention=EXCLUDED.attention,updated_at=now()`,
-    [
-      state.partition.tenant,
-      state.partition.project,
-      state.notificationCursor,
-      state.recoveryEpoch ?? null,
-      state.attention,
-    ],
   );
 }
 
@@ -131,18 +128,18 @@ async function lockSelectorProject(
   expected: SelectorProjectState,
 ): Promise<boolean> {
   await client.query(
-    `INSERT INTO selector_project_state (tenant,project)
-     VALUES ($1,$2) ON CONFLICT (tenant,project) DO NOTHING`,
-    [expected.partition.tenant, expected.partition.project],
+    sql`INSERT INTO selector_project_state (tenant,project)
+     VALUES (${expected.partition.tenant},${expected.partition.project})
+     ON CONFLICT (tenant,project) DO NOTHING`,
   );
   const found = await client.query<{
     notification_cursor: string;
     recovery_epoch: string | null;
-    attention: SelectorProjectState["attention"];
+    attention: string;
   }>(
-    `SELECT notification_cursor::text,recovery_epoch,attention
-       FROM selector_project_state WHERE tenant=$1 AND project=$2 FOR UPDATE`,
-    [expected.partition.tenant, expected.partition.project],
+    sql`SELECT notification_cursor::text,recovery_epoch,attention
+       FROM selector_project_state
+      WHERE tenant=${expected.partition.tenant} AND project=${expected.partition.project} FOR UPDATE`,
   );
   const row = found.rows[0];
   if (row === undefined)
@@ -156,15 +153,14 @@ async function lockSelectorProject(
     ...(row.recovery_epoch === null
       ? {}
       : { recoveryEpoch: row.recovery_epoch }),
-    attention: row.attention,
+    attention: row.attention as SelectorProjectState["attention"],
   });
 }
 
 async function markSubmitted(pool: pg.Pool, decision: string): Promise<void> {
   await pool.query(
-    `UPDATE selector_proposal_delivery SET state='Submitted',reconcile_at=now()
-      WHERE selector_decision=$1 AND state='Pending'`,
-    [decision],
+    sql`UPDATE selector_proposal_delivery SET state='Submitted',reconcile_at=now()
+      WHERE selector_decision=${decision} AND state='Pending'`,
   );
 }
 
@@ -181,10 +177,9 @@ async function deferDelivery(
   )
     throw new RangeError("selector retry delay must be bounded milliseconds");
   await pool.query(
-    `UPDATE selector_proposal_delivery
-        SET retry_at=GREATEST(retry_at,now()+$2 * interval '1 millisecond')
-      WHERE selector_decision=$1 AND state='Pending'`,
-    [decision, Math.min(delayMilliseconds, retry.maximumDelayMilliseconds)],
+    sql`UPDATE selector_proposal_delivery
+        SET retry_at=GREATEST(retry_at,now()+${Math.min(delayMilliseconds, retry.maximumDelayMilliseconds)} * interval '1 millisecond')
+      WHERE selector_decision=${decision} AND state='Pending'`,
   );
 }
 
@@ -194,11 +189,10 @@ async function markTerminal(
   outcome: Parameters<SelectorStateStore["terminal"]>[1],
 ): Promise<void> {
   const encoded = encode(outcome);
-  const terminal = await pool.query(
-    `UPDATE selector_proposal_delivery SET state='Terminal',outcome=$2
-      WHERE selector_decision=$1 AND (state<>'Terminal' OR outcome=$2)
+  const terminal = await pool.query<{ selector_decision: string }>(
+    sql`UPDATE selector_proposal_delivery SET state='Terminal',outcome=${encoded}
+      WHERE selector_decision=${decision} AND (state<>'Terminal' OR outcome=${encoded})
       RETURNING selector_decision`,
-    [decision, encoded],
   );
   if (terminal.rowCount !== 1)
     throw new Error(
@@ -213,18 +207,17 @@ async function submittedDeliveries(
 ): Promise<readonly SelectorDelivery[]> {
   checkedSelectorLimit(limit, "selector reconciliation");
   const found = await pool.query<DeliveryRow>(
-    `UPDATE selector_proposal_delivery
+    sql`UPDATE selector_proposal_delivery
         SET reconciliation_attempts=reconciliation_attempts+1,
             reconcile_at=now()+LEAST(
-              $2::double precision * power(2::double precision,LEAST(reconciliation_attempts,20)::double precision),
-              $3::double precision
+              ${retry.baseDelayMilliseconds}::double precision * power(2::double precision,LEAST(reconciliation_attempts,20)::double precision),
+              ${retry.maximumDelayMilliseconds}::double precision
             ) * interval '1 millisecond'
       WHERE selector_decision IN
         (SELECT selector_decision FROM selector_proposal_delivery
           WHERE state='Submitted' AND reconcile_at<=now()
-          ORDER BY reconcile_at,selector_decision LIMIT $1 FOR UPDATE SKIP LOCKED)
+          ORDER BY reconcile_at,selector_decision LIMIT ${limit} FOR UPDATE SKIP LOCKED)
       RETURNING selector_decision,tenant,project,operation,command,attempts::text`,
-    [limit, retry.baseDelayMilliseconds, retry.maximumDelayMilliseconds],
   );
   return found.rows.map(deliveryOf);
 }
@@ -236,17 +229,16 @@ async function pendingDeliveries(
 ): Promise<readonly SelectorDelivery[]> {
   checkedSelectorLimit(limit, "selector delivery");
   const found = await pool.query<DeliveryRow>(
-    `UPDATE selector_proposal_delivery
+    sql`UPDATE selector_proposal_delivery
       SET attempts=attempts+1,
           retry_at=now()+LEAST(
-            $2::double precision * power(2::double precision,LEAST(attempts,20)::double precision),
-            $3::double precision
+            ${retry.baseDelayMilliseconds}::double precision * power(2::double precision,LEAST(attempts,20)::double precision),
+            ${retry.maximumDelayMilliseconds}::double precision
           ) * interval '1 millisecond'
       WHERE selector_decision IN
         (SELECT selector_decision FROM selector_proposal_delivery
-          WHERE state='Pending' AND retry_at<=now() ORDER BY retry_at LIMIT $1 FOR UPDATE SKIP LOCKED)
+          WHERE state='Pending' AND retry_at<=now() ORDER BY retry_at LIMIT ${limit} FOR UPDATE SKIP LOCKED)
       RETURNING selector_decision,tenant,project,operation,command,attempts::text`,
-    [limit, retry.baseDelayMilliseconds, retry.maximumDelayMilliseconds],
   );
   return found.rows.map(deliveryOf);
 }
@@ -257,7 +249,9 @@ async function readInventoryCursor(
   const found = await pool.query<{
     tenant: string | null;
     project: string | null;
-  }>("SELECT tenant,project FROM selector_inventory_state WHERE singleton=1");
+  }>(
+    sql`SELECT tenant,project FROM selector_inventory_state WHERE singleton=1`,
+  );
   const row = found.rows[0];
   return row?.tenant === null ||
     row?.tenant === undefined ||
@@ -272,15 +266,10 @@ async function advanceInventoryCursor(
   next: Partition | undefined,
 ): Promise<boolean> {
   const advanced = await pool.query(
-    `UPDATE selector_inventory_state SET tenant=$3,project=$4
-      WHERE singleton=1 AND tenant IS NOT DISTINCT FROM $1
-        AND project IS NOT DISTINCT FROM $2`,
-    [
-      previous?.tenant ?? null,
-      previous?.project ?? null,
-      next?.tenant ?? null,
-      next?.project ?? null,
-    ],
+    sql`UPDATE selector_inventory_state
+        SET tenant=${next?.tenant ?? null},project=${next?.project ?? null}
+      WHERE singleton=1 AND tenant IS NOT DISTINCT FROM ${previous?.tenant ?? null}
+        AND project IS NOT DISTINCT FROM ${previous?.project ?? null}`,
   );
   return advanced.rowCount === 1;
 }
@@ -289,12 +278,16 @@ async function storeInteraction(
   client: pg.PoolClient,
   interaction: SelectorInteraction,
 ): Promise<void> {
-  const stored = await client.query(
-    `INSERT INTO selector_interaction
+  const stored = await client.query<{ selector_decision: string }>(
+    sql`INSERT INTO selector_interaction
      (selector_decision,tenant,project,instructions_version,instructions,observed_view,
       context,tool_activity,result,implementation_revision,model_revision,policy_revision,
       accounting,started_at,completed_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+     VALUES (${interaction.decision},${interaction.partition.tenant},${interaction.partition.project},
+             ${interaction.instructionsVersion},${interaction.instructions},${encode(interaction.observedView)},
+             ${encode(interaction.context)},${encode(interaction.toolActivity)},${encode(interaction.result)},
+             ${interaction.implementationRevision},${interaction.modelRevision},${interaction.policyRevision},
+             ${encode(interaction.accounting)},${interaction.startedAt}::timestamptz,${interaction.completedAt}::timestamptz)
      ON CONFLICT (selector_decision) DO UPDATE SET selector_decision=EXCLUDED.selector_decision
      WHERE selector_interaction.tenant IS NOT DISTINCT FROM EXCLUDED.tenant
        AND selector_interaction.project IS NOT DISTINCT FROM EXCLUDED.project
@@ -311,23 +304,6 @@ async function storeInteraction(
        AND selector_interaction.started_at IS NOT DISTINCT FROM EXCLUDED.started_at
        AND selector_interaction.completed_at IS NOT DISTINCT FROM EXCLUDED.completed_at
      RETURNING selector_decision`,
-    [
-      interaction.decision,
-      interaction.partition.tenant,
-      interaction.partition.project,
-      interaction.instructionsVersion,
-      interaction.instructions,
-      encode(interaction.observedView),
-      encode(interaction.context),
-      encode(interaction.toolActivity),
-      encode(interaction.result),
-      interaction.implementationRevision,
-      interaction.modelRevision,
-      interaction.policyRevision,
-      encode(interaction.accounting),
-      interaction.startedAt,
-      interaction.completedAt,
-    ],
   );
   if (stored.rowCount !== 1)
     throw new Error(
@@ -340,18 +316,13 @@ async function storePlanning(
   interaction: SelectorInteraction,
   planningIntent: unknown,
 ): Promise<void> {
-  const stored = await client.query(
-    `INSERT INTO selector_planning_intent (tenant,project,selector_decision,intent)
-     VALUES ($1,$2,$3,$4) ON CONFLICT (tenant,project) DO UPDATE SET
+  const stored = await client.query<{ selector_decision: string }>(
+    sql`INSERT INTO selector_planning_intent (tenant,project,selector_decision,intent)
+     VALUES (${interaction.partition.tenant},${interaction.partition.project},${interaction.decision},${encode(planningIntent)})
+     ON CONFLICT (tenant,project) DO UPDATE SET
      selector_decision=EXCLUDED.selector_decision,intent=EXCLUDED.intent,updated_at=now()
      WHERE selector_planning_intent.selector_decision<>EXCLUDED.selector_decision
         OR selector_planning_intent.intent=EXCLUDED.intent RETURNING selector_decision`,
-    [
-      interaction.partition.tenant,
-      interaction.partition.project,
-      interaction.decision,
-      encode(planningIntent),
-    ],
   );
   if (stored.rowCount !== 1)
     throw new Error("selector decision contradicts retained planning intent");
@@ -361,22 +332,16 @@ async function storeDelivery(
   client: pg.PoolClient,
   proposal: SelectorProposal,
 ): Promise<void> {
-  const stored = await client.query(
-    `INSERT INTO selector_proposal_delivery
-     (selector_decision,tenant,project,operation,command) VALUES ($1,$2,$3,$4,$5)
+  const stored = await client.query<{ selector_decision: string }>(
+    sql`INSERT INTO selector_proposal_delivery
+     (selector_decision,tenant,project,operation,command)
+     VALUES (${proposal.interaction.decision},${proposal.interaction.partition.tenant},${proposal.interaction.partition.project},${proposal.operation},${encode(proposal.command)})
      ON CONFLICT (selector_decision) DO UPDATE SET selector_decision=EXCLUDED.selector_decision
      WHERE selector_proposal_delivery.tenant IS NOT DISTINCT FROM EXCLUDED.tenant
        AND selector_proposal_delivery.project IS NOT DISTINCT FROM EXCLUDED.project
        AND selector_proposal_delivery.operation IS NOT DISTINCT FROM EXCLUDED.operation
        AND selector_proposal_delivery.command IS NOT DISTINCT FROM EXCLUDED.command
      RETURNING selector_decision`,
-    [
-      proposal.interaction.decision,
-      proposal.interaction.partition.tenant,
-      proposal.interaction.partition.project,
-      proposal.operation,
-      encode(proposal.command),
-    ],
   );
   if (stored.rowCount !== 1)
     throw new Error("selector decision contradicts retained delivery");
@@ -454,9 +419,13 @@ async function readSelectorHistory(
     started_at: Date;
     completed_at: Date;
   }>(
-    `SELECT * FROM selector_interaction WHERE tenant=$1 AND project=$2
-      AND ordinal>$3 ORDER BY ordinal LIMIT $4`,
-    [partition.tenant, partition.project, checkedSelectorCursor(after), limit],
+    sql`SELECT ordinal,selector_decision,instructions_version,instructions,
+            observed_view,context,tool_activity,result,implementation_revision,
+            model_revision,policy_revision,accounting,started_at,completed_at
+       FROM selector_interaction
+      WHERE tenant=${partition.tenant} AND project=${partition.project}
+        AND ordinal>${checkedSelectorCursor(after)} ORDER BY ordinal
+      LIMIT ${limit}`,
   );
   return found.rows.map((row): StoredSelectorInteraction => ({
     ordinal: projectRowCounter(row.ordinal, "selector interaction ordinal"),

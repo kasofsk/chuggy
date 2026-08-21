@@ -1,6 +1,7 @@
 /** PostgreSQL implementation of versioned native authoring. */
 
 import { createHash } from "node:crypto";
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { asTicketId } from "../../domain/ids.ts";
@@ -20,12 +21,6 @@ import {
 } from "../../interpreter/authoring.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { projectRowCounter } from "./rows.ts";
-import {
-  configurationCreateFunction,
-  draftCreateFunction,
-  draftDeleteFunction,
-  draftReviseFunction,
-} from "./schema.ts";
 
 interface DraftRow {
   readonly ticket: string;
@@ -47,10 +42,10 @@ async function readDraft(
   ticket: number,
 ): Promise<DraftResource | undefined> {
   const found = await pool.query<DraftRow>(
-    `SELECT d.ticket,d.authoring_version,d.state,d.configuration_revision,r.authoring
+    sql`SELECT d.ticket,d.authoring_version,d.state,d.configuration_revision,r.authoring
        FROM draft d JOIN draft_revision r USING (tenant,project,ticket,authoring_version)
-      WHERE d.tenant=$1 AND d.project=$2 AND d.ticket=$3`,
-    [partition.tenant, partition.project, ticket],
+      WHERE d.tenant=${partition.tenant} AND d.project=${partition.project}
+        AND d.ticket=${ticket}`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
@@ -79,9 +74,9 @@ async function readConfiguration(
     canonical: string;
     digest: string;
   }>(
-    `SELECT parent,canonical,digest FROM configuration_revision
-      WHERE tenant=$1 AND project=$2 AND revision=$3`,
-    [partition.tenant, partition.project, revision],
+    sql`SELECT parent,canonical,digest FROM configuration_revision
+      WHERE tenant=${partition.tenant} AND project=${partition.project}
+        AND revision=${revision}`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
@@ -143,20 +138,8 @@ async function createConfiguration(
   pool: pg.Pool,
   input: CreateConfigurationInput,
 ): Promise<ConfigurationCreated> {
-  const found = await pool.query<{
-    result: ConfigurationCreated["created"];
-  }>(
-    `SELECT ${configurationCreateFunction}($1,$2,$3,$4,$5,$6,$7,$8) AS result`,
-    [
-      input.partition.tenant,
-      input.partition.project,
-      input.revision,
-      input.parent ?? null,
-      input.canonical,
-      digest(input.canonical),
-      input.authority.kind,
-      input.authority.subject,
-    ],
+  const found = await pool.query<{ result: string | null }>(
+    sql`SELECT create_configuration_revision(${input.partition.tenant},${input.partition.project},${input.revision},${input.parent ?? null},${input.canonical},${digest(input.canonical)},${input.authority.kind},${input.authority.subject})::text AS result`,
   );
   const result = found.rows[0]?.result;
   if (result === "ParentNotFound" || result === "IdentityConflict")
@@ -177,16 +160,11 @@ async function createDraft(
   pool: pg.Pool,
   input: CreateDraftInput,
 ): Promise<DraftCreated> {
-  const found = await pool.query<{ result: string; ticket: string | null }>(
-    `SELECT * FROM ${draftCreateFunction}($1,$2,$3,$4,$5,$6)`,
-    [
-      input.partition.tenant,
-      input.partition.project,
-      input.configurationRevision,
-      encodeDraftAuthoring(input.authoring),
-      input.authority.kind,
-      input.authority.subject,
-    ],
+  const found = await pool.query<{
+    result: string | null;
+    ticket: string | null;
+  }>(
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")
@@ -204,19 +182,12 @@ async function reviseDraft(
   input: ReviseDraftInput,
 ): Promise<DraftRevised> {
   const found = await pool.query<{
-    result: string;
+    result: string | null;
     authoring_version: string | null;
     state: string | null;
-  }>(`SELECT * FROM ${draftReviseFunction}($1,$2,$3,$4,$5,$6,$7,$8)`, [
-    input.partition.tenant,
-    input.partition.project,
-    input.ticket,
-    input.expectedVersion,
-    input.configurationRevision,
-    encodeDraftAuthoring(input.authoring),
-    input.authority.kind,
-    input.authority.subject,
-  ]);
+  }>(
+    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.authority.kind},${input.authority.subject})`,
+  );
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")
     return { revised: "NotFound" };
@@ -245,17 +216,12 @@ async function deleteDraft(
   input: DeleteDraftInput,
 ): Promise<DraftDeleted> {
   const found = await pool.query<{
-    result: string;
+    result: string | null;
     authoring_version: string | null;
     state: string | null;
-  }>(`SELECT * FROM ${draftDeleteFunction}($1,$2,$3,$4,$5,$6)`, [
-    input.partition.tenant,
-    input.partition.project,
-    input.ticket,
-    input.expectedVersion,
-    input.authority.kind,
-    input.authority.subject,
-  ]);
+  }>(
+    sql`SELECT * FROM delete_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.authority.kind},${input.authority.subject})`,
+  );
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")
     return { deleted: "NotFound" };
