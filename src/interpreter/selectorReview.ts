@@ -1,6 +1,10 @@
 import type { Principal, ProjectAccess } from "./nativeWeb.ts";
 import type { Partition } from "./projectStore.ts";
-import type { SelectorDelivery, SelectorStateStore } from "./selector.ts";
+import type {
+  SelectorDelivery,
+  SelectorReviewFeedback,
+  SelectorStateStore,
+} from "./selector.ts";
 
 export type SelectorReviewResult =
   | { readonly result: "NotFound" }
@@ -31,6 +35,18 @@ export interface SelectorProposalReviews {
     decision: string,
     feedback?: string,
   ): Promise<SelectorReviewResult>;
+  feedback(
+    principal: Principal,
+    partition: Partition,
+    after: string | undefined,
+    limit: number,
+  ): Promise<
+    | { readonly result: "NotFound" }
+    | {
+        readonly result: "Found";
+        readonly feedback: readonly SelectorReviewFeedback[];
+      }
+  >;
 }
 
 /** Reuses manual-dispatch authority for the weaker, user-approved selector mode. */
@@ -45,12 +61,13 @@ export function selectorProposalReviews(
     feedback: string | undefined,
     review: SelectorStateStore["approve"] | SelectorStateStore["reject"],
   ): Promise<SelectorReviewResult> => {
-    if (
-      (await access.authorize(principal, partition, "DispatchTicket")) ===
-      undefined
-    )
-      return { result: "NotFound" };
-    return (await review(partition, decision, feedback))
+    const reviewer = await access.authorize(
+      principal,
+      partition,
+      "DispatchTicket",
+    );
+    if (reviewer === undefined) return { result: "NotFound" };
+    return (await review(partition, decision, reviewer, feedback))
       ? { result: "Changed" }
       : { result: "Stale" };
   };
@@ -64,12 +81,27 @@ export function selectorProposalReviews(
             proposals: await store.awaitingApproval(partition, limit),
           },
     approve: (principal, partition, decision, feedback) =>
-      change(principal, partition, decision, feedback, (scope, id, note) =>
-        store.approve(scope, id, note),
+      change(
+        principal,
+        partition,
+        decision,
+        feedback,
+        (scope, id, reviewer, note) => store.approve(scope, id, reviewer, note),
       ),
     reject: (principal, partition, decision, feedback) =>
-      change(principal, partition, decision, feedback, (scope, id, note) =>
-        store.reject(scope, id, note),
+      change(
+        principal,
+        partition,
+        decision,
+        feedback,
+        (scope, id, reviewer, note) => store.reject(scope, id, reviewer, note),
       ),
+    feedback: async (principal, partition, after, limit) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Found",
+            feedback: await store.reviewFeedback(partition, after, limit),
+          },
   };
 }

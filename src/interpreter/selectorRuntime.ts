@@ -9,7 +9,7 @@ import {
   type SelectorPolicy,
   type SelectorProjectState,
   type SelectorProposal,
-  type SelectorRuntimeControl,
+  type SelectorRuntimeSettingsSource,
   type SelectorStateStore,
   type SelectorTicketService,
 } from "./selector.ts";
@@ -77,7 +77,7 @@ export async function selectorRunOnce(
   source: SelectorRuntimeSource,
   policy: SelectorPolicy,
   identities: SelectorIdentityFactory,
-  control: SelectorRuntimeControl,
+  control: SelectorRuntimeSettingsSource,
   config: SelectorRuntimeConfig = selectorRuntimeDefaults,
 ): Promise<SelectorRunResult> {
   const initialSettings = await control.settings();

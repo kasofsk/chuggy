@@ -5,6 +5,7 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   observeSelectorProject,
   runSelectorCycle,
+  type SelectorRuntimeControlStore,
   type SelectorRuntimeSettings,
 } from "../../src/interpreter/selector.ts";
 import {
@@ -22,6 +23,7 @@ import {
 import { selectorRunOnce } from "../../src/interpreter/selectorRuntime.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
+import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdmin.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -89,6 +91,7 @@ const runtimeSettings: SelectorRuntimeSettings = {
 
 function promptObservationSource() {
   return {
+    decisionDeadline: () => new Promise<never>(() => undefined),
     notifications: () =>
       Promise.resolve({ result: "Events", cursor: 1, events: [] } as const),
     currentTimeEpochMs: () =>
@@ -130,6 +133,7 @@ function stateStore(
     awaitingApproval: () => Promise.resolve([]),
     approve: () => Promise.resolve(false),
     reject: () => Promise.resolve(false),
+    reviewFeedback: () => Promise.resolve([]),
   };
 }
 
@@ -144,6 +148,7 @@ test("selector observation resumes from a reset cursor and pins every view page"
     },
     {
       notifications: () => Promise.resolve({ result: "Reset", cursor: 12 }),
+      decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () =>
         Promise.resolve(operationalContext.observedAtEpochMs),
       operationalContext: () => Promise.resolve(operationalContext),
@@ -180,6 +185,7 @@ test("selector observation discards a view when a later page resets", async () =
     {
       notifications: () =>
         Promise.resolve({ result: "Events", cursor: 0, events: [] } as const),
+      decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () =>
         Promise.resolve(operationalContext.observedAtEpochMs),
       operationalContext: () => Promise.resolve(operationalContext),
@@ -281,6 +287,8 @@ test("a paused runtime creates no new observations but still drains durable work
         Promise.reject(new Error("paused runtime released a permit")),
       notifications: () =>
         Promise.reject(new Error("paused runtime observed a project")),
+      decisionDeadline: () =>
+        Promise.reject(new Error("paused runtime created a deadline")),
       currentTimeEpochMs: () =>
         Promise.reject(new Error("paused runtime read the clock")),
       dispatchView: () =>
@@ -304,14 +312,6 @@ test("a paused runtime creates no new observations but still drains durable work
     {
       settings: () =>
         Promise.resolve({ ...runtimeSettings, revision: 4, mode: "Paused" }),
-      pause: () => Promise.reject(new Error("not used")),
-      unpause: () => Promise.reject(new Error("not used")),
-      setDispatchMode: () => Promise.reject(new Error("not used")),
-      updateBasePrompt: () => Promise.reject(new Error("not used")),
-      updatePolicyControls: () => Promise.reject(new Error("not used")),
-      history: () => Promise.reject(new Error("not used")),
-      rollback: () => Promise.reject(new Error("not used")),
-      drainStatus: () => Promise.reject(new Error("not used")),
     },
   );
   assert.deepEqual(result, {
@@ -364,7 +364,7 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
             implementationRevision: "implementation-1",
             modelRevision: "model-1",
             policyRevision: "policy-1",
-            accounting: {},
+            accounting: { tokens: 100, durationMs: 1_000 },
             startedAt: "2026-08-21T12:00:00.000Z",
             completedAt: "2026-08-21T12:00:01.000Z",
           },
@@ -379,6 +379,32 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
     settings,
   );
   assert.equal(recorded, settings.basePrompt);
+});
+
+test("the runtime deadline ends a policy call that never returns", async () => {
+  await assert.rejects(
+    runSelectorCycle(
+      {
+        partition,
+        notificationCursor: 0,
+        attention: "Monitoring",
+        workingMemory: {},
+      },
+      {
+        ...promptObservationSource(),
+        decisionDeadline: () =>
+          Promise.reject(new Error("decision deadline exceeded")),
+      },
+      stateStore(() => undefined),
+      { decide: () => new Promise(() => undefined) },
+      {
+        operation: asOperationId("timed-operation"),
+        selectorDecisionReference: "timed-decision",
+      },
+      runtimeSettings,
+    ),
+    /deadline exceeded/,
+  );
 });
 
 test("proposal review requires dispatch authority and preserves feedback", async () => {
@@ -398,7 +424,7 @@ test("proposal review requires dispatch authority and preserves feedback", async
     {
       ...stateStore(() => undefined),
       awaitingApproval: () => Promise.resolve([delivery]),
-      approve: (_partition, _decision, feedback) => {
+      approve: (_partition, _decision, _reviewer, feedback) => {
         approvedFeedback = feedback;
         return Promise.resolve(true);
       },
@@ -414,4 +440,47 @@ test("proposal review requires dispatch authority and preserves feedback", async
   );
   assert.deepEqual(approved, { result: "Changed" });
   assert.equal(approvedFeedback, "start this after the database migration");
+});
+
+test("selector configuration changes require platform administration", async () => {
+  let mutations = 0;
+  const unchanged = Promise.resolve({
+    updated: true,
+    settings: runtimeSettings,
+  } as const);
+  const store: SelectorRuntimeControlStore = {
+    settings: () => Promise.resolve(runtimeSettings),
+    pause: () => {
+      mutations += 1;
+      return unchanged;
+    },
+    unpause: () => unchanged,
+    setDispatchMode: () => unchanged,
+    updateBasePrompt: () => unchanged,
+    updatePolicyControls: () => unchanged,
+    history: () => Promise.resolve([runtimeSettings]),
+    rollback: () => unchanged,
+    drainStatus: () =>
+      Promise.resolve({
+        mode: "Running",
+        awaitingApproval: 0,
+        pendingDeliveries: 0,
+        submittedDeliveries: 0,
+        drained: true,
+      }),
+  };
+  const administration = selectorRuntimeAdministration(
+    {
+      authorize: (principal) =>
+        Promise.resolve(principal === asPrincipal("admin")),
+    },
+    store,
+  );
+  await assert.rejects(
+    administration.pause(asPrincipal("member"), runtimeSettings.revision),
+    /forbidden/,
+  );
+  assert.equal(mutations, 0);
+  await administration.pause(asPrincipal("admin"), runtimeSettings.revision);
+  assert.equal(mutations, 1);
 });

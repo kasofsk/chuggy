@@ -9,10 +9,19 @@ import {
 } from "../../src/adapters/postgres/selector.ts";
 import {
   apiRole,
+  dispatchAcceptanceFunction,
+  selectorControlRole,
   selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { projectWriterDecide } from "../../src/interpreter/projectWriter.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+  asOperationId,
+} from "../../src/interpreter/operationInbox.ts";
 import {
   postgresHarnessHistory,
   postgresHarnessOpen,
@@ -54,6 +63,25 @@ const selectorInteractionContext = {
     executionBacklog: { queued: 0, ceiling: 10, dispatchAllowed: true },
   },
 } as const;
+
+function selectorTestInteraction(partition: Partition, decision: string) {
+  return {
+    decision,
+    partition,
+    instructionsVersion: "instructions-1",
+    instructions: "choose a dispatchable ticket",
+    observedView: [],
+    context: selectorInteractionContext,
+    toolActivity: [],
+    result: { waiting: true },
+    implementationRevision: "implementation-1",
+    modelRevision: "model-1",
+    policyRevision: "policy-1",
+    accounting: { tokens: 1, durationMs: 1 },
+    startedAt: "2026-08-20T12:00:00.000Z",
+    completedAt: "2026-08-20T12:00:01.000Z",
+  } as const;
+}
 
 test("a release atomically materializes a digest-fenced current dispatch view", async () => {
   const partition = await postgresHarnessProject(harness.store, "i5-view");
@@ -198,6 +226,20 @@ test("runtime roles cannot cross the selector and ticket-service storage boundar
     "SELECT * FROM journal_entry LIMIT 1",
   );
   assert.match(ticketRefusal ?? "", /permission denied/);
+  for (const role of [selectorServiceRole, selectorControlRole]) {
+    const settingsRefusal = await harness.attemptAs(
+      role,
+      "UPDATE selector_runtime_settings SET mode='Paused' WHERE singleton=1",
+    );
+    assert.match(settingsRefusal ?? "", /permission denied/);
+    const historyRefusal = await harness.attemptAs(
+      role,
+      `INSERT INTO selector_runtime_settings_history
+       (revision,mode,dispatch_mode,base_prompt,controls)
+       VALUES (999,'Running','Automatic','forged','{}')`,
+    );
+    assert.match(historyRefusal ?? "", /permission denied/);
+  }
 });
 
 test("selector provenance and its observed cursor roll back together", async () => {
@@ -208,22 +250,7 @@ test("selector provenance and its observed cursor roll back together", async () 
   const pool = postgresPool(postgresHarnessUrl());
   const state = postgresSelectorState(pool);
   const decision = `selector-atomic-${crypto.randomUUID()}`;
-  const interaction = {
-    decision,
-    partition,
-    instructionsVersion: "instructions-1",
-    instructions: "choose a dispatchable ticket",
-    observedView: [],
-    context: selectorInteractionContext,
-    toolActivity: [],
-    result: { waiting: true },
-    implementationRevision: "implementation-1",
-    modelRevision: "model-1",
-    policyRevision: "policy-1",
-    accounting: {},
-    startedAt: "2026-08-20T12:00:00.000Z",
-    completedAt: "2026-08-20T12:00:01.000Z",
-  } as const;
+  const interaction = selectorTestInteraction(partition, decision);
   try {
     await assert.rejects(
       state.recordInteraction(
@@ -249,6 +276,26 @@ test("selector provenance and its observed cursor roll back together", async () 
     });
     assert.equal((await state.project(partition))?.notificationCursor, 17);
     assert.equal((await state.history(partition, undefined, 10)).length, 1);
+    await state.recordInteraction(interaction, {
+      partition,
+      notificationCursor: 99,
+      attention: "Attention",
+      workingMemory: { conflicting: true },
+    });
+    assert.equal((await state.project(partition))?.notificationCursor, 17);
+    await assert.rejects(
+      state.recordInteraction(
+        { ...interaction, instructions: "different semantic interaction" },
+        {
+          partition,
+          notificationCursor: 99,
+          attention: "Attention",
+          workingMemory: { conflicting: true },
+        },
+      ),
+      /identity conflicts/,
+    );
+    assert.equal((await state.project(partition))?.notificationCursor, 17);
   } finally {
     await pool.end();
   }
@@ -322,6 +369,127 @@ test("selector controls hot-reload with a revision fence", async () => {
     assert.equal(running.settings.mode, "Running");
     const drain = await control.drainStatus();
     assert.equal(typeof drain.drained, "boolean");
+  } finally {
+    await pool.end();
+  }
+});
+
+test("proposal review retains reviewer authority and readable feedback", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-review-audit",
+  );
+  const pool = postgresPool(postgresHarnessUrl());
+  const state = postgresSelectorState(pool);
+  const decision = `review-${crypto.randomUUID()}`;
+  const interaction = selectorTestInteraction(partition, decision);
+  try {
+    await state.record(
+      {
+        interaction,
+        operation: asOperationId(`operation-${decision}`),
+        deliveryMode: "ApprovalRequired",
+        command: {
+          version: 1,
+          command: "ProposeDispatch",
+          ticket: asTicketId(1),
+          expectedTicketVersion: 1,
+          observedViewToken: {
+            ...partition,
+            recoveryEpoch: "epoch",
+            schemaVersion: 1,
+            watermark: 0,
+            digest: "a".repeat(64),
+          },
+          selectorDecisionReference: decision,
+        },
+      },
+      {
+        partition,
+        notificationCursor: 0,
+        attention: "Monitoring",
+        workingMemory: {},
+      },
+    );
+    const reviewer = {
+      kind: asAuthorityKind("User"),
+      subject: asAuthoritySubject("admin-reviewer"),
+    };
+    assert.equal(
+      await state.approve(
+        partition,
+        decision,
+        reviewer,
+        "ship after migration",
+      ),
+      true,
+    );
+    const feedback = await state.reviewFeedback(partition, undefined, 10);
+    assert.deepEqual(feedback[0], {
+      selectorDecision: decision,
+      outcome: "Approved",
+      reviewer,
+      feedback: "ship after migration",
+      reviewedAt: feedback[0]?.reviewedAt,
+    });
+  } finally {
+    await pool.end();
+  }
+});
+
+test("dispatch acceptance refuses every command the wire parser cannot read", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-invalid-dispatch",
+  );
+  const pool = postgresPool(postgresHarnessUrl());
+  const token = {
+    ...partition,
+    recoveryEpoch: "epoch",
+    schemaVersion: 1,
+    watermark: 0,
+    digest: "a".repeat(64),
+  };
+  const commands = [
+    {
+      version: 1,
+      command: "ManualDispatch",
+      ticket: 1,
+      expectedTicketVersion: 9_007_199_254_740_992,
+    },
+    {
+      version: 1,
+      command: "ProposeDispatch",
+      ticket: 1,
+      expectedTicketVersion: 1,
+      observedViewToken: { ...token, recoveryEpoch: "" },
+      selectorDecisionReference: "decision",
+    },
+    {
+      version: 1,
+      command: "ProposeDispatch",
+      ticket: 1,
+      expectedTicketVersion: 1,
+      observedViewToken: { ...token, watermark: -1 },
+      selectorDecisionReference: "decision",
+    },
+  ];
+  try {
+    for (const [index, command] of commands.entries()) {
+      const found = await pool.query<{ result: string }>(
+        `SELECT result FROM ${dispatchAcceptanceFunction}(
+          $1,$2,$3,'User','subject','v1',$4,$5,ARRAY[]::text[],ARRAY[]::text[],$6,10,100)`,
+        [
+          partition.tenant,
+          partition.project,
+          `invalid-${String(index)}`,
+          `key-${String(index)}`,
+          `payload-${String(index)}`,
+          JSON.stringify(command),
+        ],
+      );
+      assert.equal(found.rows[0]?.result, "InvalidCommand");
+    }
   } finally {
     await pool.end();
   }

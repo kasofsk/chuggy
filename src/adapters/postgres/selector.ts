@@ -1,13 +1,18 @@
 import type pg from "pg";
 
-import { asOperationId } from "../../interpreter/operationInbox.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+  asOperationId,
+} from "../../interpreter/operationInbox.ts";
 import type {
   SelectorDelivery,
   SelectorInteraction,
   SelectorProposal,
   SelectorProjectState,
+  SelectorReviewFeedback,
   SelectorPolicyControls,
-  SelectorRuntimeControl,
+  SelectorRuntimeControlStore,
   SelectorRuntimeSettings,
   SelectorSettingsUpdate,
   SelectorStateStore,
@@ -19,6 +24,7 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
+import { selectorSettingsFunction } from "./schema.ts";
 
 interface DeliveryRow {
   readonly selector_decision: string;
@@ -139,15 +145,8 @@ async function updateSettings(
     base_prompt: string;
     controls: string;
   }>(
-    `WITH updated AS (UPDATE selector_runtime_settings SET
-       revision=revision+1,mode=COALESCE($2,mode),dispatch_mode=COALESCE($3,dispatch_mode),
-       base_prompt=COALESCE($4,base_prompt),controls=COALESCE($5,controls),updated_at=now()
-       WHERE singleton=1 AND revision=$1
-       RETURNING revision,mode,dispatch_mode,base_prompt,controls),
-     recorded AS (INSERT INTO selector_runtime_settings_history
-       (revision,mode,dispatch_mode,base_prompt,controls)
-       SELECT revision,mode,dispatch_mode,base_prompt,controls FROM updated)
-     SELECT revision::text,mode,dispatch_mode,base_prompt,controls FROM updated`,
+    `SELECT revision::text,mode,dispatch_mode,base_prompt,controls
+       FROM ${selectorSettingsFunction}($1,$2,$3,$4,$5)`,
     [
       expectedRevision,
       "mode" in update ? update.mode : null,
@@ -212,7 +211,7 @@ async function rollbackSettings(
 
 export function postgresSelectorRuntimeControl(
   pool: pg.Pool,
-): SelectorRuntimeControl {
+): SelectorRuntimeControlStore {
   return {
     settings: () => readSettings(pool),
     pause: (revision) => updateSettings(pool, revision, { mode: "Paused" }),
@@ -359,6 +358,39 @@ async function awaitingApproval(
   return found.rows.map(deliveryOf);
 }
 
+async function readReviewFeedback(
+  pool: pg.Pool,
+  partition: Partition,
+  after: string | undefined,
+  limit: number,
+): Promise<readonly SelectorReviewFeedback[]> {
+  checkedSelectorLimit(limit, "selector review feedback");
+  const found = await pool.query<{
+    selector_decision: string;
+    review_outcome: SelectorReviewFeedback["outcome"];
+    reviewer_kind: string;
+    reviewer_subject: string;
+    review_feedback: string | null;
+    reviewed_at: Date;
+  }>(
+    `SELECT selector_decision,review_outcome,reviewer_kind,reviewer_subject,
+       review_feedback,reviewed_at FROM selector_proposal_delivery
+     WHERE tenant=$1 AND project=$2 AND reviewed_at IS NOT NULL
+       AND selector_decision>$3 ORDER BY selector_decision LIMIT $4`,
+    [partition.tenant, partition.project, after ?? "", limit],
+  );
+  return found.rows.map((row) => ({
+    selectorDecision: row.selector_decision,
+    outcome: row.review_outcome,
+    reviewer: {
+      kind: asAuthorityKind(row.reviewer_kind),
+      subject: asAuthoritySubject(row.reviewer_subject),
+    },
+    ...(row.review_feedback === null ? {} : { feedback: row.review_feedback }),
+    reviewedAt: row.reviewed_at.toISOString(),
+  }));
+}
+
 async function readInventoryCursor(
   pool: pg.Pool,
 ): Promise<Partition | undefined> {
@@ -384,6 +416,56 @@ async function writeInventoryCursor(
   );
 }
 
+async function insertSelectorInteraction(
+  client: pg.PoolClient,
+  interaction: SelectorInteraction,
+): Promise<boolean> {
+  const values = [
+    interaction.decision,
+    interaction.partition.tenant,
+    interaction.partition.project,
+    interaction.instructionsVersion,
+    interaction.instructions,
+    encode(interaction.observedView),
+    interaction.observedToken === undefined
+      ? null
+      : encode(interaction.observedToken),
+    encode(interaction.context),
+    encode(interaction.toolActivity),
+    encode(interaction.result),
+    interaction.implementationRevision,
+    interaction.modelRevision,
+    interaction.policyRevision,
+    encode(interaction.accounting),
+    interaction.startedAt,
+    interaction.completedAt,
+  ];
+  const inserted = await client.query<{ selector_decision: string }>(
+    `INSERT INTO selector_interaction
+     (selector_decision,tenant,project,instructions_version,instructions,observed_view,observed_token,
+      context,tool_activity,result,implementation_revision,model_revision,policy_revision,
+      accounting,started_at,completed_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     ON CONFLICT (selector_decision) DO NOTHING RETURNING selector_decision`,
+    values,
+  );
+  if (inserted.rowCount === 1) return true;
+  const same = await client.query(
+    `SELECT 1 FROM selector_interaction WHERE selector_decision=$1
+     AND tenant=$2 AND project=$3 AND instructions_version=$4 AND instructions=$5
+     AND observed_view=$6 AND observed_token IS NOT DISTINCT FROM $7
+     AND context=$8 AND tool_activity=$9 AND result=$10
+     AND implementation_revision=$11 AND model_revision=$12 AND policy_revision=$13
+     AND accounting=$14 AND started_at=$15 AND completed_at=$16`,
+    values,
+  );
+  if (same.rowCount !== 1)
+    throw new Error(
+      "selector decision identity conflicts with retained interaction",
+    );
+  return false;
+}
+
 async function recordSelectorState(
   pool: pg.Pool,
   interaction: SelectorInteraction,
@@ -392,34 +474,7 @@ async function recordSelectorState(
   proposal?: SelectorProposal,
 ): Promise<void> {
   await postgresTransaction(pool, async (client) => {
-    await client.query(
-      `INSERT INTO selector_interaction
-       (selector_decision,tenant,project,instructions_version,instructions,observed_view,observed_token,
-        context,tool_activity,result,implementation_revision,model_revision,policy_revision,
-        accounting,started_at,completed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-       ON CONFLICT (selector_decision) DO NOTHING`,
-      [
-        interaction.decision,
-        interaction.partition.tenant,
-        interaction.partition.project,
-        interaction.instructionsVersion,
-        interaction.instructions,
-        encode(interaction.observedView),
-        interaction.observedToken === undefined
-          ? null
-          : encode(interaction.observedToken),
-        encode(interaction.context),
-        encode(interaction.toolActivity),
-        encode(interaction.result),
-        interaction.implementationRevision,
-        interaction.modelRevision,
-        interaction.policyRevision,
-        encode(interaction.accounting),
-        interaction.startedAt,
-        interaction.completedAt,
-      ],
-    );
+    if (!(await insertSelectorInteraction(client, interaction))) return;
     if (planningIntent !== undefined)
       await client.query(
         `INSERT INTO selector_planning_intent (tenant,project,selector_decision,intent)
@@ -534,23 +589,34 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     project: (partition) => readSelectorProject(pool, partition),
     awaitingApproval: (partition, limit) =>
       awaitingApproval(pool, partition, limit),
-    approve: async (partition, decision, feedback) => {
+    approve: async (partition, decision, reviewer, feedback) => {
       const changed = await pool.query(
         `UPDATE selector_proposal_delivery SET state='Pending',review_feedback=$2,
-         reviewed_at=now(),retry_at=now() WHERE selector_decision=$1 AND tenant=$3
-         AND project=$4 AND state='AwaitingApproval'`,
-        [decision, feedback ?? null, partition.tenant, partition.project],
-      );
-      return changed.rowCount === 1;
-    },
-    reject: async (partition, decision, feedback) => {
-      const changed = await pool.query(
-        `UPDATE selector_proposal_delivery SET state='Terminal',review_feedback=$2,
-         reviewed_at=now(),outcome=$3 WHERE selector_decision=$1 AND tenant=$4
-         AND project=$5 AND state='AwaitingApproval'`,
+         reviewed_at=now(),reviewer_kind=$3,reviewer_subject=$4,review_outcome='Approved',
+         retry_at=now() WHERE selector_decision=$1 AND tenant=$5
+         AND project=$6 AND state='AwaitingApproval'`,
         [
           decision,
           feedback ?? null,
+          reviewer.kind,
+          reviewer.subject,
+          partition.tenant,
+          partition.project,
+        ],
+      );
+      return changed.rowCount === 1;
+    },
+    reject: async (partition, decision, reviewer, feedback) => {
+      const changed = await pool.query(
+        `UPDATE selector_proposal_delivery SET state='Terminal',review_feedback=$2,
+         reviewed_at=now(),reviewer_kind=$3,reviewer_subject=$4,review_outcome='Rejected',
+         outcome=$5 WHERE selector_decision=$1 AND tenant=$6
+         AND project=$7 AND state='AwaitingApproval'`,
+        [
+          decision,
+          feedback ?? null,
+          reviewer.kind,
+          reviewer.subject,
           encode({ state: "RejectedByUser", feedback }),
           partition.tenant,
           partition.project,
@@ -558,5 +624,7 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
       );
       return changed.rowCount === 1;
     },
+    reviewFeedback: (partition, after, limit) =>
+      readReviewFeedback(pool, partition, after, limit),
   };
 }

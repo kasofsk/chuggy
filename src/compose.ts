@@ -16,9 +16,14 @@ import {
   type SelectorHistory,
 } from "./interpreter/selectorHistory.ts";
 import type {
-  SelectorRuntimeControl,
+  SelectorRuntimeSettingsSource,
   SelectorStateStore,
 } from "./interpreter/selector.ts";
+import {
+  selectorRuntimeAdministration,
+  type SelectorAdministrationAccess,
+  type SelectorRuntimeAdministration,
+} from "./interpreter/selectorAdmin.ts";
 import {
   selectorProposalReviews,
   type SelectorProposalReviews,
@@ -54,20 +59,27 @@ export interface TicketService {
 export interface SelectorService {
   readonly state: SelectorStateStore;
   readonly history: SelectorHistory;
-  readonly control: SelectorRuntimeControl;
+  readonly settings: SelectorRuntimeSettingsSource;
+  readonly administration: SelectorRuntimeAdministration;
   readonly reviews: SelectorProposalReviews;
 }
 
 /** Wires selector-owned durability and project-authorized semantic history reads. */
 export function composeSelectorService(
   selectorPool: pg.Pool,
+  selectorControlPool: pg.Pool,
   access: ProjectAccess,
+  administrationAccess: SelectorAdministrationAccess,
 ): SelectorService {
   const state = postgresSelectorState(selectorPool);
   return {
     state,
     history: selectorHistory(access, state),
-    control: postgresSelectorRuntimeControl(selectorPool),
+    settings: postgresSelectorRuntimeControl(selectorPool),
+    administration: selectorRuntimeAdministration(
+      administrationAccess,
+      postgresSelectorRuntimeControl(selectorControlPool),
+    ),
     reviews: selectorProposalReviews(access, state),
   };
 }

@@ -1,5 +1,10 @@
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
-import type { Accepted, OperationId, TicketCommand } from "./operationInbox.ts";
+import type {
+  Accepted,
+  Authority,
+  OperationId,
+  TicketCommand,
+} from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { NotificationBatch, NotificationCursor } from "./notifications.ts";
 import type { DispatchViewPage, DispatchViewQuery } from "./dispatchView.ts";
@@ -76,13 +81,28 @@ export interface SelectorStateStore {
   approve(
     partition: Partition,
     decision: string,
+    reviewer: Authority,
     feedback?: string,
   ): Promise<boolean>;
   reject(
     partition: Partition,
     decision: string,
+    reviewer: Authority,
     feedback?: string,
   ): Promise<boolean>;
+  reviewFeedback(
+    partition: Partition,
+    after: string | undefined,
+    limit: number,
+  ): Promise<readonly SelectorReviewFeedback[]>;
+}
+
+export interface SelectorReviewFeedback {
+  readonly selectorDecision: string;
+  readonly outcome: "Approved" | "Rejected";
+  readonly reviewer: Authority;
+  readonly feedback?: string;
+  readonly reviewedAt: string;
 }
 
 export interface SelectorProjectState {
@@ -95,6 +115,7 @@ export interface SelectorProjectState {
 
 export interface SelectorObservationSource {
   currentTimeEpochMs(): Promise<number>;
+  decisionDeadline(milliseconds: number): Promise<never>;
   notifications(
     partition: Partition,
     cursor: NotificationCursor,
@@ -109,11 +130,7 @@ export interface SelectorObservationSource {
 export interface SelectorOperationalContext {
   readonly observedAt: string;
   readonly observedAtEpochMs: number;
-  readonly reviewFeedback: readonly {
-    readonly selectorDecision: string;
-    readonly outcome: "Approved" | "Rejected";
-    readonly feedback?: string;
-  }[];
+  readonly reviewFeedback: readonly SelectorReviewFeedback[];
   readonly activeWork: readonly {
     readonly ticket: DispatchCandidate["ticket"];
     readonly queuedTasks: number;
@@ -191,8 +208,11 @@ export type SelectorSettingsUpdate =
   | { readonly updated: false; readonly settings: SelectorRuntimeSettings };
 
 /** Platform-owned, hot-reloadable selector controls with optimistic concurrency. */
-export interface SelectorRuntimeControl {
+export interface SelectorRuntimeSettingsSource {
   settings(): Promise<SelectorRuntimeSettings>;
+}
+
+export interface SelectorRuntimeControlStore extends SelectorRuntimeSettingsSource {
   pause(expectedRevision: number): Promise<SelectorSettingsUpdate>;
   unpause(expectedRevision: number): Promise<SelectorSettingsUpdate>;
   setDispatchMode(
@@ -251,18 +271,21 @@ function enforcePolicyControls(
       throw new Error("selector policy used a tool outside its allowlist");
   }
   const accounting = result.interaction.accounting;
-  const tokens =
-    typeof accounting === "object" && accounting !== null
-      ? Number("tokens" in accounting ? accounting.tokens : 0)
-      : 0;
-  if (!Number.isFinite(tokens) || tokens > settings.limits.tokensPerDecision)
+  if (
+    typeof accounting !== "object" ||
+    accounting === null ||
+    !("tokens" in accounting) ||
+    !("durationMs" in accounting)
+  )
+    throw new Error("selector policy returned no trusted accounting");
+  const tokens = Number(accounting.tokens);
+  if (
+    !Number.isSafeInteger(tokens) ||
+    tokens < 0 ||
+    tokens > settings.limits.tokensPerDecision
+  )
     throw new Error("selector policy exceeded its token budget");
-  const elapsed =
-    typeof accounting === "object" &&
-    accounting !== null &&
-    "durationMs" in accounting
-      ? Number(accounting.durationMs)
-      : 0;
+  const elapsed = Number(accounting.durationMs);
   if (
     !Number.isFinite(elapsed) ||
     elapsed < 0 ||
@@ -340,7 +363,10 @@ export async function runSelectorCycle(
     currentTime - observedAt > settings.operationalContextMaxAgeMs
   )
     return undefined;
-  const result = await policy.decide(observation, settings);
+  const result = await Promise.race([
+    policy.decide(observation, settings),
+    source.decisionDeadline(settings.limits.millisecondsPerDecision),
+  ]);
   enforcePolicyControls(result, settings);
   if (!interactionMatchesObservation(result, observation, identity))
     throw new Error("selector policy provenance contradicts its observation");

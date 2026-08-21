@@ -209,6 +209,8 @@ export const ticketServiceRole = "chuggy_ticket_service";
 /** The role the authenticated API connects as, which accepts and cancels work and decides none of it. */
 export const apiRole = "chuggy_api";
 export const selectorServiceRole = "chuggy_selector_service";
+export const selectorControlRole = "chuggy_selector_control";
+export const selectorSettingsFunction = "update_selector_runtime_settings";
 
 /** The whole of a cancellation, named once so the grant, the adapter and the suite agree on it. */
 export const cancellationFunction = "cancel_pending_operation";
@@ -1410,9 +1412,9 @@ const durableDispatch = [
          NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN; END;
        IF command_value->>'version'<>'1'
           OR command_value->>'command' NOT IN ('ManualDispatch','ProposeDispatch')
-          OR jsonb_typeof(command_value->'ticket')<>'number'
+          OR NOT command_integer(command_value->'ticket')
           OR (command_value->>'ticket') !~ '^[1-9][0-9]*$'
-          OR jsonb_typeof(command_value->'expectedTicketVersion')<>'number'
+          OR NOT command_integer(command_value->'expectedTicketVersion')
           OR (command_value->>'expectedTicketVersion') !~ '^[1-9][0-9]*$' THEN
          RETURN QUERY SELECT 'InvalidCommand'::text,NULL::text,NULL::bigint,
            NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN;
@@ -1424,8 +1426,13 @@ const durableDispatch = [
           jsonb_typeof(command_value->'observedViewToken')<>'object'
           OR command_value->'observedViewToken'->>'tenant'<>in_tenant
           OR command_value->'observedViewToken'->>'project'<>in_project
+          OR jsonb_typeof(command_value->'observedViewToken'->'recoveryEpoch')<>'string'
+          OR length(command_value->'observedViewToken'->>'recoveryEpoch') NOT BETWEEN 1 AND 256
           OR command_value->'observedViewToken'->>'schemaVersion'<>'1'
+          OR NOT command_integer(command_value->'observedViewToken'->'watermark')
+          OR (command_value->'observedViewToken'->>'watermark') !~ '^(0|[1-9][0-9]*)$'
           OR (command_value->'observedViewToken'->>'digest') !~ '^[0-9a-f]{64}$'
+          OR jsonb_typeof(command_value->'selectorDecisionReference')<>'string'
           OR length(command_value->>'selectorDecisionReference') NOT BETWEEN 1 AND 256) THEN
          RETURN QUERY SELECT 'InvalidCommand'::text,NULL::text,NULL::bigint,
            NULL::text,NULL::text,NULL::text,NULL::bigint,NULL::text; RETURN;
@@ -1604,6 +1611,7 @@ export const migrations: readonly Migration[] = [
     version: 10,
     name: "hot-reloadable selector controls",
     statements: [
+      roleStatement(selectorControlRole),
       `CREATE TABLE selector_runtime_settings (
          singleton integer PRIMARY KEY DEFAULT 1, revision bigint NOT NULL DEFAULT 1,
          mode text NOT NULL DEFAULT 'Running', dispatch_mode text NOT NULL DEFAULT 'Automatic',
@@ -1632,11 +1640,48 @@ export const migrations: readonly Migration[] = [
       `ALTER TABLE selector_interaction ADD COLUMN observed_token text`,
       `ALTER TABLE selector_proposal_delivery
          ADD COLUMN review_feedback text, ADD COLUMN reviewed_at timestamptz,
+         ADD COLUMN reviewer_kind text, ADD COLUMN reviewer_subject text,
+         ADD COLUMN review_outcome text,
          DROP CONSTRAINT selector_proposal_delivery_state_check,
          ADD CHECK (state IN ('AwaitingApproval','Pending','Submitted','Terminal')),
-         ADD CHECK (review_feedback IS NULL OR length(review_feedback) <= 65536)`,
-      `GRANT SELECT,UPDATE ON selector_runtime_settings TO ${selectorServiceRole}`,
-      `GRANT SELECT,INSERT ON selector_runtime_settings_history TO ${selectorServiceRole}`,
+         ADD CHECK (review_feedback IS NULL OR length(review_feedback) <= 65536),
+         ADD CHECK ((reviewed_at IS NULL)=(reviewer_kind IS NULL)),
+         ADD CHECK ((reviewed_at IS NULL)=(reviewer_subject IS NULL)),
+         ADD CHECK ((reviewed_at IS NULL)=(review_outcome IS NULL)),
+         ADD CHECK (review_outcome IS NULL OR review_outcome IN ('Approved','Rejected')),
+         ADD CHECK (reviewer_kind IS NULL OR length(reviewer_kind) BETWEEN 1 AND 256),
+         ADD CHECK (reviewer_subject IS NULL OR length(reviewer_subject) BETWEEN 1 AND 256)`,
+      `CREATE FUNCTION ${selectorSettingsFunction}(
+         expected_revision bigint,new_mode text,new_dispatch_mode text,
+         new_base_prompt text,new_controls text)
+         RETURNS TABLE(revision bigint,mode text,dispatch_mode text,base_prompt text,controls text)
+         LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+         BEGIN
+           RETURN QUERY WITH updated AS (
+             UPDATE selector_runtime_settings current SET
+               revision=current.revision+1,
+               mode=coalesce(new_mode,current.mode),
+               dispatch_mode=coalesce(new_dispatch_mode,current.dispatch_mode),
+               base_prompt=coalesce(new_base_prompt,current.base_prompt),
+               controls=coalesce(new_controls,current.controls),updated_at=now()
+             WHERE singleton=1 AND current.revision=expected_revision
+             RETURNING current.revision,current.mode,current.dispatch_mode,
+               current.base_prompt,current.controls
+           ), recorded AS (
+             INSERT INTO selector_runtime_settings_history
+               (revision,mode,dispatch_mode,base_prompt,controls)
+             SELECT updated.revision,updated.mode,updated.dispatch_mode,
+               updated.base_prompt,updated.controls FROM updated
+           ) SELECT updated.revision,updated.mode,updated.dispatch_mode,
+               updated.base_prompt,updated.controls FROM updated;
+         END $$`,
+      `ALTER FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text)
+         OWNER TO ${boundaryOwnerRole}`,
+      `REVOKE ALL ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text) FROM PUBLIC`,
+      `GRANT EXECUTE ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text)
+         TO ${selectorControlRole}`,
+      `GRANT SELECT ON selector_runtime_settings TO ${selectorServiceRole},${selectorControlRole}`,
+      `GRANT SELECT ON selector_runtime_settings_history TO ${selectorControlRole}`,
     ],
   },
 ];
