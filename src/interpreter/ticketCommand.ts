@@ -1,5 +1,6 @@
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { TicketId } from "../domain/ids.ts";
+import type { DispatchViewToken } from "./dispatchView.ts";
 
 export type OperationDecisionEvent = Exclude<
   DecisionEvent,
@@ -40,4 +41,18 @@ export type TicketCommand =
       readonly ticket: TicketId;
       readonly authoringVersion: number;
       readonly configurationRevision: string;
+    }
+  | {
+      readonly version: 1;
+      readonly command: "ManualDispatch";
+      readonly ticket: TicketId;
+      readonly expectedTicketVersion: number;
+    }
+  | {
+      readonly version: 1;
+      readonly command: "ProposeDispatch";
+      readonly ticket: TicketId;
+      readonly expectedTicketVersion: number;
+      readonly observedViewToken: DispatchViewToken;
+      readonly selectorDecisionReference: string;
     };

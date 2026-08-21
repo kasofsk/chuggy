@@ -1,5 +1,5 @@
 /**
- * Migration nine against a real server: that the durable execution scheduler's
+ * Migration ten against a real server: that the durable execution scheduler's
  * relations apply, that its triggers refuse what they exist to refuse, and
  * that its functions decide what their names claim.
  *
@@ -75,7 +75,7 @@ after(async () => {
 });
 
 /** The migration this suite is about, named once so the ledger case and the report agree. */
-const schedulerMigrationVersion = 9;
+const schedulerMigrationVersion = 10;
 
 /** How wide a case's own cluster is, which is capacity rather than semantics. */
 const schedulerClusterSlots = 32;
@@ -398,7 +398,7 @@ async function schedulerReported(
   };
 }
 
-test("migration nine is recorded once and re-migrating this database applies nothing", async () => {
+test("migration ten is recorded once and re-migrating this database applies nothing", async () => {
   const declared = migrations.find(
     (each) => each.version === schedulerMigrationVersion,
   );
@@ -425,7 +425,7 @@ test("migration nine is recorded once and re-migrating this database applies not
   );
 });
 
-test("every relation migration nine declares is present and reachable", async () => {
+test("every relation migration ten declares is present and reachable", async () => {
   const declared = [
     "capacity_account",
     "execution",

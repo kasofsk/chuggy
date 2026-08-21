@@ -13,9 +13,9 @@ acknowledges the item and moves the primary projection, under
 migration, its scheduler adapter and its one completion boundary are driven
 against a real server under that same gate, and the briefing a launched worker
 is handed composes above them.
-The selection service is not built, so the body below still argues it. The
-revision fences a decision rechecks arrive with the slices that have a revision
-to name.
+The selection service is in the tree as well, from I5, whose row the table
+below has not marked landed, so the body below still argues it. The revision
+fences a decision rechecks arrive with the slices that have a revision to name.
 
 Clients submit authenticated mutations to a durable PostgreSQL inbox. They do
 not locate or call a ticket-service process. A successful submission creates an
@@ -950,21 +950,33 @@ is accepted. A granted permit cannot expire into safety or be abandoned until
 that reconciliation proves whether the ref advanced.
 
 Only conclusive evidence enters the project. `FinalizationSucceeded` requires
-the target ref to prove the authorized commit. `FinalizationFailed` requires
-proof that the ref did not advance and that abandoning the attempt is safe; a
-deterministic preparation failure or merge conflict concludes the same way and
-is priced as ordinary finalization failure, entering rework when affordable or
-`Escalated` with a native action when exhausted. Timeout, an unreadable ref or
-contradictory evidence is an operational hold under attention, not a `Core`
-event: ambiguity cannot expire the permit or authorize another attempt, and
-the ticket remains in `Finalizing` until reconciliation concludes.
+the target ref to prove the authorized commit. Before treating target movement
+as a merge conflict, preparation performs a bounded deterministic integration
+attempt against the pinned candidate and observed target commits. A clean Git
+rebase or merge creates a new immutable candidate attempt and continues through
+the ordinary approval, commit-permit and conditional-ref-update protocol; it is
+not ticket rework and may not silently change generated content beyond Git's
+conflict-free integration result. The attempt does not chase a moving ref: if
+the target changes again, the normal revision fence restarts preparation from
+the newly observed immutable target.
+
+`FinalizationFailed` requires proof that the ref did not advance and that
+abandoning the attempt is safe. A deterministic preparation failure or a
+conflict that remains after the automatic integration attempt concludes the
+same way and is priced as ordinary finalization failure, entering rework when
+affordable or `Escalated` with a native action when exhausted. Timeout, an
+unreadable ref or contradictory evidence is an operational hold under
+attention, not a `Core` event: ambiguity cannot expire the permit or authorize
+another attempt, and the ticket remains in `Finalizing` until reconciliation
+concludes.
 
 The I7 finalization-result envelope distinguishes a bounded typed failure kind
 from the pure `FinalizationFailed` outcome and pins immutable evidence sufficient
-for any resulting rework. For `MergeConflict`, that evidence names the
-finalization request and attempt with digest, candidate commit, observed target
-commit and merge base, and a project-owned structured conflict manifest with
-identity and digest. The decision that returns the ticket to `Working`
+for any resulting rework. For `MergeConflict`, that evidence names the failed
+automatic-integration attempt and strategy as well as the finalization request
+and attempt with digest, candidate commit, observed target commit and merge
+base, and a project-owned structured conflict manifest with identity and
+digest. The decision that returns the ticket to `Working`
 materializes the fresh work set's input bundle from that exact evidence,
 together with the existing artifact, handoff and release-briefing references.
 Workers therefore receive a precise reconciliation objective against immutable
@@ -1226,6 +1238,13 @@ selection, execution and integrity state. Administrative and security actions
 write a separately retained append-only audit stream.
 
 ## PostgreSQL deployment and recovery
+
+This production deployment and disaster-recovery tranche is deferred while
+development uses the PostgreSQL instance inside the cluster. That instance is
+adequate for development and slice-level concurrency/process-death tests, but
+it does not satisfy the production availability, independent-failure or
+restore-rehearsal guarantees below. Deferral must not be represented as those
+guarantees having landed.
 
 Managed PostgreSQL is the recommended production authority so loss of the Talos
 cluster does not also remove the record needed to reconstruct it. The production
@@ -2130,7 +2149,7 @@ inside the project boundary they were written under.
 | I4 | I3 | Authenticated native reads, operation polling and cancellation, versioned configuration and draft authoring, revision-fenced release, bounded access-controlled SSE notifications | Landed |
 | I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, plus the selector-owned durable cursor, delivery, transparent provenance, attention and planning read model. Selector timing, monitoring and deferral remain outside the ticket service, and selection failure never becomes a hidden FIFO dispatch policy. | — |
 | I6 | I3 | Scheduler registration, capacity admission reserving the mailbox room every completion it may later submit, fenced attempts and strict result manifests, the one indivisible terminal transaction crossing a single authenticated completion boundary, revocation cancellation, briefings composed from a pinned revision under an authority that can only narrow, and bounded project-safe active-work and capacity context with the authoritative hard execution-backlog dispatch guard | Landed |
-| I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with merge-conflict rework receiving its exact immutable attempt/target/conflict manifest, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
-| I8 | I0–I7 | Managed PostgreSQL deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions, permits and selector cursors. Old-epoch actors and selector observations remain rejected after restore. | — |
-| I9 | I2–I8 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. | — |
-| I10 | I6–I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, selector-monitor shutdown, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. | — |
+| I7 | I6 | The finalizer service: durable queue, preparation with bounded deterministic automatic rebase/merge against pinned commits, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with a clean automatic integration proceeding without ticket rework, a genuine merge conflict producing the exact immutable attempt/target/conflict manifest for rework, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
+| I8 | I0–I7, I9–I10 | Production PostgreSQL and disaster recovery: managed deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions, permits and selector cursors. Old-epoch actors and selector observations remain rejected after restore. Development may use the existing in-cluster PostgreSQL instance without claiming these production guarantees. | Deferred |
+| I9 | I2–I7 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. | — |
+| I10 | I6, I7, I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, selector-monitor shutdown, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. | — |

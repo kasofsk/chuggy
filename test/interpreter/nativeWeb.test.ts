@@ -190,6 +190,47 @@ test("the execution backlog guard stops dispatch before anything becomes durable
   assert.deepEqual(calls, ["authorize:Mutate"]);
 });
 
+test("the guard stops the two ingress spellings dispatch actually arrives as", async () => {
+  const spellings: readonly (readonly [TicketCommand, string])[] = [
+    [
+      {
+        version: 1,
+        command: "ManualDispatch",
+        ticket: id(1),
+        expectedTicketVersion: 1,
+      },
+      "authorize:DispatchTicket",
+    ],
+    [
+      {
+        version: 1,
+        command: "ProposeDispatch",
+        ticket: id(1),
+        expectedTicketVersion: 1,
+        observedViewToken: {
+          tenant: "tenant",
+          project: "project",
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 1,
+          digest: "0".repeat(64),
+        },
+        selectorDecisionReference: "selection-one",
+      },
+      "authorize:ProposeDispatch",
+    ],
+  ];
+  for (const [command, authorized] of spellings) {
+    const { web, calls } = boundary(true, backloggedGuard);
+    assert.deepEqual(await web.submit(principal, submissionOf(command)), {
+      result: "Backlogged",
+      scope: "Project",
+      retryAfterSeconds: 5,
+    });
+    assert.deepEqual(calls, [authorized]);
+  }
+});
+
 test("the execution backlog guard leaves correctness-reducing submission admissible", async () => {
   const { web, calls } = boundary(true, backloggedGuard);
   assert.equal(

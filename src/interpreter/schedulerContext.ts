@@ -170,13 +170,18 @@ export interface ExecutionBacklogGuard {
 
 /**
  * Whether this command asks for new execution work and therefore needs
- * scheduler headroom. Completion, cancellation, revocation, resume, release and
- * native-action resolution do not.
+ * scheduler headroom. Manual dispatch, an agentic proposal and the bare
+ * `Dispatch` decision are the spellings of that request; completion,
+ * cancellation, revocation, resume, release and native-action resolution are
+ * not.
  */
 export function dispatchNeedsExecutionHeadroom(
   command: TicketCommand,
 ): boolean {
   switch (command.command) {
+    case "ManualDispatch":
+    case "ProposeDispatch":
+      return true;
     case "Decide":
       return command.event.type === "Dispatch";
     case "ReleaseDraft":

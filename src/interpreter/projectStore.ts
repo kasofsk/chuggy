@@ -50,6 +50,7 @@
 
 import type { Entry } from "../actor/journal.ts";
 import type { Parsed } from "./wire.ts";
+import type { DispatchContractPin } from "./dispatchView.ts";
 
 declare const tenantIdBrand: unique symbol;
 declare const projectIdBrand: unique symbol;
@@ -213,6 +214,11 @@ export interface ProjectStore {
    * begins on.
    */
   load(lease: Lease): Promise<Parsed<readonly Entry[]>>;
+
+  /** Immutable release-contract pins used when reconstructing the strict dispatch view. */
+  loadDispatchContracts?(
+    lease: Lease,
+  ): Promise<ReadonlyMap<number, DispatchContractPin>>;
 
   /**
    * Advances the lifecycle generation and the fencing epoch and clears

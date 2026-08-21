@@ -48,6 +48,7 @@ import {
   type OperationId,
 } from "./operationInbox.ts";
 import type { Lease, Lifecycle } from "./projectStore.ts";
+import type { DispatchCandidate } from "./dispatchView.ts";
 
 /**
  * The finite vocabulary a refused operation answers with. It is closed because
@@ -55,13 +56,19 @@ import type { Lease, Lifecycle } from "./projectStore.ts";
  * branch on.
  */
 export type RefusalCode =
-  "NotEnabled" | "AuthoringChanged" | "ConfigurationInvalid";
+  | "NotEnabled"
+  | "AuthoringChanged"
+  | "ConfigurationInvalid"
+  | "TicketChanged"
+  | "SelectionChanged";
 
 /** Every refusal code, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
 export const allRefusalCodes: readonly RefusalCode[] = [
   "NotEnabled",
   "AuthoringChanged",
   "ConfigurationInvalid",
+  "TicketChanged",
+  "SelectionChanged",
 ];
 
 export interface ConfigurationPin {
@@ -72,6 +79,7 @@ export interface ConfigurationPin {
 export interface DraftReleaseFence extends ConfigurationPin {
   readonly ticket: number;
   readonly authoringVersion: number;
+  readonly configurationCanonical: string;
 }
 
 /**
@@ -158,6 +166,10 @@ export type DecisionOutcome =
       readonly entry: Entry;
       readonly projection: readonly TicketProjection[];
       readonly materialization: DecisionMaterialization;
+      readonly dispatchView?: {
+        readonly digest: string;
+        readonly candidates: readonly DispatchCandidate[];
+      };
     }
   | { readonly outcome: "Refused"; readonly code: RefusalCode }
   | { readonly outcome: "Stale" };
@@ -207,4 +219,13 @@ export interface ProjectDecision {
    * naming the fence that stopped it.
    */
   decide(decision: Decision): Promise<Decided>;
+
+  /** Replaces the replayable dispatch projection under the same ownership fences as decisions. */
+  rebuildDispatchView?(
+    lease: Lease,
+    view: {
+      readonly digest: string;
+      readonly candidates: readonly DispatchCandidate[];
+    },
+  ): Promise<void>;
 }

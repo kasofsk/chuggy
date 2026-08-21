@@ -201,6 +201,29 @@ const release: TicketCommand = {
   configurationRevision: "revision",
 };
 
+const manualDispatch: TicketCommand = {
+  version: 1,
+  command: "ManualDispatch",
+  ticket: asTicketId(1),
+  expectedTicketVersion: 1,
+};
+
+const proposeDispatch: TicketCommand = {
+  version: 1,
+  command: "ProposeDispatch",
+  ticket: asTicketId(1),
+  expectedTicketVersion: 1,
+  observedViewToken: {
+    tenant: "tenant",
+    project: "project",
+    recoveryEpoch: "epoch",
+    schemaVersion: 1,
+    watermark: 1,
+    digest: "0".repeat(64),
+  },
+  selectorDecisionReference: "selection-one",
+};
+
 test("only a dispatch decision needs scheduler headroom", () => {
   assert.equal(dispatchNeedsExecutionHeadroom(dispatch), true);
   assert.equal(
@@ -211,6 +234,11 @@ test("only a dispatch decision needs scheduler headroom", () => {
     }),
     false,
   );
+});
+
+test("manual dispatch and an agentic proposal need the same headroom", () => {
+  assert.equal(dispatchNeedsExecutionHeadroom(manualDispatch), true);
+  assert.equal(dispatchNeedsExecutionHeadroom(proposeDispatch), true);
 });
 
 test("release and native-action resolution stay admissible while dispatch is paused", () => {

@@ -1,6 +1,6 @@
 /**
  * The two narrow things the rest of the installation learns from the execution
- * scheduler, answered by the two functions migration nine grants the API and
+ * scheduler, answered by the two functions migration ten grants the API and
  * ticket-service roles and nothing else.
  *
  * NEITHER OF THEM READS A TABLE. Both are `SECURITY DEFINER` functions owned by

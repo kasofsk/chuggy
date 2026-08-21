@@ -3,7 +3,7 @@
 import type { Partition } from "./projectStore.ts";
 
 export type NotificationKind =
-  "Operation" | "Ticket" | "Draft" | "Configuration";
+  "Operation" | "Ticket" | "Draft" | "Configuration" | "Project";
 
 export interface ProjectNotification {
   readonly ordinal: number;

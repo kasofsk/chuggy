@@ -54,6 +54,12 @@ import {
   type NotificationCursor,
   type NotificationStore,
 } from "./notifications.ts";
+import type {
+  DispatchViewPage,
+  DispatchViewQuery,
+  DispatchViewStore,
+} from "./dispatchView.ts";
+import { checkedDispatchViewQuery } from "./dispatchView.ts";
 
 declare const principalBrand: unique symbol;
 declare const instantBrand: unique symbol;
@@ -76,7 +82,8 @@ export function asPublicInstant(value: string): PublicInstant {
   return value as PublicInstant;
 }
 
-export type ProjectAccessKind = "Read" | "Mutate";
+export type ProjectAccessKind =
+  "Read" | "Mutate" | "DispatchTicket" | "ProposeDispatch";
 
 /** Current project access and the non-reassignable authority it resolves to. */
 export interface ProjectAccess {
@@ -87,10 +94,20 @@ export interface ProjectAccess {
   ): Promise<Authority | undefined>;
 }
 
+export interface ProjectInventory {
+  projects(
+    principal: Principal,
+    after: Partition | undefined,
+    limit: number,
+  ): Promise<readonly Partition[]>;
+}
+
 export type OperationRefusalCode =
   | "NotEnabled"
   | "AuthoringChanged"
   | "ConfigurationInvalid"
+  | "TicketChanged"
+  | "SelectionChanged"
   | "CommandUnreadable";
 
 interface OperationResourceBase {
@@ -254,6 +271,16 @@ export interface NativeWeb {
     partition: Partition,
     cursor: NotificationCursor,
   ): Promise<AuthorizedResult<NotificationBatch>>;
+  dispatchView(
+    principal: Principal,
+    partition: Partition,
+    query: DispatchViewQuery,
+  ): Promise<AuthorizedResult<DispatchViewPage>>;
+  projectInventory(
+    principal: Principal,
+    after: Partition | undefined,
+    limit: number,
+  ): Promise<readonly Partition[]>;
   configuration(
     principal: Principal,
     partition: Partition,
@@ -264,6 +291,18 @@ export interface NativeWeb {
     partition: Partition,
     ticket: TicketId,
   ): Promise<DraftResource | undefined>;
+}
+
+function submissionAccess(command: TicketCommand): ProjectAccessKind {
+  if (command.command === "ManualDispatch") return "DispatchTicket";
+  if (command.command === "ProposeDispatch") return "ProposeDispatch";
+  return "Mutate";
+}
+
+function checkedInventoryLimit(limit: number): number {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+    throw new RangeError("project inventory limit must be between 1 and 100");
+  return limit;
 }
 
 type NativeAuthoringMethods = Pick<
@@ -344,6 +383,37 @@ function nativeAuthoringMethods(
   };
 }
 
+/**
+ * The one write this boundary takes. The command decides which access it is
+ * authorized under, and a dispatch is weighed against scheduler headroom after
+ * that authority is resolved and before the inbox makes anything durable.
+ */
+function nativeSubmitMethod(
+  access: ProjectAccess,
+  inbox: OperationInbox,
+  backlog: ExecutionBacklogGuard,
+): NativeWeb["submit"] {
+  return async (principal, submission) => {
+    const authority = await access.authorize(
+      principal,
+      submission.partition,
+      submissionAccess(submission.command),
+    );
+    if (authority === undefined) return { result: "NotFound" };
+    if (dispatchNeedsExecutionHeadroom(submission.command)) {
+      const verdict = await backlog.admitsDispatch(submission.partition);
+      if (verdict.admits === "Backlogged")
+        return {
+          result: "Backlogged",
+          scope: verdict.scope,
+          retryAfterSeconds: verdict.retryAfterSeconds,
+        };
+    }
+    const accepted: Submission = { ...submission, authority };
+    return { result: "Authorized", acceptance: await inbox.accept(accepted) };
+  };
+}
+
 /** Builds the application boundary from authorization, read, and inbox ports. */
 export function nativeWeb(
   access: ProjectAccess,
@@ -352,29 +422,12 @@ export function nativeWeb(
   authoring: AuthoringStore,
   notifications: NotificationStore,
   backlog: ExecutionBacklogGuard,
+  dispatchViews?: DispatchViewStore,
+  inventory?: ProjectInventory,
 ): NativeWeb {
   return {
     ...nativeAuthoringMethods(access, authoring),
-    submit: async (principal, submission) => {
-      const authority = await access.authorize(
-        principal,
-        submission.partition,
-        "Mutate",
-      );
-      if (authority === undefined) return { result: "NotFound" };
-      if (dispatchNeedsExecutionHeadroom(submission.command)) {
-        const verdict = await backlog.admitsDispatch(submission.partition);
-        if (verdict.admits === "Backlogged") {
-          return {
-            result: "Backlogged",
-            scope: verdict.scope,
-            retryAfterSeconds: verdict.retryAfterSeconds,
-          };
-        }
-      }
-      const accepted: Submission = { ...submission, authority };
-      return { result: "Authorized", acceptance: await inbox.accept(accepted) };
-    },
+    submit: nativeSubmitMethod(access, inbox, backlog),
     operation: async (principal, partition, operation) =>
       (await access.authorize(principal, partition, "Read")) === undefined
         ? undefined
@@ -403,5 +456,23 @@ export function nativeWeb(
               checkedNotificationCursor(cursor),
             ),
           },
+    dispatchView: async (principal, partition, query) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { result: "NotFound" };
+      if (dispatchViews === undefined)
+        throw new Error("native web: no dispatch-view store was composed");
+      return {
+        result: "Authorized",
+        value: await dispatchViews.read(
+          partition,
+          checkedDispatchViewQuery(query),
+        ),
+      };
+    },
+    projectInventory: async (principal, after, limit) => {
+      if (inventory === undefined)
+        throw new Error("native web: no project inventory was composed");
+      return inventory.projects(principal, after, checkedInventoryLimit(limit));
+    },
   };
 }

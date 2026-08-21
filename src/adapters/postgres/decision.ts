@@ -60,6 +60,7 @@ import {
   type TicketProjection,
 } from "../../interpreter/projectDecision.ts";
 import type { Lease, Partition } from "../../interpreter/projectStore.ts";
+import type { DispatchCandidate } from "../../interpreter/dispatchView.ts";
 import { postgresJournalWrite } from "./journal.ts";
 import {
   postgresOwnershipHonours,
@@ -191,6 +192,71 @@ async function decisionProject(
         configuration.configurationDigest,
       ],
     );
+  }
+}
+
+async function replaceDispatchView(
+  client: pg.PoolClient,
+  lease: Lease,
+  watermark: number,
+  view: {
+    readonly digest: string;
+    readonly candidates: readonly DispatchCandidate[];
+  },
+): Promise<void> {
+  await client.query(
+    `INSERT INTO dispatch_view
+       (tenant,project,recovery_epoch,watermark,schema_version,digest)
+     VALUES ($1,$2,$3,$4,1,$5)
+     ON CONFLICT (tenant,project) DO UPDATE SET
+       recovery_epoch=EXCLUDED.recovery_epoch,watermark=EXCLUDED.watermark,
+       schema_version=EXCLUDED.schema_version,digest=EXCLUDED.digest`,
+    [
+      lease.partition.tenant,
+      lease.partition.project,
+      lease.recoveryEpoch,
+      watermark,
+      view.digest,
+    ],
+  );
+  await client.query(
+    `DELETE FROM dispatch_candidate WHERE tenant=$1 AND project=$2`,
+    [lease.partition.tenant, lease.partition.project],
+  );
+  for (const candidate of view.candidates) {
+    await client.query(
+      `INSERT INTO dispatch_candidate
+       (tenant,project,ticket,ticket_version,work_fanout,program,rework_policy,
+        finalization_pricing,resume_pricing,finalizer,configuration_revision,
+        configuration_digest,configuration_canonical)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [
+        lease.partition.tenant,
+        lease.partition.project,
+        candidate.ticket,
+        candidate.ticketVersion,
+        candidate.workFanout,
+        JSON.stringify(candidate.program),
+        JSON.stringify(candidate.reworkPolicy),
+        JSON.stringify(candidate.finalizationPricing),
+        candidate.resumePricing,
+        candidate.finalizer,
+        candidate.configurationRevision,
+        candidate.configurationDigest,
+        candidate.configurationCanonical,
+      ],
+    );
+    for (const dependency of candidate.dependencies)
+      await client.query(
+        `INSERT INTO dispatch_candidate_dependency
+         (tenant,project,ticket,dependency) VALUES ($1,$2,$3,$4)`,
+        [
+          lease.partition.tenant,
+          lease.partition.project,
+          candidate.ticket,
+          dependency,
+        ],
+      );
   }
 }
 
@@ -589,6 +655,13 @@ async function decisionApplyJournaled(
     outcome.projection,
     configuration,
   );
+  if (outcome.dispatchView !== undefined)
+    await replaceDispatchView(
+      client,
+      lease,
+      outcome.entry.seq,
+      outcome.dispatchView,
+    );
   await decisionMaterialize(client, lease, outcome, configuration);
   await notifyDecision(client, lease.partition, cause, outcome);
   return { decided: "Committed", lease: { ...lease, head: seq } };
@@ -683,5 +756,24 @@ export async function postgresDecisionCommit(
       standing,
       decision.draftRelease,
     );
+  });
+}
+
+export async function postgresDispatchViewRebuild(
+  pool: pg.Pool,
+  lease: Lease,
+  view: {
+    readonly digest: string;
+    readonly candidates: readonly DispatchCandidate[];
+  },
+): Promise<void> {
+  await postgresTransaction(pool, async (client) => {
+    const row = await postgresOwnershipLockKnown(client, lease.partition);
+    const standing = projectRowStanding(row);
+    if (!(await postgresOwnershipHonours(client, row, lease)))
+      throw new Error("dispatch view rebuild was fenced");
+    if (standing.head !== lease.head)
+      throw new Error("dispatch view rebuild observed a stale head");
+    await replaceDispatchView(client, lease, lease.head, view);
   });
 }
