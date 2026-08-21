@@ -1497,9 +1497,13 @@ const durableDispatch = [
   `CREATE TABLE selector_project_state (
      tenant text NOT NULL, project text NOT NULL, notification_cursor bigint NOT NULL DEFAULT 0,
      recovery_epoch text, attention text NOT NULL DEFAULT 'Monitoring', revision bigint NOT NULL DEFAULT 0,
+     candidate_scan_token text, candidate_scan_after bigint,
      updated_at timestamptz NOT NULL DEFAULT now(),
      PRIMARY KEY (tenant,project), CHECK (notification_cursor >= 0 AND revision >= 0),
      CHECK (attention IN ('Monitoring','Attention','Stopped')),
+     CHECK ((candidate_scan_token IS NULL)=(candidate_scan_after IS NULL)),
+     CHECK (candidate_scan_after IS NULL OR candidate_scan_after >= 1),
+     CHECK (candidate_scan_token IS NULL OR length(candidate_scan_token) <= 65536),
      CHECK (recovery_epoch IS NULL OR length(recovery_epoch) BETWEEN 1 AND 256)
    )`,
   `CREATE TABLE selector_inventory_state (
@@ -1525,6 +1529,18 @@ const durableDispatch = [
        AND length(result) <= 65536 AND length(accounting) <= 65536),
      CHECK (completed_at >= started_at)
    )`,
+  `CREATE TABLE selector_interaction_resource (
+     selector_decision text NOT NULL, kind text NOT NULL, ordinal bigint NOT NULL,
+     digest text NOT NULL, byte_length bigint NOT NULL, chunk_count bigint NOT NULL,
+     content text NOT NULL,
+     PRIMARY KEY (selector_decision,kind,ordinal),
+     FOREIGN KEY (selector_decision) REFERENCES selector_interaction (selector_decision)
+       ON DELETE CASCADE,
+     CHECK (kind IN ('ObservedView','Context','ToolActivity')),
+     CHECK (ordinal >= 0 AND byte_length >= 0 AND chunk_count >= 1),
+     CHECK (digest ~ '^[0-9a-f]{64}$'),
+     CHECK (length(content) <= 65536)
+   )`,
   `CREATE TABLE selector_planning_intent (
      tenant text NOT NULL, project text NOT NULL, selector_decision text NOT NULL,
      intent text NOT NULL, updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (tenant,project),
@@ -1545,7 +1561,7 @@ const durableDispatch = [
    )`,
   `GRANT SELECT ON dispatch_view,dispatch_candidate,dispatch_candidate_dependency TO ${apiRole}`,
   `GRANT SELECT,INSERT,UPDATE,DELETE ON selector_project_state,selector_inventory_state,selector_interaction,
-     selector_planning_intent,selector_proposal_delivery TO ${selectorServiceRole}`,
+     selector_interaction_resource,selector_planning_intent,selector_proposal_delivery TO ${selectorServiceRole}`,
   `GRANT SELECT,INSERT,UPDATE,DELETE ON dispatch_view,dispatch_candidate,
      dispatch_candidate_dependency TO ${ticketServiceRole}`,
   `INSERT INTO project_readiness (tenant,project,ready,generation)
@@ -1633,7 +1649,7 @@ export const migrations: readonly Migration[] = [
        )`,
       `INSERT INTO selector_runtime_settings (singleton,base_prompt,controls) VALUES
          (1,'Select at most one currently dispatchable ticket. Use the supplied project view and advisory operational context. Prefer work that unblocks other tickets, respect explicit urgency and dependencies, and wait when evidence or safe capacity is insufficient. Use only authorized selector tools and record the evidence used for the decision.',
-         '{"modelAllowlist":["*"],"toolAllowlist":["*"],"limits":{"tokensPerDecision":8192,"millisecondsPerDecision":120000,"toolCallsPerDecision":20,"concurrentDecisions":4,"selectionsPerMinute":60},"operationalContextMaxAgeMs":30000}')`,
+         '{"modelAllowlist":["*"],"toolAllowlist":["*"],"limits":{"tokensPerDecision":8192,"millisecondsPerDecision":120000,"toolCallsPerDecision":20,"inputBytesPerDecision":1048576,"candidatePagesPerDecision":1,"concurrentDecisions":4,"selectionsPerMinute":60},"operationalContextMaxAgeMs":30000}')`,
       `CREATE TABLE selector_runtime_settings_history (
          revision bigint PRIMARY KEY, mode text NOT NULL, dispatch_mode text NOT NULL,
          base_prompt text NOT NULL,
@@ -1807,11 +1823,12 @@ export const migrations: readonly Migration[] = [
       `GRANT SELECT ON selector_runtime_settings_history TO ${selectorControlRole}`,
       `GRANT SELECT ON selector_proposal_delivery TO ${selectorControlRole}`,
       `REVOKE ALL ON selector_project_state,selector_inventory_state,selector_interaction,
-         selector_planning_intent,selector_proposal_delivery,selector_proposal_review
+         selector_interaction_resource,selector_planning_intent,selector_proposal_delivery,selector_proposal_review
          FROM ${selectorServiceRole}`,
       `GRANT SELECT,INSERT,UPDATE ON selector_project_state TO ${selectorServiceRole}`,
       `GRANT SELECT,UPDATE ON selector_inventory_state TO ${selectorServiceRole}`,
       `GRANT SELECT,INSERT ON selector_interaction TO ${selectorServiceRole}`,
+      `GRANT SELECT,INSERT ON selector_interaction_resource TO ${selectorServiceRole}`,
       `GRANT SELECT,INSERT,UPDATE,DELETE ON selector_planning_intent TO ${selectorServiceRole}`,
       `GRANT SELECT,INSERT ON selector_proposal_delivery TO ${selectorServiceRole}`,
       `REVOKE ALL ON FUNCTION ${selectorClaimFunction}(integer),

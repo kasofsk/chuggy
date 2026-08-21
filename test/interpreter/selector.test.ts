@@ -88,6 +88,8 @@ const runtimeSettings: SelectorRuntimeSettings = {
     tokensPerDecision: 8192,
     millisecondsPerDecision: 120_000,
     toolCallsPerDecision: 20,
+    inputBytesPerDecision: 1_048_576,
+    candidatePagesPerDecision: 1,
     concurrentDecisions: 4,
     selectionsPerMinute: 60,
   },
@@ -111,10 +113,25 @@ function waitingExecution(
 
 function policyHost(
   execute: (request: SelectorPolicyRequest) => Promise<unknown>,
-  terminate: (reason: unknown) => Promise<void> = () => Promise.resolve(),
+  terminate: (
+    reason: unknown,
+  ) => Promise<
+    | { readonly status: "Terminated"; readonly proof: string }
+    | { readonly status: "Unconfirmed" }
+  > = () =>
+    Promise.resolve({ status: "Terminated", proof: "test-host-termination" }),
 ): SelectorPolicyHost {
   return {
-    start: (request) => ({ result: execute(request), terminate }),
+    start: (request) => ({
+      result: execute(request),
+      terminate: async (reason) => {
+        const result = await terminate(reason);
+        return result.status === "Terminated"
+          ? { ...result, attempt: request.attempt }
+          : result;
+      },
+    }),
+    reconcileQuarantined: () => Promise.resolve(0),
   };
 }
 
@@ -141,6 +158,21 @@ function promptObservationSource() {
         notificationCursor: 1,
       } as const),
   };
+}
+
+function emptyDispatchPage(scope: typeof partition, digest: string) {
+  return {
+    result: "Page",
+    token: {
+      ...scope,
+      recoveryEpoch: "epoch",
+      schemaVersion: 1,
+      watermark: 1,
+      digest,
+    },
+    candidates: [],
+    notificationCursor: 1,
+  } as const;
 }
 
 function stateStore(
@@ -202,7 +234,7 @@ test("selector observation resumes from a reset cursor and pins every view page"
   assert.deepEqual(watermarks, [undefined]);
 });
 
-test("selector observation discards a view when a later page resets", async () => {
+test("selector observation restarts a continued scan when its view resets", async () => {
   let page = 0;
   const observed = await observeSelectorProject(
     {
@@ -211,6 +243,16 @@ test("selector observation discards a view when a later page resets", async () =
       revision: 0,
       attention: "Monitoring",
       workingMemory: {},
+      candidateScan: {
+        token: {
+          ...partition,
+          recoveryEpoch: "old-epoch",
+          schemaVersion: 1,
+          watermark: 1,
+          digest: "b".repeat(64),
+        },
+        after: asTicketId(1),
+      },
     },
     {
       notifications: () =>
@@ -222,24 +264,24 @@ test("selector observation discards a view when a later page resets", async () =
       operationalContext: () => Promise.resolve(operationalContext),
       dispatchView: () => {
         page += 1;
-        if (page === 2) return Promise.resolve({ result: "Reset" } as const);
+        if (page === 1) return Promise.resolve({ result: "Reset" } as const);
         return Promise.resolve({
           result: "Page",
           token: {
             ...partition,
             recoveryEpoch: "epoch",
             schemaVersion: 1,
-            watermark: 1,
+            watermark: 2,
             digest: "b".repeat(64),
           },
           candidates: [],
-          nextAfter: asTicketId(1),
           notificationCursor: 0,
         } as const);
       },
     },
   );
-  assert.equal(observed, undefined);
+  assert.equal(observed?.token.watermark, 2);
+  assert.equal(page, 2);
 });
 
 test("ambiguous proposal delivery retries through ordinary operation idempotency", async () => {
@@ -316,6 +358,8 @@ test("a paused runtime creates no new observations but still drains durable work
         Promise.reject(new Error("paused runtime acquired a permit")),
       releaseDecisionPermit: () =>
         Promise.reject(new Error("paused runtime released a permit")),
+      quarantineDecisionPermit: () =>
+        Promise.reject(new Error("paused runtime quarantined a permit")),
       notifications: () =>
         Promise.reject(new Error("paused runtime observed a project")),
       decisionDeadline: () =>
@@ -374,6 +418,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
       acquireDecisionPermit: (scope) =>
         Promise.resolve(scope === first ? undefined : "permit"),
       releaseDecisionPermit: () => Promise.resolve(),
+      quarantineDecisionPermit: () => Promise.resolve(),
       notifications: () =>
         Promise.resolve({ result: "Events", cursor: 1, events: [] } as const),
       decisionDeadline: () => new Promise<never>(() => undefined),
@@ -381,18 +426,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
         Promise.resolve(operationalContext.observedAtEpochMs),
       currentInstant: () => Promise.resolve(operationalContext.observedAt),
       dispatchView: (scope) =>
-        Promise.resolve({
-          result: "Page",
-          token: {
-            ...scope,
-            recoveryEpoch: "epoch",
-            schemaVersion: 1,
-            watermark: 1,
-            digest: "d".repeat(64),
-          },
-          candidates: [],
-          notificationCursor: 1,
-        } as const),
+        Promise.resolve(emptyDispatchPage(scope, "d".repeat(64))),
       operationalContext: () => Promise.resolve(operationalContext),
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
@@ -424,6 +458,7 @@ test("a pause observed after permit acquisition prevents a new decision", async 
         releases += 1;
         return Promise.resolve();
       },
+      quarantineDecisionPermit: () => Promise.resolve(),
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
     },
@@ -556,7 +591,10 @@ test("the runtime deadline hard-terminates its sandbox before returning", async 
       () => new Promise(() => undefined),
       () => {
         aborted = true;
-        return Promise.resolve();
+        return Promise.resolve({
+          status: "Terminated",
+          proof: "test-host-termination",
+        });
       },
     ),
     {
@@ -571,6 +609,142 @@ test("the runtime deadline hard-terminates its sandbox before returning", async 
     outcome: "Failed",
     code: "DeadlineExceeded",
   });
+});
+
+test("unconfirmed sandbox termination quarantines rather than releasing its permit", async () => {
+  let released = 0;
+  let quarantined: string | undefined;
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: () => Promise.reject(new Error("audit unavailable")),
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      acquireDecisionPermit: () => Promise.resolve("unsafe-permit"),
+      releaseDecisionPermit: () => {
+        released += 1;
+        return Promise.resolve();
+      },
+      quarantineDecisionPermit: (permit) => {
+        quarantined = permit;
+        return Promise.resolve();
+      },
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+      decisionDeadline: () => Promise.reject(new Error("deadline")),
+    },
+    policyHost(
+      () => new Promise(() => undefined),
+      () => Promise.resolve({ status: "Unconfirmed" }),
+    ),
+    {
+      next: () => ({
+        operation: asOperationId("unsafe-operation"),
+        selectorDecisionReference: "unsafe-decision",
+      }),
+    },
+    { settings: () => Promise.resolve(runtimeSettings) },
+  );
+  assert.equal(released, 0);
+  assert.equal(quarantined, "unsafe-permit");
+  assert.deepEqual(result.failures, [{ phase: "Observation", partition }]);
+});
+
+test("an unconfirmed permit release enters reconciliation", async () => {
+  let quarantined: string | undefined;
+  const result = await selectorRunOnce(
+    stateStore(() => undefined),
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      acquireDecisionPermit: () => Promise.resolve("release-uncertain"),
+      releaseDecisionPermit: () => Promise.reject(new Error("commit unknown")),
+      quarantineDecisionPermit: (permit) => {
+        quarantined = permit;
+        return Promise.resolve();
+      },
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    {
+      next: () => ({
+        operation: asOperationId("release-operation"),
+        selectorDecisionReference: "release-decision",
+      }),
+    },
+    { settings: () => Promise.resolve(runtimeSettings) },
+  );
+  assert.equal(quarantined, "release-uncertain");
+  assert.deepEqual(result.failures, [{ phase: "PermitRelease", partition }]);
+});
+
+test("settings and permit failures remain isolated to their projects", async () => {
+  const settingsBroken = {
+    tenant: partition.tenant,
+    project: asProjectId("settings-broken"),
+  };
+  const permitBroken = {
+    tenant: partition.tenant,
+    project: asProjectId("permit-broken"),
+  };
+  const healthy = {
+    tenant: partition.tenant,
+    project: asProjectId("healthy-after-boundary-failures"),
+  };
+  let settingsReads = 0;
+  const result = await selectorRunOnce(
+    stateStore(() => undefined),
+    {
+      ...promptObservationSource(),
+      projects: () =>
+        Promise.resolve({ projects: [settingsBroken, permitBroken, healthy] }),
+      acquireDecisionPermit: (scope) =>
+        scope === permitBroken
+          ? Promise.reject(new Error("permit store unavailable"))
+          : Promise.resolve(`permit-${scope.project}`),
+      releaseDecisionPermit: () => Promise.resolve(),
+      quarantineDecisionPermit: () => Promise.resolve(),
+      dispatchView: (scope) =>
+        Promise.resolve({
+          result: "Page",
+          token: {
+            ...scope,
+            recoveryEpoch: "epoch",
+            schemaVersion: 1,
+            watermark: 1,
+            digest: "e".repeat(64),
+          },
+          candidates: [],
+          notificationCursor: 1,
+        }),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    {
+      next: (scope) => ({
+        operation: asOperationId(`operation-${scope.project}`),
+        selectorDecisionReference: `decision-${scope.project}`,
+      }),
+    },
+    {
+      settings: () => {
+        settingsReads += 1;
+        return settingsReads === 2
+          ? Promise.reject(new Error("settings unavailable"))
+          : Promise.resolve(runtimeSettings);
+      },
+    },
+    { projectsMax: 3, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.equal(result.observed, 1);
+  assert.deepEqual(result.failures, [
+    { phase: "Settings", partition: settingsBroken },
+    { phase: "PermitAcquisition", partition: permitBroken },
+  ]);
 });
 
 test("sandbox constraints and observations are immutable", async () => {
@@ -697,7 +871,7 @@ test("unpersistable selector input is rejected before sandbox execution", async 
           ...operationalContext,
           projectCapacity: {
             ...operationalContext.projectCapacity,
-            account: "x".repeat(70_000),
+            account: "x".repeat(1_100_000),
           },
         }),
     },
@@ -762,6 +936,7 @@ test("one project failure does not block later projects or durable delivery", as
       projects: () => Promise.resolve({ projects: [broken, healthy] }),
       acquireDecisionPermit: (scope) => Promise.resolve(scope.project),
       releaseDecisionPermit: () => Promise.resolve(),
+      quarantineDecisionPermit: () => Promise.resolve(),
       notifications: (scope) =>
         scope === broken
           ? Promise.reject(new Error("broken project feed"))
@@ -771,18 +946,7 @@ test("one project failure does not block later projects or durable delivery", as
         Promise.resolve(operationalContext.observedAtEpochMs),
       currentInstant: () => Promise.resolve(operationalContext.observedAt),
       dispatchView: (scope) =>
-        Promise.resolve({
-          result: "Page",
-          token: {
-            ...scope,
-            recoveryEpoch: "epoch",
-            schemaVersion: 1,
-            watermark: 1,
-            digest: "f".repeat(64),
-          },
-          candidates: [],
-          notificationCursor: 1,
-        }),
+        Promise.resolve(emptyDispatchPage(scope, "f".repeat(64))),
       operationalContext: () => Promise.resolve(operationalContext),
       submit: () =>
         Promise.resolve({
@@ -835,6 +999,7 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
         Promise.reject(new Error("paused selector listed projects")),
       acquireDecisionPermit: () => Promise.resolve(undefined),
       releaseDecisionPermit: () => Promise.resolve(),
+      quarantineDecisionPermit: () => Promise.resolve(),
       notifications: () => Promise.reject(new Error("no observation")),
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () => Promise.resolve(0),

@@ -80,6 +80,8 @@ const governedSelectorControls = {
     tokensPerDecision: 4096,
     millisecondsPerDecision: 60_000,
     toolCallsPerDecision: 10,
+    inputBytesPerDecision: 1_048_576,
+    candidatePagesPerDecision: 1,
     concurrentDecisions: 2,
     selectionsPerMinute: 30,
   },
@@ -388,6 +390,38 @@ test("selector provenance and its observed cursor roll back together", async () 
       /identity conflicts/,
     );
     assert.equal((await state.project(partition))?.notificationCursor, 17);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("selector provenance round-trips resources larger than one audit column", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-selector-chunked-provenance",
+  );
+  const pool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(pool);
+  const largeEvidence = "e".repeat(180_000);
+  const interaction = {
+    ...selectorTestInteraction(partition, `chunked-${crypto.randomUUID()}`),
+    context: {
+      ...selectorInteractionContext,
+      workingMemory: { evidence: largeEvidence },
+    },
+    toolActivity: [{ evidence: largeEvidence }],
+  };
+  try {
+    assert.equal(
+      await state.recordInteraction(
+        interaction,
+        selectorTestState(partition, 0),
+      ),
+      true,
+    );
+    const recorded = (await state.history(partition, undefined, 1))[0];
+    assert.deepEqual(recorded?.context, interaction.context);
+    assert.deepEqual(recorded?.toolActivity, interaction.toolActivity);
   } finally {
     await pool.end();
   }

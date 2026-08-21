@@ -113,6 +113,10 @@ export interface SelectorProjectState {
   readonly recoveryEpoch?: string;
   readonly attention: "Monitoring" | "Attention" | "Stopped";
   readonly workingMemory: JsonValue;
+  readonly candidateScan?: {
+    readonly token: DispatchViewToken;
+    readonly after: DispatchCandidate["ticket"];
+  };
 }
 
 export interface SelectorObservationSource {
@@ -166,6 +170,7 @@ export interface SelectorObservation {
   readonly notificationCursor: number;
   readonly operationalContext: SelectorOperationalContext;
   readonly workingMemory: JsonValue;
+  readonly nextCandidateAfter?: DispatchCandidate["ticket"];
 }
 
 export interface SelectorPolicyResult {
@@ -201,6 +206,8 @@ export interface SelectorRuntimeSettings {
     readonly tokensPerDecision: number;
     readonly millisecondsPerDecision: number;
     readonly toolCallsPerDecision: number;
+    readonly inputBytesPerDecision: number;
+    readonly candidatePagesPerDecision: number;
     readonly concurrentDecisions: number;
     readonly selectionsPerMinute: number;
   };
@@ -272,6 +279,7 @@ export interface SelectorRuntimeControlStore extends SelectorRuntimeSettingsSour
 }
 
 export interface SelectorPolicyRequest {
+  readonly attempt: string;
   readonly observation: SelectorObservation;
   readonly instructions: {
     readonly revision: number;
@@ -286,12 +294,21 @@ export interface SelectorPolicyRequest {
 
 export interface SelectorPolicyRun {
   readonly result: Promise<unknown>;
-  terminate(reason: unknown): Promise<void>;
+  terminate(reason: unknown): Promise<SelectorTerminationResult>;
 }
+
+export type SelectorTerminationResult =
+  | {
+      readonly status: "Terminated";
+      readonly attempt: string;
+      readonly proof: string;
+    }
+  | { readonly status: "Unconfirmed" };
 
 /** Owns the only model and tool capabilities and hard-terminates each isolated run. */
 export interface SelectorPolicyHost {
   start(request: SelectorPolicyRequest): SelectorPolicyRun;
+  reconcileQuarantined(limit: number): Promise<number>;
 }
 
 function allowed(name: string, allowlist: readonly string[]): boolean {
@@ -301,6 +318,15 @@ function allowed(name: string, allowlist: readonly string[]): boolean {
 class SelectorControlViolation extends Error {}
 class SelectorDeadlineExceeded extends Error {}
 class SelectorInputInvalid extends Error {}
+class SelectorResourceLimit extends Error {}
+export class SelectorTerminationUnconfirmed extends Error {
+  override readonly cause: unknown;
+
+  constructor(cause: unknown) {
+    super("selector policy termination was not confirmed");
+    this.cause = cause;
+  }
+}
 class SelectorExecutionRejected extends Error {
   readonly rejection: unknown;
   readonly execution: SelectorPolicyExecution;
@@ -418,11 +444,38 @@ function boundedRevision(value: unknown, what: string): string {
 }
 
 function policyInstant(value: unknown, what: string): string {
-  if (
-    typeof value !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)
-  )
+  if (typeof value !== "string")
     throw new TypeError(`${what} must be a UTC instant`);
+  const parts =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?Z$/.exec(
+      value,
+    );
+  if (parts === null) throw new TypeError(`${what} must be a UTC instant`);
+  const numeric = parts.slice(1, 7).map((part) => Number(part));
+  const year = numeric[0] ?? -1;
+  const month = numeric[1] ?? -1;
+  const day = numeric[2] ?? -1;
+  const hour = numeric[3] ?? -1;
+  const minute = numeric[4] ?? -1;
+  const second = numeric[5] ?? -1;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > (days[month - 1] ?? 0) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  )
+    throw new TypeError(`${what} must be a real canonical UTC instant`);
+  return value;
+}
+
+function policyNonnegativeInteger(value: unknown, what: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
+    throw new TypeError(`${what} must be a nonnegative JSON integer`);
   return value;
 }
 
@@ -492,8 +545,14 @@ function parsedPolicyExecution(value: unknown): SelectorPolicyExecution {
       "selector tool activity",
     ) as readonly JsonValue[],
     accounting: {
-      tokens: Number(accountingValue["tokens"]),
-      durationMs: Number(accountingValue["durationMs"]),
+      tokens: policyNonnegativeInteger(
+        accountingValue["tokens"],
+        "selector token accounting",
+      ),
+      durationMs: policyNonnegativeInteger(
+        accountingValue["durationMs"],
+        "selector duration accounting",
+      ),
     },
     startedAt: policyInstant(found["startedAt"], "selector start"),
     completedAt: policyInstant(found["completedAt"], "selector completion"),
@@ -515,6 +574,7 @@ export async function dryRunSelectorPolicy(
     policy,
     observation,
     settings,
+    "dry-run",
   );
   return execution.result;
 }
@@ -571,35 +631,11 @@ async function executeSelectorPolicy(
   policy: SelectorPolicyHost,
   observation: SelectorObservation,
   settings: SelectorRuntimeSettings,
+  attempt: string,
 ): Promise<SelectorPolicyExecution> {
-  let policyObservation: SelectorObservation;
-  try {
-    if (settings.basePrompt.length < 1 || settings.basePrompt.length > 65_536)
-      throw new RangeError("selector instructions must be bounded");
-    const persistedContext = checkedJson(
-      {
-        operationalContext: observation.operationalContext,
-        workingMemory: observation.workingMemory,
-      },
-      "selector interaction context",
-    ) as unknown as SelectorInteraction["context"];
-    policyObservation = {
-      token: checkedJson(
-        observation.token,
-        "selector observation token",
-      ) as unknown as DispatchViewToken,
-      candidates: checkedJson(
-        observation.candidates,
-        "selector observed view",
-      ) as unknown as readonly DispatchCandidate[],
-      notificationCursor: observation.notificationCursor,
-      operationalContext: persistedContext.operationalContext,
-      workingMemory: persistedContext.workingMemory,
-    };
-  } catch {
-    throw new SelectorInputInvalid("selector input cannot be persisted");
-  }
+  const policyObservation = persistablePolicyObservation(observation, settings);
   const run = policy.start({
+    attempt,
     observation: Object.freeze(policyObservation),
     instructions: Object.freeze({
       revision: settings.revision,
@@ -626,9 +662,59 @@ async function executeSelectorPolicy(
     }
     return parsed;
   } catch (error) {
-    await run.terminate(error);
+    let termination: SelectorTerminationResult;
+    try {
+      termination = await run.terminate(error);
+    } catch {
+      termination = { status: "Unconfirmed" };
+    }
     void run.result.catch(() => undefined);
+    if (
+      termination.status !== "Terminated" ||
+      termination.attempt !== attempt ||
+      termination.proof.length < 1 ||
+      termination.proof.length > 1024
+    )
+      throw new SelectorTerminationUnconfirmed(error);
     throw error;
+  }
+}
+
+function persistablePolicyObservation(
+  observation: SelectorObservation,
+  settings: SelectorRuntimeSettings,
+): SelectorObservation {
+  try {
+    if (settings.basePrompt.length < 1 || settings.basePrompt.length > 65_536)
+      throw new RangeError("selector instructions must be bounded");
+    const persistedInput = checkedJson(
+      {
+        token: observation.token,
+        instructions: settings.basePrompt,
+        candidates: observation.candidates,
+        context: {
+          operationalContext: observation.operationalContext,
+          workingMemory: observation.workingMemory,
+        },
+      },
+      "selector interaction input",
+      settings.limits.inputBytesPerDecision,
+    ) as unknown as {
+      readonly candidates: readonly DispatchCandidate[];
+      readonly context: SelectorInteraction["context"];
+      readonly token: DispatchViewToken;
+    };
+    return {
+      token: persistedInput.token,
+      candidates: persistedInput.candidates,
+      notificationCursor: observation.notificationCursor,
+      operationalContext: persistedInput.context.operationalContext,
+      workingMemory: persistedInput.context.workingMemory,
+    };
+  } catch (error) {
+    if (error instanceof RangeError)
+      throw new SelectorResourceLimit("selector input exceeds its byte budget");
+    throw new SelectorInputInvalid("selector input cannot be persisted");
   }
 }
 
@@ -668,14 +754,18 @@ function selectedCandidate(
 }
 
 function policyFailureCode(error: unknown): string {
-  return error instanceof SelectorDeadlineExceeded
-    ? "DeadlineExceeded"
-    : error instanceof SelectorExecutionRejected ||
-        error instanceof SelectorControlViolation
-      ? "ControlViolation"
-      : error instanceof TypeError || error instanceof RangeError
-        ? "InvalidResult"
-        : "PolicyFailed";
+  return error instanceof SelectorTerminationUnconfirmed
+    ? "TerminationUnconfirmed"
+    : error instanceof SelectorResourceLimit
+      ? "ResourceLimit"
+      : error instanceof SelectorDeadlineExceeded
+        ? "DeadlineExceeded"
+        : error instanceof SelectorExecutionRejected ||
+            error instanceof SelectorControlViolation
+          ? "ControlViolation"
+          : error instanceof TypeError || error instanceof RangeError
+            ? "InvalidResult"
+            : "PolicyFailed";
 }
 
 function failedSelectorInteraction(
@@ -735,6 +825,14 @@ async function recordFailedSelectorCycle(
       recoveryEpoch: observation.token.recoveryEpoch,
       attention: "Attention",
       workingMemory: observation.workingMemory,
+      ...(observation.nextCandidateAfter === undefined
+        ? {}
+        : {
+            candidateScan: {
+              token: observation.token,
+              after: observation.nextCandidateAfter,
+            },
+          }),
     },
   );
 }
@@ -763,6 +861,14 @@ async function recordCompletedSelectorCycle(
     recoveryEpoch: observation.token.recoveryEpoch,
     attention: result.attention,
     workingMemory: result.workingMemory,
+    ...(selected === undefined && observation.nextCandidateAfter !== undefined
+      ? {
+          candidateScan: {
+            token: observation.token,
+            after: observation.nextCandidateAfter,
+          },
+        }
+      : {}),
   };
   if (selected === undefined) {
     await store.recordInteraction(
@@ -797,7 +903,12 @@ export async function runSelectorCycle(
   identity: SelectorCycleIdentity,
   settings: SelectorRuntimeSettings,
 ): Promise<SelectorProposal | undefined> {
-  const observation = await observeSelectorProject(state, source);
+  const observation = await observeSelectorProject(
+    state,
+    source,
+    100,
+    Math.floor(settings.limits.inputBytesPerDecision / 2),
+  );
   if (observation === undefined) return undefined;
   if (!observationMatchesProject(observation, state.partition))
     throw new Error("selector observation crossed its project boundary");
@@ -818,19 +929,29 @@ export async function runSelectorCycle(
       policy,
       observation,
       settings,
+      identity.selectorDecisionReference,
     );
   } catch (error) {
     if (error instanceof SelectorInputInvalid) throw error;
-    const completedAt = await source.currentInstant();
-    await recordFailedSelectorCycle(
-      store,
-      state,
-      observation,
-      identity,
-      settings,
-      error,
-      completedAt,
-    );
+    let auditFailed = false;
+    let auditFailure: unknown;
+    try {
+      const completedAt = await source.currentInstant();
+      await recordFailedSelectorCycle(
+        store,
+        state,
+        observation,
+        identity,
+        settings,
+        error,
+        completedAt,
+      );
+    } catch (failed) {
+      auditFailed = true;
+      auditFailure = failed;
+    }
+    if (error instanceof SelectorTerminationUnconfirmed) throw error;
+    if (auditFailed) throw auditFailure;
     return undefined;
   }
   return recordCompletedSelectorCycle(
@@ -848,34 +969,63 @@ export async function observeSelectorProject(
   state: SelectorProjectState,
   source: SelectorObservationSource,
   pageLimit = 100,
+  candidateBytesMax = 524_288,
 ): Promise<SelectorObservation | undefined> {
   const notifications = await source.notifications(state.partition, {
     after: state.notificationCursor,
     limit: pageLimit,
   });
-  const candidates: DispatchCandidate[] = [];
-  let after: DispatchCandidate["ticket"] | undefined;
-  let token: DispatchViewToken | undefined;
-  do {
-    const page = await source.dispatchView(state.partition, {
-      ...(after === undefined ? {} : { after }),
-      limit: pageLimit,
-      ...(token === undefined ? {} : { watermark: token.watermark }),
-    });
-    if (page.result === "Reset") return undefined;
-    token ??= page.token;
-    candidates.push(...page.candidates);
-    after = page.nextAfter;
-  } while (after !== undefined);
-  return token === undefined
+  const query =
+    state.candidateScan === undefined
+      ? { limit: pageLimit }
+      : {
+          limit: pageLimit,
+          after: state.candidateScan.after,
+          watermark: state.candidateScan.token.watermark,
+        };
+  let page = await boundedCandidatePage(
+    source,
+    state.partition,
+    query,
+    candidateBytesMax,
+  );
+  if (page.result === "Reset")
+    page = await boundedCandidatePage(
+      source,
+      state.partition,
+      { limit: pageLimit },
+      candidateBytesMax,
+    );
+  return page.result === "Reset"
     ? undefined
     : {
-        token,
-        candidates,
+        token: page.token,
+        candidates: page.candidates,
         notificationCursor: notifications.cursor,
         operationalContext: await source.operationalContext(state.partition),
         workingMemory: state.workingMemory,
+        ...(page.nextAfter === undefined
+          ? {}
+          : { nextCandidateAfter: page.nextAfter }),
       };
+}
+
+async function boundedCandidatePage(
+  source: SelectorObservationSource,
+  partition: Partition,
+  query: DispatchViewQuery,
+  bytesMax: number,
+): Promise<DispatchViewPage> {
+  let limit = query.limit;
+  for (;;) {
+    const page = await source.dispatchView(partition, { ...query, limit });
+    if (page.result === "Reset") return page;
+    const bytes = new TextEncoder().encode(
+      JSON.stringify(page.candidates),
+    ).length;
+    if (bytes <= bytesMax || limit === 1) return page;
+    limit = Math.max(1, Math.floor(limit / 2));
+  }
 }
 
 export interface SelectorTicketService {

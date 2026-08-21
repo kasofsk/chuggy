@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { createHash } from "node:crypto";
 
 import {
   asAuthorityKind,
@@ -68,6 +69,106 @@ function encode(value: unknown): string {
   return JSON.stringify(value);
 }
 
+type InteractionResourceKind = "ObservedView" | "Context" | "ToolActivity";
+
+interface InteractionResourceManifest {
+  readonly kind: InteractionResourceKind;
+  readonly digest: string;
+  readonly bytes: number;
+  readonly chunks: number;
+}
+
+interface EncodedInteractionResource {
+  readonly manifest: InteractionResourceManifest;
+  readonly chunks: readonly string[];
+}
+
+function interactionResource(
+  kind: InteractionResourceKind,
+  value: unknown,
+): EncodedInteractionResource {
+  const bytes = Buffer.from(encode(value), "utf8");
+  const chunkBytes = 45_000;
+  const chunks: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += chunkBytes)
+    chunks.push(bytes.subarray(offset, offset + chunkBytes).toString("base64"));
+  if (chunks.length === 0) chunks.push("");
+  return {
+    manifest: {
+      kind,
+      digest: createHash("sha256").update(bytes).digest("hex"),
+      bytes: bytes.length,
+      chunks: chunks.length,
+    },
+    chunks,
+  };
+}
+
+async function insertInteractionResource(
+  client: pg.PoolClient,
+  decision: string,
+  resource: EncodedInteractionResource,
+): Promise<void> {
+  for (const [ordinal, content] of resource.chunks.entries())
+    await client.query(
+      `INSERT INTO selector_interaction_resource
+       (selector_decision,kind,ordinal,digest,byte_length,chunk_count,content)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        decision,
+        resource.manifest.kind,
+        ordinal,
+        resource.manifest.digest,
+        resource.manifest.bytes,
+        resource.manifest.chunks,
+        content,
+      ],
+    );
+}
+
+async function readInteractionResource<T>(
+  pool: pg.Pool,
+  decision: string,
+  manifestText: string,
+): Promise<T> {
+  const manifest = JSON.parse(manifestText) as InteractionResourceManifest;
+  const found = await pool.query<{
+    ordinal: string;
+    digest: string;
+    byte_length: string;
+    chunk_count: string;
+    content: string;
+  }>(
+    `SELECT ordinal::text,digest,byte_length::text,chunk_count::text,content
+       FROM selector_interaction_resource
+       WHERE selector_decision=$1 AND kind=$2 ORDER BY ordinal`,
+    [decision, manifest.kind],
+  );
+  if (
+    found.rows.length !== manifest.chunks ||
+    found.rows.some(
+      (row, ordinal) =>
+        projectRowCounter(row.ordinal, "selector resource ordinal") !==
+          ordinal ||
+        row.digest !== manifest.digest ||
+        projectRowCounter(row.byte_length, "selector resource byte length") !==
+          manifest.bytes ||
+        projectRowCounter(row.chunk_count, "selector resource chunk count") !==
+          manifest.chunks,
+    )
+  )
+    throw new Error("selector interaction resource manifest is incomplete");
+  const bytes = Buffer.concat(
+    found.rows.map((row) => Buffer.from(row.content, "base64")),
+  );
+  if (
+    bytes.length !== manifest.bytes ||
+    createHash("sha256").update(bytes).digest("hex") !== manifest.digest
+  )
+    throw new Error("selector interaction resource failed its digest");
+  return JSON.parse(bytes.toString("utf8")) as T;
+}
+
 function checkedSelectorLimit(limit: number, what: string): number {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
     throw new RangeError(`${what} limit must be between 1 and 100`);
@@ -94,6 +195,10 @@ function checkedPolicyControls(
   for (const [what, value] of Object.entries(bounds))
     if (!Number.isSafeInteger(value) || value < 1)
       throw new RangeError(`${what} must be a positive safe integer`);
+  if (controls.limits.candidatePagesPerDecision !== 1)
+    throw new RangeError(
+      "candidatePagesPerDecision must be one until multi-page policy tools land",
+    );
   return controls;
 }
 
@@ -299,8 +404,11 @@ async function readSelectorProject(
     recovery_epoch: string | null;
     attention: SelectorProjectState["attention"];
     working_memory: string;
+    candidate_scan_token: string | null;
+    candidate_scan_after: string | null;
   }>(
-    `SELECT notification_cursor::text,revision::text,recovery_epoch,attention,working_memory
+    `SELECT notification_cursor::text,revision::text,recovery_epoch,attention,working_memory,
+       candidate_scan_token,candidate_scan_after::text
        FROM selector_project_state WHERE tenant=$1 AND project=$2`,
     [partition.tenant, partition.project],
   );
@@ -319,6 +427,22 @@ async function readSelectorProject(
           : { recoveryEpoch: row.recovery_epoch }),
         attention: row.attention,
         workingMemory: JSON.parse(row.working_memory) as JsonValue,
+        ...(row.candidate_scan_token === null ||
+        row.candidate_scan_after === null
+          ? {}
+          : {
+              candidateScan: {
+                token: JSON.parse(row.candidate_scan_token) as NonNullable<
+                  SelectorProjectState["candidateScan"]
+                >["token"],
+                after: projectRowCounter(
+                  row.candidate_scan_after,
+                  "selector candidate scan cursor",
+                ) as NonNullable<
+                  SelectorProjectState["candidateScan"]
+                >["after"],
+              },
+            }),
       };
 }
 
@@ -349,8 +473,9 @@ async function writeSelectorProject(
 ): Promise<void> {
   await client.query(
     `UPDATE selector_project_state SET notification_cursor=$3,recovery_epoch=$4,
-       attention=$5,working_memory=$6,revision=revision+1,updated_at=now()
-       WHERE tenant=$1 AND project=$2 AND revision=$7`,
+       attention=$5,working_memory=$6,candidate_scan_token=$7,candidate_scan_after=$8,
+       revision=revision+1,updated_at=now()
+       WHERE tenant=$1 AND project=$2 AND revision=$9`,
     [
       state.partition.tenant,
       state.partition.project,
@@ -358,6 +483,10 @@ async function writeSelectorProject(
       state.recoveryEpoch ?? null,
       state.attention,
       encode(state.workingMemory),
+      state.candidateScan === undefined
+        ? null
+        : encode(state.candidateScan.token),
+      state.candidateScan?.after ?? null,
       state.revision,
     ],
   );
@@ -475,18 +604,23 @@ async function insertSelectorInteraction(
   client: pg.PoolClient,
   interaction: SelectorInteraction,
 ): Promise<boolean> {
+  const resources = [
+    interactionResource("ObservedView", interaction.observedView),
+    interactionResource("Context", interaction.context),
+    interactionResource("ToolActivity", interaction.toolActivity),
+  ] as const;
   const values = [
     interaction.decision,
     interaction.partition.tenant,
     interaction.partition.project,
     interaction.instructionsVersion,
     interaction.instructions,
-    encode(interaction.observedView),
+    encode(resources[0].manifest),
     interaction.observedToken === undefined
       ? null
       : encode(interaction.observedToken),
-    encode(interaction.context),
-    encode(interaction.toolActivity),
+    encode(resources[1].manifest),
+    encode(resources[2].manifest),
     encode(interaction.result),
     interaction.implementationRevision,
     interaction.modelRevision,
@@ -504,7 +638,11 @@ async function insertSelectorInteraction(
      ON CONFLICT (selector_decision) DO NOTHING RETURNING selector_decision`,
     values,
   );
-  if (inserted.rowCount === 1) return true;
+  if (inserted.rowCount === 1) {
+    for (const resource of resources)
+      await insertInteractionResource(client, interaction.decision, resource);
+    return true;
+  }
   const same = await client.query(
     `SELECT 1 FROM selector_interaction WHERE selector_decision=$1
      AND tenant=$2 AND project=$3 AND instructions_version=$4 AND instructions=$5
@@ -626,32 +764,42 @@ async function readSelectorHistory(
        AND ordinal>$3 ORDER BY ordinal LIMIT $4`,
     [partition.tenant, partition.project, after ?? 0, limit],
   );
-  return found.rows.map((row): SelectorInteractionRecord => ({
-    decision: row.selector_decision,
-    ordinal: projectRowCounter(row.ordinal, "selector interaction ordinal"),
-    partition,
-    instructionsVersion: row.instructions_version,
-    instructions: row.instructions,
-    observedView: JSON.parse(
-      row.observed_view,
-    ) as SelectorInteraction["observedView"],
-    ...(row.observed_token === null
-      ? {}
-      : {
-          observedToken: JSON.parse(row.observed_token) as NonNullable<
-            SelectorInteraction["observedToken"]
-          >,
-        }),
-    context: JSON.parse(row.context) as SelectorInteraction["context"],
-    toolActivity: JSON.parse(row.tool_activity) as readonly JsonValue[],
-    result: JSON.parse(row.result) as JsonValue,
-    implementationRevision: row.implementation_revision,
-    modelRevision: row.model_revision,
-    policyRevision: row.policy_revision,
-    accounting: JSON.parse(row.accounting) as JsonValue,
-    startedAt: row.started_at.toISOString(),
-    completedAt: row.completed_at.toISOString(),
-  }));
+  return Promise.all(
+    found.rows.map(async (row): Promise<SelectorInteractionRecord> => ({
+      decision: row.selector_decision,
+      ordinal: projectRowCounter(row.ordinal, "selector interaction ordinal"),
+      partition,
+      instructionsVersion: row.instructions_version,
+      instructions: row.instructions,
+      observedView: await readInteractionResource<
+        SelectorInteraction["observedView"]
+      >(pool, row.selector_decision, row.observed_view),
+      ...(row.observed_token === null
+        ? {}
+        : {
+            observedToken: JSON.parse(row.observed_token) as NonNullable<
+              SelectorInteraction["observedToken"]
+            >,
+          }),
+      context: await readInteractionResource<SelectorInteraction["context"]>(
+        pool,
+        row.selector_decision,
+        row.context,
+      ),
+      toolActivity: await readInteractionResource<readonly JsonValue[]>(
+        pool,
+        row.selector_decision,
+        row.tool_activity,
+      ),
+      result: JSON.parse(row.result) as JsonValue,
+      implementationRevision: row.implementation_revision,
+      modelRevision: row.model_revision,
+      policyRevision: row.policy_revision,
+      accounting: JSON.parse(row.accounting) as JsonValue,
+      startedAt: row.started_at.toISOString(),
+      completedAt: row.completed_at.toISOString(),
+    })),
+  );
 }
 
 export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
