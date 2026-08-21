@@ -112,24 +112,12 @@ printf '%s\n' 'export const answer = 42;' > "$R/src/domain/a.ts"
 seal
 check "sources with no suite exits 2, not 0" 2 "$RC" "the suite glob matched nothing"
 
-fixture
-clean_source
-seal
-check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
-# The tally is asserted rather than trusted: it is what says the run measured
-# something.
-check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
-
-# --- The lint stage is the server-free half ----------------------------------
-#
-# The gate empties CHUG_SAFEQL_DATABASE_URL for its lint stage, so an operator
-# who exports it shell-wide cannot make check-source need a database. The
-# fixture carries a correctly tagged query and the variable names an address
-# nothing answers: without the emptying, the checker would activate, fail to
-# connect, and turn the stage red. This case bypasses run_in, whose own
-# emptying isolates the other cases from the machine rather than proving the
-# gate.
-
+# The clean tree also carries a tagged adapter query, and the run sets
+# CHUG_SAFEQL_DATABASE_URL to an address nothing answers, bypassing run_in's
+# emptying: the gate empties the variable for its lint stage itself, so an
+# operator who exports it shell-wide cannot make check-source need a
+# database — without that emptying, the checker would activate, fail to
+# connect, and turn this clean run red.
 fixture
 clean_source
 mkdir -p "$R/src/adapters/postgres"
@@ -146,7 +134,11 @@ set +e
 (cd "$R" && CHUG_SAFEQL_DATABASE_URL="postgres://fixture@127.0.0.1:1/void" "$SUT") >"$OUT" 2>&1
 RC=$?
 set -e
-check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed"
+check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
+# The tally is asserted rather than trusted: it is what says the run measured
+# something.
+check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
+check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed, 4 run"
 
 # --- What the unit stage runs ------------------------------------------------
 #

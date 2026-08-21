@@ -94,7 +94,7 @@ export function postgresPool(
  * a site today's parser happens to survive is one reformat away from a red
  * check-queries.
  */
-export function textParameter(value: string): string {
+export function postgresTextParameter(value: string): string {
   return value;
 }
 

@@ -84,7 +84,7 @@ run_gate() { # <dir> [env=value...]
 # --- No eslint to run is a could-not-run --------------------------------------
 
 fresh_repo "$R"
-git -C "$R" add -A 2>/dev/null || true
+git -C "$R" add -A
 run_gate "$R" "CHUG_PG_URL=$ANSWERS"
 check "no local eslint is a could-not-run" 2 "$RC" "no local eslint"
 

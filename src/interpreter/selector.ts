@@ -77,7 +77,7 @@ export interface SelectorStateStore {
   project(partition: Partition): Promise<SelectorProjectState | undefined>;
 }
 
-/** Every attention state, and the declaration `attention` derives from, so narrowing a stored column has one list to check. */
+/** Every attention state, in the one list the `attention` declaration derives from, so a narrowing has one place to check. */
 export const allSelectorAttentions = [
   "Monitoring",
   "Attention",

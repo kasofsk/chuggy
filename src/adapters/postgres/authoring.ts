@@ -193,14 +193,17 @@ async function reviseDraft(
     return { revised: "NotFound" };
   if (row.result === "ConfigurationNotFound")
     return { revised: "ConfigurationNotFound" };
-  if (row.result === "Stale")
+  if (row.result === "Stale") {
+    if (row.authoring_version === null)
+      throw new Error("draft revision returned Stale with no current version");
     return {
       revised: "Stale",
       currentVersion: projectRowCounter(
-        row.authoring_version ?? "",
+        row.authoring_version,
         "authoring version",
       ),
     };
+  }
   if (row.result === "NotDraft" && row.state !== null)
     return { revised: "NotDraft", state: nonDraftState(row.state) };
   if (row.result !== "Revised")
@@ -225,14 +228,17 @@ async function deleteDraft(
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")
     return { deleted: "NotFound" };
-  if (row.result === "Stale")
+  if (row.result === "Stale") {
+    if (row.authoring_version === null)
+      throw new Error("draft deletion returned Stale with no current version");
     return {
       deleted: "Stale",
       currentVersion: projectRowCounter(
-        row.authoring_version ?? "",
+        row.authoring_version,
         "authoring version",
       ),
     };
+  }
   if (row.result === "NotDraft" && row.state !== null)
     return { deleted: "NotDraft", state: nonDraftState(row.state) };
   if (row.result !== "Deleted")
