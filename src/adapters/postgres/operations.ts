@@ -37,6 +37,7 @@
  * it found, and the row it reads afterwards is a row it already holds.
  */
 
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { assertNever } from "../../domain/assertNever.ts";
@@ -81,11 +82,6 @@ import {
 } from "./keying.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowLifecycle } from "./rows.ts";
-import {
-  acceptanceFunction,
-  cancellationFunction,
-  dispatchAcceptanceFunction,
-} from "./schema.ts";
 
 /** One operation row with the ordinal of its decision input. */
 export interface OperationRow {
@@ -96,22 +92,8 @@ export interface OperationRow {
   readonly admission: string;
   readonly state: string;
   readonly lifecycle_generation: string;
-  readonly ordinal: string | null;
+  readonly ordinal: string;
 }
-
-/** The columns every read of an operation needs, named once so the queries cannot drift apart. */
-const operationRowColumns = `
-  o.tenant, o.project, o.operation, o.authority_kind, o.admission, d.state,
-  d.lifecycle_generation, d.ordinal
-`;
-
-/** An operation is read with its decision input, which owns processing state and ordinal. */
-const operationRowFrom = `
-  operation o
-  JOIN decision_input d
-    ON d.tenant = o.tenant AND d.project = o.project
-   AND d.input_kind = 'Operation' AND d.input_id = o.operation
-`;
 
 /** Narrows a state column to the closed set, refusing a value no migration can have written. */
 function operationRowState(value: string): OperationState {
@@ -134,13 +116,8 @@ function operationRowAdmission(value: string): AdmissionClass {
   return found;
 }
 
-/** What the row says about itself, refusing an operation with no decision input. */
+/** What the row says about itself. */
 export function operationRowStanding(row: OperationRow): OperationStanding {
-  if (row.ordinal === null) {
-    throw new Error(
-      `operation row: ${row.operation} was accepted with no decision input`,
-    );
-  }
   return {
     partition: {
       tenant: asTenantId(row.tenant),
@@ -197,7 +174,7 @@ function operationsRetainedOffering(
 }
 
 interface AcceptanceRow {
-  readonly result: string;
+  readonly result: string | null;
   readonly operation: string | null;
   readonly ordinal: string | null;
   readonly state: string | null;
@@ -242,6 +219,8 @@ function acceptanceResult(
   priority: ReturnType<typeof classifyCommand>["priority"],
 ): Accepted {
   switch (row.result) {
+    case null:
+      throw new Error("postgres acceptance: function returned a null result");
     case "Accepted":
     case "Original":
       return {
@@ -277,6 +256,58 @@ function acceptanceResult(
   }
 }
 
+/**
+ * Calls the acceptance boundary the submission's command class is granted:
+ * the two server functions share one signature and differ only in name, and
+ * a query the checker can read must carry each name as literal text.
+ */
+async function operationsAcceptCall(
+  client: pg.PoolClient,
+  submission: Submission,
+  keying: IdempotencyKeying,
+  scope: IdempotencyScope,
+  command: ReturnType<typeof asOperationCommand>,
+  retained: {
+    readonly keys: readonly string[];
+    readonly payloads: readonly string[];
+  },
+  config: TicketServiceConfig,
+): Promise<pg.QueryResult<AcceptanceRow>> {
+  const tenant = submission.partition.tenant;
+  const project = submission.partition.project;
+  const operation = submission.operation;
+  const authorityKind = submission.authority.kind;
+  const authoritySubject = submission.authority.subject;
+  const keyVersion = keying.current;
+  const keyDigest = idempotencyKeyDigestCurrent(keying, scope, submission.key);
+  const payloadDigest = idempotencyPayloadDigest(
+    keying,
+    keying.current,
+    scope,
+    command,
+  );
+  const dispatch =
+    submission.command.command === "ManualDispatch" ||
+    submission.command.command === "ProposeDispatch";
+  // jscpd:ignore-start the twins differ only in the routine name, which the checker reads as literal text
+  return dispatch
+    ? client.query<AcceptanceRow>(
+        sql`SELECT * FROM accept_dispatch_operation(
+          ${tenant},${project},${operation},${authorityKind},${authoritySubject},
+          ${keyVersion},${keyDigest},${payloadDigest},
+          ${retained.keys}::text[],${retained.payloads}::text[],
+          ${command},${config.ordinarySoftLimit},${config.mailboxHardLimit})`,
+      )
+    : client.query<AcceptanceRow>(
+        sql`SELECT * FROM accept_operation(
+          ${tenant},${project},${operation},${authorityKind},${authoritySubject},
+          ${keyVersion},${keyDigest},${payloadDigest},
+          ${retained.keys}::text[],${retained.payloads}::text[],
+          ${command},${config.ordinarySoftLimit},${config.mailboxHardLimit})`,
+      );
+  // jscpd:ignore-end closes the twin-query exemption
+}
+
 /** Accepts one submission, writing its operation, decision input and readiness generation together. */
 export async function postgresOperationsAccept(
   pool: pg.Pool,
@@ -303,29 +334,14 @@ export async function postgresOperationsAccept(
       submission,
       command,
     );
-    const accept =
-      submission.command.command === "ManualDispatch" ||
-      submission.command.command === "ProposeDispatch"
-        ? dispatchAcceptanceFunction
-        : acceptanceFunction;
-    const result = await client.query<AcceptanceRow>(
-      `SELECT * FROM ${accept}($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10::text[],
-        $11,$12,$13)`,
-      [
-        submission.partition.tenant,
-        submission.partition.project,
-        submission.operation,
-        submission.authority.kind,
-        submission.authority.subject,
-        keying.current,
-        idempotencyKeyDigestCurrent(keying, scope, submission.key),
-        idempotencyPayloadDigest(keying, keying.current, scope, command),
-        retained.keys,
-        retained.payloads,
-        command,
-        config.ordinarySoftLimit,
-        config.mailboxHardLimit,
-      ],
+    const result = await operationsAcceptCall(
+      client,
+      submission,
+      keying,
+      scope,
+      command,
+      retained,
+      config,
     );
     const row = result.rows[0];
     if (row === undefined || result.rows.length !== 1)
@@ -363,14 +379,7 @@ async function operationsWithdraw(
   cancellation: Cancellation,
 ): Promise<OperationState | undefined> {
   const called = await client.query<{ locked: string | null }>(
-    `SELECT ${cancellationFunction}($1, $2, $3, $4, $5) AS locked`,
-    [
-      cancellation.partition.tenant,
-      cancellation.partition.project,
-      cancellation.operation,
-      cancellation.authority.kind,
-      cancellation.authority.subject,
-    ],
+    sql`SELECT cancel_pending_operation(${cancellation.partition.tenant}, ${cancellation.partition.project}, ${cancellation.operation}, ${cancellation.authority.kind}, ${cancellation.authority.subject})::text AS locked`,
   );
   const row = called.rows[0];
   if (row === undefined || called.rows.length !== 1) {
@@ -387,13 +396,15 @@ async function operationsSettled(
   cancellation: Cancellation,
 ): Promise<OperationStanding> {
   const found = await client.query<OperationRow>(
-    `SELECT ${operationRowColumns} FROM ${operationRowFrom}
-      WHERE o.tenant = $1 AND o.project = $2 AND o.operation = $3`,
-    [
-      cancellation.partition.tenant,
-      cancellation.partition.project,
-      cancellation.operation,
-    ],
+    sql`SELECT o.tenant, o.project, o.operation, o.authority_kind, o.admission,
+           d.state, d.lifecycle_generation, d.ordinal
+      FROM operation o
+      JOIN decision_input d
+        ON d.tenant = o.tenant AND d.project = o.project
+       AND d.input_kind = 'Operation' AND d.input_id = o.operation
+     WHERE o.tenant = ${cancellation.partition.tenant}
+       AND o.project = ${cancellation.partition.project}
+       AND o.operation = ${cancellation.operation}`,
   );
   return operationRowStanding(operationsRow(found));
 }
@@ -433,9 +444,15 @@ export async function postgresOperationsRead(
   operation: OperationId,
 ): Promise<OperationStanding | undefined> {
   const found = await pool.query<OperationRow>(
-    `SELECT ${operationRowColumns} FROM ${operationRowFrom}
-      WHERE o.tenant = $1 AND o.project = $2 AND o.operation = $3`,
-    [partition.tenant, partition.project, operation],
+    sql`SELECT o.tenant, o.project, o.operation, o.authority_kind, o.admission,
+           d.state, d.lifecycle_generation, d.ordinal
+      FROM operation o
+      JOIN decision_input d
+        ON d.tenant = o.tenant AND d.project = o.project
+       AND d.input_kind = 'Operation' AND d.input_id = o.operation
+     WHERE o.tenant = ${partition.tenant}
+       AND o.project = ${partition.project}
+       AND o.operation = ${operation}`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : operationRowStanding(row);

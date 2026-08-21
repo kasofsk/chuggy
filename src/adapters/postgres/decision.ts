@@ -39,6 +39,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { assertNever } from "../../domain/assertNever.ts";
@@ -66,14 +67,8 @@ import {
   postgresOwnershipHonours,
   postgresOwnershipLockKnown,
 } from "./ownership.ts";
-import { postgresTransaction } from "./pool.ts";
+import { postgresTransaction, postgresTextParameter } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
-import {
-  accountIdentityFunction,
-  continuationFunction,
-  draftReleaseFunction,
-  notificationPublishFunction,
-} from "./schema.ts";
 
 /** One decision-input row as the transaction reads it under its lock. */
 interface DecisionCauseRow {
@@ -118,10 +113,10 @@ async function decisionLockCause(
   cause: DecisionCause,
 ): Promise<DecisionCauseRow> {
   const found = await client.query<DecisionCauseRow>(
-    `SELECT state, outcome_code, decided_seq FROM decision_input
-      WHERE tenant = $1 AND project = $2 AND input_kind = $3 AND input_id = $4
+    sql`SELECT state, outcome_code, decided_seq FROM decision_input
+      WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+        AND input_kind = ${postgresTextParameter(cause.kind)} AND input_id = ${cause.id}
       FOR UPDATE`,
-    [partition.tenant, partition.project, cause.kind, cause.id],
   );
   const row = found.rows[0];
   if (row === undefined) {
@@ -145,25 +140,17 @@ async function decisionSettle(
 ): Promise<void> {
   const succeeded = settled.settled === "Succeeded";
   await client.query(
-    `UPDATE decision_input
-        SET state = $4, terminal_at = now(),
-            settled_authority_kind = $5, settled_authority_subject = $6,
-            decided_seq = $7, outcome_code = $8,
-            refused_head = $9, refused_lifecycle_generation = $10
-      WHERE tenant = $1 AND project = $2 AND input_kind = $3 AND input_id = $11`,
-    [
-      lease.partition.tenant,
-      lease.partition.project,
-      cause.kind,
-      settled.settled === "Succeeded" ? "Journaled" : settled.settled,
-      projectTicketWriterAuthorityKind,
-      lease.owner,
-      succeeded ? settled.seq : null,
-      settled.settled === "Refused" ? settled.code : null,
-      settled.settled === "Refused" ? refusedAt?.head : null,
-      settled.settled === "Refused" ? refusedAt?.lifecycleGeneration : null,
-      cause.id,
-    ],
+    sql`UPDATE decision_input
+        SET state = ${settled.settled === "Succeeded" ? "Journaled" : settled.settled},
+            terminal_at = now(),
+            settled_authority_kind = ${projectTicketWriterAuthorityKind},
+            settled_authority_subject = ${lease.owner},
+            decided_seq = ${succeeded ? settled.seq : null},
+            outcome_code = ${settled.settled === "Refused" ? settled.code : null},
+            refused_head = ${settled.settled === "Refused" ? (refusedAt?.head ?? null) : null},
+            refused_lifecycle_generation = ${settled.settled === "Refused" ? (refusedAt?.lifecycleGeneration ?? null) : null}
+      WHERE tenant = ${lease.partition.tenant} AND project = ${lease.partition.project}
+        AND input_kind = ${postgresTextParameter(cause.kind)} AND input_id = ${cause.id}`,
   );
 }
 
@@ -177,20 +164,12 @@ async function decisionProject(
 ): Promise<void> {
   for (const row of projection) {
     await client.query(
-      `INSERT INTO ticket_projection
+      sql`INSERT INTO ticket_projection
        (tenant, project, ticket, phase, seq, configuration_revision, configuration_digest)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       VALUES (${partition.tenant}, ${partition.project}, ${row.ticket}, ${row.phase}, ${seq},
+               ${configuration.configurationRevision}, ${configuration.configurationDigest})
        ON CONFLICT (tenant, project, ticket)
        DO UPDATE SET phase = EXCLUDED.phase, seq = EXCLUDED.seq`,
-      [
-        partition.tenant,
-        partition.project,
-        row.ticket,
-        row.phase,
-        seq,
-        configuration.configurationRevision,
-        configuration.configurationDigest,
-      ],
     );
   }
 }
@@ -205,57 +184,34 @@ async function replaceDispatchView(
   },
 ): Promise<void> {
   await client.query(
-    `INSERT INTO dispatch_view
+    sql`INSERT INTO dispatch_view
        (tenant,project,recovery_epoch,watermark,schema_version,digest)
-     VALUES ($1,$2,$3,$4,1,$5)
+     VALUES (${lease.partition.tenant},${lease.partition.project},${lease.recoveryEpoch},${watermark},1,${view.digest})
      ON CONFLICT (tenant,project) DO UPDATE SET
        recovery_epoch=EXCLUDED.recovery_epoch,watermark=EXCLUDED.watermark,
        schema_version=EXCLUDED.schema_version,digest=EXCLUDED.digest`,
-    [
-      lease.partition.tenant,
-      lease.partition.project,
-      lease.recoveryEpoch,
-      watermark,
-      view.digest,
-    ],
   );
   await client.query(
-    `DELETE FROM dispatch_candidate WHERE tenant=$1 AND project=$2`,
-    [lease.partition.tenant, lease.partition.project],
+    sql`DELETE FROM dispatch_candidate WHERE tenant=${lease.partition.tenant} AND project=${lease.partition.project}`,
   );
   for (const candidate of view.candidates) {
     await client.query(
-      `INSERT INTO dispatch_candidate
+      sql`INSERT INTO dispatch_candidate
        (tenant,project,ticket,ticket_version,work_fanout,program,rework_policy,
         finalization_pricing,resume_pricing,finalizer,configuration_revision,
         configuration_digest,configuration_canonical)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-      [
-        lease.partition.tenant,
-        lease.partition.project,
-        candidate.ticket,
-        candidate.ticketVersion,
-        candidate.workFanout,
-        JSON.stringify(candidate.program),
-        JSON.stringify(candidate.reworkPolicy),
-        JSON.stringify(candidate.finalizationPricing),
-        candidate.resumePricing,
-        candidate.finalizer,
-        candidate.configurationRevision,
-        candidate.configurationDigest,
-        candidate.configurationCanonical,
-      ],
+       VALUES (${lease.partition.tenant},${lease.partition.project},${candidate.ticket},
+               ${candidate.ticketVersion},${candidate.workFanout},
+               ${JSON.stringify(candidate.program)},${JSON.stringify(candidate.reworkPolicy)},
+               ${JSON.stringify(candidate.finalizationPricing)},${candidate.resumePricing},
+               ${candidate.finalizer},${candidate.configurationRevision},
+               ${candidate.configurationDigest},${candidate.configurationCanonical})`,
     );
     for (const dependency of candidate.dependencies)
       await client.query(
-        `INSERT INTO dispatch_candidate_dependency
-         (tenant,project,ticket,dependency) VALUES ($1,$2,$3,$4)`,
-        [
-          lease.partition.tenant,
-          lease.partition.project,
-          candidate.ticket,
-          dependency,
-        ],
+        sql`INSERT INTO dispatch_candidate_dependency
+         (tenant,project,ticket,dependency)
+         VALUES (${lease.partition.tenant},${lease.partition.project},${candidate.ticket},${dependency})`,
       );
   }
 }
@@ -272,9 +228,8 @@ async function decisionConfiguration(
     configuration_revision: string | null;
     configuration_digest: string | null;
   }>(
-    `SELECT configuration_revision,configuration_digest FROM ticket_projection
-      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [partition.tenant, partition.project, ticket],
+    sql`SELECT configuration_revision,configuration_digest FROM ticket_projection
+      WHERE tenant=${partition.tenant} AND project=${partition.project} AND ticket=${ticket}`,
   );
   const row = found.rows[0];
   if (
@@ -305,39 +260,25 @@ async function decisionExecution(
   for (const request of outcome.materialization.execution) {
     const spawns = request.kind !== "CancelTicketWork";
     await client.query(
-      `INSERT INTO execution_request
+      sql`INSERT INTO execution_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
         ticket_version, kind, capacity_account, configuration_revision,
         configuration_digest)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
-               CASE WHEN $9::boolean THEN ${accountIdentityFunction}($1,$2) END,
-               $10,$11)`,
-      [
-        partition.tenant,
-        partition.project,
-        request.request,
-        seq,
-        request.effectPosition,
-        request.ticket,
-        request.ticketVersion,
-        request.kind,
-        spawns,
-        spawns ? configuration.configurationRevision : null,
-        spawns ? configuration.configurationDigest : null,
-      ],
+       VALUES (${partition.tenant},${partition.project},${request.request},${seq},
+               ${request.effectPosition},${request.ticket},${request.ticketVersion},
+               ${request.kind},
+               CASE WHEN ${spawns}::boolean
+                 THEN project_capacity_account(${partition.tenant},${partition.project})
+               END,
+               ${spawns ? configuration.configurationRevision : null},
+               ${spawns ? configuration.configurationDigest : null})`,
     );
     for (const task of request.tasks) {
       await client.query(
-        `INSERT INTO execution_request_task
-         (tenant, project, request, task, kind, stage) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [
-          partition.tenant,
-          partition.project,
-          request.request,
-          task.task,
-          task.kind,
-          task.kind === "Evaluation" ? task.stage : null,
-        ],
+        sql`INSERT INTO execution_request_task
+         (tenant, project, request, task, kind, stage)
+         VALUES (${partition.tenant},${partition.project},${request.request},${task.task},
+                 ${task.kind},${task.kind === "Evaluation" ? task.stage : null})`,
       );
     }
   }
@@ -351,26 +292,19 @@ async function decisionFinalization(
   const seq = outcome.entry.seq;
   for (const ticket of outcome.materialization.fulfillFinalizationFor) {
     await client.query(
-      `UPDATE finalization_request SET state='Fulfilled'
-        WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
-      [partition.tenant, partition.project, ticket],
+      sql`UPDATE finalization_request SET state='Fulfilled'
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND ticket=${ticket} AND state='Open'`,
     );
   }
   for (const request of outcome.materialization.finalization) {
     await client.query(
-      `INSERT INTO finalization_request
+      sql`INSERT INTO finalization_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
-        ticket_version, request_generation) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [
-        partition.tenant,
-        partition.project,
-        request.request,
-        seq,
-        request.effectPosition,
-        request.ticket,
-        request.ticketVersion,
-        request.requestGeneration,
-      ],
+        ticket_version, request_generation)
+       VALUES (${partition.tenant},${partition.project},${request.request},${seq},
+               ${request.effectPosition},${request.ticket},${request.ticketVersion},
+               ${request.requestGeneration})`,
     );
   }
 }
@@ -384,49 +318,35 @@ async function decisionActions(
   const resolved = outcome.materialization.resolveAction;
   for (const ticket of outcome.materialization.withdrawActionsFor) {
     await client.query(
-      `UPDATE native_action SET state='Withdrawn'
-        WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
-      [partition.tenant, partition.project, ticket],
+      sql`UPDATE native_action SET state='Withdrawn'
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND ticket=${ticket} AND state='Open'`,
     );
   }
   for (const action of outcome.materialization.actions) {
     await client.query(
-      `INSERT INTO native_action
+      sql`INSERT INTO native_action
        (tenant, project, action, authorizing_seq, effect_position, ticket,
         action_version, kind, reason, required_capability)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [
-        partition.tenant,
-        partition.project,
-        action.action,
-        seq,
-        action.effectPosition,
-        action.ticket,
-        action.version,
-        action.kind,
-        action.reason,
-        action.capability,
-      ],
+       VALUES (${partition.tenant},${partition.project},${action.action},${seq},
+               ${action.effectPosition},${action.ticket},${action.version},
+               ${action.kind},${action.reason},${action.capability})`,
     );
     for (const resolution of action.resolutions) {
       await client.query(
-        `INSERT INTO native_action_resolution
-         (tenant, project, action, resolution) VALUES ($1,$2,$3,$4)`,
-        [partition.tenant, partition.project, action.action, resolution],
+        sql`INSERT INTO native_action_resolution
+         (tenant, project, action, resolution)
+         VALUES (${partition.tenant},${partition.project},${action.action},${resolution})`,
       );
     }
   }
   if (resolved !== undefined) {
-    const changed = await client.query(
-      `UPDATE native_action SET state='Resolved'
-        WHERE tenant=$1 AND project=$2 AND action=$3 AND authorizing_seq=$4 AND state='Open'
+    const changed = await client.query<{ action: string }>(
+      sql`UPDATE native_action SET state='Resolved'
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND action=${resolved.action} AND authorizing_seq=${resolved.authorizingSeq}
+          AND state='Open'
         RETURNING action`,
-      [
-        partition.tenant,
-        partition.project,
-        resolved.action,
-        resolved.authorizingSeq,
-      ],
     );
     if (changed.rows.length !== 1)
       throw new Error("native action resolution fence failed");
@@ -441,43 +361,31 @@ async function decisionContinuation(
   const seq = outcome.entry.seq;
   const continuation = outcome.materialization.continuation;
   if (continuation !== undefined) {
-    const allocated = await client.query<{ ordinal: string }>(
-      `UPDATE project SET ingress_next=ingress_next+1
-        WHERE tenant=$1 AND project=$2 RETURNING (ingress_next-1)::text AS ordinal`,
-      [partition.tenant, partition.project],
+    const allocated = await client.query<{ ordinal: string | null }>(
+      sql`UPDATE project SET ingress_next=ingress_next+1
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+        RETURNING (ingress_next-1)::text AS ordinal`,
     );
     const ordinal = allocated.rows[0]?.ordinal;
-    if (ordinal === undefined)
+    if (ordinal === undefined || ordinal === null)
       throw new Error("continuation project disappeared");
     await client.query(
-      `INSERT INTO project_continuation
+      sql`INSERT INTO project_continuation
        (tenant, project, continuation, kind, authorizing_seq, effect_position,
         ticket, expected_ticket_version, expected_phase, task_set_generation)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [
-        partition.tenant,
-        partition.project,
-        continuation.continuation,
-        continuation.kind,
-        seq,
-        outcome.entry.rec.effects.length,
-        continuation.ticket,
-        continuation.expectedTicketVersion,
-        continuation.expectedPhase,
-        continuation.taskSetGeneration,
-      ],
+       VALUES (${partition.tenant},${partition.project},${continuation.continuation},
+               ${continuation.kind},${seq},${outcome.entry.rec.effects.length},
+               ${continuation.ticket},${continuation.expectedTicketVersion},
+               ${continuation.expectedPhase},${continuation.taskSetGeneration})`,
     );
-    await client.query(`SELECT ${continuationFunction}($1,$2,$3,$4)`, [
-      partition.tenant,
-      partition.project,
-      ordinal,
-      continuation.continuation,
-    ]);
+    await client.query<{ published: string | null }>(
+      sql`SELECT publish_continuation(${partition.tenant},${partition.project},${ordinal}::bigint,${continuation.continuation})::text AS published`,
+    );
     await client.query(
-      `INSERT INTO project_readiness (tenant, project, ready, generation)
-       VALUES ($1,$2,true,1) ON CONFLICT (tenant,project)
+      sql`INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES (${partition.tenant},${partition.project},true,1)
+       ON CONFLICT (tenant,project)
        DO UPDATE SET ready=true, generation=project_readiness.generation+1`,
-      [partition.tenant, partition.project],
     );
   }
 }
@@ -502,16 +410,8 @@ async function publishNotification(
   projectSequence: number | null,
   authoringVersion: number | null,
 ): Promise<void> {
-  await client.query(
-    `SELECT ${notificationPublishFunction}($1,$2,$3,$4,$5,$6)`,
-    [
-      partition.tenant,
-      partition.project,
-      kind,
-      resource,
-      projectSequence,
-      authoringVersion,
-    ],
+  await client.query<{ published: string | null }>(
+    sql`SELECT publish_project_notification(${partition.tenant},${partition.project},${kind},${resource},${projectSequence},${authoringVersion})::text AS published`,
   );
 }
 
@@ -522,17 +422,8 @@ async function decisionReleaseOutcome(
   const fence = decision.draftRelease;
   if (fence === undefined) return decision.outcome;
   const releaseFence = async (commit: boolean): Promise<boolean> => {
-    const found = await client.query<{ matched: boolean }>(
-      `SELECT ${draftReleaseFunction}($1,$2,$3,$4,$5,$6,$7) AS matched`,
-      [
-        decision.lease.partition.tenant,
-        decision.lease.partition.project,
-        fence.ticket,
-        fence.authoringVersion,
-        fence.configurationRevision,
-        fence.configurationDigest,
-        commit,
-      ],
+    const found = await client.query<{ matched: boolean | null }>(
+      sql`SELECT release_draft_fenced(${decision.lease.partition.tenant},${decision.lease.partition.project},${fence.ticket},${fence.authoringVersion},${fence.configurationRevision},${fence.configurationDigest},${commit})::boolean AS matched`,
     );
     return found.rows[0]?.matched === true;
   };
@@ -542,13 +433,10 @@ async function decisionReleaseOutcome(
     canonical: string;
     digest: string;
   }>(
-    `SELECT canonical,digest FROM configuration_revision
-      WHERE tenant=$1 AND project=$2 AND revision=$3`,
-    [
-      decision.lease.partition.tenant,
-      decision.lease.partition.project,
-      fence.configurationRevision,
-    ],
+    sql`SELECT canonical,digest FROM configuration_revision
+      WHERE tenant=${decision.lease.partition.tenant}
+        AND project=${decision.lease.partition.project}
+        AND revision=${fence.configurationRevision}`,
   );
   const revision = configuration.rows[0];
   if (revision === undefined)
@@ -613,9 +501,8 @@ async function decisionAdvanceTicketIdentity(
 ): Promise<void> {
   if (outcome.entry.event.type !== "ReleaseTicket") return;
   await client.query(
-    `UPDATE project SET ticket_next=greatest(ticket_next,$3)
-      WHERE tenant=$1 AND project=$2`,
-    [partition.tenant, partition.project, outcome.entry.event.value.ticket + 1],
+    sql`UPDATE project SET ticket_next=greatest(ticket_next,${outcome.entry.event.value.ticket + 1})
+      WHERE tenant=${partition.tenant} AND project=${partition.project}`,
   );
 }
 
@@ -679,17 +566,11 @@ async function decisionApply(
   switch (outcome.outcome) {
     case "Stale":
       await client.query(
-        `UPDATE decision_input SET state='Stale', terminal_at=now(),
-          settled_authority_kind=$5, settled_authority_subject=$6
-         WHERE tenant=$1 AND project=$2 AND input_kind=$3 AND input_id=$4`,
-        [
-          lease.partition.tenant,
-          lease.partition.project,
-          cause.kind,
-          cause.id,
-          projectTicketWriterAuthorityKind,
-          lease.owner,
-        ],
+        sql`UPDATE decision_input SET state='Stale', terminal_at=now(),
+          settled_authority_kind=${projectTicketWriterAuthorityKind},
+          settled_authority_subject=${lease.owner}
+         WHERE tenant=${lease.partition.tenant} AND project=${lease.partition.project}
+           AND input_kind=${postgresTextParameter(cause.kind)} AND input_id=${cause.id}`,
       );
       return { decided: "Stale" };
     case "Refused":

@@ -33,6 +33,7 @@
  * stay: each is independently red on deletion.
  */
 
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
@@ -55,7 +56,7 @@ import {
   asTenantId,
   type Partition,
 } from "../../interpreter/projectStore.ts";
-import { postgresTransaction } from "./pool.ts";
+import { postgresTransaction, postgresTextParameter } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   observe,
@@ -102,19 +103,14 @@ async function releaseDraftSource(
     digest: string;
     canonical: string;
   }>(
-    `SELECT r.authoring,c.digest,c.canonical FROM draft_revision r
+    sql`SELECT r.authoring,c.digest,c.canonical FROM draft_revision r
        JOIN configuration_revision c
          ON c.tenant=r.tenant AND c.project=r.project
         AND c.revision=r.configuration_revision
-      WHERE r.tenant=$1 AND r.project=$2 AND r.ticket=$3
-        AND r.authoring_version=$4 AND r.configuration_revision=$5`,
-    [
-      partition.tenant,
-      partition.project,
-      command.ticket,
-      command.authoringVersion,
-      command.configurationRevision,
-    ],
+      WHERE r.tenant=${partition.tenant} AND r.project=${partition.project}
+        AND r.ticket=${command.ticket}
+        AND r.authoring_version=${command.authoringVersion}
+        AND r.configuration_revision=${command.configurationRevision}`,
   );
   const found = revision.rows[0];
   if (found === undefined)
@@ -172,17 +168,12 @@ async function operationSource(
     };
   }
   const action = await pool.query<{ ticket: string; state: string }>(
-    `SELECT a.ticket::text, a.state FROM native_action a
+    sql`SELECT a.ticket::text, a.state FROM native_action a
       JOIN native_action_resolution r USING (tenant, project, action)
-     WHERE a.tenant=$1 AND a.project=$2 AND a.action=$3
-       AND a.authorizing_seq=$4 AND r.resolution=$5`,
-    [
-      partition.tenant,
-      partition.project,
-      parsed.value.action,
-      parsed.value.authorizingSeq,
-      parsed.value.resolution,
-    ],
+     WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+       AND a.action=${parsed.value.action}
+       AND a.authorizing_seq=${parsed.value.authorizingSeq}
+       AND r.resolution=${postgresTextParameter(parsed.value.resolution)}`,
   );
   const open = action.rows[0];
   if (open === undefined)
@@ -250,9 +241,9 @@ export async function postgresReadinessReady(
   partitionsMax: number,
 ): Promise<readonly Readiness[]> {
   const found = await pool.query<ReadinessRow>(
-    `SELECT tenant, project, generation FROM project_readiness
-      WHERE ready ORDER BY tenant, project LIMIT $1`,
-    [readinessBounded(partitionsMax, "ready partitions")],
+    sql`SELECT tenant, project, generation FROM project_readiness
+      WHERE ready ORDER BY tenant, project
+      LIMIT ${readinessBounded(partitionsMax, "ready partitions")}`,
   );
   return found.rows.map((row) => ({
     partition: {
@@ -274,11 +265,11 @@ export async function postgresReadinessConsumable(
     throw new RangeError("aging interval must be positive");
   }
   const found = await pool.query<InboxRow>(
-    `WITH heads AS (
+    sql`WITH heads AS (
        SELECT DISTINCT ON (d.base_priority)
          d.ordinal, d.input_kind, d.input_id, d.base_priority, d.created_at
        FROM decision_input d
-       WHERE d.tenant=$1 AND d.project=$2 AND d.state='Pending'
+       WHERE d.tenant=${partition.tenant} AND d.project=${partition.project} AND d.state='Pending'
        ORDER BY d.base_priority, d.ordinal
      )
      SELECT h.ordinal, h.input_kind, h.input_id, h.base_priority,
@@ -286,13 +277,12 @@ export async function postgresReadinessConsumable(
             c.expected_ticket_version::text, c.expected_phase,
             c.task_set_generation::text
        FROM heads h
-       LEFT JOIN operation o ON h.input_kind='Operation' AND o.tenant=$1 AND o.project=$2 AND o.operation=h.input_id
-       LEFT JOIN project_continuation c ON h.input_kind='Continuation' AND c.tenant=$1 AND c.project=$2 AND c.continuation=h.input_id
+       LEFT JOIN operation o ON h.input_kind='Operation' AND o.tenant=${partition.tenant} AND o.project=${partition.project} AND o.operation=h.input_id
+       LEFT JOIN project_continuation c ON h.input_kind='Continuation' AND c.tenant=${partition.tenant} AND c.project=${partition.project} AND c.continuation=h.input_id
       ORDER BY greatest(0,
         CASE h.base_priority WHEN 'Safety' THEN 0 WHEN 'Completion' THEN 1 WHEN 'Continuation' THEN 2 ELSE 3 END
-        - floor(extract(epoch FROM (statement_timestamp()-h.created_at))/$3)::integer), h.ordinal
+        - floor(extract(epoch FROM (statement_timestamp()-h.created_at))/${agingIntervalSeconds})::integer), h.ordinal
       LIMIT 1`,
-    [partition.tenant, partition.project, agingIntervalSeconds],
   );
   const row = found.rows[0];
   const depths = await pool.query<{
@@ -300,11 +290,11 @@ export async function postgresReadinessConsumable(
     depth: string;
     oldest_seconds: string;
   }>(
-    `SELECT base_priority, count(*)::text AS depth,
-            extract(epoch FROM statement_timestamp()-min(created_at))::text AS oldest_seconds
-       FROM decision_input WHERE tenant=$1 AND project=$2 AND state='Pending'
-       GROUP BY base_priority`,
-    [partition.tenant, partition.project],
+    sql`SELECT base_priority, count(*)::text AS depth,
+            coalesce(extract(epoch FROM statement_timestamp()-min(created_at)),0)::text AS oldest_seconds
+       FROM decision_input
+      WHERE tenant=${partition.tenant} AND project=${partition.project} AND state='Pending'
+      GROUP BY base_priority`,
   );
   for (const depth of depths.rows) {
     observe(() => {
@@ -337,10 +327,10 @@ async function readinessWorkRemains(
   client: pg.PoolClient,
   partition: Partition,
 ): Promise<boolean> {
-  const remaining = await client.query(
-    `SELECT 1 FROM decision_input
-      WHERE tenant = $1 AND project = $2 AND state = 'Pending' LIMIT 1`,
-    [partition.tenant, partition.project],
+  const remaining = await client.query<{ one: number }>(
+    sql`SELECT 1 AS one FROM decision_input
+      WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+        AND state = 'Pending' LIMIT 1`,
   );
   return remaining.rows.length > 0;
 }
@@ -352,9 +342,9 @@ export async function postgresReadinessClear(
 ): Promise<ReadinessCleared> {
   return postgresTransaction(pool, async (client) => {
     const locked = await client.query<ReadinessRow>(
-      `SELECT tenant, project, generation FROM project_readiness
-        WHERE tenant = $1 AND project = $2 FOR UPDATE`,
-      [readiness.partition.tenant, readiness.partition.project],
+      sql`SELECT tenant, project, generation FROM project_readiness
+        WHERE tenant = ${readiness.partition.tenant}
+          AND project = ${readiness.partition.project} FOR UPDATE`,
     );
     const row = locked.rows[0];
     if (row === undefined) {
@@ -373,9 +363,9 @@ export async function postgresReadinessClear(
       return { cleared: "WorkRemains" };
     }
     await client.query(
-      `UPDATE project_readiness SET ready = false
-        WHERE tenant = $1 AND project = $2`,
-      [readiness.partition.tenant, readiness.partition.project],
+      sql`UPDATE project_readiness SET ready = false
+        WHERE tenant = ${readiness.partition.tenant}
+          AND project = ${readiness.partition.project}`,
     );
     return { cleared: "Cleared" };
   });

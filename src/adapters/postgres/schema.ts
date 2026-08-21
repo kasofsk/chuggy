@@ -233,16 +233,16 @@ export const ticketServiceRole = "chuggy_ticket_service";
 export const apiRole = "chuggy_api";
 export const selectorServiceRole = "chuggy_selector_service";
 
-/** The whole of a cancellation, named once so the grant, the adapter and the suite agree on it. */
+/** Each server routine's name, stated once so the definition and its grants cannot drift; the exported ones are how the suites address them. */
 export const cancellationFunction = "cancel_pending_operation";
 export const acceptanceFunction = "accept_operation";
 export const dispatchAcceptanceFunction = "accept_dispatch_operation";
 export const continuationFunction = "publish_continuation";
-export const configurationCreateFunction = "create_configuration_revision";
-export const draftCreateFunction = "create_draft";
-export const draftReviseFunction = "revise_draft";
-export const draftDeleteFunction = "delete_draft";
-export const draftReleaseFunction = "release_draft_fenced";
+const configurationCreateFunction = "create_configuration_revision";
+const draftCreateFunction = "create_draft";
+const draftReviseFunction = "revise_draft";
+const draftDeleteFunction = "delete_draft";
+const draftReleaseFunction = "release_draft_fenced";
 export const notificationPublishFunction = "publish_project_notification";
 export const boundaryOwnerRole = "chuggy_boundary_owner";
 

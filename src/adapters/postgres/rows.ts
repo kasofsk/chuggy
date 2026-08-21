@@ -27,7 +27,13 @@ import {
   type ProjectStanding,
 } from "../../interpreter/projectStore.ts";
 
-/** One project row, with the liveness the database computed for its lease. */
+/**
+ * One project row, with the liveness the database computed for its lease. The
+ * liveness column is a SQL expression, and the checker cannot prove an
+ * expression non-null in every clause that carries it, so the field admits a
+ * null; a null means the same thing false does — no live lease — and is read
+ * that way.
+ */
 export interface ProjectRow {
   readonly tenant: string;
   readonly project: string;
@@ -37,15 +43,8 @@ export interface ProjectRow {
   readonly head: string;
   readonly owner: string | null;
   readonly recovery_epoch: string | null;
-  readonly lease_live: boolean;
+  readonly lease_live: boolean | null;
 }
-
-/** The columns every read of a project needs, named once so the queries cannot drift apart. */
-export const projectRowColumns = `
-  tenant, project, lifecycle, lifecycle_generation, fencing_epoch, head,
-  owner, recovery_epoch,
-  (owner IS NOT NULL AND lease_expires_at > now()) AS lease_live
-`;
 
 /** Reads a counter column, refusing a value JavaScript cannot represent exactly. */
 export function projectRowCounter(value: string, what: string): number {

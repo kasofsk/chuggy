@@ -77,7 +77,10 @@ stage() { # <label> <command>...
 }
 
 stage "  typecheck" ./node_modules/.bin/tsc --noEmit
-stage "  lint     " ./node_modules/.bin/eslint .
+# Lint is the server-free half of the query checking: the SafeQL block in
+# eslint.config.js activates on CHUG_SAFEQL_DATABASE_URL, and an operator
+# who exports it shell-wide must not make this stage need a database.
+stage "  lint     " env CHUG_SAFEQL_DATABASE_URL= ./node_modules/.bin/eslint .
 stage "  format   " ./node_modules/.bin/prettier --check --log-level warn .
 
 # The runner is handed its list rather than discovering one, and an empty

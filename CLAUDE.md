@@ -27,10 +27,10 @@ A fresh clone needs three things once, and none of them can set itself:
 ```sh
 npm ci              # the pinned quint, and the TypeScript toolchain the gates run
 just hooks          # git config core.hooksPath .githooks
-docker              # running, or CHUG_PG_URL naming a PostgreSQL the gate may use
+docker              # running, or CHUG_PG_URL naming a PostgreSQL the server gates may use
 ```
 
-The pre-commit hook runs the fast subset. It needs that `git config` because git config is not tracked and nothing in a checkout can set it for you; `npm ci` is what turns `check-boundaries` and `check-source` from could-not-run into a verdict, and a could-not-run is not a pass. A server is the same kind of precondition: `check-postgres` drives the durable authority against a real PostgreSQL and can reach no verdict without one, so it says so and exits 2. It is not in the hook, and it prints its own remedy.
+The pre-commit hook runs the fast subset. It needs that `git config` because git config is not tracked and nothing in a checkout can set it for you; `npm ci` is what turns `check-boundaries` and `check-source` from could-not-run into a verdict, and a could-not-run is not a pass. A server is the same kind of precondition: `check-postgres` drives the durable authority against a real PostgreSQL, `check-queries` asks the same server whether every tagged query and row type is true, and neither can reach a verdict without one, so each says so and exits 2. Neither is in the hook, and each prints its own remedy.
 
 Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
 slowest by far is `check-model.sh`, which is why it runs last and never in the

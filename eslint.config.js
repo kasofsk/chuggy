@@ -27,6 +27,8 @@
 // capability is what an adapter is for and banning it there would ban the
 // layer. What stands behind a stub that quietly read a clock is the reviewer
 // and the suites, which is weaker, and is why the gap is one directory wide.
+// The query checking scoped to `src/adapters/postgres/` at the bottom is a
+// different subject — what a query claims, never what the layer may reach.
 //
 // RULE 3 — every discriminated union is switched exhaustively, with
 // `assertNever` in the default arm. `switch-exhaustiveness-check` is the
@@ -49,6 +51,18 @@
 // strict set would mean disabling its most-cited rule everywhere, which is a
 // worse statement of the same position. The individually strict rules that do
 // not collide are enabled by name below.
+//
+// THE ADAPTER'S QUERIES ARE CHECKED AGAINST A LIVE SCHEMA when
+// `CHUG_SAFEQL_DATABASE_URL` names a migrated database. The SafeQL block at
+// the bottom loads its plugin only inside that guard, so a broken SQL parser
+// can degrade only `.chug/tasks/check-queries.sh` — the gate that sets the
+// variable — and never a plain `eslint .`. An editor opts in by exporting the
+// variable against a migrated database of its own and gets the same
+// diagnostics inline, with `--fix` writing the inferred row type at the call
+// site. The unconditional block beside it is the half that needs no server:
+// a query written as an untagged string, or written on a handle the checker
+// does not read, is invisible to SafeQL either way, so both are findings on
+// every run.
 
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
@@ -82,6 +96,52 @@ const noAmbientDraws = (subject) => [
     object: "Math",
     property: "random",
     message: `${subject} takes its draws as arguments.`,
+  },
+];
+
+// A query the checker cannot see is a claim nothing checks: an untagged
+// string reaches the server as SQL and never reaches SafeQL, and so does a
+// tagged one on a handle the checker's wrapper pattern does not name. A
+// second values argument is unchecked too: pg replaces the values carried by
+// the checked tag with that argument. So all three forms are findings
+// unconditionally — no server needed — with transaction control exempt
+// everywhere and the migration executor's variables exempt only where the
+// caller passes their names.
+const adapterQueriesTagged = (runtimeExemption) => [
+  "error",
+  {
+    selector:
+      "CallExpression[callee.property.name='query'][arguments.0.type='TemplateLiteral']",
+    message:
+      "adapter queries are sql-tagged: an untagged template is invisible to check-queries.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='query'][arguments.0.type='TaggedTemplateExpression']:not([arguments.0.tag.name='sql'])",
+    message:
+      "adapter queries use the sql tag from @ts-safeql/sql-tag; another tag is not checked.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='query'][arguments.0.type='TaggedTemplateExpression'][arguments.length>1]",
+    message:
+      "sql-tagged queries pass no separate values: pg would replace the checked tag's values.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='query'][arguments.0.type='Literal']:not([arguments.0.value=/^(BEGIN|COMMIT|ROLLBACK|BEGIN ISOLATION LEVEL [A-Z ]+|SET TRANSACTION [A-Z, ]+)$/])",
+    message:
+      "adapter queries are sql-tagged: a plain string is invisible to check-queries. Transaction control is the exemption.",
+  },
+  {
+    selector: `CallExpression[callee.property.name='query'][arguments.0.type!='Literal'][arguments.0.type!='TemplateLiteral'][arguments.0.type!='TaggedTemplateExpression']${runtimeExemption}`,
+    message: "a query assembled at runtime cannot be checked.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='query']:not([callee.object.name=/^(client|pool)$/])",
+    message:
+      "check-queries reads the queries on the client and pool handles; one on another handle is checked by nothing.",
   },
 ];
 
@@ -190,13 +250,59 @@ export default tseslint.config(
       "no-restricted-properties": noAmbientDraws("the interpreter"),
     },
   },
+  // Untagged query strings and unread handles are findings everywhere in the
+  // adapter; only the migration executor's own file may hand `.query` its
+  // named variables.
+  {
+    files: ["src/adapters/postgres/**/*.ts"],
+    rules: { "no-restricted-syntax": adapterQueriesTagged("") },
+  },
+  {
+    files: ["src/adapters/postgres/pool.ts"],
+    rules: {
+      "no-restricted-syntax": adapterQueriesTagged(
+        ":not([arguments.0.name=/^(statement|migrationLedger)$/])",
+      ),
+    },
+  },
+  // The adapter's queries, verified against the database the variable names.
+  // The untaken branch never evaluates, so the plugin and its SQL parser
+  // load only when the variable is set.
+  ...(process.env.CHUG_SAFEQL_DATABASE_URL
+    ? [
+        {
+          files: ["src/adapters/postgres/**/*.ts"],
+          plugins: {
+            "@ts-safeql": {
+              rules: (await import("@ts-safeql/eslint-plugin")).rules,
+            },
+          },
+          rules: {
+            "@ts-safeql/check-sql": [
+              "error",
+              {
+                connections: [
+                  {
+                    databaseUrl: process.env.CHUG_SAFEQL_DATABASE_URL,
+                    targets: [{ wrapper: { regex: "(client|pool)\\.query" } }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ]
+    : []),
   // The configs themselves. They sit outside tsconfig.json's include, so the
   // type-aware rules have no program to ask and are turned off rather than
   // left to fail on every run.
   {
     files: ["**/*.js", "**/*.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
-    languageOptions: { parserOptions: { projectService: false } },
+    languageOptions: {
+      globals: { process: "readonly" },
+      parserOptions: { projectService: false },
+    },
   },
   {
     files: ["**/*.cjs"],
