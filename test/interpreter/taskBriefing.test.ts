@@ -36,6 +36,7 @@ import {
   runtimeChangedFilesMax,
   type BlessedPractice,
   type BriefingFault,
+  type BriefingSection,
   type BriefingView,
   type PurposeBlock,
   type RuntimeFacts,
@@ -373,5 +374,25 @@ test("a runtime context past its bound is refused rather than truncated", () => 
   assert.equal(
     blockedFault(viewOf({ runtime: { changedFiles, handoff: [] } })),
     "TooManyLines",
+  );
+});
+
+test("runtime facts move the runtime section and no other", () => {
+  const withFacts = composed(
+    viewOf({
+      practices: [...allPracticeIds],
+      runtime: {
+        workspace: "/work/importer",
+        changedFiles: ["importer/rows.ts"],
+        handoff: ["The parser was left alone."],
+      },
+    }),
+  ).briefing;
+  const without = composed(viewOf({ practices: [...allPracticeIds] })).briefing;
+  const pinnedHalf = (rendered: typeof without): readonly BriefingSection[] =>
+    rendered.sections.filter((section) => section.section !== "RuntimeContext");
+  assert.deepEqual(pinnedHalf(withFacts), pinnedHalf(without));
+  assert.ok(
+    withFacts.sections.some((section) => section.section === "RuntimeContext"),
   );
 });
