@@ -1,20 +1,21 @@
 # Durable project dispatch
 
-**Status: M0, G0, I0, I1, I2, I3, I4 AND I6 LANDED** — issue #92 agreed these decisions and
-the tree carries the rows the table below marks landed: `model/` proves
-the project-scoped `Core`, `src/generated/model-api.ts` is generated from
-`model/api.qnt`, and `src/adapters/postgres/` holds the lifecycle row, the
-ownership lease, the authority-scoped operation with its permanent
-idempotency, the ingress ordinal, the durable inbox and the readiness
+**Status: M0, G0, I0, I1, I2, I3, I4, I5 AND I6 LANDED** — issue #92 agreed
+these decisions and the tree carries the rows the table below marks landed:
+`model/` proves the project-scoped `Core`, `src/generated/model-api.ts` is
+generated from `model/api.qnt`, and `src/adapters/postgres/` holds the
+lifecycle row, the ownership lease, the authority-scoped operation with its
+permanent idempotency, the ingress ordinal, the durable inbox and the readiness
 generation that indexes it, and the decision transaction that fences a writer,
 writes the entry under its one durable cause, settles the operation,
 acknowledges the item and moves the primary projection, under
-`.chug/tasks/check-postgres.sh`. I6's execution service is there too — its
-migration, its scheduler adapter and its one completion boundary are driven
-against a real server under that same gate, and the briefing a launched worker
-is handed composes above them.
-The selection service is in the tree as well, from I5, whose row the table
-below has not marked landed, so the body below still argues it. The revision
+`.chug/tasks/check-postgres.sh`. I5's selection service and I6's execution
+service are there too — the selector's cursor, delivery and read model beside
+the scheduler's migration, its adapter and its one completion boundary, all
+driven against a real server under that same gate, and the briefing a launched
+worker is handed composes above them. The finalizer service, the production
+deployment and its recovery, project-local containment and the deletion
+lifecycle are not built, so the body below still argues them, and the revision
 fences a decision rechecks arrive with the slices that have a revision to name.
 
 Clients submit authenticated mutations to a durable PostgreSQL inbox. They do
@@ -1893,17 +1894,26 @@ separate model-first change.
 
 `execution_cluster` and `capacity_account` are installation-owned policy
 rather than project state: policy identities of their own, holding no
-unfinished work. Both carry a `policy_revision`, because a release pins the
-stable account identity while admission applies the current entitlement. An
-account is an entitlement axis and never an identity one, as
+unfinished work and so owing no recovery query. No service role owns them
+either, and that is the decision rather than an omission. The migration seeds
+the cluster and an account for each project, `UPDATE` on `slots_max`,
+`reserved`, `maximum` and `policy_revision` is granted to no role at all, and
+an entitlement is therefore immutable once seeded: the transaction that moves
+one is another migration, and until a policy service exists there is no other.
+The scheduler holds `SELECT` and the API and ticket-service roles are revoked
+outright. Admission nonetheless reads the account row as it stands rather than
+a copy the release pinned, because a release pins the stable account identity
+alone — that is the shape a later policy writer needs, and `policy_revision` is
+the column it will stamp, so allocation can move without ticket history being
+rewritten. An account is an entitlement axis and never an identity one, as
 `model/capacity.qnt` says, so it cannot stand in for the project drawing on it
 and two projects are never folded into one by sharing a name. The scheduler
-reads both and writes neither, so it cannot provision the account it needs; a
-project made after the migration would otherwise have none, and its first
-registration would fail the foreign key tying an execution to the account it
-draws on. An `AFTER INSERT` trigger on `project` provisions it,
-`SECURITY DEFINER` and owned by `chuggy_boundary_owner`, so entitlement stays
-policy the scheduler may only read.
+writing neither is also why it cannot provision the account it needs; a project
+made after the migration would otherwise have none, and its first registration
+would fail the foreign key tying an execution to the account it draws on. An
+`AFTER INSERT` trigger on `project` provisions it at the seeded entitlement,
+`SECURITY DEFINER` and owned by `chuggy_boundary_owner`, so the one write these
+relations take after the migration is policy's and not the scheduler's.
 
 `execution` is one logical task registration and the grain the slice is keyed
 at. It is `chuggy_scheduler`'s, keyed `(tenant, project, execution)` with
@@ -2065,31 +2075,14 @@ its siblings, because the decider escalates the ticket without emitting a
 cancellation: those siblings drain, and the writer refuses their completions
 as the auditable staleness this document already describes.
 
-The two things the scheduler tells the rest of the installation are separate
-ports because they carry different authority. `project_active_work` is
-advisory — one project's own active counts beside the cluster total and that
-project's entitlement, the only cross-project fact the type can express. It
-reserves nothing, alters no eligibility and is excluded from the strict
-dispatchable-view digest, so a proposal must survive it changing underneath.
-`execution_backlog` is the opposite: the hard backlog guard is authoritative,
-consulted at ingress after authorization and before the inbox accepts, and
-pauses automatic and manual dispatch through the same call. It weighs a
-project ceiling and an installation one and names which stopped a dispatch,
-because a project filling its own backlog and an installation filling the
-cluster's are different backpressures; both bounds are the scheduler's
-`projectBacklogMax` and `installationBacklogMax` and no adapter keeps a copy,
-since the guard is the scheduler's authority wherever it is mounted. It is
-retryable infrastructure backpressure and not `Core` state, ticket eligibility
-or a selector reservation, and it preserves headroom by being narrow rather
-than by reserving — only a `Dispatch` decision needs scheduler headroom, so
-every other decision stays admissible while dispatch is paused.
-
-What this document forbids the scheduler to retain is kept out by the shape of
-its types rather than by a rule its callers keep: diagnostics are closed
-vocabularies in the code and bounded text at the server, briefing provenance
-has no field a prompt, a credential, a log, source material or model output
-could be put in, and a sealed telemetry sink that answers nothing leaves no
-expression a branch could read.
+The two ports the scheduler exposes to the rest of the installation,
+`project_active_work` and `execution_backlog`, are what this document promised
+above rather than anything new: the advisory capacity and active-work context
+selection may be guided by, and the hard backlog guard I5 was forbidden to
+simulate and deferred to this slice. Supplying that guard here is what makes
+the earlier claim true, and it answers an agentic proposal and a manual
+override the same way, because the promise was made about dispatch and not
+about either route to it.
 
 I6 briefs the worker it launches — issue #143's title names it — and the
 accepted proposal of issue #97 settles the shape. A template owns a role and
@@ -2117,13 +2110,12 @@ completion authority away, so a briefed worker cannot conclude its own task
 even where policy granted it: it reports a manifest and the scheduler submits
 the completion.
 
-I6 adds no input-bundle relation: a bundle today would only duplicate what the
-request already holds, so a registration pins the request identity and the
-pinned revision instead, and the relation arrives with the slice that gives it
-references of its own to hold. Artifact verification is a typed port here and
-its project-owned storage adapter is not; the completion boundary is reached
-only after that port confirms every required result durably present with
-matching digest and schema.
+Two of this document's requirements are deliberately met only in part. A
+registration pins no input bundle: it pins the spawn request's identity and the
+revision that request pinned, and the bundle relation waits for the slice that
+gives it references of its own to hold. Artifact verification is a typed port
+here and its project-owned storage adapter is not, so what that port confirms
+against arrives with the slice that builds it.
 
 I7 consumes none of these relations and adds its own preparation, permit and
 reconciliation records with the sole `FinalizationResult` authority;
@@ -2147,7 +2139,7 @@ inside the project boundary they were written under.
 | I2 | I1 | The project decision transaction: replay and load, lifecycle, lease and expected-head fences, journal entry under one durable cause, operation terminalization, inbox acknowledgement and primary projection update, with refusal writing no entry and an ambiguous commit resolved by durable read | Landed |
 | I3 | I2 | Bounded project mailbox, priority and aging, durable deterministic continuations, focused native-action and consumer-request tables | Landed |
 | I4 | I3 | Authenticated native reads, operation polling and cancellation, versioned configuration and draft authoring, revision-fenced release, bounded access-controlled SSE notifications | Landed |
-| I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, plus the selector-owned durable cursor, delivery, transparent provenance, attention and planning read model. Selector timing, monitoring and deferral remain outside the ticket service, and selection failure never becomes a hidden FIFO dispatch policy. | — |
+| I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, the selector-owned durable cursor, delivery, transparent provenance, attention and planning read model, with selector timing, monitoring and deferral outside the ticket service and selection failure never a hidden FIFO dispatch policy | Landed |
 | I6 | I3 | Scheduler registration, capacity admission reserving the mailbox room every completion it may later submit, fenced attempts and strict result manifests, the one indivisible terminal transaction crossing a single authenticated completion boundary, revocation cancellation, briefings composed from a pinned revision under an authority that can only narrow, and bounded project-safe active-work and capacity context with the authoritative hard execution-backlog dispatch guard | Landed |
 | I7 | I6 | The finalizer service: durable queue, preparation with bounded deterministic automatic rebase/merge against pinned commits, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with a clean automatic integration proceeding without ticket rework, a genuine merge conflict producing the exact immutable attempt/target/conflict manifest for rework, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
 | I8 | I0–I7, I9–I10 | Production PostgreSQL and disaster recovery: managed deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions, permits and selector cursors. Old-epoch actors and selector observations remain rejected after restore. Development may use the existing in-cluster PostgreSQL instance without claiming these production guarantees. | Deferred |
