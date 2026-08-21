@@ -253,6 +253,27 @@ export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";
 export const statusMoveFunction = "execution_status_move_is_legal";
 export const digestFoldFunction = "result_digest_fold";
+export const accountProvisionFunction = "project_draws_a_capacity_account";
+
+/**
+ * The account row a project draws on when nothing else has said otherwise,
+ * written once so the backfill for the projects that predate this migration
+ * and the trigger for the ones that arrive after it cannot state two
+ * entitlements. Without the trigger a project created later has no account at
+ * all, and `execution_account_draws_its_cluster` then refuses every
+ * registration it would ever authorize.
+ *
+ * An account is keyed by its own name and is deliberately not an identity
+ * axis, so two tenants holding the same project name draw on one account. That
+ * is what the backfill already does, and it is why the trigger takes the
+ * conflict as nothing to do rather than as a failure.
+ */
+const capacityAccountDefaults = [
+  `'${executionCapacityDefaults.cluster}'`,
+  String(executionCapacityDefaults.accountReserved),
+  String(executionCapacityDefaults.accountMaximum),
+  "1",
+].join(", ");
 
 /** The ledger of applied migrations, which the runner creates before it reads anything. */
 export const migrationLedger = `
@@ -1499,10 +1520,20 @@ const durableExecutionScheduler = [
      VALUES ('${executionCapacityDefaults.cluster}',
              ${executionCapacityDefaults.clusterSlotsMax}, 1)`,
   `INSERT INTO capacity_account (account, cluster, reserved, maximum, policy_revision)
-     SELECT p.project, '${executionCapacityDefaults.cluster}',
-            ${executionCapacityDefaults.accountReserved},
-            ${executionCapacityDefaults.accountMaximum}, 1
+     SELECT p.project, ${capacityAccountDefaults}
        FROM project p ON CONFLICT (account) DO NOTHING`,
+  `CREATE FUNCTION ${accountProvisionFunction}() RETURNS trigger
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+     BEGIN
+       INSERT INTO capacity_account (account, cluster, reserved, maximum, policy_revision)
+       VALUES (NEW.project, ${capacityAccountDefaults})
+       ON CONFLICT (account) DO NOTHING;
+       RETURN NULL;
+     END $$`,
+  `REVOKE EXECUTE ON FUNCTION ${accountProvisionFunction}() FROM PUBLIC`,
+  `CREATE TRIGGER project_has_a_capacity_account
+     AFTER INSERT ON project
+     FOR EACH ROW EXECUTE FUNCTION ${accountProvisionFunction}()`,
 
   `CREATE TABLE execution (
      tenant                 text   NOT NULL,
@@ -1960,6 +1991,7 @@ const durableExecutionSchedulerBoundaries = [
   `ALTER FUNCTION ${backlogFunction}(text,text) OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION ${statusMoveFunction}(text,text) OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION ${digestFoldFunction}(text) OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${accountProvisionFunction}() OWNER TO ${boundaryOwnerRole}`,
   `REVOKE ALL ON FUNCTION ${completionFunction}(text,text,text,bigint,bigint,integer,text,text,text,text,text,text) FROM PUBLIC`,
   `REVOKE ALL ON FUNCTION ${activeWorkFunction}(text,text) FROM PUBLIC`,
   `REVOKE ALL ON FUNCTION ${backlogFunction}(text,text) FROM PUBLIC`,
@@ -1971,7 +2003,8 @@ const durableExecutionSchedulerBoundaries = [
   `GRANT SELECT ON operation, decision_input, project, project_readiness, execution,
      execution_request, execution_request_task, execution_result, execution_cluster,
      capacity_account TO ${boundaryOwnerRole}`,
-  `GRANT INSERT ON operation, decision_input, project_readiness TO ${boundaryOwnerRole}`,
+  `GRANT INSERT ON operation, decision_input, project_readiness,
+     capacity_account TO ${boundaryOwnerRole}`,
   `GRANT UPDATE (ingress_next) ON project TO ${boundaryOwnerRole}`,
   `GRANT UPDATE (ready, generation) ON project_readiness TO ${boundaryOwnerRole}`,
   `GRANT UPDATE (status, outcome, blocked_reason, result_manifest, completion_operation,

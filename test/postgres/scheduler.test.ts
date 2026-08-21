@@ -172,9 +172,9 @@ async function schedulerFixture(label: string): Promise<SchedulerFixture> {
     "INSERT INTO execution_cluster (cluster, slots_max, policy_revision) VALUES ($1,$2,1)",
     [cluster, schedulerClusterSlots],
   );
-  await harness.query(
-    `INSERT INTO capacity_account (account, cluster, reserved, maximum, policy_revision)
-     VALUES ($1,$2,$3,$4,1)`,
+  const repointed = await harness.query(
+    `UPDATE capacity_account SET cluster=$2, reserved=$3, maximum=$4
+      WHERE account=$1 RETURNING account`,
     [
       partition.project,
       cluster,
@@ -182,6 +182,11 @@ async function schedulerFixture(label: string): Promise<SchedulerFixture> {
       schedulerAccountMaximum,
     ],
   );
+  if (repointed.length !== 1) {
+    throw new Error(
+      `postgres scheduler: provisioning ${partition.project} left it no capacity account to draw on`,
+    );
+  }
   return {
     partition,
     cluster,
