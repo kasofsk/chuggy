@@ -48,7 +48,7 @@ const authority = {
 };
 
 async function draftFixture(
-  canonical = asCanonicalConfiguration('{"image":"worker:v1"}'),
+  canonical = asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
 ) {
   const partition = await postgresHarnessProject(
     harness.store,
@@ -97,15 +97,15 @@ async function assertReleaseConfigurationPinned(
 ): Promise<void> {
   assert.deepEqual(
     await harness.query(
-      `SELECT release_configuration_revision,release_configuration_digest
+      `SELECT configuration_revision,configuration_digest
          FROM journal_entry WHERE tenant=$1 AND project=$2 AND seq=1`,
       [fixture.partition.tenant, fixture.partition.project],
     ),
     [
       {
-        release_configuration_revision: fixture.revision,
-        release_configuration_digest: createHash("sha256")
-          .update('{"image":"worker:v1"}')
+        configuration_revision: fixture.revision,
+        configuration_digest: createHash("sha256")
+          .update('{"image":"worker:v1","version":1}')
           .digest("hex"),
       },
     ],

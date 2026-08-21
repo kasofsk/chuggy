@@ -39,8 +39,8 @@ import type pg from "pg";
 import type { Entry } from "../../actor/journal.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import type {
+  ConfigurationPin,
   DecisionCause,
-  DraftReleaseFence,
 } from "../../interpreter/projectDecision.ts";
 import type {
   Lease,
@@ -71,8 +71,8 @@ interface StoredJournalRow {
   readonly integrity_version: number;
   readonly cause_kind: string;
   readonly cause_id: string;
-  readonly release_configuration_revision: string | null;
-  readonly release_configuration_digest: string | null;
+  readonly configuration_revision: string | null;
+  readonly configuration_digest: string | null;
 }
 
 async function storedJournalRows(
@@ -83,7 +83,7 @@ async function storedJournalRows(
   return (
     await client.query<StoredJournalRow>(
       `SELECT entry,entry_digest,prev_digest,integrity_version,cause_kind,cause_id,
-       release_configuration_revision,release_configuration_digest
+       configuration_revision,configuration_digest
        FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq`,
       [tenant, project],
     )
@@ -116,7 +116,7 @@ export async function postgresJournalWrite(
   lease: Lease,
   entry: Entry,
   cause: DecisionCause,
-  release?: DraftReleaseFence,
+  configuration: ConfigurationPin,
 ): Promise<void> {
   if (entry.seq !== lease.head + 1) {
     throw new Error(
@@ -128,23 +128,18 @@ export async function postgresJournalWrite(
     lease.partition,
     lease.head,
   );
-  if ((entry.event.type === "ReleaseTicket") !== (release !== undefined)) {
-    throw new Error(
-      "postgres journal: a release entry and its configuration provenance must be written together",
-    );
-  }
   const envelope: JournalIntegrityEnvelope = {
     entry,
     cause,
-    ...(release === undefined ? {} : { release }),
+    configuration,
     eventSchemaVersion: 1,
     decisionSemanticsVersion: 1,
   };
   await client.query(
     `INSERT INTO journal_entry
        (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch,
-        recovery_epoch, cause_kind, cause_id, release_configuration_revision,
-        release_configuration_digest, integrity_version)
+        recovery_epoch, cause_kind, cause_id, configuration_revision,
+        configuration_digest, integrity_version)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 2)`,
     [
       lease.partition.tenant,
@@ -158,8 +153,8 @@ export async function postgresJournalWrite(
       lease.recoveryEpoch,
       cause.kind,
       cause.id,
-      release?.configurationRevision ?? null,
-      release?.configurationDigest ?? null,
+      configuration.configurationRevision,
+      configuration.configurationDigest,
     ],
   );
   await client.query(
@@ -196,22 +191,22 @@ async function postgresJournalEntries(
             : row.cause_kind === "Continuation"
               ? { kind: "Continuation", id: row.cause_id }
               : undefined;
-        const release =
-          row.release_configuration_revision !== null &&
-          row.release_configuration_digest !== null
+        const configuration =
+          row.configuration_revision !== null &&
+          row.configuration_digest !== null
             ? {
-                configurationRevision: row.release_configuration_revision,
-                configurationDigest: row.release_configuration_digest,
+                configurationRevision: row.configuration_revision,
+                configurationDigest: row.configuration_digest,
               }
             : undefined;
         if (
           cause === undefined ||
-          (entry.event.type === "ReleaseTicket") !== (release !== undefined) ||
+          configuration === undefined ||
           row.prev_digest !== previous ||
           journalEnvelopeDigest(standing.partition, previous, {
             entry,
             cause,
-            ...(release === undefined ? {} : { release }),
+            configuration,
             eventSchemaVersion: 1,
             decisionSemanticsVersion: 1,
           }) !== row.entry_digest

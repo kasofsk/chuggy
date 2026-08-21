@@ -5,7 +5,11 @@ import { migrations } from "../../src/adapters/postgres/schema.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
-import { parseTicketCommand } from "../../src/interpreter/wire.ts";
+import {
+  encodeDecisionEventText,
+  parseTicketCommand,
+} from "../../src/interpreter/wire.ts";
+import { postgresHarnessEntry } from "./harness.ts";
 
 function databaseUrl(database: string): string {
   const url = new URL(postgresHarnessUrl());
@@ -57,6 +61,18 @@ async function seedI2(subject: pg.Pool): Promise<void> {
      VALUES ('tenant','project',5,'opaque',true)`,
   );
   await subject.query(
+    `INSERT INTO operation
+     (tenant,project,operation,authority_kind,authority_subject,admission,
+      key_version,key_digest,payload_digest,command,lifecycle_generation,state)
+     VALUES ('tenant','project','legacy-release','User','subject','Ordinary',
+       'v1','key-release','payload-release',$1,1,'Pending')`,
+    [encodeDecisionEventText(postgresHarnessEntry(0).event)],
+  );
+  await subject.query(
+    `INSERT INTO inbox_item (tenant,project,ordinal,operation,consumable)
+     VALUES ('tenant','project',6,'legacy-release',true)`,
+  );
+  await subject.query(
     `INSERT INTO journal_entry
      (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
       recovery_epoch,cause_operation)
@@ -65,6 +81,66 @@ async function seedI2(subject: pg.Pool): Promise<void> {
   await subject.query(
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
      VALUES ('tenant','project',1,'Pending',1)`,
+  );
+}
+
+async function assertMigratedI2(subject: pg.Pool): Promise<void> {
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT input_id,state,decided_seq FROM decision_input ORDER BY ordinal`,
+      )
+    ).rows,
+    [
+      { input_id: "pending", state: "Pending", decided_seq: null },
+      { input_id: "succeeded", state: "Journaled", decided_seq: "1" },
+      { input_id: "refused", state: "Refused", decided_seq: null },
+      { input_id: "cancelled", state: "Cancelled", decided_seq: null },
+      { input_id: "opaque", state: "Refused", decided_seq: null },
+      { input_id: "legacy-release", state: "Refused", decided_seq: null },
+    ],
+  );
+  assert.deepEqual(
+    (await subject.query(`SELECT cause_kind,cause_id FROM journal_entry`)).rows,
+    [{ cause_kind: "Operation", cause_id: "succeeded" }],
+  );
+  const migrated = await subject.query<{ command: string }>(
+    `SELECT command FROM operation WHERE operation='pending'`,
+  );
+  assert.deepEqual(parseTicketCommand(migrated.rows[0]?.command ?? ""), {
+    parsed: "Ok",
+    value: {
+      version: 1,
+      command: "Decide",
+      event: { type: "Dispatch", value: 1 },
+    },
+  });
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT state,outcome_code FROM decision_input WHERE input_id='opaque'`,
+      )
+    ).rows,
+    [{ state: "Refused", outcome_code: "CommandUnreadable" }],
+  );
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT i.state,i.outcome_code,i.terminal_at IS NOT NULL AS terminal
+           FROM decision_input i WHERE i.input_id='legacy-release'`,
+      )
+    ).rows,
+    [
+      {
+        state: "Refused",
+        outcome_code: "CommandUnreadable",
+        terminal: true,
+      },
+    ],
+  );
+  assert.deepEqual(
+    (await subject.query(`SELECT ticket_next FROM project`)).rows,
+    [{ ticket_next: "2" }],
   );
 }
 
@@ -86,48 +162,7 @@ test("I3 preserves every I2 operation outcome and its journal cause", async () =
       await subject.query("COMMIT");
     }
 
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT input_id,state,decided_seq FROM decision_input ORDER BY ordinal`,
-        )
-      ).rows,
-      [
-        { input_id: "pending", state: "Pending", decided_seq: null },
-        { input_id: "succeeded", state: "Journaled", decided_seq: "1" },
-        { input_id: "refused", state: "Refused", decided_seq: null },
-        { input_id: "cancelled", state: "Cancelled", decided_seq: null },
-        { input_id: "opaque", state: "Refused", decided_seq: null },
-      ],
-    );
-    assert.deepEqual(
-      (await subject.query(`SELECT cause_kind,cause_id FROM journal_entry`))
-        .rows,
-      [{ cause_kind: "Operation", cause_id: "succeeded" }],
-    );
-    const migrated = await subject.query<{ command: string }>(
-      `SELECT command FROM operation WHERE operation='pending'`,
-    );
-    assert.deepEqual(parseTicketCommand(migrated.rows[0]?.command ?? ""), {
-      parsed: "Ok",
-      value: {
-        version: 1,
-        command: "Decide",
-        event: { type: "Dispatch", value: 1 },
-      },
-    });
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT state,outcome_code FROM decision_input WHERE input_id='opaque'`,
-        )
-      ).rows,
-      [{ state: "Refused", outcome_code: "CommandUnreadable" }],
-    );
-    assert.deepEqual(
-      (await subject.query(`SELECT ticket_next FROM project`)).rows,
-      [{ ticket_next: "2" }],
-    );
+    await assertMigratedI2(subject);
   } finally {
     await subject.end();
     await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);

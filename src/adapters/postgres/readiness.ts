@@ -33,7 +33,6 @@
  * stay: each is independently red on deletion.
  */
 
-import { createHash } from "node:crypto";
 import type pg from "pg";
 
 import {
@@ -48,11 +47,7 @@ import type {
 } from "../../interpreter/projectDiscovery.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
 import type { TicketCommand } from "../../interpreter/ticketCommand.ts";
-import {
-  asCanonicalConfiguration,
-  releaseConfigurationReadiness,
-  parseDraftAuthoring,
-} from "../../interpreter/authoring.ts";
+import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
 import { releaseTicketEvent } from "../../actor/decisionEvent.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
@@ -104,10 +99,9 @@ async function releaseDraftSource(
 ): Promise<DecisionInput["source"]> {
   const revision = await pool.query<{
     authoring: string;
-    canonical: string;
     digest: string;
   }>(
-    `SELECT r.authoring,c.canonical,c.digest FROM draft_revision r
+    `SELECT r.authoring,c.digest FROM draft_revision r
        JOIN configuration_revision c
          ON c.tenant=r.tenant AND c.project=r.project
         AND c.revision=r.configuration_revision
@@ -126,13 +120,6 @@ async function releaseDraftSource(
     throw new Error(
       `release draft ${String(command.ticket)} has no retained revision`,
     );
-  const canonical = asCanonicalConfiguration(found.canonical);
-  const digest = createHash("sha256").update(found.canonical).digest("hex");
-  if (digest !== found.digest)
-    throw new Error(
-      `release draft ${String(command.ticket)} has a configuration digest mismatch`,
-    );
-  const readiness = releaseConfigurationReadiness(canonical);
   return {
     kind: "Operation",
     operation: asOperationId(operation),
@@ -147,9 +134,6 @@ async function releaseDraftSource(
       configurationRevision: command.configurationRevision,
       configurationDigest: found.digest,
     },
-    ...(readiness.readiness === "Incomplete"
-      ? { releaseRefusal: "ConfigurationInvalid" as const }
-      : {}),
   };
 }
 

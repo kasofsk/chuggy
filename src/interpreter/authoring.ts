@@ -22,6 +22,7 @@ export type CanonicalConfiguration = string & {
 };
 
 export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
+  readonly version: 1;
   readonly image: string;
 };
 
@@ -76,6 +77,7 @@ export function releaseConfigurationReadiness(
     typeof value !== "object" ||
     value === null ||
     Array.isArray(value) ||
+    (value as Record<string, unknown>)["version"] !== 1 ||
     typeof (value as Record<string, unknown>)["image"] !== "string" ||
     (value as Record<string, unknown>)["image"] === ""
   ) {

@@ -103,7 +103,7 @@ test("each stored digest chains onto its predecessor, and the first onto the par
 
   const stored = (await harness.query(
     `SELECT seq,entry_digest,prev_digest,cause_kind,cause_id,
-       release_configuration_revision,release_configuration_digest
+       configuration_revision,configuration_digest
        FROM journal_entry WHERE tenant = $1 AND project = $2 ORDER BY seq`,
     [partition.tenant, partition.project],
   )) as readonly {
@@ -111,8 +111,8 @@ test("each stored digest chains onto its predecessor, and the first onto the par
     prev_digest: string;
     cause_kind: "Operation";
     cause_id: string;
-    release_configuration_revision: string | null;
-    release_configuration_digest: string | null;
+    configuration_revision: string | null;
+    configuration_digest: string | null;
   }[];
 
   assert.equal(stored.length, journal.length);
@@ -126,15 +126,10 @@ test("each stored digest chains onto its predecessor, and the first onto the par
       journalEnvelopeDigest(partition, previous, {
         entry,
         cause: { kind: row.cause_kind, id: asOperationId(row.cause_id) },
-        ...(row.release_configuration_revision === null ||
-        row.release_configuration_digest === null
-          ? {}
-          : {
-              release: {
-                configurationRevision: row.release_configuration_revision,
-                configurationDigest: row.release_configuration_digest,
-              },
-            }),
+        configuration: {
+          configurationRevision: row.configuration_revision ?? "",
+          configurationDigest: row.configuration_digest ?? "",
+        },
         eventSchemaVersion: 1,
         decisionSemanticsVersion: 1,
       }),

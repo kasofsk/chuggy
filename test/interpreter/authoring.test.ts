@@ -47,7 +47,7 @@ test("release readiness is stricter than structurally valid draft configuration"
   );
   assert.equal(
     releaseConfigurationReadiness(
-      asCanonicalConfiguration('{"image":"worker:v1"}'),
+      asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
     ).readiness,
     "Ready",
   );

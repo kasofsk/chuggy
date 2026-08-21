@@ -27,13 +27,20 @@
  * and a ticket the decision left alone keeps the sequence that last moved it.
  */
 
+import { createHash } from "node:crypto";
 import type pg from "pg";
 
 import { assertNever } from "../../domain/assertNever.ts";
+import { decisionEventSubject } from "../../actor/decisionEvent.ts";
+import {
+  asCanonicalConfiguration,
+  releaseConfigurationReadiness,
+} from "../../interpreter/authoring.ts";
 import {
   allRefusalCodes,
   projectTicketWriterAuthorityKind,
   type Decided,
+  type ConfigurationPin,
   type Decision,
   type DecisionCause,
   type DecisionOutcome,
@@ -153,16 +160,56 @@ async function decisionProject(
   partition: Partition,
   seq: number,
   projection: readonly TicketProjection[],
+  configuration: ConfigurationPin,
 ): Promise<void> {
   for (const row of projection) {
     await client.query(
-      `INSERT INTO ticket_projection (tenant, project, ticket, phase, seq)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO ticket_projection
+       (tenant, project, ticket, phase, seq, configuration_revision, configuration_digest)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (tenant, project, ticket)
        DO UPDATE SET phase = EXCLUDED.phase, seq = EXCLUDED.seq`,
-      [partition.tenant, partition.project, row.ticket, row.phase, seq],
+      [
+        partition.tenant,
+        partition.project,
+        row.ticket,
+        row.phase,
+        seq,
+        configuration.configurationRevision,
+        configuration.configurationDigest,
+      ],
     );
   }
+}
+
+async function decisionConfiguration(
+  client: pg.PoolClient,
+  partition: Partition,
+  outcome: JournaledOutcome,
+  release: Decision["draftRelease"],
+): Promise<ConfigurationPin> {
+  if (release !== undefined) return release;
+  const ticket = decisionEventSubject(outcome.entry.event);
+  const found = await client.query<{
+    configuration_revision: string | null;
+    configuration_digest: string | null;
+  }>(
+    `SELECT configuration_revision,configuration_digest FROM ticket_projection
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [partition.tenant, partition.project, ticket],
+  );
+  const row = found.rows[0];
+  if (
+    row?.configuration_revision === null ||
+    row?.configuration_revision === undefined ||
+    row.configuration_digest === null
+  ) {
+    throw new Error("journal decision has no retained ticket configuration");
+  }
+  return {
+    configurationRevision: row.configuration_revision,
+    configurationDigest: row.configuration_digest,
+  };
 }
 
 type JournaledOutcome = Extract<
@@ -386,20 +433,52 @@ async function decisionReleaseOutcome(
 ): Promise<DecisionOutcome> {
   const fence = decision.draftRelease;
   if (fence === undefined) return decision.outcome;
-  const found = await client.query<{ matched: boolean }>(
-    `SELECT ${draftReleaseFunction}($1,$2,$3,$4,$5,$6,$7) AS matched`,
+  const releaseFence = async (commit: boolean): Promise<boolean> => {
+    const found = await client.query<{ matched: boolean }>(
+      `SELECT ${draftReleaseFunction}($1,$2,$3,$4,$5,$6,$7) AS matched`,
+      [
+        decision.lease.partition.tenant,
+        decision.lease.partition.project,
+        fence.ticket,
+        fence.authoringVersion,
+        fence.configurationRevision,
+        fence.configurationDigest,
+        commit,
+      ],
+    );
+    return found.rows[0]?.matched === true;
+  };
+  if (!(await releaseFence(false)))
+    return { outcome: "Refused", code: "AuthoringChanged" };
+  const configuration = await client.query<{
+    canonical: string;
+    digest: string;
+  }>(
+    `SELECT canonical,digest FROM configuration_revision
+      WHERE tenant=$1 AND project=$2 AND revision=$3`,
     [
       decision.lease.partition.tenant,
       decision.lease.partition.project,
-      fence.ticket,
-      fence.authoringVersion,
       fence.configurationRevision,
-      fence.configurationDigest,
-      decision.outcome.outcome === "Journaled",
     ],
   );
-  if (found.rows[0]?.matched !== true)
-    return { outcome: "Refused", code: "AuthoringChanged" };
+  const revision = configuration.rows[0];
+  if (revision === undefined)
+    throw new Error(
+      "release configuration disappeared behind its retained fence",
+    );
+  const digest = createHash("sha256").update(revision.canonical).digest("hex");
+  if (digest !== revision.digest || digest !== fence.configurationDigest)
+    throw new Error(
+      "release configuration content contradicts its retained digest",
+    );
+  const canonical = asCanonicalConfiguration(revision.canonical);
+  if (releaseConfigurationReadiness(canonical).readiness === "Incomplete")
+    return { outcome: "Refused", code: "ConfigurationInvalid" };
+  if (decision.outcome.outcome === "Journaled" && !(await releaseFence(true)))
+    throw new Error(
+      "release fence changed while held by its deciding transaction",
+    );
   if (decision.outcome.outcome === "Journaled")
     await publishNotification(
       client,
@@ -452,6 +531,47 @@ async function decisionAdvanceTicketIdentity(
   );
 }
 
+async function decisionApplyJournaled(
+  client: pg.PoolClient,
+  lease: Lease,
+  cause: DecisionCause,
+  outcome: JournaledOutcome,
+  draftRelease: Decision["draftRelease"],
+): Promise<Decided> {
+  const seq = outcome.entry.seq;
+  const configuration = await decisionConfiguration(
+    client,
+    lease.partition,
+    outcome,
+    draftRelease,
+  );
+  await postgresJournalWrite(
+    client,
+    lease,
+    outcome.entry,
+    cause,
+    configuration,
+  );
+  await decisionAdvanceTicketIdentity(client, lease.partition, outcome);
+  await decisionSettle(
+    client,
+    lease,
+    cause,
+    { settled: "Succeeded", seq },
+    null,
+  );
+  await decisionProject(
+    client,
+    lease.partition,
+    seq,
+    outcome.projection,
+    configuration,
+  );
+  await decisionMaterialize(client, lease, outcome);
+  await notifyDecision(client, lease.partition, cause, outcome);
+  return { decided: "Committed", lease: { ...lease, head: seq } };
+}
+
 /** Writes everything the decision asks for, and answers with the lease its commit advanced. */
 async function decisionApply(
   client: pg.PoolClient,
@@ -493,31 +613,14 @@ async function decisionApply(
       );
       await notifyDecision(client, lease.partition, cause, outcome);
       return { decided: "Refused" };
-    case "Journaled": {
-      const seq = outcome.entry.seq;
-      await postgresJournalWrite(
+    case "Journaled":
+      return decisionApplyJournaled(
         client,
         lease,
-        outcome.entry,
         cause,
+        outcome,
         draftRelease,
       );
-      await decisionAdvanceTicketIdentity(client, lease.partition, outcome);
-      await decisionSettle(
-        client,
-        lease,
-        cause,
-        {
-          settled: "Succeeded",
-          seq,
-        },
-        null,
-      );
-      await decisionProject(client, lease.partition, seq, outcome.projection);
-      await decisionMaterialize(client, lease, outcome);
-      await notifyDecision(client, lease.partition, cause, outcome);
-      return { decided: "Committed", lease: { ...lease, head: seq } };
-    }
     default:
       return assertNever(outcome);
   }

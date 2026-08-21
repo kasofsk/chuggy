@@ -1153,6 +1153,19 @@ const nativeWebReads = [
 ];
 
 const nativeAuthoring = [
+  `UPDATE decision_input i
+      SET state='Refused', outcome_code='CommandUnreadable',
+          refused_head=p.head,
+          refused_lifecycle_generation=p.lifecycle_generation,
+          terminal_at=now(),
+          settled_authority_kind='ProjectTicketWriter',
+          settled_authority_subject='I4Migration'
+     FROM operation o, project p
+    WHERE o.tenant=i.tenant AND o.project=i.project AND o.operation=i.input_id
+      AND i.input_kind='Operation' AND i.state='Pending'
+      AND p.tenant=i.tenant AND p.project=i.project
+      AND legacy_event(o.command)->>'command'='Decide'
+      AND legacy_event(o.command)->'event'->>'type'='ReleaseTicket'`,
   `ALTER TABLE project ADD COLUMN ticket_next bigint`,
   `UPDATE project p SET ticket_next=coalesce(
      (SELECT max(t.ticket)+1 FROM ticket_projection t
@@ -1175,14 +1188,24 @@ const nativeAuthoring = [
    )`,
   `ALTER TABLE journal_entry
      ADD COLUMN integrity_version integer NOT NULL DEFAULT 1,
-     ADD COLUMN release_configuration_revision text,
-     ADD COLUMN release_configuration_digest text,
-     ADD CONSTRAINT journal_release_configuration_is_whole CHECK
-       ((release_configuration_revision IS NULL)=(release_configuration_digest IS NULL)),
-     ADD CONSTRAINT journal_release_configuration_is_retained FOREIGN KEY
-       (tenant,project,release_configuration_revision,release_configuration_digest)
+     ADD COLUMN configuration_revision text,
+     ADD COLUMN configuration_digest text,
+     ADD CONSTRAINT journal_configuration_is_whole CHECK
+       ((configuration_revision IS NULL)=(configuration_digest IS NULL)),
+     ADD CONSTRAINT journal_configuration_is_required_for_v2 CHECK
+       (integrity_version=1 OR configuration_revision IS NOT NULL),
+     ADD CONSTRAINT journal_configuration_is_retained FOREIGN KEY
+       (tenant,project,configuration_revision,configuration_digest)
        REFERENCES configuration_revision (tenant,project,revision,digest),
      ADD CONSTRAINT journal_integrity_version_is_known CHECK (integrity_version IN (1,2))`,
+  `ALTER TABLE ticket_projection
+     ADD COLUMN configuration_revision text,
+     ADD COLUMN configuration_digest text,
+     ADD CONSTRAINT ticket_projection_configuration_is_whole CHECK
+       ((configuration_revision IS NULL)=(configuration_digest IS NULL)),
+     ADD CONSTRAINT ticket_projection_configuration_is_retained FOREIGN KEY
+       (tenant,project,configuration_revision,configuration_digest)
+       REFERENCES configuration_revision (tenant,project,revision,digest)`,
   `CREATE TABLE draft (
      tenant text NOT NULL, project text NOT NULL, ticket bigint NOT NULL,
      authoring_version bigint NOT NULL, state text NOT NULL,

@@ -64,11 +64,14 @@ export const allRefusalCodes: readonly RefusalCode[] = [
   "ConfigurationInvalid",
 ];
 
-export interface DraftReleaseFence {
-  readonly ticket: number;
-  readonly authoringVersion: number;
+export interface ConfigurationPin {
   readonly configurationRevision: string;
   readonly configurationDigest: string;
+}
+
+export interface DraftReleaseFence extends ConfigurationPin {
+  readonly ticket: number;
+  readonly authoringVersion: number;
 }
 
 /**

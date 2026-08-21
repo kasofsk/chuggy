@@ -36,6 +36,7 @@ import { createHash } from "node:crypto";
 
 import type { Entry } from "../../actor/journal.ts";
 import type { DecisionCause } from "../../interpreter/projectDecision.ts";
+import type { ConfigurationPin } from "../../interpreter/projectDecision.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { encodeEntry } from "../../interpreter/wire.ts";
 
@@ -46,10 +47,7 @@ const journalEnvelopeFormat = "chuggy:journal-envelope:v2";
 export interface JournalIntegrityEnvelope {
   readonly entry: Entry;
   readonly cause: DecisionCause;
-  readonly release?: {
-    readonly configurationRevision: string;
-    readonly configurationDigest: string;
-  };
+  readonly configuration: ConfigurationPin;
   readonly eventSchemaVersion: 1;
   readonly decisionSemanticsVersion: 1;
 }
@@ -102,7 +100,7 @@ export function journalEnvelopeDigest(
   previous: string,
   envelope: JournalIntegrityEnvelope,
 ): string {
-  const release = envelope.release;
+  const configuration = envelope.configuration;
   return createHash("sha256")
     .update(
       journalChainInput([
@@ -115,8 +113,8 @@ export function journalEnvelopeDigest(
         envelope.cause.id,
         String(envelope.eventSchemaVersion),
         String(envelope.decisionSemanticsVersion),
-        release?.configurationRevision ?? "",
-        release?.configurationDigest ?? "",
+        configuration.configurationRevision,
+        configuration.configurationDigest,
       ]),
     )
     .digest("hex");

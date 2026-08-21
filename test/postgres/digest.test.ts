@@ -105,7 +105,7 @@ test("the complete envelope digest covers cause and release configuration", () =
   const envelope = {
     entry,
     cause: { kind: "Operation" as const, id: asOperationId("operation") },
-    release: {
+    configuration: {
       configurationRevision: "config-1",
       configurationDigest: "digest-1",
     },
@@ -123,7 +123,10 @@ test("the complete envelope digest covers cause and release configuration", () =
   assert.notEqual(
     journalEnvelopeDigest(pinnedPartition, previous, {
       ...envelope,
-      release: { ...envelope.release, configurationDigest: "digest-2" },
+      configuration: {
+        ...envelope.configuration,
+        configurationDigest: "digest-2",
+      },
     }),
     digest,
   );

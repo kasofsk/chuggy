@@ -459,7 +459,7 @@ export async function postgresHarnessReleaseSubmission(
     partition,
     authority,
     revision,
-    canonical: asCanonicalConfiguration('{"image":"worker:v1"}'),
+    canonical: asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
   });
   const created = await harness.authoring.createDraft({
     partition,
