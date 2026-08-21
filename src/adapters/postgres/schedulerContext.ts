@@ -14,7 +14,7 @@
  * two functions here as they are two ports above. `project_active_work` answers
  * for exactly the project named, with cluster totals and that project's own
  * account, which is the safe aggregate
- * `docs/design/006-durable-project-dispatch.md` permits; it reserves nothing and
+ * issue #180 permits; it reserves nothing and
  * a proposal must survive it changing underneath. `execution_backlog` is the
  * hard ceiling, consulted at ingress before an operation becomes durable.
  *

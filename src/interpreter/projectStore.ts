@@ -7,7 +7,7 @@
  * a lease is only worth holding if the fencing epoch and the recovery epoch it
  * was issued under are rechecked wherever it is presented. Three ports invite
  * an implementation that checks ownership in one call and acts in the next,
- * which is exactly the race `docs/design/006-durable-project-dispatch.md`
+ * which is exactly the race issue #180
  * forbids when it says every decision commit checks both the observed journal
  * head and the current fencing epoch. So the lease is an argument — to `load`
  * too, because a replay that ran before acquisition is missing whatever the

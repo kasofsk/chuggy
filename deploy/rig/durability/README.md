@@ -108,7 +108,7 @@ run in which the database did other things fails instead of printing the same
 success line. What the inventory cannot see is an `UPDATE` of a row already
 there, which changes no count — and a mutation of the ownership row in that
 window is exactly what
-`docs/design/006-durable-project-dispatch.md` exists to close. For the witness
+issue #180 exists to close. For the witness
 that hole is shut, because `fence` reads its row again after the establish and
 refuses if anything about it moved. For every other row it is open, and this
 procedure does not close it.
@@ -146,7 +146,7 @@ witness is where that is carried. Neither half is the claim on its own.
 
 ## What a single node cannot establish
 
-`docs/design/006-durable-project-dispatch.md` says acknowledged commits have no
+issue #180 says acknowledged commits have no
 expected loss under process, instance and zonal failure. Nothing here is
 evidence for any of that, and the rehearsal must not be read as if it were.
 That sentence is a claim about a production deployment's failure domains — how

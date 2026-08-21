@@ -12,7 +12,7 @@
  * A REGISTRATION CARRIES NO PROVENANCE OF ITS OWN, so reading one is a join.
  * The authorizing sequence, the effect position, the ticket version, the task
  * kind and the stage all belong to the request and the task row that authorized
- * the registration, and `docs/design/006-durable-project-dispatch.md` has the
+ * the registration, and issue #180 has the
  * registration pin the request rather than copy them — a copy is a second
  * version of a fact that can drift from the effect that authorized it. So every
  * read of an execution names the same join, once, below.

@@ -7,7 +7,7 @@
  * The scheduler role holds no privilege at all on `operation`,
  * `decision_input`, `journal_entry` or `ticket_projection`, so there is no
  * direct insert here to be tempted by: the function is the authenticated
- * ingress `docs/design/006-durable-project-dispatch.md` requires, and granting
+ * ingress issue #180 requires, and granting
  * execute on it to one workload identity is how that rule is enforced rather
  * than an exception to it. Everything the envelope says is built by the
  * function from durable rows; what this file passes is the binding it claims to

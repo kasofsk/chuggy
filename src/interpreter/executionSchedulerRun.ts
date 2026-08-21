@@ -14,7 +14,7 @@
  *
  * THE TWO INABILITIES ARE KEPT APART, which is the whole reason the policy and
  * placement ports answer with three arms rather than a boolean.
- * `docs/design/006-durable-project-dispatch.md` makes a definitive inability to
+ * issue #180 makes a definitive inability to
  * run the immutable contract an `ExecutionBlocked` and a temporary one a
  * visible hold, and conflating them would either fabricate a domain outcome out
  * of a cluster outage or leave a permanently unrunnable ticket queued forever.
