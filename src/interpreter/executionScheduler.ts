@@ -69,6 +69,16 @@
  * `checkedExecutionSchedulerConfig` is where a deployment that has not made it
  * is refused before it runs a pass.
  *
+ * THAT ROOM HAS TWO CLAIMANTS AND NEITHER IS SIZED ALONE. A finalization result
+ * is a `Completion` too, and the request that submits one sits in no backlog:
+ * the finalizer holds at most `requestsPerPassMax` claimed requests at once and
+ * each may submit exactly one result. So the reservation is over the sum of the
+ * two ceilings, because two claimants each checked against the whole room can
+ * between them fill it, and a guard that let them would report a promise that is
+ * false. It is a sum here rather than a wider `execution_backlog`: that function
+ * is the hard dispatch guard, and a count grown by finalizations would refuse a
+ * project's dispatch for work no dispatch relieves.
+ *
  * A BLOCK RETIRES ONE EXECUTION AND NOT ITS SIBLINGS. `ExecutionBlocked`
  * escalates the whole ticket in `Core`, but the decider emits only
  * `OpenHumanTask`, so no cancellation obligation reaches this scheduler for the
@@ -82,6 +92,8 @@
 import type { Reason } from "../domain/generated/modelTypes.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
+import { checkedFinalizerConfig } from "./finalizer.ts";
+import type { FinalizerConfig } from "./finalizer.ts";
 import type { OperationId } from "./operationInbox.ts";
 import { mailboxCompletionRoom, observe } from "./ticketService.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
@@ -760,13 +772,16 @@ const executionSchedulerBounds = Object.keys(
 
 /**
  * Refuses a configuration whose bounds are not positive safe integers, and one
- * whose project backlog ceiling reserves no mailbox room for the completions
- * that backlog can submit. It takes both configurations because the
- * relationship between them is the thing being checked.
+ * whose project backlog ceiling and the finalizer's claim ceiling together
+ * reserve no mailbox room for the completions they can submit. It takes all
+ * three configurations because the relationship among them is what is being
+ * checked, and it checks the finalizer's own bounds so that the sum is over
+ * operands something has already refused a non-number for.
  */
 export function checkedExecutionSchedulerConfig(
   config: ExecutionSchedulerConfig,
   service: TicketServiceConfig,
+  finalizer: FinalizerConfig,
 ): ExecutionSchedulerConfig {
   for (const name of executionSchedulerBounds) {
     const value: number = config[name];
@@ -776,9 +791,10 @@ export function checkedExecutionSchedulerConfig(
       );
     }
   }
-  if (config.projectBacklogMax >= mailboxCompletionRoom(service)) {
+  const claimed = checkedFinalizerConfig(finalizer).requestsPerPassMax;
+  if (config.projectBacklogMax + claimed >= mailboxCompletionRoom(service)) {
     throw new RangeError(
-      "execution scheduler configuration: projectBacklogMax reserves no mailbox room for the completions it can submit",
+      "execution scheduler configuration: projectBacklogMax and the finalizer's requestsPerPassMax together reserve no mailbox room for the completions they can submit",
     );
   }
   return config;

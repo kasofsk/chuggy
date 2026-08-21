@@ -2163,13 +2163,14 @@ against nothing: not the authorizing request, not its generation, not the
 recovery epoch. It is closed, and what it is closed by is the rule's only
 statement now: `src/interpreter/ticketCommand.ts`, `ticket_command_is_valid`
 in `src/adapters/postgres/schema.ts`, and the fence in
-`src/adapters/postgres/readiness.ts`. The second is still open: the scheduler
-refuses a configuration whose project backlog reserves no mailbox room for the
-completions it may later submit, while an open finalization request — also a
-`Completion`-priority operation when it concludes — sits outside
-`execution_backlog` and outside anything that reserves room for it. Both are
-the first tranche's, because both are the sole-authority claim this document
-already makes.
+`src/adapters/postgres/readiness.ts`. The second was that the scheduler
+refused a configuration whose project backlog reserved no mailbox room for the
+completions it may later submit, while a claimed finalization request — also a
+`Completion`-priority operation when it concludes — drew on that same room and
+was reserved against by nothing. It is closed too, and by one statement:
+`checkedExecutionSchedulerConfig` in `src/interpreter/executionScheduler.ts`,
+which reserves against the two ceilings summed. Both were the first tranche's,
+because both are the sole-authority claim this document already makes.
 
 Neither defect could be observed before this slice, and the reason is worth
 stating: a ticket that entered `Finalizing` was a permanent hold. Nothing read

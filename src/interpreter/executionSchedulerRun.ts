@@ -106,6 +106,7 @@ import {
   type WorkerLaunchPort,
   type ClusterId,
 } from "./executionScheduler.ts";
+import type { FinalizerConfig } from "./finalizer.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
 import {
@@ -129,6 +130,7 @@ export interface ExecutionSchedulerService {
   readonly practices: PracticeCatalog;
   readonly config: ExecutionSchedulerConfig;
   readonly ticketService: TicketServiceConfig;
+  readonly finalizer: FinalizerConfig;
   readonly metrics: SchedulerTelemetry;
 }
 
@@ -163,6 +165,7 @@ export async function executionSchedulerFence(
   const config = checkedExecutionSchedulerConfig(
     service.config,
     service.ticketService,
+    service.finalizer,
   );
   const fenced = await service.store.fenceOldEpochAttempts(
     epoch,
@@ -182,6 +185,7 @@ export async function executionSchedulerRegister(
   const config = checkedExecutionSchedulerConfig(
     service.config,
     service.ticketService,
+    service.finalizer,
   );
   const claims = await service.store.claimRequests(
     owner,
@@ -211,6 +215,7 @@ export async function executionSchedulerCancel(
   const config = checkedExecutionSchedulerConfig(
     service.config,
     service.ticketService,
+    service.finalizer,
   );
   const claims = await service.store.claimRequests(
     owner,
@@ -244,6 +249,7 @@ export async function executionSchedulerAdmit(
   const config = checkedExecutionSchedulerConfig(
     service.config,
     service.ticketService,
+    service.finalizer,
   );
   let admitted = 0;
   for (let taken = 0; taken < config.admissionsPerPassMax; taken += 1) {
@@ -495,6 +501,7 @@ async function schedulerLaunchOne(
   const config = checkedExecutionSchedulerConfig(
     service.config,
     service.ticketService,
+    service.finalizer,
   );
   const opening: AttemptOpening = {
     partition: execution.partition,
@@ -535,6 +542,7 @@ export async function executionSchedulerLaunch(
   const config = checkedExecutionSchedulerConfig(
     service.config,
     service.ticketService,
+    service.finalizer,
   );
   const reaped = await service.store.reapLapsedAttempts(
     epoch,

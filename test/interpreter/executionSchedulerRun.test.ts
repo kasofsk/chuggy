@@ -60,6 +60,7 @@ import {
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { recordingMetrics, throwingMetrics } from "./schedulerSinks.ts";
@@ -207,6 +208,7 @@ function serviceWith(
     practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
     ticketService: ticketServiceDefaults,
+    finalizer: finalizerDefaults,
     metrics: silentSchedulerTelemetry,
   };
 }
