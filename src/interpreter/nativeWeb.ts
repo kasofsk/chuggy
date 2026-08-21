@@ -6,6 +6,15 @@
  * cancellation deliberately share the same not-found result for absent and
  * inaccessible resources. This layer coordinates ports; it neither loads the
  * project actor nor owns a database transaction.
+ *
+ * THE EXECUTION-BACKLOG GUARD IS CHECKED HERE AND ONLY OVER DISPATCH. It is
+ * the scheduler's authority rather than this layer's, and it is retryable
+ * infrastructure backpressure applied before durable acceptance rather than a
+ * domain refusal: a backlogged project creates no operation, ordinal, input or
+ * tombstone. Completion, cancellation, revocation and every other
+ * correctness-reducing submission passes it untouched, which is how headroom
+ * for them is preserved, and scheduler completions never reach this boundary
+ * at all.
  */
 
 import type { Phase } from "../domain/generated/modelTypes.ts";
@@ -34,6 +43,11 @@ import type {
   DraftRevised,
 } from "./authoring.ts";
 import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
+import {
+  dispatchNeedsExecutionHeadroom,
+  type BacklogScope,
+  type ExecutionBacklogGuard,
+} from "./schedulerContext.ts";
 import {
   checkedNotificationCursor,
   type NotificationBatch,
@@ -165,6 +179,11 @@ export interface NativeSubmission {
 
 export type NativeSubmissionResult =
   | { readonly result: "NotFound" }
+  | {
+      readonly result: "Backlogged";
+      readonly scope: BacklogScope;
+      readonly retryAfterSeconds: number;
+    }
   | { readonly result: "Authorized"; readonly acceptance: Accepted };
 
 export type NativeCancellation =
@@ -332,6 +351,7 @@ export function nativeWeb(
   inbox: OperationInbox,
   authoring: AuthoringStore,
   notifications: NotificationStore,
+  backlog: ExecutionBacklogGuard,
 ): NativeWeb {
   return {
     ...nativeAuthoringMethods(access, authoring),
@@ -342,6 +362,16 @@ export function nativeWeb(
         "Mutate",
       );
       if (authority === undefined) return { result: "NotFound" };
+      if (dispatchNeedsExecutionHeadroom(submission.command)) {
+        const verdict = await backlog.admitsDispatch(submission.partition);
+        if (verdict.admits === "Backlogged") {
+          return {
+            result: "Backlogged",
+            scope: verdict.scope,
+            retryAfterSeconds: verdict.retryAfterSeconds,
+          };
+        }
+      }
       const accepted: Submission = { ...submission, authority };
       return { result: "Authorized", acceptance: await inbox.accept(accepted) };
     },

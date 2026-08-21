@@ -15,6 +15,7 @@ import {
   type ProjectAccess,
 } from "./interpreter/nativeWeb.ts";
 import type { ProjectDecision } from "./interpreter/projectDecision.ts";
+import type { ExecutionBacklogGuard } from "./interpreter/schedulerContext.ts";
 import type { ProjectDiscovery } from "./interpreter/projectDiscovery.ts";
 import type { ProjectStore } from "./interpreter/projectStore.ts";
 import {
@@ -36,6 +37,7 @@ export function composeNativeWeb(
   apiPool: pg.Pool,
   keying: IdempotencyKeying,
   access: ProjectAccess,
+  backlog: ExecutionBacklogGuard,
   config: TicketServiceConfig = ticketServiceDefaults,
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
 ): NativeWeb {
@@ -46,6 +48,7 @@ export function composeNativeWeb(
     inbox,
     postgresAuthoring(apiPool),
     postgresNotifications(apiPool),
+    backlog,
   );
 }
 

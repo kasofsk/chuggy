@@ -6,6 +6,7 @@ import {
   asPublicInstant,
   nativeWeb,
   type NativeReadStore,
+  type NativeSubmission,
   type ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
 import {
@@ -18,6 +19,16 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
 import { id } from "../domain/fixtures.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
+import {
+  openExecutionBacklogGuard,
+  type ExecutionBacklogGuard,
+} from "../../src/interpreter/schedulerContext.ts";
+import {
+  asIdempotencyKey,
+  asOperationDecisionEvent,
+  type TicketCommand,
+} from "../../src/interpreter/operationInbox.ts";
+import { dispatchEvent, revokeEvent } from "../../src/actor/decisionEvent.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -30,7 +41,10 @@ const authority = {
   subject: asAuthoritySubject("internal-subject"),
 };
 
-function boundary(allowed: boolean): {
+function boundary(
+  allowed: boolean,
+  backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
+): {
   readonly web: ReturnType<typeof nativeWeb>;
   readonly calls: string[];
 } {
@@ -90,9 +104,24 @@ function boundary(allowed: boolean): {
     },
   };
   return {
-    web: nativeWeb(access, reads, inbox, authoring, notifications),
+    web: nativeWeb(access, reads, inbox, authoring, notifications, backlog),
     calls,
   };
+}
+
+/** A guard that refuses every dispatch, so a case can tell a gated path from an ungated one. */
+const backloggedGuard: ExecutionBacklogGuard = {
+  admitsDispatch: () =>
+    Promise.resolve({
+      admits: "Backlogged",
+      scope: "Project",
+      retryAfterSeconds: 5,
+    }),
+};
+
+/** One submission carrying the named command, which is all these cases vary. */
+function submissionOf(command: TicketCommand): NativeSubmission {
+  return { partition, operation, key: asIdempotencyKey("key"), command };
 }
 
 test("inaccessible and absent operation reads share the not-found shape", async () => {
@@ -142,4 +171,56 @@ test("authoring reads conceal inaccessible resources", async () => {
   const denied = boundary(false);
   assert.equal(await denied.web.draft(principal, partition, id(1)), undefined);
   assert.deepEqual(denied.calls, ["authorize:Read"]);
+});
+
+test("the execution backlog guard stops dispatch before anything becomes durable", async () => {
+  const { web, calls } = boundary(true, backloggedGuard);
+  assert.deepEqual(
+    await web.submit(
+      principal,
+      submissionOf({
+        version: 1,
+        command: "Decide",
+        event: asOperationDecisionEvent(dispatchEvent(id(1))),
+      }),
+    ),
+    { result: "Backlogged", scope: "Project", retryAfterSeconds: 5 },
+  );
+  assert.deepEqual(calls, ["authorize:Mutate"]);
+});
+
+test("the execution backlog guard leaves correctness-reducing submission admissible", async () => {
+  const { web, calls } = boundary(true, backloggedGuard);
+  assert.equal(
+    (
+      await web.submit(
+        principal,
+        submissionOf({
+          version: 1,
+          command: "Decide",
+          event: asOperationDecisionEvent(revokeEvent(id(1))),
+        }),
+      )
+    ).result,
+    "Authorized",
+  );
+  assert.deepEqual(calls, ["authorize:Mutate", "accept"]);
+});
+
+test("an unbacklogged project reaches acceptance for dispatch", async () => {
+  const { web, calls } = boundary(true);
+  assert.equal(
+    (
+      await web.submit(
+        principal,
+        submissionOf({
+          version: 1,
+          command: "Decide",
+          event: asOperationDecisionEvent(dispatchEvent(id(1))),
+        }),
+      )
+    ).result,
+    "Authorized",
+  );
+  assert.deepEqual(calls, ["authorize:Mutate", "accept"]);
 });
