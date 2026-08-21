@@ -101,8 +101,9 @@ const noAmbientDraws = (subject) => [
 
 // A query the checker cannot see is a claim nothing checks: an untagged
 // string reaches the server as SQL and never reaches SafeQL, and so does a
-// tagged one on a handle the checker's wrapper pattern does not name. So
-// untagged query strings and unnamed handles in the adapter are findings
+// tagged one on a handle the checker's wrapper pattern does not name. A
+// second values argument is unchecked too: pg replaces the values carried by
+// the checked tag with that argument. So all three forms are findings
 // unconditionally — no server needed — with transaction control exempt
 // everywhere and the migration executor's variables exempt only where the
 // caller passes their names.
@@ -119,6 +120,12 @@ const adapterQueriesTagged = (runtimeExemption) => [
       "CallExpression[callee.property.name='query'][arguments.0.type='TaggedTemplateExpression']:not([arguments.0.tag.name='sql'])",
     message:
       "adapter queries use the sql tag from @ts-safeql/sql-tag; another tag is not checked.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='query'][arguments.0.type='TaggedTemplateExpression'][arguments.length>1]",
+    message:
+      "sql-tagged queries pass no separate values: pg would replace the checked tag's values.",
   },
   {
     selector:

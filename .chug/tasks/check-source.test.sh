@@ -228,11 +228,11 @@ mkdir -p "$R/src/interpreter"
 } > "$R/src/domain/long.ts"
 # The adapter's query ratchet needs no server, and every one of its selectors
 # is proved against the shape it forbids: an untagged template, a plain
-# string, a foreign tag, a runtime-assembled argument, and a handle the
-# checker's wrapper pattern does not name. The runtime argument is named
-# `statement` on purpose, which pool.ts is exempted for and this file is not,
-# so the case proves the exemption is scoped to that file rather than shared
-# across the directory.
+# string, a foreign tag, a second values argument, a runtime-assembled
+# argument, and a handle the checker's wrapper pattern does not name. The
+# runtime argument is named `statement` on purpose, which pool.ts is exempted
+# for and this file is not, so the case proves the exemption is scoped to that
+# file rather than shared across the directory.
 mkdir -p "$R/src/adapters/postgres"
 {
 	printf '%s\n' 'import { sql } from "@ts-safeql/sql-tag";'
@@ -246,6 +246,7 @@ mkdir -p "$R/src/adapters/postgres"
 	printf '%s\n' '  await client.query(`SELECT 1`);'
 	printf '%s\n' '  await client.query("SELECT 2");'
 	printf '%s\n' '  await client.query(other`SELECT 3`);'
+	printf '%s\n' '  await client.query<{ one: number }>(sql`SELECT ${1}::int AS one`, [2]);'
 	printf '%s\n' '  await client.query(statement);'
 	printf '%s\n' '  await tx.query(sql`SELECT 4`);'
 	printf '%s\n' '}'
@@ -267,6 +268,7 @@ check "the interpreter may not draw randomness either" 1 "$RC" "the interpreter 
 check "an untagged query template is a finding" 1 "$RC" "an untagged template is invisible to check-queries"
 check "a plain-string query is a finding" 1 "$RC" "a plain string is invisible to check-queries"
 check "a query under another tag is a finding" 1 "$RC" "another tag is not checked"
+check "separate values cannot replace a checked tag's values" 1 "$RC" "pg would replace the checked tag's values"
 check "a runtime-assembled query is a finding" 1 "$RC" "assembled at runtime cannot be checked"
 check "a query on an unnamed handle is a finding" 1 "$RC" "one on another handle is checked by nothing"
 
