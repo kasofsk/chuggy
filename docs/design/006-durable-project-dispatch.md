@@ -718,13 +718,13 @@ and recorded interactions pin the prompt and settings revision they used. A dry
 run may replay a recorded observation through a candidate revision without
 creating a proposal or delivery.
 
-The trusted policy host receives an immutable enforcement capability which
-mediates model and tool authorization and pins execution budgets before either
-capability is exposed to a decision. Post-execution accounting and provenance
-checks use a separate immutable snapshot as defense in depth, not as the
-mechanism that prevents a forbidden model or tool call. A decision deadline
-does not depend on cooperative model cancellation; late completion is detached
-and cannot resume or create a proposal.
+The trusted policy sandbox owns the only model and tool capabilities. It receives
+immutable allowlists and budgets before execution, mediates every invocation and
+exposes no ambient model, network or Kubernetes authority to policy code.
+Post-execution accounting and provenance checks use a separate immutable
+snapshot as defense in depth. A decision deadline does not depend on cooperative
+model cancellation: the sandbox confirms hard termination before its decision
+permit is released, so timed-out work cannot survive as unaccounted concurrency.
 
 Dispatch mode is independently `Automatic` or `ApprovalRequired`. In automatic
 mode a durable proposal proceeds to ticket-service delivery. In approval mode it
@@ -744,10 +744,10 @@ summarize in-flight work, deferred considerations and user feedback, but it is
 transparent operational context—not a ticket fact, reservation or authority.
 Each recorded interaction also atomically replaces or clears the current
 project-visible planning intent.
-Completed, refused, timed-out and malformed policy attempts cross the selector
-boundary as bounded JSON and retain a durable semantic outcome. A failed
-attempt advances only selector-owned observation and attention state and never
-creates a proposal.
+Persistable inputs and completed, refused, timed-out and malformed policy
+attempts cross the selector boundary as parsed bounded JSON. A failed attempt
+retains every available host-measured provenance fact, advances only
+selector-owned observation and attention state and never creates a proposal.
 
 Several tickets in one project may be logically working concurrently. Each
 additional dispatch requires a fresh agentic choice or manual override. The
@@ -1914,7 +1914,9 @@ claimed, retry-scheduled reconciliation work so one pending or temporarily
 unreadable operation cannot monopolize a bounded reconciliation batch. Project
 observation and individual reconciliation failures are isolated: they do not
 prevent later projects from being observed or already-durable proposal delivery
-and reconciliation from continuing in the same bounded runtime quantum.
+and reconciliation from continuing in the same bounded runtime quantum. Each
+bounded quantum also reports typed phase, project and decision failure summaries
+for metrics and operator attention without exposing raw exceptions.
 
 Selector state is recovered and deleted under its owning service. I8 restore
 causes pre-restore view tokens to fail their recovery-epoch fence and causes the

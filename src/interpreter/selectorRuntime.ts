@@ -43,6 +43,20 @@ export interface SelectorRunResult {
   readonly proposed: number;
   readonly delivered: number;
   readonly reconciled: number;
+  readonly failures: readonly SelectorRunFailure[];
+}
+
+export interface SelectorRunFailure {
+  readonly phase:
+    | "Inventory"
+    | "Observation"
+    | "PermitRelease"
+    | "DeliveryClaim"
+    | "Delivery"
+    | "ReconciliationClaim"
+    | "Reconciliation";
+  readonly partition?: Partition;
+  readonly decision?: string;
 }
 
 export interface SelectorRuntimeConfig {
@@ -84,10 +98,12 @@ async function observeProjects(
   readonly scanned: number;
   readonly observed: number;
   readonly proposed: number;
+  readonly failures: readonly SelectorRunFailure[];
 }> {
   let proposed = 0;
   let observed = 0;
   let scanned = 0;
+  const failures: SelectorRunFailure[] = [];
   for (const partition of projects) {
     const settings = await control.settings();
     if (settings.mode === "Paused") break;
@@ -120,14 +136,70 @@ async function observeProjects(
       completed = true;
     } catch {
       proposal = undefined;
+      failures.push({ phase: "Observation", partition });
     } finally {
-      await source.releaseDecisionPermit(permit).catch(() => undefined);
+      await source.releaseDecisionPermit(permit).catch(() => {
+        failures.push({ phase: "PermitRelease", partition });
+      });
     }
     scanned += 1;
     if (completed) observed += 1;
     if (proposal !== undefined) proposed += 1;
   }
-  return { scanned, observed, proposed };
+  return { scanned, observed, proposed, failures };
+}
+
+async function deliverPending(
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  limit: number,
+): Promise<{ delivered: number; failures: readonly SelectorRunFailure[] }> {
+  let delivered = 0;
+  const failures: SelectorRunFailure[] = [];
+  try {
+    for (const delivery of await store.pending(limit)) {
+      if (
+        (await deliverSelectorProposal(store, source, delivery)).result ===
+        "Delivered"
+      )
+        delivered += 1;
+      else
+        failures.push({
+          phase: "Delivery",
+          partition: delivery.partition,
+          decision: delivery.decision,
+        });
+    }
+  } catch {
+    failures.push({ phase: "DeliveryClaim" });
+  }
+  return { delivered, failures };
+}
+
+async function reconcileSubmitted(
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  limit: number,
+): Promise<{ reconciled: number; failures: readonly SelectorRunFailure[] }> {
+  let reconciled = 0;
+  const failures: SelectorRunFailure[] = [];
+  try {
+    for (const delivery of await store.submittedDeliveries(limit)) {
+      try {
+        if (await reconcileSelectorProposal(store, source, delivery))
+          reconciled += 1;
+      } catch {
+        failures.push({
+          phase: "Reconciliation",
+          partition: delivery.partition,
+          decision: delivery.decision,
+        });
+      }
+    }
+  } catch {
+    failures.push({ phase: "ReconciliationClaim" });
+  }
+  return { reconciled, failures };
 }
 
 /** Performs one bounded poll, policy, delivery, and reconciliation quantum. */
@@ -145,6 +217,7 @@ export async function selectorRunOnce(
   );
   let observed = 0;
   let proposed = 0;
+  const failures: SelectorRunFailure[] = [];
   try {
     const initialSettings = await control.settings();
     const inventoryCursor = await store.inventoryCursor();
@@ -163,6 +236,7 @@ export async function selectorRunOnce(
     );
     observed = progress.observed;
     proposed = progress.proposed;
+    failures.push(...progress.failures);
     if (progress.scanned > 0 || inventory.nextAfter !== undefined)
       await store.saveInventoryCursor(
         progress.scanned === projects.length
@@ -170,36 +244,25 @@ export async function selectorRunOnce(
           : projects.at(progress.scanned - 1),
       );
   } catch {
-    /** A later quantum retries project inventory and observation from durable state. */
+    failures.push({ phase: "Inventory" });
   }
-  let delivered = 0;
-  try {
-    for (const delivery of await store.pending(
-      checkedBound(config.deliveriesMax, "selector delivery bound"),
-    )) {
-      if (
-        (await deliverSelectorProposal(store, source, delivery)).result ===
-        "Delivered"
-      )
-        delivered += 1;
-    }
-  } catch {
-    /** Delivery claims become eligible for retry without changing proposal intent. */
-  }
-  let reconciled = 0;
-  try {
-    for (const delivery of await store.submittedDeliveries(
-      checkedBound(config.reconciliationsMax, "selector reconciliation bound"),
-    )) {
-      try {
-        if (await reconcileSelectorProposal(store, source, delivery))
-          reconciled += 1;
-      } catch {
-        /** The reconciliation claim's retry time bounds the next attempt. */
-      }
-    }
-  } catch {
-    /** Claim acquisition is retried by a later runtime quantum. */
-  }
-  return { observed, proposed, delivered, reconciled };
+  const delivery = await deliverPending(
+    store,
+    source,
+    checkedBound(config.deliveriesMax, "selector delivery bound"),
+  );
+  failures.push(...delivery.failures);
+  const reconciliation = await reconcileSubmitted(
+    store,
+    source,
+    checkedBound(config.reconciliationsMax, "selector reconciliation bound"),
+  );
+  failures.push(...reconciliation.failures);
+  return {
+    observed,
+    proposed,
+    delivered: delivery.delivered,
+    reconciled: reconciliation.reconciled,
+    failures,
+  };
 }

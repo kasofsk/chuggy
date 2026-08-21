@@ -8,6 +8,8 @@ import {
   type SelectorRuntimeControlStore,
   type SelectorRuntimeSettings,
   type SelectorPolicyExecution,
+  type SelectorPolicyHost,
+  type SelectorPolicyRequest,
   type JsonValue,
 } from "../../src/interpreter/selector.ts";
 import {
@@ -107,6 +109,15 @@ function waitingExecution(
   };
 }
 
+function policyHost(
+  execute: (request: SelectorPolicyRequest) => Promise<unknown>,
+  terminate: (reason: unknown) => Promise<void> = () => Promise.resolve(),
+): SelectorPolicyHost {
+  return {
+    start: (request) => ({ result: execute(request), terminate }),
+  };
+}
+
 function promptObservationSource() {
   return {
     decisionDeadline: () => new Promise<never>(() => undefined),
@@ -114,6 +125,7 @@ function promptObservationSource() {
       Promise.resolve({ result: "Events", cursor: 1, events: [] } as const),
     currentTimeEpochMs: () =>
       Promise.resolve(operationalContext.observedAtEpochMs),
+    currentInstant: () => Promise.resolve(operationalContext.observedAt),
     operationalContext: () => Promise.resolve(operationalContext),
     dispatchView: () =>
       Promise.resolve({
@@ -167,6 +179,7 @@ test("selector observation resumes from a reset cursor and pins every view page"
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () =>
         Promise.resolve(operationalContext.observedAtEpochMs),
+      currentInstant: () => Promise.resolve(operationalContext.observedAt),
       operationalContext: () => Promise.resolve(operationalContext),
       dispatchView: (_partition, query) => {
         watermarks.push(query.watermark);
@@ -205,6 +218,7 @@ test("selector observation discards a view when a later page resets", async () =
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () =>
         Promise.resolve(operationalContext.observedAtEpochMs),
+      currentInstant: () => Promise.resolve(operationalContext.observedAt),
       operationalContext: () => Promise.resolve(operationalContext),
       dispatchView: () => {
         page += 1;
@@ -308,6 +322,8 @@ test("a paused runtime creates no new observations but still drains durable work
         Promise.reject(new Error("paused runtime created a deadline")),
       currentTimeEpochMs: () =>
         Promise.reject(new Error("paused runtime read the clock")),
+      currentInstant: () =>
+        Promise.reject(new Error("paused runtime read the instant")),
       dispatchView: () =>
         Promise.reject(new Error("paused runtime read a view")),
       operationalContext: () =>
@@ -316,10 +332,9 @@ test("a paused runtime creates no new observations but still drains durable work
       operation: () =>
         Promise.reject(new Error("there was no submitted delivery")),
     },
-    {
-      decide: () =>
-        Promise.reject(new Error("paused runtime invoked its policy")),
-    },
+    policyHost(() =>
+      Promise.reject(new Error("paused runtime invoked its policy")),
+    ),
     {
       next: () => ({
         operation: asOperationId("unused"),
@@ -336,6 +351,7 @@ test("a paused runtime creates no new observations but still drains durable work
     proposed: 0,
     delivered: 0,
     reconciled: 0,
+    failures: [],
   });
   assert.equal(pendingReads, 1);
 });
@@ -363,6 +379,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () =>
         Promise.resolve(operationalContext.observedAtEpochMs),
+      currentInstant: () => Promise.resolve(operationalContext.observedAt),
       dispatchView: (scope) =>
         Promise.resolve({
           result: "Page",
@@ -380,7 +397,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
     },
-    { decide: () => Promise.resolve(waitingExecution()) },
+    policyHost(() => Promise.resolve(waitingExecution())),
     {
       next: () => ({
         operation: asOperationId("inventory-operation"),
@@ -410,10 +427,9 @@ test("a pause observed after permit acquisition prevents a new decision", async 
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
     },
-    {
-      decide: () =>
-        Promise.reject(new Error("paused runtime invoked its policy")),
-    },
+    policyHost(() =>
+      Promise.reject(new Error("paused runtime invoked its policy")),
+    ),
     {
       next: () => ({
         operation: asOperationId("pause-race-operation"),
@@ -435,6 +451,7 @@ test("a pause observed after permit acquisition prevents a new decision", async 
     proposed: 0,
     delivered: 0,
     reconciled: 0,
+    failures: [],
   });
   assert.equal(releases, 1);
 });
@@ -464,15 +481,13 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
         return Promise.resolve(true);
       },
     },
-    {
-      decide: (request) => {
-        constrainedPrompt = request.instructions.content;
-        allowedModels = request.enforcement.models;
-        return Promise.resolve(
-          waitingExecution({ note: "watch the dependency closure" }),
-        );
-      },
-    },
+    policyHost((request) => {
+      constrainedPrompt = request.instructions.content;
+      allowedModels = request.constraints.models;
+      return Promise.resolve(
+        waitingExecution({ note: "watch the dependency closure" }),
+      );
+    }),
     {
       operation: asOperationId("prompt-operation"),
       selectorDecisionReference: "prompt-decision",
@@ -513,7 +528,7 @@ test("current selector planning is project-authorized and cursor-free", async ()
   });
 });
 
-test("the runtime deadline detaches a policy call that ignores cancellation", async () => {
+test("the runtime deadline hard-terminates its sandbox before returning", async () => {
   let aborted = false;
   let recordedFailure: JsonValue | undefined;
   const result = await runSelectorCycle(
@@ -526,6 +541,7 @@ test("the runtime deadline detaches a policy call that ignores cancellation", as
     },
     {
       ...promptObservationSource(),
+      currentInstant: () => Promise.resolve("2026-08-21T12:00:02.000Z"),
       decisionDeadline: () =>
         Promise.reject(new Error("decision deadline exceeded")),
     },
@@ -536,14 +552,13 @@ test("the runtime deadline detaches a policy call that ignores cancellation", as
         return Promise.resolve(true);
       },
     },
-    {
-      decide: (_request, signal) =>
-        new Promise(() => {
-          signal.addEventListener("abort", () => {
-            aborted = true;
-          });
-        }),
-    },
+    policyHost(
+      () => new Promise(() => undefined),
+      () => {
+        aborted = true;
+        return Promise.resolve();
+      },
+    ),
     {
       operation: asOperationId("timed-operation"),
       selectorDecisionReference: "timed-decision",
@@ -558,7 +573,7 @@ test("the runtime deadline detaches a policy call that ignores cancellation", as
   });
 });
 
-test("policy enforcement is immutable and rejects unavailable capabilities", async () => {
+test("sandbox constraints and observations are immutable", async () => {
   let mutationRejected = false;
   let observationMutationRejected = false;
   await runSelectorCycle(
@@ -571,27 +586,19 @@ test("policy enforcement is immutable and rejects unavailable capabilities", asy
     },
     promptObservationSource(),
     stateStore(() => undefined),
-    {
-      decide: (request) => {
-        assert.throws(() => {
-          request.enforcement.authorizeModel("forbidden");
-        });
-        assert.throws(() => {
-          request.enforcement.authorizeTool("forbidden");
-        });
-        try {
-          (request.enforcement.models as string[]).push("forbidden");
-        } catch {
-          mutationRejected = true;
-        }
-        try {
-          (request.observation.candidates as unknown[]).push({});
-        } catch {
-          observationMutationRejected = true;
-        }
-        return Promise.resolve(waitingExecution());
-      },
-    },
+    policyHost((request) => {
+      try {
+        (request.constraints.models as string[]).push("forbidden");
+      } catch {
+        mutationRejected = true;
+      }
+      try {
+        (request.observation.candidates as unknown[]).push({});
+      } catch {
+        observationMutationRejected = true;
+      }
+      return Promise.resolve(waitingExecution());
+    }),
     {
       operation: asOperationId("enforcement-operation"),
       selectorDecisionReference: "enforcement-decision",
@@ -601,6 +608,111 @@ test("policy enforcement is immutable and rejects unavailable capabilities", asy
   assert.equal(mutationRejected, true);
   assert.equal(observationMutationRejected, true);
   assert.deepEqual(runtimeSettings.modelAllowlist, ["*"]);
+});
+
+test("a rejected measured execution retains its available provenance", async () => {
+  let interaction:
+    Parameters<SelectorStateStore["recordInteraction"]>[0] | undefined;
+  await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    promptObservationSource(),
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: (recorded) => {
+        interaction = recorded;
+        return Promise.resolve(true);
+      },
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    {
+      operation: asOperationId("rejected-operation"),
+      selectorDecisionReference: "rejected-decision",
+    },
+    { ...runtimeSettings, modelAllowlist: ["another-model"] },
+  );
+  assert.deepEqual(interaction?.result, {
+    outcome: "Failed",
+    code: "ControlViolation",
+  });
+  assert.equal(interaction?.modelRevision, "model-1");
+  assert.deepEqual(interaction?.accounting, {
+    tokens: 100,
+    durationMs: 1_000,
+  });
+  assert.equal(interaction?.startedAt, "2026-08-21T12:00:00.000Z");
+  assert.equal(interaction?.completedAt, "2026-08-21T12:00:01.000Z");
+});
+
+test("structurally invalid JSON is audited instead of reaching persistence", async () => {
+  let recordedFailure: JsonValue | undefined;
+  await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    promptObservationSource(),
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: (recorded) => {
+        recordedFailure = recorded.result;
+        return Promise.resolve(true);
+      },
+    },
+    policyHost(() => Promise.resolve({ ...waitingExecution(), result: null })),
+    {
+      operation: asOperationId("malformed-operation"),
+      selectorDecisionReference: "malformed-decision",
+    },
+    runtimeSettings,
+  );
+  assert.deepEqual(recordedFailure, {
+    outcome: "Failed",
+    code: "InvalidResult",
+  });
+});
+
+test("unpersistable selector input is rejected before sandbox execution", async () => {
+  let started = false;
+  await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    {
+      ...promptObservationSource(),
+      operationalContext: () =>
+        Promise.resolve({
+          ...operationalContext,
+          projectCapacity: {
+            ...operationalContext.projectCapacity,
+            account: "x".repeat(70_000),
+          },
+        }),
+    },
+    stateStore(() => undefined),
+    policyHost(() => {
+      started = true;
+      return Promise.resolve(waitingExecution());
+    }),
+    {
+      operation: asOperationId("oversized-operation"),
+      selectorDecisionReference: "oversized-decision",
+    },
+    runtimeSettings,
+  ).catch(() => undefined);
+  assert.equal(started, false);
 });
 
 test("invalid policy JSON is recorded as a bounded failed interaction", async () => {
@@ -621,12 +733,11 @@ test("invalid policy JSON is recorded as a bounded failed interaction", async ()
         return Promise.resolve(true);
       },
     },
-    {
-      decide: () =>
-        Promise.resolve(
-          waitingExecution({ invalid: BigInt(1) } as unknown as JsonValue),
-        ),
-    },
+    policyHost(() =>
+      Promise.resolve(
+        waitingExecution({ invalid: BigInt(1) } as unknown as JsonValue),
+      ),
+    ),
     {
       operation: asOperationId("invalid-json-operation"),
       selectorDecisionReference: "invalid-json-decision",
@@ -658,6 +769,7 @@ test("one project failure does not block later projects or durable delivery", as
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () =>
         Promise.resolve(operationalContext.observedAtEpochMs),
+      currentInstant: () => Promise.resolve(operationalContext.observedAt),
       dispatchView: (scope) =>
         Promise.resolve({
           result: "Page",
@@ -687,7 +799,7 @@ test("one project failure does not block later projects or durable delivery", as
         }),
       operation: () => Promise.resolve(undefined),
     },
-    { decide: () => Promise.resolve(waitingExecution()) },
+    policyHost(() => Promise.resolve(waitingExecution())),
     {
       next: (scope) => ({
         operation: asOperationId(`operation-${scope.project}`),
@@ -699,6 +811,9 @@ test("one project failure does not block later projects or durable delivery", as
   );
   assert.equal(result.observed, 1);
   assert.equal(result.delivered, 1);
+  assert.deepEqual(result.failures, [
+    { phase: "Observation", partition: broken },
+  ]);
 });
 
 test("one reconciliation failure does not abandon the rest of its claim", async () => {
@@ -723,6 +838,7 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
       notifications: () => Promise.reject(new Error("no observation")),
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () => Promise.resolve(0),
+      currentInstant: () => Promise.resolve(operationalContext.observedAt),
       dispatchView: () => Promise.resolve({ result: "Reset" }),
       operationalContext: () => Promise.resolve(operationalContext),
       submit: () => Promise.reject(new Error("no pending delivery")),
@@ -731,7 +847,7 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
           ? Promise.reject(new Error("temporary operation read failure"))
           : Promise.resolve({ state: "Succeeded" }),
     },
-    { decide: () => Promise.resolve(waitingExecution()) },
+    policyHost(() => Promise.resolve(waitingExecution())),
     {
       next: () => ({
         operation: asOperationId("unused"),
@@ -745,6 +861,13 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
   );
   assert.equal(result.reconciled, 1);
   assert.equal(terminal, 1);
+  assert.deepEqual(result.failures, [
+    {
+      phase: "Reconciliation",
+      partition,
+      decision: delivery.decision,
+    },
+  ]);
 });
 
 test("proposal review requires dispatch authority and preserves feedback", async () => {

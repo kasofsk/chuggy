@@ -117,6 +117,7 @@ export interface SelectorProjectState {
 
 export interface SelectorObservationSource {
   currentTimeEpochMs(): Promise<number>;
+  currentInstant(): Promise<string>;
   decisionDeadline(milliseconds: number): Promise<never>;
   notifications(
     partition: Partition,
@@ -276,23 +277,21 @@ export interface SelectorPolicyRequest {
     readonly revision: number;
     readonly content: string;
   };
-  readonly enforcement: SelectorPolicyEnforcement;
+  readonly constraints: {
+    readonly models: readonly string[];
+    readonly tools: readonly string[];
+    readonly limits: Readonly<SelectorRuntimeSettings["limits"]>;
+  };
 }
 
-export interface SelectorPolicyEnforcement {
-  readonly models: readonly string[];
-  readonly tools: readonly string[];
-  readonly limits: Readonly<SelectorRuntimeSettings["limits"]>;
-  authorizeModel(name: string): void;
-  authorizeTool(name: string): void;
+export interface SelectorPolicyRun {
+  readonly result: Promise<unknown>;
+  terminate(reason: unknown): Promise<void>;
 }
 
-/** Model and tool access is mediated by the supplied enforcement capability. */
+/** Owns the only model and tool capabilities and hard-terminates each isolated run. */
 export interface SelectorPolicyHost {
-  decide(
-    request: SelectorPolicyRequest,
-    signal: AbortSignal,
-  ): Promise<SelectorPolicyExecution>;
+  start(request: SelectorPolicyRequest): SelectorPolicyRun;
 }
 
 function allowed(name: string, allowlist: readonly string[]): boolean {
@@ -301,10 +300,21 @@ function allowed(name: string, allowlist: readonly string[]): boolean {
 
 class SelectorControlViolation extends Error {}
 class SelectorDeadlineExceeded extends Error {}
+class SelectorInputInvalid extends Error {}
+class SelectorExecutionRejected extends Error {
+  readonly rejection: unknown;
+  readonly execution: SelectorPolicyExecution;
 
-function policyEnforcement(
+  constructor(rejection: unknown, execution: SelectorPolicyExecution) {
+    super("selector execution was rejected");
+    this.rejection = rejection;
+    this.execution = execution;
+  }
+}
+
+function policyConstraints(
   settings: SelectorRuntimeSettings,
-): SelectorPolicyEnforcement {
+): SelectorPolicyRequest["constraints"] {
   const models = Object.freeze([...settings.modelAllowlist]);
   const tools = Object.freeze([...settings.toolAllowlist]);
   const limits = Object.freeze({ ...settings.limits });
@@ -312,14 +322,6 @@ function policyEnforcement(
     models,
     tools,
     limits,
-    authorizeModel: (name: string) => {
-      if (!allowed(name, models))
-        throw new SelectorControlViolation("selector model is not authorized");
-    },
-    authorizeTool: (name: string) => {
-      if (!allowed(name, tools))
-        throw new SelectorControlViolation("selector tool is not authorized");
-    },
   });
 }
 
@@ -403,25 +405,102 @@ function enforcePolicyControls(
     );
 }
 
-function checkedPolicyExecution(
-  execution: SelectorPolicyExecution,
-  settings: SelectorRuntimeSettings,
-): SelectorPolicyExecution {
-  enforcePolicyControls(execution, settings);
-  return {
-    ...execution,
-    result: checkedJson(
-      execution.result,
-      "selector result",
-    ) as unknown as SelectorPolicyResult,
-    toolActivity: execution.toolActivity.map((activity) =>
-      checkedJson(activity, "selector tool activity"),
+function recordOf(value: unknown, what: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new TypeError(`${what} must be an object`);
+  return value as Record<string, unknown>;
+}
+
+function boundedRevision(value: unknown, what: string): string {
+  if (typeof value !== "string" || value.length < 1 || value.length > 256)
+    throw new TypeError(`${what} must be a bounded string`);
+  return value;
+}
+
+function policyInstant(value: unknown, what: string): string {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)
+  )
+    throw new TypeError(`${what} must be a UTC instant`);
+  return value;
+}
+
+function policyResult(value: unknown): SelectorPolicyResult {
+  const found = recordOf(value, "selector result");
+  const attention = found["attention"];
+  if (
+    attention !== "Monitoring" &&
+    attention !== "Attention" &&
+    attention !== "Stopped"
+  )
+    throw new TypeError("selector attention is invalid");
+  if (!("workingMemory" in found))
+    throw new TypeError("selector working memory is absent");
+  const selectedTicket = found["selectedTicket"];
+  if (
+    selectedTicket !== undefined &&
+    (!Number.isSafeInteger(selectedTicket) || Number(selectedTicket) < 1)
+  )
+    throw new TypeError("selector ticket is invalid");
+  const result: SelectorPolicyResult = {
+    attention,
+    workingMemory: checkedJson(
+      found["workingMemory"],
+      "selector working memory",
     ),
-    accounting: checkedJson(
-      execution.accounting,
-      "selector accounting",
-    ) as unknown as SelectorPolicyExecution["accounting"],
+    ...(selectedTicket === undefined
+      ? {}
+      : { selectedTicket: selectedTicket as DispatchCandidate["ticket"] }),
+    ...(found["planningIntent"] === undefined
+      ? {}
+      : {
+          planningIntent: checkedJson(
+            found["planningIntent"],
+            "selector planning intent",
+          ),
+        }),
   };
+  return checkedJson(
+    result,
+    "selector result",
+  ) as unknown as SelectorPolicyResult;
+}
+
+function parsedPolicyExecution(value: unknown): SelectorPolicyExecution {
+  const found = recordOf(value, "selector execution");
+  const toolActivityValue = found["toolActivity"];
+  if (!Array.isArray(toolActivityValue))
+    throw new TypeError("selector tool activity must be an array");
+  const accountingValue = recordOf(found["accounting"], "selector accounting");
+  const execution: SelectorPolicyExecution = {
+    result: policyResult(found["result"]),
+    implementationRevision: boundedRevision(
+      found["implementationRevision"],
+      "selector implementation revision",
+    ),
+    modelRevision: boundedRevision(
+      found["modelRevision"],
+      "selector model revision",
+    ),
+    policyRevision: boundedRevision(
+      found["policyRevision"],
+      "selector policy revision",
+    ),
+    toolActivity: checkedJson(
+      toolActivityValue,
+      "selector tool activity",
+    ) as readonly JsonValue[],
+    accounting: {
+      tokens: Number(accountingValue["tokens"]),
+      durationMs: Number(accountingValue["durationMs"]),
+    },
+    startedAt: policyInstant(found["startedAt"], "selector start"),
+    completedAt: policyInstant(found["completedAt"], "selector completion"),
+  };
+  if (execution.completedAt < execution.startedAt)
+    throw new TypeError("selector completion precedes its start");
+  return execution;
 }
 
 /** Replays a recorded semantic input without recording or delivering its result. */
@@ -493,25 +572,44 @@ async function executeSelectorPolicy(
   observation: SelectorObservation,
   settings: SelectorRuntimeSettings,
 ): Promise<SelectorPolicyExecution> {
-  const cancellation = new AbortController();
-  const decision = policy.decide(
-    {
-      observation: checkedJson(
-        observation,
-        "selector observation",
-        196_608,
-      ) as unknown as SelectorObservation,
-      instructions: {
-        revision: settings.revision,
-        content: settings.basePrompt,
+  let policyObservation: SelectorObservation;
+  try {
+    if (settings.basePrompt.length < 1 || settings.basePrompt.length > 65_536)
+      throw new RangeError("selector instructions must be bounded");
+    const persistedContext = checkedJson(
+      {
+        operationalContext: observation.operationalContext,
+        workingMemory: observation.workingMemory,
       },
-      enforcement: policyEnforcement(settings),
-    },
-    cancellation.signal,
-  );
+      "selector interaction context",
+    ) as unknown as SelectorInteraction["context"];
+    policyObservation = {
+      token: checkedJson(
+        observation.token,
+        "selector observation token",
+      ) as unknown as DispatchViewToken,
+      candidates: checkedJson(
+        observation.candidates,
+        "selector observed view",
+      ) as unknown as readonly DispatchCandidate[],
+      notificationCursor: observation.notificationCursor,
+      operationalContext: persistedContext.operationalContext,
+      workingMemory: persistedContext.workingMemory,
+    };
+  } catch {
+    throw new SelectorInputInvalid("selector input cannot be persisted");
+  }
+  const run = policy.start({
+    observation: Object.freeze(policyObservation),
+    instructions: Object.freeze({
+      revision: settings.revision,
+      content: settings.basePrompt,
+    }),
+    constraints: policyConstraints(settings),
+  });
   try {
     const execution = await Promise.race([
-      decision,
+      run.result,
       source
         .decisionDeadline(settings.limits.millisecondsPerDecision)
         .catch(() => {
@@ -520,10 +618,16 @@ async function executeSelectorPolicy(
           );
         }),
     ]);
-    return checkedPolicyExecution(execution, settings);
+    const parsed = parsedPolicyExecution(execution);
+    try {
+      enforcePolicyControls(parsed, settings);
+    } catch (error) {
+      throw new SelectorExecutionRejected(error, parsed);
+    }
+    return parsed;
   } catch (error) {
-    cancellation.abort(error);
-    void decision.catch(() => undefined);
+    await run.terminate(error);
+    void run.result.catch(() => undefined);
     throw error;
   }
 }
@@ -566,7 +670,8 @@ function selectedCandidate(
 function policyFailureCode(error: unknown): string {
   return error instanceof SelectorDeadlineExceeded
     ? "DeadlineExceeded"
-    : error instanceof SelectorControlViolation
+    : error instanceof SelectorExecutionRejected ||
+        error instanceof SelectorControlViolation
       ? "ControlViolation"
       : error instanceof TypeError || error instanceof RangeError
         ? "InvalidResult"
@@ -581,6 +686,8 @@ function failedSelectorInteraction(
   error: unknown,
   completedAt: string,
 ): SelectorInteraction {
+  const measured =
+    error instanceof SelectorExecutionRejected ? error.execution : undefined;
   return {
     decision: identity.selectorDecisionReference,
     partition,
@@ -592,14 +699,14 @@ function failedSelectorInteraction(
       operationalContext: observation.operationalContext,
       workingMemory: observation.workingMemory,
     },
-    toolActivity: [],
+    toolActivity: measured?.toolActivity ?? [],
     result: { outcome: "Failed", code: policyFailureCode(error) },
-    implementationRevision: "Unavailable",
-    modelRevision: "Unavailable",
-    policyRevision: "Unavailable",
-    accounting: { tokens: 0, durationMs: 0 },
-    startedAt: completedAt,
-    completedAt,
+    implementationRevision: measured?.implementationRevision ?? "Unavailable",
+    modelRevision: measured?.modelRevision ?? "Unavailable",
+    policyRevision: measured?.policyRevision ?? "Unavailable",
+    accounting: measured?.accounting ?? { tokens: 0, durationMs: 0 },
+    startedAt: measured?.startedAt ?? completedAt,
+    completedAt: measured?.completedAt ?? completedAt,
   };
 }
 
@@ -610,6 +717,7 @@ async function recordFailedSelectorCycle(
   identity: SelectorCycleIdentity,
   settings: SelectorRuntimeSettings,
   error: unknown,
+  completedAt: string,
 ): Promise<void> {
   await store.recordInteraction(
     failedSelectorInteraction(
@@ -618,7 +726,7 @@ async function recordFailedSelectorCycle(
       settings,
       state.partition,
       error,
-      observation.operationalContext.observedAt,
+      completedAt,
     ),
     {
       partition: state.partition,
@@ -712,6 +820,8 @@ export async function runSelectorCycle(
       settings,
     );
   } catch (error) {
+    if (error instanceof SelectorInputInvalid) throw error;
+    const completedAt = await source.currentInstant();
     await recordFailedSelectorCycle(
       store,
       state,
@@ -719,6 +829,7 @@ export async function runSelectorCycle(
       identity,
       settings,
       error,
+      completedAt,
     );
     return undefined;
   }
