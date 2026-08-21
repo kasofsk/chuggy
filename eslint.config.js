@@ -27,6 +27,8 @@
 // capability is what an adapter is for and banning it there would ban the
 // layer. What stands behind a stub that quietly read a clock is the reviewer
 // and the suites, which is weaker, and is why the gap is one directory wide.
+// The query checking scoped to `src/adapters/postgres/` at the bottom is a
+// different subject — what a query claims, never what the layer may reach.
 //
 // RULE 3 — every discriminated union is switched exhaustively, with
 // `assertNever` in the default arm. `switch-exhaustiveness-check` is the
@@ -49,6 +51,14 @@
 // strict set would mean disabling its most-cited rule everywhere, which is a
 // worse statement of the same position. The individually strict rules that do
 // not collide are enabled by name below.
+//
+// THE ADAPTER'S QUERIES ARE CHECKED AGAINST A LIVE SCHEMA when
+// `CHUG_SAFEQL_DATABASE_URL` names a migrated database. The SafeQL block at
+// the bottom loads its plugin only inside that guard, so a broken SQL parser
+// can degrade only the gate that sets the variable and never a plain
+// `eslint .`. An editor opts in by exporting the variable against a migrated
+// database of its own and gets the same diagnostics inline, with `--fix`
+// writing the inferred row type at the call site.
 
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
@@ -190,13 +200,44 @@ export default tseslint.config(
       "no-restricted-properties": noAmbientDraws("the interpreter"),
     },
   },
+  // The adapter's queries, verified against the database the variable names.
+  // The untaken branch never evaluates, so the plugin and its SQL parser
+  // load only when the variable is set.
+  ...(process.env.CHUG_SAFEQL_DATABASE_URL
+    ? [
+        {
+          files: ["src/adapters/postgres/**/*.ts"],
+          plugins: {
+            "@ts-safeql": {
+              rules: (await import("@ts-safeql/eslint-plugin")).rules,
+            },
+          },
+          rules: {
+            "@ts-safeql/check-sql": [
+              "error",
+              {
+                connections: [
+                  {
+                    databaseUrl: process.env.CHUG_SAFEQL_DATABASE_URL,
+                    targets: [{ wrapper: { regex: "(client|pool)\\.query" } }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ]
+    : []),
   // The configs themselves. They sit outside tsconfig.json's include, so the
   // type-aware rules have no program to ask and are turned off rather than
   // left to fail on every run.
   {
     files: ["**/*.js", "**/*.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
-    languageOptions: { parserOptions: { projectService: false } },
+    languageOptions: {
+      globals: { process: "readonly" },
+      parserOptions: { projectService: false },
+    },
   },
   {
     files: ["**/*.cjs"],

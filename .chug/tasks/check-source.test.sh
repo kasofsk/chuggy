@@ -29,7 +29,9 @@ R="$WORK/repo"
 run_in() { # <dir>
 	OUT="$WORK/.out"
 	set +e
-	(cd "$1" && "$SUT") >"$OUT" 2>&1
+	# Emptied so a machine exporting it does not point the fixture's lint at
+	# the exporter's database.
+	(cd "$1" && CHUG_SAFEQL_DATABASE_URL= "$SUT") >"$OUT" 2>&1
 	RC=$?
 	set -e
 }
