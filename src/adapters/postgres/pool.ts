@@ -1,6 +1,7 @@
 /**
- * The connection pool and the migration runner: everything the other modules
- * in this adapter need from `pg` that is not a statement about a relation.
+ * The connection pool, the migration runner and the shared query plumbing:
+ * everything the other modules in this adapter need that is not a statement
+ * about a relation.
  *
  * THE POOL IS BOUNDED AND SO IS EVERY WAIT. House rule 9 asks for an explicit
  * limit on anything that can grow, and a database client has three: how many
@@ -22,6 +23,14 @@
  * 006 asks for. So a handler is always attached, and a deployment that wants
  * to stop accepting on it supplies its own.
  *
+ * A CHECKED-OUT CLIENT NEEDS THAT HANDLER JUST AS MUCH. `pg` moves its own
+ * listener aside for as long as a caller holds a client, so the same
+ * termination arriving mid-transaction reaches a client nobody is listening to
+ * and ends the process for the same reason. The transaction below therefore
+ * listens for as long as it holds one; the in-flight statement rejects with
+ * that failure and the transaction rolls back, so the caller still learns what
+ * happened and only learns it once.
+ *
  * OWNERSHIP IS NEVER A CONNECTION-SCOPED LOCK. A session advisory lock would
  * be the shorter way to make one writer per project, and it is wrong: 006
  * requires the lease to live in a durable row so a project survives the
@@ -36,6 +45,7 @@
  * makes a half-applied schema impossible rather than merely unlikely.
  */
 
+import { sql } from "@ts-safeql/sql-tag";
 import pg from "pg";
 
 import { migrationLedger, migrations, type Migration } from "./schema.ts";
@@ -85,15 +95,29 @@ export function postgresPool(
 }
 
 /**
+ * An identity on a string whose declared type is narrower than string: the
+ * query checker rewrites a union-typed parameter comparison into a form
+ * whose parse depends on the whitespace around the operator, and a plain
+ * string never takes that path. Every union-typed comparison wraps, because
+ * a site today's parser happens to survive is one reformat away from a red
+ * check-queries.
+ */
+export function postgresTextParameter(value: string): string {
+  return value;
+}
+
+/**
  * Runs `work` inside one transaction, committing when it returns and rolling
- * back when it throws. The client is always released, including when the
- * rollback itself fails.
+ * back when it throws. The client is always released and listened to
+ * throughout, including when the rollback itself fails.
  */
 export async function postgresTransaction<Result>(
   pool: pg.Pool,
   work: (client: pg.PoolClient) => Promise<Result>,
 ): Promise<Result> {
   const client = await pool.connect();
+  const held = (): void => undefined;
+  client.on("error", held);
   try {
     await client.query("BEGIN");
     const result = await work(client);
@@ -103,6 +127,7 @@ export async function postgresTransaction<Result>(
     await client.query("ROLLBACK").catch(() => undefined);
     throw failure;
   } finally {
+    client.removeListener("error", held);
     client.release();
   }
 }
@@ -116,8 +141,7 @@ async function postgresMigrateOne(
     await client.query(statement);
   }
   await client.query(
-    "INSERT INTO schema_migration (version, name) VALUES ($1, $2)",
-    [migration.version, migration.name],
+    sql`INSERT INTO schema_migration (version, name) VALUES (${migration.version}, ${migration.name})`,
   );
 }
 
@@ -126,7 +150,7 @@ async function postgresMigrateApplied(
   client: pg.PoolClient,
 ): Promise<ReadonlySet<number>> {
   const applied = await client.query<{ version: number }>(
-    "SELECT version FROM schema_migration",
+    sql`SELECT version FROM schema_migration`,
   );
   return new Set(applied.rows.map((row) => row.version));
 }
@@ -140,7 +164,9 @@ export async function postgresMigrate(
   pool: pg.Pool,
 ): Promise<readonly number[]> {
   return postgresTransaction(pool, async (client) => {
-    await client.query("SELECT pg_advisory_xact_lock($1)", [migrationLockKey]);
+    await client.query<{ locked: string | null }>(
+      sql`SELECT pg_advisory_xact_lock(${migrationLockKey})::text AS locked`,
+    );
     await client.query(migrationLedger);
     const applied = await postgresMigrateApplied(client);
     const ran: number[] = [];

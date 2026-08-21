@@ -34,6 +34,7 @@
  * still I9's responsibility; this boundary refuses to replay the bad record.
  */
 
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 import { createHash } from "node:crypto";
 
@@ -130,14 +131,13 @@ async function storedJournalRows(
   const { tenant, project } = partition;
   return (
     await client.query<StoredJournalRow>(
-      `SELECT j.entry,j.entry_digest,j.prev_digest,j.integrity_version,j.cause_kind,j.cause_id,
+      sql`SELECT j.entry,j.entry_digest,j.prev_digest,j.integrity_version,j.cause_kind,j.cause_id,
        j.configuration_revision,j.configuration_digest,c.canonical AS configuration_canonical,
        j.event_schema_version,j.decision_semantics_version
        FROM journal_entry j LEFT JOIN configuration_revision c
          ON c.tenant=j.tenant AND c.project=j.project
         AND c.revision=j.configuration_revision AND c.digest=j.configuration_digest
-       WHERE j.tenant = $1 AND j.project = $2 ORDER BY j.seq`,
-      [tenant, project],
+       WHERE j.tenant = ${tenant} AND j.project = ${project} ORDER BY j.seq`,
     )
   ).rows;
 }
@@ -158,14 +158,13 @@ export async function postgresJournalDispatchContracts(
       configuration_digest: string;
       configuration_canonical: string;
     }>(
-      `SELECT j.entry,j.configuration_revision,j.configuration_digest,
+      sql`SELECT j.entry,j.configuration_revision,j.configuration_digest,
               c.canonical AS configuration_canonical
          FROM journal_entry j JOIN configuration_revision c
            ON c.tenant=j.tenant AND c.project=j.project
           AND c.revision=j.configuration_revision AND c.digest=j.configuration_digest
-        WHERE j.tenant=$1 AND j.project=$2 AND j.configuration_revision IS NOT NULL
+        WHERE j.tenant=${lease.partition.tenant} AND j.project=${lease.partition.project} AND j.configuration_revision IS NOT NULL
         ORDER BY j.seq`,
-      [lease.partition.tenant, lease.partition.project],
     );
     const contracts = new Map<number, DispatchContractPin>();
     for (const stored of found.rows) {
@@ -195,8 +194,7 @@ async function postgresJournalPrevious(
 ): Promise<string> {
   if (head === 0) return journalChainGenesis(partition);
   const found = await client.query<{ entry_digest: string }>(
-    "SELECT entry_digest FROM journal_entry WHERE tenant = $1 AND project = $2 AND seq = $3",
-    [partition.tenant, partition.project, head],
+    sql`SELECT entry_digest FROM journal_entry WHERE tenant = ${partition.tenant} AND project = ${partition.project} AND seq = ${head}`,
   );
   const row = found.rows[0];
   if (row === undefined) {
@@ -233,33 +231,23 @@ export async function postgresJournalWrite(
     decisionSemanticsVersion: 1,
   };
   await client.query(
-    `INSERT INTO journal_entry
+    sql`INSERT INTO journal_entry
        (tenant, project, seq, entry, entry_digest, prev_digest, owner, fencing_epoch,
         recovery_epoch, cause_kind, cause_id, configuration_revision,
         configuration_digest, event_schema_version, decision_semantics_version,
         integrity_version)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 2)`,
-    [
-      lease.partition.tenant,
-      lease.partition.project,
-      entry.seq,
-      encodeEntry(entry),
-      journalEnvelopeDigest(lease.partition, previous, envelope),
-      previous,
-      lease.owner,
-      lease.fencingEpoch,
-      lease.recoveryEpoch,
-      cause.kind,
-      cause.id,
-      configuration.configurationRevision,
-      configuration.configurationDigest,
-      envelope.eventSchemaVersion,
-      envelope.decisionSemanticsVersion,
-    ],
+     VALUES (${lease.partition.tenant}, ${lease.partition.project}, ${entry.seq},
+             ${encodeEntry(entry)},
+             ${journalEnvelopeDigest(lease.partition, previous, envelope)},
+             ${previous}, ${lease.owner}, ${lease.fencingEpoch},
+             ${lease.recoveryEpoch}, ${cause.kind}, ${cause.id},
+             ${configuration.configurationRevision},
+             ${configuration.configurationDigest},
+             ${envelope.eventSchemaVersion},
+             ${envelope.decisionSemanticsVersion}, 2)`,
   );
   await client.query(
-    "UPDATE project SET head = $3 WHERE tenant = $1 AND project = $2",
-    [lease.partition.tenant, lease.partition.project, entry.seq],
+    sql`UPDATE project SET head = ${entry.seq} WHERE tenant = ${lease.partition.tenant} AND project = ${lease.partition.project}`,
   );
 }
 

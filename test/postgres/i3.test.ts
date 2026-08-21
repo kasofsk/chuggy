@@ -12,6 +12,7 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import {
   postgresHarnessDecisionSubmission,
+  postgresHarnessDenial,
   postgresHarnessReleaseSubmission,
   postgresHarnessHeld,
   postgresHarnessOpen,
@@ -141,5 +142,5 @@ test("the API role cannot fabricate a continuation input", async () => {
        (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation)
      VALUES ('t','p',1,'Continuation','c','Continuation',1)`,
   );
-  assert.match(refusal ?? "", /permission denied/);
+  assert.match(refusal ?? "", postgresHarnessDenial("decision_input"));
 });
