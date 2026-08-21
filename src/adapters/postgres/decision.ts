@@ -50,7 +50,12 @@ import {
   type TicketProjection,
 } from "../../interpreter/projectDecision.ts";
 import type { Lease, Partition } from "../../interpreter/projectStore.ts";
-import type { DispatchCandidate } from "../../interpreter/dispatchView.ts";
+import {
+  encodeDispatchFinalizationPricing,
+  encodeDispatchProgram,
+  encodeDispatchReworkPolicy,
+  type DispatchCandidate,
+} from "../../interpreter/dispatchView.ts";
 import { postgresJournalWrite } from "./journal.ts";
 import {
   postgresOwnershipHonours,
@@ -191,8 +196,10 @@ async function replaceDispatchView(
         configuration_digest,configuration_canonical)
        VALUES (${lease.partition.tenant},${lease.partition.project},${candidate.ticket},
                ${candidate.ticketVersion},${candidate.workFanout},
-               ${JSON.stringify(candidate.program)},${JSON.stringify(candidate.reworkPolicy)},
-               ${JSON.stringify(candidate.finalizationPricing)},${candidate.resumePricing},
+               ${JSON.stringify(encodeDispatchProgram(candidate.program))},
+               ${JSON.stringify(encodeDispatchReworkPolicy(candidate.reworkPolicy))},
+               ${JSON.stringify(encodeDispatchFinalizationPricing(candidate.finalizationPricing))},
+               ${candidate.resumePricing},
                ${candidate.finalizer},${candidate.configurationRevision},
                ${candidate.configurationDigest},${candidate.configurationCanonical})`,
     );

@@ -4,6 +4,9 @@ import { test } from "node:test";
 import { releaseTicketEvent } from "../../src/actor/decisionEvent.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import {
+  decodeDispatchFinalizationPricing,
+  decodeDispatchProgram,
+  decodeDispatchReworkPolicy,
   deriveDispatchCandidates,
   dispatchViewDigest,
 } from "../../src/interpreter/dispatchView.ts";
@@ -93,4 +96,39 @@ test("facts outside the strict view cannot invalidate its digest", () => {
   const advisoryCapacity = 0;
   assert.equal(dispatchViewDigest(candidates), digest);
   assert.equal(unrelatedJournalHead + advisoryCapacity, 300);
+});
+
+test("dispatch JSON codecs refuse malformed stored structures", () => {
+  assert.throws(() => decodeDispatchProgram({}), /not an array/);
+  assert.throws(
+    () => decodeDispatchProgram([{ fanout: 1.5, combinator: "AnyPass" }]),
+    /expected int/i,
+  );
+  assert.throws(
+    () => decodeDispatchReworkPolicy({ type: "Unknown", value: 1 }),
+    /invalid input/i,
+  );
+  assert.throws(
+    () => decodeDispatchFinalizationPricing({ type: "Budgeted", value: 1.5 }),
+    /expected int/i,
+  );
+});
+
+test("dispatch JSON codecs accept every stored model variant", () => {
+  assert.deepEqual(
+    decodeDispatchProgram([{ fanout: 2, combinator: "UnanimousPass" }]),
+    [{ fanout: 2, combinator: "UnanimousPass" }],
+  );
+  assert.deepEqual(
+    decodeDispatchReworkPolicy({ type: "BudgetedRework", value: 3 }),
+    { type: "BudgetedRework", value: 3 },
+  );
+  assert.equal(
+    decodeDispatchFinalizationPricing("DeadlineOnly"),
+    "DeadlineOnly",
+  );
+  assert.deepEqual(
+    decodeDispatchFinalizationPricing({ type: "Budgeted", value: 4 }),
+    { type: "Budgeted", value: 4 },
+  );
 });

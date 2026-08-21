@@ -61,6 +61,23 @@ export interface SelectorDelivery {
 }
 
 export interface SelectorStateStore {
+  setAutomaticReadiness(ready: boolean): Promise<void>;
+  allocateAttempt(
+    attempt: string,
+    partition: Partition,
+    limits: Pick<
+      SelectorRuntimeSettings["limits"],
+      "concurrentDecisions" | "selectionsPerMinute"
+    >,
+  ): Promise<boolean>;
+  runningAttempt(
+    attempt: string,
+    observation: SelectorObservation,
+    settingsRevision: number,
+  ): Promise<void>;
+  quarantineAttempt(attempt: string): Promise<void>;
+  terminateAttempt(attempt: string, evidence: string): Promise<void>;
+  quarantinedAttempts(limit: number): Promise<readonly string[]>;
   inventoryCursor(): Promise<Partition | undefined>;
   saveInventoryCursor(cursor: Partition | undefined): Promise<void>;
   recordInteraction(
@@ -113,11 +130,18 @@ export interface SelectorProjectState {
   readonly recoveryEpoch?: string;
   readonly attention: "Monitoring" | "Attention" | "Stopped";
   readonly workingMemory: JsonValue;
-  readonly candidateScan?: {
-    readonly token: DispatchViewToken;
-    readonly after: DispatchCandidate["ticket"];
-  };
+  /** Missing is accepted only as the persisted pre-I5 spelling of Unstarted. */
+  readonly candidateScan?: SelectorCandidateScan;
 }
+
+export type SelectorCandidateScan =
+  | { readonly state: "Unstarted" }
+  | {
+      readonly state: "Continue";
+      readonly token: DispatchViewToken;
+      readonly after: DispatchCandidate["ticket"];
+    }
+  | { readonly state: "Exhausted"; readonly token: DispatchViewToken };
 
 export interface SelectorObservationSource {
   currentTimeEpochMs(): Promise<number>;
@@ -170,7 +194,11 @@ export interface SelectorObservation {
   readonly notificationCursor: number;
   readonly operationalContext: SelectorOperationalContext;
   readonly workingMemory: JsonValue;
-  readonly nextCandidateAfter?: DispatchCandidate["ticket"];
+  readonly nextCandidateScan: Exclude<
+    SelectorCandidateScan,
+    { readonly state: "Unstarted" }
+  >;
+  readonly resourceLimit?: "CandidateTooLarge";
 }
 
 export interface SelectorPolicyResult {
@@ -307,8 +335,9 @@ export type SelectorTerminationResult =
 
 /** Owns the only model and tool capabilities and hard-terminates each isolated run. */
 export interface SelectorPolicyHost {
+  readonly productionReady: boolean;
   start(request: SelectorPolicyRequest): SelectorPolicyRun;
-  reconcileQuarantined(limit: number): Promise<number>;
+  reconcileQuarantined(attempt: string): Promise<SelectorTerminationResult>;
 }
 
 function allowed(name: string, allowlist: readonly string[]): boolean {
@@ -589,6 +618,7 @@ export function recordedSelectorObservation(
     notificationCursor: 0,
     operationalContext: interaction.context.operationalContext,
     workingMemory: interaction.context.workingMemory,
+    nextCandidateScan: { state: "Exhausted", token: interaction.observedToken },
   };
 }
 
@@ -710,6 +740,10 @@ function persistablePolicyObservation(
       notificationCursor: observation.notificationCursor,
       operationalContext: persistedInput.context.operationalContext,
       workingMemory: persistedInput.context.workingMemory,
+      nextCandidateScan: observation.nextCandidateScan,
+      ...(observation.resourceLimit === undefined
+        ? {}
+        : { resourceLimit: observation.resourceLimit }),
     };
   } catch (error) {
     if (error instanceof RangeError)
@@ -825,14 +859,7 @@ async function recordFailedSelectorCycle(
       recoveryEpoch: observation.token.recoveryEpoch,
       attention: "Attention",
       workingMemory: observation.workingMemory,
-      ...(observation.nextCandidateAfter === undefined
-        ? {}
-        : {
-            candidateScan: {
-              token: observation.token,
-              after: observation.nextCandidateAfter,
-            },
-          }),
+      candidateScan: observation.nextCandidateScan,
     },
   );
 }
@@ -861,14 +888,10 @@ async function recordCompletedSelectorCycle(
     recoveryEpoch: observation.token.recoveryEpoch,
     attention: result.attention,
     workingMemory: result.workingMemory,
-    ...(selected === undefined && observation.nextCandidateAfter !== undefined
-      ? {
-          candidateScan: {
-            token: observation.token,
-            after: observation.nextCandidateAfter,
-          },
-        }
-      : {}),
+    candidateScan:
+      selected === undefined
+        ? observation.nextCandidateScan
+        : { state: "Unstarted" },
   };
   if (selected === undefined) {
     await store.recordInteraction(
@@ -910,6 +933,27 @@ export async function runSelectorCycle(
     Math.floor(settings.limits.inputBytesPerDecision / 2),
   );
   if (observation === undefined) return undefined;
+  return runObservedSelectorCycle(
+    state,
+    observation,
+    source,
+    store,
+    policy,
+    identity,
+    settings,
+  );
+}
+
+/** Executes a previously persisted observation through the trusted policy host. */
+export async function runObservedSelectorCycle(
+  state: SelectorProjectState,
+  observation: SelectorObservation,
+  source: SelectorObservationSource,
+  store: SelectorStateStore,
+  policy: SelectorPolicyHost,
+  identity: SelectorCycleIdentity,
+  settings: SelectorRuntimeSettings,
+): Promise<SelectorProposal | undefined> {
   if (!observationMatchesProject(observation, state.partition))
     throw new Error("selector observation crossed its project boundary");
   const observedAt = observation.operationalContext.observedAtEpochMs;
@@ -924,6 +968,10 @@ export async function runSelectorCycle(
     return undefined;
   let execution: SelectorPolicyExecution;
   try {
+    if (observation.resourceLimit === "CandidateTooLarge")
+      throw new SelectorResourceLimit(
+        "selector candidate exceeds the interaction byte budget",
+      );
     execution = await executeSelectorPolicy(
       source,
       policy,
@@ -975,20 +1023,27 @@ export async function observeSelectorProject(
     after: state.notificationCursor,
     limit: pageLimit,
   });
+  const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
   const query =
-    state.candidateScan === undefined
+    scan.state === "Unstarted"
       ? { limit: pageLimit }
-      : {
-          limit: pageLimit,
-          after: state.candidateScan.after,
-          watermark: state.candidateScan.token.watermark,
-        };
-  let page = await boundedCandidatePage(
-    source,
-    state.partition,
-    query,
-    candidateBytesMax,
-  );
+      : scan.state === "Exhausted"
+        ? { limit: 1, watermark: scan.token.watermark }
+        : {
+            limit: pageLimit,
+            after: scan.after,
+            watermark: scan.token.watermark,
+          };
+  let page =
+    scan.state === "Exhausted"
+      ? await source.dispatchView(state.partition, query)
+      : await boundedCandidatePage(
+          source,
+          state.partition,
+          query,
+          candidateBytesMax,
+        );
+  if (scan.state === "Exhausted" && page.result === "Page") return undefined;
   if (page.result === "Reset")
     page = await boundedCandidatePage(
       source,
@@ -998,24 +1053,48 @@ export async function observeSelectorProject(
     );
   return page.result === "Reset"
     ? undefined
-    : {
-        token: page.token,
-        candidates: page.candidates,
-        notificationCursor: notifications.cursor,
-        operationalContext: await source.operationalContext(state.partition),
-        workingMemory: state.workingMemory,
-        ...(page.nextAfter === undefined
-          ? {}
-          : { nextCandidateAfter: page.nextAfter }),
-      };
+    : page.result === "Oversized"
+      ? {
+          token: page.token,
+          candidates: [],
+          notificationCursor: notifications.cursor,
+          operationalContext: await source.operationalContext(state.partition),
+          workingMemory: state.workingMemory,
+          nextCandidateScan:
+            page.nextAfter === undefined
+              ? { state: "Exhausted", token: page.token }
+              : { state: "Continue", token: page.token, after: page.candidate },
+          resourceLimit: "CandidateTooLarge",
+        }
+      : {
+          token: page.token,
+          candidates: page.candidates,
+          notificationCursor: notifications.cursor,
+          operationalContext: await source.operationalContext(state.partition),
+          workingMemory: state.workingMemory,
+          nextCandidateScan:
+            page.nextAfter === undefined
+              ? { state: "Exhausted", token: page.token }
+              : { state: "Continue", token: page.token, after: page.nextAfter },
+        };
 }
+
+type BoundedCandidatePage =
+  | DispatchViewPage
+  | {
+      readonly result: "Oversized";
+      readonly token: DispatchViewToken;
+      readonly candidate: DispatchCandidate["ticket"];
+      readonly nextAfter?: DispatchCandidate["ticket"];
+      readonly notificationCursor: number;
+    };
 
 async function boundedCandidatePage(
   source: SelectorObservationSource,
   partition: Partition,
   query: DispatchViewQuery,
   bytesMax: number,
-): Promise<DispatchViewPage> {
+): Promise<BoundedCandidatePage> {
   let limit = query.limit;
   for (;;) {
     const page = await source.dispatchView(partition, { ...query, limit });
@@ -1023,7 +1102,18 @@ async function boundedCandidatePage(
     const bytes = new TextEncoder().encode(
       JSON.stringify(page.candidates),
     ).length;
-    if (bytes <= bytesMax || limit === 1) return page;
+    if (bytes <= bytesMax) return page;
+    if (limit === 1) {
+      const candidate = page.candidates[0];
+      if (candidate === undefined) return page;
+      return {
+        result: "Oversized",
+        token: page.token,
+        candidate: candidate.ticket,
+        notificationCursor: page.notificationCursor,
+        ...(page.nextAfter === undefined ? {} : { nextAfter: page.nextAfter }),
+      };
+    }
     limit = Math.max(1, Math.floor(limit / 2));
   }
 }

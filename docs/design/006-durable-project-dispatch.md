@@ -722,28 +722,31 @@ recorded interactions pin the prompt and settings revision they used. A dry run
 may replay a recorded observation through a candidate revision without creating
 a proposal or delivery.
 
-The trusted policy sandbox owns the only model and tool capabilities. It receives
-immutable allowlists and budgets before execution, mediates every invocation and
-exposes no ambient model, network or Kubernetes authority to policy code.
-Post-execution accounting and provenance checks use a separate immutable
-snapshot as defense in depth. An in-process policy host is a test double, not a
-production sandbox. The production adapter must supply isolation and a
-host-verifiable terminal proof; narrow service APIs behind the tool gateway are
-the only route to network, model, Kubernetes and cluster-view authority.
+The selector policy is trusted application code. It receives immutable
+allowlists and budgets before execution and receives only narrow capability
+interfaces: it receives no database pool, credentials, general network client
+or infrastructure client. The production policy host mediates every model and
+tool invocation, enforces project scope and the configured byte, call, time and
+cost bounds, and records the semantic request, result and accounting. Model
+responses and tool results remain untrusted boundary data. Post-execution
+accounting and provenance checks use a separate immutable snapshot as defense
+in depth. This least-privilege contract does not require a separate process or
+infrastructure sandbox; the host boundary nevertheless permits a stronger
+out-of-process implementation later without changing selector semantics.
 
-Each sandbox execution is a durable selector attempt that owns its decision
+Each policy execution is a durable selector attempt that owns its decision
 permit. It progresses from `Starting` to `Running` and releases the permit only
 in the same durable transition that records either `Completed` with final
-accounting or `Terminated` with infrastructure-issued termination proof. A
-decision deadline requests hard termination; it is not itself a terminal fact.
-If the host cannot confirm termination within the bounded control deadline, the
-attempt becomes `Quarantined`, retains its permit and charged capacity, and is
-reconciled by an independent supervisor until completion or termination is
-proved. Quarantine may trip tenant or global selection circuit breakers, but it
-does not block proposal delivery, outcome reconciliation or observation of
-unrelated projects. Application code and policy output cannot manufacture
-terminal proof. Project deletion and disaster-recovery inventory include these
-attempts and cannot silently release their permits.
+accounting or `Terminated` after every issued capability call has confirmed
+completion or cancellation. A decision deadline requests cancellation; it is
+not itself a terminal fact. If the host cannot reconcile every call within the
+bounded control deadline, the attempt becomes `Quarantined`, retains its permit
+and charged capacity, and is reconciled by an independent supervisor until
+completion or cancellation is confirmed. Quarantine may trip tenant or global
+selection circuit breakers, but it does not block proposal delivery, outcome
+reconciliation or observation of unrelated projects. Policy output cannot
+manufacture terminal evidence. Project deletion and disaster-recovery inventory
+include these attempts and cannot silently release their permits.
 
 A selector observation is also a durable aggregate rather than one large JSON
 field. Its immutable header pins project, recovery epoch, dispatchable-view
@@ -758,7 +761,8 @@ Unreferenced staged resources may be collected, while referenced resources
 follow project audit retention and erasure.
 
 Policy code begins with the bounded observation header and summary and obtains
-candidate pages and operational resources incrementally through sandbox tools.
+candidate pages and operational resources incrementally through host
+capabilities.
 One interaction has revisioned hard limits for cumulative bytes, resource count,
 candidate pages, tool calls, duration and cost. It may select only a candidate
 from a page recorded in that observation. Limit exhaustion produces an audited
@@ -1519,9 +1523,10 @@ The following commits are indivisible transactions:
    proposal-delivery record in that selector transaction before any
    ticket-service API call.
 8. A selector decision permit remains owned by its durable attempt until the
-   same transaction records completion or infrastructure-proved termination.
-   Timeout or loss of host contact quarantines the attempt and cannot release
-   the permit by inference.
+   same transaction records completion or termination after every issued
+   capability call has confirmed completion or cancellation. Timeout or loss
+   of gateway contact quarantines the attempt and cannot release the permit by
+   inference.
 
 Implementation order follows the landing table. Each slice includes real
 PostgreSQL concurrency/process-death tests for its transaction before a later
@@ -1971,14 +1976,15 @@ valid large project view. The complete logical view remains fenced by its strict
 token without requiring one interaction row or model prompt to contain the
 entire view.
 
-Production selection runs only in the authority-owning policy sandbox. Each
+Production selection runs only through the least-privilege policy host. Each
 durable attempt owns its decision permit through `Starting` and `Running` and
-releases it only with a durable `Completed` outcome or infrastructure-proved
-`Terminated` outcome. Deadline expiry requests termination. Failure to prove
-termination produces `Quarantined`, retains the permit and quota charge, and
-hands reconciliation to an independent supervisor; it does not stall delivery
-or unrelated project quanta. I5 is incomplete with only an in-process host or a
-cleanup callback whose failure is treated as termination proof.
+releases it only with a durable `Completed` outcome or a `Terminated` outcome
+after all issued model and tool calls have confirmed completion or cancellation.
+Deadline expiry requests cancellation. Ambiguous remote activity produces
+`Quarantined`, retains the permit and quota charge, and hands reconciliation to
+an independent supervisor; it does not stall delivery or unrelated project
+quanta. I5 is incomplete if an in-process cleanup callback or rejected promise
+is treated as proof that remote activity stopped.
 
 Before an agentic choice crosses the service boundary, the selector atomically
 records its semantic interaction, resulting choice or wait, current planning
@@ -1996,7 +2002,7 @@ prevent later projects from being observed or already-durable proposal delivery
 and reconciliation from continuing in the same bounded runtime quantum. Each
 bounded quantum also reports typed phase, project and decision failure summaries
 for metrics and operator attention without exposing raw exceptions.
-Settings reads, permit acquisition, sandbox startup and strict boundary parsing
+Settings reads, permit acquisition, policy startup and strict boundary parsing
 are part of that per-project isolation contract: none may escape the quantum and
 skip later projects. Boundary adapters accept declared JSON numbers and parse
 timestamps into the application instant type without coercion; invalid values
@@ -2009,7 +2015,7 @@ integrity containment holds accepted ordinary proposals and prevents new
 dispatch decisions without erasing selector audit. I10 stops project monitoring
 and applies the project's retention and erasure policy to selector cursors,
 provenance, attention and planning state. Quarantined attempts remain in
-recovery and deletion inventory until terminal proof exists; an
+recovery and deletion inventory until terminal evidence exists; an
 integrity-blocked deletion may instead retain their frozen evidence under I10's
 explicit exceptional path.
 
@@ -2022,7 +2028,7 @@ explicit exceptional path.
 | I2 | I1 | The project decision transaction: replay and load, lifecycle, lease and expected-head fences, journal entry under one durable cause, operation terminalization, inbox acknowledgement and primary projection update, with refusal writing no entry and an ambiguous commit resolved by durable read | Landed |
 | I3 | I2 | Bounded project mailbox, priority and aging, durable deterministic continuations, focused native-action and consumer-request tables | Landed |
 | I4 | I3 | Authenticated native reads, operation polling and cancellation, versioned configuration and draft authoring, revision-fenced release, bounded access-controlled SSE notifications | Landed |
-| I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, plus selector-owned durable cursor, delivery, transparent resource-manifest provenance, attention and planning state. Definition of done includes the production authority-owning sandbox adapter, durable attempt/permit lifecycle, quarantine supervisor and typed per-project failure isolation; an in-process policy host is test-only. Selector timing, monitoring and deferral remain outside the ticket service, and selection failure never becomes a hidden FIFO dispatch policy. | — |
+| I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, plus selector-owned durable cursor, delivery, transparent resource-manifest provenance, attention and planning state. Definition of done includes the production least-privilege capability host, durable attempt/permit lifecycle, ambiguous-call quarantine supervisor and typed per-project failure isolation. The selector policy is initially trusted application code and may run in process; model and tool results remain untrusted data, and the host boundary permits stronger isolation later. Selector timing, monitoring and deferral remain outside the ticket service, and selection failure never becomes a hidden FIFO dispatch policy. | — |
 | I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation, plus bounded project-safe active-work and capacity context for the selector and the authoritative hard execution-backlog dispatch guard. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
 | I7 | I6 | The finalizer service: durable queue, preparation with bounded deterministic automatic rebase/merge against pinned commits, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with a clean automatic integration proceeding without ticket rework, a genuine merge conflict producing the exact immutable attempt/target/conflict manifest for rework, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
 | I8 | I0–I7, I9–I10 | Production PostgreSQL and disaster recovery: managed deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions, permits and selector cursors. Old-epoch actors and selector observations remain rejected after restore. Development may use the existing in-cluster PostgreSQL instance without claiming these production guarantees. | Deferred |

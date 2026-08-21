@@ -35,6 +35,11 @@ import type {
 } from "./authoring.ts";
 import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
 import {
+  dispatchNeedsExecutionHeadroom,
+  type BacklogScope,
+  type ExecutionBacklogGuard,
+} from "./schedulerContext.ts";
+import {
   checkedNotificationCursor,
   type NotificationBatch,
   type NotificationCursor,
@@ -97,6 +102,8 @@ export type OperationRefusalCode =
   | "NotEnabled"
   | "AuthoringChanged"
   | "ConfigurationInvalid"
+  | "TicketChanged"
+  | "SelectionChanged"
   | "CommandUnreadable";
 
 interface OperationResourceBase {
@@ -185,6 +192,11 @@ export interface NativeSubmission {
 
 export type NativeSubmissionResult =
   | { readonly result: "NotFound" }
+  | {
+      readonly result: "Backlogged";
+      readonly scope: BacklogScope;
+      readonly retryAfterSeconds: number;
+    }
   | { readonly result: "Authorized"; readonly acceptance: Accepted };
 
 export type NativeCancellation =
@@ -367,6 +379,32 @@ function nativeAuthoringMethods(
   };
 }
 
+function nativeSubmitMethod(
+  access: ProjectAccess,
+  inbox: OperationInbox,
+  backlog: ExecutionBacklogGuard,
+): NativeWeb["submit"] {
+  return async (principal, submission) => {
+    const authority = await access.authorize(
+      principal,
+      submission.partition,
+      submissionAccess(submission.command),
+    );
+    if (authority === undefined) return { result: "NotFound" };
+    if (dispatchNeedsExecutionHeadroom(submission.command)) {
+      const verdict = await backlog.admitsDispatch(submission.partition);
+      if (verdict.admits === "Backlogged")
+        return {
+          result: "Backlogged",
+          scope: verdict.scope,
+          retryAfterSeconds: verdict.retryAfterSeconds,
+        };
+    }
+    const accepted: Submission = { ...submission, authority };
+    return { result: "Authorized", acceptance: await inbox.accept(accepted) };
+  };
+}
+
 /** Builds the application boundary from authorization, read, and inbox ports. */
 export function nativeWeb(
   access: ProjectAccess,
@@ -374,21 +412,13 @@ export function nativeWeb(
   inbox: OperationInbox,
   authoring: AuthoringStore,
   notifications: NotificationStore,
+  backlog: ExecutionBacklogGuard,
   dispatchViews?: DispatchViewStore,
   inventory?: ProjectInventory,
 ): NativeWeb {
   return {
     ...nativeAuthoringMethods(access, authoring),
-    submit: async (principal, submission) => {
-      const authority = await access.authorize(
-        principal,
-        submission.partition,
-        submissionAccess(submission.command),
-      );
-      if (authority === undefined) return { result: "NotFound" };
-      const accepted: Submission = { ...submission, authority };
-      return { result: "Authorized", acceptance: await inbox.accept(accepted) };
-    },
+    submit: nativeSubmitMethod(access, inbox, backlog),
     operation: async (principal, partition, operation) =>
       (await access.authorize(principal, partition, "Read")) === undefined
         ? undefined

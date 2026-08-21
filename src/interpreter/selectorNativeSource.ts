@@ -18,8 +18,16 @@ function inaccessible(what: string): never {
 export function selectorNativeSource(
   native: SelectorNativeApi,
   principal: Principal,
+  environment: Pick<
+    SelectorRuntimeSource,
+    | "currentTimeEpochMs"
+    | "currentInstant"
+    | "decisionDeadline"
+    | "operationalContext"
+  >,
 ): SelectorRuntimeSource {
   return {
+    ...environment,
     projects: (after, limit) =>
       native.projectInventory(principal, after, limit),
     notifications: async (partition, cursor) => {

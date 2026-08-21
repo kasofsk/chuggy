@@ -29,6 +29,7 @@ import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdmin.ts";
 import { selectorPlanning } from "../../src/interpreter/selectorPlanning.ts";
+import { trustedSelectorPolicyHost } from "../../src/interpreter/trustedSelectorPolicyHost.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -122,6 +123,7 @@ function policyHost(
     Promise.resolve({ status: "Terminated", proof: "test-host-termination" }),
 ): SelectorPolicyHost {
   return {
+    productionReady: true,
     start: (request) => ({
       result: execute(request),
       terminate: async (reason) => {
@@ -131,7 +133,7 @@ function policyHost(
           : result;
       },
     }),
-    reconcileQuarantined: () => Promise.resolve(0),
+    reconcileQuarantined: () => Promise.resolve({ status: "Unconfirmed" }),
   };
 }
 
@@ -179,6 +181,12 @@ function stateStore(
   onTerminal: (outcome: unknown) => void,
 ): SelectorStateStore {
   return {
+    setAutomaticReadiness: () => Promise.resolve(),
+    allocateAttempt: () => Promise.resolve(true),
+    runningAttempt: () => Promise.resolve(),
+    quarantineAttempt: () => Promise.resolve(),
+    terminateAttempt: () => Promise.resolve(),
+    quarantinedAttempts: () => Promise.resolve([]),
     inventoryCursor: () => Promise.resolve(undefined),
     saveInventoryCursor: () => Promise.resolve(),
     recordInteraction: () => Promise.resolve(true),
@@ -244,6 +252,7 @@ test("selector observation restarts a continued scan when its view resets", asyn
       attention: "Monitoring",
       workingMemory: {},
       candidateScan: {
+        state: "Continue",
         token: {
           ...partition,
           recoveryEpoch: "old-epoch",
@@ -282,6 +291,71 @@ test("selector observation restarts a continued scan when its view resets", asyn
   );
   assert.equal(observed?.token.watermark, 2);
   assert.equal(page, 2);
+});
+
+test("an oversized final candidate advances the scan to Exhausted", async () => {
+  const candidate = {
+    ticket: asTicketId(1),
+    ticketVersion: 1,
+    dependencies: [],
+    workFanout: 1,
+    program: [{ fanout: 1, combinator: "UnanimousPass" }],
+    reworkPolicy: { type: "BudgetedRework", value: 1 },
+    finalizationPricing: "DeadlineOnly",
+    resumePricing: "RetryCharged",
+    finalizer: "NoFinalizer",
+    configurationRevision: "revision",
+    configurationDigest: "d".repeat(64),
+    configurationCanonical: "x".repeat(1_000),
+  } as const;
+  const source = {
+    ...promptObservationSource(),
+    dispatchView: () =>
+      Promise.resolve({
+        result: "Page",
+        token: {
+          ...partition,
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 9,
+          digest: "f".repeat(64),
+        },
+        candidates: [candidate],
+        notificationCursor: 1,
+      } as const),
+  };
+  const observation = await observeSelectorProject(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+      candidateScan: { state: "Unstarted" },
+    },
+    source,
+    10,
+    100,
+  );
+  assert.equal(observation?.resourceLimit, "CandidateTooLarge");
+  assert.deepEqual(observation?.candidates, []);
+  assert.equal(observation?.nextCandidateScan.state, "Exhausted");
+  assert.equal(
+    await observeSelectorProject(
+      {
+        partition,
+        notificationCursor: 1,
+        revision: 1,
+        attention: "Attention",
+        workingMemory: {},
+        candidateScan: observation?.nextCandidateScan,
+      },
+      source,
+      10,
+      100,
+    ),
+    undefined,
+  );
 });
 
 test("ambiguous proposal delivery retries through ordinary operation idempotency", async () => {
@@ -354,12 +428,6 @@ test("a paused runtime creates no new observations but still drains durable work
     {
       projects: () =>
         Promise.reject(new Error("paused runtime listed projects")),
-      acquireDecisionPermit: () =>
-        Promise.reject(new Error("paused runtime acquired a permit")),
-      releaseDecisionPermit: () =>
-        Promise.reject(new Error("paused runtime released a permit")),
-      quarantineDecisionPermit: () =>
-        Promise.reject(new Error("paused runtime quarantined a permit")),
       notifications: () =>
         Promise.reject(new Error("paused runtime observed a project")),
       decisionDeadline: () =>
@@ -407,6 +475,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
   const result = await selectorRunOnce(
     {
       ...stateStore(() => undefined),
+      allocateAttempt: (_attempt, scope) => Promise.resolve(scope !== first),
       saveInventoryCursor: (cursor) => {
         saved = cursor;
         return Promise.resolve();
@@ -415,10 +484,6 @@ test("inventory progress follows scanned projects when a permit is unavailable",
     {
       projects: () =>
         Promise.resolve({ projects: [first, second], nextAfter: second }),
-      acquireDecisionPermit: (scope) =>
-        Promise.resolve(scope === first ? undefined : "permit"),
-      releaseDecisionPermit: () => Promise.resolve(),
-      quarantineDecisionPermit: () => Promise.resolve(),
       notifications: () =>
         Promise.resolve({ result: "Events", cursor: 1, events: [] } as const),
       decisionDeadline: () => new Promise<never>(() => undefined),
@@ -449,16 +514,16 @@ test("a pause observed after permit acquisition prevents a new decision", async 
   let settingsReads = 0;
   let releases = 0;
   const result = await selectorRunOnce(
-    stateStore(() => undefined),
     {
-      ...promptObservationSource(),
-      projects: () => Promise.resolve({ projects: [partition] }),
-      acquireDecisionPermit: () => Promise.resolve("permit"),
-      releaseDecisionPermit: () => {
+      ...stateStore(() => undefined),
+      terminateAttempt: () => {
         releases += 1;
         return Promise.resolve();
       },
-      quarantineDecisionPermit: () => Promise.resolve(),
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
     },
@@ -563,7 +628,7 @@ test("current selector planning is project-authorized and cursor-free", async ()
   });
 });
 
-test("the runtime deadline hard-terminates its sandbox before returning", async () => {
+test("the runtime deadline confirms capability cancellation before returning", async () => {
   let aborted = false;
   let recordedFailure: JsonValue | undefined;
   const result = await runSelectorCycle(
@@ -611,26 +676,25 @@ test("the runtime deadline hard-terminates its sandbox before returning", async 
   });
 });
 
-test("unconfirmed sandbox termination quarantines rather than releasing its permit", async () => {
+test("unconfirmed capability cancellation quarantines its durable attempt", async () => {
   let released = 0;
   let quarantined: string | undefined;
   const result = await selectorRunOnce(
     {
       ...stateStore(() => undefined),
       recordInteraction: () => Promise.reject(new Error("audit unavailable")),
+      terminateAttempt: () => {
+        released += 1;
+        return Promise.resolve();
+      },
+      quarantineAttempt: (attempt) => {
+        quarantined = attempt;
+        return Promise.resolve();
+      },
     },
     {
       ...promptObservationSource(),
       projects: () => Promise.resolve({ projects: [partition] }),
-      acquireDecisionPermit: () => Promise.resolve("unsafe-permit"),
-      releaseDecisionPermit: () => {
-        released += 1;
-        return Promise.resolve();
-      },
-      quarantineDecisionPermit: (permit) => {
-        quarantined = permit;
-        return Promise.resolve();
-      },
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
       decisionDeadline: () => Promise.reject(new Error("deadline")),
@@ -648,23 +712,25 @@ test("unconfirmed sandbox termination quarantines rather than releasing its perm
     { settings: () => Promise.resolve(runtimeSettings) },
   );
   assert.equal(released, 0);
-  assert.equal(quarantined, "unsafe-permit");
+  assert.equal(quarantined, "unsafe-decision");
   assert.deepEqual(result.failures, [{ phase: "Observation", partition }]);
 });
 
 test("an unconfirmed permit release enters reconciliation", async () => {
   let quarantined: string | undefined;
   const result = await selectorRunOnce(
-    stateStore(() => undefined),
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: () => Promise.reject(new Error("commit unknown")),
+      terminateAttempt: () => Promise.reject(new Error("commit unknown")),
+      quarantineAttempt: (attempt) => {
+        quarantined = attempt;
+        return Promise.resolve();
+      },
+    },
     {
       ...promptObservationSource(),
       projects: () => Promise.resolve({ projects: [partition] }),
-      acquireDecisionPermit: () => Promise.resolve("release-uncertain"),
-      releaseDecisionPermit: () => Promise.reject(new Error("commit unknown")),
-      quarantineDecisionPermit: (permit) => {
-        quarantined = permit;
-        return Promise.resolve();
-      },
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
     },
@@ -677,8 +743,11 @@ test("an unconfirmed permit release enters reconciliation", async () => {
     },
     { settings: () => Promise.resolve(runtimeSettings) },
   );
-  assert.equal(quarantined, "release-uncertain");
-  assert.deepEqual(result.failures, [{ phase: "PermitRelease", partition }]);
+  assert.equal(quarantined, "release-decision");
+  assert.deepEqual(result.failures, [
+    { phase: "Observation", partition },
+    { phase: "PermitRelease", partition },
+  ]);
 });
 
 test("settings and permit failures remain isolated to their projects", async () => {
@@ -696,17 +765,17 @@ test("settings and permit failures remain isolated to their projects", async () 
   };
   let settingsReads = 0;
   const result = await selectorRunOnce(
-    stateStore(() => undefined),
+    {
+      ...stateStore(() => undefined),
+      allocateAttempt: (_attempt, scope) =>
+        scope === permitBroken
+          ? Promise.reject(new Error("permit store unavailable"))
+          : Promise.resolve(true),
+    },
     {
       ...promptObservationSource(),
       projects: () =>
         Promise.resolve({ projects: [settingsBroken, permitBroken, healthy] }),
-      acquireDecisionPermit: (scope) =>
-        scope === permitBroken
-          ? Promise.reject(new Error("permit store unavailable"))
-          : Promise.resolve(`permit-${scope.project}`),
-      releaseDecisionPermit: () => Promise.resolve(),
-      quarantineDecisionPermit: () => Promise.resolve(),
       dispatchView: (scope) =>
         Promise.resolve({
           result: "Page",
@@ -747,7 +816,7 @@ test("settings and permit failures remain isolated to their projects", async () 
   ]);
 });
 
-test("sandbox constraints and observations are immutable", async () => {
+test("policy-host constraints and observations are immutable", async () => {
   let mutationRejected = false;
   let observationMutationRejected = false;
   await runSelectorCycle(
@@ -854,7 +923,7 @@ test("structurally invalid JSON is audited instead of reaching persistence", asy
   });
 });
 
-test("unpersistable selector input is rejected before sandbox execution", async () => {
+test("unpersistable selector input is rejected before policy execution", async () => {
   let started = false;
   await runSelectorCycle(
     {
@@ -934,9 +1003,6 @@ test("one project failure does not block later projects or durable delivery", as
     },
     {
       projects: () => Promise.resolve({ projects: [broken, healthy] }),
-      acquireDecisionPermit: (scope) => Promise.resolve(scope.project),
-      releaseDecisionPermit: () => Promise.resolve(),
-      quarantineDecisionPermit: () => Promise.resolve(),
       notifications: (scope) =>
         scope === broken
           ? Promise.reject(new Error("broken project feed"))
@@ -997,9 +1063,6 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
     {
       projects: () =>
         Promise.reject(new Error("paused selector listed projects")),
-      acquireDecisionPermit: () => Promise.resolve(undefined),
-      releaseDecisionPermit: () => Promise.resolve(),
-      quarantineDecisionPermit: () => Promise.resolve(),
       notifications: () => Promise.reject(new Error("no observation")),
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () => Promise.resolve(0),
@@ -1129,4 +1192,71 @@ test("selector configuration changes require platform administration", async () 
   assert.equal(mutations, 0);
   await administration.pause(asPrincipal("admin"), runtimeSettings.revision);
   assert.equal(mutations, 1);
+});
+
+test("the trusted policy host starts once and bounds cancellation evidence", async () => {
+  let executions = 0;
+  let aborted = false;
+  const host = trustedSelectorPolicyHost(
+    {
+      execute: (_request, signal) => {
+        executions += 1;
+        signal.addEventListener("abort", () => {
+          aborted = true;
+        });
+        return new Promise(() => undefined);
+      },
+      cancel: (attempt) =>
+        Promise.resolve({
+          status: "Terminated",
+          attempt,
+          proof: "all capability calls settled",
+        }),
+      inspect: () => Promise.resolve({ status: "Unconfirmed" }),
+    },
+    { after: () => new Promise<never>(() => undefined) },
+    { controlDeadlineMs: 1_000 },
+  );
+  const request: SelectorPolicyRequest = {
+    attempt: "durable-attempt",
+    observation: Object.freeze({
+      token: {
+        ...partition,
+        recoveryEpoch: "epoch",
+        schemaVersion: 1,
+        watermark: 1,
+        digest: "a".repeat(64),
+      },
+      candidates: [],
+      notificationCursor: 0,
+      operationalContext,
+      workingMemory: {},
+      nextCandidateScan: {
+        state: "Exhausted" as const,
+        token: {
+          ...partition,
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 1,
+          digest: "a".repeat(64),
+        },
+      },
+    }),
+    instructions: Object.freeze({ revision: 1, content: "prompt" }),
+    constraints: Object.freeze({
+      models: Object.freeze(["model"]),
+      tools: Object.freeze([]),
+      limits: Object.freeze(runtimeSettings.limits),
+    }),
+  };
+  const first = host.start(request);
+  const retry = host.start(request);
+  assert.equal(first, retry);
+  assert.equal(executions, 1);
+  assert.deepEqual(await first.terminate(new Error("deadline")), {
+    status: "Terminated",
+    attempt: "durable-attempt",
+    proof: "all capability calls settled",
+  });
+  assert.equal(aborted, true);
 });

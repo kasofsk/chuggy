@@ -2,8 +2,9 @@ import type { Partition } from "./projectStore.ts";
 import type { ProjectInventoryPage } from "./nativeWeb.ts";
 import {
   deliverSelectorProposal,
+  observeSelectorProject,
   reconcileSelectorProposal,
-  runSelectorCycle,
+  runObservedSelectorCycle,
   type SelectorCycleIdentity,
   type SelectorObservationSource,
   type SelectorOperationSource,
@@ -26,19 +27,6 @@ export interface SelectorRuntimeSource
     after: Partition | undefined,
     limit: number,
   ): Promise<ProjectInventoryPage>;
-  acquireDecisionPermit(
-    partition: Partition,
-    limits: {
-      readonly concurrentDecisions: number;
-      readonly selectionsPerMinute: number;
-    },
-  ): Promise<string | undefined>;
-  releaseDecisionPermit(permit: string): Promise<void>;
-  quarantineDecisionPermit(
-    permit: string,
-    partition: Partition,
-    decision: string,
-  ): Promise<void>;
 }
 
 export interface SelectorIdentityFactory {
@@ -95,6 +83,7 @@ function initialState(partition: Partition): SelectorProjectState {
     revision: 0,
     attention: "Monitoring",
     workingMemory: {},
+    candidateScan: { state: "Unstarted" },
   };
 }
 
@@ -156,19 +145,22 @@ async function observeProject(
   }
   if (settings.mode === "Paused") return stoppedProjectObservation;
   const identity = identities.next(partition);
-  let permit: string | undefined;
+  let allocated: boolean;
   try {
-    permit = await source.acquireDecisionPermit(partition, {
-      concurrentDecisions: settings.limits.concurrentDecisions,
-      selectionsPerMinute: settings.limits.selectionsPerMinute,
-    });
+    allocated = await store.allocateAttempt(
+      identity.selectorDecisionReference,
+      partition,
+      {
+        concurrentDecisions: settings.limits.concurrentDecisions,
+        selectionsPerMinute: settings.limits.selectionsPerMinute,
+      },
+    );
   } catch {
     return projectObservationFailure("PermitAcquisition", partition);
   }
-  if (permit === undefined) return emptyProjectObservation;
+  if (!allocated) return emptyProjectObservation;
   return observePermittedProject(
     partition,
-    permit,
     settings,
     store,
     source,
@@ -195,7 +187,6 @@ function projectObservationFailure(
 
 async function observePermittedProject(
   partition: Partition,
-  permit: string,
   expectedSettings: SelectorRuntimeSettings,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
@@ -206,53 +197,132 @@ async function observePermittedProject(
   const failures: SelectorRunFailure[] = [];
   let proposal: SelectorProposal | undefined;
   let observed = false;
-  let releasePermit = true;
   let stop = false;
   try {
     const settings = await control.settings();
     if (
       settings.mode === "Paused" ||
       settings.revision !== expectedSettings.revision
-    )
+    ) {
       stop = true;
-    else {
+      await store.terminateAttempt(
+        identity.selectorDecisionReference,
+        "settings changed before policy execution",
+      );
+    } else {
       const state = (await store.project(partition)) ?? initialState(partition);
-      proposal = await runSelectorCycle(
+      const observation = await observeSelectorProject(
         state,
         source,
-        store,
-        policy,
-        identity,
-        settings,
+        100,
+        Math.floor(settings.limits.inputBytesPerDecision / 2),
       );
+      if (observation !== undefined)
+        await store.runningAttempt(
+          identity.selectorDecisionReference,
+          observation,
+          settings.revision,
+        );
+      proposal =
+        observation === undefined
+          ? undefined
+          : await runObservedSelectorCycle(
+              state,
+              observation,
+              source,
+              store,
+              policy,
+              identity,
+              settings,
+            );
+      if (observation === undefined)
+        await store.terminateAttempt(
+          identity.selectorDecisionReference,
+          "no current observation",
+        );
       observed = true;
     }
   } catch (error) {
     failures.push({ phase: "Observation", partition });
-    if (error instanceof SelectorTerminationUnconfirmed) {
-      releasePermit = false;
-      await source
-        .quarantineDecisionPermit(
-          permit,
-          partition,
-          identity.selectorDecisionReference,
-        )
-        .catch(() => failures.push({ phase: "Quarantine", partition }));
-    }
-  } finally {
-    if (releasePermit)
-      await source.releaseDecisionPermit(permit).catch(async () => {
-        failures.push({ phase: "PermitRelease", partition });
-        await source
-          .quarantineDecisionPermit(
-            permit,
-            partition,
-            identity.selectorDecisionReference,
-          )
-          .catch(() => failures.push({ phase: "Quarantine", partition }));
-      });
+    await settleFailedAttempt(store, identity, partition, error, failures);
   }
   return { stop, observed, proposed: proposal !== undefined, failures };
+}
+
+async function settleFailedAttempt(
+  store: SelectorStateStore,
+  identity: SelectorCycleIdentity,
+  partition: Partition,
+  error: unknown,
+  failures: SelectorRunFailure[],
+): Promise<void> {
+  if (error instanceof SelectorTerminationUnconfirmed) {
+    await store
+      .quarantineAttempt(identity.selectorDecisionReference)
+      .catch(() => failures.push({ phase: "Quarantine", partition }));
+    return;
+  }
+  try {
+    await store.terminateAttempt(
+      identity.selectorDecisionReference,
+      "policy execution ended without a recorded interaction",
+    );
+  } catch {
+    failures.push({ phase: "PermitRelease", partition });
+    await store
+      .quarantineAttempt(identity.selectorDecisionReference)
+      .catch(() => failures.push({ phase: "Quarantine", partition }));
+  }
+}
+
+async function observeInventory(
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  policy: SelectorPolicyHost,
+  identities: SelectorIdentityFactory,
+  control: SelectorRuntimeSettingsSource,
+  projectsMax: number,
+): Promise<{
+  readonly observed: number;
+  readonly proposed: number;
+  readonly failures: readonly SelectorRunFailure[];
+}> {
+  await store.setAutomaticReadiness(policy.productionReady);
+  const settings = await control.settings();
+  const inventoryCursor = await store.inventoryCursor();
+  const inventory =
+    settings.mode === "Paused"
+      ? { projects: [] }
+      : await source.projects(inventoryCursor, projectsMax);
+  const progress = await observeProjects(
+    inventory.projects,
+    store,
+    source,
+    policy,
+    identities,
+    control,
+  );
+  if (progress.scanned > 0 || inventory.nextAfter !== undefined)
+    await store.saveInventoryCursor(
+      progress.scanned === inventory.projects.length
+        ? inventory.nextAfter
+        : inventory.projects.at(progress.scanned - 1),
+    );
+  return progress;
+}
+
+async function reconcileAttempts(
+  store: SelectorStateStore,
+  policy: SelectorPolicyHost,
+): Promise<void> {
+  for (const attempt of await store.quarantinedAttempts(100)) {
+    const reconciliation = await policy.reconcileQuarantined(attempt);
+    if (
+      reconciliation.status === "Terminated" &&
+      reconciliation.attempt === attempt
+    )
+      await store.terminateAttempt(attempt, reconciliation.proof);
+  }
 }
 
 async function deliverPending(
@@ -325,30 +395,17 @@ export async function selectorRunOnce(
   let proposed = 0;
   const failures: SelectorRunFailure[] = [];
   try {
-    const initialSettings = await control.settings();
-    const inventoryCursor = await store.inventoryCursor();
-    const inventory =
-      initialSettings.mode === "Paused"
-        ? { projects: [] }
-        : await source.projects(inventoryCursor, projectsMax);
-    const projects = inventory.projects;
-    const progress = await observeProjects(
-      projects,
+    const progress = await observeInventory(
       store,
       source,
       policy,
       identities,
       control,
+      projectsMax,
     );
     observed = progress.observed;
     proposed = progress.proposed;
     failures.push(...progress.failures);
-    if (progress.scanned > 0 || inventory.nextAfter !== undefined)
-      await store.saveInventoryCursor(
-        progress.scanned === projects.length
-          ? inventory.nextAfter
-          : projects.at(progress.scanned - 1),
-      );
   } catch {
     failures.push({ phase: "Inventory" });
   }
@@ -364,9 +421,11 @@ export async function selectorRunOnce(
     checkedBound(config.reconciliationsMax, "selector reconciliation bound"),
   );
   failures.push(...reconciliation.failures);
-  await policy
-    .reconcileQuarantined(100)
-    .catch(() => failures.push({ phase: "AttemptReconciliation" }));
+  try {
+    await reconcileAttempts(store, policy);
+  } catch {
+    failures.push({ phase: "AttemptReconciliation" });
+  }
   return {
     observed,
     proposed,

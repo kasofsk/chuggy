@@ -9,6 +9,9 @@ import type {
 } from "../../interpreter/dispatchView.ts";
 import {
   checkedDispatchViewQuery,
+  decodeDispatchFinalizationPricing,
+  decodeDispatchProgram,
+  decodeDispatchReworkPolicy,
   dispatchViewDigest,
 } from "../../interpreter/dispatchView.ts";
 import { asTicketId } from "../../domain/ids.ts";
@@ -43,6 +46,18 @@ interface CandidateRow {
   readonly configuration_canonical: string;
 }
 
+function decodeResumePricing(
+  value: string,
+): DispatchCandidate["resumePricing"] {
+  if (value === "RetryCharged" || value === "RetryFree") return value;
+  throw new TypeError("dispatch resume pricing is malformed");
+}
+
+function decodeFinalizer(value: string): DispatchCandidate["finalizer"] {
+  if (value === "NoFinalizer" || value === "ManagedFinalizer") return value;
+  throw new TypeError("dispatch finalizer is malformed");
+}
+
 function candidateOf(
   row: CandidateRow,
   dependencies: readonly {
@@ -61,15 +76,15 @@ function candidateOf(
       .filter((edge) => Number(edge.ticket) === ticket)
       .map((edge) => projectRowCounter(edge.dependency, "dispatch dependency")),
     workFanout: projectRowCounter(row.work_fanout, "dispatch work fanout"),
-    program: JSON.parse(row.program) as DispatchCandidate["program"],
-    reworkPolicy: JSON.parse(
-      row.rework_policy,
-    ) as DispatchCandidate["reworkPolicy"],
-    finalizationPricing: JSON.parse(
-      row.finalization_pricing,
-    ) as DispatchCandidate["finalizationPricing"],
-    resumePricing: row.resume_pricing as DispatchCandidate["resumePricing"],
-    finalizer: row.finalizer as DispatchCandidate["finalizer"],
+    program: decodeDispatchProgram(JSON.parse(row.program) as unknown),
+    reworkPolicy: decodeDispatchReworkPolicy(
+      JSON.parse(row.rework_policy) as unknown,
+    ),
+    finalizationPricing: decodeDispatchFinalizationPricing(
+      JSON.parse(row.finalization_pricing) as unknown,
+    ),
+    resumePricing: decodeResumePricing(row.resume_pricing),
+    finalizer: decodeFinalizer(row.finalizer),
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     configurationCanonical: row.configuration_canonical,

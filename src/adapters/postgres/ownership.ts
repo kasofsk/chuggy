@@ -42,7 +42,6 @@ import {
   type Renewed,
 } from "../../interpreter/projectStore.ts";
 import { postgresTransaction } from "./pool.ts";
-import { notificationPublishFunction } from "./schema.ts";
 import {
   projectRowHonours,
   projectRowLease,
@@ -302,10 +301,6 @@ export async function postgresOwnershipFence(
     );
     await client.query<{ published: string | null }>(
       sql`SELECT publish_project_notification(${partition.tenant},${partition.project},'Project',${partition.project},NULL,NULL)::text AS published`,
-    );
-    await client.query(
-      `SELECT ${notificationPublishFunction}($1,$2,'Project',$2,NULL,NULL)`,
-      [partition.tenant, partition.project],
     );
     return projectRowStanding(postgresOwnershipRow(fenced));
   });
