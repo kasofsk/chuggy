@@ -85,10 +85,13 @@ async function readConfiguration(
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
+  const canonical = asCanonicalConfiguration(row.canonical);
+  if (digest(canonical) !== row.digest)
+    throw new Error("configuration revision content contradicts its digest");
   const resource = {
     partition,
     revision: asConfigurationRevisionId(revision),
-    canonical: asCanonicalConfiguration(row.canonical),
+    canonical,
     digest: row.digest,
   };
   return row.parent === null

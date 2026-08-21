@@ -186,6 +186,31 @@ test("configuration revision identity is project-local", async () => {
   );
 });
 
+test("configuration reads reject content that contradicts its digest", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "config-read-integrity",
+  );
+  const revision = asConfigurationRevisionId(`integrity-${randomUUID()}`);
+  const store = postgresAuthoring(pool);
+  await store.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: asCanonicalConfiguration('{"image":"worker:v1"}'),
+  });
+  await harness.query(
+    `UPDATE configuration_revision SET canonical='{"image":"tampered"}'
+      WHERE tenant=$1 AND project=$2 AND revision=$3`,
+    [partition.tenant, partition.project, revision],
+  );
+
+  await assert.rejects(
+    store.configuration(partition, revision),
+    /content contradicts its digest/,
+  );
+});
+
 test("concurrent identical configuration creation is idempotent", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
