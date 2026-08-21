@@ -2234,11 +2234,21 @@ attempt beside the base it was observed at. It is service-owned and never
 enters the frozen ticket contract: a ref in `Core` is a model tripwire, and
 `ManagedFinalizer` is nullary precisely so that it is not one.
 
-Bounded means exactly one integration attempt per observed target. If the
-target moves, the revision fence restarts preparation from the newly observed
-immutable target under an explicit `preparationRestartsMax`, and exhausting
-that ceiling is an operational hold under attention rather than a priced
-failure — nothing refunds and nothing overdraws, so a finalizer's own
+Bounded means exactly one integration attempt per observed target, and the
+target that integration is answered against is a **second** reading of the
+remote taken once the candidate exists. This record said the one reading until
+the adapter was built and it cannot serve: the candidate is the observed
+commit's tree with the artifacts standing in it, so merging it with that same
+commit is the candidate itself by construction — one reading would make every
+automatic integration a no-op and `MergeConflict` a kind with no producer,
+which is exactly what a kind arriving with its producer forbids. The candidate
+is therefore built over the first reading and integrated against the second,
+the attempt pins the second because it is what the promotion is conditional
+on, and the merge base between them is what a conflict's evidence names. If
+the target moves again after that, the revision fence restarts preparation from
+the newly observed immutable target under an explicit `preparationRestartsMax`,
+and exhausting that ceiling is an operational hold under attention rather than
+a priced failure — nothing refunds and nothing overdraws, so a finalizer's own
 re-preparations must be invisible to `Core`. The strategy is **merge and not
 rebase**: `merge-tree --write-tree` is a deterministic function of two
 commits, where a rebase replays commits and is not. The attempt records the

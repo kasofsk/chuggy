@@ -91,9 +91,7 @@ test("the finalizer cannot reach a prior slice's own relations", async () => {
     "project_notification",
     "project_continuation",
     "execution_request",
-    "execution",
     "execution_attempt",
-    "execution_result",
     "scheduler_incident",
     "capacity_account",
     "dispatch_view",
@@ -101,6 +99,29 @@ test("the finalizer cannot reach a prior slice's own relations", async () => {
     "draft",
   ]) {
     for (const statement of await everyVerb(relation)) {
+      assert.match(
+        (await harness.attemptAs(finalizerRole, statement)) ?? "",
+        postgresHarnessDenial(relation),
+        statement,
+      );
+    }
+  }
+});
+
+test("the scheduler rows a handoff is spelled across are readable and nothing more", async () => {
+  for (const relation of [
+    "execution",
+    "execution_request_task",
+    "execution_result",
+    "execution_result_artifact",
+  ]) {
+    const [read, ...written] = await everyVerb(relation);
+    assert.equal(
+      await harness.attemptAs(finalizerRole, read ?? ""),
+      undefined,
+      relation,
+    );
+    for (const statement of written) {
       assert.match(
         (await harness.attemptAs(finalizerRole, statement)) ?? "",
         postgresHarnessDenial(relation),
@@ -182,10 +203,16 @@ test("the finalizer cannot mint an epoch, a project or a repository binding", as
     ["INSERT INTO recovery_epoch (epoch) VALUES ('minted')", "recovery_epoch"],
     ["INSERT INTO project_repository DEFAULT VALUES", "project_repository"],
     ["UPDATE project_repository SET repository='seized'", "project_repository"],
-    ["INSERT INTO input_bundle DEFAULT VALUES", "input_bundle"],
     [
       "INSERT INTO configuration_revision DEFAULT VALUES",
       "configuration_revision",
+    ],
+    ["INSERT INTO execution DEFAULT VALUES", "execution"],
+    ["UPDATE execution SET outcome='Passed'", "execution"],
+    ["INSERT INTO execution_result DEFAULT VALUES", "execution_result"],
+    [
+      "INSERT INTO execution_result_artifact DEFAULT VALUES",
+      "execution_result_artifact",
     ],
     ["UPDATE project SET lifecycle='Active'", "project"],
     ["INSERT INTO project DEFAULT VALUES", "project"],
@@ -245,7 +272,7 @@ test("the finalizer's write surface is exactly the columns its moves need", asyn
         table_name: "finalization_attempt",
         privilege_type: "INSERT",
         columns:
-          "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,failure_kind,outcome,prepared_at,project,repository,request,strategy,target_commit,target_ref,tenant,ticket",
+          "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,outcome,prepared_at,project,repository,request,strategy,target_commit,target_ref,tenant,ticket",
       },
       {
         table_name: "finalization_reconciliation",
@@ -264,6 +291,16 @@ test("the finalizer's write surface is exactly the columns its moves need", asyn
         columns:
           "claim_expires_at,claim_generation,claim_owner,recovery_epoch,state",
       },
+      {
+        table_name: "input_bundle",
+        privilege_type: "INSERT",
+        columns: "bundle,created_at,digest,project,tenant",
+      },
+      {
+        table_name: "input_bundle_reference",
+        privilege_type: "INSERT",
+        columns: "bundle,ordinal,project,reference_id,reference_kind,tenant",
+      },
     ],
   );
 });
@@ -280,6 +317,10 @@ test("the finalizer's read surface is exactly the relations its view is gathered
     [
       "commit_permit",
       "configuration_revision",
+      "execution",
+      "execution_request_task",
+      "execution_result",
+      "execution_result_artifact",
       "finalization_attempt",
       "finalization_reconciliation",
       "finalization_request",

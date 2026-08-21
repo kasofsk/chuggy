@@ -40,12 +40,30 @@
  * lapsed is not self-healing and nothing claimable can be drawn until those rows
  * say so again.
  *
- * PREPARING A CANDIDATE IS NOT YET THIS SERVICE'S TO DO, so the pass performs
- * neither the preparation the revision fence asks for nor the approval that
- * follows one: it counts the decision and leaves the finalization exactly where
- * it stood. Constructing a candidate needs the verified handoff artifacts'
- * content, which arrives with the adapter that reads them, and a simulated
- * preparation would forge an attempt nothing had produced.
+ * PREPARATION OBSERVES THE TARGET TWICE AND INTEGRATES AGAINST THE SECOND. The
+ * candidate is the tree of the target the view observed with the verified
+ * handoff artifacts standing in it, so integrating it against that same commit
+ * could only ever be the candidate itself and no automatic integration would
+ * ever be attempted at all. The remote is therefore re-read once the candidate
+ * exists, and the one integration this preparation is allowed is against what
+ * the remote holds then — which is where a merge base, a clean automatic merge
+ * and a genuine conflict all come from. The attempt pins that second
+ * observation, because it is the commit the promotion will be conditional on.
+ *
+ * ONE INTEGRATION PER OBSERVED TARGET, AND THE FENCE DOES THE REST. Nothing here
+ * loops until the remote holds still: a target that moved again is found by the
+ * next pass comparing the attempt's pinned target with a fresh observation, and
+ * that restarts preparation under `preparationRestartsMax` rather than chasing.
+ * Exhausting the ceiling is an operational hold, so a finalizer's own
+ * re-preparations spend nothing and stay invisible to `Core`.
+ *
+ * ONLY CONCLUSIVE EVIDENCE IS WRITTEN DOWN. A storage outage, an unreadable
+ * remote and a git call that could not answer leave no attempt at all and are
+ * counted as holds; what becomes a `PreparationFailed` or a `MergeConflict` is
+ * a property of the rows and the trees, and stays true however long anyone
+ * waits. A ticket whose passed work has no result to read is a hold too, for
+ * the plainer reason that an attempt pinning no configuration revision is a row
+ * the schema will not hold.
  *
  * NOTHING HERE READS A CLOCK. Every lease and expiry is a duration handed to the
  * store, which asks the database what time it is.
@@ -56,8 +74,11 @@ import {
   checkedFinalizerConfig,
   finalizationNext,
   type AncestryProved,
+  type CandidateFile,
+  type CandidateIntegrated,
   type CommitPermitId,
   type FinalizationAttempt,
+  type FinalizationAttemptId,
   type FinalizationClaim,
   type FinalizationConclusion,
   type FinalizationReconciliation,
@@ -69,15 +90,40 @@ import {
   type GitPromotionPort,
   type GitRefName,
   type HeldPermit,
+  type IntegrationStrategy,
+  type InputBundleId,
   type ObservedTarget,
   type RepositoryBinding,
+  inputBundleReferencesMax,
 } from "./finalizer.ts";
+import {
+  canonicalFinalizationAttempt,
+  canonicalInputBundle,
+  conflictManifestText,
+  handoffAccepted,
+  type AttemptRecord,
+  type FinalizationDigestFunction,
+  type FinalizerIdentityFactory,
+  type FinalizerPreparationStore,
+  type HandoffContentPort,
+  type InputBundle,
+  type InputBundleReference,
+  type PinnedConfiguration,
+  type PreparationIdentity,
+  type ProjectArtifactPort,
+  type TicketHandoff,
+} from "./finalizerPreparation.ts";
+import type { ResultManifestId } from "./resultManifest.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 
 /** Everything a finalizer pass calls out through, and the bounds it works within. */
 export interface FinalizerService {
-  readonly store: FinalizerStore;
+  readonly store: FinalizerStore & FinalizerPreparationStore;
   readonly git: GitPromotionPort;
+  readonly handoffs: HandoffContentPort;
+  readonly artifacts: ProjectArtifactPort;
+  readonly identities: FinalizerIdentityFactory;
+  readonly digestOf: FinalizationDigestFunction;
   readonly config: FinalizerConfig;
 }
 
@@ -85,10 +131,11 @@ export interface FinalizerService {
 export interface FinalizerPassReport {
   readonly reopened: number;
   readonly rereadings: number;
+  readonly preparations: number;
+  readonly approvals: number;
   readonly promotions: number;
   readonly reconciliations: number;
   readonly conclusions: number;
-  readonly deferrals: number;
   readonly holds: number;
 }
 
@@ -99,12 +146,19 @@ export interface FinalizerPassReport {
  */
 interface FinalizerTally {
   rereadings: number;
+  preparations: number;
+  approvals: number;
   promotions: number;
   reconciliations: number;
   conclusions: number;
-  deferrals: number;
   holds: number;
 }
+
+/**
+ * The one strategy a preparation integrates with. `merge-tree --write-tree` is
+ * a deterministic function of two commits, where a rebase replays commits.
+ */
+const finalizerStrategy: IntegrationStrategy = "Merge";
 
 /** What one reading of the target ref records, an unreadable ref among the answers. */
 type FinalizerReading = Pick<
@@ -336,6 +390,317 @@ async function finalizerPromote(
   }
 }
 
+/** What one preparation is working from, gathered before any of it is written down. */
+interface FinalizerPreparation {
+  readonly view: FinalizationView;
+  readonly repository: RepositoryBinding;
+  readonly identity: PreparationIdentity;
+  readonly bundle: InputBundle;
+  readonly target: ObservedTarget;
+  readonly configuration: PinnedConfiguration;
+  readonly approvalRequired: boolean;
+}
+
+/**
+ * The immutable inputs one preparation pinned. The manifests are pinned rather
+ * than the artifacts they declare, because a result manifest is itself
+ * immutable and already names its own artifact set.
+ */
+function finalizerBundleOf(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  bundle: InputBundleId,
+  repository: RepositoryBinding,
+  pinned: {
+    readonly configuration: PinnedConfiguration;
+    readonly manifests: readonly ResultManifestId[];
+  },
+): InputBundle {
+  const references: readonly InputBundleReference[] = [
+    { kind: "Repository", reference: repository.repository },
+    {
+      kind: "ConfigurationRevision",
+      reference: pinned.configuration.revision,
+    },
+    ...pinned.manifests.map((manifest) => ({
+      kind: "ResultManifest" as const,
+      reference: manifest,
+    })),
+  ];
+  if (references.length > inputBundleReferencesMax) {
+    throw new RangeError(
+      `finalizer pass: ${String(references.length)} references is past the most one bundle pins`,
+    );
+  }
+  return {
+    bundle,
+    digest: service.digestOf(
+      canonicalInputBundle(claim.partition, bundle, references),
+    ),
+    references,
+  };
+}
+
+/** The fields every attempt of one preparation carries, whatever the preparation came to. */
+function finalizerAttemptBase(
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+): Omit<AttemptRecord, "attemptDigest" | "outcome"> {
+  return {
+    claim: subject.view.claim,
+    repository: subject.repository.repository,
+    attempt: subject.identity.attempt,
+    bundle: subject.bundle,
+    target,
+    strategy: finalizerStrategy,
+    configuration: subject.configuration,
+    approvalRequired: subject.approvalRequired,
+  };
+}
+
+/** One attempt under its own digest, which is the last value computed before the row is written. */
+function finalizerAttemptOf(
+  service: FinalizerService,
+  record: Omit<AttemptRecord, "attemptDigest">,
+): AttemptRecord {
+  return {
+    ...record,
+    attemptDigest: service.digestOf(canonicalFinalizationAttempt(record)),
+  };
+}
+
+/** Writes one immutable attempt, a refusal leaving the finalization exactly where it stood. */
+async function finalizerRecordAttempt(
+  service: FinalizerService,
+  record: AttemptRecord,
+  tally: FinalizerTally,
+): Promise<void> {
+  const recorded = await service.store.recordAttempt(record);
+  if (recorded.recorded !== "Attempt") tally.holds += 1;
+}
+
+/** Records the deterministic failure a preparation reached before any candidate existed. */
+async function finalizerPreparationFailed(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  tally: FinalizerTally,
+): Promise<void> {
+  await finalizerRecordAttempt(
+    service,
+    finalizerAttemptOf(service, {
+      ...finalizerAttemptBase(subject, target),
+      outcome: "Failed",
+      failureKind: "PreparationFailed",
+    }),
+    tally,
+  );
+}
+
+/** Writes the conflict manifest one failed integration leaves, and records the attempt naming it. */
+async function finalizerConflicted(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  candidate: GitObjectId,
+  integrated: Extract<CandidateIntegrated, { integrated: "Conflicted" }>,
+  tally: FinalizerTally,
+): Promise<void> {
+  const written = await service.artifacts.writeArtifact({
+    partition: subject.view.claim.partition,
+    artifact: subject.identity.conflict,
+    content: new TextEncoder().encode(
+      conflictManifestText({
+        request: subject.view.claim.request,
+        attempt: subject.identity.attempt,
+        strategy: finalizerStrategy,
+        candidate,
+        target,
+        ...(integrated.base === undefined ? {} : { base: integrated.base }),
+        conflict: integrated.conflict,
+      }),
+    ),
+  });
+  if (written.written !== "Artifact") {
+    tally.holds += 1;
+    return;
+  }
+  await finalizerRecordAttempt(
+    service,
+    finalizerAttemptOf(service, {
+      ...finalizerAttemptBase(subject, target),
+      outcome: "Failed",
+      failureKind: "MergeConflict",
+      conflictManifest: subject.identity.conflict,
+      conflictDigest: written.digest,
+    }),
+    tally,
+  );
+}
+
+/** Records what integrating one candidate came to, a genuine conflict among the answers. */
+async function finalizerIntegrated(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  candidate: GitObjectId,
+  integrated: CandidateIntegrated,
+  tally: FinalizerTally,
+): Promise<void> {
+  switch (integrated.integrated) {
+    case "Failed":
+      tally.holds += 1;
+      return;
+    case "Candidate":
+      await finalizerRecordAttempt(
+        service,
+        finalizerAttemptOf(service, {
+          ...finalizerAttemptBase(subject, target),
+          outcome: "Prepared",
+          candidate: integrated.candidate,
+        }),
+        tally,
+      );
+      return;
+    case "Conflicted":
+      await finalizerConflicted(
+        service,
+        subject,
+        target,
+        candidate,
+        integrated,
+        tally,
+      );
+      return;
+    default:
+      return assertNever(integrated);
+  }
+}
+
+/**
+ * Builds the candidate over the target the view observed, re-reads the remote,
+ * and integrates against what it holds now. No working tree is asked for at any
+ * point, and nothing is written down until the integration has answered.
+ */
+async function finalizerBuild(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  files: readonly CandidateFile[],
+  tally: FinalizerTally,
+): Promise<void> {
+  const prepared = await service.git.prepareCandidate({
+    repository: subject.repository,
+    ticket: subject.view.claim.ticket,
+    bundle: subject.bundle.bundle,
+    target: subject.target,
+    files,
+  });
+  if (prepared.prepared !== "Candidate") {
+    tally.holds += 1;
+    return;
+  }
+  const observed = await service.git.observeTarget(subject.repository);
+  if (observed.observed !== "Target") {
+    tally.holds += 1;
+    return;
+  }
+  const integrated = await service.git.integrateCandidate({
+    repository: subject.repository,
+    target: observed.target,
+    candidate: prepared.candidate,
+    strategy: finalizerStrategy,
+  });
+  await finalizerIntegrated(
+    service,
+    subject,
+    observed.target,
+    prepared.candidate,
+    integrated,
+    tally,
+  );
+}
+
+/**
+ * Turns one ticket's verified handoff artifacts into a candidate, or records the
+ * deterministic reason they could not become one.
+ */
+async function finalizerPrepare(
+  service: FinalizerService,
+  view: FinalizationView,
+  target: ObservedTarget,
+  tally: FinalizerTally,
+): Promise<void> {
+  const repository = view.repository;
+  if (repository === undefined) {
+    throw new Error(
+      "finalizer pass: a preparation was authorized against no bound repository",
+    );
+  }
+  const gathering = await service.store.handoffGathering(view.claim);
+  const accepted = handoffAccepted(gathering);
+  if (accepted.accepted === "NoPassedWork") {
+    tally.holds += 1;
+    return;
+  }
+  const handoff: TicketHandoff | undefined =
+    accepted.accepted === "Handoff" ? accepted.handoff : undefined;
+  const configuration =
+    accepted.accepted === "Handoff"
+      ? accepted.handoff.configuration
+      : accepted.configuration;
+  const identity = service.identities.next(view.claim.partition);
+  const subject: FinalizerPreparation = {
+    view,
+    repository,
+    identity,
+    bundle: finalizerBundleOf(
+      service,
+      view.claim,
+      identity.bundle,
+      repository,
+      {
+        configuration,
+        manifests: [...new Set(gathering.work.map((each) => each.manifest))],
+      },
+    ),
+    target,
+    configuration,
+    approvalRequired: handoff?.approvalRequired ?? false,
+  };
+  if (handoff === undefined) {
+    await finalizerPreparationFailed(service, subject, target, tally);
+    return;
+  }
+  const read = await service.handoffs.readHandoff({
+    partition: view.claim.partition,
+    artifacts: handoff.artifacts,
+  });
+  if (read.read === "Unavailable") {
+    tally.holds += 1;
+    return;
+  }
+  if (read.read === "Rejected") {
+    await finalizerPreparationFailed(service, subject, target, tally);
+    return;
+  }
+  await finalizerBuild(service, subject, read.files, tally);
+}
+
+/** Opens the approval one prepared attempt needs, leaving the finalization where it stood. */
+async function finalizerAwaitApproval(
+  service: FinalizerService,
+  view: FinalizationView,
+  attempt: FinalizationAttemptId,
+  tally: FinalizerTally,
+): Promise<void> {
+  const asked = await service.store.requestApproval({
+    claim: view.claim,
+    attempt,
+  });
+  if (asked.asked === "Requested") tally.approvals += 1;
+  else tally.holds += 1;
+}
+
 /** Offers the one conclusion to the one authenticated door. */
 async function finalizerConclude(
   service: FinalizerService,
@@ -380,8 +745,12 @@ async function finalizerAdvance(
       tally.holds += 1;
       return;
     case "Prepare":
+      if (tally.preparations >= config.preparationsPerPassMax) return;
+      tally.preparations += 1;
+      await finalizerPrepare(service, view, decision.target, tally);
+      return;
     case "AwaitApproval":
-      tally.deferrals += 1;
+      await finalizerAwaitApproval(service, view, decision.attempt, tally);
       return;
     case "Promote":
       if (tally.promotions >= config.promotionsPerPassMax) return;
@@ -411,10 +780,11 @@ export async function finalizerPass(
   const reopened = await finalizerFence(service, epoch);
   const tally: FinalizerTally = {
     rereadings: 0,
+    preparations: 0,
+    approvals: 0,
     promotions: 0,
     reconciliations: 0,
     conclusions: 0,
-    deferrals: 0,
     holds: 0,
   };
   await finalizerReadHolds(service, epoch, tally);

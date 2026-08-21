@@ -58,14 +58,15 @@ function attemptRow(
   conflict: string | null,
   strategy = "Merge",
   digest = finalizerDigest(),
+  conflictDigest: string | null = null,
 ): Promise<string> {
   return rig.refusal(
     `INSERT INTO finalization_attempt
        (tenant, project, attempt, request, ticket, repository, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind,
-        conflict_manifest, attempt_digest)
-     VALUES ($1,$2,$3,$4,$5,$6,'refs/heads/main',$7,$8,$9,$10,false,$11,$12,$13,$14,$15)`,
+        conflict_manifest, conflict_manifest_digest, attempt_digest)
+     VALUES ($1,$2,$3,$4,$5,$6,'refs/heads/main',$7,$8,$9,$10,false,$11,$12,$13,$14,$15,$16)`,
     keys(
       identity,
       project.request,
@@ -79,6 +80,7 @@ function attemptRow(
       candidate,
       failureKind,
       conflict,
+      conflictDigest,
       digest,
     ),
   );
@@ -138,6 +140,48 @@ test("an attempt is whole: prepared pins a candidate, failed names a kind, confl
       `${outcome}/${String(candidate)}/${String(kind)}/${String(conflict)}`,
     );
   }
+});
+
+test("a conflict manifest and the digest that speaks for it stand or fall together", async () => {
+  assert.match(
+    await attemptRow(
+      finalizerIdentity("halfmanifest"),
+      "Failed",
+      null,
+      "MergeConflict",
+      "conflict-1",
+      "Merge",
+      finalizerDigest(),
+      null,
+    ),
+    /finalization_attempt_outcome_is_whole/u,
+  );
+  assert.match(
+    await attemptRow(
+      finalizerIdentity("halfdigest"),
+      "Failed",
+      null,
+      "MergeConflict",
+      null,
+      "Merge",
+      finalizerDigest(),
+      finalizerDigest(),
+    ),
+    /finalization_attempt_outcome_is_whole/u,
+  );
+  assert.match(
+    await attemptRow(
+      finalizerIdentity("baddigest"),
+      "Failed",
+      null,
+      "MergeConflict",
+      "conflict-1",
+      "Merge",
+      finalizerDigest(),
+      "not-a-digest",
+    ),
+    /finalization_attempt_digest_is_hex/u,
+  );
 });
 
 test("an attempt's commits are object identities and its digest is one too", async () => {

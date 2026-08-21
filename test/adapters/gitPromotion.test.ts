@@ -405,7 +405,7 @@ test("a target that moved without conflicting is merged into the candidate", asy
   );
 });
 
-test("a genuine conflict is the conflicting paths and no commit at all", async (t) => {
+test("a genuine conflict is the conflicting paths, the merge base, and no commit at all", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
   const port = fixturePort(fixture);
@@ -425,6 +425,7 @@ test("a genuine conflict is the conflicting paths and no commit at all", async (
   assert.deepEqual(integrated, {
     integrated: "Conflicted",
     conflict: { paths: ["base.txt"], truncated: false },
+    base: target.commit,
   });
 });
 

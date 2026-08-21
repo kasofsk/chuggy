@@ -657,10 +657,18 @@ export interface ConflictSummary {
   readonly truncated: boolean;
 }
 
-/** What integrating found: an integrated candidate, a genuine conflict, or a git refusal. */
+/**
+ * What integrating found: an integrated candidate, a genuine conflict, or a git
+ * refusal. A conflict carries the merge base it was computed against, absent
+ * only where the two commits share no history at all.
+ */
 export type CandidateIntegrated =
   | { readonly integrated: "Candidate"; readonly candidate: GitObjectId }
-  | { readonly integrated: "Conflicted"; readonly conflict: ConflictSummary }
+  | {
+      readonly integrated: "Conflicted";
+      readonly conflict: ConflictSummary;
+      readonly base?: GitObjectId;
+    }
   | { readonly integrated: "Failed"; readonly evidence: GitEvidence };
 
 /** The one irreversible act, which names the permit that authorizes it so an unpermitted one is unspellable. */

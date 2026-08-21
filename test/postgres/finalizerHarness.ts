@@ -15,15 +15,24 @@
  * I3's, materialized by the decision transaction that moved a ticket into
  * `Finalizing`, so this harness drives the real writer through release,
  * dispatch, work and evaluation rather than inserting the row it wants. An
- * attempt is written by hand because nothing constructs a candidate yet, and a
- * permit is offered both ways: written by hand where a case needs one to exist,
- * and asked of the real transaction where the grant is what is under test.
+ * attempt and a permit are each offered both ways: written by hand where a case
+ * needs one to exist, and asked of the real transaction where the move is what
+ * is under test.
+ *
+ * THE PASSED WORK IS WRITTEN BY HAND AND THE HANDOFFS ARE REAL BYTES. The
+ * scheduler that would write an execution, its attempt and its result is
+ * another slice's deployable and is not what these cases are about, but the
+ * artifacts those rows declare are stored in the rig's own store under the
+ * digest they really hash to — so a case that tampers with one is refused by
+ * the verification it was meant to satisfy.
  *
  * THE GIT PORT IS A FAKE AND THE DURABLE AUTHORITY IS NOT. Substitution belongs
  * at the port, and the answers that matter here — a refused update, an ambiguous
  * one, an unreadable ref — are exactly the ones a real remote will not produce
  * on demand. The store underneath is the real adapter against the real server,
- * so nothing the fake says can make a durable move agree with it.
+ * so nothing the fake says can make a durable move agree with it, and
+ * `finalizerPreparation.test.ts` drives the real remote where a real one can
+ * answer.
  *
  * COMMITS AND DIGESTS ARE REAL WIDTHS AND NOT PLACEHOLDERS. Every commit
  * identity a case writes matches the object-id pattern the DDL carries and
@@ -32,25 +41,44 @@
  * passing on a value nothing checked.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 
 import type pg from "pg";
 
 import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
+  accountIdentityFunction,
   approvalRequestFunction,
   finalizerRole,
 } from "../../src/adapters/postgres/schema.ts";
+import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
+import {
+  artifactAttemptFile,
+  artifactProjectDirectory,
+} from "../../src/adapters/artifacts/artifactKey.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import type { FinalizerService } from "../../src/interpreter/finalizerRun.ts";
 import {
   allGitObjectIdChars,
+  asFinalizationAttemptId,
   asFinalizerOwnerId,
+  asInputBundleId,
   checkedFinalizerConfig,
   finalizerDefaults,
   type AncestryProved,
+  type CandidateIntegrated,
+  type CandidatePrepared,
   type CandidatePromoted,
   type CandidatePromotion,
   type FinalizationClaim,
@@ -58,7 +86,15 @@ import {
   type ObservedTarget,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
-import { artifactDigestChars } from "../../src/interpreter/resultManifest.ts";
+import {
+  asProjectArtifactId,
+  type CanonicalFinalization,
+  type FinalizerIdentityFactory,
+} from "../../src/interpreter/finalizerPreparation.ts";
+import {
+  artifactDigestChars,
+  asArtifactPath,
+} from "../../src/interpreter/resultManifest.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
 import {
   asRecoveryEpoch,
@@ -92,6 +128,7 @@ export function finalizerRolePool(): pg.Pool {
 export interface FinalizerRig {
   readonly harness: PostgresHarness;
   readonly pool: pg.Pool;
+  readonly artifactRoot: string;
   readonly as: (
     sql: string,
     values?: readonly unknown[],
@@ -124,6 +161,7 @@ async function finalizerRefused(
 export async function finalizerRigOpen(): Promise<FinalizerRig> {
   const harness = await postgresHarnessOpen();
   const pool = finalizerRolePool();
+  const artifactRoot = mkdtempSync(join(tmpdir(), "chuggy-artifacts-"));
   const as = async (
     sql: string,
     values?: readonly unknown[],
@@ -133,6 +171,7 @@ export async function finalizerRigOpen(): Promise<FinalizerRig> {
   return {
     harness,
     pool,
+    artifactRoot,
     as,
     refusal: (sql, values) => finalizerRefused(() => as(sql, values), sql),
     ownerRefusal: (sql, values) =>
@@ -140,6 +179,7 @@ export async function finalizerRigOpen(): Promise<FinalizerRig> {
     close: async () => {
       await pool.end();
       await harness.close();
+      rmSync(artifactRoot, { recursive: true, force: true });
     },
   };
 }
@@ -227,6 +267,7 @@ async function finalizerBind(
   rig: FinalizerRig,
   partition: Partition,
   label: string,
+  named?: string,
 ): Promise<{
   epoch: string;
   repository: string;
@@ -234,7 +275,7 @@ async function finalizerBind(
   digest: string;
 }> {
   const epoch = await rig.harness.store.currentRecoveryEpoch();
-  const repository = `repository-${label}-${randomUUID()}`;
+  const repository = named ?? `repository-${label}-${randomUUID()}`;
   await rig.harness.query(
     `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
      VALUES ($1,$2,$3,$4)`,
@@ -259,6 +300,7 @@ async function finalizerBind(
 export async function finalizerProject(
   rig: FinalizerRig,
   label: string,
+  repository?: string,
 ): Promise<FinalizerProject> {
   const partition = await postgresHarnessProject(rig.harness.store, label);
   const first = await postgresHarnessHistory(
@@ -292,7 +334,7 @@ export async function finalizerProject(
       "finalizer harness: the evaluation left no finalization request",
     );
   }
-  const bound = await finalizerBind(rig, partition, label);
+  const bound = await finalizerBind(rig, partition, label, repository);
   return {
     partition,
     request: row.request,
@@ -459,14 +501,16 @@ export async function finalizerRequestApproval(
 /**
  * The Git port a pass calls out through, answering whatever the case last told
  * it to and recording the acts it was asked for. Preparation and integration
- * raise, because a pass that reached them would be doing the work this commit
- * does not have the artifact content for.
+ * raise until a case scripts them, because a pass reaching them unscripted is
+ * doing work the case did not mean to authorize.
  */
 export interface FinalizerGitFake extends GitPromotionPort {
   readonly acts: string[];
   target: TargetObserved;
   promotion: CandidatePromoted;
   ancestry: AncestryProved;
+  preparation?: CandidatePrepared;
+  integration?: CandidateIntegrated;
   beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
 }
 
@@ -482,10 +526,18 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       return Promise.resolve(fake.target);
     },
     prepareCandidate: () => {
-      throw new Error("finalizer harness: the pass asked for a preparation");
+      fake.acts.push("prepare");
+      if (fake.preparation === undefined) {
+        throw new Error("finalizer harness: the pass asked for a preparation");
+      }
+      return Promise.resolve(fake.preparation);
     },
     integrateCandidate: () => {
-      throw new Error("finalizer harness: the pass asked for an integration");
+      fake.acts.push("integrate");
+      if (fake.integration === undefined) {
+        throw new Error("finalizer harness: the pass asked for an integration");
+      }
+      return Promise.resolve(fake.integration);
     },
     promoteCandidate: async (promotion) => {
       fake.acts.push("promote");
@@ -500,20 +552,232 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
   return fake;
 }
 
+/** The identities a preparation mints, drawn per call so no two cases share one. */
+export function finalizerIdentities(): FinalizerIdentityFactory {
+  return {
+    next: () => ({
+      attempt: asFinalizationAttemptId(finalizerIdentity("attempt")),
+      bundle: asInputBundleId(finalizerIdentity("bundle")),
+      conflict: asProjectArtifactId(finalizerIdentity("conflict")),
+    }),
+  };
+}
+
+/** The hash the finalizer's canonical bytes are digested under, which the root also names. */
+export function finalizerDigestOf(canonical: CanonicalFinalization): string {
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
 /**
  * The service one case drives: the real durable authority over the finalizer's
- * own role, and the remote the case scripts. The composition root wires the same
- * two and nothing may import it, so this states the pair a second time.
+ * own role, a real store over the rig's own root, and the remote the case
+ * scripts. The composition root wires the same set and nothing may import it, so
+ * this states it a second time.
  */
 export function finalizerService(
   rig: FinalizerRig,
   git: GitPromotionPort,
 ): FinalizerService {
+  const artifacts = artifactStore({ root: rig.artifactRoot });
   return {
     store: postgresFinalizer(rig.pool),
     git,
+    handoffs: artifacts,
+    artifacts,
+    identities: finalizerIdentities(),
+    digestOf: finalizerDigestOf,
     config: checkedFinalizerConfig(finalizerDefaults),
   };
+}
+
+/** One handoff a case's passed work declares, its digest a real hash of the bytes stored for it. */
+export interface FinalizerHandoff {
+  readonly path: string;
+  readonly content: string;
+}
+
+/** What one case's passed work left behind, which is what a preparation reads. */
+export interface FinalizerWork {
+  readonly execution: string;
+  readonly attempt: string;
+  readonly manifest: string;
+}
+
+/** Stores one attempt-scoped artifact's bytes read-only, which is what the store calls immutable. */
+export function finalizerStoreArtifact(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  work: FinalizerWork,
+  handoff: FinalizerHandoff,
+): void {
+  const file = artifactAttemptFile(
+    artifactProjectDirectory(
+      rig.artifactRoot,
+      project.partition.tenant,
+      project.partition.project,
+    ),
+    work.execution,
+    work.attempt,
+    asArtifactPath(handoff.path),
+  );
+  if (file === undefined) {
+    throw new Error(`finalizer harness: ${handoff.path} resolves nowhere`);
+  }
+  mkdirSync(dirname(file), { recursive: true });
+  rmSync(file, { force: true });
+  writeFileSync(file, handoff.content, { mode: 0o440 });
+  chmodSync(file, 0o440);
+}
+
+/** The spawn request the project's dispatch left, and the next manifest ordinal free in it. */
+async function finalizerSpawnRequest(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+): Promise<{ request: string; task: number; ordinal: number }> {
+  const found = (await rig.harness.query(
+    `SELECT t.request, t.task::text AS task,
+            (SELECT count(*) FROM execution_result r
+              WHERE r.tenant = t.tenant AND r.project = t.project)::text AS taken
+       FROM execution_request_task t
+       JOIN execution_request q
+         ON q.tenant = t.tenant AND q.project = t.project AND q.request = t.request
+      WHERE t.tenant = $1 AND t.project = $2 AND t.kind = 'Work'
+        AND q.kind = 'SpawnWork' AND q.ticket = $3
+      ORDER BY t.task LIMIT 1`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  )) as readonly { request: string; task: string; taken: string }[];
+  const row = found[0];
+  if (row === undefined) {
+    throw new Error("finalizer harness: the dispatch left no work task");
+  }
+  return {
+    request: row.request,
+    task: Number(row.task),
+    ordinal: Number(row.taken) + 1,
+  };
+}
+
+/** The settled operation one terminal execution names, written by hand because no scheduler runs here. */
+async function finalizerCompletion(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  label: string,
+): Promise<string> {
+  const operation = finalizerIdentity(`completion-${label}`);
+  await rig.harness.query(
+    `INSERT INTO operation
+       (tenant, project, operation, authority_kind, authority_subject, admission,
+        key_version, key_digest, payload_digest, command, command_tag)
+     VALUES ($1,$2,$3,'Scheduler','fixture','CorrectnessReducing','fixture-v1',
+             $4,$4,'{}','TaskDone')`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      operation,
+      finalizerDigest(),
+    ],
+  );
+  return operation;
+}
+
+/** Declares one manifest's handoffs and stores the bytes each of them names. */
+async function finalizerDeclareHandoffs(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  work: FinalizerWork,
+  handoffs: readonly FinalizerHandoff[],
+): Promise<void> {
+  for (const [index, handoff] of handoffs.entries()) {
+    await rig.harness.query(
+      `INSERT INTO execution_result_artifact
+         (tenant, project, manifest, ordinal, role, path, digest, bytes)
+       VALUES ($1,$2,$3,$4,'Handoff',$5,$6,$7)`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        work.manifest,
+        index + 1,
+        handoff.path,
+        createHash("sha256").update(handoff.content, "utf8").digest("hex"),
+        Buffer.byteLength(handoff.content, "utf8"),
+      ],
+    );
+    finalizerStoreArtifact(rig, project, work, handoff);
+  }
+}
+
+/**
+ * One passed work execution of the project's ticket, with its result manifest,
+ * its declared handoffs and their bytes in the rig's own store. The rows are
+ * written as the migration owner because the scheduler that would write them is
+ * another slice's deployable and is not what these cases are about.
+ */
+export async function finalizerPassedWork(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  label: string,
+  handoffs: readonly FinalizerHandoff[],
+): Promise<FinalizerWork> {
+  const work: FinalizerWork = {
+    execution: finalizerIdentity(`execution-${label}`),
+    attempt: finalizerIdentity(`attempt-run-${label}`),
+    manifest: finalizerIdentity(`manifest-${label}`),
+  };
+  const { tenant, project: named } = project.partition;
+  const request = await finalizerSpawnRequest(rig, project);
+  await rig.harness.query(
+    `INSERT INTO execution
+       (tenant, project, execution, ticket, task, source_request, account, cluster,
+        configuration_revision, configuration_digest, status)
+     SELECT $1,$2,$3,$4,$5,$6,a.account,a.cluster,$7,$8,'Running'
+       FROM capacity_account a WHERE a.account = ${accountIdentityFunction}($1,$2)`,
+    [
+      tenant,
+      named,
+      work.execution,
+      project.ticket,
+      request.task,
+      request.request,
+      project.configurationRevision,
+      project.configurationDigest,
+    ],
+  );
+  await rig.harness.query(
+    `INSERT INTO execution_attempt
+       (tenant, project, execution, attempt, attempt_number, recovery_epoch, state, ended_at)
+     VALUES ($1,$2,$3,$4,1,$5,'Reported',now())`,
+    [tenant, named, work.execution, work.attempt, project.epoch],
+  );
+  await rig.harness.query(
+    `INSERT INTO execution_result
+       (tenant, project, manifest, execution, attempt, manifest_ordinal,
+        schema_version, digest, verdict)
+     VALUES ($1,$2,$3,$4,$5,$6,1,$7,'Pass')`,
+    [
+      tenant,
+      named,
+      work.manifest,
+      work.execution,
+      work.attempt,
+      request.ordinal,
+      finalizerDigest(),
+    ],
+  );
+  await rig.harness.query(
+    `UPDATE execution
+        SET status='Terminal', outcome='Passed', result_manifest=$4,
+            completion_operation=$5, terminal_at=now()
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [
+      tenant,
+      named,
+      work.execution,
+      work.manifest,
+      await finalizerCompletion(rig, project, label),
+    ],
+  );
+  await finalizerDeclareHandoffs(rig, project, work, handoffs);
+  return work;
 }
 
 /** Puts one claim's lease in the past, which is what a crashed holder leaves behind. */

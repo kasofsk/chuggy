@@ -39,6 +39,7 @@ import {
   scratchHasCommit,
   scratchIsAncestor,
   scratchKeepCommit,
+  scratchMergeBase,
   scratchMergeTree,
   scratchWriteBlob,
   scratchWriteTree,
@@ -191,11 +192,19 @@ async function candidateIntegrateMerge(
   switch (merged.merged) {
     case "Failed":
       return { integrated: "Failed", evidence: "IntegrationFailed" };
-    case "Conflicted":
+    case "Conflicted": {
+      const base = await scratchMergeBase(
+        scratch,
+        repository,
+        integration.target.commit,
+        integration.candidate,
+      );
       return {
         integrated: "Conflicted",
         conflict: { paths: merged.paths, truncated: merged.truncated },
+        ...(base === undefined ? {} : { base }),
       };
+    }
     case "Tree": {
       const candidate = await scratchCommitTree(
         scratch,

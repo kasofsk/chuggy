@@ -386,7 +386,8 @@ test("an ambiguous update that the ref denies restarts preparation instead", asy
 
   await finalizerExpireClaim(rig, project);
   const again = await passOnce(project, git, "denied-again");
-  assert.equal(again.deferrals, 1);
+  assert.equal(again.preparations, 1);
+  assert.equal(again.holds, 1);
   assert.equal(again.conclusions, 0);
 });
 

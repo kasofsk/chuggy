@@ -10,19 +10,26 @@
  */
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import { asTicketId } from "../../src/domain/ids.ts";
+import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   asCommitPermitId,
   asFinalizationAttemptId,
   asFinalizerOwnerId,
   asGitObjectId,
   asGitRefName,
+  asInputBundleId,
   asRepositoryId,
   finalizerDefaults,
   type AncestryProof,
   type AncestryProved,
+  type CandidateIntegrated,
+  type CandidateIntegration,
+  type CandidatePrepared,
+  type CandidatePreparation,
   type CandidatePromoted,
   type CandidatePromotion,
   type CommitPermit,
@@ -37,7 +44,34 @@ import {
   type Reconciled,
   type ReconciliationRecord,
   type RepositoryBinding,
+  type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
+import {
+  asProjectArtifactId,
+  type ApprovalAsk,
+  type ApprovalAsked,
+  type AttemptRecord,
+  type FinalizerIdentityFactory,
+  type FinalizerPreparationStore,
+  type HandoffArtifact,
+  type HandoffContentPort,
+  type HandoffGathering,
+  type HandoffRead,
+  type HandoffRequest,
+  type HandoffWork,
+  type ProjectArtifactPort,
+  type ProjectArtifactWrite,
+  type ProjectArtifactWritten,
+} from "../../src/interpreter/finalizerPreparation.ts";
+import {
+  asArtifactDigest,
+  asArtifactPath,
+  asResultManifestId,
+} from "../../src/interpreter/resultManifest.ts";
+import {
+  asAttemptId,
+  asExecutionId,
+} from "../../src/interpreter/schedulerIdentity.ts";
 import {
   finalizerPass,
   type FinalizerService,
@@ -54,6 +88,10 @@ const epoch = asRecoveryEpoch("epoch-run");
 
 /** The commit widths git addresses objects at, spelled once for the fixtures. */
 const commitOf = (marker: string): string => marker.repeat(40).slice(0, 40);
+
+/** The hash every digest in this suite is taken under, which is the root's own choice. */
+const digestOf = (value: string): string =>
+  createHash("sha256").update(value, "utf8").digest("hex");
 
 /** One project every fixture claim belongs to. */
 const partition: Partition = {
@@ -116,11 +154,35 @@ function permitOf(request: string): CommitPermit {
 }
 
 /** What one fixture store hands out and what it was asked to write. */
-interface FinalizerRecorder extends FinalizerStore {
+interface FinalizerRecorder extends FinalizerStore, FinalizerPreparationStore {
   readonly grants: PermitRequest[];
   readonly readings: ReconciliationRecord[];
   readonly settled: string[];
   readonly submitted: string[];
+  readonly attempts: AttemptRecord[];
+  readonly asks: ApprovalAsk[];
+  gathering: HandoffGathering;
+  asked: ApprovalAsked;
+}
+
+/** One passed work execution every preparation fixture reads its revision from. */
+const passedWork: HandoffWork = {
+  execution: asExecutionId("execution-run"),
+  attempt: asAttemptId("attempt-run"),
+  manifest: asResultManifestId("manifest-run"),
+  configuration: { revision: "revision-run", digest: digestOf("revision-run") },
+  canonical: asCanonicalConfiguration('{"image":"i","version":1}'),
+};
+
+/** One declared handoff artifact, whose digest is a real hash of the bytes named for it. */
+function handoffOf(path: string, content: string): HandoffArtifact {
+  return {
+    execution: passedWork.execution,
+    attempt: passedWork.attempt,
+    path: asArtifactPath(path),
+    digest: asArtifactDigest(digestOf(content)),
+    bytes: content.length,
+  };
 }
 
 /** A store that answers from the views a case hands it and records every move. */
@@ -133,6 +195,19 @@ function recordingStore(
     readings: [],
     settled: [],
     submitted: [],
+    attempts: [],
+    asks: [],
+    gathering: { work: [passedWork], artifacts: [handoffOf("one.txt", "one")] },
+    asked: { asked: "Requested" },
+    handoffGathering: () => Promise.resolve(own.gathering),
+    recordAttempt: (record) => {
+      own.attempts.push(record);
+      return Promise.resolve({ recorded: "Attempt" });
+    },
+    requestApproval: (ask) => {
+      own.asks.push(ask);
+      return Promise.resolve(own.asked);
+    },
     claimRequests: () => Promise.resolve(views.map((view) => view.claim)),
     extendClaim: () => Promise.resolve(true),
     durableView: (claim) =>
@@ -176,27 +251,41 @@ function recordingStore(
 interface GitRecorder extends GitPromotionPort {
   readonly promotions: CandidatePromotion[];
   readonly proofs: AncestryProof[];
+  readonly preparations: CandidatePreparation[];
+  readonly integrations: CandidateIntegration[];
   promoted: CandidatePromoted;
   proved: AncestryProved;
+  observed: TargetObserved;
+  prepared: CandidatePrepared;
+  integrated: CandidateIntegrated;
 }
 
-/** A remote that records every act and refuses the two the pass may not ask for. */
+/** A remote that records every act and answers each of them however the case chose. */
 function recordingGit(): GitRecorder {
   const own: GitRecorder = {
     promotions: [],
     proofs: [],
+    preparations: [],
+    integrations: [],
     promoted: { promoted: "Advanced" },
     proved: { proved: "Ancestor", observed: asGitObjectId(commitOf("c")) },
-    observeTarget: () =>
-      Promise.resolve({
-        observed: "Target",
-        target: attemptOf("any").target,
-      }),
-    prepareCandidate: () => {
-      throw new Error("the pass asked for a preparation");
+    observed: { observed: "Target", target: attemptOf("any").target },
+    prepared: {
+      prepared: "Candidate",
+      candidate: asGitObjectId(commitOf("c")),
     },
-    integrateCandidate: () => {
-      throw new Error("the pass asked for an integration");
+    integrated: {
+      integrated: "Candidate",
+      candidate: asGitObjectId(commitOf("c")),
+    },
+    observeTarget: () => Promise.resolve(own.observed),
+    prepareCandidate: (preparation) => {
+      own.preparations.push(preparation);
+      return Promise.resolve(own.prepared);
+    },
+    integrateCandidate: (integration) => {
+      own.integrations.push(integration);
+      return Promise.resolve(own.integrated);
     },
     promoteCandidate: (promotion) => {
       own.promotions.push(promotion);
@@ -208,6 +297,54 @@ function recordingGit(): GitRecorder {
     },
   };
   return own;
+}
+
+/** The two artifact ports one case drives, each answering whatever it chose. */
+interface ArtifactRecorder extends HandoffContentPort, ProjectArtifactPort {
+  readonly requests: HandoffRequest[];
+  readonly writes: ProjectArtifactWrite[];
+  read: HandoffRead;
+  wrote: ProjectArtifactWritten;
+}
+
+/** A store that hands back the bytes a case named and records what it was asked to write. */
+function recordingArtifacts(): ArtifactRecorder {
+  const own: ArtifactRecorder = {
+    requests: [],
+    writes: [],
+    read: {
+      read: "Files",
+      files: [{ path: "one.txt", content: new TextEncoder().encode("one") }],
+    },
+    wrote: {
+      written: "Artifact",
+      digest: asArtifactDigest(digestOf("evidence")),
+    },
+    readHandoff: (request) => {
+      own.requests.push(request);
+      return Promise.resolve(own.read);
+    },
+    writeArtifact: (write) => {
+      own.writes.push(write);
+      return Promise.resolve(own.wrote);
+    },
+  };
+  return own;
+}
+
+/** Identities drawn in order, so a case can name the attempt a preparation will mint. */
+function countingIdentities(): FinalizerIdentityFactory {
+  let drawn = 0;
+  return {
+    next: () => {
+      drawn += 1;
+      return {
+        attempt: asFinalizationAttemptId(`attempt-${String(drawn)}`),
+        bundle: asInputBundleId(`bundle-${String(drawn)}`),
+        conflict: asProjectArtifactId(`conflict-${String(drawn)}`),
+      };
+    },
+  };
 }
 
 /** One view of a claimed request that is ready to promote. */
@@ -223,11 +360,20 @@ function promotableView(request: string): FinalizationView {
 
 /** The service a case drives, over the ceilings it names. */
 function serviceOf(
-  store: FinalizerStore,
+  store: FinalizerRecorder,
   git: GitPromotionPort,
   bounds: Partial<typeof finalizerDefaults> = {},
+  artifacts: ArtifactRecorder = recordingArtifacts(),
 ): FinalizerService {
-  return { store, git, config: { ...finalizerDefaults, ...bounds } };
+  return {
+    store,
+    git,
+    handoffs: artifacts,
+    artifacts,
+    identities: countingIdentities(),
+    digestOf,
+    config: { ...finalizerDefaults, ...bounds },
+  };
 }
 
 /** One pass over the fixtures a case installed. */
@@ -286,7 +432,7 @@ test("a pass held by an unreadable ref spends the permit on neither answer", asy
   assert.equal(store.readings[0]?.reconciliation.observed, undefined);
 });
 
-test("a decision the pass cannot perform reaches neither the remote nor the store", async () => {
+test("a candidate awaiting approval opens the ask and reaches neither the remote nor the permit", async () => {
   const waiting = promotableView("request-one");
   const store = recordingStore([
     {
@@ -296,10 +442,27 @@ test("a decision the pass cannot perform reaches neither the remote nor the stor
   ]);
   const git = recordingGit();
   const report = await passOver(serviceOf(store, git));
-  assert.equal(report.deferrals, 1);
+  assert.equal(report.approvals, 1);
   assert.equal(report.promotions, 0);
+  assert.deepEqual(
+    store.asks.map((ask) => ask.attempt),
+    ["attempt-request-one"],
+  );
   assert.deepEqual(git.promotions, []);
   assert.deepEqual(store.grants, []);
+});
+
+test("an ask already standing holds rather than opening a second question", async () => {
+  const store = recordingStore([
+    {
+      ...promotableView("request-one"),
+      attempt: { ...attemptOf("request-one"), approvalRequired: true },
+    },
+  ]);
+  store.asked = { asked: "AlreadyRequested" };
+  const report = await passOver(serviceOf(store, recordingGit()));
+  assert.equal(report.approvals, 0);
+  assert.equal(report.holds, 1);
 });
 
 test("a settled request gives its claim back and moves nothing else", async () => {
@@ -315,4 +478,229 @@ test("a settled request gives its claim back and moves nothing else", async () =
   assert.deepEqual(store.settled, ["request-one"]);
   assert.equal(report.promotions, 0);
   assert.equal(report.holds, 0);
+});
+
+/** One view of a claimed request that has no attempt yet, which is what prepares one. */
+function preparableView(request: string): FinalizationView {
+  return {
+    claim: claimOf(request),
+    repository: binding,
+    observedTarget: attemptOf(request).target,
+    approval: "Pending",
+    attemptsMade: 0,
+  };
+}
+
+test("a clean preparation builds over the observed target and records one prepared attempt", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+  const integrated = asGitObjectId(commitOf("e"));
+  git.integrated = { integrated: "Candidate", candidate: integrated };
+  const report = await passOver(serviceOf(store, git));
+  assert.equal(report.preparations, 1);
+  assert.equal(report.holds, 0);
+  assert.deepEqual(
+    git.preparations.map((each) => each.target.commit),
+    [commitOf("a")],
+  );
+  assert.deepEqual(
+    git.preparations.map((each) => each.files.map((file) => file.path)),
+    [["one.txt"]],
+  );
+  const recorded = store.attempts[0];
+  assert.equal(store.attempts.length, 1);
+  assert.equal(recorded?.outcome, "Prepared");
+  assert.equal(recorded?.candidate, integrated);
+  assert.equal(recorded?.strategy, "Merge");
+  assert.equal(recorded?.configuration.revision, "revision-run");
+  assert.equal(recorded?.approvalRequired, false);
+  assert.equal(recorded?.attemptDigest.length, 64);
+  assert.deepEqual(
+    recorded?.bundle.references.map((each) => each.kind),
+    ["Repository", "ConfigurationRevision", "ResultManifest"],
+  );
+});
+
+test("the pinned revision is what says a candidate needs a person's approval", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  store.gathering = {
+    work: [
+      {
+        ...passedWork,
+        canonical: asCanonicalConfiguration(
+          '{"finalizationApprovalRequired":true,"image":"i","version":1}',
+        ),
+      },
+    ],
+    artifacts: store.gathering.artifacts,
+  };
+  await passOver(serviceOf(store, recordingGit()));
+  assert.equal(store.attempts[0]?.approvalRequired, true);
+});
+
+/** A remote that answers each observation in turn, which is how a target moves mid-preparation. */
+function movingTarget(
+  git: GitRecorder,
+  answers: readonly TargetObserved[],
+): void {
+  let asked = 0;
+  git.observeTarget = () => {
+    const answer = answers[Math.min(asked, answers.length - 1)];
+    asked += 1;
+    if (answer === undefined) {
+      throw new Error("the fixture named no observation to answer with");
+    }
+    return Promise.resolve(answer);
+  };
+}
+
+test("the target the integration was answered against is what the attempt pins", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+  movingTarget(git, [
+    { observed: "Target", target: attemptOf("any").target },
+    {
+      observed: "Target",
+      target: {
+        ref: asGitRefName("refs/heads/main"),
+        commit: asGitObjectId(commitOf("f")),
+      },
+    },
+  ]);
+  const report = await passOver(serviceOf(store, git));
+  assert.equal(report.preparations, 1);
+  assert.deepEqual(
+    git.preparations.map((each) => each.target.commit),
+    [commitOf("a")],
+  );
+  assert.deepEqual(
+    git.integrations.map((each) => each.target.commit),
+    [commitOf("f")],
+  );
+  assert.equal(store.attempts[0]?.target.commit, commitOf("f"));
+});
+
+test("a genuine conflict writes a manifest with its own identity and digest and prices one failure", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+  const artifacts = recordingArtifacts();
+  git.integrated = {
+    integrated: "Conflicted",
+    conflict: { paths: ["one.txt"], truncated: false },
+    base: asGitObjectId(commitOf("a")),
+  };
+  const report = await passOver(serviceOf(store, git, {}, artifacts));
+  assert.equal(report.preparations, 1);
+  const written = artifacts.writes[0];
+  assert.equal(written?.artifact, "conflict-1");
+  const evidence: unknown = JSON.parse(
+    new TextDecoder().decode(written?.content),
+  );
+  assert.deepEqual(evidence, {
+    version: 1,
+    request: "request-one",
+    attempt: "attempt-1",
+    strategy: "Merge",
+    candidate: commitOf("c"),
+    targetRef: "refs/heads/main",
+    targetCommit: commitOf("a"),
+    mergeBase: commitOf("a"),
+    conflictingPaths: ["one.txt"],
+    truncated: false,
+  });
+  const recorded = store.attempts[0];
+  assert.equal(recorded?.outcome, "Failed");
+  assert.equal(recorded?.failureKind, "MergeConflict");
+  assert.equal(recorded?.conflictManifest, "conflict-1");
+  assert.equal(recorded?.conflictDigest, digestOf("evidence"));
+  assert.equal(recorded?.candidate, undefined);
+});
+
+test("a conflict nothing could store leaves no attempt, because the evidence is half of it", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+  const artifacts = recordingArtifacts();
+  git.integrated = {
+    integrated: "Conflicted",
+    conflict: { paths: ["one.txt"], truncated: false },
+  };
+  artifacts.wrote = { written: "Unavailable", retryAfterSeconds: 30 };
+  const report = await passOver(serviceOf(store, git, {}, artifacts));
+  assert.equal(report.holds, 1);
+  assert.deepEqual(store.attempts, []);
+});
+
+test("artifacts that could not be confirmed fail the preparation and never reach the remote", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+  const artifacts = recordingArtifacts();
+  artifacts.read = {
+    read: "Rejected",
+    failure: "DigestMismatch",
+    at: { role: "Handoff", index: 0 },
+  };
+  await passOver(serviceOf(store, git, {}, artifacts));
+  assert.deepEqual(git.preparations, []);
+  assert.equal(store.attempts[0]?.outcome, "Failed");
+  assert.equal(store.attempts[0]?.failureKind, "PreparationFailed");
+});
+
+test("a storage outage leaves no attempt at all, because it is evidence about nothing", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+  const artifacts = recordingArtifacts();
+  artifacts.read = { read: "Unavailable", retryAfterSeconds: 30 };
+  const report = await passOver(serviceOf(store, git, {}, artifacts));
+  assert.equal(report.holds, 1);
+  assert.deepEqual(store.attempts, []);
+  assert.deepEqual(git.preparations, []);
+});
+
+test("a handoff naming the repository itself is refused before any blob is written", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  store.gathering = {
+    work: [passedWork],
+    artifacts: [handoffOf(".git/config", "hijacked")],
+  };
+  const git = recordingGit();
+  await passOver(serviceOf(store, git));
+  assert.deepEqual(git.preparations, []);
+  assert.equal(store.attempts[0]?.failureKind, "PreparationFailed");
+});
+
+test("a ticket whose passed work has no result at all is a hold and never a failure", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  store.gathering = { work: [], artifacts: [] };
+  const report = await passOver(serviceOf(store, recordingGit()));
+  assert.equal(report.holds, 1);
+  assert.deepEqual(store.attempts, []);
+});
+
+test("a pass prepares no more candidates than its ceiling admits", async () => {
+  const store = recordingStore([
+    preparableView("request-one"),
+    preparableView("request-two"),
+    preparableView("request-three"),
+  ]);
+  const git = recordingGit();
+  const report = await passOver(
+    serviceOf(store, git, { preparationsPerPassMax: 2 }),
+  );
+  assert.equal(report.preparations, 2);
+  assert.equal(git.preparations.length, 2);
+  assert.equal(store.attempts.length, 2);
+});
+
+test("an unreadable remote after the candidate is built records nothing at all", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+  movingTarget(git, [
+    { observed: "Target", target: attemptOf("any").target },
+    { observed: "Unreadable", evidence: "RemoteUnreachable" },
+  ]);
+  const report = await passOver(serviceOf(store, git));
+  assert.equal(report.preparations, 1);
+  assert.equal(report.holds, 1);
+  assert.deepEqual(git.integrations, []);
+  assert.deepEqual(store.attempts, []);
 });

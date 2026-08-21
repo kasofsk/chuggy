@@ -83,6 +83,7 @@ import {
   type FinalizerOwnerId,
   type FinalizerStore,
 } from "../../interpreter/finalizer.ts";
+import type { FinalizerPreparationStore } from "../../interpreter/finalizerPreparation.ts";
 import { nativeActionResolutions } from "../../interpreter/ticketCommand.ts";
 import {
   asProjectId,
@@ -98,6 +99,11 @@ import {
   finalizerPermitHolds,
   finalizerPermitReconcile,
 } from "./finalizerPermit.ts";
+import {
+  finalizerPreparationApproval,
+  finalizerPreparationGathering,
+  finalizerPreparationRecord,
+} from "./finalizerPreparation.ts";
 import {
   finalizerBounded,
   finalizerLiveRequestStates,
@@ -608,9 +614,32 @@ async function finalizerSubmitResult(
   return verdict;
 }
 
-/** The durable finalization authority for one installation, over a finalizer-role pool. */
-export function postgresFinalizer(pool: pg.Pool): FinalizerStore {
+/** The three moves preparation owns, over the same pool the rest of the authority runs on. */
+function postgresFinalizerPreparation(
+  pool: pg.Pool,
+): FinalizerPreparationStore {
   return {
+    handoffGathering: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerPreparationGathering(client, claim),
+      ),
+    recordAttempt: (record) =>
+      postgresTransaction(pool, (client) =>
+        finalizerPreparationRecord(client, record),
+      ),
+    requestApproval: (ask) =>
+      postgresTransaction(pool, (client) =>
+        finalizerPreparationApproval(client, ask),
+      ),
+  };
+}
+
+/** The durable finalization authority for one installation, over a finalizer-role pool. */
+export function postgresFinalizer(
+  pool: pg.Pool,
+): FinalizerStore & FinalizerPreparationStore {
+  return {
+    ...postgresFinalizerPreparation(pool),
     claimRequests: (owner, epoch, requestsMax, leaseSecs) =>
       postgresTransaction(pool, (client) =>
         finalizerClaimRequests(client, owner, epoch, requestsMax, leaseSecs),

@@ -309,6 +309,22 @@ export async function scratchIsAncestor(
   return undefined;
 }
 
+/** The best common ancestor of two commits, and `undefined` where they share none or git could not answer. */
+export async function scratchMergeBase(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  left: GitObjectId,
+  right: GitObjectId,
+): Promise<GitObjectId | undefined> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    argv: ["merge-base", left, right],
+  });
+  if (ran.ran === "Stopped" || ran.code !== 0) return undefined;
+  return scratchObjectIdOf(ran.stdout.trim());
+}
+
 /** Writes one artifact's bytes into the scratch as a blob. */
 export async function scratchWriteBlob(
   scratch: GitScratch,

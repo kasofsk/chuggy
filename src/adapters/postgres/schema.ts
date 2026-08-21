@@ -2448,8 +2448,9 @@ const durableFinalizer = [
      approval_required      boolean NOT NULL,
      outcome                text    NOT NULL,
      candidate_commit       text,
-     failure_kind           text,
-     conflict_manifest      text,
+     failure_kind             text,
+     conflict_manifest        text,
+     conflict_manifest_digest text,
      attempt_digest         text    NOT NULL,
      prepared_at            timestamptz NOT NULL DEFAULT now(),
      PRIMARY KEY (tenant, project, attempt),
@@ -2474,12 +2475,15 @@ const durableFinalizer = [
      CONSTRAINT finalization_attempt_outcome_is_whole CHECK (
        (outcome = 'Prepared') = (candidate_commit IS NOT NULL)
        AND (outcome = 'Failed') = (failure_kind IS NOT NULL)
-       AND (conflict_manifest IS NULL OR failure_kind = 'MergeConflict')),
+       AND (conflict_manifest IS NULL OR failure_kind = 'MergeConflict')
+       AND (conflict_manifest IS NULL) = (conflict_manifest_digest IS NULL)),
      CONSTRAINT finalization_attempt_commits_are_object_ids CHECK (
        target_commit ~ '${gitObjectIdPattern()}'
        AND (candidate_commit IS NULL OR candidate_commit ~ '${gitObjectIdPattern()}')),
      CONSTRAINT finalization_attempt_digest_is_hex CHECK (
-       attempt_digest ~ '^[0-9a-f]{${artifactDigestChars}}$'),
+       attempt_digest ~ '^[0-9a-f]{${artifactDigestChars}}$'
+       AND (conflict_manifest_digest IS NULL
+            OR conflict_manifest_digest ~ '^[0-9a-f]{${artifactDigestChars}}$')),
      CONSTRAINT finalization_attempt_ticket_is_positive CHECK (ticket >= 1),
      CONSTRAINT finalization_attempt_text_is_bounded CHECK (
        length(attempt) BETWEEN 1 AND ${finalizerIdentityCharsMax}
@@ -2937,6 +2941,9 @@ const durableFinalizerBoundaries = [
   `GRANT SELECT ON recovery_epoch, project_repository, input_bundle,
      input_bundle_reference, configuration_revision, native_action,
      native_action_resolution TO ${finalizerRole}`,
+  `GRANT INSERT ON input_bundle, input_bundle_reference TO ${finalizerRole}`,
+  `GRANT SELECT ON execution, execution_request_task, execution_result,
+     execution_result_artifact TO ${finalizerRole}`,
   `GRANT SELECT (tenant, project, lifecycle, lifecycle_generation)
      ON project TO ${finalizerRole}`,
   `GRANT SELECT ON finalization_request TO ${finalizerRole}`,
