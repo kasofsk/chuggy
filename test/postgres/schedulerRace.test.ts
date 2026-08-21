@@ -96,7 +96,8 @@ function claimKey(named: {
 /**
  * The launchable executions this project holds. `unlaunched` answers for the
  * whole installation, as the scheduler that calls it is one process for all of
- * it, so a case reading it filters to the work it made.
+ * it, so a case reading it filters to the work it made — and it is a read,
+ * reaping being the separate call the lapsed-lease case below asserts.
  */
 async function ownWaiting(project: SchedulerProject, epoch: RecoveryEpoch) {
   const waiting = await rig.store.unlaunched(epoch, 256);
@@ -348,12 +349,29 @@ test("an attempt whose lease lapsed is ended and its execution offered again", a
       WHERE tenant=$1 AND project=$2 AND attempt=$3`,
     [project.partition.tenant, project.partition.project, attempt.attempt],
   );
+  assert.deepEqual(
+    await ownWaiting(project, epoch),
+    [],
+    "the launch read reaped the lapsed lease itself, which is a write",
+  );
+  assert.equal(
+    await rig.store.reapLapsedAttempts(postgresHarnessNewEpoch()),
+    0,
+    "reaping ran under an epoch that is not the installation's",
+  );
+  assert.ok((await rig.store.reapLapsedAttempts(epoch)) >= 1);
   const waiting = await ownWaiting(project, epoch);
   assert.deepEqual(
     waiting.map((row) => row.execution),
     [attempt.execution],
   );
   assert.equal(waiting[0]?.retriesSpent, 1);
+  await ownWaiting(project, epoch);
+  assert.equal(
+    (await rig.store.execution(project.partition, attempt.execution))
+      ?.retriesSpent,
+    1,
+  );
   assert.deepEqual(
     await rig.harness.query(
       "SELECT state, evidence FROM execution_attempt WHERE tenant=$1 AND project=$2 AND attempt=$3",

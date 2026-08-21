@@ -104,6 +104,7 @@ function recordingStore(
     },
     blockExecution: unreached,
     execution: unreached,
+    reapLapsedAttempts: unreached,
     unlaunched: unreached,
     fenceOldEpochAttempts: unreached,
   };

@@ -139,6 +139,7 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
       });
     },
     execution: () => Promise.resolve(undefined),
+    reapLapsedAttempts: () => Promise.resolve(0),
     unlaunched: () => Promise.resolve([execution]),
     fenceOldEpochAttempts: () => {
       calls.push("fenced");
@@ -380,6 +381,10 @@ test("a pass fences the older epoch before it moves anything else", async () => 
       calls.push("admitted");
       return Promise.resolve({ admitted: "ClusterFull" });
     },
+    reapLapsedAttempts: () => {
+      calls.push("reaped");
+      return Promise.resolve(0);
+    },
     unlaunched: () => {
       calls.push("unlaunched");
       return Promise.resolve([]);
@@ -394,6 +399,7 @@ test("a pass fences the older epoch before it moves anything else", async () => 
     "claimed:CancelTicketWork",
     "claimed:SpawnWork,SpawnEvaluation",
     "admitted",
+    "reaped",
     "unlaunched",
   ]);
 });

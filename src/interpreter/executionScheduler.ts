@@ -562,6 +562,12 @@ export interface ExecutionSchedulerStore {
     execution: ExecutionId,
   ): Promise<LogicalExecution | undefined>;
 
+  /**
+   * Ends every attempt whose lease has run out, spending the safe retry budget
+   * the way any attempt that ran and vanished does.
+   */
+  reapLapsedAttempts(epoch: RecoveryEpoch): Promise<number>;
+
   /** At most `executionsMax` executions that own a slot and have no live attempt. */
   unlaunched(
     epoch: RecoveryEpoch,

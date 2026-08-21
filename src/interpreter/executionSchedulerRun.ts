@@ -24,6 +24,14 @@
  * may finish its local work afterwards and can do nothing with it. It is
  * idempotent, so every pass after the first fences nothing.
  *
+ * REAPING A LAPSED LEASE IS A MOVE AND IS ASKED FOR AS ONE. An attempt whose
+ * lease has run out is no longer live but its row still says it is, so nothing
+ * launchable can be found until those attempts are ended. That is a durable
+ * write, and hiding it inside the read that needs it would give this layer a
+ * port method whose name promises a question and whose body spends a retry
+ * budget. So the launch step reaps first and then reads, and a caller can see
+ * both.
+ *
  * CANCELLATION IS DURABLE BEFORE THE FABRIC HEARS OF IT, and the port's shape
  * is what enforces that rather than the order of two statements: the
  * registration outcome is what names the attempts it fenced, so deleting first
@@ -446,6 +454,7 @@ export async function executionSchedulerLaunch(
   epoch: RecoveryEpoch,
 ): Promise<number> {
   const config = checkedExecutionSchedulerConfig(service.config);
+  await service.store.reapLapsedAttempts(epoch);
   const waiting = await service.store.unlaunched(
     epoch,
     config.launchesPerPassMax,

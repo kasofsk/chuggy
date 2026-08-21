@@ -35,12 +35,13 @@
  * the cluster. It guards an arithmetic rather than an authority; the authority
  * stays the durable allocations, which is why no count is cached anywhere.
  *
- * A LAPSED ATTEMPT LEASE IS ENDED BEFORE ANY LAUNCH IS OFFERED. An attempt whose
- * lease has run out is no longer live, but its row still says it is, and the
- * partial unique index that makes one unfenced reporter would refuse the
- * replacement. So the launch read ends those attempts first, spending the safe
- * retry budget the way any attempt that ran and vanished does. It also refuses
- * to hand out any work at all under a superseded recovery epoch, because a
+ * A LAPSED ATTEMPT LEASE IS ENDED BEFORE ANY LAUNCH IS OFFERED, AND ENDING IT IS
+ * ITS OWN CALL. An attempt whose lease has run out is no longer live, but its
+ * row still says it is, and the partial unique index that makes one unfenced
+ * reporter would refuse the replacement. So reaping is a durable move the pass
+ * asks for by name, spending the safe retry budget the way any attempt that ran
+ * and vanished does, and the launch read that follows it writes nothing. Both
+ * refuse to do anything at all under a superseded recovery epoch, because a
  * restore withdraws the authority a scheduler was holding before it.
  *
  * NOTHING HERE READS A CLOCK. Every lease, expiry and backoff is a duration
@@ -702,20 +703,26 @@ async function schedulerAttemptEnded(
 /** Ends every live attempt whose lease has run out, spending the budget an attempt that ran spends. */
 async function schedulerReapLapsedAttempts(
   client: pg.PoolClient,
-): Promise<void> {
-  await client.query(
+  epoch: RecoveryEpoch,
+): Promise<number> {
+  if ((await postgresOwnershipEpoch(client)) !== epoch) return 0;
+  const reaped = await client.query<{ reaped: string }>(
     `WITH lapsed AS (
        UPDATE execution_attempt
           SET state = 'Lost', evidence = 'LeaseExpired', ended_at = now(),
               lease_owner = NULL, lease_expires_at = NULL
         WHERE state IN (${liveAttemptStates}) AND lease_expires_at <= now()
-        RETURNING tenant, project, execution)
-     UPDATE execution e
-        SET retries_spent = e.retries_spent + 1, placement_backoff_from = now()
-       FROM lapsed l
-      WHERE e.tenant = l.tenant AND e.project = l.project AND e.execution = l.execution
-        AND e.status NOT IN (${settledStatuses})`,
+        RETURNING tenant, project, execution),
+     spent AS (
+       UPDATE execution e
+          SET retries_spent = e.retries_spent + 1, placement_backoff_from = now()
+         FROM lapsed l
+        WHERE e.tenant = l.tenant AND e.project = l.project AND e.execution = l.execution
+          AND e.status NOT IN (${settledStatuses})
+        RETURNING e.execution)
+     SELECT count(*)::text AS reaped FROM lapsed`,
   );
+  return projectRowCounter(reaped.rows[0]?.reaped ?? "0", "reaped attempts");
 }
 
 /** At most `executionsMax` executions that own a slot and have no live attempt. */
@@ -726,7 +733,6 @@ async function schedulerUnlaunched(
 ): Promise<readonly LogicalExecution[]> {
   schedulerRequirePositive(executionsMax, "executionsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
-  await schedulerReapLapsedAttempts(client);
   const waiting = await client.query<ExecutionRow>(
     `SELECT ${executionRowColumns} FROM ${executionRowFrom}
       WHERE e.status IN ('Admitted', 'Launching', 'Running')
@@ -814,6 +820,10 @@ export function postgresExecutionScheduler(
       ),
     execution: (partition, execution) =>
       schedulerExecution(pool, partition, execution),
+    reapLapsedAttempts: (epoch) =>
+      postgresTransaction(pool, (client) =>
+        schedulerReapLapsedAttempts(client, epoch),
+      ),
     unlaunched: (epoch, executionsMax) =>
       postgresTransaction(pool, (client) =>
         schedulerUnlaunched(client, epoch, executionsMax),
