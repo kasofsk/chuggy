@@ -34,6 +34,22 @@
  * AN OMITTED FIELD ASKS FOR NOTHING. It is the identity of the meet rather than
  * a default, so a block that has no opinion about the filesystem leaves the
  * filesystem exactly where the block before it left it.
+ *
+ * A REACH NO ORDER NAMES IS NOT A POINT ON IT, and every operation here says so
+ * rather than comparing positions and getting a position back. The mint refuses
+ * one, because policy is the untyped boundary this module exists to survive; the
+ * meet treats an asked-for one as no opinion at all, so it can only leave the
+ * held reach where it was; and the order refuses it on either side, which is
+ * what keeps the postcondition below able to fail. Comparing list positions
+ * instead would make an unrecognised reach the lowest value there is and
+ * therefore the winner of every meet — outside the vocabulary and above the
+ * ceiling at once.
+ *
+ * WHAT IS HANDED BACK IS FROZEN, ARRAYS INCLUDED. "Movable only downward" is a
+ * claim about every later reader, and a reader holding the live lists could
+ * widen the same authority for all of them by appending to one in place. So the
+ * grant a resolved authority holds is frozen when it is built, and a caller that
+ * tries to grow it fails where it tried rather than silently succeeding.
  */
 
 /** How far into a workspace a task may reach, written least first. */
@@ -87,17 +103,39 @@ export function taskAuthorityGrant(
   return authority[authorityGrant];
 }
 
-/** Mints the authority policy granted, which is the widest one that will ever exist. */
-export function grantTaskAuthority(grant: PolicyAuthorityGrant): TaskAuthority {
+/** Where this reach sits on the order, or nothing when the order does not name it. */
+function authorityReachAt(access: FilesystemAccess): number | undefined {
+  const at = filesystemAccessOrder.indexOf(access);
+  return at === -1 ? undefined : at;
+}
+
+/** The grant as an authority holds it: frozen with its lists, so no reader may grow one. */
+function authorityHeld(grant: PolicyAuthorityGrant): TaskAuthority {
   return {
-    [authorityGrant]: {
-      tools: authoritySorted(grant.tools),
-      credentials: authoritySorted(grant.credentials),
+    [authorityGrant]: Object.freeze({
+      tools: Object.freeze(grant.tools),
+      credentials: Object.freeze(grant.credentials),
       network: grant.network,
       filesystem: grant.filesystem,
       mayCompleteTask: grant.mayCompleteTask,
-    },
+    }),
   };
+}
+
+/** Mints the authority policy granted, which is the widest one that will ever exist. */
+export function grantTaskAuthority(grant: PolicyAuthorityGrant): TaskAuthority {
+  if (authorityReachAt(grant.filesystem) === undefined) {
+    throw new RangeError(
+      "task authority: a policy grant names a filesystem reach this order does not",
+    );
+  }
+  return authorityHeld({
+    tools: authoritySorted(grant.tools),
+    credentials: authoritySorted(grant.credentials),
+    network: grant.network,
+    filesystem: grant.filesystem,
+    mayCompleteTask: grant.mayCompleteTask,
+  });
 }
 
 /** The names held that were also asked for, which is a subset of the held ones by construction. */
@@ -110,16 +148,16 @@ function authorityMeetNames(
   return held.filter((name) => wanted.has(name));
 }
 
-/** The lower of the two reaches, which is the held one when the request has no opinion. */
+/** The lower of the two reaches; a reach the order does not name asks for nothing. */
 function authorityMeetFilesystem(
   held: FilesystemAccess,
   asked: FilesystemAccess | undefined,
 ): FilesystemAccess {
   if (asked === undefined) return held;
-  return filesystemAccessOrder.indexOf(asked) <
-    filesystemAccessOrder.indexOf(held)
-    ? asked
-    : held;
+  const wanted = authorityReachAt(asked);
+  const holds = authorityReachAt(held);
+  if (wanted === undefined || holds === undefined) return held;
+  return wanted < holds ? asked : held;
 }
 
 /** Meets one authority with one request, which can lower every field and raise none. */
@@ -128,16 +166,23 @@ export function narrowTaskAuthority(
   request: AuthorityRequest,
 ): TaskAuthority {
   const held = authority[authorityGrant];
-  return {
-    [authorityGrant]: {
-      tools: authorityMeetNames(held.tools, request.tools),
-      credentials: authorityMeetNames(held.credentials, request.credentials),
-      network: held.network && (request.network ?? true),
-      filesystem: authorityMeetFilesystem(held.filesystem, request.filesystem),
-      mayCompleteTask:
-        held.mayCompleteTask && (request.mayCompleteTask ?? true),
-    },
-  };
+  return authorityHeld({
+    tools: authorityMeetNames(held.tools, request.tools),
+    credentials: authorityMeetNames(held.credentials, request.credentials),
+    network: held.network && (request.network ?? true),
+    filesystem: authorityMeetFilesystem(held.filesystem, request.filesystem),
+    mayCompleteTask: held.mayCompleteTask && (request.mayCompleteTask ?? true),
+  });
+}
+
+/** Whether one reach is at most the other, which no reach outside the order is. */
+function authorityReachWithin(
+  narrower: FilesystemAccess,
+  wider: FilesystemAccess,
+): boolean {
+  const at = authorityReachAt(narrower);
+  const ceiling = authorityReachAt(wider);
+  return at !== undefined && ceiling !== undefined && at <= ceiling;
 }
 
 /** Whether the first grant permits everything the second does, which is the order the meet descends. */
@@ -151,8 +196,7 @@ export function taskAuthorityIncludes(
     narrower.tools.every((tool) => tools.has(tool)) &&
     narrower.credentials.every((credential) => credentials.has(credential)) &&
     (wider.network || !narrower.network) &&
-    filesystemAccessOrder.indexOf(narrower.filesystem) <=
-      filesystemAccessOrder.indexOf(wider.filesystem) &&
+    authorityReachWithin(narrower.filesystem, wider.filesystem) &&
     (wider.mayCompleteTask || !narrower.mayCompleteTask)
   );
 }

@@ -6,6 +6,12 @@
  * credential, both flags and each reach, and the requests are the same space
  * with every field free to be absent. So "no request widens" and "order does
  * not matter" are checked exhaustively rather than argued.
+ *
+ * THE SPACE INCLUDES A REACH THE ORDER DOES NOT NAME, because the untyped
+ * boundary this module exists to survive is a policy adapter whose answer drifts
+ * from the union. A value outside the vocabulary is what the exhaustive cases
+ * cannot generate from the vocabulary itself, so it is written in below and cast
+ * exactly where a drifted adapter would have produced one.
  */
 
 import assert from "node:assert/strict";
@@ -54,24 +60,31 @@ function everyGrant(): readonly PolicyAuthorityGrant[] {
   return found;
 }
 
-/** Every request, including ones naming a tool no grant carries and ones with no opinion. */
+/** The reach a drifted policy adapter answers with, which no order here names. */
+const driftedReach = "RootReadWrite" as FilesystemAccess;
+
+/** Every request, including ones naming what no grant carries and ones with no opinion. */
 function everyRequest(): readonly AuthorityRequest[] {
   const found: AuthorityRequest[] = [];
   const flags: readonly (boolean | undefined)[] = [undefined, false, true];
   const reaches: readonly (FilesystemAccess | undefined)[] = [
     undefined,
     ...filesystemAccessOrder,
+    driftedReach,
   ];
   for (const tools of [undefined, ...subsets(["editor", "shell", "git"])]) {
-    for (const network of flags) {
-      for (const filesystem of reaches) {
-        for (const mayCompleteTask of flags) {
-          found.push({
-            ...(tools === undefined ? {} : { tools }),
-            ...(network === undefined ? {} : { network }),
-            ...(filesystem === undefined ? {} : { filesystem }),
-            ...(mayCompleteTask === undefined ? {} : { mayCompleteTask }),
-          });
+    for (const credentials of [undefined, ...subsets(["ci"])]) {
+      for (const network of flags) {
+        for (const filesystem of reaches) {
+          for (const mayCompleteTask of flags) {
+            found.push({
+              ...(tools === undefined ? {} : { tools }),
+              ...(credentials === undefined ? {} : { credentials }),
+              ...(network === undefined ? {} : { network }),
+              ...(filesystem === undefined ? {} : { filesystem }),
+              ...(mayCompleteTask === undefined ? {} : { mayCompleteTask }),
+            });
+          }
         }
       }
     }
@@ -217,6 +230,90 @@ test("a minted grant is sorted and duplicate-free, so two of them compare by val
   );
   assert.deepEqual(resolved.tools, ["editor", "shell"]);
   assert.deepEqual(resolved.credentials, ["ci"]);
+});
+
+test("a request naming a reach no order names narrows nothing", () => {
+  const grant: PolicyAuthorityGrant = {
+    tools: [],
+    credentials: [],
+    network: false,
+    filesystem: "None",
+    mayCompleteTask: false,
+  };
+  const resolved = taskAuthorityGrant(
+    resolveTaskAuthority(grant, [{ filesystem: driftedReach }]),
+  );
+  assert.equal(resolved.filesystem, "None");
+});
+
+test("a policy grant naming a reach no order names is refused at the mint", () => {
+  assert.throws(
+    () =>
+      grantTaskAuthority({
+        tools: [],
+        credentials: [],
+        network: false,
+        filesystem: driftedReach,
+        mayCompleteTask: false,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof RangeError);
+      assert.match(error.message, /filesystem reach this order does not/u);
+      return true;
+    },
+  );
+});
+
+test("inclusion refuses a reach no order names on either side of it", () => {
+  const grant: PolicyAuthorityGrant = {
+    tools: [],
+    credentials: [],
+    network: false,
+    filesystem: "None",
+    mayCompleteTask: false,
+  };
+  const drifted: PolicyAuthorityGrant = {
+    ...grant,
+    filesystem: driftedReach,
+  };
+  assert.equal(taskAuthorityIncludes(grant, drifted), false);
+  assert.equal(taskAuthorityIncludes(drifted, grant), false);
+  assert.equal(taskAuthorityIncludes(drifted, drifted), false);
+});
+
+test("a grant handed back cannot be grown by the reader holding it", () => {
+  const authority = grantTaskAuthority({
+    tools: ["editor"],
+    credentials: ["ci"],
+    network: false,
+    filesystem: "None",
+    mayCompleteTask: false,
+  });
+  const held = taskAuthorityGrant(authority);
+  assert.throws(() => (held.tools as string[]).push("shell"), TypeError);
+  assert.throws(() => (held.credentials as string[]).push("deploy"), TypeError);
+  assert.throws(() => {
+    (held as { network: boolean }).network = true;
+  }, TypeError);
+  assert.deepEqual(taskAuthorityGrant(authority).tools, ["editor"]);
+  assert.equal(taskAuthorityGrant(authority).network, false);
+});
+
+test("a narrowed grant is frozen exactly as the minted one is", () => {
+  const narrowed = taskAuthorityGrant(
+    narrowTaskAuthority(
+      grantTaskAuthority({
+        tools: ["editor", "shell"],
+        credentials: [],
+        network: true,
+        filesystem: "WriteWorkspace",
+        mayCompleteTask: true,
+      }),
+      { tools: ["editor"] },
+    ),
+  );
+  assert.throws(() => (narrowed.tools as string[]).push("shell"), TypeError);
+  assert.deepEqual(narrowed.tools, ["editor"]);
 });
 
 test("inclusion is reflexive and rejects each single widening", () => {
