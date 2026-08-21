@@ -1677,6 +1677,8 @@ export const migrations: readonly Migration[] = [
          END $$`,
       `ALTER FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text)
          OWNER TO ${boundaryOwnerRole}`,
+      `GRANT SELECT,UPDATE ON selector_runtime_settings TO ${boundaryOwnerRole}`,
+      `GRANT INSERT ON selector_runtime_settings_history TO ${boundaryOwnerRole}`,
       `REVOKE ALL ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text) FROM PUBLIC`,
       `GRANT EXECUTE ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text)
          TO ${selectorControlRole}`,
