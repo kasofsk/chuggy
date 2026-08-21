@@ -52,7 +52,7 @@ async function heldProject(label: string): Promise<ProjectMemory> {
 /** Decides the fixture history's first entry for a partition this memory holds. */
 async function commitFirst(memory: ProjectMemory, label: string) {
   const item = await postgresHarnessAccepted(
-    harness.inbox,
+    harness,
     memory.lease.partition,
     label,
     0,
@@ -87,13 +87,13 @@ test("a decision commits while another project's decision is stalled on its own 
   const neighbour = await heldProject("neighbour");
   const writer = postgresHarnessWriter(harness);
   const stalledItem = await postgresHarnessAccepted(
-    harness.inbox,
+    harness,
     stalled.lease.partition,
     "stalled",
     0,
   );
   const neighbourItem = await postgresHarnessAccepted(
-    harness.inbox,
+    harness,
     neighbour.lease.partition,
     "neighbour",
     0,

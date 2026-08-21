@@ -1,0 +1,54 @@
+/** Bounded project notifications used to accelerate authoritative reads. */
+
+import type { Partition } from "./projectStore.ts";
+
+export type NotificationKind =
+  "Operation" | "Ticket" | "Draft" | "Configuration";
+
+export interface ProjectNotification {
+  readonly ordinal: number;
+  readonly kind: NotificationKind;
+  readonly resource: string;
+  readonly projectSequence?: number;
+  readonly authoringVersion?: number;
+}
+
+export interface NotificationCursor {
+  readonly after: number;
+  readonly limit: number;
+}
+
+export const notificationPageLimitMax = 100;
+
+export function checkedNotificationCursor(
+  cursor: NotificationCursor,
+): NotificationCursor {
+  if (!Number.isSafeInteger(cursor.after) || cursor.after < 0)
+    throw new RangeError(
+      "notification cursor must be a non-negative safe integer",
+    );
+  if (
+    !Number.isSafeInteger(cursor.limit) ||
+    cursor.limit < 1 ||
+    cursor.limit > notificationPageLimitMax
+  )
+    throw new RangeError(
+      `notification limit must be between 1 and ${String(notificationPageLimitMax)}`,
+    );
+  return cursor;
+}
+
+export type NotificationBatch =
+  | { readonly result: "Reset"; readonly cursor: number }
+  | {
+      readonly result: "Events";
+      readonly cursor: number;
+      readonly events: readonly ProjectNotification[];
+    };
+
+export interface NotificationStore {
+  read(
+    partition: Partition,
+    cursor: NotificationCursor,
+  ): Promise<NotificationBatch>;
+}

@@ -225,6 +225,8 @@ export function classifyCommand(command: TicketCommand): {
   readonly admission: AdmissionClass;
   readonly priority: Exclude<PriorityClass, "Continuation">;
 } {
+  if (command.command === "ReleaseDraft")
+    return { admission: "Ordinary", priority: "Ordinary" };
   if (command.command === "ResolveNativeAction") {
     return {
       admission:
@@ -239,7 +241,6 @@ export function classifyCommand(command: TicketCommand): {
     case "ExecutionBlocked":
     case "FinalizationResult":
       return { admission: "CorrectnessReducing", priority: "Completion" };
-    case "ReleaseTicket":
     case "Dispatch":
     case "ResumeTicket":
       return { admission: "Ordinary", priority: "Ordinary" };

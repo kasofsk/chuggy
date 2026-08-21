@@ -60,7 +60,7 @@ test("typed commands round-trip and internal reducers are not operation commands
   const command = {
     version: 1,
     command: "Decide",
-    event: asOperationDecisionEvent(releaseTicketEvent(id(1), plainAuthoring)),
+    event: asOperationDecisionEvent(dispatchEvent(id(1))),
   } as const;
   assert.deepEqual(parseTicketCommand(encodeTicketCommand(command)), {
     parsed: "Ok",
@@ -69,7 +69,7 @@ test("typed commands round-trip and internal reducers are not operation commands
   assert.equal(parseTicketCommand('{"version":2}').parsed, "Refused");
   assert.throws(
     () => asOperationDecisionEvent({ type: "WorkReduce", value: id(1) }),
-    /internal continuation/,
+    /not a public decision command/,
   );
 });
 
@@ -190,9 +190,7 @@ test("submission exposes no caller-selected admission or priority", () => {
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(
-        releaseTicketEvent(id(1), plainAuthoring),
-      ),
+      event: asOperationDecisionEvent(dispatchEvent(id(1))),
     },
   };
   assert.equal("admission" in submission, false);

@@ -51,12 +51,7 @@ test("a lease issued before a restore can neither commit nor renew after it", as
     0,
   );
   const stranded = memory.lease;
-  const item = await postgresHarnessAccepted(
-    harness.inbox,
-    partition,
-    "restore",
-    0,
-  );
+  const item = await postgresHarnessAccepted(harness, partition, "restore", 0);
 
   await harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
 

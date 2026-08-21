@@ -1,8 +1,9 @@
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
+import type { TicketId } from "../domain/ids.ts";
 
 export type OperationDecisionEvent = Exclude<
   DecisionEvent,
-  { readonly type: "WorkReduce" | "EvalReduce" }
+  { readonly type: "WorkReduce" | "EvalReduce" | "ReleaseTicket" }
 >;
 
 export type NativeActionResolution = "Resume" | "Revoke";
@@ -10,8 +11,12 @@ export type NativeActionResolution = "Resume" | "Revoke";
 export function asOperationDecisionEvent(
   event: DecisionEvent,
 ): OperationDecisionEvent {
-  if (event.type === "WorkReduce" || event.type === "EvalReduce") {
-    throw new RangeError("reducers are internal continuation commands");
+  if (
+    event.type === "WorkReduce" ||
+    event.type === "EvalReduce" ||
+    event.type === "ReleaseTicket"
+  ) {
+    throw new RangeError("event is not a public decision command");
   }
   return event;
 }
@@ -28,4 +33,11 @@ export type TicketCommand =
       readonly action: string;
       readonly authorizingSeq: number;
       readonly resolution: NativeActionResolution;
+    }
+  | {
+      readonly version: 1;
+      readonly command: "ReleaseDraft";
+      readonly ticket: TicketId;
+      readonly authoringVersion: number;
+      readonly configurationRevision: string;
     };

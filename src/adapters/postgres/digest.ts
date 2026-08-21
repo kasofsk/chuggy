@@ -35,11 +35,22 @@
 import { createHash } from "node:crypto";
 
 import type { Entry } from "../../actor/journal.ts";
+import type { DecisionCause } from "../../interpreter/projectDecision.ts";
+import type { ConfigurationPin } from "../../interpreter/projectDecision.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { encodeEntry } from "../../interpreter/wire.ts";
 
 /** Names the format these digests are of, so a chain cannot be read as a later one's. */
 const journalChainFormat = "chuggy:journal:v1";
+const journalEnvelopeFormat = "chuggy:journal-envelope:v2";
+
+export interface JournalIntegrityEnvelope {
+  readonly entry: Entry;
+  readonly cause: DecisionCause;
+  readonly configuration: ConfigurationPin;
+  readonly eventSchemaVersion: number;
+  readonly decisionSemanticsVersion: number;
+}
 
 /** Joins the parts as bytes no other list of parts produces, by writing each after its length. */
 function journalChainInput(parts: readonly string[]): string {
@@ -78,6 +89,32 @@ export function journalChainDigest(
         partition.project,
         previous,
         encodeEntry(entry),
+      ]),
+    )
+    .digest("hex");
+}
+
+/** Covers every authoritative field of a newly written journal record. */
+export function journalEnvelopeDigest(
+  partition: Partition,
+  previous: string,
+  envelope: JournalIntegrityEnvelope,
+): string {
+  const configuration = envelope.configuration;
+  return createHash("sha256")
+    .update(
+      journalChainInput([
+        journalEnvelopeFormat,
+        partition.tenant,
+        partition.project,
+        previous,
+        encodeEntry(envelope.entry),
+        envelope.cause.kind,
+        envelope.cause.id,
+        String(envelope.eventSchemaVersion),
+        String(envelope.decisionSemanticsVersion),
+        configuration.configurationRevision,
+        configuration.configurationDigest,
       ]),
     )
     .digest("hex");

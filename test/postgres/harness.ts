@@ -20,7 +20,13 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type pg from "pg";
+import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
 
+import {
+  asCanonicalConfiguration,
+  asConfigurationRevisionId,
+  type AuthoringStore,
+} from "../../src/interpreter/authoring.ts";
 import {
   dispatchEvent,
   releaseTicketEvent,
@@ -102,6 +108,7 @@ export interface PostgresHarness {
   readonly inbox: OperationInbox;
   readonly discovery: ProjectDiscovery;
   readonly decisions: ProjectDecision;
+  readonly authoring: AuthoringStore;
   readonly query: (
     sql: string,
     values?: readonly unknown[],
@@ -125,6 +132,7 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
     inbox: postgresOperationInbox(pool, postgresHarnessKeying()),
     discovery: postgresProjectDiscovery(pool),
     decisions: postgresProjectDecision(pool),
+    authoring: postgresAuthoring(pool),
     query: async (sql, values) =>
       (await pool.query(sql, values === undefined ? undefined : [...values]))
         .rows as readonly Record<string, unknown>[],
@@ -383,9 +391,7 @@ export function postgresHarnessSubmission(
     command: {
       version: 1,
       command: "Decide",
-      event: asOperationDecisionEvent(
-        releaseTicketEvent(id(1), plainAuthoring),
-      ),
+      event: asOperationDecisionEvent(dispatchEvent(id(1))),
     },
   };
 }
@@ -426,6 +432,10 @@ export function postgresHarnessDecisionSubmission(
   index: number,
   unique?: string,
 ): Submission {
+  if (index === 0)
+    throw new Error(
+      "postgres harness: releases use postgresHarnessReleaseSubmission",
+    );
   return {
     ...postgresHarnessSubmission(partition, label, unique),
     command: {
@@ -436,19 +446,39 @@ export function postgresHarnessDecisionSubmission(
   };
 }
 
-/**
- * The submission the crash rig accepts, derived from the partition so the
- * parent names the operation its killed child wrote without a channel to it.
- */
-export function postgresHarnessCrashSubmission(
+/** Creates native authoring state and returns its only valid public release command. */
+export async function postgresHarnessReleaseSubmission(
+  harness: PostgresHarness,
   partition: Partition,
-): Submission {
-  return postgresHarnessDecisionSubmission(
+  label: string,
+): Promise<Submission> {
+  const revision = asConfigurationRevisionId(`config-${label}-${randomUUID()}`);
+  const base = postgresHarnessSubmission(partition, label);
+  const authority = base.authority;
+  await harness.authoring.createConfiguration({
     partition,
-    "crash",
-    0,
-    partition.project,
-  );
+    authority,
+    revision,
+    canonical: asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
+  });
+  const created = await harness.authoring.createDraft({
+    partition,
+    authority,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+  });
+  if (created.created !== "Created")
+    throw new Error("postgres harness: release draft was not created");
+  return {
+    ...base,
+    command: {
+      version: 1,
+      command: "ReleaseDraft",
+      ticket: created.draft.ticket,
+      authoringVersion: created.draft.authoringVersion,
+      configurationRevision: revision,
+    },
+  };
 }
 
 /** Accepts one submission and hands back the inbox item it created, which is what a writer decides. */
@@ -489,15 +519,26 @@ export function postgresHarnessInputOperation(
 
 /** An accepted item carrying the fixture history's decision at `index`, which most cases start from. */
 export function postgresHarnessAccepted(
-  inbox: OperationInbox,
+  harness: PostgresHarness,
   partition: Partition,
   label: string,
   index: number,
 ): Promise<DecisionInput> {
-  return postgresHarnessAccept(
-    inbox,
-    postgresHarnessDecisionSubmission(partition, label, index),
-  );
+  return (async () => {
+    const submission =
+      index === 0
+        ? await postgresHarnessReleaseSubmission(harness, partition, label)
+        : postgresHarnessDecisionSubmission(partition, label, index);
+    const accepted = await harness.inbox.accept(submission);
+    if (accepted.accepted !== "Accepted")
+      throw new Error(
+        `postgres harness: the acceptance was ${accepted.accepted}`,
+      );
+    const input = await harness.discovery.next(partition, 300);
+    if (input === undefined)
+      throw new Error("postgres harness: accepted input was not discoverable");
+    return input;
+  })();
 }
 
 /** The writer over a harness's ports, which is what turns a loaded state and an item into a commit. */
@@ -529,7 +570,7 @@ export async function postgresHarnessHistory(
   );
   for (let index = 0; index < count; index++) {
     const item = await postgresHarnessAccepted(
-      harness.inbox,
+      harness,
       partition,
       `${label}-${String(index)}`,
       index,

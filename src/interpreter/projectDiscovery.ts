@@ -55,6 +55,12 @@ export interface DecisionInput {
         readonly operation: OperationId;
         readonly command: TicketCommand;
         readonly resolvedEvent: DecisionEvent;
+        readonly draftRelease?: {
+          readonly ticket: number;
+          readonly authoringVersion: number;
+          readonly configurationRevision: string;
+          readonly configurationDigest: string;
+        };
         readonly nativeAction?: {
           readonly action: string;
           readonly authorizingSeq: number;

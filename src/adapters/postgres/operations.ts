@@ -91,8 +91,6 @@ export interface OperationRow {
   readonly authority_kind: string;
   readonly admission: string;
   readonly state: string;
-  readonly key_version: string;
-  readonly payload_digest: string;
   readonly lifecycle_generation: string;
   readonly ordinal: string | null;
 }
@@ -100,7 +98,7 @@ export interface OperationRow {
 /** The columns every read of an operation needs, named once so the queries cannot drift apart. */
 const operationRowColumns = `
   o.tenant, o.project, o.operation, o.authority_kind, o.admission, d.state,
-  o.key_version, o.payload_digest, d.lifecycle_generation, d.ordinal
+  d.lifecycle_generation, d.ordinal
 `;
 
 /** An operation is read with its decision input, which owns processing state and ordinal. */
@@ -229,8 +227,6 @@ function acceptedStanding(
     authority_kind: row.authority_kind,
     admission: row.admission,
     lifecycle_generation: row.lifecycle_generation,
-    key_version: "",
-    payload_digest: "",
   });
 }
 

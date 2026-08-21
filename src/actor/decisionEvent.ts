@@ -86,6 +86,21 @@ export function releaseTicketEvent(
   return { type: "ReleaseTicket", value: { ticket, ...authoring } };
 }
 
+/** Extracts the frozen authoring contract from a release fact. */
+export function releaseAuthoringOf(event: DecisionEvent): ReleaseAuthoring {
+  if (event.type !== "ReleaseTicket")
+    throw new TypeError("decision event is not a ticket release");
+  return {
+    deps: event.value.deps,
+    prog: event.value.prog,
+    workFanout: event.value.workFanout,
+    reworkPolicy: event.value.reworkPolicy,
+    finalizationPricing: event.value.finalizationPricing,
+    resumePricing: event.value.resumePricing,
+    finalizer: event.value.finalizer,
+  };
+}
+
 export function revokeEvent(ticket: TicketId): DecisionEvent {
   return { type: "Revoke", value: ticket };
 }

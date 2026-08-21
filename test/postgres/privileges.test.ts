@@ -4,6 +4,7 @@ import {
   acceptanceFunction,
   apiRole,
   boundaryOwnerRole,
+  notificationPublishFunction,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -110,6 +111,66 @@ test("the API cannot append history or create focused work", async () => {
     );
     assert.match(refusal ?? "", /permission denied/);
   }
+});
+
+test("the API cannot bypass versioned authoring functions", async () => {
+  for (const statement of [
+    "INSERT INTO configuration_revision DEFAULT VALUES",
+    "INSERT INTO draft DEFAULT VALUES",
+    "INSERT INTO draft_revision DEFAULT VALUES",
+    "UPDATE draft SET state='Released'",
+    "UPDATE project SET ticket_next=ticket_next+1",
+  ]) {
+    const refusal = await harness.attemptAs(apiRole, statement);
+    assert.match(refusal ?? "", /permission denied/);
+  }
+});
+
+test("runtime roles cannot write notification rows directly", async () => {
+  for (const role of [apiRole, ticketServiceRole]) {
+    for (const statement of [
+      "INSERT INTO project_notification DEFAULT VALUES",
+      "DELETE FROM project_notification",
+      "UPDATE project SET notification_next=notification_next+1",
+    ]) {
+      const refusal = await harness.attemptAs(role, statement);
+      assert.match(refusal ?? "", /permission denied/);
+    }
+  }
+  const refusal = await harness.attemptAs(
+    apiRole,
+    `SELECT ${notificationPublishFunction}('t','p','Draft','1',NULL,1)`,
+  );
+  assert.match(refusal ?? "", /permission denied/);
+});
+
+test("the API read credential cannot inspect private operation columns", async () => {
+  for (const column of [
+    "command",
+    "authority_subject",
+    "key_digest",
+    "payload_digest",
+  ]) {
+    const refusal = await harness.attemptAs(
+      apiRole,
+      `SELECT ${column} FROM operation LIMIT 1`,
+    );
+    assert.match(refusal ?? "", /permission denied/);
+  }
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT operation,accepted_at FROM operation LIMIT 1",
+    ),
+    undefined,
+  );
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT ticket,phase,seq FROM ticket_projection LIMIT 1",
+    ),
+    undefined,
+  );
 });
 
 test("the security-definer owner is non-login and non-escalating", async () => {
