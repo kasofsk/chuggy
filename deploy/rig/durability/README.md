@@ -113,15 +113,16 @@ that hole is shut, because `fence` reads its row again after the establish and
 refuses if anything about it moved. For every other row it is open, and this
 procedure does not close it.
 
-**Not proved here at all, because the adapter that decides it is not in this
-tree.** That the stranded owner's append and renewal come back `Fenced`, that a
-successor finds the project `HeldByAnother` until the term runs out, and that
-the re-acquisition carries the epoch established after the restore. Those are
-decisions the durable authority makes by comparing the current epoch to the one
-the lease carries. **The adapter and its suites are not in this tree yet**, and
-nothing in `rehearse.sh` calls them: no stage appends, renews or acquires. So a
-reader who runs the documented procedure gets the two inputs to that comparison
-and never the comparison itself. What the procedure does carry is that those
+**Not proved here at all, because this procedure never asks for it.** That the
+stranded owner's append and renewal come back `Fenced`, that a successor finds
+the project `HeldByAnother` until the term runs out, and that the re-acquisition
+carries the epoch established after the restore. Those are decisions the durable
+authority makes by comparing the current epoch to the one the lease carries.
+**The adapter that decides them is on main and its suites run under
+`.chug/tasks/check-postgres.sh`**, but nothing in `rehearse.sh` calls either: no
+stage appends, renews or acquires. So a reader who runs the documented procedure
+gets the two inputs to that comparison and never the comparison itself, and a
+stage that acquired under the restored epoch is what would close it. What the procedure does carry is that those
 inputs really do diverge across a real dump, a real destruction and a real
 restore rather than across an epoch advance standing in for one, and the
 witness is where that is carried. Neither half is the claim on its own.
