@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { observeSelectorProject } from "../../src/interpreter/selector.ts";
+import {
+  observeSelectorProject,
+  selectorViewPagesMax,
+} from "../../src/interpreter/selector.ts";
 import {
   deliverSelectorProposal,
   reconcileSelectorProposal,
@@ -12,10 +15,14 @@ import {
 } from "../../src/interpreter/selector.ts";
 import { selectorHistory } from "../../src/interpreter/selectorHistory.ts";
 import { selectorRunOnce } from "../../src/interpreter/selectorRuntime.ts";
-import { selectorNativeSource } from "../../src/interpreter/selectorNativeSource.ts";
+import {
+  selectorNativeSource,
+  type SelectorNativeApi,
+} from "../../src/interpreter/selectorNativeSource.ts";
 import {
   asPrincipal,
   asPublicInstant,
+  type NativeSubmissionResult,
 } from "../../src/interpreter/nativeWeb.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
@@ -171,6 +178,46 @@ test("selector observation discards a view when a later page resets", async () =
     },
   );
   assert.equal(observed, undefined);
+});
+
+test("a view that never ends is refused rather than walked forever", async () => {
+  let pages = 0;
+  await assert.rejects(
+    () =>
+      observeSelectorProject(
+        { partition, notificationCursor: 0, attention: "Monitoring" },
+        {
+          notifications: () =>
+            Promise.resolve({
+              result: "Events",
+              cursor: 0,
+              events: [],
+            } as const),
+          dispatchView: () => {
+            pages += 1;
+            return Promise.resolve({
+              result: "Page",
+              token: {
+                ...partition,
+                recoveryEpoch: "epoch",
+                schemaVersion: 1,
+                watermark: 1,
+                digest: "c".repeat(64),
+              },
+              candidates: [],
+              nextAfter: asTicketId(pages),
+              notificationCursor: 0,
+            } as const);
+          },
+        },
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof RangeError);
+      assert.match(error.message, /page bound/u);
+      return true;
+    },
+  );
+  assert.equal(pages, selectorViewPagesMax);
 });
 
 test("ambiguous proposal delivery retries through ordinary operation idempotency", async () => {
@@ -487,6 +534,56 @@ test("selector honors bounded ticket-service retry guidance", async () => {
   if (result.result === "Retry")
     assert.equal(result.failure.code, "Backpressure");
   assert.equal(deferred, 7_000);
+});
+
+/** A native API whose submit answers this and whose reads are never reached. */
+function nativeApiAnswering(result: NativeSubmissionResult): SelectorNativeApi {
+  return {
+    projectInventory: () => Promise.resolve([partition]),
+    notifications: () =>
+      Promise.reject(new Error("unexpected notifications read")),
+    dispatchView: () =>
+      Promise.reject(new Error("unexpected dispatch view read")),
+    submit: () => Promise.resolve(result),
+    operation: () => Promise.resolve(undefined),
+  };
+}
+
+test("a backlogged project defers the delivery rather than failing it", async () => {
+  let deferred: number | undefined;
+  const result = await deliverSelectorProposal(
+    {
+      ...stateStore(() => undefined),
+      retry: (_decision, delay) => {
+        deferred = delay;
+        return Promise.resolve();
+      },
+    },
+    selectorNativeSource(
+      nativeApiAnswering({
+        result: "Backlogged",
+        scope: "Project",
+        retryAfterSeconds: 11,
+      }),
+      asPrincipal("selector-principal"),
+    ),
+    delivery,
+  );
+  assert.equal(result.result, "Retry");
+  if (result.result === "Retry")
+    assert.equal(result.failure.code, "Backpressure");
+  assert.equal(deferred, 11_000);
+});
+
+test("an inaccessible project is a failure the selector cannot retry away", async () => {
+  const source = selectorNativeSource(
+    nativeApiAnswering({ result: "NotFound" }),
+    asPrincipal("selector-principal"),
+  );
+  await assert.rejects(
+    () => source.submit(delivery),
+    /selector source cannot access proposal submission/u,
+  );
 });
 
 test("selector native source uses the authenticated API and stable delivery identity", async () => {

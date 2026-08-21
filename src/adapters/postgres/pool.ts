@@ -22,6 +22,14 @@
  * 006 asks for. So a handler is always attached, and a deployment that wants
  * to stop accepting on it supplies its own.
  *
+ * A CHECKED-OUT CLIENT NEEDS THAT HANDLER JUST AS MUCH. `pg` moves its own
+ * listener aside for as long as a caller holds a client, so the same
+ * termination arriving mid-transaction reaches a client nobody is listening to
+ * and ends the process for the same reason. The transaction below therefore
+ * listens for as long as it holds one; the in-flight statement rejects with
+ * that failure and the transaction rolls back, so the caller still learns what
+ * happened and only learns it once.
+ *
  * OWNERSHIP IS NEVER A CONNECTION-SCOPED LOCK. A session advisory lock would
  * be the shorter way to make one writer per project, and it is wrong: 006
  * requires the lease to live in a durable row so a project survives the
@@ -86,14 +94,16 @@ export function postgresPool(
 
 /**
  * Runs `work` inside one transaction, committing when it returns and rolling
- * back when it throws. The client is always released, including when the
- * rollback itself fails.
+ * back when it throws. The client is always released and listened to
+ * throughout, including when the rollback itself fails.
  */
 export async function postgresTransaction<Result>(
   pool: pg.Pool,
   work: (client: pg.PoolClient) => Promise<Result>,
 ): Promise<Result> {
   const client = await pool.connect();
+  const held = (): void => undefined;
+  client.on("error", held);
   try {
     await client.query("BEGIN");
     const result = await work(client);
@@ -103,6 +113,7 @@ export async function postgresTransaction<Result>(
     await client.query("ROLLBACK").catch(() => undefined);
     throw failure;
   } finally {
+    client.removeListener("error", held);
     client.release();
   }
 }
