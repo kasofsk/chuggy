@@ -1,6 +1,6 @@
 # Durable project dispatch
 
-**Status: M0, G0, I0, I1, I2, I3 AND I4 LANDED** — issue #92 agreed these decisions and
+**Status: M0, G0, I0, I1, I2, I3, I4 AND I6 LANDED** — issue #92 agreed these decisions and
 the tree carries the rows the table below marks landed: `model/` proves
 the project-scoped `Core`, `src/generated/model-api.ts` is generated from
 `model/api.qnt`, and `src/adapters/postgres/` holds the lifecycle row, the
@@ -9,10 +9,10 @@ idempotency, the ingress ordinal, the durable inbox and the readiness
 generation that indexes it, and the decision transaction that fences a writer,
 writes the entry under its one durable cause, settles the operation,
 acknowledges the item and moves the primary projection, under
-`.chug/tasks/check-postgres.sh`. I6's execution service is written too — its
+`.chug/tasks/check-postgres.sh`. I6's execution service is there too — its
 migration, its scheduler adapter and its one completion boundary are driven
 against a real server under that same gate, and the briefing a launched worker
-is handed composes above them — so its row waits on review rather than on code.
+is handed composes above them.
 The selection service is not built, so the body below still argues it. The
 revision fences a decision rechecks arrive with the slices that have a revision
 to name.
@@ -2129,7 +2129,7 @@ inside the project boundary they were written under.
 | I3 | I2 | Bounded project mailbox, priority and aging, durable deterministic continuations, focused native-action and consumer-request tables | Landed |
 | I4 | I3 | Authenticated native reads, operation polling and cancellation, versioned configuration and draft authoring, revision-fenced release, bounded access-controlled SSE notifications | Landed |
 | I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, plus the selector-owned durable cursor, delivery, transparent provenance, attention and planning read model. Selector timing, monitoring and deferral remain outside the ticket service, and selection failure never becomes a hidden FIFO dispatch policy. | — |
-| I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation, plus bounded project-safe active-work and capacity context for the selector and the authoritative hard execution-backlog dispatch guard. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
+| I6 | I3 | Scheduler registration, capacity admission reserving the mailbox room every completion it may later submit, fenced attempts and strict result manifests, the one indivisible terminal transaction crossing a single authenticated completion boundary, revocation cancellation, briefings composed from a pinned revision under an authority that can only narrow, and bounded project-safe active-work and capacity context with the authoritative hard execution-backlog dispatch guard | Landed |
 | I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with merge-conflict rework receiving its exact immutable attempt/target/conflict manifest, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
 | I8 | I0–I7 | Managed PostgreSQL deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions, permits and selector cursors. Old-epoch actors and selector observations remain rejected after restore. | — |
 | I9 | I2–I8 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. | — |
