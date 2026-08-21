@@ -27,6 +27,7 @@ import {
   type AuthorityRequest,
   type FilesystemAccess,
   type PolicyAuthorityGrant,
+  type TaskAuthority,
 } from "../../src/interpreter/taskAuthority.ts";
 
 /** Every subset of these names, which is what makes the grant space finite and complete. */
@@ -297,6 +298,39 @@ test("a grant handed back cannot be grown by the reader holding it", () => {
   }, TypeError);
   assert.deepEqual(taskAuthorityGrant(authority).tools, ["editor"]);
   assert.equal(taskAuthorityGrant(authority).network, false);
+});
+
+test("the grant an authority holds cannot be replaced through the key reflection names", () => {
+  const least: PolicyAuthorityGrant = {
+    tools: ["editor"],
+    credentials: [],
+    network: false,
+    filesystem: "None",
+    mayCompleteTask: false,
+  };
+  const widest: PolicyAuthorityGrant = {
+    tools: ["editor", "shell", "root"],
+    credentials: ["deploy"],
+    network: true,
+    filesystem: "WriteWorkspace",
+    mayCompleteTask: true,
+  };
+  const authorities: readonly (readonly [string, TaskAuthority])[] = [
+    ["minted", grantTaskAuthority(least)],
+    ["narrowed", narrowTaskAuthority(grantTaskAuthority(least), {})],
+    ["resolved", resolveTaskAuthority(least, [{}])],
+  ];
+  for (const [how, authority] of authorities) {
+    const keys = Object.getOwnPropertySymbols(authority);
+    assert.equal(keys.length, 1, `the ${how} authority holds no single key`);
+    const key = keys[0] as symbol;
+    const named = authority as unknown as Record<symbol, PolicyAuthorityGrant>;
+    assert.throws(() => {
+      named[key] = widest;
+    }, TypeError);
+    assert.equal(Reflect.deleteProperty(authority, key), false, how);
+    assert.deepEqual(taskAuthorityGrant(authority), least, how);
+  }
 });
 
 test("a narrowed grant is frozen exactly as the minted one is", () => {

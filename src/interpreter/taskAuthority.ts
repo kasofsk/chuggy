@@ -5,12 +5,12 @@
  * WIDENING IS NOT A FUNCTION THIS MODULE HAS, and that is the whole point of
  * the shape rather than a convention about how to call it. A `TaskAuthority`
  * keeps its grant behind a symbol this module does not export, so no other
- * module can build one, spread a wider field into one, or name the key to
- * replace the grant inside it. The ways to obtain one are minting it from what
- * policy granted and meeting it with a request, and the meet FILTERS THE HELD
- * VALUES rather than reading the request's — so its result is a subset of what
- * was held whatever the request asked for, including a request naming a tool
- * the grant never carried.
+ * module can write the key and no object literal that does not already hold one
+ * is that type. The ways to obtain one are minting it from what policy granted
+ * and meeting it with a request, and the meet FILTERS THE HELD VALUES rather
+ * than reading the request's — so its result is a subset of what was held
+ * whatever the request asked for, including a request naming a tool the grant
+ * never carried.
  *
  * THE MINT IS THE ONE PLACE A POLICY ANSWER ENTERS, and it is what the claim
  * above is anchored to: everything after it descends. A caller handing the mint
@@ -45,11 +45,21 @@
  * therefore the winner of every meet — outside the vocabulary and above the
  * ceiling at once.
  *
- * WHAT IS HANDED BACK IS FROZEN, ARRAYS INCLUDED. "Movable only downward" is a
- * claim about every later reader, and a reader holding the live lists could
- * widen the same authority for all of them by appending to one in place. So the
- * grant a resolved authority holds is frozen when it is built, and a caller that
- * tries to grow it fails where it tried rather than silently succeeding.
+ * WHAT IS HANDED BACK IS FROZEN AT BOTH LEVELS, ARRAYS INCLUDED. "Movable only
+ * downward" is a claim about every later reader, and a reader that could append
+ * to a live list, overwrite a field, or reach the key through
+ * `Object.getOwnPropertySymbols` and put a whole other grant behind it would
+ * widen the same authority for all of them — after the postcondition below had
+ * already passed on it. So the grant is frozen when it is built and the object
+ * holding it is frozen around it, and a caller that tries either fails where it
+ * tried rather than silently succeeding.
+ *
+ * SUBSTITUTING A DIFFERENT AUTHORITY IS THE MINT'S CONCERN, NOT THIS ONE, and
+ * the two are worth keeping apart. A holder that rebuilds an object around the
+ * reflected key is not raising a composed authority; it is asserting a policy
+ * answer, which `grantTaskAuthority` lets any caller do and which the paragraph
+ * above says is the one boundary here. What the freeze buys is that the value
+ * `resolveTaskAuthority` checked is the value `place` receives.
  */
 
 /** How far into a workspace a task may reach, written least first. */
@@ -109,9 +119,9 @@ function authorityReachAt(access: FilesystemAccess): number | undefined {
   return at === -1 ? undefined : at;
 }
 
-/** The grant as an authority holds it: frozen with its lists, so no reader may grow one. */
+/** The grant as an authority holds it: frozen to its lists, and the holder frozen around it. */
 function authorityHeld(grant: PolicyAuthorityGrant): TaskAuthority {
-  return {
+  return Object.freeze({
     [authorityGrant]: Object.freeze({
       tools: Object.freeze(grant.tools),
       credentials: Object.freeze(grant.credentials),
@@ -119,7 +129,7 @@ function authorityHeld(grant: PolicyAuthorityGrant): TaskAuthority {
       filesystem: grant.filesystem,
       mayCompleteTask: grant.mayCompleteTask,
     }),
-  };
+  });
 }
 
 /** Mints the authority policy granted, which is the widest one that will ever exist. */
