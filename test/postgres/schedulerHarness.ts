@@ -22,16 +22,29 @@
  * an account report is a fact about every project drawing on them, so cases
  * sharing one by accident would be counting each other's registrations — and the
  * cases that are about borrowing across accounts need to share one on purpose.
+ *
+ * A BLOCKADE CAN KILL WHAT IT STALLED, which is how a crash reaches these cases
+ * without a second process. `pg_terminate_backend` ends a real backend in the
+ * middle of a real transaction and the server rolls it back exactly as it rolls
+ * back a client that died, so what a case reads afterwards is what survives a
+ * crash rather than what an adapter believes it would have written.
+ *
+ * THE BLOCKADE READS A CLUSTER-WIDE VIEW THROUGH A DATABASE-SCOPED FILTER.
+ * `pg_stat_activity` sees every backend in the server, so both the wait and the
+ * kill are narrowed to this run's own database. Two runs of the gate against one
+ * reused container would still observe each other, which is why the gate runs
+ * its cases one at a time and says so.
  */
 
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type pg from "pg";
 
 import { revokeEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
+import { apiRole, schedulerRole } from "../../src/adapters/postgres/schema.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   asClusterId,
@@ -352,11 +365,9 @@ export function schedulerReport(
 }
 
 /**
- * The claim a scheduler would be holding for one named request. Cases build it
- * rather than draw it, because `claimRequests` is installation-wide by design
- * and the suites share one database — a case drawing work would lease whatever
- * its neighbours had left open. The cases that are about the lease itself draw
- * for real.
+ * The claim a scheduler would be holding for one named request, built rather
+ * than drawn because `claimRequests` is installation-wide and the suites share
+ * one database. The cases that are about the lease itself draw for real.
  */
 export async function schedulerClaimFor(
   rig: SchedulerRig,
@@ -388,4 +399,133 @@ export async function schedulerClaimFor(
     generation: Number(row.generation),
     owner,
   };
+}
+
+/** How long a case waits for calls it did not await to reach the lock that stalls them. */
+const schedulerStallWaitMsMax = 5_000;
+
+/** How often that wait asks, which is what bounds the loop asking. */
+const schedulerStallAskMs = 25;
+
+/** A lock held on a connection of its own: what has stalled behind it, and how it ends. */
+export interface SchedulerBlockade {
+  readonly stalled: (backends: number) => Promise<void>;
+  readonly killStalled: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}
+
+/**
+ * Holds one lock on a connection of its own, so a case can stall a store call
+ * that borrows from the store's pool without starving the pool the rest of the
+ * case draws from. It can also kill what it stalled.
+ */
+export async function schedulerBlockade(
+  sql: string,
+  values: readonly unknown[],
+): Promise<SchedulerBlockade> {
+  const blockade = postgresPool(postgresHarnessUrl());
+  const blocker = await blockade.connect();
+  let held = true;
+  const release = async (): Promise<void> => {
+    if (!held) return;
+    held = false;
+    await blocker.query("ROLLBACK").catch(() => undefined);
+    blocker.release();
+    await blockade.end();
+  };
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query(sql, [...values]);
+    return {
+      stalled: (backends) => schedulerStalled(blockade, backends),
+      killStalled: async () =>
+        (
+          await blockade.query(
+            `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+              WHERE datname = current_database() AND wait_event_type = 'Lock'
+                AND pid <> pg_backend_pid()`,
+          )
+        ).rowCount ?? 0,
+      release,
+    };
+  } catch (failure) {
+    await release();
+    throw failure;
+  }
+}
+
+/** Resolves once that many backends are waiting on a lock in this database. */
+async function schedulerStalled(
+  blockade: pg.Pool,
+  backends: number,
+): Promise<void> {
+  for (
+    let waitedMs = 0;
+    waitedMs < schedulerStallWaitMsMax;
+    waitedMs += schedulerStallAskMs
+  ) {
+    const found = await blockade.query<{ stalled: number }>(
+      `SELECT count(*)::int AS stalled FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+    );
+    if ((found.rows[0]?.stalled ?? 0) >= backends) return;
+    await delay(schedulerStallAskMs);
+  }
+  throw new Error(
+    `scheduler harness: fewer than ${String(backends)} backends stalled, so a case is asserting against a race it never set up`,
+  );
+}
+
+/** A store call's outcome as a value, so a case can hold a doomed one without its rejection escaping. */
+export function schedulerOutcome<Result>(
+  running: Promise<Result>,
+): Promise<Result | string> {
+  return running.then(
+    (result) => result,
+    (failure: unknown) =>
+      failure instanceof Error ? failure.message : String(failure),
+  );
+}
+
+/**
+ * A second spawn request for the same ticket, declaring the same first logical
+ * task. It is what makes a contradictory registration reachable: two requests
+ * cannot both own one logical task, and no legitimate path produces that, so a
+ * case writes the row a writer would have to have written wrongly.
+ */
+export async function schedulerRivalRequest(
+  rig: SchedulerRig,
+  project: SchedulerProject,
+  label: string,
+): Promise<string> {
+  const request = `request-rival-${label}-${randomUUID()}`;
+  await rig.harness.query(
+    `INSERT INTO execution_request
+       (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
+        kind,capacity_account,configuration_revision,configuration_digest)
+     SELECT q.tenant,q.project,$4,q.authorizing_seq,q.effect_position+1,q.ticket,
+            q.ticket_version,'SpawnEvaluation',q.capacity_account,
+            q.configuration_revision,q.configuration_digest
+       FROM execution_request q
+      WHERE q.tenant=$1 AND q.project=$2 AND q.request=$3`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      request,
+    ],
+  );
+  await rig.harness.query(
+    `INSERT INTO execution_request_task (tenant,project,request,task,kind,stage)
+     VALUES ($1,$2,$3,1,'Evaluation',0)`,
+    [project.partition.tenant, project.partition.project, request],
+  );
+  return request;
+}
+
+/** A pool whose every session runs as the authenticated web application's role. */
+export function schedulerIngressPool(): pg.Pool {
+  const url = new URL(postgresHarnessUrl());
+  url.searchParams.set("options", `-c role=${apiRole}`);
+  return postgresPool(url.toString());
 }

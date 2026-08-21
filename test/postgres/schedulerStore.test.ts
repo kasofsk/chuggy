@@ -25,7 +25,10 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { asWorkloadId } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
-import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  backlogFunction,
+  schedulerRole,
+} from "../../src/adapters/postgres/schema.ts";
 import {
   schedulerArtifact,
   schedulerClaimFor,
@@ -35,6 +38,7 @@ import {
   schedulerReport,
   schedulerRequestStates,
   schedulerRevoke,
+  schedulerRivalRequest,
   schedulerRigOpen,
   type SchedulerProject,
   type SchedulerRig,
@@ -202,24 +206,24 @@ test("registering the same request again creates nothing", async () => {
 });
 
 test("a logical task another request already holds is a conflicting registration", async () => {
-  const project = await schedulerProject(rig, "conflict");
-  await registerAll(project, "conflict");
+  const project = await schedulerProject(rig, "conflict", { tasks: 2 });
+  const rival = await schedulerRivalRequest(rig, project, "conflict");
   await rig.harness.query(
-    `UPDATE execution SET source_request = 'foreign-request'
-      WHERE tenant=$1 AND project=$2 AND task=1`,
-    [project.partition.tenant, project.partition.project],
+    `INSERT INTO execution (tenant,project,execution,ticket,task,source_request,
+       account,cluster,configuration_revision,configuration_digest)
+     SELECT q.tenant,q.project,'execution-rival',q.ticket,1,$4,
+            q.capacity_account,$5,q.configuration_revision,q.configuration_digest
+       FROM execution_request q
+      WHERE q.tenant=$1 AND q.project=$2 AND q.request=$3`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      rival,
+      project.cluster,
+    ],
   );
-  const claim = await schedulerClaimFor(
-    rig,
-    project.partition,
-    project.request,
-    schedulerOwner("conflict"),
-  );
-  await rig.harness.query(
-    `UPDATE execution_request SET state='Open' WHERE tenant=$1 AND project=$2 AND request=$3`,
-    [project.partition.tenant, project.partition.project, project.request],
-  );
-  const registered = await rig.store.registerSpawn(claim);
+  const registered = await registerAll(project, "conflict");
   assert.equal(registered.registered, "Conflicting");
   assert.deepEqual(
     await rig.harness.query(
@@ -528,7 +532,7 @@ test("cancellation retires the ticket's work, names its attempts and fulfils the
   });
   assert.deepEqual(
     await rig.store.terminalize(schedulerReport(attempt, "Pass")),
-    { terminalized: "Fenced" },
+    { terminalized: "Cancelled" },
   );
 });
 
@@ -578,4 +582,77 @@ test("the installation default cluster is the one a project draws on unbidden", 
     ),
     [{ slots: String(executionCapacityDefaults.clusterSlotsMax) }],
   );
+});
+
+test("a manifest bound to another execution settles nothing and is an incident", async () => {
+  const mine = await schedulerProject(rig, "ownmanifest", { tasks: 1 });
+  const other = await schedulerProject(rig, "foreignmanifest", { tasks: 1 });
+  await registerAll(mine, "ownmanifest");
+  await registerAll(other, "foreignmanifest");
+  const attempt = await placedAttempt(mine, "ownmanifest");
+  const stranger = await placedAttempt(other, "foreignmanifest");
+  const grafted = {
+    ...attempt,
+    manifest: schedulerReport(stranger, "Pass").manifest,
+  };
+  const settled = await rig.store.terminalize(grafted);
+  assert.equal(settled.terminalized, "Conflicting");
+  assert.equal(
+    (await rig.store.execution(mine.partition, attempt.execution))?.status,
+    "Running",
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      "SELECT kind FROM scheduler_incident WHERE tenant=$1 AND project=$2",
+      [mine.partition.tenant, mine.partition.project],
+    ),
+    [{ kind: "CrossProjectReference" }],
+  );
+});
+
+test("a project in retention admits no completion and keeps no result", async () => {
+  const project = await schedulerProject(rig, "retention", { tasks: 1 });
+  await registerAll(project, "retention");
+  const attempt = await placedAttempt(project, "retention");
+  await rig.harness.store.fence(project.partition, "Retention");
+  assert.deepEqual(
+    await rig.store.terminalize(schedulerReport(attempt, "Pass")),
+    { terminalized: "Cancelled" },
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT
+         (SELECT count(*) FROM execution_result WHERE tenant=$1 AND project=$2)::text AS results,
+         (SELECT count(*) FROM operation WHERE tenant=$1 AND project=$2
+           AND authority_kind='ExecutionScheduler')::text AS completions`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ results: "0", completions: "0" }],
+  );
+  assert.equal(
+    (await rig.store.execution(project.partition, attempt.execution))?.status,
+    "Running",
+  );
+});
+
+test("a cancelled ticket stops counting against the dispatch guard at once", async () => {
+  const project = await schedulerProject(rig, "backlogged", { tasks: 3 });
+  const cancellation = await schedulerRevoke(rig, project, "backlogged");
+  const backlogOf = async () =>
+    (
+      (await rig.harness.query(
+        `SELECT project_backlog::text AS backlog FROM ${backlogFunction}($1,$2)`,
+        [project.partition.tenant, project.partition.project],
+      )) as readonly { backlog: string }[]
+    )[0]?.backlog;
+  assert.equal(await backlogOf(), String(project.tasks));
+  await rig.store.registerCancellation(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      cancellation,
+      schedulerOwner("backlogged"),
+    ),
+  );
+  assert.equal(await backlogOf(), "0");
 });
