@@ -2343,13 +2343,24 @@ built does exactly that — which means the service-owned form needs a second
 writer to cancel on phase exit, and a second writer is a commitment violation
 rather than a design preference. So `native_action` gains kind
 `FinalizationApproval`, capability `ApproveFinalization` and an
-attempt-reference column, stays ticket-service-owned, and the finalizer reads
-it. Its one-open-row-per-ticket constraint cannot bite, because a ticket in
+attempt-reference column and stays ticket-service-owned. Its
+one-open-row-per-ticket constraint cannot bite, because a ticket in
 `Finalizing` is not in `Escalated`. Whether approval is required at all is a
 field of the pinned configuration revision that I4 already versions, read at
 preparation and recorded on the attempt beside the revision and digest that
 were pinned, so the policy needs no new source and `ManagedFinalizer` stays
 nullary.
+
+The finalizer opens the action as well as reading it, and it opens it through
+`request_finalization_approval` — a second `SECURITY DEFINER` door owned by
+`chuggy_boundary_owner` and hardened as the first one is. There is no other
+author available: the action references an attempt, an attempt exists only
+after a preparation the finalizer performed, and I7 journals no effect that
+could create one, so an approval nobody may open is an approval that waits
+forever. The door keeps the role's privilege on `native_action` at `SELECT`
+and no more, which is the arrangement that lets it submit a result while
+holding no write on the mailbox. Requesting is the whole of what it does; who
+may resolve one is I4's capability check, unchanged.
 
 #### Ordering, stated once
 
