@@ -4,7 +4,10 @@ import {
   acceptanceFunction,
   apiRole,
   boundaryOwnerRole,
+  cancellationFunction,
+  continuationFunction,
   notificationPublishFunction,
+  schedulerRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -179,6 +182,189 @@ test("the security-definer owner is non-login and non-escalating", async () => {
       `SELECT rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolbypassrls
        FROM pg_roles WHERE rolname=$1`,
       [boundaryOwnerRole],
+    ),
+    [
+      {
+        rolcanlogin: false,
+        rolsuper: false,
+        rolcreaterole: false,
+        rolcreatedb: false,
+        rolbypassrls: false,
+      },
+    ],
+  );
+});
+
+test("the scheduler cannot write ticket state or append history", async () => {
+  for (const statement of [
+    "INSERT INTO journal_entry DEFAULT VALUES",
+    "UPDATE journal_entry SET entry='rewritten'",
+    "DELETE FROM journal_entry",
+    "INSERT INTO ticket_projection DEFAULT VALUES",
+    "UPDATE ticket_projection SET phase='Done'",
+    "UPDATE project SET head=1",
+    "UPDATE project SET lifecycle='Suspended'",
+    "INSERT INTO execution_request DEFAULT VALUES",
+    "INSERT INTO finalization_request DEFAULT VALUES",
+    "INSERT INTO project_continuation DEFAULT VALUES",
+    "UPDATE native_action SET state='Resolved'",
+  ]) {
+    const refusal = await harness.attemptAs(schedulerRole, statement);
+    assert.match(refusal ?? "", /permission denied/);
+  }
+});
+
+test("the scheduler reaches the decision mailbox through one function and no other door", async () => {
+  for (const statement of [
+    `INSERT INTO decision_input
+       (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation)
+     VALUES ('tenant','project',1,'Operation','input','Completion',1)`,
+    "UPDATE decision_input SET state='Cancelled'",
+    "INSERT INTO operation DEFAULT VALUES",
+    "UPDATE operation SET command='{}'",
+    "UPDATE project SET ingress_next=1",
+    "INSERT INTO project_readiness (tenant,project,ready,generation) VALUES ('t','p',true,1)",
+    "UPDATE project_readiness SET ready=true",
+    `SELECT ${acceptanceFunction}('t','p','o','User','s','v1','k','p',
+       ARRAY['k'],ARRAY['p'],'{}',10,20)`,
+    `SELECT ${cancellationFunction}('t','p','o','User','s')`,
+    `SELECT ${continuationFunction}('t','p',1,'c')`,
+    `SELECT ${notificationPublishFunction}('t','p','Draft','1',NULL,1)`,
+  ]) {
+    const refusal = await harness.attemptAs(schedulerRole, statement);
+    assert.match(refusal ?? "", /permission denied/);
+  }
+});
+
+test("the scheduler cannot rewrite a settlement, a result or its own entitlement", async () => {
+  for (const statement of [
+    "UPDATE execution SET outcome='Passed'",
+    "UPDATE execution SET result_manifest='manifest'",
+    "UPDATE execution SET completion_operation='operation'",
+    "UPDATE execution SET account='another'",
+    "DELETE FROM execution",
+    "UPDATE execution_result SET verdict='Pass'",
+    "DELETE FROM execution_result",
+    "UPDATE execution_result_artifact SET bytes=0",
+    "DELETE FROM execution_result_artifact",
+    "DELETE FROM execution_attempt",
+    "UPDATE execution_attempt SET attempt_number=1",
+    "DELETE FROM scheduler_incident",
+    "UPDATE capacity_account SET maximum=9001",
+    "INSERT INTO capacity_account (account,cluster,reserved,maximum,policy_revision) VALUES ('a','default',0,9001,1)",
+    "UPDATE execution_cluster SET slots_max=9001",
+    "INSERT INTO recovery_epoch (epoch) VALUES ('minted')",
+  ]) {
+    const refusal = await harness.attemptAs(schedulerRole, statement);
+    assert.match(refusal ?? "", /permission denied/);
+  }
+});
+
+test("the scheduler's write surface is exactly the columns execution and capacity need", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT table_name, privilege_type,
+              string_agg(column_name, ',' ORDER BY column_name) AS columns
+         FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_schema='public'
+          AND privilege_type <> 'SELECT'
+        GROUP BY table_name, privilege_type
+        ORDER BY table_name, privilege_type`,
+      [schedulerRole],
+    ),
+    [
+      {
+        table_name: "execution",
+        privilege_type: "INSERT",
+        columns:
+          "account,cluster,configuration_digest,configuration_revision,execution,project,source_request,task,tenant,ticket",
+      },
+      {
+        table_name: "execution",
+        privilege_type: "UPDATE",
+        columns:
+          "attempt_next,placement_backoff_from,retries_spent,status,terminal_at",
+      },
+      {
+        table_name: "execution_attempt",
+        privilege_type: "INSERT",
+        columns:
+          "attempt,attempt_number,ended_at,evidence,execution,generation,lease_expires_at,lease_owner,opened_at,project,recovery_epoch,state,tenant,workload",
+      },
+      {
+        table_name: "execution_attempt",
+        privilege_type: "UPDATE",
+        columns:
+          "ended_at,evidence,generation,lease_expires_at,lease_owner,state,workload",
+      },
+      {
+        table_name: "execution_request",
+        privilege_type: "UPDATE",
+        columns: "claim_expires_at,claim_generation,claim_owner,state",
+      },
+      {
+        table_name: "execution_result",
+        privilege_type: "INSERT",
+        columns:
+          "attempt,digest,execution,manifest,manifest_ordinal,project,recorded_at,schema_version,tenant,verdict",
+      },
+      {
+        table_name: "execution_result_artifact",
+        privilege_type: "INSERT",
+        columns: "bytes,digest,manifest,ordinal,path,project,role,tenant",
+      },
+      {
+        table_name: "project",
+        privilege_type: "UPDATE",
+        columns: "manifest_next",
+      },
+      {
+        table_name: "scheduler_incident",
+        privilege_type: "INSERT",
+        columns:
+          "attempt,evidence,execution,incident,kind,observed_at,project,tenant",
+      },
+    ],
+  );
+});
+
+test("the scheduler reads execution and capacity, and of the project only its lifecycle", async () => {
+  const read = (await harness.query(
+    `SELECT table_name AS relation,
+            string_agg(column_name, ',' ORDER BY column_name) AS columns
+       FROM information_schema.role_column_grants
+      WHERE grantee=$1 AND table_schema='public' AND privilege_type='SELECT'
+      GROUP BY table_name ORDER BY table_name`,
+    [schedulerRole],
+  )) as readonly { relation: string; columns: string }[];
+  assert.deepEqual(
+    read.map((row) => row.relation),
+    [
+      "capacity_account",
+      "execution",
+      "execution_attempt",
+      "execution_cluster",
+      "execution_request",
+      "execution_request_task",
+      "execution_result",
+      "execution_result_artifact",
+      "project",
+      "recovery_epoch",
+      "scheduler_incident",
+    ],
+  );
+  assert.equal(
+    read.find((row) => row.relation === "project")?.columns,
+    "lifecycle,lifecycle_generation,project,tenant",
+  );
+});
+
+test("the scheduler is non-login and non-escalating", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolbypassrls
+       FROM pg_roles WHERE rolname=$1`,
+      [schedulerRole],
     ),
     [
       {

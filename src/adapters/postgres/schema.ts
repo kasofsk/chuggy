@@ -1716,7 +1716,12 @@ const durableExecutionScheduler = [
   `CREATE INDEX scheduler_incident_recent ON scheduler_incident (tenant, project, observed_at DESC)`,
 ];
 
-/** The server's own statements of what may move, and the boundaries the runtime roles reach it through. */
+/**
+ * The server's own statements of what may move, and the boundaries the runtime
+ * roles reach it through. The boundary owner owns what its `SECURITY DEFINER`
+ * bodies call and reads what they read, and the scheduler is granted the move
+ * table because its own status updates are what fire the trigger consulting it.
+ */
 const durableExecutionSchedulerBoundaries = [
   `CREATE FUNCTION ${statusMoveFunction}(before text, after text) RETURNS boolean
      LANGUAGE sql IMMUTABLE STRICT AS $$
@@ -1953,15 +1958,19 @@ const durableExecutionSchedulerBoundaries = [
      OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION ${activeWorkFunction}(text,text) OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION ${backlogFunction}(text,text) OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${statusMoveFunction}(text,text) OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION ${digestFoldFunction}(text) OWNER TO ${boundaryOwnerRole}`,
   `REVOKE ALL ON FUNCTION ${completionFunction}(text,text,text,bigint,bigint,integer,text,text,text,text,text,text) FROM PUBLIC`,
   `REVOKE ALL ON FUNCTION ${activeWorkFunction}(text,text) FROM PUBLIC`,
   `REVOKE ALL ON FUNCTION ${backlogFunction}(text,text) FROM PUBLIC`,
   `GRANT EXECUTE ON FUNCTION ${completionFunction}(text,text,text,bigint,bigint,integer,text,text,text,text,text,text) TO ${schedulerRole}`,
   `GRANT EXECUTE ON FUNCTION ${activeWorkFunction}(text,text), ${backlogFunction}(text,text)
      TO ${apiRole}, ${ticketServiceRole}`,
+  `GRANT EXECUTE ON FUNCTION ${statusMoveFunction}(text,text) TO ${schedulerRole}`,
 
   `GRANT SELECT ON operation, decision_input, project, project_readiness, execution,
-     execution_request, execution_result TO ${boundaryOwnerRole}`,
+     execution_request, execution_request_task, execution_result, execution_cluster,
+     capacity_account TO ${boundaryOwnerRole}`,
   `GRANT INSERT ON operation, decision_input, project_readiness TO ${boundaryOwnerRole}`,
   `GRANT UPDATE (ingress_next) ON project TO ${boundaryOwnerRole}`,
   `GRANT UPDATE (ready, generation) ON project_readiness TO ${boundaryOwnerRole}`,
