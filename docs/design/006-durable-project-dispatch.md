@@ -62,7 +62,7 @@ Tenant and project use globally unique opaque identities. Ticket identity is
 project-local, and task identity is ticket-local; every API, storage, effect,
 completion, log and trace boundary carries the enclosing composite identity and
 never accepts a bare ticket or task ID. Infrastructure correlation resources
-such as operations, executions and selection requests may use globally unique
+such as operations, executions and selector decisions may use globally unique
 opaque identities. No global ticket allocator or second public ticket identity
 is introduced.
 
@@ -209,12 +209,14 @@ Repairable dependencies are repaired and the original operation retries;
 journal repair remains the separate manifest-backed integrity protocol.
 
 During shutdown a pod becomes unready and stops claiming new leases and work,
-but may finish an open short decision transaction. Detached selector and
-preparation calls remain recoverable from durable request state rather than
-blocking drain. Late results must pass request identity, generation, project
-epoch and current validity fences. Opportunistic lease release improves
-takeover; lease expiry and database fencing provide correctness. A forced kill
-rolls back an incomplete transaction, while Kubernetes lifecycle hooks affect
+but may finish an open short decision transaction. Selector calls and monitors
+belong to the selector service and do not block ticket-service drain; a proposal
+accepted before shutdown is already a durable ordinary operation. Late
+proposals must pass their recovery-epoch, view-digest, ticket-version and
+current-validity fences. Detached preparation calls remain recoverable from
+their durable request state. Opportunistic lease release improves takeover;
+lease expiry and database fencing provide correctness. A forced kill rolls
+back an incomplete transaction, while Kubernetes lifecycle hooks affect
 latency only.
 
 The public operation state is limited to `Pending`, `Succeeded`, `Refused` and
@@ -488,11 +490,11 @@ User-authored draft edits carry the authoring version the caller observed;
 release also names that version and the exact task-configuration revision. A
 stale edit or release is durably refused rather than merged or allowed to
 overwrite newer intent. Typed command-specific patches are preferred to a
-generic patch language. Manual dispatch uses the observed ticket version and current
-eligibility; agentic dispatch uses a canonical selection-view digest. Urgent
-revocation evaluates current serialized state without requiring a caller
-version. These intent guards are distinct from the journal head and fencing
-epoch that protect storage concurrency.
+generic patch language. Manual dispatch uses the observed ticket version and
+current eligibility; agentic dispatch uses a canonical selection-view digest.
+Urgent revocation evaluates current serialized state without requiring a
+caller version. These intent guards are distinct from the journal head and
+fencing epoch that protect storage concurrency.
 
 Task configuration is authored as immutable project-owned revisions with
 canonical content, digest, parent and bounded authorship metadata. Creating a
@@ -589,92 +591,112 @@ unbounded transition chain. A continuation made irrelevant by valid intervening
 state is acknowledged as stale; contradictory state is an integrity failure.
 
 Durable scheduling uses persisted deadlines interpreted by database time.
-Ownership expiry, retries, selector timeout and deferral, idle unloading,
-alerts and retention remain operational timers outside `Core`; polling always
-recovers overdue records, while notifications and local timers only reduce
-latency. If time later changes ticket meaning, expiration arrives as a typed
-project input and any resulting transition is journaled. Pure deciders never
-consult a wall clock.
+Ownership expiry, retries, idle unloading, alerts and retention remain
+operational timers outside `Core`; the independent selector likewise owns its
+monitoring and reconsideration clocks. Polling always recovers overdue records,
+while notifications and local timers only reduce latency. If time later changes
+ticket meaning, expiration arrives as a typed project input and any resulting
+transition is journaled. Pure deciders never consult a wall clock.
 
 ## Agentic and manual dispatch selection
 
 Deterministic code derives the complete set of legally dispatchable tickets at
-one project journal head. Automatic selection is exclusively agentic: the
-selector chooses exactly one member or returns an explicit bounded deferral.
-There is no algorithmic fallback. Selector unavailability pauses new automatic
-dispatch while existing tasks, completions, reductions and revocations
-continue.
+one project journal head. The ticket service maintains that normalized current
+view as a replayable projection with a watermark and versioned canonical
+digest. Bounded deterministic pages expose one complete logical snapshot;
+ticket-identity order makes paging stable and expresses no dispatch preference.
+Every later page repeats the watermark; if the current projection advanced,
+the API returns reset and the selector restarts rather than mixing versions or
+requiring retained per-selector snapshots. The projection is an API read model,
+never a second eligibility authority.
 
-A selection request and deferral are durable operational state, not domain
-events. A proposal names its observed head and canonical selection-view digest.
-That digest covers eligible ticket identities and versions, readiness,
-briefings, project scheduling policy and other validity-critical selection
-facts. The writer accepts a choice when the current view has the same digest and
-the ticket remains eligible, even if unrelated decisions advanced the journal;
-otherwise the same agentic mechanism receives a fresh request. A relevant state
-change invalidates an older deferral. Deferral reasons use a finite vocabulary,
-reconsideration is bounded, and repeated deferral is observable.
+Automatic selection is exclusively agentic and independently operated. The
+ticket service does not ask a selector to choose, schedule its reconsideration,
+or own its attempts and deferrals. It transactionally publishes bounded project
+change notifications and answers current dispatchable-view reads. The selector
+durably tracks those feeds, polls and sets monitors as it chooses, observes
+current work and available advisory capacity, and submits a dispatch proposal
+only when its internal policy wants work to begin. A missed notification is
+recovered by polling; a cursor outside retained notification history resets to
+the current view. There is no algorithmic fallback, and selector unavailability
+pauses new automatic dispatch while existing tasks, completions, reductions and
+revocations continue.
 
-Automatic selection offers no eventual-dispatch guarantee. Repeated timeout,
-failure or deferral continues through the same agentic mechanism and, after a
-configured threshold, creates a native operational attention record exposing
-age, attempts and bounded reasons. It does not choose a ticket. Authorized
-users may use one-shot manual dispatch, so the system guarantees visibility and
-another opportunity to choose rather than a hidden fallback policy.
+I5 extends the notification vocabulary with `Project`. A lifecycle transition
+that changes selector-visible availability publishes it in the lifecycle
+transaction, while every journal decision that changes a ticket continues to
+publish `Ticket`. Notifications need not enumerate derived eligibility changes:
+either kind tells the selector to refresh the complete current view. Polling
+still recovers every missed notification.
+
+An agentic proposal names the ticket, its observed ticket version, the observed
+view token and a globally opaque selector decision reference. The view token
+binds tenant, project, recovery epoch, view schema version, projection watermark
+and strict digest. The watermark identifies the observation and its paging
+snapshot but is not an expected-head fence. Strict equality covers the complete
+eligible candidate set, candidate versions, readiness and every immutable
+execution-relevant briefing fact exposed by the ticket service. It excludes the observed journal head,
+selector policy and implementation state, timestamps, provider accounting and
+fast-moving capacity, queue and cluster observations. The writer reconstructs
+the current view from replayed `Core` and the pinned immutable contract
+references named by its journal; an unrelated decision may advance the head
+without invalidating an equal view, while a recovery-epoch, digest,
+ticket-version or eligibility mismatch refuses the proposal as
+`SelectionChanged` without a journal entry.
+
+Current lifecycle and integrity controls are rechecked at commit. The existing
+ordinary mailbox limits protect proposal acceptance; the scheduler-owned hard
+execution-backlog guard becomes authoritative when I6 lands and is not
+simulated by I5. Capacity and active-work observations guide the selector but
+do not reserve capacity, alter ticket eligibility or become a hidden ticket
+service dispatch policy. The execution scheduler remains the only authority
+that admits spawned tasks against current capacity.
+
+The selector has a narrow service capability to submit `ProposeDispatch` and
+no general ticket-command authority. Its operation enters the ordinary project
+mailbox like other authenticated mutations, and only the project writer may
+translate it to the existing pure `Dispatch(ticket)` transition after
+reconstructing the strict view from replayed state and its pinned immutable
+contract references. The selector has no PostgreSQL credential to the
+ticket-service schema. Losing a connection, restarting, observing a stale view
+or waiting deliberately affects latency only; the selector decides
+independently when to observe or propose again.
 
 Selector calls consume neither ticket gas nor execution-scheduler task slots.
 They use separate bounded control-plane concurrency and cost quotas, with
-tenant/project operational usage accounting and protection against stale or
-deferral retry loops. Any later commercial billing for selection remains
-outside `Core` unless it is deliberately made part of ticket semantics.
+tenant/project operational usage accounting. Any later commercial billing for
+selection remains outside `Core` unless deliberately made ticket semantics.
+Projects do not configure selection prompts, providers, models, profiles or a
+scheduling-policy schema. The selector is a black-box product component whose
+deployment, safety, privacy, retention, region, cost and concurrency policy is
+platform-owned.
 
-Fast-moving capacity, queue and cluster observations are timestamped advisory
-context rather than part of strict digest equality. Current suspension,
-integrity and hard backlog controls are rechecked at commit, but ordinary
-capacity movement cannot make a proposal stale or become a hidden dispatch
-guard.
+The selector nevertheless provides full project-visible provenance for each
+bounded semantic interaction: exact versioned instructions and prompt content,
+the observed view, active-work and capacity context, tool calls and bounded
+returned resources, its choice or reason for waiting, timing and accounting,
+and implementation, model and internal-policy revisions. Credentials and data
+the project may not read are never supplied or exposed; cross-project capacity
+facts are reduced to safe aggregate advisory context. Hidden chain-of-thought
+is neither requested nor retained. Anyone with current project read access may
+read this history under the ordinary not-found-style authorization rule.
 
-Selection workers are detached from project ownership. The project writer
-materializes an immutable request, a worker calls the agent without holding a
-database transaction or project lease, and the result returns as a durable
-project input. The project may unload or change owners while selection is in
-flight; selection-view validation makes the response safe.
+The selector may publish a current planned-next ticket, ordered shortlist or
+other bounded planning intent for interest and planning. It belongs only to the
+selector's transparent read model and may change whenever the selector observes
+new facts. It is not a reservation, promise, queue position, eligibility fact
+or input to the ticket service, scheduler or `Core`; it neither blocks manual
+dispatch nor gives a later proposal precedence. A proposal always means
+“dispatch this ticket now if its fences and current guards pass.”
 
-The selector receives a stable logical snapshot of the complete eligible set at
-one project head, identified by candidate-set digest. Its initial overview and
-page are bounded; read-only tools page, filter and fetch structured candidate
-briefings from that immutable snapshot under explicit call and time budgets.
-Pagination order is deterministic but is not a dispatch preference, and the
-agent need not claim exhaustive inspection. It may choose any candidate in the
-snapshot or defer; only a change to the validity-critical selection view makes
-the snapshot stale.
-
-Selector context includes bounded project policy, recent dispatch and
-capacity/backlog facts. It includes no credentials, unrestricted database or
-repository access, arbitrary worker logs, rendered implementation prompts,
-cross-project data or prior model reasoning. Any later repository inspection
-uses explicit read-only project-scoped tools with bounded audited responses.
-
-Retained selector output is limited to the choice or structured deferral,
-request identity, observed head, candidate digest, policy and model revision,
-bounded user-facing reason and necessary operational accounting. Model
-chain-of-thought is not retained. Approved selector backends are declared data
-processors with explicit provider, retention, region and redaction policy;
-project configuration may choose only among approved backends and cannot weaken
-that boundary. Selector composition remains outside ticket `Core`.
-
-Selection records make a choice auditable, not exactly reproducible. They retain
-the immutable view or references, template and policy revision, backend and
-model configuration, versioned tool schema, bounded accessed-resource audit and
-the structured result. Replay never calls the selector or reconsiders a choice:
-the committed `Dispatch(ticket)` is authoritative. Hidden reasoning and
-provider-internal state are neither retained nor claimed reproducible.
-
-An authorized user may issue a one-shot manual dispatch for an eligible ticket.
-It is not a persistent manual mode and does not disable later agentic selection.
-Manual and agentic choices converge on the same pure `Dispatch(ticket)`
-transition. A committed manual choice invalidates a concurrent agent proposal
-whenever it changes that proposal's relevant selection view.
+An authorized user may issue one-shot
+`ManualDispatch(ticket, expectedTicketVersion)`. Ordinary project mutation
+access includes its distinct `DispatchTicket` capability by default, while
+read-only access does not. It is not a persistent manual mode and does not
+disable later agentic selection. The writer refuses a mismatched version as
+`TicketChanged`, refuses a matching but non-dispatchable ticket as `NotEnabled`,
+and otherwise translates manual and agentic choices to the same pure
+`Dispatch(ticket)` transition.
 
 Several tickets in one project may be logically working concurrently. Each
 additional dispatch requires a fresh agentic choice or manual override. The
@@ -684,9 +706,11 @@ capacity policy.
 
 Commercial capacity is advisory context for agentic selection and authoritative
 only in the execution scheduler. A separate high operational backlog ceiling
-protects storage and pauses both automatic and manual dispatch. That ceiling is
-retryable infrastructure backpressure, not ticket state or a commercial
-entitlement.
+protects storage and, once I6 supplies its authority, pauses both automatic and
+manual dispatch. That ceiling is retryable infrastructure backpressure, not
+ticket state or a commercial entitlement. Before I6, I5 neither fabricates a
+capacity value nor treats the existing ticket-service mailbox as scheduler
+capacity.
 
 Release also pins a stable capacity-account identity, initially the project or
 an explicit account reference. Concrete spawn effects carry that identity, but
@@ -710,10 +734,12 @@ versions must reproduce its transitions, obligations and observations exactly.
 It never grows infrastructure, selector, Kubernetes or rendered-configuration
 payloads.
 
-Every entry also names exactly one durable direct cause: an accepted operation,
-deterministic continuation or selection result. A cause can authorize at most
-one effective journal decision; refusal, duplicate and staleness complete or
-acknowledge it without an entry. Continuations retain their causing sequence,
+Every entry also names exactly one durable direct cause: an accepted operation
+or deterministic continuation. Agentic and manual dispatch are accepted
+operations whose typed commands preserve their distinct authority and audit
+evidence. A cause can authorize at most one effective journal decision;
+refusal, duplicate and staleness complete or acknowledge it without an entry.
+Continuations retain their causing sequence,
 while observational trace IDs remain non-authoritative. Cause references are
 outside the pure event but inside complete-entry integrity and audit.
 
@@ -920,21 +946,33 @@ is accepted. A granted permit cannot expire into safety or be abandoned until
 that reconciliation proves whether the ref advanced.
 
 Only conclusive evidence enters the project. `FinalizationSucceeded` requires
-the target ref to prove the authorized commit. `FinalizationFailed` requires
-proof that the ref did not advance and that abandoning the attempt is safe; a
-deterministic preparation failure or merge conflict concludes the same way and
-is priced as ordinary finalization failure, entering rework when affordable or
-`Escalated` with a native action when exhausted. Timeout, an unreadable ref or
-contradictory evidence is an operational hold under attention, not a `Core`
-event: ambiguity cannot expire the permit or authorize another attempt, and
-the ticket remains in `Finalizing` until reconciliation concludes.
+the target ref to prove the authorized commit. Before treating target movement
+as a merge conflict, preparation performs a bounded deterministic integration
+attempt against the pinned candidate and observed target commits. A clean Git
+rebase or merge creates a new immutable candidate attempt and continues through
+the ordinary approval, commit-permit and conditional-ref-update protocol; it is
+not ticket rework and may not silently change generated content beyond Git's
+conflict-free integration result. The attempt does not chase a moving ref: if
+the target changes again, the normal revision fence restarts preparation from
+the newly observed immutable target.
+
+`FinalizationFailed` requires proof that the ref did not advance and that
+abandoning the attempt is safe. A deterministic preparation failure or a
+conflict that remains after the automatic integration attempt concludes the
+same way and is priced as ordinary finalization failure, entering rework when
+affordable or `Escalated` with a native action when exhausted. Timeout, an
+unreadable ref or contradictory evidence is an operational hold under
+attention, not a `Core` event: ambiguity cannot expire the permit or authorize
+another attempt, and the ticket remains in `Finalizing` until reconciliation
+concludes.
 
 The I7 finalization-result envelope distinguishes a bounded typed failure kind
 from the pure `FinalizationFailed` outcome and pins immutable evidence sufficient
-for any resulting rework. For `MergeConflict`, that evidence names the
-finalization request and attempt with digest, candidate commit, observed target
-commit and merge base, and a project-owned structured conflict manifest with
-identity and digest. The decision that returns the ticket to `Working`
+for any resulting rework. For `MergeConflict`, that evidence names the failed
+automatic-integration attempt and strategy as well as the finalization request
+and attempt with digest, candidate commit, observed target commit and merge
+base, and a project-owned structured conflict manifest with identity and
+digest. The decision that returns the ticket to `Working`
 materializes the fresh work set's input bundle from that exact evidence,
 together with the existing artifact, handoff and release-briefing references.
 Workers therefore receive a precise reconciliation objective against immutable
@@ -1101,7 +1139,9 @@ task and project-primary projection state. The API and internal submitters may
 insert authorized operations but cannot decide them. A narrowly constrained API
 transaction may move a still-pending operation to cancelled while racing on the
 same row lock as the writer. The project writer creates immutable external-work
-requests; consumers update only their owned operational state. The execution
+requests for execution and finalization consumers; consumers update only their
+owned operational state. The selector instead owns its monitoring, observations
+and planning state and may submit only a fenced dispatch proposal. The execution
 scheduler alone owns execution and capacity state and may submit completions,
 but it cannot resolve logical tasks directly.
 
@@ -1110,14 +1150,16 @@ Runtime services do not share an omnipotent database credential.
 
 Semantic ports do not require one network service each. The initial deployment
 has an authenticated web service for submission, reads, configuration and SSE;
-a ticket service for multiplexed project actors and continuations, with selector
-requests and decision transactions; an execution service for registration,
-capacity, Kubernetes and completion; and a finalizer service for Git
-preparation, commit permit and reconciliation. Detached selector workers may
-initially run
-inside the ticket-service deployment with separate concurrency and pool budgets.
-These module boundaries permit later separation without adding network hops
-before scale, isolation or rollout needs earn them.
+a ticket service for multiplexed project actors, continuations, dispatchable
+views and decision transactions; an independent selector service for project
+feed consumption, monitoring, transparent planning and fenced proposals; an
+execution service for registration, capacity, Kubernetes and completion; and a
+finalizer service for Git preparation, commit permit and reconciliation. The
+selector may share a deployable initially but retains its own service identity,
+durable state and concurrency budget and reaches the ticket service only through
+authenticated application ports. No shared process grants it a ticket-service
+database credential or lower-level command authority. These module boundaries
+permit later physical separation without changing authority.
 
 The shared ticket-service fleet is a trusted multi-tenant control-plane component.
 Project-scoped repositories, composite keys, transaction context and adversarial
@@ -1193,6 +1235,13 @@ write a separately retained append-only audit stream.
 
 ## PostgreSQL deployment and recovery
 
+This production deployment and disaster-recovery tranche is deferred while
+development uses the PostgreSQL instance inside the cluster. That instance is
+adequate for development and slice-level concurrency/process-death tests, but
+it does not satisfy the production availability, independent-failure or
+restore-rehearsal guarantees below. Deferral must not be represented as those
+guarantees having landed.
+
 Managed PostgreSQL is the recommended production authority so loss of the Talos
 cluster does not also remove the record needed to reconstruct it. The production
 deployment uses regional high availability, automated backups, point-in-time
@@ -1204,8 +1253,11 @@ component continues from memory as authority.
 A restore may leave Kubernetes and other external systems ahead of PostgreSQL.
 Recovery therefore establishes a new deployment epoch, fences pre-restore
 writers, verifies project journals, rebuilds scheduler allocations, inventories
-external resources by immutable Chuggy identity, reconciles unknown or known
-work and redelivers durable consumer requests before enabling mutations.
+external resources by immutable Chuggy identity, rebuilds current
+dispatchable-view projections, reconciles unknown or known work and redelivers
+durable consumer requests before enabling mutations. Selector observations
+from the old epoch cannot authorize a proposal; its independent recovery
+resets project cursors through the restored notification and current-view APIs.
 
 The recovery set also includes every exclusive Git repository and immutable
 configuration/artifact blob referenced by PostgreSQL. Recovery verifies content
@@ -1227,7 +1279,8 @@ regional control plane, not globally durable.
 The formal model leads the project-scoped `Core`, local dependencies and the
 replacement of transport duplicate decisions with an idempotent effect-boundary
 claim. Port tests cover expected-head and epoch refusal, project isolation,
-complete-entry equality, operations, continuations, selection races and
+complete-entry equality, operations, continuations, manual-versus-agentic
+dispatch races, stale and old-epoch proposals, notification reset and
 immutable effects.
 
 The PostgreSQL adapter is tested against a real server rather than only mocks.
@@ -1242,9 +1295,11 @@ evidence that the storage contract survives concurrency and process death.
 ## Project deletion and retention
 
 `Deleting` is distinct from ordinary suspension. Entry blocks ordinary
-admission and selection, advances lifecycle and ownership epochs, fences the
-old owner and credentials, and permits one newly fenced logical writer to run
-only deletion-approved commands. That writer journals modeled revocations,
+admission and dispatch, publishes the project-lifecycle wake-up, advances
+lifecycle and ownership epochs, fences the old owner and credentials, and
+permits one newly fenced logical writer to run only deletion-approved commands.
+The selector stops monitoring and moves its project-owned audit and planning
+state into the deletion retention workflow. The closure writer journals modeled revocations,
 requests execution cancellation and reversible finalization abort, consumes
 terminal resource-releasing reports, administratively cancels remaining pending
 operations and reconciles irreversible finalization. It cannot release,
@@ -1271,8 +1326,9 @@ quiescent.
 
 Project deletion proceeds through `Deleting`, domain closure, operational
 cleanup, retention and final physical erasure. Suspension rejects new work and
-stops selection; closure prevents a writer from reactivating the project;
-cleanup cancels executions and revokes project credentials. During its retention
+prevents dispatch while preserving selector audit; closure prevents a writer
+or selector from reactivating the project; cleanup cancels executions and
+revokes project credentials. During its retention
 period the project cannot be mutated and is readable only through explicitly
 authorized administrative paths. Final erasure is audited, and an erased
 project's immutable identity is never reused even when a display name is.
@@ -1316,12 +1372,14 @@ section hands off.
 The infrastructure tranche must provide durable relations equivalent to:
 
 - project identity/lifecycle, lifecycle generation, ownership lease/epoch and
-  discovery readiness generation;
+  discovery readiness generation, plus bounded authenticated project inventory
+  for the selector service;
 - authority-scoped idempotency, operation outcome/progress, project ingress
   counter and project inbox;
 - expected-head journal entries, current project state/projections and durable
   continuations;
-- selector requests/results, native actions/gates and access-controlled audit;
+- current digest-fenced dispatchable views, native actions/gates and
+  access-controlled selector audit and planning state;
 - focused execution registration/cancellation, finalizer preparation/commit and
   optional-integration requests;
 - scheduler logical tasks, physical attempts, capacity allocation and terminal
@@ -1334,8 +1392,8 @@ At minimum, database constraints enforce composite project ownership, one
 effective journal cause, unique inbox source, permanent accepted idempotency,
 one terminal operation outcome, one current finalizer request per authorized
 ticket, deterministic effect/request identity, one terminal logical task result
-and non-reuse of project, ticket, task, execution, attempt and permit identity
-in their declared scopes.
+and non-reuse of project, ticket, task, execution, attempt, permit and selector
+decision/delivery identity in their declared scopes.
 
 The following commits are indivisible transactions:
 
@@ -1343,8 +1401,8 @@ The following commits are indivisible transactions:
    and readiness generation.
 2. A project decision checks lifecycle, lease epoch, expected head and relevant
    revision fences, then writes journal entry, operation outcome, inbox
-   acknowledgement, native state, projection, continuations and focused
-   requests.
+   acknowledgement, native state, primary and dispatchable-view projections,
+   project notifications, continuations and focused requests.
 3. Scheduler terminalization writes the immutable result reference, terminal
    logical outcome, capacity release and project completion operation.
 4. Cancellation locks the pending operation and makes its inbox item
@@ -1352,7 +1410,12 @@ The following commits are indivisible transactions:
 5. Staged release-object promotion locks the same metadata raced by garbage
    collection and creates permanent references with release.
 6. Lifecycle transitions advance their generation and fencing epoch while
-   changing the operation-class admission matrix.
+   changing the operation-class admission matrix and publishing any required
+   selector-visible `Project` notification.
+7. A selector observation advances its owned project cursor only with the
+   bounded provenance and resulting wait or planning state it observed; a
+   choice also creates its idempotent proposal-delivery record in that selector
+   transaction before any ticket-service API call.
 
 Implementation order follows the landing table. Each slice includes real
 PostgreSQL concurrency/process-death tests for its transaction before a later
@@ -1409,7 +1472,7 @@ The project decision mailbox has four base priority classes, highest first:
 of revocation and correctness-reducing controls; completion is an authorized
 task, execution-blocked or finalization result; continuation is internal only;
 and ordinary contains release, resume, native-action resolution, manual
-dispatch and selector results. The ticket service derives both priority and
+dispatch and selector proposals. The ticket service derives both priority and
 lifecycle admission from the authenticated typed ingress path. Neither is a
 caller-selected value or a consequence of authority kind alone. This policy is
 only for ticket decisions; it does not govern the execution scheduler.
@@ -1464,9 +1527,10 @@ transaction while requiring both directions to agree at commit; no input may
 claim a sequence without its exact entry and no entry may name an input that
 does not claim that sequence.
 
-The initial input kinds are operations and deterministic continuations;
-selection results add their subtype in I5. Every continuation, native action
-and focused service request has an immutable identity derived from tenant,
+The decision input kinds remain operations and deterministic continuations.
+Agentic proposals and manual dispatch are typed operations under different
+capabilities, not new source kinds. Every continuation, native action and
+focused service request has an immutable identity derived from tenant,
 project, authorizing journal sequence, effect position and kind. Those source
 fields remain explicit even if consumers receive an opaque deterministic
 alias. Creation is in the authorizing decision transaction, retries reproduce
@@ -1487,8 +1551,9 @@ lease: the project ownership lease already serializes its reader, and takeover
 simply resumes pending inputs.
 
 Outbound work uses dedicated relations, not a generic outbox:
-`native_action`, `execution_request` and `finalization_request` land in I3;
-`selection_request` and `selection_result` land together in I5. Common focused
+`native_action`, `execution_request` and `finalization_request` land in I3.
+I5 adds no selector request outbox; its current dispatchable view is a
+projection and its project notifications are the I4 feed. Common focused
 requests are immutable authorizations with semantic states `Open`,
 `Registered`, `Fulfilled` and `Invalidated`; worker claim lease and generation
 are separate operational fields. Registering a request and creating the
@@ -1547,30 +1612,29 @@ delta is insufficient. Continuation, finalization, manual-dispatch and native-
 action fences name this version.
 
 The selector is an API client with a deliberately narrow service authority,
-not a ticket-command authority. Logically the `ProjectTicketWriter` creates an
-immutable request over an eligible-set digest; a detached selector claims it
-through the authenticated API and may return exactly one candidate or a
-bounded deferral tied to request, generation and digest. The writer alone
-validates and commits `Dispatch(ticket)`. The selector cannot create, release,
-revoke or directly dispatch tickets. An authoring agent is a distinct role and
-credential even if implemented by the same software. Selection requests move
-`Open` to `ResultSubmitted`, then `Applied`, `Deferred` or `Invalidated`; claim
-leases are separate. Selection-specific persistence remains wholly I5's.
+not a general ticket-command authority. It consumes project notifications and
+current dispatchable views and may submit only
+`ProposeDispatch(ticket, expectedTicketVersion, observedViewToken,
+selectorDecisionReference)`. Acceptance creates an ordinary operation and
+decision input through the same durable boundary as other operations; the
+writer alone validates the recovery epoch, digest, ticket version and current
+eligibility and commits `Dispatch(ticket)`. The selector cannot create,
+release, revoke, complete or directly mutate tickets. Its monitoring,
+deferrals, audit, attention and planned-next state remain in its own service.
+An authoring agent is a distinct role and credential even if implemented by
+the same software.
 
-Only the ticket-service API accepts service-produced decision inputs. Selector
-workers have no PostgreSQL credentials. Scheduler and finalizer roles may
-register focused requests atomically with their own durable records, but submit
-ticket results through authenticated API ingress and cannot insert mailbox
-inputs directly. Result acceptance locks and validates its request and
-generation, writes the immutable result plus input and ordinal, raises
-readiness and marks the request result-submitted in one transaction. A retry
-returns the original input; a conflicting result is refused. Current domain
-applicability remains the later writer decision.
+Only the ticket-service API accepts service-produced operations and results.
+Selector workers have no ticket-service PostgreSQL credentials. Scheduler and
+finalizer roles may register focused requests atomically with their own durable
+records, but submit ticket results through authenticated API ingress and cannot
+insert mailbox inputs directly. Current domain applicability remains the later
+writer decision.
 
 Runtime roles have no direct insert grant on the typed input/mailbox boundary.
-Narrow functions such as `accept_operation`, `publish_continuation` and later
-`accept_selection_result` construct only their fixed kind. They have pinned
-search paths, no dynamic SQL, no public execute grant and a dedicated
+Narrow functions such as `accept_operation`, `publish_continuation` and the I5
+selector-proposal application boundary construct only their fixed kind. They
+have pinned search paths, no dynamic SQL, no public execute grant and a dedicated
 `NOLOGIN`, non-superuser owner rather than the migration superuser or a runtime
 role. Constraints still enforce bounded vocabulary, ownership, identity and
 references.
@@ -1607,8 +1671,9 @@ that discussion does not make telemetry a domain authority.
 
 I3's focused rows are real even though their consumers arrive later. I6 adds
 scheduler tasks, attempts, results and cancellation processing; I7 adds
-finalizer preparation, permits and reconciliation. No placeholder selection
-schema lands before I5 and no later service is simulated in memory.
+finalizer preparation, permits and reconciliation. I5 adds a dispatchable
+projection and typed proposal path rather than selector request/result tables,
+and no later service is simulated in memory.
 
 ### I4 decision record
 
@@ -1690,6 +1755,119 @@ transactional bounded notification log and SSE cursor contract. Each tranche
 includes adversarial authorization and database-role tests; no tranche adds an
 HTTP framework dependency to the inner application contract.
 
+### I5 decision record
+
+I5 uses a selector-independent ticket-service boundary. The ticket service
+publishes project changes, exposes a current digest-fenced dispatchable view and
+accepts typed dispatch operations; it never creates selection requests, owns
+selector attempts, receives deferrals or schedules reconsideration. The
+selector independently decides when to observe, wait, plan and propose. This
+replaces the request/result protocol anticipated before I5 without changing the
+pure model: a committed `Dispatch(ticket)` remains the only authoritative
+selection outcome.
+
+The durable change feed reuses I4's bounded transactional
+`project_notification` log. A ticket decision publishes its `Ticket`
+notifications in the same transaction as the journal, operation outcome and
+projections, and I5 adds a `Project` notification for lifecycle transitions
+that change selector-visible availability. The selector obtains the bounded
+inventory of projects it may monitor from the authenticated control-plane
+application API, keeps a
+project-local notification cursor in its own durable state, and reads the feed
+through the authenticated ticket-service API. A retention gap returns I4's
+`Reset`; the selector then reads the current dispatchable view and resumes at
+the returned cursor. Periodic polling is the recovery mechanism. PostgreSQL
+`LISTEN`/`NOTIFY` may later reduce latency for an API relay, but it is an
+optional hint with no authoritative payload; selector correctness depends on
+neither its delivery nor its payload.
+
+Every committed journal decision transaction maintains a normalized current
+dispatchable-view projection derived from its post-decision `Core`. The view
+header carries tenant, project, recovery epoch, projection watermark, schema
+version and canonical digest. Typed candidate rows carry ticket identity,
+ticket version and the bounded readiness and immutable briefing facts needed by
+the selector. Repeated facts use bounded child rows. Candidate identity order
+makes paging deterministic but expresses no preference. The API returns one
+complete logical view through watermark-pinned pages; if the current watermark
+changes between pages it returns reset and the selector restarts. Replay
+rebuilds the projection; no decision reads it as authority.
+
+Strict view equality covers view schema, the complete candidate set, candidate
+versions, readiness and every immutable execution-relevant briefing fact
+exposed by the ticket service. It excludes the journal head, selector
+implementation and internal policy, timestamps, provider accounting,
+presentation metadata and advisory capacity, queue and cluster observations.
+Current lifecycle, integrity and hard execution-backlog controls are separate
+commit-time guards. A proposal may therefore survive an unrelated journal
+advance, while a restore, relevant candidate change or eligibility change makes
+it stale. I5 does not simulate scheduler capacity or backlog before I6 supplies
+that authority.
+
+Agentic dispatch enters as
+`ProposeDispatch(ticket, expectedTicketVersion, observedViewToken,
+selectorDecisionReference)`. The view token binds tenant, project, recovery
+epoch, view schema, projection watermark and strict digest; the selector
+decision reference is globally opaque and bounded. A narrow selector service
+capability may submit this command and no other ticket mutation. Acceptance
+uses ordinary operation idempotency, admission, priority, ordinal and readiness
+machinery. The project writer recomputes the view from replayed `Core` and the
+immutable retained contract references named by its journal and translates a
+valid proposal to the pure `Dispatch(ticket)` event. A
+recovery-epoch, digest, ticket-version or current-eligibility mismatch refuses
+it as `SelectionChanged` without a journal entry. Selector workers have no
+ticket-service PostgreSQL credentials.
+
+One-shot manual dispatch enters as
+`ManualDispatch(ticket, expectedTicketVersion)` under the distinct
+`DispatchTicket` capability, included in ordinary project mutation access by
+default and absent from read-only access. A version mismatch is
+`TicketChanged`; a matching version that is not currently dispatchable is
+`NotEnabled`. Manual dispatch uses the same ordinary admission path and pure
+`Dispatch(ticket)` transition. I5 rejects newly submitted generic
+`Decide(Dispatch)` commands while retaining an internal decoder for operations
+durably accepted before the migration cutoff.
+
+Selector monitoring, retries, reasons for waiting, provider failures,
+capacity-aware timing and operational attention belong wholly to the selector
+service. They never become project decision inputs, journal events, reservations
+or ticket-service dispatch policy. The selector may publish a planned-next
+ticket, ordered shortlist or other bounded planning intent, but that transparent
+read model is revisable and non-authoritative: it cannot block manual dispatch,
+reserve capacity, alter eligibility or give a later proposal precedence. A
+proposal always means “dispatch this ticket now if its current fences and guards
+pass.”
+
+Projects do not configure selector prompts, models, providers, profiles or a
+scheduling-policy schema. Platform operators own selector implementation,
+safety, privacy, retention, region, cost and concurrency policy. The selector
+nevertheless retains full bounded provenance for project readers: exact
+versioned instructions and prompt content, observed views, safe project-scoped
+active-work and capacity context, tool calls and bounded results, choices or
+reasons for waiting, timing and accounting, attention, and implementation,
+model and internal-policy revisions. Reads reauthorize current project access
+and use ordinary not-found treatment. Credentials and unauthorized or
+cross-project detail are never supplied or exposed. Hidden chain-of-thought is
+neither requested nor retained; transparency covers the semantic inputs,
+observable actions and outputs on which the selector relies.
+
+Before an agentic choice crosses the service boundary, the selector atomically
+records its semantic interaction, resulting choice or wait, current planning
+intent and, for a choice, a durable proposal-delivery record under the selector
+decision reference. Delivery is then at-least-once through ordinary operation
+idempotency. A crash before submission leaves a retryable owned delivery; an
+ambiguous API result is resolved by polling the operation. No cross-service
+transaction is introduced, and a ticket-service operation never depends on
+selector storage to decide or replay it. Selector audit later reconciles the
+operation outcome for presentation.
+
+Selector state is recovered and deleted under its owning service. I8 restore
+causes pre-restore view tokens to fail their recovery-epoch fence and causes the
+selector to reset cursors through the current feed/view APIs. I9 suspension or
+integrity containment holds accepted ordinary proposals and prevents new
+dispatch decisions without erasing selector audit. I10 stops project monitoring
+and applies the project's retention and erasure policy to selector cursors,
+provenance, attention and planning state.
+
 | Slice | Depends on | What lands and its definition of done | Status |
 |---|---|---|---|
 | M0 | — | Project-scoped sparse-ID `Core`, vocabulary and transition migration | Landed |
@@ -1699,9 +1877,9 @@ HTTP framework dependency to the inner application contract.
 | I2 | I1 | The project decision transaction: replay and load, lifecycle, lease and expected-head fences, journal entry under one durable cause, operation terminalization, inbox acknowledgement and primary projection update, with refusal writing no entry and an ambiguous commit resolved by durable read | Landed |
 | I3 | I2 | Bounded project mailbox, priority and aging, durable deterministic continuations, focused native-action and consumer-request tables | Landed |
 | I4 | I3 | Authenticated native reads, operation polling and cancellation, versioned configuration and draft authoring, revision-fenced release, bounded access-controlled SSE notifications | Landed |
-| I5 | I3 | Agentic selection: immutable selection views, detached requests/results, bounded deferral and one-shot manual dispatch. Selection failure never becomes a hidden FIFO dispatch policy. | — |
-| I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
-| I7 | I6 | The finalizer service: durable queue, preparation, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with merge-conflict rework receiving its exact immutable attempt/target/conflict manifest, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
-| I8 | I0–I7 | Managed PostgreSQL deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions and permits. Old-epoch actors remain rejected after restore. | — |
-| I9 | I2–I8 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. | — |
-| I10 | I6–I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. | — |
+| I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, plus the selector-owned durable cursor, delivery, transparent provenance, attention and planning read model. Selector timing, monitoring and deferral remain outside the ticket service, and selection failure never becomes a hidden FIFO dispatch policy. | — |
+| I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation, plus bounded project-safe active-work and capacity context for the selector and the authoritative hard execution-backlog dispatch guard. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
+| I7 | I6 | The finalizer service: durable queue, preparation with bounded deterministic automatic rebase/merge against pinned commits, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with a clean automatic integration proceeding without ticket rework, a genuine merge conflict producing the exact immutable attempt/target/conflict manifest for rework, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
+| I8 | I0–I7, I9–I10 | Production PostgreSQL and disaster recovery: managed deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions, permits and selector cursors. Old-epoch actors and selector observations remain rejected after restore. Development may use the existing in-cluster PostgreSQL instance without claiming these production guarantees. | Deferred |
+| I9 | I2–I7 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. | — |
+| I10 | I6, I7, I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, selector-monitor shutdown, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. | — |

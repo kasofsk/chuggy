@@ -32,6 +32,7 @@ import {
   decisionEventEnabled,
   execDecisionEvent,
 } from "../actor/decisionEvent.ts";
+import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
 import type { Core } from "../domain/generated/modelTypes.ts";
@@ -46,6 +47,12 @@ import type {
 } from "./projectDecision.ts";
 import type { Lease, ProjectStore } from "./projectStore.ts";
 import { materializationOf } from "./decisionPlan.ts";
+import {
+  deriveDispatchCandidates,
+  dispatchViewDigest,
+  dispatchViewSchemaVersion,
+  type DispatchContractPin,
+} from "./dispatchView.ts";
 import {
   checkedTicketServiceConfig,
   observe,
@@ -67,6 +74,7 @@ export interface ProjectMemory {
   readonly lease: Lease;
   readonly core: Core;
   readonly ticketVersions: ReadonlyMap<number, number>;
+  readonly dispatchContracts?: ReadonlyMap<number, DispatchContractPin>;
 }
 
 export class IntegrityContradiction extends Error {}
@@ -144,7 +152,29 @@ export async function projectWriterLoad(
       ticketVersions.set(projection.ticket, entry.seq);
     core = post;
   }
-  return { lease, core, ticketVersions };
+  const dispatchContracts = await writer.store.loadDispatchContracts?.(lease);
+  const memory = {
+    lease,
+    core,
+    ticketVersions,
+    ...(dispatchContracts === undefined ? {} : { dispatchContracts }),
+  };
+  if (
+    dispatchContracts !== undefined &&
+    writer.decisions.rebuildDispatchView !== undefined
+  ) {
+    const candidates = deriveDispatchCandidates(
+      writer.config,
+      core,
+      ticketVersions,
+      dispatchContracts,
+    );
+    await writer.decisions.rebuildDispatchView(lease, {
+      digest: dispatchViewDigest(candidates),
+      candidates,
+    });
+  }
+  return memory;
 }
 
 /** A decision offered for commit, and the state it would install if it committed. */
@@ -174,6 +204,103 @@ function continuationFenceOutcome(
   return undefined;
 }
 
+function operationDispatchFence(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  source: Extract<DecisionInput["source"], { kind: "Operation" }>,
+): DecisionOutcome | undefined {
+  if (source.command.command === "ManualDispatch")
+    return memory.ticketVersions.get(source.command.ticket) ===
+      source.command.expectedTicketVersion
+      ? undefined
+      : { outcome: "Refused", code: "TicketChanged" };
+  if (source.command.command !== "ProposeDispatch") return undefined;
+  if (memory.dispatchContracts === undefined)
+    throw new Error(
+      "project writer: strict dispatch contracts were not loaded",
+    );
+  const candidates = deriveDispatchCandidates(
+    writer.config,
+    memory.core,
+    memory.ticketVersions,
+    memory.dispatchContracts,
+  );
+  const proposal = source.command;
+  const token = proposal.observedViewToken;
+  const selected = candidates.find(
+    (candidate) => candidate.ticket === proposal.ticket,
+  );
+  return token.tenant === memory.lease.partition.tenant &&
+    token.project === memory.lease.partition.project &&
+    token.recoveryEpoch === memory.lease.recoveryEpoch &&
+    token.schemaVersion === dispatchViewSchemaVersion &&
+    token.digest === dispatchViewDigest(candidates) &&
+    selected?.ticketVersion === proposal.expectedTicketVersion
+    ? undefined
+    : { outcome: "Refused", code: "SelectionChanged" };
+}
+
+function journaledPlan(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  item: DecisionInput,
+  command: DecisionEvent,
+): ProjectPlan {
+  const decision = execDecisionEvent(writer.config, memory.core, command);
+  const entry: Entry = {
+    seq: memory.lease.head + 1,
+    event: command,
+    rec: decision.rec,
+  };
+  const projection = projectionChanges(memory.core, decision.post);
+  const versions = new Map(memory.ticketVersions);
+  for (const row of projection) versions.set(row.ticket, entry.seq);
+  const contracts = new Map(memory.dispatchContracts ?? []);
+  if (
+    item.source.kind === "Operation" &&
+    item.source.draftRelease !== undefined
+  )
+    contracts.set(item.source.draftRelease.ticket, {
+      configurationRevision: item.source.draftRelease.configurationRevision,
+      configurationDigest: item.source.draftRelease.configurationDigest,
+      configurationCanonical: item.source.draftRelease.configurationCanonical,
+    });
+  const materializeView =
+    memory.dispatchContracts !== undefined ||
+    (item.source.kind === "Operation" &&
+      item.source.draftRelease !== undefined);
+  const candidates = materializeView
+    ? deriveDispatchCandidates(
+        writer.config,
+        decision.post,
+        versions,
+        contracts,
+      )
+    : undefined;
+  return {
+    outcome: {
+      outcome: "Journaled",
+      entry,
+      projection,
+      materialization: materializationOf(
+        item,
+        memory.core,
+        decision.post,
+        entry,
+      ),
+      ...(candidates === undefined
+        ? {}
+        : {
+            dispatchView: {
+              digest: dispatchViewDigest(candidates),
+              candidates,
+            },
+          }),
+    },
+    post: decision.post,
+  };
+}
+
 /**
  * What one inbox item asks of the state in hand: a decision the machine would
  * take, or the refusal it earns. Nothing here reaches the world.
@@ -187,6 +314,10 @@ function projectWriterPlan(
     item.source.kind === "Operation"
       ? item.source.resolvedEvent
       : item.source.command;
+  if (item.source.kind === "Operation") {
+    const fence = operationDispatchFence(writer, memory, item.source);
+    if (fence !== undefined) return { outcome: fence, post: memory.core };
+  }
   if (item.source.kind === "Continuation") {
     const fenceOutcome = continuationFenceOutcome(memory, item.source);
     if (fenceOutcome !== undefined)
@@ -208,26 +339,7 @@ function projectWriterPlan(
       post: memory.core,
     };
   }
-  const decision = execDecisionEvent(writer.config, memory.core, command);
-  const entry: Entry = {
-    seq: memory.lease.head + 1,
-    event: command,
-    rec: decision.rec,
-  };
-  return {
-    outcome: {
-      outcome: "Journaled",
-      entry,
-      projection: projectionChanges(memory.core, decision.post),
-      materialization: materializationOf(
-        item,
-        memory.core,
-        decision.post,
-        entry,
-      ),
-    },
-    post: decision.post,
-  };
+  return journaledPlan(writer, memory, item, command);
 }
 
 /**
@@ -254,12 +366,27 @@ export async function projectWriterDecide(
   });
   if (decided.decided !== "Committed") return { memory, decided };
   const ticketVersions = new Map(memory.ticketVersions);
+  const dispatchContracts = new Map(memory.dispatchContracts ?? []);
   if (plan.outcome.outcome === "Journaled") {
     for (const row of plan.outcome.projection)
       ticketVersions.set(row.ticket, plan.outcome.entry.seq);
+    if (
+      item.source.kind === "Operation" &&
+      item.source.draftRelease !== undefined
+    )
+      dispatchContracts.set(item.source.draftRelease.ticket, {
+        configurationRevision: item.source.draftRelease.configurationRevision,
+        configurationDigest: item.source.draftRelease.configurationDigest,
+        configurationCanonical: item.source.draftRelease.configurationCanonical,
+      });
   }
   return {
-    memory: { lease: decided.lease, core: plan.post, ticketVersions },
+    memory: {
+      lease: decided.lease,
+      core: plan.post,
+      ticketVersions,
+      dispatchContracts,
+    },
     decided,
   };
 }
