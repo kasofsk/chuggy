@@ -7,6 +7,10 @@
  * permitted to cross it only as a safe aggregate, so the cases below put two
  * projects in one ledger and hold the answer to the named one's own counts and
  * the cluster totals.
+ *
+ * A PROJECT IS `(tenant, project)`, SO THE LEDGER HOLDS TWO OF EACH. Two tenants
+ * naming a project the same thing is the case a fold on the project half alone
+ * passes, and it is the one that would hand a tenant another tenant's counts.
  */
 
 import assert from "node:assert/strict";
@@ -14,10 +18,7 @@ import { test } from "node:test";
 
 import { dispatchEvent, revokeEvent } from "../../src/actor/decisionEvent.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import type {
-  CapacityExecution,
-  Entitlement,
-} from "../../src/interpreter/executionScheduler.ts";
+import type { Entitlement } from "../../src/interpreter/executionScheduler.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
@@ -27,6 +28,7 @@ import {
   openExecutionBacklogGuard,
   selectorExecutionContext,
   type BacklogVerdict,
+  type PartitionedExecution,
   type ExecutionBacklogGuard,
   type ExecutionContextRead,
 } from "../../src/interpreter/schedulerContext.ts";
@@ -48,21 +50,27 @@ const entitlements: ReadonlyMap<string, Entitlement> = new Map([
 function registration(
   project: string,
   task: number,
-  status: CapacityExecution["status"],
-): CapacityExecution {
+  status: PartitionedExecution["status"],
+  tenant: string = partition.tenant,
+  account: string = project,
+): PartitionedExecution {
   return {
+    tenant,
     project,
     ticket: 1,
     task,
-    account: project,
+    account,
     sourceSeq: 1,
     sourceEffect: 0,
     status,
   };
 }
 
+/** The other tenant, which names its projects whatever it likes. */
+const otherTenant = asTenantId("tenant-two");
+
 /** A ledger holding both projects, which is what a cluster-wide read actually sees. */
-const ledger: readonly CapacityExecution[] = [
+const ledger: readonly PartitionedExecution[] = [
   registration("mine", 1, "Queued"),
   registration("mine", 2, "Admitted"),
   registration("mine", 3, "Launching"),
@@ -70,6 +78,8 @@ const ledger: readonly CapacityExecution[] = [
   registration("mine", 5, "Terminal"),
   registration("theirs", 1, "Running"),
   registration("theirs", 2, "Running"),
+  registration("mine", 6, "Running", otherTenant, "other"),
+  registration("mine", 7, "Queued", otherTenant, "other"),
 ];
 
 test("the advisory context counts the named project's own work and no other's", () => {
@@ -99,7 +109,7 @@ test("the advisory capacity is the cluster total and the project's own account",
   );
   assert.deepEqual(context.capacity, {
     clusterSlotsMax: 8,
-    clusterActive: 5,
+    clusterActive: 6,
     accountMaximum: 4,
     accountActive: 3,
     accountReservationDeficit: 0,
@@ -135,6 +145,29 @@ test("the read answers for one project and reads no other", async () => {
   assert.equal(theirs.activeWork.running, 2);
   assert.equal(theirs.activeWork.queued, 0);
   assert.equal(mine.capacity.clusterActive, theirs.capacity.clusterActive);
+});
+
+test("another tenant's project of the same name is not the named project", () => {
+  const mine = selectorExecutionContext(
+    8,
+    entitlements,
+    ledger,
+    partition,
+    "mine",
+  );
+  const theirs = selectorExecutionContext(
+    8,
+    entitlements,
+    ledger,
+    { tenant: otherTenant, project: partition.project },
+    "mine",
+  );
+  assert.equal(mine.activeWork.running, 1);
+  assert.equal(mine.activeWork.queued, 1);
+  assert.equal(theirs.activeWork.running, 1);
+  assert.equal(theirs.activeWork.queued, 1);
+  assert.equal(theirs.activeWork.admitted, 0);
+  assert.equal(theirs.activeWork.launching, 0);
 });
 
 test("an account no policy revision covers is refused rather than assumed", () => {

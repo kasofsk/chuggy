@@ -20,6 +20,15 @@
  * advisory context. No other project's identity, tickets, tasks or counts are
  * representable in these types, so an adapter cannot leak one by accident.
  *
+ * A PROJECT IS THE WHOLE COMPOSITE KEY HERE, WHICH IS WHY THE FOLD READS A TYPE
+ * THE ARITHMETIC DOES NOT. `model/capacity.qnt` gives a registration one atomic
+ * project identity and this tree's is `(tenant, project)`, so a fold that
+ * compared the project half alone would answer one tenant with another tenant's
+ * work whenever both named a project the same thing. The arithmetic below still
+ * takes the model's own record, and the project-scoped fold takes a
+ * `PartitionedExecution` — the tenant half is in the type it reads, so a caller
+ * that has not got one cannot ask.
+ *
  * THE GUARD PRESERVES HEADROOM BY BEING NARROW RATHER THAN BY RESERVING IT.
  * `dispatchNeedsExecutionHeadroom` returns true for dispatch alone, so
  * completion, cancellation, revocation and every other correctness-reducing
@@ -78,6 +87,11 @@ export interface ExecutionContextRead {
   context(partition: Partition): Promise<SelectorExecutionContext>;
 }
 
+/** One registration with the tenant half of its key, which the arithmetic never reads. */
+export interface PartitionedExecution extends CapacityExecution {
+  readonly tenant: string;
+}
+
 /** How many of these registrations sit in one logical status. */
 function statusCount(
   executions: readonly CapacityExecution[],
@@ -86,21 +100,32 @@ function statusCount(
   return executions.filter((each) => each.status === status).length;
 }
 
+/** Whether this registration is the named partition's own, on both halves of the key. */
+function partitionOwns(
+  partition: Partition,
+  execution: PartitionedExecution,
+): boolean {
+  return (
+    execution.tenant === partition.tenant &&
+    execution.project === partition.project
+  );
+}
+
 /**
  * The advisory context one cluster ledger already determines, folded with the
  * same mirrored arithmetic admission uses so an adapter answering the read has
  * something to be compared against rather than a second opinion to form. Every
- * count it returns is either the named project's own or a cluster-wide total,
+ * count it returns is either the named partition's own or a cluster-wide total,
  * which is where the project boundary is actually kept.
  */
 export function selectorExecutionContext(
   clusterSlotsMax: number,
   entitlements: ReadonlyMap<string, Entitlement>,
-  executions: readonly CapacityExecution[],
+  executions: readonly PartitionedExecution[],
   partition: Partition,
   account: string,
 ): SelectorExecutionContext {
-  const own = executions.filter((each) => each.project === partition.project);
+  const own = executions.filter((each) => partitionOwns(partition, each));
   return {
     activeWork: {
       partition,
