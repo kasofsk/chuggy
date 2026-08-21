@@ -4,6 +4,15 @@ import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
 import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
+import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
+import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
+import { postgresSelectorState } from "./adapters/postgres/selector.ts";
+import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
+import {
+  selectorHistory,
+  type SelectorHistory,
+} from "./interpreter/selectorHistory.ts";
+import type { SelectorStateStore } from "./interpreter/selector.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -13,6 +22,7 @@ import {
   nativeWeb,
   type NativeWeb,
   type ProjectAccess,
+  type ProjectInventory,
 } from "./interpreter/nativeWeb.ts";
 import type { ProjectDecision } from "./interpreter/projectDecision.ts";
 import type { ProjectDiscovery } from "./interpreter/projectDiscovery.ts";
@@ -31,6 +41,20 @@ export interface TicketService {
   readonly projects: ProjectStore;
 }
 
+export interface SelectorService {
+  readonly state: SelectorStateStore;
+  readonly history: SelectorHistory;
+}
+
+/** Wires selector-owned durability and project-authorized semantic history reads. */
+export function composeSelectorService(
+  selectorPool: pg.Pool,
+  access: ProjectAccess,
+): SelectorService {
+  const state = postgresSelectorState(selectorPool);
+  return { state, history: selectorHistory(access, state) };
+}
+
 /** Wires the authenticated web application to API-role PostgreSQL ports. */
 export function composeNativeWeb(
   apiPool: pg.Pool,
@@ -38,6 +62,7 @@ export function composeNativeWeb(
   access: ProjectAccess,
   config: TicketServiceConfig = ticketServiceDefaults,
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
+  inventory?: ProjectInventory,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
   return nativeWeb(
@@ -46,6 +71,9 @@ export function composeNativeWeb(
     inbox,
     postgresAuthoring(apiPool),
     postgresNotifications(apiPool),
+    postgresDispatchViews(apiPool),
+    inventory ??
+      authorizedProjectInventory(access, postgresProjectInventory(apiPool)),
   );
 }
 

@@ -48,6 +48,7 @@ import type {
   Partition,
   ProjectStanding,
 } from "../../interpreter/projectStore.ts";
+import type { DispatchContractPin } from "../../interpreter/dispatchView.ts";
 import {
   encodeEntry,
   parseJournal,
@@ -139,6 +140,51 @@ async function storedJournalRows(
       [tenant, project],
     )
   ).rows;
+}
+
+export async function postgresJournalDispatchContracts(
+  pool: pg.Pool,
+  lease: Lease,
+): Promise<ReadonlyMap<number, DispatchContractPin>> {
+  return postgresTransaction(pool, async (client) => {
+    const row = await postgresOwnershipLockKnown(client, lease.partition);
+    if (!(await postgresOwnershipHonours(client, row, lease)))
+      throw new Error(
+        "postgres journal: dispatch contracts requested under a fenced lease",
+      );
+    const found = await client.query<{
+      entry: string;
+      configuration_revision: string;
+      configuration_digest: string;
+      configuration_canonical: string;
+    }>(
+      `SELECT j.entry,j.configuration_revision,j.configuration_digest,
+              c.canonical AS configuration_canonical
+         FROM journal_entry j JOIN configuration_revision c
+           ON c.tenant=j.tenant AND c.project=j.project
+          AND c.revision=j.configuration_revision AND c.digest=j.configuration_digest
+        WHERE j.tenant=$1 AND j.project=$2 AND j.configuration_revision IS NOT NULL
+        ORDER BY j.seq`,
+      [lease.partition.tenant, lease.partition.project],
+    );
+    const contracts = new Map<number, DispatchContractPin>();
+    for (const stored of found.rows) {
+      const parsed = parseJournal([JSON.parse(stored.entry) as unknown]);
+      if (parsed.parsed === "Refused")
+        throw new Error(
+          `postgres journal: dispatch contract entry is unreadable — ${parsed.why}`,
+        );
+      const event = parsed.value[0]?.event;
+      if (event?.type === "ReleaseTicket") {
+        contracts.set(event.value.ticket, {
+          configurationRevision: stored.configuration_revision,
+          configurationDigest: stored.configuration_digest,
+          configurationCanonical: stored.configuration_canonical,
+        });
+      }
+    }
+    return contracts;
+  });
 }
 
 /** The digest the next entry chains onto: the head entry's, or the partition's genesis at an empty journal. */

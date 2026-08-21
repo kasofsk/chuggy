@@ -81,7 +81,11 @@ import {
 } from "./keying.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowLifecycle } from "./rows.ts";
-import { acceptanceFunction, cancellationFunction } from "./schema.ts";
+import {
+  acceptanceFunction,
+  cancellationFunction,
+  dispatchAcceptanceFunction,
+} from "./schema.ts";
 
 /** One operation row with the ordinal of its decision input. */
 export interface OperationRow {
@@ -281,6 +285,11 @@ export async function postgresOperationsAccept(
   config: TicketServiceConfig,
   metrics: TicketServiceMetrics,
 ): Promise<Accepted> {
+  if (
+    submission.command.command === "Decide" &&
+    submission.command.event.type === "Dispatch"
+  )
+    return { accepted: "InvalidCommand" };
   return postgresTransaction(pool, async (client) => {
     const scope = operationsScope(
       submission.partition,
@@ -294,8 +303,13 @@ export async function postgresOperationsAccept(
       submission,
       command,
     );
+    const accept =
+      submission.command.command === "ManualDispatch" ||
+      submission.command.command === "ProposeDispatch"
+        ? dispatchAcceptanceFunction
+        : acceptanceFunction;
     const result = await client.query<AcceptanceRow>(
-      `SELECT * FROM ${acceptanceFunction}($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10::text[],
+      `SELECT * FROM ${accept}($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10::text[],
         $11,$12,$13)`,
       [
         submission.partition.tenant,

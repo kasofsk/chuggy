@@ -19,7 +19,10 @@ import type {
   Decision,
   ProjectDecision,
 } from "../../interpreter/projectDecision.ts";
-import { postgresDecisionCommit } from "./decision.ts";
+import {
+  postgresDecisionCommit,
+  postgresDispatchViewRebuild,
+} from "./decision.ts";
 import {
   observe,
   silentTicketServiceMetrics,
@@ -37,6 +40,8 @@ export function postgresProjectDecision(
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
 ): ProjectDecision {
   return {
+    rebuildDispatchView: (lease, view) =>
+      postgresDispatchViewRebuild(pool, lease, view),
     decide: async (decision: Decision): Promise<Decided> => {
       const started = performance.now();
       const decided = await postgresDecisionCommit(pool, decision);
