@@ -36,6 +36,7 @@
  * makes a half-applied schema impossible rather than merely unlikely.
  */
 
+import { sql } from "@ts-safeql/sql-tag";
 import pg from "pg";
 
 import { migrationLedger, migrations, type Migration } from "./schema.ts";
@@ -116,8 +117,7 @@ async function postgresMigrateOne(
     await client.query(statement);
   }
   await client.query(
-    "INSERT INTO schema_migration (version, name) VALUES ($1, $2)",
-    [migration.version, migration.name],
+    sql`INSERT INTO schema_migration (version, name) VALUES (${migration.version}, ${migration.name})`,
   );
 }
 
@@ -126,7 +126,7 @@ async function postgresMigrateApplied(
   client: pg.PoolClient,
 ): Promise<ReadonlySet<number>> {
   const applied = await client.query<{ version: number }>(
-    "SELECT version FROM schema_migration",
+    sql`SELECT version FROM schema_migration`,
   );
   return new Set(applied.rows.map((row) => row.version));
 }
@@ -140,7 +140,9 @@ export async function postgresMigrate(
   pool: pg.Pool,
 ): Promise<readonly number[]> {
   return postgresTransaction(pool, async (client) => {
-    await client.query("SELECT pg_advisory_xact_lock($1)", [migrationLockKey]);
+    await client.query<{ locked: string | null }>(
+      sql`SELECT pg_advisory_xact_lock(${migrationLockKey})::text AS locked`,
+    );
     await client.query(migrationLedger);
     const applied = await postgresMigrateApplied(client);
     const ran: number[] = [];
