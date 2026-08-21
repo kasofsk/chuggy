@@ -162,9 +162,28 @@ async function lockSelectorProject(
 
 async function markSubmitted(pool: pg.Pool, decision: string): Promise<void> {
   await pool.query(
-    `UPDATE selector_proposal_delivery SET state='Submitted'
+    `UPDATE selector_proposal_delivery SET state='Submitted',reconcile_at=now()
       WHERE selector_decision=$1 AND state='Pending'`,
     [decision],
+  );
+}
+
+async function deferDelivery(
+  pool: pg.Pool,
+  decision: string,
+  delayMilliseconds: number,
+): Promise<void> {
+  if (
+    !Number.isSafeInteger(delayMilliseconds) ||
+    delayMilliseconds < 1 ||
+    delayMilliseconds > 24 * 60 * 60_000
+  )
+    throw new RangeError("selector retry delay must be bounded milliseconds");
+  await pool.query(
+    `UPDATE selector_proposal_delivery
+        SET retry_at=GREATEST(retry_at,now()+$2 * interval '1 millisecond')
+      WHERE selector_decision=$1 AND state='Pending'`,
+    [decision, delayMilliseconds],
   );
 }
 
@@ -189,13 +208,22 @@ async function markTerminal(
 async function submittedDeliveries(
   pool: pg.Pool,
   limit: number,
+  retry: SelectorRetryConfig,
 ): Promise<readonly SelectorDelivery[]> {
   checkedSelectorLimit(limit, "selector reconciliation");
   const found = await pool.query<DeliveryRow>(
-    `SELECT selector_decision,tenant,project,operation,command,attempts::text
-       FROM selector_proposal_delivery WHERE state='Submitted'
-      ORDER BY selector_decision LIMIT $1`,
-    [limit],
+    `UPDATE selector_proposal_delivery
+        SET reconciliation_attempts=reconciliation_attempts+1,
+            reconcile_at=now()+LEAST(
+              $2::double precision * power(2::double precision,LEAST(reconciliation_attempts,20)::double precision),
+              $3::double precision
+            ) * interval '1 millisecond'
+      WHERE selector_decision IN
+        (SELECT selector_decision FROM selector_proposal_delivery
+          WHERE state='Submitted' AND reconcile_at<=now()
+          ORDER BY reconcile_at,selector_decision LIMIT $1 FOR UPDATE SKIP LOCKED)
+      RETURNING selector_decision,tenant,project,operation,command,attempts::text`,
+    [limit, retry.baseDelayMilliseconds, retry.maximumDelayMilliseconds],
   );
   return found.rows.map(deliveryOf);
 }
@@ -237,14 +265,23 @@ async function readInventoryCursor(
     : { tenant: asTenantId(row.tenant), project: asProjectId(row.project) };
 }
 
-async function writeInventoryCursor(
+async function advanceInventoryCursor(
   pool: pg.Pool,
-  cursor: Partition | undefined,
-): Promise<void> {
-  await pool.query(
-    "UPDATE selector_inventory_state SET tenant=$1,project=$2 WHERE singleton=1",
-    [cursor?.tenant ?? null, cursor?.project ?? null],
+  previous: Partition | undefined,
+  next: Partition | undefined,
+): Promise<boolean> {
+  const advanced = await pool.query(
+    `UPDATE selector_inventory_state SET tenant=$3,project=$4
+      WHERE singleton=1 AND tenant IS NOT DISTINCT FROM $1
+        AND project IS NOT DISTINCT FROM $2`,
+    [
+      previous?.tenant ?? null,
+      previous?.project ?? null,
+      next?.tenant ?? null,
+      next?.project ?? null,
+    ],
   );
+  return advanced.rowCount === 1;
 }
 
 async function storeInteraction(
@@ -447,7 +484,8 @@ function selectorStateWithRetry(
 ): SelectorStateStore {
   return {
     inventoryCursor: () => readInventoryCursor(pool),
-    saveInventoryCursor: (cursor) => writeInventoryCursor(pool, cursor),
+    advanceInventoryCursor: (previous, next) =>
+      advanceInventoryCursor(pool, previous, next),
     recordInteraction: (interaction, previous, next, planningIntent) =>
       recordSelectorState(pool, interaction, previous, next, planningIntent),
     record: (proposal, previous, next) =>
@@ -460,8 +498,10 @@ function selectorStateWithRetry(
         proposal,
       ),
     pending: (limit) => pendingDeliveries(pool, limit, retry),
-    submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
+    submittedDeliveries: (limit) => submittedDeliveries(pool, limit, retry),
     submitted: (decision) => markSubmitted(pool, decision),
+    retry: (decision, delayMilliseconds) =>
+      deferDelivery(pool, decision, delayMilliseconds),
     terminal: (decision, outcome) => markTerminal(pool, decision, outcome),
     history: (partition, after, limit) =>
       readSelectorHistory(pool, partition, after, limit),

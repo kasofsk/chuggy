@@ -1558,9 +1558,12 @@ const durableDispatch = [
      tenant text NOT NULL, project text NOT NULL, operation text NOT NULL UNIQUE,
      command text NOT NULL, state text NOT NULL DEFAULT 'Pending', outcome text,
      attempts bigint NOT NULL DEFAULT 0, retry_at timestamptz NOT NULL DEFAULT now(),
+     reconciliation_attempts bigint NOT NULL DEFAULT 0,
+     reconcile_at timestamptz NOT NULL DEFAULT now(),
      FOREIGN KEY (selector_decision,tenant,project)
        REFERENCES selector_interaction (selector_decision,tenant,project),
-     CHECK (state IN ('Pending','Submitted','Terminal')), CHECK (attempts >= 0),
+     CHECK (state IN ('Pending','Submitted','Terminal')),
+     CHECK (attempts >= 0 AND reconciliation_attempts >= 0),
      CHECK (length(operation) BETWEEN 1 AND 256 AND length(command) <= 65536
        AND (outcome IS NULL OR length(outcome) <= 65536))
    )`,

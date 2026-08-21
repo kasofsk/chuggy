@@ -434,6 +434,93 @@ test("selector delivery retry leases use the configured bounded delay", async ()
   }
 });
 
+test("selector inventory advancement rejects a stale runner", async () => {
+  const pool = postgresPool(postgresHarnessUrl());
+  const state = postgresSelectorState(pool);
+  const first = {
+    tenant: (await postgresHarnessProject(harness.store, "i5-cursor-first"))
+      .tenant,
+    project: (await postgresHarnessProject(harness.store, "i5-cursor-value"))
+      .project,
+  };
+  const second = {
+    ...first,
+    project: `${first.project}-second` as typeof first.project,
+  };
+  try {
+    assert.equal(await state.advanceInventoryCursor(undefined, first), true);
+    assert.equal(await state.advanceInventoryCursor(undefined, second), false);
+    assert.deepEqual(await state.inventoryCursor(), first);
+    assert.equal(await state.advanceInventoryCursor(first, undefined), true);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("submitted reconciliation leases rotate through the bounded batch", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-reconciliation-fairness",
+  );
+  const pool = postgresPool(postgresHarnessUrl());
+  const state = postgresSelectorState(pool, {
+    baseDelayMilliseconds: 5_000,
+    maximumDelayMilliseconds: 5_000,
+  });
+  const decisions = [
+    `reconcile-a-${crypto.randomUUID()}`,
+    `reconcile-b-${crypto.randomUUID()}`,
+  ];
+  try {
+    let cursor = 0;
+    for (const decision of decisions) {
+      await state.recordInteraction(
+        selectorInteraction(partition, decision),
+        { partition, notificationCursor: cursor, attention: "Monitoring" },
+        {
+          partition,
+          notificationCursor: cursor + 1,
+          attention: "Monitoring",
+        },
+      );
+      cursor += 1;
+      await pool.query(
+        `INSERT INTO selector_proposal_delivery
+         (selector_decision,tenant,project,operation,command)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [
+          decision,
+          partition.tenant,
+          partition.project,
+          crypto.randomUUID(),
+          JSON.stringify({
+            version: 1,
+            command: "ProposeDispatch",
+            ticket: 1,
+            expectedTicketVersion: 1,
+            observedViewToken: {
+              ...partition,
+              recoveryEpoch: "epoch",
+              schemaVersion: 1,
+              watermark: 1,
+              digest: "a".repeat(64),
+            },
+            selectorDecisionReference: decision,
+          }),
+        ],
+      );
+      await state.submitted(decision);
+    }
+    const first = await state.submittedDeliveries(1);
+    const second = await state.submittedDeliveries(1);
+    assert.equal(first.length, 1);
+    assert.equal(second.length, 1);
+    assert.notEqual(first[0]?.decision, second[0]?.decision);
+  } finally {
+    await pool.end();
+  }
+});
+
 test("selector cursors reject malformed and inexact counters", async () => {
   const partition = await postgresHarnessProject(harness.store, "i5-counters");
   const pool = postgresPool(postgresHarnessUrl());

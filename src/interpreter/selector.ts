@@ -49,7 +49,10 @@ export interface SelectorDelivery {
 
 export interface SelectorStateStore {
   inventoryCursor(): Promise<Partition | undefined>;
-  saveInventoryCursor(cursor: Partition | undefined): Promise<void>;
+  advanceInventoryCursor(
+    previous: Partition | undefined,
+    next: Partition | undefined,
+  ): Promise<boolean>;
   recordInteraction(
     interaction: SelectorInteraction,
     previous: SelectorProjectState,
@@ -64,6 +67,7 @@ export interface SelectorStateStore {
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
   submitted(decision: string): Promise<void>;
+  retry(decision: string, delayMilliseconds: number): Promise<void>;
   terminal(decision: string, outcome: SelectorTerminalOutcome): Promise<void>;
   history(
     partition: Partition,
@@ -226,16 +230,38 @@ export type SelectorTerminalOutcome =
       { readonly accepted: "IdempotencyConflict" | "InvalidCommand" }
     >;
 
+export type SelectorDeliveryFailureCode =
+  | "SubmissionFailed"
+  | "Backpressure"
+  | "Unavailable"
+  | "NotAdmitted"
+  | "IdempotencyConflict"
+  | "InvalidCommand";
+
+export interface SelectorDeliveryFailure {
+  readonly code: SelectorDeliveryFailureCode;
+  readonly message: string;
+}
+
 export type SelectorDeliveryResult =
   | { readonly result: "Delivered"; readonly decision: string }
   | {
       readonly result: "Retry";
       readonly decision: string;
-      readonly failure?: string;
+      readonly failure: SelectorDeliveryFailure;
+    }
+  | {
+      readonly result: "Terminal";
+      readonly decision: string;
+      readonly failure: SelectorDeliveryFailure;
     };
 
-function failureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "selector submission failed";
+const retryAfterMillisecondsMax = 24 * 60 * 60_000;
+
+function retryDelayMilliseconds(seconds: number): number {
+  if (!Number.isFinite(seconds) || seconds <= 0)
+    throw new RangeError("ticket-service retry delay must be positive");
+  return Math.min(Math.ceil(seconds * 1_000), retryAfterMillisecondsMax);
 }
 
 /** Delivers durable proposals at least once; operation idempotency absorbs ambiguous retries. */
@@ -247,11 +273,14 @@ export async function deliverSelectorProposal(
   let accepted: Accepted;
   try {
     accepted = await ticketService.submit(delivery);
-  } catch (error) {
+  } catch {
     return {
       result: "Retry",
       decision: delivery.decision,
-      failure: failureMessage(error),
+      failure: {
+        code: "SubmissionFailed",
+        message: "ticket-service submission failed",
+      },
     };
   }
   if (accepted.accepted === "Accepted" || accepted.accepted === "Original") {
@@ -261,9 +290,33 @@ export async function deliverSelectorProposal(
   if (
     accepted.accepted === "IdempotencyConflict" ||
     accepted.accepted === "InvalidCommand"
-  )
+  ) {
     await store.terminal(delivery.decision, accepted);
-  return { result: "Retry", decision: delivery.decision };
+    return {
+      result: "Terminal",
+      decision: delivery.decision,
+      failure: {
+        code: accepted.accepted,
+        message: "ticket service terminally refused selector proposal",
+      },
+    };
+  }
+  if (
+    accepted.accepted === "Backpressure" ||
+    accepted.accepted === "Unavailable"
+  )
+    await store.retry(
+      delivery.decision,
+      retryDelayMilliseconds(accepted.retryAfterSeconds),
+    );
+  return {
+    result: "Retry",
+    decision: delivery.decision,
+    failure: {
+      code: accepted.accepted,
+      message: "ticket service deferred selector proposal",
+    },
+  };
 }
 
 /** Reconciles an accepted proposal without interpreting ticket-service outcome semantics. */

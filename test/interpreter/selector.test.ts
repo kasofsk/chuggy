@@ -71,12 +71,13 @@ function stateStore(
 ): SelectorStateStore {
   return {
     inventoryCursor: () => Promise.resolve(undefined),
-    saveInventoryCursor: () => Promise.resolve(),
+    advanceInventoryCursor: () => Promise.resolve(true),
     recordInteraction: () => Promise.resolve(true),
     record: () => Promise.resolve(true),
     pending: () => Promise.resolve([]),
     submittedDeliveries: () => Promise.resolve([]),
     submitted: () => Promise.resolve(),
+    retry: () => Promise.resolve(),
     terminal: (_decision, outcome) => {
       onTerminal(outcome);
       return Promise.resolve();
@@ -190,7 +191,10 @@ test("ambiguous proposal delivery retries through ordinary operation idempotency
   );
   assert.equal(ambiguous.result, "Retry");
   if (ambiguous.result === "Retry")
-    assert.equal(ambiguous.failure, "connection lost");
+    assert.deepEqual(ambiguous.failure, {
+      code: "SubmissionFailed",
+      message: "ticket-service submission failed",
+    });
   const retried = await deliverSelectorProposal(
     store,
     {
@@ -382,9 +386,10 @@ test("a failed project does not pin the fleet inventory page", async () => {
   const store = {
     ...stateStore(() => undefined),
     inventoryCursor: () => Promise.resolve(cursor),
-    saveInventoryCursor: (next: typeof cursor) => {
+    advanceInventoryCursor: (previous: typeof cursor, next: typeof cursor) => {
+      if (previous !== cursor) return Promise.resolve(false);
       cursor = next;
-      return Promise.resolve();
+      return Promise.resolve(true);
     },
   };
   const source = {
@@ -457,8 +462,31 @@ test("selector runtime reports an ambiguous submission while retaining it", asyn
   assert.deepEqual(result.failures[0], {
     phase: "Delivery",
     decision: delivery.decision,
-    message: "ticket API unavailable",
+    code: "SubmissionFailed",
+    message: "ticket-service submission failed",
   });
+});
+
+test("selector honors bounded ticket-service retry guidance", async () => {
+  let deferred: number | undefined;
+  const result = await deliverSelectorProposal(
+    {
+      ...stateStore(() => undefined),
+      retry: (_decision, delay) => {
+        deferred = delay;
+        return Promise.resolve();
+      },
+    },
+    {
+      submit: () =>
+        Promise.resolve({ accepted: "Backpressure", retryAfterSeconds: 7 }),
+    },
+    delivery,
+  );
+  assert.equal(result.result, "Retry");
+  if (result.result === "Retry")
+    assert.equal(result.failure.code, "Backpressure");
+  assert.equal(deferred, 7_000);
 });
 
 test("selector native source uses the authenticated API and stable delivery identity", async () => {

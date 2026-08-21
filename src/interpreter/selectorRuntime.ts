@@ -39,11 +39,13 @@ export type SelectorRunFailure =
   | {
       readonly phase: "Delivery" | "Reconciliation";
       readonly decision: string;
+      readonly code: string;
       readonly message: string;
     }
   | {
       readonly phase: "Observation";
       readonly partition: Partition;
+      readonly code: "ObservationFailed";
       readonly message: string;
     };
 
@@ -69,10 +71,6 @@ function initialState(partition: Partition): SelectorProjectState {
   return { partition, notificationCursor: 0, attention: "Monitoring" };
 }
 
-function failureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "selector runtime failed";
-}
-
 async function deliverPending(
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
@@ -84,17 +82,19 @@ async function deliverPending(
     try {
       const result = await deliverSelectorProposal(store, source, delivery);
       if (result.result === "Delivered") delivered += 1;
-      else if (result.failure !== undefined)
+      else
         failures.push({
           phase: "Delivery",
           decision: delivery.decision,
-          message: result.failure,
+          code: result.failure.code,
+          message: result.failure.message,
         });
-    } catch (error) {
+    } catch {
       failures.push({
         phase: "Delivery",
         decision: delivery.decision,
-        message: failureMessage(error),
+        code: "DeliveryFailed",
+        message: "selector delivery state transition failed",
       });
     }
   }
@@ -112,11 +112,12 @@ async function reconcileSubmitted(
     try {
       if (await reconcileSelectorProposal(store, source, delivery))
         reconciled += 1;
-    } catch (error) {
+    } catch {
       failures.push({
         phase: "Reconciliation",
         decision: delivery.decision,
-        message: failureMessage(error),
+        code: "ReconciliationFailed",
+        message: "selector reconciliation failed",
       });
     }
   }
@@ -143,11 +144,12 @@ async function observeProjects(
         identities.next(partition),
       );
       if (proposal !== undefined) proposed += 1;
-    } catch (error) {
+    } catch {
       failures.push({
         phase: "Observation",
         partition,
-        message: failureMessage(error),
+        code: "ObservationFailed",
+        message: "selector project observation failed",
       });
     }
   }
@@ -197,7 +199,8 @@ export async function selectorRunOnce(
     projects,
     failures,
   );
-  await store.saveInventoryCursor(
+  await store.advanceInventoryCursor(
+    inventoryCursor,
     projects.length < projectsMax ? undefined : projects.at(-1),
   );
   return {
