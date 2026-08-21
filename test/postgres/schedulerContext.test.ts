@@ -30,7 +30,10 @@ import {
   apiRole,
   backlogFunction,
 } from "../../src/adapters/postgres/schema.ts";
-import { asWorkloadId } from "../../src/interpreter/executionScheduler.ts";
+import {
+  asWorkloadId,
+  executionSchedulerDefaults,
+} from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import type { ExecutionContextRead } from "../../src/interpreter/schedulerContext.ts";
 import {
@@ -184,17 +187,19 @@ test("the guard admits below both ceilings and names the project ceiling at it",
   const project = await schedulerProject(rig, "projectceiling", { tasks: 3 });
   await registerAll(project, "projectceiling");
   const roomy = postgresExecutionBacklogGuard(ingress, {
-    projectMax: 1_000,
-    installationMax: 1_000_000,
-    retryAfterSeconds: 5,
+    ...executionSchedulerDefaults,
+    projectBacklogMax: 1_000,
+    installationBacklogMax: 1_000_000,
+    backlogRetryAfterSeconds: 5,
   });
   assert.deepEqual(await roomy.admitsDispatch(project.partition), {
     admits: "Admits",
   });
   const tight = postgresExecutionBacklogGuard(ingress, {
-    projectMax: 2,
-    installationMax: 1_000_000,
-    retryAfterSeconds: 7,
+    ...executionSchedulerDefaults,
+    projectBacklogMax: 2,
+    installationBacklogMax: 1_000_000,
+    backlogRetryAfterSeconds: 7,
   });
   assert.deepEqual(await tight.admitsDispatch(project.partition), {
     admits: "Backlogged",
@@ -209,9 +214,10 @@ test("the guard names the installation ceiling when the project is inside its ow
   });
   await registerAll(project, "installationceiling");
   const guard = postgresExecutionBacklogGuard(ingress, {
-    projectMax: 1_000,
-    installationMax: 1,
-    retryAfterSeconds: 11,
+    ...executionSchedulerDefaults,
+    projectBacklogMax: 1_000,
+    installationBacklogMax: 1,
+    backlogRetryAfterSeconds: 11,
   });
   assert.deepEqual(await guard.admitsDispatch(project.partition), {
     admits: "Backlogged",

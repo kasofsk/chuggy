@@ -23,15 +23,19 @@
  * is a submitter rather than an operator — a durable count crossing the boundary
  * would be an installation-wide fact handed to one project's client.
  *
- * THE CEILINGS ARE THIS ADAPTER'S, NOT THE SCHEDULER'S CONFIGURATION. They are
- * an operational choice a deployment makes about the ingress it is protecting,
- * and they default to the bound the scheduler's own configuration declares so
- * one tree states one number.
+ * THE CEILINGS ARE THE SCHEDULER'S CONFIGURATION AND NOT THIS ADAPTER'S. The
+ * guard is the scheduler's authority wherever it is mounted, so the bound it
+ * refuses past is a field of `ExecutionSchedulerConfig` and this file reads it.
+ * Holding a second copy here would let an ingress and the scheduler that owns
+ * the backlog disagree about how long it is allowed to get.
  */
 
 import type pg from "pg";
 
-import { executionSchedulerDefaults } from "../../interpreter/executionScheduler.ts";
+import {
+  executionSchedulerDefaults,
+  type ExecutionSchedulerConfig,
+} from "../../interpreter/executionScheduler.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type {
   BacklogVerdict,
@@ -41,20 +45,6 @@ import type {
 } from "../../interpreter/schedulerContext.ts";
 import { projectRowCounter } from "./rows.ts";
 import { activeWorkFunction, backlogFunction } from "./schema.ts";
-
-/** What the hard backlog guard refuses past, and how long it asks a submitter to wait. */
-export interface PostgresBacklogCeilings {
-  readonly projectMax: number;
-  readonly installationMax: number;
-  readonly retryAfterSeconds: number;
-}
-
-/** The ceilings a deployment gets when it names none. */
-export const postgresBacklogCeilingsDefault: PostgresBacklogCeilings = {
-  projectMax: executionSchedulerDefaults.executionBacklogHardLimit,
-  installationMax: executionSchedulerDefaults.executionBacklogHardLimit,
-  retryAfterSeconds: executionSchedulerDefaults.backlogRetryAfterSeconds,
-};
 
 /** One row of the advisory context function, every count of it a bigint the driver spells. */
 interface ActiveWorkRow {
@@ -120,7 +110,7 @@ async function postgresSelectorContext(
 /** Whether this project's dispatch is inside both ceilings, and which one stopped it. */
 async function postgresBacklogVerdict(
   pool: pg.Pool,
-  ceilings: PostgresBacklogCeilings,
+  config: ExecutionSchedulerConfig,
   partition: Partition,
 ): Promise<BacklogVerdict> {
   const found = await pool.query<BacklogRow>(
@@ -134,16 +124,16 @@ async function postgresBacklogVerdict(
       `postgres scheduler context: ${partition.tenant}/${partition.project} reported no backlog at all`,
     );
   }
-  const retryAfterSeconds = ceilings.retryAfterSeconds;
+  const retryAfterSeconds = config.backlogRetryAfterSeconds;
   if (
     projectRowCounter(row.project_backlog, "project backlog") >=
-    ceilings.projectMax
+    config.projectBacklogMax
   ) {
     return { admits: "Backlogged", scope: "Project", retryAfterSeconds };
   }
   if (
     projectRowCounter(row.installation_backlog, "installation backlog") >=
-    ceilings.installationMax
+    config.installationBacklogMax
   ) {
     return { admits: "Backlogged", scope: "Installation", retryAfterSeconds };
   }
@@ -153,11 +143,11 @@ async function postgresBacklogVerdict(
 /** The authoritative hard execution-backlog guard, over an ingress-role pool. */
 export function postgresExecutionBacklogGuard(
   pool: pg.Pool,
-  ceilings: PostgresBacklogCeilings = postgresBacklogCeilingsDefault,
+  config: ExecutionSchedulerConfig = executionSchedulerDefaults,
 ): ExecutionBacklogGuard {
   return {
     admitsDispatch: (partition) =>
-      postgresBacklogVerdict(pool, ceilings, partition),
+      postgresBacklogVerdict(pool, config, partition),
   };
 }
 

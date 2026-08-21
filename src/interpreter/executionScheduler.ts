@@ -660,7 +660,11 @@ export const executionCapacityDefaults = {
   accountMaximum: 8,
 } as const;
 
-/** The scheduler's bounded configuration, every value of it an operational choice. */
+/**
+ * The scheduler's bounded configuration, every value of it an operational
+ * choice. The two backlog ceilings live here because the guard that reads them
+ * is the scheduler's authority wherever it is mounted.
+ */
 export interface ExecutionSchedulerConfig {
   readonly requestClaimLeaseSecs: number;
   readonly requestsPerPassMax: number;
@@ -669,7 +673,8 @@ export interface ExecutionSchedulerConfig {
   readonly placementBackoffSecs: number;
   readonly admissionsPerPassMax: number;
   readonly launchesPerPassMax: number;
-  readonly executionBacklogHardLimit: number;
+  readonly projectBacklogMax: number;
+  readonly installationBacklogMax: number;
   readonly backlogRetryAfterSeconds: number;
 }
 
@@ -682,7 +687,8 @@ export const executionSchedulerDefaults: ExecutionSchedulerConfig = {
   placementBackoffSecs: 15,
   admissionsPerPassMax: 32,
   launchesPerPassMax: 32,
-  executionBacklogHardLimit: 5_000,
+  projectBacklogMax: 5_000,
+  installationBacklogMax: 5_000,
   backlogRetryAfterSeconds: 5,
 };
 
