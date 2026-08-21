@@ -30,6 +30,15 @@
  * an outcome a submitter must handle, not an exception it may ignore.
  */
 
+import {
+  executionAccountActiveCount,
+  executionActiveCount,
+  executionEntitlementOf,
+  executionReservationDeficit,
+  type CapacityExecution,
+  type Entitlement,
+  type ExecutionStatus,
+} from "./executionScheduler.ts";
 import type { Partition } from "./projectStore.ts";
 import type { TicketCommand } from "./ticketCommand.ts";
 
@@ -63,6 +72,51 @@ export interface SelectorExecutionContext {
  */
 export interface ExecutionContextRead {
   context(partition: Partition): Promise<SelectorExecutionContext>;
+}
+
+/** How many of these registrations sit in one logical status. */
+function statusCount(
+  executions: readonly CapacityExecution[],
+  status: ExecutionStatus,
+): number {
+  return executions.filter((each) => each.status === status).length;
+}
+
+/**
+ * The advisory context one cluster ledger already determines, folded with the
+ * same mirrored arithmetic admission uses so an adapter answering the read has
+ * something to be compared against rather than a second opinion to form. Every
+ * count it returns is either the named project's own or a cluster-wide total,
+ * which is where the project boundary is actually kept.
+ */
+export function selectorExecutionContext(
+  clusterSlotsMax: number,
+  entitlements: ReadonlyMap<string, Entitlement>,
+  executions: readonly CapacityExecution[],
+  partition: Partition,
+  account: string,
+): SelectorExecutionContext {
+  const own = executions.filter((each) => each.project === partition.project);
+  return {
+    activeWork: {
+      partition,
+      queued: statusCount(own, "Queued"),
+      admitted: statusCount(own, "Admitted"),
+      launching: statusCount(own, "Launching"),
+      running: statusCount(own, "Running"),
+    },
+    capacity: {
+      clusterSlotsMax,
+      clusterActive: executionActiveCount(executions),
+      accountMaximum: executionEntitlementOf(entitlements, account).maximum,
+      accountActive: executionAccountActiveCount(executions, account),
+      accountReservationDeficit: executionReservationDeficit(
+        entitlements,
+        executions,
+        account,
+      ),
+    },
+  };
 }
 
 /**

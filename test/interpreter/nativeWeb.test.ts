@@ -20,6 +20,7 @@ import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
 import { id } from "../domain/fixtures.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
 import {
+  allBacklogScopes,
   openExecutionBacklogGuard,
   type ExecutionBacklogGuard,
 } from "../../src/interpreter/schedulerContext.ts";
@@ -205,6 +206,27 @@ test("the execution backlog guard leaves correctness-reducing submission admissi
     "Authorized",
   );
   assert.deepEqual(calls, ["authorize:Mutate", "accept"]);
+});
+
+test("every ceiling the guard can name reaches the submitter unchanged", async () => {
+  for (const scope of allBacklogScopes) {
+    const { web, calls } = boundary(true, {
+      admitsDispatch: () =>
+        Promise.resolve({ admits: "Backlogged", scope, retryAfterSeconds: 5 }),
+    });
+    assert.deepEqual(
+      await web.submit(
+        principal,
+        submissionOf({
+          version: 1,
+          command: "Decide",
+          event: asOperationDecisionEvent(dispatchEvent(id(1))),
+        }),
+      ),
+      { result: "Backlogged", scope, retryAfterSeconds: 5 },
+    );
+    assert.deepEqual(calls, ["authorize:Mutate"]);
+  }
 });
 
 test("an unbacklogged project reaches acceptance for dispatch", async () => {
