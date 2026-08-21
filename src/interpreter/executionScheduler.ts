@@ -184,7 +184,7 @@ export function executionAccountActiveCount(
 }
 
 /** The entitlement an account was granted, refusing an account no policy revision covers. */
-function entitlementOf(
+export function executionEntitlementOf(
   entitlements: ReadonlyMap<string, Entitlement>,
   account: string,
 ): Entitlement {
@@ -204,7 +204,7 @@ export function executionReservationDeficit(
   account: string,
 ): number {
   const left =
-    entitlementOf(entitlements, account).reserved -
+    executionEntitlementOf(entitlements, account).reserved -
     executionAccountActiveCount(executions, account);
   return left > 0 ? left : 0;
 }
@@ -220,7 +220,7 @@ export function executionMayAdmit(
     candidate.status === "Queued" &&
     executionActiveCount(executions) < clusterSlotsMax &&
     executionAccountActiveCount(executions, candidate.account) <
-      entitlementOf(entitlements, candidate.account).maximum
+      executionEntitlementOf(entitlements, candidate.account).maximum
   );
 }
 
@@ -269,7 +269,7 @@ export function executionCapacitySafe(
     executionIdentityUnique(executions) &&
     executionProvenanceWellFormed(executions) &&
     executions.every((each) => {
-      const entitlement = entitlementOf(entitlements, each.account);
+      const entitlement = executionEntitlementOf(entitlements, each.account);
       return (
         entitlement.reserved >= 0 &&
         entitlement.maximum >= entitlement.reserved &&
@@ -304,13 +304,23 @@ export interface LogicalExecution {
   readonly retriesSpent: number;
 }
 
-/** One physical attempt: its fenced identity, its lease, and what it has reported. */
-export interface PhysicalAttempt {
+/**
+ * The identity every durable move against one attempt is fenced by. The
+ * generation travels with the identity rather than being read first and trusted
+ * after, so the fence is applied where the row is locked: a process that
+ * checked it itself would be checking a value it read before the takeover it is
+ * being fenced by.
+ */
+export interface FencedAttempt {
   readonly partition: Partition;
   readonly execution: ExecutionId;
   readonly attempt: AttemptId;
-  readonly attemptNumber: number;
   readonly generation: number;
+}
+
+/** One physical attempt: its fenced identity, its lease, and what it has reported. */
+export interface PhysicalAttempt extends FencedAttempt {
+  readonly attemptNumber: number;
   readonly recoveryEpoch: RecoveryEpoch;
   readonly state: AttemptState;
   readonly authoritative: boolean;
@@ -370,9 +380,18 @@ export type SpawnRegistered =
   | { readonly registered: "Superseded" }
   | { readonly registered: "Conflicting"; readonly incident: string };
 
-/** What a cancellation pass found for one focused cancellation request. */
+/**
+ * What a cancellation pass found for one focused cancellation request. It
+ * names the attempts it fenced as well as counting the logical tasks it
+ * retired, because the workloads behind those attempts are what the fabric is
+ * asked to delete afterwards and a count cannot name them.
+ */
 export type CancellationRegistered =
-  | { readonly cancelled: "Registered"; readonly fenced: number }
+  | {
+      readonly cancelled: "Registered";
+      readonly fenced: number;
+      readonly workloads: readonly AttemptId[];
+    }
   | { readonly cancelled: "AlreadyFulfilled" };
 
 /** What an admission attempt found, naming the bound that stopped it. */
@@ -400,11 +419,7 @@ export type AttemptOpened =
   | { readonly opened: "RetriesExhausted" };
 
 /** What the scheduler reports of one attempt, which the terminal transaction reduces. */
-export interface AttemptReport {
-  readonly partition: Partition;
-  readonly execution: ExecutionId;
-  readonly attempt: AttemptId;
-  readonly generation: number;
+export interface AttemptReport extends FencedAttempt {
   readonly manifest: ResultManifest;
 }
 
@@ -494,14 +509,11 @@ export interface ExecutionSchedulerStore {
   openAttempt(opening: AttemptOpening): Promise<AttemptOpened>;
 
   /** Records that the worker port placed the attempt, moving the execution to `Running`. */
-  attemptPlaced(
-    attempt: PhysicalAttempt,
-    workload: WorkloadId,
-  ): Promise<boolean>;
+  attemptPlaced(attempt: FencedAttempt, workload: WorkloadId): Promise<boolean>;
 
   /** Records that an attempt ended without a result, leaving the slot with its execution. */
   attemptEnded(
-    attempt: PhysicalAttempt,
+    attempt: FencedAttempt,
     loss: AttemptLoss,
     evidence: AttemptEvidence,
   ): Promise<boolean>;

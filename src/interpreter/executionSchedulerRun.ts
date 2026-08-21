@@ -17,6 +17,23 @@
  * A denial therefore blocks; an unavailability withdraws the attempt without
  * spending the safe retry budget and leaves the execution exactly as it was.
  *
+ * A PASS FENCES BEFORE IT MOVES ANYTHING ELSE. After a takeover the previous
+ * epoch's workers are still running, and one of them still names a live
+ * attempt it could report a manifest and a completion under. Fencing first is
+ * what makes the rest of the pass safe to run at all: an old-generation worker
+ * may finish its local work afterwards and can do nothing with it. It is
+ * idempotent, so every pass after the first fences nothing.
+ *
+ * CANCELLATION IS DURABLE BEFORE THE FABRIC HEARS OF IT, and the port's shape
+ * is what enforces that rather than the order of two statements: the
+ * registration outcome is what names the attempts it fenced, so deleting first
+ * is not an order this code can express. 006 fulfills a cancellation request
+ * when the retirement is registered and the logical slot released, not when the
+ * workload is gone, because the opposite would hold a slot for work nobody is
+ * going to run for as long as the cluster was unreachable. A deletion lost to a
+ * crash leaves a workload whose attempt is already fenced, which can report
+ * nothing either way and which inventory reconciles.
+ *
  * A LOST ATTEMPT SPENDS THE BUDGET AND A WITHDRAWN ONE DOES NOT. An attempt
  * that ran and vanished is the bounded retry 006 permits; one the fabric never
  * took is not an attempt at the work at all. When the budget is spent the
@@ -57,10 +74,19 @@ export interface ExecutionSchedulerService {
 
 /** What one bounded pass moved, which is what a deployment's loop paces itself by. */
 export interface SchedulerPassReport {
+  readonly fenced: number;
   readonly registered: number;
   readonly cancelled: number;
   readonly admitted: number;
   readonly placed: number;
+}
+
+/** Fences every attempt an older recovery epoch issued, which is what a takeover owes. */
+export async function executionSchedulerFence(
+  service: ExecutionSchedulerService,
+  epoch: RecoveryEpoch,
+): Promise<number> {
+  return service.store.fenceOldEpochAttempts(epoch);
 }
 
 /** Registers every spawn request this pass could claim, fencing superseded ones. */
@@ -109,7 +135,11 @@ export async function executionSchedulerCancel(
     observe(() => {
       service.metrics.cancellation(outcome.cancelled);
     });
-    if (outcome.cancelled === "Registered") cancelled += outcome.fenced;
+    if (outcome.cancelled !== "Registered") continue;
+    cancelled += outcome.fenced;
+    for (const workload of outcome.workloads) {
+      await service.workers.delete(claim.partition, workload);
+    }
   }
   return cancelled;
 }
@@ -265,9 +295,10 @@ export async function executionSchedulerPass(
   epoch: RecoveryEpoch,
   cluster: ClusterId,
 ): Promise<SchedulerPassReport> {
+  const fenced = await executionSchedulerFence(service, epoch);
   const cancelled = await executionSchedulerCancel(service, owner);
   const registered = await executionSchedulerRegister(service, owner);
   const admitted = await executionSchedulerAdmit(service, cluster);
   const placed = await executionSchedulerLaunch(service, epoch);
-  return { registered, cancelled, admitted, placed };
+  return { fenced, registered, cancelled, admitted, placed };
 }

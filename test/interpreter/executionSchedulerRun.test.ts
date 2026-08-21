@@ -22,17 +22,21 @@ import {
   asWorkloadId,
   executionSchedulerDefaults,
   silentExecutionSchedulerMetrics,
+  type CancellationRegistered,
   type ExecutionPolicy,
   type ExecutionSchedulerStore,
   type LogicalExecution,
   type PhysicalAttempt,
   type ProfileResolved,
+  type RequestClaim,
   type WorkerLaunchPort,
   type WorkerPlaced,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
   executionSchedulerAdmit,
+  executionSchedulerCancel,
   executionSchedulerLaunch,
+  executionSchedulerPass,
   executionSchedulerRegister,
   type ExecutionSchedulerService,
 } from "../../src/interpreter/executionSchedulerRun.ts";
@@ -89,7 +93,7 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
     registerSpawn: () =>
       Promise.resolve({ registered: "Registered", created: 1 }),
     registerCancellation: () =>
-      Promise.resolve({ cancelled: "Registered", fenced: 0 }),
+      Promise.resolve({ cancelled: "Registered", fenced: 0, workloads: [] }),
     admit: () => Promise.resolve({ admitted: "ClusterFull" }),
     openAttempt: () => Promise.resolve({ opened: "Opened", attempt }),
     attemptPlaced: (_attempt, workload) => {
@@ -123,7 +127,10 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
     },
     execution: () => Promise.resolve(undefined),
     unlaunched: () => Promise.resolve([execution]),
-    fenceOldEpochAttempts: () => Promise.resolve(0),
+    fenceOldEpochAttempts: () => {
+      calls.push("fenced");
+      return Promise.resolve(0);
+    },
   };
 }
 
@@ -138,7 +145,10 @@ function serviceWith(
   };
   const workers: WorkerLaunchPort = {
     place: () => Promise.resolve(placed),
-    delete: () => Promise.resolve(),
+    delete: (_partition, deleted) => {
+      calls.push(`deleted:${deleted}`);
+      return Promise.resolve();
+    },
   };
   return {
     store: recordingStore(calls),
@@ -257,6 +267,125 @@ test("admission stops at the first refusal rather than spinning to its bound", a
     2,
   );
   assert.equal(asked, 3);
+});
+
+/** One claimed cancellation request, which is all the cancellation cases start from. */
+const cancelClaim: RequestClaim = {
+  partition,
+  request: "2:0:CancelTicketWork",
+  kind: "CancelTicketWork",
+  ticket: asTicketId(1),
+  authorizingSeq: 2,
+  generation: 1,
+  owner,
+};
+
+/** A store whose one claimed cancellation request answers what a case is about. */
+function cancellingStore(
+  calls: string[],
+  registered: CancellationRegistered,
+): ExecutionSchedulerStore {
+  return {
+    ...recordingStore(calls),
+    claimRequests: (_owner, kinds) => {
+      calls.push(`claimed:${kinds.join(",")}`);
+      return Promise.resolve(
+        kinds.includes("CancelTicketWork") ? [cancelClaim] : [],
+      );
+    },
+    registerCancellation: () => {
+      calls.push("cancelled");
+      return Promise.resolve(registered);
+    },
+  };
+}
+
+test("a registered cancellation asks the fabric to delete every workload it fenced", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store = cancellingStore(calls, {
+    cancelled: "Registered",
+    fenced: 2,
+    workloads: [asAttemptId("attempt-one"), asAttemptId("attempt-two")],
+  });
+  assert.equal(await executionSchedulerCancel({ ...service, store }, owner), 2);
+  assert.deepEqual(calls, [
+    "claimed:CancelTicketWork",
+    "cancelled",
+    "deleted:attempt-one",
+    "deleted:attempt-two",
+  ]);
+});
+
+test("a cancellation already fulfilled retires nothing and deletes nothing", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store = cancellingStore(calls, { cancelled: "AlreadyFulfilled" });
+  assert.equal(await executionSchedulerCancel({ ...service, store }, owner), 0);
+  assert.deepEqual(calls, ["claimed:CancelTicketWork", "cancelled"]);
+});
+
+test("a pass fences the older epoch before it moves anything else", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    claimRequests: (_owner, kinds) => {
+      calls.push(`claimed:${kinds.join(",")}`);
+      return Promise.resolve([]);
+    },
+    admit: () => {
+      calls.push("admitted");
+      return Promise.resolve({ admitted: "ClusterFull" });
+    },
+    unlaunched: () => {
+      calls.push("unlaunched");
+      return Promise.resolve([]);
+    },
+  };
+  assert.deepEqual(
+    await executionSchedulerPass({ ...service, store }, owner, epoch, cluster),
+    { fenced: 0, registered: 0, cancelled: 0, admitted: 0, placed: 0 },
+  );
+  assert.deepEqual(calls, [
+    "fenced",
+    "claimed:CancelTicketWork",
+    "claimed:SpawnWork,SpawnEvaluation",
+    "admitted",
+    "unlaunched",
+  ]);
+});
+
+test("a pass reports the count each of its steps moved", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  let admitted = 0;
+  const store: ExecutionSchedulerStore = {
+    ...cancellingStore(calls, {
+      cancelled: "Registered",
+      fenced: 3,
+      workloads: [],
+    }),
+    fenceOldEpochAttempts: () => Promise.resolve(4),
+    claimRequests: (_owner, kinds) =>
+      Promise.resolve(
+        kinds.includes("CancelTicketWork")
+          ? [cancelClaim]
+          : [{ ...cancelClaim, kind: "SpawnWork" as const }],
+      ),
+    admit: () => {
+      admitted += 1;
+      return Promise.resolve(
+        admitted === 1
+          ? { admitted: "Admitted", execution: execution.execution }
+          : { admitted: "ClusterFull" },
+      );
+    },
+  };
+  assert.deepEqual(
+    await executionSchedulerPass({ ...service, store }, owner, epoch, cluster),
+    { fenced: 4, registered: 1, cancelled: 3, admitted: 1, placed: 1 },
+  );
 });
 
 test("registration claims only spawn kinds and counts what it created", async () => {
