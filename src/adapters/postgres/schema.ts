@@ -189,7 +189,17 @@
  *
  * WHICH LOCKS THIS FILE'S BODIES TAKE. `submit_finalization_result` takes two —
  * the finalization request it is answering, then the project whose mailbox it
- * writes into — in the global order `src/interpreter/finalizer.ts` declares.
+ * writes into — and `request_finalization_approval` takes the first of those
+ * alone, both in the global order `src/interpreter/finalizer.ts` declares.
+ *
+ * WHY AN APPROVAL SUPERSEDES RATHER THAN QUEUES. `native_action_one_open`
+ * admits one open action per ticket, and the revision fence prepares again when
+ * the observed target moves, so the ask a person is holding is about a
+ * candidate that no longer exists. Withdrawing it is what keeps that invariant
+ * and the question in agreement, and it is the same `Withdrawn` a phase exit
+ * writes. The uniqueness the same relation carried over an effect position
+ * moves with it: an effect materializes one action, and an approval no effect
+ * produced is unique by the attempt it names instead.
  */
 
 import {
@@ -276,6 +286,9 @@ export const completionFunction = "submit_task_completion";
 
 /** The whole of a finalization conclusion, named once so the grant, the adapter and the suite agree on it. */
 export const finalizationFunction = "submit_finalization_result";
+
+/** The whole of an approval request, named once so the grant, the adapter and the suite agree on it. */
+export const approvalRequestFunction = "request_finalization_approval";
 export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";
 export const statusMoveFunction = "execution_status_move_is_legal";
@@ -2496,7 +2509,19 @@ const durableFinalizer = [
        LOOP
          EXECUTE format('ALTER TABLE native_action DROP CONSTRAINT %I', named);
        END LOOP;
+       FOR named IN
+         SELECT c.conname FROM pg_constraint c
+          WHERE c.conrelid = 'native_action'::regclass AND c.contype = 'u'
+            AND pg_get_constraintdef(c.oid) ~ 'effect_position'
+       LOOP
+         EXECUTE format('ALTER TABLE native_action DROP CONSTRAINT %I', named);
+       END LOOP;
      END $$`,
+  `CREATE UNIQUE INDEX native_action_effect_is_materialized_once
+     ON native_action (tenant, project, authorizing_seq, effect_position)
+     WHERE attempt IS NULL`,
+  `CREATE UNIQUE INDEX native_action_approves_an_attempt_once
+     ON native_action (tenant, project, attempt) WHERE attempt IS NOT NULL`,
   `ALTER TABLE native_action
      ADD CONSTRAINT native_action_kind_is_known CHECK (
        kind IN ('TicketEscalation', 'FinalizationApproval')),
@@ -2512,9 +2537,11 @@ const durableFinalizer = [
 ];
 
 /**
- * The server's own statements of what may not move, and the one boundary the
- * finalizer reaches the mailbox through. Every relation this migration adds is
- * revoked from every prior role before anything is granted on it.
+ * The server's own statements of what may not move, and the two boundaries the
+ * finalizer reaches ticket-service-owned rows through: one submits a result
+ * into the mailbox, the other asks a person to approve one prepared candidate.
+ * Every relation this migration adds is revoked from every prior role before
+ * anything is granted on it.
  */
 const durableFinalizerBoundaries = [
   `CREATE FUNCTION durable_row_is_written_once() RETURNS trigger
@@ -2672,6 +2699,64 @@ const durableFinalizerBoundaries = [
          SET ready = true, generation = project_readiness.generation + 1;
        RETURN QUERY SELECT 'Submitted'::text, in_operation, next_ordinal;
      END $$`,
+  `CREATE FUNCTION ${approvalRequestFunction}(
+      in_tenant text, in_project text, in_attempt text, in_action text,
+      in_recovery_epoch text)
+     RETURNS TABLE(result text, action text)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+     DECLARE bound record; standing record; requested text; current_epoch text;
+     BEGIN
+       SELECT a.ticket, a.outcome, a.approval_required,
+              f.state AS request_state, f.recovery_epoch AS request_epoch,
+              f.authorizing_seq, f.effect_position, t.phase
+         INTO bound
+         FROM finalization_attempt a
+         JOIN finalization_request f
+           ON f.tenant = a.tenant AND f.project = a.project AND f.request = a.request
+         LEFT JOIN ticket_projection t
+           ON t.tenant = a.tenant AND t.project = a.project AND t.ticket = a.ticket
+        WHERE a.tenant = in_tenant AND a.project = in_project AND a.attempt = in_attempt
+        FOR UPDATE OF f;
+       IF NOT FOUND THEN
+         RETURN QUERY SELECT 'UnknownAttempt'::text, NULL::text; RETURN;
+       END IF;
+       SELECT n.action INTO requested FROM native_action n
+        WHERE n.tenant = in_tenant AND n.project = in_project AND n.attempt = in_attempt;
+       IF requested IS NOT NULL THEN
+         RETURN QUERY SELECT 'AlreadyRequested'::text, requested; RETURN;
+       END IF;
+       SELECT n.action, n.kind INTO standing FROM native_action n
+        WHERE n.tenant = in_tenant AND n.project = in_project
+          AND n.ticket = bound.ticket AND n.state = 'Open';
+       IF standing.action IS NOT NULL AND standing.kind <> 'FinalizationApproval' THEN
+         RETURN QUERY SELECT 'TicketHasAnOpenAction'::text, standing.action; RETURN;
+       END IF;
+       SELECT e.epoch INTO current_epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1;
+       IF bound.outcome <> 'Prepared'
+          OR bound.approval_required IS NOT TRUE
+          OR bound.request_state NOT IN ('Open', 'Registered')
+          OR bound.request_epoch IS DISTINCT FROM in_recovery_epoch
+          OR current_epoch IS DISTINCT FROM in_recovery_epoch
+          OR bound.phase IS DISTINCT FROM 'Finalizing'
+       THEN
+         RETURN QUERY SELECT 'BindingMismatch'::text, NULL::text; RETURN;
+       END IF;
+       IF standing.action IS NOT NULL THEN
+         UPDATE native_action n SET state = 'Withdrawn'
+          WHERE n.tenant = in_tenant AND n.project = in_project
+            AND n.action = standing.action AND n.state = 'Open';
+       END IF;
+       INSERT INTO native_action
+         (tenant, project, action, authorizing_seq, effect_position, ticket,
+          action_version, kind, reason, required_capability, attempt)
+       VALUES (in_tenant, in_project, in_action, bound.authorizing_seq,
+          bound.effect_position, bound.ticket, bound.authorizing_seq,
+          'FinalizationApproval', 'NoReason', 'ApproveFinalization', in_attempt);
+       RETURN QUERY SELECT 'Requested'::text, in_action;
+     END $$`,
+  `ALTER FUNCTION ${approvalRequestFunction}(text,text,text,text,text)
+     OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ${approvalRequestFunction}(text,text,text,text,text) FROM PUBLIC`,
   `ALTER FUNCTION ${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)
      OWNER TO ${boundaryOwnerRole}`,
   `ALTER FUNCTION durable_row_is_written_once() OWNER TO ${boundaryOwnerRole}`,
@@ -2697,7 +2782,9 @@ const durableFinalizerBoundaries = [
   `GRANT SELECT, INSERT ON input_bundle, input_bundle_reference TO ${ticketServiceRole}`,
 
   `GRANT SELECT ON finalization_request, finalization_attempt, commit_permit,
-     finalization_reconciliation, recovery_epoch TO ${boundaryOwnerRole}`,
+     finalization_reconciliation, recovery_epoch, ticket_projection
+     TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (state) ON finalization_request TO ${boundaryOwnerRole}`,
 
   `GRANT SELECT ON recovery_epoch, project_repository, input_bundle,
      input_bundle_reference, configuration_revision, native_action,
@@ -2714,6 +2801,8 @@ const durableFinalizerBoundaries = [
   `GRANT UPDATE (verdict, observed_commit, reconciled_at)
      ON finalization_reconciliation TO ${finalizerRole}`,
   `GRANT EXECUTE ON FUNCTION ${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)
+     TO ${finalizerRole}`,
+  `GRANT EXECUTE ON FUNCTION ${approvalRequestFunction}(text,text,text,text,text)
      TO ${finalizerRole}`,
 
   `REVOKE CREATE ON SCHEMA public FROM ${boundaryOwnerRole}`,

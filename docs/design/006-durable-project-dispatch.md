@@ -2344,8 +2344,13 @@ writer to cancel on phase exit, and a second writer is a commitment violation
 rather than a design preference. So `native_action` gains kind
 `FinalizationApproval`, capability `ApproveFinalization` and an
 attempt-reference column and stays ticket-service-owned. Its
-one-open-row-per-ticket constraint cannot bite, because a ticket in
-`Finalizing` is not in `Escalated`. Whether approval is required at all is a
+one-open-row-per-ticket constraint cannot bite between an escalation and an
+approval, because a ticket in `Finalizing` is not in `Escalated`; it does bite
+between two approvals, and that is right rather than awkward — the revision
+fence's new candidate is a different question, so the earlier ask is
+superseded rather than queued behind. Its once-per-effect-position uniqueness
+is a rule about effects, and an approval no effect materialized is unique by
+the attempt it names instead. Whether approval is required at all is a
 field of the pinned configuration revision that I4 already versions, read at
 preparation and recorded on the attempt beside the revision and digest that
 were pinned, so the policy needs no new source and `ManagedFinalizer` stays
