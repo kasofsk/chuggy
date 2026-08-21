@@ -1,0 +1,748 @@
+/**
+ * The finalizer's own vocabulary: the durable finalization one claimed request
+ * drives, the ports the finalizer service reaches Git and its credentials
+ * through, and the pure pass that says what a claimed request may do next.
+ *
+ * NOTHING HERE DECIDES A TICKET. The finalizer submits `FinalizationResult`
+ * through one narrow authenticated boundary and cannot append a journal entry,
+ * settle an operation or move a ticket projection. `model/domain.qnt` has a
+ * finalizer report a conclusive domain outcome and nothing else, so queueing,
+ * approval, permits and the irreversible act itself are operational protocol
+ * rather than `Core` state.
+ *
+ * NO REF, COMMIT OR OTHER GIT IDENTIFIER REACHES `Core`. The target branch, the
+ * base it was observed at and the candidate commit are the service's, recorded
+ * on the immutable attempt beside them; `ManagedFinalizer` is nullary precisely
+ * so that a repository cannot become part of the frozen ticket contract.
+ *
+ * EVERY REFUSAL IS A VALUE, as elsewhere in this layer. A non-zero git exit is
+ * an outcome `GitPromotionPort` returns and a caller must handle; the one thing
+ * that raises is git being unable to run at all, which is the answer no caller
+ * can decide its way around.
+ *
+ * A PROMOTION MAY BE AMBIGUOUS, AND THAT IS THE WHOLE REASON RECONCILIATION
+ * EXISTS. A conditional ref update that neither confirms nor denies leaves the
+ * repository the only authority on whether the ref advanced, so the permit is
+ * granted before the act and abandoned only once `proveCandidateAncestry`
+ * answers against the immutable candidate identity. That is what makes
+ * idempotence the repository's rather than the row's.
+ *
+ * A HOLD IS A STATE AND NOT AN ABSENCE. An unreadable ref, a timeout and
+ * contradictory evidence are one durable answer recorded on the reconciliation,
+ * because an absent row is indistinguishable from a crash. An operator supplies
+ * evidence — re-read the ref, confirm the ancestry — and never an outcome, so a
+ * hold ends when reconciliation concludes and no earlier.
+ *
+ * A FAILURE KIND ARRIVES WITH ITS PRODUCER. `MergeConflict` and
+ * `PreparationFailed` are the two this tree can produce, both reduce to the one
+ * priced `FinalizationFailed` the model already has, and no hold is either of
+ * them: a hold spends nothing and refunds nothing, so a finalizer's own
+ * re-preparations stay invisible to `Core`.
+ *
+ * THE GLOBAL LOCK ORDER IS REQUEST, THEN REPOSITORY, THEN PROJECT, THEN PERMIT,
+ * THEN ATTEMPT, and within each class in key order. Every transaction taking
+ * more than one of them takes them in that order, because a declared order
+ * makes a deadlock unreachable where a retry only makes it rare.
+ *
+ * THE PURE PASS AWAITS NOTHING. `finalizationNext` is a function of an observed
+ * view and returns the one move that view authorizes; the reads it needs — the
+ * durable rows and the target the remote currently names — are gathered before
+ * it runs, so a decision never acquires a mock.
+ */
+
+import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
+import type { TicketId } from "../domain/ids.ts";
+import { asBoundedText } from "./boundedText.ts";
+import type { Partition, RecoveryEpoch } from "./projectStore.ts";
+
+declare const finalizationAttemptIdBrand: unique symbol;
+declare const commitPermitIdBrand: unique symbol;
+declare const inputBundleIdBrand: unique symbol;
+declare const repositoryIdBrand: unique symbol;
+declare const finalizerOwnerIdBrand: unique symbol;
+declare const gitRefNameBrand: unique symbol;
+declare const gitObjectIdBrand: unique symbol;
+declare const repositoryCredentialBrand: unique symbol;
+
+/** One preparation's identity: globally unique, opaque, and never reused. */
+export type FinalizationAttemptId = string & {
+  readonly [finalizationAttemptIdBrand]: true;
+};
+
+/** One commit permit's identity, distinct for every permit ever granted. */
+export type CommitPermitId = string & {
+  readonly [commitPermitIdBrand]: true;
+};
+
+/** An immutable set of references a deciding transaction pinned, under its own canonical digest. */
+export type InputBundleId = string & { readonly [inputBundleIdBrand]: true };
+
+/** The remote's stable identity, which one project binds and no other project may. */
+export type RepositoryId = string & { readonly [repositoryIdBrand]: true };
+
+/** A finalizer process instance, which is what a request claim lease is granted to. */
+export type FinalizerOwnerId = string & {
+  readonly [finalizerOwnerIdBrand]: true;
+};
+
+/** A fully qualified reference name, opaque here and never interpreted. */
+export type GitRefName = string & { readonly [gitRefNameBrand]: true };
+
+/** A commit's content-addressed identity, which is what makes an ancestry proof a proof. */
+export type GitObjectId = string & { readonly [gitObjectIdBrand]: true };
+
+/**
+ * What authorizes one remote read or write, resolved through a port and never
+ * stored. No relation this slice adds has a column for one, and nothing here
+ * folds one into a digest.
+ */
+export type RepositoryCredential = string & {
+  readonly [repositoryCredentialBrand]: true;
+};
+
+/** The longest opaque finalizer identity a stored row carries. */
+export const finalizerIdentityCharsMax = 256;
+
+/** The longest reference name a stored row carries. */
+export const gitRefNameCharsMax = 256;
+
+/** The hexadecimal widths git's two object-id hashes produce, so a suite and a database CHECK iterate rather than restate. */
+export const allGitObjectIdChars: readonly number[] = [40, 64];
+
+/** The most conflicting paths one integration summary carries before it is truncated. */
+export const conflictPathsMax = 256;
+
+/** The anchored pattern an object identity matches, written once so this layer and the DDL agree. */
+export function gitObjectIdPattern(): string {
+  return `^(${allGitObjectIdChars.map((chars) => `[0-9a-f]{${String(chars)}}`).join("|")})$`;
+}
+
+/** Brands an opaque finalization attempt identity. */
+export function asFinalizationAttemptId(value: string): FinalizationAttemptId {
+  return asBoundedText(
+    value,
+    "finalization attempt",
+    finalizerIdentityCharsMax,
+  ) as FinalizationAttemptId;
+}
+
+/** Brands an opaque commit permit identity. */
+export function asCommitPermitId(value: string): CommitPermitId {
+  return asBoundedText(
+    value,
+    "commit permit",
+    finalizerIdentityCharsMax,
+  ) as CommitPermitId;
+}
+
+/** Brands an opaque input bundle identity. */
+export function asInputBundleId(value: string): InputBundleId {
+  return asBoundedText(
+    value,
+    "input bundle",
+    finalizerIdentityCharsMax,
+  ) as InputBundleId;
+}
+
+/** Brands an opaque repository identity. */
+export function asRepositoryId(value: string): RepositoryId {
+  return asBoundedText(
+    value,
+    "repository",
+    finalizerIdentityCharsMax,
+  ) as RepositoryId;
+}
+
+/** Brands an opaque finalizer instance identity. */
+export function asFinalizerOwnerId(value: string): FinalizerOwnerId {
+  return asBoundedText(
+    value,
+    "finalizer owner",
+    finalizerIdentityCharsMax,
+  ) as FinalizerOwnerId;
+}
+
+/** Brands a reference name. */
+export function asGitRefName(value: string): GitRefName {
+  return asBoundedText(value, "ref name", gitRefNameCharsMax) as GitRefName;
+}
+
+/** Brands a commit identity, refusing anything git's own object-id widths do not admit. */
+export function asGitObjectId(value: string): GitObjectId {
+  if (!new RegExp(gitObjectIdPattern(), "u").test(value)) {
+    throw new RangeError(
+      `object id: ${String(value.length)} characters is not a width git addresses an object at`,
+    );
+  }
+  return value as GitObjectId;
+}
+
+/** Brands a repository credential, which is refused the same two shapes any other bounded text is. */
+export function asRepositoryCredential(value: string): RepositoryCredential {
+  return asBoundedText(
+    value,
+    "repository credential",
+    finalizerIdentityCharsMax,
+  ) as RepositoryCredential;
+}
+
+/** The states I3 gave a focused finalization request, in the order its CHECK declares them. */
+export type FinalizationRequestState =
+  "Open" | "Registered" | "Fulfilled" | "Invalidated";
+
+/** Every request state, so a suite and a database CHECK iterate rather than restate. */
+export const allFinalizationRequestStates: readonly FinalizationRequestState[] =
+  ["Open", "Registered", "Fulfilled", "Invalidated"];
+
+/**
+ * How a candidate is integrated against its observed target.
+ * `merge-tree --write-tree` is a deterministic function of two commits, where a
+ * rebase replays commits and is not.
+ */
+export type IntegrationStrategy = "Merge";
+
+/** Every strategy, so a suite and a database CHECK iterate rather than restate. */
+export const allIntegrationStrategies: readonly IntegrationStrategy[] = [
+  "Merge",
+];
+
+/** What one preparation produced, which the attempt records once and never revises. */
+export type FinalizationAttemptOutcome = "Prepared" | "Failed";
+
+/** Every attempt outcome, so a suite and a database CHECK iterate rather than restate. */
+export const allFinalizationAttemptOutcomes: readonly FinalizationAttemptOutcome[] =
+  ["Prepared", "Failed"];
+
+/**
+ * The two definitive failures this tree can produce, both of which reduce to
+ * the one priced `FinalizationFailed`. A kind arrives when its producer does.
+ */
+export type FinalizationFailureKind = "MergeConflict" | "PreparationFailed";
+
+/** Every failure kind, so a suite and a database CHECK iterate rather than restate. */
+export const allFinalizationFailureKinds: readonly FinalizationFailureKind[] = [
+  "MergeConflict",
+  "PreparationFailed",
+];
+
+/** Whether a permit is still the authority for the one irreversible act, or has been spent. */
+export type CommitPermitState = "Granted" | "Concluded";
+
+/** Every permit state, so a suite and a database CHECK iterate rather than restate. */
+export const allCommitPermitStates: readonly CommitPermitState[] = [
+  "Granted",
+  "Concluded",
+];
+
+/** What reading the target ref proved about the candidate, an unreadable ref among the answers. */
+export type ReconciliationVerdict = "Promoted" | "NotPromoted" | "Unreadable";
+
+/** Every verdict, so a suite and a database CHECK iterate rather than restate. */
+export const allReconciliationVerdicts: readonly ReconciliationVerdict[] = [
+  "Promoted",
+  "NotPromoted",
+  "Unreadable",
+];
+
+/** The kinds of reference an input bundle holds, which is the closed set that keeps logs and secrets out of one. */
+export type InputBundleReferenceKind =
+  | "ResultManifest"
+  | "Artifact"
+  | "Handoff"
+  | "ConfigurationRevision"
+  | "Repository";
+
+/** Every reference kind, so a suite and a database CHECK iterate rather than restate. */
+export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
+  [
+    "ResultManifest",
+    "Artifact",
+    "Handoff",
+    "ConfigurationRevision",
+    "Repository",
+  ];
+
+/** The most references one bundle holds, so a bundle cannot grow into a payload. */
+export const inputBundleReferencesMax = 1_024;
+
+/** The closed vocabulary a git act reports instead of free text, so a label is never a payload. */
+export type GitEvidence =
+  | "RemoteUnreachable"
+  | "RemoteDenied"
+  | "RefUnreadable"
+  | "ObjectMissing"
+  | "IntegrationFailed"
+  | "PromotionTimedOut";
+
+/** Every evidence label, so a suite and a database CHECK iterate rather than restate. */
+export const allGitEvidence: readonly GitEvidence[] = [
+  "RemoteUnreachable",
+  "RemoteDenied",
+  "RefUnreadable",
+  "ObjectMissing",
+  "IntegrationFailed",
+  "PromotionTimedOut",
+];
+
+/** The authority kind every finalizer-submitted result is scoped and audited under. */
+export const finalizerAuthorityKind = "Finalizer";
+
+/** The key version a submitted result's idempotency scope is stamped with. */
+export const finalizerKeyVersion = "finalizer-v1";
+
+/** The remote one project's finalizations promote into, and the epoch it was bound under. */
+export interface RepositoryBinding {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+  readonly recoveryEpoch: RecoveryEpoch;
+}
+
+/** The immutable target one preparation observed, re-read from the remote and never remembered. */
+export interface ObservedTarget {
+  readonly ref: GitRefName;
+  readonly commit: GitObjectId;
+}
+
+/** One claim of a focused finalization request, held for a bounded stretch of database time. */
+export interface FinalizationClaim {
+  readonly partition: Partition;
+  readonly request: string;
+  readonly ticket: TicketId;
+  readonly authorizingSeq: number;
+  readonly requestGeneration: number;
+  readonly state: FinalizationRequestState;
+  readonly recoveryEpoch: RecoveryEpoch;
+  readonly owner: FinalizerOwnerId;
+}
+
+/**
+ * One preparation, written once and never updated, which is what makes it
+ * evidence rather than a working note. Re-preparation creates another identity.
+ */
+export interface FinalizationAttempt {
+  readonly attempt: FinalizationAttemptId;
+  readonly request: string;
+  readonly ticket: TicketId;
+  readonly repository: RepositoryId;
+  readonly target: ObservedTarget;
+  readonly strategy: IntegrationStrategy;
+  readonly configurationRevision: string;
+  readonly configurationDigest: string;
+  readonly approvalRequired: boolean;
+  readonly outcome: FinalizationAttemptOutcome;
+  readonly candidate?: GitObjectId;
+  readonly failureKind?: FinalizationFailureKind;
+  readonly attemptDigest: string;
+}
+
+/** The one permit that authorizes the one irreversible act, at most one live per project. */
+export interface CommitPermit {
+  readonly permit: CommitPermitId;
+  readonly attempt: FinalizationAttemptId;
+  readonly recoveryEpoch: RecoveryEpoch;
+  readonly lifecycleGeneration: number;
+  readonly state: CommitPermitState;
+}
+
+/** What the target ref proved about the candidate, recorded per permit and never absent for a hold. */
+export interface FinalizationReconciliation {
+  readonly permit: CommitPermitId;
+  readonly candidate: GitObjectId;
+  readonly target: GitRefName;
+  readonly verdict: ReconciliationVerdict;
+  readonly observed?: GitObjectId;
+}
+
+/**
+ * Where the approval a pinned revision may require currently stands. The
+ * finalizer reads the ticket-service-owned native action and maps it here, so a
+ * withdrawn action is pending again rather than a fourth state.
+ */
+export type ApprovalStanding = "Pending" | "Granted" | "Declined";
+
+/** Every approval standing, so a suite iterates rather than restates. */
+export const allApprovalStandings: readonly ApprovalStanding[] = [
+  "Pending",
+  "Granted",
+  "Declined",
+];
+
+/** Everything the pure pass reads, gathered before it runs so nothing is awaited inside it. */
+export interface FinalizationView {
+  readonly claim: FinalizationClaim;
+  readonly repository?: RepositoryBinding;
+  readonly observedTarget?: ObservedTarget;
+  readonly attempt?: FinalizationAttempt;
+  readonly approval: ApprovalStanding;
+  readonly permit?: CommitPermit;
+  readonly reconciliation?: FinalizationReconciliation;
+  readonly attemptsMade: number;
+}
+
+/** Why a finalization is durably stopped under attention rather than concluded or failed. */
+export type FinalizationHoldKind =
+  | "RepositoryUnbound"
+  | "TargetUnreadable"
+  | "PreparationRestartsExhausted"
+  | "ApprovalDeclined"
+  | "ReconciliationUnreadable"
+  | "ContradictoryEvidence";
+
+/** Every hold kind, so a suite and a database CHECK iterate rather than restate. */
+export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
+  "RepositoryUnbound",
+  "TargetUnreadable",
+  "PreparationRestartsExhausted",
+  "ApprovalDeclined",
+  "ReconciliationUnreadable",
+  "ContradictoryEvidence",
+];
+
+/** The one conclusive thing `Core` is told, which carries a kind only where the model prices a failure. */
+export type FinalizationConclusion =
+  | { readonly outcome: Extract<FinalizationOutcome, "FinalizationSucceeded"> }
+  | {
+      readonly outcome: Extract<FinalizationOutcome, "FinalizationFailed">;
+      readonly kind: FinalizationFailureKind;
+    };
+
+/**
+ * The one move an observed view authorizes. Every arm is a decision the caller
+ * performs; nothing here performs anything.
+ */
+export type FinalizationDecision =
+  | {
+      readonly decide: "Prepare";
+      readonly target: ObservedTarget;
+      readonly restartsSpent: number;
+    }
+  | {
+      readonly decide: "AwaitApproval";
+      readonly attempt: FinalizationAttemptId;
+    }
+  | { readonly decide: "Promote"; readonly attempt: FinalizationAttemptId }
+  | { readonly decide: "Reconcile"; readonly permit: CommitPermitId }
+  | { readonly decide: "Conclude"; readonly conclusion: FinalizationConclusion }
+  | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind }
+  | { readonly decide: "Settled" };
+
+/** Refuses a view whose durable rows contradict each other, which no later branch then has to re-ask. */
+function finalizationNextAssertView(view: FinalizationView): void {
+  const { attempt, permit, reconciliation, attemptsMade } = view;
+  if (!Number.isSafeInteger(attemptsMade) || attemptsMade < 0) {
+    throw new RangeError("finalization view: attemptsMade is not a count");
+  }
+  if (attempt !== undefined && attemptsMade < 1) {
+    throw new RangeError(
+      "finalization view: an attempt is present and no attempt was counted",
+    );
+  }
+  if (attempt !== undefined && attempt.request !== view.claim.request) {
+    throw new RangeError(
+      "finalization view: the attempt answers another request",
+    );
+  }
+  if (
+    attempt !== undefined &&
+    (attempt.outcome === "Prepared") !== (attempt.candidate !== undefined)
+  ) {
+    throw new RangeError(
+      "finalization view: a prepared attempt pins no candidate, or a failed one pins one",
+    );
+  }
+  if (
+    attempt !== undefined &&
+    (attempt.outcome === "Failed") !== (attempt.failureKind !== undefined)
+  ) {
+    throw new RangeError(
+      "finalization view: a failed attempt names no kind, or a prepared one names one",
+    );
+  }
+  if (
+    permit !== undefined &&
+    attempt !== undefined &&
+    permit.attempt !== attempt.attempt
+  ) {
+    throw new RangeError("finalization view: the permit names another attempt");
+  }
+  if (permit === undefined && reconciliation !== undefined) {
+    throw new RangeError(
+      "finalization view: a reconciliation is present with no permit to conclude",
+    );
+  }
+  if (
+    permit !== undefined &&
+    reconciliation !== undefined &&
+    reconciliation.permit !== permit.permit
+  ) {
+    throw new RangeError(
+      "finalization view: the reconciliation concludes another permit",
+    );
+  }
+}
+
+/** Whether another preparation is authorized, and the hold that is left when it is not. */
+function finalizationNextRestart(
+  config: FinalizerConfig,
+  view: FinalizationView,
+): FinalizationDecision {
+  const target = view.observedTarget;
+  if (target === undefined) return { decide: "Hold", hold: "TargetUnreadable" };
+  const restartsSpent = view.attemptsMade > 0 ? view.attemptsMade - 1 : 0;
+  if (restartsSpent >= config.preparationRestartsMax) {
+    return { decide: "Hold", hold: "PreparationRestartsExhausted" };
+  }
+  return { decide: "Prepare", target, restartsSpent };
+}
+
+/**
+ * What a finalization holding a permit may do next. A granted permit is
+ * abandoned only by a reconciliation that concluded, so an ambiguous promotion
+ * has no path to a conclusive outcome through here.
+ */
+function finalizationNextUnderPermit(
+  config: FinalizerConfig,
+  view: FinalizationView,
+  permit: CommitPermit,
+): FinalizationDecision {
+  const reconciliation = view.reconciliation;
+  if (permit.state === "Concluded") {
+    if (
+      reconciliation === undefined ||
+      reconciliation.verdict === "Unreadable"
+    ) {
+      return { decide: "Hold", hold: "ContradictoryEvidence" };
+    }
+    if (reconciliation.verdict === "Promoted") {
+      return {
+        decide: "Conclude",
+        conclusion: { outcome: "FinalizationSucceeded" },
+      };
+    }
+    return finalizationNextRestart(config, view);
+  }
+  if (reconciliation === undefined) {
+    return { decide: "Reconcile", permit: permit.permit };
+  }
+  if (reconciliation.verdict === "Unreadable") {
+    return { decide: "Hold", hold: "ReconciliationUnreadable" };
+  }
+  return { decide: "Hold", hold: "ContradictoryEvidence" };
+}
+
+/** What a finalization that has obtained no permit may do next, the revision fence included. */
+function finalizationNextBeforePermit(
+  config: FinalizerConfig,
+  view: FinalizationView,
+): FinalizationDecision {
+  const target = view.observedTarget;
+  if (target === undefined) return { decide: "Hold", hold: "TargetUnreadable" };
+  const attempt = view.attempt;
+  if (attempt === undefined) {
+    return { decide: "Prepare", target, restartsSpent: 0 };
+  }
+  if (attempt.outcome === "Failed" && attempt.failureKind !== undefined) {
+    return {
+      decide: "Conclude",
+      conclusion: { outcome: "FinalizationFailed", kind: attempt.failureKind },
+    };
+  }
+  if (
+    attempt.target.commit !== target.commit ||
+    attempt.target.ref !== target.ref
+  ) {
+    return finalizationNextRestart(config, view);
+  }
+  if (view.approval === "Declined") {
+    return { decide: "Hold", hold: "ApprovalDeclined" };
+  }
+  if (attempt.approvalRequired && view.approval === "Pending") {
+    return { decide: "AwaitApproval", attempt: attempt.attempt };
+  }
+  return { decide: "Promote", attempt: attempt.attempt };
+}
+
+/**
+ * The one move an observed view authorizes for one claimed request. It reads
+ * nothing, performs nothing and awaits nothing.
+ */
+export function finalizationNext(
+  config: FinalizerConfig,
+  view: FinalizationView,
+): FinalizationDecision {
+  finalizationNextAssertView(view);
+  if (view.claim.state === "Fulfilled" || view.claim.state === "Invalidated") {
+    return { decide: "Settled" };
+  }
+  if (view.repository === undefined) {
+    return { decide: "Hold", hold: "RepositoryUnbound" };
+  }
+  const permit = view.permit;
+  if (permit !== undefined) {
+    return finalizationNextUnderPermit(config, view, permit);
+  }
+  return finalizationNextBeforePermit(config, view);
+}
+
+/** What observing the remote's default branch found, an unreadable remote kept apart from a target. */
+export type TargetObserved =
+  | { readonly observed: "Target"; readonly target: ObservedTarget }
+  | { readonly observed: "Unreadable"; readonly evidence: GitEvidence };
+
+/** One candidate asked of a bare scratch repository, built from verified references alone. */
+export interface CandidatePreparation {
+  readonly repository: RepositoryBinding;
+  readonly ticket: TicketId;
+  readonly bundle: InputBundleId;
+  readonly target: ObservedTarget;
+}
+
+/** What constructing a candidate found, a git refusal a value like every other here. */
+export type CandidatePrepared =
+  | { readonly prepared: "Candidate"; readonly candidate: GitObjectId }
+  | { readonly prepared: "Failed"; readonly evidence: GitEvidence };
+
+/** One integration against exactly one observed target, which is what bounded means here. */
+export interface CandidateIntegration {
+  readonly repository: RepositoryBinding;
+  readonly target: ObservedTarget;
+  readonly candidate: GitObjectId;
+  readonly strategy: IntegrationStrategy;
+}
+
+/** The conflicting paths one integration reported, bounded so a summary cannot become a payload. */
+export interface ConflictSummary {
+  readonly paths: readonly string[];
+  readonly truncated: boolean;
+}
+
+/** What integrating found: an integrated candidate, a genuine conflict, or a git refusal. */
+export type CandidateIntegrated =
+  | { readonly integrated: "Candidate"; readonly candidate: GitObjectId }
+  | { readonly integrated: "Conflicted"; readonly conflict: ConflictSummary }
+  | { readonly integrated: "Failed"; readonly evidence: GitEvidence };
+
+/** The one irreversible act, which names the permit that authorizes it so an unpermitted one is unspellable. */
+export interface CandidatePromotion {
+  readonly repository: RepositoryBinding;
+  readonly permit: CommitPermitId;
+  readonly target: ObservedTarget;
+  readonly candidate: GitObjectId;
+}
+
+/**
+ * What the conditional ref update found. `Ambiguous` is the answer that neither
+ * confirms nor denies, and it is why the permit cannot be abandoned before
+ * reconciliation.
+ */
+export type CandidatePromoted =
+  | { readonly promoted: "Advanced" }
+  | { readonly promoted: "Rejected"; readonly observed: GitObjectId }
+  | { readonly promoted: "Ambiguous"; readonly evidence: GitEvidence };
+
+/** One reading of what a ref proves about an immutable candidate identity. */
+export interface AncestryProof {
+  readonly repository: RepositoryBinding;
+  readonly ref: GitRefName;
+  readonly candidate: GitObjectId;
+}
+
+/** What the ref proved, an unreadable ref kept apart from a ref that proved the candidate absent. */
+export type AncestryProved =
+  | { readonly proved: "Ancestor"; readonly observed: GitObjectId }
+  | { readonly proved: "NotAncestor"; readonly observed: GitObjectId }
+  | { readonly proved: "Unreadable"; readonly evidence: GitEvidence };
+
+/**
+ * Git, behind a typed port so the durable state machine can be driven without a
+ * remote. A non-zero exit is one of the values below; only git being unable to
+ * run at all raises.
+ */
+export interface GitPromotionPort {
+  /** Re-reads the remote's default branch, which every preparation pins and none remembers. */
+  observeTarget(repository: RepositoryBinding): Promise<TargetObserved>;
+
+  /** Writes the candidate tree and commit into a bare scratch repository, with no working tree at any point. */
+  prepareCandidate(
+    preparation: CandidatePreparation,
+  ): Promise<CandidatePrepared>;
+
+  /** Integrates one candidate against one observed target, deterministically. */
+  integrateCandidate(
+    integration: CandidateIntegration,
+  ): Promise<CandidateIntegrated>;
+
+  /** Advances the target ref to the candidate under a permit, conditionally on the target it observed. */
+  promoteCandidate(promotion: CandidatePromotion): Promise<CandidatePromoted>;
+
+  /** Reads back whether the target ref proves the candidate reached it. */
+  proveCandidateAncestry(proof: AncestryProof): Promise<AncestryProved>;
+}
+
+/** What resolving a repository credential found, a denial kept apart from an outage. */
+export type CredentialResolved =
+  | {
+      readonly resolved: "Credential";
+      readonly credential: RepositoryCredential;
+    }
+  | { readonly resolved: "Denied" }
+  | { readonly resolved: "Unavailable" };
+
+/**
+ * Where a repository's credential comes from, which is the composition root and
+ * never the environment. Nothing under `src/` reads an environment variable.
+ */
+export interface RepositoryCredentialPort {
+  credential(repository: RepositoryBinding): Promise<CredentialResolved>;
+}
+
+/**
+ * The finalizer's bounded configuration, every value of it an operational
+ * choice. A permit carries no lease among them, because a permit that expired
+ * into safety would release an act nothing had yet proved.
+ */
+export interface FinalizerConfig {
+  readonly requestClaimLeaseSecs: number;
+  readonly requestsPerPassMax: number;
+  readonly preparationRestartsMax: number;
+  readonly preparationsPerPassMax: number;
+  readonly promotionsPerPassMax: number;
+  readonly reconciliationsPerPassMax: number;
+  readonly heldPermitsPerPassMax: number;
+}
+
+/** The values a deployment starts from when it names none. */
+export const finalizerDefaults: FinalizerConfig = {
+  requestClaimLeaseSecs: 30,
+  requestsPerPassMax: 32,
+  preparationRestartsMax: 3,
+  preparationsPerPassMax: 8,
+  promotionsPerPassMax: 8,
+  reconciliationsPerPassMax: 32,
+  heldPermitsPerPassMax: 32,
+};
+
+/**
+ * Every bound a configuration must name, read from the defaults so that a bound
+ * added to the interface has a default and a required name at once. Reading the
+ * offered configuration's own keys would check the bounds it happens to carry
+ * rather than the ones it owes.
+ */
+const finalizerBounds = Object.keys(
+  finalizerDefaults,
+) as readonly (keyof FinalizerConfig)[];
+
+/** Refuses a configuration whose bounds are not positive safe integers. */
+export function checkedFinalizerConfig(
+  config: FinalizerConfig,
+): FinalizerConfig {
+  for (const name of finalizerBounds) {
+    const value: number = config[name];
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new RangeError(
+        `finalizer configuration: ${name} must be a positive safe integer`,
+      );
+    }
+  }
+  return config;
+}

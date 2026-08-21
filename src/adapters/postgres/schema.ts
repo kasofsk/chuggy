@@ -186,9 +186,14 @@
  * advance it. Acquisition advances it, renewal continues one, release and
  * fencing leave none — so the adapter is unchanged and the composed statement
  * is refused.
+ *
+ * WHICH LOCKS THIS FILE'S BODIES TAKE. `submit_finalization_result` takes two —
+ * the finalization request it is answering, then the project whose mailbox it
+ * writes into — in the global order `src/interpreter/finalizer.ts` declares.
  */
 
 import {
+  finalizationOutcomeTags,
   phaseTags,
   reasonTags,
   verdictTags,
@@ -212,6 +217,20 @@ import {
   resultDigestFoldHexChars,
 } from "../../interpreter/resultManifest.ts";
 import { schedulerIdentityCharsMax } from "../../interpreter/schedulerIdentity.ts";
+import {
+  allCommitPermitStates,
+  allFinalizationAttemptOutcomes,
+  allFinalizationFailureKinds,
+  allInputBundleReferenceKinds,
+  allIntegrationStrategies,
+  allReconciliationVerdicts,
+  finalizerAuthorityKind,
+  finalizerIdentityCharsMax,
+  finalizerKeyVersion,
+  gitObjectIdPattern,
+  gitRefNameCharsMax,
+  inputBundleReferencesMax,
+} from "../../interpreter/finalizer.ts";
 import {
   authorityCharsMax,
   operationCommandCharsMax,
@@ -249,8 +268,14 @@ export const boundaryOwnerRole = "chuggy_boundary_owner";
 /** The role the execution scheduler connects as, which owns execution and capacity and decides no ticket. */
 export const schedulerRole = "chuggy_scheduler";
 
+/** The role the finalizer connects as, which owns attempts, permits and reconciliations and decides no ticket. */
+export const finalizerRole = "chuggy_finalizer";
+
 /** The whole of a scheduler completion, named once so the grant, the adapter and the suite agree on it. */
 export const completionFunction = "submit_task_completion";
+
+/** The whole of a finalization conclusion, named once so the grant, the adapter and the suite agree on it. */
+export const finalizationFunction = "submit_finalization_result";
 export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";
 export const statusMoveFunction = "execution_status_move_is_legal";
@@ -2275,6 +2300,426 @@ const durableExecutionSchedulerBoundaries = [
   `REVOKE ${boundaryOwnerRole} FROM CURRENT_USER`,
 ];
 
+/** The relations, triggers and boundaries the finalizer owns, which I7 adds. */
+const durableFinalizer = [
+  roleStatement(finalizerRole),
+  `ALTER ROLE ${finalizerRole} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
+  `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${finalizerRole}`,
+  `REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM ${finalizerRole}`,
+  `GRANT USAGE ON SCHEMA public TO ${finalizerRole}`,
+  `GRANT ${boundaryOwnerRole} TO CURRENT_USER`,
+  `GRANT CREATE ON SCHEMA public TO ${boundaryOwnerRole}`,
+
+  `CREATE TABLE project_repository (
+     tenant         text NOT NULL,
+     project        text NOT NULL,
+     repository     text NOT NULL,
+     recovery_epoch text NOT NULL REFERENCES recovery_epoch (epoch),
+     bound_at       timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant, project),
+     CONSTRAINT project_repository_belongs_to_project
+       FOREIGN KEY (tenant, project) REFERENCES project (tenant, project),
+     CONSTRAINT project_repository_is_exclusive UNIQUE (repository),
+     CONSTRAINT project_repository_is_referenceable UNIQUE (tenant, project, repository),
+     CONSTRAINT project_repository_identity_is_bounded CHECK (
+       length(repository) BETWEEN 1 AND ${finalizerIdentityCharsMax})
+   )`,
+
+  `CREATE TABLE input_bundle (
+     tenant     text NOT NULL,
+     project    text NOT NULL,
+     bundle     text NOT NULL,
+     digest     text NOT NULL,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant, project, bundle),
+     CONSTRAINT input_bundle_identity_is_never_reused UNIQUE (bundle),
+     CONSTRAINT input_bundle_belongs_to_project
+       FOREIGN KEY (tenant, project) REFERENCES project (tenant, project),
+     CONSTRAINT input_bundle_is_referenceable UNIQUE (tenant, project, bundle, digest),
+     CONSTRAINT input_bundle_digest_is_hex CHECK (
+       digest ~ '^[0-9a-f]{${artifactDigestChars}}$'),
+     CONSTRAINT input_bundle_identity_is_bounded CHECK (
+       length(bundle) BETWEEN 1 AND ${finalizerIdentityCharsMax})
+   )`,
+  `CREATE TABLE input_bundle_reference (
+     tenant         text    NOT NULL,
+     project        text    NOT NULL,
+     bundle         text    NOT NULL,
+     ordinal        integer NOT NULL,
+     reference_kind text    NOT NULL,
+     reference_id   text    NOT NULL,
+     PRIMARY KEY (tenant, project, bundle, ordinal),
+     CONSTRAINT input_bundle_reference_has_its_bundle
+       FOREIGN KEY (tenant, project, bundle) REFERENCES input_bundle (tenant, project, bundle),
+     CONSTRAINT input_bundle_reference_is_declared_once
+       UNIQUE (tenant, project, bundle, reference_kind, reference_id),
+     CONSTRAINT input_bundle_reference_kind_is_known CHECK (
+       reference_kind IN (${schemaTextSet(allInputBundleReferenceKinds)})),
+     CONSTRAINT input_bundle_reference_count_is_bounded CHECK (
+       ordinal BETWEEN 1 AND ${inputBundleReferencesMax}),
+     CONSTRAINT input_bundle_reference_identity_is_bounded CHECK (
+       length(reference_id) BETWEEN 1 AND ${finalizerIdentityCharsMax})
+   )`,
+
+  `CREATE TABLE finalization_attempt (
+     tenant                 text    NOT NULL,
+     project                text    NOT NULL,
+     attempt                text    NOT NULL,
+     request                text    NOT NULL,
+     ticket                 bigint  NOT NULL,
+     repository             text    NOT NULL,
+     target_ref             text    NOT NULL,
+     target_commit          text    NOT NULL,
+     strategy               text    NOT NULL,
+     configuration_revision text    NOT NULL,
+     configuration_digest   text    NOT NULL,
+     approval_required      boolean NOT NULL,
+     outcome                text    NOT NULL,
+     candidate_commit       text,
+     failure_kind           text,
+     conflict_manifest      text,
+     attempt_digest         text    NOT NULL,
+     prepared_at            timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant, project, attempt),
+     CONSTRAINT finalization_attempt_identity_is_never_reused UNIQUE (attempt),
+     CONSTRAINT finalization_attempt_belongs_to_project
+       FOREIGN KEY (tenant, project) REFERENCES project (tenant, project),
+     CONSTRAINT finalization_attempt_has_its_request
+       FOREIGN KEY (tenant, project, request)
+       REFERENCES finalization_request (tenant, project, request),
+     CONSTRAINT finalization_attempt_has_its_repository
+       FOREIGN KEY (tenant, project, repository)
+       REFERENCES project_repository (tenant, project, repository),
+     CONSTRAINT finalization_attempt_configuration_is_retained
+       FOREIGN KEY (tenant, project, configuration_revision, configuration_digest)
+       REFERENCES configuration_revision (tenant, project, revision, digest),
+     CONSTRAINT finalization_attempt_outcome_is_known CHECK (
+       outcome IN (${schemaTextSet(allFinalizationAttemptOutcomes)})),
+     CONSTRAINT finalization_attempt_failure_kind_is_known CHECK (
+       failure_kind IS NULL OR failure_kind IN (${schemaTextSet(allFinalizationFailureKinds)})),
+     CONSTRAINT finalization_attempt_strategy_is_known CHECK (
+       strategy IN (${schemaTextSet(allIntegrationStrategies)})),
+     CONSTRAINT finalization_attempt_outcome_is_whole CHECK (
+       (outcome = 'Prepared') = (candidate_commit IS NOT NULL)
+       AND (outcome = 'Failed') = (failure_kind IS NOT NULL)
+       AND (conflict_manifest IS NULL OR failure_kind = 'MergeConflict')),
+     CONSTRAINT finalization_attempt_commits_are_object_ids CHECK (
+       target_commit ~ '${gitObjectIdPattern()}'
+       AND (candidate_commit IS NULL OR candidate_commit ~ '${gitObjectIdPattern()}')),
+     CONSTRAINT finalization_attempt_digest_is_hex CHECK (
+       attempt_digest ~ '^[0-9a-f]{${artifactDigestChars}}$'),
+     CONSTRAINT finalization_attempt_ticket_is_positive CHECK (ticket >= 1),
+     CONSTRAINT finalization_attempt_text_is_bounded CHECK (
+       length(attempt) BETWEEN 1 AND ${finalizerIdentityCharsMax}
+       AND length(target_ref) BETWEEN 1 AND ${gitRefNameCharsMax}
+       AND coalesce(length(conflict_manifest), 1) BETWEEN 1 AND ${finalizerIdentityCharsMax})
+   )`,
+  `CREATE INDEX finalization_attempt_by_request
+     ON finalization_attempt (tenant, project, request, prepared_at)`,
+  `CREATE INDEX finalization_attempt_prepared
+     ON finalization_attempt (prepared_at) WHERE outcome = 'Prepared'`,
+
+  `CREATE TABLE commit_permit (
+     tenant               text   NOT NULL,
+     project              text   NOT NULL,
+     permit               text   NOT NULL,
+     attempt              text   NOT NULL,
+     recovery_epoch       text   NOT NULL REFERENCES recovery_epoch (epoch),
+     lifecycle_generation bigint NOT NULL,
+     state                text   NOT NULL DEFAULT 'Granted',
+     granted_at           timestamptz NOT NULL DEFAULT now(),
+     concluded_at         timestamptz,
+     PRIMARY KEY (tenant, project, permit),
+     CONSTRAINT commit_permit_identity_is_never_reused UNIQUE (permit),
+     CONSTRAINT commit_permit_has_its_attempt
+       FOREIGN KEY (tenant, project, attempt)
+       REFERENCES finalization_attempt (tenant, project, attempt),
+     CONSTRAINT commit_permit_is_one_per_attempt UNIQUE (tenant, project, attempt),
+     CONSTRAINT commit_permit_state_is_known CHECK (
+       state IN (${schemaTextSet(allCommitPermitStates)})),
+     CONSTRAINT commit_permit_conclusion_is_whole CHECK (
+       (state = 'Concluded') = (concluded_at IS NOT NULL)),
+     CONSTRAINT commit_permit_generation_is_positive CHECK (lifecycle_generation >= 1),
+     CONSTRAINT commit_permit_identity_is_bounded CHECK (
+       length(permit) BETWEEN 1 AND ${finalizerIdentityCharsMax})
+   )`,
+  `CREATE UNIQUE INDEX commit_permit_one_live
+     ON commit_permit (tenant, project) WHERE state = 'Granted'`,
+  `CREATE INDEX commit_permit_unconcluded
+     ON commit_permit (granted_at) WHERE state = 'Granted'`,
+
+  `CREATE TABLE finalization_reconciliation (
+     tenant           text NOT NULL,
+     project          text NOT NULL,
+     permit           text NOT NULL,
+     candidate_commit text NOT NULL,
+     target_ref       text NOT NULL,
+     verdict          text NOT NULL,
+     observed_commit  text,
+     reconciled_at    timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant, project, permit),
+     CONSTRAINT finalization_reconciliation_has_its_permit
+       FOREIGN KEY (tenant, project, permit) REFERENCES commit_permit (tenant, project, permit),
+     CONSTRAINT finalization_reconciliation_verdict_is_known CHECK (
+       verdict IN (${schemaTextSet(allReconciliationVerdicts)})),
+     CONSTRAINT finalization_reconciliation_reading_is_whole CHECK (
+       (verdict = 'Unreadable') = (observed_commit IS NULL)),
+     CONSTRAINT finalization_reconciliation_commits_are_object_ids CHECK (
+       candidate_commit ~ '${gitObjectIdPattern()}'
+       AND (observed_commit IS NULL OR observed_commit ~ '${gitObjectIdPattern()}')),
+     CONSTRAINT finalization_reconciliation_ref_is_bounded CHECK (
+       length(target_ref) BETWEEN 1 AND ${gitRefNameCharsMax})
+   )`,
+  `CREATE INDEX finalization_reconciliation_held
+     ON finalization_reconciliation (reconciled_at) WHERE verdict = 'Unreadable'`,
+
+  `ALTER TABLE finalization_request
+     ADD COLUMN recovery_epoch text REFERENCES recovery_epoch (epoch),
+     ADD CONSTRAINT finalization_request_claim_is_fenced CHECK (
+       (claim_owner IS NULL) = (recovery_epoch IS NULL)
+       AND coalesce(length(claim_owner), 1) BETWEEN 1 AND ${finalizerIdentityCharsMax})`,
+  `CREATE INDEX finalization_request_claimable
+     ON finalization_request (authorizing_seq) WHERE state = 'Open'`,
+  `CREATE INDEX finalization_request_claim_expiry
+     ON finalization_request (claim_expires_at) WHERE claim_owner IS NOT NULL`,
+  `CREATE INDEX finalization_request_epoch
+     ON finalization_request (recovery_epoch) WHERE claim_owner IS NOT NULL`,
+
+  `ALTER TABLE native_action ADD COLUMN attempt text`,
+  `DO $$
+     DECLARE named text;
+     BEGIN
+       FOR named IN
+         SELECT c.conname FROM pg_constraint c
+          WHERE c.conrelid = 'native_action'::regclass AND c.contype = 'c'
+            AND pg_get_constraintdef(c.oid) ~ '(TicketEscalation|ResolveTicket)'
+       LOOP
+         EXECUTE format('ALTER TABLE native_action DROP CONSTRAINT %I', named);
+       END LOOP;
+     END $$`,
+  `ALTER TABLE native_action
+     ADD CONSTRAINT native_action_kind_is_known CHECK (
+       kind IN ('TicketEscalation', 'FinalizationApproval')),
+     ADD CONSTRAINT native_action_capability_is_known CHECK (
+       required_capability IN ('ResolveTicket', 'ApproveFinalization')),
+     ADD CONSTRAINT native_action_kind_names_its_capability CHECK (
+       (kind = 'TicketEscalation') = (required_capability = 'ResolveTicket')
+       AND (kind = 'FinalizationApproval') = (required_capability = 'ApproveFinalization')
+       AND (kind = 'FinalizationApproval') = (attempt IS NOT NULL)),
+     ADD CONSTRAINT native_action_attempt_is_its_own
+       FOREIGN KEY (tenant, project, attempt)
+       REFERENCES finalization_attempt (tenant, project, attempt)`,
+];
+
+/**
+ * The server's own statements of what may not move, and the one boundary the
+ * finalizer reaches the mailbox through. Every relation this migration adds is
+ * revoked from every prior role before anything is granted on it.
+ */
+const durableFinalizerBoundaries = [
+  `CREATE FUNCTION durable_row_is_written_once() RETURNS trigger
+     LANGUAGE plpgsql AS $$
+     BEGIN
+       RAISE EXCEPTION
+         '% is written once, and a row that could be edited is not evidence', TG_TABLE_NAME
+         USING ERRCODE = 'integrity_constraint_violation';
+     END $$`,
+  `REVOKE EXECUTE ON FUNCTION durable_row_is_written_once() FROM PUBLIC`,
+  `CREATE TRIGGER finalization_attempt_is_written_once
+     BEFORE UPDATE OR DELETE ON finalization_attempt
+     FOR EACH ROW EXECUTE FUNCTION durable_row_is_written_once()`,
+  `CREATE TRIGGER input_bundle_is_written_once
+     BEFORE UPDATE OR DELETE ON input_bundle
+     FOR EACH ROW EXECUTE FUNCTION durable_row_is_written_once()`,
+  `CREATE TRIGGER input_bundle_reference_is_written_once
+     BEFORE UPDATE OR DELETE ON input_bundle_reference
+     FOR EACH ROW EXECUTE FUNCTION durable_row_is_written_once()`,
+
+  `CREATE FUNCTION commit_permit_concludes_once() RETURNS trigger
+     LANGUAGE plpgsql AS $$
+     BEGIN
+       IF OLD.state = 'Concluded' THEN
+         RAISE EXCEPTION 'permit % is already concluded, and a permit is spent once', OLD.permit
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       IF (NEW.tenant, NEW.project, NEW.permit, NEW.attempt, NEW.recovery_epoch,
+           NEW.lifecycle_generation)
+          IS DISTINCT FROM
+          (OLD.tenant, OLD.project, OLD.permit, OLD.attempt, OLD.recovery_epoch,
+           OLD.lifecycle_generation) THEN
+         RAISE EXCEPTION 'permit % would change the identity, epoch or generation it was granted under',
+           OLD.permit USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       RETURN NEW;
+     END $$`,
+  `REVOKE EXECUTE ON FUNCTION commit_permit_concludes_once() FROM PUBLIC`,
+  `CREATE TRIGGER commit_permit_concludes_once
+     BEFORE UPDATE ON commit_permit
+     FOR EACH ROW EXECUTE FUNCTION commit_permit_concludes_once()`,
+
+  `CREATE FUNCTION finalization_reconciliation_concludes_once() RETURNS trigger
+     LANGUAGE plpgsql AS $$
+     BEGIN
+       IF OLD.verdict <> 'Unreadable' THEN
+         RAISE EXCEPTION
+           'reconciliation of permit % already concluded %, and a verdict is read once',
+           OLD.permit, OLD.verdict USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       IF (NEW.tenant, NEW.project, NEW.permit, NEW.candidate_commit, NEW.target_ref)
+          IS DISTINCT FROM
+          (OLD.tenant, OLD.project, OLD.permit, OLD.candidate_commit, OLD.target_ref) THEN
+         RAISE EXCEPTION
+           'reconciliation of permit % would change the candidate or ref it was read against',
+           OLD.permit USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       RETURN NEW;
+     END $$`,
+  `REVOKE EXECUTE ON FUNCTION finalization_reconciliation_concludes_once() FROM PUBLIC`,
+  `CREATE TRIGGER finalization_reconciliation_concludes_once
+     BEFORE UPDATE ON finalization_reconciliation
+     FOR EACH ROW EXECUTE FUNCTION finalization_reconciliation_concludes_once()`,
+
+  `CREATE FUNCTION ${finalizationFunction}(
+      in_tenant text, in_project text, in_request text, in_attempt text,
+      in_outcome text, in_failure_kind text, in_request_generation bigint,
+      in_recovery_epoch text, in_operation text, in_authority_subject text)
+     RETURNS TABLE(result text, operation text, ordinal bigint)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+     DECLARE bound record; project_lifecycle text; project_generation bigint;
+       next_ordinal bigint; command_value jsonb; current_epoch text;
+       scoped_digest text; settled text;
+     BEGIN
+       IF in_outcome NOT IN (${schemaTextSet(finalizationOutcomeTags)}) THEN
+         RAISE EXCEPTION 'finalization outcome % is not one this boundary submits', in_outcome
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       scoped_digest := encode(sha256(convert_to('finalization:' || in_request, 'UTF8')), 'hex');
+       SELECT f.ticket, f.state, f.request_generation, f.recovery_epoch,
+              a.attempt, a.outcome AS attempt_outcome, a.failure_kind,
+              p.state AS permit_state, r.verdict
+         INTO bound
+         FROM finalization_request f
+         LEFT JOIN finalization_attempt a
+           ON a.tenant = f.tenant AND a.project = f.project
+              AND a.request = f.request AND a.attempt = in_attempt
+         LEFT JOIN commit_permit p
+           ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
+         LEFT JOIN finalization_reconciliation r
+           ON r.tenant = p.tenant AND r.project = p.project AND r.permit = p.permit
+        WHERE f.tenant = in_tenant AND f.project = in_project AND f.request = in_request
+        FOR UPDATE OF f;
+       IF NOT FOUND THEN
+         RETURN QUERY SELECT 'UnknownRequest'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       SELECT o.operation INTO settled FROM operation o
+        WHERE o.tenant = in_tenant AND o.project = in_project
+          AND o.authority_kind = '${finalizerAuthorityKind}' AND o.key_digest = scoped_digest;
+       IF FOUND THEN
+         RETURN QUERY SELECT 'AlreadySubmitted'::text, settled,
+           (SELECT d.ordinal FROM decision_input d
+             WHERE d.tenant = in_tenant AND d.project = in_project
+               AND d.input_kind = 'Operation' AND d.input_id = settled);
+         RETURN;
+       END IF;
+       SELECT e.epoch INTO current_epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1;
+       IF bound.state NOT IN ('Open', 'Registered')
+          OR bound.request_generation <> in_request_generation
+          OR bound.recovery_epoch IS DISTINCT FROM in_recovery_epoch
+          OR current_epoch IS DISTINCT FROM in_recovery_epoch
+          OR bound.attempt IS NULL
+          OR (in_outcome = 'FinalizationFailed'
+              AND (bound.attempt_outcome <> 'Failed'
+                   OR bound.failure_kind IS DISTINCT FROM in_failure_kind))
+          OR (in_outcome = 'FinalizationSucceeded'
+              AND (in_failure_kind IS NOT NULL
+                   OR bound.attempt_outcome <> 'Prepared'
+                   OR bound.permit_state IS DISTINCT FROM 'Concluded'
+                   OR bound.verdict IS DISTINCT FROM 'Promoted'))
+       THEN
+         RETURN QUERY SELECT 'BindingMismatch'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       SELECT p.lifecycle, p.lifecycle_generation
+         INTO STRICT project_lifecycle, project_generation
+         FROM project p WHERE p.tenant = in_tenant AND p.project = in_project FOR UPDATE;
+       IF project_lifecycle = 'Retention' THEN
+         RETURN QUERY SELECT 'NotAdmitted'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       command_value := jsonb_build_object('version', 1, 'command', 'Decide', 'event',
+         jsonb_build_object('type', 'FinalizationResult', 'value',
+           jsonb_build_object('ticket', bound.ticket, 'out', in_outcome)));
+       IF ticket_command_is_valid(command_value) IS NOT TRUE THEN
+         RAISE EXCEPTION 'the finalization result this boundary built is not one the mailbox admits'
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       UPDATE project p SET ingress_next = p.ingress_next + 1
+        WHERE p.tenant = in_tenant AND p.project = in_project
+        RETURNING p.ingress_next - 1 INTO next_ordinal;
+       INSERT INTO operation
+         (tenant, project, operation, authority_kind, authority_subject, admission,
+          key_version, key_digest, payload_digest, command, command_tag)
+       VALUES (in_tenant, in_project, in_operation, '${finalizerAuthorityKind}',
+          in_authority_subject, 'CorrectnessReducing', '${finalizerKeyVersion}',
+          scoped_digest,
+          encode(sha256(convert_to(command_value::text, 'UTF8')), 'hex'),
+          command_value::text, 'FinalizationResult');
+       INSERT INTO decision_input
+         (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
+       VALUES (in_tenant, in_project, next_ordinal, 'Operation', in_operation,
+          'Completion', project_generation);
+       INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES (in_tenant, in_project, true, 1)
+       ON CONFLICT (tenant, project) DO UPDATE
+         SET ready = true, generation = project_readiness.generation + 1;
+       RETURN QUERY SELECT 'Submitted'::text, in_operation, next_ordinal;
+     END $$`,
+  `ALTER FUNCTION ${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)
+     OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION durable_row_is_written_once() OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION commit_permit_concludes_once() OWNER TO ${boundaryOwnerRole}`,
+  `ALTER FUNCTION finalization_reconciliation_concludes_once() OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text) FROM PUBLIC`,
+
+  `REVOKE ALL ON project_repository, finalization_attempt, commit_permit,
+     finalization_reconciliation
+     FROM ${apiRole}, ${ticketServiceRole}, ${selectorServiceRole}, ${schedulerRole}`,
+  `REVOKE ALL ON input_bundle, input_bundle_reference
+     FROM ${apiRole}, ${selectorServiceRole}, ${schedulerRole}`,
+  `REVOKE ALL ON journal_entry, decision_input, operation, ticket_projection,
+     project_notification, project_continuation, native_action_resolution,
+     execution_request, execution_request_task, draft, draft_revision,
+     execution, execution_attempt, execution_result, execution_result_artifact,
+     scheduler_incident, execution_cluster, capacity_account,
+     dispatch_view, dispatch_candidate, dispatch_candidate_dependency,
+     selector_project_state, selector_inventory_state, selector_interaction,
+     selector_planning_intent, selector_proposal_delivery
+     FROM ${finalizerRole}`,
+
+  `GRANT SELECT, INSERT ON input_bundle, input_bundle_reference TO ${ticketServiceRole}`,
+
+  `GRANT SELECT ON finalization_request, finalization_attempt, commit_permit,
+     finalization_reconciliation, recovery_epoch TO ${boundaryOwnerRole}`,
+
+  `GRANT SELECT ON recovery_epoch, project_repository, input_bundle,
+     input_bundle_reference, configuration_revision, native_action,
+     native_action_resolution TO ${finalizerRole}`,
+  `GRANT SELECT (tenant, project, lifecycle, lifecycle_generation)
+     ON project TO ${finalizerRole}`,
+  `GRANT SELECT ON finalization_request TO ${finalizerRole}`,
+  `GRANT UPDATE (state, claim_owner, claim_generation, claim_expires_at, recovery_epoch)
+     ON finalization_request TO ${finalizerRole}`,
+  `GRANT SELECT, INSERT ON finalization_attempt TO ${finalizerRole}`,
+  `GRANT SELECT, INSERT ON commit_permit TO ${finalizerRole}`,
+  `GRANT UPDATE (state, concluded_at) ON commit_permit TO ${finalizerRole}`,
+  `GRANT SELECT, INSERT ON finalization_reconciliation TO ${finalizerRole}`,
+  `GRANT UPDATE (verdict, observed_commit, reconciled_at)
+     ON finalization_reconciliation TO ${finalizerRole}`,
+  `GRANT EXECUTE ON FUNCTION ${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)
+     TO ${finalizerRole}`,
+
+  `REVOKE CREATE ON SCHEMA public FROM ${boundaryOwnerRole}`,
+  `REVOKE ${boundaryOwnerRole} FROM CURRENT_USER`,
+];
+
 /** Every migration in version order, which is the order the runner applies them in. */
 export const migrations: readonly Migration[] = [
   {
@@ -2343,5 +2788,10 @@ export const migrations: readonly Migration[] = [
       ...durableExecutionScheduler,
       ...durableExecutionSchedulerBoundaries,
     ],
+  },
+  {
+    version: 11,
+    name: "the durable finalizer",
+    statements: [...durableFinalizer, ...durableFinalizerBoundaries],
   },
 ];

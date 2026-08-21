@@ -19,6 +19,8 @@
  * so two such identities would share one row and one digest.
  */
 
+import { asBoundedText } from "./boundedText.ts";
+
 declare const executionIdBrand: unique symbol;
 declare const attemptIdBrand: unique symbol;
 declare const capacityAccountBrand: unique symbol;
@@ -53,18 +55,7 @@ export const schedulerIdentityCharsMax = 256;
 
 /** Refuses text a bounded column cannot hold, and text no digest can separate. */
 export function asSchedulerText(value: string, what: string): string {
-  if (value.length === 0) throw new RangeError(`${what}: a value is empty`);
-  if (!value.isWellFormed()) {
-    throw new RangeError(
-      `${what}: an unpaired surrogate is not a value a digest can separate`,
-    );
-  }
-  if (value.length > schedulerIdentityCharsMax) {
-    throw new RangeError(
-      `${what}: ${String(value.length)} characters is past the ${String(schedulerIdentityCharsMax)} a stored row holds`,
-    );
-  }
-  return value;
+  return asBoundedText(value, what, schedulerIdentityCharsMax);
 }
 
 /** Brands an opaque logical execution identity. */

@@ -31,6 +31,7 @@ import {
   mailboxCompletionRoom,
   ticketServiceDefaults,
 } from "../../src/interpreter/ticketService.ts";
+import { assertBoundsAreRefused } from "./configBounds.ts";
 
 /** Every bound a deployment names, read from the defaults so a field added later is covered. */
 const bounds = Object.keys(
@@ -76,43 +77,10 @@ test("the defaults are a configuration a pass may run on", () => {
   );
 });
 
-test("no bound may be zero, negative or fractional", () => {
-  for (const name of bounds) {
-    for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      assert.throws(
-        () =>
-          checkedExecutionSchedulerConfig(
-            configWith(name, value),
-            ticketServiceDefaults,
-          ),
-        (error: unknown) => {
-          assert.ok(error instanceof RangeError);
-          assert.match(error.message, new RegExp(`\\b${name}\\b`, "u"));
-          return true;
-        },
-        `${name} accepted ${String(value)}`,
-      );
-    }
-  }
-});
-
-test("a bound the configuration never names is refused rather than assumed", () => {
-  for (const name of bounds) {
-    const missing = Object.fromEntries(
-      Object.entries(executionSchedulerDefaults).filter(
-        ([named]) => named !== name,
-      ),
-    ) as ExecutionSchedulerConfig;
-    assert.throws(
-      () => checkedExecutionSchedulerConfig(missing, ticketServiceDefaults),
-      (error: unknown) => {
-        assert.ok(error instanceof RangeError);
-        assert.match(error.message, new RegExp(`\\b${name}\\b`, "u"));
-        return true;
-      },
-      `a configuration naming no ${name} was accepted`,
-    );
-  }
+test("no bound may be zero, negative, fractional or left unnamed", () => {
+  assertBoundsAreRefused(executionSchedulerDefaults, (config) =>
+    checkedExecutionSchedulerConfig(config, ticketServiceDefaults),
+  );
 });
 
 test("a bound past the safe integers is refused rather than silently rounded", () => {
