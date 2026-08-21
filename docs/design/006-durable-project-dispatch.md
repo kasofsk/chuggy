@@ -1873,16 +1873,18 @@ adds no transition, reason or event; a proved capacity state machine is a
 separate model-first change.
 
 `execution_cluster` and `capacity_account` are installation-owned policy
-rather than project state: keyed by `cluster` and by `account`, carrying no
-composite project key and holding no unfinished work. Both carry a
-`policy_revision`, because a release pins the stable account identity while
-admission applies the current entitlement. The scheduler reads both and writes
-neither, so it cannot provision the account it needs; a project made after the
-migration would otherwise have none, and its first registration would fail the
-foreign key tying an execution to the account it draws on. An `AFTER INSERT`
-trigger on `project` provisions it, `SECURITY DEFINER` and owned by
-`chuggy_boundary_owner`, so entitlement stays policy the scheduler may only
-read.
+rather than project state: policy identities of their own, holding no
+unfinished work. Both carry a `policy_revision`, because a release pins the
+stable account identity while admission applies the current entitlement. An
+account is an entitlement axis and never an identity one, as
+`model/capacity.qnt` says, so it cannot stand in for the project drawing on it
+and two projects are never folded into one by sharing a name. The scheduler
+reads both and writes neither, so it cannot provision the account it needs; a
+project made after the migration would otherwise have none, and its first
+registration would fail the foreign key tying an execution to the account it
+draws on. An `AFTER INSERT` trigger on `project` provisions it,
+`SECURITY DEFINER` and owned by `chuggy_boundary_owner`, so entitlement stays
+policy the scheduler may only read.
 
 `execution` is one logical task registration and the grain the slice is keyed
 at. It is `chuggy_scheduler`'s, keyed `(tenant, project, execution)` with
@@ -1895,7 +1897,10 @@ making partial batch registration safe, since a retry creates the rows it is
 missing and collides on the ones it made. It stores no provenance of its own
 but reads it back through the request it names, so a registration cannot drift
 from the effect that authorized it. Registration, admission, launch, attempt
-accounting, cancellation and the terminal transaction change it, and its
+accounting, cancellation and the terminal transaction change it; admission
+serializes on a transaction-scoped advisory lock keyed by the cluster, because
+the `execution_cluster` row a lock would otherwise take is policy the
+scheduler may only read and locking a row needs write privilege on it. Its
 unfinished work is found by status: queued rows for admission, slot-holding
 rows with no live attempt for launch, everything outside `Terminal` and
 `Cancelled` for a project's live work.
@@ -1903,16 +1908,13 @@ rows with no live attempt for launch, everything outside `Terminal` and
 The role's grants are why a settlement cannot be forged rather than merely
 discouraged: it may write the columns that account for an execution's progress
 and none that name its outcome, while a move to `Terminal` needs the `outcome`
-and `completion_operation` that `execution_outcome_is_whole` insists on. Every
-settlement goes through the completion boundary because a constraint says so.
-
-Admission serializes on a transaction-scoped advisory lock keyed by the
-cluster. `mayAdmit` counts over the whole ledger, so two admissions evaluating
-it concurrently would each see room only one can have, and the obvious remedy
-— locking the `execution_cluster` row — is unavailable, because locking needs
-write privilege and capacity policy is not the scheduler's to write. The lock
-serializes an arithmetic and confers no authority: that stays the durable
-allocations, so no count is cached.
+and `completion_operation` that `execution_outcome_is_whole` insists on, so an
+outcome-bearing settlement goes through the completion boundary because a
+constraint says so. `Cancelled` is this tree's other settled status and the
+scheduler does write it directly; that is sound because the same constraint
+leaves it nothing to put in — a cancelled execution carries no outcome, no
+manifest and no completion operation — and retiring work is the scheduler's
+authority where concluding it is not.
 
 `execution_attempt` is the physical grain below that and `Core` never sees
 one. It is the scheduler's, keyed
@@ -1933,8 +1935,9 @@ restore, any live attempt from an older epoch.
 versioned manifest a winning attempt produced. They are the scheduler's to
 insert and nobody's to change, their triggers raising on update and delete
 alike because a manifest that could be edited is not evidence; one result per
-execution and one per attempt are unique constraints, which makes a second
-contradictory manifest impossible rather than detectable. `manifest_ordinal`
+execution and one per attempt are unique constraints, which are the backstop
+and not the detector, since a report contradicting the manifest already
+recorded is recognised before any second insert is reached. `manifest_ordinal`
 is project-local and is what the journaled input carries; the digest is the
 control plane's and never the worker's, taken over canonical bytes binding the
 manifest to its execution and attempt, so one grafted elsewhere disagrees with
@@ -1946,21 +1949,28 @@ window to sweep but an integrity check that must return nothing.
 `scheduler_incident` is the durable form of the scheduler integrity incident
 this document already requires. It is the scheduler's to insert and read,
 keyed `(tenant, project, incident)` and foreign-keyed to its project, carrying
-a closed kind and a bounded evidence label rather than free text. It is
-written in the transaction that detected the contradiction and holds no work
-of its own, so it has no recovery query but an operator's read and nothing is
-blocked by one. Only a second terminal claim contradicting the first is an
-incident, which is what keeps the relation narrow.
+a kind the server closes against the roster the code switches on and an
+evidence sentence whose length is all the server bounds. It is written in the
+transaction that detected the contradiction and holds no work of its own, so
+it has no recovery query but an operator's read and nothing is blocked by one.
+Nothing in the kind is an ordinary refusal, which is what keeps the relation
+narrow: a second terminal result contradicting the one recorded, a logical
+task already registered under another spawn request, a manifest bound to some
+other execution, and the impossible states a partial registration, a binding
+this boundary built from its own rows and then refused, and an exhausted
+execution with no reporter leave behind. A fenced attempt, a stale report and
+a denied admission are answers.
 
-I3's `execution_request` gains the mutable delivery fields I6 consumes and the
-immutable pins it needs. The pins are the capacity account and the
-configuration revision and digest; the delivery fields are the claim lease and
-`state`, which moves `Open` to `Registered` once the executions a spawn
-authorizes exist, `Registered` to `Fulfilled` once every registration under it
-has settled, and to `Invalidated` when a cancellation for that ticket has
-already retired the work it would have created — while a cancellation request
-moves `Open` straight to `Fulfilled` once the retirement is durable, and not
-once the workload is gone. Those are the only columns any role may update.
+I3's `execution_request` already carries the delivery fields I6 consumes —
+`state`, the claim owner, its generation and its expiry — and gains from this
+migration only the immutable pins: the capacity account and the configuration
+revision and digest. `state` moves `Open` to `Registered` once the executions
+a spawn authorizes exist, `Registered` to `Fulfilled` once every registration
+under it has settled, and to `Invalidated` when a cancellation for that ticket
+has already retired the work it would have created — while a cancellation
+request moves `Open` straight to `Fulfilled` once the retirement is durable,
+and not once the workload is gone. Those delivery columns are the only ones
+any role may update, so a pin cannot be rewritten after the fact.
 Registration fences on the authorizing sequence and not on the delivery state,
 so a spawn claimed before a revocation and registered after it finds its tasks
 fenced rather than resurrecting revoked work. Unfinished delivery is the
@@ -1972,12 +1982,25 @@ a `SECURITY DEFINER` function owned by the `chuggy_boundary_owner` I3 gave
 `accept_operation` and `publish_continuation`, and hardened the same way.
 Granting the scheduler execute on it is not an exception to the rule that it
 submits through authenticated ingress and never inserts mailbox inputs
-directly; it is how that rule is enforced, because the role holds no privilege
-whatever on `operation`, `decision_input`, `journal_entry` or
-`ticket_projection`, and authentication is the database role itself. This
-adapter shares one PostgreSQL between scheduler and inbox; an adapter whose
-two do not share a transaction boundary needs a completion outbox and relay,
-implementing this same semantic port rather than a different authority.
+directly; it is how that rule is enforced, because the role is revoked on
+`operation`, `decision_input`, `journal_entry` and `ticket_projection`, and
+authentication is the database role itself. This adapter shares one PostgreSQL
+between scheduler and inbox; an adapter whose two do not share a transaction
+boundary needs a completion outbox and relay, implementing this same semantic
+port rather than a different authority.
+
+The role does hold one direct write on a ticket-service relation, and it is
+the exception that claim has to survive. `project.manifest_next` is a counter
+this slice adds to I0's `project`: the scheduler's to move, granted `UPDATE`
+on that column and no other and reading it only because advancing a counter
+reads what it advances. It needs no key of its own, being a column of a row
+already keyed `(tenant, project)`; the ordinal it hands out is the identity,
+unique at `(tenant, project, manifest_ordinal)` on `execution_result`. The
+terminal transaction is the only one that moves it, once, immediately before
+the manifest row it numbers, and it has no recovery query because a counter
+holds no work: an ordinal a rolled-back transaction consumed is a gap and
+never a lost result, where counting rows instead would let two concurrent
+completions choose the same one.
 
 Validation of the binding is the function's and never the caller's, and the
 envelope is built from durable rows rather than from arguments: a claim
@@ -2000,10 +2023,11 @@ manifest, the ingress ordinal, the operation under authority kind
 `Terminal` land together or not at all — and because slot ownership is derived
 from status, that last move is what releases the capacity slot. The window
 between holding a verified result and telling anyone is removed rather than
-shortened. The operation's idempotency key is the execution identity, so one
-logical task yields one completion and no more, and a resubmission is answered
-with the operation already recorded — identical redelivery absorbed below the
-journal at the immutable effect identity. A project that no longer admits is
+shortened. The operation's idempotency key is the execution identity, minted
+once for a logical task and pinned there by
+`execution_names_one_logical_task`, so one logical task yields one completion
+and no more and an identical redelivery is answered with the operation already
+recorded rather than reaching the journal. A project that no longer admits is
 answered as itself and not as a cancellation, because a completion arriving
 into `Retention` and a late result for work already retired are different
 facts, stated separately here and answered separately at the boundary;
@@ -2011,19 +2035,16 @@ terminalization, blocking and ingestion each carry that arm, as blocking does
 for a refused completion. Current domain applicability stays the writer's
 later decision.
 
-The two inabilities are kept apart at the port rather than the call site,
-which is why the policy and placement ports answer with three arms and not a
-boolean. `Denied` is definitive and becomes `ExecutionBlocked` under one of
-the model's existing bounded reasons; `Unavailable` is temporary, withdraws
-the attempt without spending the safe retry budget and leaves the execution
-visibly held. When that budget is spent the execution terminalizes as a single
-failed `TaskDone` carrying the explicit empty manifest that says it produced
-no handoffs, which is the exhausted-retry outcome and not a fabricated
-verdict. Blocking retires one execution and not its siblings:
-`ExecutionBlocked` escalates the ticket while the decider emits only
-`OpenHumanTask`, so no cancellation obligation reaches the scheduler, those
-siblings drain, and the writer refuses their completions as auditable
-staleness.
+A refusal to launch is definitive or temporary and never one arm for both.
+`Denied` becomes `ExecutionBlocked` under one of the model's existing bounded
+reasons; `Unavailable` leaves the execution visibly held without spending the
+safe retry budget. When that budget is spent the execution terminalizes as a
+single failed `TaskDone` carrying the explicit empty manifest that says it
+produced no handoffs, which is the exhausted-retry outcome and not a
+fabricated verdict. Blocking retires one execution and not
+its siblings, because the decider escalates the ticket without emitting a
+cancellation: those siblings drain, and the writer refuses their completions
+as the auditable staleness this document already describes.
 
 The two things the scheduler tells the rest of the installation are separate
 ports because they carry different authority. `project_active_work` is
@@ -2044,13 +2065,12 @@ or a selector reservation, and it preserves headroom by being narrow rather
 than by reserving — only a `Dispatch` decision needs scheduler headroom, so
 every other decision stays admissible while dispatch is paused.
 
-Scheduler diagnostics carry closed bounded vocabularies and no identities, and
-the provenance a briefing retains is a type with no field a prompt, a
-credential, a log, source material or model output could be put in. Telemetry
-is not an authority by construction: the sink is sealed behind an unexported
-symbol and every observation answers nothing, so no expression exists in which
-a metric returns a value a branch could read, and a sink that throws at every
-observation leaves every durable answer identical.
+What this document forbids the scheduler to retain is kept out by the shape of
+its types rather than by a rule its callers keep: diagnostics are closed
+vocabularies in the code and bounded text at the server, briefing provenance
+has no field a prompt, a credential, a log, source material or model output
+could be put in, and a sealed telemetry sink that answers nothing leaves no
+expression a branch could read.
 
 I6 briefs the worker it launches — issue #143's title names it — and the
 accepted proposal of issue #97 settles the shape. A template owns a role and
@@ -2060,30 +2080,20 @@ block and the practices scoped to that role differ. Practices resolve through
 a finite trusted catalog, each carrying an instruction and a scope; one that
 is missing or named twice refuses the launch under `TicketConfigIncompatible`,
 a reason the model already has, so briefing needs no model change. The section
-order is one array the renderer drops empty sections from, so an absent
-optional section cannot reorder its neighbours. A retry renders the same
-briefing because the input is content-addressed: `PinnedConfigurationPort` has
-no spelling for "current", is asked for the revision the execution row pinned,
-and refuses what comes back unless its revision and digest are that one — so a
-rewritten revision is a refusal rather than a different prompt, and the
-bounded runtime facts the adapter gathers are the only moving input. What the
-templates say is authored rather than derived — #97 fixes the sections and
-deliberately not their wording — so it is versioned by
-`briefingTemplateVersion` and is the part a reviewer should argue with.
+order is one array the renderer drops empty sections from, and a retry renders
+the same briefing because `PinnedConfigurationPort` can only be asked for the
+revision the execution row pinned — the bounded runtime facts the adapter
+gathers are the only moving input. What the templates say is authored rather
+than derived — #97 fixes the sections and deliberately not their wording — so
+it is versioned by `briefingTemplateVersion` rather than derived from the
+configuration it renders.
 
-Composition can only narrow authority, and that is a property of the shape
-rather than a rule for callers to keep. `TaskAuthority` holds what structured
-task policy granted behind a symbol its module does not export, so nothing
-else can build one or replace the grant inside it, and the meet that narrows
-it filters the values already held rather than reading the request's, so its
-result is a subset of the grant whatever a request asks for. Intersection,
-conjunction and a minimum over a total order are each commutative and
-associative, so folding requests is taking their meet: permuting the composed
-blocks yields the same authority and appending one can only lower it —
-stronger than forbidding a later block to widen what an earlier one narrowed.
-A request is structured data and never prose, so a briefing may ask an agent
-to run a suite while what it may actually run is decided by a value that never
-met the sentence asking. The template's own request leads the fold and takes
+Composition cannot widen authority, and that is a property of the shape rather
+than a rule for callers to keep: `TaskAuthority` keeps its grant behind a
+symbol its module does not export, and the meet that narrows it filters the
+values already held rather than reading the request's, so folding requests can
+only lower it. That is what issue #97's separation of instructions from
+authority reduces to here. The template's own request leads the fold and takes
 completion authority away, so a briefed worker cannot conclude its own task
 even where policy granted it: it reports a manifest and the scheduler submits
 the completion.
@@ -2094,8 +2104,7 @@ pinned revision instead, and the relation arrives with the slice that gives it
 references of its own to hold. Artifact verification is a typed port here and
 its project-owned storage adapter is not; the completion boundary is reached
 only after that port confirms every required result durably present with
-matching digest and schema, so an incomplete upload cannot yield a successful
-verdict and permanent loss is a definitive execution failure.
+matching digest and schema.
 
 I7 consumes none of these relations and adds its own preparation, permit and
 reconciliation records with the sole `FinalizationResult` authority;
