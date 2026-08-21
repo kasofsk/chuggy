@@ -206,6 +206,23 @@ mkdir -p "$R/src/interpreter"
 	printf '%s\n' '  return n;'
 	printf '%s\n' '}'
 } > "$R/src/domain/long.ts"
+# The adapter's query ratchet needs no server, and every one of its selectors
+# is proved against the shape it forbids: an untagged template, a plain
+# string, a foreign tag, and a runtime-assembled argument.
+mkdir -p "$R/src/adapters/postgres"
+{
+	printf '%s\n' 'import type pg from "pg";'
+	printf '%s\n' 'const other = String.raw;'
+	printf '%s\n' 'export async function untagged('
+	printf '%s\n' '  client: pg.PoolClient,'
+	printf '%s\n' '  dynamic: string,'
+	printf '%s\n' '): Promise<void> {'
+	printf '%s\n' '  await client.query(`SELECT 1`);'
+	printf '%s\n' '  await client.query("SELECT 2");'
+	printf '%s\n' '  await client.query(other`SELECT 3`);'
+	printf '%s\n' '  await client.query(dynamic);'
+	printf '%s\n' '}'
+} > "$R/src/adapters/postgres/untagged.ts"
 seal
 
 check "house rule 2: the domain may not read a clock" 1 "$RC" "the domain takes time as an argument"
@@ -220,6 +237,10 @@ check "the actor may not read a clock either" 1 "$RC" "the journaled actor takes
 check "the actor may not draw randomness either" 1 "$RC" "the journaled actor takes its draws as arguments"
 check "the interpreter may not read a clock either" 1 "$RC" "the interpreter takes time as an argument"
 check "the interpreter may not draw randomness either" 1 "$RC" "the interpreter takes its draws as arguments"
+check "an untagged query template is a finding" 1 "$RC" "an untagged template is invisible to check-queries"
+check "a plain-string query is a finding" 1 "$RC" "a plain string is invisible to check-queries"
+check "a query under another tag is a finding" 1 "$RC" "another tag is not checked"
+check "a runtime-assembled query is a finding" 1 "$RC" "assembled at runtime cannot be checked"
 
 # The floating-promise exemption is narrow: node:test's own functions and
 # nothing else. The clean fixture's suite calls `test` without awaiting it, so

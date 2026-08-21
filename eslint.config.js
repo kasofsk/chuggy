@@ -55,10 +55,13 @@
 // THE ADAPTER'S QUERIES ARE CHECKED AGAINST A LIVE SCHEMA when
 // `CHUG_SAFEQL_DATABASE_URL` names a migrated database. The SafeQL block at
 // the bottom loads its plugin only inside that guard, so a broken SQL parser
-// can degrade only the gate that sets the variable and never a plain
-// `eslint .`. An editor opts in by exporting the variable against a migrated
-// database of its own and gets the same diagnostics inline, with `--fix`
-// writing the inferred row type at the call site.
+// can degrade only `.chug/tasks/check-queries.sh` — the gate that sets the
+// variable — and never a plain `eslint .`. An editor opts in by exporting the
+// variable against a migrated database of its own and gets the same
+// diagnostics inline, with `--fix` writing the inferred row type at the call
+// site. The unconditional block beside it is the half that needs no server:
+// a query written as an untagged string is invisible to SafeQL, so untagged
+// strings there are findings on every run.
 
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
@@ -198,6 +201,43 @@ export default tseslint.config(
     rules: {
       "no-restricted-globals": noAmbientGlobals("the interpreter"),
       "no-restricted-properties": noAmbientDraws("the interpreter"),
+    },
+  },
+  // A query the checker cannot see is a claim nothing checks: an untagged
+  // string reaches the server as SQL and never reaches SafeQL. So untagged
+  // query strings in the adapter are findings unconditionally — no server
+  // needed — with transaction control and the migration executor's variables
+  // as the enumerated exemptions.
+  {
+    files: ["src/adapters/postgres/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.property.name='query'][arguments.0.type='TemplateLiteral']",
+          message:
+            "adapter queries are sql-tagged: an untagged template is invisible to check-queries.",
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='query'][arguments.0.type='TaggedTemplateExpression']:not([arguments.0.tag.name='sql'])",
+          message:
+            "adapter queries use the sql tag from @ts-safeql/sql-tag; another tag is not checked.",
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='query'][arguments.0.type='Literal']:not([arguments.0.value=/^(BEGIN|COMMIT|ROLLBACK|BEGIN ISOLATION LEVEL [A-Z ]+|SET TRANSACTION [A-Z, ]+)$/])",
+          message:
+            "adapter queries are sql-tagged: a plain string is invisible to check-queries. Transaction control is the exemption.",
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='query'][arguments.0.type!='Literal'][arguments.0.type!='TemplateLiteral'][arguments.0.type!='TaggedTemplateExpression']:not([arguments.0.name=/^(statement|migrationLedger)$/])",
+          message:
+            "a query assembled at runtime cannot be checked; the migration executor is the exemption.",
+        },
+      ],
     },
   },
   // The adapter's queries, verified against the database the variable names.
