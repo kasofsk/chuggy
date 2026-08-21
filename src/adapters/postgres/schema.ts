@@ -257,16 +257,10 @@ export const accountProvisionFunction = "project_draws_a_capacity_account";
 
 /**
  * The account row a project draws on when nothing else has said otherwise,
- * written once so the backfill for the projects that predate this migration
- * and the trigger for the ones that arrive after it cannot state two
- * entitlements. Without the trigger a project created later has no account at
- * all, and `execution_account_draws_its_cluster` then refuses every
- * registration it would ever authorize.
- *
- * An account is keyed by its own name and is deliberately not an identity
- * axis, so two tenants holding the same project name draw on one account. That
- * is what the backfill already does, and it is why the trigger takes the
- * conflict as nothing to do rather than as a failure.
+ * written once so the backfill for the projects predating this migration and
+ * the trigger for the ones after it cannot state two entitlements. An account
+ * is not an identity axis, so two tenants holding one project name draw on one
+ * account and the trigger takes that conflict as nothing to do.
  */
 const capacityAccountDefaults = [
   `'${executionCapacityDefaults.cluster}'`,
@@ -1769,10 +1763,9 @@ const durableExecutionScheduler = [
  * The server's own statements of what may move, and the boundaries the runtime
  * roles reach it through. The boundary owner owns what its `SECURITY DEFINER`
  * bodies call and reads what they read, and the scheduler is granted the move
- * table because its own status updates are what fire the trigger consulting it.
- * It is granted `SELECT` on the manifest counter it is granted `UPDATE` on for
- * the same kind of reason: allocating an ordinal reads the column it advances,
- * and a column grant that covers only the write is refused at the read.
+ * table because its own status updates are what fire the trigger consulting it
+ * and `SELECT` on the manifest counter because allocating an ordinal reads the
+ * column it advances.
  */
 const durableExecutionSchedulerBoundaries = [
   `CREATE FUNCTION ${statusMoveFunction}(before text, after text) RETURNS boolean

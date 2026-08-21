@@ -235,7 +235,13 @@ async function schedulerRequestState(
   );
 }
 
-/** Whether a later cancellation has already retired the work this spawn would create. */
+/**
+ * Whether a cancellation authorized after this spawn has retired the work it
+ * would create. The cancellation request's own delivery state is deliberately
+ * not read: the revocation is durable as soon as the writer journaled it, and a
+ * registration that waited for the scheduler to process it would create work
+ * the cancellation had not reached yet and would then have to retire.
+ */
 async function schedulerTicketRetired(
   client: pg.PoolClient,
   claim: RequestClaim,
@@ -243,8 +249,7 @@ async function schedulerTicketRetired(
   const found = await client.query(
     `SELECT 1 FROM execution_request
       WHERE tenant = $1 AND project = $2 AND ticket = $3
-        AND kind = 'CancelTicketWork' AND state IN ('Registered', 'Fulfilled')
-        AND authorizing_seq > $4`,
+        AND kind = 'CancelTicketWork' AND authorizing_seq > $4`,
     [
       claim.partition.tenant,
       claim.partition.project,
