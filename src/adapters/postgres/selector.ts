@@ -103,7 +103,7 @@ async function writeSelectorProject(
   await pool.query(
     sql`INSERT INTO selector_project_state
      (tenant,project,notification_cursor,recovery_epoch,attention)
-     VALUES (${state.partition.tenant},${state.partition.project},${state.notificationCursor},${state.recoveryEpoch ?? null},${String(state.attention)})
+     VALUES (${state.partition.tenant},${state.partition.project},${state.notificationCursor},${state.recoveryEpoch ?? null},${state.attention})
      ON CONFLICT (tenant,project) DO UPDATE SET
      notification_cursor=EXCLUDED.notification_cursor,recovery_epoch=EXCLUDED.recovery_epoch,
      attention=EXCLUDED.attention,updated_at=now()`,
