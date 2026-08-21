@@ -174,33 +174,43 @@ test("authoring reads conceal inaccessible resources", async () => {
   assert.deepEqual(denied.calls, ["authorize:Read"]);
 });
 
-test("the execution backlog guard stops dispatch before anything becomes durable", async () => {
-  const { web, calls } = boundary(true, backloggedGuard);
+/** The dispatch decision the inbox refuses, which is what the case below is about. */
+const dispatchDecision: TicketCommand = {
+  version: 1,
+  command: "Decide",
+  event: asOperationDecisionEvent(dispatchEvent(id(1))),
+};
+
+/** Dispatch as it actually arrives, which is what the guard is consulted for. */
+const manualDispatch: TicketCommand = {
+  version: 1,
+  command: "ManualDispatch",
+  ticket: id(1),
+  expectedTicketVersion: 1,
+};
+
+test("a command the inbox refuses is answered the same way backlogged or not", async () => {
+  const backlogged = boundary(true, backloggedGuard);
+  const admitting = boundary(true);
+  const refused = {
+    result: "Authorized",
+    acceptance: { accepted: "InvalidCommand" },
+  };
   assert.deepEqual(
-    await web.submit(
-      principal,
-      submissionOf({
-        version: 1,
-        command: "Decide",
-        event: asOperationDecisionEvent(dispatchEvent(id(1))),
-      }),
-    ),
-    { result: "Backlogged", scope: "Project", retryAfterSeconds: 5 },
+    await backlogged.web.submit(principal, submissionOf(dispatchDecision)),
+    refused,
   );
-  assert.deepEqual(calls, ["authorize:Mutate"]);
+  assert.deepEqual(
+    await admitting.web.submit(principal, submissionOf(dispatchDecision)),
+    refused,
+  );
+  assert.deepEqual(backlogged.calls, ["authorize:Mutate", "accept"]);
+  assert.deepEqual(admitting.calls, backlogged.calls);
 });
 
 test("the guard stops the two ingress spellings dispatch actually arrives as", async () => {
   const spellings: readonly (readonly [TicketCommand, string])[] = [
-    [
-      {
-        version: 1,
-        command: "ManualDispatch",
-        ticket: id(1),
-        expectedTicketVersion: 1,
-      },
-      "authorize:DispatchTicket",
-    ],
+    [manualDispatch, "authorize:DispatchTicket"],
     [
       {
         version: 1,
@@ -256,34 +266,18 @@ test("every ceiling the guard can name reaches the submitter unchanged", async (
         Promise.resolve({ admits: "Backlogged", scope, retryAfterSeconds: 5 }),
     });
     assert.deepEqual(
-      await web.submit(
-        principal,
-        submissionOf({
-          version: 1,
-          command: "Decide",
-          event: asOperationDecisionEvent(dispatchEvent(id(1))),
-        }),
-      ),
+      await web.submit(principal, submissionOf(manualDispatch)),
       { result: "Backlogged", scope, retryAfterSeconds: 5 },
     );
-    assert.deepEqual(calls, ["authorize:Mutate"]);
+    assert.deepEqual(calls, ["authorize:DispatchTicket"]);
   }
 });
 
 test("an unbacklogged project reaches acceptance for dispatch", async () => {
   const { web, calls } = boundary(true);
   assert.equal(
-    (
-      await web.submit(
-        principal,
-        submissionOf({
-          version: 1,
-          command: "Decide",
-          event: asOperationDecisionEvent(dispatchEvent(id(1))),
-        }),
-      )
-    ).result,
+    (await web.submit(principal, submissionOf(manualDispatch))).result,
     "Authorized",
   );
-  assert.deepEqual(calls, ["authorize:Mutate", "accept"]);
+  assert.deepEqual(calls, ["authorize:DispatchTicket", "accept"]);
 });

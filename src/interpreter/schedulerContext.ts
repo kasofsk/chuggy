@@ -1,8 +1,14 @@
 /**
- * The two narrow things the ticket service and the selector are allowed to
- * learn from the execution scheduler: bounded project-safe active-work and
- * advisory capacity context, and the authoritative hard execution-backlog
- * guard over dispatch.
+ * The two narrow things the ticket service is allowed to learn from the
+ * execution scheduler: bounded project-safe active-work and advisory capacity
+ * context, and the authoritative hard execution-backlog guard over dispatch.
+ *
+ * THE SELECTOR IS THE CONTEXT'S INTENDED READER AND HAS NO ROUTE TO IT HERE,
+ * which is why the names below say selector and why this says the rest. 006
+ * makes the context selector-facing; in this tree the functions that answer it
+ * are granted to the API and ticket-service roles alone, `NativeWeb` publishes
+ * no method returning one, and nothing composes the read. What the selector
+ * does learn is the guard's verdict, as the answer to its own `ProposeDispatch`.
  *
  * THE CONTEXT IS ADVISORY AND THE GUARD IS AUTHORITATIVE, and they are
  * separate ports for that reason. `docs/design/006-durable-project-dispatch.md`
@@ -30,10 +36,22 @@
  * that has not got one cannot ask.
  *
  * THE GUARD PRESERVES HEADROOM BY BEING NARROW RATHER THAN BY RESERVING IT.
- * `dispatchNeedsExecutionHeadroom` returns true for dispatch alone, so
- * completion, cancellation, revocation and every other correctness-reducing
- * path is admissible while dispatch is paused. It is an exhaustive switch, so
- * a command tag added later cannot slip past it unclassified.
+ * `dispatchNeedsExecutionHeadroom` returns true for the two dispatch commands
+ * alone, so completion, cancellation, revocation and every other
+ * correctness-reducing path is admissible while dispatch is paused. It reads
+ * the command tag and nothing inside the command, so the switch is exhaustive
+ * in the sense the compiler decides and a tag added later cannot slip past it
+ * unclassified.
+ *
+ * THE CRITERION IS THE COMMAND AND NOT THE WORK IT MAY CAUSE. Resuming a ticket
+ * spawns work tasks too and 006 still pauses dispatch alone, so a criterion
+ * reading "asks for new execution work" would have to classify resume and
+ * native-action resumption the other way from the way this file does. A
+ * `Decide` is never one of them either, including one carrying a `Dispatch`
+ * event: the inbox refuses that command as `InvalidCommand` whatever the
+ * backlog, so gating it here would answer a command that can never be accepted
+ * with a retryable `Backlogged` for as long as the project stayed backlogged —
+ * two answers to one invalid command, and the retryable one first.
  *
  * EVERY REFUSAL IS A VALUE, as elsewhere in this layer. A backlogged project is
  * an outcome a submitter must handle, not an exception it may ignore.
@@ -169,11 +187,9 @@ export interface ExecutionBacklogGuard {
 }
 
 /**
- * Whether this command asks for new execution work and therefore needs
- * scheduler headroom. Manual dispatch, an agentic proposal and the bare
- * `Dispatch` decision are the spellings of that request; completion,
- * cancellation, revocation, resume, release and native-action resolution are
- * not.
+ * Whether this command is a dispatch, which is the one thing the backlog
+ * ceiling pauses. Manual dispatch and an agentic proposal are the two spellings
+ * dispatch arrives as at this boundary.
  */
 export function dispatchNeedsExecutionHeadroom(
   command: TicketCommand,
@@ -183,7 +199,6 @@ export function dispatchNeedsExecutionHeadroom(
     case "ProposeDispatch":
       return true;
     case "Decide":
-      return command.event.type === "Dispatch";
     case "ReleaseDraft":
     case "ResolveNativeAction":
       return false;

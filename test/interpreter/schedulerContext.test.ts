@@ -224,8 +224,13 @@ const proposeDispatch: TicketCommand = {
   selectorDecisionReference: "selection-one",
 };
 
-test("only a dispatch decision needs scheduler headroom", () => {
-  assert.equal(dispatchNeedsExecutionHeadroom(dispatch), true);
+test("manual dispatch and an agentic proposal need the same headroom", () => {
+  assert.equal(dispatchNeedsExecutionHeadroom(manualDispatch), true);
+  assert.equal(dispatchNeedsExecutionHeadroom(proposeDispatch), true);
+});
+
+test("no decision is gated, including the one carrying a dispatch event", () => {
+  assert.equal(dispatchNeedsExecutionHeadroom(dispatch), false);
   assert.equal(
     dispatchNeedsExecutionHeadroom({
       version: 1,
@@ -234,11 +239,6 @@ test("only a dispatch decision needs scheduler headroom", () => {
     }),
     false,
   );
-});
-
-test("manual dispatch and an agentic proposal need the same headroom", () => {
-  assert.equal(dispatchNeedsExecutionHeadroom(manualDispatch), true);
-  assert.equal(dispatchNeedsExecutionHeadroom(proposeDispatch), true);
 });
 
 test("release and native-action resolution stay admissible while dispatch is paused", () => {
