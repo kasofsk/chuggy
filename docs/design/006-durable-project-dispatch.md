@@ -718,6 +718,11 @@ and recorded interactions pin the prompt and settings revision they used. A dry
 run may replay a recorded observation through a candidate revision without
 creating a proposal or delivery.
 
+The trusted policy host applies model and tool allowlists and execution budgets
+before exposing either capability to a decision. Post-execution accounting and
+provenance checks are defense in depth, not the mechanism that prevents a
+forbidden model or tool call.
+
 Dispatch mode is independently `Automatic` or `ApprovalRequired`. In automatic
 mode a durable proposal proceeds to ticket-service delivery. In approval mode it
 stops in selector-owned storage and is exposed only to users with the project's
@@ -726,12 +731,16 @@ rejection terminates it without contacting the ticket service. Optional review
 feedback is retained and returned in later project-safe selector context. Review
 never weakens the writer's view, version, eligibility, lifecycle or backlog
 guards, so approval means “submit this proposal,” not “force this dispatch.”
+Review outcomes are append-at-review audit facts with their own monotonic cursor;
+proposal creation order is not a review-feed cursor.
 
 The selector also retains bounded project-scoped working memory alongside its
 notification cursor. Each interaction receives the prior memory and atomically
 records its replacement with the interaction and any proposal. The memory may
 summarize in-flight work, deferred considerations and user feedback, but it is
 transparent operational context—not a ticket fact, reservation or authority.
+Each recorded interaction also atomically replaces or clears the current
+project-visible planning intent.
 
 Several tickets in one project may be logically working concurrently. Each
 additional dispatch requires a fresh agentic choice or manual override. The
@@ -1893,7 +1902,9 @@ idempotency. A crash before submission leaves a retryable owned delivery; an
 ambiguous API result is resolved by polling the operation. No cross-service
 transaction is introduced, and a ticket-service operation never depends on
 selector storage to decide or replay it. Selector audit later reconciles the
-operation outcome for presentation.
+operation outcome for presentation. Submitted deliveries use independently
+claimed, retry-scheduled reconciliation work so one pending or temporarily
+unreadable operation cannot monopolize a bounded reconciliation batch.
 
 Selector state is recovered and deleted under its owning service. I8 restore
 causes pre-restore view tokens to fail their recovery-epoch fence and causes the

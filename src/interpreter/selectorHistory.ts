@@ -1,12 +1,15 @@
 import type { Principal, ProjectAccess } from "./nativeWeb.ts";
 import type { Partition } from "./projectStore.ts";
-import type { SelectorInteraction, SelectorStateStore } from "./selector.ts";
+import type {
+  SelectorInteractionRecord,
+  SelectorStateStore,
+} from "./selector.ts";
 
 export type SelectorHistoryResult =
   | { readonly result: "NotFound" }
   | {
       readonly result: "Found";
-      readonly interactions: readonly SelectorInteraction[];
+      readonly interactions: readonly SelectorInteractionRecord[];
     };
 
 export interface SelectorHistory {

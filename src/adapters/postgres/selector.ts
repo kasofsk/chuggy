@@ -11,6 +11,7 @@ import type {
   SelectorInteraction,
   SelectorInteractionRecord,
   SelectorProposal,
+  SelectorPlanningIntent,
   SelectorProjectState,
   SelectorReviewFeedback,
   SelectorPolicyControls,
@@ -32,6 +33,7 @@ import type { SelectorProposalReviewStore } from "../../interpreter/selectorRevi
 import {
   selectorClaimFunction,
   selectorDeliveryFunction,
+  selectorReconcileClaimFunction,
   selectorReviewFunction,
   selectorSettingsFunction,
 } from "./schema.ts";
@@ -373,8 +375,7 @@ async function submittedDeliveries(
   checkedSelectorLimit(limit, "selector reconciliation");
   const found = await pool.query<DeliveryRow>(
     `SELECT selector_decision,tenant,project,operation,command,attempts::text
-       FROM selector_proposal_delivery WHERE state='Submitted'
-      ORDER BY selector_decision LIMIT $1`,
+       FROM ${selectorReconcileClaimFunction}($1)`,
     [limit],
   );
   return found.rows.map(deliveryOf);
@@ -425,13 +426,10 @@ async function readReviewFeedback(
     review_feedback: string | null;
     reviewed_at: Date;
   }>(
-    `SELECT delivery.selector_decision,interaction.ordinal::text,
-       delivery.review_outcome,delivery.reviewer_kind,delivery.reviewer_subject,
-       delivery.review_feedback,delivery.reviewed_at
-       FROM selector_proposal_delivery delivery JOIN selector_interaction interaction
-         USING (selector_decision,tenant,project)
-     WHERE delivery.tenant=$1 AND delivery.project=$2 AND delivery.reviewed_at IS NOT NULL
-       AND interaction.ordinal>$3 ORDER BY interaction.ordinal LIMIT $4`,
+    `SELECT selector_decision,ordinal::text,outcome AS review_outcome,
+       reviewer_kind,reviewer_subject,feedback AS review_feedback,reviewed_at
+       FROM selector_proposal_review
+     WHERE tenant=$1 AND project=$2 AND ordinal>$3 ORDER BY ordinal LIMIT $4`,
     [partition.tenant, partition.project, after ?? 0, limit],
   );
   return found.rows.map((row) => ({
@@ -532,7 +530,12 @@ async function recordSelectorState(
   return postgresTransaction(pool, async (client) => {
     if (!(await lockSelectorProject(client, state))) return false;
     if (!(await insertSelectorInteraction(client, interaction))) return false;
-    if (planningIntent !== undefined)
+    if (planningIntent === undefined)
+      await client.query(
+        `DELETE FROM selector_planning_intent WHERE tenant=$1 AND project=$2`,
+        [interaction.partition.tenant, interaction.partition.project],
+      );
+    else
       await client.query(
         `INSERT INTO selector_planning_intent (tenant,project,selector_decision,intent)
          VALUES ($1,$2,$3,$4) ON CONFLICT (tenant,project) DO UPDATE SET
@@ -566,6 +569,29 @@ async function recordSelectorState(
     await writeSelectorProject(client, state);
     return proposal === undefined || proposalRecorded;
   });
+}
+
+async function readPlanningIntent(
+  pool: pg.Pool,
+  partition: Partition,
+): Promise<SelectorPlanningIntent | undefined> {
+  const found = await pool.query<{
+    selector_decision: string;
+    intent: string;
+    updated_at: Date;
+  }>(
+    `SELECT selector_decision,intent,updated_at FROM selector_planning_intent
+       WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  );
+  const row = found.rows[0];
+  return row === undefined
+    ? undefined
+    : {
+        selectorDecision: row.selector_decision,
+        intent: JSON.parse(row.intent) as unknown,
+        updatedAt: row.updated_at.toISOString(),
+      };
 }
 
 async function readSelectorHistory(
@@ -653,6 +679,7 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     history: (partition, after, limit) =>
       readSelectorHistory(pool, partition, after, limit),
     project: (partition) => readSelectorProject(pool, partition),
+    planningIntent: (partition) => readPlanningIntent(pool, partition),
   };
 }
 

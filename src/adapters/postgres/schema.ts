@@ -213,6 +213,8 @@ export const selectorControlRole = "chuggy_selector_control";
 export const selectorReviewRole = "chuggy_selector_review";
 export const selectorSettingsFunction = "update_selector_runtime_settings";
 export const selectorReviewFunction = "review_selector_proposal";
+export const selectorReconcileClaimFunction =
+  "claim_selector_proposal_reconciliation";
 export const selectorClaimFunction = "claim_selector_deliveries";
 export const selectorDeliveryFunction = "advance_selector_delivery";
 
@@ -1651,18 +1653,25 @@ export const migrations: readonly Migration[] = [
          CHECK (length(working_memory) <= 65536)`,
       `ALTER TABLE selector_interaction ADD COLUMN observed_token text`,
       `ALTER TABLE selector_proposal_delivery
-         ADD COLUMN review_feedback text, ADD COLUMN reviewed_at timestamptz,
-         ADD COLUMN reviewer_kind text, ADD COLUMN reviewer_subject text,
-         ADD COLUMN review_outcome text,
+         ADD COLUMN reconcile_at timestamptz,
+         ADD COLUMN reconciliation_attempts bigint NOT NULL DEFAULT 0,
          DROP CONSTRAINT selector_proposal_delivery_state_check,
          ADD CHECK (state IN ('AwaitingApproval','Pending','Submitted','Terminal')),
-         ADD CHECK (review_feedback IS NULL OR length(review_feedback) <= 65536),
-         ADD CHECK ((reviewed_at IS NULL)=(reviewer_kind IS NULL)),
-         ADD CHECK ((reviewed_at IS NULL)=(reviewer_subject IS NULL)),
-         ADD CHECK ((reviewed_at IS NULL)=(review_outcome IS NULL)),
-         ADD CHECK (review_outcome IS NULL OR review_outcome IN ('Approved','Rejected')),
-         ADD CHECK (reviewer_kind IS NULL OR length(reviewer_kind) BETWEEN 1 AND 256),
-         ADD CHECK (reviewer_subject IS NULL OR length(reviewer_subject) BETWEEN 1 AND 256)`,
+         ADD CHECK (reconciliation_attempts >= 0)`,
+      `CREATE TABLE selector_proposal_review (
+         ordinal bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+         selector_decision text NOT NULL UNIQUE,
+         tenant text NOT NULL, project text NOT NULL,
+         outcome text NOT NULL, reviewer_kind text NOT NULL,
+         reviewer_subject text NOT NULL, feedback text,
+         reviewed_at timestamptz NOT NULL DEFAULT now(),
+         FOREIGN KEY (selector_decision,tenant,project)
+           REFERENCES selector_interaction (selector_decision,tenant,project),
+         CHECK (outcome IN ('Approved','Rejected')),
+         CHECK (length(reviewer_kind) BETWEEN 1 AND 256),
+         CHECK (length(reviewer_subject) BETWEEN 1 AND 256),
+         CHECK (feedback IS NULL OR length(feedback) <= 65536)
+       )`,
       `CREATE FUNCTION enforce_selector_proposal_initial_state() RETURNS trigger
          LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
          DECLARE configured_mode text; running_mode text;
@@ -1675,11 +1684,8 @@ export const migrations: readonly Migration[] = [
            NEW.outcome=NULL;
            NEW.attempts=0;
            NEW.retry_at=now();
-           NEW.review_feedback=NULL;
-           NEW.reviewed_at=NULL;
-           NEW.reviewer_kind=NULL;
-           NEW.reviewer_subject=NULL;
-           NEW.review_outcome=NULL;
+           NEW.reconcile_at=NULL;
+           NEW.reconciliation_attempts=0;
            RETURN NEW;
          END $$`,
       `ALTER FUNCTION enforce_selector_proposal_initial_state() OWNER TO ${boundaryOwnerRole}`,
@@ -1706,16 +1712,34 @@ export const migrations: readonly Migration[] = [
          SET search_path=pg_catalog,public,pg_temp AS $$
          BEGIN
            IF in_transition='Submitted' THEN
-             UPDATE selector_proposal_delivery SET state='Submitted'
+             UPDATE selector_proposal_delivery SET state='Submitted',reconcile_at=now()
                WHERE selector_decision=in_decision AND state='Pending';
            ELSIF in_transition='Terminal' THEN
-             UPDATE selector_proposal_delivery SET state='Terminal',outcome=in_outcome
+             UPDATE selector_proposal_delivery SET state='Terminal',outcome=in_outcome,
+               reconcile_at=NULL
                WHERE selector_decision=in_decision AND state IN ('Pending','Submitted');
            ELSE RAISE EXCEPTION 'invalid selector delivery transition';
            END IF;
            RETURN FOUND;
          END $$`,
       `ALTER FUNCTION ${selectorDeliveryFunction}(text,text,text) OWNER TO ${boundaryOwnerRole}`,
+      `CREATE FUNCTION ${selectorReconcileClaimFunction}(delivery_limit integer)
+         RETURNS TABLE(selector_decision text,tenant text,project text,operation text,command text,attempts bigint)
+         LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+           UPDATE selector_proposal_delivery delivery
+             SET reconciliation_attempts=delivery.reconciliation_attempts+1,
+                 reconcile_at=now()+interval '30 seconds'
+           WHERE delivery.selector_decision IN (
+             SELECT candidate.selector_decision FROM selector_proposal_delivery candidate
+             WHERE candidate.state='Submitted'
+               AND coalesce(candidate.reconcile_at,'-infinity'::timestamptz)<=now()
+             ORDER BY coalesce(candidate.reconcile_at,'-infinity'::timestamptz),candidate.selector_decision
+             LIMIT CASE WHEN delivery_limit BETWEEN 1 AND 100 THEN delivery_limit ELSE 0 END
+             FOR UPDATE SKIP LOCKED)
+           RETURNING delivery.selector_decision,delivery.tenant,delivery.project,
+             delivery.operation,delivery.command,delivery.reconciliation_attempts AS attempts
+         $$`,
+      `ALTER FUNCTION ${selectorReconcileClaimFunction}(integer) OWNER TO ${boundaryOwnerRole}`,
       `CREATE FUNCTION ${selectorReviewFunction}(
          in_decision text,in_tenant text,in_project text,in_review text,
          in_reviewer_kind text,in_reviewer_subject text,in_feedback text)
@@ -1723,19 +1747,21 @@ export const migrations: readonly Migration[] = [
          SET search_path=pg_catalog,public,pg_temp AS $$
          BEGIN
            IF in_review='Approved' THEN
-             UPDATE selector_proposal_delivery SET state='Pending',review_feedback=in_feedback,
-               reviewed_at=now(),reviewer_kind=in_reviewer_kind,reviewer_subject=in_reviewer_subject,
-               review_outcome='Approved',retry_at=now()
+             UPDATE selector_proposal_delivery SET state='Pending',retry_at=now()
                WHERE selector_decision=in_decision AND tenant=in_tenant AND project=in_project
                  AND state='AwaitingApproval';
            ELSIF in_review='Rejected' THEN
-             UPDATE selector_proposal_delivery SET state='Terminal',review_feedback=in_feedback,
-               reviewed_at=now(),reviewer_kind=in_reviewer_kind,reviewer_subject=in_reviewer_subject,
-               review_outcome='Rejected',outcome=json_build_object(
+             UPDATE selector_proposal_delivery SET state='Terminal',outcome=json_build_object(
                  'state','RejectedByUser','feedback',in_feedback)::text
                WHERE selector_decision=in_decision AND tenant=in_tenant AND project=in_project
                  AND state='AwaitingApproval';
            ELSE RAISE EXCEPTION 'invalid selector proposal review';
+           END IF;
+           IF FOUND THEN
+             INSERT INTO selector_proposal_review
+               (selector_decision,tenant,project,outcome,reviewer_kind,reviewer_subject,feedback)
+             VALUES (in_decision,in_tenant,in_project,in_review,
+               in_reviewer_kind,in_reviewer_subject,in_feedback);
            END IF;
            RETURN FOUND;
          END $$`,
@@ -1773,6 +1799,7 @@ export const migrations: readonly Migration[] = [
       `GRANT SELECT,UPDATE ON selector_runtime_settings TO ${boundaryOwnerRole}`,
       `GRANT INSERT ON selector_runtime_settings_history TO ${boundaryOwnerRole}`,
       `GRANT SELECT,UPDATE ON selector_proposal_delivery TO ${boundaryOwnerRole}`,
+      `GRANT INSERT ON selector_proposal_review TO ${boundaryOwnerRole}`,
       `REVOKE ALL ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text,text,text) FROM PUBLIC`,
       `GRANT EXECUTE ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text,text,text)
          TO ${selectorControlRole}`,
@@ -1780,21 +1807,23 @@ export const migrations: readonly Migration[] = [
       `GRANT SELECT ON selector_runtime_settings_history TO ${selectorControlRole}`,
       `GRANT SELECT ON selector_proposal_delivery TO ${selectorControlRole}`,
       `REVOKE ALL ON selector_project_state,selector_inventory_state,selector_interaction,
-         selector_planning_intent,selector_proposal_delivery FROM ${selectorServiceRole}`,
+         selector_planning_intent,selector_proposal_delivery,selector_proposal_review
+         FROM ${selectorServiceRole}`,
       `GRANT SELECT,INSERT,UPDATE ON selector_project_state TO ${selectorServiceRole}`,
       `GRANT SELECT,UPDATE ON selector_inventory_state TO ${selectorServiceRole}`,
       `GRANT SELECT,INSERT ON selector_interaction TO ${selectorServiceRole}`,
-      `GRANT SELECT,INSERT,UPDATE ON selector_planning_intent TO ${selectorServiceRole}`,
+      `GRANT SELECT,INSERT,UPDATE,DELETE ON selector_planning_intent TO ${selectorServiceRole}`,
       `GRANT SELECT,INSERT ON selector_proposal_delivery TO ${selectorServiceRole}`,
       `REVOKE ALL ON FUNCTION ${selectorClaimFunction}(integer),
+         ${selectorReconcileClaimFunction}(integer),
          ${selectorDeliveryFunction}(text,text,text),
          ${selectorReviewFunction}(text,text,text,text,text,text,text),
          enforce_selector_proposal_initial_state() FROM PUBLIC`,
       `GRANT EXECUTE ON FUNCTION ${selectorClaimFunction}(integer),
+         ${selectorReconcileClaimFunction}(integer),
          ${selectorDeliveryFunction}(text,text,text) TO ${selectorServiceRole}`,
       `GRANT SELECT ON selector_proposal_delivery TO ${selectorReviewRole}`,
-      `GRANT SELECT (selector_decision,ordinal,tenant,project)
-         ON selector_interaction TO ${selectorReviewRole}`,
+      `GRANT SELECT ON selector_proposal_review TO ${selectorReviewRole}`,
       `GRANT EXECUTE ON FUNCTION ${selectorReviewFunction}(text,text,text,text,text,text,text)
          TO ${selectorReviewRole}`,
     ],

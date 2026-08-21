@@ -25,6 +25,7 @@ import { selectorRunOnce } from "../../src/interpreter/selectorRuntime.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdmin.ts";
+import { selectorPlanning } from "../../src/interpreter/selectorPlanning.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -146,6 +147,7 @@ function stateStore(
     },
     history: () => Promise.resolve([]),
     project: () => Promise.resolve(undefined),
+    planningIntent: () => Promise.resolve(undefined),
   };
 }
 
@@ -443,6 +445,8 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
     basePrompt: "prioritize tickets that unblock dependants",
   };
   let recorded = "";
+  let constrainedPrompt = "";
+  let allowedModels: readonly string[] = [];
   await runSelectorCycle(
     {
       partition,
@@ -460,10 +464,13 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
       },
     },
     {
-      decide: () =>
-        Promise.resolve(
+      decide: (request) => {
+        constrainedPrompt = request.instructions.content;
+        allowedModels = request.controls.modelAllowlist;
+        return Promise.resolve(
           waitingExecution({ note: "watch the dependency closure" }),
-        ),
+        );
+      },
     },
     {
       operation: asOperationId("prompt-operation"),
@@ -472,6 +479,37 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
     settings,
   );
   assert.equal(recorded, settings.basePrompt);
+  assert.equal(constrainedPrompt, settings.basePrompt);
+  assert.deepEqual(allowedModels, settings.modelAllowlist);
+});
+
+test("current selector planning is project-authorized and cursor-free", async () => {
+  const plan = {
+    selectorDecision: "planned-decision",
+    intent: { tickets: [3, 5] },
+    updatedAt: "2026-08-21T12:00:00.000Z",
+  };
+  const planning = selectorPlanning(
+    {
+      authorize: (principal) =>
+        Promise.resolve(
+          principal === asPrincipal("reader")
+            ? {
+                kind: asAuthorityKind("User"),
+                subject: asAuthoritySubject("reader"),
+              }
+            : undefined,
+        ),
+    },
+    { planningIntent: () => Promise.resolve(plan) },
+  );
+  assert.deepEqual(await planning.current(asPrincipal("reader"), partition), {
+    result: "Found",
+    planningIntent: plan,
+  });
+  assert.deepEqual(await planning.current(asPrincipal("outsider"), partition), {
+    result: "NotFound",
+  });
 });
 
 test("the runtime deadline ends a policy call that never returns", async () => {
@@ -493,7 +531,7 @@ test("the runtime deadline ends a policy call that never returns", async () => {
       },
       stateStore(() => undefined),
       {
-        decide: (_observation, _settings, signal) =>
+        decide: (_request, signal) =>
           new Promise((_resolve, reject) => {
             signal.addEventListener("abort", () => {
               aborted = true;

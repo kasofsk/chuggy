@@ -608,6 +608,140 @@ test("proposal review retains reviewer authority and readable feedback", async (
   }
 });
 
+test("review feedback cursors follow review order rather than proposal order", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-review-order",
+  );
+  const pool = postgresPool(postgresHarnessUrl());
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const control = postgresSelectorRuntimeControl(pool);
+  const original = await control.settings();
+  const approval = await control.setDispatchMode(
+    original.revision,
+    "ApprovalRequired",
+    selectorAdministrator,
+  );
+  assert.equal(approval.updated, true);
+  const earlier = `review-earlier-${crypto.randomUUID()}`;
+  const later = `review-later-${crypto.randomUUID()}`;
+  const reviewer = {
+    kind: asAuthorityKind("User"),
+    subject: asAuthoritySubject("ordered-reviewer"),
+  };
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, earlier),
+        selectorTestState(partition, 0),
+      ),
+      true,
+    );
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, later),
+        selectorTestState(partition, 1),
+      ),
+      true,
+    );
+    assert.equal(await reviews.approve(partition, later, reviewer), true);
+    const first = await reviews.reviewFeedback(partition, undefined, 1);
+    assert.equal(first[0]?.selectorDecision, later);
+    assert.equal(await reviews.reject(partition, earlier, reviewer), true);
+    const second = await reviews.reviewFeedback(
+      partition,
+      first[0]?.ordinal,
+      1,
+    );
+    assert.equal(second[0]?.selectorDecision, earlier);
+  } finally {
+    const current = await control.settings();
+    await control.setDispatchMode(
+      current.revision,
+      original.dispatchMode,
+      selectorAdministrator,
+    );
+    await selectorPool.end();
+    await reviewPool.end();
+    await pool.end();
+  }
+});
+
+test("submitted proposal reconciliation claims do not starve later work", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-reconcile-fairness",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  const firstDecision = `reconcile-a-${crypto.randomUUID()}`;
+  const secondDecision = `reconcile-b-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, firstDecision),
+        selectorTestState(partition, 0),
+      ),
+      true,
+    );
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, secondDecision),
+        selectorTestState(partition, 1),
+      ),
+      true,
+    );
+    await state.submitted(firstDecision);
+    await state.submitted(secondDecision);
+    const firstClaim = await state.submittedDeliveries(1);
+    const secondClaim = await state.submittedDeliveries(1);
+    assert.equal(firstClaim.length, 1);
+    assert.equal(secondClaim.length, 1);
+    assert.notEqual(firstClaim[0]?.decision, secondClaim[0]?.decision);
+  } finally {
+    await selectorPool.end();
+  }
+});
+
+test("a selector interaction atomically replaces or clears current planning", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-planning-current",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  try {
+    const planned = `planning-set-${crypto.randomUUID()}`;
+    assert.equal(
+      await state.recordInteraction(
+        selectorTestInteraction(partition, planned),
+        selectorTestState(partition, 0),
+        { tickets: [2, 4] },
+      ),
+      true,
+    );
+    assert.deepEqual((await state.planningIntent(partition))?.intent, {
+      tickets: [2, 4],
+    });
+    assert.equal(
+      await state.recordInteraction(
+        selectorTestInteraction(
+          partition,
+          `planning-clear-${crypto.randomUUID()}`,
+        ),
+        selectorTestState(partition, 1),
+      ),
+      true,
+    );
+    assert.equal(await state.planningIntent(partition), undefined);
+  } finally {
+    await selectorPool.end();
+  }
+});
+
 test("dispatch acceptance refuses every command the wire parser cannot read", async () => {
   const partition = await postgresHarnessProject(
     harness.store,

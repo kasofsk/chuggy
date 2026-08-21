@@ -74,6 +74,9 @@ export interface SelectorStateStore {
     limit: number,
   ): Promise<readonly SelectorInteractionRecord[]>;
   project(partition: Partition): Promise<SelectorProjectState | undefined>;
+  planningIntent(
+    partition: Partition,
+  ): Promise<SelectorPlanningIntent | undefined>;
 }
 
 export interface SelectorInteractionRecord extends SelectorInteraction {
@@ -87,6 +90,12 @@ export interface SelectorReviewFeedback {
   readonly reviewer: Authority;
   readonly feedback?: string;
   readonly reviewedAt: string;
+}
+
+export interface SelectorPlanningIntent {
+  readonly selectorDecision: string;
+  readonly intent: unknown;
+  readonly updatedAt: string;
 }
 
 export interface SelectorProjectState {
@@ -253,10 +262,20 @@ export interface SelectorRuntimeControlStore extends SelectorRuntimeSettingsSour
   drainStatus(): Promise<SelectorDrainStatus>;
 }
 
+export interface SelectorPolicyRequest {
+  readonly observation: SelectorObservation;
+  readonly instructions: {
+    readonly revision: number;
+    readonly content: string;
+  };
+  /** Hard execution constraints, applied before model and tool invocation. */
+  readonly controls: SelectorPolicyControls;
+}
+
+/** Trusted sandbox boundary; model and tool access exists only behind this port. */
 export interface SelectorPolicyHost {
   decide(
-    observation: SelectorObservation,
-    settings: SelectorRuntimeSettings,
+    request: SelectorPolicyRequest,
     signal: AbortSignal,
   ): Promise<SelectorPolicyExecution>;
 }
@@ -369,7 +388,22 @@ async function executeSelectorPolicy(
   settings: SelectorRuntimeSettings,
 ): Promise<SelectorPolicyExecution> {
   const cancellation = new AbortController();
-  const decision = policy.decide(observation, settings, cancellation.signal);
+  const decision = policy.decide(
+    {
+      observation,
+      instructions: {
+        revision: settings.revision,
+        content: settings.basePrompt,
+      },
+      controls: {
+        modelAllowlist: settings.modelAllowlist,
+        toolAllowlist: settings.toolAllowlist,
+        limits: settings.limits,
+        operationalContextMaxAgeMs: settings.operationalContextMaxAgeMs,
+      },
+    },
+    cancellation.signal,
+  );
   try {
     const execution = await Promise.race([
       decision,

@@ -37,6 +37,10 @@ import {
   selectorProposalReviews,
   type SelectorProposalReviews,
 } from "./interpreter/selectorReview.ts";
+import {
+  selectorPlanning,
+  type SelectorPlanning,
+} from "./interpreter/selectorPlanning.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -71,6 +75,7 @@ export interface SelectorService {
   readonly settings: SelectorRuntimeSettingsSource;
   readonly administration: SelectorRuntimeAdministration;
   readonly reviews: SelectorProposalReviews;
+  readonly planning: SelectorPlanning;
 }
 
 export interface SelectorRuntimeService {
@@ -114,6 +119,7 @@ export function composeSelectorService(
       access,
       postgresSelectorProposalReviews(selectorReviewPool),
     ),
+    planning: selectorPlanning(access, state),
   };
 }
 
