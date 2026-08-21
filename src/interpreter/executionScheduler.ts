@@ -41,6 +41,21 @@
  * bundle relation arrives with the slice that gives it upstream handoff and
  * artifact references of its own to hold.
  *
+ * TELEMETRY IS NOT AN AUTHORITY, AND THE SHAPE IS WHAT SAYS SO. A deployment's
+ * sink is sealed into a `SchedulerTelemetry` this module holds under a symbol it
+ * does not export, so the only way to reach the sink is `recordScheduler` — which
+ * answers nothing and raises nothing. There is therefore no expression in which a
+ * metric returns a value a branch could read, and no observation whose failure
+ * can abort or redirect the move that produced it. Every method of the sink
+ * itself returns nothing for the same reason, so even a caller holding one
+ * directly can learn from it only that it was called.
+ *
+ * AN ABSORPTION IS AN ARM AND NOT A COUNTER OF ITS OWN. `AlreadyRegistered`,
+ * `AlreadyFulfilled`, `AlreadyTerminal` and `AlreadyBlocked` are what this
+ * scheduler's idempotence looks like from outside, so they are observed by the
+ * same metric as the move they absorbed rather than by a separate one that could
+ * disagree with it about how many there were.
+ *
  * A BLOCK RETIRES ONE EXECUTION AND NOT ITS SIBLINGS. `ExecutionBlocked`
  * escalates the whole ticket in `Core`, but the decider emits only
  * `OpenHumanTask`, so no cancellation obligation reaches this scheduler for the
@@ -55,6 +70,7 @@ import type { Reason } from "../domain/generated/modelTypes.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
 import type { OperationId } from "./operationInbox.ts";
+import { observe } from "./ticketService.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { ResultManifest, ResultManifestId } from "./resultManifest.ts";
 import type { TaskInvocation } from "./taskBriefing.ts";
@@ -719,16 +735,33 @@ export function checkedExecutionSchedulerConfig(
   return config;
 }
 
+/** Which ceiling stopped a dispatch, which is the whole of what a submitter learns. */
+export type BacklogScope = "Project" | "Installation";
+
+/** Every backlog scope, so a suite iterates rather than restates. */
+export const allBacklogScopes: readonly BacklogScope[] = [
+  "Project",
+  "Installation",
+];
+
+/** Which sweep made a batch of attempts unable to report. */
+export type SchedulerFenceScope = "Epoch" | "Cancellation";
+
 /** Closed, identifier-free observations emitted by the execution scheduler. */
 export interface ExecutionSchedulerMetrics {
   registration(outcome: SpawnRegistered["registered"]): void;
   cancellation(outcome: CancellationRegistered["cancelled"]): void;
+  fencing(scope: SchedulerFenceScope, attempts: number): void;
+  reaping(attempts: number): void;
   admission(outcome: Admitted["admitted"]): void;
+  attemptOpened(outcome: AttemptOpened["opened"]): void;
   placement(outcome: WorkerPlaced["placed"]): void;
-  terminalization(outcome: Terminalized["terminalized"]): void;
+  attemptEnded(loss: AttemptLoss, evidence: AttemptEvidence): void;
   manifest(outcome: "Accepted" | "Rejected"): void;
+  terminalization(outcome: Terminalized["terminalized"]): void;
+  blocking(outcome: Blocked["blocked"], reason: BlockedReason): void;
   incident(kind: SchedulerIncidentKind): void;
-  backlog(verdict: "Admits" | "Backlogged"): void;
+  backlog(admits: "Admits" | "Backlogged", scope?: BacklogScope): void;
 }
 
 /** What the scheduler records when durable evidence contradicts itself. */
@@ -750,10 +783,51 @@ export const allSchedulerIncidentKinds: readonly SchedulerIncidentKind[] = [
 export const silentExecutionSchedulerMetrics: ExecutionSchedulerMetrics = {
   registration: () => undefined,
   cancellation: () => undefined,
+  fencing: () => undefined,
+  reaping: () => undefined,
   admission: () => undefined,
+  attemptOpened: () => undefined,
   placement: () => undefined,
-  terminalization: () => undefined,
+  attemptEnded: () => undefined,
   manifest: () => undefined,
+  terminalization: () => undefined,
+  blocking: () => undefined,
   incident: () => undefined,
   backlog: () => undefined,
 };
+
+/**
+ * The key a sealed sink is held under. It is not exported, so no module but
+ * this one can read a sink back out of the value below or build one of its own.
+ */
+const schedulerSink: unique symbol = Symbol("chuggy:scheduler-telemetry");
+
+/** A sink the scheduler may write to and cannot read, gate on, or be interrupted by. */
+export interface SchedulerTelemetry {
+  readonly [schedulerSink]: ExecutionSchedulerMetrics;
+}
+
+/** Seals a deployment's sink, which is the only way one enters the scheduler. */
+export function schedulerTelemetry(
+  metrics: ExecutionSchedulerMetrics,
+): SchedulerTelemetry {
+  return { [schedulerSink]: metrics };
+}
+
+/**
+ * Records one observation. It answers nothing and raises nothing, so nothing a
+ * sink does can reach the move that observed it.
+ */
+export function recordScheduler(
+  telemetry: SchedulerTelemetry,
+  observation: (metrics: ExecutionSchedulerMetrics) => void,
+): void {
+  observe(() => {
+    observation(telemetry[schedulerSink]);
+  });
+}
+
+/** The sealed sink a caller that supplies no telemetry gets. */
+export const silentSchedulerTelemetry: SchedulerTelemetry = schedulerTelemetry(
+  silentExecutionSchedulerMetrics,
+);

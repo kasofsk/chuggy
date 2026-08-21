@@ -42,11 +42,12 @@
  */
 
 import {
+  recordScheduler,
   type AttemptEvidence,
   type ExecutionOutcome,
-  type ExecutionSchedulerMetrics,
   type ExecutionSchedulerStore,
   type FencedAttempt,
+  type SchedulerTelemetry,
 } from "./executionScheduler.ts";
 import type { OperationId } from "./operationInbox.ts";
 import {
@@ -59,14 +60,13 @@ import {
   type ResultManifest,
   type ResultManifestId,
 } from "./resultManifest.ts";
-import { observe } from "./ticketService.ts";
 
 /** Everything ingestion calls out through, which is not what a pass calls out through. */
 export interface ExecutionReportService {
   readonly store: ExecutionSchedulerStore;
   readonly artifacts: ArtifactVerificationPort;
   readonly digestOf: ManifestDigestFunction;
-  readonly metrics: ExecutionSchedulerMetrics;
+  readonly metrics: SchedulerTelemetry;
 }
 
 /**
@@ -134,6 +134,9 @@ async function reportLost(
     "Lost",
     evidence,
   );
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.attemptEnded("Lost", evidence);
+  });
 }
 
 /**
@@ -154,8 +157,8 @@ async function confirmedManifest(
     submission.text,
     service.digestOf,
   );
-  observe(() => {
-    service.metrics.manifest(accepted.accepted);
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.manifest(accepted.accepted);
   });
   if (accepted.accepted === "Rejected") {
     await reportLost(service, submission, "ManifestInvalid");
@@ -196,8 +199,8 @@ export async function executionSchedulerIngest(
     ...submissionAttempt(submission),
     manifest: confirmed,
   });
-  observe(() => {
-    service.metrics.terminalization(settled.terminalized);
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.terminalization(settled.terminalized);
   });
   switch (settled.terminalized) {
     case "Terminalized":
@@ -219,8 +222,8 @@ export async function executionSchedulerIngest(
     case "NotAdmitted":
       return { ingested: "NotAdmitted" };
     case "Conflicting":
-      observe(() => {
-        service.metrics.incident("ConflictingResult");
+      recordScheduler(service.metrics, (metrics) => {
+        metrics.incident("ConflictingResult");
       });
       return { ingested: "Conflicting", incident: settled.incident };
   }

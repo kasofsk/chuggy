@@ -72,21 +72,23 @@
  * it is; `eslint.config.js` says so for this directory.
  */
 
-import { observe } from "./ticketService.ts";
 import {
   checkedExecutionSchedulerConfig,
+  recordScheduler,
   taskPurposeForKind,
   type AttemptEvidence,
+  type AttemptLoss,
   type AttemptOpening,
   type BlockedReason,
   type ExecutionPolicy,
   type ExecutionProfile,
   type ExecutionSchedulerConfig,
-  type ExecutionSchedulerMetrics,
   type ExecutionSchedulerStore,
+  type FencedAttempt,
   type LogicalExecution,
   type PhysicalAttempt,
   type SchedulerOwnerId,
+  type SchedulerTelemetry,
   type WorkerLaunchPort,
   type ClusterId,
 } from "./executionScheduler.ts";
@@ -111,7 +113,7 @@ export interface ExecutionSchedulerService {
   readonly runtimeFacts: RuntimeFactsPort;
   readonly practices: PracticeCatalog;
   readonly config: ExecutionSchedulerConfig;
-  readonly metrics: ExecutionSchedulerMetrics;
+  readonly metrics: SchedulerTelemetry;
 }
 
 /** What one bounded pass moved, which is what a deployment's loop paces itself by. */
@@ -123,12 +125,30 @@ export interface SchedulerPassReport {
   readonly placed: number;
 }
 
+/** Ends one attempt without a result, which is the one place this module records that. */
+async function schedulerEndAttempt(
+  service: ExecutionSchedulerService,
+  attempt: FencedAttempt,
+  loss: AttemptLoss,
+  evidence: AttemptEvidence,
+): Promise<boolean> {
+  const ended = await service.store.attemptEnded(attempt, loss, evidence);
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.attemptEnded(loss, evidence);
+  });
+  return ended;
+}
+
 /** Fences every attempt an older recovery epoch issued, which is what a takeover owes. */
 export async function executionSchedulerFence(
   service: ExecutionSchedulerService,
   epoch: RecoveryEpoch,
 ): Promise<number> {
-  return service.store.fenceOldEpochAttempts(epoch);
+  const fenced = await service.store.fenceOldEpochAttempts(epoch);
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.fencing("Epoch", fenced);
+  });
+  return fenced;
 }
 
 /** Registers every spawn request this pass could claim, fencing superseded ones. */
@@ -146,14 +166,12 @@ export async function executionSchedulerRegister(
   let registered = 0;
   for (const claim of claims) {
     const outcome = await service.store.registerSpawn(claim);
-    observe(() => {
-      service.metrics.registration(outcome.registered);
+    recordScheduler(service.metrics, (metrics) => {
+      metrics.registration(outcome.registered);
+      if (outcome.registered === "Conflicting") {
+        metrics.incident("ConflictingRegistration");
+      }
     });
-    if (outcome.registered === "Conflicting") {
-      observe(() => {
-        service.metrics.incident("ConflictingRegistration");
-      });
-    }
     if (outcome.registered === "Registered") registered += 1;
   }
   return registered;
@@ -174,8 +192,11 @@ export async function executionSchedulerCancel(
   let cancelled = 0;
   for (const claim of claims) {
     const outcome = await service.store.registerCancellation(claim);
-    observe(() => {
-      service.metrics.cancellation(outcome.cancelled);
+    recordScheduler(service.metrics, (metrics) => {
+      metrics.cancellation(outcome.cancelled);
+      if (outcome.cancelled === "Registered") {
+        metrics.fencing("Cancellation", outcome.fenced);
+      }
     });
     if (outcome.cancelled !== "Registered") continue;
     cancelled += outcome.fenced;
@@ -195,8 +216,8 @@ export async function executionSchedulerAdmit(
   let admitted = 0;
   for (let taken = 0; taken < config.admissionsPerPassMax; taken += 1) {
     const outcome = await service.store.admit(cluster);
-    observe(() => {
-      service.metrics.admission(outcome.admitted);
+    recordScheduler(service.metrics, (metrics) => {
+      metrics.admission(outcome.admitted);
     });
     if (outcome.admitted !== "Admitted") return admitted;
     admitted += 1;
@@ -212,12 +233,18 @@ async function schedulerBlock(
   evidence: AttemptEvidence,
   reason: BlockedReason,
 ): Promise<void> {
-  await service.store.attemptEnded(attempt, "Withdrawn", evidence);
-  await service.store.blockExecution(
+  await schedulerEndAttempt(service, attempt, "Withdrawn", evidence);
+  const blocked = await service.store.blockExecution(
     execution.partition,
     execution.execution,
     reason,
   );
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.blocking(blocked.blocked, reason);
+    if (blocked.blocked === "Conflicting") {
+      metrics.incident("ImpossibleState");
+    }
+  });
 }
 
 /** What policy granted this execution, or the durable move its refusal earns. */
@@ -243,7 +270,8 @@ async function schedulerPolicyFor(
       );
       return undefined;
     case "Unavailable":
-      await service.store.attemptEnded(
+      await schedulerEndAttempt(
+        service,
         attempt,
         "Withdrawn",
         "PolicyUnavailable",
@@ -310,7 +338,8 @@ async function schedulerUnready(
       );
       return;
     case "Unavailable":
-      await service.store.attemptEnded(
+      await schedulerEndAttempt(
+        service,
         attempt,
         "Withdrawn",
         "PolicyUnavailable",
@@ -388,8 +417,8 @@ async function schedulerPlace(
     profile: launch.profile,
     invocation: launch.invocation,
   });
-  observe(() => {
-    service.metrics.placement(placed.placed);
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.placement(placed.placed);
   });
   switch (placed.placed) {
     case "Placed":
@@ -404,7 +433,8 @@ async function schedulerPlace(
       );
       return false;
     case "Unavailable":
-      await service.store.attemptEnded(
+      await schedulerEndAttempt(
+        service,
         attempt,
         "Withdrawn",
         "PlacementUnavailable",
@@ -429,6 +459,9 @@ async function schedulerLaunchOne(
     placementBackoffSecs: config.placementBackoffSecs,
   };
   const opened = await service.store.openAttempt(opening);
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.attemptOpened(opened.opened);
+  });
   switch (opened.opened) {
     case "Opened":
       return schedulerPlace(service, execution, opened.attempt);
@@ -440,8 +473,8 @@ async function schedulerLaunchOne(
         execution.partition,
         execution.execution,
       );
-      observe(() => {
-        service.metrics.terminalization(outcome.terminalized);
+      recordScheduler(service.metrics, (metrics) => {
+        metrics.terminalization(outcome.terminalized);
       });
       return false;
     }
@@ -454,7 +487,10 @@ export async function executionSchedulerLaunch(
   epoch: RecoveryEpoch,
 ): Promise<number> {
   const config = checkedExecutionSchedulerConfig(service.config);
-  await service.store.reapLapsedAttempts(epoch);
+  const reaped = await service.store.reapLapsedAttempts(epoch);
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.reaping(reaped);
+  });
   const waiting = await service.store.unlaunched(
     epoch,
     config.launchesPerPassMax,

@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  schedulerTelemetry,
   asAttemptId,
   asCapacityAccountId,
   asClusterId,
@@ -21,7 +22,7 @@ import {
   asSchedulerOwnerId,
   asWorkloadId,
   executionSchedulerDefaults,
-  silentExecutionSchedulerMetrics,
+  silentSchedulerTelemetry,
   type CancellationRegistered,
   type ExecutionPolicy,
   type ExecutionSchedulerStore,
@@ -60,6 +61,7 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import { recordingMetrics, throwingMetrics } from "./schedulerSinks.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -197,7 +199,7 @@ function serviceWith(
     runtimeFacts: { facts: () => Promise.resolve(facts) },
     practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
-    metrics: silentExecutionSchedulerMetrics,
+    metrics: silentSchedulerTelemetry,
   };
 }
 
@@ -235,6 +237,35 @@ test("a definitive policy denial blocks the execution and spends no retry", asyn
   assert.deepEqual(calls, [
     "ended:Withdrawn:PolicyDenied",
     "blocked:ExecutionPolicyDenied",
+  ]);
+});
+
+test("a block the completion boundary refuses is observed as an incident", async () => {
+  const seen: string[] = [];
+  const service = serviceWith(
+    [],
+    { resolved: "Denied", reason: "ExecutionPolicyDenied" },
+    placedOk,
+  );
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    blockExecution: () =>
+      Promise.resolve({ blocked: "Conflicting", incident: "incident-one" }),
+  };
+  await executionSchedulerLaunch(
+    {
+      ...service,
+      store,
+      metrics: schedulerTelemetry(recordingMetrics(seen)),
+    },
+    epoch,
+  );
+  assert.deepEqual(seen, [
+    "reaping:0",
+    "attemptOpened:Opened",
+    "attemptEnded:Withdrawn:PolicyDenied",
+    "blocking:Conflicting:ExecutionPolicyDenied",
+    "incident:ImpossibleState",
   ]);
 });
 
@@ -404,8 +435,8 @@ test("a pass fences the older epoch before it moves anything else", async () => 
   ]);
 });
 
-test("a pass reports the count each of its steps moved", async () => {
-  const calls: string[] = [];
+/** A service whose pass fences, cancels, registers, admits and launches once each. */
+function passService(calls: string[]): ExecutionSchedulerService {
   const service = serviceWith(calls, runnable, placedOk);
   let admitted = 0;
   const store: ExecutionSchedulerStore = {
@@ -430,10 +461,77 @@ test("a pass reports the count each of its steps moved", async () => {
       );
     },
   };
+  return { ...service, store };
+}
+
+test("a pass reports the count each of its steps moved", async () => {
   assert.deepEqual(
-    await executionSchedulerPass({ ...service, store }, owner, epoch, cluster),
+    await executionSchedulerPass(passService([]), owner, epoch, cluster),
     { fenced: 4, registered: 1, cancelled: 3, admitted: 1, placed: 1 },
   );
+});
+
+test("a pass observes every step it took, in the order it took them", async () => {
+  const seen: string[] = [];
+  const service = passService([]);
+  await executionSchedulerPass(
+    { ...service, metrics: schedulerTelemetry(recordingMetrics(seen)) },
+    owner,
+    epoch,
+    cluster,
+  );
+  assert.deepEqual(seen, [
+    "fencing:Epoch:4",
+    "cancellation:Registered",
+    "fencing:Cancellation:3",
+    "registration:Registered",
+    "admission:Admitted",
+    "admission:ClusterFull",
+    "reaping:0",
+    "attemptOpened:Opened",
+    "placement:Placed",
+  ]);
+});
+
+test("a sink that fails at every observation moves exactly what a silent one moves", async () => {
+  const quiet: string[] = [];
+  const loud: string[] = [];
+  const thrown: string[] = [];
+  const quietReport = await executionSchedulerPass(
+    passService(quiet),
+    owner,
+    epoch,
+    cluster,
+  );
+  const service = passService(loud);
+  const loudReport = await executionSchedulerPass(
+    { ...service, metrics: schedulerTelemetry(throwingMetrics(thrown)) },
+    owner,
+    epoch,
+    cluster,
+  );
+  assert.ok(thrown.length > 0, "no observation failed, so this proves nothing");
+  assert.deepEqual(loudReport, quietReport);
+  assert.deepEqual(loud, quiet);
+});
+
+test("a definitive denial is observed as one ended attempt and one retired task", async () => {
+  const seen: string[] = [];
+  const service = serviceWith(
+    [],
+    { resolved: "Denied", reason: "ExecutionPolicyDenied" },
+    placedOk,
+  );
+  await executionSchedulerLaunch(
+    { ...service, metrics: schedulerTelemetry(recordingMetrics(seen)) },
+    epoch,
+  );
+  assert.deepEqual(seen, [
+    "reaping:0",
+    "attemptOpened:Opened",
+    "attemptEnded:Withdrawn:PolicyDenied",
+    "blocking:Blocked:ExecutionPolicyDenied",
+  ]);
 });
 
 test("registration claims only spawn kinds and counts what it created", async () => {

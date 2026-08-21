@@ -21,11 +21,17 @@ import type {
 import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
+  allBacklogScopes,
   dispatchNeedsExecutionHeadroom,
+  observedExecutionBacklogGuard,
   openExecutionBacklogGuard,
   selectorExecutionContext,
+  type BacklogVerdict,
+  type ExecutionBacklogGuard,
   type ExecutionContextRead,
 } from "../../src/interpreter/schedulerContext.ts";
+import { schedulerTelemetry } from "../../src/interpreter/executionScheduler.ts";
+import { recordingMetrics, throwingMetrics } from "./schedulerSinks.ts";
 import type { TicketCommand } from "../../src/interpreter/ticketCommand.ts";
 
 const partition = {
@@ -187,4 +193,46 @@ test("a deployment with no scheduler admits every dispatch", async () => {
   assert.deepEqual(await openExecutionBacklogGuard.admitsDispatch(partition), {
     admits: "Admits",
   });
+});
+
+/** A guard that answers the one verdict a case is about. */
+function guardAnswering(verdict: BacklogVerdict): ExecutionBacklogGuard {
+  return { admitsDispatch: () => Promise.resolve(verdict) };
+}
+
+test("an observed guard names the ceiling that stopped a dispatch", async () => {
+  for (const scope of allBacklogScopes) {
+    const seen: string[] = [];
+    const guard = observedExecutionBacklogGuard(
+      guardAnswering({ admits: "Backlogged", scope, retryAfterSeconds: 5 }),
+      schedulerTelemetry(recordingMetrics(seen)),
+    );
+    await guard.admitsDispatch(partition);
+    assert.deepEqual(seen, [`backlog:Backlogged:${scope}`]);
+  }
+});
+
+test("an admitted dispatch is observed without a ceiling to name", async () => {
+  const seen: string[] = [];
+  const guard = observedExecutionBacklogGuard(
+    openExecutionBacklogGuard,
+    schedulerTelemetry(recordingMetrics(seen)),
+  );
+  assert.deepEqual(await guard.admitsDispatch(partition), { admits: "Admits" });
+  assert.deepEqual(seen, ["backlog:Admits"]);
+});
+
+test("a sink that fails at every observation leaves the verdict exactly as it was", async () => {
+  const thrown: string[] = [];
+  const refused: BacklogVerdict = {
+    admits: "Backlogged",
+    scope: "Installation",
+    retryAfterSeconds: 11,
+  };
+  const guard = observedExecutionBacklogGuard(
+    guardAnswering(refused),
+    schedulerTelemetry(throwingMetrics(thrown)),
+  );
+  assert.deepEqual(await guard.admitsDispatch(partition), refused);
+  assert.deepEqual(thrown, ["backlog"]);
 });

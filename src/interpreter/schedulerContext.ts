@@ -35,10 +35,14 @@ import {
   executionActiveCount,
   executionEntitlementOf,
   executionReservationDeficit,
+  recordScheduler,
+  type BacklogScope,
   type CapacityExecution,
   type Entitlement,
   type ExecutionStatus,
+  type SchedulerTelemetry,
 } from "./executionScheduler.ts";
+export { allBacklogScopes, type BacklogScope } from "./executionScheduler.ts";
 import type { Partition } from "./projectStore.ts";
 import type { TicketCommand } from "./ticketCommand.ts";
 
@@ -131,15 +135,6 @@ export type BacklogVerdict =
       readonly retryAfterSeconds: number;
     };
 
-/** Which ceiling stopped a dispatch, which is the whole of what a submitter learns. */
-export type BacklogScope = "Project" | "Installation";
-
-/** Every backlog scope, so a suite iterates rather than restates. */
-export const allBacklogScopes: readonly BacklogScope[] = [
-  "Project",
-  "Installation",
-];
-
 /**
  * The authoritative hard execution-backlog guard. It is the scheduler's, and
  * both manual and agentic dispatch are checked against the same call.
@@ -169,3 +164,32 @@ export function dispatchNeedsExecutionHeadroom(
 export const openExecutionBacklogGuard: ExecutionBacklogGuard = {
   admitsDispatch: () => Promise.resolve({ admits: "Admits" }),
 };
+
+/** The verdict, and the observation of it that no submitter's answer depends on. */
+async function observedVerdict(
+  guard: ExecutionBacklogGuard,
+  telemetry: SchedulerTelemetry,
+  partition: Partition,
+): Promise<BacklogVerdict> {
+  const verdict = await guard.admitsDispatch(partition);
+  const scope: BacklogScope | undefined =
+    verdict.admits === "Backlogged" ? verdict.scope : undefined;
+  recordScheduler(telemetry, (metrics) => {
+    metrics.backlog(verdict.admits, scope);
+  });
+  return verdict;
+}
+
+/**
+ * The same guard, observed where the verdict crosses the port. It is a wrapper
+ * rather than a field on each implementation so an unobserved guard and an
+ * observed one answer identically.
+ */
+export function observedExecutionBacklogGuard(
+  guard: ExecutionBacklogGuard,
+  telemetry: SchedulerTelemetry,
+): ExecutionBacklogGuard {
+  return {
+    admitsDispatch: (partition) => observedVerdict(guard, telemetry, partition),
+  };
+}

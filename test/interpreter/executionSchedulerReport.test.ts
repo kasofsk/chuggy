@@ -17,7 +17,9 @@ import {
   allAttemptEvidence,
   asAttemptId,
   asExecutionId,
+  schedulerTelemetry,
   silentExecutionSchedulerMetrics,
+  silentSchedulerTelemetry,
   type ExecutionSchedulerMetrics,
   type ExecutionSchedulerStore,
   type SchedulerIncidentKind,
@@ -37,6 +39,7 @@ import {
   type ArtifactsVerified,
   type CanonicalManifest,
 } from "../../src/interpreter/resultManifest.ts";
+import { recordingMetrics, throwingMetrics } from "./schedulerSinks.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -115,13 +118,16 @@ function serviceWith(
   calls: string[],
   settled: Terminalized,
   artifacts: ArtifactVerificationPort = confirmed,
-  metrics: ExecutionSchedulerMetrics = silentExecutionSchedulerMetrics,
+  metrics: ExecutionSchedulerMetrics | undefined = undefined,
 ): ExecutionReportService {
   return {
     store: recordingStore(calls, settled),
     artifacts,
     digestOf,
-    metrics,
+    metrics:
+      metrics === undefined
+        ? silentSchedulerTelemetry
+        : schedulerTelemetry(metrics),
   };
 }
 
@@ -244,6 +250,41 @@ test("a report into a project that admits no writer is its own answer", async ()
     { ingested: "NotAdmitted" },
   );
   assert.deepEqual(calls, ["terminalize:2:Pass"]);
+});
+
+test("ingesting one confirmed report observes reading it and settling it", async () => {
+  const seen: string[] = [];
+  const service = serviceWith([], passed, confirmed, recordingMetrics(seen));
+  await executionSchedulerIngest(service, submissionOf(report("Pass")));
+  assert.deepEqual(seen, ["manifest:Accepted", "terminalization:Terminalized"]);
+});
+
+test("a refused manifest observes the attempt it ended and nothing settled", async () => {
+  const seen: string[] = [];
+  const service = serviceWith([], passed, confirmed, recordingMetrics(seen));
+  await executionSchedulerIngest(service, submissionOf("{"));
+  assert.deepEqual(seen, [
+    "manifest:Rejected",
+    "attemptEnded:Lost:ManifestInvalid",
+  ]);
+});
+
+test("a sink that fails at every observation settles exactly what a silent one settles", async () => {
+  const quiet: string[] = [];
+  const loud: string[] = [];
+  const thrown: string[] = [];
+  const submission = submissionOf(report("Pass"));
+  const quietly = await executionSchedulerIngest(
+    serviceWith(quiet, passed),
+    submission,
+  );
+  const loudly = await executionSchedulerIngest(
+    serviceWith(loud, passed, confirmed, throwingMetrics(thrown)),
+    submission,
+  );
+  assert.ok(thrown.length > 0, "no observation failed, so this proves nothing");
+  assert.deepEqual(loudly, quietly);
+  assert.deepEqual(loud, quiet);
 });
 
 test("a late report for retired work leaves the domain alone", async () => {
