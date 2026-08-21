@@ -55,6 +55,15 @@ function checkedSelectorLimit(limit: number, what: string): number {
   return limit;
 }
 
+function checkedSelectorCursor(cursor: number | undefined): number {
+  if (cursor === undefined) return 0;
+  if (!Number.isSafeInteger(cursor) || cursor < 0)
+    throw new RangeError(
+      "selector history cursor must be a non-negative safe integer",
+    );
+  return cursor;
+}
+
 async function readSelectorProject(
   pool: pg.Pool,
   partition: Partition,
@@ -73,7 +82,10 @@ async function readSelectorProject(
     ? undefined
     : {
         partition,
-        notificationCursor: Number(row.notification_cursor),
+        notificationCursor: projectRowCounter(
+          row.notification_cursor,
+          "selector notification cursor",
+        ),
         ...(row.recovery_epoch === null
           ? {}
           : { recoveryEpoch: row.recovery_epoch }),
@@ -154,6 +166,24 @@ async function markSubmitted(pool: pg.Pool, decision: string): Promise<void> {
       WHERE selector_decision=$1 AND state='Pending'`,
     [decision],
   );
+}
+
+async function markTerminal(
+  pool: pg.Pool,
+  decision: string,
+  outcome: Parameters<SelectorStateStore["terminal"]>[1],
+): Promise<void> {
+  const encoded = encode(outcome);
+  const terminal = await pool.query(
+    `UPDATE selector_proposal_delivery SET state='Terminal',outcome=$2
+      WHERE selector_decision=$1 AND (state<>'Terminal' OR outcome=$2)
+      RETURNING selector_decision`,
+    [decision, encoded],
+  );
+  if (terminal.rowCount !== 1)
+    throw new Error(
+      "selector delivery terminal outcome contradicts retained state",
+    );
 }
 
 async function submittedDeliveries(
@@ -352,12 +382,7 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     pending: (limit) => pendingDeliveries(pool, limit),
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
     submitted: (decision) => markSubmitted(pool, decision),
-    terminal: async (decision, outcome) => {
-      await pool.query(
-        `UPDATE selector_proposal_delivery SET state='Terminal',outcome=$2 WHERE selector_decision=$1`,
-        [decision, encode(outcome)],
-      );
-    },
+    terminal: (decision, outcome) => markTerminal(pool, decision, outcome),
     history: async (partition: Partition, after, limit) => {
       checkedSelectorLimit(limit, "selector history");
       const found = await pool.query<{
@@ -378,7 +403,12 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
       }>(
         `SELECT * FROM selector_interaction WHERE tenant=$1 AND project=$2
           AND ordinal>$3 ORDER BY ordinal LIMIT $4`,
-        [partition.tenant, partition.project, after ?? 0, limit],
+        [
+          partition.tenant,
+          partition.project,
+          checkedSelectorCursor(after),
+          limit,
+        ],
       );
       return found.rows.map((row): StoredSelectorInteraction => ({
         ordinal: projectRowCounter(row.ordinal, "selector interaction ordinal"),

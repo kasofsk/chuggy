@@ -326,7 +326,6 @@ test("selector provenance and its observed cursor roll back together", async () 
     );
     assert.equal((await state.project(partition))?.notificationCursor, 17);
     assert.equal((await state.history(partition, undefined, 10)).length, 1);
-
     await assert.rejects(
       state.recordInteraction(
         { ...interaction, result: { waiting: false } },
@@ -344,6 +343,63 @@ test("selector provenance and its observed cursor roll back together", async () 
     );
     assert.equal(stale, false);
     assert.equal((await state.project(partition))?.notificationCursor, 17);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("selector terminal outcomes are exactly idempotent", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-terminal");
+  const pool = postgresPool(postgresHarnessUrl());
+  const state = postgresSelectorState(pool);
+  const decision = `terminal-${crypto.randomUUID()}`;
+  try {
+    await state.recordInteraction(
+      selectorInteraction(partition, decision),
+      { partition, notificationCursor: 0, attention: "Monitoring" },
+      { partition, notificationCursor: 1, attention: "Monitoring" },
+    );
+    await pool.query(
+      `INSERT INTO selector_proposal_delivery
+       (selector_decision,tenant,project,operation,command)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [
+        decision,
+        partition.tenant,
+        partition.project,
+        crypto.randomUUID(),
+        "{}",
+      ],
+    );
+    await state.terminal(decision, { accepted: "InvalidCommand" });
+    await state.terminal(decision, { accepted: "InvalidCommand" });
+    await assert.rejects(
+      state.terminal(decision, { accepted: "IdempotencyConflict" }),
+      /contradicts retained state/,
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("selector cursors reject malformed and inexact counters", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-counters");
+  const pool = postgresPool(postgresHarnessUrl());
+  const state = postgresSelectorState(pool);
+  try {
+    await assert.rejects(
+      state.history(partition, Number.NaN, 10),
+      /cursor must be a non-negative safe integer/,
+    );
+    await pool.query(
+      `INSERT INTO selector_project_state (tenant,project,notification_cursor)
+       VALUES ($1,$2,9007199254740992)`,
+      [partition.tenant, partition.project],
+    );
+    await assert.rejects(
+      state.project(partition),
+      /selector notification cursor.*exactly representable/,
+    );
   } finally {
     await pool.end();
   }

@@ -1,5 +1,6 @@
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
 import type { Accepted, OperationId, TicketCommand } from "./operationInbox.ts";
+import type { OperationResource } from "./nativeWeb.ts";
 import type { Partition } from "./projectStore.ts";
 import type { NotificationBatch, NotificationCursor } from "./notifications.ts";
 import type { DispatchViewPage, DispatchViewQuery } from "./dispatchView.ts";
@@ -63,7 +64,7 @@ export interface SelectorStateStore {
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
   submitted(decision: string): Promise<void>;
-  terminal(decision: string, outcome: unknown): Promise<void>;
+  terminal(decision: string, outcome: SelectorTerminalOutcome): Promise<void>;
   history(
     partition: Partition,
     after: number | undefined,
@@ -212,8 +213,18 @@ export interface SelectorTicketService {
 }
 
 export interface SelectorOperationSource {
-  operation(partition: Partition, operation: OperationId): Promise<unknown>;
+  operation(
+    partition: Partition,
+    operation: OperationId,
+  ): Promise<OperationResource | undefined>;
 }
+
+export type SelectorTerminalOutcome =
+  | Exclude<OperationResource, { readonly state: "Pending" }>
+  | Extract<
+      Accepted,
+      { readonly accepted: "IdempotencyConflict" | "InvalidCommand" }
+    >;
 
 export type SelectorDeliveryResult =
   | { readonly result: "Delivered"; readonly decision: string }
@@ -253,11 +264,7 @@ export async function reconcileSelectorProposal(
     delivery.operation,
   );
   if (outcome === undefined) return false;
-  const state =
-    typeof outcome === "object" && outcome !== null
-      ? (outcome as { readonly state?: unknown }).state
-      : undefined;
-  if (state === "Pending") return false;
+  if (outcome.state === "Pending") return false;
   await store.terminal(delivery.decision, outcome);
   return true;
 }

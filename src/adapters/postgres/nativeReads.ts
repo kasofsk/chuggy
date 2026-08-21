@@ -50,6 +50,8 @@ function refusalCode(value: string): OperationRefusalCode {
     value === "NotEnabled" ||
     value === "AuthoringChanged" ||
     value === "ConfigurationInvalid" ||
+    value === "TicketChanged" ||
+    value === "SelectionChanged" ||
     value === "CommandUnreadable"
   )
     return value;

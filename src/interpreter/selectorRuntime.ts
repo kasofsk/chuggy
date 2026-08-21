@@ -56,6 +56,69 @@ function initialState(partition: Partition): SelectorProjectState {
   return { partition, notificationCursor: 0, attention: "Monitoring" };
 }
 
+async function deliverPending(
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  limit: number,
+): Promise<number> {
+  let delivered = 0;
+  for (const delivery of await store.pending(limit)) {
+    try {
+      if (
+        (await deliverSelectorProposal(store, source, delivery)).result ===
+        "Delivered"
+      )
+        delivered += 1;
+    } catch {
+      continue;
+    }
+  }
+  return delivered;
+}
+
+async function reconcileSubmitted(
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  limit: number,
+): Promise<number> {
+  let reconciled = 0;
+  for (const delivery of await store.submittedDeliveries(limit)) {
+    try {
+      if (await reconcileSelectorProposal(store, source, delivery))
+        reconciled += 1;
+    } catch {
+      continue;
+    }
+  }
+  return reconciled;
+}
+
+async function observeProjects(
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  policy: SelectorPolicy,
+  identities: SelectorIdentityFactory,
+  projects: readonly Partition[],
+): Promise<number> {
+  let proposed = 0;
+  for (const partition of projects) {
+    try {
+      const state = (await store.project(partition)) ?? initialState(partition);
+      const proposal = await runSelectorCycle(
+        state,
+        source,
+        store,
+        policy,
+        identities.next(partition),
+      );
+      if (proposal !== undefined) proposed += 1;
+    } catch {
+      continue;
+    }
+  }
+  return proposed;
+}
+
 /** Performs one bounded poll, policy, delivery, and reconciliation quantum. */
 export async function selectorRunOnce(
   store: SelectorStateStore,
@@ -68,39 +131,31 @@ export async function selectorRunOnce(
     config.projectsMax,
     "selector project bound",
   );
+  const deliveriesMax = checkedBound(
+    config.deliveriesMax,
+    "selector delivery bound",
+  );
+  const reconciliationsMax = checkedBound(
+    config.reconciliationsMax,
+    "selector reconciliation bound",
+  );
+  const delivered = await deliverPending(store, source, deliveriesMax);
+  const reconciled = await reconcileSubmitted(
+    store,
+    source,
+    reconciliationsMax,
+  );
   const inventoryCursor = await store.inventoryCursor();
   const projects = await source.projects(inventoryCursor, projectsMax);
   await store.saveInventoryCursor(
     projects.length < projectsMax ? undefined : projects.at(-1),
   );
-  let proposed = 0;
-  for (const partition of projects) {
-    const state = (await store.project(partition)) ?? initialState(partition);
-    const proposal = await runSelectorCycle(
-      state,
-      source,
-      store,
-      policy,
-      identities.next(partition),
-    );
-    if (proposal !== undefined) proposed += 1;
-  }
-  let delivered = 0;
-  for (const delivery of await store.pending(
-    checkedBound(config.deliveriesMax, "selector delivery bound"),
-  )) {
-    if (
-      (await deliverSelectorProposal(store, source, delivery)).result ===
-      "Delivered"
-    )
-      delivered += 1;
-  }
-  let reconciled = 0;
-  for (const delivery of await store.submittedDeliveries(
-    checkedBound(config.reconciliationsMax, "selector reconciliation bound"),
-  )) {
-    if (await reconcileSelectorProposal(store, source, delivery))
-      reconciled += 1;
-  }
+  const proposed = await observeProjects(
+    store,
+    source,
+    policy,
+    identities,
+    projects,
+  );
   return { observed: projects.length, proposed, delivered, reconciled };
 }

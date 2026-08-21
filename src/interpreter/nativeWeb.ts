@@ -92,6 +92,8 @@ export type OperationRefusalCode =
   | "NotEnabled"
   | "AuthoringChanged"
   | "ConfigurationInvalid"
+  | "TicketChanged"
+  | "SelectionChanged"
   | "CommandUnreadable";
 
 interface OperationResourceBase {

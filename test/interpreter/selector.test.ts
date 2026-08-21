@@ -10,7 +10,11 @@ import {
   type SelectorStateStore,
 } from "../../src/interpreter/selector.ts";
 import { selectorHistory } from "../../src/interpreter/selectorHistory.ts";
-import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
+import { selectorRunOnce } from "../../src/interpreter/selectorRuntime.ts";
+import {
+  asPrincipal,
+  asPublicInstant,
+} from "../../src/interpreter/nativeWeb.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   asAuthorityKind,
@@ -171,18 +175,25 @@ test("ambiguous proposal delivery retries through ordinary operation idempotency
 
 test("accepted selector delivery reconciles its terminal operation outcome", async () => {
   let terminal: unknown;
+  const outcome = {
+    operation: delivery.operation,
+    acceptedAt: asPublicInstant("2026-08-20T12:00:00Z"),
+    state: "Refused",
+    code: "SelectionChanged",
+    refusedHead: 1,
+    refusedLifecycleGeneration: 1,
+  } as const;
   const reconciled = await reconcileSelectorProposal(
     stateStore((outcome) => {
       terminal = outcome;
     }),
     {
-      operation: () =>
-        Promise.resolve({ state: "Refused", code: "SelectionChanged" }),
+      operation: () => Promise.resolve(outcome),
     },
     delivery,
   );
   assert.equal(reconciled, true);
-  assert.deepEqual(terminal, { state: "Refused", code: "SelectionChanged" });
+  assert.deepEqual(terminal, outcome);
 });
 
 test("authorized selector history exposes its durable continuation cursor", async () => {
@@ -221,4 +232,55 @@ test("authorized selector history exposes its durable continuation cursor", asyn
   );
   assert.equal(found.result, "Found");
   if (found.result === "Found") assert.equal(found.nextAfter, 41);
+});
+
+test("a failing project cannot starve durable proposal delivery", async () => {
+  let submitted = 0;
+  const store = {
+    ...stateStore(() => undefined),
+    pending: () => Promise.resolve([delivery]),
+    submitted: () => {
+      submitted += 1;
+      return Promise.resolve();
+    },
+  };
+  const result = await selectorRunOnce(
+    store,
+    {
+      projects: () => Promise.resolve([partition]),
+      notifications: () =>
+        Promise.resolve({ result: "Events", cursor: 0, events: [] } as const),
+      dispatchView: () =>
+        Promise.resolve({
+          result: "Page",
+          token: delivery.command.observedViewToken,
+          candidates: [],
+          notificationCursor: 0,
+        } as const),
+      submit: () =>
+        Promise.resolve({
+          accepted: "Original",
+          operation: {
+            partition,
+            operation: delivery.operation,
+            ordinal: 1,
+            state: "Pending",
+            authorityKind: asAuthorityKind("Selector"),
+            admission: "Ordinary",
+            lifecycleGeneration: 1,
+          },
+        }),
+      operation: () => Promise.resolve(undefined),
+    },
+    { decide: () => Promise.reject(new Error("provider unavailable")) },
+    {
+      next: () => ({
+        operation: asOperationId("next-operation"),
+        selectorDecisionReference: "next-decision",
+      }),
+    },
+  );
+  assert.equal(result.delivered, 1);
+  assert.equal(result.proposed, 0);
+  assert.equal(submitted, 1);
 });
