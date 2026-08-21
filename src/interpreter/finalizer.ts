@@ -613,12 +613,29 @@ export type TargetObserved =
   | { readonly observed: "Target"; readonly target: ObservedTarget }
   | { readonly observed: "Unreadable"; readonly evidence: GitEvidence };
 
-/** One candidate asked of a bare scratch repository, built from verified references alone. */
+/** The most files one candidate is built from, so a preparation cannot grow into a payload. */
+export const candidateFilesMax = 1_024;
+
+/** The most content one candidate is built from, summed over every file it carries. */
+export const candidateBytesMax = 64 * 1024 * 1024;
+
+/**
+ * One verified handoff artifact's bytes, under the path it takes in the
+ * candidate tree. Content is passed by value because the port that writes it
+ * may not read the store that holds it.
+ */
+export interface CandidateFile {
+  readonly path: string;
+  readonly content: Uint8Array;
+}
+
+/** One candidate asked of a bare scratch repository, built from the artifacts one bundle pins. */
 export interface CandidatePreparation {
   readonly repository: RepositoryBinding;
   readonly ticket: TicketId;
   readonly bundle: InputBundleId;
   readonly target: ObservedTarget;
+  readonly files: readonly CandidateFile[];
 }
 
 /** What constructing a candidate found, a git refusal a value like every other here. */

@@ -31,10 +31,10 @@
  * that will admit no result at all — because a request no submission can ever
  * fulfil is a request no later claim should draw again.
  *
- * NOTHING HERE PERFORMS A GIT ACT. `GitPromotionPort` has no adapter yet, so no
- * view gathered here carries an observed target and the pure pass holds rather
- * than concluding. A durable move that assumed a promotion had happened would
- * forge the one outcome the repository is the only authority on.
+ * NOTHING HERE PERFORMS A GIT ACT. Nothing gathered here reaches
+ * `GitPromotionPort`, so no view carries an observed target and the pure pass
+ * holds rather than concluding. A durable move that assumed a promotion had
+ * happened would forge the one outcome the repository is the only authority on.
  *
  * AN APPROVAL IS READ AND NEVER WRITTEN. The action a finalizer opens is the
  * ticket service's row and this role holds `SELECT` on it and no more, so the

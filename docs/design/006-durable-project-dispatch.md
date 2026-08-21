@@ -2186,7 +2186,7 @@ here at a smaller grain. **I7a is the authority**: `chuggy_finalizer`,
 migration 11, the queue consumer over the claim columns I3 left dead,
 `submit_finalization_result` as the one authenticated door, the writer-side
 fence, the repository binding and its exclusivity, and the reconciliation
-hold. **I7b is the act**: `src/adapters/git/`, <!-- intent --> candidate
+hold. **I7b is the act**: `src/adapters/git/`, candidate
 construction from verified handoff artifacts, the bounded integration, the
 permit and the conditional ref update, reconciliation by ancestry, the
 conflict manifest, and the typed failure evidence that transactionally
@@ -2207,11 +2207,16 @@ Workers are confined to attempt-scoped immutable output storage and cannot
 mutate the project repository, and their handoff artifacts are metadata —
 path, digest and byte count, never content. So nothing in the tree turns a
 handoff into a tree object, and the finalizer is what must: it reads verified
-handoff artifacts and writes the candidate with `hash-object`, `mktree` and
-`commit-tree` against a bare scratch repository, with no working tree at any
-point. This is what constructing and validating a candidate in isolation
-rather than copying a workspace blindly already asks for, and it is
-deterministic by construction rather than by discipline. The alternative — a
+handoff artifacts and writes the candidate with `hash-object`, a temporary
+index over the observed commit's tree and `commit-tree`, against a bare scratch
+repository and with no working tree at any point. `mktree` was named here until
+the adapter was built and it cannot serve: a handoff names the files one task
+produced rather than the repository entire, so a tree written from that listing
+alone would promote the deletion of everything nobody handed over, and the
+candidate has to be the observed tree with the artifacts standing in it. This
+is what constructing and validating a candidate in isolation rather than
+copying a workspace blindly already asks for, and the tree that comes out is a
+function of the observed commit and the artifacts alone. The alternative — a
 worker pushing its own branch under a scoped ref — is rejected explicitly
 rather than left unmentioned, because it would give a worker write authority
 on the repository the permit exists to serialize.
