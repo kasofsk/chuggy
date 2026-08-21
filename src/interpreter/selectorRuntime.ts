@@ -6,7 +6,7 @@ import {
   type SelectorCycleIdentity,
   type SelectorObservationSource,
   type SelectorOperationSource,
-  type SelectorPolicy,
+  type SelectorPolicyHost,
   type SelectorProjectState,
   type SelectorProposal,
   type SelectorRuntimeSettingsSource,
@@ -71,11 +71,64 @@ function initialState(partition: Partition): SelectorProjectState {
   };
 }
 
+async function observeProjects(
+  projects: readonly Partition[],
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  policy: SelectorPolicyHost,
+  identities: SelectorIdentityFactory,
+  control: SelectorRuntimeSettingsSource,
+): Promise<{
+  readonly scanned: number;
+  readonly observed: number;
+  readonly proposed: number;
+}> {
+  let proposed = 0;
+  let observed = 0;
+  let scanned = 0;
+  for (const partition of projects) {
+    const settings = await control.settings();
+    if (settings.mode === "Paused") break;
+    const permit = await source.acquireDecisionPermit(partition, {
+      concurrentDecisions: settings.limits.concurrentDecisions,
+      selectionsPerMinute: settings.limits.selectionsPerMinute,
+    });
+    if (permit === undefined) {
+      scanned += 1;
+      continue;
+    }
+    let proposal: SelectorProposal | undefined;
+    try {
+      const confirmedSettings = await control.settings();
+      if (
+        confirmedSettings.mode === "Paused" ||
+        confirmedSettings.revision !== settings.revision
+      )
+        break;
+      const state = (await store.project(partition)) ?? initialState(partition);
+      proposal = await runSelectorCycle(
+        state,
+        source,
+        store,
+        policy,
+        identities.next(partition),
+        confirmedSettings,
+      );
+    } finally {
+      await source.releaseDecisionPermit(permit);
+    }
+    scanned += 1;
+    observed += 1;
+    if (proposal !== undefined) proposed += 1;
+  }
+  return { scanned, observed, proposed };
+}
+
 /** Performs one bounded poll, policy, delivery, and reconciliation quantum. */
 export async function selectorRunOnce(
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
-  policy: SelectorPolicy,
+  policy: SelectorPolicyHost,
   identities: SelectorIdentityFactory,
   control: SelectorRuntimeSettingsSource,
   config: SelectorRuntimeConfig = selectorRuntimeDefaults,
@@ -90,38 +143,20 @@ export async function selectorRunOnce(
     initialSettings.mode === "Paused"
       ? []
       : await source.projects(inventoryCursor, projectsMax);
-  let proposed = 0;
-  let observed = 0;
-  for (const partition of projects) {
-    const settings = await control.settings();
-    if (settings.mode === "Paused") break;
-    const permit = await source.acquireDecisionPermit(partition, {
-      concurrentDecisions: settings.limits.concurrentDecisions,
-      selectionsPerMinute: settings.limits.selectionsPerMinute,
-    });
-    if (permit === undefined) continue;
-    const state = (await store.project(partition)) ?? initialState(partition);
-    let proposal: SelectorProposal | undefined;
-    try {
-      proposal = await runSelectorCycle(
-        state,
-        source,
-        store,
-        policy,
-        identities.next(partition),
-        settings,
-      );
-    } finally {
-      await source.releaseDecisionPermit(permit);
-    }
-    observed += 1;
-    if (proposal !== undefined) proposed += 1;
-  }
-  if (observed > 0)
+  const progress = await observeProjects(
+    projects,
+    store,
+    source,
+    policy,
+    identities,
+    control,
+  );
+  const { scanned, observed, proposed } = progress;
+  if (scanned > 0)
     await store.saveInventoryCursor(
-      observed === projects.length && projects.length < projectsMax
+      scanned === projects.length && projects.length < projectsMax
         ? undefined
-        : projects.at(observed - 1),
+        : projects.at(scanned - 1),
     );
   let delivered = 0;
   for (const delivery of await store.pending(

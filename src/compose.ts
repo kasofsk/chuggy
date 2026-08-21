@@ -7,6 +7,7 @@ import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
 import {
+  postgresSelectorProposalReviews,
   postgresSelectorRuntimeControl,
   postgresSelectorState,
 } from "./adapters/postgres/selector.ts";
@@ -16,9 +17,17 @@ import {
   type SelectorHistory,
 } from "./interpreter/selectorHistory.ts";
 import type {
+  SelectorPolicyHost,
   SelectorRuntimeSettingsSource,
   SelectorStateStore,
 } from "./interpreter/selector.ts";
+import {
+  selectorRunOnce,
+  type SelectorIdentityFactory,
+  type SelectorRunResult,
+  type SelectorRuntimeConfig,
+  type SelectorRuntimeSource,
+} from "./interpreter/selectorRuntime.ts";
 import {
   selectorRuntimeAdministration,
   type SelectorAdministrationAccess,
@@ -64,10 +73,31 @@ export interface SelectorService {
   readonly reviews: SelectorProposalReviews;
 }
 
+export interface SelectorRuntimeService {
+  runOnce(): Promise<SelectorRunResult>;
+}
+
+/** Wires the independently operated selector runtime to its owned persistence. */
+export function composeSelectorRuntime(
+  selectorPool: pg.Pool,
+  source: SelectorRuntimeSource,
+  policy: SelectorPolicyHost,
+  identities: SelectorIdentityFactory,
+  config?: SelectorRuntimeConfig,
+): SelectorRuntimeService {
+  const store = postgresSelectorState(selectorPool);
+  const settings = postgresSelectorRuntimeControl(selectorPool);
+  return {
+    runOnce: () =>
+      selectorRunOnce(store, source, policy, identities, settings, config),
+  };
+}
+
 /** Wires selector-owned durability and project-authorized semantic history reads. */
 export function composeSelectorService(
   selectorPool: pg.Pool,
   selectorControlPool: pg.Pool,
+  selectorReviewPool: pg.Pool,
   access: ProjectAccess,
   administrationAccess: SelectorAdministrationAccess,
 ): SelectorService {
@@ -80,7 +110,10 @@ export function composeSelectorService(
       administrationAccess,
       postgresSelectorRuntimeControl(selectorControlPool),
     ),
-    reviews: selectorProposalReviews(access, state),
+    reviews: selectorProposalReviews(
+      access,
+      postgresSelectorProposalReviews(selectorReviewPool),
+    ),
   };
 }
 

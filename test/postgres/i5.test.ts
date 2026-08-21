@@ -4,13 +4,17 @@ import { after, before, test } from "node:test";
 import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
+  postgresSelectorProposalReviews,
   postgresSelectorRuntimeControl,
   postgresSelectorState,
 } from "../../src/adapters/postgres/selector.ts";
 import {
   apiRole,
   dispatchAcceptanceFunction,
+  selectorClaimFunction,
   selectorControlRole,
+  selectorReviewFunction,
+  selectorReviewRole,
   selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
@@ -81,6 +85,34 @@ function selectorTestInteraction(partition: Partition, decision: string) {
     startedAt: "2026-08-20T12:00:00.000Z",
     completedAt: "2026-08-20T12:00:01.000Z",
   } as const;
+}
+
+function selectorTestProposal(partition: Partition, decision: string) {
+  return {
+    interaction: selectorTestInteraction(partition, decision),
+    operation: asOperationId(`operation-${decision}`),
+    deliveryMode: "ApprovalRequired",
+    command: {
+      version: 1,
+      command: "ProposeDispatch",
+      ticket: asTicketId(1),
+      expectedTicketVersion: 1,
+      observedViewToken: {
+        ...partition,
+        recoveryEpoch: "epoch",
+        schemaVersion: 1,
+        watermark: 0,
+        digest: "a".repeat(64),
+      },
+      selectorDecisionReference: decision,
+    },
+  } as const;
+}
+
+function postgresRolePool(role: string) {
+  const url = new URL(postgresHarnessUrl());
+  url.searchParams.set("options", `-c role=${role}`);
+  return postgresPool(url.toString());
 }
 
 test("a release atomically materializes a digest-fenced current dispatch view", async () => {
@@ -240,6 +272,30 @@ test("runtime roles cannot cross the selector and ticket-service storage boundar
     );
     assert.match(historyRefusal ?? "", /permission denied/);
   }
+  for (const sql of [
+    "UPDATE selector_proposal_delivery SET state='Pending' WHERE false",
+    "DELETE FROM selector_interaction WHERE false",
+  ]) {
+    const refusal = await harness.attemptAs(selectorServiceRole, sql);
+    assert.match(refusal ?? "", /permission denied/);
+  }
+  const selectorReviewRefusal = await harness.attemptAs(
+    selectorServiceRole,
+    `SELECT ${selectorReviewFunction}('missing','t','p','Approved','User','reviewer',NULL)`,
+  );
+  assert.match(selectorReviewRefusal ?? "", /permission denied/);
+  const reviewClaimRefusal = await harness.attemptAs(
+    selectorReviewRole,
+    `SELECT * FROM ${selectorClaimFunction}(1)`,
+  );
+  assert.match(reviewClaimRefusal ?? "", /permission denied/);
+  assert.equal(
+    await harness.attemptAs(
+      selectorReviewRole,
+      `SELECT ${selectorReviewFunction}('missing','t','p','Approved','User','reviewer',NULL)`,
+    ),
+    undefined,
+  );
 });
 
 test("selector provenance and its observed cursor roll back together", async () => {
@@ -302,7 +358,7 @@ test("selector provenance and its observed cursor roll back together", async () 
 });
 
 test("selector controls hot-reload with a revision fence", async () => {
-  const pool = postgresPool(postgresHarnessUrl());
+  const pool = postgresRolePool(selectorControlRole);
   const control = postgresSelectorRuntimeControl(pool);
   try {
     const initial = await control.settings();
@@ -380,43 +436,31 @@ test("proposal review retains reviewer authority and readable feedback", async (
     "i5-review-audit",
   );
   const pool = postgresPool(postgresHarnessUrl());
-  const state = postgresSelectorState(pool);
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const control = postgresSelectorRuntimeControl(pool);
+  const originalSettings = await control.settings();
+  const approvalSettings = await control.setDispatchMode(
+    originalSettings.revision,
+    "ApprovalRequired",
+  );
+  assert.equal(approvalSettings.updated, true);
   const decision = `review-${crypto.randomUUID()}`;
-  const interaction = selectorTestInteraction(partition, decision);
   try {
-    await state.record(
-      {
-        interaction,
-        operation: asOperationId(`operation-${decision}`),
-        deliveryMode: "ApprovalRequired",
-        command: {
-          version: 1,
-          command: "ProposeDispatch",
-          ticket: asTicketId(1),
-          expectedTicketVersion: 1,
-          observedViewToken: {
-            ...partition,
-            recoveryEpoch: "epoch",
-            schemaVersion: 1,
-            watermark: 0,
-            digest: "a".repeat(64),
-          },
-          selectorDecisionReference: decision,
-        },
-      },
-      {
-        partition,
-        notificationCursor: 0,
-        attention: "Monitoring",
-        workingMemory: {},
-      },
-    );
+    await state.record(selectorTestProposal(partition, decision), {
+      partition,
+      notificationCursor: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    });
     const reviewer = {
       kind: asAuthorityKind("User"),
       subject: asAuthoritySubject("admin-reviewer"),
     };
     assert.equal(
-      await state.approve(
+      await reviews.approve(
         partition,
         decision,
         reviewer,
@@ -424,7 +468,7 @@ test("proposal review retains reviewer authority and readable feedback", async (
       ),
       true,
     );
-    const feedback = await state.reviewFeedback(partition, undefined, 10);
+    const feedback = await reviews.reviewFeedback(partition, undefined, 10);
     assert.deepEqual(feedback[0], {
       selectorDecision: decision,
       outcome: "Approved",
@@ -433,6 +477,13 @@ test("proposal review retains reviewer authority and readable feedback", async (
       reviewedAt: feedback[0]?.reviewedAt,
     });
   } finally {
+    const currentSettings = await control.settings();
+    await control.setDispatchMode(
+      currentSettings.revision,
+      originalSettings.dispatchMode,
+    );
+    await selectorPool.end();
+    await reviewPool.end();
     await pool.end();
   }
 });

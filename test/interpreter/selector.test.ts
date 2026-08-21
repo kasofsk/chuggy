@@ -7,6 +7,7 @@ import {
   runSelectorCycle,
   type SelectorRuntimeControlStore,
   type SelectorRuntimeSettings,
+  type SelectorPolicyExecution,
 } from "../../src/interpreter/selector.ts";
 import {
   deliverSelectorProposal,
@@ -89,6 +90,21 @@ const runtimeSettings: SelectorRuntimeSettings = {
   operationalContextMaxAgeMs: 30_000,
 };
 
+function waitingExecution(
+  workingMemory: unknown = {},
+): SelectorPolicyExecution {
+  return {
+    result: { attention: "Monitoring", workingMemory },
+    toolActivity: [],
+    implementationRevision: "implementation-1",
+    modelRevision: "model-1",
+    policyRevision: "policy-1",
+    accounting: { tokens: 100, durationMs: 1_000 },
+    startedAt: "2026-08-21T12:00:00.000Z",
+    completedAt: "2026-08-21T12:00:01.000Z",
+  };
+}
+
 function promptObservationSource() {
   return {
     decisionDeadline: () => new Promise<never>(() => undefined),
@@ -130,10 +146,6 @@ function stateStore(
     },
     history: () => Promise.resolve([]),
     project: () => Promise.resolve(undefined),
-    awaitingApproval: () => Promise.resolve([]),
-    approve: () => Promise.resolve(false),
-    reject: () => Promise.resolve(false),
-    reviewFeedback: () => Promise.resolve([]),
   };
 }
 
@@ -323,6 +335,104 @@ test("a paused runtime creates no new observations but still drains durable work
   assert.equal(pendingReads, 1);
 });
 
+test("inventory progress follows scanned projects when a permit is unavailable", async () => {
+  const first = { tenant: partition.tenant, project: asProjectId("first") };
+  const second = { tenant: partition.tenant, project: asProjectId("second") };
+  let saved: typeof partition | undefined;
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      saveInventoryCursor: (cursor) => {
+        saved = cursor;
+        return Promise.resolve();
+      },
+    },
+    {
+      projects: () => Promise.resolve([first, second]),
+      acquireDecisionPermit: (scope) =>
+        Promise.resolve(scope === first ? undefined : "permit"),
+      releaseDecisionPermit: () => Promise.resolve(),
+      notifications: () =>
+        Promise.resolve({ result: "Events", cursor: 1, events: [] } as const),
+      decisionDeadline: () => new Promise<never>(() => undefined),
+      currentTimeEpochMs: () =>
+        Promise.resolve(operationalContext.observedAtEpochMs),
+      dispatchView: (scope) =>
+        Promise.resolve({
+          result: "Page",
+          token: {
+            ...scope,
+            recoveryEpoch: "epoch",
+            schemaVersion: 1,
+            watermark: 1,
+            digest: "d".repeat(64),
+          },
+          candidates: [],
+          notificationCursor: 1,
+        } as const),
+      operationalContext: () => Promise.resolve(operationalContext),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    { decide: () => Promise.resolve(waitingExecution()) },
+    {
+      next: () => ({
+        operation: asOperationId("inventory-operation"),
+        selectorDecisionReference: "inventory-decision",
+      }),
+    },
+    { settings: () => Promise.resolve(runtimeSettings) },
+    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.equal(result.observed, 1);
+  assert.deepEqual(saved, second);
+});
+
+test("a pause observed after permit acquisition prevents a new decision", async () => {
+  let settingsReads = 0;
+  let releases = 0;
+  const result = await selectorRunOnce(
+    stateStore(() => undefined),
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve([partition]),
+      acquireDecisionPermit: () => Promise.resolve("permit"),
+      releaseDecisionPermit: () => {
+        releases += 1;
+        return Promise.resolve();
+      },
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    {
+      decide: () =>
+        Promise.reject(new Error("paused runtime invoked its policy")),
+    },
+    {
+      next: () => ({
+        operation: asOperationId("pause-race-operation"),
+        selectorDecisionReference: "pause-race-decision",
+      }),
+    },
+    {
+      settings: () => {
+        settingsReads += 1;
+        return Promise.resolve({
+          ...runtimeSettings,
+          mode: settingsReads === 3 ? "Paused" : "Running",
+        });
+      },
+    },
+  );
+  assert.deepEqual(result, {
+    observed: 0,
+    proposed: 0,
+    delivered: 0,
+    reconciled: 0,
+  });
+  assert.equal(releases, 1);
+});
+
 test("a selector decision uses and records one hot-loaded prompt revision", async () => {
   const settings: SelectorRuntimeSettings = {
     ...runtimeSettings,
@@ -346,31 +456,10 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
       },
     },
     {
-      decide: (observation, current) =>
-        Promise.resolve({
-          interaction: {
-            decision: "prompt-decision",
-            partition,
-            instructionsVersion: String(current.revision),
-            instructions: current.basePrompt,
-            observedView: observation.candidates,
-            observedToken: observation.token,
-            context: {
-              operationalContext: observation.operationalContext,
-              workingMemory: observation.workingMemory,
-            },
-            toolActivity: [],
-            result: { waiting: true },
-            implementationRevision: "implementation-1",
-            modelRevision: "model-1",
-            policyRevision: "policy-1",
-            accounting: { tokens: 100, durationMs: 1_000 },
-            startedAt: "2026-08-21T12:00:00.000Z",
-            completedAt: "2026-08-21T12:00:01.000Z",
-          },
-          attention: "Monitoring",
-          workingMemory: { note: "watch the dependency closure" },
-        }),
+      decide: () =>
+        Promise.resolve(
+          waitingExecution({ note: "watch the dependency closure" }),
+        ),
     },
     {
       operation: asOperationId("prompt-operation"),
@@ -382,6 +471,8 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
 });
 
 test("the runtime deadline ends a policy call that never returns", async () => {
+  let aborted = false;
+  let settled = false;
   await assert.rejects(
     runSelectorCycle(
       {
@@ -396,7 +487,20 @@ test("the runtime deadline ends a policy call that never returns", async () => {
           Promise.reject(new Error("decision deadline exceeded")),
       },
       stateStore(() => undefined),
-      { decide: () => new Promise(() => undefined) },
+      {
+        decide: (_observation, _settings, signal) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => {
+              aborted = true;
+              settled = true;
+              reject(
+                signal.reason instanceof Error
+                  ? signal.reason
+                  : new Error("selector policy aborted"),
+              );
+            });
+          }),
+      },
       {
         operation: asOperationId("timed-operation"),
         selectorDecisionReference: "timed-decision",
@@ -405,6 +509,8 @@ test("the runtime deadline ends a policy call that never returns", async () => {
     ),
     /deadline exceeded/,
   );
+  assert.equal(aborted, true);
+  assert.equal(settled, true);
 });
 
 test("proposal review requires dispatch authority and preserves feedback", async () => {
@@ -422,12 +528,13 @@ test("proposal review requires dispatch authority and preserves feedback", async
         ),
     },
     {
-      ...stateStore(() => undefined),
       awaitingApproval: () => Promise.resolve([delivery]),
       approve: (_partition, _decision, _reviewer, feedback) => {
         approvedFeedback = feedback;
         return Promise.resolve(true);
       },
+      reject: () => Promise.resolve(false),
+      reviewFeedback: () => Promise.resolve([]),
     },
   );
   const listed = await reviews.pending(asPrincipal("reviewer"), partition, 10);

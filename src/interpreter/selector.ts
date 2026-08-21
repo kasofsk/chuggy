@@ -74,27 +74,6 @@ export interface SelectorStateStore {
     limit: number,
   ): Promise<readonly SelectorInteraction[]>;
   project(partition: Partition): Promise<SelectorProjectState | undefined>;
-  awaitingApproval(
-    partition: Partition,
-    limit: number,
-  ): Promise<readonly SelectorDelivery[]>;
-  approve(
-    partition: Partition,
-    decision: string,
-    reviewer: Authority,
-    feedback?: string,
-  ): Promise<boolean>;
-  reject(
-    partition: Partition,
-    decision: string,
-    reviewer: Authority,
-    feedback?: string,
-  ): Promise<boolean>;
-  reviewFeedback(
-    partition: Partition,
-    after: string | undefined,
-    limit: number,
-  ): Promise<readonly SelectorReviewFeedback[]>;
 }
 
 export interface SelectorReviewFeedback {
@@ -166,11 +145,25 @@ export interface SelectorObservation {
 }
 
 export interface SelectorPolicyResult {
-  readonly interaction: SelectorInteraction;
   readonly selectedTicket?: DispatchCandidate["ticket"];
   readonly planningIntent?: unknown;
   readonly attention: SelectorProjectState["attention"];
   readonly workingMemory: unknown;
+}
+
+/** Provenance measured by the trusted policy host, never authored by the model result. */
+export interface SelectorPolicyExecution {
+  readonly result: SelectorPolicyResult;
+  readonly implementationRevision: string;
+  readonly modelRevision: string;
+  readonly policyRevision: string;
+  readonly toolActivity: readonly unknown[];
+  readonly accounting: {
+    readonly tokens: number;
+    readonly durationMs: number;
+  };
+  readonly startedAt: string;
+  readonly completedAt: string;
 }
 
 export interface SelectorRuntimeSettings {
@@ -238,11 +231,12 @@ export interface SelectorRuntimeControlStore extends SelectorRuntimeSettingsSour
   drainStatus(): Promise<SelectorDrainStatus>;
 }
 
-export interface SelectorPolicy {
+export interface SelectorPolicyHost {
   decide(
     observation: SelectorObservation,
     settings: SelectorRuntimeSettings,
-  ): Promise<SelectorPolicyResult>;
+    signal: AbortSignal,
+  ): Promise<SelectorPolicyExecution>;
 }
 
 function allowed(name: string, allowlist: readonly string[]): boolean {
@@ -250,17 +244,14 @@ function allowed(name: string, allowlist: readonly string[]): boolean {
 }
 
 function enforcePolicyControls(
-  result: SelectorPolicyResult,
+  execution: SelectorPolicyExecution,
   settings: SelectorRuntimeSettings,
 ): void {
-  if (!allowed(result.interaction.modelRevision, settings.modelAllowlist))
+  if (!allowed(execution.modelRevision, settings.modelAllowlist))
     throw new Error("selector policy used a model outside its allowlist");
-  if (
-    result.interaction.toolActivity.length >
-    settings.limits.toolCallsPerDecision
-  )
+  if (execution.toolActivity.length > settings.limits.toolCallsPerDecision)
     throw new Error("selector policy exceeded its tool-call budget");
-  for (const activity of result.interaction.toolActivity) {
+  for (const activity of execution.toolActivity) {
     if (
       typeof activity !== "object" ||
       activity === null ||
@@ -270,22 +261,14 @@ function enforcePolicyControls(
     )
       throw new Error("selector policy used a tool outside its allowlist");
   }
-  const accounting = result.interaction.accounting;
-  if (
-    typeof accounting !== "object" ||
-    accounting === null ||
-    !("tokens" in accounting) ||
-    !("durationMs" in accounting)
-  )
-    throw new Error("selector policy returned no trusted accounting");
-  const tokens = Number(accounting.tokens);
+  const tokens = execution.accounting.tokens;
   if (
     !Number.isSafeInteger(tokens) ||
     tokens < 0 ||
     tokens > settings.limits.tokensPerDecision
   )
     throw new Error("selector policy exceeded its token budget");
-  const elapsed = Number(accounting.durationMs);
+  const elapsed = execution.accounting.durationMs;
   if (
     !Number.isFinite(elapsed) ||
     elapsed < 0 ||
@@ -295,12 +278,19 @@ function enforcePolicyControls(
 }
 
 /** Replays a recorded semantic input without recording or delivering its result. */
-export function dryRunSelectorPolicy(
-  policy: SelectorPolicy,
+export async function dryRunSelectorPolicy(
+  policy: SelectorPolicyHost,
+  source: Pick<SelectorObservationSource, "decisionDeadline">,
   observation: SelectorObservation,
   settings: SelectorRuntimeSettings,
 ): Promise<SelectorPolicyResult> {
-  return policy.decide(observation, settings);
+  const execution = await executeSelectorPolicy(
+    source,
+    policy,
+    observation,
+    settings,
+  );
+  return execution.result;
 }
 
 export function recordedSelectorObservation(
@@ -321,26 +311,90 @@ export interface SelectorCycleIdentity {
   readonly selectorDecisionReference: string;
 }
 
-function interactionMatchesObservation(
-  result: SelectorPolicyResult,
+function selectorInteraction(
+  execution: SelectorPolicyExecution,
   observation: SelectorObservation,
   identity: SelectorCycleIdentity,
+  settings: SelectorRuntimeSettings,
+  partition: Partition,
+): SelectorInteraction {
+  return {
+    decision: identity.selectorDecisionReference,
+    partition,
+    instructionsVersion: String(settings.revision),
+    instructions: settings.basePrompt,
+    observedView: observation.candidates,
+    observedToken: observation.token,
+    context: {
+      operationalContext: observation.operationalContext,
+      workingMemory: observation.workingMemory,
+    },
+    toolActivity: execution.toolActivity,
+    result: execution.result,
+    implementationRevision: execution.implementationRevision,
+    modelRevision: execution.modelRevision,
+    policyRevision: execution.policyRevision,
+    accounting: execution.accounting,
+    startedAt: execution.startedAt,
+    completedAt: execution.completedAt,
+  };
+}
+
+async function executeSelectorPolicy(
+  source: Pick<SelectorObservationSource, "decisionDeadline">,
+  policy: SelectorPolicyHost,
+  observation: SelectorObservation,
+  settings: SelectorRuntimeSettings,
+): Promise<SelectorPolicyExecution> {
+  const cancellation = new AbortController();
+  const decision = policy.decide(observation, settings, cancellation.signal);
+  try {
+    const execution = await Promise.race([
+      decision,
+      source.decisionDeadline(settings.limits.millisecondsPerDecision),
+    ]);
+    enforcePolicyControls(execution, settings);
+    return execution;
+  } catch (error) {
+    cancellation.abort(error);
+    await decision.catch(() => undefined);
+    throw error;
+  }
+}
+
+function operationalContextIsFresh(
+  observedAt: number,
+  currentTime: number,
+  maxAgeMs: number,
 ): boolean {
-  const interaction = result.interaction;
   return (
-    interaction.decision === identity.selectorDecisionReference &&
-    interaction.partition.tenant === observation.token.tenant &&
-    interaction.partition.project === observation.token.project &&
-    JSON.stringify(interaction.observedToken) ===
-      JSON.stringify(observation.token) &&
-    JSON.stringify(interaction.observedView) ===
-      JSON.stringify(observation.candidates) &&
-    JSON.stringify(interaction.context) ===
-      JSON.stringify({
-        operationalContext: observation.operationalContext,
-        workingMemory: observation.workingMemory,
-      })
+    Number.isFinite(observedAt) &&
+    Number.isFinite(currentTime) &&
+    observedAt <= currentTime &&
+    currentTime - observedAt <= maxAgeMs
   );
+}
+
+function observationMatchesProject(
+  observation: SelectorObservation,
+  partition: Partition,
+): boolean {
+  return (
+    observation.token.tenant === partition.tenant &&
+    observation.token.project === partition.project
+  );
+}
+
+function selectedCandidate(
+  observation: SelectorObservation,
+  selectedTicket: SelectorPolicyResult["selectedTicket"],
+): DispatchCandidate | undefined {
+  const selected = observation.candidates.find(
+    (candidate) => candidate.ticket === selectedTicket,
+  );
+  if (selectedTicket !== undefined && selected === undefined)
+    throw new Error("selector policy chose a ticket outside its observed view");
+  return selected;
 }
 
 /** Runs one independently timed selector observation and durably records waiting or delivery. */
@@ -348,40 +402,39 @@ export async function runSelectorCycle(
   state: SelectorProjectState,
   source: SelectorObservationSource,
   store: SelectorStateStore,
-  policy: SelectorPolicy,
+  policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
   settings: SelectorRuntimeSettings,
 ): Promise<SelectorProposal | undefined> {
   const observation = await observeSelectorProject(state, source);
   if (observation === undefined) return undefined;
+  if (!observationMatchesProject(observation, state.partition))
+    throw new Error("selector observation crossed its project boundary");
   const observedAt = observation.operationalContext.observedAtEpochMs;
   const currentTime = await source.currentTimeEpochMs();
   if (
-    !Number.isFinite(observedAt) ||
-    !Number.isFinite(currentTime) ||
-    observedAt > currentTime ||
-    currentTime - observedAt > settings.operationalContextMaxAgeMs
+    !operationalContextIsFresh(
+      observedAt,
+      currentTime,
+      settings.operationalContextMaxAgeMs,
+    )
   )
     return undefined;
-  const result = await Promise.race([
-    policy.decide(observation, settings),
-    source.decisionDeadline(settings.limits.millisecondsPerDecision),
-  ]);
-  enforcePolicyControls(result, settings);
-  if (!interactionMatchesObservation(result, observation, identity))
-    throw new Error("selector policy provenance contradicts its observation");
-  if (
-    result.interaction.instructionsVersion !== String(settings.revision) ||
-    result.interaction.instructions !== settings.basePrompt
-  )
-    throw new Error(
-      "selector policy provenance contradicts its runtime prompt",
-    );
-  const selected = observation.candidates.find(
-    (candidate) => candidate.ticket === result.selectedTicket,
+  const execution = await executeSelectorPolicy(
+    source,
+    policy,
+    observation,
+    settings,
   );
-  if (result.selectedTicket !== undefined && selected === undefined)
-    throw new Error("selector policy chose a ticket outside its observed view");
+  const result = execution.result;
+  const interaction = selectorInteraction(
+    execution,
+    observation,
+    identity,
+    settings,
+    state.partition,
+  );
+  const selected = selectedCandidate(observation, result.selectedTicket);
   const nextState: SelectorProjectState = {
     partition: state.partition,
     notificationCursor: observation.notificationCursor,
@@ -391,14 +444,14 @@ export async function runSelectorCycle(
   };
   if (selected === undefined) {
     await store.recordInteraction(
-      result.interaction,
+      interaction,
       nextState,
       result.planningIntent,
     );
     return undefined;
   }
   const proposal: SelectorProposal = {
-    interaction: result.interaction,
+    interaction,
     operation: identity.operation,
     command: proposalCommand({
       ticket: selected,

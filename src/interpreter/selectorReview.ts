@@ -1,10 +1,31 @@
 import type { Principal, ProjectAccess } from "./nativeWeb.ts";
 import type { Partition } from "./projectStore.ts";
-import type {
-  SelectorDelivery,
-  SelectorReviewFeedback,
-  SelectorStateStore,
-} from "./selector.ts";
+import type { SelectorDelivery, SelectorReviewFeedback } from "./selector.ts";
+import type { Authority } from "./operationInbox.ts";
+
+export interface SelectorProposalReviewStore {
+  awaitingApproval(
+    partition: Partition,
+    limit: number,
+  ): Promise<readonly SelectorDelivery[]>;
+  approve(
+    partition: Partition,
+    decision: string,
+    reviewer: Authority,
+    feedback?: string,
+  ): Promise<boolean>;
+  reject(
+    partition: Partition,
+    decision: string,
+    reviewer: Authority,
+    feedback?: string,
+  ): Promise<boolean>;
+  reviewFeedback(
+    partition: Partition,
+    after: string | undefined,
+    limit: number,
+  ): Promise<readonly SelectorReviewFeedback[]>;
+}
 
 export type SelectorReviewResult =
   | { readonly result: "NotFound" }
@@ -52,14 +73,16 @@ export interface SelectorProposalReviews {
 /** Reuses manual-dispatch authority for the weaker, user-approved selector mode. */
 export function selectorProposalReviews(
   access: ProjectAccess,
-  store: SelectorStateStore,
+  store: SelectorProposalReviewStore,
 ): SelectorProposalReviews {
   const change = async (
     principal: Principal,
     partition: Partition,
     decision: string,
     feedback: string | undefined,
-    review: SelectorStateStore["approve"] | SelectorStateStore["reject"],
+    review:
+      | SelectorProposalReviewStore["approve"]
+      | SelectorProposalReviewStore["reject"],
   ): Promise<SelectorReviewResult> => {
     const reviewer = await access.authorize(
       principal,

@@ -24,7 +24,13 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
-import { selectorSettingsFunction } from "./schema.ts";
+import type { SelectorProposalReviewStore } from "../../interpreter/selectorReview.ts";
+import {
+  selectorClaimFunction,
+  selectorDeliveryFunction,
+  selectorReviewFunction,
+  selectorSettingsFunction,
+} from "./schema.ts";
 
 interface DeliveryRow {
   readonly selector_decision: string;
@@ -304,11 +310,9 @@ async function writeSelectorProject(
 }
 
 async function markSubmitted(pool: pg.Pool, decision: string): Promise<void> {
-  await pool.query(
-    `UPDATE selector_proposal_delivery SET state='Submitted'
-      WHERE selector_decision=$1 AND state='Pending'`,
-    [decision],
-  );
+  await pool.query(`SELECT ${selectorDeliveryFunction}($1,'Submitted',NULL)`, [
+    decision,
+  ]);
 }
 
 async function submittedDeliveries(
@@ -331,12 +335,8 @@ async function pendingDeliveries(
 ): Promise<readonly SelectorDelivery[]> {
   checkedSelectorLimit(limit, "selector delivery");
   const found = await pool.query<DeliveryRow>(
-    `UPDATE selector_proposal_delivery
-      SET attempts=attempts+1,retry_at=now()+interval '30 seconds'
-      WHERE selector_decision IN
-        (SELECT selector_decision FROM selector_proposal_delivery
-          WHERE state='Pending' AND retry_at<=now() ORDER BY retry_at LIMIT $1 FOR UPDATE SKIP LOCKED)
-      RETURNING selector_decision,tenant,project,operation,command,attempts::text`,
+    `SELECT selector_decision,tenant,project,operation,command,attempts::text
+       FROM ${selectorClaimFunction}($1)`,
     [limit],
   );
   return found.rows.map(deliveryOf);
@@ -579,50 +579,50 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
     submitted: (decision) => markSubmitted(pool, decision),
     terminal: async (decision, outcome) => {
-      await pool.query(
-        `UPDATE selector_proposal_delivery SET state='Terminal',outcome=$2 WHERE selector_decision=$1`,
-        [decision, encode(outcome)],
-      );
+      await pool.query(`SELECT ${selectorDeliveryFunction}($1,'Terminal',$2)`, [
+        decision,
+        encode(outcome),
+      ]);
     },
     history: (partition, after, limit) =>
       readSelectorHistory(pool, partition, after, limit),
     project: (partition) => readSelectorProject(pool, partition),
+  };
+}
+
+export function postgresSelectorProposalReviews(
+  pool: pg.Pool,
+): SelectorProposalReviewStore {
+  return {
     awaitingApproval: (partition, limit) =>
       awaitingApproval(pool, partition, limit),
     approve: async (partition, decision, reviewer, feedback) => {
-      const changed = await pool.query(
-        `UPDATE selector_proposal_delivery SET state='Pending',review_feedback=$2,
-         reviewed_at=now(),reviewer_kind=$3,reviewer_subject=$4,review_outcome='Approved',
-         retry_at=now() WHERE selector_decision=$1 AND tenant=$5
-         AND project=$6 AND state='AwaitingApproval'`,
+      const changed = await pool.query<{ changed: boolean }>(
+        `SELECT ${selectorReviewFunction}($1,$2,$3,'Approved',$4,$5,$6) AS changed`,
         [
           decision,
-          feedback ?? null,
-          reviewer.kind,
-          reviewer.subject,
           partition.tenant,
           partition.project,
+          reviewer.kind,
+          reviewer.subject,
+          feedback ?? null,
         ],
       );
-      return changed.rowCount === 1;
+      return changed.rows[0]?.changed ?? false;
     },
     reject: async (partition, decision, reviewer, feedback) => {
-      const changed = await pool.query(
-        `UPDATE selector_proposal_delivery SET state='Terminal',review_feedback=$2,
-         reviewed_at=now(),reviewer_kind=$3,reviewer_subject=$4,review_outcome='Rejected',
-         outcome=$5 WHERE selector_decision=$1 AND tenant=$6
-         AND project=$7 AND state='AwaitingApproval'`,
+      const changed = await pool.query<{ changed: boolean }>(
+        `SELECT ${selectorReviewFunction}($1,$2,$3,'Rejected',$4,$5,$6) AS changed`,
         [
           decision,
-          feedback ?? null,
-          reviewer.kind,
-          reviewer.subject,
-          encode({ state: "RejectedByUser", feedback }),
           partition.tenant,
           partition.project,
+          reviewer.kind,
+          reviewer.subject,
+          feedback ?? null,
         ],
       );
-      return changed.rowCount === 1;
+      return changed.rows[0]?.changed ?? false;
     },
     reviewFeedback: (partition, after, limit) =>
       readReviewFeedback(pool, partition, after, limit),

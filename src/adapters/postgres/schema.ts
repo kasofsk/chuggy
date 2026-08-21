@@ -210,7 +210,11 @@ export const ticketServiceRole = "chuggy_ticket_service";
 export const apiRole = "chuggy_api";
 export const selectorServiceRole = "chuggy_selector_service";
 export const selectorControlRole = "chuggy_selector_control";
+export const selectorReviewRole = "chuggy_selector_review";
 export const selectorSettingsFunction = "update_selector_runtime_settings";
+export const selectorReviewFunction = "review_selector_proposal";
+export const selectorClaimFunction = "claim_selector_deliveries";
+export const selectorDeliveryFunction = "advance_selector_delivery";
 
 /** The whole of a cancellation, named once so the grant, the adapter and the suite agree on it. */
 export const cancellationFunction = "cancel_pending_operation";
@@ -1612,6 +1616,7 @@ export const migrations: readonly Migration[] = [
     name: "hot-reloadable selector controls",
     statements: [
       roleStatement(selectorControlRole),
+      roleStatement(selectorReviewRole),
       `CREATE TABLE selector_runtime_settings (
          singleton integer PRIMARY KEY DEFAULT 1, revision bigint NOT NULL DEFAULT 1,
          mode text NOT NULL DEFAULT 'Running', dispatch_mode text NOT NULL DEFAULT 'Automatic',
@@ -1651,6 +1656,83 @@ export const migrations: readonly Migration[] = [
          ADD CHECK (review_outcome IS NULL OR review_outcome IN ('Approved','Rejected')),
          ADD CHECK (reviewer_kind IS NULL OR length(reviewer_kind) BETWEEN 1 AND 256),
          ADD CHECK (reviewer_subject IS NULL OR length(reviewer_subject) BETWEEN 1 AND 256)`,
+      `CREATE FUNCTION enforce_selector_proposal_initial_state() RETURNS trigger
+         LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+         DECLARE configured_mode text;
+         BEGIN
+           SELECT dispatch_mode INTO STRICT configured_mode
+             FROM selector_runtime_settings WHERE singleton=1;
+           NEW.state=CASE configured_mode WHEN 'Automatic' THEN 'Pending'
+             ELSE 'AwaitingApproval' END;
+           NEW.outcome=NULL;
+           NEW.attempts=0;
+           NEW.retry_at=now();
+           NEW.review_feedback=NULL;
+           NEW.reviewed_at=NULL;
+           NEW.reviewer_kind=NULL;
+           NEW.reviewer_subject=NULL;
+           NEW.review_outcome=NULL;
+           RETURN NEW;
+         END $$`,
+      `ALTER FUNCTION enforce_selector_proposal_initial_state() OWNER TO ${boundaryOwnerRole}`,
+      `CREATE TRIGGER selector_proposal_initial_state
+         BEFORE INSERT ON selector_proposal_delivery FOR EACH ROW
+         EXECUTE FUNCTION enforce_selector_proposal_initial_state()`,
+      `CREATE FUNCTION ${selectorClaimFunction}(delivery_limit integer)
+         RETURNS TABLE(selector_decision text,tenant text,project text,operation text,command text,attempts bigint)
+         LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+           UPDATE selector_proposal_delivery delivery
+             SET attempts=delivery.attempts+1,retry_at=now()+interval '30 seconds'
+           WHERE delivery.selector_decision IN (
+             SELECT candidate.selector_decision FROM selector_proposal_delivery candidate
+             WHERE candidate.state='Pending' AND candidate.retry_at<=now()
+             ORDER BY candidate.retry_at
+             LIMIT CASE WHEN delivery_limit BETWEEN 1 AND 100 THEN delivery_limit ELSE 0 END
+             FOR UPDATE SKIP LOCKED)
+           RETURNING delivery.selector_decision,delivery.tenant,delivery.project,
+             delivery.operation,delivery.command,delivery.attempts
+         $$`,
+      `ALTER FUNCTION ${selectorClaimFunction}(integer) OWNER TO ${boundaryOwnerRole}`,
+      `CREATE FUNCTION ${selectorDeliveryFunction}(in_decision text,in_transition text,in_outcome text)
+         RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER
+         SET search_path=pg_catalog,public,pg_temp AS $$
+         BEGIN
+           IF in_transition='Submitted' THEN
+             UPDATE selector_proposal_delivery SET state='Submitted'
+               WHERE selector_decision=in_decision AND state='Pending';
+           ELSIF in_transition='Terminal' THEN
+             UPDATE selector_proposal_delivery SET state='Terminal',outcome=in_outcome
+               WHERE selector_decision=in_decision AND state IN ('Pending','Submitted');
+           ELSE RAISE EXCEPTION 'invalid selector delivery transition';
+           END IF;
+           RETURN FOUND;
+         END $$`,
+      `ALTER FUNCTION ${selectorDeliveryFunction}(text,text,text) OWNER TO ${boundaryOwnerRole}`,
+      `CREATE FUNCTION ${selectorReviewFunction}(
+         in_decision text,in_tenant text,in_project text,in_review text,
+         in_reviewer_kind text,in_reviewer_subject text,in_feedback text)
+         RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER
+         SET search_path=pg_catalog,public,pg_temp AS $$
+         BEGIN
+           IF in_review='Approved' THEN
+             UPDATE selector_proposal_delivery SET state='Pending',review_feedback=in_feedback,
+               reviewed_at=now(),reviewer_kind=in_reviewer_kind,reviewer_subject=in_reviewer_subject,
+               review_outcome='Approved',retry_at=now()
+               WHERE selector_decision=in_decision AND tenant=in_tenant AND project=in_project
+                 AND state='AwaitingApproval';
+           ELSIF in_review='Rejected' THEN
+             UPDATE selector_proposal_delivery SET state='Terminal',review_feedback=in_feedback,
+               reviewed_at=now(),reviewer_kind=in_reviewer_kind,reviewer_subject=in_reviewer_subject,
+               review_outcome='Rejected',outcome=json_build_object(
+                 'state','RejectedByUser','feedback',in_feedback)::text
+               WHERE selector_decision=in_decision AND tenant=in_tenant AND project=in_project
+                 AND state='AwaitingApproval';
+           ELSE RAISE EXCEPTION 'invalid selector proposal review';
+           END IF;
+           RETURN FOUND;
+         END $$`,
+      `ALTER FUNCTION ${selectorReviewFunction}(text,text,text,text,text,text,text)
+         OWNER TO ${boundaryOwnerRole}`,
       `CREATE FUNCTION ${selectorSettingsFunction}(
          expected_revision bigint,new_mode text,new_dispatch_mode text,
          new_base_prompt text,new_controls text)
@@ -1679,11 +1761,29 @@ export const migrations: readonly Migration[] = [
          OWNER TO ${boundaryOwnerRole}`,
       `GRANT SELECT,UPDATE ON selector_runtime_settings TO ${boundaryOwnerRole}`,
       `GRANT INSERT ON selector_runtime_settings_history TO ${boundaryOwnerRole}`,
+      `GRANT SELECT,UPDATE ON selector_proposal_delivery TO ${boundaryOwnerRole}`,
       `REVOKE ALL ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text) FROM PUBLIC`,
       `GRANT EXECUTE ON FUNCTION ${selectorSettingsFunction}(bigint,text,text,text,text)
          TO ${selectorControlRole}`,
       `GRANT SELECT ON selector_runtime_settings TO ${selectorServiceRole},${selectorControlRole}`,
       `GRANT SELECT ON selector_runtime_settings_history TO ${selectorControlRole}`,
+      `GRANT SELECT ON selector_proposal_delivery TO ${selectorControlRole}`,
+      `REVOKE ALL ON selector_project_state,selector_inventory_state,selector_interaction,
+         selector_planning_intent,selector_proposal_delivery FROM ${selectorServiceRole}`,
+      `GRANT SELECT,INSERT,UPDATE ON selector_project_state TO ${selectorServiceRole}`,
+      `GRANT SELECT,UPDATE ON selector_inventory_state TO ${selectorServiceRole}`,
+      `GRANT SELECT,INSERT ON selector_interaction TO ${selectorServiceRole}`,
+      `GRANT SELECT,INSERT,UPDATE ON selector_planning_intent TO ${selectorServiceRole}`,
+      `GRANT SELECT,INSERT ON selector_proposal_delivery TO ${selectorServiceRole}`,
+      `REVOKE ALL ON FUNCTION ${selectorClaimFunction}(integer),
+         ${selectorDeliveryFunction}(text,text,text),
+         ${selectorReviewFunction}(text,text,text,text,text,text,text),
+         enforce_selector_proposal_initial_state() FROM PUBLIC`,
+      `GRANT EXECUTE ON FUNCTION ${selectorClaimFunction}(integer),
+         ${selectorDeliveryFunction}(text,text,text) TO ${selectorServiceRole}`,
+      `GRANT SELECT ON selector_proposal_delivery TO ${selectorReviewRole}`,
+      `GRANT EXECUTE ON FUNCTION ${selectorReviewFunction}(text,text,text,text,text,text,text)
+         TO ${selectorReviewRole}`,
     ],
   },
 ];
