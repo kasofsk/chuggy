@@ -2131,6 +2131,305 @@ attempts are terminal and its capacity released, and applies the project's
 retention and erasure policy to attempts, manifests, artifacts and incidents
 inside the project boundary they were written under.
 
+### I7 decision record
+
+Issue #162 tracks implementation. The following decisions refine the I7
+landing row without changing the model. The deployable is the **finalizer
+service** and the role it reaches its durable authority through is
+**`chuggy_finalizer`**. It orders the tickets a decision put into
+`Finalizing`, prepares an immutable candidate against pinned commits, obtains
+the one permit that authorizes the one irreversible act, promotes that
+candidate and reconciles what the ref proves, then submits
+`FinalizationResult` through one narrow boundary. It resolves no ticket,
+appends no journal entry, settles no operation and moves no ticket
+projection.
+
+I7 adds no decider, no effect, no event and no label, and so emits no golden
+trace: `model/` is untouched by the whole slice. The specification wrote that
+charter itself rather than leaving it to be inferred — `model/measure.qnt`
+says finalizing is one domain phase and that queueing, approval, permits and
+any irreversible external action are operational protocol rather than `Core`
+state, and `model/domain.qnt` says a finalizer reports only a conclusive
+domain outcome. A golden that moves during this slice means the slice has
+become a model change, which is an escalation and not an implementation
+decision.
+
+Two things are wrong in the tree today rather than merely unbuilt, and this
+slice owns both. `FinalizationResult` is an ordinary public `Decide` command
+that the command schema accepts and the web authority maps to plain `Mutate`,
+so any principal holding `Mutate` on a partition may conclude any finalizing
+ticket, and the project writer fences that submission against nothing: not
+the authorizing request, not its generation, not the recovery epoch. And the
+scheduler refuses a configuration whose project backlog reserves no mailbox
+room for the completions it may later submit, while an open finalization
+request — also a `Completion`-priority operation when it concludes — sits
+outside `execution_backlog` and outside anything that reserves room for it.
+Both close in the first tranche, because both are the sole-authority claim
+this document already makes.
+
+Neither defect can be observed today, and the reason is worth stating: a
+ticket that enters `Finalizing` is a permanent hold. Nothing reads
+`finalization_request`, its claim columns are granted to no role, its
+`Registered` and `Invalidated` states have no producer, and the partial
+unique index that keeps one open request per ticket blocks the second one
+forever. The producer landed in I3 with no consumer, which is the seam I7
+arrives on.
+
+#### The slice lands in two tranches and the row flips once
+
+Landing was deliberately split once already, and the same reasoning applies
+here at a smaller grain. **I7a is the authority**: `chuggy_finalizer`,
+migration 11, the queue consumer over the claim columns I3 left dead,
+`submit_finalization_result` as the one authenticated door, the writer-side
+fence, the repository binding and its exclusivity, and the reconciliation
+hold. **I7b is the act**: `src/adapters/git/`, <!-- intent --> candidate
+construction from verified handoff artifacts, the bounded integration, the
+permit and the conditional ref update, reconciliation by ancestry, the
+conflict manifest, and the typed failure evidence that transactionally
+becomes a rework bundle. The landing row stays unlanded until both are in,
+because a row is a claim about a slice and not about a tranche.
+
+The split must not simulate the authority it defers. `GitPromotionPort` is
+declared in I7a and has no adapter there, so a finalization reaching it does
+not conclude — it holds, exactly as an unreadable ref holds. That is the
+house pattern `ArtifactVerificationPort` and `WorkerLaunchPort` already
+establish; a stub returning success would be the implementor contract's
+forbidden simulation of a missing authority, and it would forge a domain
+outcome besides.
+
+#### Preparation constructs the candidate; nothing else may
+
+Workers are confined to attempt-scoped immutable output storage and cannot
+mutate the project repository, and their handoff artifacts are metadata —
+path, digest and byte count, never content. So nothing in the tree turns a
+handoff into a tree object, and the finalizer is what must: it reads verified
+handoff artifacts and writes the candidate with `hash-object`, `mktree` and
+`commit-tree` against a bare scratch repository, with no working tree at any
+point. This is what constructing and validating a candidate in isolation
+rather than copying a workspace blindly already asks for, and it is
+deterministic by construction rather than by discipline. The alternative — a
+worker pushing its own branch under a scoped ref — is rejected explicitly
+rather than left unmentioned, because it would give a worker write authority
+on the repository the permit exists to serialize.
+
+That pulls the project-owned artifact storage adapter behind
+`ArtifactVerificationPort` into I7b, which I6 deferred to the slice that
+builds it. I7b is that slice, the cost is budgeted here, and the conflict
+manifest is written through the same adapter as a project-owned artifact with
+its own identity and digest — which is how large conflict detail stays out of
+the journal and out of the request row.
+
+The target is the repository's default branch, re-read from the remote at
+every preparation rather than remembered, and recorded on the immutable
+attempt beside the base it was observed at. It is service-owned and never
+enters the frozen ticket contract: a ref in `Core` is a model tripwire, and
+`ManagedFinalizer` is nullary precisely so that it is not one.
+
+Bounded means exactly one integration attempt per observed target. If the
+target moves, the revision fence restarts preparation from the newly observed
+immutable target under an explicit `preparationRestartsMax`, and exhausting
+that ceiling is an operational hold under attention rather than a priced
+failure — nothing refunds and nothing overdraws, so a finalizer's own
+re-preparations must be invisible to `Core`. The strategy is **merge and not
+rebase**: `merge-tree --write-tree` is a deterministic function of two
+commits, where a rebase replays commits and is not. The attempt records the
+strategy regardless, so widening the set later costs a column that already
+exists rather than a migration.
+
+#### What migration 11 adds
+
+`project_repository` is the binding, keyed `(tenant, project)` at one row per
+project, foreign-keyed to its project, carrying the remote's stable identity
+and the recovery epoch it was bound under and never a credential. Project
+provisioning writes it and it is re-bound only under a new epoch. It has no
+recovery query, and that is a decision rather than an omission: a binding
+holds no unfinished work, so there is nothing for a fresh process to find.
+Credentials resolve through a port from the composition root, because `src/`
+reads no environment variable at all and the journal retains none. One
+repository per project is what keeps the finalizer declaration nullary;
+issue #104 is open on whether a project may ever own more than one, and this
+slice assumes it may not.
+
+`finalization_attempt` is one preparation and the grain the evidence is keyed
+at. It is the finalizer's, keyed `(tenant, project, attempt)` with `attempt`
+alone unique and never reused, foreign-keyed to its project and to the
+request that authorized it. It pins the candidate commit, the observed target
+ref and base, the pinned configuration revision and its digest, the strategy,
+and its own digest over canonical bytes binding the attempt to the request it
+answers. Preparation is the only transaction that writes one and there is no
+update path at all — re-preparation creates another identity, which is what
+makes an attempt evidence rather than a working note. Its unfinished work is
+attempts with no terminal permit and no concluded result, bounded and ordered.
+
+`commit_permit` is the serialization of the one irreversible act. It is the
+finalizer's, keyed `(tenant, project, permit)` with `permit` unique and never
+reused, foreign-keyed to its attempt and to the recovery epoch it was granted
+under, and fenced by the project's lifecycle generation as well. At most one
+permit is live per project and a partial unique index carries that rule,
+because exclusivity a process remembers is exclusivity a takeover forgets.
+Grant and exactly one conclusion are its transactions; it cannot expire into
+safety and cannot be abandoned before reconciliation, so a lapsed lease is
+not a release. Its recovery query is granted permits with no conclusion,
+which is the crash window that matters most in the slice.
+
+`finalization_reconciliation` is what the ref proved, keyed
+`(tenant, project, permit)` at one row per permit. It records the candidate
+identity the target ref was read against and the ancestry that read returned,
+or that the ref could not be read. Reconciliation is its transaction, and a
+hold is a state it carries rather than a row's absence — an absent row is
+indistinguishable from a crash, and this relation exists to make that
+distinction. Its recovery query is the holds under attention, bounded and
+ordered.
+
+`input_bundle` is the general relation and not a finalization-shaped one. It
+is keyed `(tenant, project, bundle)` under a canonical digest and holds
+references — upstream results, artifacts, handoffs, the pinned release
+configuration, repository identities — and never logs or secrets. The
+deciding transaction that spawns a work set creates it. This document says
+every new scheduler registration pins its bundle and its digest, and I6
+deferred the relation to the slice with references of its own to hold; I7b is
+that slice, so I7b also retrofits `execution_request` to pin one. The
+retrofit touches a landed slice's schema and its suites and is budgeted here
+rather than discovered in review, because building only a finalization-shaped
+bundle would leave that claim unenforced, which is the failure mode I6's own
+review rounds kept naming. An unreferenced bundle is retention's concern and
+not recovery's, so it has no recovery query.
+
+`finalization_request` is I3's and I7 alters it rather than replacing it. It
+gains the `recovery_epoch` its claim is fenced by, the partial index that
+makes a claimable row findable, and the claim-column grants that turn three
+dead columns live. Claim, register, fulfil and invalidate are its
+transactions and the finalizer is the one writer of all four; the ticket
+service keeps the `state` grant it already holds for fulfilment inside the
+decision transaction. Its unfinished work is open rows past their claim
+expiry, and live rows under a stale epoch.
+
+There is no finalization-queue projection and building one would be a
+finding. The queue is `finalization_request` ordered by `authorizing_seq`,
+which is journal-derived and therefore replay-rebuilt by construction — the
+same FIFO device I6's claim query already uses, and standing rule 3 rejects
+the stored duplicate.
+
+#### Grants are the enforcement
+
+The finalizer holds no privilege on `operation`, `decision_input`,
+`journal_entry` or `ticket_projection`, and reaches the mailbox only through
+`submit_finalization_result`. That is not a convenience over a permission it
+already has; it is the whole of why a conclusion cannot be forged, and it is
+I6's settlement-column rule applied at a different seam. Every relation this
+migration adds is explicitly revoked from every prior role, and the new role
+is explicitly revoked from every prior slice's relations — the scheduler's
+revoke list already names `finalization_request`, which is the pattern to
+follow rather than to rediscover.
+
+`submit_finalization_result` is the one door: `SECURITY DEFINER`, owned by
+`chuggy_boundary_owner` and hardened as `accept_operation`,
+`publish_continuation` and `submit_task_completion` are, under authority kind
+`Finalizer`, key version `finalizer-v1` and a key digest over the durable
+request rather than a client key — exactly as completion scopes its
+idempotency to the execution. Validation is the function's and never the
+caller's: the envelope is built from durable rows, and a result disagreeing
+with the authorizing request, its generation or the recovery epoch is refused
+without a journal entry, as this document already requires of stale,
+duplicate, cancelled and mismatched results.
+
+#### Approval is a native action, and that deviates
+
+The approval must reference the attempt identity and digest, and this
+document places it in the service's own records. It cannot go there. A
+service-owned approval table cannot transactionally cancel itself when the
+ticket leaves the phase, and the ticket-service-owned `native_action` I3
+built does exactly that — which means the service-owned form needs a second
+writer to cancel on phase exit, and a second writer is a commitment violation
+rather than a design preference. So `native_action` gains kind
+`FinalizationApproval`, capability `ApproveFinalization` and an
+attempt-reference column, stays ticket-service-owned, and the finalizer reads
+it. Its one-open-row-per-ticket constraint cannot bite, because a ticket in
+`Finalizing` is not in `Escalated`. Whether approval is required at all is a
+field of the pinned configuration revision that I4 already versions, read at
+preparation and recorded on the attempt beside the revision and digest that
+were pinned, so the policy needs no new source and `ManagedFinalizer` stays
+nullary.
+
+#### Ordering, stated once
+
+Journal, then effect. `model/refinement.qnt` carries the other order as a
+proved counterexample — the same candidate merged twice with the journal
+showing one clean completion — and that is the failure this slice could most
+plausibly ship. The permit is what makes the correct order survivable: it is
+granted and recorded before the ref update and cannot be abandoned until
+reconciliation proves whether the ref advanced. `merge-base --is-ancestor`
+against the immutable candidate identity is that proof, and it is what makes
+true idempotence the repository's rather than the row's.
+
+No Git call may occur while a project decision transaction is open. The
+ambiguous-commit resolution I2 built is only safe because that transaction
+performs no external irreversible I/O, and a promotion inside it would make
+the safe case unsafe.
+
+The permit transaction takes the project row under a share lock so that a
+lifecycle transition's exclusive lock serializes against it, with a
+project-keyed advisory lock where a share lock is not reachable — the
+scheduler's precedent, for the scheduler's reason. The global lock order is
+**request, then repository, then project, then permit, then attempt**, and
+within each class in key order. It is declared in the header of every file
+that takes more than one, because a declared order makes a deadlock
+unreachable where a retry only makes it rare.
+
+#### What holds, and what a person may do about it
+
+Timeout, an unreadable ref and contradictory evidence are one answer: a
+durable hold on the permit, surfaced through the attention and planning read
+model I5 built. The ticket stays in `Finalizing`, the permit does not expire,
+and no further attempt is authorized. An operator action supplies *evidence*
+— re-read the ref, confirm the ancestry — and never an outcome; the hold ends
+when reconciliation concludes. A person can unblock the reading and not the
+verdict, which is the same rule that forbids administrative resolution
+fabricating domain truth.
+
+The typed failure kinds are `MergeConflict` and `PreparationFailed`, and no
+others, because those are the two with a producer. Both reduce to the same
+priced `FinalizationFailed` outcome, the closed set carries a database check,
+and a kind arrives when its producer does rather than ahead of it.
+
+The optional-integration requests this document's handoff list names once are
+the secondary integrations — issue tracker, webhook — which carry no ticket
+authority and are not I7's. That reading is stated rather than assumed
+because the phrase could as easily have meant the finalizer's own optional
+integration attempt, and an ambiguity resolved silently is an ambiguity
+resolved twice.
+
+#### Deliberately partial
+
+The finalizer gets its own role and its own deployable in this record and no
+deployment in this slice: `src/compose.ts` gains its wiring and the pass has
+no production caller, exactly as I6's scheduler pass has none. A slice ships
+the machine and not the daemon.
+
+Project closure during `Finalizing` has two arms and I7 builds one of them.
+An attempt that never obtained the permit aborts reversibly and concludes
+failed, and I7 builds that abort request and the reconcile-before-erasure
+hold that an attempt past the permit must satisfy. The fenced closure writer
+that calls them is I10's row and stays there; until it exists, a revocation
+of a finalizing ticket is refused at the writer, as it is today. Stating this
+here is the alternative to discovering it in a review round.
+
+I8 advances the recovery epoch on restore, which is why the permit and the
+repository binding each name the epoch they were issued under: an old-epoch
+executor fails its fence and can neither obtain nor use a permit, and
+inventory reconciles repositories, attempts and permits through these rows.
+I9 contains a corrupt project locally, and a hold is already project-scoped.
+I10 closes a project only once its permits are concluded and its
+reconciliations settled, and applies the project's retention and erasure
+policy to attempts, manifests and bundles inside the project boundary they
+were written under.
+
+`model/measure.qnt`'s descent table still names three wrap-up labels the
+model no longer has. An implementer following that table would build the
+multi-phase protocol the model deliberately collapsed, so the ladder values
+are the truth and the table is stale. Fixing it is its own commit and not
+I7's, because house rule 16 forbids folding a correction into unrelated work.
+
 | Slice | Depends on | What lands and its definition of done | Status |
 |---|---|---|---|
 | M0 | — | Project-scoped sparse-ID `Core`, vocabulary and transition migration | Landed |
