@@ -1,9 +1,7 @@
 import type { Partition } from "./projectStore.ts";
 import type { ProjectInventoryPage } from "./nativeWeb.ts";
 import {
-  deliverSelectorProposal,
   observeSelectorProject,
-  reconcileSelectorProposal,
   runObservedSelectorCycle,
   type SelectorCycleIdentity,
   type SelectorObservationSource,
@@ -15,8 +13,17 @@ import {
   type SelectorRuntimeSettingsSource,
   type SelectorStateStore,
   type SelectorTicketService,
-  SelectorTerminationUnconfirmed,
 } from "./selector.ts";
+import {
+  reconcileSelectorAttempts,
+  settleFailedSelectorAttempt,
+} from "./selectorAttemptRuntime.ts";
+import {
+  deliverPendingSelectorProposals,
+  reconcileSubmittedSelectorProposals,
+} from "./selectorDeliveryRuntime.ts";
+import type { SelectorRunFailure } from "./selectorRuntimeTypes.ts";
+export type { SelectorRunFailure } from "./selectorRuntimeTypes.ts";
 
 export interface SelectorRuntimeSource
   extends
@@ -39,23 +46,6 @@ export interface SelectorRunResult {
   readonly delivered: number;
   readonly reconciled: number;
   readonly failures: readonly SelectorRunFailure[];
-}
-
-export interface SelectorRunFailure {
-  readonly phase:
-    | "Inventory"
-    | "Settings"
-    | "PermitAcquisition"
-    | "Observation"
-    | "Quarantine"
-    | "AttemptReconciliation"
-    | "PermitRelease"
-    | "DeliveryClaim"
-    | "Delivery"
-    | "ReconciliationClaim"
-    | "Reconciliation";
-  readonly partition?: Partition;
-  readonly decision?: string;
 }
 
 export interface SelectorRuntimeConfig {
@@ -244,35 +234,15 @@ async function observePermittedProject(
     }
   } catch (error) {
     failures.push({ phase: "Observation", partition });
-    await settleFailedAttempt(store, identity, partition, error, failures);
+    await settleFailedSelectorAttempt(
+      store,
+      identity,
+      partition,
+      error,
+      failures,
+    );
   }
   return { stop, observed, proposed: proposal !== undefined, failures };
-}
-
-async function settleFailedAttempt(
-  store: SelectorStateStore,
-  identity: SelectorCycleIdentity,
-  partition: Partition,
-  error: unknown,
-  failures: SelectorRunFailure[],
-): Promise<void> {
-  if (error instanceof SelectorTerminationUnconfirmed) {
-    await store
-      .quarantineAttempt(identity.selectorDecisionReference)
-      .catch(() => failures.push({ phase: "Quarantine", partition }));
-    return;
-  }
-  try {
-    await store.terminateAttempt(
-      identity.selectorDecisionReference,
-      "policy execution ended without a recorded interaction",
-    );
-  } catch {
-    failures.push({ phase: "PermitRelease", partition });
-    await store
-      .quarantineAttempt(identity.selectorDecisionReference)
-      .catch(() => failures.push({ phase: "Quarantine", partition }));
-  }
 }
 
 async function observeInventory(
@@ -311,73 +281,6 @@ async function observeInventory(
   return progress;
 }
 
-async function reconcileAttempts(
-  store: SelectorStateStore,
-  policy: SelectorPolicyHost,
-): Promise<void> {
-  for (const attempt of await store.quarantinedAttempts(100)) {
-    const reconciliation = await policy.reconcileQuarantined(attempt);
-    if (
-      reconciliation.status === "Terminated" &&
-      reconciliation.attempt === attempt
-    )
-      await store.terminateAttempt(attempt, reconciliation.proof);
-  }
-}
-
-async function deliverPending(
-  store: SelectorStateStore,
-  source: SelectorRuntimeSource,
-  limit: number,
-): Promise<{ delivered: number; failures: readonly SelectorRunFailure[] }> {
-  let delivered = 0;
-  const failures: SelectorRunFailure[] = [];
-  try {
-    for (const delivery of await store.pending(limit)) {
-      if (
-        (await deliverSelectorProposal(store, source, delivery)).result ===
-        "Delivered"
-      )
-        delivered += 1;
-      else
-        failures.push({
-          phase: "Delivery",
-          partition: delivery.partition,
-          decision: delivery.decision,
-        });
-    }
-  } catch {
-    failures.push({ phase: "DeliveryClaim" });
-  }
-  return { delivered, failures };
-}
-
-async function reconcileSubmitted(
-  store: SelectorStateStore,
-  source: SelectorRuntimeSource,
-  limit: number,
-): Promise<{ reconciled: number; failures: readonly SelectorRunFailure[] }> {
-  let reconciled = 0;
-  const failures: SelectorRunFailure[] = [];
-  try {
-    for (const delivery of await store.submittedDeliveries(limit)) {
-      try {
-        if (await reconcileSelectorProposal(store, source, delivery))
-          reconciled += 1;
-      } catch {
-        failures.push({
-          phase: "Reconciliation",
-          partition: delivery.partition,
-          decision: delivery.decision,
-        });
-      }
-    }
-  } catch {
-    failures.push({ phase: "ReconciliationClaim" });
-  }
-  return { reconciled, failures };
-}
-
 /** Performs one bounded poll, policy, delivery, and reconciliation quantum. */
 export async function selectorRunOnce(
   store: SelectorStateStore,
@@ -409,20 +312,20 @@ export async function selectorRunOnce(
   } catch {
     failures.push({ phase: "Inventory" });
   }
-  const delivery = await deliverPending(
+  const delivery = await deliverPendingSelectorProposals(
     store,
     source,
     checkedBound(config.deliveriesMax, "selector delivery bound"),
   );
   failures.push(...delivery.failures);
-  const reconciliation = await reconcileSubmitted(
+  const reconciliation = await reconcileSubmittedSelectorProposals(
     store,
     source,
     checkedBound(config.reconciliationsMax, "selector reconciliation bound"),
   );
   failures.push(...reconciliation.failures);
   try {
-    await reconcileAttempts(store, policy);
+    await reconcileSelectorAttempts(store, policy);
   } catch {
     failures.push({ phase: "AttemptReconciliation" });
   }

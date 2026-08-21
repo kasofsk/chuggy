@@ -499,7 +499,8 @@ function policyInstant(value: unknown, what: string): string {
     second > 59
   )
     throw new TypeError(`${what} must be a real canonical UTC instant`);
-  return value;
+  const milliseconds = value.length === 20 ? "000" : value.slice(20, 23);
+  return `${value.slice(0, 19)}.${milliseconds}Z`;
 }
 
 function policyNonnegativeInteger(value: unknown, what: string): number {
@@ -956,14 +957,14 @@ export async function runObservedSelectorCycle(
 ): Promise<SelectorProposal | undefined> {
   if (!observationMatchesProject(observation, state.partition))
     throw new Error("selector observation crossed its project boundary");
-  const observedAt = observation.operationalContext.observedAtEpochMs;
-  const currentTime = await source.currentTimeEpochMs();
   if (
-    !operationalContextIsFresh(
-      observedAt,
-      currentTime,
-      settings.operationalContextMaxAgeMs,
-    )
+    !(await selectorObservationIsFresh(
+      observation,
+      source,
+      store,
+      identity,
+      settings,
+    ))
   )
     return undefined;
   let execution: SelectorPolicyExecution;
@@ -1010,6 +1011,28 @@ export async function runObservedSelectorCycle(
     settings,
     execution,
   );
+}
+
+async function selectorObservationIsFresh(
+  observation: SelectorObservation,
+  source: SelectorObservationSource,
+  store: SelectorStateStore,
+  identity: SelectorCycleIdentity,
+  settings: SelectorRuntimeSettings,
+): Promise<boolean> {
+  if (
+    operationalContextIsFresh(
+      observation.operationalContext.observedAtEpochMs,
+      await source.currentTimeEpochMs(),
+      settings.operationalContextMaxAgeMs,
+    )
+  )
+    return true;
+  await store.terminateAttempt(
+    identity.selectorDecisionReference,
+    "operational context expired before policy execution",
+  );
+  return false;
 }
 
 /** Polls current state after every wake-up or cursor reset and never mixes view watermarks. */

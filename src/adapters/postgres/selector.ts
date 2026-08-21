@@ -172,10 +172,10 @@ async function allocateAttempt(
     readonly selectionsPerMinute: number;
   },
 ): Promise<boolean> {
-  const found = await pool.query<{ allocated: boolean }>(
+  const found = await pool.query<{ allocated: boolean | null }>(
     sql`SELECT allocate_selector_attempt(
       ${attempt},${partition.tenant},${partition.project},
-      ${limits.concurrentDecisions},${limits.selectionsPerMinute}) AS allocated`,
+      ${limits.concurrentDecisions},${limits.selectionsPerMinute})::boolean AS allocated`,
   );
   return found.rows[0]?.allocated ?? false;
 }
@@ -194,7 +194,7 @@ async function runningAttempt(
        VALUES (${attempt},${encoded},${digest}) ON CONFLICT (attempt) DO NOTHING`,
     );
     if (inserted.rowCount === 0) {
-      const same = await client.query(
+      const same = await client.query<{ "?column?": number }>(
         sql`SELECT 1 FROM selector_observation
          WHERE attempt=${attempt} AND observation=${encoded} AND manifest_digest=${digest}`,
       );
@@ -205,11 +205,11 @@ async function runningAttempt(
       sql`UPDATE selector_attempt SET settings_revision=${settingsRevision},observation_digest=${digest}
        WHERE attempt=${attempt} AND state='Starting'`,
     );
-    const advanced = await client.query<{ advanced: boolean }>(
-      sql`SELECT advance_selector_attempt(${attempt},'Running',NULL) AS advanced`,
+    const advanced = await client.query<{ advanced: boolean | null }>(
+      sql`SELECT advance_selector_attempt(${attempt},'Running',NULL)::boolean AS advanced`,
     );
     if (!(advanced.rows[0]?.advanced ?? false)) {
-      const same = await client.query(
+      const same = await client.query<{ "?column?": number }>(
         sql`SELECT 1 FROM selector_attempt
          WHERE attempt=${attempt} AND state='Running' AND settings_revision=${settingsRevision}
            AND observation_digest=${digest}`,
@@ -226,8 +226,8 @@ async function advanceAttempt(
   transition: "Quarantined" | "Terminated",
   evidence?: string,
 ): Promise<void> {
-  const found = await pool.query<{ advanced: boolean }>(
-    sql`SELECT advance_selector_attempt(${attempt},${transition},${evidence ?? null}) AS advanced`,
+  const found = await pool.query<{ advanced: boolean | null }>(
+    sql`SELECT advance_selector_attempt(${attempt},${transition},${evidence ?? null})::boolean AS advanced`,
   );
   if (!(found.rows[0]?.advanced ?? false))
     throw new Error(`selector attempt cannot enter ${transition}`);
@@ -247,20 +247,29 @@ async function quarantinedAttempts(
 }
 
 interface DeliveryRow {
-  readonly selector_decision: string;
-  readonly tenant: string;
-  readonly project: string;
-  readonly operation: string;
-  readonly command: string;
-  readonly attempts: string;
+  readonly selector_decision: string | null;
+  readonly tenant: string | null;
+  readonly project: string | null;
+  readonly operation: string | null;
+  readonly command: string | null;
+  readonly attempts: string | null;
 }
 
+type CompleteDeliveryRow = { readonly [Key in keyof DeliveryRow]: string };
+
 function deliveryOf(row: DeliveryRow): SelectorDelivery {
+  if (
+    row.selector_decision === null ||
+    row.tenant === null ||
+    row.project === null ||
+    row.operation === null ||
+    row.command === null ||
+    row.attempts === null
+  )
+    throw new Error("selector delivery row is incomplete");
   const parsed = parseTicketCommand(row.command);
   if (parsed.parsed === "Refused" || parsed.value.command !== "ProposeDispatch")
     throw new Error("selector delivery contains an unreadable proposal");
-  if (row.attempts === null)
-    throw new Error("selector delivery row carries no attempt count");
   return {
     decision: row.selector_decision,
     partition: {
@@ -337,6 +346,7 @@ async function readInteractionResource<T>(
     interactionResourceManifestSchema,
     "selector interaction resource manifest",
   );
+  const resourceKind: string = manifest.kind;
   const found = await pool.query<{
     ordinal: string;
     digest: string;
@@ -346,7 +356,7 @@ async function readInteractionResource<T>(
   }>(
     sql`SELECT ordinal::text,digest,byte_length::text,chunk_count::text,content
        FROM selector_interaction_resource
-       WHERE selector_decision=${decision} AND kind=${manifest.kind} ORDER BY ordinal`,
+       WHERE selector_decision=${decision} AND kind=${resourceKind} ORDER BY ordinal`,
   );
   if (
     found.rows.length !== manifest.chunks ||
@@ -410,13 +420,29 @@ function checkedPolicyControls(
   return controls;
 }
 
-function settingsOf(row: {
+interface SelectorSettingsRow {
   readonly revision: string;
-  readonly mode: SelectorRuntimeSettings["mode"];
-  readonly dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
+  readonly mode: string;
+  readonly dispatch_mode: string;
   readonly base_prompt: string;
   readonly controls: string;
-}): SelectorRuntimeSettings {
+}
+
+function selectorMode(value: string): SelectorRuntimeSettings["mode"] {
+  if (value !== "Running" && value !== "Paused")
+    throw new TypeError("selector runtime mode is invalid");
+  return value;
+}
+
+function selectorDispatchMode(
+  value: string,
+): SelectorRuntimeSettings["dispatchMode"] {
+  if (value !== "Automatic" && value !== "ApprovalRequired")
+    throw new TypeError("selector dispatch mode is invalid");
+  return value;
+}
+
+function settingsOf(row: SelectorSettingsRow): SelectorRuntimeSettings {
   const controls = decoded(
     row.controls,
     selectorPolicyControlsSchema,
@@ -424,21 +450,15 @@ function settingsOf(row: {
   );
   return {
     revision: projectRowCounter(row.revision, "selector settings revision"),
-    mode: row.mode,
-    dispatchMode: row.dispatch_mode,
+    mode: selectorMode(row.mode),
+    dispatchMode: selectorDispatchMode(row.dispatch_mode),
     basePrompt: row.base_prompt,
     ...controls,
   };
 }
 
 async function readSettings(pool: pg.Pool): Promise<SelectorRuntimeSettings> {
-  const found = await pool.query<{
-    revision: string;
-    mode: SelectorRuntimeSettings["mode"];
-    dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
-    base_prompt: string;
-    controls: string;
-  }>(
+  const found = await pool.query<SelectorSettingsRow>(
     sql`SELECT revision::text,mode,dispatch_mode,base_prompt,controls
           FROM selector_runtime_settings WHERE singleton=1`,
   );
@@ -471,11 +491,11 @@ async function updateSettings(
       "selector base prompt must contain between 1 and 65536 characters",
     );
   const found = await pool.query<{
-    revision: string;
-    mode: SelectorRuntimeSettings["mode"];
-    dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
-    base_prompt: string;
-    controls: string;
+    revision: string | null;
+    mode: string | null;
+    dispatch_mode: string | null;
+    base_prompt: string | null;
+    controls: string | null;
   }>(
     sql`SELECT revision::text,mode,dispatch_mode,base_prompt,controls
        FROM update_selector_runtime_settings(
@@ -486,8 +506,24 @@ async function updateSettings(
          ${administrator.kind},${administrator.subject})`,
   );
   const row = found.rows[0];
-  if (row !== undefined) {
-    return { updated: true, settings: settingsOf(row) };
+  if (
+    row !== undefined &&
+    row.revision !== null &&
+    row.mode !== null &&
+    row.dispatch_mode !== null &&
+    row.base_prompt !== null &&
+    row.controls !== null
+  ) {
+    return {
+      updated: true,
+      settings: settingsOf({
+        revision: row.revision,
+        mode: row.mode,
+        dispatch_mode: row.dispatch_mode,
+        base_prompt: row.base_prompt,
+        controls: row.controls,
+      }),
+    };
   }
   return { updated: false, settings: await readSettings(pool) };
 }
@@ -500,8 +536,8 @@ async function settingsHistory(
   checkedSelectorLimit(limit, "selector settings history");
   const found = await pool.query<{
     revision: string;
-    mode: SelectorRuntimeSettings["mode"];
-    dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
+    mode: string;
+    dispatch_mode: string;
     base_prompt: string;
     controls: string;
     administrator_kind: string;
@@ -530,8 +566,8 @@ async function rollbackSettings(
   administrator: Authority,
 ) {
   const found = await pool.query<{
-    mode: SelectorRuntimeSettings["mode"];
-    dispatch_mode: SelectorRuntimeSettings["dispatchMode"];
+    mode: string;
+    dispatch_mode: string;
     base_prompt: string;
     controls: string;
   }>(
@@ -545,8 +581,8 @@ async function rollbackSettings(
     pool,
     expectedRevision,
     {
-      mode: target.mode,
-      dispatchMode: target.dispatch_mode,
+      mode: selectorMode(target.mode),
+      dispatchMode: selectorDispatchMode(target.dispatch_mode),
       basePrompt: target.base_prompt,
       controls: decoded(
         target.controls,
@@ -580,7 +616,7 @@ export function postgresSelectorRuntimeControl(
     drainStatus: async () => {
       const settings = await readSettings(pool);
       const found = await pool.query<{
-        state: "AwaitingApproval" | "Pending" | "Submitted";
+        state: string;
         count: string;
       }>(
         sql`SELECT state,count(*)::text FROM selector_proposal_delivery
@@ -613,11 +649,11 @@ async function readSelectorProject(
     notification_cursor: string;
     revision: string;
     recovery_epoch: string | null;
-    attention: SelectorProjectState["attention"];
+    attention: string;
     working_memory: string;
     candidate_scan_token: string | null;
     candidate_scan_after: string | null;
-    candidate_scan_state: "Unstarted" | "Continue" | "Exhausted";
+    candidate_scan_state: string;
     candidate_scan_exhausted_token: string | null;
   }>(
     sql`SELECT notification_cursor::text,revision::text,recovery_epoch,attention,working_memory,
@@ -639,14 +675,33 @@ async function readSelectorProject(
         ...(row.recovery_epoch === null
           ? {}
           : { recoveryEpoch: row.recovery_epoch }),
-        attention: row.attention,
+        attention: selectorAttention(row.attention),
         workingMemory: decoded(
           row.working_memory,
           jsonValueSchema,
           "selector working memory",
         ),
-        candidateScan: candidateScanOf(row),
+        candidateScan: candidateScanOf({
+          ...row,
+          candidate_scan_state: selectorCandidateScanState(
+            row.candidate_scan_state,
+          ),
+        }),
       };
+}
+
+function selectorAttention(value: string): SelectorProjectState["attention"] {
+  if (value !== "Monitoring" && value !== "Attention" && value !== "Stopped")
+    throw new TypeError("selector attention state is invalid");
+  return value;
+}
+
+function selectorCandidateScanState(
+  value: string,
+): SelectorCandidateScan["state"] {
+  if (value !== "Unstarted" && value !== "Continue" && value !== "Exhausted")
+    throw new TypeError("selector candidate scan state is invalid");
+  return value;
 }
 
 function candidateScanOf(row: {
@@ -729,8 +784,8 @@ async function writeSelectorProject(
 }
 
 async function markSubmitted(pool: pg.Pool, decision: string): Promise<void> {
-  await pool.query(
-    sql`SELECT advance_selector_delivery(${decision},'Submitted',NULL)`,
+  await pool.query<{ advance_selector_delivery: string | null }>(
+    sql`SELECT advance_selector_delivery(${decision},'Submitted',NULL)::text`,
   );
 }
 
@@ -764,7 +819,7 @@ async function awaitingApproval(
   limit: number,
 ): Promise<readonly SelectorDelivery[]> {
   checkedSelectorLimit(limit, "selector proposal review");
-  const found = await pool.query<DeliveryRow>(
+  const found = await pool.query<CompleteDeliveryRow>(
     sql`SELECT selector_decision,tenant,project,operation,command,attempts::text
      FROM selector_proposal_delivery
      WHERE tenant=${partition.tenant} AND project=${partition.project}
@@ -784,7 +839,7 @@ async function readReviewFeedback(
   const found = await pool.query<{
     selector_decision: string;
     ordinal: string;
-    review_outcome: SelectorReviewFeedback["outcome"];
+    review_outcome: string;
     reviewer_kind: string;
     reviewer_subject: string;
     review_feedback: string | null;
@@ -799,7 +854,12 @@ async function readReviewFeedback(
   return found.rows.map((row) => ({
     ordinal: projectRowCounter(row.ordinal, "selector review ordinal"),
     selectorDecision: row.selector_decision,
-    outcome: row.review_outcome,
+    outcome:
+      row.review_outcome === "Approved" || row.review_outcome === "Rejected"
+        ? row.review_outcome
+        : (() => {
+            throw new TypeError("selector review outcome is invalid");
+          })(),
     reviewer: {
       kind: asAuthorityKind(row.reviewer_kind),
       subject: asAuthoritySubject(row.reviewer_subject),
@@ -837,16 +897,30 @@ async function writeInventoryCursor(
   );
 }
 
-async function insertSelectorInteraction(
-  client: pg.PoolClient,
-  interaction: SelectorInteraction,
-): Promise<boolean> {
+function selectorInteractionStorage(interaction: SelectorInteraction) {
   const resources = [
     interactionResource("ObservedView", interaction.observedView),
     interactionResource("Context", interaction.context),
     interactionResource("ToolActivity", interaction.toolActivity),
   ] as const;
-  const values = [
+  const values: readonly [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string | null,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+  ] = [
     interaction.decision,
     interaction.partition.tenant,
     interaction.partition.project,
@@ -866,6 +940,14 @@ async function insertSelectorInteraction(
     interaction.startedAt,
     interaction.completedAt,
   ];
+  return { resources, values };
+}
+
+async function insertSelectorInteraction(
+  client: pg.PoolClient,
+  interaction: SelectorInteraction,
+): Promise<boolean> {
+  const { resources, values } = selectorInteractionStorage(interaction);
   const inserted = await client.query<{ selector_decision: string }>(
     sql`INSERT INTO selector_interaction
      (selector_decision,tenant,project,instructions_version,instructions,observed_view,observed_token,
@@ -882,7 +964,7 @@ async function insertSelectorInteraction(
       await insertInteractionResource(client, interaction.decision, resource);
     return true;
   }
-  const same = await client.query(
+  const same = await client.query<{ "?column?": number }>(
     sql`SELECT 1 FROM selector_interaction WHERE selector_decision=${values[0]}
      AND tenant=${values[1]} AND project=${values[2]}
      AND instructions_version=${values[3]} AND instructions=${values[4]}
@@ -908,12 +990,17 @@ async function completeSelectorAttempt(
   );
   const state = retained.rows[0]?.state;
   if (state === undefined) {
+    const parsedRevision = Number(interaction.instructionsVersion);
+    const settingsRevision =
+      Number.isSafeInteger(parsedRevision) && parsedRevision >= 1
+        ? parsedRevision
+        : null;
     await client.query(
       sql`INSERT INTO selector_attempt
        (attempt,tenant,project,state,settings_revision,terminal_evidence)
        VALUES (${interaction.decision},${interaction.partition.tenant},
                ${interaction.partition.project},'Completed',
-               ${Number(interaction.instructionsVersion)},'recorded trusted interaction')`,
+               ${settingsRevision},'recorded trusted interaction')`,
     );
     await client.query(
       sql`INSERT INTO selector_decision_permit (attempt,released_at)
@@ -924,9 +1011,9 @@ async function completeSelectorAttempt(
   if (state === "Completed") return;
   if (state !== "Running")
     throw new Error("selector interaction requires a completed attempt");
-  const completed = await client.query<{ advanced: boolean }>(
+  const completed = await client.query<{ advanced: boolean | null }>(
     sql`SELECT advance_selector_attempt(
-      ${interaction.decision},'Completed','policy execution and capability calls completed') AS advanced`,
+      ${interaction.decision},'Completed','policy execution and capability calls completed')::boolean AS advanced`,
   );
   if (!(completed.rows[0]?.advanced ?? false))
     throw new Error("selector attempt cannot enter Completed");
@@ -1105,7 +1192,9 @@ async function readSelectorHistory(
 export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
   return {
     setAutomaticReadiness: async (ready) => {
-      await pool.query(sql`SELECT set_selector_host_readiness(${ready})`);
+      await pool.query<{ set_selector_host_readiness: string | null }>(
+        sql`SELECT set_selector_host_readiness(${ready})::text`,
+      );
     },
     allocateAttempt: (attempt, partition, limits) =>
       allocateAttempt(pool, attempt, partition, limits),
@@ -1132,8 +1221,8 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
     submitted: (decision) => markSubmitted(pool, decision),
     terminal: async (decision, outcome) => {
-      await pool.query(
-        sql`SELECT advance_selector_delivery(${decision},'Terminal',${encode(outcome)})`,
+      await pool.query<{ advance_selector_delivery: string | null }>(
+        sql`SELECT advance_selector_delivery(${decision},'Terminal',${encode(outcome)})::text`,
       );
     },
     history: (partition, after, limit) =>
@@ -1150,18 +1239,18 @@ export function postgresSelectorProposalReviews(
     awaitingApproval: (partition, limit) =>
       awaitingApproval(pool, partition, limit),
     approve: async (partition, decision, reviewer, feedback) => {
-      const changed = await pool.query<{ changed: boolean }>(
+      const changed = await pool.query<{ changed: boolean | null }>(
         sql`SELECT review_selector_proposal(
           ${decision},${partition.tenant},${partition.project},'Approved',
-          ${reviewer.kind},${reviewer.subject},${feedback ?? null}) AS changed`,
+          ${reviewer.kind},${reviewer.subject},${feedback ?? null})::boolean AS changed`,
       );
       return changed.rows[0]?.changed ?? false;
     },
     reject: async (partition, decision, reviewer, feedback) => {
-      const changed = await pool.query<{ changed: boolean }>(
+      const changed = await pool.query<{ changed: boolean | null }>(
         sql`SELECT review_selector_proposal(
           ${decision},${partition.tenant},${partition.project},'Rejected',
-          ${reviewer.kind},${reviewer.subject},${feedback ?? null}) AS changed`,
+          ${reviewer.kind},${reviewer.subject},${feedback ?? null})::boolean AS changed`,
       );
       return changed.rows[0]?.changed ?? false;
     },

@@ -250,15 +250,21 @@ async function decisionExecution(
   client: pg.PoolClient,
   partition: Partition,
   outcome: JournaledOutcome,
+  configuration: ConfigurationPin,
 ): Promise<void> {
   const seq = outcome.entry.seq;
   for (const request of outcome.materialization.execution) {
     await client.query(
       sql`INSERT INTO execution_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
-        ticket_version, kind)
+        ticket_version, kind, capacity_account, configuration_revision,
+        configuration_digest)
        VALUES (${partition.tenant},${partition.project},${request.request},${seq},
-               ${request.effectPosition},${request.ticket},${request.ticketVersion},${request.kind})`,
+               ${request.effectPosition},${request.ticket},${request.ticketVersion},${request.kind},
+               CASE WHEN ${request.kind}='CancelTicketWork' THEN NULL
+                    ELSE project_capacity_account(${partition.tenant},${partition.project}) END,
+               ${request.kind === "CancelTicketWork" ? null : configuration.configurationRevision},
+               ${request.kind === "CancelTicketWork" ? null : configuration.configurationDigest})`,
     );
     for (const task of request.tasks) {
       await client.query(
@@ -381,8 +387,9 @@ async function decisionMaterialize(
   client: pg.PoolClient,
   lease: Lease,
   outcome: JournaledOutcome,
+  configuration: ConfigurationPin,
 ): Promise<void> {
-  await decisionExecution(client, lease.partition, outcome);
+  await decisionExecution(client, lease.partition, outcome, configuration);
   await decisionFinalization(client, lease.partition, outcome);
   await decisionActions(client, lease.partition, outcome);
   await decisionContinuation(client, lease.partition, outcome);
@@ -535,7 +542,7 @@ async function decisionApplyJournaled(
       outcome.entry.seq,
       outcome.dispatchView,
     );
-  await decisionMaterialize(client, lease, outcome);
+  await decisionMaterialize(client, lease, outcome, configuration);
   await notifyDecision(client, lease.partition, cause, outcome);
   return { decided: "Committed", lease: { ...lease, head: seq } };
 }

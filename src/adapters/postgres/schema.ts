@@ -2681,7 +2681,13 @@ export const migrations: readonly Migration[] = [
          BEFORE INSERT ON selector_proposal_delivery FOR EACH ROW
          EXECUTE FUNCTION enforce_selector_proposal_attempt()`,
       `REVOKE ALL ON selector_attempt,selector_decision_permit,selector_observation FROM PUBLIC`,
+      `GRANT SELECT,INSERT,UPDATE ON selector_attempt,selector_decision_permit
+         TO ${boundaryOwnerRole}`,
+      `GRANT SELECT,INSERT ON selector_observation TO ${boundaryOwnerRole}`,
+      `GRANT SELECT,UPDATE ON selector_runtime_readiness TO ${boundaryOwnerRole}`,
       `GRANT SELECT ON selector_attempt,selector_decision_permit,selector_observation
+         TO ${selectorServiceRole}`,
+      `GRANT INSERT ON selector_attempt,selector_decision_permit
          TO ${selectorServiceRole}`,
       `GRANT INSERT ON selector_observation TO ${selectorServiceRole}`,
       `GRANT UPDATE (settings_revision,observation_digest) ON selector_attempt

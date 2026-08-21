@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   observeSelectorProject,
+  runObservedSelectorCycle,
   runSelectorCycle,
   type SelectorRuntimeControlStore,
   type SelectorRuntimeSettings,
@@ -556,6 +557,88 @@ test("a pause observed after permit acquisition prevents a new decision", async 
   assert.equal(releases, 1);
 });
 
+test("a stale persisted observation releases its permit without starting policy", async () => {
+  let releases = 0;
+  let started = false;
+  const observation = await observeSelectorProject(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    promptObservationSource(),
+  );
+  assert.ok(observation !== undefined);
+  await runObservedSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    observation,
+    {
+      ...promptObservationSource(),
+      currentTimeEpochMs: () =>
+        Promise.resolve(
+          operationalContext.observedAtEpochMs +
+            runtimeSettings.operationalContextMaxAgeMs +
+            1,
+        ),
+    },
+    {
+      ...stateStore(() => undefined),
+      terminateAttempt: () => {
+        releases += 1;
+        return Promise.resolve();
+      },
+    },
+    policyHost(() => {
+      started = true;
+      return Promise.resolve(waitingExecution());
+    }),
+    {
+      operation: asOperationId("stale-operation"),
+      selectorDecisionReference: "stale-decision",
+    },
+    runtimeSettings,
+  );
+  assert.equal(started, false);
+  assert.equal(releases, 1);
+});
+
+test("unconfirmed attempt reconciliation yields to newer attempts", async () => {
+  let deferred = 0;
+  await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      quarantinedAttempts: () => Promise.resolve(["old-attempt"]),
+      quarantineAttempt: () => {
+        deferred += 1;
+        return Promise.resolve();
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [] }),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    {
+      next: () => ({
+        operation: asOperationId("unused"),
+        selectorDecisionReference: "unused",
+      }),
+    },
+    { settings: () => Promise.resolve(runtimeSettings) },
+  );
+  assert.equal(deferred, 1);
+});
+
 test("a selector decision uses and records one hot-loaded prompt revision", async () => {
   const settings: SelectorRuntimeSettings = {
     ...runtimeSettings,
@@ -921,6 +1004,40 @@ test("structurally invalid JSON is audited instead of reaching persistence", asy
     outcome: "Failed",
     code: "InvalidResult",
   });
+});
+
+test("policy timestamps compare chronologically across accepted precisions", async () => {
+  let result: JsonValue | undefined;
+  await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      workingMemory: {},
+    },
+    promptObservationSource(),
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: (interaction) => {
+        result = interaction.result;
+        return Promise.resolve(true);
+      },
+    },
+    policyHost(() =>
+      Promise.resolve({
+        ...waitingExecution(),
+        startedAt: "2026-08-21T12:00:00Z",
+        completedAt: "2026-08-21T12:00:00.001Z",
+      }),
+    ),
+    {
+      operation: asOperationId("timestamp-operation"),
+      selectorDecisionReference: "timestamp-decision",
+    },
+    runtimeSettings,
+  );
+  assert.deepEqual(result, waitingExecution().result);
 });
 
 test("unpersistable selector input is rejected before policy execution", async () => {

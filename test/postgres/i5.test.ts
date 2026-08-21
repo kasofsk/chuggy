@@ -710,7 +710,9 @@ test("submitted proposal reconciliation claims do not starve later work", async 
     "i5-reconcile-fairness",
   );
   const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
   const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
   const firstDecision = `reconcile-a-${crypto.randomUUID()}`;
   const secondDecision = `reconcile-b-${crypto.randomUUID()}`;
   try {
@@ -728,6 +730,24 @@ test("submitted proposal reconciliation claims do not starve later work", async 
       ),
       true,
     );
+    assert.equal(
+      await reviews.approve(
+        partition,
+        firstDecision,
+        selectorAdministrator,
+        "reconciliation fairness fixture",
+      ),
+      true,
+    );
+    assert.equal(
+      await reviews.approve(
+        partition,
+        secondDecision,
+        selectorAdministrator,
+        "reconciliation fairness fixture",
+      ),
+      true,
+    );
     await state.submitted(firstDecision);
     await state.submitted(secondDecision);
     const firstClaim = await state.submittedDeliveries(1);
@@ -736,6 +756,7 @@ test("submitted proposal reconciliation claims do not starve later work", async 
     assert.equal(secondClaim.length, 1);
     assert.notEqual(firstClaim[0]?.decision, secondClaim[0]?.decision);
   } finally {
+    await reviewPool.end();
     await selectorPool.end();
   }
 });
