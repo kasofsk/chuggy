@@ -1991,20 +1991,21 @@ execution with no reporter leave behind. A fenced attempt, a stale report and
 a denied admission are answers.
 
 I3's `execution_request` already carries the delivery fields I6 consumes —
-`state`, the claim owner, its generation and its expiry — and gains from this
-migration only the immutable pins: the capacity account and the configuration
-revision and digest. `state` moves `Open` to `Registered` once the executions
-a spawn authorizes exist, `Registered` to `Fulfilled` once every registration
-under it has settled, and to `Invalidated` when a cancellation for that ticket
-has already retired the work it would have created — while a cancellation
-request moves `Open` straight to `Fulfilled` once the retirement is durable,
-and not once the workload is gone. Those delivery columns are the only ones
-any role may update, so a pin cannot be rewritten after the fact.
-Registration fences on the authorizing sequence and not on the delivery state,
-so a spawn claimed before a revocation and registered after it finds its tasks
-fenced rather than resurrecting revoked work. Unfinished delivery is the
-request's own state: an `Open` request whose claim is absent or lapsed is work
-no process holds.
+`state`, the claim owner, its generation and its expiry — and gains only the
+immutable pins: the capacity account, the configuration revision and its
+digest. `state` moves `Open` to `Registered` once the executions a spawn
+authorizes exist, and `Registered` to `Fulfilled` once every registration
+under it has settled; a cancellation request moves `Open` straight to
+`Fulfilled` once the retirement is durable, and not once the workload is gone.
+Those delivery columns are the only ones any role may update, so a pin cannot
+be rewritten after the fact. `Invalidated` is where a spawn that will not be
+registered ends, by either of two routes: a cancellation for its ticket, which
+registration fences on by authorizing sequence and not by delivery state, so a
+spawn claimed before a revocation and registered after it cannot resurrect
+revoked work; or a contradiction no later attempt could clear, which is the
+route that writes a `scheduler_incident` beside the state. Unfinished delivery
+is the request's own state: an `Open` request whose claim is absent or lapsed
+is work no process holds.
 
 Completion crosses one boundary and that boundary is `submit_task_completion`:
 a `SECURITY DEFINER` function owned by the `chuggy_boundary_owner` I3 gave
