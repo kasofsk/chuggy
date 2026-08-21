@@ -673,13 +673,15 @@ platform-owned.
 
 The selector nevertheless provides full project-visible provenance for each
 bounded semantic interaction: exact versioned instructions and prompt content,
-the observed view, active-work and capacity context, tool calls and bounded
-returned resources, its choice or reason for waiting, timing and accounting,
-and implementation, model and internal-policy revisions. Credentials and data
-the project may not read are never supplied or exposed; cross-project capacity
-facts are reduced to safe aggregate advisory context. Hidden chain-of-thought
-is neither requested nor retained. Anyone with current project read access may
-read this history under the ordinary not-found-style authorization rule.
+the immutable identity and digest of the complete observed view, every bounded
+view page and operational resource actually read, active-work and capacity
+context, tool calls and bounded returned resources, its choice or reason for
+waiting, timing and accounting, and implementation, model and internal-policy
+revisions. Credentials and data the project may not read are never supplied or
+exposed; cross-project capacity facts are reduced to safe aggregate advisory
+context. Hidden chain-of-thought is neither requested nor retained. Anyone with
+current project read access may read this history under the ordinary
+not-found-style authorization rule.
 
 The selector consumes one bounded project-safe operational snapshot with each
 selection view. It includes the project's in-flight logical work, its capacity
@@ -710,13 +712,65 @@ and otherwise translates manual and agentic choices to the same pure
 `Dispatch(ticket)` transition.
 
 Platform-owned selector settings are durable, revision-fenced and hot-loaded
-between decisions. Operators may pause new proposal creation while durable
-delivery and outcome reconciliation drain, replace or roll back the base prompt,
-and constrain allowed models, read-only tools, decision cost, duration,
-concurrency, rate and operational-context age. Every revision remains auditable,
-and recorded interactions pin the prompt and settings revision they used. A dry
-run may replay a recorded observation through a candidate revision without
-creating a proposal or delivery.
+between decisions. Only a separately authorized selector administrator may
+pause new proposal creation while durable delivery and outcome reconciliation
+drain, replace or roll back the base prompt, change dispatch mode, or constrain
+allowed models, read-only tools, decision cost, duration, concurrency, rate and
+operational-context age. Project mutation or manual-dispatch authority does not
+imply this administrative capability. Every revision remains auditable, and
+recorded interactions pin the prompt and settings revision they used. A dry run
+may replay a recorded observation through a candidate revision without creating
+a proposal or delivery.
+
+The trusted policy sandbox owns the only model and tool capabilities. It receives
+immutable allowlists and budgets before execution, mediates every invocation and
+exposes no ambient model, network or Kubernetes authority to policy code.
+Post-execution accounting and provenance checks use a separate immutable
+snapshot as defense in depth. An in-process policy host is a test double, not a
+production sandbox. The production adapter must supply isolation and a
+host-verifiable terminal proof; narrow service APIs behind the tool gateway are
+the only route to network, model, Kubernetes and cluster-view authority.
+
+Each sandbox execution is a durable selector attempt that owns its decision
+permit. It progresses from `Starting` to `Running` and releases the permit only
+in the same durable transition that records either `Completed` with final
+accounting or `Terminated` with infrastructure-issued termination proof. A
+decision deadline requests hard termination; it is not itself a terminal fact.
+If the host cannot confirm termination within the bounded control deadline, the
+attempt becomes `Quarantined`, retains its permit and charged capacity, and is
+reconciled by an independent supervisor until completion or termination is
+proved. Quarantine may trip tenant or global selection circuit breakers, but it
+does not block proposal delivery, outcome reconciliation or observation of
+unrelated projects. Application code and policy output cannot manufacture
+terminal proof. Project deletion and disaster-recovery inventory include these
+attempts and cannot silently release their permits.
+
+A selector observation is also a durable aggregate rather than one large JSON
+field. Its immutable header pins project, recovery epoch, dispatchable-view
+token and digest, settings and prompt revisions, operational-context time and a
+manifest digest. Ordered bounded resources record each candidate page, context
+snapshot, tool request and tool result actually supplied to policy code. A
+resource is either stored inline within its per-value bound or references an
+immutable content-addressed blob with verified digest and length. Resources are
+durable before an interaction references them; proposal creation atomically
+records the interaction, observation reference, planning state and delivery.
+Unreferenced staged resources may be collected, while referenced resources
+follow project audit retention and erasure.
+
+Policy code begins with the bounded observation header and summary and obtains
+candidate pages and operational resources incrementally through sandbox tools.
+One interaction has revisioned hard limits for cumulative bytes, resource count,
+candidate pages, tool calls, duration and cost. It may select only a candidate
+from a page recorded in that observation. Limit exhaustion produces an audited
+typed `ResourceLimit` outcome and no proposal; it does not make a project with a
+large but valid complete view permanently unselectable. The strict view token
+continues to fence the complete logical candidate set, while provenance records
+the exact bounded subset actually consumed. Selector attention may retain the
+next candidate cursor so a later bounded interaction can continue scanning while
+the same view token remains current; reaching a per-interaction limit therefore
+defers work rather than discarding progress. A view reset abandons that scan and
+any unreferenced staged observation resources and restarts from the new
+watermark.
 
 Dispatch mode is independently `Automatic` or `ApprovalRequired`. In automatic
 mode a durable proposal proceeds to ticket-service delivery. In approval mode it
@@ -726,12 +780,23 @@ rejection terminates it without contacting the ticket service. Optional review
 feedback is retained and returned in later project-safe selector context. Review
 never weakens the writer's view, version, eligibility, lifecycle or backlog
 guards, so approval means “submit this proposal,” not “force this dispatch.”
+Review outcomes are append-at-review audit facts with their own monotonic cursor;
+proposal creation order is not a review-feed cursor.
 
 The selector also retains bounded project-scoped working memory alongside its
 notification cursor. Each interaction receives the prior memory and atomically
 records its replacement with the interaction and any proposal. The memory may
 summarize in-flight work, deferred considerations and user feedback, but it is
 transparent operational context—not a ticket fact, reservation or authority.
+Each recorded interaction also atomically replaces or clears the current
+project-visible planning intent.
+Persistable inputs and completed, refused, resource-limited, timed-out,
+quarantined and malformed policy attempts cross the selector boundary as
+strictly parsed bounded JSON; numeric and timestamp fields are validated as
+their declared JSON and application types and are never coercively converted.
+A failed attempt retains every available host-measured provenance fact,
+advances only selector-owned observation and attention state and never creates
+a proposal.
 
 Several tickets in one project may be logically working concurrently. Each
 additional dispatch requires a fresh agentic choice or manual override. The
@@ -1414,7 +1479,8 @@ The infrastructure tranche must provide durable relations equivalent to:
 - expected-head journal entries, current project state/projections and durable
   continuations;
 - current digest-fenced dispatchable views, native actions/gates and
-  access-controlled selector audit and planning state;
+  access-controlled selector attempts, observation resource manifests, audit
+  and planning state;
 - focused execution registration/cancellation, finalizer preparation/commit and
   optional-integration requests;
 - scheduler logical tasks, physical attempts, capacity allocation and terminal
@@ -1448,9 +1514,14 @@ The following commits are indivisible transactions:
    changing the operation-class admission matrix and publishing any required
    selector-visible `Project` notification.
 7. A selector observation advances its owned project cursor only with the
-   bounded provenance and resulting wait or planning state it observed; a
-   choice also creates its idempotent proposal-delivery record in that selector
-   transaction before any ticket-service API call.
+   immutable resource manifest, bounded provenance and resulting wait or
+   planning state it observed; a choice also creates its idempotent
+   proposal-delivery record in that selector transaction before any
+   ticket-service API call.
+8. A selector decision permit remains owned by its durable attempt until the
+   same transaction records completion or infrastructure-proved termination.
+   Timeout or loss of host contact quarantines the attempt and cannot release
+   the permit by inference.
 
 Implementation order follows the landing table. Each slice includes real
 PostgreSQL concurrency/process-death tests for its transaction before a later
@@ -1873,17 +1944,41 @@ proposal always means “dispatch this ticket now if its current fences and guar
 pass.”
 
 Projects do not configure selector prompts, models, providers, profiles or a
-scheduling-policy schema. Platform operators own selector implementation,
-safety, privacy, retention, region, cost and concurrency policy. The selector
+scheduling-policy schema. A distinct platform selector-administrator capability
+owns selector implementation, prompt and dispatch-mode revisions, safety,
+privacy, retention, region, cost and concurrency policy; ordinary project
+mutation and manual-dispatch capabilities cannot change it. The selector
 nevertheless retains full bounded provenance for project readers: exact
-versioned instructions and prompt content, observed views, safe project-scoped
-active-work and capacity context, tool calls and bounded results, choices or
-reasons for waiting, timing and accounting, attention, and implementation,
-model and internal-policy revisions. Reads reauthorize current project access
-and use ordinary not-found treatment. Credentials and unauthorized or
-cross-project detail are never supplied or exposed. Hidden chain-of-thought is
-neither requested nor retained; transparency covers the semantic inputs,
-observable actions and outputs on which the selector relies.
+versioned instructions and prompt content, complete-view identity and digest,
+the bounded candidate pages and project-safe operational resources actually
+read, tool calls and bounded results, choices or reasons for waiting, timing
+and accounting, attention, and implementation, model and internal-policy
+revisions. Reads reauthorize current project access and use ordinary not-found
+treatment. Credentials and unauthorized or cross-project detail are never
+supplied or exposed. Hidden chain-of-thought is neither requested nor retained;
+transparency covers the semantic inputs, observable actions and outputs on
+which the selector relies.
+
+The observation header and its ordered immutable resource manifest are stored
+separately from the interaction. Candidate pages, operational snapshots and
+tool results are individually bounded inline values or immutable
+content-addressed blobs. Policy consumes them incrementally under revisioned
+cumulative byte, page, resource, tool, duration and cost limits and may choose
+only a candidate it actually read. Resource exhaustion is a typed audited wait,
+and selector attention may retain the next page cursor for a later interaction
+while the same view token remains current, rather than permanently refusing a
+valid large project view. The complete logical view remains fenced by its strict
+token without requiring one interaction row or model prompt to contain the
+entire view.
+
+Production selection runs only in the authority-owning policy sandbox. Each
+durable attempt owns its decision permit through `Starting` and `Running` and
+releases it only with a durable `Completed` outcome or infrastructure-proved
+`Terminated` outcome. Deadline expiry requests termination. Failure to prove
+termination produces `Quarantined`, retains the permit and quota charge, and
+hands reconciliation to an independent supervisor; it does not stall delivery
+or unrelated project quanta. I5 is incomplete with only an in-process host or a
+cleanup callback whose failure is treated as termination proof.
 
 Before an agentic choice crosses the service boundary, the selector atomically
 records its semantic interaction, resulting choice or wait, current planning
@@ -1893,7 +1988,19 @@ idempotency. A crash before submission leaves a retryable owned delivery; an
 ambiguous API result is resolved by polling the operation. No cross-service
 transaction is introduced, and a ticket-service operation never depends on
 selector storage to decide or replay it. Selector audit later reconciles the
-operation outcome for presentation.
+operation outcome for presentation. Submitted deliveries use independently
+claimed, retry-scheduled reconciliation work so one pending or temporarily
+unreadable operation cannot monopolize a bounded reconciliation batch. Project
+observation and individual reconciliation failures are isolated: they do not
+prevent later projects from being observed or already-durable proposal delivery
+and reconciliation from continuing in the same bounded runtime quantum. Each
+bounded quantum also reports typed phase, project and decision failure summaries
+for metrics and operator attention without exposing raw exceptions.
+Settings reads, permit acquisition, sandbox startup and strict boundary parsing
+are part of that per-project isolation contract: none may escape the quantum and
+skip later projects. Boundary adapters accept declared JSON numbers and parse
+timestamps into the application instant type without coercion; invalid values
+produce typed failures before policy execution.
 
 Selector state is recovered and deleted under its owning service. I8 restore
 causes pre-restore view tokens to fail their recovery-epoch fence and causes the
@@ -1901,7 +2008,10 @@ selector to reset cursors through the current feed/view APIs. I9 suspension or
 integrity containment holds accepted ordinary proposals and prevents new
 dispatch decisions without erasing selector audit. I10 stops project monitoring
 and applies the project's retention and erasure policy to selector cursors,
-provenance, attention and planning state.
+provenance, attention and planning state. Quarantined attempts remain in
+recovery and deletion inventory until terminal proof exists; an
+integrity-blocked deletion may instead retain their frozen evidence under I10's
+explicit exceptional path.
 
 | Slice | Depends on | What lands and its definition of done | Status |
 |---|---|---|---|
@@ -1912,7 +2022,7 @@ provenance, attention and planning state.
 | I2 | I1 | The project decision transaction: replay and load, lifecycle, lease and expected-head fences, journal entry under one durable cause, operation terminalization, inbox acknowledgement and primary projection update, with refusal writing no entry and an ambiguous commit resolved by durable read | Landed |
 | I3 | I2 | Bounded project mailbox, priority and aging, durable deterministic continuations, focused native-action and consumer-request tables | Landed |
 | I4 | I3 | Authenticated native reads, operation polling and cancellation, versioned configuration and draft authoring, revision-fenced release, bounded access-controlled SSE notifications | Landed |
-| I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, plus the selector-owned durable cursor, delivery, transparent provenance, attention and planning read model. Selector timing, monitoring and deferral remain outside the ticket service, and selection failure never becomes a hidden FIFO dispatch policy. | — |
+| I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, plus selector-owned durable cursor, delivery, transparent resource-manifest provenance, attention and planning state. Definition of done includes the production authority-owning sandbox adapter, durable attempt/permit lifecycle, quarantine supervisor and typed per-project failure isolation; an in-process policy host is test-only. Selector timing, monitoring and deferral remain outside the ticket service, and selection failure never becomes a hidden FIFO dispatch policy. | — |
 | I6 | I3 | Scheduler registration, capacity admission, attempt/result-manifest handling, completion authority and revocation cancellation, plus bounded project-safe active-work and capacity context for the selector and the authoritative hard execution-backlog dispatch guard. Task completion is exactly one idempotent project inbox input; current policy denial uses `ExecutionBlocked`. | — |
 | I7 | I6 | The finalizer service: durable queue, preparation with bounded deterministic automatic rebase/merge against pinned commits, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with a clean automatic integration proceeding without ticket rework, a genuine merge conflict producing the exact immutable attempt/target/conflict manifest for rework, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
 | I8 | I0–I7, I9–I10 | Production PostgreSQL and disaster recovery: managed deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions, permits and selector cursors. Old-epoch actors and selector observations remain rejected after restore. Development may use the existing in-cluster PostgreSQL instance without claiming these production guarantees. | Deferred |

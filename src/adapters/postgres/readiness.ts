@@ -100,8 +100,9 @@ async function releaseDraftSource(
   const revision = await pool.query<{
     authoring: string;
     digest: string;
+    canonical: string;
   }>(
-    `SELECT r.authoring,c.digest FROM draft_revision r
+    `SELECT r.authoring,c.digest,c.canonical FROM draft_revision r
        JOIN configuration_revision c
          ON c.tenant=r.tenant AND c.project=r.project
         AND c.revision=r.configuration_revision
@@ -133,6 +134,7 @@ async function releaseDraftSource(
       authoringVersion: command.authoringVersion,
       configurationRevision: command.configurationRevision,
       configurationDigest: found.digest,
+      configurationCanonical: found.canonical,
     },
   };
 }
@@ -157,6 +159,17 @@ async function operationSource(
   }
   if (parsed.value.command === "ReleaseDraft") {
     return releaseDraftSource(pool, partition, row.input_id, parsed.value);
+  }
+  if (
+    parsed.value.command === "ManualDispatch" ||
+    parsed.value.command === "ProposeDispatch"
+  ) {
+    return {
+      kind: "Operation",
+      operation: asOperationId(row.input_id),
+      command: parsed.value,
+      resolvedEvent: { type: "Dispatch", value: parsed.value.ticket },
+    };
   }
   const action = await pool.query<{ ticket: string; state: string }>(
     `SELECT a.ticket::text, a.state FROM native_action a

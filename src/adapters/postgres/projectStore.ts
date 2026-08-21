@@ -30,7 +30,10 @@ import type {
   Renewed,
 } from "../../interpreter/projectStore.ts";
 import type { Parsed } from "../../interpreter/wire.ts";
-import { postgresJournalLoad } from "./journal.ts";
+import {
+  postgresJournalDispatchContracts,
+  postgresJournalLoad,
+} from "./journal.ts";
 import {
   postgresOwnershipAcquire,
   postgresOwnershipCreate,
@@ -75,6 +78,9 @@ export function postgresProjectStore(pool: pg.Pool): ProjectStore {
 
     load: (lease: Lease): Promise<Parsed<readonly Entry[]>> =>
       postgresJournalLoad(pool, lease),
+
+    loadDispatchContracts: (lease) =>
+      postgresJournalDispatchContracts(pool, lease),
 
     fence: (
       partition: Partition,
