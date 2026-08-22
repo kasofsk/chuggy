@@ -56,6 +56,24 @@ export function postgresMigrate() {
 TS
 }
 
+# A resolvable plugin and root typescript, so the compiler precondition has two
+# real paths to compare. The nested copy is what a peer-range install produces.
+fake_typescript() { # [nested]
+	mkdir -p "$R/node_modules/typescript"
+	printf '%s' '{"name":"typescript","version":"6.0.3","main":"index.js"}' \
+		> "$R/node_modules/typescript/package.json"
+	: > "$R/node_modules/typescript/index.js"
+	mkdir -p "$R/node_modules/@ts-safeql/eslint-plugin"
+	printf '%s' '{"name":"@ts-safeql/eslint-plugin","version":"5.4.1","main":"index.js"}' \
+		> "$R/node_modules/@ts-safeql/eslint-plugin/package.json"
+	: > "$R/node_modules/@ts-safeql/eslint-plugin/index.js"
+	[ -z "${1:-}" ] && return 0
+	mkdir -p "$R/node_modules/@ts-safeql/eslint-plugin/node_modules/typescript"
+	printf '%s' '{"name":"typescript","version":"5.9.3","main":"index.js"}' \
+		> "$R/node_modules/@ts-safeql/eslint-plugin/node_modules/typescript/package.json"
+	: > "$R/node_modules/@ts-safeql/eslint-plugin/node_modules/typescript/index.js"
+}
+
 fake_eslint() { # <rc> [diagnostic line]
 	mkdir -p "$R/node_modules/.bin"
 	{
@@ -87,6 +105,25 @@ fresh_repo "$R"
 git -C "$R" add -A
 run_gate "$R" "CHUG_PG_URL=$ANSWERS"
 check "no local eslint is a could-not-run" 2 "$RC" "no local eslint"
+
+# --- A second typescript under the plugin is a could-not-run ------------------
+#
+# The verdict this gate reaches depends on which compiler the plugin resolves,
+# so a nested copy is refused before a server is acquired. The matching case
+# below proves the precondition passes when the two agree, which is what keeps
+# it from being a check that always fires.
+
+fixture
+fake_typescript nested
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=$ANSWERS"
+check "a typescript under the plugin is a could-not-run" 2 "$RC" "resolves its own typescript"
+
+fixture
+fake_typescript
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=$ANSWERS"
+check "one typescript reaches the verdict" 0 "$RC" "agrees with"
 
 # --- No server and no way to start one is a could-not-run, in this gate's voice
 #
