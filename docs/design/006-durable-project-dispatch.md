@@ -1,6 +1,6 @@
 # Durable project dispatch
 
-**Status: M0, G0, I0, I1, I2, I3, I4, I5 AND I6 LANDED** — issue #92 agreed
+**Status: M0, G0, I0, I1, I2, I3, I4, I5, I6 AND I7 LANDED** — issue #92 agreed
 these decisions and the tree carries the rows the table below marks landed:
 `model/` proves the project-scoped `Core`, `src/generated/model-api.ts` is
 generated from `model/api.qnt`, and `src/adapters/postgres/` holds the
@@ -9,11 +9,13 @@ permanent idempotency, the ingress ordinal, the durable inbox and the readiness
 generation that indexes it, and the decision transaction that fences a writer,
 writes the entry under its one durable cause, settles the operation,
 acknowledges the item and moves the primary projection, under
-`.chug/tasks/check-postgres.sh`. I5's selection service and I6's execution
-service are there too — the selector's cursor, delivery and read model beside
-the scheduler's migration, its adapter and its one completion boundary, all
-driven against a real server under that same gate, and the briefing a launched
-worker is handed composes above them. The finalizer service, the production
+`.chug/tasks/check-postgres.sh`. I5's selection service, I6's execution
+service and I7's finalizer service are there too — the selector's cursor,
+delivery and read model, the scheduler's migration, its adapter and its one
+completion boundary, and the finalizer's request queue, its immutable attempt,
+permit and reconciliation records and the `src/adapters/git/` promotion those
+serialize, all driven against a real server under that same gate, and the
+briefing a launched worker is handed composes above them. The production
 deployment and its recovery, project-local containment and the deletion
 lifecycle are not built, so the body below still argues them, and the revision
 fences a decision rechecks arrive with the slices that have a revision to name.
@@ -2169,7 +2171,7 @@ completions it may later submit, while a claimed finalization request — also a
 `Completion`-priority operation when it concludes — drew on that same room and
 was reserved against by nothing. It is closed too, and by one statement:
 `checkedExecutionSchedulerConfig` in `src/interpreter/executionScheduler.ts`,
-which reserves against the two ceilings summed. Both were the first tranche's,
+which reserves against the two ceilings summed. Both belong to this slice,
 because both are the sole-authority claim this document already makes.
 
 Neither defect could be observed before this slice, and the reason is worth
@@ -2178,28 +2180,6 @@ stating: a ticket that entered `Finalizing` was a permanent hold. Nothing read
 `Registered` and `Invalidated` states had no producer, and the partial unique
 index that keeps one live request per ticket blocked the second one forever.
 The producer landed in I3 with no consumer, which is the seam I7 arrives on.
-
-#### The slice lands in two tranches and the row flips once
-
-Landing was deliberately split once already, and the same reasoning applies
-here at a smaller grain. **I7a is the authority**: `chuggy_finalizer`,
-migration 11, the queue consumer over the claim columns I3 left dead,
-`submit_finalization_result` as the one authenticated door, the writer-side
-fence, the repository binding and its exclusivity, and the reconciliation
-hold. **I7b is the act**: `src/adapters/git/`, candidate
-construction from verified handoff artifacts, the bounded integration, the
-permit and the conditional ref update, reconciliation by ancestry, the
-conflict manifest, and the typed failure evidence that transactionally
-becomes a rework bundle. The landing row stays unlanded until both are in,
-because a row is a claim about a slice and not about a tranche.
-
-The split must not simulate the authority it defers. `GitPromotionPort` is
-declared in I7a and has no adapter there, so a finalization reaching it does
-not conclude — it holds, exactly as an unreadable ref holds. That is the
-house pattern `ArtifactVerificationPort` and `WorkerLaunchPort` already
-establish; a stub returning success would be the implementor contract's
-forbidden simulation of a missing authority, and it would forge a domain
-outcome besides.
 
 #### Preparation constructs the candidate; nothing else may
 
@@ -2221,12 +2201,12 @@ worker pushing its own branch under a scoped ref — is rejected explicitly
 rather than left unmentioned, because it would give a worker write authority
 on the repository the permit exists to serialize.
 
-That pulls the project-owned artifact storage adapter behind
-`ArtifactVerificationPort` into I7b, which I6 deferred to the slice that
-builds it. I7b is that slice, the cost is budgeted here, and the conflict
-manifest is written through the same adapter as a project-owned artifact with
-its own identity and digest — which is how large conflict detail stays out of
-the journal and out of the request row.
+That pulls in the project-owned artifact storage adapter behind
+`ArtifactVerificationPort`, which I6 deferred to the slice that builds it.
+I7 is that slice, and the conflict manifest is written through the same
+adapter as a project-owned artifact with its own identity and digest — which
+is how large conflict detail stays out of the journal and out of the request
+row.
 
 The target is the repository's default branch, re-read from the remote at
 every preparation rather than remembered, and recorded on the immutable
@@ -2321,12 +2301,12 @@ the reason is that no row is ever reachable by both — the identities are
 disjoint by construction, and a write-once trigger refuses every `UPDATE` and
 `DELETE`, so there is no history the two could disagree about. This document
 says every new scheduler registration pins its bundle and its digest, and I6
-deferred the relation to the slice with references of its own to hold; I7b is
-that slice, so I7b also retrofits `execution_request` to pin one. The
-retrofit touches a landed slice's schema and its suites and is budgeted here
-rather than discovered in review, because building only a finalization-shaped
-bundle would leave that claim unenforced, which is the failure mode I6's own
-review rounds kept naming. An unreferenced bundle is retention's concern and
+deferred the relation to the slice with references of its own to hold; I7 is
+that slice, so I7 also retrofits `execution_request` to pin one. The retrofit
+touches a landed slice's schema and its suites rather than being discovered in
+review, because building only a finalization-shaped bundle would leave that
+claim unenforced, which is the failure mode I6's own review rounds kept
+naming. An unreferenced bundle is retention's concern and
 not recovery's, so it has no recovery query.
 
 A deciding transaction's bundle identity is derived from the journal sequence
@@ -2577,7 +2557,7 @@ into unrelated work.
 | I4 | I3 | Authenticated native reads, operation polling and cancellation, versioned configuration and draft authoring, revision-fenced release, bounded access-controlled SSE notifications | Landed |
 | I5 | I3, I4 | Selector-independent dispatch: durable project-change consumption, current digest-fenced dispatchable views, narrowly authorized agentic proposals and one-shot manual dispatch, the selector-owned durable cursor, delivery, transparent provenance, attention and planning read model, with selector timing, monitoring and deferral outside the ticket service and selection failure never a hidden FIFO dispatch policy | Landed |
 | I6 | I3 | Scheduler registration, capacity admission reserving the mailbox room every completion it may later submit, fenced attempts and strict result manifests, the one indivisible terminal transaction crossing a single authenticated completion boundary, revocation cancellation, briefings composed from a pinned revision under an authority that can only narrow, and bounded project-safe active-work and capacity context with the authoritative hard execution-backlog dispatch guard | Landed |
-| I7 | I6 | The finalizer service: durable queue, preparation with bounded deterministic automatic rebase/merge against pinned commits, approval, commit-permit and reconciliation records, Git promotion, typed failure evidence that transactionally becomes any resulting rework bundle, and sole `FinalizationResult` submission authority. Proven with a clean automatic integration proceeding without ticket rework, a genuine merge conflict producing the exact immutable attempt/target/conflict manifest for rework, revocation racing `Finalizing` entry, closure during `Finalizing`, and old-epoch executors that cannot conclude after takeover. | — |
+| I7 | I6 | The finalizer service: the durable request queue over I3's dead claim columns, preparation building an immutable candidate against pinned commits and integrating it by bounded deterministic merge, approval as a ticket-service-owned native action, the commit permit serializing the one irreversible act, promotion through `src/adapters/git/` and the reconciliation that proves by ancestry what the ref did, typed failure evidence that transactionally becomes the rework bundle built from it, and sole `FinalizationResult` submission authority through one authenticated door | Landed |
 | I8 | I0–I7, I9–I10 | Production PostgreSQL and disaster recovery: managed deployment, backup/restore, fresh recovery epoch and inventory/reconciliation of Git, blobs, executions, permits and selector cursors. Old-epoch actors and selector observations remain rejected after restore. Development may use the existing in-cluster PostgreSQL instance without claiming these production guarantees. | Deferred |
 | I9 | I2–I7 | Project-local integrity containment, suspension and audited repair. A corrupt project fails closed while unrelated projects continue. | — |
 | I10 | I6, I7, I9 | Deletion lifecycle: fenced closure writer, execution/finalization quiescence, selector-monitor shutdown, retention, erasure and permanent non-sensitive identity tombstone. Integrity-blocked deletion follows its distinct frozen-evidence path. | — |
