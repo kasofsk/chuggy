@@ -12,6 +12,8 @@ export interface ProjectInventoryStore {
   ): Promise<readonly Partition[]>;
 }
 
+const inventoryScanPagesMax = 4;
+
 export function authorizedProjectInventory(
   access: ProjectAccess,
   store: ProjectInventoryStore,
@@ -20,9 +22,13 @@ export function authorizedProjectInventory(
     projects: async (principal: Principal, after, limit) => {
       const visible: Partition[] = [];
       let cursor = after;
-      while (visible.length < limit) {
+      let exhausted = false;
+      for (let page = 0; page < inventoryScanPagesMax; page += 1) {
         const batch = await store.projects(cursor, limit);
-        if (batch.length === 0) break;
+        if (batch.length === 0) {
+          exhausted = true;
+          break;
+        }
         for (const partition of batch) {
           cursor = partition;
           if (
@@ -31,9 +37,13 @@ export function authorizedProjectInventory(
             visible.push(partition);
           if (visible.length === limit) break;
         }
-        if (batch.length < limit) break;
+        exhausted = batch.length < limit;
+        if (visible.length === limit || exhausted) break;
       }
-      return visible;
+      return {
+        projects: visible,
+        ...(!exhausted && cursor !== undefined ? { nextAfter: cursor } : {}),
+      };
     },
   };
 }

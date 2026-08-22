@@ -56,7 +56,7 @@ import {
   asTenantId,
   type Partition,
 } from "../../interpreter/projectStore.ts";
-import { postgresTransaction, postgresTextParameter } from "./pool.ts";
+import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   observe,
@@ -173,7 +173,7 @@ async function operationSource(
      WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
        AND a.action=${parsed.value.action}
        AND a.authorizing_seq=${parsed.value.authorizingSeq}
-       AND r.resolution=${postgresTextParameter(parsed.value.resolution)}`,
+       AND r.resolution=${String(parsed.value.resolution)}`,
   );
   const open = action.rows[0];
   if (open === undefined)

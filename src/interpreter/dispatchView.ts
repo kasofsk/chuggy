@@ -5,6 +5,15 @@ import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
 import type { Core, Stage } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
+import {
+  decodeFinalizationPricing,
+  decodeReworkPolicy,
+  decodeStage,
+  encodeFinalizationPricing,
+  encodeReworkPolicy,
+  encodeStage,
+  type ModelJson,
+} from "../generated/model-api.ts";
 
 export const dispatchViewSchemaVersion = 1;
 export const dispatchViewPageLimitMax = 100;
@@ -51,7 +60,7 @@ export interface DispatchView extends DispatchViewToken {
 export interface DispatchViewQuery {
   readonly after?: TicketId;
   readonly limit: number;
-  readonly token?: DispatchViewToken;
+  readonly watermark?: number;
 }
 
 export type DispatchViewPage =
@@ -69,6 +78,44 @@ export interface DispatchViewStore {
     partition: { readonly tenant: string; readonly project: string },
     query: DispatchViewQuery,
   ): Promise<DispatchViewPage>;
+}
+
+export function decodeDispatchProgram(
+  value: unknown,
+): DispatchCandidate["program"] {
+  if (!Array.isArray(value))
+    throw new TypeError("dispatch program is not an array");
+  return value.map(decodeStage);
+}
+
+export function encodeDispatchProgram(
+  value: DispatchCandidate["program"],
+): ModelJson {
+  return value.map(encodeStage);
+}
+
+export function decodeDispatchReworkPolicy(
+  value: unknown,
+): DispatchCandidate["reworkPolicy"] {
+  return decodeReworkPolicy(value);
+}
+
+export function encodeDispatchReworkPolicy(
+  value: DispatchCandidate["reworkPolicy"],
+): ModelJson {
+  return encodeReworkPolicy(value);
+}
+
+export function decodeDispatchFinalizationPricing(
+  value: unknown,
+): DispatchCandidate["finalizationPricing"] {
+  return decodeFinalizationPricing(value);
+}
+
+export function encodeDispatchFinalizationPricing(
+  value: DispatchCandidate["finalizationPricing"],
+): ModelJson {
+  return encodeFinalizationPricing(value);
 }
 
 function canonicalCandidate(candidate: DispatchCandidate): unknown {
@@ -157,13 +204,12 @@ export function checkedDispatchViewQuery(
       `dispatch view limit must be between 1 and ${String(dispatchViewPageLimitMax)}`,
     );
   if (
-    query.token !== undefined &&
-    (!Number.isSafeInteger(query.token.watermark) ||
-      query.token.watermark < 0 ||
-      query.token.schemaVersion !== dispatchViewSchemaVersion ||
-      !/^[0-9a-f]{64}$/.test(query.token.digest))
+    query.watermark !== undefined &&
+    (!Number.isSafeInteger(query.watermark) || query.watermark < 0)
   )
-    throw new RangeError("dispatch view token is malformed");
+    throw new RangeError(
+      "dispatch view watermark must be a non-negative safe integer",
+    );
   return query;
 }
 

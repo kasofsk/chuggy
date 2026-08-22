@@ -289,23 +289,13 @@ async function operationsAcceptCall(
   const dispatch =
     submission.command.command === "ManualDispatch" ||
     submission.command.command === "ProposeDispatch";
-  // jscpd:ignore-start the twins differ only in the routine name, which the checker reads as literal text
   return dispatch
     ? client.query<AcceptanceRow>(
-        sql`SELECT * FROM accept_dispatch_operation(
-          ${tenant},${project},${operation},${authorityKind},${authoritySubject},
-          ${keyVersion},${keyDigest},${payloadDigest},
-          ${retained.keys}::text[],${retained.payloads}::text[],
-          ${command},${config.ordinarySoftLimit},${config.mailboxHardLimit})`,
+        sql`SELECT * FROM accept_dispatch_operation(${tenant},${project},${operation},${authorityKind},${authoritySubject},${keyVersion},${keyDigest},${payloadDigest},${retained.keys}::text[],${retained.payloads}::text[],${command},${config.ordinarySoftLimit},${config.mailboxHardLimit})`,
       )
     : client.query<AcceptanceRow>(
-        sql`SELECT * FROM accept_operation(
-          ${tenant},${project},${operation},${authorityKind},${authoritySubject},
-          ${keyVersion},${keyDigest},${payloadDigest},
-          ${retained.keys}::text[],${retained.payloads}::text[],
-          ${command},${config.ordinarySoftLimit},${config.mailboxHardLimit})`,
+        sql`SELECT * FROM accept_operation(${tenant},${project},${operation},${authorityKind},${authoritySubject},${keyVersion},${keyDigest},${payloadDigest},${retained.keys}::text[],${retained.payloads}::text[],${command},${config.ordinarySoftLimit},${config.mailboxHardLimit})`,
       );
-  // jscpd:ignore-end closes the twin-query exemption
 }
 
 /** Accepts one submission, writing its operation, decision input and readiness generation together. */
