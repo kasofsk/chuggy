@@ -119,6 +119,9 @@ export type ScratchPushed =
 /** What `ls-remote --exit-code` exits with when the remote answered and named no such ref. */
 const scratchNoMatchingRefCode = 2;
 
+/** The porcelain summary the receiving repository refuses a ref update with, which `[remote rejected]` and `[remote failure]` deliberately are not. */
+const scratchRefusedSummary = "[rejected]";
+
 /** The mode the credential helper is written with, which is the one file here that must not be read by another user. */
 const scratchHelperMode = 0o700;
 
@@ -197,6 +200,14 @@ export function scratchRun(
   });
 }
 
+/** The arguments naming a remote, the separator first so a repository beginning with a dash is a path git reads and never an option it obeys. */
+export function scratchRemoteArguments(
+  repository: RepositoryId,
+  ...rest: readonly string[]
+): readonly string[] {
+  return ["--", repository, ...rest];
+}
+
 /** Reads an object identity out of git's own output, refusing a width git addresses no object at. */
 function scratchObjectIdOf(value: string | undefined): GitObjectId | undefined {
   if (value === undefined) return undefined;
@@ -220,7 +231,12 @@ export async function scratchObserveHead(
     repository,
     credential,
     timeoutSecsMax: scratch.options.remoteTimeoutSecsMax,
-    argv: ["ls-remote", "--symref", "--exit-code", repository, "HEAD"],
+    argv: [
+      "ls-remote",
+      "--symref",
+      "--exit-code",
+      ...scratchRemoteArguments(repository, "HEAD"),
+    ],
   });
   if (ran.ran === "Stopped") return { read: "Unreachable" };
   if (ran.code === scratchNoMatchingRefCode) return { read: "Absent" };
@@ -231,6 +247,24 @@ export async function scratchObserveHead(
   const ref: string | undefined = named?.[1];
   if (ref === undefined || commit === undefined) return { read: "Absent" };
   return { read: "Value", value: { ref: asGitRefName(ref), commit } };
+}
+
+/**
+ * The commit the one line naming exactly this ref stands at. `ls-remote`
+ * matches the tail of a ref at a slash boundary and sorts its answer by
+ * refname, so the first line is a shadow ref's wherever one exists and the
+ * peeled line of a tag names the same ref with a suffix.
+ */
+function scratchReadRefCommit(
+  stdout: string,
+  ref: GitRefName,
+): GitObjectId | undefined {
+  for (const line of stdout.split("\n")) {
+    const tab = line.indexOf("\t");
+    if (tab < 0 || line.slice(tab + 1) !== ref) continue;
+    return scratchObjectIdOf(line.slice(0, tab));
+  }
+  return undefined;
 }
 
 /** What the remote currently says one ref stands at, which is the read a promotion is answered against. */
@@ -244,13 +278,16 @@ export async function scratchReadRef(
     repository,
     credential,
     timeoutSecsMax: scratch.options.remoteTimeoutSecsMax,
-    argv: ["ls-remote", "--exit-code", repository, ref],
+    argv: [
+      "ls-remote",
+      "--exit-code",
+      ...scratchRemoteArguments(repository, ref),
+    ],
   });
   if (ran.ran === "Stopped") return { read: "Unreachable" };
   if (ran.code === scratchNoMatchingRefCode) return { read: "Absent" };
   if (ran.code !== 0) return { read: "Unreachable" };
-  const stood = /^([0-9a-f]+)\t/mu.exec(ran.stdout);
-  const commit = scratchObjectIdOf(stood?.[1]);
+  const commit = scratchReadRefCommit(ran.stdout, ref);
   if (commit === undefined) return { read: "Absent" };
   return { read: "Value", value: commit };
 }
@@ -270,8 +307,10 @@ export async function scratchFetchRef(
       "fetch",
       "--quiet",
       "--no-tags",
-      repository,
-      `+${ref}:refs/chuggy/target/${scratchDigestOf(ref)}`,
+      ...scratchRemoteArguments(
+        repository,
+        `+${ref}:refs/chuggy/target/${scratchDigestOf(ref)}`,
+      ),
     ],
   });
   return ran.ran === "Exited" && ran.code === 0;
@@ -462,10 +501,24 @@ export async function scratchMergeTree(
 }
 
 /**
+ * The summary field of the line reporting the ref that did not move, which is
+ * what tells a non-fast-forward apart from the receiving repository declining
+ * the push or failing to apply it.
+ */
+function scratchPushSummary(stdout: string): string | undefined {
+  for (const line of stdout.split("\n")) {
+    if (!line.startsWith("!\t")) continue;
+    return line.split("\t")[2];
+  }
+  return undefined;
+}
+
+/**
  * The one ref movement this adapter makes: a single-refspec push the receiving
- * repository applies atomically and refuses when it is not a fast-forward. A
- * refusal is a porcelain flag, and everything else that stopped the push is
- * unknown rather than refused.
+ * repository applies atomically and refuses when it is not a fast-forward. The
+ * porcelain flag says the update did not happen and the summary beside it says
+ * whose refusal it was, and everything else that stopped the push is unknown
+ * rather than refused.
  */
 export async function scratchPush(
   scratch: GitScratch,
@@ -482,8 +535,7 @@ export async function scratchPush(
       "push",
       "--porcelain",
       "--atomic",
-      repository,
-      `${candidate}:${ref}`,
+      ...scratchRemoteArguments(repository, `${candidate}:${ref}`),
     ],
   });
   if (ran.ran === "Stopped") {
@@ -492,6 +544,8 @@ export async function scratchPush(
       : { pushed: "Unknown" };
   }
   if (ran.code === 0) return { pushed: "Advanced" };
-  const refused = ran.stdout.split("\n").some((line) => line.startsWith("!\t"));
-  return refused ? { pushed: "Refused" } : { pushed: "Unknown" };
+  const summary = scratchPushSummary(ran.stdout);
+  return summary?.startsWith(scratchRefusedSummary) === true
+    ? { pushed: "Refused" }
+    : { pushed: "Unknown" };
 }

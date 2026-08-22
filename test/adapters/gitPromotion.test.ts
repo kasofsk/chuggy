@@ -34,7 +34,10 @@ import {
   gitRunEnvironment,
   gitVersionAdmits,
 } from "../../src/adapters/git/gitRun.ts";
-import { scratchDigestOf } from "../../src/adapters/git/gitScratch.ts";
+import {
+  scratchDigestOf,
+  scratchRemoteArguments,
+} from "../../src/adapters/git/gitScratch.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   asCommitPermitId,
@@ -529,6 +532,69 @@ test("what the ref proves about a candidate is read back from the remote", async
     proved: "Ancestor",
     observed: candidate,
   });
+});
+
+test("a ref another ref's tail repeats is read as itself and never as the shadow", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  fixtureGit(
+    fixtureScratch(fixture),
+    "push",
+    "-q",
+    fixture.remote,
+    `${candidate}:refs/heads/decoy/refs/heads/main`,
+  );
+  assert.deepEqual(
+    await port.proveCandidateAncestry({
+      repository: binding,
+      ref: target.ref,
+      candidate,
+    }),
+    { proved: "NotAncestor", observed: target.commit },
+  );
+  assert.equal(
+    fixtureGit(fixture.remote, "rev-parse", "refs/heads/main"),
+    target.commit,
+  );
+});
+
+test("a push the receiving repository declined is ambiguous and never a refusal", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  const hook = join(fixture.remote, "hooks", "pre-receive");
+  writeFileSync(hook, "#!/bin/sh\nexit 1\n");
+  chmodSync(hook, 0o700);
+  const promoted = await port.promoteCandidate({
+    repository: binding,
+    permit: asCommitPermitId("permit-1"),
+    target,
+    candidate,
+  });
+  assert.deepEqual(promoted, {
+    promoted: "Ambiguous",
+    evidence: "RemoteUnreachable",
+  });
+  assert.equal(
+    fixtureGit(fixture.remote, "rev-parse", "refs/heads/main"),
+    target.commit,
+  );
+});
+
+test("a remote reaches git as a path and never as an option", () => {
+  assert.deepEqual(
+    scratchRemoteArguments(asRepositoryId("-dash.git"), "HEAD"),
+    ["--", "-dash.git", "HEAD"],
+  );
 });
 
 test("an unreadable ref and an unreachable remote are each their own answer", async (t) => {
