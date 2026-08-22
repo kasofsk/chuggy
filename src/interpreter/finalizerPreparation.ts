@@ -61,7 +61,11 @@ import {
   type RepositoryId,
 } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
-import { candidateBytesMax, candidateFilesMax } from "./finalizer.ts";
+import {
+  candidateBytesMax,
+  candidateExecutionsMax,
+  candidateFilesMax,
+} from "./finalizer.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import type {
   ArtifactDigest,
@@ -89,7 +93,11 @@ export type FinalizationDigestFunction = (
   canonical: CanonicalFinalization,
 ) => string;
 
-/** The most bytes one conflict manifest is stored at, past which its paths are truncated. */
+/**
+ * The most bytes one conflict manifest's paths are stored at, past which they
+ * are truncated. It is a byte count because the artifact is stored as encoded
+ * bytes, and a path outside ASCII costs more of them than it has characters.
+ */
 export const conflictManifestBytesMax = 262_144;
 
 /** The directory no handoff may write into, because git reads it as the repository itself. */
@@ -159,7 +167,8 @@ export type HandoffRefusal =
   | "PathIsReserved"
   | "PathIsDeclaredTwice"
   | "TooManyArtifacts"
-  | "TooManyBytes";
+  | "TooManyBytes"
+  | "TooManyExecutions";
 
 /** Every refusal, so a suite iterates rather than restates. */
 export const allHandoffRefusals: readonly HandoffRefusal[] = [
@@ -169,6 +178,7 @@ export const allHandoffRefusals: readonly HandoffRefusal[] = [
   "PathIsDeclaredTwice",
   "TooManyArtifacts",
   "TooManyBytes",
+  "TooManyExecutions",
 ];
 
 /**
@@ -248,6 +258,9 @@ export function handoffAccepted(gathering: HandoffGathering): HandoffAccepted {
   const first = gathering.work[0];
   if (first === undefined) return { accepted: "NoPassedWork" };
   const configuration = first.configuration;
+  if (gathering.work.length > candidateExecutionsMax) {
+    return { accepted: "Refused", refusal: "TooManyExecutions", configuration };
+  }
   const refusal = handoffArtifactRefusal(gathering.artifacts);
   if (refusal !== undefined) {
     return { accepted: "Refused", refusal, configuration };
@@ -501,10 +514,11 @@ function conflictManifestPaths(manifest: ConflictManifest): {
   readonly paths: readonly string[];
   readonly truncated: boolean;
 } {
+  const encoder = new TextEncoder();
   const paths: string[] = [];
   let bytes = 0;
   for (const path of manifest.conflict.paths) {
-    bytes += path.length;
+    bytes += encoder.encode(path).length;
     if (bytes > conflictManifestBytesMax) {
       return { paths, truncated: true };
     }

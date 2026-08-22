@@ -7,7 +7,9 @@
  * a candidate's worth is `../../interpreter/finalizerPreparation.ts`'s to say,
  * so this file has no notion of a refusal and no notion of an approval policy —
  * it hands back the passed work, its artifacts in path order, and the canonical
- * configuration those executions ran under.
+ * configuration those executions ran under. Both draws stop one row past the
+ * ceiling the decision is made against, which is what keeps the refusal for
+ * exceeding it reachable while bounding what a decision is ever handed.
  *
  * THE FINALIZER READS EXECUTION ROWS AND WRITES NONE. Migration eleven revokes
  * every scheduler relation from the role and then grants back `SELECT` on the
@@ -54,6 +56,10 @@ import type {
 import { allApprovalRefusals } from "../../interpreter/finalizerPreparation.ts";
 import type { FinalizationClaim } from "../../interpreter/finalizer.ts";
 import {
+  candidateExecutionsMax,
+  candidateFilesMax,
+} from "../../interpreter/finalizer.ts";
+import {
   asArtifactDigest,
   asArtifactPath,
   asResultManifestId,
@@ -63,6 +69,7 @@ import {
   asExecutionId,
 } from "../../interpreter/schedulerIdentity.ts";
 import { postgresInputBundleWrite } from "./inputBundle.ts";
+import { postgresOwnershipEpoch } from "./ownership.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   finalizerLiveRequestStates,
@@ -134,7 +141,7 @@ export async function finalizerPreparationGathering(
     `${preparationPassedWork}
      SELECT execution, attempt, manifest, configuration_revision,
             configuration_digest, canonical
-       FROM passed ORDER BY execution`,
+       FROM passed ORDER BY execution LIMIT ${String(candidateExecutionsMax + 1)}`,
     values,
   );
   const artifacts = await client.query<ArtifactRow>(
@@ -144,7 +151,8 @@ export async function finalizerPreparationGathering(
        JOIN execution_result_artifact a
          ON a.tenant = p.tenant AND a.project = p.project
             AND a.manifest = p.manifest
-      WHERE a.role = 'Handoff' ORDER BY a.path`,
+      WHERE a.role = 'Handoff' ORDER BY a.path
+      LIMIT ${String(candidateFilesMax + 1)}`,
     values,
   );
   return {
@@ -170,14 +178,19 @@ export async function finalizerPreparationGathering(
 
 /**
  * Writes the immutable attempt and the bundle it pinned in one transaction. The
- * claim is rechecked under the request row's lock, so an attempt cannot be
- * written by a holder a takeover has already retired.
+ * current epoch is read first and the claim is then rechecked under the request
+ * row's lock, so an attempt cannot be written by a holder a takeover has
+ * already retired — a restore leaves the request row's own fences untouched, so
+ * the row alone cannot say the epoch moved.
  */
 export async function finalizerPreparationRecord(
   client: pg.PoolClient,
   record: AttemptRecord,
 ): Promise<AttemptRecorded> {
   const { claim } = record;
+  if ((await postgresOwnershipEpoch(client)) !== claim.recoveryEpoch) {
+    return { recorded: "Fenced" };
+  }
   const held = await client.query(
     `SELECT 1 FROM finalization_request
       WHERE tenant = $1 AND project = $2 AND request = $3

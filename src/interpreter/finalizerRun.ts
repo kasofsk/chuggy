@@ -33,7 +33,7 @@
  * request, and returns; the loop that calls it again is a deployment's. What it
  * reports is what it moved, and a held count is every finalization it left
  * exactly where it found it — a hold the view decided, a ref it could not read,
- * and a permit it was refused.
+ * a permit it was refused, and a request the pass had no budget left for.
  *
  * A PASS FENCES BEFORE IT MOVES ANYTHING ELSE. Claims held under a superseded
  * epoch and claims past their expiry are reopened first, because a lease that
@@ -71,7 +71,9 @@
  * concludes it, having asked for no permit and written to no remote, which is
  * what makes the abort reversible. Past the permit nothing changes at all — the
  * reading of the ref still has to conclude, because the repository is the only
- * authority on whether it advanced and no erasure may precede that reading.
+ * authority on whether it advanced and no erasure may precede that reading. The
+ * abort is the preparation that ticket will now get, so it spends the
+ * preparation budget and is observed as one, with no restart behind it.
  *
  * NOTHING HERE READS A CLOCK. Every lease and expiry is a duration handed to the
  * store, which asks the database what time it is.
@@ -216,6 +218,22 @@ function finalizerHold(
   recordFinalizer(service.metrics, (metrics) => {
     metrics.holding(reason);
   });
+}
+
+/**
+ * Whether this pass has already spent the ceiling a move draws on. A
+ * finalization the budget ran out for was left exactly where it was found, so
+ * it is held rather than dropped out of the report entirely.
+ */
+function finalizerCeilingReached(
+  service: FinalizerService,
+  tally: FinalizerTally,
+  spent: keyof FinalizerTally,
+  ceiling: number,
+): boolean {
+  if (tally[spent] < ceiling) return false;
+  finalizerHold(service, tally, "PassCeilingReached");
+  return true;
 }
 
 /** Reopens the claims a takeover and a lapsed lease each condemn, both bounded. */
@@ -839,6 +857,10 @@ async function finalizerAdvance(
   const view = await finalizerGather(service, claim);
   if (view === undefined) return;
   const decision = finalizationNext(config, view);
+  const ceilingReached = (
+    spent: keyof FinalizerTally,
+    ceiling: number,
+  ): boolean => finalizerCeilingReached(service, tally, spent, ceiling);
   switch (decision.decide) {
     case "Settled":
       await service.store.settleClaim(claim);
@@ -847,7 +869,7 @@ async function finalizerAdvance(
       finalizerHold(service, tally, decision.hold);
       return;
     case "Prepare":
-      if (tally.preparations >= config.preparationsPerPassMax) return;
+      if (ceilingReached("preparations", config.preparationsPerPassMax)) return;
       tally.preparations += 1;
       recordFinalizer(service.metrics, (metrics) => {
         metrics.preparation(decision.restartsSpent);
@@ -855,20 +877,24 @@ async function finalizerAdvance(
       await finalizerPrepare(service, view, decision.target, tally);
       return;
     case "Abort":
-      if (tally.preparations >= config.preparationsPerPassMax) return;
+      if (ceilingReached("preparations", config.preparationsPerPassMax)) return;
       tally.preparations += 1;
+      recordFinalizer(service.metrics, (metrics) => {
+        metrics.preparation(0);
+      });
       await finalizerAbort(service, view, decision.target, tally);
       return;
     case "AwaitApproval":
       await finalizerAwaitApproval(service, view, decision.attempt, tally);
       return;
     case "Promote":
-      if (tally.promotions >= config.promotionsPerPassMax) return;
+      if (ceilingReached("promotions", config.promotionsPerPassMax)) return;
       tally.promotions += 1;
       await finalizerPromote(service, view, tally);
       return;
     case "Reconcile":
-      if (tally.reconciliations >= config.reconciliationsPerPassMax) return;
+      if (ceilingReached("reconciliations", config.reconciliationsPerPassMax))
+        return;
       tally.reconciliations += 1;
       await finalizerProve(service, view, decision.permit, tally);
       return;

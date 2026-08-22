@@ -24,6 +24,7 @@ import {
   asInputBundleId,
   asRepositoryId,
   candidateBytesMax,
+  candidateExecutionsMax,
   candidateFilesMax,
   conflictPathsMax,
   type FinalizationClaim,
@@ -158,6 +159,12 @@ test("every refusal names the revision an attempt must pin, and none of them is 
       ...plain,
       artifacts: [artifactOf("one.txt", candidateBytesMax + 1)],
     }),
+    handoffAccepted({
+      ...plain,
+      work: Array.from({ length: candidateExecutionsMax + 1 }, () =>
+        workOf('{"image":"i"}', "a"),
+      ),
+    }),
   ];
   assert.deepEqual(
     refusals.map((each) =>
@@ -169,6 +176,7 @@ test("every refusal names the revision an attempt must pin, and none of them is 
       "PathIsDeclaredTwice",
       "TooManyArtifacts",
       "TooManyBytes",
+      "TooManyExecutions",
     ],
   );
   for (const each of refusals) {
@@ -289,6 +297,26 @@ test("a conflict too large to store drops paths rather than growing without a bo
   assert.equal(held.mergeBase, null);
   assert.equal(held.conflictingPaths.length < conflictPathsMax, true);
   assert.equal(text.length <= conflictManifestBytesMax * 2, true);
+});
+
+test("the ceiling counts the bytes the artifact is stored as and not its characters", () => {
+  const wide = "\u{1f600}".repeat(1_024);
+  const declared = Math.floor(conflictManifestBytesMax / wide.length);
+  const held = JSON.parse(
+    conflictManifestText({
+      request: "request-a",
+      attempt: asFinalizationAttemptId("attempt-1"),
+      strategy: "Merge",
+      candidate: asGitObjectId(commitOf("b")),
+      target: record.target,
+      conflict: {
+        paths: Array.from({ length: declared }, () => wide),
+        truncated: false,
+      },
+    }),
+  ) as { conflictingPaths: string[]; truncated: boolean };
+  assert.equal(held.truncated, true);
+  assert.equal(held.conflictingPaths.length < declared, true);
 });
 
 test("a project artifact identity is refused what any other opaque identity is", () => {

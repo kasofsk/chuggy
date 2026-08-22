@@ -38,6 +38,7 @@ import {
   type FinalizationClaim,
 } from "../../src/interpreter/finalizer.ts";
 import type { AttemptRecord } from "../../src/interpreter/finalizerPreparation.ts";
+import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
   finalizerClaim,
   finalizerCommit,
@@ -340,6 +341,25 @@ test("an attempt a retired holder offers is refused, and its bundle is refused w
     ],
   );
   assert.deepEqual(bundles, [{ bundle: first.bundle.bundle }]);
+});
+
+test("a takeover leaves an old-epoch executor unable to write an attempt", async () => {
+  const { project } = await finalizerSubject(rig, "superseded", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const claim = await finalizerClaim(rig, project, "owner-superseded");
+  const store = postgresFinalizer(rig.pool);
+  const first = attemptRecordOf(claim, project, "superseded-one");
+  assert.deepEqual(await store.recordAttempt(first), { recorded: "Attempt" });
+  await rig.harness.store.establishRecoveryEpoch(
+    asRecoveryEpoch(`epoch-superseded-${project.partition.project}`),
+  );
+  const second = attemptRecordOf(claim, project, "superseded-two");
+  assert.deepEqual(await store.recordAttempt(second), { recorded: "Fenced" });
+  assert.deepEqual(
+    (await attemptsOf(project)).map((each) => each.attempt),
+    [first.attempt],
+  );
 });
 
 test("an attempt is written once, and the trigger says so rather than a read", async () => {

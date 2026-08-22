@@ -55,6 +55,7 @@ export type FinalizerHoldReason =
   | "AttemptFenced"
   | "ApprovalUnopened"
   | "PermitRefused"
+  | "PassCeilingReached"
   | "ReconciliationUnrecorded";
 
 /** Closed, identifier-free observations emitted by the finalizer. */

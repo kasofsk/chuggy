@@ -675,6 +675,13 @@ export const candidateFilesMax = 1_024;
 export const candidateBytesMax = 64 * 1024 * 1024;
 
 /**
+ * The most passed work executions one finalization gathers. Every one of them
+ * must pin the same configuration revision, so the ceiling is on the rows the
+ * agreement is decided over rather than on a page of them.
+ */
+export const candidateExecutionsMax = 256;
+
+/**
  * One verified handoff artifact's bytes, under the path it takes in the
  * candidate tree. Content is passed by value because the port that writes it
  * may not read the store that holds it.

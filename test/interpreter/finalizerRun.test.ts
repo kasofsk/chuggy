@@ -68,6 +68,7 @@ import {
   finalizerTelemetry,
   silentFinalizerMetrics,
   silentFinalizerTelemetry,
+  type FinalizerHoldReason,
   type FinalizerMetrics,
   type FinalizerTelemetry,
 } from "../../src/interpreter/finalizerTelemetry.ts";
@@ -418,6 +419,31 @@ test("a pass promotes no more candidates than its ceiling admits", async () => {
   assert.equal(report.promotions, 2);
   assert.equal(git.promotions.length, 2);
   assert.equal(store.grants.length, 2);
+  assert.equal(report.holds, 1, "the third was neither moved nor held");
+});
+
+test("a request the pass had no budget left for is held under its own reason", async () => {
+  const emitted: FinalizerHoldReason[] = [];
+  const metrics = finalizerTelemetry({
+    ...silentFinalizerMetrics,
+    holding: (reason) => emitted.push(reason),
+  });
+  const store = recordingStore([
+    promotableView("request-one"),
+    promotableView("request-two"),
+  ]);
+  const report = await passOver(
+    serviceOf(
+      store,
+      recordingGit(),
+      { promotionsPerPassMax: 1 },
+      recordingArtifacts(),
+      metrics,
+    ),
+  );
+  assert.equal(report.promotions, 1);
+  assert.equal(report.holds, 1);
+  assert.deepEqual(emitted, ["PassCeilingReached"]);
 });
 
 test("a pass proves no more held readings than its ceiling admits", async () => {
@@ -722,6 +748,22 @@ test("a closing project's abort reaches no remote, asks for no permit and prices
     );
     assert.equal(store.attempts[0]?.candidate, undefined, lifecycle);
   }
+});
+
+test("the preparation an abort spends is one the sink hears about", async () => {
+  const spent: number[] = [];
+  const metrics = finalizerTelemetry({
+    ...silentFinalizerMetrics,
+    preparation: (restartsSpent) => spent.push(restartsSpent),
+  });
+  const store = recordingStore([
+    { ...promotableView("request-one"), lifecycle: "Deleting" },
+  ]);
+  const report = await passOver(
+    serviceOf(store, recordingGit(), {}, recordingArtifacts(), metrics),
+  );
+  assert.equal(report.preparations, 1);
+  assert.deepEqual(spent, [0]);
 });
 
 test("a closing project whose passed work is gone holds rather than pricing a failure", async () => {
