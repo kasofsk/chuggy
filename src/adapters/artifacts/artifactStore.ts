@@ -18,8 +18,16 @@
  * A LINK IS NOT A STORED OBJECT. Metadata is read without following one and
  * bytes are opened refusing one, so a link planted where an object should be is
  * `NotDurable` rather than the mode, the size and the content of whatever it
- * points at — which is the whole of what keeps this store's containment about
- * the file that is there rather than about the name that leads to it.
+ * points at.
+ *
+ * NEITHER IS A LINK ANYWHERE ABOVE IT. Refusing the last component says nothing
+ * about the ones that led there, so the directory an object stands in is
+ * resolved through every link on the way and required to be really inside the
+ * project: a declared `a/b.txt` whose `a` is a link out of the tree is
+ * `ForeignProject`, and the same resolution stands between a project-owned
+ * write and the directory it lands in. That is what makes this store's
+ * containment about the file that is there rather than about the name that
+ * leads to it, for every component and not only the last.
  *
  * ARTIFACTS STAY OPAQUE. `verifyManifest` answers metadata alone — present,
  * that size, that digest, immutable, inside this project — and never reads an
@@ -44,6 +52,7 @@ import {
   lstat,
   mkdir,
   open,
+  realpath,
   rename,
   rm,
   writeFile,
@@ -77,6 +86,7 @@ import {
   artifactAttemptFile,
   artifactOwnedFile,
   artifactProjectDirectory,
+  artifactWithinProject,
 } from "./artifactKey.ts";
 
 /** Everything the store is composed with, each value an operational choice. */
@@ -137,16 +147,45 @@ type ArtifactStoreConfirmed =
 /**
  * Whether a caught filesystem error is an absent object or a storage the caller
  * must retry. A path leading through something that is not a directory names no
- * object either, and needs no disk fault to arise.
+ * object either, and neither does one whose links lead in a circle — both are
+ * structures a worker leaves behind rather than disk faults that pass.
  */
 function artifactStoreMissing(refused: unknown): boolean {
   if (typeof refused !== "object" || refused === null) return false;
   const code = (refused as { code?: unknown }).code;
-  return code === "ENOENT" || code === "ENOTDIR";
+  return code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP";
+}
+
+/**
+ * Why the directory one object stands in is not one this store reads or writes,
+ * or nothing when it is. Both sides are resolved through their links, so a
+ * project reached by a link is still its own directory and a component of a
+ * declared path that leads out of the tree is refused as what it is.
+ */
+async function artifactStoreDirectoryRejection(
+  projectDirectory: string,
+  file: string,
+): Promise<ArtifactStoreEntry | undefined> {
+  try {
+    const project = await realpath(projectDirectory);
+    const directory = await realpath(dirname(file));
+    return artifactWithinProject(project, directory)
+      ? undefined
+      : { entry: "Rejected", failure: "ForeignProject" };
+  } catch (refused: unknown) {
+    return artifactStoreMissing(refused)
+      ? { entry: "Rejected", failure: "Missing" }
+      : { entry: "Unavailable" };
+  }
 }
 
 /** What stands at one path, or the reason nothing about the object can be said. */
-async function artifactStoreEntryOf(file: string): Promise<ArtifactStoreEntry> {
+async function artifactStoreEntryOf(
+  projectDirectory: string,
+  file: string,
+): Promise<ArtifactStoreEntry> {
+  const outside = await artifactStoreDirectoryRejection(projectDirectory, file);
+  if (outside !== undefined) return outside;
   try {
     const found = await lstat(file);
     if (!found.isFile()) {
@@ -199,6 +238,7 @@ async function artifactStoreBytesOf(file: string): Promise<Buffer | undefined> {
 
 /** Confirms one declared artifact against what is stored, and yields its bytes only once it has. */
 async function artifactStoreConfirm(
+  projectDirectory: string,
   file: string | undefined,
   row: ArtifactRow,
   wanted: boolean,
@@ -206,7 +246,7 @@ async function artifactStoreConfirm(
   if (file === undefined) {
     return { confirmed: "Rejected", failure: "ForeignProject" };
   }
-  const entry = await artifactStoreEntryOf(file);
+  const entry = await artifactStoreEntryOf(projectDirectory, file);
   if (entry.entry === "Unavailable") return { confirmed: "Unavailable" };
   if (entry.entry === "Rejected") {
     return { confirmed: "Rejected", failure: entry.failure };
@@ -250,6 +290,7 @@ async function artifactStoreVerify(
     for (const [index, row] of rows.entries()) {
       const at: ArtifactSite = { role, index };
       const confirmed = await artifactStoreConfirm(
+        directory,
         artifactAttemptFile(
           directory,
           manifest.binding.execution,
@@ -306,6 +347,7 @@ async function artifactStoreRead(
   const files: CandidateFile[] = [];
   for (const [index, artifact] of request.artifacts.entries()) {
     const confirmed = await artifactStoreConfirm(
+      directory,
       artifactAttemptFile(
         directory,
         artifact.execution,
@@ -355,17 +397,24 @@ async function artifactStoreWrite(
       `artifact store: ${String(write.content.byteLength)} bytes is past the most one artifact is`,
     );
   }
-  const file = artifactOwnedFile(
-    artifactProjectDirectory(
-      own.root,
-      write.partition.tenant,
-      write.partition.project,
-    ),
-    write.artifact,
+  const directory = artifactProjectDirectory(
+    own.root,
+    write.partition.tenant,
+    write.partition.project,
   );
+  const file = artifactOwnedFile(directory, write.artifact);
   const pending = `${file}.${randomUUID()}`;
+  const unavailable = {
+    written: "Unavailable",
+    retryAfterSeconds: own.unavailableRetrySecs,
+  } as const;
   try {
     await mkdir(dirname(file), { recursive: true });
+    if (
+      (await artifactStoreDirectoryRejection(directory, file)) !== undefined
+    ) {
+      return unavailable;
+    }
     await writeFile(pending, write.content, {
       mode: own.storedFileMode,
       flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
@@ -374,10 +423,7 @@ async function artifactStoreWrite(
     await rename(pending, file);
   } catch {
     await artifactStoreDiscard(pending);
-    return {
-      written: "Unavailable",
-      retryAfterSeconds: own.unavailableRetrySecs,
-    };
+    return unavailable;
   }
   return {
     written: "Artifact",

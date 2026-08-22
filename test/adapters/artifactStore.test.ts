@@ -10,8 +10,10 @@
  *
  * THE NEGATIVE SPACE IS HALF THE POINT. Bytes must not come back for an artifact
  * whose content hashes to anything but the digest that was pinned, a link must
- * not stand in for the object it points at, one project must not read another's
- * objects, and an outage must not read as an artifact that failed.
+ * not stand in for the object it points at nor anywhere in the directories that
+ * lead to it — on the read paths or under a project's own write — one project
+ * must not read another's objects, and an outage must not read as an artifact
+ * that failed.
  */
 
 import assert from "node:assert/strict";
@@ -20,6 +22,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -30,6 +33,7 @@ import { test, type TestContext } from "node:test";
 
 import {
   artifactAttemptFile,
+  artifactOwnedFile,
   artifactProjectDirectory,
   artifactWithinProject,
 } from "../../src/adapters/artifacts/artifactKey.ts";
@@ -283,6 +287,90 @@ test("a link standing where an object should be is not a stored object", async (
       at: { role: "Handoff", index: 0 },
     },
   );
+});
+
+test("a link standing in a declared path's directory leads out of the project", async (t) => {
+  const fixture = fixtureOpen(t);
+  const outside = join(fixture.root, "outside");
+  mkdirSync(outside, { recursive: true });
+  writeFileSync(join(outside, "b.txt"), "secret", { mode: 0o440 });
+  chmodSync(join(outside, "b.txt"), 0o440);
+  const file = artifactAttemptFile(
+    artifactProjectDirectory(fixture.root, partition.tenant, partition.project),
+    execution,
+    attempt,
+    asArtifactPath("a/b.txt"),
+  );
+  if (file === undefined) assert.fail("the path resolved nowhere");
+  mkdirSync(dirname(dirname(file)), { recursive: true });
+  symlinkSync(outside, dirname(file));
+  assert.deepEqual(
+    await fixture.store.verifyManifest(
+      fixtureManifest([fixtureDeclared("a/b.txt", "secret")]),
+    ),
+    {
+      verified: "Rejected",
+      failure: "ForeignProject",
+      at: { role: "Handoff", index: 0 },
+    },
+  );
+  assert.deepEqual(
+    await fixture.store.readHandoff({
+      partition,
+      artifacts: [fixtureAsked("a/b.txt", "secret")],
+    }),
+    {
+      read: "Rejected",
+      failure: "ForeignProject",
+      at: { role: "Handoff", index: 0 },
+    },
+  );
+});
+
+test("a path whose links lead in a circle names no object and is never retried", async (t) => {
+  const fixture = fixtureOpen(t);
+  const file = artifactAttemptFile(
+    artifactProjectDirectory(fixture.root, partition.tenant, partition.project),
+    execution,
+    attempt,
+    asArtifactPath("a/b.txt"),
+  );
+  if (file === undefined) assert.fail("the path resolved nowhere");
+  mkdirSync(dirname(dirname(file)), { recursive: true });
+  symlinkSync("a", dirname(file));
+  assert.deepEqual(
+    await fixture.store.verifyManifest(
+      fixtureManifest([fixtureDeclared("a/b.txt", "one")]),
+    ),
+    {
+      verified: "Rejected",
+      failure: "Missing",
+      at: { role: "Handoff", index: 0 },
+    },
+  );
+});
+
+test("a link standing where a project's own artifacts go is written to by nothing", async (t) => {
+  const fixture = fixtureOpen(t);
+  const directory = artifactProjectDirectory(
+    fixture.root,
+    partition.tenant,
+    partition.project,
+  );
+  const outside = join(fixture.root, "outside");
+  mkdirSync(outside, { recursive: true });
+  mkdirSync(directory, { recursive: true });
+  symlinkSync(
+    outside,
+    dirname(artifactOwnedFile(directory, asProjectArtifactId("conflict-1"))),
+  );
+  const written = await fixture.store.writeArtifact({
+    partition,
+    artifact: asProjectArtifactId("conflict-1"),
+    content: new TextEncoder().encode("evidence"),
+  });
+  assert.equal(written.written, "Unavailable");
+  assert.deepEqual(readdirSync(outside), []);
 });
 
 test("an object standing where a directory should be is absent and not an outage", async (t) => {
