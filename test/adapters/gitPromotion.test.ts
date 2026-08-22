@@ -297,9 +297,15 @@ test("a path no tree entry takes is refused before any object is written", async
     [["../escape.txt", "escaped\n"]],
     [["/absolute.txt", "absolute\n"]],
     [[".git/config", "hijacked\n"]],
+    [["sub/.git/config", "hijacked\n"]],
+    [["sub/.GIT/config", "hijacked\n"]],
     [["", "empty\n"]],
     [
       ["same.txt", "one\n"],
+      ["same.txt", "two\n"],
+    ],
+    [
+      ["Same.txt", "one\n"],
       ["same.txt", "two\n"],
     ],
   ] as const;
@@ -310,6 +316,48 @@ test("a path no tree entry takes is refused before any object is written", async
       `${entries[0][0]} was not refused`,
     );
   }
+});
+
+test("a path that spells another one in the index format's quoting stands at its own name", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const quoted = '"\\056github\\057ci.yml"';
+  const candidate = await fixturePrepare(port, binding, target, [
+    [quoted, "quoted\n"],
+  ]);
+  const names = fixtureGit(
+    fixtureScratch(fixture),
+    "ls-tree",
+    "-r",
+    "-z",
+    "--name-only",
+    candidate,
+  ).split("\0");
+  assert.equal(names.includes(quoted), true);
+  assert.equal(names.includes(".github/ci.yml"), false);
+});
+
+test("a path git will not take is a failed preparation and never a candidate missing it", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const prepared = await port.prepareCandidate({
+    repository: binding,
+    ticket: asTicketId(1),
+    bundle: asInputBundleId("bundle-1"),
+    target,
+    files: fixtureFiles([
+      ["handed.txt", "handed\n"],
+      [".git.", "hijacked\n"],
+    ]),
+  });
+  assert.deepEqual(prepared, {
+    prepared: "Failed",
+    evidence: "IntegrationFailed",
+  });
 });
 
 test("an observed commit the remote no longer holds cannot be built on", async (t) => {

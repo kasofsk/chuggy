@@ -15,6 +15,14 @@
  * scratch is consistent after any failure by construction rather than by
  * cleanup. A conflict is an exit code here, not prose to parse.
  *
+ * A REFUSED PATH IS NOT AN EXIT CODE. `update-index` names a path it will not
+ * take on stderr and exits zero with that entry absent, so the index a
+ * preparation built is read back and held to the entries it declared; a
+ * candidate missing a handoff file would otherwise be promoted as if whole.
+ * The entries are NUL-terminated, which is what stops git reading a declared
+ * path beginning with a quotation mark as a C-quoted string and landing the
+ * artifact somewhere nothing inspected.
+ *
  * THE REPOSITORY IDENTITY IS THE REMOTE ADDRESS. Any remote git accepts is one,
  * a filesystem path to a bare repository included, which is what lets a suite
  * exercise every behaviour relied on here with no network and no server. It is
@@ -121,6 +129,9 @@ const scratchNoMatchingRefCode = 2;
 
 /** The porcelain summary the receiving repository refuses a ref update with, which `[remote rejected]` and `[remote failure]` deliberately are not. */
 const scratchRefusedSummary = "[rejected]";
+
+/** The mode every entry this adapter writes takes, a handoff being a file and never a link or a program. */
+const scratchEntryMode = "100644";
 
 /** The mode the credential helper is written with, which is the one file here that must not be read by another user. */
 const scratchHelperMode = 0o700;
@@ -381,6 +392,37 @@ export async function scratchWriteBlob(
 }
 
 /**
+ * Whether the index carries every entry that was declared, at the blob it was
+ * declared at. A path git will not take is named on stderr and left out with
+ * an exit code of zero, so this is what an addition succeeding means.
+ */
+async function scratchWriteTreeHolds(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  indexFile: string,
+  entries: readonly GitScratchEntry[],
+): Promise<boolean> {
+  if (entries.length === 0) return true;
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    indexFile,
+    argv: [
+      "ls-files",
+      "--stage",
+      "-z",
+      "--",
+      ...entries.map((entry) => `:(literal)${entry.path}`),
+    ],
+  });
+  if (ran.ran === "Stopped" || ran.code !== 0) return false;
+  const staged = new Set(ran.stdout.split("\0"));
+  return entries.every((entry) =>
+    staged.has(`${scratchEntryMode} ${entry.blob} 0\t${entry.path}`),
+  );
+}
+
+/**
  * Writes the tree one commit's tree becomes once the entries stand in it. The
  * index is temporary and named per call, so two preparations in one scratch
  * cannot write each other's trees.
@@ -406,12 +448,17 @@ export async function scratchWriteTree(
       repository,
       timeoutSecsMax,
       indexFile,
-      argv: ["update-index", "--index-info"],
+      argv: ["update-index", "-z", "--index-info"],
       input: entries
-        .map((entry) => `100644 ${entry.blob}\t${entry.path}\n`)
+        .map((entry) => `${scratchEntryMode} ${entry.blob}\t${entry.path}\0`)
         .join(""),
     });
     if (added.ran === "Stopped" || added.code !== 0) return undefined;
+    if (
+      !(await scratchWriteTreeHolds(scratch, repository, indexFile, entries))
+    ) {
+      return undefined;
+    }
     return scratchWrittenObjectOf(
       await scratchRun(scratch, {
         repository,

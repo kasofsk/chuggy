@@ -12,9 +12,10 @@
  * THE CONTENT ARRIVES AS A VALUE AND IS NEVER READ FROM ANYWHERE. The store
  * that holds an artifact is another adapter's, so this one is handed bytes and
  * metadata and answers with a commit identity; a path is refused here rather
- * than trusted, because the index format reads a tab or a newline in one as the
- * start of another entry, and a path climbing out of the tree would write
- * somewhere the promotion was never authorized for.
+ * than trusted, because the index format reads a tab in one as the end of the
+ * field before it, a path climbing out of the tree would write somewhere the
+ * promotion was never authorized for, and a `.git` component at any depth names
+ * the repository itself.
  *
  * AN INTEGRATION THE TARGET IS ALREADY INSIDE OF IS THE CANDIDATE ITSELF.
  * Merging a commit into one that already contains it changes nothing, and the
@@ -80,13 +81,19 @@ function candidateAssertPath(path: string): void {
         `candidate path: ${path} does not stay inside the tree`,
       );
     }
-  }
-  if (parts[0] === candidateReservedDirectory) {
-    throw new RangeError(`candidate path: ${path} names the repository itself`);
+    if (part.toLowerCase() === candidateReservedDirectory) {
+      throw new RangeError(
+        `candidate path: ${path} names the repository itself`,
+      );
+    }
   }
 }
 
-/** Refuses a set of files that is unbounded, self-contradicting, or carrying a path no tree entry takes. */
+/**
+ * Refuses a set of files that is unbounded, self-contradicting, or carrying a
+ * path no tree entry takes. Two paths differing only in case are one path to a
+ * filesystem that folds, and are one row to the manifest that sealed them.
+ */
 function candidateAssertFiles(files: readonly CandidateFile[]): void {
   if (files.length > candidateFilesMax) {
     throw new RangeError(
@@ -97,10 +104,11 @@ function candidateAssertFiles(files: readonly CandidateFile[]): void {
   const seen = new Set<string>();
   for (const file of files) {
     candidateAssertPath(file.path);
-    if (seen.has(file.path)) {
+    const folded = file.path.toLowerCase();
+    if (seen.has(folded)) {
       throw new RangeError(`candidate files: ${file.path} is handed twice`);
     }
-    seen.add(file.path);
+    seen.add(folded);
     bytes += file.content.byteLength;
   }
   if (bytes > candidateBytesMax) {
