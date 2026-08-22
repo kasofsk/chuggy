@@ -106,7 +106,11 @@ import {
   finalizerPreparationGathering,
   finalizerPreparationRecord,
 } from "./finalizerPreparation.ts";
-import { finalizerBounded, finalizerRowValue } from "./finalizerRows.ts";
+import {
+  finalizerBounded,
+  finalizerRowPresent,
+  finalizerRowValue,
+} from "./finalizerRows.ts";
 import { finalizerRole } from "./schema.ts";
 
 /** The states migration three gave a native action, so a column narrows rather than restates. */
@@ -121,10 +125,10 @@ interface ClaimRow {
   readonly tenant: string;
   readonly project: string;
   readonly request: string;
-  readonly ticket: string;
-  readonly authorizing_seq: string;
-  readonly request_generation: string;
-  readonly claim_generation: string;
+  readonly ticket: string | null;
+  readonly authorizing_seq: string | null;
+  readonly request_generation: string | null;
+  readonly claim_generation: string | null;
   readonly state: string;
 }
 
@@ -155,12 +159,12 @@ interface ViewRow {
   readonly observed_commit: string | null;
   readonly approval_state: string | null;
   readonly approval_resolution: string | null;
-  readonly attempts_made: string;
+  readonly attempts_made: string | null;
 }
 
 /** What the one door returned about one offered conclusion. */
 interface SubmissionRow {
-  readonly result: string;
+  readonly result: string | null;
   readonly operation: string | null;
 }
 
@@ -176,17 +180,22 @@ function finalizerRowClaim(
       project: asProjectId(row.project),
     },
     request: row.request,
-    ticket: asTicketId(projectRowCounter(row.ticket, "request ticket")),
+    ticket: asTicketId(
+      projectRowCounter(
+        finalizerRowPresent(row.ticket, "request ticket"),
+        "request ticket",
+      ),
+    ),
     authorizingSeq: projectRowCounter(
-      row.authorizing_seq,
+      finalizerRowPresent(row.authorizing_seq, "authorizing sequence"),
       "authorizing sequence",
     ),
     requestGeneration: projectRowCounter(
-      row.request_generation,
+      finalizerRowPresent(row.request_generation, "request generation"),
       "request generation",
     ),
     claimGeneration: projectRowCounter(
-      row.claim_generation,
+      finalizerRowPresent(row.claim_generation, "claim generation"),
       "claim generation",
     ),
     state: finalizerRowValue(
@@ -546,7 +555,10 @@ async function finalizerDurableView(
     ...(attempt === undefined ? {} : { attempt }),
     approval: finalizerRowApproval(row),
     ...finalizerRowPermit(row),
-    attemptsMade: projectRowCounter(row.attempts_made, "attempts made"),
+    attemptsMade: projectRowCounter(
+      finalizerRowPresent(row.attempts_made, "attempts made"),
+      "attempts made",
+    ),
   };
 }
 

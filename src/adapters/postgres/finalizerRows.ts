@@ -24,6 +24,24 @@ export function finalizerBounded(value: number, what: string): void {
   }
 }
 
+/**
+ * Refuses a column the server types as nullable where this code requires a
+ * value. The declared row type says what postgres returns, so a column that is
+ * nullable there is nullable here, and the refusal names it rather than letting
+ * `Number(null)` become a silent zero.
+ */
+export function finalizerRowPresent<Value>(
+  value: Value | null,
+  what: string,
+): Value {
+  if (value === null) {
+    throw new Error(
+      `finalizer row: ${what} is null on a row that must have one`,
+    );
+  }
+  return value;
+}
+
 /** Narrows a column to the closed set the port declares, refusing what no migration can have written. */
 export function finalizerRowValue<Value extends string>(
   admitted: readonly Value[],

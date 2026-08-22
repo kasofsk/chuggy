@@ -248,7 +248,7 @@ async function finalizationRequestSource(
     ticket: string;
     state: string;
     request_generation: string;
-    epoch_is_current: boolean;
+    epoch_is_current: boolean | null;
   }>(
     sql`SELECT f.ticket::text, f.state, f.request_generation::text,
             (${command.recoveryEpoch} = (SELECT e.epoch FROM recovery_epoch e
@@ -273,7 +273,7 @@ async function finalizationRequestSource(
       request: command.request,
       requestGeneration: command.requestGeneration,
       open:
-        request.epoch_is_current &&
+        request.epoch_is_current === true &&
         (request.state === "Open" || request.state === "Registered") &&
         projectRowCounter(
           request.request_generation,

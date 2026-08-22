@@ -78,7 +78,7 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { projectRowCounter } from "./rows.ts";
-import { finalizerRowValue } from "./finalizerRows.ts";
+import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
 
 /**
  * The namespace the permit lock is taken in. It is an arbitrary constant whose
@@ -101,6 +101,19 @@ interface PermitRow {
   readonly attempt: string;
   readonly recovery_epoch: string;
   readonly lifecycle_generation: string;
+  readonly state: string;
+}
+
+/**
+ * The same row as postgres types it coming back out of the insert that wrote
+ * it, where the generation is the parameter's nullability rather than the
+ * column's.
+ */
+interface GrantedPermitRow {
+  readonly permit: string;
+  readonly attempt: string;
+  readonly recovery_epoch: string;
+  readonly lifecycle_generation: string | null;
   readonly state: string;
 }
 
@@ -156,10 +169,11 @@ async function finalizerPermitProjectStanding(
   client: pg.PoolClient,
   partition: Partition,
 ): Promise<PermitProjectRow | undefined> {
-  await client.query<{ pg_advisory_xact_lock: null }>(
+  await client.query<{ locked: string | null }>(
     sql`SELECT pg_advisory_xact_lock(
        ${finalizerPermitLockNamespace},
-       ('x' || substr(md5(${partition.tenant} || ':' || ${partition.project}), 1, 8))::bit(32)::integer)`,
+       ('x' || substr(md5(${partition.tenant} || ':' || ${partition.project}), 1, 8))::bit(32)::integer
+     )::text AS locked`,
   );
   const found = await client.query<PermitProjectRow>(
     sql`SELECT lifecycle, lifecycle_generation::text AS lifecycle_generation
@@ -251,11 +265,12 @@ export async function finalizerPermitGrant(
     return finalizerPermitRefused("AttemptUnprepared");
   }
   const permit = `permit-${randomUUID()}`;
-  const granted = await client.query<PermitRow>(
+  const granted = await client.query<GrantedPermitRow>(
     sql`INSERT INTO commit_permit
        (tenant, project, permit, attempt, recovery_epoch, lifecycle_generation)
      VALUES (${claim.partition.tenant},${claim.partition.project},${permit},
-             ${attempt},${claim.recoveryEpoch},${standing.lifecycle_generation})
+             ${attempt},${claim.recoveryEpoch},
+             ${standing.lifecycle_generation}::bigint)
      RETURNING permit, attempt, recovery_epoch,
                lifecycle_generation::text AS lifecycle_generation, state`,
   );
@@ -263,7 +278,16 @@ export async function finalizerPermitGrant(
   if (row === undefined) {
     throw new Error("postgres finalizer: the permit insert returned no permit");
   }
-  return { granted: "Permit", permit: finalizerPermitOf(row) };
+  return {
+    granted: "Permit",
+    permit: finalizerPermitOf({
+      ...row,
+      lifecycle_generation: finalizerRowPresent(
+        row.lifecycle_generation,
+        "lifecycle generation",
+      ),
+    }),
+  };
 }
 
 /** Writes the reading, over an earlier unreadable one where a hold is being settled. */
