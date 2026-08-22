@@ -98,17 +98,19 @@ module.exports = {
       },
     },
     {
-      name: "nothing-imports-the-composition-root",
+      name: "nothing-imports-a-process-root",
       comment:
-        "src/compose.ts is the graph's root: it may import everything and " +
-        "nothing may import it, because a root something depends on is a " +
+        "src/roots/ holds the graph's executable roots: they may import " +
+        "everything and nothing may import them, because a root something depends on is a " +
         "module, and the layers below could then reach an adapter through " +
-        "it. A plain import rule is complete here where the two above are " +
+        "it. src/compose.ts is shared wiring rather than a root: separately " +
+        "operated processes select from it without duplicating composition. " +
+        "A plain import rule is complete here where the two above are " +
         "not — every path into a module ends at some module importing it " +
         "directly, and `from` is unrestricted.",
       severity: "error",
-      from: { pathNot: "^src/compose[.]ts$" },
-      to: { path: "^src/compose[.]ts$" },
+      from: { pathNot: "^src/roots/" },
+      to: { path: "^src/roots/" },
     },
     {
       name: "no-source-reaches-a-suite",
@@ -137,7 +139,7 @@ module.exports = {
       comment:
         "A module nothing reaches is either dead or a boundary nobody crossed; " +
         "either way it is not what the tree claims to hold. The composition " +
-        "root needs no carve-out here and has none: an orphan is a module with " +
+        "process root needs no carve-out here and has none: an orphan is a module with " +
         "no dependents AND no dependencies, and a root that composes anything " +
         "has dependencies. A root that stopped having them would be composing " +
         "nothing, which is what this rule should say about it.",
