@@ -31,6 +31,7 @@ import {
   draftDeletionResponse,
   draftResponse,
   draftRevisionResponse,
+  failureResponse,
   inventoryResponse,
   notificationsResponse,
   operationResponse,
@@ -97,12 +98,6 @@ function fieldsOnly(
   return found;
 }
 
-function failureCode(failure: unknown): string | undefined {
-  if (typeof failure !== "object" || failure === null) return undefined;
-  const code = (failure as Readonly<Record<string, unknown>>)["code"];
-  return typeof code === "string" ? code : undefined;
-}
-
 function textField(
   fields: Readonly<Record<string, unknown>>,
   name: string,
@@ -129,7 +124,7 @@ function integerField(
 
 function bearer(authorization: string | undefined): string | undefined {
   if (authorization === undefined) return undefined;
-  const matched = /^Bearer ([^ ]+)$/u.exec(authorization);
+  const matched = /^Bearer ([^ ]+)$/iu.exec(authorization);
   return matched?.[1];
 }
 
@@ -201,6 +196,10 @@ function registerAuthentication(
 function registerCapacity(app: FastifyInstance, requestsMax: number): void {
   let active = 0;
   const admitted = new WeakSet<FastifyRequest>();
+  const capacityRelease = (request: FastifyRequest): Promise<void> => {
+    if (admitted.delete(request)) active -= 1;
+    return Promise.resolve();
+  };
   app.addHook("onRequest", async (request, reply) => {
     if (active >= requestsMax) {
       await reply
@@ -213,10 +212,8 @@ function registerCapacity(app: FastifyInstance, requestsMax: number): void {
     active += 1;
     admitted.add(request);
   });
-  app.addHook("onResponse", (request) => {
-    if (admitted.delete(request)) active -= 1;
-    return Promise.resolve();
-  });
+  app.addHook("onResponse", capacityRelease);
+  app.addHook("onRequestAbort", capacityRelease);
 }
 
 function registerHealth(
@@ -512,15 +509,7 @@ export function createNativeHttpApp(
   registerDrafts(app, web);
   registerDispatchView(app, web);
   app.setErrorHandler((failure, _request, reply) => {
-    const oversized = failureCode(failure) === "FST_ERR_CTP_BODY_TOO_LARGE";
-    void reply
-      .code(oversized ? 413 : 400)
-      .type(nativeHttpMediaType)
-      .send(
-        oversized
-          ? nativeHttpError("BodyTooLarge", "The request body is too large.")
-          : nativeHttpError("InvalidRequest", "The request is invalid."),
-      );
+    send(reply, failureResponse(failure));
   });
   return app;
 }

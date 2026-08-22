@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { assertNever } from "../../domain/assertNever.ts";
 import type {
   ConfigurationCreated,
@@ -49,6 +51,49 @@ function response(
     },
     body,
   };
+}
+
+const clientFaultStatusMin = 400;
+const clientFaultStatusMax = 499;
+
+function invalidRequest(status: number): NativeHttpResponse {
+  return response(
+    status,
+    nativeHttpError("InvalidRequest", "The request is invalid."),
+  );
+}
+
+function requestShapeFault(failure: unknown): boolean {
+  return (
+    failure instanceof RangeError ||
+    failure instanceof TypeError ||
+    failure instanceof z.ZodError
+  );
+}
+
+function transportFaultStatus(failure: unknown): number | undefined {
+  if (typeof failure !== "object" || failure === null) return undefined;
+  const status = (failure as Readonly<Record<string, unknown>>)["statusCode"];
+  return typeof status === "number" &&
+    status >= clientFaultStatusMin &&
+    status <= clientFaultStatusMax
+    ? status
+    : undefined;
+}
+
+export function failureResponse(failure: unknown): NativeHttpResponse {
+  const status = transportFaultStatus(failure);
+  if (status === 413)
+    return response(
+      413,
+      nativeHttpError("BodyTooLarge", "The request body is too large."),
+    );
+  if (status !== undefined) return invalidRequest(status);
+  if (requestShapeFault(failure)) return invalidRequest(400);
+  return response(
+    500,
+    nativeHttpError("InternalError", "The request could not be completed."),
+  );
 }
 
 function operationPath(partition: Partition, operation: OperationId): string {
