@@ -195,6 +195,7 @@ export function gitRun(call: GitCall): Promise<GitRan> {
     gitRunCollect(child.stdout, stdout, bytesMax, ceiling);
     gitRunCollect(child.stderr, stderr, bytesMax, ceiling);
     child.on("exit", (code) => {
+      if (settled) return;
       drain = setTimeout(() => {
         settle(gitRunExited(code, stdout, stderr));
       }, gitRunDrainSecs * 1000);
