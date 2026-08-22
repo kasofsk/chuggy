@@ -113,7 +113,7 @@ import {
 } from "./finalizerRows.ts";
 import { finalizerRole } from "./schema.ts";
 
-/** The states migration three gave a native action, so a column narrows rather than restates. */
+/** The states migration five gave a native action, so a column narrows rather than restates. */
 const allNativeActionStates: readonly ApprovalAction["state"][] = [
   "Open",
   "Resolved",

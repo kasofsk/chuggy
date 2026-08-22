@@ -4,7 +4,7 @@
  * dispatch left a spawn request to register, and the capacity it draws on.
  *
  * THE STORE RUNS AS `chuggy_scheduler` AND NOT AS THE MIGRATION OWNER. Every
- * grant migration ten writes is a claim about what that role may do, and a
+ * grant migration twelve writes is a claim about what that role may do, and a
  * suite driving the adapter as the owner would prove the SQL parses rather than
  * that the deployment can run it — a column grant that covers a write and not
  * the read beside it is invisible to any other kind of test. The role is
