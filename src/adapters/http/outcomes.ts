@@ -42,7 +42,11 @@ function response(
 ): NativeHttpResponse {
   return {
     status,
-    headers: { "content-type": nativeHttpMediaType, ...headers },
+    headers: {
+      "cache-control": "no-store",
+      "content-type": nativeHttpMediaType,
+      ...headers,
+    },
     body,
   };
 }

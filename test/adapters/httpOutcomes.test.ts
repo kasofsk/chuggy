@@ -54,6 +54,7 @@ test("durable acceptance returns the operation location without a decision", () 
   assert.deepEqual(found, {
     status: 202,
     headers: {
+      "cache-control": "no-store",
       "content-type": "application/vnd.chuggy.v1+json",
       location:
         "/api/v1/tenants/tenant%2Fone/projects/project%20two/operations/operation%2Fthree",

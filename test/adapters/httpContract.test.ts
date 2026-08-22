@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   nativeHttpBasePath,
+  nativeHttpContractDocument,
   nativeHttpMediaType,
   nativeHttpRoutes,
   encodeInventoryCursor,
@@ -18,6 +19,7 @@ test("the versioned route and media contracts move together", () => {
   assert.equal(nativeHttpBasePath, "/api/v1");
   assert.equal(nativeHttpMediaType, "application/vnd.chuggy.v1+json");
   assert.deepEqual(Object.values(nativeHttpRoutes), [
+    "/api/v1/contract",
     "/api/v1/projects",
     "/api/v1/tenants/:tenant/projects/:project",
     "/api/v1/tenants/:tenant/projects/:project/operations",
@@ -29,6 +31,17 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
     "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
   ]);
+});
+
+test("the frontend contract is generated from the checked request schemas", () => {
+  const document = nativeHttpContractDocument() as {
+    schemas: { publicMutation: { oneOf: unknown[] } };
+    notifications: string;
+    caching: string;
+  };
+  assert.ok(document.schemas.publicMutation.oneOf.length > 0);
+  assert.equal(document.notifications, "bounded-polling");
+  assert.equal(document.caching, "no-store");
 });
 
 const authoring = {

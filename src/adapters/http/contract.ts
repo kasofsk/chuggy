@@ -35,6 +35,7 @@ export const nativeHttpHeaderBytesMax = 16_384;
 export const nativeHttpCursorCharsMax = 2_048;
 
 export const nativeHttpRoutes = {
+  contract: `${nativeHttpBasePath}/contract`,
   projects: `${nativeHttpBasePath}/projects`,
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
   operations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations`,
@@ -46,6 +47,37 @@ export const nativeHttpRoutes = {
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
   dispatchView: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/dispatch-view`,
 } as const;
+
+export function nativeHttpContractDocument(): unknown {
+  return {
+    version: nativeHttpVersion,
+    basePath: nativeHttpBasePath,
+    mediaType: nativeHttpMediaType,
+    authentication: {
+      scheme: "Bearer",
+      format: "OIDC JWT",
+      principal: "length-prefixed issuer and subject",
+    },
+    notifications: "bounded-polling",
+    caching: "no-store",
+    cors: "same-origin",
+    credentials: "authorization bearer header; no cookies",
+    identities: {
+      tenant: "percent-encoded opaque UTF-8 path segment",
+      project: "percent-encoded opaque UTF-8 path segment",
+      ticket: "canonical positive decimal integer",
+      operation: "percent-encoded opaque UTF-8 path segment",
+      cursor: "opaque canonical base64url",
+    },
+    routes: nativeHttpRoutes,
+    schemas: {
+      publicMutation: z.toJSONSchema(publicMutationSchema),
+      configurationCreation: z.toJSONSchema(configurationCreationSchema),
+      draftCreation: z.toJSONSchema(draftCreationSchema),
+      draftRevision: z.toJSONSchema(draftRevisionSchema),
+    },
+  };
+}
 
 const ticketSchema = z.number().int().safe().positive();
 const versionSchema = z.number().int().safe().nonnegative();

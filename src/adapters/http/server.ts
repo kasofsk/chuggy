@@ -8,17 +8,29 @@ import type { TicketId } from "../../domain/ids.ts";
 import type { Principal } from "../../interpreter/nativeWeb.ts";
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
+import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
 import {
   nativeHttpBodyBytesMax,
+  nativeHttpContractDocument,
   nativeHttpError,
   nativeHttpHeaderBytesMax,
   nativeHttpMediaType,
   parseInventoryCursor,
+  parseConfigurationCreation,
+  parseDraftCreation,
+  parseDraftRevision,
   parsePartition,
   parseSubmission,
 } from "./contract.ts";
 import {
   cancellationResponse,
+  configurationCreationResponse,
+  configurationResponse,
+  dispatchViewResponse,
+  draftCreationResponse,
+  draftDeletionResponse,
+  draftResponse,
+  draftRevisionResponse,
   inventoryResponse,
   notificationsResponse,
   operationResponse,
@@ -48,10 +60,17 @@ export const nativeHttpLimitsDefault: NativeHttpLimits = {
 type InitialNativeWeb = Pick<
   NativeWeb,
   | "cancel"
+  | "configuration"
+  | "createConfiguration"
+  | "createDraft"
+  | "deleteDraft"
+  | "dispatchView"
+  | "draft"
   | "notifications"
   | "operation"
   | "project"
   | "projectInventory"
+  | "reviseDraft"
   | "submit"
 >;
 
@@ -112,6 +131,28 @@ function bearer(authorization: string | undefined): string | undefined {
   if (authorization === undefined) return undefined;
   const matched = /^Bearer ([^ ]+)$/u.exec(authorization);
   return matched?.[1];
+}
+
+function requireVersionedJson(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  done: (failure?: Error) => void,
+): void {
+  if (
+    request.headers["content-type"]?.split(";", 1)[0] === nativeHttpMediaType
+  ) {
+    done();
+    return;
+  }
+  void reply
+    .code(415)
+    .type(nativeHttpMediaType)
+    .send(
+      nativeHttpError(
+        "UnsupportedMediaType",
+        "The request media type is unsupported.",
+      ),
+    );
 }
 
 function principalOf(request: FastifyRequest): Principal {
@@ -197,6 +238,19 @@ function registerHealth(
   );
 }
 
+function registerContract(app: FastifyInstance): void {
+  app.get(
+    "/api/v1/contract",
+    { config: { public: true } },
+    (_request, reply) => {
+      void reply
+        .header("cache-control", "no-cache")
+        .type(nativeHttpMediaType)
+        .send(nativeHttpContractDocument());
+    },
+  );
+}
+
 function registerInventory(app: FastifyInstance, web: InitialNativeWeb): void {
   app.get("/api/v1/projects", async (request, reply) => {
     const query = fieldsOnly(request.query, ["cursor", "limit"]);
@@ -265,26 +319,7 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
   const root = "/api/v1/tenants/:tenant/projects/:project/operations";
   app.post(
     root,
-    {
-      preValidation: (request, reply, done) => {
-        if (
-          request.headers["content-type"]?.split(";", 1)[0] !==
-          nativeHttpMediaType
-        ) {
-          void reply
-            .code(415)
-            .type(nativeHttpMediaType)
-            .send(
-              nativeHttpError(
-                "UnsupportedMediaType",
-                "The request media type is unsupported.",
-              ),
-            );
-          return;
-        }
-        done();
-      },
-    },
+    { preValidation: requireVersionedJson },
     async (request, reply) => {
       const partition = partitionOf(request);
       const fields = fieldsOnly(request.body, ["operation", "mutation"]);
@@ -321,6 +356,103 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
     );
     send(reply, cancellationResponse(result));
   });
+}
+
+function registerConfigurations(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  const root = "/api/v1/tenants/:tenant/projects/:project/configurations";
+  app.post(
+    root,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const result = await web.createConfiguration(principalOf(request), {
+        partition: partitionOf(request),
+        ...parseConfigurationCreation(request.body),
+      });
+      send(reply, configurationCreationResponse(result));
+    },
+  );
+  app.get(`${root}/:revision`, async (request, reply) => {
+    const params = record(request.params);
+    const result = await web.configuration(
+      principalOf(request),
+      partitionOf(request),
+      asConfigurationRevisionId(textField(params, "revision")),
+    );
+    send(reply, configurationResponse(result));
+  });
+}
+
+function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
+  const root = "/api/v1/tenants/:tenant/projects/:project/drafts";
+  app.post(
+    root,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const result = await web.createDraft(principalOf(request), {
+        partition: partitionOf(request),
+        ...parseDraftCreation(request.body),
+      });
+      send(reply, draftCreationResponse(result));
+    },
+  );
+  app.get(`${root}/:ticket`, async (request, reply) => {
+    const result = await web.draft(
+      principalOf(request),
+      partitionOf(request),
+      asTicketIdField(record(request.params), "ticket"),
+    );
+    send(reply, draftResponse(result));
+  });
+  app.put(
+    `${root}/:ticket`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const result = await web.reviseDraft(principalOf(request), {
+        partition: partitionOf(request),
+        ticket: asTicketIdField(record(request.params), "ticket"),
+        ...parseDraftRevision(request.body),
+      });
+      send(reply, draftRevisionResponse(result));
+    },
+  );
+  app.delete(`${root}/:ticket`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["expectedVersion"]);
+    const result = await web.deleteDraft(principalOf(request), {
+      partition: partitionOf(request),
+      ticket: asTicketIdField(record(request.params), "ticket"),
+      expectedVersion: integerField(query, "expectedVersion"),
+    });
+    send(reply, draftDeletionResponse(result));
+  });
+}
+
+function registerDispatchView(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  app.get(
+    "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
+    async (request, reply) => {
+      const query = fieldsOnly(request.query, ["after", "limit", "watermark"]);
+      const result = await web.dispatchView(
+        principalOf(request),
+        partitionOf(request),
+        {
+          ...(query["after"] === undefined
+            ? {}
+            : { after: asTicketIdField(query, "after") }),
+          limit: integerField(query, "limit", 50),
+          ...(query["watermark"] === undefined
+            ? {}
+            : { watermark: integerField(query, "watermark") }),
+        },
+      );
+      send(reply, dispatchViewResponse(result));
+    },
+  );
 }
 
 function registerNotifications(
@@ -362,13 +494,23 @@ export function createNativeHttpApp(
     { parseAs: "string", bodyLimit: nativeHttpBodyBytesMax },
     app.getDefaultJsonParser("error", "error"),
   );
+  app.addHook("onSend", (_request, reply) => {
+    if (!reply.hasHeader("cache-control")) {
+      void reply.header("cache-control", "no-store");
+    }
+    return Promise.resolve();
+  });
   registerCapacity(app, limits.concurrentRequestsMax);
   registerAuthentication(app, authentication);
   registerHealth(app, readiness);
+  registerContract(app);
   registerInventory(app, web);
   registerProject(app, web);
   registerOperations(app, web);
   registerNotifications(app, web);
+  registerConfigurations(app, web);
+  registerDrafts(app, web);
+  registerDispatchView(app, web);
   app.setErrorHandler((failure, _request, reply) => {
     const oversized = failureCode(failure) === "FST_ERR_CTP_BODY_TOO_LARGE";
     void reply
