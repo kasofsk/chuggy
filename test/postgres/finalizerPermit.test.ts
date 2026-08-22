@@ -41,7 +41,11 @@ import {
   asGitRefName,
   finalizationNext,
   finalizerDefaults,
+  type FinalizerStore,
   type ObservedTarget,
+  type PermitGranted,
+  type Reconciled,
+  type ReconciliationRecord,
 } from "../../src/interpreter/finalizer.ts";
 import {
   finalizerPass,
@@ -65,6 +69,7 @@ import {
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
+import { schedulerBlockade, schedulerOutcome } from "./schedulerHarness.ts";
 
 let rig: FinalizerRig;
 before(async () => {
@@ -238,9 +243,11 @@ async function waitForAdvisoryQueue(key: PermitLockKey): Promise<void> {
   const deadline = Date.now() + queueWaitSecsMax * 1000;
   for (;;) {
     const waiting = await rig.harness.query(
-      `SELECT pid FROM pg_locks
-        WHERE locktype='advisory' AND NOT granted
-          AND classid = $1::oid AND objid = $2::oid`,
+      `SELECT l.pid FROM pg_locks l
+         JOIN pg_stat_activity a ON a.pid = l.pid
+        WHERE a.datname = current_database()
+          AND l.locktype='advisory' AND NOT l.granted
+          AND l.classid = $1::oid AND l.objid = $2::oid`,
       [key.namespace, key.project],
     );
     if (waiting.length > 0) return;
@@ -331,11 +338,11 @@ test("the permit transaction queues on the project's own lock before it grants",
   await prepared(project, "queued", target, finalizerCommit());
   const key = await permitLockKey(project);
   const blocker = await rig.pool.connect();
-  let granted: FinalizerPassReport | undefined;
+  let granted: FinalizerPassReport | string;
   try {
     await holdPermitLock(blocker, key);
     const git = finalizerGit(targetAt(target));
-    const running = passOnce(project, git, "queued");
+    const running = schedulerOutcome(passOnce(project, git, "queued"));
     await waitForAdvisoryQueue(key);
     assert.deepEqual(git.acts, ["observe"]);
     await blocker.query("COMMIT");
@@ -343,6 +350,7 @@ test("the permit transaction queues on the project's own lock before it grants",
   } finally {
     blocker.release();
   }
+  if (typeof granted === "string") assert.fail(granted);
   assert.equal(granted.promotions, 1);
   const permits = await permitsOf(project);
   assert.equal(permits.length, 1);
@@ -362,21 +370,32 @@ test("two grants racing for one project leave one permit and one refusal", async
     candidate: finalizerCommit(),
   });
   const key = await permitLockKey(project);
-  const blocker = await rig.pool.connect();
   const store = finalizerService(rig, finalizerGit(targetAt(target))).store;
-  let answers;
+  const blockade = await schedulerBlockade(
+    "SELECT pg_advisory_xact_lock($1::integer, $2::integer)",
+    [key.namespace, key.project],
+  );
+  let answers: readonly PermitGranted[] | string;
   try {
-    await holdPermitLock(blocker, key);
-    const racing = Promise.all([
-      store.grantPermit({ claim, attempt: asFinalizationAttemptId(first) }),
-      store.grantPermit({ claim, attempt: asFinalizationAttemptId(second) }),
-    ]);
+    const racing = schedulerOutcome(
+      Promise.all([
+        store.grantPermit({ claim, attempt: asFinalizationAttemptId(first) }),
+        store.grantPermit({ claim, attempt: asFinalizationAttemptId(second) }),
+      ]),
+    );
+    await blockade.stalled(2);
     await waitForAdvisoryQueue(key);
-    await blocker.query("COMMIT");
+    assert.equal(
+      await blockade.stalledHolds("finalization_request", "RowShareLock"),
+      true,
+      "a stalled grant had not reached the request row",
+    );
+    await blockade.release();
     answers = await racing;
   } finally {
-    blocker.release();
+    await blockade.release();
   }
+  if (typeof answers === "string") assert.fail(answers);
   const outcomes = answers.map((answer) =>
     answer.granted === "Permit" ? "Permit" : answer.refusal,
   );
@@ -658,6 +677,89 @@ test("a takeover leaves an old-epoch executor unable to take or use a permit", a
   );
   assert.equal((await permitsOf(project))[0]?.state, "Granted");
   assert.equal(await readingOf(project), undefined);
+});
+
+/**
+ * Two readings of one permit, staged so both backends are queued on that row
+ * before either is let through. The blockade is what makes it a race the case
+ * set up rather than one it hoped for.
+ */
+async function permitReadingsRacing(
+  store: FinalizerStore,
+  record: ReconciliationRecord,
+): Promise<readonly Reconciled[]> {
+  const { partition, reconciliation } = record;
+  const blockade = await schedulerBlockade(
+    `SELECT state FROM commit_permit
+      WHERE tenant=$1 AND project=$2 AND permit=$3 FOR UPDATE`,
+    [partition.tenant, partition.project, reconciliation.permit],
+  );
+  try {
+    const racing = schedulerOutcome(
+      Promise.all([
+        store.recordReconciliation(record),
+        store.recordReconciliation(record),
+      ]),
+    );
+    await blockade.stalled(2);
+    assert.equal(
+      await blockade.stalledHolds("commit_permit", "RowShareLock"),
+      true,
+      "a stalled reading had not reached the permit row",
+    );
+    await blockade.release();
+    const recorded = await racing;
+    if (typeof recorded === "string") assert.fail(recorded);
+    return recorded;
+  } finally {
+    await blockade.release();
+  }
+}
+
+test("two readings of one permit record one verdict between them", async () => {
+  const project = await subject("reconciling");
+  const target = finalizerCommit();
+  const candidate = finalizerCommit();
+  const claim = await finalizerClaim(rig, project, "owner-reconciling");
+  const attempt = await finalizerPrepare(rig, project, "reconciling", {
+    target,
+    candidate,
+  });
+  const store = finalizerService(rig, finalizerGit(targetAt(target))).store;
+  const granted = await store.grantPermit({
+    claim,
+    attempt: asFinalizationAttemptId(attempt),
+  });
+  if (granted.granted !== "Permit") throw new Error("no permit to reconcile");
+  const record = {
+    partition: project.partition,
+    recoveryEpoch: asRecoveryEpoch(project.epoch),
+    reconciliation: {
+      permit: granted.permit.permit,
+      candidate: asGitObjectId(candidate),
+      target: asGitRefName(targetRef),
+      verdict: "Promoted" as const,
+      observed: asGitObjectId(candidate),
+    },
+  };
+  const recorded = await permitReadingsRacing(store, record);
+  assert.deepEqual([...recorded].map((each) => each.recorded).sort(), [
+    "Concluded",
+    "Refused",
+  ]);
+  assert.equal((await permitsOf(project))[0]?.state, "Concluded");
+  assert.deepEqual(
+    await rig.as(
+      `SELECT count(*)::text AS made FROM finalization_reconciliation
+        WHERE tenant=$1 AND project=$2 AND permit=$3`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        granted.permit.permit,
+      ],
+    ),
+    [{ made: "1" }],
+  );
 });
 
 test("an executor still alive on its permit row concludes nothing once the epoch moves", async () => {

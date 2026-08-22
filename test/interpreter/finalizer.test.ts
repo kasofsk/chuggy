@@ -52,6 +52,7 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import { asSafeInteger } from "../../src/domain/ids.ts";
 import { assertBoundsAreRefused } from "./configBounds.ts";
+import { populated } from "./roster.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 
 /** Every bound a deployment names, read from the defaults so a field added later is covered. */
@@ -229,7 +230,7 @@ test("an identity past its column width, empty, or unpaired is refused", () => {
 });
 
 test("an object id is one of the widths git addresses an object at", () => {
-  for (const chars of allGitObjectIdChars) {
+  for (const chars of populated(allGitObjectIdChars, "allGitObjectIdChars")) {
     assert.equal(asGitObjectId("f".repeat(chars)).length, chars);
   }
   for (const bad of [
@@ -245,7 +246,10 @@ test("an object id is one of the widths git addresses an object at", () => {
 });
 
 test("a settled request is settled whatever else the view says", () => {
-  for (const state of allFinalizationRequestStates) {
+  for (const state of populated(
+    allFinalizationRequestStates,
+    "allFinalizationRequestStates",
+  )) {
     const decision = finalizationNext(
       finalizerDefaults,
       viewWith({ claim: { ...viewWith({}).claim, state } }),
@@ -313,7 +317,10 @@ test("a prepared attempt whose target moved restarts until the ceiling is spent"
 });
 
 test("a failed attempt concludes as the one priced failure, carrying its kind", () => {
-  for (const kind of allFinalizationFailureKinds) {
+  for (const kind of populated(
+    allFinalizationFailureKinds,
+    "allFinalizationFailureKinds",
+  )) {
     assert.deepEqual(
       finalizationNext(
         finalizerDefaults,
@@ -328,7 +335,10 @@ test("a failed attempt concludes as the one priced failure, carrying its kind", 
 });
 
 test("a closing project aborts every finalization that holds no permit", () => {
-  for (const lifecycle of allClosingLifecycles) {
+  for (const lifecycle of populated(
+    allClosingLifecycles,
+    "allClosingLifecycles",
+  )) {
     for (const attempt of [undefined, prepared]) {
       assert.deepEqual(
         finalizationNext(
@@ -347,8 +357,9 @@ test("a closing project aborts every finalization that holds no permit", () => {
 });
 
 test("a lifecycle that is not closing prepares and promotes exactly as before", () => {
-  for (const lifecycle of allLifecycles.filter(
-    (each) => !allClosingLifecycles.includes(each),
+  for (const lifecycle of populated(
+    allLifecycles.filter((each) => !allClosingLifecycles.includes(each)),
+    "the lifecycles that are not closing",
   )) {
     assert.equal(
       finalizationNext(finalizerDefaults, viewWith({ lifecycle })).decide,
@@ -367,7 +378,10 @@ test("a lifecycle that is not closing prepares and promotes exactly as before", 
 });
 
 test("a closing project past the permit reads the ref before anything is erased", () => {
-  for (const lifecycle of allClosingLifecycles) {
+  for (const lifecycle of populated(
+    allClosingLifecycles,
+    "allClosingLifecycles",
+  )) {
     assert.deepEqual(
       finalizationNext(
         finalizerDefaults,
@@ -399,7 +413,10 @@ test("a closing project past the permit reads the ref before anything is erased"
 });
 
 test("a closing project's abort is recorded once and then concluded, never re-aborted", () => {
-  for (const lifecycle of allClosingLifecycles) {
+  for (const lifecycle of populated(
+    allClosingLifecycles,
+    "allClosingLifecycles",
+  )) {
     assert.deepEqual(
       finalizationNext(
         finalizerDefaults,
@@ -422,7 +439,10 @@ test("a closing project's abort is recorded once and then concluded, never re-ab
 });
 
 test("a closing project whose ref moved after a refused update aborts rather than restarting", () => {
-  for (const lifecycle of allClosingLifecycles) {
+  for (const lifecycle of populated(
+    allClosingLifecycles,
+    "allClosingLifecycles",
+  )) {
     assert.deepEqual(
       finalizationNext(
         finalizerDefaults,
@@ -460,7 +480,10 @@ test("a standing is the answer recorded, and an unanswered or withdrawn ask is p
 
 test("approval is awaited only where the pinned revision required it", () => {
   const required = { ...prepared, approvalRequired: true };
-  for (const approval of allApprovalStandings) {
+  for (const approval of populated(
+    allApprovalStandings,
+    "allApprovalStandings",
+  )) {
     const decision = finalizationNext(
       finalizerDefaults,
       viewWith({ attempt: required, approval, attemptsMade: 1 }),
@@ -528,7 +551,10 @@ test("a concluded reconciliation promotes or restarts, and nothing else", () => 
 });
 
 test("an ambiguous promotion has no path to a conclusive outcome", () => {
-  for (const state of allCommitPermitStates) {
+  for (const state of populated(
+    allCommitPermitStates,
+    "allCommitPermitStates",
+  )) {
     const decision = finalizationNext(
       finalizerDefaults,
       viewWith({
@@ -549,7 +575,10 @@ test("an ambiguous promotion has no path to a conclusive outcome", () => {
 });
 
 test("a granted permit and a concluded verdict are contradictory rather than conclusive", () => {
-  for (const verdict of allReconciliationVerdicts) {
+  for (const verdict of populated(
+    allReconciliationVerdicts,
+    "allReconciliationVerdicts",
+  )) {
     if (verdict === "Unreadable") continue;
     const decision = finalizationNext(
       finalizerDefaults,
@@ -580,13 +609,16 @@ test("a granted permit and a concluded verdict are contradictory rather than con
 
 test("no hold is a failure kind, over every view this machine can be handed", () => {
   const holds = new Set<string>(allFinalizationHoldKinds);
-  for (const kind of allFinalizationFailureKinds) {
+  for (const kind of populated(
+    allFinalizationFailureKinds,
+    "allFinalizationFailureKinds",
+  )) {
     assert.ok(!holds.has(kind), `${kind} is spelled as a hold as well`);
   }
   const approvals: readonly ApprovalStanding[] = allApprovalStandings;
   for (const state of [undefined, ...allCommitPermitStates]) {
     for (const verdict of [undefined, ...allReconciliationVerdicts]) {
-      for (const approval of approvals) {
+      for (const approval of populated(approvals, "allApprovalStandings")) {
         if (state === undefined && verdict !== undefined) continue;
         const decision = finalizationNext(
           finalizerDefaults,

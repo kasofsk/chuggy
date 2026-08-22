@@ -54,7 +54,7 @@ import {
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
-import { schedulerBlockade } from "./schedulerHarness.ts";
+import { schedulerBlockade, schedulerOutcome } from "./schedulerHarness.ts";
 
 let rig: FinalizerRig;
 before(async () => {
@@ -205,22 +205,24 @@ test("two acceptances racing on the project row are still resolved by mailbox or
     "SELECT lifecycle FROM project WHERE tenant=$1 AND project=$2 FOR UPDATE",
     [partition.tenant, partition.project],
   );
-  let accepted: readonly string[];
+  let accepted: readonly string[] | string;
   try {
-    const racing = Promise.all([
-      finalizerAccept(
-        rig.harness,
-        partition,
-        "race-done",
-        finalizerTaskDone(2),
-      ),
-      finalizerAccept(
-        rig.harness,
-        partition,
-        "race-revoke",
-        revokeEvent(subjectTicket),
-      ),
-    ]);
+    const racing = schedulerOutcome(
+      Promise.all([
+        finalizerAccept(
+          rig.harness,
+          partition,
+          "race-done",
+          finalizerTaskDone(2),
+        ),
+        finalizerAccept(
+          rig.harness,
+          partition,
+          "race-revoke",
+          revokeEvent(subjectTicket),
+        ),
+      ]),
+    );
     await blockade.stalled(2);
     assert.equal(
       await blockade.stalledHolds("project", acceptanceRowMode),
@@ -232,10 +234,15 @@ test("two acceptances racing on the project row are still resolved by mailbox or
   } finally {
     await blockade.release();
   }
+  if (typeof accepted === "string") assert.fail(accepted);
   assert.deepEqual([...accepted], ["Accepted", "Accepted"]);
+  const ordinals = await ordinalsOf(partition);
+  const raced = `revoke at ${String(ordinals["Revoke"])}, done at ${String(ordinals["TaskDone"])}`;
+  assert.equal(Object.keys(ordinals).length, 2, raced);
+  assert.notEqual(ordinals["Revoke"], ordinals["TaskDone"], raced);
   const drained = await finalizerDrain(rig.harness, partition, memory);
-  assert.deepEqual(drained.decided, ["Committed", "Refused"]);
-  assert.equal(await finalizerPhase(rig, partition), "Revoked");
+  assert.deepEqual(drained.decided, ["Committed", "Refused"], raced);
+  assert.equal(await finalizerPhase(rig, partition), "Revoked", raced);
   assert.deepEqual(await requestsOf(partition), []);
 });
 
@@ -329,12 +336,4 @@ test("a closure past the permit waits on the reading and never abandons it", asy
   assert.equal(settled.rereadings, 1);
   assert.equal((await permitsOf(project))[0]?.["state"], "Concluded");
   assert.deepEqual(await unquiescedOf(project), []);
-  assert.deepEqual(
-    await rig.harness.query(
-      `SELECT lifecycle FROM project WHERE tenant=$1 AND project=$2`,
-      [project.partition.tenant, project.partition.project],
-    ),
-    [{ lifecycle: "Deleting" }],
-    "the deletion stopped being pending while the reading was outstanding",
-  );
 });

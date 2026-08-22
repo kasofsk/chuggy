@@ -77,6 +77,7 @@ import {
   telemetryRecording,
   telemetryThrowing,
 } from "./telemetrySinks.ts";
+import { populated } from "./roster.ts";
 import {
   asArtifactDigest,
   asArtifactPath,
@@ -729,7 +730,10 @@ test("a ticket whose passed work has no result at all is a hold and never a fail
 });
 
 test("a closing project's abort reaches no remote, asks for no permit and prices one failure", async () => {
-  for (const lifecycle of allClosingLifecycles) {
+  for (const lifecycle of populated(
+    allClosingLifecycles,
+    "allClosingLifecycles",
+  )) {
     const store = recordingStore([
       { ...promotableView("request-one"), lifecycle },
     ]);
