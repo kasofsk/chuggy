@@ -355,17 +355,12 @@ async function decisionAnswerAction(
   partition: Partition,
   answer: NativeActionAnswer,
 ): Promise<void> {
-  const changed = await client.query(
-    `UPDATE native_action SET state='Resolved', resolution=$5
-      WHERE tenant=$1 AND project=$2 AND action=$3 AND authorizing_seq=$4 AND state='Open'
+  const changed = await client.query<{ action: string }>(
+    sql`UPDATE native_action SET state='Resolved', resolution=${String(answer.resolution)}
+      WHERE tenant=${partition.tenant} AND project=${partition.project}
+        AND action=${answer.action} AND authorizing_seq=${answer.authorizingSeq}
+        AND state='Open'
       RETURNING action`,
-    [
-      partition.tenant,
-      partition.project,
-      answer.action,
-      answer.authorizingSeq,
-      answer.resolution,
-    ],
   );
   if (changed.rows.length !== 1)
     throw new Error("native action resolution fence failed");

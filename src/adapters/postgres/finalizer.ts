@@ -56,6 +56,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { asTicketId, type TicketId } from "../../domain/ids.ts";
@@ -105,13 +106,8 @@ import {
   finalizerPreparationGathering,
   finalizerPreparationRecord,
 } from "./finalizerPreparation.ts";
-import {
-  finalizerBounded,
-  finalizerLiveRequestStates,
-  finalizerRowValue,
-  finalizerSettledRequestStates,
-} from "./finalizerRows.ts";
-import { finalizationFunction, finalizerRole } from "./schema.ts";
+import { finalizerBounded, finalizerRowValue } from "./finalizerRows.ts";
+import { finalizerRole } from "./schema.ts";
 
 /** The states migration three gave a native action, so a column narrows rather than restates. */
 const allNativeActionStates: readonly ApprovalAction["state"][] = [
@@ -215,22 +211,21 @@ async function finalizerClaimRequests(
   finalizerBounded(leaseSecs, "leaseSecs");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
   const claimed = await client.query<ClaimRow>(
-    `UPDATE finalization_request r
-        SET state = 'Registered', claim_owner = $1,
+    sql`UPDATE finalization_request r
+        SET state = 'Registered', claim_owner = ${owner},
             claim_generation = r.claim_generation + 1,
-            claim_expires_at = now() + make_interval(secs => $2::double precision),
-            recovery_epoch = $3
+            claim_expires_at = now() + make_interval(secs => ${leaseSecs}::double precision),
+            recovery_epoch = ${epoch}
       WHERE (r.tenant, r.project, r.request) IN (
               SELECT q.tenant, q.project, q.request FROM finalization_request q
                WHERE q.state = 'Open'
                  AND (q.claim_owner IS NULL OR q.claim_expires_at <= now())
                ORDER BY q.authorizing_seq, q.request
-               LIMIT $4 FOR UPDATE SKIP LOCKED)
+               LIMIT ${requestsMax} FOR UPDATE SKIP LOCKED)
       RETURNING r.tenant, r.project, r.request, r.ticket::text AS ticket,
                 r.authorizing_seq::text AS authorizing_seq,
                 r.request_generation::text AS request_generation,
                 r.claim_generation::text AS claim_generation, r.state`,
-    [owner, leaseSecs, epoch, requestsMax],
   );
   return claimed.rows.map((row) => finalizerRowClaim(row, owner, epoch));
 }
@@ -245,20 +240,13 @@ async function finalizerExtendClaim(
   if ((await postgresOwnershipEpoch(client)) !== claim.recoveryEpoch)
     return false;
   const held = await client.query(
-    `UPDATE finalization_request
-        SET claim_expires_at = now() + make_interval(secs => $6::double precision)
-      WHERE tenant = $1 AND project = $2 AND request = $3
-        AND claim_owner = $4 AND claim_generation = $5
-        AND recovery_epoch = $7 AND state IN (${finalizerLiveRequestStates})`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      claim.request,
-      claim.owner,
-      claim.claimGeneration,
-      leaseSecs,
-      claim.recoveryEpoch,
-    ],
+    sql`UPDATE finalization_request
+        SET claim_expires_at = now() + make_interval(secs => ${leaseSecs}::double precision)
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND claim_owner = ${claim.owner} AND claim_generation = ${claim.claimGeneration}
+        AND recovery_epoch = ${claim.recoveryEpoch}
+        AND state IN ('Open', 'Registered')`,
   );
   return held.rowCount === 1;
 }
@@ -271,21 +259,50 @@ async function finalizerSettleClaim(
   if ((await postgresOwnershipEpoch(client)) !== claim.recoveryEpoch)
     return false;
   const released = await client.query(
-    `UPDATE finalization_request
+    sql`UPDATE finalization_request
         SET claim_owner = NULL, claim_expires_at = NULL, recovery_epoch = NULL,
             claim_generation = claim_generation + 1
-      WHERE tenant = $1 AND project = $2 AND request = $3
-        AND claim_owner = $4 AND claim_generation = $5
-        AND state IN (${finalizerSettledRequestStates})`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      claim.request,
-      claim.owner,
-      claim.claimGeneration,
-    ],
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND claim_owner = ${claim.owner} AND claim_generation = ${claim.claimGeneration}
+        AND state IN ('Fulfilled', 'Invalidated')`,
   );
   return released.rowCount === 1;
+}
+
+/** One claim a fence condemns, named by the key its reopening is driven from. */
+interface CondemnedClaim {
+  readonly tenant: string;
+  readonly project: string;
+  readonly request: string;
+}
+
+/** The held claims whose leases have run out, in key order and bounded. */
+async function finalizerCondemnedLapsed(
+  client: pg.PoolClient,
+  requestsMax: number,
+): Promise<readonly CondemnedClaim[]> {
+  const found = await client.query<CondemnedClaim>(
+    sql`SELECT r.tenant, r.project, r.request FROM finalization_request r
+      WHERE r.claim_owner IS NOT NULL AND r.claim_expires_at <= now()
+      ORDER BY r.tenant, r.project, r.request LIMIT ${requestsMax} FOR UPDATE`,
+  );
+  return found.rows;
+}
+
+/** The held claims a restore superseded, in key order and bounded. */
+async function finalizerCondemnedStaleEpoch(
+  client: pg.PoolClient,
+  epoch: RecoveryEpoch,
+  requestsMax: number,
+): Promise<readonly CondemnedClaim[]> {
+  const found = await client.query<CondemnedClaim>(
+    sql`SELECT r.tenant, r.project, r.request FROM finalization_request r
+      WHERE r.claim_owner IS NOT NULL
+        AND r.recovery_epoch IS DISTINCT FROM ${epoch}
+      ORDER BY r.tenant, r.project, r.request LIMIT ${requestsMax} FOR UPDATE`,
+  );
+  return found.rows;
 }
 
 /**
@@ -295,74 +312,31 @@ async function finalizerSettleClaim(
  */
 async function finalizerReclaim(
   client: pg.PoolClient,
-  fence: { readonly predicate: string; readonly values: readonly unknown[] },
+  condemn: (
+    client: pg.PoolClient,
+    requestsMax: number,
+  ) => Promise<readonly CondemnedClaim[]>,
   epoch: RecoveryEpoch,
   requestsMax: number,
 ): Promise<number> {
   finalizerBounded(requestsMax, "requestsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return 0;
-  const condemned = await client.query<{
-    tenant: string;
-    project: string;
-    request: string;
-  }>(
-    `SELECT r.tenant, r.project, r.request FROM finalization_request r
-      WHERE r.claim_owner IS NOT NULL AND ${fence.predicate}
-      ORDER BY r.tenant, r.project, r.request LIMIT $1 FOR UPDATE`,
-    [requestsMax, ...fence.values],
-  );
-  if (condemned.rows.length === 0) return 0;
+  const condemned = await condemn(client, requestsMax);
+  if (condemned.length === 0) return 0;
+  const tenants = condemned.map((row) => row.tenant);
+  const projects = condemned.map((row) => row.project);
+  const requests = condemned.map((row) => row.request);
   const reopened = await client.query(
-    `UPDATE finalization_request r
+    sql`UPDATE finalization_request r
         SET state = CASE WHEN r.state = 'Registered' THEN 'Open' ELSE r.state END,
             claim_owner = NULL, claim_expires_at = NULL, recovery_epoch = NULL,
             claim_generation = r.claim_generation + 1
-       FROM unnest($1::text[], $2::text[], $3::text[]) AS h(tenant, project, request)
+       FROM unnest(${tenants}::text[], ${projects}::text[], ${requests}::text[])
+         AS h(tenant, project, request)
       WHERE r.tenant = h.tenant AND r.project = h.project AND r.request = h.request`,
-    [
-      condemned.rows.map((row) => row.tenant),
-      condemned.rows.map((row) => row.project),
-      condemned.rows.map((row) => row.request),
-    ],
   );
   return reopened.rowCount ?? 0;
 }
-
-/** The columns one claimed request's whole durable view is read from. */
-const viewColumns = `
-  f.state, j.lifecycle, b.repository, b.recovery_epoch AS binding_epoch,
-  a.attempt, a.target_ref, a.target_commit, a.strategy,
-  a.configuration_revision, a.configuration_digest, a.approval_required,
-  a.outcome, a.candidate_commit, a.failure_kind, a.attempt_digest,
-  p.permit, p.recovery_epoch AS permit_epoch,
-  p.lifecycle_generation::text AS lifecycle_generation, p.state AS permit_state,
-  r.verdict, r.candidate_commit AS reconciled_candidate,
-  r.target_ref AS reconciled_ref, r.observed_commit,
-  n.state AS approval_state, n.resolution AS approval_resolution,
-  c.made::text AS attempts_made
-`;
-
-/** The joins that reach every row one claimed request's view is gathered from. */
-const viewFrom = `
-  finalization_request f
-  JOIN project j ON j.tenant = f.tenant AND j.project = f.project
-  LEFT JOIN project_repository b
-    ON b.tenant = f.tenant AND b.project = f.project
-  LEFT JOIN LATERAL (
-    SELECT x.* FROM finalization_attempt x
-     WHERE x.tenant = f.tenant AND x.project = f.project AND x.request = f.request
-     ORDER BY x.prepared_at DESC, x.attempt DESC LIMIT 1) a ON true
-  LEFT JOIN commit_permit p
-    ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
-  LEFT JOIN finalization_reconciliation r
-    ON r.tenant = p.tenant AND r.project = p.project AND r.permit = p.permit
-  LEFT JOIN native_action n
-    ON n.tenant = a.tenant AND n.project = a.project AND n.attempt = a.attempt
-  LEFT JOIN LATERAL (
-    SELECT count(*) AS made FROM finalization_attempt y
-     WHERE y.tenant = f.tenant AND y.project = f.project AND y.request = f.request) c
-    ON true
-`;
 
 /** The one preparation the view was gathered around, or nothing where none was made. */
 function finalizerRowAttempt(
@@ -515,9 +489,37 @@ async function finalizerDurableView(
   claim: FinalizationClaim,
 ): Promise<FinalizationView | undefined> {
   const found = await client.query<ViewRow>(
-    `SELECT ${viewColumns} FROM ${viewFrom}
-      WHERE f.tenant = $1 AND f.project = $2 AND f.request = $3`,
-    [claim.partition.tenant, claim.partition.project, claim.request],
+    sql`SELECT
+  f.state, j.lifecycle, b.repository, b.recovery_epoch AS binding_epoch,
+  a.attempt, a.target_ref, a.target_commit, a.strategy,
+  a.configuration_revision, a.configuration_digest, a.approval_required,
+  a.outcome, a.candidate_commit, a.failure_kind, a.attempt_digest,
+  p.permit, p.recovery_epoch AS permit_epoch,
+  p.lifecycle_generation::text AS lifecycle_generation, p.state AS permit_state,
+  r.verdict, r.candidate_commit AS reconciled_candidate,
+  r.target_ref AS reconciled_ref, r.observed_commit,
+  n.state AS approval_state, n.resolution AS approval_resolution,
+  c.made::text AS attempts_made
+      FROM finalization_request f
+  JOIN project j ON j.tenant = f.tenant AND j.project = f.project
+  LEFT JOIN project_repository b
+    ON b.tenant = f.tenant AND b.project = f.project
+  LEFT JOIN LATERAL (
+    SELECT x.* FROM finalization_attempt x
+     WHERE x.tenant = f.tenant AND x.project = f.project AND x.request = f.request
+     ORDER BY x.prepared_at DESC, x.attempt DESC LIMIT 1) a ON true
+  LEFT JOIN commit_permit p
+    ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
+  LEFT JOIN finalization_reconciliation r
+    ON r.tenant = p.tenant AND r.project = p.project AND r.permit = p.permit
+  LEFT JOIN native_action n
+    ON n.tenant = a.tenant AND n.project = a.project AND n.attempt = a.attempt
+  LEFT JOIN LATERAL (
+    SELECT count(*) AS made FROM finalization_attempt y
+     WHERE y.tenant = f.tenant AND y.project = f.project AND y.request = f.request) c
+    ON true
+      WHERE f.tenant = ${claim.partition.tenant} AND f.project = ${claim.partition.project}
+        AND f.request = ${claim.request}`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
@@ -554,10 +556,10 @@ async function finalizerInvalidate(
   claim: FinalizationClaim,
 ): Promise<void> {
   await client.query(
-    `UPDATE finalization_request SET state = 'Invalidated'
-      WHERE tenant = $1 AND project = $2 AND request = $3
-        AND state IN (${finalizerLiveRequestStates})`,
-    [claim.partition.tenant, claim.partition.project, claim.request],
+    sql`UPDATE finalization_request SET state = 'Invalidated'
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND state IN ('Open', 'Registered')`,
   );
 }
 
@@ -591,20 +593,15 @@ async function finalizerSubmitResult(
   offer: FinalizationOffer,
 ): Promise<FinalizationSubmitted> {
   const { claim, conclusion } = offer;
+  const failure =
+    conclusion.outcome === "FinalizationFailed" ? conclusion.kind : null;
+  const operation = `finalization-${randomUUID()}`;
   const submitted = await client.query<SubmissionRow>(
-    `SELECT result, operation FROM ${finalizationFunction}($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      claim.request,
-      offer.attempt,
-      conclusion.outcome,
-      conclusion.outcome === "FinalizationFailed" ? conclusion.kind : null,
-      claim.requestGeneration,
-      claim.recoveryEpoch,
-      `finalization-${randomUUID()}`,
-      finalizerRole,
-    ],
+    sql`SELECT result, operation FROM submit_finalization_result(
+      ${claim.partition.tenant},${claim.partition.project},${claim.request},
+      ${offer.attempt},${conclusion.outcome},${failure},
+      ${claim.requestGeneration},${claim.recoveryEpoch},${operation},
+      ${finalizerRole})`,
   );
   const row = submitted.rows[0];
   if (row === undefined) {
@@ -680,21 +677,13 @@ export function postgresFinalizer(
       ),
     reclaimLapsed: (epoch, requestsMax) =>
       postgresTransaction(pool, (client) =>
-        finalizerReclaim(
-          client,
-          { predicate: "r.claim_expires_at <= now()", values: [] },
-          epoch,
-          requestsMax,
-        ),
+        finalizerReclaim(client, finalizerCondemnedLapsed, epoch, requestsMax),
       ),
     reclaimStaleEpoch: (epoch, requestsMax) =>
       postgresTransaction(pool, (client) =>
         finalizerReclaim(
           client,
-          {
-            predicate: "r.recovery_epoch IS DISTINCT FROM $2",
-            values: [epoch],
-          },
+          (held, bound) => finalizerCondemnedStaleEpoch(held, epoch, bound),
           epoch,
           requestsMax,
         ),

@@ -3,6 +3,12 @@
  * work declared, writing the immutable attempt and the bundle it pinned, and
  * asking a person to approve one prepared candidate.
  *
+ * THE PASSED SET IS SPELLED IN EACH STATEMENT THAT DRAWS ON IT. A tagged
+ * query's interpolations are values, so a fragment shared between the two
+ * draws would arrive as one parameter rather than as the predicate it reads
+ * like, and a query `check-queries` cannot see whole is a query no server has
+ * agreed to.
+ *
  * THE GATHER READS ROWS AND DECIDES NOTHING. Whether the artifacts it found are
  * a candidate's worth is `../../interpreter/finalizerPreparation.ts`'s to say,
  * so this file has no notion of a refusal and no notion of an approval policy —
@@ -41,6 +47,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { asCanonicalConfiguration } from "../../interpreter/authoring.ts";
@@ -71,11 +78,7 @@ import {
 import { postgresInputBundleWrite } from "./inputBundle.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { projectRowCounter } from "./rows.ts";
-import {
-  finalizerLiveRequestStates,
-  finalizerRowValue,
-} from "./finalizerRows.ts";
-import { approvalRequestFunction } from "./schema.ts";
+import { finalizerRowValue } from "./finalizerRows.ts";
 
 /** One passed work execution of the ticket, with the revision it ran under. */
 interface WorkRow {
@@ -107,8 +110,13 @@ interface ApprovalRow {
  * task's result is authoritative passed-task output, so an evaluation's
  * artifacts are not among them.
  */
-const preparationPassedWork = `
-  WITH passed AS (
+async function preparationPassedWork(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<readonly WorkRow[]> {
+  const { tenant, project } = claim.partition;
+  const found = await client.query<WorkRow>(
+    sql`WITH passed AS (
     SELECT e.tenant, e.project, e.execution, r.attempt, r.manifest,
            e.configuration_revision, e.configuration_digest, c.canonical
       FROM execution e
@@ -122,41 +130,59 @@ const preparationPassedWork = `
         ON c.tenant = e.tenant AND c.project = e.project
            AND c.revision = e.configuration_revision
            AND c.digest = e.configuration_digest
-     WHERE e.tenant = $1 AND e.project = $2 AND e.ticket = $3
+     WHERE e.tenant = ${tenant} AND e.project = ${project} AND e.ticket = ${claim.ticket}
        AND t.kind = 'Work' AND e.status = 'Terminal' AND e.outcome = 'Passed'
        AND r.verdict = 'Pass')
-`;
-
-/** Everything the ticket's passed work declared, gathered before any decision runs. */
-export async function finalizerPreparationGathering(
-  client: pg.PoolClient,
-  claim: FinalizationClaim,
-): Promise<HandoffGathering> {
-  const values = [
-    claim.partition.tenant,
-    claim.partition.project,
-    claim.ticket,
-  ];
-  const work = await client.query<WorkRow>(
-    `${preparationPassedWork}
      SELECT execution, attempt, manifest, configuration_revision,
             configuration_digest, canonical
-       FROM passed ORDER BY execution LIMIT ${String(candidateExecutionsMax + 1)}`,
-    values,
+       FROM passed ORDER BY execution LIMIT ${candidateExecutionsMax + 1}`,
   );
-  const artifacts = await client.query<ArtifactRow>(
-    `${preparationPassedWork}
+  return found.rows;
+}
+
+/** The handoff artifacts that passed work declared, in path order and bounded. */
+async function preparationPassedArtifacts(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<readonly ArtifactRow[]> {
+  const { tenant, project } = claim.partition;
+  const found = await client.query<ArtifactRow>(
+    sql`WITH passed AS (
+    SELECT e.tenant, e.project, e.execution, r.attempt, r.manifest
+      FROM execution e
+      JOIN execution_request_task t
+        ON t.tenant = e.tenant AND t.project = e.project
+           AND t.request = e.source_request AND t.task = e.task
+      JOIN execution_result r
+        ON r.tenant = e.tenant AND r.project = e.project
+           AND r.execution = e.execution
+      JOIN configuration_revision c
+        ON c.tenant = e.tenant AND c.project = e.project
+           AND c.revision = e.configuration_revision
+           AND c.digest = e.configuration_digest
+     WHERE e.tenant = ${tenant} AND e.project = ${project} AND e.ticket = ${claim.ticket}
+       AND t.kind = 'Work' AND e.status = 'Terminal' AND e.outcome = 'Passed'
+       AND r.verdict = 'Pass')
      SELECT p.execution, p.attempt, a.path, a.digest, a.bytes::text AS bytes
        FROM passed p
        JOIN execution_result_artifact a
          ON a.tenant = p.tenant AND a.project = p.project
             AND a.manifest = p.manifest
       WHERE a.role = 'Handoff' ORDER BY a.path
-      LIMIT ${String(candidateFilesMax + 1)}`,
-    values,
+      LIMIT ${candidateFilesMax + 1}`,
   );
+  return found.rows;
+}
+
+/** Everything the ticket's passed work declared, gathered before any decision runs. */
+export async function finalizerPreparationGathering(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<HandoffGathering> {
+  const work = await preparationPassedWork(client, claim);
+  const artifacts = await preparationPassedArtifacts(client, claim);
   return {
-    work: work.rows.map((row): HandoffWork => ({
+    work: work.map((row): HandoffWork => ({
       execution: asExecutionId(row.execution),
       attempt: asAttemptId(row.attempt),
       manifest: asResultManifestId(row.manifest),
@@ -166,7 +192,7 @@ export async function finalizerPreparationGathering(
       },
       canonical: asCanonicalConfiguration(row.canonical),
     })),
-    artifacts: artifacts.rows.map((row): HandoffArtifact => ({
+    artifacts: artifacts.map((row): HandoffArtifact => ({
       execution: asExecutionId(row.execution),
       attempt: asAttemptId(row.attempt),
       path: asArtifactPath(row.path),
@@ -191,53 +217,33 @@ export async function finalizerPreparationRecord(
   if ((await postgresOwnershipEpoch(client)) !== claim.recoveryEpoch) {
     return { recorded: "Fenced" };
   }
-  const held = await client.query(
-    `SELECT 1 FROM finalization_request
-      WHERE tenant = $1 AND project = $2 AND request = $3
-        AND claim_owner = $4 AND claim_generation = $5 AND recovery_epoch = $6
-        AND state IN (${finalizerLiveRequestStates})
+  const held = await client.query<{ one: number }>(
+    sql`SELECT 1 AS one FROM finalization_request
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND claim_owner = ${claim.owner} AND claim_generation = ${claim.claimGeneration}
+        AND recovery_epoch = ${claim.recoveryEpoch}
+        AND state IN ('Open', 'Registered')
       FOR UPDATE`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      claim.request,
-      claim.owner,
-      claim.claimGeneration,
-      claim.recoveryEpoch,
-    ],
   );
   if (held.rowCount !== 1) return { recorded: "Fenced" };
   await postgresInputBundleWrite(client, claim.partition, record.bundle);
   await client.query(
-    `INSERT INTO finalization_attempt
+    sql`INSERT INTO finalization_attempt
        (tenant, project, attempt, request, ticket, repository, input_bundle,
         input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind,
         conflict_manifest, conflict_manifest_digest, attempt_digest)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      record.attempt,
-      claim.request,
-      claim.ticket,
-      record.repository,
-      record.bundle.bundle,
-      record.bundle.digest,
-      record.target.ref,
-      record.target.commit,
-      record.strategy,
-      record.configuration.revision,
-      record.configuration.digest,
-      record.approvalRequired,
-      record.outcome,
-      record.candidate ?? null,
-      record.failureKind ?? null,
-      record.conflictManifest ?? null,
-      record.conflictDigest ?? null,
-      record.attemptDigest,
-    ],
+     VALUES (${claim.partition.tenant},${claim.partition.project},${record.attempt},
+             ${claim.request},${claim.ticket},${record.repository},
+             ${record.bundle.bundle},${record.bundle.digest},${record.target.ref},
+             ${record.target.commit},${record.strategy},
+             ${record.configuration.revision},${record.configuration.digest},
+             ${record.approvalRequired},${record.outcome},
+             ${record.candidate ?? null},${record.failureKind ?? null},
+             ${record.conflictManifest ?? null},${record.conflictDigest ?? null},
+             ${record.attemptDigest})`,
   );
   return { recorded: "Attempt" };
 }
@@ -262,15 +268,11 @@ export async function finalizerPreparationApproval(
   ask: ApprovalAsk,
 ): Promise<ApprovalAsked> {
   const { claim } = ask;
+  const action = `approval-${randomUUID()}`;
   const asked = await client.query<ApprovalRow>(
-    `SELECT result, action FROM ${approvalRequestFunction}($1,$2,$3,$4,$5)`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      ask.attempt,
-      `approval-${randomUUID()}`,
-      claim.recoveryEpoch,
-    ],
+    sql`SELECT result, action FROM request_finalization_approval(
+      ${claim.partition.tenant},${claim.partition.project},${ask.attempt},
+      ${action},${claim.recoveryEpoch})`,
   );
   const row = asked.rows[0];
   if (row === undefined) {

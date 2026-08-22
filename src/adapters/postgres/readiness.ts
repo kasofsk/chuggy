@@ -186,11 +186,11 @@ async function finalizationEvidenceOf(
 ): Promise<FinalizationEvidence | undefined> {
   if (command.outcome !== "FinalizationFailed") return undefined;
   const found = await pool.query<FinalizationAttemptRow>(
-    `SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
+    sql`SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
             a.conflict_manifest_digest, a.input_bundle
        FROM finalization_attempt a
-      WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3 AND a.request=$4`,
-    [partition.tenant, partition.project, command.attempt, command.request],
+      WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+        AND a.attempt=${command.attempt} AND a.request=${command.request}`,
   );
   const attempt = found.rows[0];
   if (attempt === undefined)
@@ -202,16 +202,11 @@ async function finalizationEvidenceOf(
     reference_id: string;
     reference_digest: string | null;
   }>(
-    `SELECT reference_kind, reference_id, reference_digest
+    sql`SELECT reference_kind, reference_id, reference_digest
        FROM input_bundle_reference
-      WHERE tenant=$1 AND project=$2 AND bundle=$3
-      ORDER BY ordinal LIMIT $4`,
-    [
-      partition.tenant,
-      partition.project,
-      attempt.input_bundle,
-      inputBundleReferencesMax,
-    ],
+      WHERE tenant=${partition.tenant} AND project=${partition.project}
+        AND bundle=${attempt.input_bundle}
+      ORDER BY ordinal LIMIT ${inputBundleReferencesMax}`,
   );
   return {
     attempt: asFinalizationAttemptId(command.attempt),
@@ -255,17 +250,12 @@ async function finalizationRequestSource(
     request_generation: string;
     epoch_is_current: boolean;
   }>(
-    `SELECT f.ticket::text, f.state, f.request_generation::text,
-            ($4 = (SELECT e.epoch FROM recovery_epoch e
+    sql`SELECT f.ticket::text, f.state, f.request_generation::text,
+            (${command.recoveryEpoch} = (SELECT e.epoch FROM recovery_epoch e
                     ORDER BY e.ordinal DESC LIMIT 1)) AS epoch_is_current
        FROM finalization_request f
-      WHERE f.tenant=$1 AND f.project=$2 AND f.request=$3`,
-    [
-      partition.tenant,
-      partition.project,
-      command.request,
-      command.recoveryEpoch,
-    ],
+      WHERE f.tenant=${partition.tenant} AND f.project=${partition.project}
+        AND f.request=${command.request}`,
   );
   const request = found.rows[0];
   if (request === undefined)

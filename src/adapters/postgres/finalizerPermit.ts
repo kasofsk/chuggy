@@ -50,6 +50,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
@@ -77,10 +78,7 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { projectRowCounter } from "./rows.ts";
-import {
-  finalizerLiveRequestStates,
-  finalizerRowValue,
-} from "./finalizerRows.ts";
+import { finalizerRowValue } from "./finalizerRows.ts";
 
 /**
  * The namespace the permit lock is taken in. It is an arbitrary constant whose
@@ -141,20 +139,14 @@ async function finalizerPermitClaimStands(
   client: pg.PoolClient,
   claim: FinalizationClaim,
 ): Promise<boolean> {
-  const held = await client.query(
-    `SELECT 1 FROM finalization_request
-      WHERE tenant = $1 AND project = $2 AND request = $3
-        AND claim_owner = $4 AND claim_generation = $5 AND recovery_epoch = $6
-        AND state IN (${finalizerLiveRequestStates})
+  const held = await client.query<{ one: number }>(
+    sql`SELECT 1 AS one FROM finalization_request
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND claim_owner = ${claim.owner} AND claim_generation = ${claim.claimGeneration}
+        AND recovery_epoch = ${claim.recoveryEpoch}
+        AND state IN ('Open', 'Registered')
       FOR UPDATE`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      claim.request,
-      claim.owner,
-      claim.claimGeneration,
-      claim.recoveryEpoch,
-    ],
   );
   return held.rowCount === 1;
 }
@@ -164,15 +156,14 @@ async function finalizerPermitProjectStanding(
   client: pg.PoolClient,
   partition: Partition,
 ): Promise<PermitProjectRow | undefined> {
-  await client.query(
-    `SELECT pg_advisory_xact_lock(
-       $1, ('x' || substr(md5($2 || ':' || $3), 1, 8))::bit(32)::integer)`,
-    [finalizerPermitLockNamespace, partition.tenant, partition.project],
+  await client.query<{ pg_advisory_xact_lock: null }>(
+    sql`SELECT pg_advisory_xact_lock(
+       ${finalizerPermitLockNamespace},
+       ('x' || substr(md5(${partition.tenant} || ':' || ${partition.project}), 1, 8))::bit(32)::integer)`,
   );
   const found = await client.query<PermitProjectRow>(
-    `SELECT lifecycle, lifecycle_generation::text AS lifecycle_generation
-       FROM project WHERE tenant = $1 AND project = $2`,
-    [partition.tenant, partition.project],
+    sql`SELECT lifecycle, lifecycle_generation::text AS lifecycle_generation
+       FROM project WHERE tenant = ${partition.tenant} AND project = ${partition.project}`,
   );
   return found.rows[0];
 }
@@ -184,11 +175,11 @@ async function finalizerPermitForAttempt(
   attempt: string,
 ): Promise<PermitRow | undefined> {
   const found = await client.query<PermitRow>(
-    `SELECT permit, attempt, recovery_epoch,
+    sql`SELECT permit, attempt, recovery_epoch,
             lifecycle_generation::text AS lifecycle_generation, state
        FROM commit_permit
-      WHERE tenant = $1 AND project = $2 AND attempt = $3`,
-    [partition.tenant, partition.project, attempt],
+      WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+        AND attempt = ${attempt}`,
   );
   return found.rows[0];
 }
@@ -198,10 +189,10 @@ async function finalizerPermitLiveIn(
   client: pg.PoolClient,
   partition: Partition,
 ): Promise<boolean> {
-  const found = await client.query(
-    `SELECT 1 FROM commit_permit
-      WHERE tenant = $1 AND project = $2 AND state = 'Granted'`,
-    [partition.tenant, partition.project],
+  const found = await client.query<{ one: number }>(
+    sql`SELECT 1 AS one FROM commit_permit
+      WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+        AND state = 'Granted'`,
   );
   return found.rowCount === 1;
 }
@@ -212,11 +203,11 @@ async function finalizerPermitAttemptIsPrepared(
   claim: FinalizationClaim,
   attempt: string,
 ): Promise<boolean> {
-  const found = await client.query(
-    `SELECT 1 FROM finalization_attempt
-      WHERE tenant = $1 AND project = $2 AND attempt = $3 AND request = $4
+  const found = await client.query<{ one: number }>(
+    sql`SELECT 1 AS one FROM finalization_attempt
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND attempt = ${attempt} AND request = ${claim.request}
         AND outcome = 'Prepared' AND candidate_commit IS NOT NULL`,
-    [claim.partition.tenant, claim.partition.project, attempt, claim.request],
   );
   return found.rowCount === 1;
 }
@@ -259,20 +250,14 @@ export async function finalizerPermitGrant(
   if (!(await finalizerPermitAttemptIsPrepared(client, claim, attempt))) {
     return finalizerPermitRefused("AttemptUnprepared");
   }
+  const permit = `permit-${randomUUID()}`;
   const granted = await client.query<PermitRow>(
-    `INSERT INTO commit_permit
+    sql`INSERT INTO commit_permit
        (tenant, project, permit, attempt, recovery_epoch, lifecycle_generation)
-     VALUES ($1,$2,$3,$4,$5,$6)
+     VALUES (${claim.partition.tenant},${claim.partition.project},${permit},
+             ${attempt},${claim.recoveryEpoch},${standing.lifecycle_generation})
      RETURNING permit, attempt, recovery_epoch,
                lifecycle_generation::text AS lifecycle_generation, state`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      `permit-${randomUUID()}`,
-      attempt,
-      claim.recoveryEpoch,
-      standing.lifecycle_generation,
-    ],
   );
   const row = granted.rows[0];
   if (row === undefined) {
@@ -288,23 +273,16 @@ async function finalizerPermitReadingWritten(
 ): Promise<boolean> {
   const { partition, reconciliation } = record;
   const written = await client.query(
-    `INSERT INTO finalization_reconciliation
+    sql`INSERT INTO finalization_reconciliation
        (tenant, project, permit, candidate_commit, target_ref, verdict, observed_commit)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     VALUES (${partition.tenant},${partition.project},${reconciliation.permit},
+             ${reconciliation.candidate},${reconciliation.target},
+             ${reconciliation.verdict},${reconciliation.observed ?? null})
      ON CONFLICT (tenant, project, permit) DO UPDATE
         SET verdict = EXCLUDED.verdict,
             observed_commit = EXCLUDED.observed_commit,
             reconciled_at = now()
       WHERE finalization_reconciliation.verdict = 'Unreadable'`,
-    [
-      partition.tenant,
-      partition.project,
-      reconciliation.permit,
-      reconciliation.candidate,
-      reconciliation.target,
-      reconciliation.verdict,
-      reconciliation.observed ?? null,
-    ],
   );
   return written.rowCount === 1;
 }
@@ -323,15 +301,10 @@ export async function finalizerPermitReconcile(
     return { recorded: "Refused" };
   }
   const held = await client.query<{ state: string }>(
-    `SELECT state FROM commit_permit
-      WHERE tenant = $1 AND project = $2 AND permit = $3 AND recovery_epoch = $4
+    sql`SELECT state FROM commit_permit
+      WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+        AND permit = ${reconciliation.permit} AND recovery_epoch = ${record.recoveryEpoch}
       FOR UPDATE`,
-    [
-      partition.tenant,
-      partition.project,
-      reconciliation.permit,
-      record.recoveryEpoch,
-    ],
   );
   if (held.rows[0]?.state !== "Granted") return { recorded: "Refused" };
   if (!(await finalizerPermitReadingWritten(client, record))) {
@@ -339,9 +312,9 @@ export async function finalizerPermitReconcile(
   }
   if (reconciliation.verdict === "Unreadable") return { recorded: "Held" };
   const spent = await client.query(
-    `UPDATE commit_permit SET state = 'Concluded', concluded_at = now()
-      WHERE tenant = $1 AND project = $2 AND permit = $3 AND state = 'Granted'`,
-    [partition.tenant, partition.project, reconciliation.permit],
+    sql`UPDATE commit_permit SET state = 'Concluded', concluded_at = now()
+      WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+        AND permit = ${reconciliation.permit} AND state = 'Granted'`,
   );
   if (spent.rowCount !== 1) {
     throw new Error(
@@ -362,7 +335,7 @@ export async function finalizerPermitHolds(
   permitsMax: number,
 ): Promise<readonly HeldPermit[]> {
   const found = await client.query<HeldPermitRow>(
-    `SELECT p.tenant, p.project, p.permit, b.repository,
+    sql`SELECT p.tenant, p.project, p.permit, b.repository,
             b.recovery_epoch AS binding_epoch,
             r.target_ref, r.candidate_commit
        FROM commit_permit p
@@ -371,9 +344,8 @@ export async function finalizerPermitHolds(
        JOIN project_repository b
          ON b.tenant = p.tenant AND b.project = p.project
       WHERE p.state = 'Granted' AND r.verdict = 'Unreadable'
-        AND p.recovery_epoch = $1
-      ORDER BY p.tenant, p.project, p.permit LIMIT $2`,
-    [epoch, permitsMax],
+        AND p.recovery_epoch = ${epoch}
+      ORDER BY p.tenant, p.project, p.permit LIMIT ${permitsMax}`,
   );
   return found.rows.map((row) => {
     const partition: Partition = {

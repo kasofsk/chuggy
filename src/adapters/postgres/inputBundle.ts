@@ -13,6 +13,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
@@ -55,24 +56,22 @@ export async function postgresInputBundleWrite(
   bundle: InputBundle,
 ): Promise<void> {
   await client.query(
-    `INSERT INTO input_bundle (tenant, project, bundle, digest)
-     VALUES ($1,$2,$3,$4)`,
-    [partition.tenant, partition.project, bundle.bundle, bundle.digest],
+    sql`INSERT INTO input_bundle (tenant, project, bundle, digest)
+     VALUES (${partition.tenant},${partition.project},${bundle.bundle},${bundle.digest})`,
+  );
+  const ordinals = bundle.references.map((_reference, index) => index + 1);
+  const kinds = bundle.references.map((reference) => reference.kind);
+  const references = bundle.references.map((reference) => reference.reference);
+  const digests = bundle.references.map(
+    (reference) => reference.digest ?? null,
   );
   await client.query(
-    `INSERT INTO input_bundle_reference
+    sql`INSERT INTO input_bundle_reference
        (tenant, project, bundle, ordinal, reference_kind, reference_id, reference_digest)
-     SELECT $1, $2, $3, ordinal, kind, reference, digest
-       FROM unnest($4::integer[], $5::text[], $6::text[], $7::text[])
+     SELECT ${partition.tenant}, ${partition.project}, ${bundle.bundle},
+            ordinal, kind, reference, digest
+       FROM unnest(${ordinals}::integer[], ${kinds}::text[], ${references}::text[],
+                   ${digests}::text[])
          AS r(ordinal, kind, reference, digest)`,
-    [
-      partition.tenant,
-      partition.project,
-      bundle.bundle,
-      bundle.references.map((_reference, index) => index + 1),
-      bundle.references.map((reference) => reference.kind),
-      bundle.references.map((reference) => reference.reference),
-      bundle.references.map((reference) => reference.digest ?? null),
-    ],
   );
 }
