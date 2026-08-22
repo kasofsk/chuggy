@@ -34,11 +34,12 @@
  * evidence — re-read the ref, confirm the ancestry — and never an outcome, so a
  * hold ends when reconciliation concludes and no earlier.
  *
- * A FAILURE KIND ARRIVES WITH ITS PRODUCER. `MergeConflict` and
- * `PreparationFailed` are the two this tree can produce, both reduce to the one
- * priced `FinalizationFailed` the model already has, and no hold is either of
- * them: a hold spends nothing and refunds nothing, so a finalizer's own
- * re-preparations stay invisible to `Core`.
+ * THE FAILURE KINDS ARE `MergeConflict` AND `PreparationFailed`. An integration
+ * answered by a conflict is the first and a preparation that produced no
+ * candidate is the second; both reduce to the one priced `FinalizationFailed`
+ * the model already has, and no hold is either of them: a hold spends nothing
+ * and refunds nothing, so a finalizer's own re-preparations stay invisible to
+ * `Core`.
  *
  * A CLOSING PROJECT ABORTS BEFORE THE PERMIT AND RECONCILES AFTER IT. A
  * lifecycle that will never authorize the act again makes another preparation
@@ -223,8 +224,8 @@ export const allFinalizationAttemptOutcomes: readonly FinalizationAttemptOutcome
   ["Prepared", "Failed"];
 
 /**
- * The two definitive failures this tree can produce, both of which reduce to
- * the one priced `FinalizationFailed`. A kind arrives when its producer does.
+ * An integration answered by a conflict and a preparation that produced no
+ * candidate, both of which reduce to the one priced `FinalizationFailed`.
  */
 export type FinalizationFailureKind = "MergeConflict" | "PreparationFailed";
 
@@ -256,8 +257,6 @@ export const allReconciliationVerdicts: readonly ReconciliationVerdict[] = [
 /** The kinds of reference an input bundle holds, which is the closed set that keeps logs and secrets out of one. */
 export type InputBundleReferenceKind =
   | "ResultManifest"
-  | "Artifact"
-  | "Handoff"
   | "ConfigurationRevision"
   | "Repository"
   | "FinalizationAttempt"
@@ -268,8 +267,6 @@ export type InputBundleReferenceKind =
 export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
   [
     "ResultManifest",
-    "Artifact",
-    "Handoff",
     "ConfigurationRevision",
     "Repository",
     "FinalizationAttempt",

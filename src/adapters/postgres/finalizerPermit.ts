@@ -32,8 +32,12 @@
  *
  * A READING NEEDS NO CLAIM. The permit is the authority for the act and
  * therefore for the reading of it, so a re-reading of a held permit is fenced by
- * the permit's own state and epoch alone; two processes that both read it record
- * one verdict between them, because the second finds the permit already spent.
+ * the permit's own state and epoch alone. Two processes that both read it record
+ * one verdict between them under two rules rather than one: the locked permit
+ * must still be `Granted`, and the reconciliation row is written over an earlier
+ * one only where that one is `Unreadable`. Neither alone is the mechanism — a
+ * held permit stays `Granted` through a settled hold, so it is the row's own
+ * conflict rule that refuses the second verdict there.
  *
  * THE GLOBAL LOCK ORDER IS REQUEST, THEN REPOSITORY, THEN PROJECT, THEN PERMIT,
  * THEN ATTEMPT, and within each class in key order. The grant takes the request

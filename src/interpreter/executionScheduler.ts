@@ -70,14 +70,18 @@
  * is refused before it runs a pass.
  *
  * THAT ROOM HAS TWO CLAIMANTS AND NEITHER IS SIZED ALONE. A finalization result
- * is a `Completion` too, and the request that submits one sits in no backlog:
- * the finalizer holds at most `requestsPerPassMax` claimed requests at once and
- * each may submit exactly one result. So the reservation is over the sum of the
- * two ceilings, because two claimants each checked against the whole room can
- * between them fill it, and a guard that let them would report a promise that is
- * false. It is a sum here rather than a wider `execution_backlog`: that function
- * is the hard dispatch guard, and a count grown by finalizations would refuse a
- * project's dispatch for work no dispatch relieves.
+ * is a `Completion` too and the request that submits one sits in no backlog, so
+ * a backlog sized against the whole room leaves the finalizer none of it. The
+ * reservation is the sum of the two ceilings, and what the finalizer's ceiling
+ * contributes is one pass's draw: `requestsPerPassMax` bounds what a pass claims
+ * and not what stands claimed, since a claimed request is `Registered` until it
+ * settles or a sweep reopens its lapsed lease, and that draw is
+ * installation-wide where both ceilings are per project. The sum is therefore
+ * the room a deployment must keep clear and not a proof that no more is ever
+ * wanted, and a configuration failing it promises room it does not have. It is a
+ * sum here rather than a wider `execution_backlog`: that function is the hard
+ * dispatch guard, and a count grown by finalizations would refuse a project's
+ * dispatch for work no dispatch relieves.
  *
  * A BLOCK RETIRES ONE EXECUTION AND NOT ITS SIBLINGS. `ExecutionBlocked`
  * escalates the whole ticket in `Core`, but the decider emits only

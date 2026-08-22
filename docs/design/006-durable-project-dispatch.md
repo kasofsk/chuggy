@@ -2259,10 +2259,11 @@ exists rather than a migration.
 
 `project_repository` is the binding, keyed `(tenant, project)` at one row per
 project, foreign-keyed to its project, carrying the remote's stable identity
-and the recovery epoch it was bound under and never a credential. Project
-provisioning writes it and it is re-bound only under a new epoch. It has no
-recovery query, and that is a decision rather than an omission: a binding
-holds no unfinished work, so there is nothing for a fresh process to find.
+and the recovery epoch it was bound under and never a credential. It is
+re-bound only under a new epoch, and which transaction binds one at all is
+under "Deliberately partial" below. It has no recovery query, and that is a
+decision rather than an omission: a binding holds no unfinished work, so there
+is nothing for a fresh process to find.
 Credentials resolve through a port from the composition root, because `src/`
 reads no environment variable at all and the journal retains none. One
 repository per project is what keeps the finalizer declaration nullary;
@@ -2278,10 +2279,12 @@ the input bundle the candidate was built from, and its own digest over
 canonical bytes binding the attempt to the request it answers. The bundle is a
 column rather than a digest fold alone, because a rework materialized from this
 attempt carries that bundle's references forward and a reference nobody can
-resolve is not evidence. Preparation is the only transaction that writes one and there is no
-update path at all — re-preparation creates another identity, which is what
-makes an attempt evidence rather than a working note. Its unfinished work is
-attempts with no terminal permit and no concluded result, bounded and ordered.
+resolve is not evidence. Preparation is the only transaction that writes one
+and there is no update path at all — re-preparation creates another identity,
+which is what makes an attempt evidence rather than a working note. It has no
+recovery query of its own: an attempt holds no unfinished work, and a
+preparation interrupted before its request settled is reached again through
+the claim on that request, which every attempt hangs from.
 
 `commit_permit` is the serialization of the one irreversible act. It is the
 finalizer's, keyed `(tenant, project, permit)` with `permit` unique and never
@@ -2291,8 +2294,11 @@ permit is live per project and a partial unique index carries that rule,
 because exclusivity a process remembers is exclusivity a takeover forgets.
 Grant and exactly one conclusion are its transactions; it cannot expire into
 safety and cannot be abandoned before reconciliation, so a lapsed lease is
-not a release. Its recovery query is granted permits with no conclusion,
-which is the crash window that matters most in the slice.
+not a release. Its recovery query is the granted permits whose reading
+recorded a hold; a permit granted with no reading at all is the crash window
+that matters most, and it is reached through the claim on the request its
+attempt hangs from, because the view that claim gathers carries the live
+permit.
 
 `finalization_reconciliation` is what the ref proved, keyed
 `(tenant, project, permit)` at one row per permit. It records the candidate
@@ -2305,10 +2311,16 @@ ordered.
 
 `input_bundle` is the general relation and not a finalization-shaped one. It
 is keyed `(tenant, project, bundle)` under a canonical digest and holds
-references — upstream results, artifacts, handoffs, the pinned release
-configuration, repository identities — and never logs or secrets. The
-deciding transaction that spawns a work set creates it. This document says
-every new scheduler registration pins its bundle and its digest, and I6
+references — upstream result manifests, the pinned release configuration,
+repository identities, and the immutable attempt, target and conflict manifest
+a rework is built from — and never logs or secrets. Two transactions create
+one and neither ever changes one: the deciding transaction that spawns a work
+set, and the preparation that pins what a candidate was built from. Two
+writers of an append-only relation are not a second writer of anything, and
+the reason is that no row is ever reachable by both — the identities are
+disjoint by construction, and a write-once trigger refuses every `UPDATE` and
+`DELETE`, so there is no history the two could disagree about. This document
+says every new scheduler registration pins its bundle and its digest, and I6
 deferred the relation to the slice with references of its own to hold; I7b is
 that slice, so I7b also retrofits `execution_request` to pin one. The
 retrofit touches a landed slice's schema and its suites and is budgeted here
@@ -2317,12 +2329,14 @@ bundle would leave that claim unenforced, which is the failure mode I6's own
 review rounds kept naming. An unreferenced bundle is retention's concern and
 not recovery's, so it has no recovery query.
 
-A bundle identity is derived from the journal sequence and effect position that
-minted it, exactly as every other focused request's is, so a retried decision
-reproduces the identity instead of a second bundle — which is why the identity
-is unique per project rather than globally. A reference carries a digest where
-the object it names is content addressed, because "the failed attempt and its
-digest" is one reference and not two.
+A deciding transaction's bundle identity is derived from the journal sequence
+and effect position that minted it, exactly as every other focused request's
+is, so a retried decision reproduces the identity instead of a second bundle —
+which is why the identity is unique per project rather than globally. A
+preparation's is minted at the composition root instead, because a
+re-preparation is a new attempt and must be a new bundle. A reference carries
+a digest where the object it names is content addressed, because "the failed
+attempt and its digest" is one reference and not two.
 
 `finalization_request` is I3's and I7 alters it rather than replacing it. It
 gains the `recovery_epoch` its claim is fenced by, the partial index that
@@ -2455,14 +2469,17 @@ ambiguous-commit resolution I2 built is only safe because that transaction
 performs no external irreversible I/O, and a promotion inside it would make
 the safe case unsafe.
 
-The permit transaction takes the project row under a share lock so that a
-lifecycle transition's exclusive lock serializes against it, with a
-project-keyed advisory lock where a share lock is not reachable — the
-scheduler's precedent, for the scheduler's reason. The global lock order is
-**request, then repository, then project, then permit, then attempt**, and
-within each class in key order. It is declared in the header of every file
-that takes more than one, because a declared order makes a deadlock
-unreachable where a retry only makes it rare.
+The permit transaction serializes on a project-keyed transaction-scoped
+advisory lock and never on the project row: a row lock needs write privilege
+on `project` and lifecycle is not the finalizer's to write, which is the
+scheduler's precedent for the scheduler's reason. An advisory lock conflicts
+with no row lock, so what fences a permit against a lifecycle transition is
+not the lock at all — it is the `lifecycle_generation` read under that lock
+and stamped on the permit, which a takeover's transition then leaves behind.
+The global lock order is **request, then repository, then project, then
+permit, then attempt**, and within each class in key order. It is declared in
+the header of every file that takes more than one, because a declared order
+makes a deadlock unreachable where a retry only makes it rare.
 
 #### What holds, and what a person may do about it
 
@@ -2481,8 +2498,8 @@ policy over notifications and the dispatch view, and no read anywhere in the
 ticket service reads a `native_action` — so an escalation's native action has
 been invisible since I3 and a finalization hold would be no worse served. The
 hold is therefore built as the durable state a reader needs and the reader is
-not I7's to invent, because a read model that surfaced only finalization
-would be the wrong shape for the thing it is half of.
+issue #168's and not I7's to invent, because a read model that surfaced only
+finalization would be the wrong shape for the thing it is half of.
 
 The typed failure kinds are `MergeConflict` and `PreparationFailed`, and no
 others, because those are the two with a producer. Both reduce to the same
@@ -2502,6 +2519,15 @@ The finalizer gets its own role and its own deployable in this record and no
 deployment in this slice: `src/compose.ts` gains its wiring and the pass has
 no production caller, exactly as I6's scheduler pass has none. A slice ships
 the machine and not the daemon.
+
+`project_repository` has no writer in this tree. Binding a repository to a
+project belongs to the tenant control-plane provisioning lifecycle this
+document places outside `Core`, which nothing here builds, so migration 11
+grants `SELECT` on the relation and the `INSERT` arrives with the transaction
+that binds one — the same argument this record makes for the `commit_permit`
+read I10's quiescence query needs, that a grant no transaction uses is an
+unverified control. Until that transaction exists an unbound project holds on
+`RepositoryUnbound`, which prices nothing and concludes nothing.
 
 Project closure during `Finalizing` has two arms and I7 builds one of them.
 An attempt that never obtained the permit aborts reversibly and concludes
@@ -2536,8 +2562,9 @@ were written under.
 `model/measure.qnt`'s descent table still names three wrap-up labels the
 model no longer has. An implementer following that table would build the
 multi-phase protocol the model deliberately collapsed, so the ladder values
-are the truth and the table is stale. Fixing it is its own commit and not
-I7's, because house rule 16 forbids folding a correction into unrelated work.
+are the truth and the table is stale. Fixing it is issue #182 and its own
+commit rather than I7's, because house rule 16 forbids folding a correction
+into unrelated work.
 
 | Slice | Depends on | What lands and its definition of done | Status |
 |---|---|---|---|

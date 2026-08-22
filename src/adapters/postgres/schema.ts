@@ -2562,8 +2562,6 @@ const durableFinalizer = [
    )`,
   `CREATE INDEX finalization_attempt_by_request
      ON finalization_attempt (tenant, project, request, prepared_at)`,
-  `CREATE INDEX finalization_attempt_prepared
-     ON finalization_attempt (prepared_at) WHERE outcome = 'Prepared'`,
 
   `CREATE TABLE commit_permit (
      tenant               text   NOT NULL,

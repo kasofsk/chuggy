@@ -9,11 +9,12 @@
  * fails cannot fail the move that observed it. The scheduler's sealed sink is
  * the same device for the same reason.
  *
- * THE HOLD IS THE OBSERVATION THIS SLICE OWED. A pass report says how many
- * finalizations were left exactly where they were found and cannot say why, so
- * a refused permit grant, a storage outage and a decided hold were one opaque
- * number. `FinalizerHoldReason` is the closed set of reasons, emitted at every
- * site that counts one, which is what keeps the two in agreement.
+ * A HOLD IS REPORTED WITH ITS REASON. A pass report counts the finalizations
+ * left exactly where they were found and cannot say why any one of them was, so
+ * a refused permit grant, a storage outage and a decided hold would otherwise be
+ * one opaque number. `FinalizerHoldReason` is the closed set every site counting
+ * a hold emits alongside it, which is what keeps the count and the reasons in
+ * agreement.
  */
 
 import type { ApprovalAsked } from "./finalizerPreparation.ts";

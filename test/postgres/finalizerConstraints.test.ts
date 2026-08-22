@@ -477,8 +477,10 @@ test("a bundle is written once, digested, and its references are a bounded close
     /is written once/u,
   );
   for (const [ordinal, kind, constraint] of [
-    [0, "Artifact", "input_bundle_reference_count_is_bounded"],
+    [0, "ResultManifest", "input_bundle_reference_count_is_bounded"],
     [1, "Secret", "input_bundle_reference_kind_is_known"],
+    [1, "Artifact", "input_bundle_reference_kind_is_known"],
+    [1, "Handoff", "input_bundle_reference_kind_is_known"],
   ] as readonly (readonly [number, string, string])[]) {
     assert.match(
       await rig.ownerRefusal(
@@ -495,12 +497,12 @@ test("a bundle is written once, digested, and its references are a bounded close
     await rig.ownerRefusal(
       `INSERT INTO input_bundle_reference
          (tenant, project, bundle, ordinal, reference_kind, reference_id, reference_digest)
-       VALUES ($1,$2,$3,1,'Artifact','reference','not-a-digest')`,
+       VALUES ($1,$2,$3,1,'ResultManifest','reference','not-a-digest')`,
       keys(bundle),
     ),
     /input_bundle_reference_digest_is_hex/u,
   );
-  assert.equal(allInputBundleReferenceKinds.includes("Artifact"), true);
+  assert.equal(allInputBundleReferenceKinds.includes("ResultManifest"), true);
 });
 
 test("an attempt and a registration each pin a bundle that was retained", async () => {
