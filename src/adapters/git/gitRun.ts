@@ -46,7 +46,7 @@ const gitVersionMin: { readonly major: number; readonly minor: number } = {
 const gitOutputBytesMax = 4 * 1024 * 1024;
 
 /** The bound on the two synchronous calls this adapter makes, neither of which reaches a remote. */
-export const gitRunSetupTimeoutSecsMax = 30;
+const gitRunSetupTimeoutSecsMax = 30;
 
 /** How long the output of a call is waited for once the process that produced it is gone. */
 const gitRunDrainSecs = 1;
