@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
+import net from "node:net";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
-import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import type { HttpErrorEnvelope } from "../../src/adapters/http/contract.ts";
+import {
+  createNativeHttpApp,
+  type NativeHttpLimits,
+} from "../../src/adapters/http/server.ts";
 import {
   asPrincipal,
   asPublicInstant,
@@ -95,7 +101,11 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
   };
 }
 
-function appOf(calls: string[], authenticated = true) {
+function appOf(
+  calls: string[],
+  authenticated = true,
+  limits?: NativeHttpLimits,
+) {
   return createNativeHttpApp(
     fakeWeb(calls),
     {
@@ -107,6 +117,7 @@ function appOf(calls: string[], authenticated = true) {
         ),
     },
     { ready: () => Promise.resolve(true) },
+    limits,
   );
 }
 
@@ -302,4 +313,91 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "deleteDraft:3",
     "dispatchView:4",
   ]);
+});
+
+test("the bearer scheme is matched without regard to its case", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const found = await app.inject({
+    url: "/api/v1/projects",
+    headers: { authorization: "bearer valid" },
+  });
+  assert.equal(found.statusCode, 200);
+  assert.deepEqual(calls, ["inventory:50"]);
+});
+
+test("a failing NativeWeb call is a server fault, not a client fault", async () => {
+  const calls: string[] = [];
+  const failing = {
+    ...fakeWeb(calls),
+    projectInventory: () =>
+      Promise.reject(new Error("the pool is unreachable")),
+  };
+  await using app = createNativeHttpApp(
+    failing,
+    {
+      authenticateBearer: () => Promise.resolve(asPrincipal("issuer subject")),
+    },
+    { ready: () => Promise.resolve(true) },
+  );
+  const found = await app.inject({
+    url: "/api/v1/projects",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(found.statusCode, 500);
+  assert.equal(found.json<HttpErrorEnvelope>().error.code, "InternalError");
+  assert.ok(!found.body.includes("pool"));
+});
+
+const capacityPollAttemptsMax = 200;
+const capacityPollIntervalMs = 10;
+
+async function capacityLivenessReaches(
+  port: number,
+  status: number,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < capacityPollAttemptsMax; attempt += 1) {
+    const found = await fetch(`http://127.0.0.1:${String(port)}/health/live`);
+    await found.arrayBuffer();
+    if (found.status === status) return true;
+    await delay(capacityPollIntervalMs);
+  }
+  return false;
+}
+
+function capacityAbandonedRequest(port: number): Promise<net.Socket> {
+  return new Promise((resolve) => {
+    const socket = net.connect(port, "127.0.0.1", () => {
+      socket.write(
+        "POST /api/v1/tenants/tenant/projects/project/operations HTTP/1.1\r\n" +
+          "host: localhost\r\n" +
+          "idempotency-key: key\r\n" +
+          "content-type: application/vnd.chuggy.v1+json\r\n" +
+          "content-length: 4096\r\n\r\n{",
+      );
+      resolve(socket);
+    });
+  });
+}
+
+test("an aborted request returns the capacity slot it took", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls, true, {
+    concurrentRequestsMax: 1,
+    requestTimeoutMs: 15_000,
+  });
+  await app.listen({ host: "127.0.0.1", port: 0 });
+  const address = app.server.address();
+  assert.ok(address !== null && typeof address !== "string");
+  const abandoned = await capacityAbandonedRequest(address.port);
+  assert.ok(
+    await capacityLivenessReaches(address.port, 503),
+    "the abandoned request should hold the only slot",
+  );
+  abandoned.destroy();
+  assert.ok(
+    await capacityLivenessReaches(address.port, 200),
+    "the aborted request should have returned its slot",
+  );
+  assert.deepEqual(calls, []);
 });
