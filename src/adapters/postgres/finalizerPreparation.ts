@@ -17,7 +17,7 @@
  * ceiling the decision is made against, which is what keeps the refusal for
  * exceeding it reachable while bounding what a decision is ever handed.
  *
- * THE FINALIZER READS EXECUTION ROWS AND WRITES NONE. Migration eleven revokes
+ * THE FINALIZER READS EXECUTION ROWS AND WRITES NONE. Migration thirteen revokes
  * every scheduler relation from the role and then grants back `SELECT` on the
  * four a handoff is spelled across, which is the same revoke-then-narrow shape
  * the role's other reads take. A handoff is metadata the scheduler wrote and
@@ -78,7 +78,7 @@ import {
 import { postgresInputBundleWrite } from "./inputBundle.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { projectRowCounter } from "./rows.ts";
-import { finalizerRowValue } from "./finalizerRows.ts";
+import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
 
 /** One passed work execution of the ticket, with the revision it ran under. */
 interface WorkRow {
@@ -101,7 +101,7 @@ interface ArtifactRow {
 
 /** What the approval door answered about one prepared attempt. */
 interface ApprovalRow {
-  readonly result: string;
+  readonly result: string | null;
   readonly action: string | null;
 }
 
@@ -256,7 +256,7 @@ function finalizerPreparationAsked(row: ApprovalRow): ApprovalAsked {
     asked: "Refused",
     refusal: finalizerRowValue(
       allApprovalRefusals,
-      row.result,
+      finalizerRowPresent(row.result, "approval verdict"),
       "approval refusal",
     ),
   };

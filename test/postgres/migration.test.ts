@@ -145,7 +145,7 @@ async function assertMigratedI2(subject: pg.Pool): Promise<void> {
 }
 
 /**
- * The rows migration eleven alters rather than creates: an escalation raised
+ * The rows migration thirteen alters rather than creates: an escalation raised
  * before `native_action` had an attempt column or a second kind, and a
  * finalization request written before its claim was fenced by an epoch. A
  * migration that only ever runs against an empty schema is a migration nothing
@@ -170,7 +170,7 @@ async function seedBeforeI7(subject: pg.Pool): Promise<void> {
   );
 }
 
-/** What migration eleven must have left those rows saying, and what it must now refuse. */
+/** What migration thirteen must have left those rows saying, and what it must now refuse. */
 async function assertMigratedI3(subject: pg.Pool): Promise<void> {
   assert.deepEqual(
     (

@@ -3500,7 +3500,7 @@ export const migrations: readonly Migration[] = [
     ],
   },
   {
-    version: 11,
+    version: 13,
     name: "the durable finalizer",
     statements: [...durableFinalizer, ...durableFinalizerBoundaries],
   },

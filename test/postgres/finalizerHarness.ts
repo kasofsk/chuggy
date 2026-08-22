@@ -1,11 +1,11 @@
 /**
  * What every finalizer case in this directory needs of a real PostgreSQL: a
  * project whose ticket a real decision put into `Finalizing`, the durable rows
- * migration eleven adds, and a connection as the role that will actually run
+ * migration thirteen adds, and a connection as the role that will actually run
  * them.
  *
  * THE ROWS RUN AS `chuggy_finalizer` AND NOT AS THE MIGRATION OWNER. Every
- * grant migration eleven writes is a claim about what that role may do, and a
+ * grant migration thirteen writes is a claim about what that role may do, and a
  * suite writing them as the owner would prove the DDL parses rather than that
  * the deployment can run it — a column grant omitting a column a legal move
  * writes is invisible to any other kind of test. The role is `NOLOGIN`, so the

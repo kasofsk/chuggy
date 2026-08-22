@@ -1,5 +1,5 @@
 /**
- * Every legal move migration eleven's grants admit, made as the role that is
+ * Every legal move migration thirteen's grants admit, made as the role that is
  * supposed to make it, and every recovery query the decision record names,
  * asked of a database holding the state it is supposed to find and the state it
  * must not.

@@ -1,5 +1,5 @@
 /**
- * What migration eleven's grants and revokes let each role do, asked of the
+ * What migration thirteen's grants and revokes let each role do, asked of the
  * server rather than read off the DDL. A grant nobody exercised and a revoke
  * nobody attempted are both unverified controls, so every privilege the
  * finalizer holds is used here and every one it does not hold is attempted.
@@ -39,7 +39,7 @@ const mailbox = [
   "ticket_projection",
 ] as const;
 
-/** Every relation migration eleven adds, which no prior role may reach at all. */
+/** Every relation migration thirteen adds, which no prior role may reach at all. */
 const added = [
   "project_repository",
   "input_bundle",
@@ -131,7 +131,7 @@ test("the scheduler rows a handoff is spelled across are readable and nothing mo
   }
 });
 
-test("no prior role reaches any relation migration eleven adds", async () => {
+test("no prior role reaches any relation migration thirteen adds", async () => {
   for (const role of [apiRole, selectorServiceRole, schedulerRole]) {
     for (const relation of added) {
       for (const statement of await everyVerb(relation)) {
@@ -145,7 +145,7 @@ test("no prior role reaches any relation migration eleven adds", async () => {
   }
 });
 
-test("the ticket service reaches only the bundle relations of what migration eleven adds", async () => {
+test("the ticket service reaches only the bundle relations of what migration thirteen adds", async () => {
   for (const relation of [
     "project_repository",
     "commit_permit",
