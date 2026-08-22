@@ -32,6 +32,7 @@ import {
   gitCredentialArguments,
   gitRun,
   gitRunEnvironment,
+  gitRunSetup,
   gitVersionAdmits,
 } from "../../src/adapters/git/gitRun.ts";
 import {
@@ -717,6 +718,68 @@ test("a call outruns neither its timeout nor its output ceiling", async (t) => {
     outputBytesMax: 1,
   });
   assert.deepEqual(flooded, { ran: "Stopped", stopped: "OutputCeiling" });
+});
+
+test("a call is answered on git's own exit and never on what outlived it", async (t) => {
+  const fixture = fixtureOpen(t);
+  const started = Date.now();
+  const ran = await gitRun({
+    directory: fixture.seed,
+    argv: ["-c", "alias.linger=!sh -c 'sleep 5 &'", "linger"],
+    timeoutSecsMax: gitPromotionDefaults.localTimeoutSecsMax,
+    environment: gitRunEnvironment(process.env, "chuggy"),
+  });
+  assert.deepEqual(ran, { ran: "Exited", code: 0, stdout: "", stderr: "" });
+  assert.ok(
+    Date.now() - started < 4_000,
+    "the answer waited on a grandchild holding the pipes",
+  );
+});
+
+test("a git something else killed is stopped, and is not the deadline", async (t) => {
+  const fixture = fixtureOpen(t);
+  const ran = await gitRun({
+    directory: fixture.seed,
+    argv: ["-c", "alias.doom=!kill -KILL $PPID", "doom"],
+    timeoutSecsMax: gitPromotionDefaults.localTimeoutSecsMax,
+    environment: gitRunEnvironment(process.env, "chuggy"),
+  });
+  assert.deepEqual(ran, { ran: "Stopped", stopped: "Killed" });
+});
+
+test("a synchronous call is killed at its bound rather than left to hang", () => {
+  assert.throws(
+    () =>
+      gitRunSetup(
+        ["-c", "alias.linger=!sleep 5", "linger"],
+        gitRunEnvironment(process.env, "chuggy"),
+        1,
+      ),
+    (failure: unknown) => (failure as { signal?: string }).signal === "SIGKILL",
+  );
+});
+
+test("an ambient variable neither points a call elsewhere nor configures it", async (t) => {
+  const fixture = fixtureOpen(t);
+  const environment = gitRunEnvironment(
+    { ...process.env, GIT_DIR: join(fixture.directory, "origin.git") },
+    gitPromotionDefaults.credentialUsername,
+  );
+  assert.equal(environment["GIT_DIR"], undefined);
+  assert.equal(environment["GIT_CONFIG_NOSYSTEM"], "1");
+  const ran = await gitRun({
+    directory: fixture.seed,
+    argv: ["rev-parse", "--absolute-git-dir"],
+    timeoutSecsMax: gitPromotionDefaults.localTimeoutSecsMax,
+    environment,
+  });
+  if (ran.ran !== "Exited") {
+    assert.fail("git could not say which repository it read");
+  }
+  assert.equal(
+    ran.stdout.trim(),
+    fixtureGit(fixture.seed, "rev-parse", "--absolute-git-dir"),
+  );
 });
 
 test("a git too old to write merge trees is refused by the floor", () => {

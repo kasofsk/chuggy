@@ -35,7 +35,6 @@
  * to a caller that may only promote it after a crash and a restart.
  */
 
-import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -57,6 +56,7 @@ import {
   gitRun,
   gitRunAssertVersion,
   gitRunEnvironment,
+  gitRunSetup,
   type GitEnvironment,
   type GitRan,
 } from "./gitRun.ts";
@@ -175,9 +175,10 @@ export function scratchRepositoryDirectory(
   );
   if (!scratch.initialised.has(directory)) {
     mkdirSync(directory, { recursive: true });
-    execFileSync("git", ["init", "-q", "--bare", directory], {
-      env: scratch.options.environment,
-    });
+    gitRunSetup(
+      ["init", "-q", "--bare", directory],
+      scratch.options.environment,
+    );
     scratch.initialised.add(directory);
   }
   return directory;
