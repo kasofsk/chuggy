@@ -13,8 +13,9 @@
  * THE NEGATIVE SPACE IS HALF THE POINT. A stale candidate must not clobber a
  * moved branch, a repeated integration must not write a second identity for one
  * piece of work, a path carrying an index separator must not become two
- * entries, and a push that stopped without saying anything must not read as a
- * refusal.
+ * entries, a path the index format would unquote must not land under another
+ * name, a read of one ref must not answer with another ref's commit, and a push
+ * that stopped without saying anything must not read as a refusal.
  */
 
 import assert from "node:assert/strict";

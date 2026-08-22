@@ -9,9 +9,9 @@
  * and the identity that resolves nowhere.
  *
  * THE NEGATIVE SPACE IS HALF THE POINT. Bytes must not come back for an artifact
- * whose content hashes to anything but the digest that was pinned, one project
- * must not read another's objects, and an outage must not read as an artifact
- * that failed.
+ * whose content hashes to anything but the digest that was pinned, a link must
+ * not stand in for the object it points at, one project must not read another's
+ * objects, and an outage must not read as an artifact that failed.
  */
 
 import assert from "node:assert/strict";
