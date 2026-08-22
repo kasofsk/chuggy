@@ -10,7 +10,7 @@
  * started from, and reloading is the only way forward.
  *
  * THE DECISION IS COMPUTED BEFORE THE TRANSACTION OPENS.
- * `docs/design/006-durable-project-dispatch.md` permits that to keep the
+ * issue #180 permits that to keep the
  * transaction short, and requires that a failed recheck discard the result and
  * reload. Both halves are here: nothing below awaits between the plan and the
  * commit, and nothing installs a plan the commit refused.

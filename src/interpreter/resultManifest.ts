@@ -6,7 +6,7 @@
  * produce a path that no longer names the object the worker actually stored,
  * so verification would then check a key nobody wrote. Every deviation is
  * therefore a refusal — including a spelling that is merely not in normal
- * form — and `docs/design/006-durable-project-dispatch.md`'s normalized paths
+ * form — and issue #180's normalized paths
  * are paths that arrived normalized rather than paths that were made so.
  *
  * AN UNSEALED MANIFEST CANNOT BE ASSEMBLED. `ResultManifest` carries a seal only

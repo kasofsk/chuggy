@@ -14,7 +14,7 @@
  * artifact port decides whether the objects it names are really there with the
  * digest it claims. Only a report that passed both reaches the terminal
  * transaction, so an incomplete upload has no path to a successful verdict —
- * which is what `docs/design/006-durable-project-dispatch.md` requires and the
+ * which is what issue #180 requires and the
  * reason verification is a separate port rather than a field on the manifest.
  *
  * A REFUSAL ENDS AN ATTEMPT AND NEVER A TASK. Neither a malformed manifest nor

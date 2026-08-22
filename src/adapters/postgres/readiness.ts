@@ -2,7 +2,7 @@
  * Discovery: the readiness rows a fleet reads, the decision inputs an activation
  * verifies against, and the clearing an idle owner is allowed to do.
  *
- * DISCOVERY READS READINESS AND NOTHING ELSE. `docs/design/006-durable-project-dispatch.md`
+ * DISCOVERY READS READINESS AND NOTHING ELSE. issue #180
  * limits fleet discovery to durable project-readiness metadata, never another
  * project's journal or ticket contents — so the query here selects a partition
  * key and a generation, and any replica may act on the result without having

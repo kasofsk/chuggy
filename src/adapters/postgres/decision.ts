@@ -7,7 +7,7 @@
  * commit, so asking the head first would answer `StaleHead` to the one caller
  * whose question is whether its own decision landed. Reading the operation
  * first is what
- * `docs/design/006-durable-project-dispatch.md` means by resolving an
+ * issue #180 means by resolving an
  * ambiguous commit from the durable record rather than assuming failure, and
  * a still-pending operation falls through to the fences and is decided again.
  *

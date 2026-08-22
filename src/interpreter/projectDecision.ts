@@ -4,7 +4,7 @@
  *
  * WHY THIS IS ONE CALL AND NOT SIX. The journal entry, the input outcome and
  * the projection are one transaction in
- * `docs/design/006-durable-project-dispatch.md`, and a port offering them
+ * issue #180, and a port offering them
  * separately would invite an implementation that journaled a decision and then
  * failed to settle the operation that authorized it — a project whose head has
  * moved and whose client is still waiting. So the whole decision is the

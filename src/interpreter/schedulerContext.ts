@@ -11,7 +11,7 @@
  * does learn is the guard's verdict, as the answer to its own `ProposeDispatch`.
  *
  * THE CONTEXT IS ADVISORY AND THE GUARD IS AUTHORITATIVE, and they are
- * separate ports for that reason. `docs/design/006-durable-project-dispatch.md`
+ * separate ports for that reason. issue #180
  * lets capacity and active-work observations guide the selector while forbidding
  * them to reserve capacity, alter ticket eligibility or become a hidden ticket
  * service dispatch policy — and it excludes them from the strict dispatch-view

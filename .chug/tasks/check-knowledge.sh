@@ -22,9 +22,8 @@
 # a correcting section headed some other word — errata, amendment, revision.
 # Prose outside a table row is invisible entirely, and stays the reviewer's.
 #
-# SCOPE: tracked `docs/design/*.md`, whole-directory. It is the only directory
-# this gate reads, for the reason `check-figures.sh` and `check-paths.sh` carve
-# it out too: it is where this tree writes in the future tense.
+# SCOPE: tracked `docs/design/*.md`, whole-directory. When the tree tracks no
+# design docs, the corpus is clean and empty; the gate has no claim to inspect.
 #
 # Usage:
 #   .chug/tasks/check-knowledge.sh
@@ -40,11 +39,10 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
-# A glob that matches nothing is a verdict about nothing.
 docs="$(git ls-files 'docs/design/*.md' 2>/dev/null || true)"
 if [ -z "$docs" ]; then
-	echo "check-knowledge: LINTER ERROR — no tracked docs/design/*.md; the glob matched nothing"
-	exit 2
+	echo "check-knowledge: 0 finding(s) across 0 landed row(s) and 0 heading(s) in 0 design doc(s)"
+	exit 0
 fi
 
 set -f

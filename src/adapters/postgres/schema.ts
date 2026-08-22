@@ -2,7 +2,7 @@
  * The relations the PostgreSQL foundation owns, as the migrations that create
  * them.
  *
- * `docs/design/006-durable-project-dispatch.md` requires five things of every
+ * issue #180 requires five things of every
  * new mutable relation, so each one states them here rather than in a doc that
  * would drift from the DDL beside it.
  *
