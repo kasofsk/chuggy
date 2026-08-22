@@ -51,6 +51,7 @@ export function mailboxCompletionRoom(config: TicketServiceConfig): number {
 export type DecisionMetricOutcome =
   | "Journaled"
   | "Refused"
+  | "Answered"
   | "Stale"
   | "Fenced"
   | "NotActive"

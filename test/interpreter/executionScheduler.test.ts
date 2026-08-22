@@ -11,6 +11,10 @@
  * is a promise about the mailbox the completions it authorizes will land in, so
  * the cases below drive it against the ticket-service configuration it has to
  * reserve room within rather than against itself.
+ *
+ * NOR IS IT THE ONLY CLAIM ON THAT ROOM. The finalizer's claimed requests submit
+ * completions into the same room, so a case that varies the finalizer's claim
+ * ceiling alone must move the same verdict a case varying the backlog does.
  */
 
 import assert from "node:assert/strict";
@@ -27,10 +31,12 @@ import {
   type Entitlement,
   type ExecutionSchedulerConfig,
 } from "../../src/interpreter/executionScheduler.ts";
+import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
 import {
   mailboxCompletionRoom,
   ticketServiceDefaults,
 } from "../../src/interpreter/ticketService.ts";
+import { assertBoundsAreRefused } from "./configBounds.ts";
 
 /** Every bound a deployment names, read from the defaults so a field added later is covered. */
 const bounds = Object.keys(
@@ -43,6 +49,17 @@ function configWith(
   value: number,
 ): ExecutionSchedulerConfig {
   return { ...executionSchedulerDefaults, [name]: value };
+}
+
+/** The checker under the ticket-service and finalizer configurations a case holds still. */
+function checkedAgainstDefaults(
+  config: ExecutionSchedulerConfig,
+): ExecutionSchedulerConfig {
+  return checkedExecutionSchedulerConfig(
+    config,
+    ticketServiceDefaults,
+    finalizerDefaults,
+  );
 }
 
 const entitlements: ReadonlyMap<string, Entitlement> = new Map([
@@ -64,10 +81,7 @@ function registration(account: string): CapacityExecution {
 
 test("the defaults are a configuration a pass may run on", () => {
   assert.equal(
-    checkedExecutionSchedulerConfig(
-      executionSchedulerDefaults,
-      ticketServiceDefaults,
-    ),
+    checkedAgainstDefaults(executionSchedulerDefaults),
     executionSchedulerDefaults,
   );
   assert.ok(
@@ -76,83 +90,86 @@ test("the defaults are a configuration a pass may run on", () => {
   );
 });
 
-test("no bound may be zero, negative or fractional", () => {
-  for (const name of bounds) {
-    for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      assert.throws(
-        () =>
-          checkedExecutionSchedulerConfig(
-            configWith(name, value),
-            ticketServiceDefaults,
-          ),
-        (error: unknown) => {
-          assert.ok(error instanceof RangeError);
-          assert.match(error.message, new RegExp(`\\b${name}\\b`, "u"));
-          return true;
-        },
-        `${name} accepted ${String(value)}`,
-      );
-    }
-  }
-});
-
-test("a bound the configuration never names is refused rather than assumed", () => {
-  for (const name of bounds) {
-    const missing = Object.fromEntries(
-      Object.entries(executionSchedulerDefaults).filter(
-        ([named]) => named !== name,
-      ),
-    ) as ExecutionSchedulerConfig;
-    assert.throws(
-      () => checkedExecutionSchedulerConfig(missing, ticketServiceDefaults),
-      (error: unknown) => {
-        assert.ok(error instanceof RangeError);
-        assert.match(error.message, new RegExp(`\\b${name}\\b`, "u"));
-        return true;
-      },
-      `a configuration naming no ${name} was accepted`,
-    );
-  }
+test("no bound may be zero, negative, fractional or left unnamed", () => {
+  assertBoundsAreRefused(executionSchedulerDefaults, checkedAgainstDefaults);
 });
 
 test("a bound past the safe integers is refused rather than silently rounded", () => {
   assert.throws(
     () =>
-      checkedExecutionSchedulerConfig(
+      checkedAgainstDefaults(
         configWith("attemptLeaseSecs", Number.MAX_SAFE_INTEGER + 2),
-        ticketServiceDefaults,
       ),
     RangeError,
   );
 });
 
-test("the backlog ceiling leaves the mailbox room for every completion it admits", () => {
+test("the two ceilings together leave the mailbox room for the completions they admit", () => {
   const room = mailboxCompletionRoom(ticketServiceDefaults);
+  const widest = room - finalizerDefaults.requestsPerPassMax - 1;
   assert.ok(
-    executionSchedulerDefaults.projectBacklogMax < room,
-    "the default ceiling already outgrows the room, so this proves nothing",
+    executionSchedulerDefaults.projectBacklogMax <= widest,
+    "the default ceilings already outgrow the room, so this proves nothing",
   );
-  for (const ceiling of [room, room + 1]) {
+  for (const ceiling of [widest + 1, room - 1, room]) {
     assert.throws(
-      () =>
-        checkedExecutionSchedulerConfig(
-          configWith("projectBacklogMax", ceiling),
-          ticketServiceDefaults,
-        ),
+      () => checkedAgainstDefaults(configWith("projectBacklogMax", ceiling)),
       (error: unknown) => {
         assert.ok(error instanceof RangeError);
-        assert.match(error.message, /reserves no mailbox room/u);
+        assert.match(error.message, /reserve no mailbox room/u);
         return true;
       },
       `a ceiling of ${String(ceiling)} was accepted against a room of ${String(room)}`,
     );
   }
   assert.equal(
-    checkedExecutionSchedulerConfig(
-      configWith("projectBacklogMax", room - 1),
-      ticketServiceDefaults,
-    ).projectBacklogMax,
-    room - 1,
+    checkedAgainstDefaults(configWith("projectBacklogMax", widest))
+      .projectBacklogMax,
+    widest,
+  );
+});
+
+test("the finalizer's claim ceiling draws on the same room as the backlog", () => {
+  const ceiling = configWith(
+    "projectBacklogMax",
+    mailboxCompletionRoom(ticketServiceDefaults) - 2,
+  );
+  assert.equal(
+    checkedExecutionSchedulerConfig(ceiling, ticketServiceDefaults, {
+      ...finalizerDefaults,
+      requestsPerPassMax: 1,
+    }),
+    ceiling,
+  );
+  assert.throws(
+    () =>
+      checkedExecutionSchedulerConfig(ceiling, ticketServiceDefaults, {
+        ...finalizerDefaults,
+        requestsPerPassMax: 2,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof RangeError);
+      assert.match(error.message, /requestsPerPassMax/u);
+      return true;
+    },
+    "a claim ceiling that overruns the room was accepted",
+  );
+});
+
+test("a finalizer claim ceiling that is no count is refused rather than summed", () => {
+  assert.throws(
+    () =>
+      checkedExecutionSchedulerConfig(
+        executionSchedulerDefaults,
+        ticketServiceDefaults,
+        { ...finalizerDefaults, requestsPerPassMax: Number.NaN },
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof RangeError);
+      assert.match(error.message, /finalizer configuration/u);
+      return true;
+    },
+    "a claim ceiling that is not a number reached the sum",
   );
 });
 
@@ -165,11 +182,11 @@ test("a wider mailbox is what widens the ceiling, rather than the ceiling itself
     "projectBacklogMax",
     mailboxCompletionRoom(ticketServiceDefaults),
   );
-  assert.throws(
-    () => checkedExecutionSchedulerConfig(ceiling, ticketServiceDefaults),
-    RangeError,
+  assert.throws(() => checkedAgainstDefaults(ceiling), RangeError);
+  assert.equal(
+    checkedExecutionSchedulerConfig(ceiling, wider, finalizerDefaults),
+    ceiling,
   );
-  assert.equal(checkedExecutionSchedulerConfig(ceiling, wider), ceiling);
 });
 
 test("an account the policy revision does not cover has no entitlement to assume", () => {

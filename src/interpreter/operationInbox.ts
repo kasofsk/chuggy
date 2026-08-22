@@ -39,12 +39,16 @@
  * healthy project writer.
  */
 
+import { asBoundedText } from "./boundedText.ts";
 import type { Lifecycle, Partition } from "./projectStore.ts";
-import type { TicketCommand } from "./ticketCommand.ts";
+import { safetyResolution, type TicketCommand } from "./ticketCommand.ts";
 export {
   asOperationDecisionEvent,
+  type FinalizationSubmission,
+  type NativeActionKind,
   type NativeActionResolution,
   type OperationDecisionEvent,
+  type StoredTicketCommand,
   type TicketCommand,
 } from "./ticketCommand.ts";
 
@@ -84,29 +88,6 @@ export const authorityCharsMax = 256;
 
 /** The longest command an accepted operation carries into the inbox. */
 export const operationCommandCharsMax = 65_536;
-
-/**
- * Refuses text a bounded column cannot hold, and text that is not text: an
- * opaque client string with no cap is an unbounded row, and one carrying an
- * unpaired surrogate is a value every UTF-8 encoding of it folds to the
- * replacement character, so two such strings share one digest and one stored
- * row. House rule 9 forbids the first and no later slice can retrofit either
- * onto rows already written.
- */
-function asBoundedText(value: string, what: string, charsMax: number): string {
-  if (value.length === 0) throw new RangeError(`${what}: a value is empty`);
-  if (!value.isWellFormed()) {
-    throw new RangeError(
-      `${what}: an unpaired surrogate is not a value a digest can separate`,
-    );
-  }
-  if (value.length > charsMax) {
-    throw new RangeError(
-      `${what}: ${String(value.length)} characters is past the ${String(charsMax)} a stored row holds`,
-    );
-  }
-  return value;
-}
 
 /** Brands an opaque operation identity. */
 export function asOperationId(value: string): OperationId {
@@ -189,13 +170,19 @@ export const admissionLifecycles: Readonly<
   CorrectnessReducing: ["Active", "Suspended", "IntegrityBlocked", "Deleting"],
 };
 
-/** An operation begins pending and ends succeeded, refused or cancelled; nothing else is public. */
-export type OperationState = "Pending" | "Succeeded" | "Refused" | "Cancelled";
+/**
+ * An operation begins pending and ends succeeded, answered, refused or
+ * cancelled; nothing else is public. `Answered` is the terminal state of a
+ * command that named no domain event, so it carries no decided sequence.
+ */
+export type OperationState =
+  "Pending" | "Succeeded" | "Answered" | "Refused" | "Cancelled";
 
 /** Every operation state, in the order this file declares them, so a suite can iterate rather than restate. */
 export const allOperationStates: readonly OperationState[] = [
   "Pending",
   "Succeeded",
+  "Answered",
   "Refused",
   "Cancelled",
 ];
@@ -232,10 +219,10 @@ export function classifyCommand(command: TicketCommand): {
   )
     return { admission: "Ordinary", priority: "Ordinary" };
   if (command.command === "ResolveNativeAction") {
+    const reducing = command.resolution === safetyResolution;
     return {
-      admission:
-        command.resolution === "Revoke" ? "CorrectnessReducing" : "Ordinary",
-      priority: command.resolution === "Revoke" ? "Safety" : "Ordinary",
+      admission: reducing ? "CorrectnessReducing" : "Ordinary",
+      priority: reducing ? "Safety" : "Ordinary",
     };
   }
   switch (command.event.type) {
@@ -243,7 +230,6 @@ export function classifyCommand(command: TicketCommand): {
       return { admission: "CorrectnessReducing", priority: "Safety" };
     case "TaskDone":
     case "ExecutionBlocked":
-    case "FinalizationResult":
       return { admission: "CorrectnessReducing", priority: "Completion" };
     case "Dispatch":
     case "ResumeTicket":

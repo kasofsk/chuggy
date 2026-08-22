@@ -38,12 +38,16 @@ import { recordEquals } from "../../src/actor/equality.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
+import { encodeDecisionEvent } from "../../src/generated/model-api.ts";
 import {
   encodeEntry,
   parseEntry,
   parseJournal,
+  parseStoredTicketCommand,
+  parseTicketCommand,
   type Parsed,
 } from "../../src/interpreter/wire.ts";
+import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import {
   plainAuthoring,
   plainResult,
@@ -231,4 +235,61 @@ test("a whole journal is refused when it is not a list of rows, and by the index
     both.value.map((entry) => entry.seq),
     [1, 2],
   );
+});
+
+test("a decide carrying a finalization result is refused, as a reduction and a release are", () => {
+  for (const closed of [
+    oneOfEach.FinalizationResult,
+    oneOfEach.WorkReduce,
+    oneOfEach.EvalReduce,
+    oneOfEach.ReleaseTicket,
+  ]) {
+    const refused = parseTicketCommand(
+      JSON.stringify({
+        version: 1,
+        command: "Decide",
+        event: encodeDecisionEvent(closed),
+      }),
+    );
+    assert.equal(refused.parsed, "Refused", closed.type);
+    assert.ok(refused.parsed === "Refused");
+    assert.match(refused.why, /not a public decision command/);
+    assert.throws(
+      () => asOperationDecisionEvent(closed),
+      /not a public decision command/,
+      closed.type,
+    );
+  }
+});
+
+test("the finalizer's own envelope is read only by the parse a writer reads its inbox with", () => {
+  const submitted = {
+    version: 1,
+    command: "SubmitFinalizationResult",
+    request: "6:0:RunFinalizer",
+    attempt: "attempt-1",
+    requestGeneration: 6,
+    recoveryEpoch: "epoch-1",
+    outcome: "FinalizationSucceeded",
+  };
+  const text = JSON.stringify(submitted);
+  assert.deepEqual(parseStoredTicketCommand(text), {
+    parsed: "Ok",
+    value: submitted,
+  });
+  assert.equal(parseTicketCommand(text).parsed, "Refused");
+  for (const broken of [
+    { ...submitted, version: 2 },
+    { ...submitted, request: "" },
+    { ...submitted, attempt: "" },
+    { ...submitted, requestGeneration: 0 },
+    { ...submitted, requestGeneration: 1.5 },
+    { ...submitted, recoveryEpoch: "" },
+    { ...submitted, outcome: "FinalizationHeld" },
+  ]) {
+    const refused = parseStoredTicketCommand(JSON.stringify(broken));
+    assert.equal(refused.parsed, "Refused", JSON.stringify(broken));
+    assert.ok(refused.parsed === "Refused");
+    assert.match(refused.why, /finalization submission fields are invalid/);
+  }
 });

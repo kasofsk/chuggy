@@ -125,6 +125,7 @@ export type OperationResource =
       readonly refusedHead: number;
       readonly refusedLifecycleGeneration: number;
     })
+  | (OperationResourceBase & { readonly state: "Answered" })
   | (OperationResourceBase & { readonly state: "Cancelled" });
 
 export interface TicketResource {

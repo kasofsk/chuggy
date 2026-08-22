@@ -325,13 +325,22 @@ function projectWriterPlan(
   }
   if (
     item.source.kind === "Operation" &&
-    item.source.nativeAction !== undefined &&
-    !item.source.nativeAction.open
+    (item.source.nativeAction?.open === false ||
+      item.source.finalizationRequest?.open === false)
   ) {
     return {
       outcome: { outcome: "Refused", code: "NotEnabled" },
       post: memory.core,
     };
+  }
+  const answer =
+    item.source.kind === "Operation" ? item.source.nativeAction : undefined;
+  if (command === undefined) {
+    if (answer === undefined)
+      throw new Error(
+        "project writer: an input names neither event nor answer",
+      );
+    return { outcome: { outcome: "Answered", answer }, post: memory.core };
   }
   if (!decisionEventEnabled(writer.config, memory.core, command)) {
     return {
@@ -434,6 +443,7 @@ export async function projectTicketWriterRun(
     if (
       result.decided.decided !== "Committed" &&
       result.decided.decided !== "Refused" &&
+      result.decided.decided !== "Answered" &&
       result.decided.decided !== "Stale"
     ) {
       return memory;

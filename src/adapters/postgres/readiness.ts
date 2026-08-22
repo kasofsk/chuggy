@@ -14,6 +14,18 @@
  * clearing has to prove the inbox empty and why a repair scan is optional
  * rather than load-bearing.
  *
+ * A SUBMISSION IS FENCED BEFORE A SEMANTIC EVENT IS BUILT. A native-action
+ * resolution and a finalization result each name a durable row that authorized
+ * them, so the source for one is assembled from that row rather than from the
+ * command's own claims, and a row that has settled, whose generation has moved
+ * or whose epoch a restore superseded is carried closed for the writer to
+ * refuse.
+ *
+ * AN APPROVAL ANSWER RESOLVES TO NO EVENT. `Approve` and `Decline` name no
+ * domain command, so the source built for one carries the answer and no
+ * `resolvedEvent`, and the join onto the offered resolutions is what proves the
+ * action asked that question rather than the other one.
+ *
  * NO WAKE-UP IS ERASED, AND THE READINESS ROW LOCK IS WHAT ORDERS THE TWO
  * TRANSACTIONS. An acceptance writes its decision input and its readiness upsert
  * together, so either it commits before the clearing takes that lock — leaving
@@ -46,10 +58,28 @@ import type {
   Readiness,
   ReadinessCleared,
 } from "../../interpreter/projectDiscovery.ts";
-import { parseTicketCommand } from "../../interpreter/wire.ts";
-import type { TicketCommand } from "../../interpreter/ticketCommand.ts";
+import { parseStoredTicketCommand } from "../../interpreter/wire.ts";
+import {
+  isApprovalResolution,
+  type FinalizationSubmission,
+  type TicketCommand,
+} from "../../interpreter/ticketCommand.ts";
 import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
-import { releaseTicketEvent } from "../../actor/decisionEvent.ts";
+import {
+  allInputBundleReferenceKinds,
+  asFinalizationAttemptId,
+  asGitObjectId,
+  inputBundleReferencesMax,
+} from "../../interpreter/finalizer.ts";
+import {
+  asProjectArtifactId,
+  type FinalizationEvidence,
+} from "../../interpreter/finalizerPreparation.ts";
+import { finalizerRowValue } from "./finalizerRows.ts";
+import {
+  finalizationResultEvent,
+  releaseTicketEvent,
+} from "../../actor/decisionEvent.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
   asProjectId,
@@ -135,6 +165,166 @@ async function releaseDraftSource(
   };
 }
 
+/** One failed attempt's row, with the bundle the preparation it belongs to pinned. */
+interface FinalizationAttemptRow {
+  readonly attempt_digest: string;
+  readonly target_commit: string;
+  readonly conflict_manifest: string | null;
+  readonly conflict_manifest_digest: string | null;
+  readonly input_bundle: string;
+}
+
+/**
+ * The immutable evidence a failed result concluded on, read from the attempt
+ * the submission pinned rather than from the request's latest one. A succeeded
+ * result spawns no work, so nothing is gathered for one.
+ */
+async function finalizationEvidenceOf(
+  pool: pg.Pool,
+  partition: Partition,
+  command: FinalizationSubmission,
+): Promise<FinalizationEvidence | undefined> {
+  if (command.outcome !== "FinalizationFailed") return undefined;
+  const found = await pool.query<FinalizationAttemptRow>(
+    sql`SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
+            a.conflict_manifest_digest, a.input_bundle
+       FROM finalization_attempt a
+      WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+        AND a.attempt=${command.attempt} AND a.request=${command.request}`,
+  );
+  const attempt = found.rows[0];
+  if (attempt === undefined)
+    throw new Error(
+      `finalization attempt ${command.attempt} does not answer this request`,
+    );
+  const pinned = await pool.query<{
+    reference_kind: string;
+    reference_id: string;
+    reference_digest: string | null;
+  }>(
+    sql`SELECT reference_kind, reference_id, reference_digest
+       FROM input_bundle_reference
+      WHERE tenant=${partition.tenant} AND project=${partition.project}
+        AND bundle=${attempt.input_bundle}
+      ORDER BY ordinal LIMIT ${inputBundleReferencesMax}`,
+  );
+  return {
+    attempt: asFinalizationAttemptId(command.attempt),
+    attemptDigest: attempt.attempt_digest,
+    targetCommit: asGitObjectId(attempt.target_commit),
+    ...(attempt.conflict_manifest === null
+      ? {}
+      : { conflictManifest: asProjectArtifactId(attempt.conflict_manifest) }),
+    ...(attempt.conflict_manifest_digest === null
+      ? {}
+      : { conflictManifestDigest: attempt.conflict_manifest_digest }),
+    preparation: pinned.rows.map((row) => ({
+      kind: finalizerRowValue(
+        allInputBundleReferenceKinds,
+        row.reference_kind,
+        "bundle reference kind",
+      ),
+      reference: row.reference_id,
+      ...(row.reference_digest === null
+        ? {}
+        : { digest: row.reference_digest }),
+    })),
+  };
+}
+
+/**
+ * The `RunFinalizer` request a submitted result claims to answer, and whether it
+ * is still the request that authorizes it. A result whose request has settled,
+ * whose generation has moved or whose epoch a restore superseded is carried
+ * closed, and the writer refuses it at its serialized position.
+ */
+async function finalizationRequestSource(
+  pool: pg.Pool,
+  partition: Partition,
+  operation: string,
+  command: FinalizationSubmission,
+): Promise<DecisionInput["source"]> {
+  const found = await pool.query<{
+    ticket: string;
+    state: string;
+    request_generation: string;
+    epoch_is_current: boolean | null;
+  }>(
+    sql`SELECT f.ticket::text, f.state, f.request_generation::text,
+            (${command.recoveryEpoch} = (SELECT e.epoch FROM recovery_epoch e
+                    ORDER BY e.ordinal DESC LIMIT 1)) AS epoch_is_current
+       FROM finalization_request f
+      WHERE f.tenant=${partition.tenant} AND f.project=${partition.project}
+        AND f.request=${command.request}`,
+  );
+  const request = found.rows[0];
+  if (request === undefined)
+    throw new Error(
+      `finalization request ${command.request} does not authorize this result`,
+    );
+  const ticket = projectRowCounter(request.ticket, "finalization ticket");
+  const evidence = await finalizationEvidenceOf(pool, partition, command);
+  return {
+    kind: "Operation",
+    operation: asOperationId(operation),
+    command,
+    resolvedEvent: finalizationResultEvent(asTicketId(ticket), command.outcome),
+    finalizationRequest: {
+      request: command.request,
+      requestGeneration: command.requestGeneration,
+      open:
+        request.epoch_is_current === true &&
+        (request.state === "Open" || request.state === "Registered") &&
+        projectRowCounter(
+          request.request_generation,
+          "finalization request generation",
+        ) === command.requestGeneration,
+      ...(evidence === undefined ? {} : { evidence }),
+    },
+  };
+}
+
+async function nativeActionSource(
+  pool: pg.Pool,
+  partition: Partition,
+  operation: string,
+  command: Extract<TicketCommand, { readonly command: "ResolveNativeAction" }>,
+): Promise<DecisionInput["source"]> {
+  const action = await pool.query<{ ticket: string; state: string }>(
+    sql`SELECT a.ticket::text, a.state FROM native_action a
+      JOIN native_action_resolution r USING (tenant, project, action)
+     WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+       AND a.action=${command.action}
+       AND a.authorizing_seq=${command.authorizingSeq}
+       AND r.resolution=${String(command.resolution)}`,
+  );
+  const open = action.rows[0];
+  if (open === undefined)
+    throw new Error(
+      `native action ${command.action} is not open at the requested fence`,
+    );
+  const ticket = projectRowCounter(open.ticket, "native action ticket");
+  const answered = {
+    kind: "Operation" as const,
+    operation: asOperationId(operation),
+    command,
+    nativeAction: {
+      action: command.action,
+      authorizingSeq: command.authorizingSeq,
+      resolution: command.resolution,
+      open: open.state === "Open",
+    },
+  };
+  if (isApprovalResolution(command.resolution)) return answered;
+  return {
+    ...answered,
+    resolvedEvent:
+      command.resolution === "Resume"
+        ? { type: "ResumeTicket", value: ticket }
+        : { type: "Revoke", value: ticket },
+  };
+}
+
 async function operationSource(
   pool: pg.Pool,
   partition: Partition,
@@ -142,59 +332,36 @@ async function operationSource(
 ): Promise<DecisionInput["source"]> {
   if (row.command === null)
     throw new Error(`operation ${row.input_id} has no command`);
-  const parsed = parseTicketCommand(row.command);
+  const parsed = parseStoredTicketCommand(row.command);
   if (parsed.parsed === "Refused")
     throw new Error(`stored operation is unreadable: ${parsed.why}`);
-  if (parsed.value.command === "Decide") {
+  const command = parsed.value;
+  if (command.command === "SubmitFinalizationResult") {
+    return finalizationRequestSource(pool, partition, row.input_id, command);
+  }
+  if (command.command === "Decide") {
     return {
       kind: "Operation",
       operation: asOperationId(row.input_id),
-      command: parsed.value,
-      resolvedEvent: parsed.value.event,
+      command,
+      resolvedEvent: command.event,
     };
   }
-  if (parsed.value.command === "ReleaseDraft") {
-    return releaseDraftSource(pool, partition, row.input_id, parsed.value);
+  if (command.command === "ReleaseDraft") {
+    return releaseDraftSource(pool, partition, row.input_id, command);
   }
   if (
-    parsed.value.command === "ManualDispatch" ||
-    parsed.value.command === "ProposeDispatch"
+    command.command === "ManualDispatch" ||
+    command.command === "ProposeDispatch"
   ) {
     return {
       kind: "Operation",
       operation: asOperationId(row.input_id),
-      command: parsed.value,
-      resolvedEvent: { type: "Dispatch", value: parsed.value.ticket },
+      command,
+      resolvedEvent: { type: "Dispatch", value: command.ticket },
     };
   }
-  const action = await pool.query<{ ticket: string; state: string }>(
-    sql`SELECT a.ticket::text, a.state FROM native_action a
-      JOIN native_action_resolution r USING (tenant, project, action)
-     WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
-       AND a.action=${parsed.value.action}
-       AND a.authorizing_seq=${parsed.value.authorizingSeq}
-       AND r.resolution=${String(parsed.value.resolution)}`,
-  );
-  const open = action.rows[0];
-  if (open === undefined)
-    throw new Error(
-      `native action ${parsed.value.action} is not open at the requested fence`,
-    );
-  const ticket = projectRowCounter(open.ticket, "native action ticket");
-  return {
-    kind: "Operation",
-    operation: asOperationId(row.input_id),
-    command: parsed.value,
-    resolvedEvent:
-      parsed.value.resolution === "Resume"
-        ? { type: "ResumeTicket", value: ticket }
-        : { type: "Revoke", value: ticket },
-    nativeAction: {
-      action: parsed.value.action,
-      authorizingSeq: parsed.value.authorizingSeq,
-      open: open.state === "Open",
-    },
-  };
+  return nativeActionSource(pool, partition, row.input_id, command);
 }
 
 function continuationSource(row: InboxRow): DecisionInput["source"] {

@@ -17,6 +17,13 @@
 # a call site is a finding: the queries and the schema cannot drift apart
 # silently.
 #
+# THE COMPILER IS PART OF THE VERDICT. SafeQL reads each call site's declared
+# row type through the typescript it resolves, so a second copy resolving under
+# the plugin answers for a compiler this tree is not written for — and answers
+# confidently, reporting every type argument in the adapter as `{ }`. That is a
+# wrong verdict rather than a missing one, so it is refused here as a
+# could-not-run before any server is acquired.
+#
 # A CALLER-SUPPLIED SERVER IS MIGRATED IN PLACE. CHUG_PG_URL skips the
 # container exactly as it does for check-postgres, and the database it names
 # is brought to the declared schema before eslint asks it anything.
@@ -46,6 +53,31 @@ export NO_COLOR=1
 
 if [ ! -x ./node_modules/.bin/eslint ]; then
 	echo "check-queries: LINTER ERROR — no local eslint. Install with \`npm ci\`."
+	exit 2
+fi
+
+# Reported only when both resolve and disagree: a tree missing either is a
+# tree check-source's typecheck fails on first, and guessing here would turn a
+# clear failure into a confusing one.
+mismatch="$(node --input-type=module -e '
+import { createRequire } from "node:module";
+const here = createRequire(process.cwd() + "/");
+let root, plugin;
+try {
+  root = here.resolve("typescript");
+  plugin = createRequire(
+    here.resolve("@ts-safeql/eslint-plugin"),
+  ).resolve("typescript");
+} catch {
+  process.exit(0);
+}
+if (root !== plugin) console.log(plugin);
+' 2>/dev/null)"
+if [ -n "$mismatch" ]; then
+	echo "check-queries: LINTER ERROR — the plugin resolves its own typescript at"
+	echo "check-queries:   $mismatch"
+	echo "check-queries: so every row type it infers answers for that compiler and"
+	echo "check-queries: not the root's. Reconcile the versions and \`npm ci\`."
 	exit 2
 fi
 

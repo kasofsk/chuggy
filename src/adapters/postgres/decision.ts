@@ -22,9 +22,33 @@
  * settling authority is recorded because a refusal has no entry to carry the
  * owner and the fencing epoch that produced it.
  *
+ * AN ANSWERED ACTION IS THAT SAME SHAPE WITH ONE ROW MORE. An approval answer
+ * names no domain command, so the transaction records which answer was given
+ * and settles the input, and writes no entry, no projection and no focused work
+ * — which is the whole of what keeps approval out of `Core`.
+ *
  * THE PROJECTION IS UPSERTED BY THE ROWS THE DECISION CHANGED. Its sequence is
  * the entry's, which is what lets a read say which decision it is looking at,
  * and a ticket the decision left alone keeps the sequence that last moved it.
+ *
+ * A SPAWN REQUEST PINS ITS CAPACITY ACCOUNT AND CONFIGURATION HERE, in the
+ * transaction that authorizes it, because issue #180 has a spawn request name
+ * the stable capacity account and pinned task-configuration revision a
+ * consumer needs and forbids that consumer to reconstruct historical intent
+ * from a moving ticket row. The account is the project, which is that record's
+ * initial choice; the revision and digest are the same pin this transaction
+ * writes onto the entry and the projection, so the three cannot disagree. A
+ * cancellation request carries none of them: it retires work rather than
+ * authorizing any, and a column it does not need is a column a later reader
+ * would have to decide the meaning of.
+ *
+ * AND IT PINS THE BUNDLE ITS WORKERS CONSUME, WRITTEN IN THIS SAME TRANSACTION.
+ * Issue #180 has the transaction that spawns a work set materialize that set's
+ * input bundle from the exact references at that decision, and a decision
+ * returning a ticket to `Working` after a finalization failed adds the
+ * immutable evidence that failure named. So a worker forms its reconciliation
+ * objective from the bundle rather than from current refs, finalizer logs or
+ * the bare outcome.
  */
 
 import { createHash } from "node:crypto";
@@ -46,6 +70,7 @@ import {
   type DecisionCause,
   type DecisionOutcome,
   type DecisionInputOutcome,
+  type NativeActionAnswer,
   type RefusalCode,
   type TicketProjection,
 } from "../../interpreter/projectDecision.ts";
@@ -56,6 +81,12 @@ import {
   encodeDispatchReworkPolicy,
   type DispatchCandidate,
 } from "../../interpreter/dispatchView.ts";
+import { asInputBundleId } from "../../interpreter/finalizer.ts";
+import { inputBundleReferencesOf } from "../../interpreter/decisionPlan.ts";
+import {
+  postgresInputBundleOf,
+  postgresInputBundleWrite,
+} from "./inputBundle.ts";
 import { postgresJournalWrite } from "./journal.ts";
 import {
   postgresOwnershipHonours,
@@ -85,6 +116,7 @@ function decisionRefusalCode(value: string): RefusalCode {
 /** What a settled input says about itself, refusing a row whose state and outcome disagree. */
 function decisionOutcomeOf(row: DecisionCauseRow): DecisionInputOutcome {
   if (row.state === "Cancelled") return { settled: "Cancelled" };
+  if (row.state === "Answered") return { settled: "Answered" };
   if (row.state === "Stale") return { settled: "Stale" };
   if (row.state === "Refused" && row.outcome_code !== null) {
     return { settled: "Refused", code: decisionRefusalCode(row.outcome_code) };
@@ -254,17 +286,29 @@ async function decisionExecution(
 ): Promise<void> {
   const seq = outcome.entry.seq;
   for (const request of outcome.materialization.execution) {
+    const spawns = request.kind !== "CancelTicketWork";
+    const bundle =
+      request.bundle === undefined
+        ? undefined
+        : postgresInputBundleOf(
+            partition,
+            asInputBundleId(request.bundle.bundle),
+            inputBundleReferencesOf(configuration, request.bundle),
+          );
+    if (bundle !== undefined)
+      await postgresInputBundleWrite(client, partition, bundle);
     await client.query(
       sql`INSERT INTO execution_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
         ticket_version, kind, capacity_account, configuration_revision,
-        configuration_digest)
+        configuration_digest, input_bundle, input_bundle_digest)
        VALUES (${partition.tenant},${partition.project},${request.request},${seq},
                ${request.effectPosition},${request.ticket},${request.ticketVersion},${request.kind},
                CASE WHEN ${request.kind}='CancelTicketWork' THEN NULL
                     ELSE project_capacity_account(${partition.tenant},${partition.project}) END,
-               ${request.kind === "CancelTicketWork" ? null : configuration.configurationRevision},
-               ${request.kind === "CancelTicketWork" ? null : configuration.configurationDigest})`,
+               ${spawns ? configuration.configurationRevision : null},
+               ${spawns ? configuration.configurationDigest : null},
+               ${bundle?.bundle ?? null},${bundle?.digest ?? null})`,
     );
     for (const task of request.tasks) {
       await client.query(
@@ -287,7 +331,7 @@ async function decisionFinalization(
     await client.query(
       sql`UPDATE finalization_request SET state='Fulfilled'
         WHERE tenant=${partition.tenant} AND project=${partition.project}
-          AND ticket=${ticket} AND state='Open'`,
+          AND ticket=${ticket} AND state IN ('Open', 'Registered')`,
     );
   }
   for (const request of outcome.materialization.finalization) {
@@ -300,6 +344,26 @@ async function decisionFinalization(
                ${request.requestGeneration})`,
     );
   }
+}
+
+/**
+ * Records which of the answers an open action offered was given, at the fence
+ * that authorized it. A row that stopped being open is a fence the caller lost.
+ */
+async function decisionAnswerAction(
+  client: pg.PoolClient,
+  partition: Partition,
+  answer: NativeActionAnswer,
+): Promise<void> {
+  const changed = await client.query<{ action: string }>(
+    sql`UPDATE native_action SET state='Resolved', resolution=${String(answer.resolution)}
+      WHERE tenant=${partition.tenant} AND project=${partition.project}
+        AND action=${answer.action} AND authorizing_seq=${answer.authorizingSeq}
+        AND state='Open'
+      RETURNING action`,
+  );
+  if (changed.rows.length !== 1)
+    throw new Error("native action resolution fence failed");
 }
 
 async function decisionActions(
@@ -333,17 +397,8 @@ async function decisionActions(
       );
     }
   }
-  if (resolved !== undefined) {
-    const changed = await client.query<{ action: string }>(
-      sql`UPDATE native_action SET state='Resolved'
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
-          AND action=${resolved.action} AND authorizing_seq=${resolved.authorizingSeq}
-          AND state='Open'
-        RETURNING action`,
-    );
-    if (changed.rows.length !== 1)
-      throw new Error("native action resolution fence failed");
-  }
+  if (resolved !== undefined)
+    await decisionAnswerAction(client, partition, resolved);
 }
 
 async function decisionContinuation(
@@ -582,6 +637,11 @@ async function decisionApply(
       );
       await notifyDecision(client, lease.partition, cause, outcome);
       return { decided: "Refused" };
+    case "Answered":
+      await decisionAnswerAction(client, lease.partition, outcome.answer);
+      await decisionSettle(client, lease, cause, { settled: "Answered" }, null);
+      await notifyDecision(client, lease.partition, cause, outcome);
+      return { decided: "Answered" };
     case "Journaled":
       return decisionApplyJournaled(
         client,

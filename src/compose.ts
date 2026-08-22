@@ -1,5 +1,11 @@
+import { createHash, randomUUID } from "node:crypto";
+
 import type pg from "pg";
 
+import {
+  artifactStore,
+  type ArtifactStoreOptions,
+} from "./adapters/artifacts/artifactStore.ts";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
 import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
@@ -41,6 +47,25 @@ import {
   selectorPlanning,
   type SelectorPlanning,
 } from "./interpreter/selectorPlanning.ts";
+import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
+import {
+  asFinalizationAttemptId,
+  asInputBundleId,
+  checkedFinalizerConfig,
+  finalizerDefaults,
+  type FinalizerConfig,
+  type GitPromotionPort,
+} from "./interpreter/finalizer.ts";
+import {
+  asProjectArtifactId,
+  type CanonicalFinalization,
+  type FinalizerIdentityFactory,
+} from "./interpreter/finalizerPreparation.ts";
+import type { FinalizerService } from "./interpreter/finalizerRun.ts";
+import {
+  silentFinalizerTelemetry,
+  type FinalizerTelemetry,
+} from "./interpreter/finalizerTelemetry.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -121,6 +146,57 @@ export function composeSelectorService(
       postgresSelectorProposalReviews(selectorReviewPool),
     ),
     planning: selectorPlanning(access, state),
+  };
+}
+
+/** What a finalizer deployment answers its own ports with, none of it read from an environment. */
+export interface FinalizerServiceRuntime {
+  readonly git: GitPromotionPort;
+  readonly artifactRoot: string;
+  readonly artifacts?: ArtifactStoreOptions;
+}
+
+/** The identities one preparation mints, which the layer below may not draw for itself. */
+function finalizerIdentities(): FinalizerIdentityFactory {
+  return {
+    next: () => ({
+      attempt: asFinalizationAttemptId(`attempt-${randomUUID()}`),
+      bundle: asInputBundleId(`bundle-${randomUUID()}`),
+      conflict: asProjectArtifactId(`conflict-${randomUUID()}`),
+    }),
+  };
+}
+
+/** The hash the finalizer's canonical bytes are digested under. */
+function finalizerDigestOf(canonical: CanonicalFinalization): string {
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+/**
+ * Wires the finalizer's durable authority to its finalizer-role credentials, the
+ * Git port its caller composes and one project-owned artifact store, which is
+ * where a credential and a storage root are answered from and never the
+ * environment.
+ */
+export function composeFinalizerService(
+  finalizerPool: pg.Pool,
+  runtime: FinalizerServiceRuntime,
+  config: FinalizerConfig = finalizerDefaults,
+  metrics: FinalizerTelemetry = silentFinalizerTelemetry,
+): FinalizerService {
+  const artifacts = artifactStore({
+    ...runtime.artifacts,
+    root: runtime.artifactRoot,
+  });
+  return {
+    store: postgresFinalizer(finalizerPool),
+    git: runtime.git,
+    handoffs: artifacts,
+    artifacts,
+    identities: finalizerIdentities(),
+    digestOf: finalizerDigestOf,
+    config: checkedFinalizerConfig(config),
+    metrics,
   };
 }
 

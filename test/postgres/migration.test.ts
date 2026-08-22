@@ -144,7 +144,76 @@ async function assertMigratedI2(subject: pg.Pool): Promise<void> {
   );
 }
 
-test("I3 preserves every I2 operation outcome and its journal cause", async () => {
+/**
+ * The rows migration thirteen alters rather than creates: an escalation raised
+ * before `native_action` had an attempt column or a second kind, and a
+ * finalization request written before its claim was fenced by an epoch. A
+ * migration that only ever runs against an empty schema is a migration nothing
+ * has asked to preserve anything.
+ */
+async function seedBeforeI7(subject: pg.Pool): Promise<void> {
+  await subject.query(
+    `INSERT INTO native_action
+     (tenant,project,action,authorizing_seq,effect_position,ticket,action_version,
+      kind,reason,required_capability)
+     VALUES ('tenant','project','escalation',1,0,1,1,
+       'TicketEscalation','WorkFailed','ResolveTicket')`,
+  );
+  await subject.query(
+    `INSERT INTO native_action_resolution (tenant,project,action,resolution)
+     VALUES ('tenant','project','escalation','Resume')`,
+  );
+  await subject.query(
+    `INSERT INTO finalization_request
+     (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
+      request_generation) VALUES ('tenant','project','1:1:RunFinalizer',1,1,1,1,1)`,
+  );
+}
+
+/** What migration thirteen must have left those rows saying, and what it must now refuse. */
+async function assertMigratedI3(subject: pg.Pool): Promise<void> {
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT kind, state, required_capability, attempt FROM native_action`,
+      )
+    ).rows,
+    [
+      {
+        kind: "TicketEscalation",
+        state: "Open",
+        required_capability: "ResolveTicket",
+        attempt: null,
+      },
+    ],
+  );
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT state, recovery_epoch FROM finalization_request`,
+      )
+    ).rows,
+    [{ state: "Open", recovery_epoch: null }],
+  );
+  await assert.rejects(
+    subject.query(
+      `INSERT INTO native_action
+       (tenant,project,action,authorizing_seq,effect_position,ticket,action_version,
+        kind,reason,required_capability)
+       VALUES ('tenant','project','rival',1,0,2,1,
+         'TicketEscalation','WorkFailed','ResolveTicket')`,
+    ),
+    /native_action_effect_is_materialized_once/u,
+  );
+  await assert.rejects(
+    subject.query(
+      `UPDATE finalization_request SET claim_owner='owner', claim_expires_at=now()`,
+    ),
+    /finalization_request_claim_is_fenced/u,
+  );
+}
+
+test("each migration runs forward over the rows the slice before it left", async () => {
   const database = `chuggy_i3_${randomUUID().replaceAll("-", "")}`;
   const admin = postgresPool(postgresHarnessUrl());
   await admin.query(`CREATE DATABASE ${database}`);
@@ -155,7 +224,14 @@ test("I3 preserves every I2 operation outcome and its journal cause", async () =
         await subject.query(statement);
     }
     await seedI2(subject);
-    for (const migration of migrations.slice(4)) {
+    for (const migration of migrations.slice(4, 10)) {
+      await subject.query("BEGIN");
+      for (const statement of migration.statements)
+        await subject.query(statement);
+      await subject.query("COMMIT");
+    }
+    await seedBeforeI7(subject);
+    for (const migration of migrations.slice(10)) {
       await subject.query("BEGIN");
       for (const statement of migration.statements)
         await subject.query(statement);
@@ -163,6 +239,7 @@ test("I3 preserves every I2 operation outcome and its journal cause", async () =
     }
 
     await assertMigratedI2(subject);
+    await assertMigratedI3(subject);
   } finally {
     await subject.end();
     await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);

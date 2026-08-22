@@ -29,6 +29,12 @@
  * are looked at, and a still-pending operation falls through to the fences and
  * is decided again.
  *
+ * AN ANSWERED ACTION WRITES NO ENTRY EITHER, AND IT IS NOT A REFUSAL. The two
+ * answers a finalization approval admits name no domain command, so `Core`
+ * learns nothing and there is nothing to journal; the input settles carrying
+ * which of the offered answers was given, and the head and the projection are
+ * exactly as they were.
+ *
  * A REFUSAL WRITES NO ENTRY. It settles the decision input
  * and moves nothing else, so the head, the projection and the journal are
  * exactly as they were — which is what makes a refusal replayable as an
@@ -49,6 +55,11 @@ import {
 } from "./operationInbox.ts";
 import type { Lease, Lifecycle } from "./projectStore.ts";
 import type { DispatchCandidate } from "./dispatchView.ts";
+import type { FinalizationEvidence } from "./finalizerPreparation.ts";
+import type {
+  EscalationResolution,
+  NativeActionResolution,
+} from "./ticketCommand.ts";
 
 /**
  * The finite vocabulary a refused operation answers with. It is closed because
@@ -101,12 +112,32 @@ export interface TicketProjection {
   readonly phase: Phase;
 }
 
+/**
+ * The bundle a spawn request pins, minted from the same journal position the
+ * request is, so a retried decision reproduces the identity rather than a second
+ * bundle. A cancellation authorizes no work and pins none.
+ */
+export interface ExecutionRequestBundle {
+  readonly bundle: string;
+  readonly evidence?: FinalizationEvidence;
+}
+
+/** The kind part of a spawn bundle's derived identity, which the schema's backfill spells too. */
+export const inputBundleIdentityKind = "InputBundle";
+
+/** The request kinds that authorize work, which are the ones that pin a bundle. */
+export const spawnRequestKinds: readonly ExecutionRequestPlan["kind"][] = [
+  "SpawnWork",
+  "SpawnEvaluation",
+];
+
 export interface ExecutionRequestPlan {
   readonly request: string;
   readonly effectPosition: number;
   readonly ticket: TicketId;
   readonly ticketVersion: number;
   readonly kind: "SpawnWork" | "SpawnEvaluation" | "CancelTicketWork";
+  readonly bundle?: ExecutionRequestBundle;
   readonly tasks: readonly (
     | { readonly task: number; readonly kind: "Work" }
     | {
@@ -125,7 +156,19 @@ export interface NativeActionPlan {
   readonly kind: "TicketEscalation";
   readonly reason: string;
   readonly capability: "ResolveTicket";
-  readonly resolutions: readonly ("Resume" | "Revoke")[];
+  readonly resolutions: readonly EscalationResolution[];
+}
+
+/**
+ * Which of the answers an open action offered was given, at the fence that
+ * authorized it. `open` is false where the action stopped being answerable
+ * between acceptance and decision.
+ */
+export interface NativeActionAnswer {
+  readonly action: string;
+  readonly authorizingSeq: number;
+  readonly resolution: NativeActionResolution;
+  readonly open: boolean;
 }
 
 export interface DecisionMaterialization {
@@ -148,11 +191,7 @@ export interface DecisionMaterialization {
   }[];
   readonly fulfillFinalizationFor: readonly TicketId[];
   readonly withdrawActionsFor: readonly TicketId[];
-  readonly resolveAction?: {
-    readonly action: string;
-    readonly authorizingSeq: number;
-    readonly open: boolean;
-  };
+  readonly resolveAction?: NativeActionAnswer;
 }
 
 /**
@@ -172,6 +211,7 @@ export type DecisionOutcome =
       };
     }
   | { readonly outcome: "Refused"; readonly code: RefusalCode }
+  | { readonly outcome: "Answered"; readonly answer: NativeActionAnswer }
   | { readonly outcome: "Stale" };
 
 /** One decision offered for commit: what authorizes it, what caused it, and what it writes. */
@@ -190,6 +230,7 @@ export interface Decision {
 export type DecisionInputOutcome =
   | { readonly settled: "Succeeded"; readonly seq: number }
   | { readonly settled: "Refused"; readonly code: RefusalCode }
+  | { readonly settled: "Answered" }
   | { readonly settled: "Cancelled" }
   | { readonly settled: "Stale" };
 
@@ -200,6 +241,7 @@ export type DecisionInputOutcome =
 export type Decided =
   | { readonly decided: "Committed"; readonly lease: Lease }
   | { readonly decided: "Refused" }
+  | { readonly decided: "Answered" }
   | { readonly decided: "Stale" }
   | {
       readonly decided: "AlreadyTerminal";

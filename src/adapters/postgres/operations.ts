@@ -409,6 +409,7 @@ export async function postgresOperationsCancel(
     if (locked === undefined) return { cancelled: "Unknown" };
     switch (locked) {
       case "Succeeded":
+      case "Answered":
       case "Refused":
         return { cancelled: "NotPending", state: locked };
       case "Pending":

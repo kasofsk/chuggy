@@ -77,7 +77,7 @@ after(async () => {
 });
 
 /** The migration this suite is about, named once so the ledger case and the report agree. */
-const schedulerMigrationVersion = 10;
+const schedulerMigrationVersion = 12;
 
 /** How wide a case's own cluster is, which is capacity rather than semantics. */
 const schedulerClusterSlots = 32;
@@ -400,7 +400,7 @@ async function schedulerReported(
   };
 }
 
-test("migration ten is recorded once and re-migrating this database applies nothing", async () => {
+test("migration twelve is recorded once and re-migrating this database applies nothing", async () => {
   const declared = migrations.find(
     (each) => each.version === schedulerMigrationVersion,
   );
@@ -427,7 +427,7 @@ test("migration ten is recorded once and re-migrating this database applies noth
   );
 });
 
-test("every relation migration ten declares is present and reachable", async () => {
+test("every relation migration twelve declares is present and reachable", async () => {
   const declared = [
     "capacity_account",
     "execution",
