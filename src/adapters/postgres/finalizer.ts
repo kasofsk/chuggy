@@ -353,8 +353,8 @@ function finalizerRowAttempt(
   request: string,
   ticket: TicketId,
 ): FinalizationAttempt | undefined {
+  if (row.attempt === null) return undefined;
   if (
-    row.attempt === null ||
     row.repository === null ||
     row.target_ref === null ||
     row.target_commit === null ||
@@ -365,9 +365,9 @@ function finalizerRowAttempt(
     row.outcome === null ||
     row.attempt_digest === null
   ) {
-    return undefined;
+    throw new Error("postgres finalizer: an attempt row is incomplete");
   }
-  return {
+  const base = {
     attempt: asFinalizationAttemptId(row.attempt),
     request,
     ticket,
@@ -384,24 +384,34 @@ function finalizerRowAttempt(
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     approvalRequired: row.approval_required,
-    outcome: finalizerRowValue(
-      allFinalizationAttemptOutcomes,
-      row.outcome,
-      "attempt outcome",
-    ),
-    ...(row.candidate_commit === null
-      ? {}
-      : { candidate: asGitObjectId(row.candidate_commit) }),
-    ...(row.failure_kind === null
-      ? {}
-      : {
-          failureKind: finalizerRowValue(
-            allFinalizationFailureKinds,
-            row.failure_kind,
-            "failure kind",
-          ),
-        }),
     attemptDigest: row.attempt_digest,
+  };
+  const outcome = finalizerRowValue(
+    allFinalizationAttemptOutcomes,
+    row.outcome,
+    "attempt outcome",
+  );
+  if (outcome === "Prepared") {
+    if (row.candidate_commit === null || row.failure_kind !== null) {
+      throw new Error("postgres finalizer: a prepared attempt is not whole");
+    }
+    return {
+      ...base,
+      outcome,
+      candidate: asGitObjectId(row.candidate_commit),
+    };
+  }
+  if (row.candidate_commit !== null || row.failure_kind === null) {
+    throw new Error("postgres finalizer: a failed attempt is not whole");
+  }
+  return {
+    ...base,
+    outcome,
+    failureKind: finalizerRowValue(
+      allFinalizationFailureKinds,
+      row.failure_kind,
+      "failure kind",
+    ),
   };
 }
 
@@ -410,26 +420,38 @@ function finalizerRowReconciliation(
   row: ViewRow,
   permit: CommitPermitId,
 ): Pick<FinalizationView, "reconciliation"> {
-  if (
-    row.verdict === null ||
-    row.reconciled_candidate === null ||
-    row.reconciled_ref === null
-  ) {
-    return {};
+  if (row.verdict === null) return {};
+  if (row.reconciled_candidate === null || row.reconciled_ref === null) {
+    throw new Error("postgres finalizer: a reconciliation row is incomplete");
+  }
+  const base = {
+    permit,
+    candidate: asGitObjectId(row.reconciled_candidate),
+    target: asGitRefName(row.reconciled_ref),
+  };
+  const verdict = finalizerRowValue(
+    allReconciliationVerdicts,
+    row.verdict,
+    "reconciliation verdict",
+  );
+  if (verdict === "Unreadable") {
+    if (row.observed_commit !== null) {
+      throw new Error(
+        "postgres finalizer: an unreadable reconciliation observed a commit",
+      );
+    }
+    return { reconciliation: { ...base, verdict } };
+  }
+  if (row.observed_commit === null) {
+    throw new Error(
+      "postgres finalizer: a readable reconciliation observed no commit",
+    );
   }
   return {
     reconciliation: {
-      permit,
-      candidate: asGitObjectId(row.reconciled_candidate),
-      target: asGitRefName(row.reconciled_ref),
-      verdict: finalizerRowValue(
-        allReconciliationVerdicts,
-        row.verdict,
-        "reconciliation verdict",
-      ),
-      ...(row.observed_commit === null
-        ? {}
-        : { observed: asGitObjectId(row.observed_commit) }),
+      ...base,
+      verdict,
+      observed: asGitObjectId(row.observed_commit),
     },
   };
 }
@@ -437,21 +459,29 @@ function finalizerRowReconciliation(
 /** Where the approval for the attempt in hand stands, pending until an answer is recorded. */
 function finalizerRowApproval(row: ViewRow): ApprovalStanding {
   if (row.approval_state === null) return approvalStandingOf(undefined);
+  const state = finalizerRowValue(
+    allNativeActionStates,
+    row.approval_state,
+    "action state",
+  );
+  if (state !== "Resolved") {
+    if (row.approval_resolution !== null) {
+      throw new Error(
+        "postgres finalizer: an unresolved approval has an answer",
+      );
+    }
+    return approvalStandingOf({ state });
+  }
+  if (row.approval_resolution === null) {
+    throw new Error("postgres finalizer: a resolved approval has no answer");
+  }
   return approvalStandingOf({
-    state: finalizerRowValue(
-      allNativeActionStates,
-      row.approval_state,
-      "action state",
+    state,
+    resolution: finalizerRowValue(
+      nativeActionResolutions.FinalizationApproval,
+      row.approval_resolution,
+      "approval answer",
     ),
-    ...(row.approval_resolution === null
-      ? {}
-      : {
-          resolution: finalizerRowValue(
-            nativeActionResolutions.FinalizationApproval,
-            row.approval_resolution,
-            "approval answer",
-          ),
-        }),
   });
 }
 

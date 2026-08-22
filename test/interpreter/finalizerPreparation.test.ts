@@ -37,7 +37,7 @@ import {
   conflictManifestBytesMax,
   conflictManifestText,
   handoffAccepted,
-  type AttemptRecord,
+  type AttemptRecordInput,
   type HandoffArtifact,
   type HandoffGathering,
   type HandoffWork,
@@ -200,7 +200,7 @@ const claim: FinalizationClaim = {
 };
 
 /** One attempt with everything a preparation pins, before its own digest is taken. */
-const record: Omit<AttemptRecord, "attemptDigest"> = {
+const record: AttemptRecordInput = {
   claim,
   repository: asRepositoryId("repository-a"),
   attempt: asFinalizationAttemptId("attempt-1"),

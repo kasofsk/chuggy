@@ -228,6 +228,16 @@ export async function finalizerPreparationRecord(
   );
   if (held.rowCount !== 1) return { recorded: "Fenced" };
   await postgresInputBundleWrite(client, claim.partition, record.bundle);
+  const candidate = record.outcome === "Prepared" ? record.candidate : null;
+  const failureKind = record.outcome === "Failed" ? record.failureKind : null;
+  const conflictManifest =
+    record.outcome === "Failed" && record.failureKind === "MergeConflict"
+      ? record.conflictManifest
+      : null;
+  const conflictDigest =
+    record.outcome === "Failed" && record.failureKind === "MergeConflict"
+      ? record.conflictDigest
+      : null;
   await client.query(
     sql`INSERT INTO finalization_attempt
        (tenant, project, attempt, request, ticket, repository, input_bundle,
@@ -241,8 +251,8 @@ export async function finalizerPreparationRecord(
              ${record.target.commit},${record.strategy},
              ${record.configuration.revision},${record.configuration.digest},
              ${record.approvalRequired},${record.outcome},
-             ${record.candidate ?? null},${record.failureKind ?? null},
-             ${record.conflictManifest ?? null},${record.conflictDigest ?? null},
+             ${candidate},${failureKind},
+             ${conflictManifest},${conflictDigest},
              ${record.attemptDigest})`,
   );
   return { recorded: "Attempt" };

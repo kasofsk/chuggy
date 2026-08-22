@@ -49,9 +49,7 @@ import {
   type CandidateFile,
   type ConflictSummary,
   type FinalizationAttemptId,
-  type FinalizationAttemptOutcome,
   type FinalizationClaim,
-  type FinalizationFailureKind,
   type GitObjectId,
   type InputBundle,
   type InputBundleId,
@@ -354,7 +352,7 @@ export interface FinalizerIdentityFactory {
  * One preparation offered to the durable authority. It is written once, and the
  * schema has no update path at all, so a second preparation is another identity.
  */
-export interface AttemptRecord {
+interface AttemptRecordBase {
   readonly claim: FinalizationClaim;
   readonly repository: RepositoryId;
   readonly attempt: FinalizationAttemptId;
@@ -363,13 +361,29 @@ export interface AttemptRecord {
   readonly strategy: IntegrationStrategy;
   readonly configuration: PinnedConfiguration;
   readonly approvalRequired: boolean;
-  readonly outcome: FinalizationAttemptOutcome;
-  readonly candidate?: GitObjectId;
-  readonly failureKind?: FinalizationFailureKind;
-  readonly conflictManifest?: ProjectArtifactId;
-  readonly conflictDigest?: string;
-  readonly attemptDigest: string;
 }
+
+/** One immutable attempt record, carrying exactly the evidence its outcome produced. */
+export type AttemptRecordInput =
+  | (AttemptRecordBase & {
+      readonly outcome: "Prepared";
+      readonly candidate: GitObjectId;
+    })
+  | (AttemptRecordBase & {
+      readonly outcome: "Failed";
+      readonly failureKind: "PreparationFailed";
+    })
+  | (AttemptRecordBase & {
+      readonly outcome: "Failed";
+      readonly failureKind: "MergeConflict";
+      readonly conflictManifest: ProjectArtifactId;
+      readonly conflictDigest: string;
+    });
+
+/** One attempt input after its canonical digest has bound all of its fields. */
+export type AttemptRecord = AttemptRecordInput & {
+  readonly attemptDigest: string;
+};
 
 /**
  * What recording one preparation did. `Fenced` is every durable reason the row
@@ -453,8 +467,18 @@ export function canonicalInputBundle(
 
 /** The exact bytes one attempt's digest is taken over, binding it to the request it answers. */
 export function canonicalFinalizationAttempt(
-  record: Omit<AttemptRecord, "attemptDigest">,
+  record: AttemptRecordInput,
 ): CanonicalFinalization {
+  const candidate = record.outcome === "Prepared" ? record.candidate : "";
+  const failureKind = record.outcome === "Failed" ? record.failureKind : "";
+  const conflictManifest =
+    record.outcome === "Failed" && record.failureKind === "MergeConflict"
+      ? record.conflictManifest
+      : "";
+  const conflictDigest =
+    record.outcome === "Failed" && record.failureKind === "MergeConflict"
+      ? record.conflictDigest
+      : "";
   return finalizationParts([
     finalizationDigestFormat,
     "attempt",
@@ -473,10 +497,10 @@ export function canonicalFinalizationAttempt(
     record.configuration.digest,
     String(record.approvalRequired),
     record.outcome,
-    record.candidate ?? "",
-    record.failureKind ?? "",
-    record.conflictManifest ?? "",
-    record.conflictDigest ?? "",
+    candidate,
+    failureKind,
+    conflictManifest,
+    conflictDigest,
   ]);
 }
 

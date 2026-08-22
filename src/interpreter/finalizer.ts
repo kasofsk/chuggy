@@ -350,7 +350,7 @@ export interface FinalizationClaim {
  * One preparation, written once and never updated, which is what makes it
  * evidence rather than a working note. Re-preparation creates another identity.
  */
-export interface FinalizationAttempt {
+interface FinalizationAttemptBase {
   readonly attempt: FinalizationAttemptId;
   readonly request: string;
   readonly ticket: TicketId;
@@ -360,11 +360,19 @@ export interface FinalizationAttempt {
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly approvalRequired: boolean;
-  readonly outcome: FinalizationAttemptOutcome;
-  readonly candidate?: GitObjectId;
-  readonly failureKind?: FinalizationFailureKind;
   readonly attemptDigest: string;
 }
+
+/** One immutable preparation, whose outcome carries exactly the evidence that state requires. */
+export type FinalizationAttempt =
+  | (FinalizationAttemptBase & {
+      readonly outcome: "Prepared";
+      readonly candidate: GitObjectId;
+    })
+  | (FinalizationAttemptBase & {
+      readonly outcome: "Failed";
+      readonly failureKind: FinalizationFailureKind;
+    });
 
 /** The one permit that authorizes the one irreversible act, at most one live per project. */
 export interface CommitPermit {
@@ -376,13 +384,21 @@ export interface CommitPermit {
 }
 
 /** What the target ref proved about the candidate, recorded per permit and never absent for a hold. */
-export interface FinalizationReconciliation {
+interface FinalizationReconciliationBase {
   readonly permit: CommitPermitId;
   readonly candidate: GitObjectId;
   readonly target: GitRefName;
-  readonly verdict: ReconciliationVerdict;
-  readonly observed?: GitObjectId;
 }
+
+/** What the target ref proved, with an observed commit exactly when the ref was readable. */
+export type FinalizationReconciliation =
+  | (FinalizationReconciliationBase & {
+      readonly verdict: "Unreadable";
+    })
+  | (FinalizationReconciliationBase & {
+      readonly verdict: "Promoted" | "NotPromoted";
+      readonly observed: GitObjectId;
+    });
 
 /**
  * Where the approval a pinned revision may require currently stands. The
@@ -399,10 +415,9 @@ export const allApprovalStandings: readonly ApprovalStanding[] = [
 ];
 
 /** What the ticket-service-owned action a finalizer opened currently says. */
-export interface ApprovalAction {
-  readonly state: "Open" | "Resolved" | "Withdrawn";
-  readonly resolution?: ApprovalResolution;
-}
+export type ApprovalAction =
+  | { readonly state: "Open" | "Withdrawn" }
+  | { readonly state: "Resolved"; readonly resolution: ApprovalResolution };
 
 /**
  * Where the approval for one prepared candidate stands. An action nobody has
@@ -413,9 +428,6 @@ export function approvalStandingOf(
   action: ApprovalAction | undefined,
 ): ApprovalStanding {
   if (action === undefined || action.state !== "Resolved") return "Pending";
-  if (action.resolution === undefined) {
-    throw new Error("approval: a resolved action records no answer");
-  }
   return action.resolution === "Approve" ? "Granted" : "Declined";
 }
 
@@ -503,22 +515,6 @@ function finalizationNextAssertView(view: FinalizationView): void {
   if (attempt !== undefined && attempt.request !== view.claim.request) {
     throw new RangeError(
       "finalization view: the attempt answers another request",
-    );
-  }
-  if (
-    attempt !== undefined &&
-    (attempt.outcome === "Prepared") !== (attempt.candidate !== undefined)
-  ) {
-    throw new RangeError(
-      "finalization view: a prepared attempt pins no candidate, or a failed one pins one",
-    );
-  }
-  if (
-    attempt !== undefined &&
-    (attempt.outcome === "Failed") !== (attempt.failureKind !== undefined)
-  ) {
-    throw new RangeError(
-      "finalization view: a failed attempt names no kind, or a prepared one names one",
     );
   }
   if (

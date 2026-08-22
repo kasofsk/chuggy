@@ -96,7 +96,6 @@ import {
   type FinalizationAttemptId,
   type FinalizationClaim,
   type FinalizationConclusion,
-  type FinalizationReconciliation,
   type FinalizationView,
   type FinalizerConfig,
   type FinalizerOwnerId,
@@ -119,6 +118,7 @@ import {
   conflictManifestText,
   handoffAccepted,
   type AttemptRecord,
+  type AttemptRecordInput,
   type FinalizationDigestFunction,
   type FinalizerIdentityFactory,
   type FinalizerPreparationStore,
@@ -182,10 +182,12 @@ interface FinalizerTally {
 const finalizerStrategy: IntegrationStrategy = "Merge";
 
 /** What one reading of the target ref records, an unreadable ref among the answers. */
-type FinalizerReading = Pick<
-  FinalizationReconciliation,
-  "verdict" | "observed"
->;
+type FinalizerReading =
+  | { readonly verdict: "Unreadable" }
+  | {
+      readonly verdict: "Promoted" | "NotPromoted";
+      readonly observed: GitObjectId;
+    };
 
 /** Everything a reading needs to name the permit it settles. */
 interface FinalizerReadingSubject {
@@ -349,7 +351,7 @@ function finalizerCandidateOf(view: FinalizationView): FinalizerCandidate {
   const { attempt, repository } = view;
   if (
     attempt === undefined ||
-    attempt.candidate === undefined ||
+    attempt.outcome !== "Prepared" ||
     repository === undefined
   ) {
     throw new Error(
@@ -530,7 +532,7 @@ function finalizerAttemptBase(
 /** One attempt under its own digest, which is the last value computed before the row is written. */
 function finalizerAttemptOf(
   service: FinalizerService,
-  record: Omit<AttemptRecord, "attemptDigest">,
+  record: AttemptRecordInput,
 ): AttemptRecord {
   return {
     ...record,
@@ -550,7 +552,10 @@ async function finalizerRecordAttempt(
     return;
   }
   recordFinalizer(service.metrics, (metrics) => {
-    metrics.attempt(record.outcome, record.failureKind);
+    metrics.attempt(
+      record.outcome,
+      record.outcome === "Failed" ? record.failureKind : undefined,
+    );
   });
 }
 

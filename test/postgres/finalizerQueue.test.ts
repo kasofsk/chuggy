@@ -372,7 +372,8 @@ test("the view is gathered from the rows, and a finalization needing git holds",
   const carried = await store.durableView(claim);
   assert.ok(carried !== undefined);
   assert.equal(carried.attempt?.attempt, attempt);
-  assert.equal(carried.attempt?.candidate, candidate);
+  assert.ok(carried.attempt?.outcome === "Prepared");
+  assert.equal(carried.attempt.candidate, candidate);
   assert.equal(carried.attempt?.strategy, "Merge");
   assert.equal(carried.attemptsMade, 1);
   assert.equal(carried.permit?.permit, permit);

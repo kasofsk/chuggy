@@ -173,13 +173,14 @@ function permitIn(state: CommitPermitState): CommitPermit {
 function reconciliationOf(
   verdict: ReconciliationVerdict,
 ): FinalizationReconciliation {
-  return {
+  const base = {
     permit: permitId,
     candidate,
     target: target.ref,
-    verdict,
-    ...(verdict === "Unreadable" ? {} : { observed: candidate }),
   };
+  return verdict === "Unreadable"
+    ? { ...base, verdict }
+    : { ...base, verdict, observed: candidate };
 }
 
 test("the defaults are a configuration a pass may run on", () => {
@@ -472,10 +473,6 @@ test("a standing is the answer recorded, and an unanswered or withdrawn ask is p
     approvalStandingOf({ state: "Resolved", resolution: "Decline" }),
     "Declined",
   );
-  assert.throws(
-    () => approvalStandingOf({ state: "Resolved" }),
-    /records no answer/u,
-  );
 });
 
 test("approval is awaited only where the pinned revision required it", () => {
@@ -668,17 +665,6 @@ test("a view whose durable rows contradict each other is refused rather than dec
         }),
       ),
     /answers another request/u,
-  );
-  assert.throws(
-    () =>
-      finalizationNext(
-        finalizerDefaults,
-        viewWith({
-          attempt: { ...prepared, outcome: "Failed" },
-          attemptsMade: 1,
-        }),
-      ),
-    /pins no candidate, or a failed one pins one/u,
   );
   assert.throws(
     () =>

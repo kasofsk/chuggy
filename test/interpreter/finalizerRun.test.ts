@@ -480,7 +480,7 @@ test("a pass held by an unreadable ref spends the permit on neither answer", asy
     store.readings.map((each) => each.reconciliation.verdict),
     ["Unreadable"],
   );
-  assert.equal(store.readings[0]?.reconciliation.observed, undefined);
+  assert.equal(store.readings[0]?.reconciliation.verdict, "Unreadable");
 });
 
 test("a candidate awaiting approval opens the ask and reaches neither the remote nor the permit", async () => {
@@ -662,11 +662,11 @@ test("a genuine conflict writes a manifest with its own identity and digest and 
     truncated: false,
   });
   const recorded = store.attempts[0];
-  assert.equal(recorded?.outcome, "Failed");
-  assert.equal(recorded?.failureKind, "MergeConflict");
-  assert.equal(recorded?.conflictManifest, "conflict-1");
-  assert.equal(recorded?.conflictDigest, digestOf("evidence"));
-  assert.equal(recorded?.candidate, undefined);
+  assert.ok(recorded !== undefined && recorded.outcome === "Failed");
+  assert.equal(recorded.failureKind, "MergeConflict");
+  assert.ok(recorded.failureKind === "MergeConflict");
+  assert.equal(recorded.conflictManifest, "conflict-1");
+  assert.equal(recorded.conflictDigest, digestOf("evidence"));
 });
 
 test("a conflict nothing could store leaves no attempt, because the evidence is half of it", async () => {
@@ -718,7 +718,9 @@ test("a handoff naming the repository itself is refused before any blob is writt
   const git = recordingGit();
   await passOver(serviceOf(store, git));
   assert.deepEqual(git.preparations, []);
-  assert.equal(store.attempts[0]?.failureKind, "PreparationFailed");
+  const refused = store.attempts[0];
+  assert.ok(refused !== undefined && refused.outcome === "Failed");
+  assert.equal(refused.failureKind, "PreparationFailed");
 });
 
 test("a ticket whose passed work has no result at all is a hold and never a failure", async () => {
@@ -744,13 +746,9 @@ test("a closing project's abort reaches no remote, asks for no permit and prices
     assert.deepEqual(store.grants, [], lifecycle);
     assert.equal(report.promotions, 0, lifecycle);
     assert.equal(store.attempts.length, 1, lifecycle);
-    assert.equal(store.attempts[0]?.outcome, "Failed", lifecycle);
-    assert.equal(
-      store.attempts[0]?.failureKind,
-      "PreparationFailed",
-      lifecycle,
-    );
-    assert.equal(store.attempts[0]?.candidate, undefined, lifecycle);
+    const aborted = store.attempts[0];
+    assert.ok(aborted !== undefined && aborted.outcome === "Failed", lifecycle);
+    assert.equal(aborted.failureKind, "PreparationFailed", lifecycle);
   }
 });
 
