@@ -61,6 +61,7 @@
 
 import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
+import { assertNever } from "../domain/assertNever.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { ApprovalResolution } from "./ticketCommand.ts";
 import type { Lifecycle, Partition, RecoveryEpoch } from "./projectStore.ts";
@@ -350,7 +351,7 @@ export interface FinalizationClaim {
  * One preparation, written once and never updated, which is what makes it
  * evidence rather than a working note. Re-preparation creates another identity.
  */
-export interface FinalizationAttempt {
+interface FinalizationAttemptBase {
   readonly attempt: FinalizationAttemptId;
   readonly request: string;
   readonly ticket: TicketId;
@@ -360,11 +361,19 @@ export interface FinalizationAttempt {
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly approvalRequired: boolean;
-  readonly outcome: FinalizationAttemptOutcome;
-  readonly candidate?: GitObjectId;
-  readonly failureKind?: FinalizationFailureKind;
   readonly attemptDigest: string;
 }
+
+/** One immutable preparation, whose outcome carries exactly the evidence that state requires. */
+export type FinalizationAttempt =
+  | (FinalizationAttemptBase & {
+      readonly outcome: "Prepared";
+      readonly candidate: GitObjectId;
+    })
+  | (FinalizationAttemptBase & {
+      readonly outcome: "Failed";
+      readonly failureKind: FinalizationFailureKind;
+    });
 
 /** The one permit that authorizes the one irreversible act, at most one live per project. */
 export interface CommitPermit {
@@ -376,13 +385,21 @@ export interface CommitPermit {
 }
 
 /** What the target ref proved about the candidate, recorded per permit and never absent for a hold. */
-export interface FinalizationReconciliation {
+interface FinalizationReconciliationBase {
   readonly permit: CommitPermitId;
   readonly candidate: GitObjectId;
   readonly target: GitRefName;
-  readonly verdict: ReconciliationVerdict;
-  readonly observed?: GitObjectId;
 }
+
+/** What the target ref proved, with an observed commit exactly when the ref was readable. */
+export type FinalizationReconciliation =
+  | (FinalizationReconciliationBase & {
+      readonly verdict: "Unreadable";
+    })
+  | (FinalizationReconciliationBase & {
+      readonly verdict: "Promoted" | "NotPromoted";
+      readonly observed: GitObjectId;
+    });
 
 /**
  * Where the approval a pinned revision may require currently stands. The
@@ -399,10 +416,9 @@ export const allApprovalStandings: readonly ApprovalStanding[] = [
 ];
 
 /** What the ticket-service-owned action a finalizer opened currently says. */
-export interface ApprovalAction {
-  readonly state: "Open" | "Resolved" | "Withdrawn";
-  readonly resolution?: ApprovalResolution;
-}
+export type ApprovalAction =
+  | { readonly state: "Open" | "Withdrawn" }
+  | { readonly state: "Resolved"; readonly resolution: ApprovalResolution };
 
 /**
  * Where the approval for one prepared candidate stands. An action nobody has
@@ -413,9 +429,6 @@ export function approvalStandingOf(
   action: ApprovalAction | undefined,
 ): ApprovalStanding {
   if (action === undefined || action.state !== "Resolved") return "Pending";
-  if (action.resolution === undefined) {
-    throw new Error("approval: a resolved action records no answer");
-  }
   return action.resolution === "Approve" ? "Granted" : "Declined";
 }
 
@@ -428,18 +441,84 @@ export const allClosingLifecycles: readonly Lifecycle[] = [
   "Retention",
 ];
 
-/** Everything the pure pass reads, gathered before it runs so nothing is awaited inside it. */
-export interface FinalizationView {
+interface FinalizationViewBase {
   readonly claim: FinalizationClaim;
   readonly lifecycle: Lifecycle;
-  readonly repository?: RepositoryBinding;
-  readonly observedTarget?: ObservedTarget;
-  readonly attempt?: FinalizationAttempt;
-  readonly approval: ApprovalStanding;
-  readonly permit?: CommitPermit;
-  readonly reconciliation?: FinalizationReconciliation;
   readonly attemptsMade: number;
 }
+
+type ActiveFinalizationClaim = FinalizationClaim & {
+  readonly state: "Open" | "Registered";
+};
+
+type SettledFinalizationClaim = FinalizationClaim & {
+  readonly state: "Fulfilled" | "Invalidated";
+};
+
+export type PreparedFinalizationAttempt = Extract<
+  FinalizationAttempt,
+  { readonly outcome: "Prepared" }
+>;
+
+export type FailedFinalizationAttempt = Extract<
+  FinalizationAttempt,
+  { readonly outcome: "Failed" }
+>;
+
+type GrantedCommitPermit = CommitPermit & { readonly state: "Granted" };
+type ConcludedCommitPermit = CommitPermit & { readonly state: "Concluded" };
+type UnreadableReconciliation = Extract<
+  FinalizationReconciliation,
+  { readonly verdict: "Unreadable" }
+>;
+type ReadableReconciliation = Extract<
+  FinalizationReconciliation,
+  { readonly verdict: "Promoted" | "NotPromoted" }
+>;
+
+interface ActiveFinalizationViewBase extends FinalizationViewBase {
+  readonly claim: ActiveFinalizationClaim;
+}
+
+interface BoundFinalizationViewBase extends ActiveFinalizationViewBase {
+  readonly repository: RepositoryBinding;
+  readonly observedTarget?: ObservedTarget;
+}
+
+/** Everything the pure pass reads, with each durable progress state represented once. */
+export type FinalizationView =
+  | (FinalizationViewBase & {
+      readonly stage: "Settled";
+      readonly claim: SettledFinalizationClaim;
+    })
+  | (ActiveFinalizationViewBase & { readonly stage: "Unbound" })
+  | (BoundFinalizationViewBase & { readonly stage: "Unattempted" })
+  | (BoundFinalizationViewBase & {
+      readonly stage: "Failed";
+      readonly attempt: FailedFinalizationAttempt;
+    })
+  | (BoundFinalizationViewBase & {
+      readonly stage: "Prepared";
+      readonly attempt: PreparedFinalizationAttempt;
+      readonly approval: ApprovalStanding;
+    })
+  | (BoundFinalizationViewBase & {
+      readonly stage: "PermitGranted";
+      readonly attempt: PreparedFinalizationAttempt;
+      readonly approval: ApprovalStanding;
+      readonly permit: GrantedCommitPermit;
+      readonly reconciliation?: UnreadableReconciliation;
+    })
+  | (BoundFinalizationViewBase & {
+      readonly stage: "PermitConcluded";
+      readonly attempt: PreparedFinalizationAttempt;
+      readonly approval: ApprovalStanding;
+      readonly permit: ConcludedCommitPermit;
+      readonly reconciliation: ReadableReconciliation;
+    })
+  | (ActiveFinalizationViewBase & {
+      readonly stage: "Contradictory";
+    });
 
 /** Why a finalization is durably stopped under attention rather than concluded or failed. */
 export type FinalizationHoldKind =
@@ -485,69 +564,18 @@ export type FinalizationDecision =
   | { readonly decide: "Abort"; readonly target: ObservedTarget }
   | { readonly decide: "Promote"; readonly attempt: FinalizationAttemptId }
   | { readonly decide: "Reconcile"; readonly permit: CommitPermitId }
-  | { readonly decide: "Conclude"; readonly conclusion: FinalizationConclusion }
+  | {
+      readonly decide: "Conclude";
+      readonly attempt: FinalizationAttemptId;
+      readonly conclusion: FinalizationConclusion;
+    }
   | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind }
   | { readonly decide: "Settled" };
-
-/** Refuses a view whose durable rows contradict each other, which no later branch then has to re-ask. */
-function finalizationNextAssertView(view: FinalizationView): void {
-  const { attempt, permit, reconciliation, attemptsMade } = view;
-  if (!Number.isSafeInteger(attemptsMade) || attemptsMade < 0) {
-    throw new RangeError("finalization view: attemptsMade is not a count");
-  }
-  if (attempt !== undefined && attemptsMade < 1) {
-    throw new RangeError(
-      "finalization view: an attempt is present and no attempt was counted",
-    );
-  }
-  if (attempt !== undefined && attempt.request !== view.claim.request) {
-    throw new RangeError(
-      "finalization view: the attempt answers another request",
-    );
-  }
-  if (
-    attempt !== undefined &&
-    (attempt.outcome === "Prepared") !== (attempt.candidate !== undefined)
-  ) {
-    throw new RangeError(
-      "finalization view: a prepared attempt pins no candidate, or a failed one pins one",
-    );
-  }
-  if (
-    attempt !== undefined &&
-    (attempt.outcome === "Failed") !== (attempt.failureKind !== undefined)
-  ) {
-    throw new RangeError(
-      "finalization view: a failed attempt names no kind, or a prepared one names one",
-    );
-  }
-  if (
-    permit !== undefined &&
-    attempt !== undefined &&
-    permit.attempt !== attempt.attempt
-  ) {
-    throw new RangeError("finalization view: the permit names another attempt");
-  }
-  if (permit === undefined && reconciliation !== undefined) {
-    throw new RangeError(
-      "finalization view: a reconciliation is present with no permit to conclude",
-    );
-  }
-  if (
-    permit !== undefined &&
-    reconciliation !== undefined &&
-    reconciliation.permit !== permit.permit
-  ) {
-    throw new RangeError(
-      "finalization view: the reconciliation concludes another permit",
-    );
-  }
-}
 
 /** Whether another preparation is authorized, and the hold that is left when it is not. */
 function finalizationNextRestart(
   config: FinalizerConfig,
-  view: FinalizationView,
+  view: BoundFinalizationViewBase,
 ): FinalizationDecision {
   const target = view.observedTarget;
   if (target === undefined) return { decide: "Hold", hold: "TargetUnreadable" };
@@ -566,34 +594,19 @@ function finalizationNextRestart(
  * abandoned only by a reconciliation that concluded, so an ambiguous promotion
  * has no path to a conclusive outcome through here.
  */
-function finalizationNextUnderPermit(
+function finalizationNextConcluded(
   config: FinalizerConfig,
-  view: FinalizationView,
-  permit: CommitPermit,
+  view: Extract<FinalizationView, { readonly stage: "PermitConcluded" }>,
 ): FinalizationDecision {
   const reconciliation = view.reconciliation;
-  if (permit.state === "Concluded") {
-    if (
-      reconciliation === undefined ||
-      reconciliation.verdict === "Unreadable"
-    ) {
-      return { decide: "Hold", hold: "ContradictoryEvidence" };
-    }
-    if (reconciliation.verdict === "Promoted") {
-      return {
-        decide: "Conclude",
-        conclusion: { outcome: "FinalizationSucceeded" },
-      };
-    }
-    return finalizationNextRestart(config, view);
+  if (reconciliation.verdict === "Promoted") {
+    return {
+      decide: "Conclude",
+      attempt: view.attempt.attempt,
+      conclusion: { outcome: "FinalizationSucceeded" },
+    };
   }
-  if (reconciliation === undefined) {
-    return { decide: "Reconcile", permit: permit.permit };
-  }
-  if (reconciliation.verdict === "Unreadable") {
-    return { decide: "Hold", hold: "ReconciliationUnreadable" };
-  }
-  return { decide: "Hold", hold: "ContradictoryEvidence" };
+  return finalizationNextRestart(config, view);
 }
 
 /**
@@ -603,16 +616,14 @@ function finalizationNextUnderPermit(
  */
 function finalizationNextBeforePermit(
   config: FinalizerConfig,
-  view: FinalizationView,
+  view: Extract<
+    FinalizationView,
+    { readonly stage: "Unattempted" | "Prepared" }
+  >,
 ): FinalizationDecision {
-  const attempt = view.attempt;
-  if (attempt?.outcome === "Failed" && attempt.failureKind !== undefined) {
-    return {
-      decide: "Conclude",
-      conclusion: { outcome: "FinalizationFailed", kind: attempt.failureKind },
-    };
-  }
-  const aborting = view.observedTarget ?? attempt?.target;
+  const aborting =
+    view.observedTarget ??
+    (view.stage === "Prepared" ? view.attempt.target : undefined);
   if (allClosingLifecycles.includes(view.lifecycle)) {
     return aborting === undefined
       ? { decide: "Hold", hold: "TargetUnreadable" }
@@ -620,9 +631,10 @@ function finalizationNextBeforePermit(
   }
   const target = view.observedTarget;
   if (target === undefined) return { decide: "Hold", hold: "TargetUnreadable" };
-  if (attempt === undefined) {
+  if (view.stage === "Unattempted") {
     return { decide: "Prepare", target, restartsSpent: 0 };
   }
+  const attempt = view.attempt;
   if (
     attempt.target.commit !== target.commit ||
     attempt.target.ref !== target.ref
@@ -646,18 +658,34 @@ export function finalizationNext(
   config: FinalizerConfig,
   view: FinalizationView,
 ): FinalizationDecision {
-  finalizationNextAssertView(view);
-  if (view.claim.state === "Fulfilled" || view.claim.state === "Invalidated") {
-    return { decide: "Settled" };
+  switch (view.stage) {
+    case "Settled":
+      return { decide: "Settled" };
+    case "Unbound":
+      return { decide: "Hold", hold: "RepositoryUnbound" };
+    case "Contradictory":
+      return { decide: "Hold", hold: "ContradictoryEvidence" };
+    case "Failed":
+      return {
+        decide: "Conclude",
+        attempt: view.attempt.attempt,
+        conclusion: {
+          outcome: "FinalizationFailed",
+          kind: view.attempt.failureKind,
+        },
+      };
+    case "Unattempted":
+    case "Prepared":
+      return finalizationNextBeforePermit(config, view);
+    case "PermitGranted":
+      return view.reconciliation === undefined
+        ? { decide: "Reconcile", permit: view.permit.permit }
+        : { decide: "Hold", hold: "ReconciliationUnreadable" };
+    case "PermitConcluded":
+      return finalizationNextConcluded(config, view);
+    default:
+      return assertNever(view);
   }
-  if (view.repository === undefined) {
-    return { decide: "Hold", hold: "RepositoryUnbound" };
-  }
-  const permit = view.permit;
-  if (permit !== undefined) {
-    return finalizationNextUnderPermit(config, view, permit);
-  }
-  return finalizationNextBeforePermit(config, view);
 }
 
 /** What observing the remote's default branch found, an unreadable remote kept apart from a target. */

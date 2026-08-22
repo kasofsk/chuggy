@@ -34,9 +34,9 @@ import {
   type CandidatePromoted,
   type CandidatePromotion,
   type CommitPermit,
-  type FinalizationAttempt,
   type FinalizationClaim,
   type FinalizationView,
+  type PreparedFinalizationAttempt,
   type FinalizerStore,
   type GitPromotionPort,
   type HeldPermit,
@@ -127,7 +127,9 @@ const binding: RepositoryBinding = {
 };
 
 /** One claimed request, distinct by the request identity it names. */
-function claimOf(request: string): FinalizationClaim {
+function claimOf(
+  request: string,
+): FinalizationClaim & { readonly state: "Registered" } {
   return {
     partition,
     request,
@@ -142,7 +144,7 @@ function claimOf(request: string): FinalizationClaim {
 }
 
 /** One prepared attempt over the target the fixture remote reports. */
-function attemptOf(request: string): FinalizationAttempt {
+function attemptOf(request: string): PreparedFinalizationAttempt {
   return {
     attempt: asFinalizationAttemptId(`attempt-${request}`),
     request,
@@ -371,8 +373,11 @@ function countingIdentities(): FinalizerIdentityFactory {
 }
 
 /** One view of a claimed request that is ready to promote. */
-function promotableView(request: string): FinalizationView {
+function promotableView(
+  request: string,
+): Extract<FinalizationView, { readonly stage: "Prepared" }> {
   return {
+    stage: "Prepared",
     lifecycle: "Active",
     claim: claimOf(request),
     repository: binding,
@@ -480,7 +485,7 @@ test("a pass held by an unreadable ref spends the permit on neither answer", asy
     store.readings.map((each) => each.reconciliation.verdict),
     ["Unreadable"],
   );
-  assert.equal(store.readings[0]?.reconciliation.observed, undefined);
+  assert.equal(store.readings[0]?.reconciliation.verdict, "Unreadable");
 });
 
 test("a candidate awaiting approval opens the ask and reaches neither the remote nor the permit", async () => {
@@ -518,10 +523,9 @@ test("an ask already standing holds rather than opening a second question", asyn
 
 test("a settled request gives its claim back and moves nothing else", async () => {
   const settled: FinalizationView = {
+    stage: "Settled",
     lifecycle: "Active",
     claim: { ...claimOf("request-one"), state: "Fulfilled" },
-    repository: binding,
-    approval: "Pending",
     attemptsMade: 0,
   };
   const store = recordingStore([settled]);
@@ -533,13 +537,15 @@ test("a settled request gives its claim back and moves nothing else", async () =
 });
 
 /** One view of a claimed request that has no attempt yet, which is what prepares one. */
-function preparableView(request: string): FinalizationView {
+function preparableView(
+  request: string,
+): Extract<FinalizationView, { readonly stage: "Unattempted" }> {
   return {
+    stage: "Unattempted",
     lifecycle: "Active",
     claim: claimOf(request),
     repository: binding,
     observedTarget: attemptOf(request).target,
-    approval: "Pending",
     attemptsMade: 0,
   };
 }
@@ -662,11 +668,11 @@ test("a genuine conflict writes a manifest with its own identity and digest and 
     truncated: false,
   });
   const recorded = store.attempts[0];
-  assert.equal(recorded?.outcome, "Failed");
-  assert.equal(recorded?.failureKind, "MergeConflict");
-  assert.equal(recorded?.conflictManifest, "conflict-1");
-  assert.equal(recorded?.conflictDigest, digestOf("evidence"));
-  assert.equal(recorded?.candidate, undefined);
+  assert.ok(recorded !== undefined && recorded.outcome === "Failed");
+  assert.equal(recorded.failureKind, "MergeConflict");
+  assert.ok(recorded.failureKind === "MergeConflict");
+  assert.equal(recorded.conflictManifest, "conflict-1");
+  assert.equal(recorded.conflictDigest, digestOf("evidence"));
 });
 
 test("a conflict nothing could store leaves no attempt, because the evidence is half of it", async () => {
@@ -718,7 +724,9 @@ test("a handoff naming the repository itself is refused before any blob is writt
   const git = recordingGit();
   await passOver(serviceOf(store, git));
   assert.deepEqual(git.preparations, []);
-  assert.equal(store.attempts[0]?.failureKind, "PreparationFailed");
+  const refused = store.attempts[0];
+  assert.ok(refused !== undefined && refused.outcome === "Failed");
+  assert.equal(refused.failureKind, "PreparationFailed");
 });
 
 test("a ticket whose passed work has no result at all is a hold and never a failure", async () => {
@@ -744,13 +752,9 @@ test("a closing project's abort reaches no remote, asks for no permit and prices
     assert.deepEqual(store.grants, [], lifecycle);
     assert.equal(report.promotions, 0, lifecycle);
     assert.equal(store.attempts.length, 1, lifecycle);
-    assert.equal(store.attempts[0]?.outcome, "Failed", lifecycle);
-    assert.equal(
-      store.attempts[0]?.failureKind,
-      "PreparationFailed",
-      lifecycle,
-    );
-    assert.equal(store.attempts[0]?.candidate, undefined, lifecycle);
+    const aborted = store.attempts[0];
+    assert.ok(aborted !== undefined && aborted.outcome === "Failed", lifecycle);
+    assert.equal(aborted.failureKind, "PreparationFailed", lifecycle);
   }
 });
 

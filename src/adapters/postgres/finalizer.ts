@@ -75,10 +75,12 @@ import {
   approvalStandingOf,
   type ApprovalAction,
   type ApprovalStanding,
+  type CommitPermit,
   type CommitPermitId,
   type FinalizationAttempt,
   type FinalizationClaim,
   type FinalizationOffer,
+  type FinalizationReconciliation,
   type FinalizationSubmitted,
   type FinalizationView,
   type FinalizerOwnerId,
@@ -91,6 +93,7 @@ import {
   asProjectId,
   asRecoveryEpoch,
   asTenantId,
+  type Lifecycle,
   type RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
@@ -353,8 +356,8 @@ function finalizerRowAttempt(
   request: string,
   ticket: TicketId,
 ): FinalizationAttempt | undefined {
+  if (row.attempt === null) return undefined;
   if (
-    row.attempt === null ||
     row.repository === null ||
     row.target_ref === null ||
     row.target_commit === null ||
@@ -365,9 +368,9 @@ function finalizerRowAttempt(
     row.outcome === null ||
     row.attempt_digest === null
   ) {
-    return undefined;
+    throw new Error("postgres finalizer: an attempt row is incomplete");
   }
-  return {
+  const base = {
     attempt: asFinalizationAttemptId(row.attempt),
     request,
     ticket,
@@ -384,24 +387,34 @@ function finalizerRowAttempt(
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     approvalRequired: row.approval_required,
-    outcome: finalizerRowValue(
-      allFinalizationAttemptOutcomes,
-      row.outcome,
-      "attempt outcome",
-    ),
-    ...(row.candidate_commit === null
-      ? {}
-      : { candidate: asGitObjectId(row.candidate_commit) }),
-    ...(row.failure_kind === null
-      ? {}
-      : {
-          failureKind: finalizerRowValue(
-            allFinalizationFailureKinds,
-            row.failure_kind,
-            "failure kind",
-          ),
-        }),
     attemptDigest: row.attempt_digest,
+  };
+  const outcome = finalizerRowValue(
+    allFinalizationAttemptOutcomes,
+    row.outcome,
+    "attempt outcome",
+  );
+  if (outcome === "Prepared") {
+    if (row.candidate_commit === null || row.failure_kind !== null) {
+      throw new Error("postgres finalizer: a prepared attempt is not whole");
+    }
+    return {
+      ...base,
+      outcome,
+      candidate: asGitObjectId(row.candidate_commit),
+    };
+  }
+  if (row.candidate_commit !== null || row.failure_kind === null) {
+    throw new Error("postgres finalizer: a failed attempt is not whole");
+  }
+  return {
+    ...base,
+    outcome,
+    failureKind: finalizerRowValue(
+      allFinalizationFailureKinds,
+      row.failure_kind,
+      "failure kind",
+    ),
   };
 }
 
@@ -409,66 +422,88 @@ function finalizerRowAttempt(
 function finalizerRowReconciliation(
   row: ViewRow,
   permit: CommitPermitId,
-): Pick<FinalizationView, "reconciliation"> {
-  if (
-    row.verdict === null ||
-    row.reconciled_candidate === null ||
-    row.reconciled_ref === null
-  ) {
-    return {};
+): FinalizationReconciliation | undefined {
+  if (row.verdict === null) return undefined;
+  if (row.reconciled_candidate === null || row.reconciled_ref === null) {
+    throw new Error("postgres finalizer: a reconciliation row is incomplete");
+  }
+  const base = {
+    permit,
+    candidate: asGitObjectId(row.reconciled_candidate),
+    target: asGitRefName(row.reconciled_ref),
+  };
+  const verdict = finalizerRowValue(
+    allReconciliationVerdicts,
+    row.verdict,
+    "reconciliation verdict",
+  );
+  if (verdict === "Unreadable") {
+    if (row.observed_commit !== null) {
+      throw new Error(
+        "postgres finalizer: an unreadable reconciliation observed a commit",
+      );
+    }
+    return { ...base, verdict };
+  }
+  if (row.observed_commit === null) {
+    throw new Error(
+      "postgres finalizer: a readable reconciliation observed no commit",
+    );
   }
   return {
-    reconciliation: {
-      permit,
-      candidate: asGitObjectId(row.reconciled_candidate),
-      target: asGitRefName(row.reconciled_ref),
-      verdict: finalizerRowValue(
-        allReconciliationVerdicts,
-        row.verdict,
-        "reconciliation verdict",
-      ),
-      ...(row.observed_commit === null
-        ? {}
-        : { observed: asGitObjectId(row.observed_commit) }),
-    },
+    ...base,
+    verdict,
+    observed: asGitObjectId(row.observed_commit),
   };
 }
 
 /** Where the approval for the attempt in hand stands, pending until an answer is recorded. */
 function finalizerRowApproval(row: ViewRow): ApprovalStanding {
   if (row.approval_state === null) return approvalStandingOf(undefined);
+  const state = finalizerRowValue(
+    allNativeActionStates,
+    row.approval_state,
+    "action state",
+  );
+  if (state !== "Resolved") {
+    if (row.approval_resolution !== null) {
+      throw new Error(
+        "postgres finalizer: an unresolved approval has an answer",
+      );
+    }
+    return approvalStandingOf({ state });
+  }
+  if (row.approval_resolution === null) {
+    throw new Error("postgres finalizer: a resolved approval has no answer");
+  }
   return approvalStandingOf({
-    state: finalizerRowValue(
-      allNativeActionStates,
-      row.approval_state,
-      "action state",
+    state,
+    resolution: finalizerRowValue(
+      nativeActionResolutions.FinalizationApproval,
+      row.approval_resolution,
+      "approval answer",
     ),
-    ...(row.approval_resolution === null
-      ? {}
-      : {
-          resolution: finalizerRowValue(
-            nativeActionResolutions.FinalizationApproval,
-            row.approval_resolution,
-            "approval answer",
-          ),
-        }),
   });
 }
 
 /** The permit that authorizes the one irreversible act, absent until it is granted. */
-function finalizerRowPermit(
-  row: ViewRow,
-): Pick<FinalizationView, "permit" | "reconciliation"> {
+interface FinalizerPermitRows {
+  readonly permit: CommitPermit;
+  readonly reconciliation?: FinalizationReconciliation;
+}
+
+function finalizerRowPermit(row: ViewRow): FinalizerPermitRows | undefined {
+  if (row.permit === null) return undefined;
   if (
-    row.permit === null ||
     row.permit_epoch === null ||
     row.lifecycle_generation === null ||
     row.permit_state === null ||
     row.attempt === null
   ) {
-    return {};
+    throw new Error("postgres finalizer: a permit row is incomplete");
   }
   const permit = asCommitPermitId(row.permit);
+  const reconciliation = finalizerRowReconciliation(row, permit);
   return {
     permit: {
       permit,
@@ -484,8 +519,142 @@ function finalizerRowPermit(
         "permit state",
       ),
     },
-    ...finalizerRowReconciliation(row, permit),
+    ...(reconciliation === undefined ? {} : { reconciliation }),
   };
+}
+
+function finalizerActiveClaim(
+  claim: FinalizationClaim,
+  state: "Open" | "Registered",
+): FinalizationClaim & { readonly state: "Open" | "Registered" } {
+  return { ...claim, state };
+}
+
+type FinalizerActiveView = Omit<
+  Extract<FinalizationView, { readonly stage: "Unbound" }>,
+  "stage"
+>;
+
+type FinalizerBoundView = Omit<
+  Extract<FinalizationView, { readonly stage: "Unattempted" }>,
+  "stage"
+>;
+
+function finalizerPermittedViewOf(
+  active: FinalizerActiveView,
+  bound: FinalizerBoundView,
+  attempt: Extract<FinalizationAttempt, { readonly outcome: "Prepared" }>,
+  approval: ApprovalStanding,
+  permitRows: FinalizerPermitRows,
+): FinalizationView {
+  const { permit, reconciliation } = permitRows;
+  if (permit.attempt !== attempt.attempt) {
+    return { ...active, stage: "Contradictory" };
+  }
+  if (permit.state === "Granted") {
+    const granted = { ...permit, state: "Granted" as const };
+    return reconciliation === undefined ||
+      reconciliation.verdict === "Unreadable"
+      ? {
+          ...bound,
+          stage: "PermitGranted",
+          attempt,
+          approval,
+          permit: granted,
+          ...(reconciliation === undefined ? {} : { reconciliation }),
+        }
+      : { ...active, stage: "Contradictory" };
+  }
+  const concluded = { ...permit, state: "Concluded" as const };
+  return reconciliation !== undefined && reconciliation.verdict !== "Unreadable"
+    ? {
+        ...bound,
+        stage: "PermitConcluded",
+        attempt,
+        approval,
+        permit: concluded,
+        reconciliation,
+      }
+    : { ...active, stage: "Contradictory" };
+}
+
+function finalizerActiveViewOf(
+  row: ViewRow,
+  claim: FinalizationClaim,
+  lifecycle: Lifecycle,
+  attemptsMade: number,
+): FinalizationView {
+  const state = finalizerRowValue(
+    ["Open", "Registered"] as const,
+    row.state,
+    "active delivery state",
+  );
+  const active = {
+    claim: finalizerActiveClaim(claim, state),
+    lifecycle,
+    attemptsMade,
+  };
+  const attempt = finalizerRowAttempt(row, claim.request, claim.ticket);
+  if (attempt !== undefined && attemptsMade < 1) {
+    return { ...active, stage: "Contradictory" };
+  }
+  if (row.repository === null || row.binding_epoch === null) {
+    return attempt === undefined
+      ? { ...active, stage: "Unbound" }
+      : { ...active, stage: "Contradictory" };
+  }
+  const bound = {
+    ...active,
+    repository: {
+      partition: claim.partition,
+      repository: asRepositoryId(row.repository),
+      recoveryEpoch: asRecoveryEpoch(row.binding_epoch),
+    },
+  };
+  if (attempt === undefined) return { ...bound, stage: "Unattempted" };
+  const permitRows = finalizerRowPermit(row);
+  if (attempt.outcome === "Failed") {
+    return permitRows === undefined
+      ? { ...bound, stage: "Failed", attempt }
+      : { ...active, stage: "Contradictory" };
+  }
+  const approval = finalizerRowApproval(row);
+  if (permitRows === undefined) {
+    return { ...bound, stage: "Prepared", attempt, approval };
+  }
+  return finalizerPermittedViewOf(active, bound, attempt, approval, permitRows);
+}
+
+function finalizerViewOf(
+  row: ViewRow,
+  claim: FinalizationClaim,
+): FinalizationView {
+  const state = finalizerRowValue(
+    allFinalizationRequestStates,
+    row.state,
+    "delivery state",
+  );
+  const lifecycle = finalizerRowValue(
+    allLifecycles,
+    row.lifecycle,
+    "lifecycle",
+  );
+  const attemptsMade = projectRowCounter(
+    finalizerRowPresent(row.attempts_made, "attempts made"),
+    "attempts made",
+  );
+  if (attemptsMade < 0) {
+    throw new Error("postgres finalizer: attempts made is not a count");
+  }
+  if (state === "Fulfilled" || state === "Invalidated") {
+    return {
+      stage: "Settled",
+      claim: { ...claim, state },
+      lifecycle,
+      attemptsMade,
+    };
+  }
+  return finalizerActiveViewOf(row, claim, lifecycle, attemptsMade);
 }
 
 /**
@@ -532,34 +701,7 @@ async function finalizerDurableView(
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
-  const attempt = finalizerRowAttempt(row, claim.request, claim.ticket);
-  return {
-    claim: {
-      ...claim,
-      state: finalizerRowValue(
-        allFinalizationRequestStates,
-        row.state,
-        "delivery state",
-      ),
-    },
-    lifecycle: finalizerRowValue(allLifecycles, row.lifecycle, "lifecycle"),
-    ...(row.repository === null || row.binding_epoch === null
-      ? {}
-      : {
-          repository: {
-            partition: claim.partition,
-            repository: asRepositoryId(row.repository),
-            recoveryEpoch: asRecoveryEpoch(row.binding_epoch),
-          },
-        }),
-    ...(attempt === undefined ? {} : { attempt }),
-    approval: finalizerRowApproval(row),
-    ...finalizerRowPermit(row),
-    attemptsMade: projectRowCounter(
-      finalizerRowPresent(row.attempts_made, "attempts made"),
-      "attempts made",
-    ),
-  };
+  return finalizerViewOf(row, claim);
 }
 
 /** Takes the request out of the open set for good, which a project admitting no result leaves behind. */

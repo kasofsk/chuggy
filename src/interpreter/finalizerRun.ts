@@ -96,7 +96,6 @@ import {
   type FinalizationAttemptId,
   type FinalizationClaim,
   type FinalizationConclusion,
-  type FinalizationReconciliation,
   type FinalizationView,
   type FinalizerConfig,
   type FinalizerOwnerId,
@@ -119,6 +118,7 @@ import {
   conflictManifestText,
   handoffAccepted,
   type AttemptRecord,
+  type AttemptRecordInput,
   type FinalizationDigestFunction,
   type FinalizerIdentityFactory,
   type FinalizerPreparationStore,
@@ -182,10 +182,12 @@ interface FinalizerTally {
 const finalizerStrategy: IntegrationStrategy = "Merge";
 
 /** What one reading of the target ref records, an unreadable ref among the answers. */
-type FinalizerReading = Pick<
-  FinalizationReconciliation,
-  "verdict" | "observed"
->;
+type FinalizerReading =
+  | { readonly verdict: "Unreadable" }
+  | {
+      readonly verdict: "Promoted" | "NotPromoted";
+      readonly observed: GitObjectId;
+    };
 
 /** Everything a reading needs to name the permit it settles. */
 interface FinalizerReadingSubject {
@@ -338,7 +340,14 @@ async function finalizerGather(
   claim: FinalizationClaim,
 ): Promise<FinalizationView | undefined> {
   const durable = await service.store.durableView(claim);
-  if (durable === undefined || durable.repository === undefined) return durable;
+  if (
+    durable === undefined ||
+    durable.stage === "Settled" ||
+    durable.stage === "Unbound" ||
+    durable.stage === "Contradictory"
+  ) {
+    return durable;
+  }
   const observed = await service.git.observeTarget(durable.repository);
   if (observed.observed !== "Target") return durable;
   return { ...durable, observedTarget: observed.target };
@@ -346,16 +355,16 @@ async function finalizerGather(
 
 /** What the view's prepared attempt pinned, refusing a view no promotion could act on. */
 function finalizerCandidateOf(view: FinalizationView): FinalizerCandidate {
-  const { attempt, repository } = view;
   if (
-    attempt === undefined ||
-    attempt.candidate === undefined ||
-    repository === undefined
+    view.stage !== "Prepared" &&
+    view.stage !== "PermitGranted" &&
+    view.stage !== "PermitConcluded"
   ) {
     throw new Error(
       "finalizer pass: an act was authorized against no prepared candidate",
     );
   }
+  const { attempt, repository } = view;
   return {
     repository,
     target: attempt.target,
@@ -530,7 +539,7 @@ function finalizerAttemptBase(
 /** One attempt under its own digest, which is the last value computed before the row is written. */
 function finalizerAttemptOf(
   service: FinalizerService,
-  record: Omit<AttemptRecord, "attemptDigest">,
+  record: AttemptRecordInput,
 ): AttemptRecord {
   return {
     ...record,
@@ -550,7 +559,10 @@ async function finalizerRecordAttempt(
     return;
   }
   recordFinalizer(service.metrics, (metrics) => {
-    metrics.attempt(record.outcome, record.failureKind);
+    metrics.attempt(
+      record.outcome,
+      record.outcome === "Failed" ? record.failureKind : undefined,
+    );
   });
 }
 
@@ -710,12 +722,12 @@ async function finalizerGathered(
 ): Promise<
   { subject: FinalizerPreparation; handoff?: TicketHandoff } | undefined
 > {
-  const repository = view.repository;
-  if (repository === undefined) {
+  if (!("repository" in view)) {
     throw new Error(
       "finalizer pass: an attempt was authorized against no bound repository",
     );
   }
+  const repository = view.repository;
   const gathering = await service.store.handoffGathering(view.claim);
   const accepted = handoffAccepted(gathering);
   if (accepted.accepted === "NoPassedWork") {
@@ -821,19 +833,14 @@ async function finalizerAwaitApproval(
 /** Offers the one conclusion to the one authenticated door. */
 async function finalizerConclude(
   service: FinalizerService,
-  view: FinalizationView,
+  claim: FinalizationClaim,
+  attempt: FinalizationAttemptId,
   conclusion: FinalizationConclusion,
   tally: FinalizerTally,
 ): Promise<void> {
-  const attempt = view.attempt;
-  if (attempt === undefined) {
-    throw new Error(
-      "finalizer pass: a conclusion named no attempt to carry it",
-    );
-  }
   const submitted = await service.store.submitResult({
-    claim: view.claim,
-    attempt: attempt.attempt,
+    claim,
+    attempt,
     conclusion,
   });
   recordFinalizer(service.metrics, (metrics) => {
@@ -899,7 +906,13 @@ async function finalizerAdvance(
       await finalizerProve(service, view, decision.permit, tally);
       return;
     case "Conclude":
-      await finalizerConclude(service, view, decision.conclusion, tally);
+      await finalizerConclude(
+        service,
+        view.claim,
+        decision.attempt,
+        decision.conclusion,
+        tally,
+      );
       return;
     default:
       return assertNever(decision);

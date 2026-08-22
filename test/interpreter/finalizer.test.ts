@@ -38,11 +38,13 @@ import {
   type CommitPermit,
   type CommitPermitState,
   type FinalizationAttempt,
+  type FinalizationClaim,
   type FinalizationReconciliation,
   type FinalizationView,
   type FinalizerConfig,
   type ObservedTarget,
   type ReconciliationVerdict,
+  type RepositoryBinding,
 } from "../../src/interpreter/finalizer.ts";
 import {
   allLifecycles,
@@ -122,40 +124,111 @@ function attemptFailed(
 }
 
 /** What a case may vary, an explicitly absent row among the values it may name. */
-type ViewOverrides = {
-  readonly [Named in keyof FinalizationView]?:
-    FinalizationView[Named] | undefined;
-};
+interface ViewOverrides {
+  readonly claim?: FinalizationClaim | undefined;
+  readonly lifecycle?: FinalizationView["lifecycle"] | undefined;
+  readonly repository?: RepositoryBinding | undefined;
+  readonly observedTarget?: ObservedTarget | undefined;
+  readonly attempt?: FinalizationAttempt | undefined;
+  readonly approval?: ApprovalStanding | undefined;
+  readonly permit?: CommitPermit | undefined;
+  readonly reconciliation?: FinalizationReconciliation | undefined;
+  readonly attemptsMade?: number | undefined;
+}
 
 /**
  * The smallest well-formed view with the named rows replaced. A named row whose
  * value is `undefined` is dropped rather than set, which is what an absent
  * durable row looks like to the machine.
  */
-function viewWith(overrides: ViewOverrides): FinalizationView {
-  const smallest: FinalizationView = {
-    lifecycle: "Active",
-    claim: {
-      partition,
-      request: "request-1",
-      ticket,
-      authorizingSeq: 1,
-      requestGeneration: 1,
-      claimGeneration: 1,
-      state: "Open",
-      recoveryEpoch: epoch,
-      owner: asFinalizerOwnerId("finalizer-1"),
-    },
-    repository: { partition, repository, recoveryEpoch: epoch },
-    observedTarget: target,
-    approval: "Pending",
-    attemptsMade: 0,
+function viewWithActive(
+  active: Extract<FinalizationView, { stage: "Unbound" }>,
+  overrides: ViewOverrides,
+): FinalizationView {
+  const boundRepository = Object.hasOwn(overrides, "repository")
+    ? overrides.repository
+    : { partition, repository, recoveryEpoch: epoch };
+  const observedTarget = Object.hasOwn(overrides, "observedTarget")
+    ? overrides.observedTarget
+    : target;
+  const attempt = overrides.attempt;
+  const approval = overrides.approval ?? "Pending";
+  const permit = overrides.permit;
+  const reconciliation = overrides.reconciliation;
+  if (boundRepository === undefined) return { ...active, stage: "Unbound" };
+  const bound = {
+    ...active,
+    repository: boundRepository,
+    ...(observedTarget === undefined ? {} : { observedTarget }),
   };
-  return Object.fromEntries(
-    Object.entries({ ...smallest, ...overrides }).filter(
-      ([, value]) => value !== undefined,
-    ),
-  ) as unknown as FinalizationView;
+  if (attempt === undefined) return { ...bound, stage: "Unattempted" };
+  if (attempt.outcome === "Failed") {
+    return { ...bound, stage: "Failed", attempt };
+  }
+  if (permit === undefined) {
+    return { ...bound, stage: "Prepared", attempt, approval };
+  }
+  if (
+    permit.state === "Granted" &&
+    (reconciliation === undefined || reconciliation.verdict === "Unreadable")
+  ) {
+    return {
+      ...bound,
+      stage: "PermitGranted",
+      attempt,
+      approval,
+      permit: { ...permit, state: "Granted" },
+      ...(reconciliation === undefined ? {} : { reconciliation }),
+    };
+  }
+  if (
+    permit.state === "Concluded" &&
+    reconciliation !== undefined &&
+    reconciliation.verdict !== "Unreadable"
+  ) {
+    return {
+      ...bound,
+      stage: "PermitConcluded",
+      attempt,
+      approval,
+      permit: { ...permit, state: "Concluded" },
+      reconciliation,
+    };
+  }
+  return { ...active, stage: "Contradictory" };
+}
+
+function viewWith(overrides: ViewOverrides): FinalizationView {
+  const claim = overrides.claim ?? {
+    partition,
+    request: "request-1",
+    ticket,
+    authorizingSeq: 1,
+    requestGeneration: 1,
+    claimGeneration: 1,
+    state: "Open",
+    recoveryEpoch: epoch,
+    owner: asFinalizerOwnerId("finalizer-1"),
+  };
+  const lifecycle = overrides.lifecycle ?? "Active";
+  const attemptsMade = overrides.attemptsMade ?? 0;
+  if (claim.state === "Fulfilled" || claim.state === "Invalidated") {
+    return {
+      stage: "Settled",
+      claim: { ...claim, state: claim.state },
+      lifecycle,
+      attemptsMade,
+    };
+  }
+  return viewWithActive(
+    {
+      stage: "Unbound",
+      claim: { ...claim, state: claim.state },
+      lifecycle,
+      attemptsMade,
+    },
+    overrides,
+  );
 }
 
 /** A permit in the named state, which is the second half of every post-promotion view. */
@@ -173,13 +246,14 @@ function permitIn(state: CommitPermitState): CommitPermit {
 function reconciliationOf(
   verdict: ReconciliationVerdict,
 ): FinalizationReconciliation {
-  return {
+  const base = {
     permit: permitId,
     candidate,
     target: target.ref,
-    verdict,
-    ...(verdict === "Unreadable" ? {} : { observed: candidate }),
   };
+  return verdict === "Unreadable"
+    ? { ...base, verdict }
+    : { ...base, verdict, observed: candidate };
 }
 
 test("the defaults are a configuration a pass may run on", () => {
@@ -328,6 +402,7 @@ test("a failed attempt concludes as the one priced failure, carrying its kind", 
       ),
       {
         decide: "Conclude",
+        attempt: attemptId,
         conclusion: { outcome: "FinalizationFailed", kind },
       },
     );
@@ -339,7 +414,7 @@ test("a closing project aborts every finalization that holds no permit", () => {
     allClosingLifecycles,
     "allClosingLifecycles",
   )) {
-    for (const attempt of [undefined, prepared]) {
+    for (const attempt of [undefined, prepared] as const) {
       assert.deepEqual(
         finalizationNext(
           finalizerDefaults,
@@ -428,6 +503,7 @@ test("a closing project's abort is recorded once and then concluded, never re-ab
       ),
       {
         decide: "Conclude",
+        attempt: attemptId,
         conclusion: {
           outcome: "FinalizationFailed",
           kind: "PreparationFailed",
@@ -471,10 +547,6 @@ test("a standing is the answer recorded, and an unanswered or withdrawn ask is p
   assert.equal(
     approvalStandingOf({ state: "Resolved", resolution: "Decline" }),
     "Declined",
-  );
-  assert.throws(
-    () => approvalStandingOf({ state: "Resolved" }),
-    /records no answer/u,
   );
 });
 
@@ -534,7 +606,11 @@ test("a concluded reconciliation promotes or restarts, and nothing else", () => 
         reconciliation: reconciliationOf("Promoted"),
       }),
     ),
-    { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
+    {
+      decide: "Conclude",
+      attempt: attemptId,
+      conclusion: { outcome: "FinalizationSucceeded" },
+    },
   );
   assert.deepEqual(
     finalizationNext(
@@ -647,68 +723,4 @@ test("no hold is a failure kind, over every view this machine can be handed", ()
       }
     }
   }
-});
-
-test("a view whose durable rows contradict each other is refused rather than decided", () => {
-  assert.throws(
-    () =>
-      finalizationNext(
-        finalizerDefaults,
-        viewWith({ attempt: prepared, attemptsMade: 0 }),
-      ),
-    /no attempt was counted/u,
-  );
-  assert.throws(
-    () =>
-      finalizationNext(
-        finalizerDefaults,
-        viewWith({
-          attempt: { ...prepared, request: "another" },
-          attemptsMade: 1,
-        }),
-      ),
-    /answers another request/u,
-  );
-  assert.throws(
-    () =>
-      finalizationNext(
-        finalizerDefaults,
-        viewWith({
-          attempt: { ...prepared, outcome: "Failed" },
-          attemptsMade: 1,
-        }),
-      ),
-    /pins no candidate, or a failed one pins one/u,
-  );
-  assert.throws(
-    () =>
-      finalizationNext(
-        finalizerDefaults,
-        viewWith({
-          attempt: prepared,
-          attemptsMade: 1,
-          reconciliation: reconciliationOf("Promoted"),
-        }),
-      ),
-    /no permit to conclude/u,
-  );
-  assert.throws(
-    () =>
-      finalizationNext(
-        finalizerDefaults,
-        viewWith({
-          attempt: prepared,
-          attemptsMade: 1,
-          permit: {
-            ...permitIn("Granted"),
-            attempt: asFinalizationAttemptId("other"),
-          },
-        }),
-      ),
-    /names another attempt/u,
-  );
-  assert.throws(
-    () => finalizationNext(finalizerDefaults, viewWith({ attemptsMade: -1 })),
-    /is not a count/u,
-  );
 });

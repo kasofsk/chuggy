@@ -296,12 +296,14 @@ async function finalizerPermitReadingWritten(
   record: ReconciliationRecord,
 ): Promise<boolean> {
   const { partition, reconciliation } = record;
+  const observed =
+    reconciliation.verdict === "Unreadable" ? null : reconciliation.observed;
   const written = await client.query(
     sql`INSERT INTO finalization_reconciliation
        (tenant, project, permit, candidate_commit, target_ref, verdict, observed_commit)
      VALUES (${partition.tenant},${partition.project},${reconciliation.permit},
              ${reconciliation.candidate},${reconciliation.target},
-             ${reconciliation.verdict},${reconciliation.observed ?? null})
+             ${reconciliation.verdict},${observed})
      ON CONFLICT (tenant, project, permit) DO UPDATE
         SET verdict = EXCLUDED.verdict,
             observed_commit = EXCLUDED.observed_commit,

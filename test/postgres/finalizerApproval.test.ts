@@ -151,7 +151,12 @@ async function answer(
 async function standing(
   subject: ApprovalCase,
 ): Promise<ApprovalStanding | undefined> {
-  return (await store.durableView(subject.claim))?.approval;
+  const view = await store.durableView(subject.claim);
+  return view?.stage === "Prepared" ||
+    view?.stage === "PermitGranted" ||
+    view?.stage === "PermitConcluded"
+    ? view.approval
+    : undefined;
 }
 
 test("the door offers exactly the two answers an approval admits", async () => {
