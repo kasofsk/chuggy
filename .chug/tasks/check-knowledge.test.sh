@@ -119,14 +119,17 @@ run_in "$R"
 check "the clean line reports what the run read" 0 "$RC" \
 	"check-knowledge: 0 finding(s) across 3 landed row(s) and 3 heading(s) in 2 design doc(s)"
 
-# --- Could not run -----------------------------------------------------------
+# --- Empty corpus ------------------------------------------------------------
 
-# A corpus that matched nothing is not a clean tree.
+# With no design docs there is no claim for this gate to inspect.
 fresh_repo "$R"
 printf '%s\n' '{}' > "$R/package.json"
 git -C "$R" add -A
 run_in "$R"
-check "an empty corpus exits 2, not 0" 2 "$RC" "glob matched nothing"
+check "an empty corpus is clean" 0 "$RC" \
+	"0 finding(s) across 0 landed row(s) and 0 heading(s) in 0 design doc(s)"
+
+# --- Could not run -----------------------------------------------------------
 
 # Tracked and gone from the worktree reads as tracked, and there is nothing to
 # open — which must not print as a clean run over a corpus nobody read.

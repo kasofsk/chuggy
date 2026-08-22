@@ -4,7 +4,7 @@
  * backend that dies in the middle of a transaction.
  *
  * EVERY CASE HERE USES A SECOND REAL CONNECTION OR A REAL KILLED BACKEND.
- * `docs/design/006-durable-project-dispatch.md` refuses an in-memory simulation
+ * issue #180 refuses an in-memory simulation
  * of a missing authority for exactly these claims: whether two admissions can
  * both take the last slot, whether a claim lapses to somebody else, and whether
  * a half-written settlement can be observed are all facts about what the server

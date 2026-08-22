@@ -7,10 +7,11 @@ connection to the server, and where the server may open one. Each argues itself
 in its own header, and this is the procedure.
 
 The migration is not here. It runs at start-up from the slice that carries the
-schema, and what this procedure owes it is an identity to run as. That slice is
-not on main: it is the operations-inbox work, on branch dc/i1-operations-inbox.
-So from a checkout of main the Migrate step has no command to issue and the
-database half of Prove it has no gate to run, and each says so where it stands.
+schema, and what this procedure owes it is an identity to run as. That schema is
+on main, in `src/adapters/postgres/`, but nothing in this tree wraps it in a
+process a deployment could start. So the Migrate step still issues no command of
+its own, and the gate in the database half of Prove it is what applies the
+schema here.
 
 ## Before you start
 
@@ -76,9 +77,10 @@ lookup came back empty.
 
 ## Migrate
 
-**No command of its own, and none to borrow yet.** The migration ships with the
-operations-inbox slice named above; until that lands, this step sets the
-variable the next one reads and there is nothing here to invoke.
+**No command of its own.** `postgresMigrate` is a function the adapter exports
+and no process in this tree calls, so this step sets the variable the next one
+reads and the gate below is what runs the migration against the database that
+variable names.
 
 As `chuggy_owner` and as nobody else, over the same forwarded port:
 
@@ -306,10 +308,11 @@ accepts an established flow before it consults either.
 
 ### The database half
 
-**Not runnable from a checkout of main** — the gate ships with the
-operations-inbox slice. With `CHUG_PG_URL` set as above it replays every claim
-the adapter makes about what the server does, including the one that matters
-here: what each group role is refused. It leaves its partitions behind in
+With `CHUG_PG_URL` set as above, the gate uses that database as it stands —
+it starts no server and creates no database of its own — so the harness
+migrates the one this procedure pointed it at. It then replays every claim the
+adapter makes about what the server does, including the one that matters here:
+what each group role is refused. It leaves its partitions behind in
 whatever database it is pointed at, which is a rehearsal's residue and not
 something to point at a database anyone depends on.
 

@@ -1,5 +1,6 @@
 /** PostgreSQL projection and public-operation reads for the native web API. */
 
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
@@ -141,8 +142,7 @@ async function readProject(
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const project = await client.query<{ head: string }>(
-      "SELECT head FROM project WHERE tenant=$1 AND project=$2",
-      [partition.tenant, partition.project],
+      sql`SELECT head FROM project WHERE tenant=${partition.tenant} AND project=${partition.project}`,
     );
     const standing = project.rows[0];
     if (standing === undefined) {
@@ -158,10 +158,10 @@ async function readProject(
       return { result: "Behind", observedSequence: head };
     }
     const tickets = await client.query<TicketProjectionRow>(
-      `SELECT ticket,phase,seq FROM ticket_projection
-        WHERE tenant=$1 AND project=$2 AND ticket>$3
-        ORDER BY ticket LIMIT $4`,
-      [partition.tenant, partition.project, query.after ?? 0, query.limit + 1],
+      sql`SELECT ticket,phase,seq FROM ticket_projection
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND ticket>${query.after ?? 0}
+        ORDER BY ticket LIMIT ${query.limit + 1}`,
     );
     await client.query("COMMIT");
     return {
@@ -186,14 +186,14 @@ export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
   return {
     operation: async (partition, operation) => {
       const found = await pool.query<PublicOperationRow>(
-        `SELECT o.operation,o.accepted_at::text AS accepted_at,
+        sql`SELECT o.operation,o.accepted_at::text AS accepted_at,
                 d.state,d.decided_seq,d.outcome_code,
                 d.refused_head,d.refused_lifecycle_generation
            FROM operation o JOIN decision_input d
              ON d.tenant=o.tenant AND d.project=o.project
             AND d.input_kind='Operation' AND d.input_id=o.operation
-          WHERE o.tenant=$1 AND o.project=$2 AND o.operation=$3`,
-        [partition.tenant, partition.project, operation],
+          WHERE o.tenant=${partition.tenant} AND o.project=${partition.project}
+            AND o.operation=${operation}`,
       );
       const row = found.rows[0];
       return row === undefined ? undefined : publicOperation(row);

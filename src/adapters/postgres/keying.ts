@@ -5,7 +5,7 @@
  * WHY KEYED AND NOT HASHED. An unkeyed hash of a client key is a lookup table
  * for anyone who reads the column: the key space a caller actually uses is
  * small, so a plain digest reveals the key it was taken from.
- * `docs/design/006-durable-project-dispatch.md` therefore stores versioned
+ * issue #180 therefore stores versioned
  * keyed digests only, and plaintext keys and unkeyed hashes enter no long-lived
  * storage, log, trace or metric. HMAC-SHA256 under a per-version secret is
  * that, and the secret never leaves the process that was handed it.

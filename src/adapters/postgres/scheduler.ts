@@ -72,11 +72,11 @@
  * is allowed to depend on.
  */
 
+import { sql } from "@ts-safeql/sql-tag";
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 
 import {
-  allExecutionStatuses,
   asAttemptId,
   asExecutionId,
   executionOwnsSlot,
@@ -114,10 +114,7 @@ import {
   schedulerTerminalize,
 } from "./schedulerCompletion.ts";
 import {
-  attemptRowColumns,
   attemptRowPhysical,
-  executionRowColumns,
-  executionRowFrom,
   executionRowLogical,
   schedulerRowPartition,
   type AttemptRow,
@@ -129,18 +126,6 @@ import {
  * whose only requirement is that nothing else in this database uses it.
  */
 const admissionLockNamespace = 0x63687536;
-
-/** The statuses that own a logical slot, spelled for SQL by the arithmetic that decides them. */
-const slotHolders = allExecutionStatuses
-  .filter(executionOwnsSlot)
-  .map((status) => `'${status}'`)
-  .join(", ");
-
-/** The statuses no further move is possible from, which is where a slot is already released. */
-const settledStatuses = "'Terminal', 'Cancelled'";
-
-/** The attempt states an attempt may still report from. */
-const liveAttemptStates = "'Placing', 'Running'";
 
 /** One registration named the way an installation-wide sweep has to name it. */
 interface SchedulerRowKey {
@@ -169,9 +154,17 @@ interface ClaimRow {
   readonly project: string;
   readonly request: string;
   readonly kind: string;
-  readonly ticket: string;
-  readonly authorizing_seq: string;
-  readonly claim_generation: string;
+  readonly ticket: string | null;
+  readonly authorizing_seq: string | null;
+  readonly claim_generation: string | null;
+}
+
+/** Refuses a missing value in a request kind whose schema permits other kinds to omit it. */
+function claimRowRequired(value: string | null, what: string): string {
+  if (value === null) {
+    throw new Error(`execution request row: claimed ${what} is null`);
+  }
+  return value;
 }
 
 /** One request row as registration and cancellation read it under their lock. */
@@ -209,12 +202,20 @@ function claimRowClaim(row: ClaimRow, owner: SchedulerOwnerId): RequestClaim {
     partition: schedulerRowPartition(row),
     request: row.request,
     kind: claimRowKind(row.kind),
-    ticket: asTicketId(projectRowCounter(row.ticket, "request ticket")),
+    ticket: asTicketId(
+      projectRowCounter(
+        claimRowRequired(row.ticket, "ticket"),
+        "request ticket",
+      ),
+    ),
     authorizingSeq: projectRowCounter(
-      row.authorizing_seq,
+      claimRowRequired(row.authorizing_seq, "authorizing sequence"),
       "authorizing sequence",
     ),
-    generation: projectRowCounter(row.claim_generation, "claim generation"),
+    generation: projectRowCounter(
+      claimRowRequired(row.claim_generation, "claim generation"),
+      "claim generation",
+    ),
     owner,
   };
 }
@@ -230,20 +231,19 @@ async function schedulerClaimRequests(
   schedulerRequirePositive(requestsMax, "requestsMax");
   schedulerRequirePositive(leaseSecs, "leaseSecs");
   const claimed = await pool.query<ClaimRow>(
-    `UPDATE execution_request r
-        SET claim_owner = $1,
+    sql`UPDATE execution_request r
+        SET claim_owner = ${owner},
             claim_generation = r.claim_generation + 1,
-            claim_expires_at = now() + make_interval(secs => $2::double precision)
+            claim_expires_at = now() + make_interval(secs => ${leaseSecs}::double precision)
       WHERE (r.tenant, r.project, r.request) IN (
               SELECT q.tenant, q.project, q.request FROM execution_request q
-               WHERE q.kind = ANY($3::text[]) AND q.state = 'Open'
+               WHERE q.kind = ANY(${[...kinds]}::text[]) AND q.state = 'Open'
                  AND (q.claim_owner IS NULL OR q.claim_expires_at <= now())
                ORDER BY q.authorizing_seq, q.request
-               LIMIT $4 FOR UPDATE SKIP LOCKED)
+               LIMIT ${requestsMax} FOR UPDATE SKIP LOCKED)
       RETURNING r.tenant, r.project, r.request, r.kind, r.ticket::text AS ticket,
                 r.authorizing_seq::text AS authorizing_seq,
                 r.claim_generation::text AS claim_generation`,
-    [owner, leaseSecs, [...kinds], requestsMax],
   );
   return claimed.rows.map((row) => claimRowClaim(row, owner));
 }
@@ -254,9 +254,9 @@ async function schedulerLockRequest(
   claim: RequestClaim,
 ): Promise<RequestRow> {
   const found = await client.query<RequestRow>(
-    `SELECT state, authorizing_seq::text AS authorizing_seq FROM execution_request
-      WHERE tenant = $1 AND project = $2 AND request = $3 FOR UPDATE`,
-    [claim.partition.tenant, claim.partition.project, claim.request],
+    sql`SELECT state, authorizing_seq::text AS authorizing_seq FROM execution_request
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request} FOR UPDATE`,
   );
   const row = found.rows[0];
   if (row === undefined) {
@@ -280,11 +280,11 @@ async function schedulerLockTicketRequests(
   claim: RequestClaim,
 ): Promise<RequestRow> {
   const found = await client.query<RequestRow & { request: string }>(
-    `SELECT request, state, authorizing_seq::text AS authorizing_seq
+    sql`SELECT request, state, authorizing_seq::text AS authorizing_seq
        FROM execution_request
-      WHERE tenant = $1 AND project = $2 AND ticket = $3
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND ticket = ${claim.ticket}
       ORDER BY request FOR UPDATE`,
-    [claim.partition.tenant, claim.partition.project, claim.ticket],
   );
   const row = found.rows.find((each) => each.request === claim.request);
   if (row === undefined) {
@@ -302,10 +302,10 @@ async function schedulerRequestState(
   state: "Registered" | "Fulfilled" | "Invalidated",
 ): Promise<void> {
   await client.query(
-    `UPDATE execution_request
-        SET state = $4, claim_owner = NULL, claim_expires_at = NULL
-      WHERE tenant = $1 AND project = $2 AND request = $3`,
-    [claim.partition.tenant, claim.partition.project, claim.request, state],
+    sql`UPDATE execution_request
+        SET state = ${state}, claim_owner = NULL, claim_expires_at = NULL
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}`,
   );
 }
 
@@ -320,16 +320,11 @@ async function schedulerTicketRetired(
   client: pg.PoolClient,
   claim: RequestClaim,
 ): Promise<boolean> {
-  const found = await client.query(
-    `SELECT 1 FROM execution_request
-      WHERE tenant = $1 AND project = $2 AND ticket = $3
-        AND kind = 'CancelTicketWork' AND authorizing_seq > $4`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      claim.ticket,
-      claim.authorizingSeq,
-    ],
+  const found = await client.query<{ one: number }>(
+    sql`SELECT 1 AS one FROM execution_request
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND ticket = ${claim.ticket}
+        AND kind = 'CancelTicketWork' AND authorizing_seq > ${claim.authorizingSeq}`,
   );
   return found.rows.length > 0;
 }
@@ -340,17 +335,12 @@ async function schedulerRegistrationConflict(
   claim: RequestClaim,
 ): Promise<string | undefined> {
   const found = await client.query<{ execution: string }>(
-    `SELECT e.execution FROM execution e
+    sql`SELECT e.execution FROM execution e
        JOIN execution_request_task t
          ON t.tenant = e.tenant AND t.project = e.project AND t.task = e.task
-      WHERE e.tenant = $1 AND e.project = $2 AND e.ticket = $3
-        AND t.request = $4 AND e.source_request <> $4 LIMIT 1`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      claim.ticket,
-      claim.request,
-    ],
+      WHERE e.tenant = ${claim.partition.tenant} AND e.project = ${claim.partition.project}
+        AND e.ticket = ${claim.ticket}
+        AND t.request = ${claim.request} AND e.source_request <> ${claim.request} LIMIT 1`,
   );
   return found.rows[0]?.execution;
 }
@@ -360,24 +350,20 @@ async function schedulerCreateExecutions(
   client: pg.PoolClient,
   claim: RequestClaim,
 ): Promise<number> {
+  const stem = `execution-${randomUUID()}`;
   const created = await client.query(
-    `INSERT INTO execution
+    sql`INSERT INTO execution
        (tenant, project, execution, ticket, task, source_request, account, cluster,
         configuration_revision, configuration_digest)
-     SELECT q.tenant, q.project, $4::text || '-' || t.task::text, q.ticket, t.task, q.request,
+     SELECT q.tenant, q.project, ${stem}::text || '-' || t.task::text, q.ticket, t.task, q.request,
             q.capacity_account, a.cluster, q.configuration_revision, q.configuration_digest
        FROM execution_request q
        JOIN execution_request_task t
          ON t.tenant = q.tenant AND t.project = q.project AND t.request = q.request
        JOIN capacity_account a ON a.account = q.capacity_account
-      WHERE q.tenant = $1 AND q.project = $2 AND q.request = $3
+      WHERE q.tenant = ${claim.partition.tenant} AND q.project = ${claim.partition.project}
+        AND q.request = ${claim.request}
      ON CONFLICT (tenant, project, ticket, task) DO NOTHING`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      claim.request,
-      `execution-${randomUUID()}`,
-    ],
   );
   return created.rowCount ?? 0;
 }
@@ -388,12 +374,12 @@ async function schedulerUnregisteredTasks(
   claim: RequestClaim,
 ): Promise<number> {
   const found = await client.query<{ owed: string }>(
-    `SELECT count(*)::text AS owed FROM execution_request_task t
-      WHERE t.tenant = $1 AND t.project = $2 AND t.request = $3
+    sql`SELECT count(*)::text AS owed FROM execution_request_task t
+      WHERE t.tenant = ${claim.partition.tenant} AND t.project = ${claim.partition.project}
+        AND t.request = ${claim.request}
         AND NOT EXISTS (SELECT 1 FROM execution e
                          WHERE e.tenant = t.tenant AND e.project = t.project
                            AND e.source_request = t.request AND e.task = t.task)`,
-    [claim.partition.tenant, claim.partition.project, claim.request],
   );
   return projectRowCounter(found.rows[0]?.owed ?? "0", "unregistered tasks");
 }
@@ -482,19 +468,19 @@ async function schedulerRetireTicket(
   client: pg.PoolClient,
   claim: RequestClaim,
 ): Promise<readonly RetiredRow[]> {
-  await client.query(
-    `SELECT e.execution FROM execution e
-      WHERE e.tenant = $1 AND e.project = $2 AND e.ticket = $3
-        AND e.status NOT IN (${settledStatuses})
+  await client.query<{ execution: string }>(
+    sql`SELECT e.execution FROM execution e
+      WHERE e.tenant = ${claim.partition.tenant} AND e.project = ${claim.partition.project}
+        AND e.ticket = ${claim.ticket}
+        AND e.status NOT IN ('Terminal', 'Cancelled')
       ORDER BY e.tenant, e.project, e.execution FOR UPDATE`,
-    [claim.partition.tenant, claim.partition.project, claim.ticket],
   );
   const retired = await client.query<RetiredRow>(
-    `UPDATE execution SET status = 'Cancelled', terminal_at = now()
-      WHERE tenant = $1 AND project = $2 AND ticket = $3
-        AND status NOT IN (${settledStatuses})
+    sql`UPDATE execution SET status = 'Cancelled', terminal_at = now()
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND ticket = ${claim.ticket}
+        AND status NOT IN ('Terminal', 'Cancelled')
       RETURNING execution, source_request`,
-    [claim.partition.tenant, claim.partition.project, claim.ticket],
   );
   return retired.rows;
 }
@@ -509,32 +495,23 @@ async function schedulerFenceRetired(
   claim: RequestClaim,
   retired: readonly RetiredRow[],
 ): Promise<readonly string[]> {
-  await client.query(
-    `SELECT a.attempt FROM execution_attempt a
-      WHERE a.tenant = $1 AND a.project = $2
-        AND a.execution = ANY($3::text[])
-        AND a.state IN (${liveAttemptStates})
+  const executions = retired.map((row) => row.execution);
+  await client.query<{ attempt: string }>(
+    sql`SELECT a.attempt FROM execution_attempt a
+      WHERE a.tenant = ${claim.partition.tenant} AND a.project = ${claim.partition.project}
+        AND a.execution = ANY(${executions}::text[])
+        AND a.state IN ('Placing', 'Running')
       ORDER BY a.tenant, a.project, a.execution, a.attempt FOR UPDATE`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      retired.map((row) => row.execution),
-    ],
   );
   const fenced = await client.query<{ attempt: string }>(
-    `UPDATE execution_attempt a
+    sql`UPDATE execution_attempt a
         SET state = 'Superseded', generation = a.generation + 1,
             evidence = 'Fenced', ended_at = now(),
             lease_owner = NULL, lease_expires_at = NULL
-      WHERE a.tenant = $1 AND a.project = $2
-        AND a.execution = ANY($3::text[])
-        AND a.state IN (${liveAttemptStates})
+      WHERE a.tenant = ${claim.partition.tenant} AND a.project = ${claim.partition.project}
+        AND a.execution = ANY(${executions}::text[])
+        AND a.state IN ('Placing', 'Running')
       RETURNING a.attempt`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      retired.map((row) => row.execution),
-    ],
   );
   return fenced.rows.map((row) => row.attempt);
 }
@@ -545,17 +522,12 @@ async function schedulerInvalidateSpawns(
   claim: RequestClaim,
 ): Promise<void> {
   await client.query(
-    `UPDATE execution_request
+    sql`UPDATE execution_request
         SET state = 'Invalidated', claim_owner = NULL, claim_expires_at = NULL
-      WHERE tenant = $1 AND project = $2 AND ticket = $3
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND ticket = ${claim.ticket}
         AND kind IN ('SpawnWork', 'SpawnEvaluation') AND state = 'Open'
-        AND authorizing_seq < $4`,
-    [
-      claim.partition.tenant,
-      claim.partition.project,
-      claim.ticket,
-      claim.authorizingSeq,
-    ],
+        AND authorizing_seq < ${claim.authorizingSeq}`,
   );
 }
 
@@ -585,17 +557,16 @@ async function schedulerClusterLedger(
   client: pg.PoolClient,
   cluster: ClusterId,
 ): Promise<{ readonly slotsMax: number; readonly active: number }> {
-  await client.query(
-    "SELECT pg_advisory_xact_lock($1, ('x' || substr(md5($2), 1, 8))::bit(32)::integer)",
-    [admissionLockNamespace, cluster],
+  await client.query<{ locked: string | null }>(
+    sql`SELECT pg_advisory_xact_lock(${admissionLockNamespace},
+          ('x' || substr(md5(${cluster}), 1, 8))::bit(32)::integer)::text AS locked`,
   );
   const found = await client.query<{ slots_max: string; active: string }>(
-    `SELECT c.slots_max::text AS slots_max,
+    sql`SELECT c.slots_max::text AS slots_max,
             (SELECT count(*)::text FROM execution e
               WHERE e.cluster = c.cluster
-                AND e.status IN (${slotHolders})) AS active
-       FROM execution_cluster c WHERE c.cluster = $1`,
-    [cluster],
+                AND e.status IN ('Admitted', 'Launching', 'Running')) AS active
+       FROM execution_cluster c WHERE c.cluster = ${cluster}`,
   );
   const row = found.rows[0];
   if (row === undefined) {
@@ -621,24 +592,23 @@ async function schedulerAdmit(
     project: string;
     execution: string;
   }>(
-    `SELECT e.tenant, e.project, e.execution
+    sql`SELECT e.tenant, e.project, e.execution
        FROM execution e
        JOIN capacity_account a ON a.account = e.account
        LEFT JOIN LATERAL (SELECT count(*) AS held FROM execution x
                            WHERE x.account = e.account
-                             AND x.status IN (${slotHolders})) h ON true
-      WHERE e.cluster = $1 AND e.status = 'Queued' AND h.held < a.maximum
+                             AND x.status IN ('Admitted', 'Launching', 'Running')) h ON true
+      WHERE e.cluster = ${cluster} AND e.status = 'Queued' AND h.held < a.maximum
       ORDER BY (greatest(a.reserved - h.held, 0) > 0) DESC,
                e.registered_at, e.execution LIMIT 1
       FOR UPDATE OF e`,
-    [cluster],
   );
   const row = candidate.rows[0];
   if (row === undefined) return schedulerNoCandidate(client, cluster);
   const taken = await client.query(
-    `UPDATE execution SET status = 'Admitted'
-      WHERE tenant = $1 AND project = $2 AND execution = $3 AND status = 'Queued'`,
-    [row.tenant, row.project, row.execution],
+    sql`UPDATE execution SET status = 'Admitted'
+      WHERE tenant = ${row.tenant} AND project = ${row.project}
+        AND execution = ${row.execution} AND status = 'Queued'`,
   );
   if (taken.rowCount !== 1) {
     throw new Error(
@@ -653,9 +623,8 @@ async function schedulerNoCandidate(
   client: pg.PoolClient,
   cluster: ClusterId,
 ): Promise<Admitted> {
-  const queued = await client.query(
-    `SELECT 1 FROM execution WHERE cluster = $1 AND status = 'Queued' LIMIT 1`,
-    [cluster],
+  const queued = await client.query<{ one: number }>(
+    sql`SELECT 1 AS one FROM execution WHERE cluster = ${cluster} AND status = 'Queued' LIMIT 1`,
   );
   return queued.rows.length > 0
     ? { admitted: "AccountAtMaximum" }
@@ -664,8 +633,31 @@ async function schedulerNoCandidate(
 
 /** One execution row read with the launch conditions the server decided about it. */
 interface LaunchRow extends ExecutionRow {
-  readonly backing_off: boolean;
+  readonly backing_off: boolean | null;
   readonly attempt_live: boolean;
+}
+
+/** The insert-returning shape PostgreSQL reports before table constraints are applied. */
+interface OpenedAttemptRow extends Omit<
+  AttemptRow,
+  "attempt_number" | "generation" | "authoritative"
+> {
+  readonly attempt_number: string | null;
+  readonly generation: string | null;
+  readonly authoritative: boolean | null;
+}
+
+/** Restores the non-null attempt contract enforced by the execution_attempt table. */
+function schedulerOpenedAttempt(row: OpenedAttemptRow): AttemptRow {
+  if (row.authoritative === null) {
+    throw new Error("postgres scheduler: opened attempt authority is null");
+  }
+  return {
+    ...row,
+    attempt_number: claimRowRequired(row.attempt_number, "attempt number"),
+    generation: claimRowRequired(row.generation, "attempt generation"),
+    authoritative: row.authoritative,
+  };
 }
 
 /** Locks the registration a launch is about, with the backoff and liveness it is subject to. */
@@ -674,23 +666,31 @@ async function schedulerLockForLaunch(
   opening: AttemptOpening,
 ): Promise<LaunchRow> {
   const found = await client.query<LaunchRow>(
-    `SELECT ${executionRowColumns},
+    sql`SELECT e.tenant, e.project, e.execution, e.ticket::text AS ticket, e.task::text AS task,
+            t.kind AS task_kind, t.stage::text AS stage, e.source_request,
+            q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
+            q.ticket_version::text AS ticket_version, e.account, e.cluster,
+            e.configuration_revision, e.configuration_digest, e.status, e.outcome,
+            e.result_manifest, e.completion_operation,
+            (e.attempt_next - 1)::text AS attempts_opened,
+            e.retries_spent::text AS retries_spent,
             (e.placement_backoff_from IS NOT NULL
              AND e.placement_backoff_from
-                 + make_interval(secs => $4::double precision) > now()) AS backing_off,
+                 + make_interval(secs => ${opening.placementBackoffSecs}::double precision)
+                 > now()) IS TRUE AS backing_off,
             EXISTS (SELECT 1 FROM execution_attempt a
                      WHERE a.tenant = e.tenant AND a.project = e.project
                        AND a.execution = e.execution
-                       AND a.state IN (${liveAttemptStates})) AS attempt_live
-       FROM ${executionRowFrom}
-      WHERE e.tenant = $1 AND e.project = $2 AND e.execution = $3
+                       AND a.state IN ('Placing', 'Running')) AS attempt_live
+       FROM execution e
+       JOIN execution_request q
+         ON q.tenant = e.tenant AND q.project = e.project AND q.request = e.source_request
+       JOIN execution_request_task t
+         ON t.tenant = e.tenant AND t.project = e.project
+        AND t.request = e.source_request AND t.task = e.task
+      WHERE e.tenant = ${opening.partition.tenant} AND e.project = ${opening.partition.project}
+        AND e.execution = ${opening.execution}
       FOR UPDATE OF e`,
-    [
-      opening.partition.tenant,
-      opening.partition.project,
-      opening.execution,
-      opening.placementBackoffSecs,
-    ],
   );
   const row = found.rows[0];
   if (row === undefined) {
@@ -706,18 +706,23 @@ async function schedulerTakeAttemptNumber(
   client: pg.PoolClient,
   opening: AttemptOpening,
 ): Promise<string> {
-  const taken = await client.query<{ attempt_number: string }>(
-    `UPDATE execution
+  const taken = await client.query<{ attempt_number: string | null }>(
+    sql`UPDATE execution
         SET attempt_next = attempt_next + 1,
             status = CASE WHEN status = 'Admitted' THEN 'Launching' ELSE status END
-      WHERE tenant = $1 AND project = $2 AND execution = $3
+      WHERE tenant = ${opening.partition.tenant} AND project = ${opening.partition.project}
+        AND execution = ${opening.execution}
       RETURNING (attempt_next - 1)::text AS attempt_number`,
-    [opening.partition.tenant, opening.partition.project, opening.execution],
   );
   const row = taken.rows[0];
   if (row === undefined) {
     throw new Error(
       `postgres scheduler: execution ${opening.execution} handed out no attempt number`,
+    );
+  }
+  if (row.attempt_number === null) {
+    throw new Error(
+      `postgres scheduler: execution ${opening.execution} handed out a null attempt number`,
     );
   }
   return row.attempt_number;
@@ -742,25 +747,20 @@ async function schedulerOpenAttempt(
   if (execution.retriesSpent >= opening.retriesMax) {
     return { opened: "RetriesExhausted" };
   }
-  if (row.backing_off) return { opened: "BackingOff" };
+  if (row.backing_off === true) return { opened: "BackingOff" };
   const attempt = `attempt-${randomUUID()}`;
   const attemptNumber = await schedulerTakeAttemptNumber(client, opening);
-  const opened = await client.query<AttemptRow>(
-    `INSERT INTO execution_attempt
+  const opened = await client.query<OpenedAttemptRow>(
+    sql`INSERT INTO execution_attempt
        (tenant, project, execution, attempt, attempt_number, generation,
         recovery_epoch, state, lease_owner, lease_expires_at)
-     VALUES ($1,$2,$3,$4,$5,1,$6,'Placing',$4,
-             now() + make_interval(secs => $7::double precision))
-     RETURNING ${attemptRowColumns}`,
-    [
-      opening.partition.tenant,
-      opening.partition.project,
-      opening.execution,
-      attempt,
-      attemptNumber,
-      opening.epoch,
-      opening.leaseSecs,
-    ],
+     VALUES (${opening.partition.tenant},${opening.partition.project},${opening.execution},
+             ${attempt},${attemptNumber}::bigint,1,${opening.epoch},'Placing',${attempt},
+             now() + make_interval(secs => ${opening.leaseSecs}::double precision))
+     RETURNING tenant, project, execution, attempt,
+               attempt_number::text AS attempt_number,
+               generation::text AS generation, recovery_epoch, state, workload,
+               (state IN ('Placing', 'Running')) AS authoritative`,
   );
   const written = opened.rows[0];
   if (written === undefined) {
@@ -768,7 +768,10 @@ async function schedulerOpenAttempt(
       `postgres scheduler: opening an attempt on ${opening.execution} wrote no row`,
     );
   }
-  return { opened: "Opened", attempt: attemptRowPhysical(written) };
+  return {
+    opened: "Opened",
+    attempt: attemptRowPhysical(schedulerOpenedAttempt(written)),
+  };
 }
 
 /** Takes the registration's own row lock, which every attempt move is made under. */
@@ -776,10 +779,10 @@ async function schedulerLockAttemptExecution(
   client: pg.PoolClient,
   attempt: FencedAttempt,
 ): Promise<void> {
-  await client.query(
-    `SELECT 1 FROM execution
-      WHERE tenant = $1 AND project = $2 AND execution = $3 FOR UPDATE`,
-    [attempt.partition.tenant, attempt.partition.project, attempt.execution],
+  await client.query<{ one: number }>(
+    sql`SELECT 1 AS one FROM execution
+      WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
+        AND execution = ${attempt.execution} FOR UPDATE`,
   );
 }
 
@@ -791,23 +794,16 @@ async function schedulerAttemptPlaced(
 ): Promise<boolean> {
   await schedulerLockAttemptExecution(client, attempt);
   const placed = await client.query(
-    `UPDATE execution_attempt SET state = 'Running', workload = $6
-      WHERE tenant = $1 AND project = $2 AND execution = $3 AND attempt = $4
-        AND generation = $5 AND state = 'Placing'`,
-    [
-      attempt.partition.tenant,
-      attempt.partition.project,
-      attempt.execution,
-      attempt.attempt,
-      attempt.generation,
-      workload,
-    ],
+    sql`UPDATE execution_attempt SET state = 'Running', workload = ${workload}
+      WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
+        AND execution = ${attempt.execution} AND attempt = ${attempt.attempt}
+        AND generation = ${attempt.generation} AND state = 'Placing'`,
   );
   if (placed.rowCount !== 1) return false;
   await client.query(
-    `UPDATE execution SET status = 'Running'
-      WHERE tenant = $1 AND project = $2 AND execution = $3 AND status = 'Launching'`,
-    [attempt.partition.tenant, attempt.partition.project, attempt.execution],
+    sql`UPDATE execution SET status = 'Running'
+      WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
+        AND execution = ${attempt.execution} AND status = 'Launching'`,
   );
   return true;
 }
@@ -821,33 +817,21 @@ async function schedulerAttemptEnded(
 ): Promise<boolean> {
   await schedulerLockAttemptExecution(client, attempt);
   const ended = await client.query(
-    `UPDATE execution_attempt
-        SET state = $6, evidence = $7, ended_at = now(),
+    sql`UPDATE execution_attempt
+        SET state = ${loss}, evidence = ${evidence}, ended_at = now(),
             lease_owner = NULL, lease_expires_at = NULL
-      WHERE tenant = $1 AND project = $2 AND execution = $3 AND attempt = $4
-        AND generation = $5 AND state IN (${liveAttemptStates})`,
-    [
-      attempt.partition.tenant,
-      attempt.partition.project,
-      attempt.execution,
-      attempt.attempt,
-      attempt.generation,
-      loss,
-      evidence,
-    ],
+      WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
+        AND execution = ${attempt.execution} AND attempt = ${attempt.attempt}
+        AND generation = ${attempt.generation} AND state IN ('Placing', 'Running')`,
   );
   if (ended.rowCount !== 1) return false;
   await client.query(
-    `UPDATE execution
-        SET retries_spent = retries_spent + $4, placement_backoff_from = now()
-      WHERE tenant = $1 AND project = $2 AND execution = $3
-        AND status NOT IN (${settledStatuses})`,
-    [
-      attempt.partition.tenant,
-      attempt.partition.project,
-      attempt.execution,
-      loss === "Lost" ? 1 : 0,
-    ],
+    sql`UPDATE execution
+        SET retries_spent = retries_spent + ${loss === "Lost" ? 1 : 0},
+            placement_backoff_from = now()
+      WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
+        AND execution = ${attempt.execution}
+        AND status NOT IN ('Terminal', 'Cancelled')`,
   );
   return true;
 }
@@ -867,33 +851,36 @@ async function schedulerReapLapsedAttempts(
   schedulerRequirePositive(attemptsMax, "attemptsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return 0;
   const held = await client.query<SchedulerRowKey>(
-    `SELECT e.tenant, e.project, e.execution FROM execution e
+    sql`SELECT e.tenant, e.project, e.execution FROM execution e
       WHERE EXISTS (SELECT 1 FROM execution_attempt a
                      WHERE a.tenant = e.tenant AND a.project = e.project
                        AND a.execution = e.execution
-                       AND a.state IN (${liveAttemptStates})
+                       AND a.state IN ('Placing', 'Running')
                        AND a.lease_expires_at <= now())
       ORDER BY e.tenant, e.project, e.execution
-      LIMIT $1 FOR UPDATE`,
-    [attemptsMax],
+      LIMIT ${attemptsMax} FOR UPDATE`,
   );
   if (held.rows.length === 0) return 0;
+  const [heldTenants, heldProjects, heldExecutions] = schedulerRowKeys(
+    held.rows,
+  );
   const lapsed = await client.query<SchedulerRowKey & { attempt: string }>(
-    `SELECT a.tenant, a.project, a.execution, a.attempt FROM execution_attempt a
-       JOIN unnest($1::text[], $2::text[], $3::text[]) AS h(tenant, project, execution)
+    sql`SELECT a.tenant, a.project, a.execution, a.attempt FROM execution_attempt a
+       JOIN unnest(${heldTenants}::text[], ${heldProjects}::text[], ${heldExecutions}::text[])
+         AS h(tenant, project, execution)
          ON a.tenant = h.tenant AND a.project = h.project AND a.execution = h.execution
-      WHERE a.state IN (${liveAttemptStates}) AND a.lease_expires_at <= now()
+      WHERE a.state IN ('Placing', 'Running') AND a.lease_expires_at <= now()
       ORDER BY a.tenant, a.project, a.execution, a.attempt FOR UPDATE OF a`,
-    schedulerRowKeys(held.rows),
   );
   if (lapsed.rows.length === 0) return 0;
+  const [tenants, projects, executions] = schedulerRowKeys(lapsed.rows);
   await client.query(
-    `UPDATE execution e
+    sql`UPDATE execution e
         SET retries_spent = e.retries_spent + 1, placement_backoff_from = now()
-       FROM unnest($1::text[], $2::text[], $3::text[]) AS h(tenant, project, execution)
+       FROM unnest(${tenants}::text[], ${projects}::text[], ${executions}::text[])
+         AS h(tenant, project, execution)
       WHERE e.tenant = h.tenant AND e.project = h.project AND e.execution = h.execution
-        AND e.status NOT IN (${settledStatuses})`,
-    schedulerRowKeys(lapsed.rows),
+        AND e.status NOT IN ('Terminal', 'Cancelled')`,
   );
   return schedulerEndLapsed(
     client,
@@ -908,11 +895,10 @@ async function schedulerEndLapsed(
 ): Promise<number> {
   if (attempts.length === 0) return 0;
   const ended = await client.query(
-    `UPDATE execution_attempt
+    sql`UPDATE execution_attempt
         SET state = 'Lost', evidence = 'LeaseExpired', ended_at = now(),
             lease_owner = NULL, lease_expires_at = NULL
-      WHERE attempt = ANY($1::text[])`,
-    [[...attempts]],
+      WHERE attempt = ANY(${[...attempts]}::text[])`,
   );
   return ended.rowCount ?? 0;
 }
@@ -926,14 +912,26 @@ async function schedulerUnlaunched(
   schedulerRequirePositive(executionsMax, "executionsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
   const waiting = await client.query<ExecutionRow>(
-    `SELECT ${executionRowColumns} FROM ${executionRowFrom}
+    sql`SELECT e.tenant, e.project, e.execution, e.ticket::text AS ticket, e.task::text AS task,
+            t.kind AS task_kind, t.stage::text AS stage, e.source_request,
+            q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
+            q.ticket_version::text AS ticket_version, e.account, e.cluster,
+            e.configuration_revision, e.configuration_digest, e.status, e.outcome,
+            e.result_manifest, e.completion_operation,
+            (e.attempt_next - 1)::text AS attempts_opened,
+            e.retries_spent::text AS retries_spent
+       FROM execution e
+       JOIN execution_request q
+         ON q.tenant = e.tenant AND q.project = e.project AND q.request = e.source_request
+       JOIN execution_request_task t
+         ON t.tenant = e.tenant AND t.project = e.project
+        AND t.request = e.source_request AND t.task = e.task
       WHERE e.status IN ('Admitted', 'Launching', 'Running')
         AND NOT EXISTS (SELECT 1 FROM execution_attempt a
                          WHERE a.tenant = e.tenant AND a.project = e.project
                            AND a.execution = e.execution
-                           AND a.state IN (${liveAttemptStates}))
-      ORDER BY e.registered_at, e.execution LIMIT $1`,
-    [executionsMax],
+                           AND a.state IN ('Placing', 'Running'))
+      ORDER BY e.registered_at, e.execution LIMIT ${executionsMax}`,
   );
   return waiting.rows.map(executionRowLogical);
 }
@@ -950,20 +948,19 @@ async function schedulerFenceOldEpochs(
 ): Promise<number> {
   schedulerRequirePositive(attemptsMax, "attemptsMax");
   const superseded = await client.query<{ attempt: string }>(
-    `SELECT a.attempt FROM execution_attempt a
-      WHERE a.state IN (${liveAttemptStates}) AND a.recovery_epoch <> $1
+    sql`SELECT a.attempt FROM execution_attempt a
+      WHERE a.state IN ('Placing', 'Running') AND a.recovery_epoch <> ${epoch}
       ORDER BY a.tenant, a.project, a.execution, a.attempt
-      LIMIT $2 FOR UPDATE`,
-    [epoch, attemptsMax],
+      LIMIT ${attemptsMax} FOR UPDATE`,
   );
   if (superseded.rows.length === 0) return 0;
+  const attempts = superseded.rows.map((row) => row.attempt);
   const fenced = await client.query(
-    `UPDATE execution_attempt
+    sql`UPDATE execution_attempt
         SET state = 'Superseded', generation = generation + 1,
             evidence = 'Fenced', ended_at = now(),
             lease_owner = NULL, lease_expires_at = NULL
-      WHERE attempt = ANY($1::text[])`,
-    [superseded.rows.map((row) => row.attempt)],
+      WHERE attempt = ANY(${attempts}::text[])`,
   );
   return fenced.rowCount ?? 0;
 }
@@ -975,9 +972,24 @@ async function schedulerExecution(
   execution: ExecutionId,
 ): Promise<LogicalExecution | undefined> {
   const found = await pool.query<ExecutionRow>(
-    `SELECT ${executionRowColumns} FROM ${executionRowFrom}
-      WHERE e.tenant = $1 AND e.project = $2 AND e.execution = $3`,
-    [partition.tenant, partition.project, execution],
+    sql`SELECT e.tenant, e.project, e.execution, e.ticket::text AS ticket,
+               e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage,
+               e.source_request, q.authorizing_seq::text AS source_seq,
+               q.effect_position::text AS source_effect,
+               q.ticket_version::text AS ticket_version, e.account, e.cluster,
+               e.configuration_revision, e.configuration_digest, e.status,
+               e.outcome, e.result_manifest, e.completion_operation,
+               (e.attempt_next - 1)::text AS attempts_opened,
+               e.retries_spent::text AS retries_spent
+          FROM execution e
+          JOIN execution_request q
+            ON q.tenant = e.tenant AND q.project = e.project
+           AND q.request = e.source_request
+          JOIN execution_request_task t
+            ON t.tenant = e.tenant AND t.project = e.project
+           AND t.request = e.source_request AND t.task = e.task
+         WHERE e.tenant = ${partition.tenant} AND e.project = ${partition.project}
+           AND e.execution = ${execution}`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : executionRowLogical(row);

@@ -10,7 +10,7 @@
 # THE CASES SUPPLY THEIR OWN SERVER URL AND THEIR FIXTURE SUITES IGNORE IT.
 # What is under test here is the gate's sequencing and its verdict, not the
 # adapter — the adapter is tested against a real server by the gate itself. So
-# the URL they pass names a socket this file opens, which answers the gate's
+# the URL they pass names a socket `_socket.sh` opens, which answers the gate's
 # reachability probe and nothing else: a fixture that needed a database to say
 # anything about a script would leave a machine without one unable to check the
 # script either.
@@ -36,48 +36,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SUT="$HERE/check-postgres.sh"
 R="$WORK/repo"
 
-# A PATH with no docker on it, so the missing-docker case is about the gate
-# rather than about whichever machine runs this suite.
-NODE_DIR="$(dirname "$(command -v node)")"
-BIN="$WORK/bin"
-mkdir -p "$BIN"
-ln -sf "$NODE_DIR/node" "$BIN/node"
-for tool in git find grep sort dirname mktemp sed; do
-	if command -v "$tool" >/dev/null 2>&1; then
-		ln -sf "$(command -v "$tool")" "$BIN/$tool"
-	fi
-done
-
-# A socket that accepts and says nothing, which is all the gate's reachability
-# probe asks of a caller-supplied server, and is not a database.
-PORT_FILE="$WORK/.port"
-node -e '
-const fs = require("node:fs");
-const net = require("node:net");
-const server = net.createServer((socket) => socket.destroy());
-server.listen(0, "127.0.0.1", () => {
-  fs.writeFileSync(process.argv[1], String(server.address().port));
-});
-' "$PORT_FILE" &
-SOCKET=$!
-# The harness removes $WORK on exit; this adds the socket to what goes with it.
-trap 'kill "$SOCKET" 2>/dev/null || true; rm -rf "$WORK"' EXIT
-
-SOCKET_WAIT_SECS=10
-waited=0
-until [ -s "$PORT_FILE" ]; do
-	if [ "$waited" -ge "$SOCKET_WAIT_SECS" ]; then
-		echo "check-postgres.test.sh: LINTER ERROR — the fixture socket never opened"
-		exit 2
-	fi
-	sleep 1
-	waited=$((waited + 1))
-done
-ANSWERS="postgres://fixture@127.0.0.1:$(cat "$PORT_FILE")/ignored"
-
-# An address on the loopback that nothing is listening on, which is the shape of
-# a URL naming a server that is not running.
-SILENT="127.0.0.1:1"
+. "$HERE/_socket.sh"
 
 fixture() { # a throwaway repo with a test/postgres directory
 	fresh_repo "$R"

@@ -4,7 +4,7 @@
  *
  * WHY A SECOND PORT AND NOT MORE OF `ProjectStore`. Acceptance is the API's
  * transaction and the append is the project ticket writer's, and
- * `docs/design/006-durable-project-dispatch.md` says runtime services do not
+ * issue #180 says runtime services do not
  * share an omnipotent credential. A port whose methods two roles answer is a
  * port no set of grants can describe, and the grant is where that boundary is
  * actually enforced — so the split here is by authority, and each side is

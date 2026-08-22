@@ -1,3 +1,4 @@
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import type {
@@ -8,6 +9,9 @@ import type {
 } from "../../interpreter/dispatchView.ts";
 import {
   checkedDispatchViewQuery,
+  decodeDispatchFinalizationPricing,
+  decodeDispatchProgram,
+  decodeDispatchReworkPolicy,
   dispatchViewDigest,
 } from "../../interpreter/dispatchView.ts";
 import { asTicketId } from "../../domain/ids.ts";
@@ -35,11 +39,23 @@ interface CandidateRow {
   readonly program: string;
   readonly rework_policy: string;
   readonly finalization_pricing: string;
-  readonly resume_pricing: DispatchCandidate["resumePricing"];
-  readonly finalizer: DispatchCandidate["finalizer"];
+  readonly resume_pricing: string;
+  readonly finalizer: string;
   readonly configuration_revision: string;
   readonly configuration_digest: string;
   readonly configuration_canonical: string;
+}
+
+function decodeResumePricing(
+  value: string,
+): DispatchCandidate["resumePricing"] {
+  if (value === "RetryCharged" || value === "RetryFree") return value;
+  throw new TypeError("dispatch resume pricing is malformed");
+}
+
+function decodeFinalizer(value: string): DispatchCandidate["finalizer"] {
+  if (value === "NoFinalizer" || value === "ManagedFinalizer") return value;
+  throw new TypeError("dispatch finalizer is malformed");
 }
 
 function candidateOf(
@@ -60,15 +76,15 @@ function candidateOf(
       .filter((edge) => Number(edge.ticket) === ticket)
       .map((edge) => projectRowCounter(edge.dependency, "dispatch dependency")),
     workFanout: projectRowCounter(row.work_fanout, "dispatch work fanout"),
-    program: JSON.parse(row.program) as DispatchCandidate["program"],
-    reworkPolicy: JSON.parse(
-      row.rework_policy,
-    ) as DispatchCandidate["reworkPolicy"],
-    finalizationPricing: JSON.parse(
-      row.finalization_pricing,
-    ) as DispatchCandidate["finalizationPricing"],
-    resumePricing: row.resume_pricing,
-    finalizer: row.finalizer,
+    program: decodeDispatchProgram(JSON.parse(row.program) as unknown),
+    reworkPolicy: decodeDispatchReworkPolicy(
+      JSON.parse(row.rework_policy) as unknown,
+    ),
+    finalizationPricing: decodeDispatchFinalizationPricing(
+      JSON.parse(row.finalization_pricing) as unknown,
+    ),
+    resumePricing: decodeResumePricing(row.resume_pricing),
+    finalizer: decodeFinalizer(row.finalizer),
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     configurationCanonical: row.configuration_canonical,
@@ -80,35 +96,18 @@ async function viewHeader(
   partition: Partition,
 ): Promise<HeaderRow | undefined> {
   const found = await client.query<HeaderRow>(
-    `SELECT v.tenant IS NOT NULL AS has_view,
+    sql`SELECT v.tenant IS NOT NULL AS has_view,
             coalesce(v.recovery_epoch,e.epoch) AS recovery_epoch,
             coalesce(v.watermark,p.head)::text AS watermark,
             coalesce(v.schema_version,1) AS schema_version,
-            coalesce(v.digest,$3) AS digest,
+            coalesce(v.digest,${dispatchViewDigest([])}) AS digest,
             (p.notification_next-1)::text AS notification_cursor
        FROM project p CROSS JOIN LATERAL
             (SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1) e
        LEFT JOIN dispatch_view v USING (tenant,project)
-      WHERE p.tenant=$1 AND p.project=$2`,
-    [partition.tenant, partition.project, dispatchViewDigest([])],
+      WHERE p.tenant=${partition.tenant} AND p.project=${partition.project}`,
   );
   return found.rows[0];
-}
-
-function tokenMatches(
-  token: NonNullable<DispatchViewQuery["token"]>,
-  partition: Partition,
-  current: HeaderRow,
-  watermark: number,
-): boolean {
-  return (
-    token.tenant === partition.tenant &&
-    token.project === partition.project &&
-    token.recoveryEpoch === current.recovery_epoch &&
-    token.schemaVersion === current.schema_version &&
-    token.watermark === watermark &&
-    token.digest === current.digest
-  );
 }
 
 async function readDispatchView(
@@ -127,19 +126,16 @@ async function readDispatchView(
       "dispatch view watermark",
     );
     if (!current.has_view && watermark > 0) return { result: "Reset" };
-    if (
-      query.token !== undefined &&
-      !tokenMatches(query.token, partition, current, watermark)
-    )
+    if (query.watermark !== undefined && query.watermark !== watermark)
       return { result: "Reset" };
     const found = await client.query<CandidateRow>(
-      `SELECT ticket::text,ticket_version::text,work_fanout::text,program,
+      sql`SELECT ticket::text,ticket_version::text,work_fanout::text,program,
               rework_policy,finalization_pricing,resume_pricing,finalizer,
             configuration_revision,configuration_digest,configuration_canonical
          FROM dispatch_candidate
-        WHERE tenant=$1 AND project=$2 AND ticket>$3
-        ORDER BY ticket LIMIT $4`,
-      [partition.tenant, partition.project, query.after ?? 0, query.limit + 1],
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND ticket>${query.after ?? 0}
+        ORDER BY ticket LIMIT ${query.limit + 1}`,
     );
     const pageRows = found.rows.slice(0, query.limit);
     const tickets = pageRows.map((row) =>
@@ -149,10 +145,10 @@ async function readDispatchView(
       tickets.length === 0
         ? { rows: [] as { ticket: string; dependency: string }[] }
         : await client.query<{ ticket: string; dependency: string }>(
-            `SELECT ticket::text,dependency::text FROM dispatch_candidate_dependency
-            WHERE tenant=$1 AND project=$2 AND ticket=ANY($3::bigint[])
+            sql`SELECT ticket::text,dependency::text FROM dispatch_candidate_dependency
+            WHERE tenant=${partition.tenant} AND project=${partition.project}
+              AND ticket=ANY(${tickets}::bigint[])
             ORDER BY ticket,dependency`,
-            [partition.tenant, partition.project, tickets],
           );
     const candidates = pageRows.map((row) =>
       candidateOf(row, dependencies.rows),

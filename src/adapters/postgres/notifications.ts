@@ -1,5 +1,6 @@
 /** PostgreSQL reads over the bounded durable project notification log. */
 
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
@@ -77,9 +78,9 @@ async function readNotifications(
       "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY",
     );
     const bounds = await client.query<NotificationBoundsRow>(
-      `SELECT min(ordinal)::text AS earliest,max(ordinal)::text AS latest
-         FROM project_notification WHERE tenant=$1 AND project=$2`,
-      [partition.tenant, partition.project],
+      sql`SELECT min(ordinal)::text AS earliest,max(ordinal)::text AS latest
+         FROM project_notification
+        WHERE tenant=${partition.tenant} AND project=${partition.project}`,
     );
     const earliest = optionalCounter(
       bounds.rows[0]?.earliest ?? null,
@@ -93,11 +94,11 @@ async function readNotifications(
       return { result: "Reset", cursor: latest ?? 0 };
     if (after > (latest ?? 0)) return { result: "Reset", cursor: latest ?? 0 };
     const found = await client.query<NotificationRow>(
-      `SELECT ordinal,kind,resource,project_seq,authoring_version
+      sql`SELECT ordinal,kind,resource,project_seq,authoring_version
          FROM project_notification
-        WHERE tenant=$1 AND project=$2 AND ordinal>$3
-        ORDER BY ordinal LIMIT $4`,
-      [partition.tenant, partition.project, after, limit],
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND ordinal>${after}
+        ORDER BY ordinal LIMIT ${limit}`,
     );
     const events = found.rows.map(notificationOf);
     return {

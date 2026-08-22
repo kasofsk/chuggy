@@ -7,7 +7,7 @@
  * The scheduler role holds no privilege at all on `operation`,
  * `decision_input`, `journal_entry` or `ticket_projection`, so there is no
  * direct insert here to be tempted by: the function is the authenticated
- * ingress `docs/design/006-durable-project-dispatch.md` requires, and granting
+ * ingress issue #180 requires, and granting
  * execute on it to one workload identity is how that rule is enforced rather
  * than an exception to it. Everything the envelope says is built by the
  * function from durable rows; what this file passes is the binding it claims to
@@ -44,6 +44,7 @@
  * skipped validation, which is the one thing the sealed type exists to prevent.
  */
 
+import { sql } from "@ts-safeql/sql-tag";
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 
@@ -69,13 +70,8 @@ import {
   type ArtifactRow,
   type ResultManifest,
 } from "../../interpreter/resultManifest.ts";
-import {
-  executionRowColumns,
-  executionRowFrom,
-  executionRowLogical,
-  type ExecutionRow,
-} from "./schedulerRows.ts";
-import { completionFunction, schedulerRole } from "./schema.ts";
+import { executionRowLogical, type ExecutionRow } from "./schedulerRows.ts";
+import { schedulerRole } from "./schema.ts";
 
 /** The report a manifest a worker never produced is composed from. */
 const exhaustedManifestText = JSON.stringify({
@@ -104,9 +100,13 @@ export const schedulerEvidence = {
     "a manifest is bound to an execution other than the one reporting it",
 } as const;
 
-/** What the completion boundary answered. */
+/**
+ * What the completion boundary answered. Every column of a set-returning
+ * function is nullable to the query checker, so the verdict admits a null; a
+ * null is no verdict this file recognizes and takes the refused-binding arm.
+ */
 interface CompletionRow {
-  readonly result: string;
+  readonly result: string | null;
   readonly operation: string | null;
 }
 
@@ -117,10 +117,26 @@ export async function schedulerLockExecution(
   execution: ExecutionId,
 ): Promise<LogicalExecution | undefined> {
   const found = await client.query<ExecutionRow>(
-    `SELECT ${executionRowColumns} FROM ${executionRowFrom}
-      WHERE e.tenant = $1 AND e.project = $2 AND e.execution = $3
-      FOR UPDATE OF e`,
-    [partition.tenant, partition.project, execution],
+    sql`SELECT
+          e.tenant, e.project, e.execution, e.ticket::text AS ticket,
+          e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage,
+          e.source_request, q.authorizing_seq::text AS source_seq,
+          q.effect_position::text AS source_effect,
+          q.ticket_version::text AS ticket_version, e.account, e.cluster,
+          e.configuration_revision, e.configuration_digest, e.status, e.outcome,
+          e.result_manifest, e.completion_operation,
+          (e.attempt_next - 1)::text AS attempts_opened,
+          e.retries_spent::text AS retries_spent
+        FROM execution e
+        JOIN execution_request q
+          ON q.tenant = e.tenant AND q.project = e.project
+         AND q.request = e.source_request
+        JOIN execution_request_task t
+          ON t.tenant = e.tenant AND t.project = e.project
+         AND t.request = e.source_request AND t.task = e.task
+        WHERE e.tenant = ${partition.tenant} AND e.project = ${partition.project}
+          AND e.execution = ${execution}
+        FOR UPDATE OF e`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : executionRowLogical(row);
@@ -132,8 +148,9 @@ async function schedulerProjectAdmits(
   partition: Partition,
 ): Promise<boolean> {
   const found = await client.query<{ lifecycle: string }>(
-    "SELECT lifecycle FROM project WHERE tenant = $1 AND project = $2 FOR UPDATE",
-    [partition.tenant, partition.project],
+    sql`SELECT lifecycle FROM project
+         WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+         FOR UPDATE`,
   );
   const row = found.rows[0];
   if (row === undefined) {
@@ -154,18 +171,11 @@ export async function schedulerRecordIncident(
 ): Promise<string> {
   const incident = `incident-${randomUUID()}`;
   await client.query(
-    `INSERT INTO scheduler_incident
-       (tenant, project, incident, kind, execution, attempt, evidence)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-    [
-      partition.tenant,
-      partition.project,
-      incident,
-      kind,
-      subject.execution ?? null,
-      subject.attempt ?? null,
-      evidence,
-    ],
+    sql`INSERT INTO scheduler_incident
+         (tenant, project, incident, kind, execution, attempt, evidence)
+       VALUES (${partition.tenant},${partition.project},${incident},${kind},
+               ${subject.execution ?? null},${subject.attempt ?? null},
+               ${evidence})`,
   );
   return incident;
 }
@@ -180,14 +190,14 @@ export async function schedulerFulfilRequest(
   request: string,
 ): Promise<void> {
   await client.query(
-    `UPDATE execution_request q SET state = 'Fulfilled'
-      WHERE q.tenant = $1 AND q.project = $2 AND q.request = $3
-        AND q.state = 'Registered'
-        AND NOT EXISTS (SELECT 1 FROM execution e
-                         WHERE e.tenant = q.tenant AND e.project = q.project
-                           AND e.source_request = q.request
-                           AND e.status NOT IN ('Terminal', 'Cancelled'))`,
-    [partition.tenant, partition.project, request],
+    sql`UPDATE execution_request q SET state = 'Fulfilled'
+         WHERE q.tenant = ${partition.tenant} AND q.project = ${partition.project}
+           AND q.request = ${request}
+           AND q.state = 'Registered'
+           AND NOT EXISTS (SELECT 1 FROM execution e
+                            WHERE e.tenant = q.tenant AND e.project = q.project
+                              AND e.source_request = q.request
+                              AND e.status NOT IN ('Terminal', 'Cancelled'))`,
   );
 }
 
@@ -199,22 +209,14 @@ async function schedulerSubmit(
   manifest: { readonly id: string; readonly digest: string } | undefined,
   reason: BlockedReason | undefined,
 ): Promise<CompletionRow> {
+  const operation = `completion-${randomUUID()}`;
   const submitted = await client.query<CompletionRow>(
-    `SELECT result, operation FROM ${completionFunction}($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-    [
-      execution.partition.tenant,
-      execution.partition.project,
-      execution.execution,
-      execution.ticket,
-      execution.task,
-      execution.sourceEffect,
-      outcome,
-      manifest?.id ?? null,
-      manifest?.digest ?? null,
-      reason ?? null,
-      `completion-${randomUUID()}`,
-      schedulerRole,
-    ],
+    sql`SELECT result, operation FROM submit_task_completion(
+          ${execution.partition.tenant},${execution.partition.project},
+          ${execution.execution},${execution.ticket},${execution.task},
+          ${execution.sourceEffect},${outcome},${manifest?.id ?? null},
+          ${manifest?.digest ?? null},${reason ?? null},${operation},
+          ${schedulerRole})`,
   );
   const row = submitted.rows[0];
   if (row === undefined) {
@@ -230,19 +232,18 @@ async function schedulerManifestOrdinal(
   client: pg.PoolClient,
   partition: Partition,
 ): Promise<string> {
-  const taken = await client.query<{ ordinal: string }>(
-    `UPDATE project SET manifest_next = manifest_next + 1
-      WHERE tenant = $1 AND project = $2
-      RETURNING (manifest_next - 1)::text AS ordinal`,
-    [partition.tenant, partition.project],
+  const taken = await client.query<{ ordinal: string | null }>(
+    sql`UPDATE project SET manifest_next = manifest_next + 1
+         WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+         RETURNING (manifest_next - 1)::text AS ordinal`,
   );
-  const row = taken.rows[0];
-  if (row === undefined) {
+  const ordinal = taken.rows[0]?.ordinal;
+  if (ordinal === undefined || ordinal === null) {
     throw new Error(
       `postgres scheduler: ${partition.tenant}/${partition.project} handed out no manifest ordinal`,
     );
   }
-  return row.ordinal;
+  return ordinal;
 }
 
 /** Writes one artifact list, continuing the manifest-local ordinal the previous list left. */
@@ -256,19 +257,12 @@ async function schedulerWriteArtifacts(
   let ordinal = from;
   for (const artifact of rows) {
     await client.query(
-      `INSERT INTO execution_result_artifact
-         (tenant, project, manifest, ordinal, role, path, digest, bytes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [
-        manifest.binding.partition.tenant,
-        manifest.binding.partition.project,
-        manifest.manifest,
-        ordinal,
-        role,
-        artifact.path,
-        artifact.digest,
-        artifact.bytes,
-      ],
+      sql`INSERT INTO execution_result_artifact
+           (tenant, project, manifest, ordinal, role, path, digest, bytes)
+         VALUES (${manifest.binding.partition.tenant},
+                 ${manifest.binding.partition.project},${manifest.manifest},
+                 ${ordinal},${role},${artifact.path},${artifact.digest},
+                 ${artifact.bytes})`,
     );
     ordinal += 1;
   }
@@ -282,21 +276,14 @@ async function schedulerWriteManifest(
   ordinal: string,
 ): Promise<void> {
   await client.query(
-    `INSERT INTO execution_result
-       (tenant, project, manifest, execution, attempt, manifest_ordinal,
-        schema_version, digest, verdict)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [
-      manifest.binding.partition.tenant,
-      manifest.binding.partition.project,
-      manifest.manifest,
-      manifest.binding.execution,
-      manifest.binding.attempt,
-      ordinal,
-      manifest.schemaVersion,
-      manifest.digest,
-      manifest.verdict,
-    ],
+    sql`INSERT INTO execution_result
+         (tenant, project, manifest, execution, attempt, manifest_ordinal,
+          schema_version, digest, verdict)
+       VALUES (${manifest.binding.partition.tenant},
+               ${manifest.binding.partition.project},${manifest.manifest},
+               ${manifest.binding.execution},${manifest.binding.attempt},
+               ${ordinal}::bigint,${manifest.schemaVersion},${manifest.digest},
+               ${manifest.verdict})`,
   );
   const handoffs = await schedulerWriteArtifacts(
     client,
@@ -367,13 +354,10 @@ async function schedulerManifestAlreadyStands(
 ): Promise<boolean> {
   if (execution.resultManifest !== offered.manifest) return false;
   const stored = await client.query<{ digest: string }>(
-    `SELECT digest FROM execution_result
-      WHERE tenant = $1 AND project = $2 AND manifest = $3`,
-    [
-      execution.partition.tenant,
-      execution.partition.project,
-      execution.resultManifest,
-    ],
+    sql`SELECT digest FROM execution_result
+         WHERE tenant = ${execution.partition.tenant}
+           AND project = ${execution.partition.project}
+           AND manifest = ${execution.resultManifest}`,
   );
   return stored.rows[0]?.digest === offered.digest;
 }
@@ -427,18 +411,14 @@ async function schedulerReporterReported(
   report: AttemptReport,
 ): Promise<boolean> {
   const reported = await client.query(
-    `UPDATE execution_attempt
-        SET state = 'Reported', ended_at = now(),
-            lease_owner = NULL, lease_expires_at = NULL
-      WHERE tenant = $1 AND project = $2 AND execution = $3 AND attempt = $4
-        AND generation = $5 AND state IN ('Placing', 'Running')`,
-    [
-      report.partition.tenant,
-      report.partition.project,
-      report.execution,
-      report.attempt,
-      report.generation,
-    ],
+    sql`UPDATE execution_attempt
+           SET state = 'Reported', ended_at = now(),
+               lease_owner = NULL, lease_expires_at = NULL
+         WHERE tenant = ${report.partition.tenant}
+           AND project = ${report.partition.project}
+           AND execution = ${report.execution} AND attempt = ${report.attempt}
+           AND generation = ${report.generation}
+           AND state IN ('Placing', 'Running')`,
   );
   return reported.rowCount === 1;
 }
@@ -485,13 +465,13 @@ async function schedulerLockSourceRequest(
   partition: Partition,
   execution: ExecutionId,
 ): Promise<void> {
-  await client.query(
-    `SELECT q.request FROM execution_request q
-       JOIN execution e ON e.tenant = q.tenant AND e.project = q.project
-                       AND e.source_request = q.request
-      WHERE e.tenant = $1 AND e.project = $2 AND e.execution = $3
-      FOR UPDATE OF q`,
-    [partition.tenant, partition.project, execution],
+  await client.query<{ request: string }>(
+    sql`SELECT q.request FROM execution_request q
+          JOIN execution e ON e.tenant = q.tenant AND e.project = q.project
+                          AND e.source_request = q.request
+         WHERE e.tenant = ${partition.tenant} AND e.project = ${partition.project}
+           AND e.execution = ${execution}
+         FOR UPDATE OF q`,
   );
 }
 
@@ -563,15 +543,12 @@ async function schedulerLastReporter(
   execution: LogicalExecution,
 ): Promise<string | undefined> {
   const found = await client.query<{ attempt: string }>(
-    `SELECT attempt FROM execution_attempt
-      WHERE tenant = $1 AND project = $2 AND execution = $3
-        AND state <> 'Superseded'
-      ORDER BY attempt_number DESC LIMIT 1`,
-    [
-      execution.partition.tenant,
-      execution.partition.project,
-      execution.execution,
-    ],
+    sql`SELECT attempt FROM execution_attempt
+         WHERE tenant = ${execution.partition.tenant}
+           AND project = ${execution.partition.project}
+           AND execution = ${execution.execution}
+           AND state <> 'Superseded'
+         ORDER BY attempt_number DESC LIMIT 1`,
   );
   return found.rows[0]?.attempt;
 }

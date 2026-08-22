@@ -27,6 +27,7 @@
  * instead, at the entry, before anything is written.
  */
 
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
@@ -41,9 +42,7 @@ import {
   type Renewed,
 } from "../../interpreter/projectStore.ts";
 import { postgresTransaction } from "./pool.ts";
-import { notificationPublishFunction } from "./schema.ts";
 import {
-  projectRowColumns,
   projectRowHonours,
   projectRowLease,
   projectRowStanding,
@@ -55,7 +54,7 @@ export async function postgresOwnershipEpoch(
   client: pg.PoolClient,
 ): Promise<RecoveryEpoch> {
   const found = await client.query<{ epoch: string }>(
-    "SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1",
+    sql`SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1`,
   );
   const latest = found.rows[0];
   if (latest === undefined) {
@@ -72,8 +71,7 @@ export async function postgresOwnershipEstablishEpoch(
   epoch: RecoveryEpoch,
 ): Promise<RecoveryEpoch> {
   const written = await client.query<{ epoch: string }>(
-    "INSERT INTO recovery_epoch (epoch) VALUES ($1) ON CONFLICT (epoch) DO NOTHING RETURNING epoch",
-    [epoch],
+    sql`INSERT INTO recovery_epoch (epoch) VALUES (${epoch}) ON CONFLICT (epoch) DO NOTHING RETURNING epoch`,
   );
   const row = written.rows[0];
   if (row === undefined) {
@@ -106,8 +104,12 @@ export async function postgresOwnershipLock(
   partition: Partition,
 ): Promise<ProjectRow | undefined> {
   const found = await client.query<ProjectRow>(
-    `SELECT ${projectRowColumns} FROM project WHERE tenant = $1 AND project = $2 FOR UPDATE`,
-    [partition.tenant, partition.project],
+    sql`SELECT p.tenant, p.project, p.lifecycle, p.lifecycle_generation,
+           p.fencing_epoch, p.head, p.owner, p.recovery_epoch,
+           (p.owner IS NOT NULL AND p.lease_expires_at > now()) IS TRUE AS lease_live
+      FROM project p
+     WHERE p.tenant = ${partition.tenant} AND p.project = ${partition.project}
+       FOR UPDATE`,
   );
   return found.rows[0];
 }
@@ -133,8 +135,7 @@ export async function postgresOwnershipCreate(
 ): Promise<ProjectStanding> {
   return postgresTransaction(pool, async (client) => {
     await client.query(
-      "INSERT INTO project (tenant, project, lifecycle) VALUES ($1, $2, 'Active') ON CONFLICT (tenant, project) DO NOTHING",
-      [partition.tenant, partition.project],
+      sql`INSERT INTO project (tenant, project, lifecycle) VALUES (${partition.tenant}, ${partition.project}, 'Active') ON CONFLICT (tenant, project) DO NOTHING`,
     );
     return projectRowStanding(
       await postgresOwnershipLockKnown(client, partition),
@@ -148,8 +149,11 @@ export async function postgresOwnershipStanding(
   partition: Partition,
 ): Promise<ProjectStanding | undefined> {
   const found = await pool.query<ProjectRow>(
-    `SELECT ${projectRowColumns} FROM project WHERE tenant = $1 AND project = $2`,
-    [partition.tenant, partition.project],
+    sql`SELECT p.tenant, p.project, p.lifecycle, p.lifecycle_generation,
+           p.fencing_epoch, p.head, p.owner, p.recovery_epoch,
+           (p.owner IS NOT NULL AND p.lease_expires_at > now()) IS TRUE AS lease_live
+      FROM project p
+     WHERE p.tenant = ${partition.tenant} AND p.project = ${partition.project}`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : projectRowStanding(row);
@@ -173,14 +177,15 @@ async function postgresOwnershipGrant(
 ): Promise<Lease> {
   const epoch = await postgresOwnershipEpoch(client);
   const granted = await client.query<ProjectRow>(
-    `UPDATE project
-        SET owner = $3,
-            lease_expires_at = now() + make_interval(secs => $4::double precision),
+    sql`UPDATE project
+        SET owner = ${owner},
+            lease_expires_at = now() + make_interval(secs => ${leaseSecs}::double precision),
             fencing_epoch = fencing_epoch + 1,
-            recovery_epoch = $5
-      WHERE tenant = $1 AND project = $2
-      RETURNING ${projectRowColumns}`,
-    [partition.tenant, partition.project, owner, leaseSecs, epoch],
+            recovery_epoch = ${epoch}
+      WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+      RETURNING tenant, project, lifecycle, lifecycle_generation,
+                fencing_epoch, head, owner, recovery_epoch,
+                (owner IS NOT NULL AND lease_expires_at > now()) IS TRUE AS lease_live`,
   );
   const lease = projectRowLease(postgresOwnershipRow(granted));
   if (lease === undefined) {
@@ -242,11 +247,12 @@ export async function postgresOwnershipRenew(
       return { renewed: "Fenced", fencingEpoch: standing.fencingEpoch };
     }
     const extended = await client.query<ProjectRow>(
-      `UPDATE project
-          SET lease_expires_at = now() + make_interval(secs => $3::double precision)
-        WHERE tenant = $1 AND project = $2
-        RETURNING ${projectRowColumns}`,
-      [lease.partition.tenant, lease.partition.project, leaseSecs],
+      sql`UPDATE project
+          SET lease_expires_at = now() + make_interval(secs => ${leaseSecs}::double precision)
+        WHERE tenant = ${lease.partition.tenant} AND project = ${lease.partition.project}
+        RETURNING tenant, project, lifecycle, lifecycle_generation,
+                  fencing_epoch, head, owner, recovery_epoch,
+                  (owner IS NOT NULL AND lease_expires_at > now()) IS TRUE AS lease_live`,
     );
     const current = projectRowLease(postgresOwnershipRow(extended));
     if (current === undefined) {
@@ -267,10 +273,9 @@ export async function postgresOwnershipRelease(
     const row = await postgresOwnershipLockKnown(client, lease.partition);
     if (!(await postgresOwnershipHonours(client, row, lease))) return;
     await client.query(
-      `UPDATE project
+      sql`UPDATE project
           SET owner = NULL, lease_expires_at = NULL, recovery_epoch = NULL
-        WHERE tenant = $1 AND project = $2`,
-      [lease.partition.tenant, lease.partition.project],
+        WHERE tenant = ${lease.partition.tenant} AND project = ${lease.partition.project}`,
     );
   });
 }
@@ -284,18 +289,18 @@ export async function postgresOwnershipFence(
   return postgresTransaction(pool, async (client) => {
     await postgresOwnershipLockKnown(client, partition);
     const fenced = await client.query<ProjectRow>(
-      `UPDATE project
-          SET lifecycle = $3,
+      sql`UPDATE project
+          SET lifecycle = ${lifecycle},
               lifecycle_generation = lifecycle_generation + 1,
               fencing_epoch = fencing_epoch + 1,
               owner = NULL, lease_expires_at = NULL, recovery_epoch = NULL
-        WHERE tenant = $1 AND project = $2
-        RETURNING ${projectRowColumns}`,
-      [partition.tenant, partition.project, lifecycle],
+        WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+        RETURNING tenant, project, lifecycle, lifecycle_generation,
+                  fencing_epoch, head, owner, recovery_epoch,
+                  (owner IS NOT NULL AND lease_expires_at > now()) IS TRUE AS lease_live`,
     );
-    await client.query(
-      `SELECT ${notificationPublishFunction}($1,$2,'Project',$2,NULL,NULL)`,
-      [partition.tenant, partition.project],
+    await client.query<{ published: string | null }>(
+      sql`SELECT publish_project_notification(${partition.tenant},${partition.project},'Project',${partition.project},NULL,NULL)::text AS published`,
     );
     return projectRowStanding(postgresOwnershipRow(fenced));
   });

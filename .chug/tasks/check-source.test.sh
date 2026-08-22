@@ -29,7 +29,9 @@ R="$WORK/repo"
 run_in() { # <dir>
 	OUT="$WORK/.out"
 	set +e
-	(cd "$1" && "$SUT") >"$OUT" 2>&1
+	# Emptied so a machine exporting it does not point the fixture's lint at
+	# the exporter's database.
+	(cd "$1" && CHUG_SAFEQL_DATABASE_URL= "$SUT") >"$OUT" 2>&1
 	RC=$?
 	set -e
 }
@@ -110,13 +112,33 @@ printf '%s\n' 'export const answer = 42;' > "$R/src/domain/a.ts"
 seal
 check "sources with no suite exits 2, not 0" 2 "$RC" "the suite glob matched nothing"
 
+# The clean tree also carries a tagged adapter query, and the run sets
+# CHUG_SAFEQL_DATABASE_URL to an address nothing answers, bypassing run_in's
+# emptying: the gate empties the variable for its lint stage itself, so an
+# operator who exports it shell-wide cannot make check-source need a
+# database — without that emptying, the checker would activate, fail to
+# connect, and turn this clean run red.
 fixture
 clean_source
-seal
+mkdir -p "$R/src/adapters/postgres"
+{
+	printf '%s\n' 'import { sql } from "@ts-safeql/sql-tag";'
+	printf '%s\n' 'import type pg from "pg";'
+	printf '%s\n' 'export async function tagged(client: pg.PoolClient): Promise<void> {'
+	printf '%s\n' '  await client.query<{ one: number }>(sql`SELECT 1 AS one`);'
+	printf '%s\n' '}'
+} > "$R/src/adapters/postgres/tagged.ts"
+git -C "$R" add -A
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_SAFEQL_DATABASE_URL="postgres://fixture@127.0.0.1:1/void" "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
 check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
 # The tally is asserted rather than trusted: it is what says the run measured
 # something.
 check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
+check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed, 4 run"
 
 # --- What the unit stage runs ------------------------------------------------
 #
@@ -204,6 +226,31 @@ mkdir -p "$R/src/interpreter"
 	printf '%s\n' '  return n;'
 	printf '%s\n' '}'
 } > "$R/src/domain/long.ts"
+# The adapter's query ratchet needs no server, and every one of its selectors
+# is proved against the shape it forbids: an untagged template, a plain
+# string, a foreign tag, a second values argument, a runtime-assembled
+# argument, and a handle the checker's wrapper pattern does not name. The
+# runtime argument is named `statement` on purpose, which pool.ts is exempted
+# for and this file is not, so the case proves the exemption is scoped to that
+# file rather than shared across the directory.
+mkdir -p "$R/src/adapters/postgres"
+{
+	printf '%s\n' 'import { sql } from "@ts-safeql/sql-tag";'
+	printf '%s\n' 'import type pg from "pg";'
+	printf '%s\n' 'const other = String.raw;'
+	printf '%s\n' 'export async function untagged('
+	printf '%s\n' '  client: pg.PoolClient,'
+	printf '%s\n' '  tx: pg.PoolClient,'
+	printf '%s\n' '  statement: string,'
+	printf '%s\n' '): Promise<void> {'
+	printf '%s\n' '  await client.query(`SELECT 1`);'
+	printf '%s\n' '  await client.query("SELECT 2");'
+	printf '%s\n' '  await client.query(other`SELECT 3`);'
+	printf '%s\n' '  await client.query<{ one: number }>(sql`SELECT ${1}::int AS one`, [2]);'
+	printf '%s\n' '  await client.query(statement);'
+	printf '%s\n' '  await tx.query(sql`SELECT 4`);'
+	printf '%s\n' '}'
+} > "$R/src/adapters/postgres/untagged.ts"
 seal
 
 check "house rule 2: the domain may not read a clock" 1 "$RC" "the domain takes time as an argument"
@@ -218,6 +265,12 @@ check "the actor may not read a clock either" 1 "$RC" "the journaled actor takes
 check "the actor may not draw randomness either" 1 "$RC" "the journaled actor takes its draws as arguments"
 check "the interpreter may not read a clock either" 1 "$RC" "the interpreter takes time as an argument"
 check "the interpreter may not draw randomness either" 1 "$RC" "the interpreter takes its draws as arguments"
+check "an untagged query template is a finding" 1 "$RC" "an untagged template is invisible to check-queries"
+check "a plain-string query is a finding" 1 "$RC" "a plain string is invisible to check-queries"
+check "a query under another tag is a finding" 1 "$RC" "another tag is not checked"
+check "separate values cannot replace a checked tag's values" 1 "$RC" "pg would replace the checked tag's values"
+check "a runtime-assembled query is a finding" 1 "$RC" "assembled at runtime cannot be checked"
+check "a query on an unnamed handle is a finding" 1 "$RC" "one on another handle is checked by nothing"
 
 # The floating-promise exemption is narrow: node:test's own functions and
 # nothing else. The clean fixture's suite calls `test` without awaiting it, so

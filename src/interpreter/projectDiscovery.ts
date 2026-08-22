@@ -5,7 +5,7 @@
  *
  * WHY THIS IS NOT PART OF `OperationInbox`. Acceptance and cancellation are
  * the API's transactions and these three are a writer's, and
- * `docs/design/006-durable-project-dispatch.md` says runtime services do not
+ * issue #180 says runtime services do not
  * share an omnipotent credential. A port whose methods two roles answer is a
  * port no set of grants can describe — the grant is where that boundary is
  * actually enforced — so the split is by authority, and each side is given

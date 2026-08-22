@@ -14,7 +14,7 @@
  * two functions here as they are two ports above. `project_active_work` answers
  * for exactly the project named, with cluster totals and that project's own
  * account, which is the safe aggregate
- * `docs/design/006-durable-project-dispatch.md` permits; it reserves nothing and
+ * issue #180 permits; it reserves nothing and
  * a proposal must survive it changing underneath. `execution_backlog` is the
  * hard ceiling, consulted at ingress before an operation becomes durable.
  *
@@ -30,6 +30,7 @@
  * the backlog disagree about how long it is allowed to get.
  */
 
+import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
@@ -44,25 +45,39 @@ import type {
   SelectorExecutionContext,
 } from "../../interpreter/schedulerContext.ts";
 import { projectRowCounter } from "./rows.ts";
-import { activeWorkFunction, backlogFunction } from "./schema.ts";
 
-/** One row of the advisory context function, every count of it a bigint the driver spells. */
+/**
+ * One row of the advisory context function, every count of it a bigint the
+ * driver spells. Every column of a set-returning function is nullable to the
+ * query checker, and neither function here returns one, so the counters admit
+ * a null that `schedulerContextCounter` refuses.
+ */
 interface ActiveWorkRow {
-  readonly queued: string;
-  readonly admitted: string;
-  readonly launching: string;
-  readonly running: string;
-  readonly cluster_slots_max: string;
-  readonly cluster_active: string;
-  readonly account_maximum: string;
-  readonly account_active: string;
-  readonly account_deficit: string;
+  readonly queued: string | null;
+  readonly admitted: string | null;
+  readonly launching: string | null;
+  readonly running: string | null;
+  readonly cluster_slots_max: string | null;
+  readonly cluster_active: string | null;
+  readonly account_maximum: string | null;
+  readonly account_active: string | null;
+  readonly account_deficit: string | null;
 }
 
 /** One row of the backlog function. */
 interface BacklogRow {
-  readonly project_backlog: string;
-  readonly installation_backlog: string;
+  readonly project_backlog: string | null;
+  readonly installation_backlog: string | null;
+}
+
+/** Reads one such counter, refusing the null the function it came from never returns. */
+function schedulerContextCounter(value: string | null, what: string): number {
+  if (value === null) {
+    throw new Error(
+      `postgres scheduler context: ${what} came back as no count`,
+    );
+  }
+  return projectRowCounter(value, what);
 }
 
 /** What one project's advisory context currently is. */
@@ -71,11 +86,11 @@ async function postgresSelectorContext(
   partition: Partition,
 ): Promise<SelectorExecutionContext> {
   const found = await pool.query<ActiveWorkRow>(
-    `SELECT queued::text, admitted::text, launching::text, running::text,
-            cluster_slots_max::text, cluster_active::text, account_maximum::text,
-            account_active::text, account_deficit::text
-       FROM ${activeWorkFunction}($1, $2)`,
-    [partition.tenant, partition.project],
+    sql`SELECT queued::text, admitted::text, launching::text, running::text,
+               cluster_slots_max::text, cluster_active::text,
+               account_maximum::text, account_active::text,
+               account_deficit::text
+          FROM project_active_work(${partition.tenant}, ${partition.project})`,
   );
   const row = found.rows[0];
   if (row === undefined) {
@@ -86,20 +101,29 @@ async function postgresSelectorContext(
   return {
     activeWork: {
       partition,
-      queued: projectRowCounter(row.queued, "queued executions"),
-      admitted: projectRowCounter(row.admitted, "admitted executions"),
-      launching: projectRowCounter(row.launching, "launching executions"),
-      running: projectRowCounter(row.running, "running executions"),
+      queued: schedulerContextCounter(row.queued, "queued executions"),
+      admitted: schedulerContextCounter(row.admitted, "admitted executions"),
+      launching: schedulerContextCounter(row.launching, "launching executions"),
+      running: schedulerContextCounter(row.running, "running executions"),
     },
     capacity: {
-      clusterSlotsMax: projectRowCounter(
+      clusterSlotsMax: schedulerContextCounter(
         row.cluster_slots_max,
         "cluster slots",
       ),
-      clusterActive: projectRowCounter(row.cluster_active, "cluster active"),
-      accountMaximum: projectRowCounter(row.account_maximum, "account maximum"),
-      accountActive: projectRowCounter(row.account_active, "account active"),
-      accountReservationDeficit: projectRowCounter(
+      clusterActive: schedulerContextCounter(
+        row.cluster_active,
+        "cluster active",
+      ),
+      accountMaximum: schedulerContextCounter(
+        row.account_maximum,
+        "account maximum",
+      ),
+      accountActive: schedulerContextCounter(
+        row.account_active,
+        "account active",
+      ),
+      accountReservationDeficit: schedulerContextCounter(
         row.account_deficit,
         "account reservation deficit",
       ),
@@ -114,9 +138,8 @@ async function postgresBacklogVerdict(
   partition: Partition,
 ): Promise<BacklogVerdict> {
   const found = await pool.query<BacklogRow>(
-    `SELECT project_backlog::text, installation_backlog::text
-       FROM ${backlogFunction}($1, $2)`,
-    [partition.tenant, partition.project],
+    sql`SELECT project_backlog::text, installation_backlog::text
+          FROM execution_backlog(${partition.tenant}, ${partition.project})`,
   );
   const row = found.rows[0];
   if (row === undefined) {
@@ -126,13 +149,13 @@ async function postgresBacklogVerdict(
   }
   const retryAfterSeconds = config.backlogRetryAfterSeconds;
   if (
-    projectRowCounter(row.project_backlog, "project backlog") >=
+    schedulerContextCounter(row.project_backlog, "project backlog") >=
     config.projectBacklogMax
   ) {
     return { admits: "Backlogged", scope: "Project", retryAfterSeconds };
   }
   if (
-    projectRowCounter(row.installation_backlog, "installation backlog") >=
+    schedulerContextCounter(row.installation_backlog, "installation backlog") >=
     config.installationBacklogMax
   ) {
     return { admits: "Backlogged", scope: "Installation", retryAfterSeconds };
