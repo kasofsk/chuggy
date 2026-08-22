@@ -22,5 +22,8 @@
     "@ts-safeql/sql-tag": "^0.2.2",
     "pg": "^8.23.0",
     "zod": "^4.4.3"
+  },
+  "overrides": {
+    "typescript": "$typescript"
   }
 }
