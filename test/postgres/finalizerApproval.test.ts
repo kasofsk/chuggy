@@ -13,6 +13,12 @@
  * the acceptance door as an ordinary `ResolveNativeAction` and is decided by the
  * real project writer, so what a case proves is the path rather than the row it
  * would have liked the path to write.
+ *
+ * AN UNANSWERED ASK IS PROVED DEAD BY THE ROW THAT FOLLOWS IT. `native_action`
+ * admits one open row per ticket, so the case about a ticket leaving the phase
+ * drives the writer on to the escalation the same ticket then needs: a
+ * withdrawal that did not happen is a unique violation inside the deciding
+ * transaction, which no assertion about the approval row alone would reach.
  */
 
 import assert from "node:assert/strict";
@@ -25,14 +31,23 @@ import type {
   FinalizerStore,
 } from "../../src/interpreter/finalizer.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
+import { ticketAt } from "../../src/domain/core.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import {
+  finalizerAccept,
   finalizerClaim,
   finalizerDrain,
+  finalizerExpireClaim,
   finalizerIdentity,
+  finalizerPassOnce,
+  finalizerPhase,
   finalizerPrepare,
   finalizerProject,
+  finalizerRemotePort,
   finalizerRequestApproval,
   finalizerRigOpen,
+  finalizerSubject,
+  finalizerTaskDone,
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
@@ -278,4 +293,95 @@ test("an action records only an answer it offered, and records one exactly when 
     await set("Resolved", "Resume"),
     /native_action_answers_with_one_it_offered/u,
   );
+});
+
+/** Every action this project's ticket has ever carried, and what became of each. */
+async function actionsOf(
+  project: FinalizerProject,
+): Promise<readonly Record<string, unknown>[]> {
+  return rig.harness.query(
+    `SELECT kind, state FROM native_action
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 ORDER BY kind`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+}
+
+/** The one task the rework spawned, which is the one a case then fails. */
+function outstandingTaskOf(
+  project: FinalizerProject,
+  memory: Awaited<ReturnType<typeof finalizerDrain>>["memory"],
+): number {
+  const tasks = [
+    ...ticketAt(memory.core, asTicketId(project.ticket)).tasks,
+  ].filter((task) => task.state === "Outstanding");
+  const task = tasks[0];
+  if (tasks.length !== 1 || task === undefined) {
+    throw new Error("finalizer approval: the rework spawned no single task");
+  }
+  return task.id;
+}
+
+test("an ask the phase outlived is withdrawn, and the next desk task can be opened", async () => {
+  const label = "outlived";
+  const { project } = await finalizerSubject(rig, label, [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  await finalizerClaim(rig, project, finalizerIdentity(`owner-${label}`));
+  const attempt = await finalizerPrepare(rig, project, label, {
+    approvalRequired: true,
+  });
+  const action = finalizerIdentity(`action-${label}`);
+  assert.equal(
+    (await finalizerRequestApproval(rig, project, attempt, action))["result"],
+    "Requested",
+  );
+
+  await finalizerPrepare(rig, project, `${label}-refenced`, {
+    outcome: "Failed",
+    failureKind: "MergeConflict",
+  });
+  await finalizerExpireClaim(rig, project);
+  assert.equal(
+    (
+      await finalizerPassOnce(
+        rig,
+        project,
+        finalizerRemotePort(rig),
+        `${label}-end`,
+      )
+    ).conclusions,
+    1,
+  );
+
+  const reworked = await finalizerDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  assert.deepEqual(reworked.decided, ["Committed"]);
+  assert.equal(await finalizerPhase(rig, project.partition), "Working");
+  assert.deepEqual(await actionsOf(project), [
+    { kind: "FinalizationApproval", state: "Withdrawn" },
+  ]);
+
+  assert.equal(
+    await finalizerAccept(
+      rig.harness,
+      project.partition,
+      `${label}-failed`,
+      finalizerTaskDone(outstandingTaskOf(project, reworked.memory), "Fail"),
+    ),
+    "Accepted",
+  );
+  const escalated = await finalizerDrain(
+    rig.harness,
+    project.partition,
+    reworked.memory,
+  );
+  assert.deepEqual(escalated.decided, ["Committed", "Committed"]);
+  assert.equal(await finalizerPhase(rig, project.partition), "Escalated");
+  assert.deepEqual(await actionsOf(project), [
+    { kind: "FinalizationApproval", state: "Withdrawn" },
+    { kind: "TicketEscalation", state: "Open" },
+  ]);
 });

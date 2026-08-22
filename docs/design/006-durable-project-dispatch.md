@@ -2388,8 +2388,10 @@ writer to cancel on phase exit, and a second writer is a commitment violation
 rather than a design preference. So `native_action` gains kind
 `FinalizationApproval`, capability `ApproveFinalization` and an
 attempt-reference column and stays ticket-service-owned. Its
-one-open-row-per-ticket constraint cannot bite between an escalation and an
-approval, because a ticket in `Finalizing` is not in `Escalated`; it does bite
+one-open-row-per-ticket constraint would bite between an approval and the
+escalation the same ticket reaches on the very decision that leaves
+`Finalizing`, so the phase-exit withdrawal names every phase an open action can
+stand in and not `Escalated` alone; it does bite
 between two approvals, and that is right rather than awkward — the revision
 fence's new candidate is a different question, so the earlier ask is
 superseded rather than queued behind. Its once-per-effect-position uniqueness

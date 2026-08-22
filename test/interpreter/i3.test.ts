@@ -3,11 +3,15 @@ import { test } from "node:test";
 
 import {
   dispatchEvent,
+  evalReduceEvent,
   executionBlockedEvent,
+  finalizationResultEvent,
   releaseTicketEvent,
   revokeEvent,
   taskDoneEvent,
+  workReduceEvent,
 } from "../../src/actor/decisionEvent.ts";
+import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
 import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
 import { materializationOf } from "../../src/interpreter/decisionPlan.ts";
 import {
@@ -209,6 +213,86 @@ test("a decision leaving escalation withdraws its open native action", () => {
     entry,
   );
   assert.deepEqual(planned.withdrawActionsFor, [id(1)]);
+});
+
+/** The state a ticket reaches by passing its whole program: one finalization awaiting a report. */
+function finalizing(): ReturnType<typeof journalStep> {
+  const steps: readonly DecisionEvent[] = [
+    releaseTicketEvent(id(1), plainAuthoring),
+    dispatchEvent(id(1)),
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    workReduceEvent(id(1)),
+    taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
+    evalReduceEvent(id(1)),
+  ];
+  return steps.reduce(
+    (state, event) => journalStep(refinementInstance, state, event),
+    actorInit(),
+  );
+}
+
+/** The input the one finalizer door mints, which carries no public command. */
+function finalizationInput(event: DecisionEvent): DecisionInput {
+  const command = {
+    version: 1,
+    command: "SubmitFinalizationResult",
+    request: "request",
+    attempt: "attempt",
+    requestGeneration: 1,
+    recoveryEpoch: "epoch",
+    outcome: "FinalizationFailed",
+  } as const;
+  return {
+    partition,
+    ordinal: 1,
+    priority: "Completion",
+    source: {
+      kind: "Operation",
+      operation: asOperationId("operation"),
+      command,
+      resolvedEvent: event,
+      finalizationRequest: {
+        request: command.request,
+        requestGeneration: command.requestGeneration,
+        open: true,
+      },
+    },
+  };
+}
+
+test("a decision leaving finalization withdraws the approval it left unanswered", () => {
+  const before = finalizing();
+  const result = finalizationResultEvent(id(1), "FinalizationFailed");
+  const after = journalStep(refinementInstance, before, result);
+  const entry = after.journal.at(-1);
+  assert.ok(entry !== undefined);
+  const planned = materializationOf(
+    finalizationInput(result),
+    memoryCore(before),
+    memoryCore(after),
+    entry,
+  );
+  assert.deepEqual(planned.withdrawActionsFor, [id(1)]);
+});
+
+test("a decision that leaves a ticket where it found it withdraws nothing", () => {
+  const before = journalStep(
+    refinementInstance,
+    actorInit(),
+    releaseTicketEvent(id(1), plainAuthoring),
+  );
+  const after = journalStep(refinementInstance, before, dispatchEvent(id(1)));
+  const entry = after.journal.at(-1);
+  assert.ok(entry !== undefined);
+  assert.deepEqual(
+    materializationOf(
+      input(asOperationDecisionEvent(entry.event)),
+      memoryCore(before),
+      memoryCore(after),
+      entry,
+    ).withdrawActionsFor,
+    [],
+  );
 });
 
 test("telemetry failures cannot escape into ticket-service correctness", () => {

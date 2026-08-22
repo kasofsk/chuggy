@@ -56,7 +56,10 @@ import { tmpdir } from "node:os";
 import type pg from "pg";
 
 import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
-import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  DecisionEvent,
+  Verdict,
+} from "../../src/domain/generated/modelTypes.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   accountIdentityFunction,
@@ -401,9 +404,12 @@ export async function finalizerAccept(
   return accepted.accepted;
 }
 
-/** The completion one passed task reports, which is what an evaluation is driven by. */
-export function finalizerTaskDone(task: number): DecisionEvent {
-  return taskDoneEvent(id(1), asTaskId(task), "Pass", plainResult);
+/** The completion one task reports, defaulted to the pass an evaluation is driven by. */
+export function finalizerTaskDone(
+  task: number,
+  verdict: Verdict = "Pass",
+): DecisionEvent {
+  return taskDoneEvent(id(1), asTaskId(task), verdict, plainResult);
 }
 
 /** Accepts one reported task and decides it along with everything it enqueues. */

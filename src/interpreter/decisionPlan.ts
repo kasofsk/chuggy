@@ -2,7 +2,7 @@ import type { Entry } from "../actor/journal.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import { effectFromLabel } from "../domain/effect.ts";
 import { ticketAt } from "../domain/core.ts";
-import type { Core, Task } from "../domain/generated/modelTypes.ts";
+import type { Core, Phase, Task } from "../domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import { tasksInIdOrder } from "../domain/task.ts";
 import { reducibleEvalIn, reducibleWorkIn } from "../domain/enablement.ts";
@@ -266,6 +266,48 @@ export function inputBundleReferencesOf(
   return references;
 }
 
+/**
+ * The phases an open native action can stand in: `Escalated` carries the desk
+ * task, `Finalizing` carries the finalization approval. `native_action` admits
+ * one open row per ticket, so a ticket leaving either phase must take its
+ * question with it or the next one cannot be opened at all.
+ */
+const materializationActionablePhases: readonly Phase[] = [
+  "Escalated",
+  "Finalizing",
+];
+
+/**
+ * The tickets whose open action this decision leaves standing on a question
+ * nobody is being asked any more. An answer withdraws nothing, because the
+ * resolution it carries is the same row's own fence.
+ */
+function materializationWithdrawals(
+  input: DecisionInput,
+  entry: Entry,
+  pre: Core,
+  post: Core,
+): readonly TicketId[] {
+  if (
+    input.source.kind === "Operation" &&
+    input.source.nativeAction !== undefined
+  )
+    return [];
+  const moved = new Set(
+    entry.rec.transitions.map((transition) => transition.ticket),
+  );
+  return [...moved].map(asTicketId).filter((ticket) => {
+    const before = pre.tickets.get(ticket);
+    const after = post.tickets.get(ticket);
+    return (
+      before !== undefined &&
+      after !== undefined &&
+      materializationActionablePhases.includes(before.phase) &&
+      after.phase !== before.phase
+    );
+  });
+}
+
 /** Derives every durable consequence of one pure ticket decision. */
 export function materializationOf(
   input: DecisionInput,
@@ -311,25 +353,7 @@ export function materializationOf(
       entry.event.type === "FinalizationResult"
         ? [asTicketId(entry.event.value.ticket)]
         : [],
-    withdrawActionsFor:
-      input.source.kind === "Operation" &&
-      input.source.nativeAction !== undefined
-        ? []
-        : [
-            ...new Set(
-              entry.rec.transitions.map((transition) => transition.ticket),
-            ),
-          ]
-            .map(asTicketId)
-            .filter((ticket) => {
-              const before = pre.tickets.get(ticket);
-              const after = post.tickets.get(ticket);
-              return (
-                before?.phase === "Escalated" &&
-                after !== undefined &&
-                after.phase !== "Escalated"
-              );
-            }),
+    withdrawActionsFor: materializationWithdrawals(input, entry, pre, post),
     ...(input.source.kind === "Operation" &&
     input.source.nativeAction !== undefined
       ? { resolveAction: input.source.nativeAction }
