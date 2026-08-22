@@ -14,7 +14,9 @@
  * object under and a rewritten one would name a key nobody wrote.
  * `../../interpreter/resultManifest.ts` has already refused every shape that
  * could climb out of the tree, and the resolution below is what proves the
- * refusal held rather than assuming it.
+ * refusal held rather than assuming it. That proof is lexical: what a resolved
+ * path leads to is `./artifactStore.ts`'s, and it refuses a link rather than
+ * following one.
  */
 
 import { createHash } from "node:crypto";

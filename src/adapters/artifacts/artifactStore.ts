@@ -15,6 +15,12 @@
  * for. Writes land on a temporary name in the same directory and are renamed
  * into place, so a reader never sees a half-written object.
  *
+ * A LINK IS NOT A STORED OBJECT. Metadata is read without following one and
+ * bytes are opened refusing one, so a link planted where an object should be is
+ * `NotDurable` rather than the mode, the size and the content of whatever it
+ * points at — which is the whole of what keeps this store's containment about
+ * the file that is there rather than about the name that leads to it.
+ *
  * ARTIFACTS STAY OPAQUE. `verifyManifest` answers metadata alone — present,
  * that size, that digest, immutable, inside this project — and never reads an
  * artifact's meaning. `readHandoff` is the one call that yields bytes, and it
@@ -35,12 +41,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
   chmod,
+  lstat,
   mkdir,
   open,
-  readFile,
   rename,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -104,6 +109,9 @@ const artifactStoreChunkBytes = 65_536;
 /** The permission bits whose absence is what this store means by immutable. */
 const artifactStoreWritableBits = 0o222;
 
+/** How a stored object is opened: to be read, and never through a link standing where it should be. */
+const artifactStoreReadFlags = constants.O_RDONLY | constants.O_NOFOLLOW;
+
 /** What the store holds across calls, resolved once so no call re-reads its own options. */
 interface ArtifactStoreState {
   readonly root: string;
@@ -126,19 +134,21 @@ type ArtifactStoreConfirmed =
   | { readonly confirmed: "Rejected"; readonly failure: ArtifactFailure }
   | { readonly confirmed: "Unavailable" };
 
-/** Whether a caught filesystem error is an absent object or a storage the caller must retry. */
+/**
+ * Whether a caught filesystem error is an absent object or a storage the caller
+ * must retry. A path leading through something that is not a directory names no
+ * object either, and needs no disk fault to arise.
+ */
 function artifactStoreMissing(refused: unknown): boolean {
-  return (
-    typeof refused === "object" &&
-    refused !== null &&
-    (refused as { code?: unknown }).code === "ENOENT"
-  );
+  if (typeof refused !== "object" || refused === null) return false;
+  const code = (refused as { code?: unknown }).code;
+  return code === "ENOENT" || code === "ENOTDIR";
 }
 
 /** What stands at one path, or the reason nothing about the object can be said. */
 async function artifactStoreEntryOf(file: string): Promise<ArtifactStoreEntry> {
   try {
-    const found = await stat(file);
+    const found = await lstat(file);
     if (!found.isFile()) {
       return { entry: "Rejected", failure: "NotDurable" };
     }
@@ -159,7 +169,7 @@ async function artifactStoreDigestOf(
   const chunk = Buffer.allocUnsafe(artifactStoreChunkBytes);
   let handle;
   try {
-    handle = await open(file, "r");
+    handle = await open(file, artifactStoreReadFlags);
     for (let read = 0; read < bytes;) {
       const drawn = await handle.read(chunk, 0, chunk.byteLength, read);
       if (drawn.bytesRead === 0) return undefined;
@@ -172,6 +182,19 @@ async function artifactStoreDigestOf(
     await handle?.close();
   }
   return hash.digest("hex");
+}
+
+/** The whole of one stored object, or nothing where it could not be opened as the object it is. */
+async function artifactStoreBytesOf(file: string): Promise<Buffer | undefined> {
+  let handle;
+  try {
+    handle = await open(file, artifactStoreReadFlags);
+    return await handle.readFile();
+  } catch {
+    return undefined;
+  } finally {
+    await handle?.close();
+  }
 }
 
 /** Confirms one declared artifact against what is stored, and yields its bytes only once it has. */
@@ -201,12 +224,8 @@ async function artifactStoreConfirm(
       ? { confirmed: "Object" }
       : { confirmed: "Rejected", failure: "DigestMismatch" };
   }
-  let content: Buffer;
-  try {
-    content = await readFile(file);
-  } catch {
-    return { confirmed: "Unavailable" };
-  }
+  const content = await artifactStoreBytesOf(file);
+  if (content === undefined) return { confirmed: "Unavailable" };
   const digest = createHash("sha256").update(content).digest("hex");
   return digest === row.digest
     ? { confirmed: "Object", content }

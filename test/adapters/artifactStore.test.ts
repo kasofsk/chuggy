@@ -21,6 +21,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -242,6 +243,58 @@ test("a directory standing where an object should be is not a stored object", as
     {
       verified: "Rejected",
       failure: "NotDurable",
+      at: { role: "Handoff", index: 0 },
+    },
+  );
+});
+
+test("a link standing where an object should be is not a stored object", async (t) => {
+  const fixture = fixtureOpen(t);
+  const elsewhere = join(fixture.root, "elsewhere.txt");
+  writeFileSync(elsewhere, "one", { mode: 0o444 });
+  chmodSync(elsewhere, 0o444);
+  const file = artifactAttemptFile(
+    artifactProjectDirectory(fixture.root, partition.tenant, partition.project),
+    execution,
+    attempt,
+    asArtifactPath("one.txt"),
+  );
+  if (file === undefined) assert.fail("the path resolved nowhere");
+  mkdirSync(dirname(file), { recursive: true });
+  symlinkSync(elsewhere, file);
+  assert.deepEqual(
+    await fixture.store.verifyManifest(
+      fixtureManifest([fixtureDeclared("one.txt", "one")]),
+    ),
+    {
+      verified: "Rejected",
+      failure: "NotDurable",
+      at: { role: "Handoff", index: 0 },
+    },
+  );
+  assert.deepEqual(
+    await fixture.store.readHandoff({
+      partition,
+      artifacts: [fixtureAsked("one.txt", "one")],
+    }),
+    {
+      read: "Rejected",
+      failure: "NotDurable",
+      at: { role: "Handoff", index: 0 },
+    },
+  );
+});
+
+test("an object standing where a directory should be is absent and not an outage", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureStore(fixture, "one.txt", "one");
+  assert.deepEqual(
+    await fixture.store.verifyManifest(
+      fixtureManifest([fixtureDeclared("one.txt/two.txt", "two")]),
+    ),
+    {
+      verified: "Rejected",
+      failure: "Missing",
       at: { role: "Handoff", index: 0 },
     },
   );
