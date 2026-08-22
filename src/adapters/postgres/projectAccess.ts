@@ -9,8 +9,8 @@ import {
 import { projectAuthorizationFunction } from "./schema.ts";
 
 interface ProjectAuthorityRow {
-  readonly authority_kind: string;
-  readonly authority_subject: string;
+  readonly authority_kind: string | null;
+  readonly authority_subject: string | null;
 }
 
 export function postgresProjectAccess(pool: pg.Pool): ProjectAccess {
@@ -26,6 +26,10 @@ export function postgresProjectAccess(pool: pg.Pool): ProjectAccess {
       if (found.rows.length !== 1)
         throw new Error(
           `${projectAuthorizationFunction}: one membership resolved more than once`,
+        );
+      if (row.authority_kind === null || row.authority_subject === null)
+        throw new Error(
+          `${projectAuthorizationFunction}: a membership resolved no authority`,
         );
       return {
         kind: asAuthorityKind(row.authority_kind),
