@@ -34,9 +34,9 @@ import {
   type CandidatePromoted,
   type CandidatePromotion,
   type CommitPermit,
-  type FinalizationAttempt,
   type FinalizationClaim,
   type FinalizationView,
+  type PreparedFinalizationAttempt,
   type FinalizerStore,
   type GitPromotionPort,
   type HeldPermit,
@@ -127,7 +127,9 @@ const binding: RepositoryBinding = {
 };
 
 /** One claimed request, distinct by the request identity it names. */
-function claimOf(request: string): FinalizationClaim {
+function claimOf(
+  request: string,
+): FinalizationClaim & { readonly state: "Registered" } {
   return {
     partition,
     request,
@@ -142,7 +144,7 @@ function claimOf(request: string): FinalizationClaim {
 }
 
 /** One prepared attempt over the target the fixture remote reports. */
-function attemptOf(request: string): FinalizationAttempt {
+function attemptOf(request: string): PreparedFinalizationAttempt {
   return {
     attempt: asFinalizationAttemptId(`attempt-${request}`),
     request,
@@ -371,8 +373,11 @@ function countingIdentities(): FinalizerIdentityFactory {
 }
 
 /** One view of a claimed request that is ready to promote. */
-function promotableView(request: string): FinalizationView {
+function promotableView(
+  request: string,
+): Extract<FinalizationView, { readonly stage: "Prepared" }> {
   return {
+    stage: "Prepared",
     lifecycle: "Active",
     claim: claimOf(request),
     repository: binding,
@@ -518,10 +523,9 @@ test("an ask already standing holds rather than opening a second question", asyn
 
 test("a settled request gives its claim back and moves nothing else", async () => {
   const settled: FinalizationView = {
+    stage: "Settled",
     lifecycle: "Active",
     claim: { ...claimOf("request-one"), state: "Fulfilled" },
-    repository: binding,
-    approval: "Pending",
     attemptsMade: 0,
   };
   const store = recordingStore([settled]);
@@ -533,13 +537,15 @@ test("a settled request gives its claim back and moves nothing else", async () =
 });
 
 /** One view of a claimed request that has no attempt yet, which is what prepares one. */
-function preparableView(request: string): FinalizationView {
+function preparableView(
+  request: string,
+): Extract<FinalizationView, { readonly stage: "Unattempted" }> {
   return {
+    stage: "Unattempted",
     lifecycle: "Active",
     claim: claimOf(request),
     repository: binding,
     observedTarget: attemptOf(request).target,
-    approval: "Pending",
     attemptsMade: 0,
   };
 }

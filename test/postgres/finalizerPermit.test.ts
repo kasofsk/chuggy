@@ -845,13 +845,12 @@ test("the process that took over reconstructs the correlation from the rows alon
     assert.ok(redrawn !== undefined, "the successor drew no claim of its own");
     assert.notEqual(redrawn.claimGeneration, claim.claimGeneration);
     const view = await successor.durableView(redrawn);
-    assert.equal(view?.attempt?.attempt, attempt);
-    assert.ok(view?.attempt?.outcome === "Prepared");
+    assert.ok(view?.stage === "PermitGranted");
+    assert.equal(view.attempt.attempt, attempt);
     assert.equal(view.attempt.candidate, candidate);
-    assert.equal(view?.permit?.permit, permit);
-    assert.equal(view?.permit?.state, "Granted");
-    assert.equal(view?.reconciliation, undefined);
-    assert.ok(view !== undefined);
+    assert.equal(view.permit.permit, permit);
+    assert.equal(view.permit.state, "Granted");
+    assert.equal(view.reconciliation, undefined);
     assert.deepEqual(finalizationNext(finalizerDefaults, view), {
       decide: "Reconcile",
       permit,

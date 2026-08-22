@@ -357,11 +357,9 @@ test("the view is gathered from the rows, and a finalization needing git holds",
   const project = await finalizerProject(rig, "view");
   const claim = await drawn(project, "view");
   const bare = await store.durableView(claim);
-  assert.ok(bare !== undefined);
-  assert.equal(bare.repository?.repository, project.repository);
-  assert.equal(bare.attempt, undefined);
+  assert.ok(bare?.stage === "Unattempted");
+  assert.equal(bare.repository.repository, project.repository);
   assert.equal(bare.attemptsMade, 0);
-  assert.equal(bare.approval, "Pending");
   assert.deepEqual(finalizationNext(finalizerDefaults, bare), {
     decide: "Hold",
     hold: "TargetUnreadable",
@@ -370,14 +368,13 @@ test("the view is gathered from the rows, and a finalization needing git holds",
   const attempt = await finalizerPrepare(rig, project, "view", { candidate });
   const permit = await finalizerGrantPermit(rig, project, attempt, "view");
   const carried = await store.durableView(claim);
-  assert.ok(carried !== undefined);
-  assert.equal(carried.attempt?.attempt, attempt);
-  assert.ok(carried.attempt?.outcome === "Prepared");
+  assert.ok(carried?.stage === "PermitGranted");
+  assert.equal(carried.attempt.attempt, attempt);
   assert.equal(carried.attempt.candidate, candidate);
-  assert.equal(carried.attempt?.strategy, "Merge");
+  assert.equal(carried.attempt.strategy, "Merge");
   assert.equal(carried.attemptsMade, 1);
-  assert.equal(carried.permit?.permit, permit);
-  assert.equal(carried.permit?.state, "Granted");
+  assert.equal(carried.permit.permit, permit);
+  assert.equal(carried.permit.state, "Granted");
   assert.equal(carried.reconciliation, undefined);
   assert.deepEqual(finalizationNext(finalizerDefaults, carried), {
     decide: "Reconcile",
