@@ -8,6 +8,7 @@ import {
   cancellationFunction,
   continuationFunction,
   notificationPublishFunction,
+  projectAuthorizationFunction,
   schedulerRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
@@ -205,6 +206,25 @@ test("the API read credential cannot inspect private operation columns", async (
     await harness.attemptAs(
       apiRole,
       "SELECT ticket,phase,seq FROM ticket_projection LIMIT 1",
+    ),
+    undefined,
+  );
+});
+
+test("the API can resolve access but cannot enumerate or change memberships", async () => {
+  for (const statement of [
+    "SELECT * FROM project_membership",
+    "INSERT INTO project_membership DEFAULT VALUES",
+    "UPDATE project_membership SET may_read=true",
+    "DELETE FROM project_membership",
+  ]) {
+    const refusal = await harness.attemptAs(apiRole, statement);
+    assert.match(refusal ?? "", postgresHarnessDenial("project_membership"));
+  }
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT * FROM ${projectAuthorizationFunction}('principal','tenant','project','Read')`,
     ),
     undefined,
   );

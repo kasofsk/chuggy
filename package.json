@@ -16,10 +16,13 @@
   },
   "type": "module",
   "scripts": {
-    "check": "./.chug/tasks/ci.sh"
+    "check": "./.chug/tasks/ci.sh",
+    "start:native-web": "node --experimental-strip-types src/roots/nativeHttp.ts"
   },
   "dependencies": {
     "@ts-safeql/sql-tag": "^0.2.2",
+    "fastify": "^5.12.1",
+    "jose": "^6.2.10",
     "pg": "^8.23.0",
     "zod": "^4.4.3"
   },

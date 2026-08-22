@@ -250,13 +250,14 @@ printf '%s\n' 'import { store } from "../src/adapters/one/store.ts"' 'import { x
 seal
 check "an adapter directory may not import the adapter its name prefixes" 1 "$RC" "no-adapter-sees-another:"
 
-# --- nothing-imports-the-composition-root ------------------------------------
+# --- nothing-imports-a-process-root ------------------------------------------
 
 fixture
-printf '%s\n' 'export const wired = 1' > "$R/src/compose.ts"
-printf '%s\n' 'import { wired } from "../src/compose.ts"' 'export const z = wired' > "$R/test/a.test.ts"
+mkdir -p "$R/src/roots"
+printf '%s\n' 'export const wired = 1' > "$R/src/roots/service.ts"
+printf '%s\n' 'import { wired } from "../src/roots/service.ts"' 'export const z = wired' > "$R/test/a.test.ts"
 seal
-check "importing the composition root is a finding" 1 "$RC" "nothing-imports-the-composition-root:"
+check "importing a process root is a finding" 1 "$RC" "nothing-imports-a-process-root:"
 
 # --- no-source-reaches-a-suite, under its own name ----------------------------
 

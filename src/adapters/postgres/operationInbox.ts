@@ -9,7 +9,7 @@
  * another's.
  *
  * THE POOL AND THE KEYING SET ARE BOTH THE CALLER'S. Where the connection
- * comes from is a deployment choice `src/compose.ts` alone may make, and so is
+ * comes from is a deployment choice a process root alone may make, and so is
  * where the idempotency secrets come from — an adapter that read either from
  * its environment would be making that choice inside the layer that must not
  * have one. This pool is the API role's; the ticket service's is

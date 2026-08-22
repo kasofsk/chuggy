@@ -45,6 +45,8 @@ import {
 import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
+import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
+import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -109,6 +111,7 @@ export interface PostgresHarness {
   readonly discovery: ProjectDiscovery;
   readonly decisions: ProjectDecision;
   readonly authoring: AuthoringStore;
+  readonly access: ProjectAccess;
   readonly query: (
     sql: string,
     values?: readonly unknown[],
@@ -133,6 +136,7 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
     discovery: postgresProjectDiscovery(pool),
     decisions: postgresProjectDecision(pool),
     authoring: postgresAuthoring(pool),
+    access: postgresProjectAccess(pool),
     query: async (sql, values) =>
       (await pool.query(sql, values === undefined ? undefined : [...values]))
         .rows as readonly Record<string, unknown>[],
