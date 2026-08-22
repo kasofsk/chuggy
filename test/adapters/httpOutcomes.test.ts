@@ -9,7 +9,18 @@ import {
 } from "../../src/interpreter/operationInbox.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
+  asCanonicalConfiguration,
+  asConfigurationRevisionId,
+} from "../../src/interpreter/authoring.ts";
+import {
   cancellationResponse,
+  configurationCreationResponse,
+  configurationResponse,
+  dispatchViewResponse,
+  draftCreationResponse,
+  draftDeletionResponse,
+  draftResponse,
+  draftRevisionResponse,
   inventoryResponse,
   notificationsResponse,
   operationResponse,
@@ -17,6 +28,8 @@ import {
   submissionResponse,
 } from "../../src/adapters/http/outcomes.ts";
 import { populated } from "../interpreter/roster.ts";
+import { id } from "../domain/fixtures.ts";
+import { plainAuthoring } from "../actor/harness.ts";
 
 const partition = {
   tenant: asTenantId("tenant/one"),
@@ -152,4 +165,99 @@ test("inventory exposes only an opaque continuation cursor", () => {
     "string",
   );
   assert.equal(JSON.stringify(found.body).includes("nextAfter"), false);
+});
+
+const configuration = {
+  partition,
+  revision: asConfigurationRevisionId("revision"),
+  canonical: asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
+  digest: "digest",
+};
+const draft = {
+  partition,
+  ticket: id(1),
+  authoringVersion: 2,
+  state: "Draft" as const,
+  configurationRevision: configuration.revision,
+  authoring: plainAuthoring,
+};
+
+test("configuration outcomes are closed and location-bearing", () => {
+  assert.equal(configurationResponse(undefined).status, 404);
+  const cases = [
+    { value: { created: "Created", revision: configuration }, status: 201 },
+    {
+      value: { created: "AlreadyExists", revision: configuration },
+      status: 200,
+    },
+    { value: { created: "IdentityConflict" }, status: 409 },
+    { value: { created: "ParentNotFound" }, status: 404 },
+  ] as const;
+  for (const each of populated(cases, "configuration creation outcomes")) {
+    assert.equal(
+      configurationCreationResponse({
+        result: "Authorized",
+        value: each.value,
+      }).status,
+      each.status,
+    );
+  }
+  assert.equal(
+    configurationCreationResponse({ result: "NotFound" }).status,
+    404,
+  );
+});
+
+test("draft resources encode sets as stable JSON arrays", () => {
+  assert.deepEqual(
+    (draftResponse(draft).body as { authoring: { dependencies: unknown } })
+      .authoring.dependencies,
+    [],
+  );
+  assert.equal(
+    draftCreationResponse({
+      result: "Authorized",
+      value: { created: "Created", draft },
+    }).status,
+    201,
+  );
+});
+
+test("draft revision and deletion map every closed result", () => {
+  const revisions = [
+    { value: { revised: "Revised", draft }, status: 200 },
+    { value: { revised: "NotFound" }, status: 404 },
+    { value: { revised: "Stale", currentVersion: 3 }, status: 409 },
+    { value: { revised: "NotDraft", state: "Released" }, status: 409 },
+    { value: { revised: "ConfigurationNotFound" }, status: 404 },
+  ] as const;
+  for (const each of populated(revisions, "draft revision outcomes")) {
+    assert.equal(
+      draftRevisionResponse({ result: "Authorized", value: each.value }).status,
+      each.status,
+    );
+  }
+  const deletions = [
+    { value: { deleted: "Deleted", draft }, status: 200 },
+    { value: { deleted: "NotFound" }, status: 404 },
+    { value: { deleted: "Stale", currentVersion: 3 }, status: 409 },
+    { value: { deleted: "NotDraft", state: "Released" }, status: 409 },
+  ] as const;
+  for (const each of populated(deletions, "draft deletion outcomes")) {
+    assert.equal(
+      draftDeletionResponse({ result: "Authorized", value: each.value }).status,
+      each.status,
+    );
+  }
+});
+
+test("dispatch view authorization preserves reset and page outcomes", () => {
+  assert.equal(dispatchViewResponse({ result: "NotFound" }).status, 404);
+  assert.deepEqual(
+    dispatchViewResponse({
+      result: "Authorized",
+      value: { result: "Reset" },
+    }).body,
+    { result: "Reset" },
+  );
 });

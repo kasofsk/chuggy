@@ -1,7 +1,18 @@
 import { z } from "zod";
 
 import { revokeEvent, resumeTicketEvent } from "../../actor/decisionEvent.ts";
+import type { ReleaseAuthoring } from "../../actor/decisionEvent.ts";
 import { asTicketId } from "../../domain/ids.ts";
+import {
+  asCanonicalConfiguration,
+  asConfigurationRevisionId,
+  type CanonicalConfiguration,
+  type ConfigurationRevisionId,
+} from "../../interpreter/authoring.ts";
+import {
+  dispatchViewSchemaVersion,
+  checkedSelectorDecisionReference,
+} from "../../interpreter/dispatchView.ts";
 import {
   asIdempotencyKey,
   asOperationDecisionEvent,
@@ -29,10 +40,16 @@ export const nativeHttpRoutes = {
   operations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations`,
   operation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations/:operation`,
   notifications: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/notifications`,
+  configurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations`,
+  configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,
+  drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
+  draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
+  dispatchView: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/dispatch-view`,
 } as const;
 
 const ticketSchema = z.number().int().safe().positive();
 const versionSchema = z.number().int().safe().nonnegative();
+const identitySchema = z.string().min(1);
 
 const publicMutationSchema = z.discriminatedUnion("mutation", [
   z.strictObject({ mutation: z.literal("RevokeTicket"), ticket: ticketSchema }),
@@ -59,18 +76,127 @@ const publicMutationSchema = z.discriminatedUnion("mutation", [
     ticket: ticketSchema,
     expectedTicketVersion: versionSchema,
     observedViewToken: z.strictObject({
-      tenant: z.string(),
-      project: z.string(),
-      recoveryEpoch: z.string(),
-      schemaVersion: versionSchema,
+      tenant: identitySchema,
+      project: identitySchema,
+      recoveryEpoch: identitySchema,
+      schemaVersion: z.literal(dispatchViewSchemaVersion),
       watermark: versionSchema,
-      digest: z.string(),
+      digest: z.string().regex(/^[0-9a-f]{64}$/u),
     }),
     selectorDecisionReference: z.string(),
   }),
 ]);
 
 export type PublicMutation = z.infer<typeof publicMutationSchema>;
+
+export const nativeHttpDraftDependenciesMax = 100;
+export const nativeHttpDraftStagesMax = 100;
+
+const authoringSchema = z.strictObject({
+  dependencies: z
+    .array(ticketSchema)
+    .max(nativeHttpDraftDependenciesMax)
+    .refine((values) => new Set(values).size === values.length),
+  program: z
+    .array(
+      z.strictObject({
+        fanout: ticketSchema,
+        combinator: z.enum(["UnanimousPass", "AnyPass"]),
+      }),
+    )
+    .max(nativeHttpDraftStagesMax),
+  workFanout: ticketSchema,
+  reworkPolicy: z.strictObject({
+    type: z.literal("BudgetedRework"),
+    value: versionSchema,
+  }),
+  finalizationPricing: z.union([
+    z.literal("DeadlineOnly"),
+    z.strictObject({ type: z.literal("Budgeted"), value: versionSchema }),
+  ]),
+  resumePricing: z.enum(["RetryCharged", "RetryFree"]),
+  finalizer: z.enum(["NoFinalizer", "ManagedFinalizer"]),
+});
+
+const configurationCreationSchema = z.strictObject({
+  revision: identitySchema,
+  parent: identitySchema.optional(),
+  canonical: identitySchema,
+});
+
+const draftCreationSchema = z.strictObject({
+  configurationRevision: identitySchema,
+  authoring: authoringSchema,
+});
+
+const draftRevisionSchema = z.strictObject({
+  expectedVersion: versionSchema,
+  configurationRevision: identitySchema,
+  authoring: authoringSchema,
+});
+
+export interface ParsedConfigurationCreation {
+  readonly revision: ConfigurationRevisionId;
+  readonly parent?: ConfigurationRevisionId;
+  readonly canonical: CanonicalConfiguration;
+}
+
+export interface ParsedDraftCreation {
+  readonly configurationRevision: ConfigurationRevisionId;
+  readonly authoring: ReleaseAuthoring;
+}
+
+export interface ParsedDraftRevision extends ParsedDraftCreation {
+  readonly expectedVersion: number;
+}
+
+function releaseAuthoring(
+  value: z.infer<typeof authoringSchema>,
+): ReleaseAuthoring {
+  return {
+    deps: new Set(value.dependencies),
+    prog: value.program,
+    workFanout: value.workFanout,
+    reworkPolicy: value.reworkPolicy,
+    finalizationPricing: value.finalizationPricing,
+    resumePricing: value.resumePricing,
+    finalizer: value.finalizer,
+  };
+}
+
+export function parseConfigurationCreation(
+  body: unknown,
+): ParsedConfigurationCreation {
+  const value = configurationCreationSchema.parse(body);
+  return {
+    revision: asConfigurationRevisionId(value.revision),
+    ...(value.parent === undefined
+      ? {}
+      : { parent: asConfigurationRevisionId(value.parent) }),
+    canonical: asCanonicalConfiguration(value.canonical),
+  };
+}
+
+export function parseDraftCreation(body: unknown): ParsedDraftCreation {
+  const value = draftCreationSchema.parse(body);
+  return {
+    configurationRevision: asConfigurationRevisionId(
+      value.configurationRevision,
+    ),
+    authoring: releaseAuthoring(value.authoring),
+  };
+}
+
+export function parseDraftRevision(body: unknown): ParsedDraftRevision {
+  const value = draftRevisionSchema.parse(body);
+  return {
+    expectedVersion: value.expectedVersion,
+    configurationRevision: asConfigurationRevisionId(
+      value.configurationRevision,
+    ),
+    authoring: releaseAuthoring(value.authoring),
+  };
+}
 
 export interface ParsedSubmission {
   readonly operation: OperationId;
@@ -173,7 +299,9 @@ function publicMutationCommand(mutation: PublicMutation): TicketCommand {
         ticket: asTicketId(mutation.ticket),
         expectedTicketVersion: mutation.expectedTicketVersion,
         observedViewToken: mutation.observedViewToken,
-        selectorDecisionReference: mutation.selectorDecisionReference,
+        selectorDecisionReference: checkedSelectorDecisionReference(
+          mutation.selectorDecisionReference,
+        ),
       };
   }
 }

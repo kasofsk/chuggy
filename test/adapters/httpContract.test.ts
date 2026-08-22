@@ -7,6 +7,9 @@ import {
   nativeHttpRoutes,
   encodeInventoryCursor,
   parseInventoryCursor,
+  parseConfigurationCreation,
+  parseDraftCreation,
+  parseDraftRevision,
   parsePartition,
   parseSubmission,
 } from "../../src/adapters/http/contract.ts";
@@ -20,7 +23,79 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/operations",
     "/api/v1/tenants/:tenant/projects/:project/operations/:operation",
     "/api/v1/tenants/:tenant/projects/:project/notifications",
+    "/api/v1/tenants/:tenant/projects/:project/configurations",
+    "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
+    "/api/v1/tenants/:tenant/projects/:project/drafts",
+    "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
+    "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
   ]);
+});
+
+const authoring = {
+  dependencies: [1, 2],
+  program: [{ fanout: 1, combinator: "UnanimousPass" }],
+  workFanout: 1,
+  reworkPolicy: { type: "BudgetedRework", value: 1 },
+  finalizationPricing: { type: "Budgeted", value: 1 },
+  resumePricing: "RetryCharged",
+  finalizer: "ManagedFinalizer",
+} as const;
+
+test("authoring DTOs translate into existing application types", () => {
+  assert.deepEqual(
+    parseConfigurationCreation({
+      revision: "revision",
+      canonical: '{"image":"worker:v1","version":1}',
+    }),
+    {
+      revision: "revision",
+      canonical: '{"image":"worker:v1","version":1}',
+    },
+  );
+  assert.deepEqual(
+    parseDraftCreation({ configurationRevision: "revision", authoring }),
+    {
+      configurationRevision: "revision",
+      authoring: {
+        deps: new Set([1, 2]),
+        prog: authoring.program,
+        workFanout: 1,
+        reworkPolicy: authoring.reworkPolicy,
+        finalizationPricing: authoring.finalizationPricing,
+        resumePricing: "RetryCharged",
+        finalizer: "ManagedFinalizer",
+      },
+    },
+  );
+  assert.equal(
+    parseDraftRevision({
+      expectedVersion: 3,
+      configurationRevision: "revision",
+      authoring,
+    }).expectedVersion,
+    3,
+  );
+});
+
+test("authoring DTOs reject duplicates, unknown fields, and noncanonical config", () => {
+  assert.throws(() =>
+    parseDraftCreation({
+      configurationRevision: "revision",
+      authoring: { ...authoring, dependencies: [1, 1] },
+    }),
+  );
+  assert.throws(() =>
+    parseDraftCreation({
+      configurationRevision: "revision",
+      authoring: { ...authoring, hidden: true },
+    }),
+  );
+  assert.throws(() =>
+    parseConfigurationCreation({
+      revision: "revision",
+      canonical: '{"version":1,"image":"worker:v1"}',
+    }),
+  );
 });
 
 test("partition identities remain opaque strings", () => {
