@@ -1,19 +1,19 @@
 /**
- * The row vocabulary the finalizer's transactions share: the request states a
- * predicate spells, the narrowing that refuses a column value no migration can
- * have written, and the bound check every paged query owes its caller.
+ * The row vocabulary the finalizer's transactions share: the bound check every
+ * paged query owes its caller, the refusal of a null the row type admits, and
+ * the narrowing that refuses a column value no migration can have written.
  *
  * A COLUMN IS NARROWED AND NEVER CAST. A `text` column arrives as a string the
  * driver knows nothing about, so a value outside the closed set the port
  * declares raises here rather than travelling on as a type the compiler was told
  * to believe.
+ *
+ * A REQUEST-STATE SET IS SPELLED IN THE STATEMENT THAT TESTS IT. This file used
+ * to hold the live and settled sets as SQL fragments for a predicate to
+ * interpolate; a checked `sql` tag makes an interpolation a value, so such a
+ * fragment would arrive as one string and the predicate would match nothing.
+ * There is nowhere for them to live but the statement.
  */
-
-/** The states a request is still working through, which a claim and a submission both need it to be in. */
-export const finalizerLiveRequestStates = "'Open', 'Registered'";
-
-/** The states no claim outlives, which is where a lease is dropped rather than reopened. */
-export const finalizerSettledRequestStates = "'Fulfilled', 'Invalidated'";
 
 /** Refuses a bound no work can be drawn under, naming the argument rather than the row. */
 export function finalizerBounded(value: number, what: string): void {
