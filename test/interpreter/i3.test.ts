@@ -41,6 +41,7 @@ import {
   refinementInstance,
 } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
+import { populated } from "./roster.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { DecisionInput } from "../../src/interpreter/projectDiscovery.ts";
@@ -132,7 +133,10 @@ test("every answer but the safety one is ordinary, and each belongs to one quest
     action: "action",
     authorizingSeq: 1,
   };
-  for (const resolution of allNativeActionResolutions) {
+  for (const resolution of populated(
+    allNativeActionResolutions,
+    "allNativeActionResolutions",
+  )) {
     const offered = { ...command, resolution };
     assert.deepEqual(parseTicketCommand(encodeTicketCommand(offered)), {
       parsed: "Ok",
