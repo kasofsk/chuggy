@@ -78,18 +78,19 @@ function retry(
 
 function acceptedResponse(
   partition: Partition,
-  operation: OperationId,
   accepted: Accepted,
 ): NativeHttpResponse {
-  const location = operationPath(partition, operation);
   switch (accepted.accepted) {
     case "Accepted":
     case "Original":
       return response(
         202,
-        { operation, state: accepted.operation.state },
         {
-          location,
+          operation: accepted.operation.operation,
+          state: accepted.operation.state,
+        },
+        {
+          location: operationPath(partition, accepted.operation.operation),
         },
       );
     case "IdempotencyConflict":
@@ -119,7 +120,6 @@ function acceptedResponse(
 
 export function submissionResponse(
   partition: Partition,
-  operation: OperationId,
   result: NativeSubmissionResult,
 ): NativeHttpResponse {
   switch (result.result) {
@@ -128,7 +128,7 @@ export function submissionResponse(
     case "Backlogged":
       return retry(429, result.retryAfterSeconds, "DispatchBacklog");
     case "Authorized":
-      return acceptedResponse(partition, operation, result.acceptance);
+      return acceptedResponse(partition, result.acceptance);
     default:
       return assertNever(result);
   }

@@ -47,7 +47,7 @@ const standing = {
 };
 
 test("durable acceptance returns the operation location without a decision", () => {
-  const found = submissionResponse(partition, operation, {
+  const found = submissionResponse(partition, {
     result: "Authorized",
     acceptance: { accepted: "Accepted", operation: standing },
   });
@@ -74,7 +74,7 @@ test("every acceptance outcome has a closed safe status mapping", () => {
     [{ accepted: "NotAdmitted", lifecycle: "Suspended" }, 409],
   ];
   for (const [accepted, status] of populated(cases, "acceptance outcomes")) {
-    const found = submissionResponse(partition, operation, {
+    const found = submissionResponse(partition, {
       result: "Authorized",
       acceptance: accepted,
     });
@@ -86,8 +86,20 @@ test("every acceptance outcome has a closed safe status mapping", () => {
   }
 });
 
+test("an idempotent retry returns the originally accepted operation", () => {
+  const found = submissionResponse(partition, {
+    result: "Authorized",
+    acceptance: { accepted: "Original", operation: standing },
+  });
+  assert.deepEqual(found.body, {
+    operation: "operation/three",
+    state: "Pending",
+  });
+  assert.match(found.headers["location"] ?? "", /operation%2Fthree$/u);
+});
+
 test("retryable refusal carries bounded retry guidance", () => {
-  const found = submissionResponse(partition, operation, {
+  const found = submissionResponse(partition, {
     result: "Backlogged",
     scope: "Project",
     retryAfterSeconds: 7,

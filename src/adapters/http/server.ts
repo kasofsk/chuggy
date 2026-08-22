@@ -335,7 +335,7 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
         partition,
         ...parsed,
       });
-      send(reply, submissionResponse(partition, parsed.operation, result));
+      send(reply, submissionResponse(partition, result));
     },
   );
   app.get(`${root}/:operation`, async (request, reply) => {
