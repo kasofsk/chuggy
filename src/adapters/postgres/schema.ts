@@ -3073,6 +3073,20 @@ const nativeProjectAccess = [
      TO ${apiRole}`,
 ];
 
+const nativeOperationsViews = [
+  `GRANT SELECT (tenant,project,execution,ticket,task,cluster,
+     source_request,configuration_revision,configuration_digest,status,outcome,result_manifest,
+     retries_spent,registered_at,terminal_at) ON execution TO ${apiRole}`,
+  `GRANT SELECT (tenant,project,execution,attempt,attempt_number,generation,
+     state,opened_at,ended_at) ON execution_attempt TO ${apiRole}`,
+  `GRANT SELECT (tenant,project,manifest,attempt,schema_version,digest,verdict,recorded_at)
+     ON execution_result TO ${apiRole}`,
+  `GRANT SELECT (tenant,project,manifest,ordinal,role,path,digest,bytes)
+     ON execution_result_artifact TO ${apiRole}`,
+  `GRANT SELECT (tenant,project,request,task,kind,stage)
+     ON execution_request_task TO ${apiRole}`,
+];
+
 /** Every migration in version order, which is the order the runner applies them in. */
 export const migrations: readonly Migration[] = [
   {
@@ -3558,5 +3572,10 @@ export const migrations: readonly Migration[] = [
     version: 14,
     name: "native project access",
     statements: [...nativeProjectAccess],
+  },
+  {
+    version: 15,
+    name: "native operational reads",
+    statements: [...nativeOperationsViews],
   },
 ];

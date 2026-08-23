@@ -55,6 +55,7 @@ import {
   asAttemptId,
   asExecutionId,
 } from "../../src/interpreter/schedulerIdentity.ts";
+import { branchDiffOutput } from "../../src/interpreter/operationsView.ts";
 import {
   asProjectId,
   asTenantId,
@@ -501,4 +502,38 @@ test("a root that cannot be written is an outage and never an artifact that fail
   });
   chmodSync(fixture.root, 0o700);
   assert.equal(written.written, "Unavailable");
+});
+
+test("a declared output preview returns only verified UTF-8 content", async (t) => {
+  const fixture = fixtureOpen(t);
+  const content = "diff --git a/a.ts b/a.ts\n";
+  fixtureStore(fixture, branchDiffOutput.path, content);
+  const artifact = {
+    ordinal: 1,
+    role: "Diagnostic" as const,
+    path: branchDiffOutput.path,
+    digest: asArtifactDigest(digestOf(content)),
+    bytes: content.length,
+    output: branchDiffOutput,
+  };
+  assert.deepEqual(
+    await fixture.store.read({ partition, execution, attempt, artifact }),
+    {
+      read: "Content",
+      mediaType: "text/x-diff",
+      renderer: "UnifiedDiff",
+      content,
+    },
+  );
+  assert.equal(
+    (
+      await fixture.store.read({
+        partition,
+        execution,
+        attempt,
+        artifact: { ...artifact, digest: asArtifactDigest("0".repeat(64)) },
+      })
+    ).read,
+    "Corrupt",
+  );
 });

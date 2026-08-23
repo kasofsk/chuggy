@@ -5,9 +5,15 @@ import fastify, {
 } from "fastify";
 
 import type { TicketId } from "../../domain/ids.ts";
+import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
+import {
+  allExecutionStatuses,
+  type ExecutionStatus,
+} from "../../interpreter/executionScheduler.ts";
 import type { Principal } from "../../interpreter/nativeWeb.ts";
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
+import { asExecutionId } from "../../interpreter/schedulerIdentity.ts";
 import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
 import {
   nativeHttpBodyBytesMax,
@@ -36,6 +42,11 @@ import {
   notificationsResponse,
   operationResponse,
   projectResponse,
+  ticketResponse,
+  executionResponse,
+  executionsResponse,
+  operationalStatusResponse,
+  outputContentResponse,
   submissionResponse,
   type NativeHttpResponse,
 } from "./outcomes.ts";
@@ -73,6 +84,11 @@ type InitialNativeWeb = Pick<
   | "projectInventory"
   | "reviseDraft"
   | "submit"
+  | "ticket"
+  | "execution"
+  | "executions"
+  | "operationalStatus"
+  | "outputContent"
 >;
 
 function send(reply: FastifyReply, result: NativeHttpResponse): void {
@@ -276,31 +292,158 @@ function partitionOf(
 }
 
 function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project",
-    async (request, reply) => {
-      const query = fieldsOnly(request.query, [
-        "after",
-        "limit",
-        "minimumSequence",
-      ]);
-      const after = query["after"];
-      const result = await web.project(
-        principalOf(request),
-        partitionOf(request),
-        {
+  const root = "/api/v1/tenants/:tenant/projects/:project";
+  const projectRead = async (request: FastifyRequest, reply: FastifyReply) => {
+    const query = fieldsOnly(request.query, [
+      "after",
+      "limit",
+      "minimumSequence",
+      "phase",
+    ]);
+    const after = query["after"];
+    const result = await web.project(
+      principalOf(request),
+      partitionOf(request),
+      {
+        ...(after === undefined
+          ? {}
+          : { after: asTicketIdField(query, "after") }),
+        limit: integerField(query, "limit", 50),
+        ...(query["minimumSequence"] === undefined
+          ? {}
+          : { minimumSequence: integerField(query, "minimumSequence") }),
+        ...phaseFilter(query["phase"]),
+      },
+    );
+    send(reply, projectResponse(result));
+  };
+  app.get(root, projectRead);
+  app.get(`${root}/tickets`, projectRead);
+  app.get(`${root}/tickets/:ticket`, async (request, reply) => {
+    const params = record(request.params);
+    const resource = await web.ticket(
+      principalOf(request),
+      partitionOf(request),
+      asTicketIdField(params, "ticket"),
+    );
+    send(reply, ticketResponse(resource));
+  });
+  registerOperationalRoutes(app, web, root);
+}
+
+function registerOperationalRoutes(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  app.get(`${root}/operational-status`, async (request, reply) => {
+    send(
+      reply,
+      operationalStatusResponse(
+        await web.operationalStatus(principalOf(request), partitionOf(request)),
+      ),
+    );
+  });
+  app.get(`${root}/executions`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["after", "limit", "state"]);
+    const after = query["after"];
+    send(
+      reply,
+      executionsResponse(
+        await web.executions(principalOf(request), partitionOf(request), {
           ...(after === undefined
             ? {}
-            : { after: asTicketIdField(query, "after") }),
+            : { after: asExecutionId(textField(query, "after")) }),
           limit: integerField(query, "limit", 50),
-          ...(query["minimumSequence"] === undefined
-            ? {}
-            : { minimumSequence: integerField(query, "minimumSequence") }),
-        },
+          ...executionSelection(query["state"]),
+        }),
+      ),
+    );
+  });
+  app.get(`${root}/executions/:execution`, async (request, reply) => {
+    const params = record(request.params);
+    send(
+      reply,
+      executionResponse(
+        await web.execution(
+          principalOf(request),
+          partitionOf(request),
+          asExecutionId(textField(params, "execution")),
+        ),
+      ),
+    );
+  });
+  app.get(
+    `${root}/executions/:execution/artifacts/:ordinal`,
+    async (request, reply) => {
+      const params = record(request.params);
+      send(
+        reply,
+        outputContentResponse(
+          await web.outputContent(
+            principalOf(request),
+            partitionOf(request),
+            asExecutionId(textField(params, "execution")),
+            integerField(params, "ordinal"),
+          ),
+        ),
       );
-      send(reply, projectResponse(result));
     },
   );
+}
+
+function executionSelection(value: unknown): {
+  readonly selection?:
+    | { readonly selection: "NonTerminal" }
+    | {
+        readonly selection: "Selected";
+        readonly states: readonly ExecutionStatus[];
+      };
+} {
+  if (value === undefined) return {};
+  const values = Array.isArray(value) ? value : [value];
+  if (values.some((state) => typeof state !== "string"))
+    throw new TypeError("state is not text");
+  if (values.length === 1 && values[0] === "NonTerminal")
+    return { selection: { selection: "NonTerminal" } };
+  if (
+    values.length < 1 ||
+    values.some(
+      (state) =>
+        state === "NonTerminal" ||
+        !allExecutionStatuses.includes(state as ExecutionStatus),
+    )
+  )
+    throw new RangeError("execution state selection is invalid");
+  return {
+    selection: {
+      selection: "Selected",
+      states: values as ExecutionStatus[],
+    },
+  };
+}
+
+function phaseFilter(value: unknown): {
+  readonly phaseFilter?:
+    | { readonly selection: "NonTerminal" }
+    | { readonly selection: "Selected"; readonly phases: readonly Phase[] };
+} {
+  if (value === undefined) return {};
+  const values = Array.isArray(value) ? value : [value];
+  if (values.some((phase) => typeof phase !== "string"))
+    throw new TypeError("phase is not text");
+  if (values.length === 1 && values[0] === "NonTerminal")
+    return { phaseFilter: { selection: "NonTerminal" } };
+  if (
+    values.length < 1 ||
+    values.some(
+      (phase) => phase === "NonTerminal" || !phaseTags.includes(phase as Phase),
+    )
+  )
+    throw new RangeError("phase selection is invalid");
+  return {
+    phaseFilter: { selection: "Selected", phases: values as Phase[] },
+  };
 }
 
 function asTicketIdField(
