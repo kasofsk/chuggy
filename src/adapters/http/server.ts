@@ -47,6 +47,7 @@ import {
   executionResponse,
   executionsResponse,
   operationalStatusResponse,
+  selectorOperationalContextResponse,
   outputContentResponse,
   submissionResponse,
   type NativeHttpResponse,
@@ -89,6 +90,7 @@ type InitialNativeWeb = Pick<
   | "execution"
   | "executions"
   | "operationalStatus"
+  | "selectorOperationalContext"
   | "outputContent"
 >;
 
@@ -393,6 +395,26 @@ function registerOperationalRoutes(
   );
 }
 
+function registerSelectorContext(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  app.get(
+    "/api/v1/tenants/:tenant/projects/:project/selector-context",
+    async (request, reply) => {
+      send(
+        reply,
+        selectorOperationalContextResponse(
+          await web.selectorOperationalContext(
+            principalOf(request),
+            partitionOf(request),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 function executionSelection(value: unknown): {
   readonly selection?:
     | { readonly selection: "NonTerminal" }
@@ -647,6 +669,7 @@ export function createNativeHttpApp(
   registerContract(app);
   registerInventory(app, web);
   registerProject(app, web);
+  registerSelectorContext(app, web);
   registerOperations(app, web);
   registerNotifications(app, web);
   registerConfigurations(app, web);

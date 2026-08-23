@@ -131,10 +131,20 @@ test("an account below its reservation reports the deficit a selector may weigh"
 
 test("the read answers for one project and reads no other", async () => {
   const read: ExecutionContextRead = {
-    context: (asked) =>
-      Promise.resolve(
-        selectorExecutionContext(8, entitlements, ledger, asked, asked.project),
-      ),
+    context: (asked) => {
+      const context = selectorExecutionContext(
+        8,
+        entitlements,
+        ledger,
+        asked,
+        asked.project,
+      );
+      return Promise.resolve({
+        ...context,
+        account: asked.project,
+        backlog: { project: 0, installation: 0 },
+      });
+    },
   };
   const mine = await read.context(partition);
   const theirs = await read.context({

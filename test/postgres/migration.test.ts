@@ -40,9 +40,13 @@ const retainedImageRequired = [
   { version: 14, name: "native project access" },
   { version: 15, name: "native operational reads" },
 ] as const;
-const retainedImageContract = runtimeSchemaContract(retainedImageRequired, [
+const publishingImageRequired = [
   ...retainedImageRequired,
   { version: 16, name: "runtime schema readiness" },
+] as const;
+const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
+  ...publishingImageRequired,
+  { version: 17, name: "selector context account read" },
 ]);
 
 function databaseUrl(database: string): string {
@@ -352,12 +356,13 @@ test("a staged migration advances after its publishing image is retained", async
         [migration.version, migration.name],
       );
     }
+    await assertDivergentMigrationRefused(subject);
     assert.deepEqual(
       await postgresMigrateCompatible(subject, {
         current: currentRuntimeSchemaContract,
         retainedPrevious: retainedImageContract,
       }),
-      { migrated: "Applied", versions: [] },
+      { migrated: "Applied", versions: [17] },
     );
     assert.equal(
       await schemaCompatibilityPrecondition(
@@ -365,22 +370,6 @@ test("a staged migration advances after its publishing image is retained", async
         retainedImageContract,
       ).check(new AbortController().signal),
       true,
-    );
-    assert.deepEqual(
-      currentRuntimeSchemaContract.required,
-      retainedImageContract.compatible,
-    );
-    assert.equal(currentRuntimeSchemaContract.compatible.at(-1)?.version, 17);
-    await assertDivergentMigrationRefused(subject);
-    const consumingContract = runtimeSchemaContract(
-      currentRuntimeSchemaContract.compatible,
-    );
-    assert.deepEqual(
-      await postgresMigrateCompatible(subject, {
-        current: consumingContract,
-        retainedPrevious: currentRuntimeSchemaContract,
-      }),
-      { migrated: "Applied", versions: [17] },
     );
   } finally {
     await subject.end();

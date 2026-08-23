@@ -83,6 +83,7 @@ import type { ProjectStore } from "./interpreter/projectStore.ts";
 import type { ExecutionBacklogGuard } from "./interpreter/schedulerContext.ts";
 import { postgresOperationalReads } from "./adapters/postgres/operationalReads.ts";
 import type { OutputContentPort } from "./interpreter/operationsView.ts";
+import type { SelectorOperationalContextRead } from "./interpreter/selectorOperationalContext.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -212,6 +213,7 @@ export function composeNativeWeb(
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
   inventory?: ProjectInventory,
   outputContents?: OutputContentPort,
+  selectorContexts?: SelectorOperationalContextRead,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
   return nativeWeb(
@@ -226,6 +228,7 @@ export function composeNativeWeb(
       authorizedProjectInventory(access, postgresProjectInventory(apiPool)),
     postgresOperationalReads(apiPool),
     outputContents,
+    selectorContexts,
   );
 }
 
