@@ -40,12 +40,16 @@
 -- chuggy_boundary_owner IS THE ONE THAT WIDENS IT, AND HAS TO. That role owns
 -- the SECURITY DEFINER functions and chuggy_owner does not, so a migration
 -- whose statement is a GRANT on one of them is granting on an object it
--- neither owns nor holds grant option for — which PostgreSQL answers with a
--- warning and not an error. The statement succeeds having granted nothing, the
--- runner commits the ledger row beside it, and the version is applied by every
--- account anyone can query. Membership is what makes such a grant land, and
--- the migration cannot take it for itself: granting a role needs admin option
--- on it, which a CREATEROLE role holds only over the roles it created itself.
+-- neither owns nor holds grant option for. PostgreSQL answers that with a hard
+-- error when the grantor holds nothing at all on the object, and with a warning
+-- when it holds some privilege on it without grant option — and the warning is
+-- the branch that hurts, because the statement succeeds having granted nothing,
+-- the runner commits the ledger row beside it, and the version is applied by
+-- every account anyone can query. A grantor that inherits a privilege through
+-- any group it belongs to is on that branch, which is where the memberships
+-- below put chuggy_owner. Membership in the owner is what makes the grant land,
+-- and the migration cannot take it for itself: granting a role needs admin
+-- option on it, which a CREATEROLE role holds only over roles it created itself.
 --
 -- AND IT NEEDS CREATE ON THE SCHEMA, not the USAGE every other group role gets.
 -- A migration hands it those functions with ALTER FUNCTION ... OWNER TO, and

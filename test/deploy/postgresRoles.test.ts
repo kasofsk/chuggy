@@ -6,10 +6,11 @@
  * WHY NO SUITE COULD SEE IT. Every suite migrates as a superuser, which owns
  * every object and needs no membership, so an orphaned group role is invisible
  * to all of them. A deployment's migrating identity owns some of the objects
- * and none of the SECURITY DEFINER functions, and PostgreSQL answers a GRANT
- * on an object the grantor neither owns nor holds grant option for with a
- * warning rather than an error — so the migration that needed the missing
- * membership commits its ledger row having granted nothing.
+ * and none of the SECURITY DEFINER functions, and a GRANT by a grantor that
+ * neither owns the object nor holds grant option on it is a hard error only
+ * where the grantor holds nothing on it at all; where it inherits any privilege
+ * through a group, PostgreSQL warns instead — so the migration that needed the
+ * missing membership commits its ledger row having granted nothing.
  *
  * THE EXPECTED SET IS DERIVED FROM THE MIGRATIONS AND FROM `src/roots/`, never
  * listed here. A migration that adds a group role, or a serving command that
