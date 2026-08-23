@@ -1,0 +1,40 @@
+# A static file server for the operations UI, and nothing else: it terminates no
+# TLS, proxies nothing, and holds nothing between requests.
+#
+# THE CONTRACT WITH WHOEVER WRITES THE UI. `site` is a repository-relative
+# directory and its contents become the document root, so `index.html` at its
+# top is what `/` serves. `/healthz` belongs to the image and answers ahead of
+# anything the site carries, so the site may not claim that path. There is no
+# default for `site`: this image serves what it is pointed at, and guessing
+# would ship whatever happened to be at the guess.
+#
+# The digest is the multi-architecture index's, read on 2026-08-22 with
+#   docker buildx imagetools inspect nginx:1.31.4-alpine3.24
+#
+# THE CONTEXT IS THE REPOSITORY ROOT:
+#   docker build -f images/web/Dockerfile --build-arg site=<dir> \
+#     -t chuggy.invalid/web:<tag> .
+
+FROM nginx:1.31.4-alpine3.24@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
+
+# Unset, `COPY ${site}/` would resolve to the whole context and ship the
+# repository as a website. It is refused while the image is still empty.
+ARG site
+RUN [ -n "$site" ] || { echo "the site build argument names the document root and has no default"; exit 1; }
+
+# The whole configuration, rather than a fragment dropped beside the shipped
+# one: everything writable is moved under /tmp so the container can run with a
+# read-only root filesystem. `deploy/rig/images/README.md` says what to mount.
+COPY images/web/nginx.conf /etc/nginx/nginx.conf
+COPY ${site}/ /usr/share/nginx/html/
+
+# Numeric for the same reason as `images/api/Dockerfile`. 101 is this image's
+# `nginx` user.
+USER 101:101
+EXPOSE 8080
+
+# The shipped entrypoint rewrites configuration under /etc/nginx from templates
+# and its own environment. This image has one configuration, it is the one
+# above, and a read-only root filesystem refuses the rewrite anyway.
+ENTRYPOINT []
+CMD ["nginx", "-g", "daemon off;"]
