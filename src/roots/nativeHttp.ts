@@ -15,6 +15,10 @@ import {
   postgresRuntimeSchema,
 } from "../adapters/postgres/runtimeSchema.ts";
 import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
+import { postgresExecutionContextRead } from "../adapters/postgres/schedulerContext.ts";
+import { postgresSelectorProposalReviews } from "../adapters/postgres/selector.ts";
+import { selectorOperationalContextRead } from "../interpreter/selectorOperationalContext.ts";
+import { selectorReviewRole } from "../adapters/postgres/schema.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -22,6 +26,8 @@ const oidcIssuerVariable = "CHUG_API_OIDC_ISSUER";
 const oidcAudienceVariable = "CHUG_API_OIDC_AUDIENCE";
 const oidcAlgorithmsVariable = "CHUG_API_OIDC_ALGORITHMS";
 const artifactRootVariable = "CHUG_API_ARTIFACT_ROOT";
+const selectorReviewDatabaseUrlVariable =
+  "CHUG_API_SELECTOR_REVIEW_DATABASE_URL";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -101,19 +107,81 @@ async function apiDatabaseReady(
   }
 }
 
+async function selectorReviewDatabaseReady(
+  pool: ReturnType<typeof postgresPool>,
+): Promise<boolean> {
+  try {
+    const found = await pool.query<{ current_role: string }>(
+      "SELECT current_user AS current_role",
+    );
+    return found.rows[0]?.current_role === selectorReviewRole;
+  } catch {
+    return false;
+  }
+}
+
+function selectorContextSource(
+  pool: ReturnType<typeof postgresPool>,
+  selectorReviewPool: ReturnType<typeof postgresPool>,
+) {
+  return selectorOperationalContextRead(
+    postgresExecutionContextRead(pool),
+    postgresSelectorProposalReviews(selectorReviewPool),
+    {
+      now: () => {
+        const instant = new Date();
+        return {
+          instant: instant.toISOString(),
+          epochMilliseconds: instant.getTime(),
+        };
+      },
+    },
+    {
+      reviewFeedbackMax: positiveEnvironment(
+        "CHUG_API_SELECTOR_FEEDBACK_MAX",
+        100,
+      ),
+      projectBacklogMax: positiveEnvironment(
+        "CHUG_SCHEDULER_PROJECT_BACKLOG_MAX",
+        200,
+      ),
+      installationBacklogMax: positiveEnvironment(
+        "CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX",
+        5_000,
+      ),
+    },
+  );
+}
+
+function closePools(
+  pool: ReturnType<typeof postgresPool>,
+  selectorReviewPool: ReturnType<typeof postgresPool>,
+): Promise<unknown[]> {
+  return Promise.all([pool.end(), selectorReviewPool.end()]);
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
   const pool = postgresPool(requiredEnvironment(databaseUrlVariable));
+  const selectorReviewPool = postgresPool(
+    requiredEnvironment(selectorReviewDatabaseUrlVariable),
+  );
   if (!(await apiDatabaseReady(pool))) {
-    await pool.end();
+    await Promise.all([pool.end(), selectorReviewPool.end()]);
     throw new Error(
       `the native HTTP database must be migrated and connect as ${apiRole}`,
     );
   }
+  if (!(await selectorReviewDatabaseReady(selectorReviewPool))) {
+    await Promise.all([pool.end(), selectorReviewPool.end()]);
+    throw new Error(
+      `the selector review database must connect as ${selectorReviewRole}`,
+    );
+  }
   const authentication = await oidcAuthentication(authenticationConfig).catch(
     async (failure: unknown) => {
-      await pool.end();
+      await Promise.all([pool.end(), selectorReviewPool.end()]);
       throw failure;
     },
   );
@@ -127,11 +195,12 @@ async function main(): Promise<void> {
     undefined,
     undefined,
     artifactStore({ root: requiredEnvironment(artifactRootVariable) }),
+    selectorContextSource(pool, selectorReviewPool),
   );
   const app = createNativeHttpApp(web, authentication, {
     ready: () => apiDatabaseReady(pool),
   });
-  app.addHook("onClose", () => pool.end());
+  app.addHook("onClose", () => closePools(pool, selectorReviewPool));
   const drainMs = positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000);
   let shutdownStarted = false;
   const shutdown = async (): Promise<void> => {

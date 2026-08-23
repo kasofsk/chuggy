@@ -1,0 +1,78 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { selectorContextHttp } from "../../src/adapters/http/selectorContext.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+
+const body = Object.freeze({
+  version: 2,
+  observedAt: "2026-08-23T12:00:00.000Z",
+  observedAtEpochMs: 1_777_000_000_000,
+  reviewFeedback: [],
+  activeWork: {
+    running: 4,
+    launching: 3,
+    admitted: 2,
+    queued: 1,
+  },
+  capacity: {
+    account: "account",
+    accountMaximum: 8,
+    accountActive: 5,
+    accountReservationDeficit: 1,
+    clusterSlotsMax: 20,
+    clusterActive: 9,
+  },
+  backlog: {
+    project: { queued: 6, ceiling: 100 },
+    installation: { queued: 12, ceiling: 1_000 },
+  },
+});
+
+test("selector context client authenticates and strictly parses the response", async () => {
+  let authorization: string | null = null;
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      bearerToken: "token",
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 10_000,
+    },
+    (request, init) => {
+      authorization = new Headers(init?.headers).get("authorization");
+      assert.ok(request instanceof URL);
+      assert.equal(
+        request.href,
+        "https://native.example/api/v1/tenants/tenant/projects/project/selector-context",
+      );
+      return Promise.resolve(Response.json(body));
+    },
+  );
+  assert.deepEqual(
+    await source.context({
+      tenant: asTenantId("tenant"),
+      project: asProjectId("project"),
+    }),
+    body,
+  );
+  assert.equal(authorization, "Bearer token");
+});
+
+test("selector context client refuses oversized responses", async () => {
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      bearerToken: "token",
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 1,
+    },
+    () => Promise.resolve(Response.json(body)),
+  );
+  await assert.rejects(
+    source.context({
+      tenant: asTenantId("tenant"),
+      project: asProjectId("project"),
+    }),
+    /byte bound/u,
+  );
+});

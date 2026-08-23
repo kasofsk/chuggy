@@ -19,6 +19,7 @@ import type {
   ProjectRead,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
+import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
 import type {
   ExecutionPage,
   ExecutionResource,
@@ -221,6 +222,14 @@ export function ticketResponse(
 
 export function operationalStatusResponse(
   result: AuthorizedResult<ProjectOperationalStatus>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, result.value);
+}
+
+export function selectorOperationalContextResponse(
+  result: AuthorizedResult<SelectorOperationalContext>,
 ): NativeHttpResponse {
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))

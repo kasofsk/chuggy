@@ -143,6 +143,7 @@ async function countedProject(label: string): Promise<SchedulerProject> {
 
 test("the advisory context reports this project's own work and this cluster's total", async () => {
   const project = await countedProject("context");
+  const account = `${String(Buffer.byteLength(project.partition.tenant))}:${project.partition.tenant}${String(Buffer.byteLength(project.partition.project))}:${project.partition.project}`;
   assert.deepEqual(await context.context(project.partition), {
     activeWork: {
       partition: project.partition,
@@ -158,6 +159,8 @@ test("the advisory context reports this project's own work and this cluster's to
       accountActive: counted.admissions,
       accountReservationDeficit: counted.reserved - counted.admissions,
     },
+    account,
+    backlog: { project: counted.tasks, installation: counted.tasks + 1 },
   });
 });
 

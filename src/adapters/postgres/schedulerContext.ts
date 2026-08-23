@@ -70,6 +70,10 @@ interface BacklogRow {
   readonly installation_backlog: string | null;
 }
 
+interface AccountRow {
+  readonly account: string | null;
+}
+
 /** Reads one such counter, refusing the null the function it came from never returns. */
 function schedulerContextCounter(value: string | null, what: string): number {
   if (value === null) {
@@ -84,7 +88,7 @@ function schedulerContextCounter(value: string | null, what: string): number {
 async function postgresSelectorContext(
   pool: pg.Pool,
   partition: Partition,
-): Promise<SelectorExecutionContext> {
+): Promise<Pick<SelectorExecutionContext, "activeWork" | "capacity">> {
   const found = await pool.query<ActiveWorkRow>(
     sql`SELECT queued::text, admitted::text, launching::text, running::text,
                cluster_slots_max::text, cluster_active::text,
@@ -179,6 +183,39 @@ export function postgresExecutionContextRead(
   pool: pg.Pool,
 ): ExecutionContextRead {
   return {
-    context: (partition) => postgresSelectorContext(pool, partition),
+    context: async (partition) => {
+      const [context, backlog, account] = await Promise.all([
+        postgresSelectorContext(pool, partition),
+        pool.query<BacklogRow>(
+          sql`SELECT project_backlog::text, installation_backlog::text
+                FROM execution_backlog(${partition.tenant}, ${partition.project})`,
+        ),
+        pool.query<AccountRow>(
+          sql`SELECT project_capacity_account(${partition.tenant}, ${partition.project})::text AS account`,
+        ),
+      ]);
+      const backlogRow = backlog.rows[0];
+      const accountValue = account.rows[0]?.account;
+      if (backlogRow === undefined)
+        throw new Error("postgres scheduler context: backlog is absent");
+      if (accountValue === undefined || accountValue === null)
+        throw new Error(
+          "postgres scheduler context: capacity account is absent",
+        );
+      return {
+        ...context,
+        account: accountValue,
+        backlog: {
+          project: schedulerContextCounter(
+            backlogRow.project_backlog,
+            "project backlog",
+          ),
+          installation: schedulerContextCounter(
+            backlogRow.installation_backlog,
+            "installation backlog",
+          ),
+        },
+      };
+    },
   };
 }

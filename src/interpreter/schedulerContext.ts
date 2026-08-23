@@ -97,12 +97,20 @@ export interface SelectorExecutionContext {
   readonly capacity: AdvisoryCapacity;
 }
 
+export interface SelectorRuntimeExecutionContext extends SelectorExecutionContext {
+  readonly account: string;
+  readonly backlog: {
+    readonly project: number;
+    readonly installation: number;
+  };
+}
+
 /**
  * The advisory read the selector observes through the authenticated ticket
  * service. It answers for one project and reads no other.
  */
 export interface ExecutionContextRead {
-  context(partition: Partition): Promise<SelectorExecutionContext>;
+  context(partition: Partition): Promise<SelectorRuntimeExecutionContext>;
 }
 
 /** One registration with the tenant half of its key, which the arithmetic never reads. */

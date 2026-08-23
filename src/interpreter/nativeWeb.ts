@@ -63,6 +63,8 @@ import {
 } from "./operationsView.ts";
 import type { ExecutionId } from "./schedulerIdentity.ts";
 import { type PublicInstant } from "./publicResource.ts";
+import type { SelectorOperationalContext } from "./selector.ts";
+import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 
 declare const principalBrand: unique symbol;
@@ -280,6 +282,10 @@ export interface NativeWeb {
     principal: Principal,
     partition: Partition,
   ): Promise<AuthorizedResult<ProjectOperationalStatus>>;
+  selectorOperationalContext(
+    principal: Principal,
+    partition: Partition,
+  ): Promise<AuthorizedResult<SelectorOperationalContext>>;
   executions(
     principal: Principal,
     partition: Partition,
@@ -551,10 +557,15 @@ export function nativeWeb(
   inventory?: ProjectInventory,
   operationalReads?: OperationalReadStore,
   outputContents?: OutputContentPort,
+  selectorContexts?: SelectorOperationalContextRead,
 ): NativeWeb {
   return {
     ...nativeAuthoringMethods(access, authoring),
     ...nativeOperationalMethods(access, operationalReads, outputContents),
+    selectorOperationalContext: nativeSelectorContextMethod(
+      access,
+      selectorContexts,
+    ),
     submit: nativeSubmitMethod(access, inbox, backlog),
     operation: async (principal, partition, operation) =>
       (await access.authorize(principal, partition, "Read")) === undefined
@@ -588,23 +599,40 @@ export function nativeWeb(
               checkedNotificationCursor(cursor),
             ),
           },
-    dispatchView: async (principal, partition, query) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { result: "NotFound" };
-      if (dispatchViews === undefined)
-        throw new Error("native web: no dispatch-view store was composed");
-      return {
-        result: "Authorized",
-        value: await dispatchViews.read(
-          partition,
-          checkedDispatchViewQuery(query),
-        ),
-      };
-    },
+    dispatchView: nativeDispatchViewMethod(access, dispatchViews),
     projectInventory: async (principal, after, limit) => {
       if (inventory === undefined)
         throw new Error("native web: no project inventory was composed");
       return inventory.projects(principal, after, checkedInventoryLimit(limit));
     },
+  };
+}
+
+function nativeDispatchViewMethod(
+  access: ProjectAccess,
+  views?: DispatchViewStore,
+): NativeWeb["dispatchView"] {
+  return async (principal, partition, query) => {
+    if ((await access.authorize(principal, partition, "Read")) === undefined)
+      return { result: "NotFound" };
+    if (views === undefined)
+      throw new Error("native web: no dispatch-view store was composed");
+    return {
+      result: "Authorized",
+      value: await views.read(partition, checkedDispatchViewQuery(query)),
+    };
+  };
+}
+
+function nativeSelectorContextMethod(
+  access: ProjectAccess,
+  contexts?: SelectorOperationalContextRead,
+): NativeWeb["selectorOperationalContext"] {
+  return async (principal, partition) => {
+    if ((await access.authorize(principal, partition, "Read")) === undefined)
+      return { result: "NotFound" };
+    if (contexts === undefined)
+      throw new Error("native web: no selector context source was composed");
+    return { result: "Authorized", value: await contexts.context(partition) };
   };
 }
