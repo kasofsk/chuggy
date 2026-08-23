@@ -50,21 +50,19 @@ const selectorInteractionContext = {
     observedAt: "2026-08-20T12:00:00.000Z",
     observedAtEpochMs: 1_777_000_000_000,
     reviewFeedback: [],
-    activeWork: [],
-    projectCapacity: {
+    activeWork: { queued: 0, admitted: 0, launching: 0, running: 0 },
+    capacity: {
       account: "project",
-      allocated: 0,
-      limit: 1,
-      available: 1,
+      accountMaximum: 1,
+      accountActive: 0,
+      accountReservationDeficit: 0,
+      clusterSlotsMax: 1,
+      clusterActive: 0,
     },
-    clusterCapacity: {
-      visibility: "AuthorizedAggregate",
-      allocated: 0,
-      limit: 1,
-      available: 1,
-      pressure: "Normal",
+    backlog: {
+      project: { queued: 0, ceiling: 10 },
+      installation: { queued: 0, ceiling: 100 },
     },
-    executionBacklog: { queued: 0, ceiling: 10, dispatchAllowed: true },
   },
 } as const;
 

@@ -162,30 +162,37 @@ export interface SelectorOperationalContext {
   readonly observedAt: string;
   readonly observedAtEpochMs: number;
   readonly reviewFeedback: readonly SelectorReviewFeedback[];
-  readonly activeWork: readonly {
-    readonly ticket: DispatchCandidate["ticket"];
-    readonly queuedTasks: number;
-    readonly admittedTasks: number;
-    readonly runningAttempts: number;
-  }[];
-  readonly projectCapacity: {
-    readonly account: string;
-    readonly allocated: number;
-    readonly limit: number;
-    readonly available: number;
-  };
-  readonly clusterCapacity: {
-    readonly visibility: "AuthorizedAggregate";
-    readonly allocated: number;
-    readonly limit: number;
-    readonly available: number;
-    readonly pressure: "Normal" | "Constrained" | "Exhausted" | "Unknown";
-  };
-  readonly executionBacklog: {
+  readonly activeWork: {
     readonly queued: number;
-    readonly ceiling: number;
-    readonly dispatchAllowed: boolean;
+    readonly admitted: number;
+    readonly launching: number;
+    readonly running: number;
   };
+  readonly capacity: {
+    readonly account: string;
+    readonly accountMaximum: number;
+    readonly accountActive: number;
+    readonly accountReservationDeficit: number;
+    readonly clusterSlotsMax: number;
+    readonly clusterActive: number;
+  };
+  readonly backlog: {
+    readonly project: { readonly queued: number; readonly ceiling: number };
+    readonly installation: {
+      readonly queued: number;
+      readonly ceiling: number;
+    };
+  };
+}
+
+/** Whether both scheduler-owned backlog constraints currently admit dispatch. */
+export function selectorBacklogsAdmitDispatch(
+  backlog: SelectorOperationalContext["backlog"],
+): boolean {
+  return (
+    backlog.project.queued < backlog.project.ceiling &&
+    backlog.installation.queued < backlog.installation.ceiling
+  );
 }
 
 export interface SelectorObservation {

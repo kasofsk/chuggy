@@ -95,33 +95,29 @@ const selectorContextSchema = z
               ),
           )
           .readonly(),
-        activeWork: z
-          .array(
-            z.object({
-              ticket: z.number().int().safe().positive().transform(asTicketId),
-              queuedTasks: z.number().int().safe().nonnegative(),
-              admittedTasks: z.number().int().safe().nonnegative(),
-              runningAttempts: z.number().int().safe().nonnegative(),
-            }),
-          )
-          .readonly(),
-        projectCapacity: z.object({
-          account: z.string(),
-          allocated: z.number().int().safe().nonnegative(),
-          limit: z.number().int().safe().nonnegative(),
-          available: z.number().int().safe().nonnegative(),
-        }),
-        clusterCapacity: z.object({
-          visibility: z.literal("AuthorizedAggregate"),
-          allocated: z.number().int().safe().nonnegative(),
-          limit: z.number().int().safe().nonnegative(),
-          available: z.number().int().safe().nonnegative(),
-          pressure: z.enum(["Normal", "Constrained", "Exhausted", "Unknown"]),
-        }),
-        executionBacklog: z.object({
+        activeWork: z.object({
           queued: z.number().int().safe().nonnegative(),
-          ceiling: z.number().int().safe().nonnegative(),
-          dispatchAllowed: z.boolean(),
+          admitted: z.number().int().safe().nonnegative(),
+          launching: z.number().int().safe().nonnegative(),
+          running: z.number().int().safe().nonnegative(),
+        }),
+        capacity: z.object({
+          account: z.string(),
+          accountMaximum: z.number().int().safe().nonnegative(),
+          accountActive: z.number().int().safe().nonnegative(),
+          accountReservationDeficit: z.number().int().safe().nonnegative(),
+          clusterSlotsMax: z.number().int().safe().nonnegative(),
+          clusterActive: z.number().int().safe().nonnegative(),
+        }),
+        backlog: z.object({
+          project: z.object({
+            queued: z.number().int().safe().nonnegative(),
+            ceiling: z.number().int().safe().positive(),
+          }),
+          installation: z.object({
+            queued: z.number().int().safe().nonnegative(),
+            ceiling: z.number().int().safe().positive(),
+          }),
         }),
       })
       .readonly(),
