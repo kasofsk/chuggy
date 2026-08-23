@@ -109,17 +109,11 @@ As `chuggy_owner` and as nobody else, over the same forwarded port:
 
 ```sh
 owner_url="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy_rehearsal"
-export CHUG_PG_URL="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy"
 CHUG_MIGRATE_DATABASE_URL="$owner_url" npm run migrate
 ```
 
 It prints the versions it applied, or says the schema was already current, and
 running it twice is how you see the difference.
-
-`CHUG_PG_URL` is set here because the gate in the database half of `Prove it`
-reads that one, and it names a **different** database on purpose: that gate
-migrates and litters whatever it is pointed at, which the control plane's own
-database must not be. The rig's `chuggy` is what it gets.
 
 A ledger this checkout does not declare — a version it has never heard of, or
 one under another name — is a **could-not-run** that applies nothing and exits
@@ -330,13 +324,13 @@ function needs and the one whose absence a migration reports as applied.
 
 Each names the role it authenticated as and a client address that is the
 probe's rather than `127.0.0.1`, which is what makes it a password check rather
-than a trust match; nothing else in this procedure is one, because the gate
-below reaches the group roles with `SET LOCAL ROLE` on a connection it already
-holds and never authenticates as a login role at all. And each ends in `true`
-for a group the role holds only through the grant `postgres-roles.sql` made:
-revoke that grant and the same call prints `false` with every other field
-unchanged. Without these calls the passwords, the LOGIN attribute and the
-membership are exercised by nothing.
+than a trust match; nothing else in this procedure is one, because the gates
+below connect as the superuser and reach the group roles with `SET LOCAL ROLE`
+on that connection, never authenticating as a login role at all. And each ends
+in `true` for a group the role holds only through the grant
+`postgres-roles.sql` made: revoke that grant and the same call prints `false`
+with every other field unchanged. Without these calls the passwords, the LOGIN
+attribute and the membership are exercised by nothing.
 
 ### The egress half
 
@@ -406,20 +400,37 @@ accepts an established flow before it consults either.
 
 ### The database half
 
-With `CHUG_PG_URL` set as above, the gate uses that database as it stands —
-it starts no server and creates no database of its own — so the harness
-migrates the one this procedure pointed it at. It then replays every claim the
-adapter makes about what the server does, including the one that matters here:
-what each group role is refused. It leaves its partitions behind in
-whatever database it is pointed at, which is a rehearsal's residue and not
-something to point at a database anyone depends on.
+Two gates read `CHUG_PG_URL`, and neither can be given the control plane's own
+identity. `.chug/tasks/check-queries.sh` migrates the database it names and
+leaves the schema behind; `.chug/tasks/check-postgres.sh` migrates a template
+database beside it and clones one per worker, which is why its header requires
+the role to be able to create and drop sibling databases. `chuggy_owner` can do
+neither: it is `NOCREATEDB`, and the rig's `chuggy` — the other database this
+file names — is at migration 2, which the top of this file says that identity
+cannot advance. So the gates get the superuser and a database made for the run,
+which is nobody's control plane:
+
+```sh
+psql -h 127.0.0.1 -p 55440 -U postgres -d postgres -c 'CREATE DATABASE chuggy_gate'
+export CHUG_PG_URL="postgres://postgres:$PGPASSWORD@127.0.0.1:55440/chuggy_gate"
+.chug/tasks/check-queries.sh
+.chug/tasks/check-postgres.sh
+```
+
+Between them they ask the server whether every tagged query and row type is
+true, and replay every claim the adapter makes about what the server does —
+including the one that matters here: what each group role is refused. What they
+leave behind is a migrated schema and its partitions, which is why the database
+is one made for the run and dropped with the rest.
 
 ### Done with them
 
-The probe carries the Secret, so it does not outlive the proofs; the forwarded
-port is this host's rather than the cluster's, so nothing below reverses it.
+The probe carries the Secret, so it does not outlive the proofs, and the gates'
+database is a rehearsal's residue; the forwarded port is this host's rather than
+the cluster's, so nothing below reverses it.
 
 ```sh
+psql -h 127.0.0.1 -p 55440 -U postgres -d postgres -c 'DROP DATABASE chuggy_gate'
 kubectl -n chuggy delete pod probe
 kill "$forward"
 ```
