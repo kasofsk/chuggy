@@ -199,6 +199,16 @@ export type PostgresCompatibleMigration =
 
 class IncompatibleMigration extends Error {}
 
+function postgresCompatibleTarget(
+  deployment: RuntimeDeploymentSchema,
+): readonly RuntimeSchemaMigration[] {
+  const length = Math.min(
+    deployment.current.compatible.length,
+    deployment.retainedPrevious.compatible.length,
+  );
+  return deployment.current.compatible.slice(0, length);
+}
+
 /** Plans and applies one rollback-compatible target under the migration lock. */
 export async function postgresMigrateCompatible(
   pool: pg.Pool,
@@ -211,7 +221,7 @@ export async function postgresMigrateCompatible(
       );
       await client.query(migrationLedger);
       const applied = await postgresAppliedMigrations(client);
-      const target = migrations.map(({ version, name }) => ({ version, name }));
+      const target = postgresCompatibleTarget(deployment);
       const plan = runtimeMigrationPlan(applied, target, deployment);
       if (plan.planned === "Incompatible") throw new IncompatibleMigration();
       const pending = new Set(plan.pending.map(({ version }) => version));

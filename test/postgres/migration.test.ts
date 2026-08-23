@@ -310,7 +310,7 @@ test("an incompatible rollout leaves an untouched database untouched", async () 
   }
 });
 
-test("a staged migration waits until the publishing image is retained", async () => {
+test("a staged migration advances after its publishing image is retained", async () => {
   const database = `chuggy_stage_${randomUUID().replaceAll("-", "")}`;
   const admin = postgresPool(postgresHarnessUrl());
   await admin.query(`CREATE DATABASE ${database}`);
@@ -330,7 +330,7 @@ test("a staged migration waits until the publishing image is retained", async ()
         current: currentRuntimeSchemaContract,
         retainedPrevious: retainedImageContract,
       }),
-      { migrated: "CouldNotRun" },
+      { migrated: "Applied", versions: [] },
     );
     assert.equal(
       await schemaCompatibilityPrecondition(
@@ -344,6 +344,16 @@ test("a staged migration waits until the publishing image is retained", async ()
       retainedImageContract.compatible,
     );
     assert.equal(currentRuntimeSchemaContract.compatible.at(-1)?.version, 17);
+    const consumingContract = runtimeSchemaContract(
+      currentRuntimeSchemaContract.compatible,
+    );
+    assert.deepEqual(
+      await postgresMigrateCompatible(subject, {
+        current: consumingContract,
+        retainedPrevious: currentRuntimeSchemaContract,
+      }),
+      { migrated: "Applied", versions: [17] },
+    );
   } finally {
     await subject.end();
     await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);
