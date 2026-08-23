@@ -11,6 +11,7 @@ import {
   notificationPublishFunction,
   projectAuthorizationFunction,
   schedulerRole,
+  selectorReviewRole,
   selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
@@ -34,6 +35,7 @@ test("every runtime role may read only the migration ledger contract", async () 
     apiRole,
     ticketServiceRole,
     selectorServiceRole,
+    selectorReviewRole,
     schedulerRole,
     finalizerRole,
   ]) {

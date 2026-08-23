@@ -47,6 +47,14 @@
  * wrong group, the other cannot authenticate at all. So a role's grant, its
  * password variable and that variable's environment name are each checked
  * against the role's own name rather than against the collection.
+ *
+ * AND A GROUP A COMMAND ASSERTS HAS TO SATISFY THE PRECONDITIONS EVERY COMMAND
+ * SHARES. The only one of those reads the migration ledger, so a group role a
+ * `src/roots/` command connects as and no migration grants that read is a pool
+ * that authenticates and is then refused the first statement it makes — which
+ * is what the API's selector-review pool was, and the deployment could not work
+ * around it. The two sides are matched rather than listed, so a group nothing
+ * connects as is left without the read and a grant to one is red as well.
  */
 
 import assert from "node:assert/strict";
@@ -80,6 +88,19 @@ function migrationReceivingRoles(): ReadonlySet<string> {
     for (const statement of migration.statements)
       for (const [, role] of statement.matchAll(/OWNER TO (chuggy_\w+)/gu))
         if (role !== undefined) found.add(role);
+  return found;
+}
+
+/** Every role the migrations let read the ledger the shared precondition reads. */
+function migrationLedgerReaders(): ReadonlySet<string> {
+  const found = new Set<string>();
+  for (const migration of migrations)
+    for (const statement of migration.statements)
+      for (const [, granted] of statement.matchAll(
+        /GRANT SELECT ON schema_migration TO ([\s\S]*)/gu,
+      ))
+        for (const [role] of String(granted).matchAll(/chuggy_\w+/gu))
+          found.add(role);
   return found;
 }
 
@@ -180,6 +201,14 @@ test("every group role a serving command asserts is granted to a login role", ()
   assert.deepEqual(
     rolesFileRepeated(/GRANT (chuggy_\w+) TO chuggy_\w+_login;/gu),
     rootAssertedRoles(),
+  );
+});
+
+test("exactly the groups a serving command asserts may read the ledger", () => {
+  assert.deepEqual(
+    migrationLedgerReaders(),
+    rootAssertedRoles(),
+    "a group role a src/roots/ command connects as reads schema_migration before it serves, and a group no command connects as never does",
   );
 });
 

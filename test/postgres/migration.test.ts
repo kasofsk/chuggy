@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import {
+  accountIdentityFunction,
   migrationLedger,
   migrations,
 } from "../../src/adapters/postgres/schema.ts";
@@ -41,14 +42,15 @@ const retainedImageRequired = [
   { version: 13, name: "the durable finalizer" },
   { version: 14, name: "native project access" },
   { version: 15, name: "native operational reads" },
+  { version: 16, name: "runtime schema readiness" },
 ] as const;
 const publishingImageRequired = [
   ...retainedImageRequired,
-  { version: 16, name: "runtime schema readiness" },
+  { version: 17, name: "selector context account read" },
 ] as const;
 const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
   ...publishingImageRequired,
-  { version: 17, name: "selector context account read" },
+  { version: 18, name: "selector review schema readiness" },
 ]);
 
 const declaredLatest = Math.max(...migrations.map(({ version }) => version));
@@ -188,7 +190,7 @@ async function assertDivergentMigrationRefused(
     retainedImageContract.required,
     [
       ...retainedImageContract.compatible.slice(0, -1),
-      { version: 17, name: "unknown migration" },
+      { version: 18, name: "unknown migration" },
     ],
   );
   assert.deepEqual(
@@ -204,7 +206,7 @@ async function assertDivergentMigrationRefused(
         "SELECT version FROM schema_migration ORDER BY version DESC LIMIT 1",
       )
     ).rows,
-    [{ version: 16 }],
+    [{ version: declaredLatest - 1 }],
   );
 }
 
@@ -401,7 +403,7 @@ test("a staged migration advances after its publishing image is retained", async
         current: currentRuntimeSchemaContract,
         retainedPrevious: retainedImageContract,
       }),
-      { migrated: "Applied", versions: [17] },
+      { migrated: "Applied", versions: [18] },
     );
     assert.equal(
       await schemaCompatibilityPrecondition(
@@ -472,21 +474,27 @@ test("a ledger carrying a version this image does not declare is refused untouch
 });
 
 test("a statement that fails is a failure and not a could-not-run, and takes its ledger row with it", async () => {
+  const sabotaged = migrations.findLast(({ statements }) =>
+    statements.some((statement) => statement.includes(accountIdentityFunction)),
+  )?.version;
+  assert.notEqual(sabotaged, undefined, "no migration names the function");
+  const version = sabotaged ?? 0;
   await migrationDatabase("failing", async (subject, url) => {
-    await migrationSeedApplied(subject, declaredLatest);
+    await migrationSeedApplied(subject, version);
     await subject.query(
-      "ALTER FUNCTION project_capacity_account(text,text) RENAME TO project_capacity_account_renamed",
+      `ALTER FUNCTION ${accountIdentityFunction}(text,text)
+         RENAME TO ${accountIdentityFunction}_renamed`,
     );
     const run = await migrationCommandRun(url);
     assert.equal(run.code, 1);
-    assert.match(run.report, /project_capacity_account/u);
+    assert.match(run.report, new RegExp(accountIdentityFunction, "u"));
     assert.equal(
       (
         await subject.query<{ latest: number | null }>(
           "SELECT max(version) AS latest FROM schema_migration",
         )
       ).rows[0]?.latest,
-      declaredLatest - 1,
+      version - 1,
     );
   });
 });

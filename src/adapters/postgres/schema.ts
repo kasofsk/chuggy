@@ -3595,4 +3595,9 @@ export const migrations: readonly Migration[] = [
       `GRANT EXECUTE ON FUNCTION ${accountIdentityFunction}(text,text) TO ${apiRole}`,
     ],
   },
+  {
+    version: 18,
+    name: "selector review schema readiness",
+    statements: [`GRANT SELECT ON schema_migration TO ${selectorReviewRole}`],
+  },
 ];
