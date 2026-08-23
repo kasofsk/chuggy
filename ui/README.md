@@ -9,11 +9,15 @@ dependency, so what is in this directory is what a browser runs.
 - `ui/index.html` and `ui/styles.css` — the page and its one stylesheet.
 - `ui/app/` — the console's decisions: the wire, the DTO parsers, PKCE and the
   authorization requests, the polling and paging bounds, the operation
-  machine, panel state and the view models. Nothing here touches a document, a
-  clock or the network, which is why `tsconfig.json` typechecks it and
-  `test/ui/` covers it.
+  machine, panel state, the outcome-to-state mapping and the view models.
+  Nothing here touches a document, a clock or the network, which is why
+  `tsconfig.json` typechecks it and `test/ui/` covers it.
 - `ui/dom/` — the effects: the fetch, session storage, the timer and the
-  document writes. It holds no decision worth a test.
+  document writes. It holds no decision, and so no test.
+
+Both halves of that split are rules in `.dependency-cruiser.cjs` rather than a
+convention: this directory reaches nothing outside itself, and `ui/app/`
+reaches nothing in `ui/dom/`.
 - `ui/config.example.json` — the shape of the runtime configuration below.
 
 ## Runtime configuration

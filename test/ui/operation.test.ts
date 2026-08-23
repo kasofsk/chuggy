@@ -16,6 +16,7 @@ import {
   operationSubmitting,
   operationTerminalStates,
 } from "../../ui/app/operation.js";
+import { submissionEvent } from "../../ui/app/outcomes.js";
 import { candidateRows, manualDispatchMutation } from "../../ui/app/views.js";
 import { parseDispatchView } from "../../ui/app/resources.js";
 
@@ -103,7 +104,7 @@ test("a refusal reaches the operator by its code", () => {
   );
 });
 
-test("a backlogged submission is a state, not a discarded error", () => {
+test("a backlogged submission is a state the caller must act on again", () => {
   const step = operationAdvanced(operationSubmitting(4), {
     event: "Deferred",
     code: "DispatchBacklog",
@@ -114,8 +115,46 @@ test("a backlogged submission is a state, not a discarded error", () => {
     ticket: 4,
     code: "DispatchBacklog",
     retryAfterSeconds: 9,
+    attempts: 1,
   });
   assert.equal(operationPolls(step), true);
+});
+
+test("a server that keeps deferring is abandoned inside the same budget", () => {
+  let step = operationSubmitting(4);
+  let sends = 0;
+  while (operationPolls(step) || step.step === "Submitting") {
+    step = operationAdvanced(
+      step,
+      submissionEvent({
+        outcome: "Retryable",
+        code: "DispatchBacklog",
+        retryAfterSeconds: 1,
+      }),
+    );
+    sends += 1;
+    assert.ok(
+      sends <= operationAttemptsMax,
+      "the backlog retry was not bounded",
+    );
+  }
+  assert.equal(step.step, "Abandoned");
+  assert.equal(sends, operationAttemptsMax);
+});
+
+test("a deferral then an acceptance keeps the budget already spent", () => {
+  const backlogged = operationAdvanced(operationSubmitting(4), {
+    event: "Deferred",
+    code: "DispatchBacklog",
+    retryAfterSeconds: 1,
+  });
+  const following = operationAdvanced(backlogged, {
+    event: "Accepted",
+    operation: "o1",
+    state: "Pending",
+  });
+  assert.equal(following.step, "Following");
+  assert.equal(following.step === "Following" ? following.attempts : -1, 1);
 });
 
 test("an operation that stays pending is abandoned inside the attempt budget", () => {

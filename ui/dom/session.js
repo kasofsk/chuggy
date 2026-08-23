@@ -51,15 +51,13 @@ function sessionTakeTransaction() {
 }
 
 async function sessionExchanged(request) {
-  const response = await fetch(request.url, {
-    method: request.method,
-    headers: request.headers,
-    body: request.body,
-    credentials: "omit",
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error("the token endpoint refused the exchange");
-  return parseTokenResponse(await response.json());
+  return parseTokenResponse(
+    await readJson(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+    }),
+  );
 }
 
 async function sessionLoad(held) {

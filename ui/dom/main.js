@@ -9,6 +9,7 @@
 
 import { createConsole } from "./console.js";
 import { createSession } from "./session.js";
+import { send } from "./transport.js";
 import { draw } from "./view.js";
 
 const nowMs = () => Date.now();
@@ -60,7 +61,7 @@ page.select.addEventListener("change", () => {
 async function signedIn() {
   page.boot = { step: "SignedIn", reason: "" };
   page.label = session.label();
-  page.controller = createConsole({ session, nowMs, onChanged: changed });
+  page.controller = createConsole({ session, nowMs, send, onChanged: changed });
   changed();
   await page.controller.loadProjects();
 }

@@ -1,10 +1,11 @@
 /**
  * Following a submitted operation from its 202 to a terminal state.
  *
- * The machine is a pure step over what the last poll returned; the caller owns
- * the timer and performs the request. Every path out of `Following` is bounded
- * by the attempt budget, so a stuck operation ends as a state the console can
- * draw rather than as a loop.
+ * The machine is a pure step over what the last request returned; the caller
+ * owns the timer and performs the request. One attempt budget spans the whole
+ * follow — a submission the server keeps deferring and an operation that stays
+ * pending draw from the same count — so a stuck dispatch ends as a state the
+ * console can draw rather than as a loop.
  */
 
 export const operationAttemptsMax = 40;
@@ -18,8 +19,9 @@ export const operationTerminalStates = [
 ];
 
 /**
- * @typedef {{ step: "Submitting", ticket: number }
- *   | { step: "Backlogged", ticket: number, code: string, retryAfterSeconds: number }
+ * @typedef {{ step: "Submitting", ticket: number, attempts: number }
+ *   | { step: "Backlogged", ticket: number, code: string,
+ *        retryAfterSeconds: number, attempts: number }
  *   | { step: "Following", ticket: number, operation: string, attempts: number }
  *   | { step: "Settled", ticket: number, operation: string, state: string,
  *        refusalCode: string | undefined }
@@ -39,7 +41,18 @@ export const operationTerminalStates = [
  * @returns {OperationStep}
  */
 export function operationSubmitting(ticket) {
-  return { step: /** @type {const} */ ("Submitting"), ticket };
+  return { step: /** @type {const} */ ("Submitting"), ticket, attempts: 0 };
+}
+
+/**
+ * The budget a step has already spent, whichever way it spent it.
+ *
+ * @param {OperationStep} step
+ */
+function operationAttempts(step) {
+  return step.step === "Settled" || step.step === "Abandoned"
+    ? 0
+    : step.attempts;
 }
 
 /**
@@ -95,7 +108,28 @@ function following(step, operation, attempts) {
 function operationAccepted(step, event) {
   return operationTerminalStates.includes(event.state)
     ? settled(step, event.operation, event.state, undefined)
-    : following(step, event.operation, 0);
+    : following(step, event.operation, operationAttempts(step));
+}
+
+/**
+ * A deferral spends the budget like a poll does: a server that keeps answering
+ * `DispatchBacklog` would otherwise be retried forever.
+ *
+ * @param {OperationStep} step
+ * @param {{ code: string, retryAfterSeconds: number }} event
+ * @returns {OperationStep}
+ */
+function operationDeferred(step, event) {
+  const attempts = operationAttempts(step) + 1;
+  return attempts >= operationAttemptsMax
+    ? abandoned(step, "the server is still deferring after the attempt budget")
+    : {
+        step: /** @type {const} */ ("Backlogged"),
+        ticket: step.ticket,
+        code: event.code,
+        retryAfterSeconds: event.retryAfterSeconds,
+        attempts,
+      };
 }
 
 /**
@@ -124,12 +158,7 @@ export function operationAdvanced(step, event) {
     case "Accepted":
       return operationAccepted(step, event);
     case "Deferred":
-      return {
-        step: /** @type {const} */ ("Backlogged"),
-        ticket: step.ticket,
-        code: event.code,
-        retryAfterSeconds: event.retryAfterSeconds,
-      };
+      return operationDeferred(step, event);
     case "Polled":
       return operationPolled(step, event);
     case "Absent":
@@ -142,7 +171,8 @@ export function operationAdvanced(step, event) {
 }
 
 /**
- * Whether the caller should schedule another poll for this step.
+ * Whether the caller has another request to make for this step: a poll while
+ * following, and a resubmission of the same command while backlogged.
  *
  * @param {OperationStep} step
  */

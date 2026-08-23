@@ -14,6 +14,7 @@ import {
   nativeHttpBodyBytesMax,
   nativeHttpCursorCharsMax,
   nativeHttpMediaType,
+  nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
 } from "../../src/adapters/http/contract.ts";
 import { projectPageLimitMax } from "../../src/interpreter/nativeWeb.ts";
@@ -55,6 +56,7 @@ test("the console's wire constants are the server's", () => {
   assert.equal(bodyBytesMax, nativeHttpBodyBytesMax);
   assert.equal(pageLimitMax, projectPageLimitMax);
   assert.equal(pageLimitMax, executionPageLimitMax);
+  assert.equal(pathSegmentCharsMax, nativeHttpPathSegmentCharsMax);
 });
 
 test("every path the console builds is a route the server registers", () => {

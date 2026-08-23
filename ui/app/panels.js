@@ -86,6 +86,20 @@ export function panelHeld(panel) {
 }
 
 /**
+ * Which panel a notification kind puts behind. An authoring event changes
+ * nothing the console draws, so it dirties nothing.
+ *
+ * @param {string} kind
+ * @returns {string | undefined}
+ */
+export function panelForKind(kind) {
+  if (kind === "Ticket" || kind === "Project") return "tickets";
+  if (kind === "Operation") return "candidates";
+  if (kind === "Configuration" || kind === "Draft") return undefined;
+  return "executions";
+}
+
+/**
  * @param {Panel} panel
  * @param {number} nowMs
  * @returns {{ verdict: "NoEvidence" }

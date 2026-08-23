@@ -20,13 +20,20 @@ import type { OutputRenderer } from "../../src/interpreter/operationsView.ts";
 import type { ProjectOperationalStatus } from "../../src/interpreter/operationsView.ts";
 import type { OperationRefusalCode } from "../../src/interpreter/nativeWeb.ts";
 import type { OperationState } from "../../src/interpreter/operationInbox.ts";
+import { allArtifactRoles } from "../../src/interpreter/resultManifest.ts";
+import type { ExecutionResultResource } from "../../src/interpreter/operationsView.ts";
+import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
+import type { NotificationBatch } from "../../src/interpreter/notifications.ts";
 import type { NotificationKind } from "../../src/interpreter/notifications.ts";
 import {
+  artifactRoles,
   attemptStates,
+  dispatchViewResults,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
   notificationKinds,
+  notificationResults,
   operationRefusalCodes,
   operationStates,
   outputRenderers,
@@ -40,6 +47,7 @@ import {
   parseProject,
   parseProjectsPage,
   phaseRoster,
+  resultVerdicts,
   schedulerFreshnessRoster,
 } from "../../ui/app/resources.js";
 
@@ -54,6 +62,7 @@ test("the phase and scheduler rosters are the model's", () => {
   assert.deepEqual(executionStatuses, [...allExecutionStatuses]);
   assert.deepEqual(executionOutcomes, [...allExecutionOutcomes]);
   assert.deepEqual(attemptStates, [...allAttemptStates]);
+  assert.deepEqual(artifactRoles, [...allArtifactRoles]);
 });
 
 test("the rosters with no runtime list are exhaustive over their unions", () => {
@@ -95,12 +104,27 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
   > = {
     Unknown: true,
   };
+  const verdicts: Record<ExecutionResultResource["verdict"], true> = {
+    Pass: true,
+    Fail: true,
+  };
+  const dispatchResults: Record<DispatchViewPage["result"], true> = {
+    Page: true,
+    Reset: true,
+  };
+  const notificationBatches: Record<NotificationBatch["result"], true> = {
+    Events: true,
+    Reset: true,
+  };
   assert.deepEqual(sorted(executionTaskKinds), keysOf(kinds));
   assert.deepEqual(sorted(outputRenderers), keysOf(renderers));
   assert.deepEqual(sorted(operationStates), keysOf(states));
   assert.deepEqual(sorted(operationRefusalCodes), keysOf(refusals));
   assert.deepEqual(sorted(notificationKinds), keysOf(notifications));
   assert.deepEqual(sorted(schedulerFreshnessRoster), keysOf(freshness));
+  assert.deepEqual(sorted(resultVerdicts), keysOf(verdicts));
+  assert.deepEqual(sorted(dispatchViewResults), keysOf(dispatchResults));
+  assert.deepEqual(sorted(notificationResults), keysOf(notificationBatches));
 });
 
 test("a projects page carries its cursor even when the page is short", () => {
@@ -341,6 +365,27 @@ test("an artifact with no declared output offers no preview", () => {
     },
   });
   assert.equal(detail.result?.artifacts[0]?.renderer, undefined);
+});
+
+test("an artifact with no content field is a parse failure, not an empty preview", () => {
+  assert.throws(
+    () =>
+      parseArtifactContent({
+        read: "Content",
+        mediaType: "text/plain",
+        renderer: "Text",
+      }),
+    TypeError,
+  );
+  assert.equal(
+    parseArtifactContent({
+      read: "Content",
+      mediaType: "text/plain",
+      renderer: "Text",
+      content: "",
+    }).content,
+    "",
+  );
 });
 
 test("artifact content arrives as text with the renderer the server chose", () => {

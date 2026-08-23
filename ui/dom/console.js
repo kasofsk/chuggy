@@ -5,10 +5,15 @@
  * console cannot fan out across the installation's in-flight request cap. Each
  * panel keeps its own bounded poll state, and when all of them have stopped the
  * timer stops with them until an operator resumes.
+ *
+ * Every response reaches a panel through `readResult`, which is what makes a
+ * body this console cannot read a drawn reason rather than a rejected promise
+ * and a panel that reads forever.
  */
 
 import {
   panelDeferred,
+  panelForKind,
   panelLoading,
   panelReady,
   panelUnavailable,
@@ -34,11 +39,15 @@ import {
   parseExecution,
   parseExecutionsPage,
   parseNotifications,
-  parseOperation,
   parseOperationalStatus,
   parseProject,
   parseProjectsPage,
 } from "../app/resources.js";
+import {
+  operationEvent,
+  readResult,
+  submissionEvent,
+} from "../app/outcomes.js";
 import {
   artifactRequest,
   dispatchViewRequest,
@@ -54,9 +63,12 @@ import {
   submissionRequest,
   ticketsRequest,
 } from "../app/protocol.js";
-import { operationAdvanced, operationSubmitting } from "../app/operation.js";
+import {
+  operationAdvanced,
+  operationPolls,
+  operationSubmitting,
+} from "../app/operation.js";
 import { manualDispatchMutation } from "../app/views.js";
-import { send } from "./transport.js";
 
 export const operationsShownMax = 12;
 
@@ -118,62 +130,6 @@ function byName(make) {
   return Object.fromEntries(readers.map((reader) => [reader.name, make()]));
 }
 
-/** Which panel a notification kind puts behind; an unmapped kind dirties nothing. */
-export function panelForKind(kind) {
-  if (kind === "Ticket" || kind === "Project") return "tickets";
-  if (kind === "Operation") return "candidates";
-  if (kind === "Configuration" || kind === "Draft") return undefined;
-  return "executions";
-}
-
-export function unavailableReason(outcome) {
-  if (outcome.outcome === "Absent")
-    return "The resource is absent, or this account cannot see it.";
-  if (outcome.outcome === "Unauthenticated")
-    return "The session is no longer accepted.";
-  if (outcome.outcome === "Conflict")
-    return `The server answered ${outcome.code}.`;
-  return `The read failed: ${outcome.code}.`;
-}
-
-export function submissionEvent(outcome) {
-  if (outcome.outcome === "Accepted") {
-    const accepted = parseOperation(outcome.body);
-    return {
-      event: "Accepted",
-      operation: accepted.operation,
-      state: accepted.state,
-    };
-  }
-  if (outcome.outcome === "Retryable")
-    return {
-      event: "Deferred",
-      code: outcome.code,
-      retryAfterSeconds: outcome.retryAfterSeconds,
-    };
-  if (outcome.outcome === "Absent") return { event: "Absent" };
-  return {
-    event: "Faulted",
-    reason: `the submission answered ${outcome.code}`,
-  };
-}
-
-export function operationEvent(outcome) {
-  if (outcome.outcome === "Ok") {
-    const resource = parseOperation(outcome.body);
-    return {
-      event: "Polled",
-      state: resource.state,
-      refusalCode: resource.refusalCode,
-    };
-  }
-  if (outcome.outcome === "Absent") return { event: "Absent" };
-  return {
-    event: "Faulted",
-    reason: `the operation read answered ${outcome.code}`,
-  };
-}
-
 function consoleDelay(waitMs) {
   return new Promise((resolve) => {
     setTimeout(resolve, waitMs);
@@ -191,31 +147,34 @@ function consoleDirty(desk) {
   for (const reader of readers) desk.state.polledAtMs[reader.name] = 0;
 }
 
+/** The token, or `undefined` once the session has ended and cannot be renewed. */
+async function consoleToken(desk) {
+  return desk.session.accessToken();
+}
+
 function consoleApply(desk, reader, outcome, at) {
   const panel = desk.state.panels[reader.name];
-  if (outcome.outcome === "Ok") {
-    desk.state.panels[reader.name] = panelReady(reader.parse(outcome.body), at);
+  const read = readResult(outcome, reader.parse);
+  if (read.result === "Value") {
+    desk.state.panels[reader.name] = panelReady(read.value, at);
     desk.state.polls[reader.name] = pollSucceeded(
       desk.state.polls[reader.name],
     );
     return;
   }
-  if (outcome.outcome === "Retryable") {
+  if (read.result === "Deferred") {
     desk.state.panels[reader.name] = panelDeferred(
       panel,
-      outcome.code,
-      outcome.retryAfterSeconds,
+      read.code,
+      read.retryAfterSeconds,
     );
     desk.state.polls[reader.name] = pollDeferred(
       desk.state.polls[reader.name],
-      outcome.retryAfterSeconds,
+      read.retryAfterSeconds,
     );
     return;
   }
-  desk.state.panels[reader.name] = panelUnavailable(
-    panel,
-    unavailableReason(outcome),
-  );
+  desk.state.panels[reader.name] = panelUnavailable(panel, read.reason);
   desk.state.polls[reader.name] = pollFailed(desk.state.polls[reader.name]);
 }
 
@@ -235,23 +194,15 @@ function consoleFollowNotifications(desk) {
 }
 
 async function consoleRead(desk, reader) {
-  const token = await desk.session.accessToken();
+  const token = await consoleToken(desk);
   if (token === undefined) return;
   desk.state.panels[reader.name] = panelLoading(desk.state.panels[reader.name]);
   const at = desk.nowMs();
   desk.state.polledAtMs[reader.name] = at;
-  const outcome = await send(
+  const outcome = await desk.send(
     reader.request(token, desk.state.partition, desk.state.cursor),
   );
-  try {
-    consoleApply(desk, reader, outcome, at);
-  } catch {
-    desk.state.panels[reader.name] = panelUnavailable(
-      desk.state.panels[reader.name],
-      "The server sent a resource this console cannot read.",
-    );
-    desk.state.polls[reader.name] = pollFailed(desk.state.polls[reader.name]);
-  }
+  consoleApply(desk, reader, outcome, at);
   if (reader.name === "notifications") consoleFollowNotifications(desk);
 }
 
@@ -303,17 +254,29 @@ function consoleAdvance(desk, step, event) {
   return next;
 }
 
-/** Bounded by the operation machine's attempt budget, not by this loop. */
-async function consoleFollow(desk, start) {
+/**
+ * A backlogged submission is resent with the same key, which the server answers
+ * as the original; a following one is polled. Both spend the machine's one
+ * attempt budget, so neither loop is the caller's to bound.
+ */
+async function consoleFollow(desk, start, submission) {
   let step = start;
-  while (step.step === "Following") {
-    await consoleDelay(pollIntervalMsBase);
-    const token = await desk.session.accessToken();
-    if (token === undefined) return;
-    const outcome = await send(
-      operationRequest(token, desk.state.partition, step.operation),
+  while (operationPolls(step)) {
+    const backlogged = step.step === "Backlogged";
+    await consoleDelay(
+      backlogged ? retryDelayMs(step.retryAfterSeconds) : pollIntervalMsBase,
     );
-    step = consoleAdvance(desk, step, operationEvent(outcome));
+    const token = await consoleToken(desk);
+    if (token === undefined) return;
+    const request = backlogged
+      ? submissionRequest(token, desk.state.partition, submission)
+      : operationRequest(token, desk.state.partition, step.operation);
+    const outcome = await desk.send(request);
+    step = consoleAdvance(
+      desk,
+      step,
+      backlogged ? submissionEvent(outcome) : operationEvent(outcome),
+    );
   }
   consoleDirty(desk);
   consoleSchedule(desk, 0);
@@ -326,36 +289,38 @@ async function consoleDispatch(desk, row) {
     operationsShownMax,
   );
   desk.onChanged();
-  const token = await desk.session.accessToken();
+  const token = await consoleToken(desk);
   if (token === undefined) return;
-  const outcome = await send(
-    submissionRequest(token, desk.state.partition, {
-      operation: crypto.randomUUID(),
-      idempotencyKey: crypto.randomUUID(),
-      mutation: manualDispatchMutation(row),
-    }),
+  const submission = {
+    operation: crypto.randomUUID(),
+    idempotencyKey: crypto.randomUUID(),
+    mutation: manualDispatchMutation(row),
+  };
+  const outcome = await desk.send(
+    submissionRequest(token, desk.state.partition, submission),
   );
   await consoleFollow(
     desk,
     consoleAdvance(desk, step, submissionEvent(outcome)),
+    submission,
   );
 }
 
 /** Follows the server's cursor to the end, under the accumulator's own ceilings. */
 async function consoleLoadProjects(desk) {
-  const token = await desk.session.accessToken();
+  const token = await consoleToken(desk);
   if (token === undefined) return;
   let paging = pagingStart();
   let cursor;
   for (;;) {
-    const outcome = await send(
+    const outcome = await desk.send(
       projectsRequest(token, cursor, pageLimitDefault),
     );
-    if (outcome.outcome !== "Ok") return;
-    const page = parseProjectsPage(outcome.body);
+    const read = readResult(outcome, parseProjectsPage);
+    if (read.result !== "Value") return;
     const stepped = pagingStep(paging, {
-      items: page.projects,
-      next: page.nextCursor,
+      items: read.value.projects,
+      next: read.value.nextCursor,
     });
     if (stepped.done) {
       desk.state.projects = stepped.items;
@@ -374,34 +339,43 @@ async function consoleOpenDetail(desk, execution) {
     preview: undefined,
   };
   desk.onChanged();
-  const token = await desk.session.accessToken();
+  const token = await consoleToken(desk);
   if (token === undefined) return;
-  const outcome = await send(
+  const outcome = await desk.send(
     executionRequest(token, desk.state.partition, execution),
   );
+  const read = readResult(outcome, parseExecution);
   desk.state.detail = {
     execution,
     preview: undefined,
     panel:
-      outcome.outcome === "Ok"
-        ? panelReady(parseExecution(outcome.body), desk.nowMs())
-        : panelUnavailable(panelUnknown, unavailableReason(outcome)),
+      read.result === "Value"
+        ? panelReady(read.value, desk.nowMs())
+        : panelUnavailable(panelUnknown, detailReason(read)),
   };
   desk.onChanged();
+}
+
+/** A deferral and a failure both end this read; only their sentences differ. */
+function detailReason(read) {
+  return read.result === "Deferred"
+    ? `The server deferred this read: ${read.code}.`
+    : read.reason;
 }
 
 async function consolePreview(desk, ordinal) {
   const detail = desk.state.detail;
   if (detail === undefined) return;
-  const token = await desk.session.accessToken();
+  const token = await consoleToken(desk);
   if (token === undefined) return;
-  const outcome = await send(
+  const outcome = await desk.send(
     artifactRequest(token, desk.state.partition, detail.execution, ordinal),
   );
+  const read = readResult(outcome, parseArtifactContent);
   detail.preview =
-    outcome.outcome === "Ok"
-      ? parseArtifactContent(outcome.body).content
-      : `This artifact could not be previewed. ${unavailableReason(outcome)}`;
+    read.result === "Value"
+      ? read.value.content
+      : `This artifact could not be previewed. ${detailReason(read)}`;
   desk.onChanged();
 }
 
@@ -446,6 +420,7 @@ export function createConsole(parts) {
     session: parts.session,
     nowMs: parts.nowMs,
     onChanged: parts.onChanged,
+    send: parts.send,
     timer: undefined,
     state: {
       projects: [],

@@ -26,24 +26,26 @@ export function element(tag, attributes, children) {
   return node;
 }
 
-export function replaceChildren(host, children) {
-  host.replaceChildren(...children);
-}
-
 function hatchedReason(panel) {
   if (panel.state === "Unknown") return "This panel has not read yet.";
   if (panel.state === "Loading") return "The first read is in flight.";
   if (panel.state === "Deferred")
     return `The server deferred the read: ${panel.code}.`;
-  return `The read did not complete: ${panel.reason}.`;
+  return `The read did not complete. ${panel.reason}`;
 }
 
-function panelNote(panel) {
+/**
+ * The sentence above a panel that has a value but could not refresh it. A
+ * panel with nothing to show gets no note: the hatch below already carries the
+ * reason, and "showing the last good read" over an empty panel is a claim
+ * about a read that never happened.
+ */
+function panelNote(panel, held) {
   if (panel.state === "Deferred")
     return element("p", { class: "note", "data-tone": "deferred" }, [
       `${panel.code} — the server asked for ${String(panel.retryAfterSeconds)}s before the next read.`,
     ]);
-  if (panel.state === "Unavailable")
+  if (panel.state === "Unavailable" && held !== undefined)
     return element("p", { class: "note", "data-tone": "halt" }, [
       `Showing the last good read. ${panel.reason}`,
     ]);
@@ -61,7 +63,7 @@ export function panelSection(spec) {
       ? 1
       : freshnessFraction(verdict.ageMs, spec.dueMs);
   const held = panelHeld(spec.panel);
-  const note = panelNote(spec.panel);
+  const note = panelNote(spec.panel, held);
   const body =
     held === undefined
       ? [

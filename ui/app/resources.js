@@ -157,19 +157,6 @@ export function parseProject(value) {
   };
 }
 
-/**
- * The observed sequence a 409 `ProjectionBehind` carries beside its envelope.
- *
- * @param {unknown} value
- */
-export function parseObservedSequence(value) {
-  return count(
-    record(value, "projection conflict"),
-    "observedSequence",
-    "projection conflict",
-  );
-}
-
 /** @param {unknown} value */
 function dispatchToken(value) {
   const fields = record(value, "dispatch token");
@@ -183,6 +170,11 @@ function dispatchToken(value) {
   };
 }
 
+export const dispatchViewResults = ["Page", "Reset"];
+export const notificationResults = ["Events", "Reset"];
+export const artifactRoles = ["Handoff", "Diagnostic"];
+export const resultVerdicts = ["Pass", "Fail"];
+
 /**
  * `Reset` means the snapshot moved under the reader and paging starts over.
  * `ticketVersion` is the only source of a manual dispatch's expected version.
@@ -191,7 +183,7 @@ function dispatchToken(value) {
  */
 export function parseDispatchView(value) {
   const fields = record(value, "dispatch view");
-  const result = member(fields, "result", ["Page", "Reset"], "dispatch view");
+  const result = member(fields, "result", dispatchViewResults, "dispatch view");
   if (result === "Reset") return { result: /** @type {const} */ ("Reset") };
   const candidates = list(
     fields["candidates"],
@@ -227,7 +219,7 @@ export const notificationKinds = [
 /** @param {unknown} value */
 export function parseNotifications(value) {
   const fields = record(value, "notifications");
-  const result = member(fields, "result", ["Events", "Reset"], "notifications");
+  const result = member(fields, "result", notificationResults, "notifications");
   const cursor = count(fields, "cursor", "notifications");
   if (result === "Reset")
     return { result: /** @type {const} */ ("Reset"), cursor, events: [] };
@@ -409,7 +401,7 @@ function resultArtifact(value) {
   const output = fields["output"];
   return {
     ordinal: count(fields, "ordinal", "artifact"),
-    role: member(fields, "role", ["Handoff", "Diagnostic"], "artifact"),
+    role: member(fields, "role", artifactRoles, "artifact"),
     path: text(fields, "path", "artifact"),
     digest: text(fields, "digest", "artifact"),
     bytes: count(fields, "bytes", "artifact"),
@@ -430,7 +422,7 @@ function executionResult(value) {
   const fields = record(value, "result");
   return {
     manifest: text(fields, "manifest", "result"),
-    verdict: member(fields, "verdict", ["Pass", "Fail"], "result"),
+    verdict: member(fields, "verdict", resultVerdicts, "result"),
     recordedAt: text(fields, "recordedAt", "result"),
     artifacts: list(fields["artifacts"], "artifacts", itemsPerPageMax).map(
       resultArtifact,
@@ -458,10 +450,12 @@ export function parseExecution(value) {
  */
 export function parseArtifactContent(value) {
   const fields = record(value, "artifact content");
+  const content = fields["content"];
+  if (typeof content !== "string")
+    throw new ResourceError("artifact content.content is not text");
   return {
     mediaType: text(fields, "mediaType", "artifact content"),
     renderer: member(fields, "renderer", outputRenderers, "artifact content"),
-    content:
-      typeof fields["content"] === "string" ? String(fields["content"]) : "",
+    content,
   };
 }

@@ -1,10 +1,11 @@
 /**
  * The one place the console touches the network.
  *
- * A request descriptor goes in and a classified outcome comes out; no caller
- * sees a status code or a thrown fetch. The abort bound sits above the
- * server's own request timeout, so a stalled socket ends as an outcome the
- * console can draw rather than as a promise nothing settles.
+ * Every request goes out under the same abort bound, which sits above the
+ * server's own request timeout, so a stalled socket ends as a value the caller
+ * can draw rather than as a promise nothing settles. A request descriptor goes
+ * in and a classified outcome comes out; no caller sees a status code or a
+ * thrown fetch.
  */
 
 import { classify } from "../app/protocol.js";
@@ -12,30 +13,21 @@ import { classify } from "../app/protocol.js";
 export const transportTimeoutMs = 20_000;
 
 /**
- * @param {{ method: string, url: string, headers: Record<string, string>,
- *   body?: string }} request
+ * @param {string} url
+ * @param {RequestInit} options
  */
-export async function send(request) {
+async function bounded(url, options) {
   const abort = new AbortController();
   const timer = setTimeout(() => {
     abort.abort();
   }, transportTimeoutMs);
   try {
-    const response = await fetch(request.url, {
-      method: request.method,
-      headers: request.headers,
-      ...(request.body === undefined ? {} : { body: request.body }),
+    return await fetch(url, {
+      ...options,
       signal: abort.signal,
       credentials: "omit",
       cache: "no-store",
     });
-    return classify(
-      response.status,
-      (name) => response.headers.get(name),
-      await readBody(response),
-    );
-  } catch {
-    return { outcome: "Fault", code: "Unreachable", status: 0 };
   } finally {
     clearTimeout(timer);
   }
@@ -51,9 +43,37 @@ async function readBody(response) {
   }
 }
 
-/** A JSON read outside the API, used for the runtime configuration and discovery. */
-export async function readJson(url) {
-  const response = await fetch(url, { credentials: "omit", cache: "no-store" });
+/**
+ * @param {{ method: string, url: string, headers: Record<string, string>,
+ *   body?: string }} request
+ */
+export async function send(request) {
+  try {
+    const response = await bounded(request.url, {
+      method: request.method,
+      headers: request.headers,
+      ...(request.body === undefined ? {} : { body: request.body }),
+    });
+    return classify(
+      response.status,
+      (name) => response.headers.get(name),
+      await readBody(response),
+    );
+  } catch {
+    return { outcome: "Fault", code: "Unreachable", status: 0 };
+  }
+}
+
+/**
+ * A JSON read outside the API, used for the runtime configuration, for
+ * discovery and for the token exchange. It rejects rather than classifying,
+ * because its three callers are boot steps with their own drawn failures.
+ *
+ * @param {string} url
+ * @param {RequestInit} [options]
+ */
+export async function readJson(url, options) {
+  const response = await bounded(url, options ?? {});
   if (!response.ok)
     throw new Error(`${url} answered ${String(response.status)}`);
   return response.json();
