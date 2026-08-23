@@ -158,7 +158,8 @@ export interface SelectorObservationSource {
   operationalContext(partition: Partition): Promise<SelectorOperationalContext>;
 }
 
-export interface SelectorOperationalContext {
+export interface SelectorOperationalContextV2 {
+  readonly version: 2;
   readonly observedAt: string;
   readonly observedAtEpochMs: number;
   readonly reviewFeedback: readonly SelectorReviewFeedback[];
@@ -185,9 +186,44 @@ export interface SelectorOperationalContext {
   };
 }
 
+/** Historical policy input retained exactly as written before context versioning. */
+export interface SelectorOperationalContextV1 {
+  readonly version: 1;
+  readonly observedAt: string;
+  readonly observedAtEpochMs: number;
+  readonly reviewFeedback: readonly SelectorReviewFeedback[];
+  readonly activeWork: readonly {
+    readonly ticket: DispatchCandidate["ticket"];
+    readonly queuedTasks: number;
+    readonly admittedTasks: number;
+    readonly runningAttempts: number;
+  }[];
+  readonly projectCapacity: {
+    readonly account: string;
+    readonly allocated: number;
+    readonly limit: number;
+    readonly available: number;
+  };
+  readonly clusterCapacity: {
+    readonly visibility: "AuthorizedAggregate";
+    readonly allocated: number;
+    readonly limit: number;
+    readonly available: number;
+    readonly pressure: "Normal" | "Constrained" | "Exhausted" | "Unknown";
+  };
+  readonly executionBacklog: {
+    readonly queued: number;
+    readonly ceiling: number;
+    readonly dispatchAllowed: boolean;
+  };
+}
+
+export type SelectorOperationalContext =
+  SelectorOperationalContextV1 | SelectorOperationalContextV2;
+
 /** Whether both scheduler-owned backlog constraints currently admit dispatch. */
 export function selectorBacklogsAdmitDispatch(
-  backlog: SelectorOperationalContext["backlog"],
+  backlog: SelectorOperationalContextV2["backlog"],
 ): boolean {
   return (
     backlog.project.queued < backlog.project.ceiling &&

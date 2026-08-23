@@ -60,6 +60,7 @@ const delivery: SelectorDelivery = {
 };
 
 const operationalContext = {
+  version: 2,
   observedAt: "2026-08-21T12:00:00.000Z",
   observedAtEpochMs: 1_777_000_000_000,
   reviewFeedback: [],
