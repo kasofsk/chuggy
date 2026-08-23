@@ -10,6 +10,11 @@ import {
 import { composeNativeWeb } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
+import {
+  currentRuntimeSchemaContract,
+  postgresRuntimeSchema,
+} from "../adapters/postgres/runtimeSchema.ts";
+import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -76,13 +81,24 @@ function oidcConfig(): OidcAuthenticationConfig {
 async function apiDatabaseReady(
   pool: ReturnType<typeof postgresPool>,
 ): Promise<boolean> {
-  const found = await pool.query<{ current_role: string; authorized: boolean }>(
-    `SELECT current_user AS current_role,
-       has_function_privilege(
-         current_user,'authorize_project_access(text,text,text,text)','EXECUTE') AS authorized`,
-  );
-  const row = found.rows[0];
-  return row?.current_role === apiRole && row.authorized;
+  try {
+    const found = await pool.query<{
+      current_role: string;
+      authorized: boolean;
+    }>(
+      `SELECT current_user AS current_role,
+         has_function_privilege(
+           current_user,'authorize_project_access(text,text,text,text)','EXECUTE') AS authorized`,
+    );
+    const row = found.rows[0];
+    if (row?.current_role !== apiRole || !row.authorized) return false;
+    return schemaCompatibilityPrecondition(
+      postgresRuntimeSchema(pool),
+      currentRuntimeSchemaContract,
+    ).check(new AbortController().signal);
+  } catch {
+    return false;
+  }
 }
 
 async function main(): Promise<void> {
