@@ -14,7 +14,7 @@ const declaredMigrations: readonly RuntimeSchemaMigration[] = migrations.map(
 
 /** The schema this source revision requires and understands without migration. */
 export const currentRuntimeSchemaContract: RuntimeSchemaContract = {
-  required: declaredMigrations,
+  required: declaredMigrations.slice(0, -1),
   compatible: declaredMigrations,
 };
 
