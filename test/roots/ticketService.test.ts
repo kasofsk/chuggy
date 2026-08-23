@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
-import { once } from "node:events";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { test } from "node:test";
+
+import { signalledCommandRun } from "./harness.ts";
 
 const execute = promisify(execFile);
 const command = ["--experimental-strip-types", "src/roots/ticketService.ts"];
@@ -66,6 +67,66 @@ test("the command parses its complete plain-data configuration", async () => {
   assert.deepEqual(JSON.parse(found.stdout), validConfiguration);
 });
 
+test("optional pool bounds are omitted rather than carried as undefined", async () => {
+  const withoutLimits = {
+    ...validConfiguration,
+    database: { url: validConfiguration.database.url },
+  };
+  const program = `
+    const { ticketServiceConfiguration } = await import('./src/roots/ticketService.ts');
+    const { database } = ticketServiceConfiguration(process.env);
+    process.stdout.write(JSON.stringify(Object.keys(database)));
+  `;
+  const found = await execute(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", program],
+    {
+      cwd: process.cwd(),
+      env: { CHUG_TICKET_SERVICE_CONFIG: JSON.stringify(withoutLimits) },
+    },
+  );
+  assert.deepEqual(JSON.parse(found.stdout), ["url"]);
+});
+
+test("a pool bound past the safe integers is refused", async () => {
+  const invalid = {
+    ...validConfiguration,
+    database: {
+      ...validConfiguration.database,
+      limits: {
+        ...validConfiguration.database.limits,
+        connectionsMax: Number.MAX_SAFE_INTEGER + 1,
+      },
+    },
+  };
+  const found = await executeFailure({
+    CHUG_TICKET_SERVICE_CONFIG: JSON.stringify(invalid),
+  });
+  assert.equal(found.code, 2);
+  assert.equal(
+    found.stderr,
+    "ticket service configuration: CHUG_TICKET_SERVICE_CONFIG.database.limits.connectionsMax is invalid\n",
+  );
+});
+
+test("a pool bound the schema does not publish is refused", async () => {
+  const invalid = {
+    ...validConfiguration,
+    database: {
+      ...validConfiguration.database,
+      limits: { ...validConfiguration.database.limits, connectionsMin: 1 },
+    },
+  };
+  const found = await executeFailure({
+    CHUG_TICKET_SERVICE_CONFIG: JSON.stringify(invalid),
+  });
+  assert.equal(found.code, 2);
+  assert.equal(
+    found.stderr,
+    "ticket service configuration: CHUG_TICKET_SERVICE_CONFIG.database.limits is invalid\n",
+  );
+});
+
 test("the command rejects a fractional finalization budget", async () => {
   const invalid = {
     ...validConfiguration,
@@ -124,23 +185,9 @@ test("SIGTERM drives bounded shutdown and preserves its result", async () => {
     const result = await runTicketService(runtime);
     process.stdout.write(JSON.stringify(result));
   `;
-  const child = spawn(
-    process.execPath,
-    ["--experimental-strip-types", "--input-type=module", "--eval", program],
-    { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] },
+  const { code, stdout } = await signalledCommandRun(program, (out) =>
+    out.startsWith("ready\n"),
   );
-  let stdout = "";
-  let ready!: () => void;
-  const started = new Promise<void>((resolve) => {
-    ready = resolve;
-  });
-  child.stdout.on("data", (chunk: Buffer) => {
-    stdout += chunk.toString();
-    if (stdout.startsWith("ready\n")) ready();
-  });
-  await started;
-  child.kill("SIGTERM");
-  const [code] = (await once(child, "exit")) as [number];
   assert.equal(code, 0);
   assert.deepEqual(JSON.parse(stdout.slice("ready\n".length)), {
     outcome: "Stopped",

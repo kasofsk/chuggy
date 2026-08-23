@@ -7,13 +7,19 @@ import type {
   ServiceStopResult,
 } from "../interpreter/serviceRuntime.ts";
 import {
+  commandDatabaseConfig,
+  commandDatabaseSchema,
+  commandRuntimeSchema,
+  decodedCommandConfiguration,
+  positiveInteger,
+} from "./commandConfig.ts";
+import {
   ticketServiceProcessRoot,
   type TicketServiceProcessRootConfig,
 } from "./controlPlane.ts";
 
 const configurationVariable = "CHUG_TICKET_SERVICE_CONFIG";
 
-const positiveInteger = z.number().int().positive();
 const positiveNumber = z.number().positive().finite();
 const budgeted = z
   .object({
@@ -23,25 +29,8 @@ const budgeted = z
   .strict();
 const configurationSchema = z
   .object({
-    database: z
-      .object({
-        url: z.string().min(1),
-        limits: z
-          .object({
-            connectionsMax: positiveInteger,
-            connectionWaitMs: positiveInteger,
-            statementTimeoutMs: positiveInteger,
-          })
-          .strict()
-          .optional(),
-      })
-      .strict(),
-    runtime: z
-      .object({
-        idleIntervalMilliseconds: positiveInteger,
-        shutdownDrainMilliseconds: positiveInteger,
-      })
-      .strict(),
+    database: commandDatabaseSchema,
+    runtime: commandRuntimeSchema,
     pass: z
       .object({
         projectsPerPassMax: positiveInteger,
@@ -96,33 +85,18 @@ interface ProcessSignals {
 export function ticketServiceConfiguration(
   environment: NodeJS.ProcessEnv,
 ): TicketServiceProcessRootConfig {
-  const encoded = environment[configurationVariable];
-  if (encoded === undefined || encoded.length === 0)
-    throw new Error(`${configurationVariable} is required`);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(encoded);
-  } catch {
-    throw new Error(`${configurationVariable} must be valid JSON`);
-  }
-  const result = configurationSchema.safeParse(parsed);
-  if (!result.success) {
-    const path = result.error.issues[0]?.path.join(".") || "value";
-    throw new Error(`${configurationVariable}.${path} is invalid`);
-  }
+  const data = decodedCommandConfiguration(
+    configurationVariable,
+    configurationSchema,
+    environment,
+  );
   if (
-    result.data.ticket !== undefined &&
-    result.data.ticket.ordinarySoftLimit >= result.data.ticket.mailboxHardLimit
+    data.ticket !== undefined &&
+    data.ticket.ordinarySoftLimit >= data.ticket.mailboxHardLimit
   )
     throw new Error(`${configurationVariable}.ticket count bounds are invalid`);
-  const data = result.data;
   return {
-    database: {
-      url: data.database.url,
-      ...(data.database.limits === undefined
-        ? {}
-        : { limits: data.database.limits }),
-    },
+    database: commandDatabaseConfig(data.database),
     runtime: data.runtime,
     pass: data.pass,
     domain: data.domain,

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
-import { once } from "node:events";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { test } from "node:test";
+
+import { signalledCommandRun } from "./harness.ts";
 
 const execute = promisify(execFile);
 const command = ["--experimental-strip-types", "src/roots/selector.ts"];
@@ -191,23 +192,9 @@ test("a running selector reports health until signal-driven shutdown", async () 
     const result = await root.runSelector(runtime);
     process.stdout.write(JSON.stringify(result));
   `;
-  const child = spawn(
-    process.execPath,
-    ["--experimental-strip-types", "--input-type=module", "--eval", program],
-    { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] },
+  const { code, stdout } = await signalledCommandRun(program, (out) =>
+    out.includes("\n"),
   );
-  let stdout = "";
-  let ready!: () => void;
-  const started = new Promise<void>((resolve) => {
-    ready = resolve;
-  });
-  child.stdout.on("data", (chunk: Buffer) => {
-    stdout += chunk.toString();
-    if (stdout.includes("\n")) ready();
-  });
-  await started;
-  child.kill("SIGTERM");
-  const [code] = (await once(child, "exit")) as [number];
   assert.equal(code, 0);
   const newline = stdout.indexOf("\n");
   assert.deepEqual(JSON.parse(stdout.slice(0, newline)), {
