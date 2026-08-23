@@ -12,13 +12,15 @@
 -- function's OWNER rather than of whoever created it, and the migration hands
 -- every one of them to chuggy_boundary_owner with ALTER FUNCTION ... OWNER TO,
 -- so no migrating identity is left owning one — a superuser included. What it
--- does keep is the relations and the trigger and CHECK helpers, none of which
--- is SECURITY DEFINER. The reason is the credential: it is issued, stored and
--- rotated beside the service passwords, and a superuser is bounded by nothing
--- the database it migrates can state — every other database in the cluster and
--- every role in it are in its reach, and so is the host, by the route the next
--- paragraph names. chuggy_owner reaches what it created and the roles it was
--- granted, and holds one attribute beyond ownership.
+-- is left owning is every relation and no function but the trigger bodies the
+-- chain never hands over; test/postgres/privileges.test.ts asks the server for
+-- both halves rather than reading the chain. The reason is the credential: it
+-- is issued, stored and rotated beside the service passwords, and a superuser
+-- is bounded by nothing the database it migrates can state — every other
+-- database in the cluster and every role in it are in its reach, and so is the
+-- host, by the route the next paragraph names. chuggy_owner reaches what it
+-- created and the roles it was granted, and holds one attribute beyond
+-- ownership.
 --
 -- WHY THAT ATTRIBUTE IS CREATEROLE. The migration creates its group roles
 -- itself, and creating a role is not something owning an object confers. It is
@@ -45,26 +47,34 @@
 -- what each group role is refused.
 --
 -- chuggy_boundary_owner IS THE ONE THAT WIDENS IT, AND HAS TO. That role owns
--- the SECURITY DEFINER functions and chuggy_owner does not, so a migration
--- whose statement is a GRANT on one of them is granting on an object it
--- neither owns nor holds grant option for. PostgreSQL answers that with a hard
--- error when the grantor holds nothing at all on the object, and with a warning
--- when it holds some privilege on it without grant option — and the warning is
--- the branch that hurts, because the statement succeeds having granted nothing,
--- the runner commits the ledger row beside it, and the version is applied by
--- every account anyone can query. A grantor that inherits a privilege through
--- any group it belongs to is on that branch, which is where the memberships
--- below put chuggy_owner. Membership in the owner is what makes the grant land,
--- and the migration cannot take it for itself: granting a role needs admin
--- option on it, which a CREATEROLE role holds only over roles it created itself.
+-- every function the chain hands over and chuggy_owner owns none of them, so a
+-- migration whose statement is a GRANT on one of them is granting on an object
+-- it neither owns nor holds grant option for. Which of them is SECURITY
+-- DEFINER does not enter it, and reading the rule that way would leave out the
+-- case it was written for: the boundary owner holds ordinary bodies too, and
+-- the grant the memberships below exist for is an EXECUTE on one of those —
+-- project_capacity_account, which test/postgres/privileges.test.ts asks the
+-- server to confirm is that role's and is no SECURITY DEFINER. PostgreSQL
+-- answers such a GRANT with a hard error when the grantor holds nothing at all
+-- on the object, and with a warning when it holds some privilege on it without
+-- grant option — and the warning is the branch that hurts, because the
+-- statement succeeds having granted nothing, the runner commits the ledger row
+-- beside it, and the version is applied by every account anyone can query.
+-- A grantor that inherits a privilege through any group it belongs to is on
+-- that branch, which is where the memberships below put chuggy_owner.
+-- Membership in the owner is what makes the grant land, and the migration
+-- cannot take it for itself: granting a role needs admin option on it, which a
+-- CREATEROLE role holds only over roles it created itself.
 --
--- AND IT NEEDS CREATE ON THE SCHEMA, not the USAGE every other group role gets.
--- A migration hands it those functions with ALTER FUNCTION ... OWNER TO, and
--- PostgreSQL requires the receiving owner to hold CREATE on the schema the
+-- AND IT NEEDS CREATE ON THE SCHEMA, on top of the USAGE every group role gets
+-- below. A migration hands it those functions with ALTER FUNCTION ... OWNER TO,
+-- and PostgreSQL requires the receiving owner to hold CREATE on the schema the
 -- object lives in — so without it the migration stops at the first such
--- statement under the migrating identity, on a database at any version. It
--- widens nothing: chuggy_owner is its only member and already holds CREATE, and
--- the functions it owns create no objects.
+-- statement under the migrating identity, on a database at any version. USAGE
+-- is not what it replaces: a SECURITY DEFINER body runs as this role, and one
+-- that lacked USAGE on public could not resolve the objects its pinned
+-- search_path names. It widens nothing either: chuggy_owner is its only member
+-- and already holds CREATE, and the functions it owns create no objects.
 --
 -- PASSWORDS COME FROM THE ENVIRONMENT, so none of them is in this file and none
 -- is in an argument list either — an argument to psql is in the process table

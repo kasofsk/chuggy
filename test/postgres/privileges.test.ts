@@ -292,6 +292,60 @@ test("every security-definer function is owned by the boundary owner and none by
   );
 });
 
+/**
+ * The other side of the same handover, which decides whether a later GRANT
+ * needs the membership `deploy/rig/postgres/postgres-roles.sql` gives: the
+ * migrating identity is left every relation and no function but a trigger
+ * body. A CHECK helper or a `SECURITY DEFINER` body left behind turns this red
+ * where the ownership case above would still pass.
+ */
+test("whoever migrated keeps every relation and no body but a trigger function", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT count(DISTINCT c.relowner)::text AS owners,
+              bool_or(r.rolname = $1) AS boundary
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         JOIN pg_roles r ON r.oid = c.relowner
+        WHERE n.nspname='public'`,
+      [boundaryOwnerRole],
+    ),
+    [{ owners: "1", boundary: false }],
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT DISTINCT pg_get_function_result(p.oid) AS returns, p.prosecdef
+         FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+         JOIN pg_roles r ON r.oid = p.proowner
+        WHERE n.nspname='public' AND r.rolname <> $1
+        ORDER BY 1`,
+      [boundaryOwnerRole],
+    ),
+    [{ returns: "trigger", prosecdef: false }],
+  );
+});
+
+/**
+ * Ownership rather than `SECURITY DEFINER` is what decides whether a GRANT by
+ * the migrating identity lands, and this is the case that separates them: the
+ * boundary owner holds an ordinary body too, and granting EXECUTE on it is the
+ * whole of a migration this chain carries.
+ */
+test("the function a migration grants execute on is the boundary owner's and is no security definer", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT r.rolname AS owner, p.prosecdef
+         FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+         JOIN pg_roles r ON r.oid = p.proowner
+        WHERE n.nspname='public' AND p.proname = $1`,
+      [accountIdentityFunction],
+    ),
+    [{ owner: boundaryOwnerRole, prosecdef: false }],
+  );
+});
+
 test("the scheduler cannot write ticket state or append history", async () => {
   for (const [statement, object] of [
     ["INSERT INTO journal_entry DEFAULT VALUES", "journal_entry"],
@@ -497,11 +551,21 @@ test("the scheduler is non-login and non-escalating", async () => {
   );
 });
 
-test("the retired dispatcher role no longer exists", async () => {
+/**
+ * What a retired role can still hold is an object or a privilege in the
+ * database it was retired from, and `pg_shdepend` records both — per database,
+ * which a role name is not. A cluster hosting a sibling database may carry the
+ * role for that one and no schema here decides it; a migration that created it
+ * again is `test/deploy/postgresRoles.test.ts`'s to refuse.
+ */
+test("the retired dispatcher role owns nothing here and is granted nothing here", async () => {
   assert.deepEqual(
     await harness.query(
-      `SELECT count(*)::text AS count FROM pg_roles
-       WHERE rolname='chuggy_dispatcher'`,
+      `SELECT count(*)::text AS count FROM pg_shdepend d
+         JOIN pg_roles r ON r.oid = d.refobjid
+        WHERE d.dbid = (SELECT oid FROM pg_database
+                         WHERE datname = current_database())
+          AND r.rolname = 'chuggy_dispatcher'`,
     ),
     [{ count: "0" }],
   );

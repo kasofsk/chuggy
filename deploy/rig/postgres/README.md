@@ -434,14 +434,31 @@ is one made for the run and dropped with the rest.
 
 The probe carries the Secret, so it does not outlive the proofs, and the gates'
 database is a rehearsal's residue; the forwarded port is this host's rather than
-the cluster's, so nothing below reverses it. The drop is forced because a gate
-killed mid-run leaves a connection behind, and an unforced drop refuses over one.
+the cluster's, so nothing below reverses it.
+
+`chuggy_gate` is not the only database a run can leave in this cluster.
+`check-postgres.sh` migrates `chuggy_template_<pid>` beside it and clones a
+`chuggy_worker_<pid>_<n>` per worker, and drops both on the way out — its trap
+covers an interrupt, so what survives is a signal the trap cannot catch, and
+that same signal leaves a connection an unforced drop refuses over. So the drop
+is forced, and it drops what the run left rather than the one name this file
+chose:
 
 ```sh
-psql -h 127.0.0.1 -p 55440 -U postgres -d postgres -c 'DROP DATABASE chuggy_gate WITH (FORCE)'
+psql -h 127.0.0.1 -p 55440 -U postgres -d postgres <<'SQL'
+SELECT format('DROP DATABASE %I WITH (FORCE)', datname)
+  FROM pg_database
+ WHERE datname = 'chuggy_gate'
+    OR datname LIKE 'chuggy\_template\_%'
+    OR datname LIKE 'chuggy\_worker\_%'
+\gexec
+SQL
 kubectl -n chuggy delete pod probe
 kill "$forward"
 ```
+
+`chuggy` and `chuggy_rehearsal` match none of those three, which is what keeps
+this from being a command that drops the deployment.
 
 ## Reversing it
 

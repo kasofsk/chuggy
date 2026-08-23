@@ -569,8 +569,9 @@ const inboxTerminality = [
  * decide an operation instead. A `SECURITY DEFINER` body runs as its owner, so
  * the `search_path` is pinned on the definition against a caller shadowing
  * `operation` — and that owner is whoever applied this migration only until
- * migration 5, which hands it to `boundaryOwnerRole` along with every other
- * such body, which is what kasofsk/chuggy#134 asks.
+ * migration 5, which hands it to `boundaryOwnerRole` with the other such bodies
+ * the chain has defined by then, and `test/postgres/privileges.test.ts` is what
+ * holds every later one to the same rule for kasofsk/chuggy#134.
  */
 const inboxCancellation = [
   `CREATE FUNCTION ${cancellationFunction}(

@@ -34,6 +34,13 @@
  * line-wise, so a literal `--` inside a statement would take the rest of that
  * line with it; no statement in that file writes one.
  *
+ * A `format()` TEMPLATE IS MATCHED THROUGH ITS `\gexec` AND ITS ARGUMENTS,
+ * because the text of a template says nothing about whether psql runs it or
+ * what it names. The CONNECT block is the one where neither failure is loud:
+ * without the terminator psql prints the statements and exits zero, and with a
+ * literal database name in place of `current_database()` the grants land on
+ * another database and every set here is unchanged.
+ *
  * AND PAIRWISE WHEREVER A SET WOULD HOLD STILL. Exchange two roles' group
  * grants, or two roles' password variables, and every set below is unchanged
  * while neither process starts: one authenticates and refuses to serve as the
@@ -198,7 +205,7 @@ test("each login role is granted the group its own name is made of", () => {
 test("every login role is created, attributed, passworded and connected alike", () => {
   const created = loginRoles();
   const connected = rolesFileNames(
-    /GRANT CONNECT ON DATABASE %I TO %I'[^[]*\[([^\]]*)\]/u,
+    /GRANT CONNECT ON DATABASE %I TO %I', current_database\(\), role_name\) FROM unnest\(ARRAY\[([^\]]*)\]\) AS role_name \\gexec/u,
   );
   const attributed = rolesFileRepeated(/ALTER ROLE (chuggy_\w+) WITH LOGIN/gu);
   const passworded = rolesFileRepeated(/ALTER ROLE (chuggy_\w+) PASSWORD /gu);
