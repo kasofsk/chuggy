@@ -26,12 +26,14 @@ trap 'rm -rf "$WORK"' EXIT
 
 R="$WORK/repo"
 
-run_in() { # <dir>
+run_in() { # <dir> [mode]
 	OUT="$WORK/.out"
+	dir="$1"
+	shift
 	set +e
 	# Emptied so a machine exporting it does not point the fixture's lint at
 	# the exporter's database.
-	(cd "$1" && CHUG_SAFEQL_DATABASE_URL= "$SUT") >"$OUT" 2>&1
+	(cd "$dir" && CHUG_SAFEQL_DATABASE_URL= "$SUT" "$@") >"$OUT" 2>&1
 	RC=$?
 	set -e
 }
@@ -139,6 +141,14 @@ check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
 # something.
 check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
 check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed, 4 run"
+
+run_in "$R" --static
+check "static mode runs only the three static stages" 0 "$RC" "0 stage(s) failed, 3 run"
+check "static mode does not discover unit suites" 0 "$RC" "typecheck: clean"
+
+run_in "$R" --unit
+check "unit mode runs only the unit stage" 0 "$RC" "0 stage(s) failed, 1 run"
+check "unit mode reports the suite partition" 0 "$RC" "unit ran 1 suite(s)"
 
 # A checkout nested inside the checkout. The parallel worktrees live under
 # .claude/, each with a tsconfig of its own, so a linter that walks in lints

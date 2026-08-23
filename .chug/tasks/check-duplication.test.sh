@@ -2,7 +2,7 @@
 # Shell test for check-duplication.sh.
 #
 # The cases that matter are the refusals. A clone is easy to detect and the tool
-# does it; what this suite pins is that a run which measured nothing — no jscpd,
+# does it; what this suite pins is that a run which measured nothing — no local jscpd,
 # no verdict, or a verdict over an empty scan — reports could-not-run.
 #
 # Run:  .chug/tasks/check-duplication.test.sh
@@ -71,7 +71,7 @@ fresh_repo "$R"
 printf 'placeholder\n' > "$R/README.md"
 git -C "$R" add -A
 run_in_repo
-check "no jscpd and no npx exits 2" 2 "$RC" "no jscpd and no npx"
+check "no local jscpd exits 2" 2 "$RC" "no local jscpd"
 
 # --- The ignore list, against the real tool ----------------------------------
 #
@@ -93,7 +93,9 @@ check "no jscpd and no npx exits 2" 2 "$RC" "no jscpd and no npx"
 
 nested_repo() { # <dir> <parts>
 	fresh_repo "$1"
-	mkdir -p "$1/.chug/tasks" "$1/.claude/worktrees/w/.chug/tasks"
+	mkdir -p "$1/.chug/tasks" "$1/.claude/worktrees/w/.chug/tasks" \
+		"$1/node_modules/.bin"
+	ln -s "$ROOT/node_modules/.bin/jscpd" "$1/node_modules/.bin/jscpd"
 	p=1
 	while [ "$p" -le "$2" ]; do
 		i=0

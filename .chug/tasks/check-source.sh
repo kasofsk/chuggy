@@ -28,6 +28,8 @@
 #
 # Usage:
 #   .chug/tasks/check-source.sh
+#   .chug/tasks/check-source.sh --static
+#   .chug/tasks/check-source.sh --unit
 #
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
@@ -40,18 +42,28 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
+mode="${1:-all}"
+case "$mode" in
+--static) run_static=1; run_unit=0 ;;
+--unit) run_static=0; run_unit=1 ;;
+all) run_static=1; run_unit=1 ;;
+*) echo "check-source: LINTER ERROR — expected --static or --unit"; exit 2 ;;
+esac
+
 sources="$(git ls-files 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 2>/dev/null || true)"
 if [ -z "$sources" ]; then
 	echo "check-source: LINTER ERROR — no tracked TypeScript; the glob matched nothing"
 	exit 2
 fi
 
-for tool in tsc eslint prettier; do
-	if [ ! -x "./node_modules/.bin/$tool" ]; then
-		echo "check-source: LINTER ERROR — no local $tool. Install with \`npm ci\`."
-		exit 2
-	fi
-done
+if [ "$run_static" -eq 1 ]; then
+	for tool in tsc eslint prettier; do
+		if [ ! -x "./node_modules/.bin/$tool" ]; then
+			echo "check-source: LINTER ERROR — no local $tool. Install with \`npm ci\`."
+			exit 2
+		fi
+	done
+fi
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -76,44 +88,48 @@ stage() { # <label> <command>...
 	fi
 }
 
-stage "  typecheck" ./node_modules/.bin/tsc --noEmit
-# Lint is the server-free half of the query checking: the SafeQL block in
-# eslint.config.js activates on CHUG_SAFEQL_DATABASE_URL, and an operator
-# who exports it shell-wide must not make this stage need a database.
-stage "  lint     " env CHUG_SAFEQL_DATABASE_URL= ./node_modules/.bin/eslint .
-stage "  format   " ./node_modules/.bin/prettier --check --log-level warn .
+if [ "$run_static" -eq 1 ]; then
+	stage "  typecheck" ./node_modules/.bin/tsc --noEmit
+	# Lint is the server-free half of the query checking: the SafeQL block in
+	# eslint.config.js activates on CHUG_SAFEQL_DATABASE_URL, and an operator
+	# who exports it shell-wide must not make this stage need a database.
+	stage "  lint     " env CHUG_SAFEQL_DATABASE_URL= ./node_modules/.bin/eslint .
+	stage "  format   " ./node_modules/.bin/prettier --check --log-level warn .
+fi
 
 # The runner is handed its list rather than discovering one, and an empty
 # list would send it back to whole-tree discovery; the glob is checked first
 # and separately.
-suites="$(git ls-files '*.test.ts' 2>/dev/null || true)"
-if [ -z "$suites" ]; then
-	echo "check-source: LINTER ERROR — no tracked *.test.ts; the suite glob matched nothing"
-	exit 2
-fi
+if [ "$run_unit" -eq 1 ]; then
+	suites="$(git ls-files '*.test.ts' 2>/dev/null || true)"
+	if [ -z "$suites" ]; then
+		echo "check-source: LINTER ERROR — no tracked *.test.ts; the suite glob matched nothing"
+		exit 2
+	fi
 
 # The pattern mirrors how those gates find their own work — the directory
 # itself, not below it — so a suite nested deeper than they look is this
 # stage's, which is what keeps the two halves a partition.
-owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$|^test/postgres/[^/]*\.test\.ts$'
-unit_suites="$(printf '%s\n' "$suites" | grep -Ev "$owned" || true)"
-if [ -z "$unit_suites" ]; then
-	echo "check-source: LINTER ERROR — every tracked suite belongs to another gate; this stage would run nothing"
-	exit 2
-fi
-unit_count="$(printf '%s\n' "$unit_suites" | grep -c '' || true)"
-owned_count="$(printf '%s\n' "$suites" | grep -Ec "$owned" || true)"
+	owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$|^test/postgres/[^/]*\.test\.ts$'
+	unit_suites="$(printf '%s\n' "$suites" | grep -Ev "$owned" || true)"
+	if [ -z "$unit_suites" ]; then
+		echo "check-source: LINTER ERROR — every tracked suite belongs to another gate; this stage would run nothing"
+		exit 2
+	fi
+	unit_count="$(printf '%s\n' "$unit_suites" | grep -c '' || true)"
+	owned_count="$(printf '%s\n' "$suites" | grep -Ec "$owned" || true)"
 
-set -f
-IFS='
+	set -f
+	IFS='
 '
-# shellcheck disable=SC2086 # the suite list is newline-separated by construction
-set -- $unit_suites
-unset IFS
-set +f
+	# shellcheck disable=SC2086 # the suite list is newline-separated by construction
+	set -- $unit_suites
+	unset IFS
+	set +f
 
-stage "  unit     " node --test --test-reporter=dot "$@"
-echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance, check-random and check-postgres"
+	stage "  unit     " node --test --test-reporter=dot "$@"
+	echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance, check-random and check-postgres"
+fi
 
 echo "check-source: $failed stage(s) failed, $ran run"
 [ "$failed" -eq 0 ]

@@ -31,6 +31,8 @@ docker              # running, or CHUG_PG_URL naming a PostgreSQL the server gat
 
 The pre-commit hook runs the fast subset. It needs that `git config` because git config is not tracked and nothing in a checkout can set it for you; `npm ci` is what turns `check-boundaries` and `check-source` from could-not-run into a verdict, and a could-not-run is not a pass. A server is the same kind of precondition: `check-postgres` drives the durable authority against a real PostgreSQL, `check-queries` asks the same server whether every tagged query and row type is true, and neither can reach a verdict without one, so each says so and exits 2. Neither is in the hook, and each prints its own remedy.
 
+`.chug/tasks/ci.sh` runs only the gates affected since the merge base with `origin/main`, falling back to local `main`. Set `CHUG_CI_BASE` to override that base; an absent or unresolvable base falls back to full coverage. `just check` forces the full run through `CHUG_CI_FULL=1` for release-grade verification. Changed runs print every skipped gate, and shell gate suites run only when their gate, their suite, or a shared shell harness changed.
+
 Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
 slowest by far is `check-model.sh`, which is why it runs last and never in the
 hook. A gate exits 0 clean, 1 on a finding, **2 when it could not run** — and 2 is not a pass. Not every gate uses all three: `check-roster` has no finding state, because everything it can detect is the environment. The sequencing lives in `.chug/tasks/ci.sh`; the justfile is a thin wrapper, and the hook calls the scripts directly because `just` may not be installed.

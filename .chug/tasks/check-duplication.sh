@@ -21,14 +21,12 @@
 # is NOT exempt, and a clone inside it is a finding like any other, which is
 # where a reader who wants the repetition gone would have to go anyway.
 #
-# The version is pinned exactly, never `@5`: config semantics move within the
-# major, `ignorePattern` matching among them. A local binary wins over PATH.
+# The version is pinned exactly in package.json: config semantics move within
+# the major, `ignorePattern` matching among them.
 #
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
 export LC_ALL=C
-
-JSCPD_VERSION="5.0.5"
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$root" ]; then
@@ -37,14 +35,11 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
-if [ -x ./node_modules/.bin/jscpd ]; then
-	RUN="./node_modules/.bin/jscpd"
-elif command -v npx > /dev/null 2>&1; then
-	RUN="npx --yes jscpd@$JSCPD_VERSION"
-else
-	echo "check-duplication: LINTER ERROR — no jscpd and no npx to fetch one"
+if [ ! -x ./node_modules/.bin/jscpd ]; then
+	echo "check-duplication: LINTER ERROR — no local jscpd. Install with \`npm ci\`."
 	exit 2
 fi
+RUN="./node_modules/.bin/jscpd"
 
 out="$(mktemp)"
 trap 'rm -f "$out"' EXIT
