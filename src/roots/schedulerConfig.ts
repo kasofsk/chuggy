@@ -169,6 +169,10 @@ const schedulerConfigurationSchema = z.strictObject({
   authority: schedulerAuthoritySchema.optional(),
 });
 
+const schedulerConfigurationsSchema = z
+  .array(schedulerConfigurationSchema)
+  .min(1);
+
 const schedulerImagesSchema = z
   .array(
     z.strictObject({
@@ -282,7 +286,7 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
   );
   const merged = { ...defaults };
   for (const [bound, value] of Object.entries(overrides)) {
-    if (!(bound in merged))
+    if (!Object.hasOwn(merged, bound))
       throw new RangeError(
         `${schedulerVariablePrefix}${name} names an unknown bound ${bound}`,
       );
@@ -514,11 +518,10 @@ export function schedulerCommandConfig(
     ),
     workers: schedulerWorkers(environment),
     policy: schedulerPolicy(environment),
-    configurations: schedulerJsonOr(
+    configurations: schedulerJson(
       environment,
       "TASK_CONFIGURATIONS",
-      z.array(schedulerConfigurationSchema),
-      [],
+      schedulerConfigurationsSchema,
     ).map(schedulerTaskConfiguration),
     runtimeFacts: workspace === undefined ? {} : { workspace },
   };

@@ -65,6 +65,21 @@ const policy = {
   Work: { profile: "standard", runtimeVersion: "1", grant },
 };
 
+const configuration = {
+  tenant: "tenant",
+  project: "project",
+  configurationRevision: "revision",
+  configurationDigest: "digest",
+  brief: {
+    motivation: ["The importer drops rows."],
+    acceptanceCriteria: ["A dropped row is reported."],
+    constraints: [],
+  },
+  practices: ["AcceptanceCriteria"],
+  work: { instructions: ["Change the importer."] },
+  review: { instructions: ["Walk the call paths."] },
+};
+
 /** A complete environment, so a case can make one variable at a time the subject. */
 const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_DATABASE_URL: "postgres://chuggy_scheduler@127.0.0.1:1/chuggy",
@@ -77,6 +92,7 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_WORKER_IMAGES: JSON.stringify(images),
   CHUG_SCHEDULER_WORKER_RESOURCES: JSON.stringify(resources),
   CHUG_SCHEDULER_EXECUTION_POLICY: JSON.stringify(policy),
+  CHUG_SCHEDULER_TASK_CONFIGURATIONS: JSON.stringify([configuration]),
 };
 
 /** Every variable the command refuses to start without. */
@@ -155,7 +171,7 @@ test("a complete environment parses into the plain data the process root takes",
           },
         },
       },
-      configurations: [],
+      configurations: [configuration],
       runtimeFacts: {},
     },
   });
@@ -183,6 +199,32 @@ test("a bound no configuration publishes is refused rather than ignored", async 
     ),
   ) as { readonly refused?: string };
   assert.match(found.refused ?? "", /admissionsPerPass/u);
+});
+
+test("a bound named on the prototype of the defaults is refused too", async () => {
+  for (const bound of ["toString", "valueOf", "constructor"]) {
+    const found = JSON.parse(
+      await schedulerProgram(
+        parseProgram({
+          ...environment,
+          CHUG_SCHEDULER_PASS_BOUNDS: JSON.stringify({ [bound]: 4 }),
+        }),
+      ),
+    ) as { readonly refused?: string };
+    assert.match(found.refused ?? "", new RegExp(bound, "u"), bound);
+  }
+});
+
+test("a catalog stating no configuration cannot brief anything and is refused", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_TASK_CONFIGURATIONS: "[]",
+      }),
+    ),
+  ) as { readonly refused?: string };
+  assert.match(found.refused ?? "", /CHUG_SCHEDULER_TASK_CONFIGURATIONS/u);
 });
 
 test("a stated bound is taken and the rest stay the published defaults", async () => {
@@ -247,18 +289,7 @@ function processFakes(reachable: boolean): string {
       openAttempt: async () => ({ opened: 'Opened', attempt }),
       attemptPlaced: async (_attempt, workload) => { placed.push(workload); return true; },
     };
-    const configuration = {
-      tenant: 'tenant', project: 'project',
-      configurationRevision: 'revision', configurationDigest: 'digest',
-      brief: {
-        motivation: ['The importer drops rows.'],
-        acceptanceCriteria: ['A dropped row is reported.'],
-        constraints: [],
-      },
-      practices: ['AcceptanceCriteria'],
-      work: { instructions: ['Change the importer.'] },
-      review: { instructions: ['Walk the call paths.'] },
-    };
+    const configuration = ${JSON.stringify(configuration)};
   `;
 }
 
