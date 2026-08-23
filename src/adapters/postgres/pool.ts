@@ -206,7 +206,9 @@ function postgresCompatibleTarget(
     deployment.current.compatible.length,
     deployment.retainedPrevious.compatible.length,
   );
-  return deployment.current.compatible.slice(0, length);
+  return migrations
+    .slice(0, length)
+    .map(({ version, name }) => ({ version, name }));
 }
 
 /** Plans and applies one rollback-compatible target under the migration lock. */

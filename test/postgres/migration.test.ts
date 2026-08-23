@@ -118,6 +118,33 @@ async function seedI2(subject: pg.Pool): Promise<void> {
   );
 }
 
+async function assertDivergentMigrationRefused(
+  subject: pg.Pool,
+): Promise<void> {
+  const divergentRetained = runtimeSchemaContract(
+    retainedImageContract.required,
+    [
+      ...retainedImageContract.compatible.slice(0, -1),
+      { version: 17, name: "unknown migration" },
+    ],
+  );
+  assert.deepEqual(
+    await postgresMigrateCompatible(subject, {
+      current: currentRuntimeSchemaContract,
+      retainedPrevious: divergentRetained,
+    }),
+    { migrated: "CouldNotRun" },
+  );
+  assert.deepEqual(
+    (
+      await subject.query<{ version: number }>(
+        "SELECT version FROM schema_migration ORDER BY version DESC LIMIT 1",
+      )
+    ).rows,
+    [{ version: 16 }],
+  );
+}
+
 async function assertMigratedI2(subject: pg.Pool): Promise<void> {
   assert.deepEqual(
     (
@@ -344,6 +371,7 @@ test("a staged migration advances after its publishing image is retained", async
       retainedImageContract.compatible,
     );
     assert.equal(currentRuntimeSchemaContract.compatible.at(-1)?.version, 17);
+    await assertDivergentMigrationRefused(subject);
     const consumingContract = runtimeSchemaContract(
       currentRuntimeSchemaContract.compatible,
     );
