@@ -15,7 +15,8 @@
  * `Missing` arm says the pinned revision is definitively gone, which retires
  * the ticket; not having been supplied one is a fact about this process, so it
  * takes `Unavailable` and leaves the execution exactly as it was. A digest that
- * contradicts the pin is not checked twice either — `./taskBriefing.ts` refuses
+ * contradicts the pin is not checked twice either —
+ * `../../interpreter/taskBriefing.ts` refuses
  * a configuration whose revision or digest is not the pinned one, and a second
  * opinion here could only disagree with it.
  *
