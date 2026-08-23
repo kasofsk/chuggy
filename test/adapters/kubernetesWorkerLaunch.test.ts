@@ -336,7 +336,7 @@ test("an unadmitted placement never reaches the cluster", async () => {
   assert.deepEqual(reached, []);
 });
 
-test("a refused create is definitive and a failing cluster is a hold", async () => {
+test("only a refusal of the document is definitive and every other answer holds", async () => {
   const placed = {
     placed: "Placed",
     workload: kubernetesWorkerPodName(config, partition, placement.attempt),
@@ -348,9 +348,13 @@ test("a refused create is definitive and a failing cluster is a hold", async () 
     [201, placed],
     [409, placed],
     [400, denied],
-    [403, denied],
+    [413, denied],
+    [415, denied],
     [422, denied],
     [401, held],
+    [403, held],
+    [404, held],
+    [405, held],
     [429, held],
     [500, held],
     [503, held],

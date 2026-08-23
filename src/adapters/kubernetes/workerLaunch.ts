@@ -9,12 +9,16 @@
  * cannot be reached, or that answers something this adapter does not recognise
  * is an arm of `WorkerPlaced` rather than a raised failure.
  *
- * THE TWO INABILITIES PART AT THE STATUS LINE. An unauthenticated answer, a
- * throttled one and a server failure are holds, because each of them describes
- * the cluster's own state at this moment; every other refusal is the site
- * declining to run this contract — an admission webhook, a quota, a rejected
- * manifest — and is definitive, so it retires the execution where an operator
- * can see it rather than holding a ticket silently forever.
+ * THE TWO INABILITIES PART AT THE STATUS LINE, AND AN ANSWER THIS ADAPTER DOES
+ * NOT RECOGNISE IS A HOLD. Only a refusal of the submitted document itself —
+ * malformed, too large, a media type the API does not take, or one it
+ * validated and rejected — is the site declining to run this contract. A
+ * forbidden answer is not: one status line cannot tell an exhausted quota, a
+ * terminating namespace or a service account short of the create verb apart
+ * from an admission refusal, and every one of those but the last resolves
+ * without anyone touching the ticket. So every other answer describes the
+ * cluster's own state at this moment and holds, and an execution is retired to
+ * an operator only where no later attempt could place it either.
  *
  * A CREDENTIAL IS READ PER ACT AND NEVER HELD. The token file is what the
  * configuration carries, so a rotated token is picked up without a restart and
@@ -97,10 +101,10 @@ async function kubernetesReach(
   }
 }
 
-/** The unauthenticated, throttled and failing answers, which are the cluster's own state. */
-function kubernetesHeld(status: number): boolean {
-  return status === 401 || status === 429 || status >= 500;
-}
+/** The answers that refuse the submitted document itself rather than describe the cluster. */
+const kubernetesManifestRefusals: ReadonlySet<number> = new Set([
+  400, 413, 415, 422,
+]);
 
 /** What one create answer means for the attempt it was made for. */
 function kubernetesPlaced(
@@ -108,18 +112,20 @@ function kubernetesPlaced(
   reached: KubernetesReached,
   workload: WorkloadId,
 ): WorkerPlaced {
-  if (reached.reached === "Unreachable" || kubernetesHeld(reached.status))
-    return {
-      placed: "Unavailable",
-      retryAfterSeconds: config.unavailableRetryAfterSecs,
-    };
+  const held: WorkerPlaced = {
+    placed: "Unavailable",
+    retryAfterSeconds: config.unavailableRetryAfterSecs,
+  };
+  if (reached.reached === "Unreachable") return held;
   if (
     reached.status === 200 ||
     reached.status === 201 ||
     reached.status === 409
   )
     return { placed: "Placed", workload };
-  return { placed: "Denied", reason: "ExecutionPolicyDenied" };
+  return kubernetesManifestRefusals.has(reached.status)
+    ? { placed: "Denied", reason: "ExecutionPolicyDenied" }
+    : held;
 }
 
 /** Places and deletes one bounded pod per attempt against the supplied cluster. */
