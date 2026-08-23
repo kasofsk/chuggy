@@ -303,6 +303,7 @@ export interface SchedulerProcessRootConfig {
     readonly cluster: ClusterId;
   };
   readonly service: Omit<ExecutionSchedulerService, "store">;
+  readonly additional?: readonly RuntimePrecondition[];
 }
 
 /** Owns the scheduler-role pool while its cluster and policy adapters stay explicit ports. */
@@ -324,6 +325,7 @@ export function schedulerProcessRoot(
         additional: [
           postgresRolePrecondition(pool, schedulerRole),
           recoveryEpochPrecondition(pool, config.identity.recoveryEpoch),
+          ...(config.additional ?? []),
         ],
       },
       config.runtime,
