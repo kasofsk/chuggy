@@ -26,10 +26,11 @@
 # ends via the trap the caller installs. Two runs share nothing, and a crashed
 # run leaves no state the next one inherits.
 #
-# A CALLER-SUPPLIED SERVER IS USED AS IT STANDS. CHUG_PG_URL skips the
-# container: the gates did not start that server, so they do not stop it, and
-# they create no database inside it. It is still waited on, because a server
-# that never answers is a run that never happened.
+# A CALLER-SUPPLIED SERVER IS USED WITHOUT A CONTAINER SCRATCH DATABASE.
+# CHUG_PG_URL skips the container: the gates did not start that server, so they
+# do not stop it. A sourcing gate may still create and remove databases when
+# its own header says it does. The server is waited on first, because one that
+# never answers is a run that never happened.
 #
 # A SERVER THAT DOES NOT ANSWER IS A COULD-NOT-RUN. The container branch waits
 # on `pg_isready` before anything runs, and a caller's own server is probed for
