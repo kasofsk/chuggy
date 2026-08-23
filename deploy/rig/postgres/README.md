@@ -6,18 +6,29 @@ identities a deployment owns and the migration cannot create for itself;
 connection to the server, and where the server may open one. Each argues itself
 in its own header, and this is the procedure.
 
-The migration is not here. It runs at start-up from the slice that carries the
-schema, and what this procedure owes it is an identity to run as. That schema is
-on main, in `src/adapters/postgres/`, but nothing in this tree wraps it in a
-process a deployment could start. So the Migrate step still issues no command of
-its own, and the gate in the database half of Prove it is what applies the
-schema here.
+The migration is a command now: `npm run migrate` applies the schema this
+checkout declares to the database `CHUG_MIGRATE_DATABASE_URL` names, and what
+this procedure owes it is an identity to run as.
+
+**A DATABASE WITH ANY OF 5, 12 AND 13 STILL PENDING CANNOT BE MIGRATED BY THAT
+IDENTITY.** Each of those restates `NOSUPERUSER`, `NOREPLICATION` and
+`NOBYPASSRLS` on a role, which `ALTER ROLE` refuses to a `CREATEROLE` role
+however it holds that role, so the chain stops at the first of them still to
+apply — see kasofsk/chuggy#241 for the two refusals and what has to be decided.
+A database already carrying all three advances normally, and that is what the
+Migrate step below is written for.
 
 ## Before you start
 
 A server, and a database in it for chuggy to own. On the rig that is the
-`postgres` StatefulSet in namespace `chuggy` and the `chuggy` database inside
-it. You will need the superuser's password and three passwords to issue.
+`postgres` StatefulSet in namespace `chuggy` and the `chuggy_rehearsal`
+database inside it — the one `chuggy-api`'s `CHUG_API_DATABASE_URL` names, and
+the one every step below names. The rig's `chuggy` database stopped at
+migration 2 and is not it: pointing this procedure there runs the chain from 3
+and stops on the refusal above.
+
+You will need the superuser's password, and one password for each login role
+`postgres-roles.sql` issues.
 
 ## Issue the credentials
 
@@ -32,8 +43,19 @@ kubectl -n chuggy create secret generic chuggy-postgres-credentials \
 owner-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 ticket-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 api-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+selector-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+scheduler-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+finalizer-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 EOF
 ```
+
+One per control-plane process, because every serving command under `src/roots/`
+asserts at start-up that `current_user` is its own group role and refuses to
+serve otherwise. A shared credential does not widen one process's reach; it
+stops every process the credential does not belong to from starting. The
+administrative commands — the migration and `provision:project-access` — are
+outside that rule, and `postgres-roles.sql`'s header says what each asserts
+instead.
 
 ## Create the roles
 
@@ -53,12 +75,18 @@ export PGPASSWORD="$(secret postgres-superuser password)"
 export CHUG_PG_OWNER_PASSWORD="$(secret chuggy-postgres-credentials owner-password)"
 export CHUG_PG_TICKET_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials ticket-service-password)"
 export CHUG_PG_API_PASSWORD="$(secret chuggy-postgres-credentials api-password)"
+export CHUG_PG_SELECTOR_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials selector-service-password)"
+export CHUG_PG_SCHEDULER_PASSWORD="$(secret chuggy-postgres-credentials scheduler-password)"
+export CHUG_PG_FINALIZER_PASSWORD="$(secret chuggy-postgres-credentials finalizer-password)"
 
 : "${PGPASSWORD:?the superuser password did not read back}" \
   "${CHUG_PG_OWNER_PASSWORD:?owner-password did not read back}" \
   "${CHUG_PG_TICKET_SERVICE_PASSWORD:?ticket-service-password did not read back}" \
-  "${CHUG_PG_API_PASSWORD:?api-password did not read back}" &&
-psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy -f deploy/rig/postgres/postgres-roles.sql
+  "${CHUG_PG_API_PASSWORD:?api-password did not read back}" \
+  "${CHUG_PG_SELECTOR_SERVICE_PASSWORD:?selector-service-password did not read back}" \
+  "${CHUG_PG_SCHEDULER_PASSWORD:?scheduler-password did not read back}" \
+  "${CHUG_PG_FINALIZER_PASSWORD:?finalizer-password did not read back}" &&
+psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy_rehearsal -f deploy/rig/postgres/postgres-roles.sql
 ```
 
 It is one transaction: it lands whole or not at all, and re-running it rotates
@@ -77,16 +105,22 @@ lookup came back empty.
 
 ## Migrate
 
-**No command of its own.** `postgresMigrate` is a function the adapter exports
-and no process in this tree calls, so this step sets the variable the next one
-reads and the gate below is what runs the migration against the database that
-variable names.
-
 As `chuggy_owner` and as nobody else, over the same forwarded port:
 
 ```sh
-export CHUG_PG_URL="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy"
+owner_url="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy_rehearsal"
+CHUG_MIGRATE_DATABASE_URL="$owner_url" npm run migrate
 ```
+
+It prints the versions it applied, or says the schema was already current, and
+running it twice is how you see the difference.
+
+A ledger this checkout does not declare — a version it has never heard of, or
+one under another name — is a **could-not-run** that applies nothing and exits
+2. That is the case the command exists to refuse: the runner underneath it
+subtracts the applied set and applies the difference, so against a database
+ahead of this checkout it would fill the gaps it recognised and report the
+success of a schema nobody has.
 
 ## Grant a project access
 
@@ -100,7 +134,7 @@ stored principal with the same function the API derives it from, so neither
 side has an encoding to get wrong.
 
 ```sh
-export CHUG_PROVISION_DATABASE_URL="$CHUG_PG_URL"
+export CHUG_PROVISION_DATABASE_URL="$owner_url"
 export CHUG_API_OIDC_ISSUER="https://accounts.example.test"
 export CHUG_PROVISION_SUBJECT="the sub claim the provider issues"
 export CHUG_PROVISION_TENANT="tenant" CHUG_PROVISION_PROJECT="project"
@@ -195,13 +229,22 @@ spec:
         - name: CHUG_PG_API_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: api-password }
+        - name: CHUG_PG_SELECTOR_SERVICE_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: selector-service-password }
+        - name: CHUG_PG_SCHEDULER_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: scheduler-password }
+        - name: CHUG_PG_FINALIZER_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: finalizer-password }
 YAML
 kubectl -n chuggy wait --for=condition=Ready pod/probe
 
 as() {
   kubectl -n chuggy exec -i probe -- sh -c '
     PGPASSWORD="$(printenv "$2")" psql \
-      "postgres://$1@postgres.chuggy.svc.cluster.local:5432/chuggy?connect_timeout=5" -At -f -
+      "postgres://$1@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?connect_timeout=5" -At -f -
   ' _ "$1" "$2" <<SQL
 SELECT 'admitted as ' || current_user
     || ' from ' || inet_client_addr()
@@ -260,26 +303,34 @@ means chuggy-fabric moved the binding, and the header is what to re-read.
 
 ### The credentials
 
-With the label back on, each login role once, with the password this procedure
-issued it:
+With the label back on, every login role with the password this procedure
+issued it, and the API's twice because its second pool becomes a second group:
 
 ```sh
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
 
-as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_ticket_service
+as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_boundary_owner
 as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service
 as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_api
+as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_selector_review
+as chuggy_selector_service_login CHUG_PG_SELECTOR_SERVICE_PASSWORD chuggy_selector_service
+as chuggy_scheduler_login CHUG_PG_SCHEDULER_PASSWORD chuggy_scheduler
+as chuggy_finalizer_login CHUG_PG_FINALIZER_PASSWORD chuggy_finalizer
 ```
+
+The owner's line asks about `chuggy_boundary_owner` rather than a service
+group, because that is the membership a `GRANT` on a `SECURITY DEFINER`
+function needs and the one whose absence a migration reports as applied.
 
 Each names the role it authenticated as and a client address that is the
 probe's rather than `127.0.0.1`, which is what makes it a password check rather
-than a trust match; nothing else in this procedure is one, because the gate
-below reaches the group roles with `SET LOCAL ROLE` on a connection it already
-holds and never authenticates as a login role at all. And each ends in `true`
-for a group the role holds only through the grant `postgres-roles.sql` made:
-revoke that grant and the same call prints `false` with every other field
-unchanged. Without these three calls the passwords, the LOGIN attribute and the
-membership are exercised by nothing.
+than a trust match; nothing else in this procedure is one, because the gates
+below connect as the superuser and reach the group roles with `SET LOCAL ROLE`
+on that connection, never authenticating as a login role at all. And each ends
+in `true` for a group the role holds only through the grant
+`postgres-roles.sql` made: revoke that grant and the same call prints `false`
+with every other field unchanged. Without these calls the passwords, the LOGIN
+attribute and the membership are exercised by nothing.
 
 ### The egress half
 
@@ -349,23 +400,65 @@ accepts an established flow before it consults either.
 
 ### The database half
 
-With `CHUG_PG_URL` set as above, the gate uses that database as it stands —
-it starts no server and creates no database of its own — so the harness
-migrates the one this procedure pointed it at. It then replays every claim the
-adapter makes about what the server does, including the one that matters here:
-what each group role is refused. It leaves its partitions behind in
-whatever database it is pointed at, which is a rehearsal's residue and not
-something to point at a database anyone depends on.
+Two gates read `CHUG_PG_URL`, and neither can be given the control plane's own
+identity. `.chug/tasks/check-queries.sh` migrates the database it names and
+leaves the schema behind; `.chug/tasks/check-postgres.sh` migrates a template
+database beside it and clones one per worker, which is why its header requires
+the role to be able to create and drop sibling databases. `chuggy_owner` can do
+neither: it is `NOCREATEDB`, and the rig's `chuggy` — the other database this
+file names — is at migration 2, which the top of this file says that identity
+cannot advance. So the gates get the superuser and a database made for the run,
+which is nobody's control plane:
+
+```sh
+psql -h 127.0.0.1 -p 55440 -U postgres -d postgres -c 'CREATE DATABASE chuggy_gate'
+export CHUG_PG_URL="postgres://postgres:$(node -p 'encodeURIComponent(process.env.PGPASSWORD)')@127.0.0.1:55440/chuggy_gate"
+.chug/tasks/check-queries.sh
+.chug/tasks/check-postgres.sh
+```
+
+This is the one URL in this file whose password nothing here generated: every
+other one interpolates a value `Issue the credentials` made and stripped `=+/`
+from, and the superuser's comes from a Secret this procedure only reads. A `@`,
+a `/`, a `:` or a `#` in it would silently make that line a different URL, so it
+is percent-encoded rather than interpolated — with `node`, which
+`.chug/tasks/_postgres.sh` requires of the two gates on the next lines anyway.
+
+Between them they ask the server whether every tagged query and row type is
+true, and replay every claim the adapter makes about what the server does —
+including the one that matters here: what each group role is refused. What they
+leave behind is a migrated schema and its partitions, which is why the database
+is one made for the run and dropped with the rest.
 
 ### Done with them
 
-The probe carries the Secret, so it does not outlive the proofs; the forwarded
-port is this host's rather than the cluster's, so nothing below reverses it.
+The probe carries the Secret, so it does not outlive the proofs, and the gates'
+database is a rehearsal's residue; the forwarded port is this host's rather than
+the cluster's, so nothing below reverses it.
+
+`chuggy_gate` is not the only database a run can leave in this cluster.
+`check-postgres.sh` migrates `chuggy_template_<pid>` beside it and clones a
+`chuggy_worker_<pid>_<n>` per worker, and drops both on the way out — its trap
+covers an interrupt, so what survives is a signal the trap cannot catch, and
+that same signal leaves a connection an unforced drop refuses over. So the drop
+is forced, and it drops what the run left rather than the one name this file
+chose:
 
 ```sh
+psql -h 127.0.0.1 -p 55440 -U postgres -d postgres <<'SQL'
+SELECT format('DROP DATABASE %I WITH (FORCE)', datname)
+  FROM pg_database
+ WHERE datname = 'chuggy_gate'
+    OR datname LIKE 'chuggy\_template\_%'
+    OR datname LIKE 'chuggy\_worker\_%'
+\gexec
+SQL
 kubectl -n chuggy delete pod probe
 kill "$forward"
 ```
+
+`chuggy` and `chuggy_rehearsal` match none of those three, which is what keeps
+this from being a command that drops the deployment.
 
 ## Reversing it
 
@@ -378,5 +471,6 @@ The roles are deliberately not reversed by a command here. Dropping a role that
 owns relations drops nothing and fails until the relations are reassigned, and
 a runbook that offered a one-line undo for that would be offering to lose the
 database. So the Secret goes and the roles stay, and deleting it discards the
-only copy of a password three roles still have — recoverable only by re-running
-`Issue the credentials` and `Create the roles`, which issues different ones.
+only copy of every password the login roles still have — recoverable only by
+re-running `Issue the credentials` and `Create the roles`, which issues
+different ones.

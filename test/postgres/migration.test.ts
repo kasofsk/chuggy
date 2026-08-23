@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import { promisify } from "node:util";
 import {
   migrationLedger,
   migrations,
@@ -49,10 +51,67 @@ const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
   { version: 17, name: "selector context account read" },
 ]);
 
+const declaredLatest = Math.max(...migrations.map(({ version }) => version));
+
 function databaseUrl(database: string): string {
   const url = new URL(postgresHarnessUrl());
   url.pathname = `/${database}`;
   return url.toString();
+}
+
+/** One empty database of its own, dropped whatever the body did with it. */
+async function migrationDatabase(
+  label: string,
+  body: (subject: pg.Pool, url: string) => Promise<void>,
+): Promise<void> {
+  const database = `chuggy_${label}_${randomUUID().replaceAll("-", "")}`;
+  const admin = postgresPool(postgresHarnessUrl());
+  await admin.query(`CREATE DATABASE ${database}`);
+  const url = databaseUrl(database);
+  const subject = postgresPool(url);
+  try {
+    await body(subject, url);
+  } finally {
+    await subject.end();
+    await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);
+    await admin.end();
+  }
+}
+
+/** Applies the declared migrations below `beyond` and records each in the ledger. */
+async function migrationSeedApplied(
+  subject: pg.Pool,
+  beyond: number,
+): Promise<void> {
+  await subject.query(migrationLedger);
+  for (const migration of migrations.filter(
+    ({ version }) => version < beyond,
+  )) {
+    for (const statement of migration.statements)
+      await subject.query(statement);
+    await subject.query(
+      "INSERT INTO schema_migration (version,name) VALUES ($1,$2)",
+      [migration.version, migration.name],
+    );
+  }
+}
+
+/** Runs the migration command against one database and returns what it reported. */
+async function migrationCommandRun(
+  url: string,
+): Promise<{ readonly code: number; readonly report: string }> {
+  const run = promisify(execFile)(
+    process.execPath,
+    ["--experimental-strip-types", "src/roots/migrate.ts"],
+    { cwd: process.cwd(), env: { CHUG_MIGRATE_DATABASE_URL: url } },
+  );
+  const settled = await run.catch((failure: unknown) => failure);
+  const { stdout, stderr, code } = settled as {
+    stdout: string;
+    stderr: string;
+    code?: number;
+  };
+  return { code: code ?? 0, report: `${stdout}${stderr}`.trim() };
 }
 
 async function seedI2(subject: pg.Pool): Promise<void> {
@@ -314,11 +373,7 @@ test("each migration runs forward over the rows the slice before it left", async
 });
 
 test("an incompatible rollout leaves an untouched database untouched", async () => {
-  const database = `chuggy_gate_${randomUUID().replaceAll("-", "")}`;
-  const admin = postgresPool(postgresHarnessUrl());
-  await admin.query(`CREATE DATABASE ${database}`);
-  const subject = postgresPool(databaseUrl(database));
-  try {
+  await migrationDatabase("gate", async (subject) => {
     assert.deepEqual(
       await postgresMigrateCompatible(subject, {
         current: currentRuntimeSchemaContract,
@@ -334,28 +389,12 @@ test("an incompatible rollout leaves an untouched database untouched", async () 
       ).rows,
       [{ relation: null }],
     );
-  } finally {
-    await subject.end();
-    await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);
-    await admin.end();
-  }
+  });
 });
 
 test("a staged migration advances after its publishing image is retained", async () => {
-  const database = `chuggy_stage_${randomUUID().replaceAll("-", "")}`;
-  const admin = postgresPool(postgresHarnessUrl());
-  await admin.query(`CREATE DATABASE ${database}`);
-  const subject = postgresPool(databaseUrl(database));
-  try {
-    await subject.query(migrationLedger);
-    for (const migration of migrations.slice(0, -1)) {
-      for (const statement of migration.statements)
-        await subject.query(statement);
-      await subject.query(
-        "INSERT INTO schema_migration (version,name) VALUES ($1,$2)",
-        [migration.version, migration.name],
-      );
-    }
+  await migrationDatabase("stage", async (subject) => {
+    await migrationSeedApplied(subject, declaredLatest);
     await assertDivergentMigrationRefused(subject);
     assert.deepEqual(
       await postgresMigrateCompatible(subject, {
@@ -371,9 +410,83 @@ test("a staged migration advances after its publishing image is retained", async
       ).check(new AbortController().signal),
       true,
     );
-  } finally {
-    await subject.end();
-    await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);
-    await admin.end();
-  }
+  });
+});
+
+test("the command applies the declared schema and the run after it applies nothing", async () => {
+  await migrationDatabase("command", async (subject, url) => {
+    assert.deepEqual(await migrationCommandRun(url), {
+      code: 0,
+      report: `migrate: applied ${migrations.map(({ version }) => version).join(",")}`,
+    });
+    assert.deepEqual(await migrationCommandRun(url), {
+      code: 0,
+      report: "migrate: the schema was already current",
+    });
+    assert.equal(
+      await schemaCompatibilityPrecondition(
+        postgresRuntimeSchema(subject),
+        currentRuntimeSchemaContract,
+      ).check(new AbortController().signal),
+      true,
+    );
+  });
+});
+
+/** Drives the command at a ledger holding the versions below `beyond` and one this image never declared. */
+async function migrationForeignLedgerRefused(
+  label: string,
+  beyond: number,
+): Promise<void> {
+  const foreign = declaredLatest + 1;
+  await migrationDatabase(label, async (subject, url) => {
+    await migrationSeedApplied(subject, beyond);
+    await subject.query(
+      "INSERT INTO schema_migration (version,name) VALUES ($1,$2)",
+      [foreign, "a migration a later image declares"],
+    );
+    assert.deepEqual(await migrationCommandRun(url), {
+      code: 2,
+      report:
+        "migrate: the applied ledger is not a prefix of the schema this image declares, so nothing was applied",
+    });
+    assert.deepEqual(
+      (
+        await subject.query<{ version: number }>(
+          "SELECT version FROM schema_migration ORDER BY version",
+        )
+      ).rows.map(({ version }) => version),
+      [
+        ...migrations
+          .filter(({ version }) => version < beyond)
+          .map(({ version }) => version),
+        foreign,
+      ],
+    );
+  });
+}
+
+test("a ledger carrying a version this image does not declare is refused untouched", async () => {
+  await migrationForeignLedgerRefused("foreign", declaredLatest);
+  await migrationForeignLedgerRefused("rolledback", declaredLatest + 1);
+});
+
+test("a statement that fails is a failure and not a could-not-run, and takes its ledger row with it", async () => {
+  await migrationDatabase("failing", async (subject, url) => {
+    await migrationSeedApplied(subject, declaredLatest);
+    await subject.query(
+      "ALTER FUNCTION project_capacity_account(text,text) RENAME TO project_capacity_account_renamed",
+    );
+    const run = await migrationCommandRun(url);
+    assert.equal(run.code, 1);
+    assert.match(run.report, /project_capacity_account/u);
+    assert.equal(
+      (
+        await subject.query<{ latest: number | null }>(
+          "SELECT max(version) AS latest FROM schema_migration",
+        )
+      ).rows[0]?.latest,
+      declaredLatest - 1,
+    );
+  });
 });
