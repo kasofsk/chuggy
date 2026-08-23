@@ -5,6 +5,7 @@ import {
   asPrincipal,
   asPublicInstant,
   nativeWeb,
+  type NativeWeb,
   type NativeReadStore,
   type NativeSubmission,
   type ProjectAccess,
@@ -30,6 +31,7 @@ import {
   type TicketCommand,
 } from "../../src/interpreter/operationInbox.ts";
 import { dispatchEvent, revokeEvent } from "../../src/actor/decisionEvent.ts";
+import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -41,6 +43,13 @@ const authority = {
   kind: asAuthorityKind("User"),
   subject: asAuthoritySubject("internal-subject"),
 };
+
+function ticketRead(calls: string[]): NativeReadStore["ticket"] {
+  return (_partition, ticket) => {
+    calls.push(`read:ticket:${String(ticket)}`);
+    return Promise.resolve({ ticket, phase: "Pending", sequence: 1 });
+  };
+}
 
 function boundary(
   allowed: boolean,
@@ -72,6 +81,7 @@ function boundary(
         project: { partition, sequence: 0, tickets: [] },
       });
     },
+    ticket: ticketRead(calls),
   };
   const inbox: OperationInbox = {
     accept: () => {
@@ -129,6 +139,33 @@ test("inaccessible and absent operation reads share the not-found shape", async 
   const { web, calls } = boundary(false);
   assert.equal(await web.operation(principal, partition, operation), undefined);
   assert.deepEqual(calls, ["authorize:Read"]);
+});
+
+test("ticket detail reauthorizes and conceals inaccessible tickets", async () => {
+  const denied = boundary(false);
+  assert.equal(await denied.web.ticket(principal, partition, id(1)), undefined);
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
+
+  const allowed = boundary(true);
+  assert.equal(
+    (await allowed.web.ticket(principal, partition, id(1)))?.ticket,
+    id(1),
+  );
+  assert.deepEqual(allowed.calls, ["authorize:Read", "read:ticket:1"]);
+});
+
+test("operational resources authorize before scheduler or artifact reads", async () => {
+  const execution = asExecutionId("execution");
+  for (const read of [
+    (web: NativeWeb) => web.operationalStatus(principal, partition),
+    (web: NativeWeb) => web.executions(principal, partition, { limit: 10 }),
+    (web: NativeWeb) => web.execution(principal, partition, execution),
+    (web: NativeWeb) => web.outputContent(principal, partition, execution, 1),
+  ]) {
+    const denied = boundary(false);
+    await read(denied.web);
+    assert.deepEqual(denied.calls, ["authorize:Read"]);
+  }
 });
 
 test("cancellation reauthorizes before reading or writing", async () => {

@@ -30,10 +30,49 @@ type ServedNativeWeb = Pick<
   | "projectInventory"
   | "reviseDraft"
   | "submit"
+  | "ticket"
+  | "execution"
+  | "executions"
+  | "operationalStatus"
+  | "outputContent"
 >;
+
+function fakeTicket(calls: string[]): NativeWeb["ticket"] {
+  return (_principal, _partition, ticket) => {
+    calls.push(`ticket:${String(ticket)}`);
+    return Promise.resolve({ ticket, phase: "Working", sequence: 4 });
+  };
+}
+
+function fakeOperations(
+  calls: string[],
+): Pick<
+  NativeWeb,
+  "operationalStatus" | "executions" | "execution" | "outputContent"
+> {
+  return {
+    operationalStatus: () => {
+      calls.push("operationalStatus");
+      return Promise.resolve({ result: "NotFound" });
+    },
+    executions: (_principal, _partition, query) => {
+      calls.push(`executions:${String(query.limit)}`);
+      return Promise.resolve({ result: "NotFound" });
+    },
+    execution: (_principal, _partition, execution) => {
+      calls.push(`execution:${execution}`);
+      return Promise.resolve(undefined);
+    },
+    outputContent: (_principal, _partition, execution, ordinal) => {
+      calls.push(`output:${execution}:${String(ordinal)}`);
+      return Promise.resolve({ read: "NotFound" });
+    },
+  };
+}
 
 function fakeWeb(calls: string[]): ServedNativeWeb {
   return {
+    ...fakeOperations(calls),
     cancel: (_principal, _partition, operation) => {
       calls.push(`cancel:${operation}`);
       return Promise.resolve({ result: "NotFound" });
@@ -98,6 +137,7 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
         acceptance: { accepted: "InvalidCommand" },
       });
     },
+    ticket: fakeTicket(calls),
   };
 }
 
@@ -247,6 +287,67 @@ test("unknown query fields and oversized bodies fail before NativeWeb", async ()
   });
   assert.equal(found.statusCode, 413);
   assert.deepEqual(calls, []);
+});
+
+test("ticket phase filters and detail are parsed before NativeWeb", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}?phase=Pending&phase=Escalated&limit=7`,
+        headers,
+      })
+    ).statusCode,
+    404,
+  );
+  assert.equal(
+    (await app.inject({ url: `${root}?phase=NonTerminal`, headers }))
+      .statusCode,
+    404,
+  );
+  const detail = await app.inject({ url: `${root}/3`, headers });
+  assert.equal(detail.statusCode, 200);
+  assert.deepEqual(detail.json(), { ticket: 3, phase: "Working", sequence: 4 });
+  assert.equal(
+    (await app.inject({ url: `${root}?phase=Unknown`, headers })).statusCode,
+    400,
+  );
+  assert.deepEqual(calls, ["project:7", "project:50", "ticket:3"]);
+});
+
+test("operational routes parse bounded filters and artifact identities", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project";
+  const headers = { authorization: "Bearer valid" };
+  await app.inject({ url: `${root}/operational-status`, headers });
+  await app.inject({
+    url: `${root}/executions?state=Queued&state=Running&limit=7`,
+    headers,
+  });
+  await app.inject({ url: `${root}/executions/execution-1`, headers });
+  await app.inject({
+    url: `${root}/executions/execution-1/artifacts/2`,
+    headers,
+  });
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}/executions?state=Unknown`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
+  assert.deepEqual(calls, [
+    "operationalStatus",
+    "executions:7",
+    "execution:execution-1",
+    "output:execution-1:2",
+  ]);
 });
 
 const publicAuthoring = {

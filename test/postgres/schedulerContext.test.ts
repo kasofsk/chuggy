@@ -227,7 +227,7 @@ test("the guard names the installation ceiling when the project is inside its ow
   });
 });
 
-test("the ingress credential may ask, and may not read what it asks about", async () => {
+test("the ingress credential reads only the operational projection columns", async () => {
   const project = await schedulerProject(rig, "ingress");
   const named = `'${project.partition.tenant}','${project.partition.project}'`;
   for (const call of [activeWorkFunction, backlogFunction]) {
@@ -236,20 +236,28 @@ test("the ingress credential may ask, and may not read what it asks about", asyn
       undefined,
     );
   }
+  for (const [statement, relation] of [
+    ["SELECT account FROM execution", "execution"],
+    ["SELECT lease_owner FROM execution_attempt", "execution_attempt"],
+    ["SELECT execution FROM execution_result", "execution_result"],
+    ["SELECT count(*) FROM capacity_account", "capacity_account"],
+    ["SELECT count(*) FROM execution_cluster", "execution_cluster"],
+    ["SELECT count(*) FROM scheduler_incident", "scheduler_incident"],
+  ] as const) {
+    assert.match(
+      (await rig.harness.attemptAs(apiRole, statement)) ?? "",
+      postgresHarnessDenial(relation),
+    );
+  }
   for (const relation of [
     "execution",
     "execution_attempt",
     "execution_result",
-    "capacity_account",
-    "execution_cluster",
-    "scheduler_incident",
+    "execution_result_artifact",
   ]) {
-    assert.match(
-      (await rig.harness.attemptAs(
-        apiRole,
-        `SELECT count(*) FROM ${relation}`,
-      )) ?? "",
-      postgresHarnessDenial(relation),
+    assert.equal(
+      await rig.harness.attemptAs(apiRole, `SELECT count(*) FROM ${relation}`),
+      undefined,
     );
   }
 });

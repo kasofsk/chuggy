@@ -73,6 +73,11 @@ import type {
   ProjectArtifactWritten,
 } from "../../interpreter/finalizerPreparation.ts";
 import {
+  outputPreviewBytesMax,
+  type OutputContentPort,
+  type OutputContentRead,
+} from "../../interpreter/operationsView.ts";
+import {
   asArtifactDigest,
   type ArtifactFailure,
   type ArtifactRole,
@@ -111,7 +116,8 @@ export const artifactStoreDefaults = {
 /** The three ports one store answers, which is one boundary and not three deployments. */
 export type ArtifactStore = ArtifactVerificationPort &
   HandoffContentPort &
-  ProjectArtifactPort;
+  ProjectArtifactPort &
+  OutputContentPort;
 
 /** The most bytes one read of a stored object draws at a time. */
 const artifactStoreChunkBytes = 65_536;
@@ -433,6 +439,56 @@ async function artifactStoreWrite(
   };
 }
 
+async function artifactStoreOutput(
+  own: ArtifactStoreState,
+  input: Parameters<OutputContentPort["read"]>[0],
+): Promise<OutputContentRead> {
+  const output = input.artifact.output;
+  if (output === undefined) return { read: "NotFound" };
+  if (input.artifact.bytes > outputPreviewBytesMax)
+    return { read: "TooLarge", bytes: input.artifact.bytes };
+  const directory = artifactProjectDirectory(
+    own.root,
+    input.partition.tenant,
+    input.partition.project,
+  );
+  const confirmed = await artifactStoreConfirm(
+    directory,
+    artifactAttemptFile(
+      directory,
+      input.execution,
+      input.attempt,
+      input.artifact.path,
+    ),
+    input.artifact,
+    true,
+  );
+  if (confirmed.confirmed === "Unavailable")
+    return {
+      read: "Unavailable",
+      retryAfterSeconds: own.unavailableRetrySecs,
+    };
+  if (confirmed.confirmed === "Rejected")
+    return confirmed.failure === "Missing" ||
+      confirmed.failure === "ForeignProject"
+      ? { read: "NotFound" }
+      : { read: "Corrupt" };
+  if (confirmed.content === undefined) return { read: "Corrupt" };
+  try {
+    return {
+      read: "Content",
+      mediaType: output.mediaType,
+      renderer: output.renderer,
+      content: new TextDecoder("utf-8", { fatal: true }).decode(
+        confirmed.content,
+      ),
+      ...(output.schema === undefined ? {} : { schema: output.schema }),
+    };
+  } catch {
+    return { read: "Corrupt" };
+  }
+}
+
 /** The store over its options, refusing at construction what no later call could work around. */
 export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
   const own: ArtifactStoreState = {
@@ -468,5 +524,6 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
     verifyManifest: (manifest) => artifactStoreVerify(own, manifest),
     readHandoff: (request) => artifactStoreRead(own, request),
     writeArtifact: (write) => artifactStoreWrite(own, write),
+    read: (input) => artifactStoreOutput(own, input),
   };
 }
