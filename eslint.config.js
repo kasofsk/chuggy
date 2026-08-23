@@ -169,8 +169,20 @@ const adapterQueriesTagged = (runtimeExemption) => [
 ];
 
 export default tseslint.config(
+  // `.claude/` is the agent harness's, and the parallel worktrees live under
+  // it: each one a whole checkout of this repo with a tsconfig of its own, so
+  // a linter that walks in builds a type-aware program per worktree and
+  // exhausts the heap on a checkout hosting a few. `.prettierignore` declines
+  // the directory and `.jscpd.json` the worktrees under it, each for its own
+  // tool; the gates scoped by `git ls-files` never see an untracked tree.
   {
-    ignores: ["node_modules/**", "model/**", "docs/**", ".chug/**"],
+    ignores: [
+      "node_modules/**",
+      "model/**",
+      "docs/**",
+      ".chug/**",
+      ".claude/**",
+    ],
   },
   eslint.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
