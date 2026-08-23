@@ -6,12 +6,17 @@ identities a deployment owns and the migration cannot create for itself;
 connection to the server, and where the server may open one. Each argues itself
 in its own header, and this is the procedure.
 
-The migration is not here. It runs at start-up from the slice that carries the
-schema, and what this procedure owes it is an identity to run as. That schema is
-on main, in `src/adapters/postgres/`, but nothing in this tree wraps it in a
-process a deployment could start. So the Migrate step still issues no command of
-its own, and the gate in the database half of Prove it is what applies the
-schema here.
+The migration is a command now: `npm run migrate` applies the schema this
+checkout declares to the database `CHUG_MIGRATE_DATABASE_URL` names, and what
+this procedure owes it is an identity to run as.
+
+**A FRESH DATABASE STILL CANNOT BE MIGRATED BY THAT IDENTITY.** Migrations 5, 12
+and 13 each restate `NOSUPERUSER`, `NOREPLICATION` and `NOBYPASSRLS` on a role,
+which `ALTER ROLE` refuses to a `CREATEROLE` role however it holds that role, so
+the chain stops there for `chuggy_owner` and only for a fresh database — see
+kasofsk/chuggy#241 for the two refusals and what has to be decided. A database
+already carrying those migrations advances normally, which is the rig's case and
+what the Migrate step below is written for.
 
 ## Before you start
 
@@ -32,8 +37,16 @@ kubectl -n chuggy create secret generic chuggy-postgres-credentials \
 owner-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 ticket-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 api-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+selector-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+scheduler-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+finalizer-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 EOF
 ```
+
+One per control-plane process, because every command under `src/roots/`
+asserts at start-up that `current_user` is its own group role and refuses to
+serve otherwise. A shared credential does not widen one process's reach; it
+stops every process the credential does not belong to from starting.
 
 ## Create the roles
 
@@ -53,11 +66,17 @@ export PGPASSWORD="$(secret postgres-superuser password)"
 export CHUG_PG_OWNER_PASSWORD="$(secret chuggy-postgres-credentials owner-password)"
 export CHUG_PG_TICKET_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials ticket-service-password)"
 export CHUG_PG_API_PASSWORD="$(secret chuggy-postgres-credentials api-password)"
+export CHUG_PG_SELECTOR_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials selector-service-password)"
+export CHUG_PG_SCHEDULER_PASSWORD="$(secret chuggy-postgres-credentials scheduler-password)"
+export CHUG_PG_FINALIZER_PASSWORD="$(secret chuggy-postgres-credentials finalizer-password)"
 
 : "${PGPASSWORD:?the superuser password did not read back}" \
   "${CHUG_PG_OWNER_PASSWORD:?owner-password did not read back}" \
   "${CHUG_PG_TICKET_SERVICE_PASSWORD:?ticket-service-password did not read back}" \
-  "${CHUG_PG_API_PASSWORD:?api-password did not read back}" &&
+  "${CHUG_PG_API_PASSWORD:?api-password did not read back}" \
+  "${CHUG_PG_SELECTOR_SERVICE_PASSWORD:?selector-service-password did not read back}" \
+  "${CHUG_PG_SCHEDULER_PASSWORD:?scheduler-password did not read back}" \
+  "${CHUG_PG_FINALIZER_PASSWORD:?finalizer-password did not read back}" &&
 psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy -f deploy/rig/postgres/postgres-roles.sql
 ```
 
@@ -77,16 +96,23 @@ lookup came back empty.
 
 ## Migrate
 
-**No command of its own.** `postgresMigrate` is a function the adapter exports
-and no process in this tree calls, so this step sets the variable the next one
-reads and the gate below is what runs the migration against the database that
-variable names.
-
 As `chuggy_owner` and as nobody else, over the same forwarded port:
 
 ```sh
 export CHUG_PG_URL="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy"
+CHUG_MIGRATE_DATABASE_URL="$CHUG_PG_URL" npm run migrate
 ```
+
+It prints the versions it applied, or says the schema was already current, and
+running it twice is how you see the difference. `CHUG_PG_URL` is set as well
+because the gate in the database half of `Prove it` reads that one.
+
+A ledger this checkout does not declare — a version it has never heard of, or
+one under another name — is a **could-not-run** that applies nothing and exits
+2. That is the case the command exists to refuse: the runner underneath it
+subtracts the applied set and applies the difference, so against a database
+ahead of this checkout it would fill the gaps it recognised and report the
+success of a schema nobody has.
 
 ## Grant a project access
 
@@ -195,6 +221,15 @@ spec:
         - name: CHUG_PG_API_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: api-password }
+        - name: CHUG_PG_SELECTOR_SERVICE_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: selector-service-password }
+        - name: CHUG_PG_SCHEDULER_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: scheduler-password }
+        - name: CHUG_PG_FINALIZER_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: finalizer-password }
 YAML
 kubectl -n chuggy wait --for=condition=Ready pod/probe
 
@@ -269,6 +304,9 @@ kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
 as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_ticket_service
 as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service
 as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_api
+as chuggy_selector_service_login CHUG_PG_SELECTOR_SERVICE_PASSWORD chuggy_selector_service
+as chuggy_scheduler_login CHUG_PG_SCHEDULER_PASSWORD chuggy_scheduler
+as chuggy_finalizer_login CHUG_PG_FINALIZER_PASSWORD chuggy_finalizer
 ```
 
 Each names the role it authenticated as and a client address that is the
@@ -278,7 +316,7 @@ below reaches the group roles with `SET LOCAL ROLE` on a connection it already
 holds and never authenticates as a login role at all. And each ends in `true`
 for a group the role holds only through the grant `postgres-roles.sql` made:
 revoke that grant and the same call prints `false` with every other field
-unchanged. Without these three calls the passwords, the LOGIN attribute and the
+unchanged. Without these calls the passwords, the LOGIN attribute and the
 membership are exercised by nothing.
 
 ### The egress half
