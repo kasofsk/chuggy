@@ -98,6 +98,24 @@ test("an idempotent retry returns the originally accepted operation", () => {
   assert.match(found.headers["location"] ?? "", /operation%2Fthree$/u);
 });
 
+test("an idempotent retry may expose a terminal public state only", () => {
+  const found = submissionResponse(partition, {
+    result: "Authorized",
+    acceptance: {
+      accepted: "Original",
+      operation: { ...standing, state: "Succeeded" },
+    },
+  });
+  assert.deepEqual(found.body, {
+    operation: "operation/three",
+    state: "Succeeded",
+  });
+  assert.doesNotMatch(
+    JSON.stringify(found.body),
+    /ordinal|authority|lifecycle/u,
+  );
+});
+
 test("retryable refusal carries bounded retry guidance", () => {
   const found = submissionResponse(partition, {
     result: "Backlogged",

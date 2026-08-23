@@ -1,5 +1,6 @@
 import { asIdempotencyKey } from "./operationInbox.ts";
 import type { NativeWeb, Principal } from "./nativeWeb.ts";
+import type { SelectorProposalAcceptance } from "./selector.ts";
 import type { SelectorRuntimeSource } from "./selectorRuntime.ts";
 
 function inaccessible(what: string): never {
@@ -64,5 +65,20 @@ export function selectorNativeSource(
 }
 export type SelectorNativeApi = Pick<
   NativeWeb,
-  "projectInventory" | "notifications" | "dispatchView" | "submit" | "operation"
->;
+  "projectInventory" | "notifications" | "dispatchView" | "operation"
+> & {
+  submit(
+    principal: Principal,
+    submission: Parameters<NativeWeb["submit"]>[1],
+  ): Promise<
+    | { readonly result: "NotFound" }
+    | {
+        readonly result: "Backlogged";
+        readonly retryAfterSeconds: number;
+      }
+    | {
+        readonly result: "Authorized";
+        readonly acceptance: SelectorProposalAcceptance;
+      }
+  >;
+};
