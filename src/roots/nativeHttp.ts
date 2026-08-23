@@ -9,12 +9,14 @@ import {
 } from "../adapters/http/oidc.ts";
 import { composeNativeWeb } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
+import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
 const oidcIssuerVariable = "CHUG_API_OIDC_ISSUER";
 const oidcAudienceVariable = "CHUG_API_OIDC_AUDIENCE";
 const oidcAlgorithmsVariable = "CHUG_API_OIDC_ALGORITHMS";
+const artifactRootVariable = "CHUG_API_ARTIFACT_ROOT";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -105,6 +107,10 @@ async function main(): Promise<void> {
     keying,
     access,
     postgresExecutionBacklogGuard(pool),
+    undefined,
+    undefined,
+    undefined,
+    artifactStore({ root: requiredEnvironment(artifactRootVariable) }),
   );
   const app = createNativeHttpApp(web, authentication, {
     ready: () => apiDatabaseReady(pool),

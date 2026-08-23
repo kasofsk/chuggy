@@ -10,7 +10,7 @@
  */
 
 import { assertNever } from "./assertNever.ts";
-import type { Phase } from "./generated/modelTypes.ts";
+import { phaseTags, type Phase } from "./generated/modelTypes.ts";
 
 /** Nothing is below settled: Done, Escalated and Revoked all rank here. */
 export const rankSettled = 0;
@@ -47,3 +47,13 @@ export function phaseRank(phase: Phase): number {
 export function isSettled(phase: Phase): boolean {
   return phaseRank(phase) === rankSettled;
 }
+
+/** The absorbing lifecycle endpoints; Escalated remains resumable. */
+export function isTerminalPhase(phase: Phase): boolean {
+  return phase === "Done" || phase === "Revoked";
+}
+
+/** The domain-owned meaning of the public non-terminal ticket selection. */
+export const nonTerminalPhaseTags: readonly Phase[] = phaseTags.filter(
+  (phase) => !isTerminalPhase(phase),
+);
