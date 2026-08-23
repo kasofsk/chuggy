@@ -449,7 +449,7 @@ test("the scheduler's write surface is exactly the columns execution and capacit
         table_name: "execution",
         privilege_type: "INSERT",
         columns:
-          "account,cluster,configuration_digest,configuration_revision,execution,project,source_request,task,tenant,ticket",
+          "account,cluster,configuration_digest,configuration_revision,execution,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
       },
       {
         table_name: "execution",
@@ -513,6 +513,7 @@ test("the scheduler reads execution and capacity, and of the project only its li
     read.map((row) => row.relation),
     [
       "capacity_account",
+      "configuration_revision",
       "execution",
       "execution_attempt",
       "execution_cluster",

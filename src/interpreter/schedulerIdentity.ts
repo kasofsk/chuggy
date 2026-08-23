@@ -25,7 +25,7 @@ declare const executionIdBrand: unique symbol;
 declare const attemptIdBrand: unique symbol;
 declare const capacityAccountBrand: unique symbol;
 declare const clusterIdBrand: unique symbol;
-declare const workloadIdBrand: unique symbol;
+declare const placementIdBrand: unique symbol;
 declare const schedulerOwnerBrand: unique symbol;
 
 /** A logical execution's identity: globally unique, opaque, and never reused. */
@@ -42,8 +42,8 @@ export type CapacityAccountId = string & {
 /** The placement pool an account draws its slots from. */
 export type ClusterId = string & { readonly [clusterIdBrand]: true };
 
-/** What the worker-launch port calls the workload it placed, opaque to everything here. */
-export type WorkloadId = string & { readonly [workloadIdBrand]: true };
+/** The backend's opaque identity for one placed physical attempt. */
+export type PlacementId = string & { readonly [placementIdBrand]: true };
 
 /** A scheduler process instance, which is what a claim lease is granted to. */
 export type SchedulerOwnerId = string & {
@@ -78,9 +78,9 @@ export function asClusterId(value: string): ClusterId {
   return asSchedulerText(value, "cluster id") as ClusterId;
 }
 
-/** Brands an opaque workload identity. */
-export function asWorkloadId(value: string): WorkloadId {
-  return asSchedulerText(value, "workload id") as WorkloadId;
+/** Brands an opaque backend placement identity. */
+export function asPlacementId(value: string): PlacementId {
+  return asSchedulerText(value, "placement id") as PlacementId;
 }
 
 /** Brands an opaque scheduler instance identity. */

@@ -93,6 +93,8 @@ export const schedulerEvidence = {
     "a logical task is already registered under another spawn request",
   PartialRegistration:
     "a registration left fewer executions than its request declares",
+  TooManyTasks:
+    "a registration declares more tasks than one request may materialize",
   NoReporter: "an exhausted execution has no attempt that could have reported",
   RefusedBinding:
     "the completion boundary refused a binding built from its own rows",
@@ -123,7 +125,9 @@ export async function schedulerLockExecution(
           e.source_request, q.authorizing_seq::text AS source_seq,
           q.effect_position::text AS source_effect,
           q.ticket_version::text AS ticket_version, e.account, e.cluster,
-          e.configuration_revision, e.configuration_digest, e.status, e.outcome,
+          e.configuration_revision, e.configuration_digest, e.requirement_identity,
+          e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
+          e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
           e.result_manifest, e.completion_operation,
           (e.attempt_next - 1)::text AS attempts_opened,
           e.retries_spent::text AS retries_spent

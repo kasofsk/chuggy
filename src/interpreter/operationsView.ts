@@ -20,6 +20,10 @@ import type {
 } from "./resultManifest.ts";
 import { asArtifactPath } from "./resultManifest.ts";
 import type { PublicInstant } from "./publicResource.ts";
+import type {
+  ExecutionRequirement,
+  RequirementSource,
+} from "./executionRequirement.ts";
 
 export type OutputRenderer = "UnifiedDiff" | "Markdown" | "Json" | "Text";
 
@@ -66,6 +70,11 @@ export interface ExecutionSummary {
   readonly stage?: number;
   readonly cluster: ClusterId;
   readonly configurationRevision: ConfigurationRevisionId;
+  readonly requirementIdentity: string;
+  readonly requirement: ExecutionRequirement;
+  readonly requirementDigest: string;
+  readonly requirementSource: RequirementSource;
+  readonly platformDefaultVersion: number;
   readonly status: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;
   readonly retriesSpent: number;

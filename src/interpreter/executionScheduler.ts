@@ -94,6 +94,7 @@
  */
 
 import type { Reason } from "../domain/generated/modelTypes.ts";
+import type { Config as DomainConfig } from "../domain/config.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
 import { checkedFinalizerConfig } from "./finalizer.ts";
@@ -105,20 +106,26 @@ import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { ResultManifest, ResultManifestId } from "./resultManifest.ts";
 import type { BriefingFault, TaskInvocation } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
+import type {
+  ExecutionRequirement,
+  ExecutionTaskKind,
+  RequirementSource,
+} from "./executionRequirement.ts";
+export type { ExecutionTaskKind } from "./executionRequirement.ts";
 export {
   asAttemptId,
   asCapacityAccountId,
   asClusterId,
   asExecutionId,
   asSchedulerOwnerId,
-  asWorkloadId,
+  asPlacementId,
   schedulerIdentityCharsMax,
   type AttemptId,
   type CapacityAccountId,
   type ClusterId,
   type ExecutionId,
   type SchedulerOwnerId,
-  type WorkloadId,
+  type PlacementId,
 } from "./schedulerIdentity.ts";
 import type {
   AttemptId,
@@ -126,7 +133,7 @@ import type {
   ClusterId,
   ExecutionId,
   SchedulerOwnerId,
-  WorkloadId,
+  PlacementId,
 } from "./schedulerIdentity.ts";
 
 /** The logical states of `model/capacity.qnt`, in the order that module declares them. */
@@ -154,8 +161,6 @@ export const allExecutionOutcomes: readonly ExecutionOutcome[] = [
 ];
 
 /** The kind of logical task an execution runs, mirroring the spawn request's child rows. */
-export type ExecutionTaskKind = "Work" | "Evaluation";
-
 /** Which briefing template a logical task's kind is briefed from, which is total and never a lookup. */
 export function taskPurposeForKind(kind: ExecutionTaskKind): TaskPurpose {
   switch (kind) {
@@ -355,6 +360,11 @@ export interface LogicalExecution {
   readonly cluster: ClusterId;
   readonly configurationRevision: string;
   readonly configurationDigest: string;
+  readonly requirementIdentity: string;
+  readonly requirement: ExecutionRequirement;
+  readonly requirementDigest: string;
+  readonly requirementSource: RequirementSource;
+  readonly platformDefaultVersion: number;
   readonly status: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;
   readonly resultManifest?: ResultManifestId;
@@ -383,7 +393,7 @@ export interface PhysicalAttempt extends FencedAttempt {
   readonly recoveryEpoch: RecoveryEpoch;
   readonly state: AttemptState;
   readonly authoritative: boolean;
-  readonly workload?: WorkloadId;
+  readonly placement?: PlacementId;
 }
 
 /** What an attempt is doing, which is below the logical grain and never reaches `Core`. */
@@ -442,14 +452,14 @@ export type SpawnRegistered =
 /**
  * What a cancellation pass found for one focused cancellation request. It
  * names the attempts it fenced as well as counting the logical tasks it
- * retired, because the workloads behind those attempts are what the fabric is
- * asked to delete afterwards and a count cannot name them.
+ * retired, because the placements behind those attempts are what the backend
+ * is asked to cancel afterwards and a count cannot name them.
  */
 export type CancellationRegistered =
   | {
       readonly cancelled: "Registered";
       readonly fenced: number;
-      readonly workloads: readonly AttemptId[];
+      readonly placements: readonly FencedAttempt[];
     }
   | { readonly cancelled: "AlreadyFulfilled" };
 
@@ -470,7 +480,7 @@ export interface AttemptOpening {
   readonly placementBackoffSecs: number;
 }
 
-/** What a launch reservation produced: the fenced attempt a worker is placed under. */
+/** What a placement reservation produced: the fenced physical attempt. */
 export type AttemptOpened =
   | { readonly opened: "Opened"; readonly attempt: PhysicalAttempt }
   | { readonly opened: "NotLaunchable"; readonly status: ExecutionStatus }
@@ -560,7 +570,10 @@ export interface ExecutionSchedulerStore {
   ): Promise<readonly RequestClaim[]>;
 
   /** Creates or finds the exact logical executions one spawn request authorized. */
-  registerSpawn(claim: RequestClaim): Promise<SpawnRegistered>;
+  registerSpawn(
+    claim: RequestClaim,
+    tasksMax: DomainConfig["nTasks"],
+  ): Promise<SpawnRegistered>;
 
   /** Fences every task a cancellation request names, then fulfills the request. */
   registerCancellation(claim: RequestClaim): Promise<CancellationRegistered>;
@@ -574,8 +587,11 @@ export interface ExecutionSchedulerStore {
    */
   openAttempt(opening: AttemptOpening): Promise<AttemptOpened>;
 
-  /** Records that the worker port placed the attempt, moving the execution to `Running`. */
-  attemptPlaced(attempt: FencedAttempt, workload: WorkloadId): Promise<boolean>;
+  /** Records that the placement port accepted the attempt, moving it to `Running`. */
+  attemptPlaced(
+    attempt: FencedAttempt,
+    placement: PlacementId,
+  ): Promise<boolean>;
 
   /** Records that an attempt ended without a result, leaving the slot with its execution. */
   attemptEnded(
@@ -640,23 +656,19 @@ export interface ExecutionSchedulerStore {
   ): Promise<number>;
 }
 
-/** The execution profile a worker runs under, resolved from policy and never weakened by authored content. */
+/** The execution profile a backend enforces, resolved by policy and never weakened by authored content. */
 export interface ExecutionProfile {
   readonly profile: string;
   readonly runtimeVersion: string;
 }
 
 /**
- * One placement asked of the fabric, carrying only what an untrusted worker may
- * be told. The invocation is what the worker is briefed with and what it may
+ * One placement asked of a backend, carrying only what an executor may be
+ * told. The invocation is its briefing and bounds what it may
  * do; a placement that named a briefing and no authority, or the other way
  * round, is not a shape this port has.
  */
-export interface WorkerPlacement {
-  readonly partition: Partition;
-  readonly execution: ExecutionId;
-  readonly attempt: AttemptId;
-  readonly generation: number;
+export interface AttemptPlacement extends FencedAttempt {
   readonly ticket: TicketId;
   readonly task: TaskId;
   readonly taskKind: ExecutionTaskKind;
@@ -664,6 +676,9 @@ export interface WorkerPlacement {
   readonly sourceRequest: string;
   readonly configurationRevision: string;
   readonly configurationDigest: string;
+  readonly requirementIdentity: string;
+  readonly requirement: ExecutionRequirement;
+  readonly requirementDigest: string;
   readonly profile: ExecutionProfile;
   readonly invocation: TaskInvocation;
 }
@@ -673,8 +688,8 @@ export interface WorkerPlacement {
  * immutable contract and becomes `ExecutionBlocked`; `Unavailable` is
  * temporary and leaves the execution visibly held.
  */
-export type WorkerPlaced =
-  | { readonly placed: "Placed"; readonly workload: WorkloadId }
+export type AttemptPlacementOutcome =
+  | { readonly placed: "Placed"; readonly placement: PlacementId }
   | { readonly placed: "Denied"; readonly reason: BlockedReason }
   | { readonly placed: "Unavailable"; readonly retryAfterSeconds: number };
 
@@ -702,16 +717,16 @@ export type ProfileResolved =
   | { readonly resolved: "Unavailable" };
 
 /**
- * Kubernetes, behind a typed port so the durable state machine can be driven
- * without a cluster. Nothing here is the capacity ledger: a pod count is an
- * observation and the durable allocations are the authority.
+ * Physical attempt placement, behind a backend-neutral port. A Kubernetes
+ * adapter and a registered-runner adapter consume the same immutable request;
+ * neither backend's inventory or protocol is part of the capacity ledger.
  */
-export interface WorkerLaunchPort {
+export interface AttemptPlacementPort {
   /** Places one fenced attempt, or says why the immutable contract cannot be run. */
-  place(placement: WorkerPlacement): Promise<WorkerPlaced>;
+  place(placement: AttemptPlacement): Promise<AttemptPlacementOutcome>;
 
-  /** Asks the fabric to delete a workload; correctness never waits on it. */
-  delete(partition: Partition, attempt: AttemptId): Promise<void>;
+  /** Cancels this exact generation; correctness never waits on the backend. */
+  cancel(attempt: FencedAttempt): Promise<void>;
 }
 
 /** The authority kind every scheduler-submitted completion is scoped and audited under. */
@@ -734,7 +749,7 @@ export const executionCapacityDefaults = {
  * is the scheduler's authority wherever it is mounted, and both sweeps share one
  * per-pass bound because both of them end attempts.
  */
-export interface ExecutionSchedulerConfig {
+export interface ExecutionSchedulerConfig extends Pick<DomainConfig, "nTasks"> {
   readonly requestClaimLeaseSecs: number;
   readonly requestsPerPassMax: number;
   readonly attemptLeaseSecs: number;
@@ -750,6 +765,7 @@ export interface ExecutionSchedulerConfig {
 
 /** The values a deployment starts from when it names none. */
 export const executionSchedulerDefaults: ExecutionSchedulerConfig = {
+  nTasks: 200,
   requestClaimLeaseSecs: 30,
   requestsPerPassMax: 32,
   attemptLeaseSecs: 300,
@@ -825,7 +841,7 @@ export interface ExecutionSchedulerMetrics {
   admission(outcome: Admitted["admitted"]): void;
   attemptOpened(outcome: AttemptOpened["opened"]): void;
   briefing(fault: BriefingFault): void;
-  placement(outcome: WorkerPlaced["placed"]): void;
+  placement(outcome: AttemptPlacementOutcome["placed"]): void;
   attemptEnded(loss: AttemptLoss, evidence: AttemptEvidence): void;
   manifest(outcome: "Accepted" | "Rejected"): void;
   terminalization(outcome: Terminalized["terminalized"]): void;

@@ -32,7 +32,7 @@ import {
   asCapacityAccountId,
   asClusterId,
   asExecutionId,
-  asWorkloadId,
+  asPlacementId,
   type AttemptState,
   type ExecutionOutcome,
   type ExecutionStatus,
@@ -49,6 +49,10 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { asResultManifestId } from "../../interpreter/resultManifest.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  asExecutionRequirement,
+  type RequirementSource,
+} from "../../interpreter/executionRequirement.ts";
 
 /** One execution row joined to the request and task row that authorized it. */
 export interface ExecutionRow {
@@ -67,6 +71,11 @@ export interface ExecutionRow {
   readonly cluster: string;
   readonly configuration_revision: string;
   readonly configuration_digest: string;
+  readonly requirement_identity: string;
+  readonly requirement_value: string;
+  readonly requirement_digest: string;
+  readonly requirement_source: string;
+  readonly platform_default_version: string;
   readonly status: string;
   readonly outcome: string | null;
   readonly result_manifest: string | null;
@@ -108,7 +117,9 @@ export const executionRowColumns = `
   t.kind AS task_kind, t.stage::text AS stage, e.source_request,
   q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
   q.ticket_version::text AS ticket_version, e.account, e.cluster,
-  e.configuration_revision, e.configuration_digest, e.status, e.outcome,
+  e.configuration_revision, e.configuration_digest, e.requirement_identity,
+  e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
+  e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
   e.result_manifest, e.completion_operation,
   (e.attempt_next - 1)::text AS attempts_opened, e.retries_spent::text AS retries_spent
 `;
@@ -167,12 +178,23 @@ function attemptRowState(value: string): AttemptState {
 }
 
 /** Narrows a task kind column, which the request declared and the registration mirrors. */
-function executionRowTaskKind(value: string): ExecutionTaskKind {
+export function executionRowTaskKind(value: string): ExecutionTaskKind {
   if (value !== "Work" && value !== "Evaluation") {
     throw new Error(
       `execution row: ${value} is not a task kind a spawn request declares`,
     );
   }
+  return value;
+}
+
+function executionRowRequirementSource(value: string): RequirementSource {
+  if (
+    value !== "ExplicitTask" &&
+    value !== "TaskKindDefault" &&
+    value !== "TicketDefault" &&
+    value !== "PlatformDefault"
+  )
+    throw new Error(`execution row: ${value} is not a requirement source`);
   return value;
 }
 
@@ -210,6 +232,16 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
     cluster: asClusterId(row.cluster),
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
+    requirementIdentity: row.requirement_identity,
+    requirement: asExecutionRequirement(
+      JSON.parse(row.requirement_value) as unknown,
+    ),
+    requirementDigest: row.requirement_digest,
+    requirementSource: executionRowRequirementSource(row.requirement_source),
+    platformDefaultVersion: projectRowCounter(
+      row.platform_default_version,
+      "platform default version",
+    ),
     status: executionRowStatus(row.status),
     ...executionRowSettlement(row),
     attemptsOpened: projectRowCounter(row.attempts_opened, "attempts opened"),
@@ -228,6 +260,8 @@ export function attemptRowPhysical(row: AttemptRow): PhysicalAttempt {
     recoveryEpoch: asRecoveryEpoch(row.recovery_epoch),
     state: attemptRowState(row.state),
     authoritative: row.authoritative,
-    ...(row.workload === null ? {} : { workload: asWorkloadId(row.workload) }),
+    ...(row.workload === null
+      ? {}
+      : { placement: asPlacementId(row.workload) }),
   };
 }

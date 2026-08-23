@@ -9,6 +9,7 @@ import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import { encodeDecisionEventText, parseDecisionEventText } from "./wire.ts";
+import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
 
 declare const configurationRevisionBrand: unique symbol;
 declare const canonicalConfigurationBrand: unique symbol;
@@ -79,7 +80,8 @@ export function releaseConfigurationReadiness(
     Array.isArray(value) ||
     (value as Record<string, unknown>)["version"] !== 1 ||
     typeof (value as Record<string, unknown>)["image"] !== "string" ||
-    (value as Record<string, unknown>)["image"] === ""
+    (value as Record<string, unknown>)["image"] === "" ||
+    !executionRequirementConfigurationIsValid(value)
   ) {
     return { readiness: "Incomplete" };
   }

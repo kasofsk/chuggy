@@ -32,7 +32,7 @@ import { after, before, test } from "node:test";
 
 import { postgresExecutionScheduler } from "../../src/adapters/postgres/scheduler.ts";
 import {
-  asWorkloadId,
+  asPlacementId,
   executionSchedulerDefaults,
   type ExecutionSchedulerStore,
   type PhysicalAttempt,
@@ -117,6 +117,7 @@ async function registerAll(project: SchedulerProject, label: string) {
       project.request,
       schedulerOwner(label),
     ),
+    executionSchedulerDefaults.nTasks,
   );
 }
 
@@ -174,7 +175,7 @@ async function placedAttempt(
   assert.ok(opened.opened === "Opened", `attempt was ${opened.opened}`);
   await rig.store.attemptPlaced(
     opened.attempt,
-    asWorkloadId(`workload-${label}`),
+    asPlacementId(`placement-${label}`),
   );
   return opened.attempt;
 }
@@ -379,7 +380,7 @@ test("a registration and the cancellation of its ticket leave no live work eithe
   assert.deepEqual(await cancelling, {
     cancelled: "Registered",
     fenced: project.tasks,
-    workloads: [],
+    placements: [],
   });
   const rows = await schedulerExecutions(rig, project.partition);
   assert.equal(rows.length, project.tasks);
@@ -436,7 +437,14 @@ test("a launch and the cancellation of its ticket leave no live work either way"
   assert.deepEqual(await cancelling, {
     cancelled: "Registered",
     fenced: 1,
-    workloads: [opened.attempt.attempt],
+    placements: [
+      {
+        partition: opened.attempt.partition,
+        execution: opened.attempt.execution,
+        attempt: opened.attempt.attempt,
+        generation: opened.attempt.generation,
+      },
+    ],
   });
   assert.deepEqual(
     await rig.harness.query(
@@ -501,7 +509,14 @@ test("a report queued behind a cancellation is cancelled rather than deadlocked"
   assert.deepEqual(await cancelled, {
     cancelled: "Registered",
     fenced: 1,
-    workloads: [attempt.attempt],
+    placements: [
+      {
+        partition: attempt.partition,
+        execution: attempt.execution,
+        attempt: attempt.attempt,
+        generation: attempt.generation,
+      },
+    ],
   });
   assert.deepEqual(await reporting, { terminalized: "Cancelled" });
   assert.deepEqual(
@@ -540,7 +555,7 @@ test("a cancellation queued behind a report retires nothing rather than deadlock
   assert.deepEqual(await cancelled, {
     cancelled: "Registered",
     fenced: 0,
-    workloads: [],
+    placements: [],
   });
   assert.deepEqual(
     (await schedulerExecutions(rig, project.partition)).map(
@@ -581,7 +596,14 @@ test("an attempt ending under the cancellation of its ticket answers rather than
   assert.deepEqual(await cancelled, {
     cancelled: "Registered",
     fenced: 1,
-    workloads: [attempt.attempt],
+    placements: [
+      {
+        partition: attempt.partition,
+        execution: attempt.execution,
+        attempt: attempt.attempt,
+        generation: attempt.generation,
+      },
+    ],
   });
   assert.equal(await ending, false);
   assert.deepEqual(

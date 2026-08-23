@@ -775,6 +775,13 @@ test("an execution cannot change a pin it was registered under or unspend a retr
     harness.query(`UPDATE execution SET account='another' ${where}`, values),
     /would change an identity or a pin it was registered under/,
   );
+  await assert.rejects(
+    harness.query(
+      `UPDATE execution SET requirement_value=requirement_value||'{"image":"other"}'::jsonb ${where}`,
+      values,
+    ),
+    /would change an identity or a pin it was registered under/,
+  );
   await harness.query(
     `UPDATE execution SET retries_spent=retries_spent+1 ${where}`,
     values,

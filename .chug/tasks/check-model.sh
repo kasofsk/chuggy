@@ -113,6 +113,8 @@ unset IFS
 echo "--- unit suite"
 run_suite "model/tests/chuggy_test.qnt" model/tests/chuggy_test.qnt
 run_suite "model/tests/capacity_test.qnt" model/tests/capacity_test.qnt
+run_suite "model/tests/runner_test.qnt" model/tests/runner_test.qnt
+run_suite "model/tests/execution_requirement_test.qnt" model/tests/execution_requirement_test.qnt
 
 # The witness modules prove each named shape reachable and assert every
 # invariant after every step. `wrapup_none` is the odd one out: it witnesses
@@ -145,6 +147,15 @@ for i in budgeted deadline_only retryfree; do
 	verdict "instance $i" "$rc" "$out" '\[violation\]' \
 		"instance $i violated an invariant"
 done
+
+if out="$("$QUINT" run model/mc/mc_runner.qnt --main=mc_registered_runner \
+		--invariant=allInvariants --max-samples=2000 --max-steps=30 2>&1)"; then
+	:
+else
+	rc=$?
+	verdict "registered runner instance" "$rc" "$out" '\[violation\]' \
+		"registered runner instance violated an invariant"
+fi
 
 echo "check-model: $failed failure(s), $tests test(s) run"
 if [ "$errored" -ne 0 ]; then
