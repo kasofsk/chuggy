@@ -2,10 +2,21 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type pg from "pg";
 
+import { artifactRootPrecondition } from "./adapters/artifacts/artifactRoot.ts";
 import {
   artifactStore,
   type ArtifactStoreOptions,
 } from "./adapters/artifacts/artifactStore.ts";
+import {
+  credentialFiles,
+  credentialFilesPrecondition,
+  type CredentialFilesOptions,
+} from "./adapters/credentials/credentialFiles.ts";
+import {
+  gitAvailablePrecondition,
+  gitScratchWritablePrecondition,
+} from "./adapters/git/gitPrerequisites.ts";
+import { gitPromotion } from "./adapters/git/gitPromotion.ts";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
 import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
@@ -62,6 +73,8 @@ import {
   type FinalizerIdentityFactory,
 } from "./interpreter/finalizerPreparation.ts";
 import type { FinalizerService } from "./interpreter/finalizerRun.ts";
+import type { FinalizerSettings } from "./interpreter/finalizerSettings.ts";
+import type { RuntimePrecondition } from "./interpreter/serviceRuntime.ts";
 import {
   silentFinalizerTelemetry,
   type FinalizerTelemetry,
@@ -200,6 +213,60 @@ export function composeFinalizerService(
     digestOf: finalizerDigestOf,
     config: checkedFinalizerConfig(config),
     metrics,
+  };
+}
+
+/** What one finalizer deployment must find before it runs, and the ports it finds it through. */
+export interface FinalizerRuntimeComposition {
+  readonly preconditions: readonly RuntimePrecondition[];
+  service(): FinalizerServiceRuntime;
+}
+
+/**
+ * Wires a finalizer deployment's plain settings to the git, artifact and
+ * credential ports it promotes through. The git port is built on demand,
+ * because opening its scratch refuses what `git-available` and
+ * `git-scratch-writable` are there to report.
+ */
+export function composeFinalizerRuntime(
+  settings: FinalizerSettings,
+): FinalizerRuntimeComposition {
+  const credentialOptions: CredentialFilesOptions = {
+    sources: settings.credentials,
+    ...(settings.credentialBytesMax === undefined
+      ? {}
+      : { credentialBytesMax: settings.credentialBytesMax }),
+  };
+  const credentials = credentialFiles(credentialOptions);
+  const git = settings.git;
+  return {
+    preconditions: [
+      gitAvailablePrecondition(git.environment),
+      gitScratchWritablePrecondition(git.scratchDirectory),
+      artifactRootPrecondition(settings.artifactRoot),
+      credentialFilesPrecondition(credentialOptions),
+    ],
+    service: () => ({
+      git: gitPromotion({
+        scratchDirectory: git.scratchDirectory,
+        identity: { name: git.commitName, email: git.commitEmail },
+        environment: git.environment,
+        credentials,
+        ...(git.credentialUsername === undefined
+          ? {}
+          : { credentialUsername: git.credentialUsername }),
+        ...(git.localTimeoutSecsMax === undefined
+          ? {}
+          : { localTimeoutSecsMax: git.localTimeoutSecsMax }),
+        ...(git.remoteTimeoutSecsMax === undefined
+          ? {}
+          : { remoteTimeoutSecsMax: git.remoteTimeoutSecsMax }),
+        ...(git.promotionTimeoutSecsMax === undefined
+          ? {}
+          : { promotionTimeoutSecsMax: git.promotionTimeoutSecsMax }),
+      }),
+      artifactRoot: settings.artifactRoot,
+    }),
   };
 }
 
