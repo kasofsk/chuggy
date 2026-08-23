@@ -95,12 +95,47 @@ export function checkedProjectMembership(
   };
 }
 
+/** Which of the two writes an administrator is asking for. */
+export type ProjectMembershipAction = "Grant" | "Revoke";
+
+/** What each action needs of the stored table: a grant upserts, so it needs both halves of that. */
+export const projectMembershipPrivileges: Record<
+  ProjectMembershipAction,
+  readonly string[]
+> = {
+  Grant: ["INSERT", "UPDATE"],
+  Revoke: ["DELETE"],
+};
+
+/** The identity a write would run as, and what it may do to the membership table. */
+export interface ProjectMembershipWriter {
+  readonly role: string;
+  readonly privileges: ReadonlySet<string>;
+}
+
+/**
+ * What `action` needs and `writer` has not got, empty when it may proceed.
+ * Every privilege is answered for separately because holding one of them is
+ * not holding them all.
+ */
+export function projectMembershipWriterLacks(
+  action: ProjectMembershipAction,
+  writer: ProjectMembershipWriter,
+): readonly string[] {
+  return projectMembershipPrivileges[action].filter(
+    (privilege) => !writer.privileges.has(privilege),
+  );
+}
+
 /**
  * Writes what `ProjectAccess` reads. No runtime role answers this port: the
  * membership table refuses every privilege the API process holds, so an
  * implementation connects as the identity that owns the table.
  */
 export interface ProjectMembershipAdministration {
+  /** The identity this writes as and what it holds, gathered before an action is attempted. */
+  writer(): Promise<ProjectMembershipWriter>;
+
   /** Grants exactly `membership.access`, replacing whatever that principal held on that project. */
   grant(membership: ProjectMembership): Promise<void>;
 

@@ -19,6 +19,9 @@ import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
 import {
   checkedProjectMembership,
   checkedProjectMembershipTarget,
+  projectMembershipWriterLacks,
+  type ProjectMembershipAction,
+  type ProjectMembershipAdministration,
   type ProjectMembershipTarget,
   type ProjectMembershipTargetRequest,
 } from "../interpreter/projectMembership.ts";
@@ -43,13 +46,13 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
-function provisionAction(): typeof grantAction | typeof revokeAction {
+function provisionAction(): ProjectMembershipAction {
   const value = requiredEnvironment(actionVariable);
-  if (value !== grantAction && value !== revokeAction)
-    throw new Error(
-      `${actionVariable} must be ${grantAction} or ${revokeAction}`,
-    );
-  return value;
+  if (value === grantAction) return "Grant";
+  if (value === revokeAction) return "Revoke";
+  throw new Error(
+    `${actionVariable} must be ${grantAction} or ${revokeAction}`,
+  );
 }
 
 /** What both actions name, and all a revocation reads. */
@@ -63,25 +66,20 @@ function provisionTargetRequest(): ProjectMembershipTargetRequest {
 }
 
 /**
- * The two things this command cannot do without: the privileges the membership
- * table refuses the runtime role, and a project for the row to belong to.
+ * The two things this command cannot do without: every privilege the action
+ * needs, and a project for the row to belong to.
  */
 async function provisionPreconditions(
   pool: ReturnType<typeof postgresPool>,
+  administration: ProjectMembershipAdministration,
+  action: ProjectMembershipAction,
   target: ProjectMembershipTarget,
 ): Promise<void> {
-  const found = await pool.query<{
-    current_role: string;
-    may_write: boolean | null;
-  }>(
-    `SELECT current_user AS current_role,
-       has_table_privilege(current_user,'project_membership','INSERT,UPDATE,DELETE')
-         AS may_write`,
-  );
-  const row = found.rows[0];
-  if (row?.may_write !== true) {
+  const writer = await administration.writer();
+  const lacks = projectMembershipWriterLacks(action, writer);
+  if (lacks.length > 0) {
     throw new Error(
-      `${String(row?.current_role)} may not write project_membership; ${databaseUrlVariable} must name the identity that owns it`,
+      `${writer.role} lacks ${lacks.join(" and ")} on project_membership; ${databaseUrlVariable} must name the identity that owns it`,
     );
   }
   if (
@@ -96,7 +94,7 @@ async function main(): Promise<void> {
   const action = provisionAction();
   const targetRequest = provisionTargetRequest();
   const membership =
-    action === grantAction
+    action === "Grant"
       ? checkedProjectMembership({
           ...targetRequest,
           authorityKind: requiredEnvironment(authorityKindVariable),
@@ -107,12 +105,12 @@ async function main(): Promise<void> {
   const target = membership ?? checkedProjectMembershipTarget(targetRequest);
   const pool = postgresPool(requiredEnvironment(databaseUrlVariable));
   try {
-    await provisionPreconditions(pool, target);
     const administration = postgresProjectMembership(pool);
+    await provisionPreconditions(pool, administration, action, target);
     if (membership !== undefined) {
       await administration.grant(membership);
       process.stdout.write(
-        `granted ${[...membership.access].sort().join(",")} to ${membership.principal}\n`,
+        `granted ${[...membership.access].sort().join(",")} to ${membership.principal}, audited to ${membership.authority.kind}/${membership.authority.subject}\n`,
       );
       return;
     }

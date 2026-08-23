@@ -5,11 +5,13 @@
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import { oidcPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import {
   checkedProjectMembership,
+  projectMembershipWriterLacks,
   type ProjectMembershipRequest,
 } from "../../src/interpreter/projectMembership.ts";
 import {
@@ -122,6 +124,77 @@ test("a revoked principal authorizes nothing and revoking again says so", async 
     undefined,
   );
   assert.equal(await harness.membership.revoke(granted), false);
+});
+
+test("re-granting re-points the audited authority to the one supplied", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "membership-authority",
+  );
+  const request = membershipRequest(
+    partition.tenant,
+    partition.project,
+    "subject-five",
+    ["Read"],
+  );
+  const first = checkedProjectMembership(request);
+  await harness.membership.grant(first);
+  assert.deepEqual(
+    await harness.access.authorize(first.principal, partition, "Read"),
+    { kind: "OidcUser", subject: "internal-user" },
+  );
+  await harness.membership.grant(
+    checkedProjectMembership({
+      ...request,
+      authorityKind: "OidcService",
+      authoritySubject: "internal-successor",
+    }),
+  );
+  assert.deepEqual(
+    await harness.access.authorize(first.principal, partition, "Read"),
+    { kind: "OidcService", subject: "internal-successor" },
+  );
+});
+
+test("the writer this connects as holds every privilege both actions need", async () => {
+  const writer = await harness.membership.writer();
+  assert.deepEqual(projectMembershipWriterLacks("Grant", writer), []);
+  assert.deepEqual(projectMembershipWriterLacks("Revoke", writer), []);
+});
+
+test("naming several privileges in one inquiry answers any of them, not all", async () => {
+  const role = `membership_probe_${randomUUID().replaceAll("-", "")}`;
+  const transaction = await harness.begin();
+  try {
+    await transaction.query(`CREATE ROLE ${role} NOLOGIN`);
+    await transaction.query(`GRANT DELETE ON project_membership TO ${role}`);
+    const [asked] = await transaction.query(
+      `SELECT
+         has_table_privilege($1,'project_membership','INSERT,UPDATE,DELETE') AS together,
+         has_table_privilege($1,'project_membership','INSERT') AS insert_only,
+         has_table_privilege($1,'project_membership','UPDATE') AS update_only,
+         has_table_privilege($1,'project_membership','DELETE') AS delete_only`,
+      [role],
+    );
+    assert.equal(
+      asked?.["together"],
+      true,
+      "a comma-separated inquiry is ANY, so it must not be what a precondition asks",
+    );
+    assert.deepEqual(
+      [asked?.["insert_only"], asked?.["update_only"], asked?.["delete_only"]],
+      [false, false, true],
+    );
+    assert.deepEqual(
+      projectMembershipWriterLacks("Grant", {
+        role,
+        privileges: new Set(["DELETE"]),
+      }),
+      ["INSERT", "UPDATE"],
+    );
+  } finally {
+    await transaction.rollback();
+  }
 });
 
 test("a membership cannot be granted on a project that was never provisioned", async () => {

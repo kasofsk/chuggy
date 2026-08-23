@@ -7,6 +7,11 @@
  * conflicting row is overwritten with exactly the access asked for. Adding to
  * it instead would make a narrowed grant unreachable — an administrator could
  * only ever widen, and revoking wholesale would be the one way back.
+ *
+ * EACH PRIVILEGE IS ASKED FOR SEPARATELY. `has_table_privilege` given a
+ * comma-separated list answers whether ANY of them is held, so one call naming
+ * all three passes a role holding only `DELETE` — which then reaches the
+ * refusal the caller's own message exists to replace.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -15,12 +20,40 @@ import type pg from "pg";
 import type {
   ProjectMembership,
   ProjectMembershipAdministration,
+  ProjectMembershipWriter,
 } from "../../interpreter/projectMembership.ts";
+
+/** Every privilege any action can need, which is what one row is answered for. */
+const postgresProjectMembershipPrivileges = ["INSERT", "UPDATE", "DELETE"];
 
 export function postgresProjectMembership(
   pool: pg.Pool,
 ): ProjectMembershipAdministration {
   return {
+    writer: async (): Promise<ProjectMembershipWriter> => {
+      const found = await pool.query<{
+        writer_role: string | null;
+        privilege: string | null;
+        holds: boolean | null;
+      }>(
+        sql`SELECT current_user::text AS writer_role, privilege,
+                   has_table_privilege(current_user,'project_membership',privilege)::boolean
+                     AS holds
+              FROM unnest(${postgresProjectMembershipPrivileges}::text[]) AS privilege`,
+      );
+      const role = found.rows[0]?.writer_role;
+      if (role === undefined || role === null)
+        throw new Error("project membership: the server named no current role");
+      return {
+        role,
+        privileges: new Set(
+          found.rows
+            .filter((row) => row.holds === true && row.privilege !== null)
+            .map((row) => String(row.privilege)),
+        ),
+      };
+    },
+
     grant: async (membership: ProjectMembership) => {
       await pool.query(
         sql`INSERT INTO project_membership

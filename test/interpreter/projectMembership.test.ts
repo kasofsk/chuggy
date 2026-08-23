@@ -6,6 +6,7 @@ import {
   asProjectAccessGrant,
   checkedProjectMembership,
   checkedProjectMembershipTarget,
+  projectMembershipWriterLacks,
   type ProjectMembershipRequest,
 } from "../../src/interpreter/projectMembership.ts";
 
@@ -65,4 +66,37 @@ test("every identity a membership names is refused empty", () => {
       `${Object.keys(empty)[0] ?? "a field"} was accepted empty`,
     );
   }
+});
+
+test("holding one privilege the action needs is not holding them all", () => {
+  const writerOf = (...privileges: string[]) => ({
+    role: "someone",
+    privileges: new Set(privileges),
+  });
+  assert.deepEqual(projectMembershipWriterLacks("Grant", writerOf("DELETE")), [
+    "INSERT",
+    "UPDATE",
+  ]);
+  assert.deepEqual(projectMembershipWriterLacks("Grant", writerOf("INSERT")), [
+    "UPDATE",
+  ]);
+  assert.deepEqual(projectMembershipWriterLacks("Revoke", writerOf("INSERT")), [
+    "DELETE",
+  ]);
+});
+
+test("a writer holding what the action needs lacks nothing", () => {
+  const owner = {
+    role: "owner",
+    privileges: new Set(["INSERT", "UPDATE", "DELETE"]),
+  };
+  assert.deepEqual(projectMembershipWriterLacks("Grant", owner), []);
+  assert.deepEqual(projectMembershipWriterLacks("Revoke", owner), []);
+  assert.deepEqual(
+    projectMembershipWriterLacks("Revoke", {
+      role: "deleter",
+      privileges: new Set(["DELETE"]),
+    }),
+    [],
+  );
 });
