@@ -20,6 +20,7 @@
     "start:finalizer": "node --experimental-strip-types src/roots/finalizer.ts",
     "start:native-web": "node --experimental-strip-types src/roots/nativeHttp.ts",
     "start:scheduler": "node --experimental-strip-types src/roots/scheduler.ts",
+    "start:ticket-service": "node --experimental-strip-types src/roots/ticketService.ts",
     "provision:project-access": "node --experimental-strip-types src/roots/provisionProjectAccess.ts",
     "start:selector": "node --experimental-strip-types src/roots/selector.ts"
   },

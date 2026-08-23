@@ -24,12 +24,18 @@ import type {
 } from "../interpreter/serviceRuntime.ts";
 import { trustedSelectorPolicyHost } from "../interpreter/trustedSelectorPolicyHost.ts";
 import {
+  commandDatabaseConfig,
+  commandDatabaseSchema,
+  commandRuntimeSchema,
+  decodedCommandConfiguration,
+  positiveInteger,
+} from "./commandConfig.ts";
+import {
   selectorProcessRoot,
   type SelectorProcessRootConfig,
 } from "./controlPlane.ts";
 
 const configurationVariable = "CHUG_SELECTOR_CONFIG";
-const positiveInteger = z.number().int().safe().positive();
 const httpUrl = z.url().refine((value) => {
   const protocol = new URL(value).protocol;
   return protocol === "http:" || protocol === "https:";
@@ -48,25 +54,8 @@ const service = z
   .strict();
 const configurationSchema = z
   .object({
-    database: z
-      .object({
-        url: z.string().min(1),
-        limits: z
-          .object({
-            connectionsMax: positiveInteger,
-            connectionWaitMs: positiveInteger,
-            statementTimeoutMs: positiveInteger,
-          })
-          .strict()
-          .optional(),
-      })
-      .strict(),
-    runtime: z
-      .object({
-        idleIntervalMilliseconds: positiveInteger,
-        shutdownDrainMilliseconds: positiveInteger,
-      })
-      .strict(),
+    database: commandDatabaseSchema,
+    runtime: commandRuntimeSchema,
     selector: z
       .object({
         projectsMax: positiveInteger.max(100),
@@ -111,29 +100,14 @@ interface ProcessSignals {
 export function selectorConfiguration(
   environment: NodeJS.ProcessEnv,
 ): SelectorCommandConfig {
-  const encoded = environment[configurationVariable];
-  if (encoded === undefined || encoded.length === 0)
-    throw new Error(`${configurationVariable} is required`);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(encoded);
-  } catch {
-    throw new Error(`${configurationVariable} must be valid JSON`);
-  }
-  const result = configurationSchema.safeParse(parsed);
-  if (!result.success) {
-    const path = result.error.issues[0]?.path.join(".") || "value";
-    throw new Error(`${configurationVariable}.${path} is invalid`);
-  }
-  const data = result.data;
+  const data = decodedCommandConfiguration(
+    configurationVariable,
+    configurationSchema,
+    environment,
+  );
   return {
     process: {
-      database: {
-        url: data.database.url,
-        ...(data.database.limits === undefined
-          ? {}
-          : { limits: data.database.limits }),
-      },
+      database: commandDatabaseConfig(data.database),
       runtime: data.runtime,
       ...(data.selector === undefined ? {} : { selector: data.selector }),
     },
