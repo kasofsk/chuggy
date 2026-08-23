@@ -19,6 +19,7 @@ import { postgresExecutionContextRead } from "../adapters/postgres/schedulerCont
 import { postgresSelectorProposalReviews } from "../adapters/postgres/selector.ts";
 import { selectorOperationalContextRead } from "../interpreter/selectorOperationalContext.ts";
 import { selectorReviewRole } from "../adapters/postgres/schema.ts";
+import { postgresSelectorContextReady } from "../adapters/postgres/selectorContextReadiness.ts";
 import { pathToFileURL } from "node:url";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
@@ -108,33 +109,6 @@ async function apiDatabaseReady(
   }
 }
 
-export async function selectorReviewDatabaseReady(
-  pool: ReturnType<typeof postgresPool>,
-): Promise<boolean> {
-  try {
-    const found = await pool.query<{
-      current_role: string;
-      review_feedback_readable: boolean;
-    }>(
-      `SELECT current_user AS current_role,
-         has_table_privilege(current_user,'selector_proposal_review','SELECT')
-           AS review_feedback_readable`,
-    );
-    const row = found.rows[0];
-    if (
-      row?.current_role !== selectorReviewRole ||
-      !row.review_feedback_readable
-    )
-      return false;
-    return schemaCompatibilityPrecondition(
-      postgresRuntimeSchema(pool),
-      currentRuntimeSchemaContract,
-    ).check(new AbortController().signal);
-  } catch {
-    return false;
-  }
-}
-
 function selectorContextSource(
   pool: ReturnType<typeof postgresPool>,
   selectorReviewPool: ReturnType<typeof postgresPool>,
@@ -182,7 +156,7 @@ function nativeReadiness(
   return {
     ready: async () =>
       (await apiDatabaseReady(pool)) &&
-      (await selectorReviewDatabaseReady(selectorReviewPool)),
+      (await postgresSelectorContextReady(selectorReviewPool)),
   };
 }
 
@@ -205,7 +179,7 @@ async function main(): Promise<void> {
       `the native HTTP database must be migrated and connect as ${apiRole}`,
     );
   }
-  if (!(await selectorReviewDatabaseReady(selectorReviewPool))) {
+  if (!(await postgresSelectorContextReady(selectorReviewPool))) {
     await Promise.all([pool.end(), selectorReviewPool.end()]);
     throw new Error(
       `the selector review database must connect as ${selectorReviewRole}`,

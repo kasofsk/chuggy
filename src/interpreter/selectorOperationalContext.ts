@@ -1,8 +1,10 @@
 import type { ExecutionSchedulerConfig } from "./executionScheduler.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ExecutionContextRead } from "./schedulerContext.ts";
-import type { SelectorOperationalContext } from "./selector.ts";
-import type { SelectorProposalReviewStore } from "./selectorReview.ts";
+import type {
+  SelectorOperationalContext,
+  SelectorReviewFeedback,
+} from "./selector.ts";
 
 export interface SelectorContextClock {
   now(): { readonly instant: string; readonly epochMilliseconds: number };
@@ -18,6 +20,14 @@ export interface SelectorOperationalContextRead {
   context(partition: Partition): Promise<SelectorOperationalContext>;
 }
 
+export interface SelectorReviewFeedbackRead {
+  reviewFeedback(
+    partition: Partition,
+    after: number | undefined,
+    limit: number,
+  ): Promise<readonly SelectorReviewFeedback[]>;
+}
+
 function checkedBound(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1 || value > 100)
     throw new RangeError(`${name} must be between 1 and 100`);
@@ -27,7 +37,7 @@ function checkedBound(value: number, name: string): number {
 /** Joins selector-owned feedback to one scheduler-owned project observation. */
 export function selectorOperationalContextRead(
   execution: ExecutionContextRead,
-  reviews: Pick<SelectorProposalReviewStore, "reviewFeedback">,
+  reviews: SelectorReviewFeedbackRead,
   clock: SelectorContextClock,
   config: SelectorOperationalContextConfig,
 ): SelectorOperationalContextRead {
