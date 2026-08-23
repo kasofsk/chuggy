@@ -88,6 +88,47 @@ As `chuggy_owner` and as nobody else, over the same forwarded port:
 export CHUG_PG_URL="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy"
 ```
 
+## Grant a project access
+
+`src/roots/provisionProjectAccess.ts` is the only way a `project_membership`
+row is written, and it runs as `chuggy_owner` because that role owns the table.
+`chuggy_api` is refused every privilege on it, so the API process cannot widen
+its own authorization and this command cannot be run with its credential.
+
+Supply the issuer and the subject the token carries; the command derives the
+stored principal with the same function the API derives it from, so neither
+side has an encoding to get wrong.
+
+```sh
+export CHUG_PROVISION_DATABASE_URL="$CHUG_PG_URL"
+export CHUG_API_OIDC_ISSUER="https://accounts.example.test"
+export CHUG_PROVISION_SUBJECT="the sub claim the provider issues"
+export CHUG_PROVISION_TENANT="tenant" CHUG_PROVISION_PROJECT="project"
+export CHUG_PROVISION_AUTHORITY_KIND="OidcUser"
+export CHUG_PROVISION_AUTHORITY_SUBJECT="the internal subject submissions are audited to"
+export CHUG_PROVISION_ACCESS="Read,Mutate"
+CHUG_PROVISION_ACTION=grant npm run provision:project-access
+```
+
+`CHUG_PROVISION_ACCESS` names the kinds `authorize_project_access` knows —
+`Read`, `Mutate`, `DispatchTicket`, `ProposeDispatch` — and a grant naming none
+is refused before the row is. Re-running a grant is not an error: it replaces
+whatever that principal held on that project, so narrowing access is the same
+command with a shorter list.
+
+The project has to exist first, and **no command in this tree creates one**.
+The command says so rather than reporting a foreign-key violation.
+
+### Reversing it
+
+```sh
+CHUG_PROVISION_ACTION=revoke npm run provision:project-access
+```
+
+Every access, taken back in one statement. A revocation reads only the issuer,
+subject, tenant and project, and says whether there was a membership to
+withdraw.
+
 ## Apply the policies
 
 ```sh
