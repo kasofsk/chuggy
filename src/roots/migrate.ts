@@ -1,7 +1,9 @@
 /**
  * The migration as a process: the one command that applies the schema this
- * image declares, and the only place in this tree that reads an environment to
- * decide which database it applies it to.
+ * image declares, and the only place under `src/` that reads an environment to
+ * decide which database it applies it to. It is not the only place in the tree:
+ * `.chug/tasks/check-queries.sh` and `.chug/tasks/check-postgres.sh` read
+ * `CHUG_PG_URL` through `.chug/tasks/_postgres.sh` and migrate what it names.
  *
  * A LEDGER THAT IS NOT A PREFIX OF THIS IMAGE'S OWN IS A COULD-NOT-RUN. A
  * database carrying a version this image does not declare, or declaring one
@@ -27,8 +29,10 @@
  * split `src/roots/finalizer.ts` and `src/roots/scheduler.ts` already make
  * between a precondition nothing met and a run that failed.
  *
- * NO CREDENTIAL REACHES A DIAGNOSTIC. The database URL carries a password, so
- * every refusal below names the variable it read and never the value.
+ * NO CREDENTIAL IS PUT INTO A DIAGNOSTIC HERE. The database URL carries a
+ * password, so every refusal this file writes names the variable it read and
+ * never the value. A failure the driver or the server raised is reported as it
+ * came, so what such a message carries is theirs rather than this file's.
  */
 
 import { pathToFileURL } from "node:url";

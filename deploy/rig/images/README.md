@@ -108,6 +108,9 @@ to start without the required ones.
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |
 | `CHUG_API_OIDC_DISCOVERY_TIMEOUT_MS` | | |
 | `CHUG_API_OIDC_JWKS_TIMEOUT_MS` | | |
+| `CHUG_API_SELECTOR_FEEDBACK_MAX` | | how much review feedback one operational context carries |
+| `CHUG_SCHEDULER_PROJECT_BACKLOG_MAX` | | how much of a project's backlog it carries |
+| `CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX` | | how much of the installation's it carries |
 
 **Both database URLs must become a group role, and they become different ones.**
 The API authenticates as `chuggy_api_login` for each and refuses to start unless
@@ -120,9 +123,10 @@ postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/ch
 postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?options=-c%20role%3Dchuggy_selector_review
 ```
 
-The second reads the selector's proposal reviews for the operational context
-the API serves, which `chuggy_api` is granted nothing on: the split is the
-privilege, not a second credential.
+The second carries the selector's proposal reviews both ways — the operational
+context the API serves reads them, and a reviewer's approval or rejection is
+recorded through them — over a surface `chuggy_api` is granted nothing on: the
+split is the privilege, not a second credential.
 
 **The artifact root is data, not image content.** It is a filesystem path the
 API only ever reads — the web composition passes the store to one read port —
