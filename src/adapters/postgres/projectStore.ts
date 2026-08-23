@@ -11,7 +11,7 @@
  * load holds is the one its own transaction took.
  *
  * THE POOL IS THE CALLER'S. A store that opened its own connection would put a
- * deployment choice inside the adapter, and `src/compose.ts` is the only file
+ * deployment choice inside the adapter, and a process root is the only place
  * in this tree allowed to make one.
  */
 

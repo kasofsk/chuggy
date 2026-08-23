@@ -7,7 +7,7 @@
  * one implementation to name.
  *
  * THE POOL IS THE CALLER'S AND IT IS NOT THE INBOX'S. Where the connection
- * comes from is a deployment choice `src/compose.ts` alone may make, and these
+ * comes from is a deployment choice a process root alone may make, and these
  * calls are the ticket-service role's while `./operationInbox.ts`'s are the API
  * role's — so the two ports are handed separate pools carrying the separate
  * credentials 006 requires of runtime services.

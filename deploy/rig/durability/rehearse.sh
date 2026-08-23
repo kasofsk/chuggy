@@ -142,7 +142,10 @@ command -v kubectl > /dev/null 2>&1 || cannot "no kubectl on PATH, so nothing ra
 # process may write in it, so that is asked separately.
 umask 077
 mkdir -p "$archive" || cannot "$archive could not be created"
-archive_mode="$(stat -c '%a' "$archive" 2> /dev/null || true)"
+archive_mode="$(
+	stat -c '%a' "$archive" 2> /dev/null ||
+		stat -f '%Lp' "$archive" 2> /dev/null || true
+)"
 [ -n "$archive_mode" ] || cannot "the mode of $archive could not be read, so nothing here can say who else may read the dump"
 [ "$archive_mode" = "700" ] || cannot "$archive is mode $archive_mode, and what goes into it carries every login role's verifier"
 : > "$archive/.writable" 2> /dev/null || cannot "$archive is not writable"
