@@ -76,8 +76,34 @@ export function asPrincipal(value: string): Principal {
   return value as Principal;
 }
 
-export type ProjectAccessKind =
-  "Read" | "Mutate" | "DispatchTicket" | "ProposeDispatch";
+/**
+ * The principal an OIDC identity resolves to, length-prefixing the issuer so
+ * that no issuer and subject pair encodes to the same string as another's.
+ * Every side that names an identity derives it here.
+ */
+export function oidcPrincipal(issuer: string, subject: string): Principal {
+  if (issuer.length === 0) throw new RangeError("OIDC issuer is empty");
+  if (subject.length === 0) throw new RangeError("OIDC subject is empty");
+  return asPrincipal(`${String(issuer.length)}:${issuer}${subject}`);
+}
+
+/** Every project access kind, and the declaration `ProjectAccessKind` derives from, so narrowing a supplied kind has one list to check. */
+export const allProjectAccessKinds = [
+  "Read",
+  "Mutate",
+  "DispatchTicket",
+  "ProposeDispatch",
+] as const;
+
+export type ProjectAccessKind = (typeof allProjectAccessKinds)[number];
+
+/** Narrows text to the access kind it names, refusing anything `authorize_project_access` would not know. */
+export function asProjectAccessKind(value: string): ProjectAccessKind {
+  const kind = allProjectAccessKinds.find((known) => known === value);
+  if (kind === undefined)
+    throw new RangeError(`project access kind: ${value} is not a known kind`);
+  return kind;
+}
 
 /** Current project access and the non-reassignable authority it resolves to. */
 export interface ProjectAccess {

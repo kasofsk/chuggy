@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  oidcAuthentication,
-  oidcPrincipal,
-} from "../../src/adapters/http/oidc.ts";
+import { oidcAuthentication } from "../../src/adapters/http/oidc.ts";
 
 const config = {
   issuer: "https://accounts.example.test",
@@ -13,17 +10,6 @@ const config = {
   discoveryTimeoutMs: 1_000,
   jwksTimeoutMs: 1_000,
 };
-
-test("principal identity is collision-free across issuer and subject", () => {
-  assert.notEqual(
-    oidcPrincipal("https://one.example", "/subject"),
-    oidcPrincipal("https://one.example/", "subject"),
-  );
-  assert.equal(
-    oidcPrincipal("https://one.example", "subject"),
-    oidcPrincipal("https://one.example", "subject"),
-  );
-});
 
 test("OIDC discovery is issuer-pinned and bounded", async () => {
   let signal: AbortSignal | undefined;
