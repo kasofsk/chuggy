@@ -71,7 +71,7 @@ run_in_repo() {
 # the total the success line prints is a fixture size this suite knows.
 model_repo 0.32.0
 run_in_repo
-check "a clean model run exits 0" 0 "$RC" "0 failure(s), 14 test(s) run"
+check "a clean model run exits 0" 0 "$RC" "0 failure(s), 15 test(s) run"
 
 # A CALLER'S FORCE_COLOR MUST NOT REACH QUINT. Every verdict is read out of
 # Quint's own text, so a colour escape in front of the passing count reads as a
@@ -83,7 +83,7 @@ FORCE_COLOR=1
 export FORCE_COLOR
 run_in_repo
 unset FORCE_COLOR
-check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "14 test(s) run"
+check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "15 test(s) run"
 
 # A SUITE THAT SELECTED NOTHING IS NOT A SUITE THAT PASSED. Quint runs only the
 # names its match selects and exits 0 when that is none of them, so a renamed

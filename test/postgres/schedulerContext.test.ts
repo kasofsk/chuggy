@@ -31,7 +31,7 @@ import {
   backlogFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
-  asWorkloadId,
+  asPlacementId,
   executionSchedulerDefaults,
 } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
@@ -88,6 +88,7 @@ async function registerAll(project: SchedulerProject, label: string) {
       project.request,
       schedulerOwner(label),
     ),
+    executionSchedulerDefaults.nTasks,
   );
 }
 
@@ -132,7 +133,7 @@ async function countedProject(label: string): Promise<SchedulerProject> {
       assert.equal(
         await rig.store.attemptPlaced(
           opened.attempt,
-          asWorkloadId(`workload-${execution}`),
+          asPlacementId(`placement-${execution}`),
         ),
         true,
       );

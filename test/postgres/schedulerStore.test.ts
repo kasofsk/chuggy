@@ -16,16 +16,18 @@
  */
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import {
   executionCapacityDefaults,
+  executionSchedulerDefaults,
   type FencedAttempt,
   type PhysicalAttempt,
 } from "../../src/interpreter/executionScheduler.ts";
-import { asWorkloadId } from "../../src/interpreter/executionScheduler.ts";
+import { asPlacementId } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { asExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   accountIdentityFunction,
@@ -73,6 +75,7 @@ async function registerAll(project: SchedulerProject, label: string) {
       project.request,
       schedulerOwner(label),
     ),
+    executionSchedulerDefaults.nTasks,
   );
 }
 
@@ -94,7 +97,7 @@ async function placedAttempt(
   assert.equal(
     await rig.store.attemptPlaced(
       opened.attempt,
-      asWorkloadId(`workload-${label}`),
+      asPlacementId(`placement-${label}`),
     ),
     true,
   );
@@ -230,6 +233,31 @@ test("registering creates one execution per declared task, pinned to its request
   assert.deepEqual(await schedulerRequestStates(rig, project.partition), {
     [project.request]: "Registered",
   });
+  const requirements = (await rig.harness.query(
+    `SELECT requirement_identity,requirement_value,requirement_digest,
+            requirement_source,platform_default_version::text AS platform_default_version
+       FROM execution WHERE tenant=$1 AND project=$2 ORDER BY task`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly {
+    requirement_identity: string;
+    requirement_value: unknown;
+    requirement_digest: string;
+    requirement_source: string;
+    platform_default_version: string;
+  }[];
+  assert.equal(
+    new Set(requirements.map((row) => row.requirement_identity)).size,
+    project.tasks,
+  );
+  for (const row of requirements) {
+    const value = asExecutionRequirement(row.requirement_value);
+    assert.equal(row.requirement_source, "PlatformDefault");
+    assert.equal(row.platform_default_version, "1");
+    assert.equal(
+      row.requirement_digest,
+      createHash("sha256").update(JSON.stringify(value)).digest("hex"),
+    );
+  }
 });
 
 test("a registration retry creates only the tasks that are missing", async () => {
@@ -257,13 +285,62 @@ test("a registration retry creates only the tasks that are missing", async () =>
     ],
   );
   const before = await schedulerExecutions(rig, project.partition);
-  assert.deepEqual(await rig.store.registerSpawn(claim), {
-    registered: "Registered",
-    created: project.tasks - 2,
-  });
+  assert.deepEqual(
+    await rig.store.registerSpawn(claim, executionSchedulerDefaults.nTasks),
+    {
+      registered: "Registered",
+      created: project.tasks - 2,
+    },
+  );
   const after = await schedulerExecutions(rig, project.partition);
   assert.equal(after.length, project.tasks);
   assert.deepEqual(after.slice(0, 2), before);
+});
+
+test("registration refuses above its explicit task query bound", async () => {
+  const configuredTasksMax = 3;
+  const allowed = await schedulerProject(rig, "task-bound-allowed", {
+    tasks: configuredTasksMax,
+  });
+  const allowedClaim = await schedulerClaimFor(
+    rig,
+    allowed.partition,
+    allowed.request,
+    schedulerOwner("task-bound-allowed"),
+  );
+  assert.deepEqual(
+    await rig.store.registerSpawn(allowedClaim, configuredTasksMax),
+    {
+      registered: "Registered",
+      created: configuredTasksMax,
+    },
+  );
+  const project = await schedulerProject(rig, "task-bound", {
+    tasks: configuredTasksMax + 1,
+  });
+  const claim = await schedulerClaimFor(
+    rig,
+    project.partition,
+    project.request,
+    schedulerOwner("task-bound"),
+  );
+  const result = await rig.store.registerSpawn(claim, configuredTasksMax);
+  assert.equal(result.registered, "Conflicting");
+  assert.deepEqual(await schedulerExecutions(rig, project.partition), []);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT kind,evidence FROM scheduler_incident
+        WHERE tenant=$1 AND project=$2`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [
+      {
+        kind: "ImpossibleState",
+        evidence:
+          "a registration declares more tasks than one request may materialize",
+      },
+    ],
+  );
 });
 
 test("registering the same request again creates nothing", async () => {
@@ -470,7 +547,7 @@ test("a fenced attempt settles nothing, and neither does a stale generation", as
     },
   );
   assert.equal(
-    await rig.store.attemptPlaced(stale, asWorkloadId("late")),
+    await rig.store.attemptPlaced(stale, asPlacementId("late")),
     false,
   );
   assert.equal(await rig.store.attemptEnded(stale, "Lost", "Vanished"), false);
@@ -623,7 +700,14 @@ test("cancellation retires the ticket's work, names its attempts and fulfils the
   assert.deepEqual(registered, {
     cancelled: "Registered",
     fenced: 2,
-    workloads: [attempt.attempt],
+    placements: [
+      {
+        partition: attempt.partition,
+        execution: attempt.execution,
+        attempt: attempt.attempt,
+        generation: attempt.generation,
+      },
+    ],
   });
   assert.deepEqual(
     (await schedulerExecutions(rig, project.partition)).map(
@@ -658,9 +742,12 @@ test("a spawn whose ticket a later cancellation retired is superseded", async ()
       schedulerOwner("revoked"),
     ),
   );
-  assert.deepEqual(await rig.store.registerSpawn(claim), {
-    registered: "Superseded",
-  });
+  assert.deepEqual(
+    await rig.store.registerSpawn(claim, executionSchedulerDefaults.nTasks),
+    {
+      registered: "Superseded",
+    },
+  );
   assert.deepEqual(await schedulerExecutions(rig, project.partition), []);
   assert.equal(
     (await schedulerRequestStates(rig, project.partition))[project.request],

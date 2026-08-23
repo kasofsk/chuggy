@@ -114,6 +114,7 @@ echo "--- unit suite"
 run_suite "model/tests/chuggy_test.qnt" model/tests/chuggy_test.qnt
 run_suite "model/tests/capacity_test.qnt" model/tests/capacity_test.qnt
 run_suite "model/tests/runner_test.qnt" model/tests/runner_test.qnt
+run_suite "model/tests/execution_requirement_test.qnt" model/tests/execution_requirement_test.qnt
 
 # The witness modules prove each named shape reachable and assert every
 # invariant after every step. `wrapup_none` is the odd one out: it witnesses

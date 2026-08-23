@@ -1833,6 +1833,11 @@ const durableExecutionScheduler = [
      cluster                text   NOT NULL,
      configuration_revision text   NOT NULL,
      configuration_digest   text   NOT NULL,
+     requirement_identity   text   NOT NULL,
+     requirement_value      jsonb  NOT NULL,
+     requirement_digest     text   NOT NULL,
+     requirement_source     text   NOT NULL,
+     platform_default_version bigint NOT NULL,
      status                 text   NOT NULL DEFAULT 'Queued',
      outcome                text,
      blocked_reason         text,
@@ -1845,6 +1850,7 @@ const durableExecutionScheduler = [
      terminal_at            timestamptz,
      PRIMARY KEY (tenant, project, execution),
      CONSTRAINT execution_identity_is_never_reused UNIQUE (execution),
+     CONSTRAINT execution_requirement_identity_unique UNIQUE (requirement_identity),
      CONSTRAINT execution_names_one_logical_task UNIQUE (tenant, project, ticket, task),
      CONSTRAINT execution_completion_is_its_own UNIQUE (tenant, project, completion_operation),
      CONSTRAINT execution_belongs_to_project
@@ -1869,6 +1875,10 @@ const durableExecutionScheduler = [
        outcome IS NULL OR outcome IN (${schemaTextSet(allExecutionOutcomes)})),
      CONSTRAINT execution_blocked_reason_is_known CHECK (
        blocked_reason IS NULL OR blocked_reason IN (${schemaTextSet(allBlockedReasons)})),
+     CONSTRAINT execution_requirement_source_known CHECK (requirement_source IN
+       ('ExplicitTask','TaskKindDefault','TicketDefault','PlatformDefault')),
+     CONSTRAINT execution_platform_default_version_positive CHECK (
+       platform_default_version >= 1),
      CONSTRAINT execution_counters_are_positive CHECK (
        ticket >= 1 AND task >= 1 AND attempt_next >= 1 AND retries_spent >= 0),
      CONSTRAINT execution_identity_is_bounded CHECK (
@@ -1889,6 +1899,29 @@ const durableExecutionScheduler = [
   `CREATE INDEX execution_live_by_project ON execution (tenant, project, status)
      WHERE status NOT IN ('Terminal','Cancelled')`,
   `CREATE INDEX execution_by_request ON execution (tenant, project, source_request)`,
+  `CREATE FUNCTION materialize_legacy_execution_requirement() RETURNS trigger
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE configuration jsonb;
+     BEGIN
+       IF NEW.requirement_identity IS NOT NULL THEN RETURN NEW; END IF;
+       SELECT canonical::jsonb INTO STRICT configuration FROM configuration_revision
+         WHERE tenant=NEW.tenant AND project=NEW.project
+           AND revision=NEW.configuration_revision AND digest=NEW.configuration_digest;
+       NEW.requirement_identity=NEW.execution;
+       NEW.requirement_value=jsonb_build_object('mode','Container','operatingSystem','Linux',
+         'architecture','Amd64','image',configuration->>'image');
+       NEW.requirement_digest=encode(sha256(convert_to(format(
+         '{"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":%s}',
+         to_json(configuration->>'image')::text),'UTF8')),'hex');
+       NEW.requirement_source='PlatformDefault';
+       NEW.platform_default_version=1;
+       RETURN NEW;
+     END $$`,
+  `ALTER FUNCTION materialize_legacy_execution_requirement() OWNER TO ${boundaryOwnerRole}`,
+  `CREATE TRIGGER execution_materializes_legacy_requirement
+     BEFORE INSERT ON execution FOR EACH ROW
+     EXECUTE FUNCTION materialize_legacy_execution_requirement()`,
+  `REVOKE ALL ON FUNCTION materialize_legacy_execution_requirement() FROM PUBLIC`,
 
   `CREATE TABLE execution_attempt (
      tenant           text   NOT NULL,
@@ -2087,10 +2120,14 @@ const durableExecutionSchedulerBoundaries = [
            OLD.execution, OLD.status USING ERRCODE = 'integrity_constraint_violation';
        END IF;
        IF (NEW.tenant, NEW.project, NEW.execution, NEW.ticket, NEW.task, NEW.source_request,
-           NEW.account, NEW.cluster, NEW.configuration_revision, NEW.configuration_digest)
+           NEW.account, NEW.cluster, NEW.configuration_revision, NEW.configuration_digest,
+           NEW.requirement_identity,NEW.requirement_value,NEW.requirement_digest,
+           NEW.requirement_source,NEW.platform_default_version)
           IS DISTINCT FROM
           (OLD.tenant, OLD.project, OLD.execution, OLD.ticket, OLD.task, OLD.source_request,
-           OLD.account, OLD.cluster, OLD.configuration_revision, OLD.configuration_digest) THEN
+           OLD.account, OLD.cluster, OLD.configuration_revision, OLD.configuration_digest,
+           OLD.requirement_identity,OLD.requirement_value,OLD.requirement_digest,
+           OLD.requirement_source,OLD.platform_default_version) THEN
          RAISE EXCEPTION 'execution % would change an identity or a pin it was registered under',
            OLD.execution USING ERRCODE = 'integrity_constraint_violation';
        END IF;
@@ -2338,7 +2375,9 @@ const durableExecutionSchedulerBoundaries = [
   `GRANT SELECT ON execution, execution_attempt, execution_result,
      execution_result_artifact, scheduler_incident TO ${schedulerRole}`,
   `GRANT INSERT (tenant, project, execution, ticket, task, source_request, account, cluster,
-                 configuration_revision, configuration_digest) ON execution TO ${schedulerRole}`,
+                 configuration_revision, configuration_digest, requirement_identity,
+                 requirement_value, requirement_digest, requirement_source,
+                 platform_default_version) ON execution TO ${schedulerRole}`,
   `GRANT UPDATE (status, attempt_next, retries_spent, placement_backoff_from, terminal_at)
      ON execution TO ${schedulerRole}`,
   `GRANT INSERT ON execution_attempt, execution_result, execution_result_artifact,
@@ -2353,6 +2392,7 @@ const durableExecutionSchedulerBoundaries = [
   `REVOKE ALL ON execution, execution_attempt, execution_result, execution_result_artifact,
      scheduler_incident, execution_cluster, capacity_account
      FROM ${apiRole}, ${ticketServiceRole}`,
+  `GRANT SELECT ON configuration_revision TO ${schedulerRole}`,
   `REVOKE CREATE ON SCHEMA public FROM ${boundaryOwnerRole}`,
   `REVOKE ${boundaryOwnerRole} FROM CURRENT_USER`,
 ];
@@ -3075,7 +3115,9 @@ const nativeProjectAccess = [
 
 const nativeOperationsViews = [
   `GRANT SELECT (tenant,project,execution,ticket,task,cluster,
-     source_request,configuration_revision,configuration_digest,status,outcome,result_manifest,
+     source_request,configuration_revision,configuration_digest,requirement_identity,
+     requirement_value,requirement_digest,requirement_source,platform_default_version,
+     status,outcome,result_manifest,
      retries_spent,registered_at,terminal_at) ON execution TO ${apiRole}`,
   `GRANT SELECT (tenant,project,execution,attempt,attempt_number,generation,
      state,opened_at,ended_at) ON execution_attempt TO ${apiRole}`,

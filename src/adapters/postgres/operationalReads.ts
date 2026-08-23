@@ -39,6 +39,10 @@ import {
   type ArtifactRole,
 } from "../../interpreter/resultManifest.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  asExecutionRequirement,
+  asRequirementSource,
+} from "../../interpreter/executionRequirement.ts";
 
 interface ExecutionViewRow {
   readonly execution: string;
@@ -48,6 +52,11 @@ interface ExecutionViewRow {
   readonly stage: string | null;
   readonly cluster: string;
   readonly configuration_revision: string;
+  readonly requirement_identity: string;
+  readonly requirement_value: unknown;
+  readonly requirement_digest: string;
+  readonly requirement_source: string;
+  readonly platform_default_version: string;
   readonly canonical: string;
   readonly status: string;
   readonly outcome: string | null;
@@ -118,6 +127,14 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
     cluster: asClusterId(row.cluster),
     configurationRevision: asConfigurationRevisionId(
       row.configuration_revision,
+    ),
+    requirementIdentity: row.requirement_identity,
+    requirement: asExecutionRequirement(row.requirement_value),
+    requirementDigest: row.requirement_digest,
+    requirementSource: asRequirementSource(row.requirement_source),
+    platformDefaultVersion: projectRowCounter(
+      row.platform_default_version,
+      "platform default version",
     ),
     status: known(row.status, allExecutionStatuses, "execution status"),
     ...(row.outcome === null
@@ -198,7 +215,10 @@ async function executionRows(
   const found = await pool.query<ExecutionViewRow>(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
                t.kind AS task_kind,t.stage::text AS stage,e.cluster,
-               e.configuration_revision,c.canonical,e.status,e.outcome,
+               e.configuration_revision,e.requirement_identity,e.requirement_value,
+               e.requirement_digest,e.requirement_source,
+               e.platform_default_version::text AS platform_default_version,
+               c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
                e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
                e.result_manifest
@@ -237,7 +257,10 @@ async function oneExecution(
   const found = await pool.query<ExecutionViewRow>(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
                t.kind AS task_kind,t.stage::text AS stage,e.cluster,
-               e.configuration_revision,c.canonical,e.status,e.outcome,
+               e.configuration_revision,e.requirement_identity,e.requirement_value,
+               e.requirement_digest,e.requirement_source,
+               e.platform_default_version::text AS platform_default_version,
+               c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
                e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
                e.result_manifest

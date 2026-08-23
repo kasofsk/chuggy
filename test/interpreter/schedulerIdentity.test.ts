@@ -19,7 +19,7 @@ import {
   asExecutionId,
   asSchedulerOwnerId,
   asSchedulerText,
-  asWorkloadId,
+  asPlacementId,
   schedulerIdentityCharsMax,
 } from "../../src/interpreter/schedulerIdentity.ts";
 
@@ -32,7 +32,7 @@ const branders: readonly {
   { what: "attempt id", brand: asAttemptId },
   { what: "capacity account", brand: asCapacityAccountId },
   { what: "cluster id", brand: asClusterId },
-  { what: "workload id", brand: asWorkloadId },
+  { what: "placement id", brand: asPlacementId },
   { what: "scheduler owner", brand: asSchedulerOwnerId },
 ];
 

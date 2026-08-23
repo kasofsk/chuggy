@@ -3,6 +3,7 @@ import { after, before, test } from "node:test";
 
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import {
   schedulerClaimFor,
   schedulerExecutions,
@@ -36,7 +37,11 @@ test("operational reads page scheduler-owned execution state", async () => {
     project.request,
     schedulerOwner("operational-page"),
   );
-  assert.equal((await rig.store.registerSpawn(claim)).registered, "Registered");
+  assert.equal(
+    (await rig.store.registerSpawn(claim, executionSchedulerDefaults.nTasks))
+      .registered,
+    "Registered",
+  );
   const durable = await schedulerExecutions(rig, project.partition);
   const reads = postgresOperationalReads(ingress);
   const page = await reads.executions(project.partition, {

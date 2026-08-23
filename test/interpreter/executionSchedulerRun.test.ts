@@ -20,7 +20,7 @@ import {
   asClusterId,
   asExecutionId,
   asSchedulerOwnerId,
-  asWorkloadId,
+  asPlacementId,
   executionSchedulerDefaults,
   silentSchedulerTelemetry,
   type CancellationRegistered,
@@ -30,9 +30,9 @@ import {
   type PhysicalAttempt,
   type ProfileResolved,
   type RequestClaim,
-  type WorkerLaunchPort,
-  type WorkerPlaced,
-  type WorkerPlacement,
+  type AttemptPlacementPort,
+  type AttemptPlacementOutcome,
+  type AttemptPlacement,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
   executionSchedulerAdmit,
@@ -87,6 +87,16 @@ const execution: LogicalExecution = {
   cluster,
   configurationRevision: "revision",
   configurationDigest: "digest",
+  requirementIdentity: "requirement-one",
+  requirement: {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image: "worker:v1",
+  },
+  requirementDigest: "requirement-digest",
+  requirementSource: "PlatformDefault",
+  platformDefaultVersion: 1,
   status: "Admitted",
   attemptsOpened: 0,
   retriesSpent: 0,
@@ -110,7 +120,7 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
     registerSpawn: () =>
       Promise.resolve({ registered: "Registered", created: 1 }),
     registerCancellation: () =>
-      Promise.resolve({ cancelled: "Registered", fenced: 0, workloads: [] }),
+      Promise.resolve({ cancelled: "Registered", fenced: 0, placements: [] }),
     admit: () => Promise.resolve({ admitted: "ClusterFull" }),
     openAttempt: () => Promise.resolve({ opened: "Opened", attempt }),
     attemptPlaced: (_attempt, workload) => {
@@ -185,23 +195,25 @@ const noFacts: RuntimeFacts = { changedFiles: [], handoff: [] };
 function serviceWith(
   calls: string[],
   resolved: ProfileResolved,
-  placed: WorkerPlaced,
+  placed: AttemptPlacementOutcome,
   read: ConfigurationRead = { read: "Configuration", configuration },
   facts: RuntimeFactsRead = { read: "Facts", facts: noFacts },
 ): ExecutionSchedulerService {
   const policy: ExecutionPolicy = {
     profileFor: () => Promise.resolve(resolved),
   };
-  const workers: WorkerLaunchPort = {
+  const placement: AttemptPlacementPort = {
     place: () => Promise.resolve(placed),
-    delete: (_partition, deleted) => {
-      calls.push(`deleted:${deleted}`);
+    cancel: (cancelled) => {
+      calls.push(
+        `cancelled:${cancelled.attempt}:${String(cancelled.generation)}`,
+      );
       return Promise.resolve();
     },
   };
   return {
     store: recordingStore(calls),
-    workers,
+    placement,
     policy,
     configurations: { configuration: () => Promise.resolve(read) },
     runtimeFacts: { facts: () => Promise.resolve(facts) },
@@ -219,12 +231,12 @@ const runnable: ProfileResolved = {
   grant,
 };
 
-const placedOk: WorkerPlaced = {
+const placedOk: AttemptPlacementOutcome = {
   placed: "Placed",
-  workload: asWorkloadId("workload-one"),
+  placement: asPlacementId("placement-one"),
 };
 
-test("a placed attempt records its workload and nothing else", async () => {
+test("a placed attempt records its backend placement and nothing else", async () => {
   const calls: string[] = [];
   assert.equal(
     await executionSchedulerLaunch(
@@ -233,7 +245,37 @@ test("a placed attempt records its workload and nothing else", async () => {
     ),
     1,
   );
-  assert.deepEqual(calls, ["placed:workload-one"]);
+  assert.deepEqual(calls, ["placed:placement-one"]);
+});
+
+test("independent backends substitute at the same placement port", async () => {
+  const asked: string[] = [];
+  const backend = (name: string): AttemptPlacementPort => ({
+    place: (request) => {
+      asked.push(
+        `${name}:${request.requirementIdentity}:${request.profile.profile}:${String(request.generation)}`,
+      );
+      return Promise.resolve({
+        placed: "Placed",
+        placement: asPlacementId(`${name}-placement`),
+      });
+    },
+    cancel: () => Promise.resolve(),
+  });
+  for (const name of ["kubernetes", "registered-runner"]) {
+    const service = serviceWith([], runnable, placedOk);
+    assert.equal(
+      await executionSchedulerLaunch(
+        { ...service, placement: backend(name) },
+        epoch,
+      ),
+      1,
+    );
+  }
+  assert.deepEqual(asked, [
+    "kubernetes:requirement-one:standard:1",
+    "registered-runner:requirement-one:standard:1",
+  ]);
 });
 
 test("a definitive policy denial blocks the execution and spends no retry", async () => {
@@ -284,6 +326,27 @@ test("a temporary policy hold blocks nothing and spends no retry", async () => {
   const service = serviceWith(calls, { resolved: "Unavailable" }, placedOk);
   assert.equal(await executionSchedulerLaunch(service, epoch), 0);
   assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("a pinned non-default requirement reaches placement unchanged", async () => {
+  const placements: AttemptPlacement[] = [];
+  const service = placingService([], placements);
+  const overridden = {
+    ...execution,
+    requirement: { ...execution.requirement, image: "worker:v2" },
+    requirementSource: "ExplicitTask" as const,
+  };
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    unlaunched: () => Promise.resolve([overridden]),
+  };
+  assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 1);
+  assert.deepEqual(placements[0]?.requirement, overridden.requirement);
+  assert.equal(
+    placements[0]?.requirementIdentity,
+    overridden.requirementIdentity,
+  );
+  assert.equal(placements[0]?.requirementDigest, overridden.requirementDigest);
 });
 
 test("a definitive placement denial blocks the execution", async () => {
@@ -384,20 +447,23 @@ function cancellingStore(
   };
 }
 
-test("a registered cancellation asks the fabric to delete every workload it fenced", async () => {
+test("a registered cancellation asks the backend to cancel every fenced generation", async () => {
   const calls: string[] = [];
   const service = serviceWith(calls, runnable, placedOk);
   const store = cancellingStore(calls, {
     cancelled: "Registered",
     fenced: 2,
-    workloads: [asAttemptId("attempt-one"), asAttemptId("attempt-two")],
+    placements: [
+      { ...attempt, attempt: asAttemptId("attempt-one") },
+      { ...attempt, attempt: asAttemptId("attempt-two") },
+    ],
   });
   assert.equal(await executionSchedulerCancel({ ...service, store }, owner), 2);
   assert.deepEqual(calls, [
     "claimed:CancelTicketWork",
     "cancelled",
-    "deleted:attempt-one",
-    "deleted:attempt-two",
+    "cancelled:attempt-one:1",
+    "cancelled:attempt-two:1",
   ]);
 });
 
@@ -453,7 +519,10 @@ function passService(calls: string[]): ExecutionSchedulerService {
     ...cancellingStore(calls, {
       cancelled: "Registered",
       fenced: 3,
-      workloads: [asAttemptId("attempt-one"), asAttemptId("attempt-two")],
+      placements: [
+        { ...attempt, attempt: asAttemptId("attempt-one") },
+        { ...attempt, attempt: asAttemptId("attempt-two") },
+      ],
     }),
     fenceOldEpochAttempts: () => Promise.resolve(4),
     claimRequests: (_owner, kinds) =>
@@ -550,7 +619,10 @@ test("the fencing observation counts attempts where the report counts tasks", as
   const store = cancellingStore([], {
     cancelled: "Registered",
     fenced: 3,
-    workloads: [asAttemptId("attempt-one"), asAttemptId("attempt-two")],
+    placements: [
+      { ...attempt, attempt: asAttemptId("attempt-one") },
+      { ...attempt, attempt: asAttemptId("attempt-two") },
+    ],
   });
   const cancelled = await executionSchedulerCancel(
     { ...service, store, metrics: schedulerTelemetry(recordingMetrics(seen)) },
@@ -595,7 +667,7 @@ test("a pass refuses a configuration that reserves no room for its completions",
   );
 });
 
-test("a workload the durable row would not take is deleted where it was placed", async () => {
+test("a placement the durable row would not take is cancelled at its backend", async () => {
   const calls: string[] = [];
   const service = serviceWith(calls, runnable, placedOk);
   const store: ExecutionSchedulerStore = {
@@ -606,7 +678,7 @@ test("a workload the durable row would not take is deleted where it was placed",
     },
   };
   assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
-  assert.deepEqual(calls, ["placed:workload-one", "deleted:attempt-one"]);
+  assert.deepEqual(calls, ["placed:placement-one", "cancelled:attempt-one:1"]);
 });
 
 test("registration claims only spawn kinds and counts what it created", async () => {
@@ -640,15 +712,15 @@ test("registration claims only spawn kinds and counts what it created", async ()
 /** A service that keeps every placement it was asked for, so a briefing can be read back. */
 function placingService(
   calls: string[],
-  into: WorkerPlacement[],
+  into: AttemptPlacement[],
   read: ConfigurationRead = { read: "Configuration", configuration },
   facts: RuntimeFactsRead = { read: "Facts", facts: noFacts },
 ): ExecutionSchedulerService {
   const service = serviceWith(calls, runnable, placedOk, read, facts);
   return {
     ...service,
-    workers: {
-      ...service.workers,
+    placement: {
+      ...service.placement,
       place: (placement) => {
         into.push(placement);
         return Promise.resolve(placedOk);
@@ -658,7 +730,7 @@ function placingService(
 }
 
 test("a launched worker is handed the briefing its pinned revision composes to", async () => {
-  const placements: WorkerPlacement[] = [];
+  const placements: AttemptPlacement[] = [];
   await executionSchedulerLaunch(placingService([], placements), epoch);
   const placement = placements[0];
   assert.ok(placement !== undefined);
@@ -680,7 +752,7 @@ test("a launched worker is handed the briefing its pinned revision composes to",
 });
 
 test("an evaluation task is briefed from the review template", async () => {
-  const placements: WorkerPlacement[] = [];
+  const placements: AttemptPlacement[] = [];
   const service = placingService([], placements);
   const store: ExecutionSchedulerStore = {
     ...service.store,
@@ -696,7 +768,7 @@ test("an evaluation task is briefed from the review template", async () => {
 });
 
 test("a launched worker holds no authority to complete its own task", async () => {
-  const placements: WorkerPlacement[] = [];
+  const placements: AttemptPlacement[] = [];
   await executionSchedulerLaunch(placingService([], placements), epoch);
   const authority = placements[0]?.invocation.authority;
   assert.ok(authority !== undefined);
@@ -724,7 +796,7 @@ test("the configuration is asked for by the revision the execution pinned", asyn
 });
 
 test("a second attempt renders the briefing the first one was given", async () => {
-  const placements: WorkerPlacement[] = [];
+  const placements: AttemptPlacement[] = [];
   const service = placingService([], placements);
   await executionSchedulerLaunch(service, epoch);
   await executionSchedulerLaunch(service, epoch);

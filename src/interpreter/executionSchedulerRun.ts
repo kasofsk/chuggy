@@ -22,9 +22,9 @@
  * spending the safe retry budget and leaves the execution exactly as it was.
  *
  * A PASS FENCES BEFORE IT MOVES ANYTHING ELSE. After a takeover the previous
- * epoch's workers are still running, and one of them still names a live
+ * epoch's attempts may still be running, and one still names a live
  * attempt it could report a manifest and a completion under. Fencing first is
- * what makes the rest of the pass safe to run at all: an old-generation worker
+ * what makes the rest of the pass safe to run at all: an old-generation executor
  * may finish its local work afterwards and can do nothing with it. It is
  * idempotent, so a pass that finds nothing left to fence fences nothing.
  *
@@ -37,25 +37,25 @@
  * both.
  *
  * A WORKLOAD THE DURABLE ROW WOULD NOT TAKE IS DELETED WHERE IT WAS PLACED. An
- * attempt fenced between the placement and the record leaves a worker running
- * for a generation that may no longer report, so the same pass asks the fabric
- * to delete it; leaving it would let the next pass place a second worker for one
+ * attempt fenced between the placement and the record leaves an executor running
+ * for a generation that may no longer report, so the same pass asks the backend
+ * to cancel it; leaving it would let the next pass place a second attempt for one
  * logical task, which is the thing the attempt fence exists to prevent. The
  * durable answer still comes first, so a deletion lost to a crash leaves a
- * workload whose attempt is already fenced.
+ * placement whose attempt is already fenced.
  *
  * CANCELLATION IS DURABLE BEFORE THE FABRIC HEARS OF IT, and the port's shape
  * is what enforces that rather than the order of two statements: the
  * registration outcome is what names the attempts it fenced, so deleting first
  * is not an order this code can express. 006 fulfills a cancellation request
  * when the retirement is registered and the logical slot released, not when the
- * workload is gone, because the opposite would hold a slot for work nobody is
+ * placement is gone, because the opposite would hold a slot for work nobody is
  * going to run for as long as the cluster was unreachable. A deletion lost to a
- * crash leaves a workload whose attempt is already fenced, which can report
+ * crash leaves a placement whose attempt is already fenced, which can report
  * nothing either way and which inventory reconciles.
  *
  * A WORKER IS BRIEFED BEFORE IT IS PLACED, AND THE PORT HAS NO SHAPE FOR AN
- * UNBRIEFED ONE. `WorkerPlacement` carries the composed invocation, so placing
+ * UNBRIEFED ONE. `AttemptPlacement` carries the composed invocation, so placing
  * without a briefing is not an order this code can express — the same device
  * cancellation uses. Composing it needs the pinned revision read back and the
  * runtime facts gathered, and both are read before `./taskBriefing.ts` decides
@@ -103,7 +103,7 @@ import {
   type PhysicalAttempt,
   type SchedulerOwnerId,
   type SchedulerTelemetry,
-  type WorkerLaunchPort,
+  type AttemptPlacementPort,
   type ClusterId,
 } from "./executionScheduler.ts";
 import type { FinalizerConfig } from "./finalizer.ts";
@@ -123,7 +123,7 @@ import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 /** Everything a scheduler pass calls out through, and the bounds it works within. */
 export interface ExecutionSchedulerService {
   readonly store: ExecutionSchedulerStore;
-  readonly workers: WorkerLaunchPort;
+  readonly placement: AttemptPlacementPort;
   readonly policy: ExecutionPolicy;
   readonly configurations: PinnedConfigurationPort;
   readonly runtimeFacts: RuntimeFactsPort;
@@ -195,7 +195,7 @@ export async function executionSchedulerRegister(
   );
   let registered = 0;
   for (const claim of claims) {
-    const outcome = await service.store.registerSpawn(claim);
+    const outcome = await service.store.registerSpawn(claim, config.nTasks);
     recordScheduler(service.metrics, (metrics) => {
       metrics.registration(outcome.registered);
       if (outcome.registered === "Conflicting") {
@@ -229,13 +229,13 @@ export async function executionSchedulerCancel(
     recordScheduler(service.metrics, (metrics) => {
       metrics.cancellation(outcome.cancelled);
       if (outcome.cancelled === "Registered") {
-        metrics.fencing("Cancellation", outcome.workloads.length);
+        metrics.fencing("Cancellation", outcome.placements.length);
       }
     });
     if (outcome.cancelled !== "Registered") continue;
     cancelled += outcome.fenced;
-    for (const workload of outcome.workloads) {
-      await service.workers.delete(claim.partition, workload);
+    for (const placement of outcome.placements) {
+      await service.placement.cancel(placement);
     }
   }
   return cancelled;
@@ -443,7 +443,7 @@ async function schedulerPlace(
 ): Promise<boolean> {
   const launch = await schedulerPrepare(service, execution, attempt);
   if (launch === undefined) return false;
-  const placed = await service.workers.place({
+  const placed = await service.placement.place({
     partition: execution.partition,
     execution: execution.execution,
     attempt: attempt.attempt,
@@ -455,6 +455,9 @@ async function schedulerPlace(
     sourceRequest: execution.sourceRequest,
     configurationRevision: execution.configurationRevision,
     configurationDigest: execution.configurationDigest,
+    requirementIdentity: execution.requirementIdentity,
+    requirement: execution.requirement,
+    requirementDigest: execution.requirementDigest,
     profile: launch.profile,
     invocation: launch.invocation,
   });
@@ -465,10 +468,10 @@ async function schedulerPlace(
     case "Placed": {
       const recorded = await service.store.attemptPlaced(
         attempt,
-        placed.workload,
+        placed.placement,
       );
       if (!recorded) {
-        await service.workers.delete(execution.partition, attempt.attempt);
+        await service.placement.cancel(attempt);
       }
       return recorded;
     }
@@ -534,7 +537,7 @@ async function schedulerLaunchOne(
   }
 }
 
-/** Places workers for the executions that hold a slot and have no live attempt. */
+/** Places attempts for the executions that hold a slot and have no live attempt. */
 export async function executionSchedulerLaunch(
   service: ExecutionSchedulerService,
   epoch: RecoveryEpoch,

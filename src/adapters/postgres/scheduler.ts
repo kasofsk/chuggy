@@ -73,8 +73,9 @@
  */
 
 import { sql } from "@ts-safeql/sql-tag";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
+import { materializeExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 
 import {
   asAttemptId,
@@ -95,7 +96,7 @@ import {
   type SchedulerIncidentKind,
   type SchedulerOwnerId,
   type SpawnRegistered,
-  type WorkloadId,
+  type PlacementId,
 } from "../../interpreter/executionScheduler.ts";
 import type {
   Partition,
@@ -116,6 +117,7 @@ import {
 import {
   attemptRowPhysical,
   executionRowLogical,
+  executionRowTaskKind,
   schedulerRowPartition,
   type AttemptRow,
   type ExecutionRow,
@@ -349,23 +351,57 @@ async function schedulerRegistrationConflict(
 async function schedulerCreateExecutions(
   client: pg.PoolClient,
   claim: RequestClaim,
-): Promise<number> {
-  const stem = `execution-${randomUUID()}`;
-  const created = await client.query(
-    sql`INSERT INTO execution
-       (tenant, project, execution, ticket, task, source_request, account, cluster,
-        configuration_revision, configuration_digest)
-     SELECT q.tenant, q.project, ${stem}::text || '-' || t.task::text, q.ticket, t.task, q.request,
-            q.capacity_account, a.cluster, q.configuration_revision, q.configuration_digest
-       FROM execution_request q
-       JOIN execution_request_task t
-         ON t.tenant = q.tenant AND t.project = q.project AND t.request = q.request
-       JOIN capacity_account a ON a.account = q.capacity_account
-      WHERE q.tenant = ${claim.partition.tenant} AND q.project = ${claim.partition.project}
-        AND q.request = ${claim.request}
-     ON CONFLICT (tenant, project, ticket, task) DO NOTHING`,
-  );
-  return created.rowCount ?? 0;
+  tasksMax: number,
+): Promise<number | undefined> {
+  const inputs = await client.query<{
+    task: string;
+    kind: string;
+    canonical: string;
+    configuration_revision: string;
+    configuration_digest: string;
+    capacity_account: string;
+    cluster: string;
+  }>(sql`SELECT t.task::text AS task,t.kind,c.canonical,q.configuration_revision,
+       q.configuration_digest,q.capacity_account,a.cluster
+     FROM execution_request q
+     JOIN execution_request_task t
+       ON t.tenant=q.tenant AND t.project=q.project AND t.request=q.request
+     JOIN configuration_revision c
+       ON c.tenant=q.tenant AND c.project=q.project
+      AND c.revision=q.configuration_revision AND c.digest=q.configuration_digest
+     JOIN capacity_account a ON a.account=q.capacity_account
+     WHERE q.tenant=${claim.partition.tenant} AND q.project=${claim.partition.project}
+       AND q.request=${claim.request} ORDER BY t.task
+     LIMIT ${tasksMax + 1}`);
+  if (inputs.rows.length > tasksMax) return undefined;
+  let created = 0;
+  const executionStem = `execution-${randomUUID()}`;
+  for (const input of inputs.rows) {
+    const task = projectRowCounter(input.task, "execution task");
+    const materialized = materializeExecutionRequirement(
+      JSON.parse(input.canonical) as unknown,
+      task,
+      executionRowTaskKind(input.kind),
+    );
+    const execution = `${executionStem}-${input.task}`;
+    const requirementIdentity = execution;
+    const requirementValue = JSON.stringify(materialized.value);
+    const requirementDigest = createHash("sha256")
+      .update(requirementValue)
+      .digest("hex");
+    const inserted = await client.query(sql`INSERT INTO execution
+       (tenant,project,execution,ticket,task,source_request,account,cluster,
+        configuration_revision,configuration_digest,requirement_identity,requirement_value,
+        requirement_digest,requirement_source,platform_default_version)
+       VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
+        ${task},${claim.request},${input.capacity_account},${input.cluster},
+        ${input.configuration_revision},${input.configuration_digest},${requirementIdentity},
+        ${requirementValue}::jsonb,${requirementDigest},${materialized.source},
+        ${materialized.platformDefaultVersion})
+       ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
+    created += inserted.rowCount ?? 0;
+  }
+  return created;
 }
 
 /** How many of the request's declared tasks are still missing a registration. */
@@ -415,7 +451,9 @@ async function schedulerContradicted(
 async function schedulerRegisterSpawn(
   client: pg.PoolClient,
   claim: RequestClaim,
+  tasksMax: number,
 ): Promise<SpawnRegistered> {
+  schedulerRequirePositive(tasksMax, "tasksMax");
   const request = await schedulerLockRequest(client, claim);
   if (request.state === "Invalidated") return { registered: "Superseded" };
   if (request.state !== "Open") {
@@ -435,7 +473,15 @@ async function schedulerRegisterSpawn(
       { execution: conflict },
     );
   }
-  const created = await schedulerCreateExecutions(client, claim);
+  const created = await schedulerCreateExecutions(client, claim, tasksMax);
+  if (created === undefined) {
+    return schedulerContradicted(
+      client,
+      claim,
+      "ImpossibleState",
+      schedulerEvidence.TooManyTasks,
+    );
+  }
   if ((await schedulerUnregisteredTasks(client, claim)) > 0) {
     return schedulerContradicted(
       client,
@@ -494,7 +540,7 @@ async function schedulerFenceRetired(
   client: pg.PoolClient,
   claim: RequestClaim,
   retired: readonly RetiredRow[],
-): Promise<readonly string[]> {
+): Promise<readonly FencedAttempt[]> {
   const executions = retired.map((row) => row.execution);
   await client.query<{ attempt: string }>(
     sql`SELECT a.attempt FROM execution_attempt a
@@ -503,7 +549,11 @@ async function schedulerFenceRetired(
         AND a.state IN ('Placing', 'Running')
       ORDER BY a.tenant, a.project, a.execution, a.attempt FOR UPDATE`,
   );
-  const fenced = await client.query<{ attempt: string }>(
+  const fenced = await client.query<{
+    execution: string;
+    attempt: string;
+    generation: string | null;
+  }>(
     sql`UPDATE execution_attempt a
         SET state = 'Superseded', generation = a.generation + 1,
             evidence = 'Fenced', ended_at = now(),
@@ -511,9 +561,18 @@ async function schedulerFenceRetired(
       WHERE a.tenant = ${claim.partition.tenant} AND a.project = ${claim.partition.project}
         AND a.execution = ANY(${executions}::text[])
         AND a.state IN ('Placing', 'Running')
-      RETURNING a.attempt`,
+      RETURNING a.execution, a.attempt,
+                (a.generation - 1)::text AS generation`,
   );
-  return fenced.rows.map((row) => row.attempt);
+  return fenced.rows.map((row) => ({
+    partition: claim.partition,
+    execution: asExecutionId(row.execution),
+    attempt: asAttemptId(row.attempt),
+    generation: projectRowCounter(
+      claimRowRequired(row.generation, "attempt generation"),
+      "attempt generation",
+    ),
+  }));
 }
 
 /** Invalidates the spawn requests an earlier sequence authorized for this retired ticket. */
@@ -539,7 +598,7 @@ async function schedulerRegisterCancellation(
   const request = await schedulerLockTicketRequests(client, claim);
   if (request.state !== "Open") return { cancelled: "AlreadyFulfilled" };
   const retired = await schedulerRetireTicket(client, claim);
-  const workloads = await schedulerFenceRetired(client, claim, retired);
+  const placements = await schedulerFenceRetired(client, claim, retired);
   await schedulerInvalidateSpawns(client, claim);
   for (const source of new Set(retired.map((row) => row.source_request))) {
     await schedulerFulfilRequest(client, claim.partition, source);
@@ -548,7 +607,7 @@ async function schedulerRegisterCancellation(
   return {
     cancelled: "Registered",
     fenced: retired.length,
-    workloads: workloads.map(asAttemptId),
+    placements,
   };
 }
 
@@ -670,7 +729,9 @@ async function schedulerLockForLaunch(
             t.kind AS task_kind, t.stage::text AS stage, e.source_request,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
             q.ticket_version::text AS ticket_version, e.account, e.cluster,
-            e.configuration_revision, e.configuration_digest, e.status, e.outcome,
+            e.configuration_revision, e.configuration_digest, e.requirement_identity,
+            e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
+            e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
             e.result_manifest, e.completion_operation,
             (e.attempt_next - 1)::text AS attempts_opened,
             e.retries_spent::text AS retries_spent,
@@ -790,11 +851,11 @@ async function schedulerLockAttemptExecution(
 async function schedulerAttemptPlaced(
   client: pg.PoolClient,
   attempt: FencedAttempt,
-  workload: WorkloadId,
+  placement: PlacementId,
 ): Promise<boolean> {
   await schedulerLockAttemptExecution(client, attempt);
   const placed = await client.query(
-    sql`UPDATE execution_attempt SET state = 'Running', workload = ${workload}
+    sql`UPDATE execution_attempt SET state = 'Running', workload = ${placement}
       WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
         AND execution = ${attempt.execution} AND attempt = ${attempt.attempt}
         AND generation = ${attempt.generation} AND state = 'Placing'`,
@@ -916,7 +977,9 @@ async function schedulerUnlaunched(
             t.kind AS task_kind, t.stage::text AS stage, e.source_request,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
             q.ticket_version::text AS ticket_version, e.account, e.cluster,
-            e.configuration_revision, e.configuration_digest, e.status, e.outcome,
+            e.configuration_revision, e.configuration_digest, e.requirement_identity,
+            e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
+            e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
             e.result_manifest, e.completion_operation,
             (e.attempt_next - 1)::text AS attempts_opened,
             e.retries_spent::text AS retries_spent
@@ -977,7 +1040,9 @@ async function schedulerExecution(
                e.source_request, q.authorizing_seq::text AS source_seq,
                q.effect_position::text AS source_effect,
                q.ticket_version::text AS ticket_version, e.account, e.cluster,
-               e.configuration_revision, e.configuration_digest, e.status,
+               e.configuration_revision, e.configuration_digest, e.requirement_identity,
+               e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
+               e.platform_default_version::text AS platform_default_version, e.status,
                e.outcome, e.result_manifest, e.completion_operation,
                (e.attempt_next - 1)::text AS attempts_opened,
                e.retries_spent::text AS retries_spent
@@ -1002,9 +1067,9 @@ export function postgresExecutionScheduler(
   return {
     claimRequests: (owner, kinds, requestsMax, leaseSecs) =>
       schedulerClaimRequests(pool, owner, kinds, requestsMax, leaseSecs),
-    registerSpawn: (claim) =>
+    registerSpawn: (claim, tasksMax) =>
       postgresTransaction(pool, (client) =>
-        schedulerRegisterSpawn(client, claim),
+        schedulerRegisterSpawn(client, claim, tasksMax),
       ),
     registerCancellation: (claim) =>
       postgresTransaction(pool, (client) =>
