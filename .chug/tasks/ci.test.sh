@@ -16,6 +16,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/_suite.sh"
 SUT="$HERE/ci.sh"
+SELECT="$HERE/_ci-select.sh"
 BARE="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$BARE"' EXIT
 
@@ -38,6 +39,7 @@ stub_repo() { # <doc-lint exit> — every named gate stubbed clean but doc-lint
 	fresh_repo "$R"
 	mkdir -p "$R/.chug/tasks"
 	cp "$SUT" "$R/.chug/tasks/ci.sh"
+	cp "$SELECT" "$R/.chug/tasks/_ci-select.sh"
 	chmod +x "$R/.chug/tasks/ci.sh"
 	for gate in $(named_gates "$SUT"); do
 		printf '#!/bin/sh\necho stub %s\nexit 0\n' "$gate" > "$R/.chug/tasks/$gate.sh"
@@ -73,9 +75,83 @@ run_ci() {
 }
 
 stub_repo 0
+git -C "$R" commit -qm baseline
 run_gates_only
 check "all gates clean exits 0" 0 "$RC" "all gates clean"
 check "CHUG_CI_SHELL_SUITES=0 skips the suite stage" 0 "$RC" "SKIPPED"
+check "the default run uses change selection" 0 "$RC" "changed run"
+
+stub_repo 0
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_FULL=1 CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "CHUG_CI_FULL forces every gate" 0 "$RC" "full run (CHUG_CI_FULL=1)"
+check "the forced run executes the model gate" 0 "$RC" "stub check-model"
+
+# A resolved base activates selection. Documentation does not reach the model,
+# database or source toolchains, and each skip is stated rather than hidden.
+stub_repo 0
+git -C "$R" commit -qm baseline
+printf '# docs\n' > "$R/README.md"
+git -C "$R" add README.md
+git -C "$R" commit -qm docs
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a resolved base activates a changed run" 0 "$RC" "changed run"
+check "a docs-only change skips the model" 0 "$RC" "check-model: SKIPPED"
+check "a docs-only change still runs doc-lint" 0 "$RC" "stub doc-lint"
+
+stub_repo 0
+mkdir -p "$R/src/domain"
+printf 'export const changed = true;\n' > "$R/src/domain/changed.ts"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf 'export const changed = false;\n' > "$R/src/domain/changed.ts"
+git -C "$R" add -A
+git -C "$R" commit -qm source
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a source-only change skips Quint" 0 "$RC" "check-model: SKIPPED"
+check "a source-only change selects static checks" 0 "$RC" "stub check-source"
+
+stub_repo 0
+mkdir -p "$R/model"
+printf 'module before {}\n' > "$R/model/domain.qnt"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf 'module after {}\n' > "$R/model/domain.qnt"
+git -C "$R" add -A
+git -C "$R" commit -qm model
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a model change selects Quint" 0 "$RC" "stub check-model"
+check "a model change selects model API generation" 0 "$RC" "stub check-model-api"
+
+# An unresolvable base fails open to complete coverage, never to no coverage.
+stub_repo 0
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=refs/heads/absent CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "an absent base falls back to a full run" 0 "$RC" "full run"
+check "the fallback explains the unresolved base" 0 "$RC" "cannot be resolved"
 
 stub_repo 1
 run_gates_only

@@ -15,6 +15,8 @@
 # print the same.
 #
 # Env:
+#   CHUG_CI_BASE=<ref>            override the default origin/main or main base
+#   CHUG_CI_FULL=1                force every gate and shell suite
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
 #                                 suites themselves, so ci.test.sh cannot
 #                                 recurse into a real run)
@@ -29,6 +31,10 @@ if [ -z "$root" ]; then
 	exit 2
 fi
 cd "$root" || exit 2
+
+. ./.chug/tasks/_ci-select.sh
+ci_select_init
+echo "ci: $CI_SELECT_MODE run ($CI_SELECT_REASON)"
 
 failed=0
 errored=0
@@ -60,16 +66,27 @@ run_gate() { # <label> <script> [args...]
 	esac
 }
 
-run_gate "doc-lint" ./.chug/tasks/doc-lint.sh
+run_selected_gate() { # <gate-id> <label> <script> [args...]
+	gate_id="$1"
+	label="$2"
+	shift 2
+	if ci_gate_selected "$gate_id"; then
+		run_gate "$label" "$@"
+	else
+		printf '\n--- %s: SKIPPED (no relevant changes)\n' "$label"
+	fi
+}
 
-run_gate "check-figures" ./.chug/tasks/check-figures.sh
-run_gate "check-paths" ./.chug/tasks/check-paths.sh
-run_gate "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
-run_gate "check-duplication" ./.chug/tasks/check-duplication.sh
-run_gate "check-gates" ./.chug/tasks/check-gates.sh
-run_gate "check-comments" ./.chug/tasks/check-comments.sh
-run_gate "check-knowledge" ./.chug/tasks/check-knowledge.sh
-run_gate "check-roster" ./.chug/tasks/check-roster.sh
+run_selected_gate doc-lint "doc-lint" ./.chug/tasks/doc-lint.sh
+
+run_selected_gate check-figures "check-figures" ./.chug/tasks/check-figures.sh
+run_selected_gate check-paths "check-paths" ./.chug/tasks/check-paths.sh
+run_selected_gate check-shell-quoting "check-shell-quoting" ./.chug/tasks/check-shell-quoting.sh
+run_selected_gate check-duplication "check-duplication" ./.chug/tasks/check-duplication.sh
+run_selected_gate check-gates "check-gates" ./.chug/tasks/check-gates.sh
+run_selected_gate check-comments "check-comments" ./.chug/tasks/check-comments.sh
+run_selected_gate check-knowledge "check-knowledge" ./.chug/tasks/check-knowledge.sh
+run_selected_gate check-roster "check-roster" ./.chug/tasks/check-roster.sh
 
 if [ "${CHUG_CI_SHELL_SUITES:-1}" = "0" ]; then
 	printf '\n--- shell suites: SKIPPED (CHUG_CI_SHELL_SUITES=0)\n'
@@ -90,10 +107,25 @@ else
 		timeout_cmd="gtimeout"
 	fi
 
-	suites="$(git ls-files '*.test.sh' 2>/dev/null || true)"
+	all_suites="$(git ls-files '*.test.sh' 2>/dev/null || true)"
+	suites=""
+	IFS='
+'
+	for suite in $all_suites; do
+		if ci_suite_selected "$suite"; then
+			suites="$suites$suite
+"
+		fi
+	done
+	unset IFS
+	suites="$(printf '%s' "$suites" | sed '/^$/d')"
 	if [ -z "$suites" ]; then
-		echo "ci: LINTER ERROR — no *.test.sh found; the suite glob matched nothing"
-		errored=$((errored + 1))
+		if [ -z "$all_suites" ]; then
+			echo "ci: LINTER ERROR — no *.test.sh found; the suite glob matched nothing"
+			errored=$((errored + 1))
+		else
+			echo "ci: no shell suites selected"
+		fi
 	else
 		if [ -n "$timeout_cmd" ]; then
 			echo "ci: cap ${suite_cap}s per suite, ${suite_budget}s total"
@@ -138,18 +170,19 @@ else
 	fi
 fi
 
-run_gate "check-boundaries" ./.chug/tasks/check-boundaries.sh
-run_gate "check-source" ./.chug/tasks/check-source.sh
+run_selected_gate check-boundaries "check-boundaries" ./.chug/tasks/check-boundaries.sh
+run_selected_gate source-static "check-source static" ./.chug/tasks/check-source.sh --static
+run_selected_gate source-unit "check-source unit" ./.chug/tasks/check-source.sh --unit
 
-run_gate "check-conformance" ./.chug/tasks/check-conformance.sh
+run_selected_gate check-conformance "check-conformance" ./.chug/tasks/check-conformance.sh
 
-run_gate "check-random" ./.chug/tasks/check-random.sh
+run_selected_gate check-random "check-random" ./.chug/tasks/check-random.sh
 
-run_gate "check-postgres" ./.chug/tasks/check-postgres.sh
-run_gate "check-queries" ./.chug/tasks/check-queries.sh
+run_selected_gate check-postgres "check-postgres" ./.chug/tasks/check-postgres.sh
+run_selected_gate check-queries "check-queries" ./.chug/tasks/check-queries.sh
 
-run_gate "check-model" ./.chug/tasks/check-model.sh
-run_gate "check-model-api" ./.chug/tasks/check-model-api.sh
+run_selected_gate check-model "check-model" ./.chug/tasks/check-model.sh
+run_selected_gate check-model-api "check-model-api" ./.chug/tasks/check-model-api.sh
 
 printf '\n'
 if [ "$errored" -gt 0 ]; then

@@ -3,7 +3,7 @@
 
 # Every gate, in order.
 check:
-    ./.chug/tasks/ci.sh
+    CHUG_CI_FULL=1 ./.chug/tasks/ci.sh
 
 # The gates' own tests, without the sequencer.
 suites:
