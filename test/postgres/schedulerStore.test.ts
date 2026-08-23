@@ -139,6 +139,15 @@ test("two tenants holding one project name draw on entitlements of their own", a
     { tenant: asTenantId(`tenant-later-${randomUUID()}`), project: shared },
   ];
   for (const partition of partitions) {
+    /**
+     * Both tenants are invented here, so each is established before its project
+     * can reference it.
+     */
+    await rig.harness.query(
+      `INSERT INTO tenant (tenant, display_name, lifecycle)
+         VALUES ($1, $1, 'Active') ON CONFLICT (tenant) DO NOTHING`,
+      [partition.tenant],
+    );
     await rig.harness.store.createProject(partition);
   }
   const drawn = `SELECT a.account, a.maximum::text AS maximum FROM project p

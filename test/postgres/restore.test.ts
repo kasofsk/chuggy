@@ -43,7 +43,7 @@ after(async () => {
 });
 
 test("a lease issued before a restore can neither commit nor renew after it", async () => {
-  const partition = await postgresHarnessProject(harness.store, "restore");
+  const partition = await postgresHarnessProject(harness, "restore");
   const memory = await postgresHarnessHistory(
     harness,
     partition,
@@ -73,7 +73,7 @@ test("a lease issued before a restore can neither commit nor renew after it", as
 });
 
 test("a lease issued before a restore cannot release the project either", async () => {
-  const partition = await postgresHarnessProject(harness.store, "stranded");
+  const partition = await postgresHarnessProject(harness, "stranded");
   const acquired = await harness.store.acquire(
     partition,
     postgresHarnessOwner("preRestore"),
@@ -95,7 +95,7 @@ test("a lease issued before a restore cannot release the project either", async 
 });
 
 test("a lease taken after the restore carries the new epoch, and commits and replays under it", async () => {
-  const partition = await postgresHarnessProject(harness.store, "reissued");
+  const partition = await postgresHarnessProject(harness, "reissued");
   const epoch = await harness.store.establishRecoveryEpoch(
     postgresHarnessNewEpoch(),
   );
@@ -114,7 +114,7 @@ test("a lease taken after the restore carries the new epoch, and commits and rep
 });
 
 test("the stranded owner's project is acquired afresh under the current epoch", async () => {
-  const partition = await postgresHarnessProject(harness.store, "reacquire");
+  const partition = await postgresHarnessProject(harness, "reacquire");
   const stranded = await harness.store.acquire(
     partition,
     postgresHarnessOwner("stranded"),

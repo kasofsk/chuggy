@@ -36,7 +36,7 @@ function granted(partition: Partition, label: string): Promise<Lease> {
 }
 
 test("a fresh project is Active with an empty journal, and provisioning it twice is one project", async () => {
-  const partition = await postgresHarnessProject(harness.store, "provision");
+  const partition = await postgresHarnessProject(harness, "provision");
   const again = await harness.store.createProject(partition);
   assert.equal(again.lifecycle, "Active");
   assert.equal(again.head, 0);
@@ -44,7 +44,7 @@ test("a fresh project is Active with an empty journal, and provisioning it twice
 });
 
 test("acquisition grants the lease and advances the fencing epoch", async () => {
-  const partition = await postgresHarnessProject(harness.store, "acquire");
+  const partition = await postgresHarnessProject(harness, "acquire");
   const before = await harness.store.standing(partition);
   const lease = await granted(partition, "first");
   assert.ok(before !== undefined);
@@ -53,7 +53,7 @@ test("acquisition grants the lease and advances the fencing epoch", async () => 
 });
 
 test("a competing owner is refused while the lease is live", async () => {
-  const partition = await postgresHarnessProject(harness.store, "compete");
+  const partition = await postgresHarnessProject(harness, "compete");
   const held = await granted(partition, "holder");
   const rival = postgresHarnessOwner("rival");
   const refused = await harness.store.acquire(partition, rival, 60);
@@ -63,7 +63,7 @@ test("a competing owner is refused while the lease is live", async () => {
 });
 
 test("two replicas racing one free project are told Granted and HeldByAnother", async () => {
-  const partition = await postgresHarnessProject(harness.store, "race");
+  const partition = await postgresHarnessProject(harness, "race");
   const lock = await postgresHarnessRowLock(partition);
   const racers = [
     harness.store.acquire(partition, postgresHarnessOwner("racerleft"), 60),
@@ -82,7 +82,7 @@ test("two replicas racing one free project are told Granted and HeldByAnother", 
 });
 
 test("renewal extends the lease and preserves its fencing epoch", async () => {
-  const partition = await postgresHarnessProject(harness.store, "renew");
+  const partition = await postgresHarnessProject(harness, "renew");
   const lease = await granted(partition, "steady");
   const renewed = await harness.store.renew(lease, 60);
   assert.equal(renewed.renewed, "Extended");
@@ -92,7 +92,7 @@ test("renewal extends the lease and preserves its fencing epoch", async () => {
 });
 
 test("takeover after expiry advances the epoch, and the former owner cannot renew", async () => {
-  const partition = await postgresHarnessProject(harness.store, "takeover");
+  const partition = await postgresHarnessProject(harness, "takeover");
   const former = await granted(partition, "former");
   await postgresHarnessExpire(harness, partition);
   const successor = await granted(partition, "successor");
@@ -104,7 +104,7 @@ test("takeover after expiry advances the epoch, and the former owner cannot rene
 });
 
 test("release frees the project, and a released lease cannot release its successor", async () => {
-  const partition = await postgresHarnessProject(harness.store, "release");
+  const partition = await postgresHarnessProject(harness, "release");
   const lease = await granted(partition, "leaver");
   await harness.store.release(lease);
   const next = await granted(partition, "next");
@@ -124,7 +124,7 @@ test("release frees the project, and a released lease cannot release its success
 });
 
 test("a fenced project admits no ticket writer, and fencing advances both counters", async () => {
-  const partition = await postgresHarnessProject(harness.store, "fence");
+  const partition = await postgresHarnessProject(harness, "fence");
   const lease = await granted(partition, "held");
   const fenced = await harness.store.fence(partition, "Suspended");
   assert.equal(fenced.lifecycle, "Suspended");
@@ -141,7 +141,7 @@ test("a fenced project admits no ticket writer, and fencing advances both counte
 });
 
 test("a duration no lease can be granted for names the argument, not the row it would spoil", async () => {
-  const partition = await postgresHarnessProject(harness.store, "duration");
+  const partition = await postgresHarnessProject(harness, "duration");
   const held = await granted(partition, "steady");
   for (const leaseSecs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
     await assert.rejects(
@@ -163,7 +163,7 @@ test("a duration no lease can be granted for names the argument, not the row it 
 });
 
 test("a partition nothing provisioned has no standing and cannot be acquired", async () => {
-  const partition = await postgresHarnessProject(harness.store, "known");
+  const partition = await postgresHarnessProject(harness, "known");
   const unknown = {
     tenant: partition.tenant,
     project: partition.project.concat("-absent"),

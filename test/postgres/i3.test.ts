@@ -33,7 +33,7 @@ after(async () => {
 });
 
 test("typed operation acceptance creates one decision input and derives priority", async () => {
-  const partition = await postgresHarnessProject(harness.store, "typed-input");
+  const partition = await postgresHarnessProject(harness, "typed-input");
   const submission = postgresHarnessSubmission(partition, "typed-input");
   const accepted = await harness.inbox.accept(submission);
   assert.equal(accepted.accepted, "Accepted");
@@ -55,7 +55,7 @@ test("typed operation acceptance creates one decision input and derives priority
 });
 
 test("cancellation terminalizes the decision input without a journal entry", async () => {
-  const partition = await postgresHarnessProject(harness.store, "cancel-input");
+  const partition = await postgresHarnessProject(harness, "cancel-input");
   const submission = postgresHarnessSubmission(partition, "cancel-input");
   await harness.inbox.accept(submission);
   const cancellation: Cancellation = {
@@ -81,7 +81,7 @@ test("cancellation terminalizes the decision input without a journal entry", asy
 });
 
 test("journal, input outcome, projection and focused execution request commit together", async () => {
-  const partition = await postgresHarnessProject(harness.store, "materialized");
+  const partition = await postgresHarnessProject(harness, "materialized");
   const lease = await postgresHarnessHeld(
     harness.store,
     partition,

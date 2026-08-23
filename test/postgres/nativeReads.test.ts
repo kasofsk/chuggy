@@ -58,7 +58,7 @@ test("public operations expose an authoring-fence refusal", () => {
 
 test("operation polling reads the durable public state", async () => {
   const partition = await postgresHarnessProject(
-    subject.harness.store,
+    subject.harness,
     "native-poll",
   );
   const submission = postgresHarnessSubmission(partition, "native-poll");
@@ -74,7 +74,7 @@ test("operation polling reads the durable public state", async () => {
 
 test("project reads page by ticket identity and enforce a minimum sequence", async () => {
   const partition = await postgresHarnessProject(
-    subject.harness.store,
+    subject.harness,
     "native-page",
   );
   await subject.harness.query(

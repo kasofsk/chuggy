@@ -43,6 +43,14 @@ import { postgresProjectDecision } from "../../src/adapters/postgres/projectDeci
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
 import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
+import {
+  postgresTenantAdministration,
+  postgresTenantAdministrationAccess,
+} from "../../src/adapters/postgres/tenantAdmin.ts";
+import type {
+  TenantAdministrationAccess,
+  TenantAdministrationStore,
+} from "../../src/interpreter/tenantAdmin.ts";
 import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
 import {
   asAuthorityKind,
@@ -109,6 +117,8 @@ export interface PostgresHarness {
   readonly decisions: ProjectDecision;
   readonly authoring: AuthoringStore;
   readonly access: ProjectAccess;
+  readonly tenantAccess: TenantAdministrationAccess;
+  readonly tenants: TenantAdministrationStore;
   readonly query: (
     sql: string,
     values?: readonly unknown[],
@@ -133,6 +143,8 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
     decisions: postgresProjectDecision(pool),
     authoring: postgresAuthoring(pool),
     access: postgresProjectAccess(pool),
+    tenantAccess: postgresTenantAdministrationAccess(pool),
+    tenants: postgresTenantAdministration(pool),
     query: async (sql, values) =>
       (await pool.query(sql, values === undefined ? undefined : [...values]))
         .rows as readonly Record<string, unknown>[],
@@ -237,11 +249,21 @@ export function postgresHarnessOwner(label: string): OwnerId {
 
 /** A provisioned, active partition with an empty journal, which is what most cases start from. */
 export async function postgresHarnessProject(
-  store: ProjectStore,
+  harness: PostgresHarness,
   label: string,
 ): Promise<Partition> {
   const partition = postgresHarnessPartition(label);
-  await store.createProject(partition);
+  /**
+   * A project references its tenant, so the tenant is established first or the
+   * insert is refused. Cases about tenancy itself say who owns it; the rest
+   * only need one to exist.
+   */
+  await harness.query(
+    `INSERT INTO tenant (tenant, display_name, lifecycle)
+       VALUES ($1, $1, 'Active') ON CONFLICT (tenant) DO NOTHING`,
+    [partition.tenant],
+  );
+  await harness.store.createProject(partition);
   return partition;
 }
 

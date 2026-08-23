@@ -22,10 +22,7 @@ after(async () => {
 });
 
 test("an ambiguous commit is resolved from the terminal input before stale-head fences", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "ambiguous-input",
-  );
+  const partition = await postgresHarnessProject(harness, "ambiguous-input");
   const lease = await postgresHarnessHeld(
     harness.store,
     partition,
@@ -64,10 +61,7 @@ test("an ambiguous commit is resolved from the terminal input before stale-head 
 });
 
 test("rollback before commit leaves the input pending for takeover", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "rollback-input",
-  );
+  const partition = await postgresHarnessProject(harness, "rollback-input");
   const submission = await postgresHarnessReleaseSubmission(
     harness,
     partition,

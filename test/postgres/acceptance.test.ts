@@ -30,10 +30,7 @@ after(async () => {
 });
 
 test("acceptance publishes one typed input and an idempotent retry returns it", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "accept-idempotent",
-  );
+  const partition = await postgresHarnessProject(harness, "accept-idempotent");
   const submission = postgresHarnessSubmission(partition, "accept-idempotent");
   assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
   assert.equal((await harness.inbox.accept(submission)).accepted, "Original");
@@ -55,10 +52,7 @@ test("acceptance publishes one typed input and an idempotent retry returns it", 
 });
 
 test("one key with a different typed command conflicts without allocating", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "accept-conflict",
-  );
+  const partition = await postgresHarnessProject(harness, "accept-conflict");
   const submission = postgresHarnessSubmission(partition, "accept-conflict");
   await harness.inbox.accept(submission);
   const conflict = await harness.inbox.accept({
@@ -81,7 +75,7 @@ test("one key with a different typed command conflicts without allocating", asyn
 
 test("a canonical retry recognizes the payload digest stored by I2", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "accept-legacy-payload",
   );
   const submission = postgresHarnessSubmission(
@@ -106,10 +100,7 @@ test("a canonical retry recognizes the payload digest stored by I2", async () =>
 });
 
 test("ordinary work receives pre-acceptance backpressure at the soft bound", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "accept-pressure",
-  );
+  const partition = await postgresHarnessProject(harness, "accept-pressure");
   const pool = postgresPool(postgresHarnessUrl());
   const inbox = postgresOperationInbox(pool, postgresHarnessKeying(), {
     agingIntervalSeconds: 300,
@@ -133,10 +124,7 @@ test("ordinary work receives pre-acceptance backpressure at the soft bound", asy
 });
 
 test("concurrent acceptance gives every operation one distinct ordinal", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "accept-concurrent",
-  );
+  const partition = await postgresHarnessProject(harness, "accept-concurrent");
   const submissions = Array.from({ length: 8 }, (_, index) =>
     postgresHarnessSubmission(partition, `concurrent-${String(index)}`),
   );
@@ -154,14 +142,8 @@ test("concurrent acceptance gives every operation one distinct ordinal", async (
 });
 
 test("operation identity remains globally unique", async () => {
-  const first = await postgresHarnessProject(
-    harness.store,
-    "accept-global-one",
-  );
-  const second = await postgresHarnessProject(
-    harness.store,
-    "accept-global-two",
-  );
+  const first = await postgresHarnessProject(harness, "accept-global-one");
+  const second = await postgresHarnessProject(harness, "accept-global-two");
   const submission = postgresHarnessSubmission(first, "accept-global");
   await harness.inbox.accept(submission);
   await assert.rejects(
@@ -176,7 +158,7 @@ test("operation identity remains globally unique", async () => {
 
 test("native-action resolution is accepted only against its open versioned request", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "accept-native-fence",
   );
   const submission = postgresHarnessSubmission(partition, "native-fence");
@@ -201,7 +183,7 @@ test("native-action resolution is accepted only against its open versioned reque
 
 test("a decision carrying a dispatch event is refused and allocates nothing", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "accept-dispatch-decision",
   );
   const submission = postgresHarnessSubmission(partition, "dispatch-decision");

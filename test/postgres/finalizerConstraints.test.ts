@@ -422,7 +422,7 @@ test("a reconciliation belongs to a permit and there is one of it per permit", a
 
 test("one repository belongs to one project and one project binds one repository", async () => {
   const unbound = await postgresHarnessProject(
-    rig.harness.store,
+    rig.harness,
     "constraints-exclusive",
   );
   for (const [values, constraint] of [

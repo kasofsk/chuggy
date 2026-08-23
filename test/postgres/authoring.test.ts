@@ -50,10 +50,7 @@ const authority = {
 async function draftFixture(
   canonical = asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
 ) {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "authoring-draft",
-  );
+  const partition = await postgresHarnessProject(harness, "authoring-draft");
   const store = postgresAuthoring(pool);
   const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
   await store.createConfiguration({
@@ -113,10 +110,7 @@ async function assertReleaseConfigurationPinned(
 }
 
 test("configuration revisions are immutable and parented inside one project", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "authoring-config",
-  );
+  const partition = await postgresHarnessProject(harness, "authoring-config");
   const store = postgresAuthoring(pool);
   const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
   const canonical = asCanonicalConfiguration('{"image":"worker:v1"}');
@@ -164,8 +158,8 @@ test("configuration revisions are immutable and parented inside one project", as
 });
 
 test("configuration revision identity is project-local", async () => {
-  const first = await postgresHarnessProject(harness.store, "config-local-a");
-  const second = await postgresHarnessProject(harness.store, "config-local-b");
+  const first = await postgresHarnessProject(harness, "config-local-a");
+  const second = await postgresHarnessProject(harness, "config-local-b");
   const revision = asConfigurationRevisionId(`shared-${randomUUID()}`);
   const canonical = asCanonicalConfiguration("{}");
   const store = postgresAuthoring(pool);
@@ -188,7 +182,7 @@ test("configuration revision identity is project-local", async () => {
 
 test("configuration reads reject content that contradicts its digest", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "config-read-integrity",
   );
   const revision = asConfigurationRevisionId(`integrity-${randomUUID()}`);
@@ -212,10 +206,7 @@ test("configuration reads reject content that contradicts its digest", async () 
 });
 
 test("concurrent identical configuration creation is idempotent", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "config-concurrent",
-  );
+  const partition = await postgresHarnessProject(harness, "config-concurrent");
   const revision = asConfigurationRevisionId(`concurrent-${randomUUID()}`);
   const input = {
     partition,
@@ -293,7 +284,7 @@ test("draft edits are versioned and deletion leaves an unreusable identity", asy
 
 test("a domain release advances the shared ticket identity allocator", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "authoring-existing-ticket",
   );
   const submission = await postgresHarnessReleaseSubmission(

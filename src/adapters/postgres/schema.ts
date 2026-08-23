@@ -323,6 +323,24 @@ export const notificationPublishFunction = "publish_project_notification";
 export const boundaryOwnerRole = "chuggy_boundary_owner";
 export const projectAuthorizationFunction = "authorize_project_access";
 
+/**
+ * Tenant administration, which is control-plane state rather than ticket state:
+ * every write is a checked function because no role holds DML on the tables.
+ */
+export const tenantRoleGrantsFunction = "tenant_role_grants";
+export const tenantAuthorizationFunction = "authorize_tenant_capability";
+export const tenantCreateFunction = "create_tenant";
+export const tenantMembershipGrantFunction = "grant_tenant_membership";
+export const tenantMembershipRevokeFunction = "revoke_tenant_membership";
+export const tenantInviteFunction = "invite_to_tenant";
+export const tenantInviteRevokeFunction = "revoke_tenant_invitation";
+export const tenantInviteRedeemFunction = "redeem_tenant_invitations";
+export const tenantProjectCreateFunction = "create_project_in_tenant";
+export const projectMembershipSetFunction = "set_project_membership";
+export const projectMembershipClearFunction = "clear_project_membership";
+export const tenantMembersFunction = "list_tenant_members";
+export const tenantInvitationsFunction = "list_tenant_invitations";
+
 /** The role the execution scheduler connects as, which owns execution and capacity and decides no ticket. */
 export const schedulerRole = "chuggy_scheduler";
 
@@ -3073,6 +3091,451 @@ const nativeProjectAccess = [
      TO ${apiRole}`,
 ];
 
+const tenantOwnership = [
+  `CREATE TABLE tenant (
+     tenant       text        NOT NULL PRIMARY KEY,
+     display_name text        NOT NULL,
+     lifecycle    text        NOT NULL,
+     created_at   timestamptz NOT NULL DEFAULT now(),
+     CONSTRAINT tenant_lifecycle_is_known CHECK (lifecycle IN ('Active','Suspended')),
+     CONSTRAINT tenant_identity_is_bounded CHECK (
+       length(tenant) BETWEEN 1 AND ${schedulerIdentityCharsMax}
+       AND length(display_name) BETWEEN 1 AND ${schedulerIdentityCharsMax})
+   )`,
+
+  /**
+   * Every project predating this migration names a tenant that must exist
+   * before the constraint below can be believed.
+   */
+  `INSERT INTO tenant (tenant, display_name, lifecycle)
+     SELECT DISTINCT tenant, tenant, 'Active' FROM project
+     ON CONFLICT (tenant) DO NOTHING`,
+  `ALTER TABLE project ADD CONSTRAINT project_belongs_to_a_tenant
+     FOREIGN KEY (tenant) REFERENCES tenant (tenant)`,
+
+  `CREATE TABLE tenant_membership (
+     principal         text        NOT NULL,
+     tenant            text        NOT NULL REFERENCES tenant (tenant),
+     role              text        NOT NULL,
+     authority_kind    text        NOT NULL,
+     authority_subject text        NOT NULL,
+     granted_at        timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (principal, tenant),
+     CONSTRAINT tenant_membership_role_is_known CHECK (role IN ('Owner','Admin','Member')),
+     CONSTRAINT tenant_membership_identities_are_present CHECK (
+       principal <> '' AND authority_kind <> '' AND authority_subject <> '')
+   )`,
+
+  `CREATE TABLE tenant_invitation (
+     tenant             text        NOT NULL REFERENCES tenant (tenant),
+     email              text        NOT NULL,
+     role               text        NOT NULL,
+     invited_by_kind    text        NOT NULL,
+     invited_by_subject text        NOT NULL,
+     expires_at         timestamptz NOT NULL,
+     state              text        NOT NULL,
+     created_at         timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (tenant, email, created_at),
+     CONSTRAINT tenant_invitation_role_is_known CHECK (role IN ('Owner','Admin','Member')),
+     CONSTRAINT tenant_invitation_state_is_known CHECK (
+       state IN ('Pending','Redeemed','Revoked')),
+     CONSTRAINT tenant_invitation_email_is_folded CHECK (email = lower(email) AND email <> '')
+   )`,
+  /**
+   * One address holds at most one live invitation per tenant; redeemed and
+   * revoked rows stay as the record of what happened.
+   */
+  `CREATE UNIQUE INDEX tenant_invitation_is_live_once
+     ON tenant_invitation (tenant, email) WHERE state = 'Pending'`,
+
+  `CREATE TABLE tenant_membership_change (
+     ordinal       bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     tenant        text        NOT NULL REFERENCES tenant (tenant),
+     principal     text        NOT NULL,
+     role_before   text,
+     role_after    text,
+     actor_kind    text        NOT NULL,
+     actor_subject text        NOT NULL,
+     recorded_at   timestamptz NOT NULL DEFAULT now(),
+     CONSTRAINT tenant_membership_change_moves_something CHECK (
+       role_before IS DISTINCT FROM role_after)
+   )`,
+
+  /**
+   * The one place a role's default project access is stated, so the policy is
+   * a single statement to change and a single function to test.
+   */
+  `CREATE FUNCTION ${tenantRoleGrantsFunction}(in_role text, in_access text)
+     RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+       SELECT CASE
+         WHEN in_role IN ('Owner','Admin') THEN true
+         WHEN in_role = 'Member' THEN in_access = 'Read'
+         ELSE false
+       END
+     $$`,
+
+  `CREATE FUNCTION ${tenantAuthorizationFunction}(
+     in_principal text,in_tenant text,in_capability text)
+     RETURNS TABLE (authority_kind text,authority_subject text)
+     LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     BEGIN
+       IF in_capability NOT IN ('ManageTenant','ManageMembers','ManageProjects','ReadTenant') THEN
+         RAISE EXCEPTION 'unknown tenant capability';
+       END IF;
+       RETURN QUERY
+         SELECT membership.authority_kind,membership.authority_subject
+           FROM tenant_membership membership
+           JOIN tenant ON tenant.tenant=membership.tenant
+          WHERE membership.principal=in_principal
+            AND membership.tenant=in_tenant
+            AND tenant.lifecycle='Active'
+            AND CASE membership.role
+              WHEN 'Owner' THEN true
+              WHEN 'Admin' THEN in_capability <> 'ManageTenant'
+              WHEN 'Member' THEN in_capability = 'ReadTenant'
+              ELSE false
+            END;
+     END $$`,
+
+  /**
+   * Migration 14 shipped this reading project_membership alone. Replaced rather
+   * than edited in place, because an applied migration never runs again and a
+   * fresh database would otherwise disagree with a migrated one.
+   */
+  `CREATE OR REPLACE FUNCTION ${projectAuthorizationFunction}(
+     in_principal text,in_tenant text,in_project text,in_access text)
+     RETURNS TABLE (authority_kind text,authority_subject text)
+     LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE
+       explicit project_membership%ROWTYPE;
+     BEGIN
+       IF in_access NOT IN ('Read','Mutate','DispatchTicket','ProposeDispatch') THEN
+         RAISE EXCEPTION 'unknown project access kind';
+       END IF;
+       SELECT * INTO explicit FROM project_membership membership
+         WHERE membership.principal=in_principal
+           AND membership.tenant=in_tenant AND membership.project=in_project;
+       IF FOUND THEN
+         -- An explicit row is the whole answer, including when it denies what
+         -- the tenant role would have allowed.
+         -- Parenthesised because a bare CASE would end this IF at its own
+         -- first WHEN ... THEN rather than at the one closing the condition.
+         IF (CASE in_access
+              WHEN 'Read' THEN explicit.may_read
+              WHEN 'Mutate' THEN explicit.may_mutate
+              WHEN 'DispatchTicket' THEN explicit.may_dispatch
+              WHEN 'ProposeDispatch' THEN explicit.may_propose
+             END) THEN
+           RETURN QUERY SELECT explicit.authority_kind,explicit.authority_subject;
+         END IF;
+         RETURN;
+       END IF;
+       RETURN QUERY
+         SELECT membership.authority_kind,membership.authority_subject
+           FROM tenant_membership membership
+           JOIN tenant ON tenant.tenant=membership.tenant
+          WHERE membership.principal=in_principal
+            AND membership.tenant=in_tenant
+            AND tenant.lifecycle='Active'
+            AND ${tenantRoleGrantsFunction}(membership.role,in_access);
+     END $$`,
+
+  `CREATE FUNCTION ${tenantCreateFunction}(
+     in_principal text,in_tenant text,in_display_name text,
+     in_authority_kind text,in_authority_subject text)
+     RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     BEGIN
+       INSERT INTO tenant (tenant,display_name,lifecycle)
+         VALUES (in_tenant,in_display_name,'Active');
+       INSERT INTO tenant_membership
+         (principal,tenant,role,authority_kind,authority_subject)
+         VALUES (in_principal,in_tenant,'Owner',in_authority_kind,in_authority_subject);
+       INSERT INTO tenant_membership_change
+         (tenant,principal,role_before,role_after,actor_kind,actor_subject)
+         VALUES (in_tenant,in_principal,NULL,'Owner',in_authority_kind,in_authority_subject);
+     END $$`,
+
+  `CREATE FUNCTION ${tenantMembershipGrantFunction}(
+     in_actor text,in_tenant text,in_principal text,in_role text)
+     RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE
+       actor   record;
+       previous text;
+     BEGIN
+       IF in_role NOT IN ('Owner','Admin','Member') THEN
+         RAISE EXCEPTION 'unknown tenant role';
+       END IF;
+       SELECT * INTO actor FROM ${tenantAuthorizationFunction}(in_actor,in_tenant,'ManageMembers');
+       IF NOT FOUND THEN RAISE EXCEPTION 'tenant membership management is forbidden'
+           USING ERRCODE='insufficient_privilege'; END IF;
+       SELECT role INTO previous FROM tenant_membership
+         WHERE principal=in_principal AND tenant=in_tenant;
+       IF previous='Owner' AND in_role<>'Owner'
+          AND (SELECT count(*) FROM tenant_membership
+                WHERE tenant=in_tenant AND role='Owner')=1 THEN
+         RAISE EXCEPTION 'a tenant keeps at least one owner';
+       END IF;
+       IF previous IS NOT DISTINCT FROM in_role THEN RETURN; END IF;
+       INSERT INTO tenant_membership
+         (principal,tenant,role,authority_kind,authority_subject)
+         VALUES (in_principal,in_tenant,in_role,actor.authority_kind,actor.authority_subject)
+         ON CONFLICT (principal,tenant) DO UPDATE SET role=EXCLUDED.role,
+           authority_kind=EXCLUDED.authority_kind,
+           authority_subject=EXCLUDED.authority_subject;
+       INSERT INTO tenant_membership_change
+         (tenant,principal,role_before,role_after,actor_kind,actor_subject)
+         VALUES (in_tenant,in_principal,previous,in_role,actor.authority_kind,actor.authority_subject);
+     END $$`,
+
+  `CREATE FUNCTION ${tenantMembershipRevokeFunction}(
+     in_actor text,in_tenant text,in_principal text)
+     RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE
+       actor    record;
+       previous text;
+     BEGIN
+       SELECT * INTO actor FROM ${tenantAuthorizationFunction}(in_actor,in_tenant,'ManageMembers');
+       IF NOT FOUND THEN RAISE EXCEPTION 'tenant membership management is forbidden'
+           USING ERRCODE='insufficient_privilege'; END IF;
+       SELECT role INTO previous FROM tenant_membership
+         WHERE principal=in_principal AND tenant=in_tenant;
+       IF NOT FOUND THEN RETURN; END IF;
+       IF previous='Owner'
+          AND (SELECT count(*) FROM tenant_membership
+                WHERE tenant=in_tenant AND role='Owner')=1 THEN
+         RAISE EXCEPTION 'a tenant keeps at least one owner';
+       END IF;
+       DELETE FROM tenant_membership WHERE principal=in_principal AND tenant=in_tenant;
+       INSERT INTO tenant_membership_change
+         (tenant,principal,role_before,role_after,actor_kind,actor_subject)
+         VALUES (in_tenant,in_principal,previous,NULL,actor.authority_kind,actor.authority_subject);
+     END $$`,
+
+  `CREATE FUNCTION ${tenantInviteFunction}(
+     in_actor text,in_tenant text,in_email text,in_role text,in_expires_at timestamptz)
+     RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE
+       actor record;
+     BEGIN
+       IF in_role NOT IN ('Owner','Admin','Member') THEN
+         RAISE EXCEPTION 'unknown tenant role';
+       END IF;
+       SELECT * INTO actor FROM ${tenantAuthorizationFunction}(in_actor,in_tenant,'ManageMembers');
+       IF NOT FOUND THEN RAISE EXCEPTION 'tenant membership management is forbidden'
+           USING ERRCODE='insufficient_privilege'; END IF;
+       UPDATE tenant_invitation SET state='Revoked'
+         WHERE tenant=in_tenant AND email=lower(in_email) AND state='Pending';
+       INSERT INTO tenant_invitation
+         (tenant,email,role,invited_by_kind,invited_by_subject,expires_at,state)
+         VALUES (in_tenant,lower(in_email),in_role,
+                 actor.authority_kind,actor.authority_subject,in_expires_at,'Pending');
+     END $$`,
+
+  `CREATE FUNCTION ${tenantInviteRevokeFunction}(
+     in_actor text,in_tenant text,in_email text)
+     RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE
+       actor record;
+     BEGIN
+       SELECT * INTO actor FROM ${tenantAuthorizationFunction}(in_actor,in_tenant,'ManageMembers');
+       IF NOT FOUND THEN RAISE EXCEPTION 'tenant membership management is forbidden'
+           USING ERRCODE='insufficient_privilege'; END IF;
+       UPDATE tenant_invitation SET state='Revoked'
+         WHERE tenant=in_tenant AND email=lower(in_email) AND state='Pending';
+     END $$`,
+
+  /**
+   * No capability check: the caller's proof is a verified email address, which
+   * only the authentication path can attest to, and it attests by calling this.
+   * The answered columns are not named `tenant` and `role`: those would shadow
+   * the columns of every table this reads, and the shadowing is a runtime
+   * ambiguity rather than a creation-time one.
+   */
+  `CREATE FUNCTION ${tenantInviteRedeemFunction}(in_principal text,in_email text)
+     RETURNS TABLE (redeemed_tenant text,redeemed_role text)
+     LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE
+       invitation record;
+     BEGIN
+       FOR invitation IN
+         SELECT * FROM tenant_invitation
+          WHERE email=lower(in_email) AND state='Pending' AND expires_at>now()
+          FOR UPDATE
+       LOOP
+         INSERT INTO tenant_membership
+           (principal,tenant,role,authority_kind,authority_subject)
+           VALUES (in_principal,invitation.tenant,invitation.role,
+                   invitation.invited_by_kind,invitation.invited_by_subject)
+           ON CONFLICT (principal,tenant) DO NOTHING;
+         -- A standing membership is left as it was, so an invitation cannot
+         -- quietly demote somebody who already belongs.
+         IF FOUND THEN
+           INSERT INTO tenant_membership_change
+             (tenant,principal,role_before,role_after,actor_kind,actor_subject)
+             VALUES (invitation.tenant,in_principal,NULL,invitation.role,
+                     invitation.invited_by_kind,invitation.invited_by_subject);
+         END IF;
+         UPDATE tenant_invitation SET state='Redeemed'
+           WHERE tenant_invitation.tenant=invitation.tenant
+             AND tenant_invitation.email=invitation.email
+             AND tenant_invitation.created_at=invitation.created_at;
+         redeemed_tenant:=invitation.tenant;
+         redeemed_role:=invitation.role;
+         RETURN NEXT;
+       END LOOP;
+     END $$`,
+
+  `CREATE FUNCTION ${tenantProjectCreateFunction}(
+     in_actor text,in_tenant text,in_project text)
+     RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE
+       actor record;
+     BEGIN
+       SELECT * INTO actor FROM ${tenantAuthorizationFunction}(in_actor,in_tenant,'ManageProjects');
+       IF NOT FOUND THEN RAISE EXCEPTION 'tenant project management is forbidden'
+           USING ERRCODE='insufficient_privilege'; END IF;
+       -- The project_has_a_capacity_account trigger provisions capacity, so a
+       -- plain insert is the whole of creation.
+       INSERT INTO project (tenant,project,lifecycle)
+         VALUES (in_tenant,in_project,'Active')
+         ON CONFLICT (tenant,project) DO NOTHING;
+     END $$`,
+
+  `CREATE FUNCTION ${projectMembershipSetFunction}(
+     in_actor text,in_tenant text,in_project text,in_principal text,
+     in_may_read boolean,in_may_mutate boolean,
+     in_may_dispatch boolean,in_may_propose boolean)
+     RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE
+       actor record;
+     BEGIN
+       SELECT * INTO actor FROM ${tenantAuthorizationFunction}(in_actor,in_tenant,'ManageMembers');
+       IF NOT FOUND THEN RAISE EXCEPTION 'tenant membership management is forbidden'
+           USING ERRCODE='insufficient_privilege'; END IF;
+       INSERT INTO project_membership
+         (principal,tenant,project,authority_kind,authority_subject,
+          may_read,may_mutate,may_dispatch,may_propose)
+         VALUES (in_principal,in_tenant,in_project,
+                 actor.authority_kind,actor.authority_subject,
+                 in_may_read,in_may_mutate,in_may_dispatch,in_may_propose)
+         ON CONFLICT (principal,tenant,project) DO UPDATE SET
+           may_read=EXCLUDED.may_read,may_mutate=EXCLUDED.may_mutate,
+           may_dispatch=EXCLUDED.may_dispatch,may_propose=EXCLUDED.may_propose,
+           authority_kind=EXCLUDED.authority_kind,
+           authority_subject=EXCLUDED.authority_subject;
+     END $$`,
+
+  `CREATE FUNCTION ${projectMembershipClearFunction}(
+     in_actor text,in_tenant text,in_project text,in_principal text)
+     RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE
+       actor record;
+     BEGIN
+       SELECT * INTO actor FROM ${tenantAuthorizationFunction}(in_actor,in_tenant,'ManageMembers');
+       IF NOT FOUND THEN RAISE EXCEPTION 'tenant membership management is forbidden'
+           USING ERRCODE='insufficient_privilege'; END IF;
+       DELETE FROM project_membership
+         WHERE principal=in_principal AND tenant=in_tenant AND project=in_project;
+     END $$`,
+
+  /**
+   * Reads are checked functions too, rather than a table grant, so the API role
+   * cannot read one tenant's roster while acting for another.
+   */
+  `CREATE FUNCTION ${tenantMembersFunction}(in_actor text,in_tenant text)
+     RETURNS TABLE (principal text,role text,authority_kind text,authority_subject text)
+     LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM ${tenantAuthorizationFunction}(in_actor,in_tenant,'ReadTenant')) THEN
+         RAISE EXCEPTION 'tenant membership management is forbidden'
+           USING ERRCODE='insufficient_privilege';
+       END IF;
+       RETURN QUERY
+         SELECT membership.principal,membership.role,
+                membership.authority_kind,membership.authority_subject
+           FROM tenant_membership membership
+          WHERE membership.tenant=in_tenant ORDER BY membership.principal;
+     END $$`,
+
+  `CREATE FUNCTION ${tenantInvitationsFunction}(in_actor text,in_tenant text)
+     RETURNS TABLE (email text,role text,expires_at timestamptz)
+     LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+     BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM ${tenantAuthorizationFunction}(in_actor,in_tenant,'ReadTenant')) THEN
+         RAISE EXCEPTION 'tenant membership management is forbidden'
+           USING ERRCODE='insufficient_privilege';
+       END IF;
+       RETURN QUERY
+         SELECT invitation.email,invitation.role,invitation.expires_at
+           FROM tenant_invitation invitation
+          WHERE invitation.tenant=in_tenant AND invitation.state='Pending'
+          ORDER BY invitation.email;
+     END $$`,
+
+  ...[
+    `${tenantMembersFunction}(text,text)`,
+    `${tenantInvitationsFunction}(text,text)`,
+    `${tenantRoleGrantsFunction}(text,text)`,
+    `${tenantAuthorizationFunction}(text,text,text)`,
+    `${tenantCreateFunction}(text,text,text,text,text)`,
+    `${tenantMembershipGrantFunction}(text,text,text,text)`,
+    `${tenantMembershipRevokeFunction}(text,text,text)`,
+    `${tenantInviteFunction}(text,text,text,text,timestamptz)`,
+    `${tenantInviteRevokeFunction}(text,text,text)`,
+    `${tenantInviteRedeemFunction}(text,text)`,
+    `${tenantProjectCreateFunction}(text,text,text)`,
+    `${projectMembershipSetFunction}(text,text,text,text,boolean,boolean,boolean,boolean)`,
+    `${projectMembershipClearFunction}(text,text,text,text)`,
+  ].flatMap((signature) => [
+    `ALTER FUNCTION ${signature} OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${signature} FROM PUBLIC`,
+    `GRANT EXECUTE ON FUNCTION ${signature} TO ${apiRole}`,
+  ]),
+
+  /**
+   * No role holds DML or SELECT on any of these: every read and every write is
+   * one of the checked functions above. The definer holds exactly what those
+   * functions write and nothing wider, so the grant states the change surface.
+   */
+  `REVOKE ALL ON tenant, tenant_membership, tenant_invitation,
+     tenant_membership_change FROM PUBLIC`,
+  `GRANT SELECT ON tenant, tenant_membership, tenant_invitation,
+     tenant_membership_change TO ${boundaryOwnerRole}`,
+  `GRANT INSERT ON tenant TO ${boundaryOwnerRole}`,
+  `GRANT INSERT, DELETE ON tenant_membership TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (role, authority_kind, authority_subject)
+     ON tenant_membership TO ${boundaryOwnerRole}`,
+  `GRANT INSERT ON tenant_invitation TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (state) ON tenant_invitation TO ${boundaryOwnerRole}`,
+  `GRANT INSERT ON tenant_membership_change TO ${boundaryOwnerRole}`,
+
+  /**
+   * create_project_in_tenant and the project-membership overrides are written
+   * by the same definer, so it gains those two surfaces here rather than in the
+   * migrations that made the tables.
+   */
+  `GRANT INSERT ON project TO ${boundaryOwnerRole}`,
+  `GRANT INSERT, DELETE ON project_membership TO ${boundaryOwnerRole}`,
+  `GRANT UPDATE (may_read, may_mutate, may_dispatch, may_propose,
+     authority_kind, authority_subject)
+     ON project_membership TO ${boundaryOwnerRole}`,
+];
+
 /** Every migration in version order, which is the order the runner applies them in. */
 export const migrations: readonly Migration[] = [
   {
@@ -3558,5 +4021,10 @@ export const migrations: readonly Migration[] = [
     version: 14,
     name: "native project access",
     statements: [...nativeProjectAccess],
+  },
+  {
+    version: 16,
+    name: "tenant ownership and administration",
+    statements: [...tenantOwnership],
   },
 ];

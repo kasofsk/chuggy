@@ -220,7 +220,7 @@ export async function schedulerProject(
   label: string,
   capacity: SchedulerCapacity = {},
 ): Promise<SchedulerProject> {
-  const partition = await postgresHarnessProject(rig.harness.store, label);
+  const partition = await postgresHarnessProject(rig.harness, label);
   const memory = await postgresHarnessHistory(
     rig.harness,
     partition,

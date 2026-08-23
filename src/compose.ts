@@ -66,6 +66,14 @@ import {
   silentFinalizerTelemetry,
   type FinalizerTelemetry,
 } from "./interpreter/finalizerTelemetry.ts";
+import {
+  postgresTenantAdministration,
+  postgresTenantAdministrationAccess,
+} from "./adapters/postgres/tenantAdmin.ts";
+import type {
+  TenantAdministrationAccess,
+  TenantAdministrationStore,
+} from "./interpreter/tenantAdmin.ts";
 import { postgresProjectDecision } from "./adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "./adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "./adapters/postgres/projectStore.ts";
@@ -108,6 +116,11 @@ export interface SelectorRuntimeService {
   runOnce(): Promise<SelectorRunResult>;
 }
 
+export interface TenantAdministrationService {
+  readonly access: TenantAdministrationAccess;
+  readonly store: TenantAdministrationStore;
+}
+
 /** Wires the independently operated selector runtime to its owned persistence. */
 export function composeSelectorRuntime(
   selectorPool: pg.Pool,
@@ -121,6 +134,20 @@ export function composeSelectorRuntime(
   return {
     runOnce: () =>
       selectorRunOnce(store, source, policy, identities, settings, config),
+  };
+}
+
+/**
+ * Wires tenant administration to API-role PostgreSQL ports. Standing and the
+ * changes it authorizes are separate ports because they answer separate
+ * questions: what a caller may be offered, and whether one change is permitted.
+ */
+export function composeTenantAdministration(
+  apiPool: pg.Pool,
+): TenantAdministrationService {
+  return {
+    access: postgresTenantAdministrationAccess(apiPool),
+    store: postgresTenantAdministration(apiPool),
   };
 }
 

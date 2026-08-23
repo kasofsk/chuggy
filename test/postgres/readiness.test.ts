@@ -37,7 +37,7 @@ function completion(
 }
 
 test("the bounded class-head query chooses completion before ordinary", async () => {
-  const partition = await postgresHarnessProject(harness.store, "priority");
+  const partition = await postgresHarnessProject(harness, "priority");
   const ordinary = postgresHarnessSubmission(partition, "priority-ordinary");
   const done = completion(partition, "priority-completion");
   await harness.inbox.accept(ordinary);
@@ -51,7 +51,7 @@ test("the bounded class-head query chooses completion before ordinary", async ()
 });
 
 test("database-time aging eventually puts old ordinary work ahead", async () => {
-  const partition = await postgresHarnessProject(harness.store, "aging");
+  const partition = await postgresHarnessProject(harness, "aging");
   const ordinary = postgresHarnessSubmission(partition, "aging-ordinary");
   const done = completion(partition, "aging-completion");
   await harness.inbox.accept(ordinary);
@@ -69,7 +69,7 @@ test("database-time aging eventually puts old ordinary work ahead", async () => 
 });
 
 test("readiness clears only when no pending input remains", async () => {
-  const partition = await postgresHarnessProject(harness.store, "ready-clear");
+  const partition = await postgresHarnessProject(harness, "ready-clear");
   const submission = postgresHarnessSubmission(partition, "ready-clear");
   await harness.inbox.accept(submission);
   const readiness = (await harness.discovery.ready(100)).find(

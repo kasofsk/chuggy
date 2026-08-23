@@ -95,7 +95,7 @@ test("the API cannot construct any part of an accepted operation directly", asyn
 
 test("the API acceptance boundary rejects malformed command bytes", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "privilege-malformed-command",
   );
   for (const [operation, command] of [

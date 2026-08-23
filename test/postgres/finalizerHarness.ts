@@ -475,7 +475,7 @@ export async function finalizerEntering(
   rig: FinalizerRig,
   label: string,
 ): Promise<{ partition: Partition; memory: ProjectMemory }> {
-  const partition = await postgresHarnessProject(rig.harness.store, label);
+  const partition = await postgresHarnessProject(rig.harness, label);
   const first = await postgresHarnessHistory(
     rig.harness,
     partition,

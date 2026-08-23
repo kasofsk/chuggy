@@ -161,7 +161,7 @@ async function schedulerTasks(
 
 /** A project with one dispatched ticket, a cluster of its own, and an account drawing on it. */
 async function schedulerFixture(label: string): Promise<SchedulerFixture> {
-  const partition = await postgresHarnessProject(harness.store, label);
+  const partition = await postgresHarnessProject(harness, label);
   await postgresHarnessHistory(
     harness,
     partition,

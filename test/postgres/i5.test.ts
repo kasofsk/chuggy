@@ -150,7 +150,7 @@ function postgresRolePool(role: string) {
 }
 
 test("a release atomically materializes a digest-fenced current dispatch view", async () => {
-  const partition = await postgresHarnessProject(harness.store, "i5-view");
+  const partition = await postgresHarnessProject(harness, "i5-view");
   const memory = await postgresHarnessHistory(harness, partition, "i5-view", 1);
   const pool = postgresPool(postgresHarnessUrl());
   try {
@@ -169,7 +169,7 @@ test("a release atomically materializes a digest-fenced current dispatch view", 
 });
 
 test("a proposal carrying the current strict view dispatches", async () => {
-  const partition = await postgresHarnessProject(harness.store, "i5-proposal");
+  const partition = await postgresHarnessProject(harness, "i5-proposal");
   const memory = await postgresHarnessHistory(
     harness,
     partition,
@@ -211,10 +211,7 @@ test("a proposal carrying the current strict view dispatches", async () => {
 });
 
 test("manual and agentic dispatch race by ordinary journal order", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "i5-dispatch-race",
-  );
+  const partition = await postgresHarnessProject(harness, "i5-dispatch-race");
   let memory = await postgresHarnessHistory(
     harness,
     partition,
@@ -333,10 +330,7 @@ test("runtime roles cannot cross the selector and ticket-service storage boundar
 });
 
 test("selector provenance and its observed cursor roll back together", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "i5-selector-atomic",
-  );
+  const partition = await postgresHarnessProject(harness, "i5-selector-atomic");
   const pool = postgresPool(postgresHarnessUrl());
   const state = postgresSelectorState(pool);
   const decision = `selector-atomic-${crypto.randomUUID()}`;
@@ -397,7 +391,7 @@ test("selector provenance and its observed cursor roll back together", async () 
 
 test("selector provenance round-trips resources larger than one audit column", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "i5-selector-chunked-provenance",
   );
   const pool = postgresRolePool(selectorServiceRole);
@@ -429,7 +423,7 @@ test("selector provenance round-trips resources larger than one audit column", a
 
 test("selector state fencing and audit ordinals survive out-of-order identities", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "i5-selector-ordering",
   );
   const pool = postgresRolePool(selectorServiceRole);
@@ -475,10 +469,7 @@ test("selector state fencing and audit ordinals survive out-of-order identities"
 });
 
 test("a database-linearized pause suppresses proposal creation", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "i5-pause-fence",
-  );
+  const partition = await postgresHarnessProject(harness, "i5-pause-fence");
   const selectorPool = postgresRolePool(selectorServiceRole);
   const controlPool = postgresRolePool(selectorControlRole);
   const state = postgresSelectorState(selectorPool);
@@ -581,10 +572,7 @@ test("selector controls hot-reload with a revision fence", async () => {
 });
 
 test("proposal review retains reviewer authority and readable feedback", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "i5-review-audit",
-  );
+  const partition = await postgresHarnessProject(harness, "i5-review-audit");
   const pool = postgresPool(postgresHarnessUrl());
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
@@ -643,10 +631,7 @@ test("proposal review retains reviewer authority and readable feedback", async (
 });
 
 test("review feedback cursors follow review order rather than proposal order", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "i5-review-order",
-  );
+  const partition = await postgresHarnessProject(harness, "i5-review-order");
   const pool = postgresPool(postgresHarnessUrl());
   const selectorPool = postgresRolePool(selectorServiceRole);
   const reviewPool = postgresRolePool(selectorReviewRole);
@@ -706,7 +691,7 @@ test("review feedback cursors follow review order rather than proposal order", a
 
 test("submitted proposal reconciliation claims do not starve later work", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "i5-reconcile-fairness",
   );
   const selectorPool = postgresRolePool(selectorServiceRole);
@@ -763,7 +748,7 @@ test("submitted proposal reconciliation claims do not starve later work", async 
 
 test("attempt reconciliation cannot claim another runtime's active attempt", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "i5-active-attempt-isolation",
   );
   const selectorPool = postgresRolePool(selectorServiceRole);
@@ -817,7 +802,7 @@ test("attempt reconciliation cannot claim another runtime's active attempt", asy
 
 test("a selector interaction atomically replaces or clears current planning", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "i5-planning-current",
   );
   const selectorPool = postgresRolePool(selectorServiceRole);
@@ -853,7 +838,7 @@ test("a selector interaction atomically replaces or clears current planning", as
 
 test("dispatch acceptance refuses every command the wire parser cannot read", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "i5-invalid-dispatch",
   );
   const pool = postgresPool(postgresHarnessUrl());

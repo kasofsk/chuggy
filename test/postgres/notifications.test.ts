@@ -13,7 +13,7 @@ const subject = postgresReadHarness();
 
 test("cancellation publishes only an operation identity", async () => {
   const partition = await postgresHarnessProject(
-    subject.harness.store,
+    subject.harness,
     "notify-cancel",
   );
   const submission = postgresHarnessSubmission(partition, "notify-cancel");
@@ -39,10 +39,7 @@ test("cancellation publishes only an operation identity", async () => {
 });
 
 test("an expired cursor resets instead of pretending the stream is complete", async () => {
-  const partition = await postgresHarnessProject(
-    subject.harness.store,
-    "notify-gap",
-  );
+  const partition = await postgresHarnessProject(subject.harness, "notify-gap");
   await subject.harness.query(
     `SELECT ${notificationPublishFunction}($1,$2,'Draft',g::text,NULL,g)
        FROM generate_series(1,1002) AS generated(g)`,
@@ -67,7 +64,7 @@ test("an expired cursor resets instead of pretending the stream is complete", as
 
 test("a cursor beyond the project log resets to its latest event", async () => {
   const partition = await postgresHarnessProject(
-    subject.harness.store,
+    subject.harness,
     "notify-future",
   );
   await subject.harness.query(

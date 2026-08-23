@@ -45,7 +45,7 @@ after(async () => {
 
 /** A provisioned partition already held by its own owner, with nothing decided yet. */
 async function heldProject(label: string): Promise<ProjectMemory> {
-  const partition = await postgresHarnessProject(harness.store, label);
+  const partition = await postgresHarnessProject(harness, label);
   return postgresHarnessHistory(harness, partition, label, 0);
 }
 
@@ -151,6 +151,15 @@ test("two tenants may hold the same project name without sharing a partition", a
     tenant: left.lease.partition.tenant.concat("-other") as Partition["tenant"],
     project: left.lease.partition.project,
   };
+  /**
+   * The shadow tenant is invented here rather than seeded by the helper, so it
+   * is established before a project can reference it.
+   */
+  await harness.query(
+    `INSERT INTO tenant (tenant, display_name, lifecycle)
+       VALUES ($1, $1, 'Active') ON CONFLICT (tenant) DO NOTHING`,
+    [shadow.tenant],
+  );
   await harness.store.createProject(shadow);
   const other = await postgresHarnessHeld(
     harness.store,

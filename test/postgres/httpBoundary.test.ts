@@ -91,10 +91,7 @@ async function acceptAndRetry(
 
 test("real HTTP ingress accepts once and observes the separate writer", async () => {
   const harness = await postgresHarnessOpen();
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "http-boundary",
-  );
+  const partition = await postgresHarnessProject(harness, "http-boundary");
   await harness.query(
     `INSERT INTO project_membership
        (principal,tenant,project,authority_kind,authority_subject,

@@ -46,7 +46,7 @@ after(async () => {
 });
 
 test("a committed history advances the head and loads back as a legal journal", async () => {
-  const partition = await postgresHarnessProject(harness.store, "append");
+  const partition = await postgresHarnessProject(harness, "append");
   const journal = postgresHarnessJournal();
   const memory = await postgresHarnessHistory(
     harness,
@@ -64,10 +64,7 @@ test("a committed history advances the head and loads back as a legal journal", 
 });
 
 test("load refuses a changed complete-envelope digest", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "envelope-tamper",
-  );
+  const partition = await postgresHarnessProject(harness, "envelope-tamper");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
   await harness.query(
     "UPDATE journal_entry SET entry_digest=$4 WHERE tenant=$1 AND project=$2 AND seq=$3",
@@ -80,10 +77,7 @@ test("load refuses a changed complete-envelope digest", async () => {
 });
 
 test("load refuses a v2 row whose format discriminator is downgraded", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "format-downgrade",
-  );
+  const partition = await postgresHarnessProject(harness, "format-downgrade");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
   await harness.query(
     "UPDATE journal_entry SET integrity_version=1 WHERE tenant=$1 AND project=$2 AND seq=1",
@@ -101,7 +95,7 @@ test("load refuses unsupported event and decision semantic versions", async () =
     "decision_semantics_version",
   ] as const) {
     const partition = await postgresHarnessProject(
-      harness.store,
+      harness,
       `unsupported-${column}`,
     );
     const memory = await postgresHarnessHistory(
@@ -123,7 +117,7 @@ test("load refuses unsupported event and decision semantic versions", async () =
 
 test("load re-verifies the retained configuration content", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    harness,
     "configuration-content-tamper",
   );
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
@@ -139,7 +133,7 @@ test("load re-verifies the retained configuration content", async () => {
 });
 
 test("a load under a fenced lease is refused, not served the prefix it would replay", async () => {
-  const partition = await postgresHarnessProject(harness.store, "loadfenced");
+  const partition = await postgresHarnessProject(harness, "loadfenced");
   const memory = await postgresHarnessHistory(
     harness,
     partition,
@@ -156,7 +150,7 @@ test("a load under a fenced lease is refused, not served the prefix it would rep
 });
 
 test("each stored digest chains onto its predecessor, and the first onto the partition's genesis", async () => {
-  const partition = await postgresHarnessProject(harness.store, "chain");
+  const partition = await postgresHarnessProject(harness, "chain");
   const journal = postgresHarnessJournal();
   await postgresHarnessHistory(harness, partition, "writer", journal.length);
 
@@ -201,7 +195,7 @@ test("each stored digest chains onto its predecessor, and the first onto the par
 });
 
 test("every stored entry names the decision input that caused it, and no cause names two", async () => {
-  const partition = await postgresHarnessProject(harness.store, "cause");
+  const partition = await postgresHarnessProject(harness, "cause");
   const journal = postgresHarnessJournal();
   await postgresHarnessHistory(harness, partition, "writer", journal.length);
 
@@ -230,7 +224,7 @@ test("every stored entry names the decision input that caused it, and no cause n
 });
 
 test("a stored row that is not JSON is refused by returning, not thrown on", async () => {
-  const partition = await postgresHarnessProject(harness.store, "notjson");
+  const partition = await postgresHarnessProject(harness, "notjson");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
 
   await harness.query(
@@ -245,7 +239,7 @@ test("a stored row that is not JSON is refused by returning, not thrown on", asy
 });
 
 test("a stored row that is JSON but not an entry is refused by the schema", async () => {
-  const partition = await postgresHarnessProject(harness.store, "notentry");
+  const partition = await postgresHarnessProject(harness, "notentry");
   const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
 
   await harness.query(
@@ -261,7 +255,7 @@ test("the database rejects a journal that no longer reaches its decision input",
   const journal = postgresHarnessJournal();
   assert.ok(journal.length > 1);
   for (const seq of [1, journal.length]) {
-    const partition = await postgresHarnessProject(harness.store, "torn");
+    const partition = await postgresHarnessProject(harness, "torn");
     const memory = await postgresHarnessHistory(
       harness,
       partition,
