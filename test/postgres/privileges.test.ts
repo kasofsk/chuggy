@@ -270,6 +270,28 @@ test("the security-definer owner is non-login and non-escalating", async () => {
   );
 });
 
+/**
+ * A `SECURITY DEFINER` body runs with the privileges of the function's owner,
+ * so who owns one is the whole of what it is allowed to be. The migration hands
+ * every one of them to the boundary owner, and this asks the server rather than
+ * the chain whether any was left behind: the identity that applied the chain is
+ * whatever a deployment ran it as, and `deploy/rig/postgres/postgres-roles.sql`
+ * argues from none of them being owned by it.
+ */
+test("every security-definer function is owned by the boundary owner and none by whoever migrated", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT DISTINCT r.rolname AS owner
+         FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+         JOIN pg_roles r ON r.oid = p.proowner
+        WHERE n.nspname='public' AND p.prosecdef
+        ORDER BY r.rolname`,
+    ),
+    [{ owner: boundaryOwnerRole }],
+  );
+});
+
 test("the scheduler cannot write ticket state or append history", async () => {
   for (const [statement, object] of [
     ["INSERT INTO journal_entry DEFAULT VALUES", "journal_entry"],

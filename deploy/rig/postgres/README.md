@@ -412,10 +412,17 @@ which is nobody's control plane:
 
 ```sh
 psql -h 127.0.0.1 -p 55440 -U postgres -d postgres -c 'CREATE DATABASE chuggy_gate'
-export CHUG_PG_URL="postgres://postgres:$PGPASSWORD@127.0.0.1:55440/chuggy_gate"
+export CHUG_PG_URL="postgres://postgres:$(node -p 'encodeURIComponent(process.env.PGPASSWORD)')@127.0.0.1:55440/chuggy_gate"
 .chug/tasks/check-queries.sh
 .chug/tasks/check-postgres.sh
 ```
+
+This is the one URL in this file whose password nothing here generated: every
+other one interpolates a value `Issue the credentials` made and stripped `=+/`
+from, and the superuser's comes from a Secret this procedure only reads. A `@`,
+a `/`, a `:` or a `#` in it would silently make that line a different URL, so it
+is percent-encoded rather than interpolated — with `node`, which
+`.chug/tasks/_postgres.sh` requires of the two gates on the next lines anyway.
 
 Between them they ask the server whether every tagged query and row type is
 true, and replay every claim the adapter makes about what the server does —
@@ -427,10 +434,11 @@ is one made for the run and dropped with the rest.
 
 The probe carries the Secret, so it does not outlive the proofs, and the gates'
 database is a rehearsal's residue; the forwarded port is this host's rather than
-the cluster's, so nothing below reverses it.
+the cluster's, so nothing below reverses it. The drop is forced because a gate
+killed mid-run leaves a connection behind, and an unforced drop refuses over one.
 
 ```sh
-psql -h 127.0.0.1 -p 55440 -U postgres -d postgres -c 'DROP DATABASE chuggy_gate'
+psql -h 127.0.0.1 -p 55440 -U postgres -d postgres -c 'DROP DATABASE chuggy_gate WITH (FORCE)'
 kubectl -n chuggy delete pod probe
 kill "$forward"
 ```

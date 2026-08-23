@@ -566,10 +566,11 @@ const inboxTerminality = [
 /**
  * The whole of a cancellation as one call the API role is granted, because the
  * grants that would let a caller assemble it by hand are the grants that let it
- * decide an operation instead. A `SECURITY DEFINER` body runs as its owner —
- * whichever role applied the migration, which nothing here decides — so the
- * `search_path` is pinned on the definition against a caller shadowing
- * `operation`, and kasofsk/chuggy#134 carries who owns it in production.
+ * decide an operation instead. A `SECURITY DEFINER` body runs as its owner, so
+ * the `search_path` is pinned on the definition against a caller shadowing
+ * `operation` — and that owner is whoever applied this migration only until
+ * migration 5, which hands it to `boundaryOwnerRole` along with every other
+ * such body, which is what kasofsk/chuggy#134 asks.
  */
 const inboxCancellation = [
   `CREATE FUNCTION ${cancellationFunction}(

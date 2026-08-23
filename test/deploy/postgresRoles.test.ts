@@ -23,6 +23,23 @@
  * its process asserts; drop any one of those and every other suite stays green
  * while the process cannot start. So the five places are checked against each
  * other rather than against a list, and the groups against `src/roots/`.
+ *
+ * IT IS THE STATEMENTS THAT ARE MATCHED, NEVER THE PROSE. Every check here is a
+ * pattern over a text file, so a commented-out statement is text that satisfies
+ * the pattern that its deletion should have broken — and both files are written
+ * in a house style whose headers quote the statements they argue about. The
+ * comments are stripped first, in both directions: a `src/roots/` block comment
+ * naming a group role is a mention rather than an assertion, and counting one
+ * would demand a credential for a role no process holds. The SQL strip is
+ * line-wise, so a literal `--` inside a statement would take the rest of that
+ * line with it; no statement in that file writes one.
+ *
+ * AND PAIRWISE WHEREVER A SET WOULD HOLD STILL. Exchange two roles' group
+ * grants, or two roles' password variables, and every set below is unchanged
+ * while neither process starts: one authenticates and refuses to serve as the
+ * wrong group, the other cannot authenticate at all. So a role's grant, its
+ * password variable and that variable's environment name are each checked
+ * against the role's own name rather than against the collection.
  */
 
 import assert from "node:assert/strict";
@@ -33,7 +50,9 @@ import * as schema from "../../src/adapters/postgres/schema.ts";
 
 const { apiRole, migrations, selectorReviewRole } = schema;
 const rolesFilePath = "deploy/rig/postgres/postgres-roles.sql";
-const rolesFile = readFileSync(rolesFilePath, "utf8").replaceAll(/\s+/gu, " ");
+const rolesFile = readFileSync(rolesFilePath, "utf8")
+  .replaceAll(/--.*$/gmu, " ")
+  .replaceAll(/\s+/gu, " ");
 const rootsDirectory = "src/roots";
 const schemaExports: Readonly<Record<string, unknown>> = schema;
 
@@ -61,7 +80,10 @@ function migrationReceivingRoles(): ReadonlySet<string> {
 function rootAssertedRoles(): ReadonlySet<string> {
   const found = new Set<string>();
   for (const entry of readdirSync(rootsDirectory)) {
-    const source = readFileSync(`${rootsDirectory}/${entry}`, "utf8");
+    const source = readFileSync(
+      `${rootsDirectory}/${entry}`,
+      "utf8",
+    ).replaceAll(/\/\*[\s\S]*?\*\//gu, " ");
     for (const [, name] of source.matchAll(/\b(\w+Role)\b/gu)) {
       const role = name === undefined ? undefined : schemaExports[name];
       if (typeof role === "string" && role.startsWith("chuggy_"))
@@ -86,6 +108,13 @@ function rolesFileNames(pattern: RegExp): ReadonlySet<string> {
   assert.notEqual(found, null, `${rolesFilePath} has no ${pattern.source}`);
   return new Set(
     Array.from(found?.[1]?.matchAll(/chuggy_\w+/gu) ?? [], ([role]) => role),
+  );
+}
+
+/** Every role the file creates with a login, which is one per process plus the owner. */
+function loginRoles(): ReadonlySet<string> {
+  return rolesFileNames(
+    /CREATE ROLE %I LOGIN', role_name\) FROM unnest\(ARRAY\[([^\]]*)\]/u,
   );
 }
 
@@ -147,10 +176,27 @@ test("every group role a serving command asserts is granted to a login role", ()
   );
 });
 
-test("every login role is created, attributed, passworded and connected alike", () => {
-  const created = rolesFileNames(
-    /CREATE ROLE %I LOGIN', role_name\) FROM unnest\(ARRAY\[([^\]]*)\]/u,
+test("each login role is granted the group its own name is made of", () => {
+  let paired = 0;
+  for (const login of loginRoles()) {
+    const group = /^(chuggy_\w+)_login$/u.exec(login)?.[1];
+    if (group === undefined) continue;
+    assert.match(
+      rolesFile,
+      new RegExp(`GRANT ${group} TO ${login};`, "u"),
+      `${rolesFilePath} never grants ${group} to ${login}, so that process authenticates and then refuses to serve as the group it is not`,
+    );
+    paired += 1;
+  }
+  assert.notEqual(
+    paired,
+    0,
+    `${rolesFilePath} creates no login role named for a group`,
   );
+});
+
+test("every login role is created, attributed, passworded and connected alike", () => {
+  const created = loginRoles();
   const connected = rolesFileNames(
     /GRANT CONNECT ON DATABASE %I TO %I'[^[]*\[([^\]]*)\]/u,
   );
@@ -189,23 +235,37 @@ test("no login role is left locked out by an attribute a rotation does not touch
   }
 });
 
-test("every login role's password is a distinct variable the file reads", () => {
-  const read = rolesFileRepeated(/\\getenv (\w+) CHUG_\w+/gu);
+test("every login role's password is the distinct variable its own name names", () => {
+  const read = new Map(
+    Array.from(
+      rolesFile.matchAll(/\\getenv (\w+) (\w+)/gu),
+      ([, variable, name]) => [String(variable), String(name)] as const,
+    ),
+  );
+  assert.notEqual(read.size, 0, `${rolesFilePath} reads no environment name`);
   const used = Array.from(
-    rolesFile.matchAll(/ALTER ROLE chuggy_\w+ PASSWORD :'(\w+)';/gu),
-    ([, variable]) => String(variable),
+    rolesFile.matchAll(/ALTER ROLE (chuggy_\w+) PASSWORD :'(\w+)';/gu),
+    ([, role, variable]) => [String(role), String(variable)] as const,
   );
   assert.notEqual(used.length, 0, `${rolesFilePath} sets no password`);
   assert.equal(
-    new Set(used).size,
+    new Set(used.map(([, variable]) => variable)).size,
     used.length,
     `${rolesFilePath} gives two roles one password`,
   );
-  for (const variable of used)
-    assert.ok(
-      read.has(variable),
-      `${rolesFilePath} interpolates ${variable} without reading it`,
+  for (const [role, variable] of used) {
+    const stem = role.replace(/^chuggy_/u, "").replace(/_login$/u, "");
+    assert.equal(
+      variable,
+      `${stem}_password`,
+      `${rolesFilePath} gives ${role} a password from ${variable}, which is another role's`,
     );
+    assert.equal(
+      read.get(variable),
+      `CHUG_PG_${stem.toUpperCase()}_PASSWORD`,
+      `${rolesFilePath} fills ${variable} from an environment name that is not ${role}'s`,
+    );
+  }
 });
 
 test("the API's credential can become the role its second pool asserts", () => {

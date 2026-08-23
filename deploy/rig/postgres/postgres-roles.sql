@@ -7,11 +7,18 @@
 -- relations will live in. The version floor is not this file's syntax; it is
 -- what makes the CREATEROLE argument below true, and it is argued there.
 --
--- WHY THE MIGRATING IDENTITY IS NOT THE SUPERUSER. Cancellation is a
--- SECURITY DEFINER function and executes with the privileges of whoever created
--- it, so a superuser migration hands every caller that may execute it a
--- superuser's reach. chuggy_owner migrates instead: it owns the relations and
--- the function, and holds one attribute beyond ownership.
+-- WHY THE MIGRATING IDENTITY IS NOT THE SUPERUSER, AND WHY THE REASON IS NOT
+-- THE SECURITY DEFINER FUNCTIONS. Such a body runs with the privileges of the
+-- function's OWNER rather than of whoever created it, and the migration hands
+-- every one of them to chuggy_boundary_owner with ALTER FUNCTION ... OWNER TO,
+-- so no migrating identity is left owning one — a superuser included. What it
+-- does keep is the relations and the trigger and CHECK helpers, none of which
+-- is SECURITY DEFINER. The reason is the credential: it is issued, stored and
+-- rotated beside the service passwords, and a superuser is bounded by nothing
+-- the database it migrates can state — every other database in the cluster and
+-- every role in it are in its reach, and so is the host, by the route the next
+-- paragraph names. chuggy_owner reaches what it created and the roles it was
+-- granted, and holds one attribute beyond ownership.
 --
 -- WHY THAT ATTRIBUTE IS CREATEROLE. The migration creates its group roles
 -- itself, and creating a role is not something owning an object confers. It is
@@ -19,12 +26,12 @@
 -- migration that adds a group role would otherwise fail at start-up on every
 -- cluster where this file was not re-run first, which is a coupling between a
 -- future migration and a deployment step that nothing checks. CREATEROLE is not
--- superuser, which is the property the SECURITY DEFINER function turns on —
--- and that separation is what PostgreSQL 16 introduced. Before it a CREATEROLE
--- role could grant itself membership in any non-superuser role, and
+-- superuser, and that separation is what PostgreSQL 16 introduced. Before it a
+-- CREATEROLE role could grant itself membership in any non-superuser role, and
 -- `pg_execute_server_program` is one of those and is a shell as the server's
--- own OS user: on an older cluster chuggy_owner would be superuser-equivalent
--- by a single GRANT and the argument above would be false, not merely weaker.
+-- own OS user — which is also the route by which a superuser reaches the host.
+-- On an older cluster chuggy_owner would be superuser-equivalent by a single
+-- GRANT and the argument above would be false, not merely weaker.
 --
 -- WHY THE GROUP ROLES ARE CREATED HERE AS WELL. A membership grant needs the
 -- group to exist, and a deployment issues credentials before the process that
