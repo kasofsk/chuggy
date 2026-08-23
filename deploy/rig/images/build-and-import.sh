@@ -12,12 +12,24 @@
 # `CHUG_IMAGE_TAG` is how a build says out loud that it is naming something
 # else.
 #
-# THE READ-BACK IS THE VERDICT, not the import's exit status. `docker save` and
-# the import are two commands with a file between them rather than a pipeline,
-# because a pipeline's status is its last command's and an import handed
-# nothing succeeds at importing nothing. Then the node is asked which
-# references it holds, because that — and not either status — is what the
-# kubelet will consult.
+# THE VERDICT NEEDS BOTH THE STATUS AND THE READ-BACK, and neither is allowed
+# to answer alone. `docker save` and the import are two commands with a file
+# between them rather than a pipeline, because a pipeline's status is its last
+# command's and an import handed nothing succeeds at importing nothing. Then
+# the node is asked which references it holds, because that and not the status
+# is what the kubelet will consult.
+#
+# But a listed reference says an image stands at that name, not that this run
+# put it there. Under an explicit `CHUG_IMAGE_TAG` — which is how the refusal
+# below tells an operator to iterate — an import that fails leaves the previous
+# build at the very reference the read-back then finds. So a failed import is a
+# failed image whatever the node lists, and the two disagreeing is reported as
+# the stale build it is. What is still not checked is that the digest under the
+# reference is this archive's: an import that exits clean having written
+# something else would pass here.
+#
+# A NODE THAT CANNOT BE ASKED IS NOT A NODE WITHOUT THE IMAGE. Whether the
+# reference is there is then unknown, and unknown exits 2.
 #
 # WHAT IT DOES NOT DO. It deploys nothing: the Deployments, Services and probes
 # live in chuggy-fabric and reference these tags. It removes no earlier tag
@@ -107,6 +119,7 @@ on_node() { # <command-word>...
 }
 
 failed=0
+errored=0
 
 for name in "$@"; do
 	reference="$prefix/$name:$tag"
@@ -139,19 +152,41 @@ for name in "$@"; do
 
 	set +e
 	on_node sudo k3s ctr --namespace k8s.io images import - <"$archive"
+	imported=$?
 	set -e
 
 	set +e
 	present="$(on_node sudo k3s ctr --namespace k8s.io images ls -q)"
+	asked=$?
 	set -e
-	if printf '%s\n' "$present" | grep -Fqx "$reference"; then
-		echo "build-and-import: the node holds $reference"
-	else
+	if [ "$asked" -ne 0 ]; then
+		echo "build-and-import: LINTER ERROR — the node could not be asked what it holds, so whether $reference reached it is unknown; this is not a pass"
+		errored=$((errored + 1))
+		continue
+	fi
+	if printf '%s\n' "$present" | grep -Fqx "$reference"; then held=1; else held=0; fi
+
+	if [ "$imported" -ne 0 ]; then
+		if [ "$held" -eq 1 ]; then
+			echo "build-and-import: FAILED — the import of $reference failed and the node lists that reference anyway, so what stands there is an earlier build"
+		else
+			echo "build-and-import: FAILED — the import of $reference failed"
+		fi
+		failed=$((failed + 1))
+		continue
+	fi
+	if [ "$held" -eq 0 ]; then
 		echo "build-and-import: FAILED — the node does not list $reference, whatever the import said"
 		failed=$((failed + 1))
+		continue
 	fi
+	echo "build-and-import: the node holds $reference"
 done
 
+if [ "$errored" -gt 0 ]; then
+	echo "build-and-import: $errored image(s) could not be checked on the node"
+	exit 2
+fi
 if [ "$failed" -gt 0 ]; then
 	echo "build-and-import: $failed image(s) did not reach the node"
 	exit 1

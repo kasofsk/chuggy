@@ -2,11 +2,28 @@
 # TLS, proxies nothing, and holds nothing between requests.
 #
 # THE CONTRACT WITH WHOEVER WRITES THE UI. `site` is a repository-relative
-# directory and its contents become the document root, so `index.html` at its
-# top is what `/` serves. `/healthz` belongs to the image and answers ahead of
-# anything the site carries, so the site may not claim that path. There is no
-# default for `site`: this image serves what it is pointed at, and guessing
-# would ship whatever happened to be at the guess.
+# directory and its contents become the document root. There is no default:
+# this image serves what it is pointed at, and guessing would ship whatever
+# happened to be at the guess. Given that directory, the whole of what this
+# image answers is:
+#
+#   /              `index.html` at the top of the document root.
+#   anything with no file behind it
+#                  that same `index.html`, because the routes belong to the
+#                  client. The authorization-code redirect sign-in returns to
+#                  is not a file, and a 404 there ends the flow.
+#   /healthz       the image's own, ahead of anything the site carries.
+#   /config.json   the deployment's file, mounted at /etc/chuggy/web/config.json
+#                  and answered `no-store`. It is served from outside the
+#                  document root, so a copy of it inside the site is
+#                  unreachable rather than merely overridden, and no
+#                  configuration is baked in. Unmounted, it is a 404 rather
+#                  than the index, so a UI cannot mistake markup for its
+#                  configuration.
+#
+# So the site may claim neither `/healthz` nor `/config.json`. `/api/v1/` is
+# NOT here: the API is reached same-origin through the Ingress, which routes
+# the two prefixes on one host, and nothing in this image proxies.
 #
 # The digest is the multi-architecture index's, read on 2026-08-22 with
 #   docker buildx imagetools inspect nginx:1.31.4-alpine3.24
@@ -27,6 +44,11 @@ RUN [ -n "$site" ] || { echo "the site build argument names the document root an
 # read-only root filesystem. `deploy/rig/images/README.md` says what to mount.
 COPY images/web/nginx.conf /etc/nginx/nginx.conf
 COPY ${site}/ /usr/share/nginx/html/
+
+# The mount point for the deployment's `/config.json`, and empty: a file
+# mounted by subPath needs its directory to be there already, and a directory
+# mounted whole needs nothing of the image's underneath it.
+RUN mkdir -p /etc/chuggy/web
 
 # Numeric for the same reason as `images/api/Dockerfile`. 101 is this image's
 # `nginx` user.

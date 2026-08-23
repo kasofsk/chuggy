@@ -37,9 +37,21 @@ The web image serves what it is pointed at and has no default:
 CHUG_WEB_SITE=<directory> deploy/rig/images/build-and-import.sh web
 ```
 
-That directory's contents become the document root, so `index.html` at its top
-is what `/` serves. `/healthz` belongs to the image and answers ahead of
-anything the site carries, so the site may not claim that path.
+That directory's contents become the document root. `images/web/Dockerfile`
+states the whole of what the image then answers, and the two paths a deployment
+has to act on are these:
+
+- **`/config.json` is mounted, never baked.** The image serves it from
+  `/etc/chuggy/web/config.json`, outside the document root, with `no-store`. A
+  copy of it inside the site is unreachable rather than merely overridden.
+  Unmounted, it is a 404 and not the index, so a UI cannot mistake markup for
+  its configuration.
+- **`/api/v1/` is not proxied here.** The API is reached same-origin through the
+  Ingress, which routes the two prefixes on one host. Nothing in this image
+  proxies, and nobody should look for it in the nginx configuration.
+
+Every other unresolved path answers with the document root's `index.html`,
+because the routes belong to the client.
 
 ## What the manifests must reference
 
@@ -72,8 +84,10 @@ securityContext:
 ```
 
 The web image's nginx writes its pid and every temporary path under `/tmp`, so
-it needs an `emptyDir` mounted there and nothing else. The API image needs no
-mount of its own, but `CHUG_API_ARTIFACT_ROOT` below names one.
+it needs an `emptyDir` mounted there. Its other mount is the deployment's
+`/config.json`, read-only at `/etc/chuggy/web/config.json`; neither the fallback
+nor that file needs anything writable. The API image needs no mount of its own,
+but `CHUG_API_ARTIFACT_ROOT` below names one.
 
 ## Configuring the API
 
@@ -145,7 +159,10 @@ docker stop api-probe; docker inspect -f '{{.State.ExitCode}}' api-probe
 ### The node holds it
 
 `build-and-import.sh` asks after every import, because an import's exit status
-is not the claim being made. By hand:
+is not the claim being made — and it keeps the status too, because a reference
+the node lists under a tag you chose yourself may be the build that was already
+there. A node it could not ask at all exits 2 rather than reporting an absence
+it never established. By hand:
 
 ```sh
 sudo k3s ctr --namespace k8s.io images ls -q | grep chuggy.invalid
@@ -156,6 +173,11 @@ sudo k3s ctr --namespace k8s.io images ls -q | grep chuggy.invalid
 - **One node.** There is no registry, so nothing replicates the image. A second
   node would not have it, and neither would this one after the node's image
   store is reset.
+- **One architecture, and nothing here checks it.** `docker save` writes the
+  build host's platform alone, and `ctr images import` takes a foreign-arch
+  archive without complaint — after which the read-back passes and the kubelet
+  fails at exec. Build on a host whose architecture is the node's, or say
+  `--platform` and mean it.
 - **The read-back is containerd's, not the kubelet's.** It says the reference is
   there to be found; it says nothing about a pod starting, a probe passing, or a
   secret being mounted.

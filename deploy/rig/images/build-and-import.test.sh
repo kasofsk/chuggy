@@ -84,7 +84,10 @@ case " $* " in
 	cat > /dev/null
 	exit "${CHUG_STUB_IMPORT_RC:-0}"
 	;;
-*' images ls '*) cat "$CHUG_STUB_PRESENT" ;;
+*' images ls '*)
+	[ "${CHUG_STUB_LS_RC:-0}" = "0" ] || exit "$CHUG_STUB_LS_RC"
+	cat "$CHUG_STUB_PRESENT"
+	;;
 esac
 exit 0
 STUB
@@ -124,7 +127,7 @@ fresh_case() {
 	: > "$PRESENT"
 	rm -f "$REPO/dirt"
 	unset CHUG_IMAGE_TAG CHUG_WEB_SITE CHUG_RIG_SSH
-	unset CHUG_STUB_BUILD_RC CHUG_STUB_EMPTY_SAVE CHUG_STUB_IMPORT_RC
+	unset CHUG_STUB_BUILD_RC CHUG_STUB_EMPTY_SAVE CHUG_STUB_IMPORT_RC CHUG_STUB_LS_RC
 }
 
 run() { # <argument...>
@@ -244,6 +247,33 @@ export CHUG_IMAGE_TAG=fixed
 printf 'chuggy.invalid/api:fixed\n' > "$PRESENT"
 run api
 check "an import the node took is clean" 0 "$RC" "the node holds chuggy.invalid/api:fixed"
+
+# The import said something was wrong. The read-back on its own cannot see that:
+# under a fixed tag the node still holds the previous build at this very
+# reference, so "is a reference listed" answers yes about an image this run did
+# not put there.
+fresh_case
+export CHUG_IMAGE_TAG=fixed
+export CHUG_STUB_IMPORT_RC=1
+printf 'chuggy.invalid/api:fixed\n' > "$PRESENT"
+run api
+check "an import that failed onto a tag the node already held is a finding" 1 "$RC" "an earlier build"
+
+fresh_case
+export CHUG_IMAGE_TAG=fixed
+export CHUG_STUB_IMPORT_RC=1
+run api
+check "an import that failed onto a tag the node lacks is a finding" 1 "$RC" "the import of chuggy.invalid/api:fixed failed"
+
+# Neither status decides on its own, so the pair that agrees nothing is wrong is
+# the only pair that passes.
+fresh_case
+export CHUG_IMAGE_TAG=fixed
+export CHUG_STUB_LS_RC=1
+printf 'chuggy.invalid/api:fixed\n' > "$PRESENT"
+run api
+check "a node that cannot be asked could not run" 2 "$RC" "could not be asked"
+check "a node that cannot be asked is not called clean" 2 "$RC" "this is not a pass"
 
 # A near miss rather than a miss: the node holds the repository under another
 # tag, which a substring search would have accepted.
