@@ -433,10 +433,14 @@ test("the command applies the declared schema and the run after it applies nothi
   });
 });
 
-test("a ledger carrying a version this image does not declare is refused untouched", async () => {
+/** Drives the command at a ledger holding the versions below `beyond` and one this image never declared. */
+async function migrationForeignLedgerRefused(
+  label: string,
+  beyond: number,
+): Promise<void> {
   const foreign = declaredLatest + 1;
-  await migrationDatabase("foreign", async (subject, url) => {
-    await migrationSeedApplied(subject, declaredLatest);
+  await migrationDatabase(label, async (subject, url) => {
+    await migrationSeedApplied(subject, beyond);
     await subject.query(
       "INSERT INTO schema_migration (version,name) VALUES ($1,$2)",
       [foreign, "a migration a later image declares"],
@@ -454,10 +458,35 @@ test("a ledger carrying a version this image does not declare is refused untouch
       ).rows.map(({ version }) => version),
       [
         ...migrations
-          .filter(({ version }) => version < declaredLatest)
+          .filter(({ version }) => version < beyond)
           .map(({ version }) => version),
         foreign,
       ],
+    );
+  });
+}
+
+test("a ledger carrying a version this image does not declare is refused untouched", async () => {
+  await migrationForeignLedgerRefused("foreign", declaredLatest);
+  await migrationForeignLedgerRefused("rolledback", declaredLatest + 1);
+});
+
+test("a statement that fails is a failure and not a could-not-run, and takes its ledger row with it", async () => {
+  await migrationDatabase("failing", async (subject, url) => {
+    await migrationSeedApplied(subject, declaredLatest);
+    await subject.query(
+      "ALTER FUNCTION project_capacity_account(text,text) RENAME TO project_capacity_account_renamed",
+    );
+    const run = await migrationCommandRun(url);
+    assert.equal(run.code, 1);
+    assert.match(run.report, /project_capacity_account/u);
+    assert.equal(
+      (
+        await subject.query<{ latest: number | null }>(
+          "SELECT max(version) AS latest FROM schema_migration",
+        )
+      ).rows[0]?.latest,
+      declaredLatest - 1,
     );
   });
 });

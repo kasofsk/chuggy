@@ -125,12 +125,12 @@ test("every outcome maps to the line and the status an operator reads", async ()
   ]);
 });
 
-test("a failed run is reported without the credential the URL carries", async () => {
+test("a server that never answered is a could-not-run, and its report carries no credential", async () => {
   const exit = (await migrateMainExit({
     CHUG_MIGRATE_DATABASE_URL: `postgres://chuggy_owner:${password}@127.0.0.1:1/chuggy`,
     CHUG_MIGRATE_STATEMENT_TIMEOUT_MS: "1000",
   })) as { code: number; report: string };
-  assert.equal(exit.code, 1);
+  assert.equal(exit.code, 2);
   assert.ok(!exit.report.includes(password), exit.report);
 });
 

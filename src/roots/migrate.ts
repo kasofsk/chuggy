@@ -20,6 +20,13 @@
  * that image's own `runtimeSchemaContract` on the other side of the plan, and
  * this command has no way to be told it — see kasofsk/chuggy#240.
  *
+ * A DATABASE IT COULD NOT REACH IS A COULD-NOT-RUN AS WELL, and the split is
+ * structural rather than a reading of the failure: the connection is proved
+ * before the migration transaction opens, so a server that never answered
+ * leaves with two and a statement that failed leaves with one. That is the
+ * split `src/roots/finalizer.ts` and `src/roots/scheduler.ts` already make
+ * between a precondition nothing met and a run that failed.
+ *
  * NO CREDENTIAL REACHES A DIAGNOSTIC. The database URL carries a password, so
  * every refusal below names the variable it read and never the value.
  */
@@ -114,12 +121,23 @@ export function migrateSettingsOf(
   };
 }
 
+/** What a server this command never reached raises, so nothing applied is not read as a failure. */
+class MigrateUnreachable extends Error {}
+
 /** Applies the planned target, ending the pool whatever the outcome was. */
 export async function migrateRun(
   settings: MigrateSettings,
 ): Promise<PostgresCompatibleMigration> {
   const pool = postgresPool(settings.databaseUrl, settings.limits);
   try {
+    const proved = await pool.connect().catch((failure: unknown) => {
+      throw new MigrateUnreachable(
+        failure instanceof Error
+          ? failure.message
+          : "the server did not answer",
+      );
+    });
+    proved.release();
     return await postgresMigrateCompatible(pool, settings.deployment);
   } finally {
     await pool.end();
@@ -161,7 +179,10 @@ export async function migrateMain(
   } catch (failure) {
     const message =
       failure instanceof Error ? failure.message : "unknown migration failure";
-    return { code: 1, report: message };
+    return {
+      code: failure instanceof MigrateUnreachable ? 2 : 1,
+      report: message,
+    };
   }
 }
 
