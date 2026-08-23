@@ -553,19 +553,27 @@ test("the scheduler is non-login and non-escalating", async () => {
 
 /**
  * What a retired role can still hold is an object or a privilege in the
- * database it was retired from, and `pg_shdepend` records both — per database,
- * which a role name is not. A cluster hosting a sibling database may carry the
- * role for that one and no schema here decides it; a migration that created it
- * again is `test/deploy/postgresRoles.test.ts`'s to refuse.
+ * database it was retired from, and `pg_shdepend` records both per database —
+ * all but a grant on the database itself, which `pg_database` being a shared
+ * catalogue leaves tagged with no database at all, so those rows are read by
+ * the database they name instead. Membership in another role stays outside
+ * even that: `pg_shdepend` records none of it, so this case does not see it,
+ * and like the role name it is the cluster's rather than this database's — a
+ * cluster hosting a sibling database may carry the role for that one and no
+ * schema here decides it, and a migration that created it again is
+ * `test/deploy/postgresRoles.test.ts`'s to refuse.
  */
 test("the retired dispatcher role owns nothing here and is granted nothing here", async () => {
   assert.deepEqual(
     await harness.query(
       `SELECT count(*)::text AS count FROM pg_shdepend d
          JOIN pg_roles r ON r.oid = d.refobjid
-        WHERE d.dbid = (SELECT oid FROM pg_database
-                         WHERE datname = current_database())
-          AND r.rolname = 'chuggy_dispatcher'`,
+        WHERE r.rolname = 'chuggy_dispatcher'
+          AND (d.dbid = (SELECT oid FROM pg_database
+                          WHERE datname = current_database())
+               OR (d.classid = 'pg_database'::regclass
+                   AND d.objid = (SELECT oid FROM pg_database
+                                   WHERE datname = current_database())))`,
     ),
     [{ count: "0" }],
   );
