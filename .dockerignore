@@ -1,0 +1,5 @@
+# Every image under `images/` builds from the repository root, and nothing here
+# is read by any of them: `node_modules` is reinstalled from the lockfile inside
+# the build, and no stage reads the history.
+.git
+node_modules
