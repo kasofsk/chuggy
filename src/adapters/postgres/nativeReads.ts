@@ -67,11 +67,27 @@ function requiredCounter(value: string | null, what: string): number {
   return projectRowCounter(value, what);
 }
 
+function publicOperationInstant(
+  value: string,
+): ReturnType<typeof asPublicInstant> {
+  const parsed =
+    /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?)([+-]\d{2})(?::?(\d{2}))?$/u.exec(
+      value,
+    );
+  if (parsed === null)
+    throw new TypeError(
+      "native read: accepted instant is not PostgreSQL timestamptz text",
+    );
+  return asPublicInstant(
+    `${parsed[1]}T${parsed[2]}${parsed[3]}:${parsed[4] ?? "00"}`,
+  );
+}
+
 /** Maps the private storage row onto the deliberately smaller public resource. */
 export function publicOperation(row: PublicOperationRow): OperationResource {
   const base = {
     operation: asOperationId(row.operation),
-    acceptedAt: asPublicInstant(row.accepted_at),
+    acceptedAt: publicOperationInstant(row.accepted_at),
   };
   const state = operationState(row.state);
   switch (state) {
