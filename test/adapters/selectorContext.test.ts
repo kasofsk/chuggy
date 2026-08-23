@@ -37,6 +37,7 @@ test("selector context client authenticates and strictly parses the response", a
       bearerToken: "token",
       requestTimeoutMs: 1_000,
       responseBytesMax: 10_000,
+      responseReadsMax: 100,
     },
     (request, init) => {
       authorization = new Headers(init?.headers).get("authorization");
@@ -76,6 +77,7 @@ test("selector context client refuses oversized responses", async () => {
       bearerToken: "token",
       requestTimeoutMs: 1_000,
       responseBytesMax: 1,
+      responseReadsMax: 10,
     },
     () => Promise.resolve(new Response(stream)),
   );
@@ -89,5 +91,35 @@ test("selector context client refuses oversized responses", async () => {
   const stoppedAt = reads;
   await Promise.resolve();
   assert.equal(reads, stoppedAt);
+  assert.equal(cancelled, true);
+});
+
+test("selector context client cancels an endless empty response", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new Uint8Array());
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      bearerToken: "token",
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 1_000,
+      responseReadsMax: 3,
+    },
+    () => Promise.resolve(new Response(stream)),
+  );
+  await assert.rejects(
+    source.context({
+      tenant: asTenantId("tenant"),
+      project: asProjectId("project"),
+    }),
+    /read bound/u,
+  );
   assert.equal(cancelled, true);
 });

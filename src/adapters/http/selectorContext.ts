@@ -58,6 +58,7 @@ export interface SelectorContextHttpConfig {
   readonly bearerToken: string;
   readonly requestTimeoutMs: number;
   readonly responseBytesMax: number;
+  readonly responseReadsMax: number;
 }
 
 function checkedPositive(value: number, name: string): number {
@@ -82,6 +83,7 @@ function contextUrl(baseUrl: string, partition: Partition): URL {
 async function boundedResponseBytes(
   response: Response,
   bytesMax: number,
+  readsMax: number,
 ): Promise<Uint8Array> {
   const declared = response.headers.get("content-length");
   if (declared !== null && Number(declared) > bytesMax) {
@@ -93,8 +95,16 @@ async function boundedResponseBytes(
     response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
+  let reads = 0;
   try {
     while (true) {
+      reads += 1;
+      if (reads > readsMax) {
+        await reader.cancel();
+        throw new RangeError(
+          "selector context response exceeds its read bound",
+        );
+      }
       const read = await reader.read();
       if (read.done) break;
       length += read.value.byteLength;
@@ -130,6 +140,10 @@ export function selectorContextHttp(
     config.responseBytesMax,
     "response byte bound",
   );
+  const responseReadsMax = checkedPositive(
+    config.responseReadsMax,
+    "response read bound",
+  );
   return {
     context: async (partition) => {
       const response = await transport(contextUrl(config.baseUrl, partition), {
@@ -143,7 +157,11 @@ export function selectorContextHttp(
         throw new Error(
           `selector context source returned ${String(response.status)}`,
         );
-      const bytes = await boundedResponseBytes(response, responseBytesMax);
+      const bytes = await boundedResponseBytes(
+        response,
+        responseBytesMax,
+        responseReadsMax,
+      );
       return contextSchema.parse(JSON.parse(new TextDecoder().decode(bytes)));
     },
   };
