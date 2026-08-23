@@ -140,6 +140,26 @@ check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
 check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
 check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed, 4 run"
 
+# A checkout nested inside the checkout. The parallel worktrees live under
+# .claude/, each with a tsconfig of its own, so a linter that walks in lints
+# every copy of the tree against a program of its own; eslint.config.js is
+# where it is told not to. The nested tsconfig is what makes the copy a second
+# program rather than a second file.
+fixture
+clean_source
+mkdir -p "$R/.claude/worktrees/agent-x/src/domain"
+cp "$ROOT/tsconfig.json" "$R/.claude/worktrees/agent-x/tsconfig.json"
+{
+	printf '%s\n' 'export async function work(): Promise<void> {'
+	printf '%s\n' '  return Promise.resolve();'
+	printf '%s\n' '}'
+	printf '%s\n' 'export function caller(): void {'
+	printf '%s\n' '  work();'
+	printf '%s\n' '}'
+} > "$R/.claude/worktrees/agent-x/src/domain/floating.ts"
+seal
+check "a checkout nested under .claude/ is not this tree's source" 0 "$RC" "0 stage(s) failed"
+
 # --- What the unit stage runs ------------------------------------------------
 #
 # `check-conformance.sh`, `check-random.sh` and `check-postgres.sh` own their

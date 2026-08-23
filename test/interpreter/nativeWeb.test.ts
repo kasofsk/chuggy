@@ -3,8 +3,10 @@ import { test } from "node:test";
 
 import {
   asPrincipal,
+  asProjectAccessKind,
   asPublicInstant,
   nativeWeb,
+  oidcPrincipal,
   type NativeWeb,
   type NativeReadStore,
   type NativeSubmission,
@@ -317,4 +319,26 @@ test("an unbacklogged project reaches acceptance for dispatch", async () => {
     "Authorized",
   );
   assert.deepEqual(calls, ["authorize:DispatchTicket", "accept"]);
+});
+
+test("principal identity is collision-free across issuer and subject", () => {
+  assert.notEqual(
+    oidcPrincipal("https://one.example", "/subject"),
+    oidcPrincipal("https://one.example/", "subject"),
+  );
+  assert.equal(
+    oidcPrincipal("https://one.example", "subject"),
+    oidcPrincipal("https://one.example", "subject"),
+  );
+});
+
+test("a principal needs both halves of the identity it names", () => {
+  assert.throws(() => oidcPrincipal("", "subject"), RangeError);
+  assert.throws(() => oidcPrincipal("https://one.example", ""), RangeError);
+});
+
+test("only the access kinds the authorization function knows narrow", () => {
+  assert.equal(asProjectAccessKind("DispatchTicket"), "DispatchTicket");
+  assert.throws(() => asProjectAccessKind("Dispatch"), RangeError);
+  assert.throws(() => asProjectAccessKind(""), RangeError);
 });

@@ -1,7 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 
-import { asPrincipal, type Principal } from "../../interpreter/nativeWeb.ts";
+import { oidcPrincipal } from "../../interpreter/nativeWeb.ts";
 import type { PrincipalAuthentication } from "./server.ts";
 
 export interface OidcAuthenticationConfig {
@@ -12,7 +12,11 @@ export interface OidcAuthenticationConfig {
   readonly jwksTimeoutMs: number;
 }
 
-const discoverySchema = z.strictObject({
+/**
+ * A provider advertises far more than the two members this code reads, and
+ * OpenID Connect Discovery requires a client to ignore the rest.
+ */
+const discoverySchema = z.object({
   issuer: z.string(),
   jwks_uri: z.string(),
 });
@@ -49,11 +53,6 @@ function discoveryUrl(issuer: string): URL {
   const url = new URL(issuer);
   url.pathname = `${url.pathname.replace(/\/$/u, "")}/.well-known/openid-configuration`;
   return url;
-}
-
-export function oidcPrincipal(issuer: string, subject: string): Principal {
-  if (subject.length === 0) throw new RangeError("OIDC subject is empty");
-  return asPrincipal(`${String(issuer.length)}:${issuer}${subject}`);
 }
 
 async function discoverJwks(

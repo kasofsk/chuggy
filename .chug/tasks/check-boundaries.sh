@@ -2,6 +2,10 @@
 # The module graph points inward, and `src/domain/` reaches nothing outside
 # itself by any path through it.
 #
+# The console is cruised beside them: `ui/` reaches nothing outside itself, so
+# what a browser is served needs no build step and no client dependency, and
+# `ui/app/` reaches no document.
+#
 # This is house rule 2's graph half; `eslint.config.js` holds the ambient half.
 # What no per-file check can see is reachability — a helper inside the domain
 # that imports a filesystem module names no forbidden global, and the decider
@@ -60,7 +64,12 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 set +e
-"$DEPCRUISE" --config .dependency-cruiser.cjs --output-type err src test >"$work/out" 2>"$work/err"
+# `ui` is named only when the tree has one: depcruise fails on a root that
+# does not exist, and that would be a could-not-run rather than a verdict.
+roots="src test"
+[ -d ui ] && roots="$roots ui"
+# shellcheck disable=SC2086 # the root list is space-separated by construction
+"$DEPCRUISE" --config .dependency-cruiser.cjs --output-type err $roots >"$work/out" 2>"$work/err"
 rc=$?
 set -e
 

@@ -26,9 +26,17 @@
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
 
+    "allowJs": true,
+    "checkJs": true,
+
     "noEmit": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "scripts/**/*.ts",
+    "ui/app/**/*.js"
+  ]
 }
