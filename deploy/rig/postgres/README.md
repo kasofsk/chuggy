@@ -10,19 +10,25 @@ The migration is a command now: `npm run migrate` applies the schema this
 checkout declares to the database `CHUG_MIGRATE_DATABASE_URL` names, and what
 this procedure owes it is an identity to run as.
 
-**A FRESH DATABASE STILL CANNOT BE MIGRATED BY THAT IDENTITY.** Migrations 5, 12
-and 13 each restate `NOSUPERUSER`, `NOREPLICATION` and `NOBYPASSRLS` on a role,
-which `ALTER ROLE` refuses to a `CREATEROLE` role however it holds that role, so
-the chain stops there for `chuggy_owner` and only for a fresh database — see
-kasofsk/chuggy#241 for the two refusals and what has to be decided. A database
-already carrying those migrations advances normally, which is the rig's case and
-what the Migrate step below is written for.
+**A DATABASE WITH ANY OF 5, 12 AND 13 STILL PENDING CANNOT BE MIGRATED BY THAT
+IDENTITY.** Each of those restates `NOSUPERUSER`, `NOREPLICATION` and
+`NOBYPASSRLS` on a role, which `ALTER ROLE` refuses to a `CREATEROLE` role
+however it holds that role, so the chain stops at the first of them still to
+apply — see kasofsk/chuggy#241 for the two refusals and what has to be decided.
+A database already carrying all three advances normally, and that is what the
+Migrate step below is written for.
 
 ## Before you start
 
 A server, and a database in it for chuggy to own. On the rig that is the
-`postgres` StatefulSet in namespace `chuggy` and the `chuggy` database inside
-it. You will need the superuser's password and three passwords to issue.
+`postgres` StatefulSet in namespace `chuggy` and the `chuggy_rehearsal`
+database inside it — the one `chuggy-api`'s `CHUG_API_DATABASE_URL` names, and
+the one every step below names. The rig's `chuggy` database stopped at
+migration 2 and is not it: pointing this procedure there runs the chain from 3
+and stops on the refusal above.
+
+You will need the superuser's password, and one password for each login role
+`postgres-roles.sql` issues.
 
 ## Issue the credentials
 
@@ -43,10 +49,13 @@ finalizer-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 EOF
 ```
 
-One per control-plane process, because every command under `src/roots/`
+One per control-plane process, because every serving command under `src/roots/`
 asserts at start-up that `current_user` is its own group role and refuses to
 serve otherwise. A shared credential does not widen one process's reach; it
-stops every process the credential does not belong to from starting.
+stops every process the credential does not belong to from starting. The
+administrative commands — the migration and `provision:project-access` — are
+outside that rule, and `postgres-roles.sql`'s header says what each asserts
+instead.
 
 ## Create the roles
 
@@ -77,7 +86,7 @@ export CHUG_PG_FINALIZER_PASSWORD="$(secret chuggy-postgres-credentials finalize
   "${CHUG_PG_SELECTOR_SERVICE_PASSWORD:?selector-service-password did not read back}" \
   "${CHUG_PG_SCHEDULER_PASSWORD:?scheduler-password did not read back}" \
   "${CHUG_PG_FINALIZER_PASSWORD:?finalizer-password did not read back}" &&
-psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy -f deploy/rig/postgres/postgres-roles.sql
+psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy_rehearsal -f deploy/rig/postgres/postgres-roles.sql
 ```
 
 It is one transaction: it lands whole or not at all, and re-running it rotates
@@ -99,13 +108,18 @@ lookup came back empty.
 As `chuggy_owner` and as nobody else, over the same forwarded port:
 
 ```sh
+owner_url="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy_rehearsal"
 export CHUG_PG_URL="postgres://chuggy_owner:$CHUG_PG_OWNER_PASSWORD@127.0.0.1:55440/chuggy"
-CHUG_MIGRATE_DATABASE_URL="$CHUG_PG_URL" npm run migrate
+CHUG_MIGRATE_DATABASE_URL="$owner_url" npm run migrate
 ```
 
 It prints the versions it applied, or says the schema was already current, and
-running it twice is how you see the difference. `CHUG_PG_URL` is set as well
-because the gate in the database half of `Prove it` reads that one.
+running it twice is how you see the difference.
+
+`CHUG_PG_URL` is set here because the gate in the database half of `Prove it`
+reads that one, and it names a **different** database on purpose: that gate
+migrates and litters whatever it is pointed at, which the control plane's own
+database must not be. The rig's `chuggy` is what it gets.
 
 A ledger this checkout does not declare — a version it has never heard of, or
 one under another name — is a **could-not-run** that applies nothing and exits
@@ -126,7 +140,7 @@ stored principal with the same function the API derives it from, so neither
 side has an encoding to get wrong.
 
 ```sh
-export CHUG_PROVISION_DATABASE_URL="$CHUG_PG_URL"
+export CHUG_PROVISION_DATABASE_URL="$owner_url"
 export CHUG_API_OIDC_ISSUER="https://accounts.example.test"
 export CHUG_PROVISION_SUBJECT="the sub claim the provider issues"
 export CHUG_PROVISION_TENANT="tenant" CHUG_PROVISION_PROJECT="project"
@@ -236,7 +250,7 @@ kubectl -n chuggy wait --for=condition=Ready pod/probe
 as() {
   kubectl -n chuggy exec -i probe -- sh -c '
     PGPASSWORD="$(printenv "$2")" psql \
-      "postgres://$1@postgres.chuggy.svc.cluster.local:5432/chuggy?connect_timeout=5" -At -f -
+      "postgres://$1@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?connect_timeout=5" -At -f -
   ' _ "$1" "$2" <<SQL
 SELECT 'admitted as ' || current_user
     || ' from ' || inet_client_addr()
@@ -295,19 +309,24 @@ means chuggy-fabric moved the binding, and the header is what to re-read.
 
 ### The credentials
 
-With the label back on, each login role once, with the password this procedure
-issued it:
+With the label back on, every login role with the password this procedure
+issued it, and the API's twice because its second pool becomes a second group:
 
 ```sh
 kubectl -n chuggy label pod probe chuggy.dev/postgres-client=true
 
-as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_ticket_service
+as chuggy_owner CHUG_PG_OWNER_PASSWORD chuggy_boundary_owner
 as chuggy_ticket_service_login CHUG_PG_TICKET_SERVICE_PASSWORD chuggy_ticket_service
 as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_api
+as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_selector_review
 as chuggy_selector_service_login CHUG_PG_SELECTOR_SERVICE_PASSWORD chuggy_selector_service
 as chuggy_scheduler_login CHUG_PG_SCHEDULER_PASSWORD chuggy_scheduler
 as chuggy_finalizer_login CHUG_PG_FINALIZER_PASSWORD chuggy_finalizer
 ```
+
+The owner's line asks about `chuggy_boundary_owner` rather than a service
+group, because that is the membership a `GRANT` on a `SECURITY DEFINER`
+function needs and the one whose absence a migration reports as applied.
 
 Each names the role it authenticated as and a client address that is the
 probe's rather than `127.0.0.1`, which is what makes it a password check rather
@@ -416,5 +435,6 @@ The roles are deliberately not reversed by a command here. Dropping a role that
 owns relations drops nothing and fails until the relations are reassigned, and
 a runbook that offered a one-line undo for that would be offering to lose the
 database. So the Secret goes and the roles stay, and deleting it discards the
-only copy of a password three roles still have — recoverable only by re-running
-`Issue the credentials` and `Create the roles`, which issues different ones.
+only copy of every password the login roles still have — recoverable only by
+re-running `Issue the credentials` and `Create the roles`, which issues
+different ones.

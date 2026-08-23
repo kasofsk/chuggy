@@ -97,6 +97,7 @@ to start without the required ones.
 | Variable | | |
 |---|---|---|
 | `CHUG_API_DATABASE_URL` | required | see below |
+| `CHUG_API_SELECTOR_REVIEW_DATABASE_URL` | required | see below |
 | `CHUG_API_IDEMPOTENCY_KEYING` | required | JSON: a `current` version and the `versions` that may still be verified |
 | `CHUG_API_OIDC_ISSUER` | required | an HTTPS URL with no credentials, query or fragment |
 | `CHUG_API_OIDC_AUDIENCE` | required | |
@@ -108,14 +109,20 @@ to start without the required ones.
 | `CHUG_API_OIDC_DISCOVERY_TIMEOUT_MS` | | |
 | `CHUG_API_OIDC_JWKS_TIMEOUT_MS` | | |
 
-**The database URL must become the group role.** The API authenticates as
-`chuggy_api_login` and refuses to start unless `current_user` is `chuggy_api`,
-which the login role holds by grant rather than by default. The connection
-string carries the switch:
+**Both database URLs must become a group role, and they become different ones.**
+The API authenticates as `chuggy_api_login` for each and refuses to start unless
+`current_user` is `chuggy_api` on the first and `chuggy_selector_review` on the
+second, which the login role holds by grant rather than by default. Each
+connection string carries its own switch:
 
 ```
-postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy?options=-c%20role%3Dchuggy_api
+postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?options=-c%20role%3Dchuggy_api
+postgres://chuggy_api_login:<password>@postgres.chuggy.svc.cluster.local:5432/chuggy_rehearsal?options=-c%20role%3Dchuggy_selector_review
 ```
+
+The second reads the selector's proposal reviews for the operational context
+the API serves, which `chuggy_api` is granted nothing on: the split is the
+privilege, not a second credential.
 
 **The artifact root is data, not image content.** It is a filesystem path the
 API only ever reads — the web composition passes the store to one read port —

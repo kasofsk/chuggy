@@ -32,10 +32,20 @@
 -- same shape the migration uses and for the reason it states: a role is
 -- cluster-wide, so a sibling database may have made it first.
 --
--- WHY chuggy_owner IS A MEMBER OF EVERY GROUP. It owns the relations, so
--- membership confers no privilege it did not already hold. What it buys is
--- SET ROLE, which is how the privilege suite asks the server what each group
--- role is refused.
+-- WHY chuggy_owner IS A MEMBER OF EVERY GROUP. For the service groups it owns
+-- the relations, so membership confers no privilege it did not already hold.
+-- What it buys is SET ROLE, which is how the privilege suite asks the server
+-- what each group role is refused.
+--
+-- chuggy_boundary_owner IS THE ONE THAT WIDENS IT, AND HAS TO. That role owns
+-- the SECURITY DEFINER functions and chuggy_owner does not, so a migration
+-- whose statement is a GRANT on one of them is granting on an object it
+-- neither owns nor holds grant option for — which PostgreSQL answers with a
+-- warning and not an error. The statement succeeds having granted nothing, the
+-- runner commits the ledger row beside it, and the version is applied by every
+-- account anyone can query. Membership is what makes such a grant land, and
+-- the migration cannot take it for itself: granting a role needs admin option
+-- on it, which a CREATEROLE role holds only over the roles it created itself.
 --
 -- PASSWORDS COME FROM THE ENVIRONMENT, so none of them is in this file and none
 -- is in an argument list either — an argument to psql is in the process table
@@ -63,11 +73,36 @@
 -- that rotated credentials without restating them would report success over a
 -- role that still cannot authenticate.
 --
+-- AN ATTRIBUTE IS NOT EVERYTHING A ROLE CARRIES, and the word is PostgreSQL's
+-- rather than a loose one. A per-role configuration set by ALTER ROLE ... SET
+-- lives in another catalogue, and a membership no statement below names is
+-- left where it was; neither is restated, so a re-run is no answer to either.
+--
 -- ONE LOGIN ROLE PER CONTROL-PLANE PROCESS, and that is the point of the list
--- being this long. Every command under `src/roots/` asserts at start-up that
--- `current_user` is its own group role and refuses to serve otherwise, so a
--- shared credential would not merely widen a process's reach — it would stop
--- every process the credential does not belong to from starting at all.
+-- being this long. Every serving command under `src/roots/` asserts at start-up
+-- that `current_user` is its own group role and refuses to serve otherwise, so
+-- a shared credential would not merely widen a process's reach — it would stop
+-- every process the credential does not belong to from starting at all. The two
+-- administrative commands are outside that: `src/roots/migrate.ts` runs as the
+-- owner and asserts nothing about the role it connected as, and
+-- `src/roots/provisionProjectAccess.ts` states in its own header why it checks
+-- a privilege instead.
+--
+-- A PROCESS WITH TWO POOLS STILL HAS ONE CREDENTIAL. The API opens a second
+-- connection for the selector-context read and refuses to start unless it
+-- becomes `chuggy_selector_review`, which is a group `chuggy_api` is not a
+-- member of and is a real widening of `chuggy_api_login`. It is the widening
+-- that process needs, and holding it through the group leaves what it reaches
+-- editable in the migration rather than here. The connection string names the
+-- group the same way the API's first one does.
+--
+-- chuggy_selector_control IS CREATED WITH NO LOGIN ROLE, DELIBERATELY. The
+-- migration grants it the selector administration surface and no command under
+-- `src/roots/` connects as it, so there is no process for a credential to
+-- belong to; issuing one would put a live password behind a door nothing opens.
+-- It is created here for the reason every group role is — so a membership grant
+-- has a group, and so re-running this file is authoritative over its
+-- attributes.
 --
 -- Usage:
 --   CHUG_PG_OWNER_PASSWORD=... \
@@ -91,8 +126,10 @@ BEGIN;
 -- would be the shorter conditional and psql does not interpolate a variable
 -- inside one, so the whole file is \gexec rather than two idioms.
 SELECT format('CREATE ROLE %I NOLOGIN', role_name)
-  FROM unnest(ARRAY['chuggy_ticket_service', 'chuggy_api', 'chuggy_selector_service',
-                    'chuggy_scheduler', 'chuggy_finalizer']) AS role_name
+  FROM unnest(ARRAY['chuggy_boundary_owner', 'chuggy_ticket_service', 'chuggy_api',
+                    'chuggy_selector_service', 'chuggy_selector_control',
+                    'chuggy_selector_review', 'chuggy_scheduler',
+                    'chuggy_finalizer']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
 
@@ -106,11 +143,17 @@ SELECT format('CREATE ROLE %I LOGIN', role_name)
 
 -- A group role gets PASSWORD NULL here and a login role gets its password
 -- below, which is the only attribute split between the two blocks.
+ALTER ROLE chuggy_boundary_owner WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_ticket_service WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_api WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_selector_service WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
+ALTER ROLE chuggy_selector_control WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
+ALTER ROLE chuggy_selector_review WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_scheduler WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
@@ -143,7 +186,9 @@ GRANT chuggy_api TO chuggy_api_login;
 GRANT chuggy_selector_service TO chuggy_selector_service_login;
 GRANT chuggy_scheduler TO chuggy_scheduler_login;
 GRANT chuggy_finalizer TO chuggy_finalizer_login;
-GRANT chuggy_ticket_service, chuggy_api, chuggy_selector_service, chuggy_scheduler,
+GRANT chuggy_selector_review TO chuggy_api_login;
+GRANT chuggy_boundary_owner, chuggy_ticket_service, chuggy_api, chuggy_selector_service,
+      chuggy_selector_control, chuggy_selector_review, chuggy_scheduler,
       chuggy_finalizer TO chuggy_owner;
 
 -- CONNECT is granted to PUBLIC on a stock database and revoked on a hardened
@@ -156,7 +201,8 @@ SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_nam
 \gexec
 
 GRANT USAGE, CREATE ON SCHEMA public TO chuggy_owner;
-GRANT USAGE ON SCHEMA public TO chuggy_ticket_service, chuggy_api, chuggy_selector_service,
-                                chuggy_scheduler, chuggy_finalizer;
+GRANT USAGE ON SCHEMA public TO chuggy_boundary_owner, chuggy_ticket_service, chuggy_api,
+                                chuggy_selector_service, chuggy_selector_control,
+                                chuggy_selector_review, chuggy_scheduler, chuggy_finalizer;
 
 COMMIT;
