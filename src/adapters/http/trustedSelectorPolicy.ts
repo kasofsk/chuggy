@@ -5,6 +5,7 @@ import type {
   SelectorTerminationResult,
 } from "../../interpreter/selector.ts";
 import type { TrustedSelectorPolicy } from "../../interpreter/trustedSelectorPolicyHost.ts";
+import { selectorOperationalContextV2Schema } from "./selectorContext.ts";
 
 export const trustedSelectorPolicyProtocolVersion = 1;
 export const trustedSelectorPolicyMediaType =
@@ -75,21 +76,24 @@ const capacity = z.strictObject({
   available: integer,
 });
 
-const operationalContext = z.strictObject({
+const reviewFeedback = z
+  .array(
+    z.strictObject({
+      ordinal: integer,
+      selectorDecision: identity,
+      outcome: z.enum(["Approved", "Rejected"]),
+      reviewer: z.strictObject({ kind: identity, subject: identity }),
+      feedback: boundedText.optional(),
+      reviewedAt: identity,
+    }),
+  )
+  .max(trustedSelectorPolicyCollectionMembersMax);
+
+const operationalContextV1 = z.strictObject({
+  version: z.literal(1),
   observedAt: identity,
   observedAtEpochMs: integer,
-  reviewFeedback: z
-    .array(
-      z.strictObject({
-        ordinal: integer,
-        selectorDecision: identity,
-        outcome: z.enum(["Approved", "Rejected"]),
-        reviewer: z.strictObject({ kind: identity, subject: identity }),
-        feedback: boundedText.optional(),
-        reviewedAt: identity,
-      }),
-    )
-    .max(trustedSelectorPolicyCollectionMembersMax),
+  reviewFeedback,
   activeWork: z
     .array(
       z.strictObject({
@@ -111,6 +115,11 @@ const operationalContext = z.strictObject({
     dispatchAllowed: z.boolean(),
   }),
 });
+
+const operationalContext = z.discriminatedUnion("version", [
+  operationalContextV1,
+  selectorOperationalContextV2Schema,
+]);
 
 const candidateScan = z.discriminatedUnion("state", [
   z.strictObject({

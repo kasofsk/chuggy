@@ -25,7 +25,7 @@ const reviewFeedbackSchema = z
   .transform(({ feedback, ...value }) =>
     feedback === undefined ? value : { ...value, feedback },
   );
-const contextSchema = z.strictObject({
+export const selectorOperationalContextV2Schema = z.strictObject({
   version: z.literal(2),
   observedAt: z.iso.datetime(),
   observedAtEpochMs: counter,
@@ -162,7 +162,9 @@ export function selectorContextHttp(
         responseBytesMax,
         responseReadsMax,
       );
-      return contextSchema.parse(JSON.parse(new TextDecoder().decode(bytes)));
+      return selectorOperationalContextV2Schema.parse(
+        JSON.parse(new TextDecoder().decode(bytes)),
+      );
     },
   };
 }
