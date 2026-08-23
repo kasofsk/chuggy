@@ -13,10 +13,34 @@ import {
   panelHeld,
 } from "../app/panels.js";
 
+/**
+ * A `style` KEY IS NOT AN ATTRIBUTE, and it is spelled as an object of
+ * declarations so that it cannot be one. Content-Security-Policy governs the
+ * style *attribute* under `style-src-attr`, which falls back to `style-src`,
+ * and the only policy that would admit one here is `'unsafe-inline'` -- a hash
+ * cannot cover a width computed per render. So a declaration written as an
+ * attribute is dropped by the browser, in silence and with no error the console
+ * could show.
+ *
+ * WHAT THAT COSTS IS A WRONG READING RATHER THAN A BROKEN PAGE, which is why
+ * this is a shape and not a convention. The bars this draws are `display:
+ * block` with no width of their own, so a dropped declaration leaves
+ * `width: auto` and they fill their track: every age bar reads fully aged and
+ * every meter reads full, forever, looking exactly like data.
+ *
+ * The CSSOM is not hooked by CSP, so setting the same property here applies
+ * under `style-src 'self'` and needs no relaxation of the policy.
+ */
 export function element(tag, attributes, children) {
   const node = document.createElement(tag);
   for (const [name, value] of Object.entries(attributes ?? {})) {
-    if (value !== undefined) node.setAttribute(name, String(value));
+    if (value === undefined) continue;
+    if (name === "style") {
+      for (const [property, declaration] of Object.entries(value))
+        node.style.setProperty(property, String(declaration));
+      continue;
+    }
+    node.setAttribute(name, String(value));
   }
   for (const child of children ?? []) {
     node.append(
@@ -89,7 +113,7 @@ export function panelSection(spec) {
     element("div", { class: "age", "data-verdict": verdict.verdict }, [
       element(
         "span",
-        { style: `width:${String(Math.round(fraction * 100))}%` },
+        { style: { width: `${String(Math.round(fraction * 100))}%` } },
         [],
       ),
     ]),
@@ -117,7 +141,7 @@ function meter(label, headroom) {
       [
         element(
           "span",
-          { style: `width:${String(Math.min(filled, 100))}%` },
+          { style: { width: `${String(Math.min(filled, 100))}%` } },
           [],
         ),
       ],
