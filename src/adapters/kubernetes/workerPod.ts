@@ -11,12 +11,15 @@
  * to, and which definitive inability the cluster is told about when it resolves
  * to none.
  *
- * A POD IS NAMED FOR ITS ATTEMPT AND FOR NOTHING ELSE. `WorkerLaunchPort`
- * deletes by partition and attempt, so the name has to be derivable from those
- * two alone; it is a digest over them because an attempt identity is opaque and
- * may carry text no object name accepts. The same derivation makes a repeated
- * placement of one attempt idempotent, because the second request names the
- * object the first created.
+ * A POD IS NAMED FOR ITS ATTEMPT AND FOR NOTHING ELSE. `AttemptPlacementPort`
+ * places and cancels the same fenced attempt, so the name has to be derivable
+ * from what both of those carry; it is a digest over the partition and the
+ * attempt because an attempt identity is opaque and may carry text no object
+ * name accepts. The generation is not part of it: a cancellation names the
+ * generation it is fencing, and a name that varied with it would leave the
+ * earlier pod behind. The same derivation makes a repeated placement of one
+ * attempt idempotent, because the second request names the object the first
+ * created.
  *
  * THE FENCE TRAVELS AS ANNOTATIONS. A label value is bounded and constrained in
  * its alphabet where an annotation value is neither, so the generation an
@@ -33,9 +36,9 @@
 import { createHash } from "node:crypto";
 
 import type {
+  AttemptPlacement,
   BlockedReason,
   ExecutionProfile,
-  WorkerPlacement,
 } from "../../interpreter/executionScheduler.ts";
 import type { AttemptId } from "../../interpreter/schedulerIdentity.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -232,7 +235,7 @@ function kubernetesWorkerImage(
 /** The fenced identity and the pinned inputs, as the annotations a placed pod carries. */
 function kubernetesWorkerAnnotations(
   config: KubernetesWorkerLaunchConfig,
-  placement: WorkerPlacement,
+  placement: AttemptPlacement,
 ): Readonly<Record<string, string>> {
   const identity: Readonly<Record<string, string>> = {
     tenant: placement.partition.tenant,
@@ -265,7 +268,7 @@ function kubernetesWorkerAnnotations(
 
 /** Everything the placement supplied, as the one document a worker is handed. */
 export function kubernetesWorkerTask(
-  placement: WorkerPlacement,
+  placement: AttemptPlacement,
 ): KubernetesWorkerTask {
   const briefing = placement.invocation.briefing;
   return {
@@ -294,7 +297,7 @@ export function kubernetesWorkerTask(
 /** The one bounded pod a scheduled attempt becomes, or the inability that stops it. */
 export function kubernetesWorkerPodRequest(
   config: KubernetesWorkerLaunchConfig,
-  placement: WorkerPlacement,
+  placement: AttemptPlacement,
 ): KubernetesPodRequested {
   const admitted = kubernetesWorkerImage(config, placement.profile);
   if ("reason" in admitted)

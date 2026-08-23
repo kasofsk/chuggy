@@ -1,13 +1,15 @@
 /**
- * The adapter behind `WorkerLaunchPort`: the one request that asks a cluster
- * for a scheduled attempt's pod, the one that asks it to go away, and the
- * readiness probe that says whether either could be attempted at all.
+ * The Kubernetes adapter behind `AttemptPlacementPort`: the one request that
+ * asks a cluster for a scheduled attempt's pod, the one that asks it to go
+ * away, and the readiness probe that says whether either could be attempted at
+ * all. The port is backend-neutral, so a cluster fact reaches no caller: what
+ * leaves here is an opaque placement identity and the three placement arms.
  *
  * EVERY REACH IS BOUNDED AND EVERY OUTCOME IS A VALUE. One request carries one
  * deadline, nothing retries in place — a withdrawn attempt is a durable row and
  * the pass above decides when to try again — and a cluster that refuses, that
  * cannot be reached, or that answers something this adapter does not recognise
- * is an arm of `WorkerPlaced` rather than a raised failure.
+ * is an arm of `AttemptPlacementOutcome` rather than a raised failure.
  *
  * THE TWO INABILITIES PART AT THE STATUS LINE, AND AN ANSWER THIS ADAPTER DOES
  * NOT RECOGNISE IS A HOLD. Only a refusal of the submitted document itself —
@@ -34,11 +36,11 @@
 import { readFile } from "node:fs/promises";
 
 import type {
-  WorkerLaunchPort,
-  WorkerPlaced,
+  AttemptPlacementOutcome,
+  AttemptPlacementPort,
 } from "../../interpreter/executionScheduler.ts";
-import { asWorkloadId } from "../../interpreter/schedulerIdentity.ts";
-import type { WorkloadId } from "../../interpreter/schedulerIdentity.ts";
+import { asPlacementId } from "../../interpreter/schedulerIdentity.ts";
+import type { PlacementId } from "../../interpreter/schedulerIdentity.ts";
 import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
 import {
   checkedKubernetesWorkerLaunchConfig,
@@ -110,9 +112,9 @@ const kubernetesManifestRefusals: ReadonlySet<number> = new Set([
 function kubernetesPlaced(
   config: KubernetesWorkerLaunchConfig,
   reached: KubernetesReached,
-  workload: WorkloadId,
-): WorkerPlaced {
-  const held: WorkerPlaced = {
+  placement: PlacementId,
+): AttemptPlacementOutcome {
+  const held: AttemptPlacementOutcome = {
     placed: "Unavailable",
     retryAfterSeconds: config.unavailableRetryAfterSecs,
   };
@@ -122,17 +124,17 @@ function kubernetesPlaced(
     reached.status === 201 ||
     reached.status === 409
   )
-    return { placed: "Placed", workload };
+    return { placed: "Placed", placement };
   return kubernetesManifestRefusals.has(reached.status)
     ? { placed: "Denied", reason: "ExecutionPolicyDenied" }
     : held;
 }
 
-/** Places and deletes one bounded pod per attempt against the supplied cluster. */
+/** Places and cancels one bounded pod per attempt against the supplied cluster. */
 export function kubernetesWorkerLaunch(
   input: KubernetesWorkerLaunchConfig,
   fetcher: typeof fetch = fetch,
-): WorkerLaunchPort {
+): AttemptPlacementPort {
   const config = checkedKubernetesWorkerLaunchConfig(input);
   return {
     place: async (placement) => {
@@ -147,11 +149,15 @@ export function kubernetesWorkerLaunch(
       return kubernetesPlaced(
         config,
         reached,
-        asWorkloadId(requested.pod.metadata.name),
+        asPlacementId(requested.pod.metadata.name),
       );
     },
-    delete: async (partition, attempt) => {
-      const name = kubernetesWorkerPodName(config, partition, attempt);
+    cancel: async (attempt) => {
+      const name = kubernetesWorkerPodName(
+        config,
+        attempt.partition,
+        attempt.attempt,
+      );
       await kubernetesReach(config, fetcher, {
         method: "DELETE",
         path: `${kubernetesPodsPath(config)}/${encodeURIComponent(name)}`,
