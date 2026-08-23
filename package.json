@@ -18,7 +18,8 @@
   "scripts": {
     "check": "./.chug/tasks/ci.sh",
     "start:native-web": "node --experimental-strip-types src/roots/nativeHttp.ts",
-    "provision:project-access": "node --experimental-strip-types src/roots/provisionProjectAccess.ts"
+    "provision:project-access": "node --experimental-strip-types src/roots/provisionProjectAccess.ts",
+    "start:selector": "node --experimental-strip-types src/roots/selector.ts"
   },
   "dependencies": {
     "@ts-safeql/sql-tag": "^0.2.2",
