@@ -3586,4 +3586,11 @@ export const migrations: readonly Migration[] = [
          ${selectorServiceRole},${schedulerRole},${finalizerRole}`,
     ],
   },
+  {
+    version: 17,
+    name: "selector context account read",
+    statements: [
+      `GRANT EXECUTE ON FUNCTION ${accountIdentityFunction}(text,text) TO ${apiRole}`,
+    ],
+  },
 ];

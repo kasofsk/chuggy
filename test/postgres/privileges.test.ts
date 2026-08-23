@@ -47,10 +47,11 @@ test("every runtime role may read only the migration ledger contract", async () 
   }
 });
 
-test("only the writer may name the account a spawn request pins", async () => {
+test("only ingress and the writer may name a project's capacity account", async () => {
   const naming = `SELECT ${accountIdentityFunction}('tenant','project')`;
   assert.equal(await harness.attemptAs(ticketServiceRole, naming), undefined);
-  for (const role of [apiRole, schedulerRole]) {
+  assert.equal(await harness.attemptAs(apiRole, naming), undefined);
+  for (const role of [schedulerRole, selectorServiceRole]) {
     assert.match(
       (await harness.attemptAs(role, naming)) ?? "",
       postgresHarnessDenial(accountIdentityFunction),
