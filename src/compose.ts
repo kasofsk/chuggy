@@ -2,10 +2,21 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type pg from "pg";
 
+import { artifactRootPrecondition } from "./adapters/artifacts/artifactRoot.ts";
 import {
   artifactStore,
   type ArtifactStoreOptions,
 } from "./adapters/artifacts/artifactStore.ts";
+import {
+  credentialFiles,
+  credentialFilesPrecondition,
+  type CredentialFilesOptions,
+} from "./adapters/credentials/credentialFiles.ts";
+import {
+  gitAvailablePrecondition,
+  gitScratchWritablePrecondition,
+} from "./adapters/git/gitPrerequisites.ts";
+import { gitPromotion } from "./adapters/git/gitPromotion.ts";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
 import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
@@ -62,6 +73,8 @@ import {
   type FinalizerIdentityFactory,
 } from "./interpreter/finalizerPreparation.ts";
 import type { FinalizerService } from "./interpreter/finalizerRun.ts";
+import type { FinalizerSettings } from "./interpreter/finalizerSettings.ts";
+import type { RuntimePrecondition } from "./interpreter/serviceRuntime.ts";
 import {
   silentFinalizerTelemetry,
   type FinalizerTelemetry,
@@ -83,6 +96,7 @@ import type { ProjectStore } from "./interpreter/projectStore.ts";
 import type { ExecutionBacklogGuard } from "./interpreter/schedulerContext.ts";
 import { postgresOperationalReads } from "./adapters/postgres/operationalReads.ts";
 import type { OutputContentPort } from "./interpreter/operationsView.ts";
+import type { SelectorOperationalContextRead } from "./interpreter/selectorOperationalContext.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -202,6 +216,60 @@ export function composeFinalizerService(
   };
 }
 
+/** What one finalizer deployment must find before it runs, and the ports it finds it through. */
+export interface FinalizerRuntimeComposition {
+  readonly preconditions: readonly RuntimePrecondition[];
+  service(): FinalizerServiceRuntime;
+}
+
+/**
+ * Wires a finalizer deployment's plain settings to the git, artifact and
+ * credential ports it promotes through. The git port is built on demand,
+ * because opening its scratch refuses what `git-available` and
+ * `git-scratch-writable` are there to report.
+ */
+export function composeFinalizerRuntime(
+  settings: FinalizerSettings,
+): FinalizerRuntimeComposition {
+  const credentialOptions: CredentialFilesOptions = {
+    sources: settings.credentials,
+    ...(settings.credentialBytesMax === undefined
+      ? {}
+      : { credentialBytesMax: settings.credentialBytesMax }),
+  };
+  const credentials = credentialFiles(credentialOptions);
+  const git = settings.git;
+  return {
+    preconditions: [
+      gitAvailablePrecondition(git.environment),
+      gitScratchWritablePrecondition(git.scratchDirectory),
+      artifactRootPrecondition(settings.artifactRoot),
+      credentialFilesPrecondition(credentialOptions),
+    ],
+    service: () => ({
+      git: gitPromotion({
+        scratchDirectory: git.scratchDirectory,
+        identity: { name: git.commitName, email: git.commitEmail },
+        environment: git.environment,
+        credentials,
+        ...(git.credentialUsername === undefined
+          ? {}
+          : { credentialUsername: git.credentialUsername }),
+        ...(git.localTimeoutSecsMax === undefined
+          ? {}
+          : { localTimeoutSecsMax: git.localTimeoutSecsMax }),
+        ...(git.remoteTimeoutSecsMax === undefined
+          ? {}
+          : { remoteTimeoutSecsMax: git.remoteTimeoutSecsMax }),
+        ...(git.promotionTimeoutSecsMax === undefined
+          ? {}
+          : { promotionTimeoutSecsMax: git.promotionTimeoutSecsMax }),
+      }),
+      artifactRoot: settings.artifactRoot,
+    }),
+  };
+}
+
 /** Wires the authenticated web application to API-role PostgreSQL ports. */
 export function composeNativeWeb(
   apiPool: pg.Pool,
@@ -212,6 +280,7 @@ export function composeNativeWeb(
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
   inventory?: ProjectInventory,
   outputContents?: OutputContentPort,
+  selectorContexts?: SelectorOperationalContextRead,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
   return nativeWeb(
@@ -226,6 +295,7 @@ export function composeNativeWeb(
       authorizedProjectInventory(access, postgresProjectInventory(apiPool)),
     postgresOperationalReads(apiPool),
     outputContents,
+    selectorContexts,
   );
 }
 

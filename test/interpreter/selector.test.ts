@@ -6,6 +6,7 @@ import {
   observeSelectorProject,
   runObservedSelectorCycle,
   runSelectorCycle,
+  selectorBacklogsAdmitDispatch,
   type SelectorRuntimeControlStore,
   type SelectorRuntimeSettings,
   type SelectorPolicyExecution,
@@ -59,25 +60,42 @@ const delivery: SelectorDelivery = {
 };
 
 const operationalContext = {
+  version: 2,
   observedAt: "2026-08-21T12:00:00.000Z",
   observedAtEpochMs: 1_777_000_000_000,
   reviewFeedback: [],
-  activeWork: [],
-  projectCapacity: {
+  activeWork: { queued: 0, admitted: 0, launching: 0, running: 0 },
+  capacity: {
     account: "project",
-    allocated: 0,
-    limit: 4,
-    available: 4,
+    accountMaximum: 4,
+    accountActive: 0,
+    accountReservationDeficit: 0,
+    clusterSlotsMax: 10,
+    clusterActive: 2,
   },
-  clusterCapacity: {
-    visibility: "AuthorizedAggregate",
-    allocated: 2,
-    limit: 10,
-    available: 8,
-    pressure: "Normal",
+  backlog: {
+    project: { queued: 0, ceiling: 100 },
+    installation: { queued: 0, ceiling: 1_000 },
   },
-  executionBacklog: { queued: 0, ceiling: 100, dispatchAllowed: true },
 } as const;
+
+test("selector backlog admission requires room under both ceilings", () => {
+  assert.equal(selectorBacklogsAdmitDispatch(operationalContext.backlog), true);
+  assert.equal(
+    selectorBacklogsAdmitDispatch({
+      ...operationalContext.backlog,
+      project: { queued: 100, ceiling: 100 },
+    }),
+    false,
+  );
+  assert.equal(
+    selectorBacklogsAdmitDispatch({
+      ...operationalContext.backlog,
+      installation: { queued: 1_000, ceiling: 1_000 },
+    }),
+    false,
+  );
+});
 
 const runtimeSettings: SelectorRuntimeSettings = {
   revision: 1,
@@ -1099,8 +1117,8 @@ test("unpersistable selector input is rejected before policy execution", async (
       operationalContext: () =>
         Promise.resolve({
           ...operationalContext,
-          projectCapacity: {
-            ...operationalContext.projectCapacity,
+          capacity: {
+            ...operationalContext.capacity,
             account: "x".repeat(1_100_000),
           },
         }),

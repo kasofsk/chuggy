@@ -40,9 +40,13 @@ const retainedImageRequired = [
   { version: 14, name: "native project access" },
   { version: 15, name: "native operational reads" },
 ] as const;
-const retainedImageContract = runtimeSchemaContract(retainedImageRequired, [
+const publishingImageRequired = [
   ...retainedImageRequired,
   { version: 16, name: "runtime schema readiness" },
+] as const;
+const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
+  ...publishingImageRequired,
+  { version: 17, name: "selector context account read" },
 ]);
 
 function databaseUrl(database: string): string {
@@ -115,6 +119,33 @@ async function seedI2(subject: pg.Pool): Promise<void> {
   await subject.query(
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
      VALUES ('tenant','project',1,'Pending',1)`,
+  );
+}
+
+async function assertDivergentMigrationRefused(
+  subject: pg.Pool,
+): Promise<void> {
+  const divergentRetained = runtimeSchemaContract(
+    retainedImageContract.required,
+    [
+      ...retainedImageContract.compatible.slice(0, -1),
+      { version: 17, name: "unknown migration" },
+    ],
+  );
+  assert.deepEqual(
+    await postgresMigrateCompatible(subject, {
+      current: currentRuntimeSchemaContract,
+      retainedPrevious: divergentRetained,
+    }),
+    { migrated: "CouldNotRun" },
+  );
+  assert.deepEqual(
+    (
+      await subject.query<{ version: number }>(
+        "SELECT version FROM schema_migration ORDER BY version DESC LIMIT 1",
+      )
+    ).rows,
+    [{ version: 16 }],
   );
 }
 
@@ -310,7 +341,7 @@ test("an incompatible rollout leaves an untouched database untouched", async () 
   }
 });
 
-test("a staged migration keeps the retained image schema-compatible", async () => {
+test("a staged migration advances after its publishing image is retained", async () => {
   const database = `chuggy_stage_${randomUUID().replaceAll("-", "")}`;
   const admin = postgresPool(postgresHarnessUrl());
   await admin.query(`CREATE DATABASE ${database}`);
@@ -325,12 +356,13 @@ test("a staged migration keeps the retained image schema-compatible", async () =
         [migration.version, migration.name],
       );
     }
+    await assertDivergentMigrationRefused(subject);
     assert.deepEqual(
       await postgresMigrateCompatible(subject, {
         current: currentRuntimeSchemaContract,
         retainedPrevious: retainedImageContract,
       }),
-      { migrated: "Applied", versions: [16] },
+      { migrated: "Applied", versions: [17] },
     );
     assert.equal(
       await schemaCompatibilityPrecondition(

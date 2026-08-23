@@ -21,7 +21,7 @@ async function filterProject() {
 test("public operations omit commands, authority, and storage coordination", () => {
   const resource = publicOperation({
     operation: "operation",
-    accepted_at: "2026-01-01T00:00:00Z",
+    accepted_at: "2026-01-01 00:00:00.123456+00",
     state: "Journaled",
     decided_seq: "7",
     outcome_code: null,
@@ -30,7 +30,7 @@ test("public operations omit commands, authority, and storage coordination", () 
   });
   assert.deepEqual(resource, {
     operation: "operation",
-    acceptedAt: "2026-01-01T00:00:00Z",
+    acceptedAt: "2026-01-01T00:00:00.123456+00:00",
     state: "Succeeded",
     decidedSequence: 7,
   });
@@ -43,7 +43,7 @@ test("public operations expose an authoring-fence refusal", () => {
   assert.deepEqual(
     publicOperation({
       operation: "release-race",
-      accepted_at: "2026-01-01T00:00:00Z",
+      accepted_at: "2026-01-01 00:00:00+00",
       state: "Refused",
       decided_seq: null,
       outcome_code: "AuthoringChanged",
@@ -52,7 +52,7 @@ test("public operations expose an authoring-fence refusal", () => {
     }),
     {
       operation: "release-race",
-      acceptedAt: "2026-01-01T00:00:00Z",
+      acceptedAt: "2026-01-01T00:00:00+00:00",
       state: "Refused",
       code: "AuthoringChanged",
       refusedHead: 3,

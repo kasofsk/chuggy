@@ -19,6 +19,7 @@ import type {
   ProjectRead,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
+import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
 import type {
   ExecutionPage,
   ExecutionResource,
@@ -37,6 +38,13 @@ import {
   nativeHttpError,
   nativeHttpMediaType,
 } from "./contract.ts";
+import {
+  encodeDispatchViewResponse,
+  encodeNotificationsResponse,
+  encodeOperationResponse,
+  encodeProjectInventoryResponse,
+  encodeProposalSubmissionResponse,
+} from "./codecs.ts";
 
 export interface NativeHttpResponse {
   readonly status: number;
@@ -137,10 +145,10 @@ function acceptedResponse(
     case "Original":
       return response(
         202,
-        {
+        encodeProposalSubmissionResponse({
           operation: accepted.operation.operation,
           state: accepted.operation.state,
-        },
+        }),
         {
           location: operationPath(partition, accepted.operation.operation),
         },
@@ -191,7 +199,7 @@ export function operationResponse(
 ): NativeHttpResponse {
   return resource === undefined
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, resource);
+    : response(200, encodeOperationResponse(resource));
 }
 
 export function projectResponse(result: ProjectRead): NativeHttpResponse {
@@ -221,6 +229,14 @@ export function ticketResponse(
 
 export function operationalStatusResponse(
   result: AuthorizedResult<ProjectOperationalStatus>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, result.value);
+}
+
+export function selectorOperationalContextResponse(
+  result: AuthorizedResult<SelectorOperationalContext>,
 ): NativeHttpResponse {
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
@@ -308,19 +324,22 @@ export function notificationsResponse(
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Authorized":
-      return response(200, result.value);
+      return response(200, encodeNotificationsResponse(result.value));
   }
 }
 
 export function inventoryResponse(
   page: ProjectInventoryPage,
 ): NativeHttpResponse {
-  return response(200, {
-    projects: page.projects,
-    ...(page.nextAfter === undefined
-      ? {}
-      : { nextCursor: encodeInventoryCursor(page.nextAfter) }),
-  });
+  return response(
+    200,
+    encodeProjectInventoryResponse({
+      projects: page.projects,
+      ...(page.nextAfter === undefined
+        ? {}
+        : { nextCursor: encodeInventoryCursor(page.nextAfter) }),
+    }),
+  );
 }
 
 function resourcePath(
@@ -489,5 +508,5 @@ export function dispatchViewResponse(
 ): NativeHttpResponse {
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, result.value);
+    : response(200, encodeDispatchViewResponse(result.value));
 }

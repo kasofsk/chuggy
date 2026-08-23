@@ -1,6 +1,5 @@
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
 import type {
-  Accepted,
   Authority,
   OperationId,
   TicketCommand,
@@ -158,7 +157,37 @@ export interface SelectorObservationSource {
   operationalContext(partition: Partition): Promise<SelectorOperationalContext>;
 }
 
-export interface SelectorOperationalContext {
+export interface SelectorOperationalContextV2 {
+  readonly version: 2;
+  readonly observedAt: string;
+  readonly observedAtEpochMs: number;
+  readonly reviewFeedback: readonly SelectorReviewFeedback[];
+  readonly activeWork: {
+    readonly queued: number;
+    readonly admitted: number;
+    readonly launching: number;
+    readonly running: number;
+  };
+  readonly capacity: {
+    readonly account: string;
+    readonly accountMaximum: number;
+    readonly accountActive: number;
+    readonly accountReservationDeficit: number;
+    readonly clusterSlotsMax: number;
+    readonly clusterActive: number;
+  };
+  readonly backlog: {
+    readonly project: { readonly queued: number; readonly ceiling: number };
+    readonly installation: {
+      readonly queued: number;
+      readonly ceiling: number;
+    };
+  };
+}
+
+/** Historical policy input retained exactly as written before context versioning. */
+export interface SelectorOperationalContextV1 {
+  readonly version: 1;
   readonly observedAt: string;
   readonly observedAtEpochMs: number;
   readonly reviewFeedback: readonly SelectorReviewFeedback[];
@@ -186,6 +215,19 @@ export interface SelectorOperationalContext {
     readonly ceiling: number;
     readonly dispatchAllowed: boolean;
   };
+}
+
+export type SelectorOperationalContext =
+  SelectorOperationalContextV1 | SelectorOperationalContextV2;
+
+/** Whether both scheduler-owned backlog constraints currently admit dispatch. */
+export function selectorBacklogsAdmitDispatch(
+  backlog: SelectorOperationalContextV2["backlog"],
+): boolean {
+  return (
+    backlog.project.queued < backlog.project.ceiling &&
+    backlog.installation.queued < backlog.installation.ceiling
+  );
 }
 
 export interface SelectorObservation {
@@ -1142,8 +1184,17 @@ async function boundedCandidatePage(
 }
 
 export interface SelectorTicketService {
-  submit(delivery: SelectorDelivery): Promise<Accepted>;
+  submit(delivery: SelectorDelivery): Promise<SelectorProposalAcceptance>;
 }
+
+export type SelectorProposalAcceptance =
+  | { readonly accepted: "Accepted" | "Original" }
+  | { readonly accepted: "IdempotencyConflict" | "InvalidCommand" }
+  | {
+      readonly accepted: "Backpressure" | "Unavailable";
+      readonly retryAfterSeconds: number;
+    }
+  | { readonly accepted: "NotAdmitted" };
 
 export interface SelectorOperationSource {
   operation(partition: Partition, operation: OperationId): Promise<unknown>;

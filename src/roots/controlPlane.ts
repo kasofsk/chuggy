@@ -238,6 +238,7 @@ export function selectorProcessRoot(
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
   identities: SelectorIdentityFactory,
+  additional: readonly RuntimePrecondition[] = [],
 ): ServiceRuntime {
   const pool = processPool(config.database);
   const service = composeSelectorRuntime(
@@ -253,7 +254,10 @@ export function selectorProcessRoot(
       service,
       {
         pool,
-        additional: [postgresRolePrecondition(pool, selectorServiceRole)],
+        additional: [
+          postgresRolePrecondition(pool, selectorServiceRole),
+          ...additional,
+        ],
       },
       config.runtime,
     ),
