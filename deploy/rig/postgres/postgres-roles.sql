@@ -47,6 +47,14 @@
 -- the migration cannot take it for itself: granting a role needs admin option
 -- on it, which a CREATEROLE role holds only over the roles it created itself.
 --
+-- AND IT NEEDS CREATE ON THE SCHEMA, not the USAGE every other group role gets.
+-- A migration hands it those functions with ALTER FUNCTION ... OWNER TO, and
+-- PostgreSQL requires the receiving owner to hold CREATE on the schema the
+-- object lives in — so without it the migration stops at the first such
+-- statement under the migrating identity, on a database at any version. It
+-- widens nothing: chuggy_owner is its only member and already holds CREATE, and
+-- the functions it owns create no objects.
+--
 -- PASSWORDS COME FROM THE ENVIRONMENT, so none of them is in this file and none
 -- is in an argument list either — an argument to psql is in the process table
 -- for anyone on the host to read, and a deployment secret has no business
@@ -89,7 +97,8 @@
 -- a privilege instead.
 --
 -- A PROCESS WITH TWO POOLS STILL HAS ONE CREDENTIAL. The API opens a second
--- connection for the selector-context read and refuses to start unless it
+-- connection for the selector context — the proposal reviews it reads and the
+-- approvals and rejections it records — and refuses to start unless it
 -- becomes `chuggy_selector_review`, which is a group `chuggy_api` is not a
 -- member of and is a real widening of `chuggy_api_login`. It is the widening
 -- that process needs, and holding it through the group leaves what it reaches
@@ -201,6 +210,7 @@ SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_nam
 \gexec
 
 GRANT USAGE, CREATE ON SCHEMA public TO chuggy_owner;
+GRANT CREATE ON SCHEMA public TO chuggy_boundary_owner;
 GRANT USAGE ON SCHEMA public TO chuggy_boundary_owner, chuggy_ticket_service, chuggy_api,
                                 chuggy_selector_service, chuggy_selector_control,
                                 chuggy_selector_review, chuggy_scheduler, chuggy_finalizer;
