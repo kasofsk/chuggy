@@ -54,7 +54,7 @@ test("a release contract distinguishes required migrations from staged compatibi
 test("the current runtime contract is the declared migration history", () => {
   const declared = migrations.map(({ version, name }) => ({ version, name }));
   assert.deepEqual(currentRuntimeSchemaContract, {
-    required: declared.slice(0, -1),
+    required: declared,
     compatible: declared,
   });
 });

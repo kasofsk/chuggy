@@ -319,7 +319,6 @@ test("an incompatible rollout leaves an untouched database untouched", async () 
   await admin.query(`CREATE DATABASE ${database}`);
   const subject = postgresPool(databaseUrl(database));
   try {
-    await assertDivergentMigrationRefused(subject);
     assert.deepEqual(
       await postgresMigrateCompatible(subject, {
         current: currentRuntimeSchemaContract,
@@ -357,6 +356,7 @@ test("a staged migration advances after its publishing image is retained", async
         [migration.version, migration.name],
       );
     }
+    await assertDivergentMigrationRefused(subject);
     assert.deepEqual(
       await postgresMigrateCompatible(subject, {
         current: currentRuntimeSchemaContract,
