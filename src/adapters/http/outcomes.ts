@@ -25,6 +25,7 @@ import type {
 } from "../../interpreter/operationInbox.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
+import type { SelectorExecutionContext } from "../../interpreter/schedulerContext.ts";
 import {
   encodeInventoryCursor,
   nativeHttpError,
@@ -421,6 +422,15 @@ export function draftDeletionResponse(
 
 export function dispatchViewResponse(
   result: AuthorizedResult<DispatchViewPage>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, result.value);
+}
+
+/** The advisory execution context, whose counts are read afresh and never cached. */
+export function executionContextResponse(
+  result: AuthorizedResult<SelectorExecutionContext>,
 ): NativeHttpResponse {
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))

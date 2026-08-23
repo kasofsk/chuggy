@@ -46,6 +46,7 @@ export const nativeHttpRoutes = {
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
   dispatchView: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/dispatch-view`,
+  executionContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-context`,
 } as const;
 
 export function nativeHttpContractDocument(): unknown {

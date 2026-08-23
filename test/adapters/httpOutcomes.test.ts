@@ -21,6 +21,7 @@ import {
   draftDeletionResponse,
   draftResponse,
   draftRevisionResponse,
+  executionContextResponse,
   inventoryResponse,
   notificationsResponse,
   operationResponse,
@@ -273,4 +274,36 @@ test("dispatch view authorization preserves reset and page outcomes", () => {
     }).body,
     { result: "Reset" },
   );
+});
+
+/** The whole advisory context, every count of it distinct so a swapped field shows. */
+const executionContext = {
+  activeWork: { partition, queued: 7, admitted: 5, launching: 3, running: 2 },
+  capacity: {
+    clusterSlotsMax: 64,
+    clusterActive: 11,
+    accountMaximum: 8,
+    accountActive: 6,
+    accountReservationDeficit: 1,
+  },
+} as const;
+
+test("the execution context is 404 when inaccessible and uncacheable when not", () => {
+  const absent = executionContextResponse({ result: "NotFound" });
+  assert.equal(absent.status, 404);
+  assert.deepEqual(absent.body, {
+    error: { code: "NotFound", message: "Resource not found." },
+  });
+  const found = executionContextResponse({
+    result: "Authorized",
+    value: executionContext,
+  });
+  assert.deepEqual(found, {
+    status: 200,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    body: executionContext,
+  });
 });

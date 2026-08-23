@@ -38,6 +38,8 @@ import {
   dispatchNeedsExecutionHeadroom,
   type BacklogScope,
   type ExecutionBacklogGuard,
+  type ExecutionContextRead,
+  type SelectorExecutionContext,
 } from "./schedulerContext.ts";
 import {
   checkedNotificationCursor,
@@ -273,6 +275,10 @@ export interface NativeWeb {
     partition: Partition,
     query: DispatchViewQuery,
   ): Promise<AuthorizedResult<DispatchViewPage>>;
+  executionContext(
+    principal: Principal,
+    partition: Partition,
+  ): Promise<AuthorizedResult<SelectorExecutionContext>>;
   projectInventory(
     principal: Principal,
     after: Partition | undefined,
@@ -414,6 +420,7 @@ export function nativeWeb(
   authoring: AuthoringStore,
   notifications: NotificationStore,
   backlog: ExecutionBacklogGuard,
+  executionContexts: ExecutionContextRead,
   dispatchViews?: DispatchViewStore,
   inventory?: ProjectInventory,
 ): NativeWeb {
@@ -461,6 +468,13 @@ export function nativeWeb(
         ),
       };
     },
+    executionContext: async (principal, partition) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await executionContexts.context(partition),
+          },
     projectInventory: async (principal, after, limit) => {
       if (inventory === undefined)
         throw new Error("native web: no project inventory was composed");

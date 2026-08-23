@@ -23,6 +23,7 @@ import {
   allBacklogScopes,
   openExecutionBacklogGuard,
   type ExecutionBacklogGuard,
+  type ExecutionContextRead,
 } from "../../src/interpreter/schedulerContext.ts";
 import {
   asIdempotencyKey,
@@ -42,21 +43,9 @@ const authority = {
   subject: asAuthoritySubject("internal-subject"),
 };
 
-function boundary(
-  allowed: boolean,
-  backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
-): {
-  readonly web: ReturnType<typeof nativeWeb>;
-  readonly calls: string[];
-} {
-  const calls: string[] = [];
-  const access: ProjectAccess = {
-    authorize: (_principal, _partition, kind) => {
-      calls.push(`authorize:${kind}`);
-      return Promise.resolve(allowed ? authority : undefined);
-    },
-  };
-  const reads: NativeReadStore = {
+/** The projection reads a boundary answers, each recording that it was reached. */
+function boundaryReads(calls: string[]): NativeReadStore {
+  return {
     operation: () => {
       calls.push("read:operation");
       return Promise.resolve({
@@ -73,6 +62,48 @@ function boundary(
       });
     },
   };
+}
+
+/** The advisory context a boundary reads, recording that it was asked at all. */
+function boundaryExecutionContexts(calls: string[]): ExecutionContextRead {
+  return {
+    context: (asked) => {
+      calls.push("read:executionContext");
+      return Promise.resolve({
+        activeWork: {
+          partition: asked,
+          queued: 1,
+          admitted: 0,
+          launching: 0,
+          running: 0,
+        },
+        capacity: {
+          clusterSlotsMax: 4,
+          clusterActive: 1,
+          accountMaximum: 2,
+          accountActive: 1,
+          accountReservationDeficit: 0,
+        },
+      });
+    },
+  };
+}
+
+function boundary(
+  allowed: boolean,
+  backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
+): {
+  readonly web: ReturnType<typeof nativeWeb>;
+  readonly calls: string[];
+} {
+  const calls: string[] = [];
+  const access: ProjectAccess = {
+    authorize: (_principal, _partition, kind) => {
+      calls.push(`authorize:${kind}`);
+      return Promise.resolve(allowed ? authority : undefined);
+    },
+  };
+  const reads = boundaryReads(calls);
   const inbox: OperationInbox = {
     accept: () => {
       calls.push("accept");
@@ -105,7 +136,15 @@ function boundary(
     },
   };
   return {
-    web: nativeWeb(access, reads, inbox, authoring, notifications, backlog),
+    web: nativeWeb(
+      access,
+      reads,
+      inbox,
+      authoring,
+      notifications,
+      backlog,
+      boundaryExecutionContexts(calls),
+    ),
     calls,
   };
 }
@@ -280,4 +319,16 @@ test("an unbacklogged project reaches acceptance for dispatch", async () => {
     "Authorized",
   );
   assert.deepEqual(calls, ["authorize:DispatchTicket", "accept"]);
+});
+
+test("the advisory execution context is authorized before the store is asked", async () => {
+  const denied = boundary(false);
+  assert.deepEqual(await denied.web.executionContext(principal, partition), {
+    result: "NotFound",
+  });
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
+  const allowed = boundary(true);
+  const found = await allowed.web.executionContext(principal, partition);
+  assert.equal(found.result, "Authorized");
+  assert.deepEqual(allowed.calls, ["authorize:Read", "read:executionContext"]);
 });

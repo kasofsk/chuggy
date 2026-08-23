@@ -7,7 +7,9 @@ import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
+import { executionCapacityDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
+import type { SelectorExecutionContext } from "../../src/interpreter/schedulerContext.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   projectWriterDecide,
@@ -89,6 +91,43 @@ async function acceptAndRetry(
   return root;
 }
 
+/**
+ * What the advisory context answers over real HTTP for a project that has
+ * dispatched nothing. Every count of its own work is zero and every capacity
+ * number is the provisioning default, except the cluster total, which this
+ * database shares with whatever else its worker has run.
+ */
+async function observedExecutionContext(
+  root: string,
+  partition: Partition,
+): Promise<void> {
+  const found = await fetch(`${root}/execution-context`, {
+    headers: { authorization: "Bearer token" },
+  });
+  assert.equal(found.status, 200);
+  assert.equal(found.headers.get("cache-control"), "no-store");
+  assert.match(
+    found.headers.get("content-type") ?? "",
+    /^application\/vnd\.chuggy\.v1\+json\b/u,
+  );
+  const context = (await found.json()) as SelectorExecutionContext;
+  assert.deepEqual(context.activeWork, {
+    partition,
+    queued: 0,
+    admitted: 0,
+    launching: 0,
+    running: 0,
+  });
+  const { clusterActive, ...policy } = context.capacity;
+  assert.ok(Number.isSafeInteger(clusterActive) && clusterActive >= 0);
+  assert.deepEqual(policy, {
+    clusterSlotsMax: executionCapacityDefaults.clusterSlotsMax,
+    accountMaximum: executionCapacityDefaults.accountMaximum,
+    accountActive: 0,
+    accountReservationDeficit: executionCapacityDefaults.accountReserved,
+  });
+}
+
 test("real HTTP ingress accepts once and observes the separate writer", async () => {
   const harness = await postgresHarnessOpen();
   const partition = await postgresHarnessProject(
@@ -121,6 +160,7 @@ test("real HTTP ingress accepts once and observes the separate writer", async ()
       [{ role: apiRole }],
     );
     const root = await acceptAndRetry(address, harness, partition);
+    await observedExecutionContext(root, partition);
     const lease = await postgresHarnessHeld(harness.store, partition, "http");
     const input = await harness.discovery.next(partition, 300);
     assert.ok(input !== undefined);

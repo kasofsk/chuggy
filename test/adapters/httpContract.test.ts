@@ -30,6 +30,7 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/drafts",
     "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
     "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
+    "/api/v1/tenants/:tenant/projects/:project/execution-context",
   ]);
 });
 

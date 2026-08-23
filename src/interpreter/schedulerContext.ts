@@ -3,12 +3,16 @@
  * execution scheduler: bounded project-safe active-work and advisory capacity
  * context, and the authoritative hard execution-backlog guard over dispatch.
  *
- * THE SELECTOR IS THE CONTEXT'S INTENDED READER AND HAS NO ROUTE TO IT HERE,
- * which is why the names below say selector and why this says the rest. 006
- * makes the context selector-facing; in this tree the functions that answer it
- * are granted to the API and ticket-service roles alone, `NativeWeb` publishes
- * no method returning one, and nothing composes the read. What the selector
- * does learn is the guard's verdict, as the answer to its own `ProposeDispatch`.
+ * THE SELECTOR IS THE CONTEXT'S INTENDED READER AND AN OPERATOR IS ITS SECOND,
+ * which is why the names below still say selector: what a selector may weigh is
+ * what bounds this shape, and a reader who is not one observes that aggregate
+ * rather than widening it. 006 makes the context selector-facing; in this tree
+ * the functions that answer it are granted to the API and ticket-service roles
+ * alone, and `NativeWeb.executionContext` publishes it to a project member
+ * holding `Read`, so an operations UI can show the queue depth and the headroom
+ * a project is actually working against. issue #194 asks for exactly that
+ * resource. What the selector itself learns is the guard's verdict, as the
+ * answer to its own `ProposeDispatch`.
  *
  * THE CONTEXT IS ADVISORY AND THE GUARD IS AUTHORITATIVE, and they are
  * separate ports for that reason. issue #180

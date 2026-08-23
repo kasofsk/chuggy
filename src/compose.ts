@@ -11,6 +11,7 @@ import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
 import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
+import { postgresExecutionContextRead } from "./adapters/postgres/schedulerContext.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
 import {
   postgresSelectorProposalReviews,
@@ -218,6 +219,7 @@ export function composeNativeWeb(
     postgresAuthoring(apiPool),
     postgresNotifications(apiPool),
     backlog,
+    postgresExecutionContextRead(apiPool),
     postgresDispatchViews(apiPool),
     inventory ??
       authorizedProjectInventory(access, postgresProjectInventory(apiPool)),

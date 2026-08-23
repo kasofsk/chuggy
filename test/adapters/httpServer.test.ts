@@ -24,6 +24,7 @@ type ServedNativeWeb = Pick<
   | "deleteDraft"
   | "dispatchView"
   | "draft"
+  | "executionContext"
   | "notifications"
   | "operation"
   | "project"
@@ -32,12 +33,19 @@ type ServedNativeWeb = Pick<
   | "submit"
 >;
 
-function fakeWeb(calls: string[]): ServedNativeWeb {
+/** The authoring half of the fake, which every case reaches through `fakeWeb`. */
+function fakeWebAuthoring(
+  calls: string[],
+): Pick<
+  ServedNativeWeb,
+  | "configuration"
+  | "createConfiguration"
+  | "createDraft"
+  | "deleteDraft"
+  | "draft"
+  | "reviseDraft"
+> {
   return {
-    cancel: (_principal, _partition, operation) => {
-      calls.push(`cancel:${operation}`);
-      return Promise.resolve({ result: "NotFound" });
-    },
     configuration: (_principal, _partition, revision) => {
       calls.push(`configuration:${revision}`);
       return Promise.resolve(undefined);
@@ -54,13 +62,31 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
       calls.push(`deleteDraft:${String(input.expectedVersion)}`);
       return Promise.resolve({ result: "NotFound" });
     },
+    draft: (_principal, _partition, ticket) => {
+      calls.push(`draft:${String(ticket)}`);
+      return Promise.resolve(undefined);
+    },
+    reviseDraft: (_principal, input) => {
+      calls.push(`reviseDraft:${String(input.expectedVersion)}`);
+      return Promise.resolve({ result: "NotFound" });
+    },
+  };
+}
+
+function fakeWeb(calls: string[]): ServedNativeWeb {
+  return {
+    ...fakeWebAuthoring(calls),
+    cancel: (_principal, _partition, operation) => {
+      calls.push(`cancel:${operation}`);
+      return Promise.resolve({ result: "NotFound" });
+    },
     dispatchView: (_principal, _partition, query) => {
       calls.push(`dispatchView:${String(query.limit)}`);
       return Promise.resolve({ result: "NotFound" });
     },
-    draft: (_principal, _partition, ticket) => {
-      calls.push(`draft:${String(ticket)}`);
-      return Promise.resolve(undefined);
+    executionContext: (_principal, partition) => {
+      calls.push(`executionContext:${partition.project}`);
+      return Promise.resolve({ result: "NotFound" });
     },
     notifications: (_principal, _partition, cursor) => {
       calls.push(
@@ -86,10 +112,6 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
     projectInventory: (_principal, _after, limit) => {
       calls.push(`inventory:${String(limit)}`);
       return Promise.resolve({ projects: [] });
-    },
-    reviseDraft: (_principal, input) => {
-      calls.push(`reviseDraft:${String(input.expectedVersion)}`);
-      return Promise.resolve({ result: "NotFound" });
     },
     submit: (_principal, submission) => {
       calls.push(`submit:${submission.command.command}`);
@@ -313,6 +335,29 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "deleteDraft:3",
     "dispatchView:4",
   ]);
+});
+
+test("the execution context route takes no query and reaches the boundary once", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const url = "/api/v1/tenants/tenant/projects/project/execution-context";
+  const authorization = { authorization: "Bearer valid" };
+  const found = await app.inject({ url, headers: authorization });
+  assert.equal(found.statusCode, 404);
+  assert.equal(found.headers["cache-control"], "no-store");
+  const contentType = found.headers["content-type"];
+  assert.ok(
+    typeof contentType === "string" &&
+      contentType.startsWith("application/vnd.chuggy.v1+json"),
+  );
+  assert.deepEqual(calls, ["executionContext:project"]);
+  assert.equal(
+    (await app.inject({ url: `${url}?limit=1`, headers: authorization }))
+      .statusCode,
+    400,
+  );
+  assert.equal((await app.inject({ url })).statusCode, 401);
+  assert.deepEqual(calls, ["executionContext:project"]);
 });
 
 test("the bearer scheme is matched without regard to its case", async () => {

@@ -31,6 +31,7 @@ import {
   draftDeletionResponse,
   draftResponse,
   draftRevisionResponse,
+  executionContextResponse,
   failureResponse,
   inventoryResponse,
   notificationsResponse,
@@ -67,6 +68,7 @@ type InitialNativeWeb = Pick<
   | "deleteDraft"
   | "dispatchView"
   | "draft"
+  | "executionContext"
   | "notifications"
   | "operation"
   | "project"
@@ -452,6 +454,23 @@ function registerDispatchView(
   );
 }
 
+function registerExecutionContext(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  app.get(
+    "/api/v1/tenants/:tenant/projects/:project/execution-context",
+    async (request, reply) => {
+      fieldsOnly(request.query, []);
+      const result = await web.executionContext(
+        principalOf(request),
+        partitionOf(request),
+      );
+      send(reply, executionContextResponse(result));
+    },
+  );
+}
+
 function registerNotifications(
   app: FastifyInstance,
   web: InitialNativeWeb,
@@ -508,6 +527,7 @@ export function createNativeHttpApp(
   registerConfigurations(app, web);
   registerDrafts(app, web);
   registerDispatchView(app, web);
+  registerExecutionContext(app, web);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));
   });
