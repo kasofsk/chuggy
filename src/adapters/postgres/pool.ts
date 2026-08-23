@@ -199,7 +199,7 @@ export type PostgresCompatibleMigration =
 
 class IncompatibleMigration extends Error {}
 
-function postgresCompatibleTarget(
+function postgresMigrateCompatibleTarget(
   deployment: RuntimeDeploymentSchema,
 ): readonly RuntimeSchemaMigration[] {
   const length = Math.min(
@@ -223,7 +223,7 @@ export async function postgresMigrateCompatible(
       );
       await client.query(migrationLedger);
       const applied = await postgresAppliedMigrations(client);
-      const target = postgresCompatibleTarget(deployment);
+      const target = postgresMigrateCompatibleTarget(deployment);
       const plan = runtimeMigrationPlan(applied, target, deployment);
       if (plan.planned === "Incompatible") throw new IncompatibleMigration();
       const pending = new Set(plan.pending.map(({ version }) => version));
