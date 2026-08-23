@@ -59,6 +59,17 @@ test("selector context client authenticates and strictly parses the response", a
 });
 
 test("selector context client refuses oversized responses", async () => {
+  let reads = 0;
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      reads += 1;
+      controller.enqueue(new Uint8Array([1]));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
   const source = selectorContextHttp(
     {
       baseUrl: "https://native.example/",
@@ -66,7 +77,7 @@ test("selector context client refuses oversized responses", async () => {
       requestTimeoutMs: 1_000,
       responseBytesMax: 1,
     },
-    () => Promise.resolve(Response.json(body)),
+    () => Promise.resolve(new Response(stream)),
   );
   await assert.rejects(
     source.context({
@@ -75,4 +86,8 @@ test("selector context client refuses oversized responses", async () => {
     }),
     /byte bound/u,
   );
+  const stoppedAt = reads;
+  await Promise.resolve();
+  assert.equal(reads, stoppedAt);
+  assert.equal(cancelled, true);
 });

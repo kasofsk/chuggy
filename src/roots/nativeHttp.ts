@@ -19,6 +19,7 @@ import { postgresExecutionContextRead } from "../adapters/postgres/schedulerCont
 import { postgresSelectorProposalReviews } from "../adapters/postgres/selector.ts";
 import { selectorOperationalContextRead } from "../interpreter/selectorOperationalContext.ts";
 import { selectorReviewRole } from "../adapters/postgres/schema.ts";
+import { pathToFileURL } from "node:url";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -107,14 +108,28 @@ async function apiDatabaseReady(
   }
 }
 
-async function selectorReviewDatabaseReady(
+export async function selectorReviewDatabaseReady(
   pool: ReturnType<typeof postgresPool>,
 ): Promise<boolean> {
   try {
-    const found = await pool.query<{ current_role: string }>(
-      "SELECT current_user AS current_role",
+    const found = await pool.query<{
+      current_role: string;
+      review_feedback_readable: boolean;
+    }>(
+      `SELECT current_user AS current_role,
+         has_table_privilege(current_user,'selector_proposal_review','SELECT')
+           AS review_feedback_readable`,
     );
-    return found.rows[0]?.current_role === selectorReviewRole;
+    const row = found.rows[0];
+    if (
+      row?.current_role !== selectorReviewRole ||
+      !row.review_feedback_readable
+    )
+      return false;
+    return schemaCompatibilityPrecondition(
+      postgresRuntimeSchema(pool),
+      currentRuntimeSchemaContract,
+    ).check(new AbortController().signal);
   } catch {
     return false;
   }
@@ -160,13 +175,30 @@ function closePools(
   return Promise.all([pool.end(), selectorReviewPool.end()]);
 }
 
+function nativeReadiness(
+  pool: ReturnType<typeof postgresPool>,
+  selectorReviewPool: ReturnType<typeof postgresPool>,
+) {
+  return {
+    ready: async () =>
+      (await apiDatabaseReady(pool)) &&
+      (await selectorReviewDatabaseReady(selectorReviewPool)),
+  };
+}
+
+function nativePools() {
+  return {
+    pool: postgresPool(requiredEnvironment(databaseUrlVariable)),
+    selectorReviewPool: postgresPool(
+      requiredEnvironment(selectorReviewDatabaseUrlVariable),
+    ),
+  };
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
-  const pool = postgresPool(requiredEnvironment(databaseUrlVariable));
-  const selectorReviewPool = postgresPool(
-    requiredEnvironment(selectorReviewDatabaseUrlVariable),
-  );
+  const { pool, selectorReviewPool } = nativePools();
   if (!(await apiDatabaseReady(pool))) {
     await Promise.all([pool.end(), selectorReviewPool.end()]);
     throw new Error(
@@ -197,9 +229,11 @@ async function main(): Promise<void> {
     artifactStore({ root: requiredEnvironment(artifactRootVariable) }),
     selectorContextSource(pool, selectorReviewPool),
   );
-  const app = createNativeHttpApp(web, authentication, {
-    ready: () => apiDatabaseReady(pool),
-  });
+  const app = createNativeHttpApp(
+    web,
+    authentication,
+    nativeReadiness(pool, selectorReviewPool),
+  );
   app.addHook("onClose", () => closePools(pool, selectorReviewPool));
   const drainMs = positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000);
   let shutdownStarted = false;
@@ -231,9 +265,13 @@ async function main(): Promise<void> {
   });
 }
 
-await main().catch((failure: unknown) => {
-  const message =
-    failure instanceof Error ? failure.message : "unknown startup failure";
-  process.stderr.write(`native HTTP server: ${message}\n`);
-  process.exitCode = 1;
-});
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+)
+  await main().catch((failure: unknown) => {
+    const message =
+      failure instanceof Error ? failure.message : "unknown startup failure";
+    process.stderr.write(`native HTTP server: ${message}\n`);
+    process.exitCode = 1;
+  });

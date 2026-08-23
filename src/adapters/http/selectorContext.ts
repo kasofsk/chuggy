@@ -79,6 +79,45 @@ function contextUrl(baseUrl: string, partition: Partition): URL {
   );
 }
 
+async function boundedResponseBytes(
+  response: Response,
+  bytesMax: number,
+): Promise<Uint8Array> {
+  const declared = response.headers.get("content-length");
+  if (declared !== null && Number(declared) > bytesMax) {
+    await response.body?.cancel();
+    throw new RangeError("selector context response exceeds its byte bound");
+  }
+  if (response.body === null) return new Uint8Array();
+  const reader: ReadableStreamDefaultReader<Uint8Array> =
+    response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const read = await reader.read();
+      if (read.done) break;
+      length += read.value.byteLength;
+      if (length > bytesMax) {
+        await reader.cancel();
+        throw new RangeError(
+          "selector context response exceeds its byte bound",
+        );
+      }
+      chunks.push(read.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 /** Reads one strictly parsed selector context through the authenticated native API. */
 export function selectorContextHttp(
   config: SelectorContextHttpConfig,
@@ -104,11 +143,7 @@ export function selectorContextHttp(
         throw new Error(
           `selector context source returned ${String(response.status)}`,
         );
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.byteLength > responseBytesMax)
-        throw new RangeError(
-          "selector context response exceeds its byte bound",
-        );
+      const bytes = await boundedResponseBytes(response, responseBytesMax);
       return contextSchema.parse(JSON.parse(new TextDecoder().decode(bytes)));
     },
   };
