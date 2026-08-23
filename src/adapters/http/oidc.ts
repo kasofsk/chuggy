@@ -12,7 +12,11 @@ export interface OidcAuthenticationConfig {
   readonly jwksTimeoutMs: number;
 }
 
-const discoverySchema = z.strictObject({
+/**
+ * A provider advertises far more than the two members this code reads, and
+ * OpenID Connect Discovery requires a client to ignore the rest.
+ */
+const discoverySchema = z.object({
   issuer: z.string(),
   jwks_uri: z.string(),
 });
