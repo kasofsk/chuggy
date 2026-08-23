@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>chuggy operations</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231f4bd8'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <header class="masthead">
+      <h1>chuggy <span>operations</span></h1>
+      <div class="masthead-controls">
+        <label class="field">
+          <span class="eyebrow">Project</span>
+          <select id="project" disabled>
+            <option value="">Not loaded</option>
+          </select>
+        </label>
+        <div class="refresh" id="refresh"></div>
+        <div class="session" id="session"></div>
+      </div>
+    </header>
+    <main id="console" class="console"></main>
+    <noscript>
+      The operations console is an ES module application and needs JavaScript.
+    </noscript>
+    <script type="module" src="/dom/main.js"></script>
+  </body>
+</html>

@@ -128,6 +128,37 @@ module.exports = {
       to: { path: "^test/" },
     },
     {
+      name: "console-reaches-no-source",
+      comment:
+        "ui/ is served to a browser as static files, so a module it reaches " +
+        "is a module the browser must fetch. Reaching src/ would mean either " +
+        "shipping TypeScript no browser parses or acquiring the build step " +
+        "this console exists without; reaching a package would be the client " +
+        "dependency it also exists without. Stated as reachability and as one " +
+        "rule over the whole directory, because the shape that breaks it is a " +
+        "shared helper somebody adds between the console and the server to " +
+        "stop writing a constant twice — which is what test/ui/ holds the two " +
+        "copies equal for instead.",
+      severity: "error",
+      from: { path: "^ui/" },
+      to: { reachable: true, path: "^(?!ui/)" },
+    },
+    {
+      name: "console-decisions-touch-no-document",
+      comment:
+        "ui/app/ is the console's decision layer and ui/dom/ is what performs " +
+        "its effects, which is the same split the interpreter and the " +
+        "adapters have and it is enforced the same way. What it buys is that " +
+        "every arrangement the console can show is reachable from a suite " +
+        "with no browser: a decision that reached the document would need one " +
+        "to be tested, and this tree has no browser harness to give it. " +
+        "Reachability again, because a relay belonging to neither directory " +
+        "is the shape a per-import rule misses.",
+      severity: "error",
+      from: { path: "^ui/app/" },
+      to: { reachable: true, path: "^ui/dom/" },
+    },
+    {
       name: "no-circular-dependency",
       comment: "A cycle makes the layer a module belongs to unanswerable.",
       severity: "error",

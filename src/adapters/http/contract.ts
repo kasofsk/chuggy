@@ -33,6 +33,7 @@ export const nativeHttpMediaType = "application/vnd.chuggy.v1+json";
 export const nativeHttpBodyBytesMax = 65_536;
 export const nativeHttpHeaderBytesMax = 16_384;
 export const nativeHttpCursorCharsMax = 2_048;
+export const nativeHttpPathSegmentCharsMax = 256;
 
 export const nativeHttpRoutes = {
   contract: `${nativeHttpBasePath}/contract`,

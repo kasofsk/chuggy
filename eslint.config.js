@@ -90,6 +90,29 @@ const noAmbientGlobals = (subject) => [
   })),
 ];
 
+// The platform capability the console's files may name. Everything a browser
+// and the suite runner both provide is spelled once here, and a name absent
+// from it is `no-undef`.
+const browserCapabilities = Object.fromEntries(
+  [
+    "AbortController",
+    "TextDecoder",
+    "TextEncoder",
+    "URL",
+    "URLSearchParams",
+    "clearTimeout",
+    "console",
+    "crypto",
+    "document",
+    "fetch",
+    "history",
+    "location",
+    "sessionStorage",
+    "setTimeout",
+    "window",
+  ].map((name) => [name, "readonly"]),
+);
+
 const noAmbientDraws = (subject) => [
   "error",
   {
@@ -293,15 +316,32 @@ export default tseslint.config(
         },
       ]
     : []),
-  // The configs themselves. They sit outside tsconfig.json's include, so the
-  // type-aware rules have no program to ask and are turned off rather than
-  // left to fail on every run.
+  // The configs themselves, and the console's document layer. Both sit outside
+  // tsconfig.json's include, so the type-aware rules have no program to ask and
+  // are turned off rather than left to fail on every run. `ui/app/` is inside
+  // that include and is excluded here, so the console's decisions keep house
+  // rules 3 and 4 while the DOM writes beneath them do not.
   {
     files: ["**/*.js", "**/*.mjs"],
+    ignores: ["ui/app/**"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: { process: "readonly" },
       parserOptions: { projectService: false },
+    },
+  },
+  // The console runs in a browser, and this is the closed roster of platform
+  // capability it may name: one it reaches for and this list does not carry is
+  // `no-undef` rather than a runtime surprise in somebody's tab. `process` is
+  // taken back from the block above, which grants it to a config file.
+  {
+    files: ["ui/**/*.js"],
+    languageOptions: { globals: browserCapabilities },
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        { name: "process", message: "the console runs in a browser." },
+      ],
     },
   },
   {

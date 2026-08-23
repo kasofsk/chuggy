@@ -21,6 +21,7 @@ import {
   nativeHttpError,
   nativeHttpHeaderBytesMax,
   nativeHttpMediaType,
+  nativeHttpPathSegmentCharsMax,
   parseInventoryCursor,
   parseConfigurationCreation,
   parseDraftCreation,
@@ -625,7 +626,7 @@ export function createNativeHttpApp(
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
     requestTimeout: limits.requestTimeoutMs,
-    routerOptions: { maxParamLength: 256 },
+    routerOptions: { maxParamLength: nativeHttpPathSegmentCharsMax },
     forceCloseConnections: "idle",
     http: { maxHeaderSize: nativeHttpHeaderBytesMax },
   });
