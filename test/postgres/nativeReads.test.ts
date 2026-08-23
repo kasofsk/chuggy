@@ -10,8 +10,13 @@ import {
   postgresHarnessSubmission,
 } from "./harness.ts";
 import { postgresReadHarness } from "./readHarness.ts";
+import { id } from "../domain/fixtures.ts";
 
 const subject = postgresReadHarness();
+
+async function filterProject() {
+  return postgresHarnessProject(subject.harness.store, "native-filter");
+}
 
 test("public operations omit commands, authority, and storage coordination", () => {
   const resource = publicOperation({
@@ -117,4 +122,73 @@ test("project reads page by ticket identity and enforce a minimum sequence", asy
       },
     },
   );
+});
+
+test("project reads filter before paging and expose one ticket detail", async () => {
+  const partition = await filterProject();
+  await subject.harness.query(
+    "UPDATE project SET head=4 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  for (const [ticket, phase] of [
+    [1, "Done"],
+    [2, "Pending"],
+    [3, "Revoked"],
+    [4, "Escalated"],
+  ] as const) {
+    await subject.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ($1,$2,$3,$4,$3)`,
+      [partition.tenant, partition.project, ticket, phase],
+    );
+  }
+  const reads = postgresNativeReads(subject.pool);
+  const nonTerminal = await reads.project(partition, {
+    limit: 1,
+    phaseFilter: { selection: "NonTerminal" },
+  });
+  assert.equal(nonTerminal.result, "Found");
+  if (nonTerminal.result !== "Found") return;
+  assert.deepEqual(nonTerminal.project.tickets, [
+    { ticket: 2, phase: "Pending", sequence: 2 },
+  ]);
+  assert.equal(nonTerminal.project.nextAfter, 2);
+  assert.deepEqual(
+    await reads.project(partition, {
+      after: nonTerminal.project.nextAfter,
+      limit: 2,
+      phaseFilter: { selection: "NonTerminal" },
+    }),
+    {
+      result: "Found",
+      project: {
+        partition,
+        sequence: 4,
+        tickets: [{ ticket: 4, phase: "Escalated", sequence: 4 }],
+      },
+    },
+  );
+  assert.deepEqual(
+    await reads.project(partition, {
+      limit: 10,
+      phaseFilter: { selection: "Selected", phases: ["Done", "Revoked"] },
+    }),
+    {
+      result: "Found",
+      project: {
+        partition,
+        sequence: 4,
+        tickets: [
+          { ticket: 1, phase: "Done", sequence: 1 },
+          { ticket: 3, phase: "Revoked", sequence: 3 },
+        ],
+      },
+    },
+  );
+  assert.deepEqual(await reads.ticket(partition, id(4)), {
+    ticket: 4,
+    phase: "Escalated",
+    sequence: 4,
+  });
+  assert.equal(await reads.ticket(partition, id(9)), undefined);
 });

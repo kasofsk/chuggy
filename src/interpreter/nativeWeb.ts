@@ -8,7 +8,7 @@
  * project actor nor owns a database transaction.
  */
 
-import type { Phase } from "../domain/generated/modelTypes.ts";
+import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type {
   Accepted,
@@ -51,26 +51,29 @@ import type {
   DispatchViewStore,
 } from "./dispatchView.ts";
 import { checkedDispatchViewQuery } from "./dispatchView.ts";
+import {
+  checkedExecutionListQuery,
+  type ExecutionListQuery,
+  type ExecutionPage,
+  type ExecutionResource,
+  type OperationalReadStore,
+  type OutputContentPort,
+  type OutputContentRead,
+  type ProjectOperationalStatus,
+} from "./operationsView.ts";
+import type { ExecutionId } from "./schedulerIdentity.ts";
+import { type PublicInstant } from "./publicResource.ts";
+export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 
 declare const principalBrand: unique symbol;
-declare const instantBrand: unique symbol;
 
 /** An authenticated session subject, opaque to the application boundary. */
 export type Principal = string & { readonly [principalBrand]: true };
-
-/** A database-authored RFC 3339 instant, used only for presentation. */
-export type PublicInstant = string & { readonly [instantBrand]: true };
 
 export function asPrincipal(value: string): Principal {
   if (value.length === 0)
     throw new RangeError("principal: an identity is empty");
   return value as Principal;
-}
-
-export function asPublicInstant(value: string): PublicInstant {
-  if (value.length === 0)
-    throw new RangeError("public instant: a value is empty");
-  return value as PublicInstant;
 }
 
 export type ProjectAccessKind =
@@ -145,7 +148,12 @@ export interface ProjectReadQuery {
   readonly after?: TicketId;
   readonly limit: number;
   readonly minimumSequence?: number;
+  readonly phaseFilter?: TicketPhaseFilter;
 }
+
+export type TicketPhaseFilter =
+  | { readonly selection: "NonTerminal" }
+  | { readonly selection: "Selected"; readonly phases: readonly Phase[] };
 
 export type ProjectRead =
   | { readonly result: "NotFound" }
@@ -172,6 +180,16 @@ export function checkedProjectReadQuery(
     throw new RangeError(
       "minimum project sequence must be a non-negative safe integer",
     );
+  if (query.phaseFilter?.selection === "Selected") {
+    const phases = query.phaseFilter.phases;
+    if (
+      phases.length < 1 ||
+      phases.length > phaseTags.length ||
+      new Set(phases).size !== phases.length ||
+      phases.some((phase) => !phaseTags.includes(phase))
+    )
+      throw new RangeError("ticket phase selection is invalid");
+  }
   return query;
 }
 
@@ -182,6 +200,10 @@ export interface NativeReadStore {
     operation: OperationId,
   ): Promise<OperationResource | undefined>;
   project(partition: Partition, query: ProjectReadQuery): Promise<ProjectRead>;
+  ticket(
+    partition: Partition,
+    ticket: TicketId,
+  ): Promise<TicketResource | undefined>;
 }
 
 export interface NativeSubmission {
@@ -223,6 +245,31 @@ export interface NativeWeb {
     partition: Partition,
     query: ProjectReadQuery,
   ): Promise<ProjectRead>;
+  ticket(
+    principal: Principal,
+    partition: Partition,
+    ticket: TicketId,
+  ): Promise<TicketResource | undefined>;
+  operationalStatus(
+    principal: Principal,
+    partition: Partition,
+  ): Promise<AuthorizedResult<ProjectOperationalStatus>>;
+  executions(
+    principal: Principal,
+    partition: Partition,
+    query: ExecutionListQuery,
+  ): Promise<AuthorizedResult<ExecutionPage>>;
+  execution(
+    principal: Principal,
+    partition: Partition,
+    execution: ExecutionId,
+  ): Promise<ExecutionResource | undefined>;
+  outputContent(
+    principal: Principal,
+    partition: Partition,
+    execution: ExecutionId,
+    ordinal: number,
+  ): Promise<OutputContentRead>;
   cancel(
     principal: Principal,
     partition: Partition,
@@ -406,6 +453,66 @@ function nativeSubmitMethod(
   };
 }
 
+type NativeOperationalMethods = Pick<
+  NativeWeb,
+  "operationalStatus" | "executions" | "execution" | "outputContent"
+>;
+
+function nativeOperationalMethods(
+  access: ProjectAccess,
+  operationalReads?: OperationalReadStore,
+  outputContents?: OutputContentPort,
+): NativeOperationalMethods {
+  const operations = () => {
+    if (operationalReads === undefined)
+      throw new Error("native web: no operational read store was composed");
+    return operationalReads;
+  };
+  const contents = () => {
+    if (outputContents === undefined)
+      throw new Error("native web: no output content store was composed");
+    return outputContents;
+  };
+  return {
+    operationalStatus: async (principal, partition) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : { result: "Authorized", value: await operations().status(partition) },
+    executions: async (principal, partition, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await operations().executions(
+              partition,
+              checkedExecutionListQuery(query),
+            ),
+          },
+    execution: async (principal, partition, execution) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : operations().execution(partition, execution),
+    outputContent: async (principal, partition, execution, ordinal) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { read: "NotFound" };
+      if (!Number.isSafeInteger(ordinal) || ordinal < 1 || ordinal > 256)
+        throw new RangeError("artifact ordinal is invalid");
+      const resource = await operations().execution(partition, execution);
+      const artifact = resource?.result?.artifacts.find(
+        (candidate) => candidate.ordinal === ordinal,
+      );
+      if (resource?.result === undefined || artifact === undefined)
+        return { read: "NotFound" };
+      return contents().read({
+        partition,
+        execution,
+        attempt: resource.result.attempt,
+        artifact,
+      });
+    },
+  };
+}
+
 /** Builds the application boundary from authorization, read, and inbox ports. */
 export function nativeWeb(
   access: ProjectAccess,
@@ -416,9 +523,12 @@ export function nativeWeb(
   backlog: ExecutionBacklogGuard,
   dispatchViews?: DispatchViewStore,
   inventory?: ProjectInventory,
+  operationalReads?: OperationalReadStore,
+  outputContents?: OutputContentPort,
 ): NativeWeb {
   return {
     ...nativeAuthoringMethods(access, authoring),
+    ...nativeOperationalMethods(access, operationalReads, outputContents),
     submit: nativeSubmitMethod(access, inbox, backlog),
     operation: async (principal, partition, operation) =>
       (await access.authorize(principal, partition, "Read")) === undefined
@@ -428,6 +538,10 @@ export function nativeWeb(
       (await access.authorize(principal, partition, "Read")) === undefined
         ? { result: "NotFound" }
         : reads.project(partition, checkedProjectReadQuery(query)),
+    ticket: async (principal, partition, ticket) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : reads.ticket(partition, ticket),
     cancel: async (principal, partition, operation) => {
       const authority = await access.authorize(principal, partition, "Mutate");
       if (authority === undefined) return { result: "NotFound" };

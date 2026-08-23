@@ -17,7 +17,14 @@ import type {
   OperationResource,
   ProjectInventoryPage,
   ProjectRead,
+  TicketResource,
 } from "../../interpreter/nativeWeb.ts";
+import type {
+  ExecutionPage,
+  ExecutionResource,
+  ProjectOperationalStatus,
+  OutputContentRead,
+} from "../../interpreter/operationsView.ts";
 import type {
   Accepted,
   Cancelled,
@@ -201,6 +208,64 @@ export function projectResponse(result: ProjectRead): NativeHttpResponse {
       });
     case "Found":
       return response(200, result.project);
+  }
+}
+
+export function ticketResponse(
+  resource: TicketResource | undefined,
+): NativeHttpResponse {
+  return resource === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, resource);
+}
+
+export function operationalStatusResponse(
+  result: AuthorizedResult<ProjectOperationalStatus>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, result.value);
+}
+
+export function executionsResponse(
+  result: AuthorizedResult<ExecutionPage>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, result.value);
+}
+
+export function executionResponse(
+  resource: ExecutionResource | undefined,
+): NativeHttpResponse {
+  return resource === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, resource);
+}
+
+export function outputContentResponse(
+  result: OutputContentRead,
+): NativeHttpResponse {
+  switch (result.read) {
+    case "Content":
+      return response(200, result);
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "TooLarge":
+      return response(413, {
+        ...nativeHttpError(
+          "OutputTooLarge",
+          "The output is too large to preview.",
+        ),
+        bytes: result.bytes,
+      });
+    case "Unavailable":
+      return retry(503, result.retryAfterSeconds, "OutputUnavailable");
+    case "Corrupt":
+      return response(
+        409,
+        nativeHttpError("OutputCorrupt", "The output failed verification."),
+      );
   }
 }
 

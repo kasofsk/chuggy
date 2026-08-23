@@ -4,6 +4,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
+import { nonTerminalPhaseTags } from "../../domain/phase.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
   asPublicInstant,
@@ -13,6 +14,8 @@ import {
   type ProjectRead,
   type ProjectReadQuery,
   type ProjectResource,
+  type TicketPhaseFilter,
+  type TicketResource,
 } from "../../interpreter/nativeWeb.ts";
 import {
   allOperationStates,
@@ -133,6 +136,23 @@ function projectResource(
       };
 }
 
+function selectedPhases(
+  filter: TicketPhaseFilter | undefined,
+): readonly Phase[] {
+  if (filter === undefined) return phaseTags;
+  return filter.selection === "NonTerminal"
+    ? nonTerminalPhaseTags
+    : filter.phases;
+}
+
+function ticketResource(row: TicketProjectionRow): TicketResource {
+  return {
+    ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
+    phase: projectionPhase(row.phase),
+    sequence: projectRowCounter(row.seq, "ticket projection sequence"),
+  };
+}
+
 async function readProject(
   pool: pg.Pool,
   partition: Partition,
@@ -161,6 +181,7 @@ async function readProject(
       sql`SELECT ticket,phase,seq FROM ticket_projection
         WHERE tenant=${partition.tenant} AND project=${partition.project}
           AND ticket>${query.after ?? 0}
+          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
         ORDER BY ticket LIMIT ${query.limit + 1}`,
     );
     await client.query("COMMIT");
@@ -199,5 +220,14 @@ export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
       return row === undefined ? undefined : publicOperation(row);
     },
     project: (partition, query) => readProject(pool, partition, query),
+    ticket: async (partition, ticket) => {
+      const found = await pool.query<TicketProjectionRow>(
+        sql`SELECT ticket,phase,seq FROM ticket_projection
+          WHERE tenant=${partition.tenant} AND project=${partition.project}
+            AND ticket=${ticket}`,
+      );
+      const row = found.rows[0];
+      return row === undefined ? undefined : ticketResource(row);
+    },
   };
 }
