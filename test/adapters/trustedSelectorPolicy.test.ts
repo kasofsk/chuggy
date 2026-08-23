@@ -23,24 +23,23 @@ const request: SelectorPolicyRequest = {
     candidates: [],
     notificationCursor: 3,
     operationalContext: {
+      version: 2,
       observedAt: "2026-08-23T00:00:00.000Z",
       observedAtEpochMs: 1,
       reviewFeedback: [],
-      activeWork: [],
-      projectCapacity: {
-        account: "project",
-        allocated: 0,
-        limit: 1,
-        available: 1,
+      activeWork: { queued: 1, admitted: 2, launching: 3, running: 4 },
+      capacity: {
+        clusterActive: 9,
+        clusterSlotsMax: 20,
+        accountReservationDeficit: 1,
+        accountActive: 5,
+        accountMaximum: 8,
+        account: "account",
       },
-      clusterCapacity: {
-        visibility: "AuthorizedAggregate",
-        allocated: 0,
-        limit: 1,
-        available: 1,
-        pressure: "Normal",
+      backlog: {
+        installation: { queued: 12, ceiling: 1_000 },
+        project: { queued: 6, ceiling: 100 },
       },
-      executionBacklog: { queued: 0, ceiling: 1, dispatchAllowed: true },
     },
     workingMemory: {},
     nextCandidateScan: {
@@ -207,6 +206,82 @@ test("unknown response fields and malformed requests are refused", async () => {
     ),
     /unrecognized key/i,
   );
+});
+
+test("mixed historical and live operational context is refused", async () => {
+  let calls = 0;
+  const client = trustedSelectorPolicyHttpClient(config, () => {
+    calls += 1;
+    return Promise.resolve(
+      response({ version: trustedSelectorPolicyProtocolVersion, execution }),
+    );
+  });
+  await assert.rejects(
+    client.execute(
+      {
+        ...request,
+        observation: {
+          ...request.observation,
+          operationalContext: {
+            ...request.observation.operationalContext,
+            projectCapacity: {
+              account: "legacy",
+              allocated: 0,
+              limit: 1,
+              available: 1,
+            },
+          },
+        },
+      } as SelectorPolicyRequest,
+      new AbortController().signal,
+    ),
+    /unrecognized key/i,
+  );
+  assert.equal(calls, 0);
+});
+
+test("version one remains available for recorded historical policy inputs", async () => {
+  const historical: SelectorPolicyRequest = {
+    ...request,
+    observation: {
+      ...request.observation,
+      operationalContext: {
+        version: 1,
+        observedAt: "2026-08-22T00:00:00.000Z",
+        observedAtEpochMs: 1,
+        reviewFeedback: [],
+        activeWork: [],
+        projectCapacity: {
+          account: "project",
+          allocated: 0,
+          limit: 1,
+          available: 1,
+        },
+        clusterCapacity: {
+          visibility: "AuthorizedAggregate",
+          allocated: 0,
+          limit: 1,
+          available: 1,
+          pressure: "Normal",
+        },
+        executionBacklog: { queued: 0, ceiling: 1, dispatchAllowed: true },
+      },
+    },
+  };
+  let sent: unknown;
+  const client = trustedSelectorPolicyHttpClient(config, (_url, init) => {
+    if (typeof init.body !== "string")
+      throw new TypeError("historical request body is absent");
+    sent = JSON.parse(init.body);
+    return Promise.resolve(
+      response({ version: trustedSelectorPolicyProtocolVersion, execution }),
+    );
+  });
+  await client.execute(historical, new AbortController().signal);
+  assert.deepEqual(sent, {
+    version: trustedSelectorPolicyProtocolVersion,
+    request: historical,
+  });
 });
 
 test("response bytes are bounded before JSON decoding", async () => {
