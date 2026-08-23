@@ -1,6 +1,5 @@
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
 import type {
-  Accepted,
   Authority,
   OperationId,
   TicketCommand,
@@ -1185,8 +1184,17 @@ async function boundedCandidatePage(
 }
 
 export interface SelectorTicketService {
-  submit(delivery: SelectorDelivery): Promise<Accepted>;
+  submit(delivery: SelectorDelivery): Promise<SelectorProposalAcceptance>;
 }
+
+export type SelectorProposalAcceptance =
+  | { readonly accepted: "Accepted" | "Original" }
+  | { readonly accepted: "IdempotencyConflict" | "InvalidCommand" }
+  | {
+      readonly accepted: "Backpressure" | "Unavailable";
+      readonly retryAfterSeconds: number;
+    }
+  | { readonly accepted: "NotAdmitted" };
 
 export interface SelectorOperationSource {
   operation(partition: Partition, operation: OperationId): Promise<unknown>;
