@@ -41,6 +41,15 @@ R="$WORK/repo"
 fixture() { # a throwaway repo with a test/postgres directory
 	fresh_repo "$R"
 	mkdir -p "$R/test/postgres"
+	mkdir -p "$R/.chug/tasks"
+	export CHUG_PG_HELPER_LOG="$WORK/.helper"
+	: >"$CHUG_PG_HELPER_LOG"
+	cat >"$R/.chug/tasks/postgres-databases.ts" <<'TS'
+import { appendFileSync } from "node:fs";
+const [command, , ...databases] = process.argv.slice(2);
+appendFileSync(process.env.CHUG_PG_HELPER_LOG, `${command} ${databases.join(" ")}\n`);
+if (process.env.CHUG_PG_HELPER_FAIL === command) process.exitCode = 1;
+TS
 }
 
 passing_suite() { # <path>
@@ -55,6 +64,15 @@ failing_suite() { # <path>
 import assert from "node:assert/strict";
 import { test } from "node:test";
 test("a fixture case that fails on purpose", () => assert.fail("as designed"));
+TS
+}
+
+blocking_suite() { # <path>
+	cat >"$1" <<'TS'
+import { test } from "node:test";
+test("a fixture case that waits to be interrupted", async () => {
+  await new Promise((resolve) => setTimeout(resolve, 30_000));
+});
 TS
 }
 
@@ -144,8 +162,47 @@ check "an empty host parameter names nothing and the authority stands" 2 "$RC" "
 fixture
 failing_suite "$R/test/postgres/red.test.ts"
 git -C "$R" add -A
-run_gate "$R" "CHUG_PG_URL=$ANSWERS"
-check "a red suite is a finding" 1 "$RC" "the suite went red against the server CHUG_PG_URL names"
+HELPER_LOG="$WORK/.helper"
+: >"$HELPER_LOG"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$HELPER_LOG"
+check "a red worker is a finding" 1 "$RC" "a worker went red against the server CHUG_PG_URL names"
+OUT="$HELPER_LOG"
+check "a red worker still removes every database" 0 0 "drop chuggy_worker_"
+
+# --- Preparation failure is could-not-run and still cleans up ---------------
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+git -C "$R" add -A
+HELPER_LOG="$WORK/.helper"
+: >"$HELPER_LOG"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$HELPER_LOG" CHUG_PG_HELPER_FAIL=clone
+check "a worker database that cannot be cloned is a could-not-run" 2 "$RC" "could not clone worker database"
+OUT="$HELPER_LOG"
+check "a partial preparation removes its clone name and template" 0 0 "drop chuggy_worker_"
+
+# --- An interrupted run terminates its worker and cleans up -----------------
+
+fixture
+blocking_suite "$R/test/postgres/blocked.test.ts"
+git -C "$R" add -A
+OUT="$WORK/.out"
+set +e
+(cd "$R" && exec env CHUG_PG_URL="$ANSWERS" "$SUT") >"$OUT" 2>&1 &
+GATE_PID=$!
+waited=0
+until grep -q "clone" "$CHUG_PG_HELPER_LOG"; do
+	if [ "$waited" -ge 10 ]; then break; fi
+	sleep 1
+	waited=$((waited + 1))
+done
+kill -TERM "$GATE_PID"
+wait "$GATE_PID"
+RC=$?
+set -e
+check "an interrupted run is a could-not-run" 2 "$RC" "interrupted before the workers completed"
+OUT="$CHUG_PG_HELPER_LOG"
+check "an interrupted run removes its databases" 0 0 "drop chuggy_worker_"
 
 # --- A green run is clean, and says what it consumed --------------------------
 
@@ -153,8 +210,14 @@ fixture
 passing_suite "$R/test/postgres/one.test.ts"
 passing_suite "$R/test/postgres/two.test.ts"
 git -C "$R" add -A
-run_gate "$R" "CHUG_PG_URL=$ANSWERS"
+HELPER_LOG="$WORK/.helper"
+: >"$HELPER_LOG"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$HELPER_LOG"
 check "a green suite is clean" 0 "$RC" "clean against the server CHUG_PG_URL names"
 check "the clean line counts the suites it ran" 0 "$RC" "2 suite(s) clean"
+check "the active worker count is reported" 0 "$RC" "with 2 worker(s)"
+OUT="$HELPER_LOG"
+check "a green run prepares the schema once" 0 0 "prepare chuggy_template_"
+check "a green run removes its databases" 0 0 "drop chuggy_worker_"
 
 done_ "check-postgres.test.sh"

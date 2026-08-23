@@ -38,10 +38,7 @@ import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import type { IdempotencyKeying } from "../../src/adapters/postgres/keying.ts";
 import { postgresOperationInbox } from "../../src/adapters/postgres/operationInbox.ts";
-import {
-  postgresMigrate,
-  postgresPool,
-} from "../../src/adapters/postgres/pool.ts";
+import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
@@ -124,10 +121,9 @@ export interface PostgresHarness {
   readonly close: () => Promise<void>;
 }
 
-/** Opens a migrated store, establishing the first recovery epoch when this database has none. */
+/** Opens a store over the schema prepared by the PostgreSQL gate, establishing its first recovery epoch. */
 export async function postgresHarnessOpen(): Promise<PostgresHarness> {
   const pool = postgresPool(postgresHarnessUrl());
-  await postgresMigrate(pool);
   const store = postgresProjectStore(pool);
   await postgresHarnessEpoch(store);
   return {
