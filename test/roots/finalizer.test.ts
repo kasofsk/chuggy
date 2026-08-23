@@ -15,7 +15,13 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Socket } from "node:net";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -156,8 +162,15 @@ test("each local prerequisite this deployment lacks is named on the way out", as
   const { root, environment } = fixture(t);
   const empty = join(root, "empty-path");
   mkdirSync(empty);
+  const locked = join(root, "locked");
+  mkdirSync(locked);
+  chmodSync(locked, 0o500);
   for (const [precondition, overrides] of [
     ["git-available", { PATH: empty }],
+    [
+      "git-scratch-writable",
+      { CHUG_FINALIZER_GIT_SCRATCH_ROOT: join(locked, "scratch") },
+    ],
     [
       "artifact-root-writable",
       { CHUG_FINALIZER_ARTIFACT_ROOT: join(root, "unmounted") },

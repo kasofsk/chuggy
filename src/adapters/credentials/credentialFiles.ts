@@ -45,7 +45,7 @@ interface CredentialFilesState {
   readonly credentialBytesMax: number;
 }
 
-/** Reads one file's whole credential, every way of failing to being an outage rather than an answer. */
+/** Reads one file's whole credential, every way of failing being an outage rather than an answer. */
 async function credentialFilesRead(
   path: string,
   bytesMax: number,
