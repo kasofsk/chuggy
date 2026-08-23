@@ -25,14 +25,20 @@
  * other rather than against a list, and the groups against `src/roots/`.
  *
  * IT IS THE STATEMENTS THAT ARE MATCHED, NEVER THE PROSE. Every check here is a
- * pattern over a text file, so a commented-out statement is text that satisfies
- * the pattern that its deletion should have broken — and both files are written
- * in a house style whose headers quote the statements they argue about. The
- * comments are stripped first, in both directions: a `src/roots/` block comment
- * naming a group role is a mention rather than an assertion, and counting one
- * would demand a credential for a role no process holds. The SQL strip is
- * line-wise, so a literal `--` inside a statement would take the rest of that
- * line with it; no statement in that file writes one.
+ * pattern over text, so a commented-out statement is text that satisfies the
+ * pattern that its deletion should have broken — and what is read is written in
+ * a house style whose headers quote the statements they argue about. The
+ * comments are stripped first, from all three sources: a `src/roots/` block
+ * comment naming a group role is a mention rather than an assertion, and a
+ * migration that mentions a grant it does not make is a read no role holds. The
+ * SQL strip is line-wise, so a literal `--` inside a statement would take the
+ * rest of that line with it. And a role list is matched to the end of the list
+ * rather than to the end of the text it was found in, because a strip cannot
+ * see a second statement inside one string, and a pattern that ran on would
+ * collect the roles that second statement named. No migration writes either
+ * shape today; the patterns are cut to the text a migration may carry rather
+ * than to the text it happens to carry, because the first one that does would
+ * otherwise be a green run over a grant nobody made.
  *
  * A `format()` TEMPLATE IS MATCHED THROUGH ITS `\gexec` AND ITS ARGUMENTS,
  * because the text of a template says nothing about whether psql runs it or
@@ -71,36 +77,39 @@ const rolesFile = readFileSync(rolesFilePath, "utf8")
 const rootsDirectory = "src/roots";
 const schemaExports: Readonly<Record<string, unknown>> = schema;
 
+/** Every statement the declared migrations run, less the prose around it. */
+const migrationStatements: readonly string[] = migrations.flatMap(
+  ({ statements }) =>
+    statements.map((statement) => statement.replaceAll(/--.*$/gmu, " ")),
+);
+
 /** Every role the declared migrations create, in whatever form they create it. */
 function migrationGroupRoles(): ReadonlySet<string> {
   const found = new Set<string>();
-  for (const migration of migrations)
-    for (const statement of migration.statements)
-      for (const [, role] of statement.matchAll(/CREATE ROLE (chuggy_\w+)/gu))
-        if (role !== undefined) found.add(role);
+  for (const statement of migrationStatements)
+    for (const [, role] of statement.matchAll(/CREATE ROLE (chuggy_\w+)/gu))
+      if (role !== undefined) found.add(role);
   return found;
 }
 
 /** Every role a migration hands an object to, which the receiver must be able to create. */
 function migrationReceivingRoles(): ReadonlySet<string> {
   const found = new Set<string>();
-  for (const migration of migrations)
-    for (const statement of migration.statements)
-      for (const [, role] of statement.matchAll(/OWNER TO (chuggy_\w+)/gu))
-        if (role !== undefined) found.add(role);
+  for (const statement of migrationStatements)
+    for (const [, role] of statement.matchAll(/OWNER TO (chuggy_\w+)/gu))
+      if (role !== undefined) found.add(role);
   return found;
 }
 
 /** Every role the migrations let read the ledger the shared precondition reads. */
 function migrationLedgerReaders(): ReadonlySet<string> {
   const found = new Set<string>();
-  for (const migration of migrations)
-    for (const statement of migration.statements)
-      for (const [, granted] of statement.matchAll(
-        /GRANT SELECT ON schema_migration TO ([\s\S]*)/gu,
-      ))
-        for (const [role] of String(granted).matchAll(/chuggy_\w+/gu))
-          found.add(role);
+  for (const statement of migrationStatements)
+    for (const [, granted] of statement.matchAll(
+      /GRANT SELECT ON schema_migration TO ((?:\s*chuggy_\w+\s*,?)+)/gu,
+    ))
+      for (const [role] of String(granted).matchAll(/chuggy_\w+/gu))
+        found.add(role);
   return found;
 }
 

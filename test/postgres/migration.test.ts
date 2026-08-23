@@ -190,7 +190,7 @@ async function assertDivergentMigrationRefused(
     retainedImageContract.required,
     [
       ...retainedImageContract.compatible.slice(0, -1),
-      { version: 18, name: "unknown migration" },
+      { version: declaredLatest, name: "unknown migration" },
     ],
   );
   assert.deepEqual(
@@ -403,7 +403,7 @@ test("a staged migration advances after its publishing image is retained", async
         current: currentRuntimeSchemaContract,
         retainedPrevious: retainedImageContract,
       }),
-      { migrated: "Applied", versions: [18] },
+      { migrated: "Applied", versions: [declaredLatest] },
     );
     assert.equal(
       await schemaCompatibilityPrecondition(
