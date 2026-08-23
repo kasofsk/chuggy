@@ -7,9 +7,11 @@ import {
   boundaryOwnerRole,
   cancellationFunction,
   continuationFunction,
+  finalizerRole,
   notificationPublishFunction,
   projectAuthorizationFunction,
   schedulerRole,
+  selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -25,6 +27,24 @@ before(async () => {
 });
 after(async () => {
   await harness.close();
+});
+
+test("every runtime role may read only the migration ledger contract", async () => {
+  for (const role of [
+    apiRole,
+    ticketServiceRole,
+    selectorServiceRole,
+    schedulerRole,
+    finalizerRole,
+  ]) {
+    assert.equal(
+      await harness.attemptAs(
+        role,
+        "SELECT version,name FROM schema_migration ORDER BY version",
+      ),
+      undefined,
+    );
+  }
 });
 
 test("only the writer may name the account a spawn request pins", async () => {
@@ -426,6 +446,7 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "project",
       "recovery_epoch",
       "scheduler_incident",
+      "schema_migration",
     ],
   );
   assert.equal(

@@ -3578,4 +3578,12 @@ export const migrations: readonly Migration[] = [
     name: "native operational reads",
     statements: [...nativeOperationsViews],
   },
+  {
+    version: 16,
+    name: "runtime schema readiness",
+    statements: [
+      `GRANT SELECT ON schema_migration TO ${apiRole},${ticketServiceRole},
+         ${selectorServiceRole},${schedulerRole},${finalizerRole}`,
+    ],
+  },
 ];

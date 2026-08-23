@@ -49,6 +49,11 @@ import { sql } from "@ts-safeql/sql-tag";
 import pg from "pg";
 
 import { migrationLedger, migrations, type Migration } from "./schema.ts";
+import {
+  runtimeMigrationPlan,
+  type RuntimeDeploymentSchema,
+  type RuntimeSchemaMigration,
+} from "../../interpreter/serviceRuntime.ts";
 
 /** How many connections one pool opens, how long a caller waits for one, and how long any one statement may run. */
 export interface PostgresLimits {
@@ -155,6 +160,15 @@ async function postgresMigrateApplied(
   return new Set(applied.rows.map((row) => row.version));
 }
 
+async function postgresAppliedMigrations(
+  client: pg.PoolClient,
+): Promise<readonly RuntimeSchemaMigration[]> {
+  const applied = await client.query<{ version: number; name: string }>(
+    sql`SELECT version,name FROM schema_migration ORDER BY version`,
+  );
+  return applied.rows;
+}
+
 /**
  * Brings the database up to the declared schema, returning the versions this
  * call applied. Concurrent callers serialize on the migration lock and the
@@ -177,4 +191,41 @@ export async function postgresMigrate(
     }
     return ran;
   });
+}
+
+export type PostgresCompatibleMigration =
+  | { readonly migrated: "Applied"; readonly versions: readonly number[] }
+  | { readonly migrated: "CouldNotRun" };
+
+class IncompatibleMigration extends Error {}
+
+/** Plans and applies one rollback-compatible target under the migration lock. */
+export async function postgresMigrateCompatible(
+  pool: pg.Pool,
+  deployment: RuntimeDeploymentSchema,
+): Promise<PostgresCompatibleMigration> {
+  try {
+    return await postgresTransaction(pool, async (client) => {
+      await client.query<{ locked: string | null }>(
+        sql`SELECT pg_advisory_xact_lock(${migrationLockKey})::text AS locked`,
+      );
+      await client.query(migrationLedger);
+      const applied = await postgresAppliedMigrations(client);
+      const target = migrations.map(({ version, name }) => ({ version, name }));
+      const plan = runtimeMigrationPlan(applied, target, deployment);
+      if (plan.planned === "Incompatible") throw new IncompatibleMigration();
+      const pending = new Set(plan.pending.map(({ version }) => version));
+      const versions: number[] = [];
+      for (const migration of migrations) {
+        if (!pending.has(migration.version)) continue;
+        await postgresMigrateOne(client, migration);
+        versions.push(migration.version);
+      }
+      return { migrated: "Applied", versions };
+    });
+  } catch (failure) {
+    if (failure instanceof IncompatibleMigration)
+      return { migrated: "CouldNotRun" };
+    throw failure;
+  }
 }

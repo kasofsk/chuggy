@@ -344,6 +344,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "project",
       "project_repository",
       "recovery_epoch",
+      "schema_migration",
     ],
   );
 });

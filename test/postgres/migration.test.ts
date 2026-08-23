@@ -1,8 +1,20 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { migrations } from "../../src/adapters/postgres/schema.ts";
-import { postgresPool } from "../../src/adapters/postgres/pool.ts";
+import {
+  migrationLedger,
+  migrations,
+} from "../../src/adapters/postgres/schema.ts";
+import {
+  postgresMigrateCompatible,
+  postgresPool,
+} from "../../src/adapters/postgres/pool.ts";
+import {
+  currentRuntimeSchemaContract,
+  postgresRuntimeSchema,
+  runtimeSchemaContract,
+} from "../../src/adapters/postgres/runtimeSchema.ts";
+import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
 import {
@@ -10,6 +22,28 @@ import {
   parseTicketCommand,
 } from "../../src/interpreter/wire.ts";
 import { postgresHarnessEntry } from "./harness.ts";
+
+const retainedImageRequired = [
+  { version: 1, name: "the project foundation" },
+  { version: 2, name: "the project inbox" },
+  { version: 3, name: "the project decision" },
+  { version: 4, name: "the tenure fence" },
+  { version: 5, name: "the durable prioritized decision mailbox" },
+  { version: 6, name: "native web reads" },
+  { version: 7, name: "native versioned authoring" },
+  { version: 8, name: "bounded durable project notifications" },
+  { version: 9, name: "selector-independent durable dispatch" },
+  { version: 10, name: "hot-reloadable selector controls" },
+  { version: 11, name: "durable selector attempts and permits" },
+  { version: 12, name: "the durable execution scheduler" },
+  { version: 13, name: "the durable finalizer" },
+  { version: 14, name: "native project access" },
+  { version: 15, name: "native operational reads" },
+] as const;
+const retainedImageContract = runtimeSchemaContract(retainedImageRequired, [
+  ...retainedImageRequired,
+  { version: 16, name: "runtime schema readiness" },
+]);
 
 function databaseUrl(database: string): string {
   const url = new URL(postgresHarnessUrl());
@@ -219,6 +253,7 @@ test("each migration runs forward over the rows the slice before it left", async
   await admin.query(`CREATE DATABASE ${database}`);
   const subject = postgresPool(databaseUrl(database));
   try {
+    await subject.query(migrationLedger);
     for (const migration of migrations.slice(0, 4)) {
       for (const statement of migration.statements)
         await subject.query(statement);
@@ -240,6 +275,70 @@ test("each migration runs forward over the rows the slice before it left", async
 
     await assertMigratedI2(subject);
     await assertMigratedI3(subject);
+  } finally {
+    await subject.end();
+    await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);
+    await admin.end();
+  }
+});
+
+test("an incompatible rollout leaves an untouched database untouched", async () => {
+  const database = `chuggy_gate_${randomUUID().replaceAll("-", "")}`;
+  const admin = postgresPool(postgresHarnessUrl());
+  await admin.query(`CREATE DATABASE ${database}`);
+  const subject = postgresPool(databaseUrl(database));
+  try {
+    assert.deepEqual(
+      await postgresMigrateCompatible(subject, {
+        current: currentRuntimeSchemaContract,
+        retainedPrevious: runtimeSchemaContract([]),
+      }),
+      { migrated: "CouldNotRun" },
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ relation: string | null }>(
+          "SELECT to_regclass('public.schema_migration')::text AS relation",
+        )
+      ).rows,
+      [{ relation: null }],
+    );
+  } finally {
+    await subject.end();
+    await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);
+    await admin.end();
+  }
+});
+
+test("a staged migration keeps the retained image schema-compatible", async () => {
+  const database = `chuggy_stage_${randomUUID().replaceAll("-", "")}`;
+  const admin = postgresPool(postgresHarnessUrl());
+  await admin.query(`CREATE DATABASE ${database}`);
+  const subject = postgresPool(databaseUrl(database));
+  try {
+    await subject.query(migrationLedger);
+    for (const migration of migrations.slice(0, -1)) {
+      for (const statement of migration.statements)
+        await subject.query(statement);
+      await subject.query(
+        "INSERT INTO schema_migration (version,name) VALUES ($1,$2)",
+        [migration.version, migration.name],
+      );
+    }
+    assert.deepEqual(
+      await postgresMigrateCompatible(subject, {
+        current: currentRuntimeSchemaContract,
+        retainedPrevious: retainedImageContract,
+      }),
+      { migrated: "Applied", versions: [16] },
+    );
+    assert.equal(
+      await schemaCompatibilityPrecondition(
+        postgresRuntimeSchema(subject),
+        retainedImageContract,
+      ).check(new AbortController().signal),
+      true,
+    );
   } finally {
     await subject.end();
     await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);
