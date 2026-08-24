@@ -28,6 +28,7 @@ test("the versioned route and media contracts move together", () => {
   assert.equal(nativeHttpMediaType, "application/vnd.chuggy.v1+json");
   assert.deepEqual(Object.values(nativeHttpRoutes), [
     "/api/v1/contract",
+    "/api/v1/installation",
     "/api/v1/projects",
     "/api/v1/tenants/:tenant/projects/:project",
     "/api/v1/tenants/:tenant/projects/:project/tickets",

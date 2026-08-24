@@ -27,8 +27,21 @@ import {
   encodeCore,
   encodeStepRecord,
 } from "../itf/vocabulary.ts";
+import { asInstallationId } from "../../src/domain/ids.ts";
 
 const GOLDEN_DIR = join(import.meta.dirname, "..", "golden");
+
+test("installation identities accept only canonical UUIDs", () => {
+  assert.equal(
+    asInstallationId("018f84a1-4c2b-7def-8abc-0123456789ab"),
+    "018f84a1-4c2b-7def-8abc-0123456789ab",
+  );
+  assert.throws(
+    () => asInstallationId("018F84A1-4C2B-7DEF-8ABC-0123456789AB"),
+    RangeError,
+  );
+  assert.throws(() => asInstallationId("mini"), RangeError);
+});
 
 function goldens(): { name: string; trace: ItfTrace }[] {
   return readdirSync(GOLDEN_DIR)

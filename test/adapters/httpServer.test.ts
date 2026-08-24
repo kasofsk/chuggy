@@ -14,6 +14,12 @@ import {
   type NativeWeb,
 } from "../../src/interpreter/nativeWeb.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import { asInstallationId } from "../../src/domain/ids.ts";
+
+const authority = {
+  installationAuthority: () =>
+    Promise.resolve(asInstallationId("018f84a1-4c2b-7def-8abc-0123456789ab")),
+};
 
 type ServedNativeWeb = Pick<
   NativeWeb,
@@ -199,6 +205,7 @@ function appOf(
         ),
     },
     { ready: () => Promise.resolve(true) },
+    authority,
     limits,
   );
 }
@@ -210,6 +217,20 @@ test("authentication failure never reaches NativeWeb", async () => {
   assert.equal(found.statusCode, 401);
   assert.equal(found.headers["www-authenticate"], "Bearer");
   assert.equal(found.headers["cache-control"], "no-store");
+  assert.deepEqual(calls, []);
+});
+
+test("installation authority is a public read-only bootstrap resource", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls, false);
+  const found = await app.inject({
+    method: "GET",
+    url: "/api/v1/installation",
+  });
+  assert.equal(found.statusCode, 200);
+  assert.deepEqual(found.json(), {
+    installation: "018f84a1-4c2b-7def-8abc-0123456789ab",
+  });
   assert.deepEqual(calls, []);
 });
 
@@ -549,6 +570,7 @@ test("a failing NativeWeb call is a server fault, not a client fault", async () 
       authenticateBearer: () => Promise.resolve(asPrincipal("issuer subject")),
     },
     { ready: () => Promise.resolve(true) },
+    authority,
   );
   const found = await app.inject({
     url: "/api/v1/projects",

@@ -13,6 +13,7 @@ import {
   repositoryBindingReadFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
+  postgresMigrate,
   postgresMigrateCompatible,
   postgresPool,
 } from "../../src/adapters/postgres/pool.ts";
@@ -109,8 +110,12 @@ async function migrationSeedApplied(
   for (const migration of migrations.filter(
     ({ version }) => version < beyond,
   )) {
+    if (migration.version === 25)
+      await subject.query("SET chuggy.initializing_journal = 'on'");
     for (const statement of migration.statements)
       await subject.query(statement);
+    if (migration.version === 25)
+      await subject.query("RESET chuggy.initializing_journal");
     await subject.query(
       "INSERT INTO schema_migration (version,name) VALUES ($1,$2)",
       [migration.version, migration.name],
@@ -378,12 +383,19 @@ test("each migration runs forward over the rows the slice before it left", async
       await subject.query("COMMIT");
     }
     await seedBeforeI7(subject);
-    for (const migration of migrations.slice(10)) {
+    for (const migration of migrations.slice(10, -1)) {
       await subject.query("BEGIN");
       for (const statement of migration.statements)
         await subject.query(statement);
       await subject.query("COMMIT");
     }
+
+    await subject.query("BEGIN");
+    await assert.rejects(async () => {
+      for (const statement of migrations.at(-1)?.statements ?? [])
+        await subject.query(statement);
+    }, /existing journal has no installation authority/u);
+    await subject.query("ROLLBACK");
 
     await assertMigratedI2(subject);
     await assertMigratedI3(subject);
@@ -414,21 +426,26 @@ test("an incompatible rollout leaves an untouched database untouched", async () 
   });
 });
 
-test("a staged migration advances after its publishing image is retained", async () => {
+test("an empty staged legacy journal cannot silently acquire an authority", async () => {
   await migrationDatabase("stage", async (subject) => {
     await migrationSeedApplied(subject, declaredLatest);
+    await subject.query("SET chuggy.initializing_journal = 'on'");
     await assertDivergentMigrationRefused(subject);
-    assert.deepEqual(
-      await postgresMigrateCompatible(subject, {
+    const retainedAfterPublication = runtimeSchemaContract(
+      retainedImageContract.required,
+      migrations.map(({ version, name }) => ({ version, name })),
+    );
+    await assert.rejects(
+      postgresMigrateCompatible(subject, {
         current: currentRuntimeSchemaContract,
-        retainedPrevious: retainedImageContract,
+        retainedPrevious: retainedAfterPublication,
       }),
-      { migrated: "Applied", versions: [declaredLatest] },
+      /existing journal has no installation authority/u,
     );
     assert.equal(
       await schemaCompatibilityPrecondition(
         postgresRuntimeSchema(subject),
-        retainedImageContract,
+        retainedAfterPublication,
       ).check(new AbortController().signal),
       true,
     );
@@ -451,6 +468,48 @@ test("the command applies the declared schema and the run after it applies nothi
         currentRuntimeSchemaContract,
       ).check(new AbortController().signal),
       true,
+    );
+  });
+});
+
+test("fresh journals receive different durable installation authorities", async () => {
+  const identities: string[] = [];
+  for (const label of ["authority_a", "authority_b"]) {
+    await migrationDatabase(label, async (subject) => {
+      await postgresMigrate(subject);
+      const first = await subject.query<{ installation_id: string }>(
+        "SELECT installation_id FROM installation_authority",
+      );
+      await postgresMigrate(subject);
+      const restarted = await subject.query<{ installation_id: string }>(
+        "SELECT installation_id FROM installation_authority",
+      );
+      assert.deepEqual(restarted.rows, first.rows);
+      identities.push(first.rows[0]?.installation_id ?? "");
+    });
+  }
+  assert.equal(identities.length, 2);
+  assert.notEqual(identities[0], identities[1]);
+});
+
+test("an initialized legacy journal cannot silently acquire an authority", async () => {
+  await migrationDatabase("authority_legacy", async (subject) => {
+    await migrationSeedApplied(subject, declaredLatest);
+    await subject.query(
+      "INSERT INTO project (tenant,project,lifecycle) VALUES ('tenant','project','Active')",
+    );
+    await subject.query("SET chuggy.initializing_journal = 'on'");
+    await assert.rejects(
+      postgresMigrate(subject),
+      /existing journal has no installation authority/u,
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ relation: string | null }>(
+          "SELECT to_regclass('public.installation_authority')::text AS relation",
+        )
+      ).rows,
+      [{ relation: null }],
     );
   });
 });
