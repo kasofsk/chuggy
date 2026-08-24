@@ -20,9 +20,20 @@ import {
   type DraftResource,
   type DraftRevised,
   type DraftState,
+  type ConfigurationRevisionProvenance,
 } from "../../interpreter/authoring.ts";
+import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
+import {
+  type RepositoryConfigurationsImported,
+  type RepositoryConfigurationStore,
+} from "../../interpreter/repositoryConfiguration.ts";
+import {
+  asRepositoryConfigurationName,
+  asRepositoryConfigurationPath,
+  repositoryConfigurationDeclarationsMax,
+} from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { projectRowCounter } from "./rows.ts";
 import { configurationRevisionDigest } from "./digest.ts";
 
@@ -40,6 +51,40 @@ interface ConfigurationPageRow {
   readonly canonical: string;
   readonly digest: string;
   readonly created_at: string;
+  readonly repository: string | null;
+  readonly commit: string | null;
+  readonly path: string | null;
+  readonly name: string | null;
+}
+
+function configurationPageProvenance(
+  row: ConfigurationPageRow,
+): ConfigurationRevisionProvenance {
+  if (
+    row.repository === null &&
+    row.commit === null &&
+    row.path === null &&
+    row.name === null
+  )
+    return { source: "Authored" };
+  if (
+    row.repository === null ||
+    row.commit === null ||
+    row.path === null ||
+    row.name === null
+  )
+    throw new Error("configuration provenance is partial");
+  const path = asRepositoryConfigurationPath(row.path);
+  const name = asRepositoryConfigurationName(row.name);
+  if (path === undefined || name === undefined)
+    throw new Error("configuration provenance is invalid");
+  return {
+    source: "Repository",
+    repository: asRepositoryId(row.repository),
+    commit: asGitObjectId(row.commit),
+    path,
+    name,
+  };
 }
 
 async function readConfigurations(
@@ -48,12 +93,15 @@ async function readConfigurations(
   query: ConfigurationPageQuery,
 ): Promise<ConfigurationPage> {
   const found = await pool.query<ConfigurationPageRow>(
-    sql`SELECT revision,parent,canonical,digest,created_at::text AS created_at
-          FROM configuration_revision
-         WHERE tenant=${partition.tenant} AND project=${partition.project}
+    sql`SELECT c.revision,c.parent,c.canonical,c.digest,c.created_at::text AS created_at,
+               p.repository,p.repository_commit AS commit,p.path,p.name
+          FROM configuration_revision c
+          LEFT JOIN repository_configuration_provenance p
+            USING (tenant,project,revision)
+         WHERE c.tenant=${partition.tenant} AND c.project=${partition.project}
            AND (${query.after?.createdAt ?? null}::timestamptz IS NULL
-                OR (created_at,revision) < (${query.after?.createdAt ?? null}::timestamptz,${query.after?.revision ?? null}))
-         ORDER BY created_at DESC,revision DESC
+                OR (c.created_at,c.revision) < (${query.after?.createdAt ?? null}::timestamptz,${query.after?.revision ?? null}))
+         ORDER BY c.created_at DESC,c.revision DESC
          LIMIT ${query.limit + 1}`,
   );
   const rows = found.rows.slice(0, query.limit);
@@ -66,6 +114,7 @@ async function readConfigurations(
       canonical: asCanonicalConfiguration(row.canonical),
       digest: row.digest,
       createdAt: asPublicInstant(row.created_at),
+      provenance: configurationPageProvenance(row),
     }),
   );
   const last = rows.at(-1);
@@ -182,6 +231,50 @@ type CreateConfigurationInput = Parameters<
 type CreateDraftInput = Parameters<AuthoringStore["createDraft"]>[0];
 type ReviseDraftInput = Parameters<AuthoringStore["reviseDraft"]>[0];
 type DeleteDraftInput = Parameters<AuthoringStore["deleteDraft"]>[0];
+type ImportRepositoryConfigurationsInput = Parameters<
+  RepositoryConfigurationStore["importRepositoryConfigurations"]
+>[0];
+
+function repositoryImportConflict(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "P0001"
+  );
+}
+
+async function importRepositoryConfigurations(
+  pool: pg.Pool,
+  input: ImportRepositoryConfigurationsInput,
+): Promise<RepositoryConfigurationsImported> {
+  if (input.declarations.length > repositoryConfigurationDeclarationsMax)
+    throw new RangeError("repository configuration import exceeds its bound");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const declaration of input.declarations) {
+      const digest = configurationRevisionDigest(declaration.canonical);
+      const imported = await client.query<{ result: string | null }>(
+        sql`SELECT import_repository_configuration(${input.partition.tenant},${input.partition.project},${declaration.revision},${declaration.canonical},${digest},${declaration.repository},${declaration.commit},${declaration.path},${declaration.name},${input.authority.kind},${input.authority.subject})::text AS result`,
+      );
+      const result = imported.rows[0]?.result;
+      if (result !== "Imported" && result !== "AlreadyImported")
+        throw new Error(
+          `repository configuration transition returned ${String(result)}`,
+        );
+    }
+    await client.query("COMMIT");
+    return { imported: "Imported" };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    if (repositoryImportConflict(error))
+      return { imported: "IdentityConflict" };
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 async function createConfiguration(
   pool: pg.Pool,
@@ -299,7 +392,9 @@ async function deleteDraft(
 }
 
 /** Answers the native authoring port through constrained server functions. */
-export function postgresAuthoring(pool: pg.Pool): AuthoringStore {
+export function postgresAuthoring(
+  pool: pg.Pool,
+): AuthoringStore & RepositoryConfigurationStore {
   return {
     configurations: (partition, query) =>
       readConfigurations(pool, partition, query),
@@ -307,6 +402,8 @@ export function postgresAuthoring(pool: pg.Pool): AuthoringStore {
       readConfiguration(pool, partition, revision),
     draft: (partition, ticket) => readDraft(pool, partition, ticket),
     createConfiguration: (input) => createConfiguration(pool, input),
+    importRepositoryConfigurations: (input) =>
+      importRepositoryConfigurations(pool, input),
     createDraft: (input) => createDraft(pool, input),
     reviseDraft: (input) => reviseDraft(pool, input),
     deleteDraft: (input) => deleteDraft(pool, input),

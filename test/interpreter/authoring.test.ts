@@ -103,6 +103,7 @@ test("configuration summaries expose registry fields without canonical content",
     revision: asConfigurationRevisionId("revision"),
     digest: "digest",
     createdAt: asPublicInstant("2026-08-24T12:00:00Z"),
+    provenance: { source: "Authored" } as const,
   };
   assert.deepEqual(
     configurationRevisionSummary({ ...base, canonical: readyConfiguration }),

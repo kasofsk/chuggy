@@ -9,6 +9,11 @@ import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
+import type { GitObjectId, RepositoryId } from "./finalizer.ts";
+import type {
+  RepositoryConfigurationName,
+  RepositoryConfigurationPath,
+} from "./repositoryConfigurationIdentity.ts";
 import { encodeDecisionEventText, parseDecisionEventText } from "./wire.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
 import {
@@ -181,7 +186,18 @@ interface ConfigurationRevisionSummaryBase {
   readonly parent?: ConfigurationRevisionId;
   readonly digest: string;
   readonly createdAt: PublicInstant;
+  readonly provenance: ConfigurationRevisionProvenance;
 }
+
+export type ConfigurationRevisionProvenance =
+  | { readonly source: "Authored" }
+  | {
+      readonly source: "Repository";
+      readonly repository: RepositoryId;
+      readonly commit: GitObjectId;
+      readonly path: RepositoryConfigurationPath;
+      readonly name: RepositoryConfigurationName;
+    };
 
 export type ConfigurationRevisionSummary =
   | (ConfigurationRevisionSummaryBase & { readonly readiness: "Incomplete" })
@@ -212,6 +228,7 @@ export function configurationRevisionSummary(input: {
   readonly canonical: CanonicalConfiguration;
   readonly digest: string;
   readonly createdAt: PublicInstant;
+  readonly provenance: ConfigurationRevisionProvenance;
 }): ConfigurationRevisionSummary {
   const readiness = releaseConfigurationReadiness(input.canonical);
   const base = {
@@ -219,6 +236,7 @@ export function configurationRevisionSummary(input: {
     ...(input.parent === undefined ? {} : { parent: input.parent }),
     digest: input.digest,
     createdAt: input.createdAt,
+    provenance: input.provenance,
   };
   return readiness.readiness === "Incomplete"
     ? { ...base, readiness: "Incomplete" }

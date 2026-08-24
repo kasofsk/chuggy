@@ -58,6 +58,7 @@ const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
     version: 19,
     name: "the execution requirement a migrated database never got",
   },
+  { version: 20, name: "repository configuration provenance" },
 ]);
 
 const declaredLatest = Math.max(...migrations.map(({ version }) => version));
@@ -718,5 +719,39 @@ test("the migration that adds the requirement leaves a database already carrying
     await assertRequirementColumns(subject);
     await assertRequirementBoundary(subject);
     await assertRequirementGrants(subject);
+  });
+});
+
+test("repository configuration provenance migrates as an immutable API boundary", async () => {
+  await migrationDatabase("repositoryprovenance", async (subject) => {
+    await migrationSeedApplied(subject, 20);
+    await applyMigration(subject, 20);
+    assert.equal(
+      (
+        await subject.query<{ relation: string | null }>(
+          "SELECT to_regclass('repository_configuration_provenance')::text AS relation",
+        )
+      ).rows[0]?.relation,
+      "repository_configuration_provenance",
+    );
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_function_privilege($1,'import_repository_configuration(text,text,text,text,text,text,text,text,text,text,text)','EXECUTE') AS granted",
+          [apiRole],
+        )
+      ).rows[0]?.granted,
+      true,
+    );
+    for (const privilege of ["UPDATE", "DELETE"])
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_table_privilege($1,'repository_configuration_provenance',$2) AS granted",
+            [apiRole, privilege],
+          )
+        ).rows[0]?.granted,
+        false,
+      );
   });
 });

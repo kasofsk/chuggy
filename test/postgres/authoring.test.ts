@@ -10,6 +10,14 @@ import {
   asConfigurationRevisionId,
 } from "../../src/interpreter/authoring.ts";
 import {
+  asGitObjectId,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
+import {
+  repositoryConfigurationImportReadiness,
+  type RepositoryConfigurationDeclaration,
+} from "../../src/interpreter/repositoryConfiguration.ts";
+import {
   asAuthorityKind,
   asAuthoritySubject,
   asIdempotencyKey,
@@ -47,6 +55,39 @@ const authority = {
   kind: asAuthorityKind("User"),
   subject: asAuthoritySubject("author"),
 };
+
+function repositoryDeclarations(
+  commitValue: string,
+  names: readonly string[],
+): readonly RepositoryConfigurationDeclaration[] {
+  const ready = repositoryConfigurationImportReadiness({
+    repository: asRepositoryId("repository"),
+    commit: asGitObjectId(commitValue),
+    files: names.map((name) => ({
+      path: `.chug/configurations/${name}.json`,
+      kind: "File" as const,
+      content: JSON.stringify({
+        version: 1,
+        name,
+        configuration: {
+          version: 1,
+          image: "worker:v1",
+          practices: [],
+          brief: {
+            motivation: ["The ticket should be completed."],
+            acceptanceCriteria: ["The ticket is complete."],
+            constraints: [],
+          },
+          work: { instructions: [] },
+          review: { instructions: [] },
+        },
+      }),
+    })),
+  });
+  if (ready.readiness === "Refused")
+    throw new Error("repository configuration fixture was refused");
+  return ready.declarations;
+}
 
 async function draftFixture(canonical = postgresHarnessConfiguration) {
   const partition = await postgresHarnessProject(
@@ -212,6 +253,129 @@ test("configuration pages are newest-first, bounded, and project-local", async (
     ["revision-a"],
   );
   assert.equal(second.nextAfter, undefined);
+});
+
+test("repository configuration imports are idempotent and expose provenance", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-configuration-import",
+  );
+  const declarations = repositoryDeclarations("a".repeat(40), ["work"]);
+  for (const expected of ["Imported", "Imported"]) {
+    assert.equal(
+      (
+        await harness.authoring.importRepositoryConfigurations({
+          partition,
+          authority,
+          declarations,
+        })
+      ).imported,
+      expected,
+    );
+  }
+  const page = await harness.authoring.configurations(partition, { limit: 10 });
+  assert.deepEqual(
+    page.configurations.map(({ provenance }) => provenance),
+    [
+      {
+        source: "Repository",
+        repository: "repository",
+        commit: "a".repeat(40),
+        path: [".chug", "configurations", "work.json"].join("/"),
+        name: "work",
+      },
+    ],
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT count(*)::integer AS count FROM repository_configuration_provenance
+        WHERE tenant=$1 AND project=$2`,
+      [partition.tenant, partition.project],
+    ),
+    [{ count: 1 }],
+  );
+});
+
+test("repository imports retain changed commits and partition their identity", async () => {
+  const first = await postgresHarnessProject(harness.store, "repository-first");
+  const second = await postgresHarnessProject(
+    harness.store,
+    "repository-second",
+  );
+  const oldDeclarations = repositoryDeclarations("b".repeat(40), ["work"]);
+  const newDeclarations = repositoryDeclarations("c".repeat(40), ["work"]);
+  for (const partition of [first, second])
+    assert.equal(
+      (
+        await harness.authoring.importRepositoryConfigurations({
+          partition,
+          authority,
+          declarations: oldDeclarations,
+        })
+      ).imported,
+      "Imported",
+    );
+  assert.equal(
+    (
+      await harness.authoring.importRepositoryConfigurations({
+        partition: first,
+        authority,
+        declarations: newDeclarations,
+      })
+    ).imported,
+    "Imported",
+  );
+  assert.equal(
+    (await harness.authoring.configurations(first, { limit: 10 }))
+      .configurations.length,
+    2,
+  );
+  assert.equal(
+    (await harness.authoring.configurations(second, { limit: 10 }))
+      .configurations.length,
+    1,
+  );
+});
+
+test("a repository import conflict rolls back the entire snapshot", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-rollback",
+  );
+  const declarations = repositoryDeclarations("d".repeat(40), [
+    "first",
+    "second",
+  ]);
+  const conflict = declarations[1];
+  if (conflict === undefined) throw new Error("conflict fixture is absent");
+  await harness.authoring.createConfiguration({
+    partition,
+    authority,
+    revision: conflict.revision,
+    canonical: asCanonicalConfiguration("{}"),
+  });
+  assert.deepEqual(
+    await harness.authoring.importRepositoryConfigurations({
+      partition,
+      authority,
+      declarations,
+    }),
+    { imported: "IdentityConflict" },
+  );
+  const first = declarations[0];
+  if (first === undefined) throw new Error("rollback fixture is absent");
+  assert.equal(
+    await harness.authoring.configuration(partition, first.revision),
+    undefined,
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT revision FROM repository_configuration_provenance
+        WHERE tenant=$1 AND project=$2`,
+      [partition.tenant, partition.project],
+    ),
+    [],
+  );
 });
 
 test("configuration revision identity is project-local", async () => {

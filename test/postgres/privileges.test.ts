@@ -173,6 +173,18 @@ test("the API cannot bypass versioned authoring functions", async () => {
     ],
     ["INSERT INTO draft DEFAULT VALUES", "draft"],
     ["INSERT INTO draft_revision DEFAULT VALUES", "draft_revision"],
+    [
+      "INSERT INTO repository_configuration_provenance DEFAULT VALUES",
+      "repository_configuration_provenance",
+    ],
+    [
+      "UPDATE repository_configuration_provenance SET name='changed'",
+      "repository_configuration_provenance",
+    ],
+    [
+      "DELETE FROM repository_configuration_provenance",
+      "repository_configuration_provenance",
+    ],
     ["UPDATE draft SET state='Released'", "draft"],
     ["UPDATE project SET ticket_next=ticket_next+1", "project"],
   ] as readonly (readonly [string, string])[]) {
