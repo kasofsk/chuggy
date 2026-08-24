@@ -87,10 +87,9 @@ test("ticket detail presents identity, full configuration, authoring, and outcom
   assert.match(rendered, /worker:v1/);
   assert.match(rendered, /Dependencies2/);
   assert.match(rendered, /execution-1 · Work · Terminal · Passed/);
-  assert.deepEqual(elements(page, "button").slice(0, 3).map(content), [
-    "Edit",
-    "Delete",
+  assert.deepEqual(elements(page, "button").map(content), [
     "Release",
+    "execution-1",
   ]);
 });
 

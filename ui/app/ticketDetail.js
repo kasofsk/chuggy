@@ -176,6 +176,6 @@ export function ticketDetailExecutionsNext(
 export function ticketDetailActions(state) {
   const draft = ticketDetailHeld(state.draft);
   return draft?.state === "Draft"
-    ? { edit: true, delete: true, release: true }
+    ? { edit: false, delete: false, release: true }
     : { edit: false, delete: false, release: false };
 }

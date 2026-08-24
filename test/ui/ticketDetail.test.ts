@@ -45,7 +45,7 @@ function execution(execution: string) {
   };
 }
 
-test("a retained draft starts its configuration read and enables draft actions", () => {
+test("a retained draft starts its configuration read and exposes only supported actions", () => {
   const initial = ticketDetailInitial("token", partition, 7, 20);
   const answered = ticketDetailDraftReceived(
     initial.state,
@@ -59,8 +59,8 @@ test("a retained draft starts its configuration read and enables draft actions",
     "/api/v1/tenants/acme/projects/atlas/configurations/revision-1",
   );
   assert.deepEqual(ticketDetailActions(answered.state), {
-    edit: true,
-    delete: true,
+    edit: false,
+    delete: false,
     release: true,
   });
 });

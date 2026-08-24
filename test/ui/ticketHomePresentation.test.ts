@@ -48,7 +48,7 @@ test("tickets render in server order with activity, phase, and accessible links"
   const links = elements(view, "a");
   assert.deepEqual(
     links.map((link) => link.attributes.get("href")),
-    ["#ticket-8", "#ticket-3"],
+    ["/tickets/8", "/tickets/3"],
   );
   links[0]?.listeners.get("click")?.({ preventDefault: () => undefined });
   assert.deepEqual(fixture.tickets, [8]);

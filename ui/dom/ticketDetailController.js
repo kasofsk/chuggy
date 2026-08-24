@@ -62,10 +62,10 @@ export function createTicketDetail(parts) {
     state: detail.state,
     /** @param {Partition} partition @param {number} ticket */
     select: async (partition, ticket) => {
-      const token = await detail.session.accessToken();
-      if (token === undefined) return;
       detail.selection += 1;
       const selection = detail.selection;
+      const token = await detail.session.accessToken();
+      if (token === undefined || selection !== detail.selection) return;
       detail.state.partition = partition;
       const initial = ticketDetailInitial(token, partition, ticket);
       detail.state.detail = initial.state;
@@ -73,6 +73,7 @@ export function createTicketDetail(parts) {
       await readInitial(detail, selection, initial);
     },
     nextExecutions: async () => {
+      const selection = detail.selection;
       const token = await detail.session.accessToken();
       if (
         token === undefined ||
@@ -88,9 +89,12 @@ export function createTicketDetail(parts) {
       if (next === undefined) return;
       detail.state.detail = next.state;
       detail.onChanged();
+      const outcome = await detail.send(next.request);
+      if (selection !== detail.selection || detail.state.detail === undefined)
+        return;
       detail.state.detail = ticketDetailExecutionsReceived(
         detail.state.detail,
-        await detail.send(next.request),
+        outcome,
       );
       detail.onChanged();
     },

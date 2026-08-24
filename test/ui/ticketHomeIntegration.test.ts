@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createTicketHome } from "../../ui/dom/ticketHomeController.js";
+import { deferred } from "./deferred.ts";
+import type { ApiOutcome } from "../../ui/app/protocol.js";
 
 const partition = { tenant: "acme", project: "atlas" };
 
@@ -58,4 +60,36 @@ test("navigation callbacks remain shell-owned", () => {
 
   assert.deepEqual(tickets, [7]);
   assert.equal(creations, 1);
+});
+
+test("a late ticket page cannot replace a newly selected project", async () => {
+  const first = deferred<ApiOutcome>();
+  const newer = { tenant: "acme", project: "beacon" };
+  const controller = createTicketHome({
+    session: { accessToken: () => Promise.resolve("token") },
+    send: (request) =>
+      request.url.includes("atlas")
+        ? first.promise
+        : Promise.resolve({
+            outcome: "Ok" as const,
+            body: {
+              partition: newer,
+              sequence: 2,
+              tickets: [{ ticket: 2, phase: "Pending", sequence: 2 }],
+            },
+          }),
+    onChanged: () => undefined,
+    onTicket: () => undefined,
+    onNewTicket: () => undefined,
+  });
+  const oldRead = controller.select(partition);
+  await controller.select(newer);
+  first.answer({
+    outcome: "Ok",
+    body: { partition, sequence: 1, tickets: [] },
+  });
+  await oldRead;
+  assert.equal(controller.state.tickets.state, "Data");
+  if (controller.state.tickets.state === "Data")
+    assert.equal(controller.state.tickets.project.partition.project, "beacon");
 });

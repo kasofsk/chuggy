@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createTicketDetail } from "../../ui/dom/ticketDetailController.js";
+import { deferred } from "./deferred.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
@@ -132,10 +133,45 @@ test("navigation callbacks carry stable ticket and resource identities", async (
   controller.openExecution("execution-1");
   controller.openArtifact("execution-1", 2);
   assert.deepEqual(calls, [
-    ["edit", 7],
-    ["delete", 7],
     ["release", 7],
     ["execution", "execution-1"],
     ["artifact", "execution-1", 2],
   ]);
+});
+
+test("a selection waiting for credentials cannot overtake a newer ticket", async () => {
+  const firstToken = deferred<string | undefined>();
+  let tokens = 0;
+  const controller = createTicketDetail({
+    session: {
+      accessToken: () => {
+        tokens += 1;
+        return tokens === 1 ? firstToken.promise : Promise.resolve("token");
+      },
+    },
+    send: (request) => {
+      if (request.url.includes("/drafts/"))
+        return Promise.resolve({ outcome: "Absent" as const });
+      if (request.url.includes("/executions?"))
+        return Promise.resolve({
+          outcome: "Ok" as const,
+          body: { executions: [] },
+        });
+      return Promise.resolve({
+        outcome: "Ok" as const,
+        body: { ticket: 8, phase: "Pending", sequence: 2 },
+      });
+    },
+    onChanged: () => undefined,
+    onEdit: () => undefined,
+    onDelete: () => undefined,
+    onRelease: () => undefined,
+    onExecution: () => undefined,
+    onArtifact: () => undefined,
+  });
+  const oldRead = controller.select(partition, 7);
+  await controller.select(partition, 8);
+  firstToken.answer("token");
+  await oldRead;
+  assert.equal(controller.state.detail?.ticket, 8);
 });

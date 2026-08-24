@@ -9,11 +9,12 @@ import {
 /** @typedef {import("../app/ticketHome.js").TicketHomeState} TicketHomeState */
 /** @typedef {import("../app/protocol.js").Partition} Partition */
 
-/** @param {TicketHomeController} controller @param {TicketHomeRead} read */
-async function ticketHomeRead(controller, read) {
+/** @param {TicketHomeController} controller @param {TicketHomeRead} read @param {number} generation */
+async function ticketHomeRead(controller, read, generation) {
   controller.state.tickets = read.state;
   controller.onChanged();
   const outcome = await controller.send(read.request);
+  if (generation !== controller.generation) return;
   controller.state.tickets = ticketHomeReceived(read.state, outcome);
   controller.onChanged();
 }
@@ -23,10 +24,17 @@ async function ticketHomeRead(controller, read) {
  * @param {(token: string, partition: Partition) => TicketHomeRead | undefined} makeRead
  */
 async function ticketHomeStart(controller, makeRead) {
+  controller.generation += 1;
+  const generation = controller.generation;
   const token = await controller.session.accessToken();
-  if (token === undefined || controller.state.partition === undefined) return;
+  if (
+    token === undefined ||
+    controller.state.partition === undefined ||
+    generation !== controller.generation
+  )
+    return;
   const read = makeRead(token, controller.state.partition);
-  if (read !== undefined) await ticketHomeRead(controller, read);
+  if (read !== undefined) await ticketHomeRead(controller, read, generation);
 }
 
 /**
@@ -35,6 +43,7 @@ async function ticketHomeStart(controller, makeRead) {
  *   onChanged: () => void,
  *   onTicket: (ticket: number) => void,
  *   onNewTicket: () => void,
+ *   generation: number,
  *   state: { partition: Partition | undefined, tickets: TicketHomeState } }} TicketHomeController
  */
 
@@ -43,6 +52,7 @@ export function createTicketHome(parts) {
   /** @type {TicketHomeController} */
   const controller = {
     ...parts,
+    generation: 0,
     state: {
       partition: undefined,
       tickets: {

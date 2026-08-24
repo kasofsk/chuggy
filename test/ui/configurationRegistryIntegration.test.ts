@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createConfigurationRegistry } from "../../ui/dom/configurationRegistryController.js";
+import { deferred } from "./deferred.ts";
+import type { ApiOutcome } from "../../ui/app/protocol.js";
 
 const partition = { tenant: "acme", project: "atlas" };
 const commit = "a".repeat(40);
@@ -88,4 +90,27 @@ test("editing an import commit does not redraw the focused input", () => {
     commit: "a",
     issue: undefined,
   });
+});
+
+test("a late registry page cannot replace a newly selected project", async () => {
+  const first = deferred<ApiOutcome>();
+  const newer = { tenant: "acme", project: "beacon" };
+  const controller = createConfigurationRegistry({
+    session: { accessToken: () => Promise.resolve("token") },
+    send: (request) =>
+      request.url.includes("atlas")
+        ? first.promise
+        : Promise.resolve({ outcome: "Ok" as const, body: page("newer") }),
+    onChanged: () => undefined,
+  });
+  const oldRead = controller.select(partition);
+  await controller.select(newer);
+  first.answer({ outcome: "Ok", body: page("older") });
+  await oldRead;
+  assert.equal(controller.state.registry.state, "Data");
+  if (controller.state.registry.state === "Data")
+    assert.equal(
+      controller.state.registry.configurations[0]?.revision,
+      "newer",
+    );
 });

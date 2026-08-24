@@ -1,4 +1,5 @@
 import { ticketHomeData } from "../app/ticketHome.js";
+import { routePath } from "../app/routes.js";
 import { element } from "./render.js";
 
 /** @param {import("../app/ticketHome.js").TicketHomeState} state */
@@ -27,9 +28,11 @@ function notice(state) {
 
 /** @param {{ ticket: number, phase: string, sequence: number }} ticket @param {(ticket: number) => void} onTicket */
 function ticketRow(ticket, onTicket) {
-  const link = element("a", { href: `#ticket-${String(ticket.ticket)}` }, [
-    `Ticket ${String(ticket.ticket)}`,
-  ]);
+  const link = element(
+    "a",
+    { href: routePath({ page: "Ticket", ticket: ticket.ticket }) },
+    [`Ticket ${String(ticket.ticket)}`],
+  );
   /** @param {{ preventDefault: () => void }} event */
   const openTicket = (event) => {
     event.preventDefault();
