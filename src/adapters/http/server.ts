@@ -24,6 +24,7 @@ import {
   nativeHttpPathSegmentCharsMax,
   parseConfigurationCursor,
   parseInventoryCursor,
+  parseTicketActivityCursor,
   parseConfigurationCreation,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
@@ -305,25 +306,40 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
   const projectRead = async (request: FastifyRequest, reply: FastifyReply) => {
     const query = fieldsOnly(request.query, [
       "after",
+      "cursor",
       "limit",
       "minimumSequence",
+      "order",
       "phase",
     ]);
     const after = query["after"];
-    const result = await web.project(
-      principalOf(request),
-      partitionOf(request),
-      {
-        ...(after === undefined
-          ? {}
-          : { after: asTicketIdField(query, "after") }),
-        limit: integerField(query, "limit", 50),
-        ...(query["minimumSequence"] === undefined
-          ? {}
-          : { minimumSequence: integerField(query, "minimumSequence") }),
-        ...phaseFilter(query["phase"]),
-      },
-    );
+    const order = query["order"];
+    if (order !== undefined && order !== "RecentActivity")
+      throw new TypeError("order is invalid");
+    if (query["cursor"] !== undefined && order !== "RecentActivity")
+      throw new TypeError("cursor requires recent activity order");
+    if (after !== undefined && order === "RecentActivity")
+      throw new TypeError("after cannot order recent activity");
+    const partition = partitionOf(request);
+    const result = await web.project(principalOf(request), partition, {
+      ...(after === undefined
+        ? {}
+        : { after: asTicketIdField(query, "after") }),
+      limit: integerField(query, "limit", 50),
+      ...(order === undefined ? {} : { order }),
+      ...(query["cursor"] === undefined
+        ? {}
+        : {
+            recentActivityAfter: parseTicketActivityCursor(
+              textField(query, "cursor"),
+              partition,
+            ),
+          }),
+      ...(query["minimumSequence"] === undefined
+        ? {}
+        : { minimumSequence: integerField(query, "minimumSequence") }),
+      ...phaseFilter(query["phase"]),
+    });
     send(reply, projectResponse(result));
   };
   app.get(root, projectRead);
@@ -354,7 +370,12 @@ function registerOperationalRoutes(
     );
   });
   app.get(`${root}/executions`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["after", "limit", "state"]);
+    const query = fieldsOnly(request.query, [
+      "after",
+      "limit",
+      "state",
+      "ticket",
+    ]);
     const after = query["after"];
     send(
       reply,
@@ -364,6 +385,9 @@ function registerOperationalRoutes(
             ? {}
             : { after: asExecutionId(textField(query, "after")) }),
           limit: integerField(query, "limit", 50),
+          ...(query["ticket"] === undefined
+            ? {}
+            : { ticket: asTicketIdField(query, "ticket") }),
           ...executionSelection(query["state"]),
         }),
       ),

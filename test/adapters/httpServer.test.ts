@@ -67,7 +67,9 @@ function fakeOperations(
       return Promise.resolve({ result: "NotFound" });
     },
     executions: (_principal, _partition, query) => {
-      calls.push(`executions:${String(query.limit)}`);
+      calls.push(
+        `executions:${String(query.limit)}:${String(query.ticket ?? "")}`,
+      );
       return Promise.resolve({ result: "NotFound" });
     },
     execution: (_principal, _partition, execution) => {
@@ -152,7 +154,9 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
       });
     },
     project: (_principal, _partition, query) => {
-      calls.push(`project:${String(query.limit)}`);
+      calls.push(
+        `project:${String(query.limit)}:${query.order ?? "Identity"}:${String(query.recentActivityAfter?.sequence ?? "")}`,
+      );
       return Promise.resolve({ result: "NotFound" });
     },
     projectInventory: (_principal, _after, limit) => {
@@ -348,7 +352,33 @@ test("ticket phase filters and detail are parsed before NativeWeb", async () => 
     (await app.inject({ url: `${root}?phase=Unknown`, headers })).statusCode,
     400,
   );
-  assert.deepEqual(calls, ["project:7", "project:50", "ticket:3"]);
+  assert.deepEqual(calls, [
+    "project:7:Identity:",
+    "project:50:Identity:",
+    "ticket:3",
+  ]);
+});
+
+test("recent activity ordering requires its opaque cursor contract", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  assert.equal(
+    (await app.inject({ url: `${root}?order=RecentActivity`, headers }))
+      .statusCode,
+    404,
+  );
+  assert.equal(
+    (await app.inject({ url: `${root}?order=Newest`, headers })).statusCode,
+    400,
+  );
+  assert.equal(
+    (await app.inject({ url: `${root}?order=RecentActivity&after=1`, headers }))
+      .statusCode,
+    400,
+  );
+  assert.deepEqual(calls, ["project:50:RecentActivity:"]);
 });
 
 test("operational routes parse bounded filters and artifact identities", async () => {
@@ -358,7 +388,7 @@ test("operational routes parse bounded filters and artifact identities", async (
   const headers = { authorization: "Bearer valid" };
   await app.inject({ url: `${root}/operational-status`, headers });
   await app.inject({
-    url: `${root}/executions?state=Queued&state=Running&limit=7`,
+    url: `${root}/executions?state=Queued&state=Running&ticket=3&limit=7`,
     headers,
   });
   await app.inject({ url: `${root}/executions/execution-1`, headers });
@@ -377,7 +407,7 @@ test("operational routes parse bounded filters and artifact identities", async (
   );
   assert.deepEqual(calls, [
     "operationalStatus",
-    "executions:7",
+    "executions:7:3",
     "execution:execution-1",
     "output:execution-1:2",
   ]);
