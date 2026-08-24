@@ -15,11 +15,11 @@
  * places and cancels the same fenced attempt, so the name has to be derivable
  * from what both of those carry; it is a digest over the partition and the
  * attempt because an attempt identity is opaque and may carry text no object
- * name accepts. The generation is not part of it: a cancellation names the
- * generation it is fencing, and a name that varied with it would leave the
- * earlier pod behind. The same derivation makes a repeated placement of one
- * attempt idempotent, because the second request names the object the first
- * created.
+ * name accepts. The generation is not part of it: an attempt identity is
+ * already unique to one attempt, so there is at most one pod to name and a
+ * generation would distinguish nothing. That is what makes a repeated
+ * placement of one attempt idempotent, because the second request names the
+ * object the first created.
  *
  * THE FENCE TRAVELS AS ANNOTATIONS. A label value is bounded and constrained in
  * its alphabet where an annotation value is neither, so the generation an
@@ -201,8 +201,8 @@ export function checkedKubernetesWorkerLaunchConfig(
 }
 
 /**
- * The object name one attempt's pod has, which the delete path derives from the
- * same two values without holding anything.
+ * The object name one attempt's pod has, which the cancellation path derives
+ * from the same two values without holding anything.
  */
 export function kubernetesWorkerPodName(
   config: KubernetesWorkerLaunchConfig,

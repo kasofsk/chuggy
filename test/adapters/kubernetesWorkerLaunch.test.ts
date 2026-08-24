@@ -56,6 +56,14 @@ const token = "cluster-token-value";
 const tokenFile = join(root, "token");
 writeFileSync(tokenFile, `${token}\n`);
 
+/**
+ * The one image this suite's site admits and its placement requires. They are
+ * written as the same value so that no case here turns on which of the two a
+ * container ends up running; that divergence is issue #250's, and the case
+ * that pins it belongs with the fix.
+ */
+const workerImage = "registry.invalid/worker:1";
+
 const config: KubernetesWorkerLaunchConfig = {
   apiBaseUrl: "https://cluster.invalid:6443",
   namespace: "chuggy-workers",
@@ -66,7 +74,7 @@ const config: KubernetesWorkerLaunchConfig = {
     {
       profile: "standard",
       runtimeVersion: "1",
-      image: "registry.invalid/worker:1",
+      image: workerImage,
     },
   ],
   resources: {
@@ -140,7 +148,7 @@ const placement: AttemptPlacement = {
     mode: "Container",
     operatingSystem: "Linux",
     architecture: "Amd64",
-    image: "registry.invalid/worker:v1",
+    image: workerImage,
   },
   requirementDigest: "requirement-digest",
   profile: { profile: "standard", runtimeVersion: "1" },
@@ -241,7 +249,7 @@ function expectedPod(name: string): unknown {
       containers: [
         {
           name: kubernetesWorkerContainerName,
-          image: "registry.invalid/worker:1",
+          image: workerImage,
           env: [{ name: kubernetesWorkerTaskVariable, value: expectedTask() }],
           resources: {
             requests: { cpu: "500m", memory: "1Gi" },
