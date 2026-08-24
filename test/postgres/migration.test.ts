@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import {
@@ -531,6 +531,78 @@ async function unmaterializeRequirement(subject: pg.Pool): Promise<void> {
   await subject.query(
     `REVOKE SELECT ON configuration_revision FROM ${schedulerRole}`,
   );
+  await subject.query(
+    `CREATE OR REPLACE FUNCTION execution_moves_legally() RETURNS trigger
+       LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+       BEGIN
+         IF (NEW.tenant,NEW.project,NEW.execution,NEW.ticket,NEW.task,
+             NEW.source_request,NEW.account,NEW.cluster,
+             NEW.configuration_revision,NEW.configuration_digest)
+            IS DISTINCT FROM
+            (OLD.tenant,OLD.project,OLD.execution,OLD.ticket,OLD.task,
+             OLD.source_request,OLD.account,OLD.cluster,
+             OLD.configuration_revision,OLD.configuration_digest) THEN
+           RAISE EXCEPTION 'execution identity or pin changed';
+         END IF;
+         RETURN NEW;
+       END $$`,
+  );
+}
+
+/** An execution whose requirement has to be reconstructed from its configuration. */
+async function seedLegacyExecution(subject: pg.Pool): Promise<void> {
+  await subject.query("SET session_replication_role=replica");
+  try {
+    await subject.query(
+      `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES ('tenant','project','revision',
+         '{"image":"registry.example/worker:legacy"}','configuration-digest',
+         'ProjectWriter','subject')`,
+    );
+    await subject.query(
+      `INSERT INTO execution
+       (tenant,project,execution,ticket,task,source_request,account,cluster,
+        configuration_revision,configuration_digest,requirement_identity,
+        requirement_value,requirement_digest,requirement_source,
+        platform_default_version)
+       VALUES ('tenant','project','execution',1,1,'request','account','cluster',
+         'revision','configuration-digest','discarded','{}','discarded',
+         'PlatformDefault',1)`,
+    );
+  } finally {
+    await subject.query("SET session_replication_role=origin");
+  }
+}
+
+/** The legacy row carries the platform requirement derived from its configuration. */
+async function assertRequirementBackfilled(subject: pg.Pool): Promise<void> {
+  const value = {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image: "registry.example/worker:legacy",
+  };
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT requirement_identity,requirement_value,requirement_digest,
+                requirement_source,platform_default_version
+           FROM execution WHERE execution='execution'`,
+      )
+    ).rows,
+    [
+      {
+        requirement_identity: "execution",
+        requirement_value: value,
+        requirement_digest: createHash("sha256")
+          .update(JSON.stringify(value), "utf8")
+          .digest("hex"),
+        requirement_source: "PlatformDefault",
+        platform_default_version: "1",
+      },
+    ],
+  );
 }
 
 async function applyMigration(
@@ -626,10 +698,12 @@ async function assertRequirementGrants(subject: pg.Pool): Promise<void> {
 test("the requirement a database migrated before the columns existed never got is added", async () => {
   await migrationDatabase("requirement", async (subject) => {
     await migrationSeedApplied(subject, 19);
+    await seedLegacyExecution(subject);
     await unmaterializeRequirement(subject);
 
     await applyMigration(subject, 19);
 
+    await assertRequirementBackfilled(subject);
     await assertRequirementColumns(subject);
     await assertRequirementBoundary(subject);
     await assertRequirementGrants(subject);
