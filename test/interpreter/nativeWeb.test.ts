@@ -18,7 +18,16 @@ import {
   asOperationId,
   type OperationInbox,
 } from "../../src/interpreter/operationInbox.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asRecoveryEpoch,
+  asTenantId,
+} from "../../src/interpreter/projectStore.ts";
+import {
+  asGitObjectId,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
+import type { RepositoryConfigurationImportPorts } from "../../src/interpreter/repositoryConfiguration.ts";
 import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
 import { id } from "../domain/fixtures.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
@@ -77,6 +86,7 @@ function authoringStore(calls: string[]): AuthoringStore {
 function boundary(
   allowed: boolean,
   backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
+  repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
 ): {
   readonly web: ReturnType<typeof nativeWeb>;
   readonly calls: string[];
@@ -131,8 +141,67 @@ function boundary(
       authoringStore(calls),
       notifications,
       backlog,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      repositoryConfigurationImports,
     ),
     calls,
+  };
+}
+
+function repositoryImportPorts(
+  calls: string[],
+): RepositoryConfigurationImportPorts {
+  return {
+    bindings: {
+      binding: (foundPartition) => {
+        calls.push("binding");
+        return Promise.resolve({
+          partition: foundPartition,
+          repository: asRepositoryId("repository"),
+          recoveryEpoch: asRecoveryEpoch("epoch"),
+        });
+      },
+    },
+    snapshots: {
+      snapshot: ({ commit }) => {
+        calls.push(`snapshot:${commit}`);
+        return Promise.resolve({
+          read: "Snapshot",
+          files: [
+            {
+              path: [".chug", "configurations", "work.json"].join("/"),
+              kind: "File",
+              content: JSON.stringify({
+                version: 1,
+                name: "work",
+                configuration: {
+                  version: 1,
+                  image: "worker:v1",
+                  practices: [],
+                  brief: {
+                    motivation: ["Do the work."],
+                    acceptanceCriteria: ["The work is done."],
+                    constraints: [],
+                  },
+                  work: { instructions: [] },
+                  review: { instructions: [] },
+                },
+              }),
+            },
+          ],
+        });
+      },
+    },
+    store: {
+      importRepositoryConfigurations: ({ declarations }) => {
+        calls.push(`import:${String(declarations.length)}`);
+        return Promise.resolve({ imported: "Imported" });
+      },
+    },
   };
 }
 
@@ -188,6 +257,75 @@ test("configuration pages authorize and enforce their bound before reading", asy
     allowed.web.configurations(principal, partition, { limit: 101 }),
     /configuration page limit/u,
   );
+});
+
+test("repository imports authorize, pin one snapshot, then persist ready declarations", async () => {
+  const calls: string[] = [];
+  const subject = boundary(
+    true,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls),
+  );
+  const commit = asGitObjectId("a".repeat(40));
+  assert.deepEqual(
+    await subject.web.importRepositoryConfigurations(
+      principal,
+      partition,
+      commit,
+    ),
+    { result: "Imported" },
+  );
+  assert.deepEqual(subject.calls, ["authorize:Mutate"]);
+  assert.deepEqual(calls, ["binding", `snapshot:${commit}`, "import:1"]);
+});
+
+test("repository imports conceal denial before reading any outer port", async () => {
+  const calls: string[] = [];
+  const subject = boundary(
+    false,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls),
+  );
+  assert.deepEqual(
+    await subject.web.importRepositoryConfigurations(
+      principal,
+      partition,
+      asGitObjectId("b".repeat(40)),
+    ),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(subject.calls, ["authorize:Mutate"]);
+  assert.deepEqual(calls, []);
+});
+
+test("repository imports refuse invalid declarations without writing", async () => {
+  const calls: string[] = [];
+  const ports = repositoryImportPorts(calls);
+  const subject = boundary(true, openExecutionBacklogGuard, {
+    ...ports,
+    snapshots: {
+      snapshot: () => {
+        calls.push("snapshot:invalid");
+        return Promise.resolve({
+          read: "Snapshot",
+          files: [
+            {
+              path: [".chug", "configurations", "invalid.json"].join("/"),
+              kind: "File",
+              content: "{}",
+            },
+          ],
+        });
+      },
+    },
+  });
+  const result = await subject.web.importRepositoryConfigurations(
+    principal,
+    partition,
+    asGitObjectId("c".repeat(40)),
+  );
+  assert.equal(result.result, "DeclarationsRefused");
+  assert.deepEqual(calls, ["binding", "snapshot:invalid"]);
 });
 
 test("operational resources authorize before scheduler or artifact reads", async () => {

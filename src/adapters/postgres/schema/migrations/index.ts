@@ -18,6 +18,7 @@ import { migration017 } from "./017-selector-context-account-read.ts";
 import { migration018 } from "./018-selector-review-readiness.ts";
 import { migration019 } from "./019-execution-requirement-upgrade.ts";
 import { migration020 } from "./020-repository-configuration-provenance.ts";
+import { migration021 } from "./021-api-repository-binding-read.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -42,4 +43,5 @@ export const migrations: readonly Migration[] = [
   migration018,
   migration019,
   migration020,
+  migration021,
 ];

@@ -10,6 +10,7 @@ import {
   finalizerRole,
   notificationPublishFunction,
   projectAuthorizationFunction,
+  repositoryBindingReadFunction,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
@@ -191,6 +192,21 @@ test("the API cannot bypass versioned authoring functions", async () => {
     const refusal = await harness.attemptAs(apiRole, statement);
     assert.match(refusal ?? "", postgresHarnessDenial(object));
   }
+});
+
+test("the API reads one repository binding only through its boundary", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project')`,
+    ),
+    undefined,
+  );
+  assert.match(
+    (await harness.attemptAs(apiRole, "SELECT * FROM project_repository")) ??
+      "",
+    postgresHarnessDenial("project_repository"),
+  );
 });
 
 test("runtime roles cannot write notification rows directly", async () => {

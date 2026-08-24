@@ -114,6 +114,38 @@ export interface RepositoryConfigurationStore {
   }): Promise<RepositoryConfigurationsImported>;
 }
 
+export interface ProjectRepositoryBindingRead {
+  binding(partition: Partition): Promise<RepositoryBinding | undefined>;
+}
+
+export interface RepositoryConfigurationImportPorts {
+  readonly bindings: ProjectRepositoryBindingRead;
+  readonly snapshots: RepositoryConfigurationSnapshotPort;
+  readonly store: RepositoryConfigurationStore;
+}
+
+export type RepositoryConfigurationImportOutcome =
+  | { readonly result: "NotFound" }
+  | { readonly result: "RepositoryAbsent" }
+  | {
+      readonly result: "SnapshotAbsent";
+      readonly absent: "Commit" | "ConfigurationDirectory";
+    }
+  | {
+      readonly result: "Unavailable";
+      readonly unavailable: "Credential" | "Repository";
+    }
+  | {
+      readonly result: "SnapshotRefused";
+      readonly refused: "Credential" | "Snapshot";
+    }
+  | {
+      readonly result: "DeclarationsRefused";
+      readonly faults: readonly RepositoryConfigurationRefusal[];
+    }
+  | { readonly result: "IdentityConflict" }
+  | { readonly result: "Imported" };
+
 function repositoryConfigurationRevision(
   commit: GitObjectId,
   name: RepositoryConfigurationName,
