@@ -37,7 +37,7 @@ export const retryAfterSecondsFallback = 5;
  *   | { outcome: "Absent" }
  *   | { outcome: "Conflict", code: string, body: unknown }
  *   | { outcome: "Retryable", code: string, retryAfterSeconds: number }
- *   | { outcome: "Rejected", code: string, status: number }
+ *   | { outcome: "Rejected", code: string, status: number, body: unknown }
  *   | { outcome: "Fault", code: string, status: number }} ApiOutcome
  */
 
@@ -143,6 +143,56 @@ export function ticketsRequest(accessToken, partition, query) {
     ...optionalField("minimumSequence", query.minimumSequence),
     ...(query.phases ?? []),
   ]);
+}
+
+/**
+ * Configuration pages are newest-first and continue with an opaque cursor.
+ *
+ * @param {string} accessToken
+ * @param {Partition} partition
+ * @param {string | undefined} cursor
+ * @param {number} limit
+ */
+export function configurationsRequest(accessToken, partition, cursor, limit) {
+  return readRequest(
+    accessToken,
+    `${partitionPath(partition)}/configurations`,
+    [
+      ...optionalField(
+        "cursor",
+        cursor === undefined ? undefined : checkedCursor(cursor),
+      ),
+      ["limit", checkedLimit(limit)],
+    ],
+  );
+}
+
+/**
+ * Repository imports name an immutable Git object, never a moving ref.
+ *
+ * @param {string} accessToken
+ * @param {Partition} partition
+ * @param {string} commit
+ * @returns {ApiRequest}
+ */
+export function repositoryConfigurationImportRequest(
+  accessToken,
+  partition,
+  commit,
+) {
+  const body = JSON.stringify({ commit });
+  if (body.length > bodyBytesMax)
+    throw new RangeError("an import body is larger than the server accepts");
+  return {
+    method: /** @type {const} */ ("POST"),
+    url: `${partitionPath(partition)}/configurations/imports`,
+    headers: {
+      accept: mediaType,
+      authorization: `Bearer ${accessToken}`,
+      "content-type": mediaType,
+    },
+    body,
+  };
 }
 
 /**
@@ -339,6 +389,7 @@ export function classify(status, header, body) {
       outcome: "Rejected",
       code: envelopeCode(body, "InvalidRequest"),
       status,
+      body,
     };
   return {
     outcome: "Fault",

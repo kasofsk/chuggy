@@ -25,9 +25,13 @@ import type { ExecutionResultResource } from "../../src/interpreter/operationsVi
 import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
 import type { NotificationBatch } from "../../src/interpreter/notifications.ts";
 import type { NotificationKind } from "../../src/interpreter/notifications.ts";
+import type { ConfigurationRevisionProvenance } from "../../src/interpreter/authoring.ts";
+import type { RepositoryConfigurationFault } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   artifactRoles,
   attemptStates,
+  configurationProvenanceSources,
+  configurationReadinesses,
   dispatchViewResults,
   executionOutcomes,
   executionStatuses,
@@ -38,6 +42,7 @@ import {
   operationStates,
   outputRenderers,
   parseArtifactContent,
+  parseConfigurationsPage,
   parseDispatchView,
   parseExecution,
   parseExecutionsPage,
@@ -46,8 +51,10 @@ import {
   parseOperationalStatus,
   parseProject,
   parseProjectsPage,
+  parseRepositoryConfigurationRefusals,
   phaseRoster,
   resultVerdicts,
+  repositoryConfigurationFaults,
   schedulerFreshnessRoster,
 } from "../../ui/app/resources.js";
 
@@ -56,6 +63,32 @@ function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
 }
 
 const sorted = (values: readonly string[]) => [...values].sort();
+
+function assertConfigurationRosters(): void {
+  const provenance: Record<ConfigurationRevisionProvenance["source"], true> = {
+    Authored: true,
+    Repository: true,
+  };
+  const readiness: Record<"Ready" | "Incomplete", true> = {
+    Ready: true,
+    Incomplete: true,
+  };
+  const faults: Record<RepositoryConfigurationFault, true> = {
+    TooManyDeclarations: true,
+    PathInvalid: true,
+    SymlinkRefused: true,
+    ContentTooLarge: true,
+    DocumentUnreadable: true,
+    EnvelopeInvalid: true,
+    NameInvalid: true,
+    ConfigurationInvalid: true,
+    DuplicateName: true,
+    DuplicatePath: true,
+  };
+  assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
+  assert.deepEqual(sorted(configurationReadinesses), keysOf(readiness));
+  assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
+}
 
 test("the phase and scheduler rosters are the model's", () => {
   assert.deepEqual(phaseRoster, [...phaseTags]);
@@ -125,6 +158,74 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
   assert.deepEqual(sorted(resultVerdicts), keysOf(verdicts));
   assert.deepEqual(sorted(dispatchViewResults), keysOf(dispatchResults));
   assert.deepEqual(sorted(notificationResults), keysOf(notificationBatches));
+  assertConfigurationRosters();
+});
+
+test("configuration pages preserve readiness and repository provenance", () => {
+  const declarationPath = [".chug", "configurations", "work.json"].join("/");
+  const page = parseConfigurationsPage({
+    configurations: [
+      {
+        revision: "repository:commit:work",
+        digest: "digest",
+        createdAt: "2026-08-24T12:00:00Z",
+        readiness: "Ready",
+        image: "worker:v1",
+        practices: ["RegressionCoverage"],
+        workInstructionsCount: 2,
+        reviewInstructionsCount: 1,
+        provenance: {
+          source: "Repository",
+          repository: "chuggy",
+          commit: "a".repeat(40),
+          path: declarationPath,
+          name: "work",
+        },
+      },
+      {
+        revision: "draft",
+        parent: "parent",
+        digest: "other-digest",
+        createdAt: "2026-08-23T12:00:00Z",
+        readiness: "Incomplete",
+        provenance: { source: "Authored" },
+      },
+    ],
+    nextCursor: "opaque",
+  });
+  assert.equal(page.nextCursor, "opaque");
+  assert.equal(page.configurations[0]?.readiness, "Ready");
+  assert.equal(page.configurations[1]?.readiness, "Incomplete");
+  assert.deepEqual(page.configurations[0]?.provenance, {
+    source: "Repository",
+    repository: "chuggy",
+    commit: "a".repeat(40),
+    path: declarationPath,
+    name: "work",
+  });
+});
+
+test("repository import refusals retain paths and configuration faults", () => {
+  const declarationPath = [".chug", "configurations", "work.json"].join("/");
+  assert.deepEqual(
+    parseRepositoryConfigurationRefusals({
+      error: { code: "RepositoryConfigurationsRefused" },
+      faults: [
+        {
+          path: declarationPath,
+          fault: "ConfigurationInvalid",
+          configurationFault: "WorkInvalid",
+        },
+      ],
+    }),
+    [
+      {
+        path: declarationPath,
+        fault: "ConfigurationInvalid",
+        configurationFault: "WorkInvalid",
+      },
+    ],
+  );
 });
 
 test("a projects page carries its cursor even when the page is short", () => {
