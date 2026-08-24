@@ -54,6 +54,14 @@ function count(fields, name, what) {
   return value;
 }
 
+/** @param {Record<string, unknown>} fields @param {string} name @param {string} what */
+function booleanField(fields, name, what) {
+  const value = fields[name];
+  if (typeof value !== "boolean")
+    throw new ResourceError(`${what}.${name} is not a boolean`);
+  return value;
+}
+
 /**
  * @param {Record<string, unknown>} fields
  * @param {string} name
@@ -154,6 +162,17 @@ export function parseProject(value) {
     sequence: count(fields, "sequence", "project"),
     tickets,
     nextAfter: optionalTicket(fields, "nextAfter", "project"),
+    nextCursor: optionalText(fields, "nextCursor", "project"),
+  };
+}
+
+/** @param {unknown} value */
+export function parseTicket(value) {
+  const fields = record(value, "ticket");
+  return {
+    ticket: ticket(fields, "ticket", "ticket"),
+    phase: member(fields, "phase", phaseRoster, "ticket"),
+    sequence: count(fields, "sequence", "ticket"),
   };
 }
 
@@ -438,6 +457,170 @@ export function parseConfigurationsPage(value) {
       itemsPerPageMax,
     ).map(configurationSummary),
     nextCursor: optionalText(fields, "nextCursor", "configurations page"),
+  };
+}
+
+/** @param {unknown} value */
+export function parseConfiguration(value) {
+  const fields = record(value, "configuration");
+  return {
+    partition: partition(fields["partition"], "configuration partition"),
+    revision: text(fields, "revision", "configuration"),
+    parent: optionalText(fields, "parent", "configuration"),
+    canonical: text(fields, "canonical", "configuration"),
+    digest: text(fields, "digest", "configuration"),
+  };
+}
+
+export const evaluationCombinators = ["UnanimousPass", "AnyPass"];
+export const resumePricings = ["RetryCharged", "RetryFree"];
+export const finalizers = ["NoFinalizer", "ManagedFinalizer"];
+export const draftStates = ["Draft", "Released", "Deleted"];
+
+/** @param {unknown} value @param {string} what */
+function stage(value, what) {
+  const fields = record(value, what);
+  return {
+    fanout: ticket(fields, "fanout", what),
+    combinator: member(fields, "combinator", evaluationCombinators, what),
+  };
+}
+
+/** @param {unknown} value @param {string} what */
+function reworkPolicy(value, what) {
+  const fields = record(value, what);
+  if (text(fields, "type", what) !== "BudgetedRework")
+    throw new ResourceError(`${what}.type is outside the known set`);
+  return {
+    type: /** @type {const} */ ("BudgetedRework"),
+    value: count(fields, "value", what),
+  };
+}
+
+/** @param {unknown} value @param {string} what */
+function finalizationPricing(value, what) {
+  if (value === "DeadlineOnly") return value;
+  const fields = record(value, what);
+  if (text(fields, "type", what) !== "Budgeted")
+    throw new ResourceError(`${what}.type is outside the known set`);
+  return {
+    type: /** @type {const} */ ("Budgeted"),
+    value: count(fields, "value", what),
+  };
+}
+
+/** @param {unknown} value @param {string} what */
+function authoring(value, what) {
+  const fields = record(value, what);
+  return {
+    dependencies: list(
+      fields["dependencies"],
+      `${what}.dependencies`,
+      itemsPerPageMax,
+    ).map((entry) => ticket({ ticket: entry }, "ticket", `${what}.dependency`)),
+    program: list(fields["program"], `${what}.program`, itemsPerPageMax).map(
+      (entry) => stage(entry, `${what}.stage`),
+    ),
+    workFanout: ticket(fields, "workFanout", what),
+    reworkPolicy: reworkPolicy(fields["reworkPolicy"], `${what}.reworkPolicy`),
+    finalizationPricing: finalizationPricing(
+      fields["finalizationPricing"],
+      `${what}.finalizationPricing`,
+    ),
+    resumePricing: member(fields, "resumePricing", resumePricings, what),
+    finalizer: member(fields, "finalizer", finalizers, what),
+  };
+}
+
+/** @param {Record<string, unknown>} choices */
+function draftInitializationChoices(choices) {
+  /** @param {string} name */
+  const choiceList = (name) =>
+    list(
+      choices[name],
+      `draft initialization choices.${name}`,
+      itemsPerPageMax,
+    );
+  return {
+    stages: choiceList("stages").map((entry) =>
+      stage(entry, "draft initialization choice stage"),
+    ),
+    programStagesMax: count(
+      choices,
+      "programStagesMax",
+      "draft initialization.choices",
+    ),
+    workFanouts: choiceList("workFanouts").map((entry) =>
+      ticket({ ticket: entry }, "ticket", "work fanout choice"),
+    ),
+    reworkPolicies: choiceList("reworkPolicies").map((entry) =>
+      reworkPolicy(entry, "rework policy choice"),
+    ),
+    finalizationPricings: choiceList("finalizationPricings").map((entry) =>
+      finalizationPricing(entry, "finalization pricing choice"),
+    ),
+    resumePricings: choiceList("resumePricings").map((entry) =>
+      rosterEntry(entry, resumePricings, "resume pricing choice"),
+    ),
+    finalizers: choiceList("finalizers").map((entry) =>
+      rosterEntry(entry, finalizers, "finalizer choice"),
+    ),
+  };
+}
+
+/** @param {unknown} value @param {readonly string[]} roster @param {string} what */
+function rosterEntry(value, roster, what) {
+  if (typeof value !== "string" || !roster.includes(value))
+    throw new ResourceError(`${what} is outside the known set`);
+  return value;
+}
+
+/** @param {unknown} value */
+export function parseDraft(value) {
+  const fields = record(value, "draft");
+  return {
+    partition: partition(fields["partition"], "draft partition"),
+    ticket: ticket(fields, "ticket", "draft"),
+    authoringVersion: count(fields, "authoringVersion", "draft"),
+    state: member(fields, "state", draftStates, "draft"),
+    configurationRevision: text(fields, "configurationRevision", "draft"),
+    authoring: authoring(fields["authoring"], "draft.authoring"),
+  };
+}
+
+/** @param {unknown} value */
+export function parseDraftInitialization(value) {
+  const fields = record(value, "draft initialization");
+  const choices = record(fields["choices"], "draft initialization.choices");
+  const fence = record(fields["fence"], "draft initialization.fence");
+  return {
+    configuration: parseConfiguration(fields["configuration"]),
+    fence: {
+      projectSequence: count(
+        fence,
+        "projectSequence",
+        "draft initialization.fence",
+      ),
+      configurationDigest: text(
+        fence,
+        "configurationDigest",
+        "draft initialization.fence",
+      ),
+    },
+    defaults: authoring(fields["defaults"], "draft initialization.defaults"),
+    choices: draftInitializationChoices(choices),
+    dependencyCandidates: list(
+      fields["dependencyCandidates"],
+      "dependency candidates",
+      itemsPerPageMax,
+    ).map((entry) =>
+      ticket({ ticket: entry }, "ticket", "dependency candidate"),
+    ),
+    dependencyCandidatesTruncated: booleanField(
+      fields,
+      "dependencyCandidatesTruncated",
+      "draft initialization",
+    ),
   };
 }
 

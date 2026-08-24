@@ -26,12 +26,21 @@ import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
 import type { NotificationBatch } from "../../src/interpreter/notifications.ts";
 import type { NotificationKind } from "../../src/interpreter/notifications.ts";
 import type { ConfigurationRevisionProvenance } from "../../src/interpreter/authoring.ts";
+import type { DraftState } from "../../src/interpreter/authoring.ts";
+import type {
+  Combinator,
+  Finalizer,
+  RetryPricing,
+} from "../../src/domain/generated/modelTypes.ts";
 import type { RepositoryConfigurationFault } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   artifactRoles,
   attemptStates,
   configurationProvenanceSources,
   configurationReadinesses,
+  draftStates,
+  evaluationCombinators,
+  finalizers,
   dispatchViewResults,
   executionOutcomes,
   executionStatuses,
@@ -43,6 +52,9 @@ import {
   outputRenderers,
   parseArtifactContent,
   parseConfigurationsPage,
+  parseConfiguration,
+  parseDraft,
+  parseDraftInitialization,
   parseDispatchView,
   parseExecution,
   parseExecutionsPage,
@@ -53,6 +65,7 @@ import {
   parseProjectsPage,
   parseRepositoryConfigurationRefusals,
   phaseRoster,
+  resumePricings,
   resultVerdicts,
   repositoryConfigurationFaults,
   schedulerFreshnessRoster,
@@ -159,6 +172,83 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
   assert.deepEqual(sorted(dispatchViewResults), keysOf(dispatchResults));
   assert.deepEqual(sorted(notificationResults), keysOf(notificationBatches));
   assertConfigurationRosters();
+});
+
+test("ticket authoring rosters are exhaustive over the model unions", () => {
+  const states: Record<DraftState, true> = {
+    Draft: true,
+    Released: true,
+    Deleted: true,
+  };
+  const combinators: Record<Combinator, true> = {
+    UnanimousPass: true,
+    AnyPass: true,
+  };
+  const pricing: Record<RetryPricing, true> = {
+    RetryCharged: true,
+    RetryFree: true,
+  };
+  const finalizer: Record<Finalizer, true> = {
+    NoFinalizer: true,
+    ManagedFinalizer: true,
+  };
+  assert.deepEqual(sorted(draftStates), keysOf(states));
+  assert.deepEqual(sorted(evaluationCombinators), keysOf(combinators));
+  assert.deepEqual(sorted(resumePricings), keysOf(pricing));
+  assert.deepEqual(sorted(finalizers), keysOf(finalizer));
+});
+
+const authoring = {
+  dependencies: [1],
+  program: [{ fanout: 1, combinator: "UnanimousPass" }],
+  workFanout: 1,
+  reworkPolicy: { type: "BudgetedRework", value: 0 },
+  finalizationPricing: "DeadlineOnly",
+  resumePricing: "RetryCharged",
+  finalizer: "ManagedFinalizer",
+};
+
+test("ticket creation resources retain server defaults and their fence", () => {
+  const configuration = {
+    partition: { tenant: "acme", project: "atlas" },
+    revision: "revision",
+    canonical: "{}",
+    digest: "a".repeat(64),
+  };
+  assert.equal(parseConfiguration(configuration).revision, "revision");
+  const initialization = parseDraftInitialization({
+    configuration,
+    fence: { projectSequence: 9, configurationDigest: "a".repeat(64) },
+    defaults: authoring,
+    choices: {
+      stages: authoring.program,
+      programStagesMax: 4,
+      workFanouts: [1, 2],
+      reworkPolicies: [authoring.reworkPolicy],
+      finalizationPricings: [authoring.finalizationPricing],
+      resumePricings: [authoring.resumePricing],
+      finalizers: [authoring.finalizer],
+    },
+    dependencyCandidates: [1, 2],
+    dependencyCandidatesTruncated: false,
+  });
+  assert.equal(initialization.fence.projectSequence, 9);
+  assert.deepEqual(initialization.defaults.dependencies, [1]);
+  assert.deepEqual(initialization.choices.workFanouts, [1, 2]);
+});
+
+test("draft reads retain editable authoring and lifecycle state", () => {
+  const draft = parseDraft({
+    partition: { tenant: "acme", project: "atlas" },
+    ticket: 3,
+    authoringVersion: 2,
+    state: "Released",
+    configurationRevision: "revision",
+    authoring,
+  });
+  assert.equal(draft.state, "Released");
+  assert.equal(draft.authoring.program[0]?.combinator, "UnanimousPass");
+  assert.throws(() => parseDraft({ ...draft, state: "Unknown" }), TypeError);
 });
 
 test("configuration pages preserve readiness and repository provenance", () => {

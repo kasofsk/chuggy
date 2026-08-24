@@ -15,11 +15,12 @@ import {
 /** @typedef {import("../app/configurationRegistry.js").ConfigurationRegistryState} ConfigurationRegistryState */
 /** @typedef {import("../app/protocol.js").Partition} Partition */
 
-/** @param {Registry} registry @param {ConfigurationRegistryRead} read */
-async function registryRead(registry, read) {
+/** @param {Registry} registry @param {ConfigurationRegistryRead} read @param {number} generation */
+async function registryRead(registry, read, generation) {
   registry.state.registry = read.state;
   registry.onChanged();
   const outcome = await registry.send(read.request);
+  if (generation !== registry.generation) return;
   registry.state.registry = configurationRegistryReceived(read.state, outcome);
   registry.onChanged();
 }
@@ -29,16 +30,30 @@ async function registryRead(registry, read) {
  * @param {(token: string, partition: Partition) => ConfigurationRegistryRead | undefined} makeRead
  */
 async function registryStart(registry, makeRead) {
+  registry.generation += 1;
+  const generation = registry.generation;
   const token = await registry.session.accessToken();
-  if (token === undefined || registry.state.partition === undefined) return;
+  if (
+    token === undefined ||
+    registry.state.partition === undefined ||
+    generation !== registry.generation
+  )
+    return;
   const read = makeRead(token, registry.state.partition);
-  if (read !== undefined) await registryRead(registry, read);
+  if (read !== undefined) await registryRead(registry, read, generation);
 }
 
 /** @param {Registry} registry */
 async function registryImport(registry) {
+  registry.generation += 1;
+  const generation = registry.generation;
   const token = await registry.session.accessToken();
-  if (token === undefined || registry.state.partition === undefined) return;
+  if (
+    token === undefined ||
+    registry.state.partition === undefined ||
+    generation !== registry.generation
+  )
+    return;
   const submission = repositoryConfigurationImportSubmitted(
     registry.state.import,
     token,
@@ -47,9 +62,11 @@ async function registryImport(registry) {
   registry.state.import = submission.state;
   registry.onChanged();
   if (submission.request === undefined) return;
+  const outcome = await registry.send(submission.request);
+  if (generation !== registry.generation) return;
   const answered = repositoryConfigurationImportAnswered(
     submission.state,
-    await registry.send(submission.request),
+    outcome,
   );
   registry.state.import = answered.state;
   registry.onChanged();
@@ -66,7 +83,7 @@ async function registryImport(registry) {
 /**
  * @typedef {{ session: { accessToken: () => Promise<string | undefined> },
  *   send: (request: import("../app/protocol.js").ApiRequest) => Promise<import("../app/protocol.js").ApiOutcome>,
- *   onChanged: () => void,
+ *   onChanged: () => void, generation: number,
  *   state: { partition: Partition | undefined,
  *     registry: ConfigurationRegistryState,
  *     import: import("../app/repositoryConfigurationImport.js").RepositoryConfigurationImportState } }} Registry
@@ -79,6 +96,7 @@ export function createConfigurationRegistry(parts) {
     session: parts.session,
     send: parts.send,
     onChanged: parts.onChanged,
+    generation: 0,
     state: {
       partition: undefined,
       registry: {
