@@ -44,6 +44,7 @@ import {
   selectorServiceRole,
   ticketServiceRole,
 } from "../adapters/postgres/schema.ts";
+import { postgresDomainConfigurationPrecondition } from "../adapters/postgres/domainConfiguration.ts";
 import {
   currentRuntimeSchemaContract,
   postgresRuntimeSchema,
@@ -293,7 +294,13 @@ export function ticketServiceProcessRoot(
     ticketServiceProcess(
       service,
       config.pass,
-      { pool, additional: [postgresRolePrecondition(pool, ticketServiceRole)] },
+      {
+        pool,
+        additional: [
+          postgresRolePrecondition(pool, ticketServiceRole),
+          postgresDomainConfigurationPrecondition(pool, config.domain),
+        ],
+      },
       config.runtime,
     ),
   );

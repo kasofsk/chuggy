@@ -21,6 +21,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type pg from "pg";
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
+import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 
 import {
   asCanonicalConfiguration,
@@ -135,6 +136,13 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
   const pool = postgresPool(postgresHarnessUrl());
   const store = postgresProjectStore(pool);
   await postgresHarnessEpoch(store);
+  if (
+    !(await postgresDomainConfigurationPrecondition(
+      pool,
+      refinementInstance,
+    ).check(new AbortController().signal))
+  )
+    throw new Error("postgres harness: domain configuration was refused");
   return {
     store,
     inbox: postgresOperationInbox(pool, postgresHarnessKeying()),
@@ -508,7 +516,7 @@ export async function postgresHarnessReleaseSubmission(
     revision,
     100,
   );
-  if (initialized === undefined)
+  if (initialized === undefined || initialized === "PolicyUnavailable")
     throw new Error("postgres harness: release draft was not initialized");
   const created = await harness.authoring.createDraft({
     partition,

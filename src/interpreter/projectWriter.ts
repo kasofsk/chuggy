@@ -36,6 +36,7 @@ import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
 import type { Core } from "../domain/generated/modelTypes.ts";
+import { dependableIn } from "../domain/enablement.ts";
 import { asTicketId } from "../domain/ids.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type { ProjectDiscovery, Readiness } from "./projectDiscovery.ts";
@@ -87,9 +88,11 @@ export interface ProjectDecided {
 
 /** Every ticket's current phase, which is the whole projection and the rebuild of it. */
 export function projectionOf(core: Core): readonly TicketProjection[] {
+  const dependable = new Set(dependableIn(core));
   return ticketIds(core).map((ticket) => ({
     ticket,
     phase: ticketAt(core, ticket).phase,
+    dependable: dependable.has(ticket),
   }));
 }
 

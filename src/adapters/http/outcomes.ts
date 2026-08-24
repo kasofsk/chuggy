@@ -504,6 +504,8 @@ export function draftInitializationResponse(
         "The configuration is not ready.",
       ),
     );
+  if (initialized.initialized === "PolicyUnavailable")
+    return retry(503, 1, "DraftInitializationUnavailable");
   const value = initialized.value;
   return response(200, {
     configuration: value.configuration,

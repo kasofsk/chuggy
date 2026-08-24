@@ -4,6 +4,7 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
+import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   asCanonicalConfiguration,
@@ -28,7 +29,7 @@ import {
   projectWriterDecide,
   projectWriterLoad,
 } from "../../src/interpreter/projectWriter.ts";
-import { plainAuthoring } from "../actor/harness.ts";
+import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import {
   postgresHarnessHeld,
   postgresHarnessConfiguration,
@@ -55,6 +56,23 @@ const authority = {
   kind: asAuthorityKind("User"),
   subject: asAuthoritySubject("author"),
 };
+
+test("the ticket service refuses policy drift from the installed authority", async () => {
+  assert.equal(
+    await postgresDomainConfigurationPrecondition(
+      pool,
+      refinementInstance,
+    ).check(new AbortController().signal),
+    true,
+  );
+  assert.equal(
+    await postgresDomainConfigurationPrecondition(pool, {
+      ...refinementInstance,
+      nTasks: refinementInstance.nTasks + 1,
+    }).check(new AbortController().signal),
+    false,
+  );
+});
 
 function repositoryDeclarations(
   commitValue: string,
@@ -103,7 +121,7 @@ async function draftFixture(canonical = postgresHarnessConfiguration) {
     canonical,
   });
   const initialized = await store.initializeDraft(partition, revision, 100);
-  if (initialized === undefined)
+  if (initialized === undefined || initialized === "PolicyUnavailable")
     throw new Error("draft fixture was not initialized");
   const created = await store.createDraft({
     partition,
@@ -132,7 +150,8 @@ test("draft creation rejects a stale initialization fence", async () => {
     canonical: postgresHarnessConfiguration,
   });
   const initialized = await store.initializeDraft(partition, revision, 100);
-  if (initialized === undefined) throw new Error("draft was not initialized");
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("draft was not initialized");
   await harness.query(
     "UPDATE project SET head=head+1 WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
@@ -532,7 +551,7 @@ test("draft edits are versioned and deletion leaves an unreusable identity", asy
     { revised: "NotDraft", state: "Deleted" },
   );
   const initialized = await store.initializeDraft(partition, revision, 100);
-  if (initialized === undefined)
+  if (initialized === undefined || initialized === "PolicyUnavailable")
     throw new Error("next draft was not initialized");
   const next = await store.createDraft({
     partition,
@@ -587,7 +606,7 @@ test("a domain release advances the shared ticket identity allocator", async () 
     canonical: asCanonicalConfiguration("{}"),
   });
   const initialized = await store.initializeDraft(partition, revision, 100);
-  if (initialized === undefined)
+  if (initialized === undefined || initialized === "PolicyUnavailable")
     throw new Error("draft fixture was not initialized");
   const created = await store.createDraft({
     partition,

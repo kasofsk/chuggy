@@ -27,7 +27,6 @@ import {
   finalizerGitEnvironmentNames,
   repositoryCredentialFilesOf,
 } from "../interpreter/finalizerSettings.ts";
-import { domainConfigurationOf } from "./domainConfig.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -40,7 +39,6 @@ const selectorReviewDatabaseUrlVariable =
 const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
 const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
-const domainConfigurationVariable = "CHUG_API_DOMAIN_CONFIG";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -95,12 +93,6 @@ function oidcConfig(): OidcAuthenticationConfig {
     ),
     jwksTimeoutMs: positiveEnvironment("CHUG_API_OIDC_JWKS_TIMEOUT_MS", 5_000),
   };
-}
-
-function domainConfiguration() {
-  return domainConfigurationOf(
-    JSON.parse(requiredEnvironment(domainConfigurationVariable)),
-  );
 }
 
 async function apiDatabaseReady(
@@ -241,7 +233,6 @@ async function main(): Promise<void> {
     keying,
     postgresProjectAccess(pool),
     postgresExecutionBacklogGuard(pool),
-    domainConfiguration(),
     undefined,
     undefined,
     undefined,

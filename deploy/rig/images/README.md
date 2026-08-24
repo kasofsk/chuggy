@@ -106,7 +106,6 @@ to start without the required ones.
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | required | JSON repository-to-credential-file mappings |
-| `CHUG_API_DOMAIN_CONFIG` | required | the same domain configuration supplied to the ticket service |
 | `CHUG_API_HOST` | `0.0.0.0` in the image | the source default is loopback, which no kubelet can reach |
 | `CHUG_API_PORT` | 3000 | |
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |

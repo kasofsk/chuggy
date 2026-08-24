@@ -13,7 +13,7 @@ import {
   decodedCommandConfiguration,
   positiveInteger,
 } from "./commandConfig.ts";
-import { domainConfigurationSchema } from "./domainConfig.ts";
+import { domainConfigurationSchema } from "../interpreter/domainConfiguration.ts";
 import {
   ticketServiceProcessRoot,
   type TicketServiceProcessRootConfig,

@@ -316,7 +316,15 @@ export interface DraftInitialization {
 export type DraftInitializationRead =
   | { readonly initialized: "Initialized"; readonly value: DraftInitialization }
   | { readonly initialized: "ConfigurationNotFound" }
-  | { readonly initialized: "ConfigurationIncomplete" };
+  | { readonly initialized: "ConfigurationIncomplete" }
+  | { readonly initialized: "PolicyUnavailable" };
+
+export interface DraftInitializationSnapshot extends Omit<
+  DraftInitialization,
+  "defaults" | "choices"
+> {
+  readonly domain: Config;
+}
 
 /** The deployment policy exposed to authors; release validation consumes the same universes. */
 export function draftInitializationPolicy(
@@ -368,7 +376,7 @@ export interface AuthoringStore {
     partition: Partition,
     revision: ConfigurationRevisionId,
     dependencyCandidatesMax: number,
-  ): Promise<Omit<DraftInitialization, "defaults" | "choices"> | undefined>;
+  ): Promise<DraftInitializationSnapshot | "PolicyUnavailable" | undefined>;
   configurations(
     partition: Partition,
     query: ConfigurationPageQuery,

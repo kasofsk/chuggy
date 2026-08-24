@@ -28,9 +28,13 @@ import {
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import type { RepositoryConfigurationImportPorts } from "../../src/interpreter/repositoryConfiguration.ts";
-import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
+import {
+  asCanonicalConfiguration,
+  asConfigurationRevisionId,
+  type AuthoringStore,
+} from "../../src/interpreter/authoring.ts";
+import { refinementInstance } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
-import { refinementInstance as domainConfig } from "../actor/harness.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
 import {
   allBacklogScopes,
@@ -63,9 +67,17 @@ function ticketRead(calls: string[]): NativeReadStore["ticket"] {
   };
 }
 
-function authoringStore(calls: string[]): AuthoringStore {
+function authoringStore(
+  calls: string[],
+  initialization: ReturnType<
+    AuthoringStore["initializeDraft"]
+  > = Promise.resolve(undefined),
+): AuthoringStore {
   return {
-    initializeDraft: () => Promise.resolve(undefined),
+    initializeDraft: (_partition, _revision, maximum) => {
+      calls.push(`initialize:${String(maximum)}`);
+      return initialization;
+    },
     configurations: () => {
       calls.push("read:configurations");
       return Promise.resolve({ partition, configurations: [] });
@@ -89,6 +101,7 @@ function boundary(
   allowed: boolean,
   backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
   repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
+  initialization?: ReturnType<AuthoringStore["initializeDraft"]>,
 ): {
   readonly web: ReturnType<typeof nativeWeb>;
   readonly calls: string[];
@@ -140,7 +153,7 @@ function boundary(
       access,
       reads,
       inbox,
-      authoringStore(calls),
+      authoringStore(calls, initialization),
       notifications,
       backlog,
       undefined,
@@ -149,11 +162,95 @@ function boundary(
       undefined,
       undefined,
       repositoryConfigurationImports,
-      domainConfig,
     ),
     calls,
   };
 }
+
+const readyConfiguration = asCanonicalConfiguration(
+  '{"brief":{"acceptanceCriteria":["works"],"constraints":[],"motivation":["needed"]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
+);
+
+test("draft initialization authorizes before reading and returns bounded policy", async () => {
+  const revision = asConfigurationRevisionId("revision");
+  const initialization = Promise.resolve({
+    configuration: {
+      partition,
+      revision,
+      canonical: readyConfiguration,
+      digest: "a".repeat(64),
+    },
+    projectSequence: 4,
+    dependencyCandidates: [id(1)],
+    dependencyCandidatesTruncated: true,
+    domain: refinementInstance,
+  });
+  const denied = boundary(
+    false,
+    openExecutionBacklogGuard,
+    undefined,
+    initialization,
+  );
+  assert.equal(
+    (await denied.web.initializeDraft(principal, partition, revision)).result,
+    "NotFound",
+  );
+  assert.deepEqual(denied.calls, ["authorize:Mutate"]);
+  const allowed = boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    initialization,
+  );
+  const result = await allowed.web.initializeDraft(
+    principal,
+    partition,
+    revision,
+  );
+  assert.equal(result.result, "Authorized");
+  assert.equal(
+    result.result === "Authorized" && result.value.initialized === "Initialized"
+      ? result.value.value.dependencyCandidatesTruncated
+      : false,
+    true,
+  );
+  assert.deepEqual(allowed.calls, ["authorize:Mutate", "initialize:100"]);
+});
+
+test("draft initialization bounds missing, unavailable, and incomplete configurations", async () => {
+  const revision = asConfigurationRevisionId("revision");
+  for (const [initialization, expected] of [
+    [Promise.resolve(undefined), "ConfigurationNotFound"],
+    [Promise.resolve("PolicyUnavailable" as const), "PolicyUnavailable"],
+    [
+      Promise.resolve({
+        configuration: {
+          partition,
+          revision,
+          canonical: asCanonicalConfiguration("{}"),
+          digest: "a".repeat(64),
+        },
+        projectSequence: 0,
+        dependencyCandidates: [],
+        dependencyCandidatesTruncated: false,
+        domain: refinementInstance,
+      }),
+      "ConfigurationIncomplete",
+    ],
+  ] as const) {
+    const { web } = boundary(
+      true,
+      openExecutionBacklogGuard,
+      undefined,
+      initialization,
+    );
+    const result = await web.initializeDraft(principal, partition, revision);
+    assert.equal(
+      result.result === "Authorized" ? result.value.initialized : "NotFound",
+      expected,
+    );
+  }
+});
 
 function repositoryImportPorts(
   calls: string[],

@@ -123,7 +123,10 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
       calls.push("createDraft");
       return Promise.resolve({ result: "NotFound" });
     },
-    initializeDraft: () => Promise.resolve({ result: "NotFound" }),
+    initializeDraft: () => {
+      calls.push("initializeDraft");
+      return Promise.resolve({ result: "NotFound" });
+    },
     deleteDraft: (_principal, input) => {
       calls.push(`deleteDraft:${String(input.expectedVersion)}`);
       return Promise.resolve({ result: "NotFound" });
@@ -468,6 +471,17 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "deleteDraft:3",
     "dispatchView:4",
   ]);
+});
+
+test("draft initialization routes the selected revision", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const response = await app.inject({
+    url: "/api/v1/tenants/tenant/projects/project/draft-initializations/revision",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(calls, ["initializeDraft"]);
 });
 
 test("the bearer scheme is matched without regard to its case", async () => {

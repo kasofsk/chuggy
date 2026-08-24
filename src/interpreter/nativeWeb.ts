@@ -42,7 +42,6 @@ import {
   draftInitializationPolicy,
   releaseConfigurationReadiness,
 } from "./authoring.ts";
-import type { Config } from "../domain/config.ts";
 import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
 import {
   dispatchNeedsExecutionHeadroom,
@@ -426,7 +425,6 @@ type NativeAuthoringMethods = Pick<
 function nativeDraftInitializationMethod(
   access: ProjectAccess,
   authoring: AuthoringStore,
-  domain: Config,
 ): Pick<NativeWeb, "initializeDraft"> {
   return {
     initializeDraft: async (principal, partition, revision) => {
@@ -442,6 +440,11 @@ function nativeDraftInitializationMethod(
           result: "Authorized",
           value: { initialized: "ConfigurationNotFound" },
         };
+      if (snapshot === "PolicyUnavailable")
+        return {
+          result: "Authorized",
+          value: { initialized: "PolicyUnavailable" },
+        };
       if (
         releaseConfigurationReadiness(snapshot.configuration.canonical)
           .readiness === "Incomplete"
@@ -454,7 +457,14 @@ function nativeDraftInitializationMethod(
         result: "Authorized",
         value: {
           initialized: "Initialized",
-          value: { ...snapshot, ...draftInitializationPolicy(domain) },
+          value: {
+            configuration: snapshot.configuration,
+            projectSequence: snapshot.projectSequence,
+            dependencyCandidates: snapshot.dependencyCandidates,
+            dependencyCandidatesTruncated:
+              snapshot.dependencyCandidatesTruncated,
+            ...draftInitializationPolicy(snapshot.domain),
+          },
         },
       };
     },
@@ -679,12 +689,6 @@ function nativeOperationalMethods(
 }
 
 /** Builds the application boundary from authorization, read, and inbox ports. */
-function requiredAuthoringDomain(domain: Config | undefined): Config {
-  if (domain === undefined)
-    throw new Error("native web authoring policy is required");
-  return domain;
-}
-
 export function nativeWeb(
   access: ProjectAccess,
   reads: NativeReadStore,
@@ -698,16 +702,14 @@ export function nativeWeb(
   outputContents?: OutputContentPort,
   selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
-  domain?: Config,
 ): NativeWeb {
-  const authoringDomain = requiredAuthoringDomain(domain);
   return {
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,
     ),
     ...nativeConfigurationMethods(access, authoring),
-    ...nativeDraftInitializationMethod(access, authoring, authoringDomain),
+    ...nativeDraftInitializationMethod(access, authoring),
     ...nativeAuthoringMethods(access, authoring),
     ...nativeOperationalMethods(access, operationalReads, outputContents),
     selectorOperationalContext: nativeSelectorContextMethod(

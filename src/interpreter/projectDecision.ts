@@ -110,6 +110,7 @@ export type DecisionCause =
 export interface TicketProjection {
   readonly ticket: TicketId;
   readonly phase: Phase;
+  readonly dependable: boolean;
 }
 
 /**
