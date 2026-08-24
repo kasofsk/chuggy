@@ -46,6 +46,7 @@ import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess
 import { postgresProjectMembership } from "../../src/adapters/postgres/projectMembership.ts";
 import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
 import type { ProjectMembershipAdministration } from "../../src/interpreter/projectMembership.ts";
+import type { RepositoryConfigurationStore } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -114,7 +115,7 @@ export interface PostgresHarness {
   readonly inbox: OperationInbox;
   readonly discovery: ProjectDiscovery;
   readonly decisions: ProjectDecision;
-  readonly authoring: AuthoringStore;
+  readonly authoring: AuthoringStore & RepositoryConfigurationStore;
   readonly access: ProjectAccess;
   readonly membership: ProjectMembershipAdministration;
   readonly query: (
