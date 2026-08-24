@@ -4,10 +4,12 @@ import { test } from "node:test";
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
+  configurationRevisionSummary,
   encodeDraftAuthoring,
   parseDraftAuthoring,
   releaseConfigurationReadiness,
 } from "../../src/interpreter/authoring.ts";
+import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
@@ -94,6 +96,32 @@ test("release readiness names briefing and practice refusals", () => {
       { readiness: "Incomplete", fault },
     );
   }
+});
+
+test("configuration summaries expose registry fields without canonical content", () => {
+  const base = {
+    revision: asConfigurationRevisionId("revision"),
+    digest: "digest",
+    createdAt: asPublicInstant("2026-08-24T12:00:00Z"),
+  };
+  assert.deepEqual(
+    configurationRevisionSummary({ ...base, canonical: readyConfiguration }),
+    {
+      ...base,
+      readiness: "Ready",
+      image: "worker:v1",
+      practices: [],
+      workInstructionsCount: 0,
+      reviewInstructionsCount: 0,
+    },
+  );
+  assert.deepEqual(
+    configurationRevisionSummary({
+      ...base,
+      canonical: asCanonicalConfiguration("{}"),
+    }),
+    { ...base, readiness: "Incomplete" },
+  );
 });
 
 test("a raw ReleaseTicket is not a public Decide command", () => {

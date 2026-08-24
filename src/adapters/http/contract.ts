@@ -7,8 +7,10 @@ import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
   type CanonicalConfiguration,
+  type ConfigurationPageCursor,
   type ConfigurationRevisionId,
 } from "../../interpreter/authoring.ts";
+import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import {
   dispatchViewSchemaVersion,
   checkedSelectorDecisionReference,
@@ -262,6 +264,56 @@ const inventoryCursorSchema = z.strictObject({
   tenant: z.string(),
   project: z.string(),
 });
+
+const configurationCursorSchema = z.strictObject({
+  version: z.literal(nativeHttpVersion),
+  tenant: z.string(),
+  project: z.string(),
+  createdAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), {
+    message: "Expected a timestamp",
+  }),
+  revision: z.string().min(1),
+});
+
+export function encodeConfigurationCursor(
+  partition: Partition,
+  cursor: ConfigurationPageCursor,
+): string {
+  return Buffer.from(
+    JSON.stringify({
+      version: nativeHttpVersion,
+      tenant: partition.tenant,
+      project: partition.project,
+      createdAt: cursor.createdAt,
+      revision: cursor.revision,
+    }),
+  ).toString("base64url");
+}
+
+export function parseConfigurationCursor(
+  value: string,
+  expected: Partition,
+): ConfigurationPageCursor {
+  if (value.length === 0 || value.length > nativeHttpCursorCharsMax)
+    throw new RangeError("configuration cursor is empty or too long");
+  const decoded: unknown = JSON.parse(
+    Buffer.from(value, "base64url").toString(),
+  );
+  const cursor = configurationCursorSchema.parse(decoded);
+  const partition = parsePartition(cursor.tenant, cursor.project);
+  if (
+    partition.tenant !== expected.tenant ||
+    partition.project !== expected.project
+  )
+    throw new RangeError("configuration cursor belongs to another project");
+  const parsed = {
+    createdAt: asPublicInstant(cursor.createdAt),
+    revision: asConfigurationRevisionId(cursor.revision),
+  };
+  if (encodeConfigurationCursor(partition, parsed) !== value)
+    throw new RangeError("configuration cursor is not canonically encoded");
+  return parsed;
+}
 
 export function encodeInventoryCursor(partition: Partition): string {
   return Buffer.from(

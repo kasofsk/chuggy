@@ -53,6 +53,27 @@ function ticketRead(calls: string[]): NativeReadStore["ticket"] {
   };
 }
 
+function authoringStore(calls: string[]): AuthoringStore {
+  return {
+    configurations: () => {
+      calls.push("read:configurations");
+      return Promise.resolve({ partition, configurations: [] });
+    },
+    configuration: () => {
+      calls.push("read:configuration");
+      return Promise.resolve(undefined);
+    },
+    draft: () => {
+      calls.push("read:draft");
+      return Promise.resolve(undefined);
+    },
+    createConfiguration: () => Promise.resolve({ created: "ParentNotFound" }),
+    createDraft: () => Promise.resolve({ created: "ConfigurationNotFound" }),
+    reviseDraft: () => Promise.resolve({ revised: "NotFound" }),
+    deleteDraft: () => Promise.resolve({ deleted: "NotFound" }),
+  };
+}
+
 function boundary(
   allowed: boolean,
   backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
@@ -96,20 +117,6 @@ function boundary(
     },
     operation: () => Promise.resolve(undefined),
   };
-  const authoring: AuthoringStore = {
-    configuration: () => {
-      calls.push("read:configuration");
-      return Promise.resolve(undefined);
-    },
-    draft: () => {
-      calls.push("read:draft");
-      return Promise.resolve(undefined);
-    },
-    createConfiguration: () => Promise.resolve({ created: "ParentNotFound" }),
-    createDraft: () => Promise.resolve({ created: "ConfigurationNotFound" }),
-    reviseDraft: () => Promise.resolve({ revised: "NotFound" }),
-    deleteDraft: () => Promise.resolve({ deleted: "NotFound" }),
-  };
   const notifications: NotificationStore = {
     read: () => {
       calls.push("read:notifications");
@@ -117,7 +124,14 @@ function boundary(
     },
   };
   return {
-    web: nativeWeb(access, reads, inbox, authoring, notifications, backlog),
+    web: nativeWeb(
+      access,
+      reads,
+      inbox,
+      authoringStore(calls),
+      notifications,
+      backlog,
+    ),
     calls,
   };
 }
@@ -154,6 +168,26 @@ test("ticket detail reauthorizes and conceals inaccessible tickets", async () =>
     id(1),
   );
   assert.deepEqual(allowed.calls, ["authorize:Read", "read:ticket:1"]);
+});
+
+test("configuration pages authorize and enforce their bound before reading", async () => {
+  const denied = boundary(false);
+  assert.deepEqual(
+    await denied.web.configurations(principal, partition, { limit: 10 }),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
+
+  const allowed = boundary(true);
+  assert.deepEqual(
+    await allowed.web.configurations(principal, partition, { limit: 10 }),
+    { result: "Authorized", value: { partition, configurations: [] } },
+  );
+  assert.deepEqual(allowed.calls, ["authorize:Read", "read:configurations"]);
+  await assert.rejects(
+    allowed.web.configurations(principal, partition, { limit: 101 }),
+    /configuration page limit/u,
+  );
 });
 
 test("operational resources authorize before scheduler or artifact reads", async () => {

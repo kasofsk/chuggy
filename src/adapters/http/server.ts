@@ -22,6 +22,7 @@ import {
   nativeHttpHeaderBytesMax,
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
+  parseConfigurationCursor,
   parseInventoryCursor,
   parseConfigurationCreation,
   parseDraftCreation,
@@ -33,6 +34,7 @@ import {
   cancellationResponse,
   configurationCreationResponse,
   configurationResponse,
+  configurationsResponse,
   dispatchViewResponse,
   draftCreationResponse,
   draftDeletionResponse,
@@ -75,6 +77,7 @@ type InitialNativeWeb = Pick<
   NativeWeb,
   | "cancel"
   | "configuration"
+  | "configurations"
   | "createConfiguration"
   | "createDraft"
   | "deleteDraft"
@@ -526,6 +529,23 @@ function registerConfigurations(
   web: InitialNativeWeb,
 ): void {
   const root = "/api/v1/tenants/:tenant/projects/:project/configurations";
+  app.get(root, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["cursor", "limit"]);
+    const cursor = query["cursor"];
+    const partition = partitionOf(request);
+    const result = await web.configurations(principalOf(request), partition, {
+      ...(cursor === undefined
+        ? {}
+        : {
+            after: parseConfigurationCursor(
+              textField(query, "cursor"),
+              partition,
+            ),
+          }),
+      limit: integerField(query, "limit", 50),
+    });
+    send(reply, configurationsResponse(result));
+  });
   app.post(
     root,
     { preValidation: requireVersionedJson },

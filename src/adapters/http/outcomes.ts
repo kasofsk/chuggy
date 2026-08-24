@@ -3,6 +3,7 @@ import { z } from "zod";
 import { assertNever } from "../../domain/assertNever.ts";
 import type {
   ConfigurationCreated,
+  ConfigurationPage,
   ConfigurationRevisionResource,
   DraftCreated,
   DraftDeleted,
@@ -34,6 +35,7 @@ import type {
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
+  encodeConfigurationCursor,
   encodeInventoryCursor,
   nativeHttpError,
   nativeHttpMediaType,
@@ -382,6 +384,24 @@ export function configurationResponse(
   return resource === undefined
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, resource);
+}
+
+export function configurationsResponse(
+  result: AuthorizedResult<ConfigurationPage>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        configurations: result.value.configurations,
+        ...(result.value.nextAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeConfigurationCursor(
+                result.value.partition,
+                result.value.nextAfter,
+              ),
+            }),
+      });
 }
 
 function configurationCreated(value: ConfigurationCreated): NativeHttpResponse {

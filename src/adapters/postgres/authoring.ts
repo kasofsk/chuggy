@@ -7,9 +7,12 @@ import { asTicketId } from "../../domain/ids.ts";
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
+  configurationRevisionSummary,
   encodeDraftAuthoring,
   parseDraftAuthoring,
   type AuthoringStore,
+  type ConfigurationPage,
+  type ConfigurationPageQuery,
   type ConfigurationCreated,
   type ConfigurationRevisionResource,
   type DraftCreated,
@@ -19,6 +22,7 @@ import {
   type DraftState,
 } from "../../interpreter/authoring.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
+import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import { projectRowCounter } from "./rows.ts";
 import { configurationRevisionDigest } from "./digest.ts";
 
@@ -28,6 +32,55 @@ interface DraftRow {
   readonly state: string;
   readonly configuration_revision: string;
   readonly authoring: string;
+}
+
+interface ConfigurationPageRow {
+  readonly revision: string;
+  readonly parent: string | null;
+  readonly canonical: string;
+  readonly digest: string;
+  readonly created_at: string;
+}
+
+async function readConfigurations(
+  pool: pg.Pool,
+  partition: Partition,
+  query: ConfigurationPageQuery,
+): Promise<ConfigurationPage> {
+  const found = await pool.query<ConfigurationPageRow>(
+    sql`SELECT revision,parent,canonical,digest,created_at::text AS created_at
+          FROM configuration_revision
+         WHERE tenant=${partition.tenant} AND project=${partition.project}
+           AND (${query.after?.createdAt ?? null}::timestamptz IS NULL
+                OR (created_at,revision) < (${query.after?.createdAt ?? null}::timestamptz,${query.after?.revision ?? null}))
+         ORDER BY created_at DESC,revision DESC
+         LIMIT ${query.limit + 1}`,
+  );
+  const rows = found.rows.slice(0, query.limit);
+  const configurations = rows.map((row) =>
+    configurationRevisionSummary({
+      revision: asConfigurationRevisionId(row.revision),
+      ...(row.parent === null
+        ? {}
+        : { parent: asConfigurationRevisionId(row.parent) }),
+      canonical: asCanonicalConfiguration(row.canonical),
+      digest: row.digest,
+      createdAt: asPublicInstant(row.created_at),
+    }),
+  );
+  const last = rows.at(-1);
+  return {
+    partition,
+    configurations,
+    ...(found.rows.length <= query.limit || last === undefined
+      ? {}
+      : {
+          nextAfter: {
+            createdAt: asPublicInstant(last.created_at),
+            revision: asConfigurationRevisionId(last.revision),
+          },
+        }),
+  };
 }
 
 function draftState(value: string): DraftState {
@@ -248,6 +301,8 @@ async function deleteDraft(
 /** Answers the native authoring port through constrained server functions. */
 export function postgresAuthoring(pool: pg.Pool): AuthoringStore {
   return {
+    configurations: (partition, query) =>
+      readConfigurations(pool, partition, query),
     configuration: (partition, revision) =>
       readConfiguration(pool, partition, revision),
     draft: (partition, ticket) => readDraft(pool, partition, ticket),

@@ -8,6 +8,7 @@ import {
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
+import type { PublicInstant } from "./publicResource.ts";
 import { encodeDecisionEventText, parseDecisionEventText } from "./wire.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
 import {
@@ -163,6 +164,82 @@ export interface ConfigurationRevisionResource {
   readonly digest: string;
 }
 
+export interface ConfigurationPageCursor {
+  readonly createdAt: PublicInstant;
+  readonly revision: ConfigurationRevisionId;
+}
+
+interface ConfigurationRevisionSummaryBase {
+  readonly revision: ConfigurationRevisionId;
+  readonly parent?: ConfigurationRevisionId;
+  readonly digest: string;
+  readonly createdAt: PublicInstant;
+}
+
+export type ConfigurationRevisionSummary =
+  | (ConfigurationRevisionSummaryBase & { readonly readiness: "Incomplete" })
+  | (ConfigurationRevisionSummaryBase & {
+      readonly readiness: "Ready";
+      readonly image: string;
+      readonly practices: readonly string[];
+      readonly workInstructionsCount: number;
+      readonly reviewInstructionsCount: number;
+    });
+
+export interface ConfigurationPage {
+  readonly partition: Partition;
+  readonly configurations: readonly ConfigurationRevisionSummary[];
+  readonly nextAfter?: ConfigurationPageCursor;
+}
+
+export interface ConfigurationPageQuery {
+  readonly after?: ConfigurationPageCursor;
+  readonly limit: number;
+}
+
+export const configurationPageLimitMax = 100;
+
+export function configurationRevisionSummary(input: {
+  readonly revision: ConfigurationRevisionId;
+  readonly parent?: ConfigurationRevisionId;
+  readonly canonical: CanonicalConfiguration;
+  readonly digest: string;
+  readonly createdAt: PublicInstant;
+}): ConfigurationRevisionSummary {
+  const readiness = releaseConfigurationReadiness(input.canonical);
+  const base = {
+    revision: input.revision,
+    ...(input.parent === undefined ? {} : { parent: input.parent }),
+    digest: input.digest,
+    createdAt: input.createdAt,
+  };
+  return readiness.readiness === "Incomplete"
+    ? { ...base, readiness: "Incomplete" }
+    : {
+        ...base,
+        readiness: "Ready",
+        image: readiness.configuration.image,
+        practices: readiness.configuration.practices,
+        workInstructionsCount: readiness.configuration.work.instructions.length,
+        reviewInstructionsCount:
+          readiness.configuration.review.instructions.length,
+      };
+}
+
+export function checkedConfigurationPageQuery(
+  query: ConfigurationPageQuery,
+): ConfigurationPageQuery {
+  if (
+    !Number.isSafeInteger(query.limit) ||
+    query.limit < 1 ||
+    query.limit > configurationPageLimitMax
+  )
+    throw new RangeError(
+      `configuration page limit must be between 1 and ${String(configurationPageLimitMax)}`,
+    );
+  return query;
+}
+
 export type ConfigurationCreated =
   | {
       readonly created: "Created";
@@ -199,6 +276,10 @@ export type DraftDeleted =
     };
 
 export interface AuthoringStore {
+  configurations(
+    partition: Partition,
+    query: ConfigurationPageQuery,
+  ): Promise<ConfigurationPage>;
   configuration(
     partition: Partition,
     revision: ConfigurationRevisionId,
