@@ -15,6 +15,10 @@ import {
   parseTicketCommand,
 } from "../../src/interpreter/wire.ts";
 
+const readyConfiguration = asCanonicalConfiguration(
+  '{"brief":{"acceptanceCriteria":["It works."],"constraints":[],"motivation":["It matters."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
+);
+
 test("draft authoring round-trips through the generated domain codec", () => {
   assert.deepEqual(
     parseDraftAuthoring(encodeDraftAuthoring(plainAuthoring)),
@@ -46,10 +50,14 @@ test("release readiness is stricter than structurally valid draft configuration"
     },
   );
   assert.equal(
+    releaseConfigurationReadiness(readyConfiguration).readiness,
+    "Ready",
+  );
+  assert.deepEqual(
     releaseConfigurationReadiness(
       asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
-    ).readiness,
-    "Ready",
+    ),
+    { readiness: "Incomplete" },
   );
 });
 

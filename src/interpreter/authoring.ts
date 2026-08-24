@@ -10,6 +10,10 @@ import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import { encodeDecisionEventText, parseDecisionEventText } from "./wire.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
+import {
+  authoredTaskConfigurationReadiness,
+  type AuthoredTaskConfiguration,
+} from "./taskConfiguration.ts";
 
 declare const configurationRevisionBrand: unique symbol;
 declare const canonicalConfigurationBrand: unique symbol;
@@ -25,7 +29,7 @@ export type CanonicalConfiguration = string & {
 export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
   readonly version: 1;
   readonly image: string;
-};
+} & AuthoredTaskConfiguration;
 
 export type ReleaseConfigurationReadiness =
   | {
@@ -81,7 +85,8 @@ export function releaseConfigurationReadiness(
     (value as Record<string, unknown>)["version"] !== 1 ||
     typeof (value as Record<string, unknown>)["image"] !== "string" ||
     (value as Record<string, unknown>)["image"] === "" ||
-    !executionRequirementConfigurationIsValid(value)
+    !executionRequirementConfigurationIsValid(value) ||
+    authoredTaskConfigurationReadiness(value).readiness === "Incomplete"
   ) {
     return { readiness: "Incomplete" };
   }
