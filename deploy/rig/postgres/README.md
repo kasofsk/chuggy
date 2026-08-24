@@ -105,6 +105,19 @@ lookup came back empty.
 
 ## Migrate
 
+**MIGRATE AND ROLL OUT IN ONE WINDOW.** An image's contract sets `required` and
+`compatible` both to the migrations its own source declares, and
+`schemaContractAccepts` refuses an applied list longer than `compatible` — so a
+database *ahead* of an image refuses it exactly as one behind it does. The
+moment this step lands a version the serving image does not declare, that
+image's `schema-compatible` precondition fails; on the rig `chuggy-api` re-runs
+it on every readiness probe and leaves service until an image declaring that
+version is Ready. A control-plane process already running is unaffected,
+because its readiness is derived from state it holds, but it would refuse to
+start again. So the images that declare the new version go out with this step
+and not after it. kasofsk/chuggy#240 is where that contract shape is being
+decided.
+
 As `chuggy_owner` and as nobody else, over the same forwarded port:
 
 ```sh
