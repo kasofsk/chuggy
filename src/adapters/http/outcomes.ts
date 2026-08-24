@@ -34,6 +34,7 @@ import type {
 } from "../../interpreter/operationInbox.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
+import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
 import {
   encodeConfigurationCursor,
   encodeInventoryCursor,
@@ -435,6 +436,47 @@ export function configurationCreationResponse(
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : configurationCreated(result.value);
+}
+
+export function repositoryConfigurationImportResponse(
+  result: RepositoryConfigurationImportOutcome,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+    case "RepositoryAbsent":
+    case "SnapshotAbsent":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, 1, "RepositoryUnavailable");
+    case "SnapshotRefused":
+      return response(
+        422,
+        nativeHttpError(
+          "RepositorySnapshotRefused",
+          "The snapshot was refused.",
+        ),
+      );
+    case "DeclarationsRefused":
+      return response(422, {
+        ...nativeHttpError(
+          "RepositoryConfigurationsRefused",
+          "The repository configurations were refused.",
+        ),
+        faults: result.faults,
+      });
+    case "IdentityConflict":
+      return response(
+        409,
+        nativeHttpError(
+          "ConfigurationIdentityConflict",
+          "The configuration identity conflicts.",
+        ),
+      );
+    case "Imported":
+      return response(200, { imported: true });
+    default:
+      return assertNever(result);
+  }
 }
 
 export function draftResponse(

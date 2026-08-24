@@ -9,6 +9,7 @@
  */
 
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
+import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type {
   Accepted,
@@ -68,6 +69,12 @@ import type { ExecutionId } from "./schedulerIdentity.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import type { SelectorOperationalContext } from "./selector.ts";
 import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
+import type { GitObjectId } from "./finalizer.ts";
+import {
+  repositoryConfigurationImportReadiness,
+  type RepositoryConfigurationImportOutcome,
+  type RepositoryConfigurationImportPorts,
+} from "./repositoryConfiguration.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 
 declare const principalBrand: unique symbol;
@@ -324,6 +331,11 @@ export interface NativeWeb {
     partition: Partition,
     query: ConfigurationPageQuery,
   ): Promise<AuthorizedResult<ConfigurationPage>>;
+  importRepositoryConfigurations(
+    principal: Principal,
+    partition: Partition,
+    commit: GitObjectId,
+  ): Promise<RepositoryConfigurationImportOutcome>;
   createDraft(
     principal: Principal,
     input: {
@@ -417,6 +429,51 @@ function nativeConfigurationMethods(
       (await access.authorize(principal, partition, "Read")) === undefined
         ? undefined
         : authoring.configuration(partition, revision),
+  };
+}
+
+function nativeRepositoryConfigurationImportMethod(
+  access: ProjectAccess,
+  ports?: RepositoryConfigurationImportPorts,
+): NativeWeb["importRepositoryConfigurations"] {
+  return async (principal, partition, commit) => {
+    const authority = await access.authorize(principal, partition, "Mutate");
+    if (authority === undefined) return { result: "NotFound" };
+    if (ports === undefined)
+      return { result: "Unavailable", unavailable: "Repository" };
+    const binding = await ports.bindings.binding(partition);
+    if (binding === undefined) return { result: "RepositoryAbsent" };
+    const snapshot = await ports.snapshots.snapshot({
+      repository: binding,
+      commit,
+    });
+    switch (snapshot.read) {
+      case "Absent":
+        return { result: "SnapshotAbsent", absent: snapshot.absent };
+      case "Unavailable":
+        return { result: "Unavailable", unavailable: snapshot.unavailable };
+      case "Refused":
+        return { result: "SnapshotRefused", refused: snapshot.refused };
+      case "Snapshot": {
+        const readiness = repositoryConfigurationImportReadiness({
+          repository: binding.repository,
+          commit,
+          files: snapshot.files,
+        });
+        if (readiness.readiness === "Refused")
+          return { result: "DeclarationsRefused", faults: readiness.faults };
+        const imported = await ports.store.importRepositoryConfigurations({
+          partition,
+          authority,
+          declarations: readiness.declarations,
+        });
+        return imported.imported === "Imported"
+          ? { result: "Imported" }
+          : { result: "IdentityConflict" };
+      }
+      default:
+        return assertNever(snapshot);
+    }
   };
 }
 
@@ -583,8 +640,13 @@ export function nativeWeb(
   operationalReads?: OperationalReadStore,
   outputContents?: OutputContentPort,
   selectorContexts?: SelectorOperationalContextRead,
+  repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
 ): NativeWeb {
   return {
+    importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
+      access,
+      repositoryConfigurationImports,
+    ),
     ...nativeConfigurationMethods(access, authoring),
     ...nativeAuthoringMethods(access, authoring),
     ...nativeOperationalMethods(access, operationalReads, outputContents),

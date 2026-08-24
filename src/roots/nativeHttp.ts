@@ -21,6 +21,12 @@ import { selectorOperationalContextRead } from "../interpreter/selectorOperation
 import { selectorReviewRole } from "../adapters/postgres/schema.ts";
 import { postgresSelectorContextReady } from "../adapters/postgres/selectorContextReadiness.ts";
 import { pathToFileURL } from "node:url";
+import { credentialFiles } from "../adapters/credentials/credentialFiles.ts";
+import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
+import {
+  finalizerGitEnvironmentNames,
+  repositoryCredentialFilesOf,
+} from "../interpreter/finalizerSettings.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -30,6 +36,9 @@ const oidcAlgorithmsVariable = "CHUG_API_OIDC_ALGORITHMS";
 const artifactRootVariable = "CHUG_API_ARTIFACT_ROOT";
 const selectorReviewDatabaseUrlVariable =
   "CHUG_API_SELECTOR_REVIEW_DATABASE_URL";
+const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
+const repositoryCredentialSourcesVariable =
+  "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -169,6 +178,34 @@ function nativePools() {
   };
 }
 
+function repositoryConfigurationSnapshots() {
+  const scratchDirectory = process.env[gitScratchRootVariable];
+  if (scratchDirectory === undefined || scratchDirectory.length === 0)
+    return undefined;
+  const environment = Object.fromEntries(
+    finalizerGitEnvironmentNames
+      .filter((name) => process.env[name] !== undefined)
+      .map((name) => [name, process.env[name]]),
+  );
+  const encodedSources = process.env[repositoryCredentialSourcesVariable];
+  const sources =
+    encodedSources === undefined || encodedSources.length === 0
+      ? []
+      : repositoryCredentialFilesOf(
+          encodedSources,
+          repositoryCredentialSourcesVariable,
+        );
+  return gitRepositoryConfiguration({
+    scratchDirectory,
+    identity: {
+      name: "Chuggy configuration importer",
+      email: "configuration-importer@chuggy.invalid",
+    },
+    environment,
+    credentials: credentialFiles({ sources }),
+  });
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
@@ -202,6 +239,7 @@ async function main(): Promise<void> {
     undefined,
     artifactStore({ root: requiredEnvironment(artifactRootVariable) }),
     selectorContextSource(pool, selectorReviewPool),
+    repositoryConfigurationSnapshots(),
   );
   const app = createNativeHttpApp(
     web,

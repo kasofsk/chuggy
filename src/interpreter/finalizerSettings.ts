@@ -154,9 +154,10 @@ function finalizerSettingsBoundOr(
 /** One declared credential file, refusing an entry that names neither a repository nor a path. */
 function finalizerSettingsCredentialFile(
   entry: unknown,
+  variable: string = credentialSourcesVariable,
 ): RepositoryCredentialFile {
   if (typeof entry !== "object" || entry === null)
-    throw new Error(`${credentialSourcesVariable} has an invalid entry`);
+    throw new Error(`${variable} has an invalid entry`);
   const fields = entry as Readonly<Record<string, unknown>>;
   const path = fields["path"];
   if (
@@ -164,28 +165,38 @@ function finalizerSettingsCredentialFile(
     typeof path !== "string" ||
     path.length === 0
   )
-    throw new Error(`${credentialSourcesVariable} has an invalid entry`);
+    throw new Error(`${variable} has an invalid entry`);
   return { repository: asRepositoryId(fields["repository"]), path };
+}
+
+/** Parses one bounded repository-to-credential-file mapping without reading its files. */
+export function repositoryCredentialFilesOf(
+  encoded: string,
+  variable: string,
+): readonly RepositoryCredentialFile[] {
+  const parsed: unknown = JSON.parse(encoded);
+  if (!Array.isArray(parsed)) throw new Error(`${variable} must be an array`);
+  if (parsed.length === 0 || parsed.length > repositoryCredentialFilesMax)
+    throw new RangeError(
+      `${variable} names ${String(parsed.length)} repositories, past the ${String(repositoryCredentialFilesMax)} one deployment holds`,
+    );
+  const files = parsed.map((entry) =>
+    finalizerSettingsCredentialFile(entry, variable),
+  );
+  const repositories = new Set(files.map((file) => file.repository));
+  if (repositories.size !== files.length)
+    throw new Error(`${variable} names a repository twice`);
+  return files;
 }
 
 /** Every repository this deployment holds a credential for, each named once. */
 function finalizerSettingsCredentials(
   environment: FinalizerEnvironment,
 ): readonly RepositoryCredentialFile[] {
-  const parsed: unknown = JSON.parse(
+  return repositoryCredentialFilesOf(
     finalizerSettingsRequired(environment, credentialSourcesVariable),
+    credentialSourcesVariable,
   );
-  if (!Array.isArray(parsed))
-    throw new Error(`${credentialSourcesVariable} must be an array`);
-  if (parsed.length === 0 || parsed.length > repositoryCredentialFilesMax)
-    throw new RangeError(
-      `${credentialSourcesVariable} names ${String(parsed.length)} repositories, past the ${String(repositoryCredentialFilesMax)} one deployment holds`,
-    );
-  const files = parsed.map(finalizerSettingsCredentialFile);
-  const repositories = new Set(files.map((file) => file.repository));
-  if (repositories.size !== files.length)
-    throw new Error(`${credentialSourcesVariable} names a repository twice`);
-  return files;
 }
 
 /** The variables a git child is given, taken from this process's own by name. */

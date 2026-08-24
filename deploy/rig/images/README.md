@@ -86,8 +86,9 @@ securityContext:
 The web image's nginx writes its pid and every temporary path under `/tmp`, so
 it needs an `emptyDir` mounted there. Its other mount is the deployment's
 `/config.json`, read-only at `/etc/chuggy/web/config.json`; neither the fallback
-nor that file needs anything writable. The API image needs no mount of its own,
-but `CHUG_API_ARTIFACT_ROOT` below names one.
+nor that file needs anything writable. The API deployment supplies writable
+artifact and Git scratch roots, plus read-only repository credential files;
+their locations are named by the variables below.
 
 ## Configuring the API
 
@@ -103,6 +104,8 @@ to start without the required ones.
 | `CHUG_API_OIDC_AUDIENCE` | required | |
 | `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, and `none` is refused |
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
+| `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
+| `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | required | JSON repository-to-credential-file mappings |
 | `CHUG_API_HOST` | `0.0.0.0` in the image | the source default is loopback, which no kubelet can reach |
 | `CHUG_API_PORT` | 3000 | |
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |

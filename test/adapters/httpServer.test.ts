@@ -21,6 +21,7 @@ type ServedNativeWeb = Pick<
   | "configuration"
   | "configurations"
   | "createConfiguration"
+  | "importRepositoryConfigurations"
   | "createDraft"
   | "deleteDraft"
   | "dispatchView"
@@ -82,7 +83,13 @@ function fakeOperations(
 
 function fakeConfigurations(
   calls: string[],
-): Pick<NativeWeb, "configuration" | "configurations" | "createConfiguration"> {
+): Pick<
+  NativeWeb,
+  | "configuration"
+  | "configurations"
+  | "createConfiguration"
+  | "importRepositoryConfigurations"
+> {
   return {
     configuration: (_principal, _partition, revision) => {
       calls.push(`configuration:${revision}`);
@@ -95,6 +102,10 @@ function fakeConfigurations(
     createConfiguration: (_principal, input) => {
       calls.push(`createConfiguration:${input.revision}`);
       return Promise.resolve({ result: "NotFound" });
+    },
+    importRepositoryConfigurations: (_principal, _partition, commit) => {
+      calls.push(`importRepositoryConfigurations:${commit}`);
+      return Promise.resolve({ result: "Imported" });
     },
   };
 }
@@ -409,6 +420,12 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
   });
   await app.inject({
     method: "POST",
+    url: `${project}/configurations/imports`,
+    headers,
+    body: { commit: "a".repeat(40) },
+  });
+  await app.inject({
+    method: "POST",
     url: `${project}/drafts`,
     headers,
     body: { configurationRevision: "revision", authoring: publicAuthoring },
@@ -436,6 +453,7 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "configurations:2",
     "createConfiguration:revision",
     "configuration:revision",
+    `importRepositoryConfigurations:${"a".repeat(40)}`,
     "createDraft",
     "reviseDraft:2",
     "deleteDraft:3",

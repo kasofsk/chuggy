@@ -25,6 +25,7 @@ import {
   parseConfigurationCursor,
   parseInventoryCursor,
   parseConfigurationCreation,
+  parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
   parsePartition,
@@ -33,6 +34,7 @@ import {
 import {
   cancellationResponse,
   configurationCreationResponse,
+  repositoryConfigurationImportResponse,
   configurationResponse,
   configurationsResponse,
   dispatchViewResponse,
@@ -79,6 +81,7 @@ type InitialNativeWeb = Pick<
   | "configuration"
   | "configurations"
   | "createConfiguration"
+  | "importRepositoryConfigurations"
   | "createDraft"
   | "deleteDraft"
   | "dispatchView"
@@ -555,6 +558,18 @@ function registerConfigurations(
         ...parseConfigurationCreation(request.body),
       });
       send(reply, configurationCreationResponse(result));
+    },
+  );
+  app.post(
+    `${root}/imports`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const result = await web.importRepositoryConfigurations(
+        principalOf(request),
+        partitionOf(request),
+        parseRepositoryConfigurationImport(request.body),
+      );
+      send(reply, repositoryConfigurationImportResponse(result));
     },
   );
   app.get(`${root}/:revision`, async (request, reply) => {

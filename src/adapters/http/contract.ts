@@ -28,6 +28,10 @@ import {
   asTenantId,
   type Partition,
 } from "../../interpreter/projectStore.ts";
+import {
+  asGitObjectId,
+  type GitObjectId,
+} from "../../interpreter/finalizer.ts";
 
 export const nativeHttpVersion = 1;
 export const nativeHttpBasePath = "/api/v1";
@@ -52,6 +56,7 @@ export const nativeHttpRoutes = {
   operation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations/:operation`,
   notifications: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/notifications`,
   configurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations`,
+  configurationImports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports`,
   configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
@@ -89,6 +94,9 @@ export function nativeHttpContractDocument(): unknown {
     schemas: {
       publicMutation: z.toJSONSchema(publicMutationSchema),
       configurationCreation: z.toJSONSchema(configurationCreationSchema),
+      repositoryConfigurationImport: z.toJSONSchema(
+        repositoryConfigurationImportSchema,
+      ),
       draftCreation: z.toJSONSchema(draftCreationSchema),
       draftRevision: z.toJSONSchema(draftRevisionSchema),
     },
@@ -172,6 +180,10 @@ const configurationCreationSchema = z.strictObject({
   canonical: identitySchema,
 });
 
+const repositoryConfigurationImportSchema = z.strictObject({
+  commit: identitySchema,
+});
+
 const draftCreationSchema = z.strictObject({
   configurationRevision: identitySchema,
   authoring: authoringSchema,
@@ -187,6 +199,10 @@ export interface ParsedConfigurationCreation {
   readonly revision: ConfigurationRevisionId;
   readonly parent?: ConfigurationRevisionId;
   readonly canonical: CanonicalConfiguration;
+}
+
+export function parseRepositoryConfigurationImport(body: unknown): GitObjectId {
+  return asGitObjectId(repositoryConfigurationImportSchema.parse(body).commit);
 }
 
 export interface ParsedDraftCreation {

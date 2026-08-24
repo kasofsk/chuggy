@@ -20,6 +20,7 @@ import { gitPromotion } from "./adapters/git/gitPromotion.ts";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
 import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
+import { postgresProjectRepositoryBinding } from "./adapters/postgres/repositoryConfiguration.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
@@ -97,6 +98,7 @@ import type { ExecutionBacklogGuard } from "./interpreter/schedulerContext.ts";
 import { postgresOperationalReads } from "./adapters/postgres/operationalReads.ts";
 import type { OutputContentPort } from "./interpreter/operationsView.ts";
 import type { SelectorOperationalContextRead } from "./interpreter/selectorOperationalContext.ts";
+import type { RepositoryConfigurationSnapshotPort } from "./interpreter/repositoryConfiguration.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -281,13 +283,15 @@ export function composeNativeWeb(
   inventory?: ProjectInventory,
   outputContents?: OutputContentPort,
   selectorContexts?: SelectorOperationalContextRead,
+  repositoryConfigurationSnapshots?: RepositoryConfigurationSnapshotPort,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
+  const authoring = postgresAuthoring(apiPool);
   return nativeWeb(
     access,
     postgresNativeReads(apiPool),
     inbox,
-    postgresAuthoring(apiPool),
+    authoring,
     postgresNotifications(apiPool),
     backlog,
     postgresDispatchViews(apiPool),
@@ -296,6 +300,13 @@ export function composeNativeWeb(
     postgresOperationalReads(apiPool),
     outputContents,
     selectorContexts,
+    repositoryConfigurationSnapshots === undefined
+      ? undefined
+      : {
+          bindings: postgresProjectRepositoryBinding(apiPool),
+          snapshots: repositoryConfigurationSnapshots,
+          store: authoring,
+        },
   );
 }
 

@@ -26,6 +26,7 @@ import {
   notificationsResponse,
   operationResponse,
   projectResponse,
+  repositoryConfigurationImportResponse,
   submissionResponse,
 } from "../../src/adapters/http/outcomes.ts";
 import { populated } from "../interpreter/roster.ts";
@@ -46,6 +47,32 @@ const standing = {
   admission: "Ordinary" as const,
   lifecycleGeneration: 1,
 };
+
+test("repository import outcomes distinguish retry, refusal, and conflict", () => {
+  assert.equal(
+    repositoryConfigurationImportResponse({
+      result: "Unavailable",
+      unavailable: "Repository",
+    }).status,
+    503,
+  );
+  assert.equal(
+    repositoryConfigurationImportResponse({
+      result: "DeclarationsRefused",
+      faults: [{ path: "declaration", fault: "EnvelopeInvalid" }],
+    }).status,
+    422,
+  );
+  assert.equal(
+    repositoryConfigurationImportResponse({ result: "IdentityConflict" })
+      .status,
+    409,
+  );
+  assert.equal(
+    repositoryConfigurationImportResponse({ result: "Imported" }).status,
+    200,
+  );
+});
 
 test("durable acceptance returns the operation location without a decision", () => {
   const found = submissionResponse(partition, {

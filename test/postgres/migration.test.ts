@@ -10,6 +10,7 @@ import {
   migrationLedger,
   migrations,
   schedulerRole,
+  repositoryBindingReadFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresMigrateCompatible,
@@ -59,6 +60,7 @@ const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
     name: "the execution requirement a migrated database never got",
   },
   { version: 20, name: "repository configuration provenance" },
+  { version: 21, name: "API repository binding read" },
 ]);
 
 const declaredLatest = Math.max(...migrations.map(({ version }) => version));
@@ -753,5 +755,30 @@ test("repository configuration provenance migrates as an immutable API boundary"
         ).rows[0]?.granted,
         false,
       );
+  });
+});
+
+test("the API repository binding read migrates without exposing its table", async () => {
+  await migrationDatabase("repositorybindingread", async (subject) => {
+    await migrationSeedApplied(subject, 21);
+    await applyMigration(subject, 21);
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          `SELECT has_function_privilege($1,'${repositoryBindingReadFunction}(text,text)','EXECUTE') AS granted`,
+          [apiRole],
+        )
+      ).rows[0]?.granted,
+      true,
+    );
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_table_privilege($1,'project_repository','SELECT') AS granted",
+          [apiRole],
+        )
+      ).rows[0]?.granted,
+      false,
+    );
   });
 });
