@@ -69,3 +69,23 @@ test("a successful import refreshes the selected project's registry", async () =
   ]);
   assert.deepEqual(controller.state.import, { status: "Succeeded", commit });
 });
+
+test("editing an import commit does not redraw the focused input", () => {
+  let changes = 0;
+  const controller = createConfigurationRegistry({
+    session: { accessToken: () => Promise.resolve("token") },
+    send: () => Promise.resolve({ outcome: "Ok", body: page("current") }),
+    onChanged: () => {
+      changes += 1;
+    },
+  });
+
+  controller.editImport("a");
+
+  assert.equal(changes, 0);
+  assert.deepEqual(controller.state.import, {
+    status: "Editing",
+    commit: "a",
+    issue: undefined,
+  });
+});

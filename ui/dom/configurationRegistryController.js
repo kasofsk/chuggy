@@ -110,7 +110,6 @@ export function createConfigurationRegistry(parts) {
     /** @param {string} commit */
     editImport: (commit) => {
       registry.state.import = repositoryConfigurationImportEdited(commit);
-      registry.onChanged();
     },
     import: () => registryImport(registry),
   };
