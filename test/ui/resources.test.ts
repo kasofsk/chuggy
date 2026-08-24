@@ -64,6 +64,32 @@ function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
 
 const sorted = (values: readonly string[]) => [...values].sort();
 
+function assertConfigurationRosters(): void {
+  const provenance: Record<ConfigurationRevisionProvenance["source"], true> = {
+    Authored: true,
+    Repository: true,
+  };
+  const readiness: Record<"Ready" | "Incomplete", true> = {
+    Ready: true,
+    Incomplete: true,
+  };
+  const faults: Record<RepositoryConfigurationFault, true> = {
+    TooManyDeclarations: true,
+    PathInvalid: true,
+    SymlinkRefused: true,
+    ContentTooLarge: true,
+    DocumentUnreadable: true,
+    EnvelopeInvalid: true,
+    NameInvalid: true,
+    ConfigurationInvalid: true,
+    DuplicateName: true,
+    DuplicatePath: true,
+  };
+  assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
+  assert.deepEqual(sorted(configurationReadinesses), keysOf(readiness));
+  assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
+}
+
 test("the phase and scheduler rosters are the model's", () => {
   assert.deepEqual(phaseRoster, [...phaseTags]);
   assert.deepEqual(executionStatuses, [...allExecutionStatuses]);
@@ -123,26 +149,6 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
     Events: true,
     Reset: true,
   };
-  const provenance: Record<ConfigurationRevisionProvenance["source"], true> = {
-    Authored: true,
-    Repository: true,
-  };
-  const readiness: Record<"Ready" | "Incomplete", true> = {
-    Ready: true,
-    Incomplete: true,
-  };
-  const configurationFaults: Record<RepositoryConfigurationFault, true> = {
-    TooManyDeclarations: true,
-    PathInvalid: true,
-    SymlinkRefused: true,
-    ContentTooLarge: true,
-    DocumentUnreadable: true,
-    EnvelopeInvalid: true,
-    NameInvalid: true,
-    ConfigurationInvalid: true,
-    DuplicateName: true,
-    DuplicatePath: true,
-  };
   assert.deepEqual(sorted(executionTaskKinds), keysOf(kinds));
   assert.deepEqual(sorted(outputRenderers), keysOf(renderers));
   assert.deepEqual(sorted(operationStates), keysOf(states));
@@ -152,12 +158,7 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
   assert.deepEqual(sorted(resultVerdicts), keysOf(verdicts));
   assert.deepEqual(sorted(dispatchViewResults), keysOf(dispatchResults));
   assert.deepEqual(sorted(notificationResults), keysOf(notificationBatches));
-  assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
-  assert.deepEqual(sorted(configurationReadinesses), keysOf(readiness));
-  assert.deepEqual(
-    sorted(repositoryConfigurationFaults),
-    keysOf(configurationFaults),
-  );
+  assertConfigurationRosters();
 });
 
 test("configuration pages preserve readiness and repository provenance", () => {
