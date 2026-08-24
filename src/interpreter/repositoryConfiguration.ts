@@ -8,7 +8,11 @@ import {
   type ConfigurationRevisionId,
   type ReleaseConfiguration,
 } from "./authoring.ts";
-import type { GitObjectId, RepositoryId } from "./finalizer.ts";
+import type {
+  GitObjectId,
+  RepositoryBinding,
+  RepositoryId,
+} from "./finalizer.ts";
 import type { TaskConfigurationFault } from "./taskConfiguration.ts";
 
 declare const repositoryConfigurationNameBrand: unique symbol;
@@ -32,6 +36,38 @@ export interface RepositoryConfigurationFile {
   readonly path: string;
   readonly kind: "File" | "Symlink";
   readonly content: string;
+}
+
+/** One immutable repository view the application asks an outer adapter to read. */
+export interface RepositoryConfigurationSnapshotRequest {
+  readonly repository: RepositoryBinding;
+  readonly commit: GitObjectId;
+}
+
+/** What reading an immutable repository view found before its declarations are interpreted. */
+export type RepositoryConfigurationSnapshotRead =
+  | {
+      readonly read: "Snapshot";
+      readonly files: readonly RepositoryConfigurationFile[];
+    }
+  | {
+      readonly read: "Absent";
+      readonly absent: "Commit" | "ConfigurationDirectory";
+    }
+  | {
+      readonly read: "Unavailable";
+      readonly unavailable: "Credential" | "Repository";
+    }
+  | {
+      readonly read: "Refused";
+      readonly refused: "Credential" | "Snapshot";
+    };
+
+/** Reads repository configuration bytes at exactly the commit the application pins. */
+export interface RepositoryConfigurationSnapshotPort {
+  snapshot(
+    request: RepositoryConfigurationSnapshotRequest,
+  ): Promise<RepositoryConfigurationSnapshotRead>;
 }
 
 export interface RepositoryConfigurationDeclaration {

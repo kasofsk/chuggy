@@ -93,6 +93,7 @@ export interface GitScratchCall {
   readonly credential?: RepositoryCredential;
   readonly indexFile?: string;
   readonly input?: Uint8Array | string;
+  readonly outputBytesMax?: number;
 }
 
 /** One path and the blob that is to stand at it. */
@@ -208,6 +209,9 @@ export function scratchRun(
     argv: [...prefix, ...call.argv],
     timeoutSecsMax: call.timeoutSecsMax,
     environment,
+    ...(call.outputBytesMax === undefined
+      ? {}
+      : { outputBytesMax: call.outputBytesMax }),
     input: call.input ?? "",
   });
 }
