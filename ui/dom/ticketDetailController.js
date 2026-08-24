@@ -28,7 +28,13 @@ async function readInitial(detail, selection, initial) {
     executions,
   );
   const token = await detail.session.accessToken();
-  if (token === undefined || detail.state.partition === undefined) return;
+  if (
+    token === undefined ||
+    selection !== detail.selection ||
+    detail.state.partition === undefined ||
+    detail.state.detail === undefined
+  )
+    return;
   const answered = ticketDetailDraftReceived(
     detail.state.detail,
     draft,
@@ -77,6 +83,7 @@ export function createTicketDetail(parts) {
       const token = await detail.session.accessToken();
       if (
         token === undefined ||
+        selection !== detail.selection ||
         detail.state.partition === undefined ||
         detail.state.detail === undefined
       )

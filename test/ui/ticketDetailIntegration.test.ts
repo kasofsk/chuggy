@@ -6,6 +6,71 @@ import { deferred } from "./deferred.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
+function raceOutcome(url: string, continuation = false) {
+  const ticket = Number(/\/(?:tickets|drafts)\/(\d+)/.exec(url)?.[1] ?? 7);
+  if (url.includes("/drafts/"))
+    return {
+      outcome: "Ok" as const,
+      body: {
+        partition,
+        ticket,
+        authoringVersion: 1,
+        state: "Draft",
+        configurationRevision: `revision-${String(ticket)}`,
+        authoring: {
+          dependencies: [],
+          program: [],
+          workFanout: 1,
+          reworkPolicy: { type: "BudgetedRework", value: 0 },
+          finalizationPricing: "DeadlineOnly",
+          resumePricing: "RetryCharged",
+          finalizer: "ManagedFinalizer",
+        },
+      },
+    };
+  if (url.includes("/executions?"))
+    return {
+      outcome: "Ok" as const,
+      body: { executions: [], ...(continuation ? { nextAfter: "next" } : {}) },
+    };
+  if (url.includes("/configurations/"))
+    return {
+      outcome: "Ok" as const,
+      body: {
+        partition,
+        revision: url.endsWith("revision-8") ? "revision-8" : "revision-7",
+        parent: undefined,
+        canonical: "{}",
+        digest: "digest",
+      },
+    };
+  return {
+    outcome: "Ok" as const,
+    body: { ticket, phase: "Pending", sequence: ticket },
+  };
+}
+
+function raceController(
+  accessToken: () => Promise<string | undefined>,
+  continuation = false,
+) {
+  const requests: string[] = [];
+  const controller = createTicketDetail({
+    session: { accessToken },
+    send: (request) => {
+      requests.push(request.url);
+      return Promise.resolve(raceOutcome(request.url, continuation));
+    },
+    onChanged: () => undefined,
+    onEdit: () => undefined,
+    onDelete: () => undefined,
+    onRelease: () => undefined,
+    onExecution: () => undefined,
+    onArtifact: () => undefined,
+  });
+  return { controller, requests };
+}
+
 test("select composes ticket, draft, configuration, and ticket executions", async () => {
   const requests: string[] = [];
   const controller = createTicketDetail({
@@ -174,4 +239,44 @@ test("a selection waiting for credentials cannot overtake a newer ticket", async
   firstToken.answer("token");
   await oldRead;
   assert.equal(controller.state.detail?.ticket, 8);
+});
+
+test("a configuration credential delay cannot overwrite a newer ticket", async () => {
+  const delayedToken = deferred<string | undefined>();
+  const credentialRequested = deferred<void>();
+  let tokens = 0;
+  const { controller, requests } = raceController(() => {
+    tokens += 1;
+    if (tokens !== 2) return Promise.resolve("token");
+    credentialRequested.answer();
+    return delayedToken.promise;
+  });
+  const oldRead = controller.select(partition, 7);
+  await credentialRequested.promise;
+  await controller.select(partition, 8);
+  delayedToken.answer("token");
+  await oldRead;
+  assert.equal(controller.state.detail?.ticket, 8);
+  assert.equal(
+    requests.includes(
+      "/api/v1/tenants/acme/projects/atlas/configurations/revision-7",
+    ),
+    false,
+  );
+});
+
+test("a load-more credential delay cannot mark a newer ticket loading", async () => {
+  const delayedToken = deferred<string | undefined>();
+  let tokens = 0;
+  const { controller } = raceController(() => {
+    tokens += 1;
+    return tokens === 3 ? delayedToken.promise : Promise.resolve("token");
+  }, true);
+  await controller.select(partition, 7);
+  const oldRead = controller.nextExecutions();
+  await controller.select(partition, 8);
+  delayedToken.answer("token");
+  await oldRead;
+  assert.equal(controller.state.detail?.ticket, 8);
+  assert.notEqual(controller.state.detail?.executions.state, "Loading");
 });
