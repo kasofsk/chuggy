@@ -91,7 +91,7 @@ function repositoryConfigurationImportFaults(faults) {
   return faults.map((fault) => ({
     path: fault.path,
     fault: fault.fault,
-    label: faultLabels[fault.fault],
+    label: faultLabels[fault.fault] ?? fault.fault,
     detail: fault.configurationFault,
   }));
 }

@@ -13,6 +13,7 @@ import {
   scheduler,
 } from "../app/views.js";
 import { readers } from "./console.js";
+import { configurationRegistryPage } from "./configurationRegistryView.js";
 import {
   boardBody,
   candidatesBody,
@@ -234,9 +235,18 @@ export function draw(page) {
   );
   page.select.disabled =
     controller === undefined || controller.state.projects.length === 0;
+  page.operationsPage.className =
+    page.selectedPage === "Operations" ? "primary" : "";
+  page.configurationsPage.className =
+    page.selectedPage === "Configurations" ? "primary" : "";
   if (controller === undefined || controller.state.partition === undefined) {
     page.host.className = "console standing";
     page.host.replaceChildren(standingCard(page));
+    return;
+  }
+  if (page.selectedPage === "Configurations") {
+    page.host.className = "registry-shell";
+    page.host.replaceChildren(configurationRegistryPage(page.registry));
     return;
   }
   const named = Object.fromEntries(

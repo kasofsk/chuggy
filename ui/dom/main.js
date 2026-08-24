@@ -8,6 +8,7 @@
  */
 
 import { createConsole } from "./console.js";
+import { createConfigurationRegistry } from "./configurationRegistryController.js";
 import { createSession } from "./session.js";
 import { send } from "./transport.js";
 import { draw } from "./view.js";
@@ -20,6 +21,9 @@ const page = {
   select: document.getElementById("project"),
   session: document.getElementById("session"),
   refresh: document.getElementById("refresh"),
+  operationsPage: document.getElementById("operations-page"),
+  configurationsPage: document.getElementById("configurations-page"),
+  selectedPage: "Operations",
   boot: { step: "Loading", reason: "Reading the console configuration…" },
   label: undefined,
   controller: undefined,
@@ -31,6 +35,7 @@ const page = {
     session.signOut();
     page.controller?.pause();
     page.controller = undefined;
+    page.registry = undefined;
     page.boot = { step: "SignedOut", reason: "Signed out of this tab." };
     changed();
   },
@@ -55,13 +60,31 @@ function settle(promise) {
 
 page.select.addEventListener("change", () => {
   const chosen = page.select.value;
-  if (chosen.length > 0) page.controller?.select(JSON.parse(chosen));
+  if (chosen.length > 0) {
+    const partition = JSON.parse(chosen);
+    page.controller?.select(partition);
+    settle(page.registry?.select(partition) ?? Promise.resolve());
+  }
+});
+
+page.operationsPage.addEventListener("click", () => {
+  page.selectedPage = "Operations";
+  changed();
+});
+page.configurationsPage.addEventListener("click", () => {
+  page.selectedPage = "Configurations";
+  changed();
 });
 
 async function signedIn() {
   page.boot = { step: "SignedIn", reason: "" };
   page.label = session.label();
   page.controller = createConsole({ session, nowMs, send, onChanged: changed });
+  page.registry = createConfigurationRegistry({
+    session,
+    send,
+    onChanged: changed,
+  });
   changed();
   await page.controller.loadProjects();
 }
