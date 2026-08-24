@@ -2,52 +2,41 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { releaseDraftMutation } from "../../ui/app/protocol.js";
-import { createConsole } from "../../ui/dom/console.js";
 import { createTicketCreation } from "../../ui/dom/ticketCreationController.js";
+import {
+  ticketCreationDraft,
+  ticketCreationInitialization,
+  ticketCreationPartition,
+} from "./ticketCreationFixture.ts";
 
-const partition = { tenant: "acme", project: "atlas" };
-const authoring = JSON.parse(
-  '{"dependencies":[],"program":[{"fanout":1,"combinator":"UnanimousPass"}],"workFanout":1,"reworkPolicy":{"type":"BudgetedRework","value":0},"finalizationPricing":"DeadlineOnly","resumePricing":"RetryCharged","finalizer":"ManagedFinalizer"}',
-);
+type Partition = { readonly tenant: string; readonly project: string };
+
+const operationsModule = "../../ui/dom/console.js";
+const { createConsole } = (await import(operationsModule)) as {
+  createConsole: (parts: unknown) => {
+    select: (partition: Partition) => void;
+    pause: () => void;
+    submitMutation: (
+      ticket: number,
+      mutation: ReturnType<typeof releaseDraftMutation>,
+    ) => Promise<
+      { result: "Succeeded" } | { result: "Failed"; reason: string }
+    >;
+  };
+};
 
 function shellSend(requests: string[]) {
-  const initialization = {
-    configuration: {
-      partition,
-      revision: "ready",
-      parent: undefined,
-      canonical: "{}",
-      digest: "digest",
-    },
-    fence: { projectSequence: 4, configurationDigest: "digest" },
-    defaults: authoring,
-    choices: {
-      stages: authoring.program,
-      programStagesMax: 1,
-      workFanouts: [1],
-      reworkPolicies: [authoring.reworkPolicy],
-      finalizationPricings: ["DeadlineOnly"],
-      resumePricings: ["RetryCharged"],
-      finalizers: ["ManagedFinalizer"],
-    },
-    dependencyCandidates: [],
-    dependencyCandidatesTruncated: false,
-  };
   return (request: { method: string; url: string }) => {
     requests.push(`${request.method} ${request.url}`);
     if (request.url.includes("draft-initializations"))
-      return Promise.resolve({ outcome: "Ok" as const, body: initialization });
+      return Promise.resolve({
+        outcome: "Ok" as const,
+        body: ticketCreationInitialization,
+      });
     if (request.url.endsWith("/drafts"))
       return Promise.resolve({
         outcome: "Ok" as const,
-        body: {
-          partition,
-          ticket: 8,
-          authoringVersion: 1,
-          state: "Draft",
-          configurationRevision: "ready",
-          authoring,
-        },
+        body: ticketCreationDraft(),
       });
     return Promise.resolve({
       outcome: "Accepted" as const,
@@ -70,7 +59,7 @@ test("the shell follows draft release before navigating to ticket detail", async
     nowMs: () => 1,
     onChanged: () => undefined,
   });
-  operations.select(partition);
+  operations.select(ticketCreationPartition);
   operations.pause();
   let resolveNavigation: (ticket: number) => void = () => undefined;
   const navigated = new Promise<number>((resolve) => {
@@ -98,7 +87,7 @@ test("the shell follows draft release before navigating to ticket detail", async
       resolveNavigation(ticket);
     },
   });
-  creation.selectProject(partition, [
+  creation.selectProject(ticketCreationPartition, [
     { revision: "ready", readiness: "Ready" },
   ]);
   await creation.selectRevision("ready");

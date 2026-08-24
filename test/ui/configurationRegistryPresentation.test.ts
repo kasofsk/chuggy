@@ -2,54 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseConfigurationsPage } from "../../ui/app/resources.js";
-
-class TextNode {
-  constructor(readonlyValue: string) {
-    this.textContent = readonlyValue;
-  }
-  readonly textContent: string;
-}
-
-class TestElement {
-  readonly attributes = new Map<string, string>();
-  readonly children: (TestElement | TextNode)[] = [];
-  readonly style = { setProperty: () => undefined };
-  constructor(tagName: string) {
-    this.tagName = tagName;
-  }
-  readonly tagName: string;
-  setAttribute(name: string, value: string) {
-    this.attributes.set(name, value);
-  }
-  append(...children: (TestElement | TextNode)[]) {
-    this.children.push(...children);
-  }
-}
-
-Object.defineProperty(globalThis, "document", {
-  value: {
-    createElement: (tag: string) => new TestElement(tag),
-    createTextNode: (value: string) => new TextNode(value),
-  },
-});
+import { content, elements } from "./domHarness.ts";
+import type { TestElement } from "./domHarness.ts";
 
 const presentationModule = "../../ui/dom/configurationRegistry.js";
 const { configurationRegistry } = (await import(presentationModule)) as {
   configurationRegistry: (state: unknown) => unknown;
 };
-
-function content(node: TestElement | TextNode): string {
-  return node instanceof TextNode
-    ? node.textContent
-    : node.children.map(content).join("");
-}
-
-function elements(node: TestElement, tag: string): TestElement[] {
-  const nested = node.children.flatMap((child) =>
-    child instanceof TestElement ? elements(child, tag) : [],
-  );
-  return node.tagName === tag ? [node, ...nested] : nested;
-}
 
 test("loading, error, and empty registry states are explicit", () => {
   const loading = configurationRegistry({

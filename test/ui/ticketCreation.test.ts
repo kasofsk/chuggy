@@ -12,7 +12,9 @@ import {
 import { parseDraftInitialization } from "../../ui/app/resources.js";
 
 const partition = { tenant: "acme", project: "atlas" };
-const defaults = {
+type DraftInitialization = ReturnType<typeof parseDraftInitialization>;
+type DraftAuthoring = DraftInitialization["defaults"];
+const defaults: DraftAuthoring = {
   dependencies: [1],
   program: [{ fanout: 1, combinator: "UnanimousPass" }],
   workFanout: 1,
@@ -65,7 +67,7 @@ test("selection reads initialization and adopts every server default", () => {
 });
 
 test("every authoring field can change within returned choices and creation keeps the fence", () => {
-  const authoring = {
+  const authoring: DraftAuthoring = {
     dependencies: [2],
     program: [{ fanout: 2, combinator: "AnyPass" }],
     workFanout: 2,

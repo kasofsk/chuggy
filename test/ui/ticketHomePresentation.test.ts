@@ -1,65 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { content, elements } from "./domHarness.ts";
+import type { TestElement } from "./domHarness.ts";
 
-class TextNode {
-  readonly textContent: string;
-  constructor(textContent: string) {
-    this.textContent = textContent;
-  }
-}
-
-class TestElement {
-  readonly attributes = new Map<string, string>();
-  readonly children: (TestElement | TextNode)[] = [];
-  readonly listeners = new Map<
-    string,
-    (event: { preventDefault: () => void }) => void
-  >();
-  readonly styles = new Map<string, string>();
-  readonly style = {
-    setProperty: (name: string, value: string) => this.styles.set(name, value),
-  };
-  readonly tagName: string;
-  constructor(tagName: string) {
-    this.tagName = tagName;
-  }
-  setAttribute(name: string, value: string) {
-    this.attributes.set(name, value);
-  }
-  append(...children: (TestElement | TextNode)[]) {
-    this.children.push(...children);
-  }
-  addEventListener(
-    name: string,
-    listener: (event: { preventDefault: () => void }) => void,
-  ) {
-    this.listeners.set(name, listener);
-  }
-}
-
-Object.defineProperty(globalThis, "document", {
-  value: {
-    createElement: (tag: string) => new TestElement(tag),
-    createTextNode: (value: string) => new TextNode(value),
-  },
-});
-
-const { ticketHomePage } = (await import("../../ui/dom/ticketHomeView.js")) as {
+const ticketHomePresentationModule = "../../ui/dom/ticketHomeView.js";
+const { ticketHomePage } = (await import(ticketHomePresentationModule)) as {
   ticketHomePage: (controller: unknown) => unknown;
 };
-
-function content(node: TestElement | TextNode): string {
-  return node instanceof TextNode
-    ? node.textContent
-    : node.children.map(content).join("");
-}
-
-function elements(node: TestElement, tag: string): TestElement[] {
-  const nested = node.children.flatMap((child) =>
-    child instanceof TestElement ? elements(child, tag) : [],
-  );
-  return node.tagName === tag ? [node, ...nested] : nested;
-}
 
 function controller() {
   const tickets: number[] = [];

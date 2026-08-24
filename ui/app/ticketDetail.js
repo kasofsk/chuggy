@@ -4,6 +4,7 @@
  */
 
 import { readResult } from "./outcomes.js";
+import { readStateFailure } from "./readState.js";
 import {
   configurationRequest,
   draftRequest,
@@ -47,24 +48,7 @@ function received(state, outcome, parse) {
   const result = readResult(outcome, parse);
   if (result.result === "Value")
     return { state: /** @type {const} */ ("Data"), value: result.value };
-  if (result.result === "Deferred")
-    return {
-      state: /** @type {const} */ ("Error"),
-      held: state.held,
-      error: {
-        kind: /** @type {const} */ ("Deferred"),
-        code: result.code,
-        retryAfterSeconds: result.retryAfterSeconds,
-      },
-    };
-  return {
-    state: /** @type {const} */ ("Error"),
-    held: state.held,
-    error: {
-      kind: /** @type {const} */ ("Unavailable"),
-      reason: result.reason,
-    },
-  };
+  return readStateFailure(state, result);
 }
 
 /** @param {import("./protocol.js").ApiOutcome} outcome */

@@ -1,57 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { content, elements } from "./domHarness.ts";
+import type { TestElement } from "./domHarness.ts";
 
-class TextNode {
-  readonly textContent: string;
-  constructor(value: string) {
-    this.textContent = value;
-  }
-}
+const detailPresentationModule = "../../ui/dom/ticketDetailView.js";
+const { ticketDetailPage } = (await import(detailPresentationModule)) as {
+  ticketDetailPage: (controller: unknown) => unknown;
+};
 
-class TestElement {
-  readonly attributes = new Map<string, string>();
-  readonly children: (TestElement | TextNode)[] = [];
-  readonly listeners = new Map<string, () => void>();
-  readonly style = { setProperty: () => undefined };
-  readonly tagName: string;
-  constructor(tagName: string) {
-    this.tagName = tagName;
-  }
-  setAttribute(name: string, value: string) {
-    this.attributes.set(name, value);
-  }
-  append(...children: (TestElement | TextNode)[]) {
-    this.children.push(...children);
-  }
-  addEventListener(name: string, listener: () => void) {
-    this.listeners.set(name, listener);
-  }
-}
-
-Object.defineProperty(globalThis, "document", {
-  value: {
-    createElement: (tag: string) => new TestElement(tag),
-    createTextNode: (value: string) => new TextNode(value),
-  },
-});
-
-const { ticketDetailPage } = await import("../../ui/dom/ticketDetailView.js");
-type TicketDetailController = Parameters<typeof ticketDetailPage>[0];
-
-function content(node: TestElement | TextNode): string {
-  return node instanceof TextNode
-    ? node.textContent
-    : node.children.map(content).join("");
-}
-
-function elements(node: TestElement, tag: string): TestElement[] {
-  const nested = node.children.flatMap((child) =>
-    child instanceof TestElement ? elements(child, tag) : [],
-  );
-  return node.tagName === tag ? [node, ...nested] : nested;
-}
-
-function controller(draftState = "Draft"): TicketDetailController {
+function controller(draftState = "Draft") {
   return {
     state: {
       detail: {
@@ -84,6 +41,7 @@ function controller(draftState = "Draft"): TicketDetailController {
           value: {
             partition: { tenant: "acme", project: "atlas" },
             revision: "revision-1",
+            parent: undefined,
             canonical: '{"image":"worker:v1"}',
             digest: "digest-1",
           },
@@ -97,12 +55,14 @@ function controller(draftState = "Draft"): TicketDetailController {
                 ticket: 7,
                 task: 1,
                 taskKind: "Work",
+                stage: undefined,
                 cluster: "primary",
                 configurationRevision: "revision-1",
                 status: "Terminal",
                 outcome: "Passed",
                 retriesSpent: 0,
                 registeredAt: "2026-08-24T12:00:00Z",
+                terminalAt: undefined,
               },
             ],
           },

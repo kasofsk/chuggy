@@ -2,39 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createTicketCreation } from "../../ui/dom/ticketCreationController.js";
-
-const partition = { tenant: "acme", project: "atlas" };
-const authoring = {
-  dependencies: [],
-  program: [{ fanout: 1, combinator: "UnanimousPass" }],
-  workFanout: 1,
-  reworkPolicy: { type: "BudgetedRework", value: 0 },
-  finalizationPricing: "DeadlineOnly",
-  resumePricing: "RetryCharged",
-  finalizer: "ManagedFinalizer",
-};
-const initialization = {
-  configuration: {
-    partition,
-    revision: "ready",
-    parent: undefined,
-    canonical: "{}",
-    digest: "digest",
-  },
-  fence: { projectSequence: 4, configurationDigest: "digest" },
-  defaults: authoring,
-  choices: {
-    stages: authoring.program,
-    programStagesMax: 1,
-    workFanouts: [1],
-    reworkPolicies: [authoring.reworkPolicy],
-    finalizationPricings: ["DeadlineOnly"],
-    resumePricings: ["RetryCharged"],
-    finalizers: ["ManagedFinalizer"],
-  },
-  dependencyCandidates: [],
-  dependencyCandidatesTruncated: false,
-};
+import {
+  ticketCreationDraft,
+  ticketCreationInitialization,
+  ticketCreationPartition,
+} from "./ticketCreationFixture.ts";
 
 test("controller initializes, creates, emits release, and navigates only after success", async () => {
   const requests: string[] = [];
@@ -46,17 +18,10 @@ test("controller initializes, creates, emits release, and navigates only after s
       requests.push(`${request.method} ${request.url}`);
       return Promise.resolve(
         request.method === "GET"
-          ? { outcome: "Ok" as const, body: initialization }
+          ? { outcome: "Ok" as const, body: ticketCreationInitialization }
           : {
               outcome: "Ok" as const,
-              body: {
-                partition,
-                ticket: 8,
-                authoringVersion: 1,
-                state: "Draft",
-                configurationRevision: "ready",
-                authoring,
-              },
+              body: ticketCreationDraft(),
             },
       );
     },
@@ -64,7 +29,7 @@ test("controller initializes, creates, emits release, and navigates only after s
     onRelease: (event) => releases.push(event),
     onNavigate: (ticket) => navigations.push(ticket),
   });
-  controller.selectProject(partition, [
+  controller.selectProject(ticketCreationPartition, [
     { revision: "ready", readiness: "Ready" },
   ]);
   await controller.selectRevision("ready");

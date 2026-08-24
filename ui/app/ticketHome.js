@@ -6,6 +6,7 @@
  */
 
 import { readResult } from "./outcomes.js";
+import { readStateFailure } from "./readState.js";
 import { pageLimitDefault, recentTicketsRequest } from "./protocol.js";
 import { parseProject } from "./resources.js";
 
@@ -103,22 +104,7 @@ export function ticketHomeNext(
  */
 export function ticketHomeReceived(state, outcome) {
   const result = readResult(outcome, parseProject);
-  if (result.result === "Deferred")
-    return {
-      state: "Error",
-      held: state.held,
-      error: {
-        kind: "Deferred",
-        code: result.code,
-        retryAfterSeconds: result.retryAfterSeconds,
-      },
-    };
-  if (result.result === "Unavailable")
-    return {
-      state: "Error",
-      held: state.held,
-      error: { kind: "Unavailable", reason: result.reason },
-    };
+  if (result.result !== "Value") return readStateFailure(state, result);
   const tickets =
     state.load === "Next" && state.held !== undefined
       ? [...state.held.project.tickets, ...result.value.tickets]

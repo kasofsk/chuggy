@@ -7,6 +7,7 @@
  */
 
 import { readResult } from "./outcomes.js";
+import { readStateFailure } from "./readState.js";
 import { configurationsRequest, pageLimitDefault } from "./protocol.js";
 import { parseConfigurationsPage } from "./resources.js";
 
@@ -115,22 +116,7 @@ export function configurationRegistryNext(
  */
 export function configurationRegistryReceived(state, outcome) {
   const result = readResult(outcome, parseConfigurationsPage);
-  if (result.result === "Deferred")
-    return {
-      state: "Error",
-      held: state.held,
-      error: {
-        kind: "Deferred",
-        code: result.code,
-        retryAfterSeconds: result.retryAfterSeconds,
-      },
-    };
-  if (result.result === "Unavailable")
-    return {
-      state: "Error",
-      held: state.held,
-      error: { kind: "Unavailable", reason: result.reason },
-    };
+  if (result.result !== "Value") return readStateFailure(state, result);
   const configurations =
     state.load === "Next" && state.held !== undefined
       ? [...state.held.configurations, ...result.value.configurations]
