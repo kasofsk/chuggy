@@ -1,5 +1,5 @@
-import { finalizationOutcomeTags } from "../../../domain/generated/modelTypes.ts";
-import { artifactDigestChars } from "../../../interpreter/resultManifest.ts";
+import { finalizationOutcomeTags } from "../../../../domain/generated/modelTypes.ts";
+import { artifactDigestChars } from "../../../../interpreter/resultManifest.ts";
 import {
   allCommitPermitStates,
   allFinalizationAttemptOutcomes,
@@ -13,20 +13,20 @@ import {
   gitObjectIdPattern,
   gitRefNameCharsMax,
   inputBundleReferencesMax,
-} from "../../../interpreter/finalizer.ts";
+} from "../../../../interpreter/finalizer.ts";
 import {
   finalizationDigestFormat,
   inputBundleCanonicalPart,
-} from "../../../interpreter/finalizerPreparation.ts";
+} from "../../../../interpreter/finalizerPreparation.ts";
 import {
   inputBundleIdentityKind,
   spawnRequestKinds,
-} from "../../../interpreter/projectDecision.ts";
+} from "../../../../interpreter/projectDecision.ts";
 import {
   allNativeActionKinds,
   allNativeActionResolutions,
   nativeActionResolutions,
-} from "../../../interpreter/ticketCommand.ts";
+} from "../../../../interpreter/ticketCommand.ts";
 import {
   apiRole,
   approvalRequestFunction,
@@ -39,15 +39,18 @@ import {
   selectorServiceRole,
   ticketServiceRole,
   type Migration,
-} from "./shared.ts";
-import { acceptanceBody, publicCommandGrammarBody } from "./mailbox.ts";
+} from "../shared.ts";
+import {
+  acceptanceBody,
+  publicCommandGrammarBody,
+} from "./005-durable-prioritized-decision-mailbox.ts";
 
 /**
  * The pairing every offered answer satisfies, as the disjunction a trigger
  * evaluates. A question and the answers it admits are one roster, so a row
  * offering an escalation's answer to an approval is refused by the server.
  */
-export const nativeActionPairing = allNativeActionKinds
+const nativeActionPairing = allNativeActionKinds
   .map(
     (kind) =>
       `(asked = '${kind}' AND NEW.resolution IN (${schemaTextSet(nativeActionResolutions[kind])}))`,
@@ -74,7 +77,7 @@ export const retrofitBundleDigest = `encode(sha256(convert_to((
               WITH ORDINALITY AS parts(part, position)), 'UTF8')), 'hex')`;
 
 /** The relations, triggers and boundaries the finalizer owns, which I7 adds. */
-export const durableFinalizer = [
+const durableFinalizer = [
   roleStatement(finalizerRole),
   `ALTER ROLE ${finalizerRole} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
   `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${finalizerRole}`,
@@ -396,7 +399,7 @@ export const durableFinalizer = [
  * Every relation this migration adds is revoked from every prior role before
  * anything is granted on it.
  */
-export const durableFinalizerBoundaries = [
+const durableFinalizerBoundaries = [
   `ALTER TABLE decision_input
      DROP CONSTRAINT decision_input_state_is_known,
      DROP CONSTRAINT decision_input_kind_state_agree,
@@ -709,10 +712,8 @@ export const durableFinalizerBoundaries = [
   `REVOKE ${boundaryOwnerRole} FROM CURRENT_USER`,
 ];
 
-export const finalizerMigrations: readonly Migration[] = [
-  {
-    version: 13,
-    name: "the durable finalizer",
-    statements: [...durableFinalizer, ...durableFinalizerBoundaries],
-  },
-];
+export const migration013: Migration = {
+  version: 13,
+  name: "the durable finalizer",
+  statements: [...durableFinalizer, ...durableFinalizerBoundaries],
+};

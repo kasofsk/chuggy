@@ -1,4 +1,4 @@
-import { verdictTags } from "../../../domain/generated/modelTypes.ts";
+import { verdictTags } from "../../../../domain/generated/modelTypes.ts";
 import {
   allAttemptStates,
   allBlockedReasons,
@@ -8,7 +8,7 @@ import {
   executionCapacityDefaults,
   executionSchedulerAuthorityKind,
   schedulerEvidenceCharsMax,
-} from "../../../interpreter/executionScheduler.ts";
+} from "../../../../interpreter/executionScheduler.ts";
 import {
   allArtifactRoles,
   artifactBytesMax,
@@ -16,8 +16,8 @@ import {
   artifactPathCharsMax,
   manifestArtifactsMax,
   resultDigestFoldHexChars,
-} from "../../../interpreter/resultManifest.ts";
-import { schedulerIdentityCharsMax } from "../../../interpreter/schedulerIdentity.ts";
+} from "../../../../interpreter/resultManifest.ts";
+import { schedulerIdentityCharsMax } from "../../../../interpreter/schedulerIdentity.ts";
 import {
   accountIdentityFunction,
   accountProvisionFunction,
@@ -33,7 +33,7 @@ import {
   statusMoveFunction,
   ticketServiceRole,
   type Migration,
-} from "./shared.ts";
+} from "../shared.ts";
 
 const capacityAccountDefaults = [
   `\x27${executionCapacityDefaults.cluster}\x27`,
@@ -47,7 +47,7 @@ const capacityAccountDefaults = [
  * once for the create that spells them and the upgrade that adds and grants
  * them.
  */
-const executionRequirementColumns = [
+export const executionRequirementColumns = [
   { name: "requirement_identity", type: "text" },
   { name: "requirement_value", type: "jsonb" },
   { name: "requirement_digest", type: "text" },
@@ -55,7 +55,7 @@ const executionRequirementColumns = [
   { name: "platform_default_version", type: "bigint" },
 ] as const;
 
-const executionRequirementColumnNames = executionRequirementColumns
+export const executionRequirementColumnNames = executionRequirementColumns
   .map(({ name }) => name)
   .join(",");
 
@@ -63,7 +63,7 @@ const executionRequirementColumnNames = executionRequirementColumns
  * Installed by the migration that creates it and by the one that upgrades a
  * database which never got it, so the two cannot disagree about the body.
  */
-const materializeLegacyRequirementDefinition = `FUNCTION materialize_legacy_execution_requirement() RETURNS trigger
+export const materializeLegacyRequirementDefinition = `FUNCTION materialize_legacy_execution_requirement() RETURNS trigger
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE configuration jsonb;
      BEGIN
@@ -83,7 +83,7 @@ const materializeLegacyRequirementDefinition = `FUNCTION materialize_legacy_exec
      END $$`;
 
 /** The relations, triggers and boundaries the execution scheduler owns, which I6 adds. */
-export const durableExecutionScheduler = [
+const durableExecutionScheduler = [
   roleStatement(schedulerRole),
   `ALTER ROLE ${schedulerRole} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
   `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${schedulerRole}`,
@@ -443,7 +443,7 @@ export const durableExecutionScheduler = [
  * database whose copy predates the requirement columns, so the tuple this
  * body compares cannot fall behind the columns the table has.
  */
-const executionMovesLegallyDefinition = `FUNCTION execution_moves_legally() RETURNS trigger
+export const executionMovesLegallyDefinition = `FUNCTION execution_moves_legally() RETURNS trigger
      LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
      DECLARE reported text;
      BEGIN
@@ -494,7 +494,7 @@ const executionMovesLegallyDefinition = `FUNCTION execution_moves_legally() RETU
  * and `SELECT` on the manifest counter because allocating an ordinal reads the
  * column it advances.
  */
-export const durableExecutionSchedulerBoundaries = [
+const durableExecutionSchedulerBoundaries = [
   `CREATE FUNCTION ${statusMoveFunction}(before text, after text) RETURNS boolean
      LANGUAGE sql IMMUTABLE STRICT AS $$
        SELECT CASE before
@@ -754,86 +754,12 @@ export const durableExecutionSchedulerBoundaries = [
  * columns were added to their bodies up to the shape the code reads. Every
  * statement is a no-op against a database already carrying them.
  */
-export const executionRequirementUpgrade = [
-  `ALTER TABLE execution
-     ${executionRequirementColumns
-       .map(({ name, type }) => `ADD COLUMN IF NOT EXISTS ${name} ${type}`)
-       .join(",\n     ")}`,
-  `UPDATE execution e SET
-     requirement_identity=e.execution,
-     requirement_value=jsonb_build_object('mode','Container','operatingSystem','Linux',
-       'architecture','Amd64','image',c.canonical::jsonb->>'image'),
-     requirement_digest=encode(sha256(convert_to(format(
-       '{"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":%s}',
-       to_json(c.canonical::jsonb->>'image')::text),'UTF8')),'hex'),
-     requirement_source='PlatformDefault',
-     platform_default_version=1
-     FROM configuration_revision c
-    WHERE c.tenant=e.tenant AND c.project=e.project
-      AND c.revision=e.configuration_revision AND c.digest=e.configuration_digest
-      AND e.requirement_identity IS NULL`,
-  `ALTER TABLE execution
-     ${executionRequirementColumns
-       .map(({ name }) => `ALTER COLUMN ${name} SET NOT NULL`)
-       .join(",\n     ")}`,
-  `DO $upgrade$ BEGIN
-     IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                     WHERE conrelid='execution'::regclass
-                       AND conname='execution_requirement_identity_unique') THEN
-       ALTER TABLE execution
-         ADD CONSTRAINT execution_requirement_identity_unique UNIQUE (requirement_identity);
-     END IF;
-     IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                     WHERE conrelid='execution'::regclass
-                       AND conname='execution_requirement_source_known') THEN
-       ALTER TABLE execution
-         ADD CONSTRAINT execution_requirement_source_known CHECK (requirement_source IN
-           ('ExplicitTask','TaskKindDefault','TicketDefault','PlatformDefault'));
-     END IF;
-     IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                     WHERE conrelid='execution'::regclass
-                       AND conname='execution_platform_default_version_positive') THEN
-       ALTER TABLE execution
-         ADD CONSTRAINT execution_platform_default_version_positive CHECK (
-           platform_default_version >= 1);
-     END IF;
-   END $upgrade$`,
-  `DO $upgrade$ BEGIN
-     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-                     WHERE n.nspname='public'
-                       AND p.proname='materialize_legacy_execution_requirement') THEN
-       CREATE ${materializeLegacyRequirementDefinition};
-       ALTER FUNCTION materialize_legacy_execution_requirement()
-         OWNER TO ${boundaryOwnerRole};
-       REVOKE ALL ON FUNCTION materialize_legacy_execution_requirement() FROM PUBLIC;
-       CREATE TRIGGER execution_materializes_legacy_requirement
-         BEFORE INSERT ON execution FOR EACH ROW
-         EXECUTE FUNCTION materialize_legacy_execution_requirement();
-     END IF;
-   END $upgrade$`,
-  `CREATE OR REPLACE ${executionMovesLegallyDefinition}`,
-  `GRANT SELECT ON configuration_revision TO ${schedulerRole}`,
-  `GRANT INSERT (${executionRequirementColumnNames})
-     ON execution TO ${schedulerRole}`,
-  `GRANT SELECT (${executionRequirementColumnNames})
-     ON execution TO ${apiRole}`,
-];
 
-export const schedulerMigrations: readonly Migration[] = [
-  {
-    version: 12,
-    name: "the durable execution scheduler",
-    statements: [
-      ...durableExecutionScheduler,
-      ...durableExecutionSchedulerBoundaries,
-    ],
-  },
-];
-
-export const executionUpgradeMigrations: readonly Migration[] = [
-  {
-    version: 19,
-    name: "the execution requirement a migrated database never got",
-    statements: [...executionRequirementUpgrade],
-  },
-];
+export const migration012: Migration = {
+  version: 12,
+  name: "the durable execution scheduler",
+  statements: [
+    ...durableExecutionScheduler,
+    ...durableExecutionSchedulerBoundaries,
+  ],
+};

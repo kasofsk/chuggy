@@ -1,26 +1,16 @@
 /**
  * The PostgreSQL schema, expressed as the ordered migrations that create it.
  *
- * Migration statements live in cohesive modules under `./schema`; this facade
- * preserves the adapter's existing public API.
+ * Each migration lives in its own module under `./schema/migrations`; this
+ * facade preserves the adapter's existing public API.
  */
-import { accessMigrations } from "./schema/access.ts";
-import { finalizerMigrations } from "./schema/finalizer.ts";
-import { foundationMigrations } from "./schema/foundation.ts";
-import { mailboxMigrations } from "./schema/mailbox.ts";
-import { nativeMigrations } from "./schema/native.ts";
-import {
-  executionUpgradeMigrations,
-  schedulerMigrations,
-} from "./schema/scheduler.ts";
-import { selectorMigrations } from "./schema/selector.ts";
-import type { Migration } from "./schema/shared.ts";
+export { migrations } from "./schema/migrations/index.ts";
 
 export * from "./schema/shared.ts";
 export {
   retrofitBundleDigest,
   retrofitBundleIdentity,
-} from "./schema/finalizer.ts";
+} from "./schema/migrations/013-durable-finalizer.ts";
 
 /** The ledger of applied migrations, which the runner creates before it reads anything. */
 export const migrationLedger = `
@@ -30,15 +20,3 @@ export const migrationLedger = `
     applied_at timestamptz NOT NULL DEFAULT now()
   )
 `;
-
-/** Every migration in version order, which is the order the runner applies them in. */
-export const migrations: readonly Migration[] = [
-  ...foundationMigrations,
-  ...mailboxMigrations,
-  ...nativeMigrations,
-  ...selectorMigrations,
-  ...schedulerMigrations,
-  ...finalizerMigrations,
-  ...accessMigrations,
-  ...executionUpgradeMigrations,
-];

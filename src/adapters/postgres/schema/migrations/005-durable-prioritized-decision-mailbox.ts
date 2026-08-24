@@ -1,9 +1,12 @@
-import { phaseTags, reasonTags } from "../../../domain/generated/modelTypes.ts";
+import {
+  phaseTags,
+  reasonTags,
+} from "../../../../domain/generated/modelTypes.ts";
 import {
   allNativeActionResolutions,
   nativeActionResolutions,
   safetyResolution,
-} from "../../../interpreter/ticketCommand.ts";
+} from "../../../../interpreter/ticketCommand.ts";
 import {
   acceptanceFunction,
   apiRole,
@@ -15,8 +18,10 @@ import {
   schemaTextSet,
   ticketServiceRole,
   type Migration,
-} from "./shared.ts";
-import { acceptanceOrdinaryResolutions } from "./foundation.ts";
+} from "../shared.ts";
+const acceptanceOrdinaryResolutions = allNativeActionResolutions.filter(
+  (resolution) => resolution !== safetyResolution,
+);
 
 export const acceptanceBody = `FUNCTION ${acceptanceFunction}(
       in_tenant text, in_project text, in_operation text,
@@ -208,7 +213,7 @@ export const publicCommandGrammarBody = `(command jsonb) RETURNS boolean
          AND command->>'resolution' IN (${schemaTextSet(allNativeActionResolutions)});
      END $$`;
 /** I3 replaces the operation-only inbox with one typed, prioritized decision-input authority. */
-export const durableMailbox = [
+const durableMailbox = [
   roleStatement(boundaryOwnerRole),
   roleStatement(ticketServiceRole),
   `CREATE FUNCTION command_integer(value jsonb) RETURNS boolean
@@ -549,10 +554,8 @@ export const durableMailbox = [
   `REVOKE ${boundaryOwnerRole} FROM CURRENT_USER`,
 ];
 
-export const mailboxMigrations: readonly Migration[] = [
-  {
-    version: 5,
-    name: "the durable prioritized decision mailbox",
-    statements: [...durableMailbox],
-  },
-];
+export const migration005: Migration = {
+  version: 5,
+  name: "the durable prioritized decision mailbox",
+  statements: [...durableMailbox],
+};
