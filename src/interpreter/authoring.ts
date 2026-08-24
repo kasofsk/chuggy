@@ -78,6 +78,13 @@ export function asCanonicalConfiguration(
   return bounded as CanonicalConfiguration;
 }
 
+/** Canonically encodes one parsed configuration document. */
+export function canonicalConfigurationOf(
+  value: unknown,
+): CanonicalConfiguration {
+  return asCanonicalConfiguration(canonicalJson(value));
+}
+
 /** Applies the release-time semantic minimum without restricting draft authoring. */
 export function releaseConfigurationReadiness(
   configuration: CanonicalConfiguration,
