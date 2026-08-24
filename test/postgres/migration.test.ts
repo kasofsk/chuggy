@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import {
   accountIdentityFunction,
+  apiRole,
+  boundaryOwnerRole,
   migrationLedger,
   migrations,
+  schedulerRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresMigrateCompatible,
@@ -43,14 +46,18 @@ const retainedImageRequired = [
   { version: 14, name: "native project access" },
   { version: 15, name: "native operational reads" },
   { version: 16, name: "runtime schema readiness" },
+  { version: 17, name: "selector context account read" },
 ] as const;
 const publishingImageRequired = [
   ...retainedImageRequired,
-  { version: 17, name: "selector context account read" },
+  { version: 18, name: "selector review schema readiness" },
 ] as const;
 const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
   ...publishingImageRequired,
-  { version: 18, name: "selector review schema readiness" },
+  {
+    version: 19,
+    name: "the execution requirement a migrated database never got",
+  },
 ]);
 
 const declaredLatest = Math.max(...migrations.map(({ version }) => version));
@@ -496,5 +503,220 @@ test("a statement that fails is a failure and not a could-not-run, and takes its
       ).rows[0]?.latest,
       version - 1,
     );
+  });
+});
+
+/** The five columns migration 19 exists to add, whatever order a table has them in. */
+const requirementColumns = [
+  "requirement_identity",
+  "requirement_value",
+  "requirement_digest",
+  "requirement_source",
+  "platform_default_version",
+] as const;
+
+/** Takes a database back to the shape one migrated before those columns existed has. */
+async function unmaterializeRequirement(subject: pg.Pool): Promise<void> {
+  await subject.query(
+    "DROP TRIGGER execution_materializes_legacy_requirement ON execution",
+  );
+  await subject.query(
+    "DROP FUNCTION materialize_legacy_execution_requirement()",
+  );
+  await subject.query(
+    `ALTER TABLE execution ${requirementColumns
+      .map((column) => `DROP COLUMN ${column} CASCADE`)
+      .join(",")}`,
+  );
+  await subject.query(
+    `REVOKE SELECT ON configuration_revision FROM ${schedulerRole}`,
+  );
+  await subject.query(
+    `CREATE OR REPLACE FUNCTION execution_moves_legally() RETURNS trigger
+       LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+       BEGIN
+         IF (NEW.tenant,NEW.project,NEW.execution,NEW.ticket,NEW.task,
+             NEW.source_request,NEW.account,NEW.cluster,
+             NEW.configuration_revision,NEW.configuration_digest)
+            IS DISTINCT FROM
+            (OLD.tenant,OLD.project,OLD.execution,OLD.ticket,OLD.task,
+             OLD.source_request,OLD.account,OLD.cluster,
+             OLD.configuration_revision,OLD.configuration_digest) THEN
+           RAISE EXCEPTION 'execution identity or pin changed';
+         END IF;
+         RETURN NEW;
+       END $$`,
+  );
+}
+
+/** An execution whose requirement has to be reconstructed from its configuration. */
+async function seedLegacyExecution(subject: pg.Pool): Promise<void> {
+  await subject.query("SET session_replication_role=replica");
+  try {
+    await subject.query(
+      `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES ('tenant','project','revision',
+         '{"image":"registry.example/worker:legacy"}','configuration-digest',
+         'ProjectWriter','subject')`,
+    );
+    await subject.query(
+      `INSERT INTO execution
+       (tenant,project,execution,ticket,task,source_request,account,cluster,
+        configuration_revision,configuration_digest,requirement_identity,
+        requirement_value,requirement_digest,requirement_source,
+        platform_default_version)
+       VALUES ('tenant','project','execution',1,1,'request','account','cluster',
+         'revision','configuration-digest','discarded','{}','discarded',
+         'PlatformDefault',1)`,
+    );
+  } finally {
+    await subject.query("SET session_replication_role=origin");
+  }
+}
+
+/** The legacy row carries the platform requirement derived from its configuration. */
+async function assertRequirementBackfilled(subject: pg.Pool): Promise<void> {
+  const value = {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image: "registry.example/worker:legacy",
+  };
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT requirement_identity,requirement_value,requirement_digest,
+                requirement_source,platform_default_version
+           FROM execution WHERE execution='execution'`,
+      )
+    ).rows,
+    [
+      {
+        requirement_identity: "execution",
+        requirement_value: value,
+        requirement_digest: createHash("sha256")
+          .update(JSON.stringify(value), "utf8")
+          .digest("hex"),
+        requirement_source: "PlatformDefault",
+        platform_default_version: "1",
+      },
+    ],
+  );
+}
+
+async function applyMigration(
+  subject: pg.Pool,
+  version: number,
+): Promise<void> {
+  const migration = migrations.find((one) => one.version === version);
+  assert.ok(migration, `migration ${version} is declared`);
+  for (const statement of migration.statements) await subject.query(statement);
+}
+
+/** Every column is there and none of them is nullable. */
+async function assertRequirementColumns(subject: pg.Pool): Promise<void> {
+  const columns = await subject.query<{
+    column_name: string;
+    is_nullable: string;
+  }>(
+    `SELECT column_name,is_nullable FROM information_schema.columns
+      WHERE table_name='execution' AND column_name = ANY($1) ORDER BY column_name`,
+    [[...requirementColumns]],
+  );
+  assert.deepEqual(
+    columns.rows.map(({ column_name }) => column_name),
+    [...requirementColumns].sort(),
+  );
+  assert.deepEqual(
+    columns.rows.map(({ is_nullable }) => is_nullable),
+    columns.rows.map(() => "NO"),
+  );
+}
+
+/** The constraints, and the trigger the boundary owner has to own to be trusted. */
+async function assertRequirementBoundary(subject: pg.Pool): Promise<void> {
+  assert.equal(
+    (
+      await subject.query(
+        `SELECT 1 FROM pg_constraint WHERE conrelid='execution'::regclass
+           AND conname IN ('execution_requirement_identity_unique',
+                           'execution_requirement_source_known',
+                           'execution_platform_default_version_positive')`,
+      )
+    ).rows.length,
+    3,
+  );
+  assert.deepEqual(
+    (
+      await subject.query<{ owner: string }>(
+        `SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc
+          WHERE proname='materialize_legacy_execution_requirement'`,
+      )
+    ).rows.map(({ owner }) => owner),
+    [boundaryOwnerRole],
+  );
+  assert.equal(
+    (
+      await subject.query(
+        `SELECT 1 FROM pg_trigger WHERE tgrelid='execution'::regclass
+           AND tgname='execution_materializes_legacy_requirement'`,
+      )
+    ).rows.length,
+    1,
+  );
+}
+
+/** What each side may do with the columns, asked of the server and not of the chain. */
+async function assertRequirementGrants(subject: pg.Pool): Promise<void> {
+  for (const column of requirementColumns)
+    for (const [role, privilege] of [
+      [schedulerRole, "INSERT"],
+      [apiRole, "SELECT"],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_column_privilege($1,'execution',$2,$3) AS granted",
+            [role, column, privilege],
+          )
+        ).rows[0]?.granted,
+        true,
+        `${role} holds ${privilege} on ${column}`,
+      );
+  assert.equal(
+    (
+      await subject.query<{ granted: boolean }>(
+        "SELECT has_table_privilege($1,'configuration_revision','SELECT') AS granted",
+        [schedulerRole],
+      )
+    ).rows[0]?.granted,
+    true,
+  );
+}
+
+test("the requirement a database migrated before the columns existed never got is added", async () => {
+  await migrationDatabase("requirement", async (subject) => {
+    await migrationSeedApplied(subject, 19);
+    await seedLegacyExecution(subject);
+    await unmaterializeRequirement(subject);
+
+    await applyMigration(subject, 19);
+
+    await assertRequirementBackfilled(subject);
+    await assertRequirementColumns(subject);
+    await assertRequirementBoundary(subject);
+    await assertRequirementGrants(subject);
+  });
+});
+
+test("the migration that adds the requirement leaves a database already carrying it alone", async () => {
+  await migrationDatabase("requirementagain", async (subject) => {
+    await migrationSeedApplied(subject, 19);
+    await applyMigration(subject, 19);
+    await applyMigration(subject, 19);
+    await assertRequirementColumns(subject);
+    await assertRequirementBoundary(subject);
+    await assertRequirementGrants(subject);
   });
 });

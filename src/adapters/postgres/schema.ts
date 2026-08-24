@@ -1721,6 +1721,46 @@ const durableDispatch = [
        ready=true,generation=project_readiness.generation+1`,
 ];
 
+/**
+ * The columns a logical execution's requirement is materialized into, named
+ * once for the create that spells them and the upgrade that adds and grants
+ * them.
+ */
+const executionRequirementColumns = [
+  { name: "requirement_identity", type: "text" },
+  { name: "requirement_value", type: "jsonb" },
+  { name: "requirement_digest", type: "text" },
+  { name: "requirement_source", type: "text" },
+  { name: "platform_default_version", type: "bigint" },
+] as const;
+
+const executionRequirementColumnNames = executionRequirementColumns
+  .map(({ name }) => name)
+  .join(",");
+
+/**
+ * Installed by the migration that creates it and by the one that upgrades a
+ * database which never got it, so the two cannot disagree about the body.
+ */
+const materializeLegacyRequirementDefinition = `FUNCTION materialize_legacy_execution_requirement() RETURNS trigger
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE configuration jsonb;
+     BEGIN
+       IF NEW.requirement_identity IS NOT NULL THEN RETURN NEW; END IF;
+       SELECT canonical::jsonb INTO STRICT configuration FROM configuration_revision
+         WHERE tenant=NEW.tenant AND project=NEW.project
+           AND revision=NEW.configuration_revision AND digest=NEW.configuration_digest;
+       NEW.requirement_identity=NEW.execution;
+       NEW.requirement_value=jsonb_build_object('mode','Container','operatingSystem','Linux',
+         'architecture','Amd64','image',configuration->>'image');
+       NEW.requirement_digest=encode(sha256(convert_to(format(
+         '{"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":%s}',
+         to_json(configuration->>'image')::text),'UTF8')),'hex');
+       NEW.requirement_source='PlatformDefault';
+       NEW.platform_default_version=1;
+       RETURN NEW;
+     END $$`;
+
 /** The relations, triggers and boundaries the execution scheduler owns, which I6 adds. */
 const durableExecutionScheduler = [
   roleStatement(schedulerRole),
@@ -1901,24 +1941,7 @@ const durableExecutionScheduler = [
   `CREATE INDEX execution_live_by_project ON execution (tenant, project, status)
      WHERE status NOT IN ('Terminal','Cancelled')`,
   `CREATE INDEX execution_by_request ON execution (tenant, project, source_request)`,
-  `CREATE FUNCTION materialize_legacy_execution_requirement() RETURNS trigger
-     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-     DECLARE configuration jsonb;
-     BEGIN
-       IF NEW.requirement_identity IS NOT NULL THEN RETURN NEW; END IF;
-       SELECT canonical::jsonb INTO STRICT configuration FROM configuration_revision
-         WHERE tenant=NEW.tenant AND project=NEW.project
-           AND revision=NEW.configuration_revision AND digest=NEW.configuration_digest;
-       NEW.requirement_identity=NEW.execution;
-       NEW.requirement_value=jsonb_build_object('mode','Container','operatingSystem','Linux',
-         'architecture','Amd64','image',configuration->>'image');
-       NEW.requirement_digest=encode(sha256(convert_to(format(
-         '{"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":%s}',
-         to_json(configuration->>'image')::text),'UTF8')),'hex');
-       NEW.requirement_source='PlatformDefault';
-       NEW.platform_default_version=1;
-       RETURN NEW;
-     END $$`,
+  `CREATE ${materializeLegacyRequirementDefinition}`,
   `ALTER FUNCTION materialize_legacy_execution_requirement() OWNER TO ${boundaryOwnerRole}`,
   `CREATE TRIGGER execution_materializes_legacy_requirement
      BEFORE INSERT ON execution FOR EACH ROW
@@ -2095,25 +2118,11 @@ const durableExecutionScheduler = [
 ];
 
 /**
- * The server's own statements of what may move, and the boundaries the runtime
- * roles reach it through. The boundary owner owns what its `SECURITY DEFINER`
- * bodies call and reads what they read, and the scheduler is granted the move
- * table because its own status updates are what fire the trigger consulting it
- * and `SELECT` on the manifest counter because allocating an ordinal reads the
- * column it advances.
+ * Installed by the migration that creates it and by the one that upgrades a
+ * database whose copy predates the requirement columns, so the tuple this
+ * body compares cannot fall behind the columns the table has.
  */
-const durableExecutionSchedulerBoundaries = [
-  `CREATE FUNCTION ${statusMoveFunction}(before text, after text) RETURNS boolean
-     LANGUAGE sql IMMUTABLE STRICT AS $$
-       SELECT CASE before
-         WHEN 'Queued'    THEN after IN ('Admitted', 'Cancelled')
-         WHEN 'Admitted'  THEN after IN ('Launching', 'Terminal', 'Cancelled')
-         WHEN 'Launching' THEN after IN ('Running', 'Terminal', 'Cancelled')
-         WHEN 'Running'   THEN after IN ('Terminal', 'Cancelled')
-         WHEN 'Terminal'  THEN after = 'Terminal'
-         WHEN 'Cancelled' THEN after = 'Cancelled'
-       END $$`,
-  `CREATE FUNCTION execution_moves_legally() RETURNS trigger
+const executionMovesLegallyDefinition = `FUNCTION execution_moves_legally() RETURNS trigger
      LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
      DECLARE reported text;
      BEGIN
@@ -2154,7 +2163,28 @@ const durableExecutionSchedulerBoundaries = [
          END IF;
        END IF;
        RETURN NEW;
-     END $$`,
+     END $$`;
+
+/**
+ * The server's own statements of what may move, and the boundaries the runtime
+ * roles reach it through. The boundary owner owns what its `SECURITY DEFINER`
+ * bodies call and reads what they read, and the scheduler is granted the move
+ * table because its own status updates are what fire the trigger consulting it
+ * and `SELECT` on the manifest counter because allocating an ordinal reads the
+ * column it advances.
+ */
+const durableExecutionSchedulerBoundaries = [
+  `CREATE FUNCTION ${statusMoveFunction}(before text, after text) RETURNS boolean
+     LANGUAGE sql IMMUTABLE STRICT AS $$
+       SELECT CASE before
+         WHEN 'Queued'    THEN after IN ('Admitted', 'Cancelled')
+         WHEN 'Admitted'  THEN after IN ('Launching', 'Terminal', 'Cancelled')
+         WHEN 'Launching' THEN after IN ('Running', 'Terminal', 'Cancelled')
+         WHEN 'Running'   THEN after IN ('Terminal', 'Cancelled')
+         WHEN 'Terminal'  THEN after = 'Terminal'
+         WHEN 'Cancelled' THEN after = 'Cancelled'
+       END $$`,
+  `CREATE ${executionMovesLegallyDefinition}`,
   `REVOKE ALL ON FUNCTION ${statusMoveFunction}(text, text) FROM PUBLIC`,
   `REVOKE EXECUTE ON FUNCTION execution_moves_legally() FROM PUBLIC`,
   `CREATE TRIGGER execution_status_moves_legally
@@ -3131,6 +3161,76 @@ const nativeOperationsViews = [
      ON execution_request_task TO ${apiRole}`,
 ];
 
+/**
+ * Brings a database that applied migrations 12 and 15 before the requirement
+ * columns were added to their bodies up to the shape the code reads. Every
+ * statement is a no-op against a database already carrying them.
+ */
+const executionRequirementUpgrade = [
+  `ALTER TABLE execution
+     ${executionRequirementColumns
+       .map(({ name, type }) => `ADD COLUMN IF NOT EXISTS ${name} ${type}`)
+       .join(",\n     ")}`,
+  `UPDATE execution e SET
+     requirement_identity=e.execution,
+     requirement_value=jsonb_build_object('mode','Container','operatingSystem','Linux',
+       'architecture','Amd64','image',c.canonical::jsonb->>'image'),
+     requirement_digest=encode(sha256(convert_to(format(
+       '{"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":%s}',
+       to_json(c.canonical::jsonb->>'image')::text),'UTF8')),'hex'),
+     requirement_source='PlatformDefault',
+     platform_default_version=1
+     FROM configuration_revision c
+    WHERE c.tenant=e.tenant AND c.project=e.project
+      AND c.revision=e.configuration_revision AND c.digest=e.configuration_digest
+      AND e.requirement_identity IS NULL`,
+  `ALTER TABLE execution
+     ${executionRequirementColumns
+       .map(({ name }) => `ALTER COLUMN ${name} SET NOT NULL`)
+       .join(",\n     ")}`,
+  `DO $upgrade$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                     WHERE conrelid='execution'::regclass
+                       AND conname='execution_requirement_identity_unique') THEN
+       ALTER TABLE execution
+         ADD CONSTRAINT execution_requirement_identity_unique UNIQUE (requirement_identity);
+     END IF;
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                     WHERE conrelid='execution'::regclass
+                       AND conname='execution_requirement_source_known') THEN
+       ALTER TABLE execution
+         ADD CONSTRAINT execution_requirement_source_known CHECK (requirement_source IN
+           ('ExplicitTask','TaskKindDefault','TicketDefault','PlatformDefault'));
+     END IF;
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                     WHERE conrelid='execution'::regclass
+                       AND conname='execution_platform_default_version_positive') THEN
+       ALTER TABLE execution
+         ADD CONSTRAINT execution_platform_default_version_positive CHECK (
+           platform_default_version >= 1);
+     END IF;
+   END $upgrade$`,
+  `DO $upgrade$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                     WHERE n.nspname='public'
+                       AND p.proname='materialize_legacy_execution_requirement') THEN
+       CREATE ${materializeLegacyRequirementDefinition};
+       ALTER FUNCTION materialize_legacy_execution_requirement()
+         OWNER TO ${boundaryOwnerRole};
+       REVOKE ALL ON FUNCTION materialize_legacy_execution_requirement() FROM PUBLIC;
+       CREATE TRIGGER execution_materializes_legacy_requirement
+         BEFORE INSERT ON execution FOR EACH ROW
+         EXECUTE FUNCTION materialize_legacy_execution_requirement();
+     END IF;
+   END $upgrade$`,
+  `CREATE OR REPLACE ${executionMovesLegallyDefinition}`,
+  `GRANT SELECT ON configuration_revision TO ${schedulerRole}`,
+  `GRANT INSERT (${executionRequirementColumnNames})
+     ON execution TO ${schedulerRole}`,
+  `GRANT SELECT (${executionRequirementColumnNames})
+     ON execution TO ${apiRole}`,
+];
+
 /** Every migration in version order, which is the order the runner applies them in. */
 export const migrations: readonly Migration[] = [
   {
@@ -3641,5 +3741,10 @@ export const migrations: readonly Migration[] = [
     version: 18,
     name: "selector review schema readiness",
     statements: [`GRANT SELECT ON schema_migration TO ${selectorReviewRole}`],
+  },
+  {
+    version: 19,
+    name: "the execution requirement a migrated database never got",
+    statements: [...executionRequirementUpgrade],
   },
 ];
