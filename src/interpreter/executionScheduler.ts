@@ -104,7 +104,11 @@ import { mailboxCompletionRoom, observe } from "./ticketService.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { ResultManifest, ResultManifestId } from "./resultManifest.ts";
-import type { BriefingFault, TaskInvocation } from "./taskBriefing.ts";
+import type {
+  BriefingFault,
+  TaskConfigurationReadFault,
+  TaskInvocation,
+} from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import type {
   ExecutionRequirement,
@@ -840,7 +844,7 @@ export interface ExecutionSchedulerMetrics {
   reaping(attempts: number): void;
   admission(outcome: Admitted["admitted"]): void;
   attemptOpened(outcome: AttemptOpened["opened"]): void;
-  briefing(fault: BriefingFault): void;
+  briefing(fault: BriefingFault | TaskConfigurationReadFault): void;
   placement(outcome: AttemptPlacementOutcome["placed"]): void;
   attemptEnded(loss: AttemptLoss, evidence: AttemptEvidence): void;
   manifest(outcome: "Accepted" | "Rejected"): void;

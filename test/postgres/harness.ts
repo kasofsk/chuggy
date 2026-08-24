@@ -79,6 +79,11 @@ import {
   type RecoveryEpoch,
 } from "../../src/interpreter/projectStore.ts";
 
+/** The smallest authored configuration a release may pin. */
+export const postgresHarnessConfiguration = asCanonicalConfiguration(
+  '{"brief":{"acceptanceCriteria":["The ticket is complete."],"constraints":[],"motivation":["The ticket should be completed."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
+);
+
 /** The environment variable `.chug/tasks/check-postgres.sh` sets, named once. */
 export const postgresHarnessUrlVar = "CHUG_PG_URL";
 
@@ -495,7 +500,7 @@ export async function postgresHarnessReleaseSubmission(
     partition,
     authority,
     revision,
-    canonical: asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
+    canonical: postgresHarnessConfiguration,
   });
   const created = await harness.authoring.createDraft({
     partition,

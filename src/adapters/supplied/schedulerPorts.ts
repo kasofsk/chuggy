@@ -4,12 +4,9 @@
  * configurations, and the runtime facts the fabric can observe before a worker
  * exists.
  *
- * NONE OF THESE READS THE SCHEDULER'S DATABASE, AND THAT IS THE SCHEMA'S
- * DECISION RATHER THAN A CHOICE MADE HERE. `src/adapters/postgres/schema.ts`
- * revokes the scheduler role on `draft`, `draft_revision` and
- * `configuration_revision`, so the process holding a scheduler credential
- * cannot read authored content at all; what it may brief a worker with is
- * therefore what its deployment handed it.
+ * NONE OF THESE READS THE SCHEDULER'S DATABASE. This supplied implementation
+ * remains available while the PostgreSQL adapter resolves authored revisions
+ * through the scheduler role's separate read-only authority.
  *
  * A REVISION THIS DEPLOYMENT WAS NOT GIVEN IS A HOLD AND NEVER AN ABSENCE. The
  * `Missing` arm says the pinned revision is definitively gone, which retires

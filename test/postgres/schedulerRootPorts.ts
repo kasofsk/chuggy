@@ -23,7 +23,10 @@ import { blessedPracticeCatalog } from "../../src/interpreter/taskBriefing.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 
 /** Everything `schedulerProcessRoot` takes but the store it opens for itself. */
-export const schedulerRootService: Omit<ExecutionSchedulerService, "store"> = {
+export const schedulerRootService: Omit<
+  ExecutionSchedulerService,
+  "store" | "configurations"
+> = {
   placement: {
     place: () =>
       Promise.resolve({ placed: "Unavailable", retryAfterSeconds: 1 }),
@@ -35,9 +38,6 @@ export const schedulerRootService: Omit<ExecutionSchedulerService, "store"> = {
         resolved: "Denied",
         reason: "ExecutionProfileUnavailable",
       }),
-  },
-  configurations: {
-    configuration: () => Promise.resolve({ read: "Unavailable" }),
   },
   runtimeFacts: { facts: () => Promise.resolve({ read: "Unavailable" }) },
   practices: blessedPracticeCatalog,

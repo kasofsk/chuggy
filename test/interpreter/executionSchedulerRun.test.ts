@@ -817,6 +817,27 @@ test("a pinned revision that is gone blocks the ticket as incompatible", async (
   ]);
 });
 
+test("a pinned revision with incompatible authored content blocks the ticket", async () => {
+  const calls: string[] = [];
+  const seen: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk, {
+    read: "Incompatible",
+    fault: "BriefingShapeMissing",
+  });
+  assert.equal(
+    await executionSchedulerLaunch(
+      { ...service, metrics: schedulerTelemetry(recordingMetrics(seen)) },
+      epoch,
+    ),
+    0,
+  );
+  assert.deepEqual(calls, [
+    "ended:Withdrawn:PolicyDenied",
+    "blocked:TicketConfigIncompatible",
+  ]);
+  assert.ok(seen.includes("briefing:BriefingShapeMissing"));
+});
+
 test("an authoring store that cannot be read holds the attempt instead", async () => {
   const calls: string[] = [];
   const service = serviceWith(calls, runnable, placedOk, {

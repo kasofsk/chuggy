@@ -30,6 +30,7 @@ import {
   blessedPracticeCatalog,
   briefingLineCharsMax,
   briefingLinesMax,
+  authoredTaskConfigurationReadiness,
   composeTaskInvocation,
   renderBriefing,
   resolvePractices,
@@ -71,6 +72,49 @@ const brief: TicketBrief = {
 };
 
 const noFacts: RuntimeFacts = { changedFiles: [], handoff: [] };
+
+const authoredConfiguration = {
+  brief,
+  practices: ["AcceptanceCriteria"],
+  work: { instructions: ["Change the importer."] },
+  review: { instructions: ["Walk the call paths."] },
+};
+
+test("an authored document parses the complete task briefing contract", () => {
+  assert.deepEqual(authoredTaskConfigurationReadiness(authoredConfiguration), {
+    readiness: "Ready",
+    configuration: authoredConfiguration,
+  });
+});
+
+test("an authored document without the briefing shape is refused by name", () => {
+  assert.deepEqual(authoredTaskConfigurationReadiness({}), {
+    readiness: "Incomplete",
+    fault: "BriefingShapeMissing",
+  });
+});
+
+test("authored briefing bounds are enforced while the document is parsed", () => {
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      work: { instructions: ["x".repeat(briefingLineCharsMax + 1)] },
+    }),
+    { readiness: "Incomplete", fault: "TextTooLong" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      review: {
+        instructions: Array.from(
+          { length: briefingLinesMax + 1 },
+          () => "review",
+        ),
+      },
+    }),
+    { readiness: "Incomplete", fault: "TooManyLines" },
+  );
+});
 
 /** One view, with the parts a case is about replacing the ordinary ones. */
 function viewOf(parts: {

@@ -23,6 +23,7 @@ import {
 import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresHarnessHeld,
+  postgresHarnessConfiguration,
   postgresHarnessReleaseSubmission,
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -47,9 +48,7 @@ const authority = {
   subject: asAuthoritySubject("author"),
 };
 
-async function draftFixture(
-  canonical = asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
-) {
+async function draftFixture(canonical = postgresHarnessConfiguration) {
   const partition = await postgresHarnessProject(
     harness.store,
     "authoring-draft",
@@ -105,7 +104,7 @@ async function assertReleaseConfigurationPinned(
       {
         configuration_revision: fixture.revision,
         configuration_digest: createHash("sha256")
-          .update('{"image":"worker:v1","version":1}')
+          .update(postgresHarnessConfiguration)
           .digest("hex"),
       },
     ],

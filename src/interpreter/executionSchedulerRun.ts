@@ -117,6 +117,7 @@ import {
   type RuntimeFacts,
   type RuntimeFactsPort,
   type TaskInvocation,
+  type TaskConfigurationReadFault,
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 
@@ -320,7 +321,12 @@ async function schedulerPolicyFor(
 
 /** Why a briefing could not be gathered, which is the two inabilities once more. */
 type BriefingUnready =
-  { readonly gathered: "Missing" } | { readonly gathered: "Unavailable" };
+  | { readonly gathered: "Missing" }
+  | {
+      readonly gathered: "Incompatible";
+      readonly fault: TaskConfigurationReadFault;
+    }
+  | { readonly gathered: "Unavailable" };
 
 /** Reads back exactly the revision this execution pinned, never a moving ticket row. */
 async function schedulerConfiguration(
@@ -336,6 +342,8 @@ async function schedulerConfiguration(
       return read.configuration;
     case "Missing":
       return { gathered: "Missing" };
+    case "Incompatible":
+      return { gathered: "Incompatible", fault: read.fault };
     case "Unavailable":
       return { gathered: "Unavailable" };
   }
@@ -367,6 +375,18 @@ async function schedulerUnready(
 ): Promise<void> {
   switch (unready.gathered) {
     case "Missing":
+      await schedulerBlock(
+        service,
+        execution,
+        attempt,
+        "PolicyDenied",
+        "TicketConfigIncompatible",
+      );
+      return;
+    case "Incompatible":
+      recordScheduler(service.metrics, (metrics) => {
+        metrics.briefing(unready.fault);
+      });
       await schedulerBlock(
         service,
         execution,
