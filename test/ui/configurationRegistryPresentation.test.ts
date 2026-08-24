@@ -33,8 +33,10 @@ Object.defineProperty(globalThis, "document", {
   },
 });
 
-const { configurationRegistry } =
-  await import("../../ui/dom/configurationRegistry.js");
+const presentationModule = "../../ui/dom/configurationRegistry.js";
+const { configurationRegistry } = (await import(presentationModule)) as {
+  configurationRegistry: (state: unknown) => unknown;
+};
 
 function content(node: TestElement | TextNode): string {
   return node instanceof TextNode
