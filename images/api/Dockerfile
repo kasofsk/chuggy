@@ -32,6 +32,46 @@ FROM node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a85
 ENV NODE_ENV=production \
 	CHUG_API_HOST=0.0.0.0
 
+# THE FINALIZER SHELLS OUT TO GIT and this base ships none, so its
+# `git-available` precondition is unmet and the command exits reporting a gap no
+# operator can close from outside the image. `src/compose.ts` builds the git port
+# on demand for exactly that reason: the precondition is what names the absence,
+# and `scratchOpen`'s own refusal would arrive too late to. The other four
+# commands this image serves never call git; one image serving five is what puts
+# it in all of them, and splitting the image for one is the larger change.
+#
+# CA-CERTIFICATES IS NAMED BECAUSE --no-install-recommends DROPS IT. Debian's
+# git only recommends it, and this base carries no bundle of its own, so git
+# installed without it resolves every HTTPS remote to a certificate error. That
+# failure is invisible where it matters: `gitAvailablePrecondition` asks only
+# for `git --version`, so it would pass, and `scratchObserveHead` reports the
+# error as `Unreachable` — a finalizer that starts clean and calls every
+# repository down, which is worse than the one that could not start at all.
+#
+# NOT PINNED, because what this depends on is a floor rather than a version:
+# `gitVersionMin` in `src/adapters/git/gitRun.ts` is the oldest git whose
+# `merge-tree` writes trees, and `gitAvailablePrecondition` reads
+# `git --version` and refuses below it. The pinned base's candidate clears it
+# today —
+#   docker run --rm \
+#     node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503 \
+#     sh -c 'apt-get -qq update && apt-cache policy git'
+# — and the day it does not, the finalizer says so by name instead of promoting
+# against a git that cannot write the tree.
+#
+# THE COST IS THE ARGUMENT FOR SPLITTING THIS IMAGE LATER, and it is the layer
+# rather than the certificates: git and its dependencies are most of it, the CA
+# bundle a rounding error beside them.
+#   docker image inspect --format '{{.Size}}' chuggy.invalid/api:<tag>
+# against a build of this file with the RUN removed is the comparison. What
+# lands on the API pod with it is a Perl interpreter and a network-capable
+# libcurl; `perl`, `git-man` and `libcurl3t64-gnutls` are hard dependencies
+# rather than recommendations, so no install line is leaner and the lever is the
+# split, not this RUN.
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends git ca-certificates \
+	&& rm -rf /var/lib/apt/lists/*
+
 WORKDIR /srv/chuggy
 COPY --from=dependencies /srv/chuggy/node_modules ./node_modules
 # `type: module` is here, and Node reads it to decide that a `.ts` file is ESM.
