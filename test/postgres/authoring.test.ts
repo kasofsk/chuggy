@@ -102,16 +102,53 @@ async function draftFixture(canonical = postgresHarnessConfiguration) {
     revision,
     canonical,
   });
+  const initialized = await store.initializeDraft(partition, revision, 100);
+  if (initialized === undefined)
+    throw new Error("draft fixture was not initialized");
   const created = await store.createDraft({
     partition,
     authority,
     configurationRevision: revision,
+    configurationDigest: initialized.configuration.digest,
+    expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
   });
   if (created.created !== "Created")
     throw new Error("draft fixture was not created");
   return { partition, store, revision, draft: created.draft };
 }
+
+test("draft creation rejects a stale initialization fence", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "draft-initialization-stale",
+  );
+  const store = postgresAuthoring(pool);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await store.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  const initialized = await store.initializeDraft(partition, revision, 100);
+  if (initialized === undefined) throw new Error("draft was not initialized");
+  await harness.query(
+    "UPDATE project SET head=head+1 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  assert.deepEqual(
+    await store.createDraft({
+      partition,
+      authority,
+      configurationRevision: revision,
+      configurationDigest: initialized.configuration.digest,
+      expectedProjectSequence: initialized.projectSequence,
+      authoring: plainAuthoring,
+    }),
+    { created: "Stale" },
+  );
+});
 
 function releaseSubmission(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
@@ -494,10 +531,15 @@ test("draft edits are versioned and deletion leaves an unreusable identity", asy
     }),
     { revised: "NotDraft", state: "Deleted" },
   );
+  const initialized = await store.initializeDraft(partition, revision, 100);
+  if (initialized === undefined)
+    throw new Error("next draft was not initialized");
   const next = await store.createDraft({
     partition,
     authority,
     configurationRevision: revision,
+    configurationDigest: initialized.configuration.digest,
+    expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
   });
   assert.equal(
@@ -544,10 +586,15 @@ test("a domain release advances the shared ticket identity allocator", async () 
     revision,
     canonical: asCanonicalConfiguration("{}"),
   });
+  const initialized = await store.initializeDraft(partition, revision, 100);
+  if (initialized === undefined)
+    throw new Error("draft fixture was not initialized");
   const created = await store.createDraft({
     partition,
     authority,
     configurationRevision: revision,
+    configurationDigest: initialized.configuration.digest,
+    expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
   });
   assert.equal(created.created === "Created" ? created.draft.ticket : 0, 2);

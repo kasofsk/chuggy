@@ -30,6 +30,7 @@ import {
 import type { RepositoryConfigurationImportPorts } from "../../src/interpreter/repositoryConfiguration.ts";
 import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
 import { id } from "../domain/fixtures.ts";
+import { refinementInstance as domainConfig } from "../actor/harness.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
 import {
   allBacklogScopes,
@@ -64,6 +65,7 @@ function ticketRead(calls: string[]): NativeReadStore["ticket"] {
 
 function authoringStore(calls: string[]): AuthoringStore {
   return {
+    initializeDraft: () => Promise.resolve(undefined),
     configurations: () => {
       calls.push("read:configurations");
       return Promise.resolve({ partition, configurations: [] });
@@ -147,6 +149,7 @@ function boundary(
       undefined,
       undefined,
       repositoryConfigurationImports,
+      domainConfig,
     ),
     calls,
   };

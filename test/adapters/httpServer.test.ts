@@ -23,6 +23,7 @@ type ServedNativeWeb = Pick<
   | "createConfiguration"
   | "importRepositoryConfigurations"
   | "createDraft"
+  | "initializeDraft"
   | "deleteDraft"
   | "dispatchView"
   | "draft"
@@ -122,6 +123,7 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
       calls.push("createDraft");
       return Promise.resolve({ result: "NotFound" });
     },
+    initializeDraft: () => Promise.resolve({ result: "NotFound" }),
     deleteDraft: (_principal, input) => {
       calls.push(`deleteDraft:${String(input.expectedVersion)}`);
       return Promise.resolve({ result: "NotFound" });
@@ -393,6 +395,13 @@ const publicAuthoring = {
   finalizer: "ManagedFinalizer",
 };
 
+const publicDraftCreation = {
+  configurationRevision: "revision",
+  configurationDigest: "a".repeat(64),
+  expectedProjectSequence: 7,
+  authoring: publicAuthoring,
+};
+
 test("authoring and dispatch routes remain thin NativeWeb adapters", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
@@ -428,7 +437,7 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     method: "POST",
     url: `${project}/drafts`,
     headers,
-    body: { configurationRevision: "revision", authoring: publicAuthoring },
+    body: publicDraftCreation,
   });
   await app.inject({
     method: "PUT",

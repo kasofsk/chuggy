@@ -6,6 +6,17 @@ import {
   type ReleaseAuthoring,
 } from "../actor/decisionEvent.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
+import {
+  defaultProgram,
+  finalizationPricingChoices,
+  finalizerChoices,
+  reworkPolicyChoices,
+  resumePricingChoices,
+  stageChoices,
+  workFanoutChoices,
+  type Config,
+} from "../domain/config.ts";
+import { reworkBudgetOf } from "../domain/pricing.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
@@ -279,7 +290,59 @@ export type ConfigurationCreated =
 
 export type DraftCreated =
   | { readonly created: "Created"; readonly draft: DraftResource }
-  | { readonly created: "ConfigurationNotFound" };
+  | { readonly created: "ConfigurationNotFound" }
+  | { readonly created: "Stale" };
+
+export interface DraftInitialization {
+  readonly configuration: ConfigurationRevisionResource;
+  readonly projectSequence: number;
+  readonly defaults: ReleaseAuthoring;
+  readonly choices: {
+    readonly stages: readonly {
+      readonly fanout: number;
+      readonly combinator: "UnanimousPass" | "AnyPass";
+    }[];
+    readonly programStagesMax: number;
+    readonly workFanouts: readonly number[];
+    readonly reworkPolicies: readonly ReleaseAuthoring["reworkPolicy"][];
+    readonly finalizationPricings: readonly ReleaseAuthoring["finalizationPricing"][];
+    readonly resumePricings: readonly ReleaseAuthoring["resumePricing"][];
+    readonly finalizers: readonly ReleaseAuthoring["finalizer"][];
+  };
+  readonly dependencyCandidates: readonly TicketId[];
+  readonly dependencyCandidatesTruncated: boolean;
+}
+
+export type DraftInitializationRead =
+  | { readonly initialized: "Initialized"; readonly value: DraftInitialization }
+  | { readonly initialized: "ConfigurationNotFound" }
+  | { readonly initialized: "ConfigurationIncomplete" };
+
+/** The deployment policy exposed to authors; release validation consumes the same universes. */
+export function draftInitializationPolicy(
+  config: Config,
+): Pick<DraftInitialization, "defaults" | "choices"> {
+  return {
+    defaults: {
+      deps: new Set(),
+      prog: defaultProgram(config),
+      workFanout: 1,
+      reworkPolicy: reworkBudgetOf(0),
+      finalizationPricing: "DeadlineOnly",
+      resumePricing: "RetryCharged",
+      finalizer: "ManagedFinalizer",
+    },
+    choices: {
+      stages: stageChoices(config),
+      programStagesMax: config.maxStages,
+      workFanouts: workFanoutChoices(config),
+      reworkPolicies: reworkPolicyChoices(config),
+      finalizationPricings: finalizationPricingChoices(config),
+      resumePricings: resumePricingChoices,
+      finalizers: finalizerChoices,
+    },
+  };
+}
 
 export type DraftRevised =
   | { readonly revised: "Revised"; readonly draft: DraftResource }
@@ -301,6 +364,11 @@ export type DraftDeleted =
     };
 
 export interface AuthoringStore {
+  initializeDraft(
+    partition: Partition,
+    revision: ConfigurationRevisionId,
+    dependencyCandidatesMax: number,
+  ): Promise<Omit<DraftInitialization, "defaults" | "choices"> | undefined>;
   configurations(
     partition: Partition,
     query: ConfigurationPageQuery,
@@ -324,6 +392,8 @@ export interface AuthoringStore {
     readonly partition: Partition;
     readonly authority: Authority;
     readonly configurationRevision: ConfigurationRevisionId;
+    readonly configurationDigest: string;
+    readonly expectedProjectSequence: number;
     readonly authoring: ReleaseAuthoring;
   }): Promise<DraftCreated>;
   reviseDraft(input: {

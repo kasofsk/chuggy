@@ -503,10 +503,19 @@ export async function postgresHarnessReleaseSubmission(
     revision,
     canonical: postgresHarnessConfiguration,
   });
+  const initialized = await harness.authoring.initializeDraft(
+    partition,
+    revision,
+    100,
+  );
+  if (initialized === undefined)
+    throw new Error("postgres harness: release draft was not initialized");
   const created = await harness.authoring.createDraft({
     partition,
     authority,
     configurationRevision: revision,
+    configurationDigest: initialized.configuration.digest,
+    expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
   });
   if (created.created !== "Created")

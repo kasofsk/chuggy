@@ -99,6 +99,7 @@ import { postgresOperationalReads } from "./adapters/postgres/operationalReads.t
 import type { OutputContentPort } from "./interpreter/operationsView.ts";
 import type { SelectorOperationalContextRead } from "./interpreter/selectorOperationalContext.ts";
 import type { RepositoryConfigurationSnapshotPort } from "./interpreter/repositoryConfiguration.ts";
+import type { Config } from "./domain/config.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -278,6 +279,7 @@ export function composeNativeWeb(
   keying: IdempotencyKeying,
   access: ProjectAccess,
   backlog: ExecutionBacklogGuard,
+  domain: Config,
   config: TicketServiceConfig = ticketServiceDefaults,
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
   inventory?: ProjectInventory,
@@ -307,6 +309,7 @@ export function composeNativeWeb(
           snapshots: repositoryConfigurationSnapshots,
           store: authoring,
         },
+    domain,
   );
 }
 

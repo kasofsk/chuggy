@@ -7,6 +7,7 @@ import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
+import { refinementInstance } from "../actor/harness.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
@@ -108,6 +109,7 @@ test("real HTTP ingress accepts once and observes the separate writer", async ()
     postgresHarnessKeying(),
     postgresProjectAccess(pool),
     postgresExecutionBacklogGuard(pool),
+    refinementInstance,
   );
   const app = createNativeHttpApp(
     web,

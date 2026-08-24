@@ -32,11 +32,17 @@ import type {
   ConfigurationRevisionResource,
   ConfigurationRevisionId,
   DraftCreated,
+  DraftInitializationRead,
   DraftDeleted,
   DraftResource,
   DraftRevised,
 } from "./authoring.ts";
-import { checkedConfigurationPageQuery } from "./authoring.ts";
+import {
+  checkedConfigurationPageQuery,
+  draftInitializationPolicy,
+  releaseConfigurationReadiness,
+} from "./authoring.ts";
+import type { Config } from "../domain/config.ts";
 import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
 import {
   dispatchNeedsExecutionHeadroom,
@@ -341,9 +347,16 @@ export interface NativeWeb {
     input: {
       readonly partition: Partition;
       readonly configurationRevision: ConfigurationRevisionId;
+      readonly configurationDigest: string;
+      readonly expectedProjectSequence: number;
       readonly authoring: ReleaseAuthoring;
     },
   ): Promise<AuthorizedResult<DraftCreated>>;
+  initializeDraft(
+    principal: Principal,
+    partition: Partition,
+    revision: ConfigurationRevisionId,
+  ): Promise<AuthorizedResult<DraftInitializationRead>>;
   reviseDraft(
     principal: Principal,
     input: {
@@ -409,6 +422,44 @@ type NativeAuthoringMethods = Pick<
   | "reviseDraft"
   | "deleteDraft"
 >;
+
+function nativeDraftInitializationMethod(
+  access: ProjectAccess,
+  authoring: AuthoringStore,
+  domain: Config,
+): Pick<NativeWeb, "initializeDraft"> {
+  return {
+    initializeDraft: async (principal, partition, revision) => {
+      const authority = await access.authorize(principal, partition, "Mutate");
+      if (authority === undefined) return { result: "NotFound" };
+      const snapshot = await authoring.initializeDraft(
+        partition,
+        revision,
+        100,
+      );
+      if (snapshot === undefined)
+        return {
+          result: "Authorized",
+          value: { initialized: "ConfigurationNotFound" },
+        };
+      if (
+        releaseConfigurationReadiness(snapshot.configuration.canonical)
+          .readiness === "Incomplete"
+      )
+        return {
+          result: "Authorized",
+          value: { initialized: "ConfigurationIncomplete" },
+        };
+      return {
+        result: "Authorized",
+        value: {
+          initialized: "Initialized",
+          value: { ...snapshot, ...draftInitializationPolicy(domain) },
+        },
+      };
+    },
+  };
+}
 
 function nativeConfigurationMethods(
   access: ProjectAccess,
@@ -628,6 +679,12 @@ function nativeOperationalMethods(
 }
 
 /** Builds the application boundary from authorization, read, and inbox ports. */
+function requiredAuthoringDomain(domain: Config | undefined): Config {
+  if (domain === undefined)
+    throw new Error("native web authoring policy is required");
+  return domain;
+}
+
 export function nativeWeb(
   access: ProjectAccess,
   reads: NativeReadStore,
@@ -641,13 +698,16 @@ export function nativeWeb(
   outputContents?: OutputContentPort,
   selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
+  domain?: Config,
 ): NativeWeb {
+  const authoringDomain = requiredAuthoringDomain(domain);
   return {
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,
     ),
     ...nativeConfigurationMethods(access, authoring),
+    ...nativeDraftInitializationMethod(access, authoring, authoringDomain),
     ...nativeAuthoringMethods(access, authoring),
     ...nativeOperationalMethods(access, operationalReads, outputContents),
     selectorOperationalContext: nativeSelectorContextMethod(
