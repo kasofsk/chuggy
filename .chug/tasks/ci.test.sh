@@ -22,6 +22,14 @@ trap 'rm -rf "$WORK" "$BARE"' EXIT
 
 R="$WORK/repo"
 
+# No case inherits a sequencer input it did not choose. ci.sh hands each suite
+# the environment it was given, so an ambient one reaches the nested runs below
+# and answers a question the case did not ask. These are ci.sh's own Env block
+# and the base `_ci-select.sh` reads, less CHUG_CI_SHELL_SUITES — the recursion
+# guard, which each case that reaches the suite stage sets for itself.
+unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF \
+	CHUG_CI_SUITE_TIMEOUT_SECS CHUG_CI_SUITES_BUDGET_SECS
+
 # Read off the sequencer rather than listed here: the roster is the calls, and
 # a second copy of it would be the half that drifts.
 named_gates() { # <script> — the gates it calls, by bare name
