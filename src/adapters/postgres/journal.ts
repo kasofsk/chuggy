@@ -36,7 +36,6 @@
 
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
-import { createHash } from "node:crypto";
 
 import type { Entry } from "../../actor/journal.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
@@ -56,6 +55,7 @@ import {
   type Parsed,
 } from "../../interpreter/wire.ts";
 import {
+  configurationRevisionDigest,
   journalChainDigest,
   journalChainGenesis,
   journalEnvelopeDigest,
@@ -112,7 +112,7 @@ function storedJournalRowVerified(
     cause !== undefined &&
     configuration !== undefined &&
     row.configuration_canonical !== null &&
-    createHash("sha256").update(row.configuration_canonical).digest("hex") ===
+    configurationRevisionDigest(row.configuration_canonical) ===
       configuration.configurationDigest &&
     journalEnvelopeDigest(partition, previous, {
       entry,

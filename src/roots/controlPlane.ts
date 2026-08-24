@@ -37,6 +37,7 @@ import { postgresProjectDecision } from "../adapters/postgres/projectDecision.ts
 import { postgresProjectDiscovery } from "../adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
+import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import {
   finalizerRole,
   schedulerRole,
@@ -306,8 +307,20 @@ export interface SchedulerProcessRootConfig {
     readonly recoveryEpoch: RecoveryEpoch;
     readonly cluster: ClusterId;
   };
-  readonly service: Omit<ExecutionSchedulerService, "store">;
+  readonly service: Omit<ExecutionSchedulerService, "store" | "configurations">;
   readonly additional?: readonly RuntimePrecondition[];
+}
+
+/** Composes the scheduler service with the PostgreSQL ports its process owns. */
+export function schedulerProcessRootService(
+  pool: pg.Pool,
+  service: SchedulerProcessRootConfig["service"],
+): ExecutionSchedulerService {
+  return {
+    ...service,
+    store: postgresExecutionScheduler(pool),
+    configurations: postgresPinnedConfigurations(pool),
+  };
 }
 
 /** Owns the scheduler-role pool while its cluster and policy adapters stay explicit ports. */
@@ -315,10 +328,7 @@ export function schedulerProcessRoot(
   config: SchedulerProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const service: ExecutionSchedulerService = {
-    ...config.service,
-    store: postgresExecutionScheduler(pool),
-  };
+  const service = schedulerProcessRootService(pool, config.service);
   return ownedProcess(
     pool,
     schedulerProcess(

@@ -5,7 +5,6 @@ import {
 import {
   suppliedExecutionPolicy,
   suppliedRuntimeFacts,
-  suppliedTaskConfigurations,
 } from "../adapters/supplied/schedulerPorts.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
 import type { ServiceRuntime } from "../interpreter/serviceRuntime.ts";
@@ -24,7 +23,6 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
     service: {
       placement: kubernetesWorkerLaunch(config.workers),
       policy: suppliedExecutionPolicy(config.policy),
-      configurations: suppliedTaskConfigurations(config.configurations),
       runtimeFacts: suppliedRuntimeFacts(config.runtimeFacts),
       practices: blessedPracticeCatalog,
       config: config.scheduler,

@@ -30,10 +30,12 @@ import {
   blessedPracticeCatalog,
   briefingLineCharsMax,
   briefingLinesMax,
+  authoredTaskConfigurationReadiness,
   composeTaskInvocation,
   renderBriefing,
   resolvePractices,
   runtimeChangedFilesMax,
+  runtimeHandoffLinesMax,
   type BlessedPractice,
   type BriefingFault,
   type BriefingSection,
@@ -50,6 +52,7 @@ import {
   type PolicyAuthorityGrant,
 } from "../../src/interpreter/taskAuthority.ts";
 import type { ConfigurationPin } from "../../src/interpreter/projectDecision.ts";
+import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 
 const pin: ConfigurationPin = {
   configurationRevision: "revision-7",
@@ -71,6 +74,191 @@ const brief: TicketBrief = {
 };
 
 const noFacts: RuntimeFacts = { changedFiles: [], handoff: [] };
+
+const authoredConfiguration = {
+  brief,
+  practices: ["AcceptanceCriteria"],
+  work: { instructions: ["Change the importer."] },
+  review: { instructions: ["Walk the call paths."] },
+};
+
+test("an authored document parses the complete task briefing contract", () => {
+  assert.deepEqual(authoredTaskConfigurationReadiness(authoredConfiguration), {
+    readiness: "Ready",
+    configuration: authoredConfiguration,
+  });
+});
+
+test("an authored document without the briefing shape is refused by name", () => {
+  assert.deepEqual(authoredTaskConfigurationReadiness({}), {
+    readiness: "Incomplete",
+    fault: "BriefingShapeMissing",
+  });
+});
+
+test("authored briefing bounds are enforced while the document is parsed", () => {
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      work: { instructions: ["x".repeat(briefingLineCharsMax + 1)] },
+    }),
+    { readiness: "Incomplete", fault: "TextTooLong" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      review: {
+        instructions: Array.from(
+          { length: briefingLinesMax + 1 },
+          () => "review",
+        ),
+      },
+    }),
+    { readiness: "Incomplete", fault: "TooManyLines" },
+  );
+});
+
+test("every authored line list is bounded while it is parsed", () => {
+  const tooMany = Array.from({ length: briefingLinesMax + 1 }, () => "line");
+  const variants = [
+    { ...authoredConfiguration, brief: { ...brief, motivation: tooMany } },
+    {
+      ...authoredConfiguration,
+      brief: { ...brief, acceptanceCriteria: tooMany },
+    },
+    { ...authoredConfiguration, brief: { ...brief, constraints: tooMany } },
+    { ...authoredConfiguration, work: { instructions: tooMany } },
+    { ...authoredConfiguration, review: { instructions: tooMany } },
+  ];
+  for (const variant of variants) {
+    assert.deepEqual(authoredTaskConfigurationReadiness(variant), {
+      readiness: "Incomplete",
+      fault: "TooManyLines",
+    });
+  }
+});
+
+test("missing or mistyped authored fields are refused at their field", () => {
+  const variants: readonly [unknown, string][] = [
+    [
+      { ...authoredConfiguration, brief: { ...brief, motivation: undefined } },
+      "MotivationInvalid",
+    ],
+    [
+      {
+        ...authoredConfiguration,
+        brief: { ...brief, acceptanceCriteria: [1] },
+      },
+      "AcceptanceCriteriaInvalid",
+    ],
+    [
+      { ...authoredConfiguration, brief: { ...brief, constraints: undefined } },
+      "ConstraintsInvalid",
+    ],
+    [{ ...authoredConfiguration, practices: undefined }, "PracticesInvalid"],
+    [{ ...authoredConfiguration, work: {} }, "WorkInvalid"],
+    [{ ...authoredConfiguration, review: undefined }, "ReviewInvalid"],
+  ];
+  for (const [variant, fault] of variants) {
+    assert.deepEqual(authoredTaskConfigurationReadiness(variant), {
+      readiness: "Incomplete",
+      fault,
+    });
+  }
+});
+
+test("empty briefs and unblessed or duplicate practices are refused at release parsing", () => {
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      brief: { motivation: [], acceptanceCriteria: [], constraints: [] },
+    }),
+    { readiness: "Incomplete", fault: "EmptyBrief" },
+  );
+  for (const practices of [
+    ["Nonsense"],
+    ["AcceptanceCriteria", "AcceptanceCriteria"],
+  ]) {
+    assert.notEqual(
+      authoredTaskConfigurationReadiness({
+        ...authoredConfiguration,
+        practices,
+      }).readiness,
+      "Ready",
+    );
+  }
+});
+
+test("authority requests are structured and their name collections are bounded", () => {
+  assert.equal(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      authority: {
+        tools: ["editor"],
+        credentials: ["workspace"],
+        network: false,
+        filesystem: "ReadWorkspace",
+        mayCompleteTask: false,
+      },
+    }).readiness,
+    "Ready",
+  );
+  for (const authority of [
+    "everything",
+    { filesystem: "RootShell" },
+    { network: "yes" },
+    { tools: Array.from({ length: briefingLinesMax + 1 }, () => "tool") },
+    { credentials: [1] },
+  ]) {
+    assert.deepEqual(
+      authoredTaskConfigurationReadiness({
+        ...authoredConfiguration,
+        authority,
+      }),
+      { readiness: "Incomplete", fault: "AuthorityInvalid" },
+    );
+  }
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      work: { instructions: [], authority: { filesystem: "RootShell" } },
+    }),
+    { readiness: "Incomplete", fault: "WorkInvalid" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      review: { instructions: [], authority: { network: "yes" } },
+    }),
+    { readiness: "Incomplete", fault: "ReviewInvalid" },
+  );
+});
+
+test("the largest accepted authored collections fit the canonical storage bound", () => {
+  const lines = Array.from({ length: briefingLinesMax }, () =>
+    "x".repeat(briefingLineCharsMax),
+  );
+  const canonical = JSON.stringify({
+    authority: {
+      credentials: lines,
+      filesystem: "None",
+      mayCompleteTask: false,
+      network: false,
+      tools: lines,
+    },
+    brief: {
+      acceptanceCriteria: lines,
+      constraints: lines,
+      motivation: lines,
+    },
+    image: "worker:v1",
+    practices: [...allPracticeIds],
+    review: { instructions: lines },
+    version: 1,
+    work: { instructions: lines },
+  });
+  assert.doesNotThrow(() => asCanonicalConfiguration(canonical));
+});
 
 /** One view, with the parts a case is about replacing the ordinary ones. */
 function viewOf(parts: {
@@ -420,7 +608,7 @@ test("every fault is reachable from a pinned configuration or a runtime fact", (
         brief: {
           ...brief,
           constraints: Array.from(
-            { length: briefingLinesMax + 1 },
+            { length: runtimeHandoffLinesMax + 1 },
             () => "one",
           ),
         },

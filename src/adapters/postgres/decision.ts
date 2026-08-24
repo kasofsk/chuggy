@@ -51,7 +51,6 @@
  * the bare outcome.
  */
 
-import { createHash } from "node:crypto";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
@@ -94,6 +93,7 @@ import {
 } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
+import { configurationRevisionDigest } from "./digest.ts";
 
 /** One decision-input row as the transaction reads it under its lock. */
 interface DecisionCauseRow {
@@ -491,7 +491,7 @@ async function decisionReleaseOutcome(
     throw new Error(
       "release configuration disappeared behind its retained fence",
     );
-  const digest = createHash("sha256").update(revision.canonical).digest("hex");
+  const digest = configurationRevisionDigest(revision.canonical);
   if (digest !== revision.digest || digest !== fence.configurationDigest)
     throw new Error(
       "release configuration content contradicts its retained digest",

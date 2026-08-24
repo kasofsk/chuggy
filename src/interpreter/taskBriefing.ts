@@ -60,6 +60,30 @@ import type { ConfigurationPin } from "./projectDecision.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ExecutionId } from "./schedulerIdentity.ts";
 import {
+  authoredTaskConfigurationReadiness,
+  allPracticeIds,
+  briefingLinesMax,
+  taskConfigurationLineFault,
+  type AuthoredTaskConfiguration,
+  type PurposeBlock,
+  type PracticeId,
+  type TaskConfigurationFault,
+  type TaskConfigurationReadFault,
+  type TicketBrief,
+} from "./taskConfiguration.ts";
+export {
+  authoredTaskConfigurationReadiness,
+  allPracticeIds,
+  briefingLineCharsMax,
+  briefingLinesMax,
+  type AuthoredTaskConfiguration,
+  type PurposeBlock,
+  type PracticeId,
+  type TaskConfigurationFault,
+  type TaskConfigurationReadFault,
+  type TicketBrief,
+} from "./taskConfiguration.ts";
+import {
   briefingHeading,
   briefingLabels,
   briefingRequiredResult,
@@ -75,17 +99,6 @@ import {
   type PolicyAuthorityGrant,
   type TaskAuthority,
 } from "./taskAuthority.ts";
-
-/** The blessed practices this tree trusts, which is the whole catalog and not a prefix of one. */
-export type PracticeId =
-  "RegressionCoverage" | "ChangedCallPaths" | "AcceptanceCriteria";
-
-/** Every practice identity, in the order a resolved list is sorted into. */
-export const allPracticeIds: readonly PracticeId[] = [
-  "RegressionCoverage",
-  "ChangedCallPaths",
-  "AcceptanceCriteria",
-];
 
 /** Which roles a practice speaks to, which is what makes one shared list serve both. */
 export type PracticeScope = "Work" | "Review" | "Both";
@@ -127,26 +140,30 @@ export const blessedPracticeCatalog: PracticeCatalog = new Map(
   blessedPractices.map((practice) => [practice.practice, practice]),
 );
 
-/** The claim a ticket makes about itself, which both roles are briefed with unchanged. */
-export interface TicketBrief {
-  readonly motivation: readonly string[];
-  readonly acceptanceCriteria: readonly string[];
-  readonly constraints: readonly string[];
-}
-
-/** What one role is told beyond the shared brief, and what its blocks ask to narrow. */
-export interface PurposeBlock {
-  readonly instructions: readonly string[];
-  readonly authority?: AuthorityRequest;
-}
-
 /** One immutable authored configuration revision, as the release pinned it. */
-export interface PinnedTaskConfiguration extends ConfigurationPin {
-  readonly brief: TicketBrief;
-  readonly practices: readonly string[];
-  readonly work: PurposeBlock;
-  readonly review: PurposeBlock;
-  readonly authority?: AuthorityRequest;
+export interface PinnedTaskConfiguration
+  extends ConfigurationPin, AuthoredTaskConfiguration {}
+
+/** Adds the immutable storage identity to an authored briefing that parsed successfully. */
+export function pinnedTaskConfigurationReadiness(
+  value: unknown,
+  pin: ConfigurationPin,
+):
+  | {
+      readonly readiness: "Ready";
+      readonly configuration: PinnedTaskConfiguration;
+    }
+  | {
+      readonly readiness: "Incomplete";
+      readonly fault: TaskConfigurationFault;
+    } {
+  const authored = authoredTaskConfigurationReadiness(value);
+  return authored.readiness === "Incomplete"
+    ? authored
+    : {
+        readiness: "Ready",
+        configuration: { ...pin, ...authored.configuration },
+      };
 }
 
 /** What the adapter observed of the world, which is data and never authored prompt text. */
@@ -156,23 +173,11 @@ export interface RuntimeFacts {
   readonly handoff: readonly string[];
 }
 
-/** The longest single briefing line, which is one criterion, constraint or instruction. */
-export const briefingLineCharsMax = 512;
-
-/** The most lines one authored list may carry. */
-export const briefingLinesMax = 32;
-
 /** The most changed files a runtime context may name before it stops being context. */
 export const runtimeChangedFilesMax = 64;
 
-/** The first code point a briefing line may carry, below which every value is a control character. */
-const briefingFirstPrintable = 0x20;
-
-/** The first code point of the delete and C1 block, which renders as nothing and survives encoding. */
-const briefingFirstUpperControl = 0x7f;
-
-/** The last code point of that block. */
-const briefingLastUpperControl = 0x9f;
+/** The most handoff lines runtime context may carry. */
+export const runtimeHandoffLinesMax = 32;
 
 /** Why a briefing could not be composed, each of them a fact about the pinned configuration. */
 export type BriefingFault =
@@ -201,19 +206,7 @@ export const allBriefingFaults: readonly BriefingFault[] = [
 
 /** What one line has to be to render: present, bounded, and free of anything a terminal eats. */
 function briefingLineFault(line: string): BriefingFault | undefined {
-  if (line.length === 0) return "EmptyLine";
-  if (line.length > briefingLineCharsMax) return "TextTooLong";
-  if (!line.isWellFormed()) return "TextUnreadable";
-  for (const character of line) {
-    const code = character.codePointAt(0) ?? 0;
-    if (
-      code < briefingFirstPrintable ||
-      (code >= briefingFirstUpperControl && code <= briefingLastUpperControl)
-    ) {
-      return "TextUnreadable";
-    }
-  }
-  return undefined;
+  return taskConfigurationLineFault(line);
 }
 
 /** What one list has to be to render, which is bounded and made of renderable lines. */
@@ -292,6 +285,10 @@ export type ConfigurationRead =
       readonly configuration: PinnedTaskConfiguration;
     }
   | { readonly read: "Missing" }
+  | {
+      readonly read: "Incompatible";
+      readonly fault: TaskConfigurationReadFault;
+    }
   | { readonly read: "Unavailable" };
 
 /**
@@ -376,7 +373,7 @@ function briefingRuntimeFault(
   return briefingListsFault([
     [runtime.workspace === undefined ? [] : [runtime.workspace], 1],
     [runtime.changedFiles, runtimeChangedFilesMax],
-    [runtime.handoff, briefingLinesMax],
+    [runtime.handoff, runtimeHandoffLinesMax],
   ]);
 }
 

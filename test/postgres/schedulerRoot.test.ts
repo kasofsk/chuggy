@@ -28,9 +28,19 @@ import { after, before, test } from "node:test";
 import { promisify } from "node:util";
 
 import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
-import type { RecoveryEpoch } from "../../src/interpreter/projectStore.ts";
+import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import {
+  asAuthorityKind,
+  asAuthoritySubject,
+} from "../../src/interpreter/operationInbox.ts";
+import type {
+  Partition,
+  RecoveryEpoch,
+} from "../../src/interpreter/projectStore.ts";
+import {
+  postgresHarnessConfiguration,
   postgresHarnessOpen,
+  postgresHarnessProject,
   postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
@@ -39,10 +49,49 @@ const execute = promisify(execFile);
 
 let harness: PostgresHarness;
 let epoch: RecoveryEpoch;
+let configurationPartition: Partition;
+let configurationRevision: string;
+let configurationDigest: string;
 before(async () => {
   harness = await postgresHarnessOpen();
   epoch = await harness.store.currentRecoveryEpoch();
+  configurationPartition = await postgresHarnessProject(
+    harness.store,
+    "scheduler-root-configuration",
+  );
+  configurationRevision = asConfigurationRevisionId("scheduler-root-config");
+  const created = await harness.authoring.createConfiguration({
+    partition: configurationPartition,
+    authority: {
+      kind: asAuthorityKind("User"),
+      subject: asAuthoritySubject("author"),
+    },
+    revision: asConfigurationRevisionId(configurationRevision),
+    canonical: postgresHarnessConfiguration,
+  });
+  if (created.created !== "Created")
+    throw new Error("scheduler root configuration was not created");
+  configurationDigest = created.revision.digest;
 });
+
+function schedulerRootConfigurationProgram(): string {
+  return `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const pools = await import('./src/adapters/postgres/pool.ts');
+    const ports = await import('./test/postgres/schedulerRootPorts.ts');
+    const pool = pools.postgresPool(${JSON.stringify(schedulerRootUrl())});
+    const service = roots.schedulerProcessRootService(pool, ports.schedulerRootService);
+    const read = await service.configurations.configuration(
+      ${JSON.stringify(configurationPartition)},
+      {
+        configurationRevision: ${JSON.stringify(configurationRevision)},
+        configurationDigest: ${JSON.stringify(configurationDigest)},
+      },
+    );
+    await pool.end();
+    process.stdout.write(JSON.stringify(read));
+  `;
+}
 after(async () => {
   await harness.close();
 });
@@ -99,4 +148,19 @@ test("a precondition the deployment supplies is reached past the database ones a
     },
     called: { met: 1, unmet: 1 },
   });
+});
+
+test("the production scheduler root reads configurations through PostgreSQL", async () => {
+  const result = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      schedulerRootConfigurationProgram(),
+    ],
+    { cwd: process.cwd() },
+  );
+  const read = JSON.parse(result.stdout) as { readonly read: string };
+  assert.equal(read.read, "Configuration");
 });

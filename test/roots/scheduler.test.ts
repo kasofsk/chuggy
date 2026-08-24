@@ -90,7 +90,6 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_WORKER_IMAGES: JSON.stringify(images),
   CHUG_SCHEDULER_WORKER_RESOURCES: JSON.stringify(resources),
   CHUG_SCHEDULER_EXECUTION_POLICY: JSON.stringify(policy),
-  CHUG_SCHEDULER_TASK_CONFIGURATIONS: JSON.stringify([configuration]),
 };
 
 /** Every variable the command refuses to start without. */
@@ -169,7 +168,6 @@ test("a complete environment parses into the plain data the process root takes",
           },
         },
       },
-      configurations: [configuration],
       runtimeFacts: {},
     },
   });
@@ -211,18 +209,6 @@ test("a bound named on the prototype of the defaults is refused too", async () =
     ) as { readonly refused?: string };
     assert.match(found.refused ?? "", new RegExp(bound, "u"), bound);
   }
-});
-
-test("a catalog stating no configuration cannot brief anything and is refused", async () => {
-  const found = JSON.parse(
-    await schedulerProgram(
-      parseProgram({
-        ...environment,
-        CHUG_SCHEDULER_TASK_CONFIGURATIONS: "[]",
-      }),
-    ),
-  ) as { readonly refused?: string };
-  assert.match(found.refused ?? "", /CHUG_SCHEDULER_TASK_CONFIGURATIONS/u);
 });
 
 test("a stated bound is taken and the rest stay the published defaults", async () => {
@@ -320,7 +306,9 @@ function processProgram(reachable: boolean): string {
           grant: ${JSON.stringify(grant)},
         }]]),
       }),
-      configurations: supplied.suppliedTaskConfigurations([configuration]),
+      configurations: {
+        configuration: async () => ({ read: 'Configuration', configuration }),
+      },
       runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,
