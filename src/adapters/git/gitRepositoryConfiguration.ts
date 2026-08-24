@@ -55,8 +55,8 @@ type GitRepositoryConfigurationAuthorization =
       readonly authorized: "Credential";
       readonly credential: RepositoryCredential;
     }
-  | { readonly authorized: "Unavailable" }
-  | { readonly authorized: "Refused" };
+  | { readonly authorized: "NoCredential" }
+  | { readonly authorized: "Unavailable" };
 
 const gitRepositoryConfigurationTreeOutputBytesMax =
   (repositoryConfigurationDeclarationsMax + 1) * 512;
@@ -72,7 +72,7 @@ async function gitRepositoryConfigurationCredential(
     case "Credential":
       return { authorized: "Credential", credential: resolved.credential };
     case "Denied":
-      return { authorized: "Refused" };
+      return { authorized: "NoCredential" };
     case "Unavailable":
       return { authorized: "Unavailable" };
     default:
@@ -89,19 +89,19 @@ function gitRepositoryConfigurationExited(
 async function gitRepositoryConfigurationFetch(
   own: GitRepositoryConfigurationState,
   request: RepositoryConfigurationSnapshotRequest,
-  credential: RepositoryCredential,
+  credential: RepositoryCredential | undefined,
 ): Promise<"Fetched" | "Absent" | "Unavailable"> {
   const repository = request.repository.repository;
   const probe = await scratchRun(own.scratch, {
     repository,
-    credential,
+    ...(credential === undefined ? {} : { credential }),
     timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
     argv: ["ls-remote", ...scratchRemoteArguments(repository)],
   });
   if (!gitRepositoryConfigurationExited(probe)) return "Unavailable";
   const fetched = await scratchRun(own.scratch, {
     repository,
-    credential,
+    ...(credential === undefined ? {} : { credential }),
     timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
     argv: [
       "fetch",
@@ -127,6 +127,7 @@ function gitRepositoryConfigurationEntries(
     const [, mode, object, path] = matched;
     if (mode === undefined || object === undefined || path === undefined)
       return undefined;
+    if (!path.endsWith(".json")) continue;
     entries.push({ mode, object, path });
     if (entries.length > repositoryConfigurationDeclarationsMax)
       return undefined;
@@ -206,12 +207,12 @@ async function gitRepositoryConfigurationSnapshot(
   );
   if (authorization.authorized === "Unavailable")
     return { read: "Unavailable", unavailable: "Credential" };
-  if (authorization.authorized === "Refused")
-    return { read: "Refused", refused: "Credential" };
   const fetched = await gitRepositoryConfigurationFetch(
     own,
     request,
-    authorization.credential,
+    authorization.authorized === "Credential"
+      ? authorization.credential
+      : undefined,
   );
   if (fetched === "Unavailable")
     return { read: "Unavailable", unavailable: "Repository" };

@@ -173,6 +173,34 @@ test("symlinks and nested declarations reach the pure parser unchanged", async (
   );
 });
 
+test("non-JSON files beside declarations are ignored", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(
+    fixture,
+    `${repositoryConfigurationRoot}README.md`,
+    "Repository configuration declarations.\n",
+  );
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const commit = fixtureCommit(fixture, "documented declaration");
+
+  assert.deepEqual(
+    await fixturePort(fixture).snapshot({
+      repository: fixtureBinding(fixture.remote),
+      commit: asGitObjectId(commit),
+    }),
+    {
+      read: "Snapshot",
+      files: [
+        {
+          path: `${repositoryConfigurationRoot}work.json`,
+          kind: "File",
+          content: "work\n",
+        },
+      ],
+    },
+  );
+});
+
 test("an absent directory and an absent commit are distinct", async (t) => {
   const fixture = fixtureOpen(t);
   fixtureWrite(fixture, "README.md", "empty\n");
@@ -201,7 +229,7 @@ test("an unreachable repository is unavailable", async (t) => {
   );
 });
 
-test("credential denial and credential outage remain distinct", async (t) => {
+test("an unmapped repository needs no credential while an outage remains distinct", async (t) => {
   const fixture = fixtureOpen(t);
   const request = {
     repository: fixtureBinding(fixture.remote),
@@ -209,7 +237,7 @@ test("credential denial and credential outage remain distinct", async (t) => {
   };
   assert.deepEqual(
     await fixturePort(fixture, { resolved: "Denied" }).snapshot(request),
-    { read: "Refused", refused: "Credential" },
+    { read: "Absent", absent: "Commit" },
   );
   assert.deepEqual(
     await fixturePort(fixture, { resolved: "Unavailable" }).snapshot(request),

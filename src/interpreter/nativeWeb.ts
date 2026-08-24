@@ -437,12 +437,10 @@ function nativeRepositoryConfigurationImportMethod(
   ports?: RepositoryConfigurationImportPorts,
 ): NativeWeb["importRepositoryConfigurations"] {
   return async (principal, partition, commit) => {
-    if (ports === undefined)
-      throw new Error(
-        "native web: no repository configuration import was composed",
-      );
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
+    if (ports === undefined)
+      return { result: "Unavailable", unavailable: "Repository" };
     const binding = await ports.bindings.binding(partition);
     if (binding === undefined) return { result: "RepositoryAbsent" };
     const snapshot = await ports.snapshots.snapshot({

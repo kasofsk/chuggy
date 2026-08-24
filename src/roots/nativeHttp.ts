@@ -179,17 +179,24 @@ function nativePools() {
 }
 
 function repositoryConfigurationSnapshots() {
+  const scratchDirectory = process.env[gitScratchRootVariable];
+  if (scratchDirectory === undefined || scratchDirectory.length === 0)
+    return undefined;
   const environment = Object.fromEntries(
     finalizerGitEnvironmentNames
       .filter((name) => process.env[name] !== undefined)
       .map((name) => [name, process.env[name]]),
   );
-  const sources = repositoryCredentialFilesOf(
-    requiredEnvironment(repositoryCredentialSourcesVariable),
-    repositoryCredentialSourcesVariable,
-  );
+  const encodedSources = process.env[repositoryCredentialSourcesVariable];
+  const sources =
+    encodedSources === undefined || encodedSources.length === 0
+      ? []
+      : repositoryCredentialFilesOf(
+          encodedSources,
+          repositoryCredentialSourcesVariable,
+        );
   return gitRepositoryConfiguration({
-    scratchDirectory: requiredEnvironment(gitScratchRootVariable),
+    scratchDirectory,
     identity: {
       name: "Chuggy configuration importer",
       email: "configuration-importer@chuggy.invalid",

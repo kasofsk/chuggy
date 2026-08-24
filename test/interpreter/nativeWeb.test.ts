@@ -298,6 +298,30 @@ test("repository imports conceal denial before reading any outer port", async ()
   assert.deepEqual(calls, []);
 });
 
+test("repository imports are unavailable when their infrastructure is not composed", async () => {
+  const allowed = boundary(true);
+  assert.deepEqual(
+    await allowed.web.importRepositoryConfigurations(
+      principal,
+      partition,
+      asGitObjectId("b".repeat(40)),
+    ),
+    { result: "Unavailable", unavailable: "Repository" },
+  );
+  assert.deepEqual(allowed.calls, ["authorize:Mutate"]);
+
+  const denied = boundary(false);
+  assert.deepEqual(
+    await denied.web.importRepositoryConfigurations(
+      principal,
+      partition,
+      asGitObjectId("b".repeat(40)),
+    ),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(denied.calls, ["authorize:Mutate"]);
+});
+
 test("repository imports refuse invalid declarations without writing", async () => {
   const calls: string[] = [];
   const ports = repositoryImportPorts(calls);
