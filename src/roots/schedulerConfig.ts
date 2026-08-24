@@ -34,7 +34,6 @@ import type {
   SuppliedExecutionPolicyConfig,
   SuppliedExecutionProfile,
   SuppliedRuntimeFactsConfig,
-  SuppliedTaskConfiguration,
 } from "../adapters/supplied/schedulerPorts.ts";
 import {
   asClusterId,
@@ -55,11 +54,7 @@ import {
   type RecoveryEpoch,
 } from "../interpreter/projectStore.ts";
 import type { ServiceRuntimeConfig } from "../interpreter/serviceRuntime.ts";
-import type {
-  AuthorityRequest,
-  FilesystemAccess,
-} from "../interpreter/taskAuthority.ts";
-import type { PurposeBlock } from "../interpreter/taskBriefing.ts";
+import type { FilesystemAccess } from "../interpreter/taskAuthority.ts";
 import {
   ticketServiceDefaults,
   type TicketServiceConfig,
@@ -80,7 +75,6 @@ export interface SchedulerCommandConfig {
   readonly finalizer: FinalizerConfig;
   readonly workers: KubernetesWorkerLaunchConfig;
   readonly policy: SuppliedExecutionPolicyConfig;
-  readonly configurations: readonly SuppliedTaskConfiguration[];
   readonly runtimeFacts: SuppliedRuntimeFactsConfig;
 }
 
@@ -114,14 +108,6 @@ const schedulerFilesystemSchema = z.enum([
   "WriteWorkspace",
 ] as const satisfies readonly FilesystemAccess[]);
 
-const schedulerAuthoritySchema = z.strictObject({
-  tools: z.array(schedulerTextSchema).optional(),
-  credentials: z.array(schedulerTextSchema).optional(),
-  network: z.boolean().optional(),
-  filesystem: schedulerFilesystemSchema.optional(),
-  mayCompleteTask: z.boolean().optional(),
-});
-
 const schedulerGrantSchema = z.strictObject({
   tools: z.array(schedulerTextSchema),
   credentials: z.array(schedulerTextSchema),
@@ -147,31 +133,6 @@ const schedulerPolicySchema = z.strictObject(schedulerPolicyShape);
 const schedulerTaskKinds = Object.keys(
   schedulerPolicyShape,
 ) as readonly ExecutionTaskKind[];
-
-const schedulerBlockSchema = z.strictObject({
-  instructions: z.array(schedulerTextSchema),
-  authority: schedulerAuthoritySchema.optional(),
-});
-
-const schedulerConfigurationSchema = z.strictObject({
-  tenant: schedulerTextSchema,
-  project: schedulerTextSchema,
-  configurationRevision: schedulerTextSchema,
-  configurationDigest: schedulerTextSchema,
-  brief: z.strictObject({
-    motivation: z.array(schedulerTextSchema),
-    acceptanceCriteria: z.array(schedulerTextSchema),
-    constraints: z.array(schedulerTextSchema),
-  }),
-  practices: z.array(schedulerTextSchema),
-  work: schedulerBlockSchema,
-  review: schedulerBlockSchema,
-  authority: schedulerAuthoritySchema.optional(),
-});
-
-const schedulerConfigurationsSchema = z
-  .array(schedulerConfigurationSchema)
-  .min(1);
 
 const schedulerImagesSchema = z
   .array(
@@ -293,56 +254,6 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
     Object.assign(merged, { [bound]: value });
   }
   return merged;
-}
-
-/** An authority request as the exact shape a block carries, an absent field asking nothing. */
-function schedulerAuthorityRequest(
-  parsed: z.infer<typeof schedulerAuthoritySchema>,
-): AuthorityRequest {
-  return {
-    ...(parsed.tools === undefined ? {} : { tools: parsed.tools }),
-    ...(parsed.credentials === undefined
-      ? {}
-      : { credentials: parsed.credentials }),
-    ...(parsed.network === undefined ? {} : { network: parsed.network }),
-    ...(parsed.filesystem === undefined
-      ? {}
-      : { filesystem: parsed.filesystem }),
-    ...(parsed.mayCompleteTask === undefined
-      ? {}
-      : { mayCompleteTask: parsed.mayCompleteTask }),
-  };
-}
-
-/** One role's authored block, whose authority request is present only where one was authored. */
-function schedulerPurposeBlock(
-  parsed: z.infer<typeof schedulerBlockSchema>,
-): PurposeBlock {
-  return {
-    instructions: parsed.instructions,
-    ...(parsed.authority === undefined
-      ? {}
-      : { authority: schedulerAuthorityRequest(parsed.authority) }),
-  };
-}
-
-/** One supplied pinned revision, as the port reads it. */
-function schedulerTaskConfiguration(
-  parsed: z.infer<typeof schedulerConfigurationSchema>,
-): SuppliedTaskConfiguration {
-  return {
-    tenant: parsed.tenant,
-    project: parsed.project,
-    configurationRevision: parsed.configurationRevision,
-    configurationDigest: parsed.configurationDigest,
-    brief: parsed.brief,
-    practices: parsed.practices,
-    work: schedulerPurposeBlock(parsed.work),
-    review: schedulerPurposeBlock(parsed.review),
-    ...(parsed.authority === undefined
-      ? {}
-      : { authority: schedulerAuthorityRequest(parsed.authority) }),
-  };
 }
 
 /** The execution policy this deployment states, one profile and grant per task kind. */
@@ -518,11 +429,6 @@ export function schedulerCommandConfig(
     ),
     workers: schedulerWorkers(environment),
     policy: schedulerPolicy(environment),
-    configurations: schedulerJson(
-      environment,
-      "TASK_CONFIGURATIONS",
-      schedulerConfigurationsSchema,
-    ).map(schedulerTaskConfiguration),
     runtimeFacts: workspace === undefined ? {} : { workspace },
   };
 }

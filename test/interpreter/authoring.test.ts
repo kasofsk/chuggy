@@ -39,6 +39,14 @@ test("configuration must be canonical, bounded, and secret-free", () => {
     () => asCanonicalConfiguration('{"apiToken":"value"}'),
     /secret-bearing/,
   );
+  assert.equal(
+    asCanonicalConfiguration('{"authority":{"credentials":["workspace"]}}'),
+    '{"authority":{"credentials":["workspace"]}}',
+  );
+  assert.throws(
+    () => asCanonicalConfiguration('{"credentialValue":"value"}'),
+    /secret-bearing/,
+  );
   assert.throws(() => asCanonicalConfiguration("not-json"), SyntaxError);
 });
 
@@ -47,6 +55,7 @@ test("release readiness is stricter than structurally valid draft configuration"
     releaseConfigurationReadiness(asCanonicalConfiguration("{}")),
     {
       readiness: "Incomplete",
+      fault: "ReleaseShapeInvalid",
     },
   );
   assert.equal(
@@ -57,8 +66,34 @@ test("release readiness is stricter than structurally valid draft configuration"
     releaseConfigurationReadiness(
       asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
     ),
-    { readiness: "Incomplete" },
+    { readiness: "Incomplete", fault: "BriefingShapeMissing" },
   );
+});
+
+test("release readiness names briefing and practice refusals", () => {
+  const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
+  assert.deepEqual(
+    releaseConfigurationReadiness(
+      asCanonicalConfiguration(
+        JSON.stringify({
+          ...parsed,
+          brief: { acceptanceCriteria: [], constraints: [], motivation: [] },
+        }),
+      ),
+    ),
+    { readiness: "Incomplete", fault: "EmptyBrief" },
+  );
+  for (const [practices, fault] of [
+    [["Nonsense"], "UnknownPractice"],
+    [["AcceptanceCriteria", "AcceptanceCriteria"], "DuplicatePractice"],
+  ] as const) {
+    assert.deepEqual(
+      releaseConfigurationReadiness(
+        asCanonicalConfiguration(JSON.stringify({ ...parsed, practices })),
+      ),
+      { readiness: "Incomplete", fault },
+    );
+  }
 });
 
 test("a raw ReleaseTicket is not a public Decide command", () => {

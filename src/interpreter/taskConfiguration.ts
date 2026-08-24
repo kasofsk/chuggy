@@ -24,15 +24,36 @@ export interface AuthoredTaskConfiguration {
   readonly authority?: AuthorityRequest;
 }
 
+/** The blessed practice identities accepted in authored configuration. */
+export type PracticeId =
+  "RegressionCoverage" | "ChangedCallPaths" | "AcceptanceCriteria";
+
+/** Every accepted practice identity in stable rendering order. */
+export const allPracticeIds: readonly PracticeId[] = [
+  "RegressionCoverage",
+  "ChangedCallPaths",
+  "AcceptanceCriteria",
+];
+
 /** The longest single briefing line, which is one criterion, constraint or instruction. */
 export const briefingLineCharsMax = 512;
 
 /** The most lines one authored list may carry. */
-export const briefingLinesMax = 32;
+export const briefingLinesMax = 8;
 
 /** Why an authored document cannot supply the briefing contract. */
 export type TaskConfigurationFault =
   | "BriefingShapeMissing"
+  | "MotivationInvalid"
+  | "AcceptanceCriteriaInvalid"
+  | "ConstraintsInvalid"
+  | "PracticesInvalid"
+  | "WorkInvalid"
+  | "ReviewInvalid"
+  | "AuthorityInvalid"
+  | "EmptyBrief"
+  | "UnknownPractice"
+  | "DuplicatePractice"
   | "EmptyLine"
   | "TextTooLong"
   | "TextUnreadable"
@@ -40,7 +61,7 @@ export type TaskConfigurationFault =
 
 /** A definitive fault while reading authored content, including unreadable canonical bytes. */
 export type TaskConfigurationReadFault =
-  TaskConfigurationFault | "ConfigurationUnreadable";
+  TaskConfigurationFault | "ConfigurationUnreadable" | "DigestMismatch";
 
 /** A parsed authored briefing, or the bounded reason it cannot be one. */
 export type AuthoredTaskConfigurationReadiness =
@@ -53,9 +74,9 @@ export type AuthoredTaskConfigurationReadiness =
       readonly fault: TaskConfigurationFault;
     };
 
-type BriefingTextFault = Exclude<
+type BriefingTextFault = Extract<
   TaskConfigurationFault,
-  "BriefingShapeMissing"
+  "EmptyLine" | "TextTooLong" | "TextUnreadable" | "TooManyLines"
 >;
 
 const briefingFirstPrintable = 0x20;
@@ -80,25 +101,43 @@ export function taskConfigurationLineFault(
   return undefined;
 }
 
-function stringArray(value: unknown): readonly string[] | undefined {
+function authoredTaskConfigurationStringArray(
+  value: unknown,
+): readonly string[] | undefined {
   return Array.isArray(value) && value.every((line) => typeof line === "string")
     ? value
     : undefined;
 }
 
-function authorityRequest(value: unknown): AuthorityRequest | undefined {
+function authoredTaskConfigurationAuthorityRequest(
+  value: unknown,
+): AuthorityRequest | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return undefined;
   const record = value as Record<string, unknown>;
   const tools = record["tools"];
   const credentials = record["credentials"];
   const filesystem = record["filesystem"];
-  const parsedTools = tools === undefined ? undefined : stringArray(tools);
+  const parsedTools =
+    tools === undefined
+      ? undefined
+      : authoredTaskConfigurationStringArray(tools);
   const parsedCredentials =
-    credentials === undefined ? undefined : stringArray(credentials);
+    credentials === undefined
+      ? undefined
+      : authoredTaskConfigurationStringArray(credentials);
   if (tools !== undefined && parsedTools === undefined) return undefined;
   if (credentials !== undefined && parsedCredentials === undefined)
     return undefined;
+  if (
+    (parsedTools !== undefined && parsedTools.length > briefingLinesMax) ||
+    (parsedCredentials !== undefined &&
+      parsedCredentials.length > briefingLinesMax)
+  )
+    return undefined;
+  for (const name of [...(parsedTools ?? []), ...(parsedCredentials ?? [])]) {
+    if (taskConfigurationLineFault(name) !== undefined) return undefined;
+  }
   if (record["network"] !== undefined && typeof record["network"] !== "boolean")
     return undefined;
   if (
@@ -126,14 +165,20 @@ function authorityRequest(value: unknown): AuthorityRequest | undefined {
   };
 }
 
-function purposeBlockFrom(value: unknown): PurposeBlock | undefined {
+function authoredTaskConfigurationPurposeBlock(
+  value: unknown,
+): PurposeBlock | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return undefined;
   const record = value as Record<string, unknown>;
-  const instructions = stringArray(record["instructions"]);
+  const instructions = authoredTaskConfigurationStringArray(
+    record["instructions"],
+  );
   const authority = record["authority"];
   const parsedAuthority =
-    authority === undefined ? undefined : authorityRequest(authority);
+    authority === undefined
+      ? undefined
+      : authoredTaskConfigurationAuthorityRequest(authority);
   if (instructions === undefined) return undefined;
   if (authority !== undefined && parsedAuthority === undefined)
     return undefined;
@@ -156,6 +201,20 @@ function taskConfigurationLinesFault(
   return undefined;
 }
 
+function authoredTaskConfigurationPracticesFault(
+  practices: readonly string[],
+): TaskConfigurationFault | undefined {
+  if (practices.length > allPracticeIds.length) return "TooManyLines";
+  const seen = new Set<string>();
+  for (const practice of practices) {
+    if (seen.has(practice)) return "DuplicatePractice";
+    seen.add(practice);
+    if (!allPracticeIds.some((known) => known === practice))
+      return "UnknownPractice";
+  }
+  return undefined;
+}
+
 /** Parses the authored fields shared by every task a configuration revision briefs. */
 export function authoredTaskConfigurationReadiness(
   value: unknown,
@@ -171,25 +230,40 @@ export function authoredTaskConfigurationReadiness(
   )
     return { readiness: "Incomplete", fault: "BriefingShapeMissing" };
   const brief = briefValue as Record<string, unknown>;
-  const motivation = stringArray(brief["motivation"]);
-  const acceptanceCriteria = stringArray(brief["acceptanceCriteria"]);
-  const constraints = stringArray(brief["constraints"]);
-  const practices = stringArray(record["practices"]);
-  const work = purposeBlockFrom(record["work"]);
-  const review = purposeBlockFrom(record["review"]);
+  const motivation = authoredTaskConfigurationStringArray(brief["motivation"]);
+  if (motivation === undefined)
+    return { readiness: "Incomplete", fault: "MotivationInvalid" };
+  const acceptanceCriteria = authoredTaskConfigurationStringArray(
+    brief["acceptanceCriteria"],
+  );
+  if (acceptanceCriteria === undefined)
+    return { readiness: "Incomplete", fault: "AcceptanceCriteriaInvalid" };
+  const constraints = authoredTaskConfigurationStringArray(
+    brief["constraints"],
+  );
+  if (constraints === undefined)
+    return { readiness: "Incomplete", fault: "ConstraintsInvalid" };
+  const practices = authoredTaskConfigurationStringArray(record["practices"]);
+  if (practices === undefined)
+    return { readiness: "Incomplete", fault: "PracticesInvalid" };
+  const work = authoredTaskConfigurationPurposeBlock(record["work"]);
+  if (work === undefined)
+    return { readiness: "Incomplete", fault: "WorkInvalid" };
+  const review = authoredTaskConfigurationPurposeBlock(record["review"]);
+  if (review === undefined)
+    return { readiness: "Incomplete", fault: "ReviewInvalid" };
   const authority = record["authority"];
   const parsedAuthority =
-    authority === undefined ? undefined : authorityRequest(authority);
-  if (
-    motivation === undefined ||
-    acceptanceCriteria === undefined ||
-    constraints === undefined ||
-    practices === undefined ||
-    work === undefined ||
-    review === undefined ||
-    (authority !== undefined && parsedAuthority === undefined)
-  )
-    return { readiness: "Incomplete", fault: "BriefingShapeMissing" };
+    authority === undefined
+      ? undefined
+      : authoredTaskConfigurationAuthorityRequest(authority);
+  if (authority !== undefined && parsedAuthority === undefined)
+    return { readiness: "Incomplete", fault: "AuthorityInvalid" };
+  if (motivation.length === 0 && acceptanceCriteria.length === 0)
+    return { readiness: "Incomplete", fault: "EmptyBrief" };
+  const practicesFault = authoredTaskConfigurationPracticesFault(practices);
+  if (practicesFault !== undefined)
+    return { readiness: "Incomplete", fault: practicesFault };
   const textFault = taskConfigurationLinesFault([
     motivation,
     acceptanceCriteria,

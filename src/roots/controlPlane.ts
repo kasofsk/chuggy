@@ -311,16 +311,24 @@ export interface SchedulerProcessRootConfig {
   readonly additional?: readonly RuntimePrecondition[];
 }
 
+/** Composes the scheduler service with the PostgreSQL ports its process owns. */
+export function schedulerProcessRootService(
+  pool: pg.Pool,
+  service: SchedulerProcessRootConfig["service"],
+): ExecutionSchedulerService {
+  return {
+    ...service,
+    store: postgresExecutionScheduler(pool),
+    configurations: postgresPinnedConfigurations(pool),
+  };
+}
+
 /** Owns the scheduler-role pool while its cluster and policy adapters stay explicit ports. */
 export function schedulerProcessRoot(
   config: SchedulerProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const service: ExecutionSchedulerService = {
-    ...config.service,
-    store: postgresExecutionScheduler(pool),
-    configurations: postgresPinnedConfigurations(pool),
-  };
+  const service = schedulerProcessRootService(pool, config.service);
   return ownedProcess(
     pool,
     schedulerProcess(

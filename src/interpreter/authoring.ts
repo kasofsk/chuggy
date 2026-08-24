@@ -13,6 +13,7 @@ import { executionRequirementConfigurationIsValid } from "./executionRequirement
 import {
   authoredTaskConfigurationReadiness,
   type AuthoredTaskConfiguration,
+  type TaskConfigurationFault,
 } from "./taskConfiguration.ts";
 
 declare const configurationRevisionBrand: unique symbol;
@@ -36,7 +37,10 @@ export type ReleaseConfigurationReadiness =
       readonly readiness: "Ready";
       readonly configuration: ReleaseConfiguration;
     }
-  | { readonly readiness: "Incomplete" };
+  | {
+      readonly readiness: "Incomplete";
+      readonly fault: "ReleaseShapeInvalid" | TaskConfigurationFault;
+    };
 
 function boundedText(value: string, what: string, maximum: number): string {
   if (value.length === 0) throw new RangeError(`${what}: a value is empty`);
@@ -78,6 +82,7 @@ export function releaseConfigurationReadiness(
   configuration: CanonicalConfiguration,
 ): ReleaseConfigurationReadiness {
   const value: unknown = JSON.parse(configuration);
+  const authored = authoredTaskConfigurationReadiness(value);
   if (
     typeof value !== "object" ||
     value === null ||
@@ -85,18 +90,19 @@ export function releaseConfigurationReadiness(
     (value as Record<string, unknown>)["version"] !== 1 ||
     typeof (value as Record<string, unknown>)["image"] !== "string" ||
     (value as Record<string, unknown>)["image"] === "" ||
-    !executionRequirementConfigurationIsValid(value) ||
-    authoredTaskConfigurationReadiness(value).readiness === "Incomplete"
+    !executionRequirementConfigurationIsValid(value)
   ) {
-    return { readiness: "Incomplete" };
+    return { readiness: "Incomplete", fault: "ReleaseShapeInvalid" };
   }
+  if (authored.readiness === "Incomplete") return authored;
   return {
     readiness: "Ready",
     configuration: value as ReleaseConfiguration,
   };
 }
 
-const prohibitedConfigurationKeys = /(?:password|secret|token|credential)/iu;
+const prohibitedConfigurationKeys =
+  /(?:password|secret|token|credential(?!s$))/iu;
 
 function canonicalValue(value: unknown): unknown {
   if (value === null || typeof value === "string" || typeof value === "boolean")

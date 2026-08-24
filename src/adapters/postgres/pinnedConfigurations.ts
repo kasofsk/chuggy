@@ -10,7 +10,10 @@
  * ABSENCE, INCOMPATIBILITY AND OUTAGE ARE DIFFERENT RESULTS. No row is the
  * definitive `Missing`; a row whose canonical document cannot satisfy the
  * briefing contract is `Incompatible`; and only a failed database read is
- * `Unavailable`. The scheduler retires the first two and holds the last.
+ * `Unavailable`. A legacy briefing-free revision has
+ * `BriefingShapeMissing`; it also holds so an operator can replace it without
+ * spending retry measure against immutable content. The scheduler retires
+ * every other incompatibility and holds unavailable reads.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -18,6 +21,7 @@ import type pg from "pg";
 
 import type { PinnedConfigurationPort } from "../../interpreter/taskBriefing.ts";
 import { pinnedTaskConfigurationReadiness } from "../../interpreter/taskBriefing.ts";
+import { configurationRevisionDigest } from "./digest.ts";
 
 /** Answers the exact revision a scheduler pass pinned, without a mutable-current read. */
 export function postgresPinnedConfigurations(
@@ -37,6 +41,8 @@ export function postgresPinnedConfigurations(
       }
       const row = found.rows[0];
       if (row === undefined) return { read: "Missing" };
+      if (configurationRevisionDigest(row.canonical) !== row.digest)
+        return { read: "Incompatible", fault: "DigestMismatch" };
       let document: unknown;
       try {
         document = JSON.parse(row.canonical);
@@ -47,6 +53,11 @@ export function postgresPinnedConfigurations(
         configurationRevision: pin.configurationRevision,
         configurationDigest: row.digest,
       });
+      if (
+        parsed.readiness === "Incomplete" &&
+        parsed.fault === "BriefingShapeMissing"
+      )
+        return { read: "Unavailable" };
       return parsed.readiness === "Ready"
         ? { read: "Configuration", configuration: parsed.configuration }
         : { read: "Incompatible", fault: parsed.fault };

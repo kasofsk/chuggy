@@ -61,20 +61,24 @@ import type { Partition } from "./projectStore.ts";
 import type { ExecutionId } from "./schedulerIdentity.ts";
 import {
   authoredTaskConfigurationReadiness,
+  allPracticeIds,
   briefingLinesMax,
   taskConfigurationLineFault,
   type AuthoredTaskConfiguration,
   type PurposeBlock,
+  type PracticeId,
   type TaskConfigurationFault,
   type TaskConfigurationReadFault,
   type TicketBrief,
 } from "./taskConfiguration.ts";
 export {
   authoredTaskConfigurationReadiness,
+  allPracticeIds,
   briefingLineCharsMax,
   briefingLinesMax,
   type AuthoredTaskConfiguration,
   type PurposeBlock,
+  type PracticeId,
   type TaskConfigurationFault,
   type TaskConfigurationReadFault,
   type TicketBrief,
@@ -95,17 +99,6 @@ import {
   type PolicyAuthorityGrant,
   type TaskAuthority,
 } from "./taskAuthority.ts";
-
-/** The blessed practices this tree trusts, which is the whole catalog and not a prefix of one. */
-export type PracticeId =
-  "RegressionCoverage" | "ChangedCallPaths" | "AcceptanceCriteria";
-
-/** Every practice identity, in the order a resolved list is sorted into. */
-export const allPracticeIds: readonly PracticeId[] = [
-  "RegressionCoverage",
-  "ChangedCallPaths",
-  "AcceptanceCriteria",
-];
 
 /** Which roles a practice speaks to, which is what makes one shared list serve both. */
 export type PracticeScope = "Work" | "Review" | "Both";
@@ -182,6 +175,9 @@ export interface RuntimeFacts {
 
 /** The most changed files a runtime context may name before it stops being context. */
 export const runtimeChangedFilesMax = 64;
+
+/** The most handoff lines runtime context may carry. */
+export const runtimeHandoffLinesMax = 32;
 
 /** Why a briefing could not be composed, each of them a fact about the pinned configuration. */
 export type BriefingFault =
@@ -377,7 +373,7 @@ function briefingRuntimeFault(
   return briefingListsFault([
     [runtime.workspace === undefined ? [] : [runtime.workspace], 1],
     [runtime.changedFiles, runtimeChangedFilesMax],
-    [runtime.handoff, briefingLinesMax],
+    [runtime.handoff, runtimeHandoffLinesMax],
   ]);
 }
 

@@ -1,6 +1,5 @@
 /** PostgreSQL implementation of versioned native authoring. */
 
-import { createHash } from "node:crypto";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
@@ -21,6 +20,7 @@ import {
 } from "../../interpreter/authoring.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { projectRowCounter } from "./rows.ts";
+import { configurationRevisionDigest } from "./digest.ts";
 
 interface DraftRow {
   readonly ticket: string;
@@ -81,7 +81,7 @@ async function readConfiguration(
   const row = found.rows[0];
   if (row === undefined) return undefined;
   const canonical = asCanonicalConfiguration(row.canonical);
-  if (digest(canonical) !== row.digest)
+  if (configurationRevisionDigest(canonical) !== row.digest)
     throw new Error("configuration revision content contradicts its digest");
   const resource = {
     partition,
@@ -92,10 +92,6 @@ async function readConfiguration(
   return row.parent === null
     ? resource
     : { ...resource, parent: asConfigurationRevisionId(row.parent) };
-}
-
-function digest(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 async function requiredDraft(
@@ -139,7 +135,7 @@ async function createConfiguration(
   input: CreateConfigurationInput,
 ): Promise<ConfigurationCreated> {
   const found = await pool.query<{ result: string | null }>(
-    sql`SELECT create_configuration_revision(${input.partition.tenant},${input.partition.project},${input.revision},${input.parent ?? null},${input.canonical},${digest(input.canonical)},${input.authority.kind},${input.authority.subject})::text AS result`,
+    sql`SELECT create_configuration_revision(${input.partition.tenant},${input.partition.project},${input.revision},${input.parent ?? null},${input.canonical},${configurationRevisionDigest(input.canonical)},${input.authority.kind},${input.authority.subject})::text AS result`,
   );
   const result = found.rows[0]?.result;
   if (result === "ParentNotFound" || result === "IdentityConflict")
