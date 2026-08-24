@@ -19,6 +19,7 @@ type ServedNativeWeb = Pick<
   NativeWeb,
   | "cancel"
   | "configuration"
+  | "configurations"
   | "createConfiguration"
   | "createDraft"
   | "deleteDraft"
@@ -79,19 +80,31 @@ function fakeOperations(
   };
 }
 
-function fakeWeb(calls: string[]): ServedNativeWeb {
+function fakeConfigurations(
+  calls: string[],
+): Pick<NativeWeb, "configuration" | "configurations" | "createConfiguration"> {
   return {
-    ...fakeOperations(calls),
-    cancel: (_principal, _partition, operation) => {
-      calls.push(`cancel:${operation}`);
-      return Promise.resolve({ result: "NotFound" });
-    },
     configuration: (_principal, _partition, revision) => {
       calls.push(`configuration:${revision}`);
       return Promise.resolve(undefined);
     },
+    configurations: (_principal, _partition, query) => {
+      calls.push(`configurations:${String(query.limit)}`);
+      return Promise.resolve({ result: "NotFound" });
+    },
     createConfiguration: (_principal, input) => {
       calls.push(`createConfiguration:${input.revision}`);
+      return Promise.resolve({ result: "NotFound" });
+    },
+  };
+}
+
+function fakeWeb(calls: string[]): ServedNativeWeb {
+  return {
+    ...fakeOperations(calls),
+    ...fakeConfigurations(calls),
+    cancel: (_principal, _partition, operation) => {
+      calls.push(`cancel:${operation}`);
       return Promise.resolve({ result: "NotFound" });
     },
     createDraft: () => {
@@ -378,6 +391,10 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "content-type": "application/vnd.chuggy.v1+json",
   };
   await app.inject({
+    url: `${project}/configurations?limit=2`,
+    headers: { authorization: "Bearer valid" },
+  });
+  await app.inject({
     method: "POST",
     url: `${project}/configurations`,
     headers,
@@ -416,6 +433,7 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     headers: { authorization: "Bearer valid" },
   });
   assert.deepEqual(calls, [
+    "configurations:2",
     "createConfiguration:revision",
     "configuration:revision",
     "createDraft",

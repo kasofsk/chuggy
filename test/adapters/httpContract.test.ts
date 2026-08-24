@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  encodeConfigurationCursor,
+  parseConfigurationCursor,
   nativeHttpBasePath,
   nativeHttpContractDocument,
   nativeHttpMediaType,
@@ -14,6 +16,8 @@ import {
   parsePartition,
   parseSubmission,
 } from "../../src/adapters/http/contract.ts";
+import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
+import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 
 test("the versioned route and media contracts move together", () => {
   assert.equal(nativeHttpBasePath, "/api/v1");
@@ -131,6 +135,31 @@ test("inventory cursors are opaque, canonical, and round trip", () => {
   assert.deepEqual(parseInventoryCursor(cursor), partition);
   assert.throws(() => parseInventoryCursor(`${cursor}=`));
   assert.throws(() => parseInventoryCursor("not-json"));
+});
+
+test("configuration cursors preserve the stable newest-first key", () => {
+  const after = {
+    createdAt: asPublicInstant("2026-08-24T12:00:00Z"),
+    revision: asConfigurationRevisionId("revision-2"),
+  };
+  const partition = parsePartition("tenant", "project");
+  const cursor = encodeConfigurationCursor(partition, after);
+  assert.deepEqual(parseConfigurationCursor(cursor, partition), after);
+  assert.throws(() =>
+    parseConfigurationCursor(cursor, parsePartition("tenant", "other")),
+  );
+  assert.throws(() => parseConfigurationCursor(`${cursor}=`, partition));
+  assert.throws(() => parseConfigurationCursor("not-json", partition));
+  const invalidTimestamp = Buffer.from(
+    JSON.stringify({
+      version: 1,
+      tenant: "tenant",
+      project: "project",
+      createdAt: "not-a-timestamp",
+      revision: "revision-a",
+    }),
+  ).toString("base64url");
+  assert.throws(() => parseConfigurationCursor(invalidTimestamp, partition));
 });
 
 test("a purpose-specific mutation becomes its one application command", () => {

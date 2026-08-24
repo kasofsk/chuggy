@@ -162,6 +162,58 @@ test("configuration revisions are immutable and parented inside one project", as
   );
 });
 
+test("configuration pages are newest-first, bounded, and project-local", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "authoring-configuration-page",
+  );
+  const other = await postgresHarnessProject(
+    harness.store,
+    "authoring-configuration-page-other",
+  );
+  const revisions = ["revision-a", "revision-b", "revision-c"].map(
+    asConfigurationRevisionId,
+  );
+  for (const revision of revisions) {
+    await harness.authoring.createConfiguration({
+      partition,
+      authority,
+      revision,
+      canonical: postgresHarnessConfiguration,
+    });
+  }
+  await harness.authoring.createConfiguration({
+    partition: other,
+    authority,
+    revision: asConfigurationRevisionId("revision-other"),
+    canonical: postgresHarnessConfiguration,
+  });
+  await harness.query(
+    `UPDATE configuration_revision SET created_at=CASE revision
+       WHEN 'revision-a' THEN '2026-08-22T00:00:00Z'::timestamptz
+       ELSE '2026-08-23T00:00:00Z'::timestamptz END
+     WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  );
+  const first = await harness.authoring.configurations(partition, { limit: 2 });
+  assert.deepEqual(
+    first.configurations.map((configuration) => configuration.revision),
+    ["revision-c", "revision-b"],
+  );
+  assert.equal(first.configurations[0]?.readiness, "Ready");
+  assert.equal("canonical" in (first.configurations[0] ?? {}), false);
+  assert.ok(first.nextAfter !== undefined);
+  const second = await harness.authoring.configurations(partition, {
+    after: first.nextAfter,
+    limit: 2,
+  });
+  assert.deepEqual(
+    second.configurations.map((configuration) => configuration.revision),
+    ["revision-a"],
+  );
+  assert.equal(second.nextAfter, undefined);
+});
+
 test("configuration revision identity is project-local", async () => {
   const first = await postgresHarnessProject(harness.store, "config-local-a");
   const second = await postgresHarnessProject(harness.store, "config-local-b");

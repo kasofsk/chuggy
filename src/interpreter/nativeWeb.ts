@@ -25,6 +25,8 @@ import type { TicketCommand } from "./ticketCommand.ts";
 import type {
   AuthoringStore,
   CanonicalConfiguration,
+  ConfigurationPage,
+  ConfigurationPageQuery,
   ConfigurationCreated,
   ConfigurationRevisionResource,
   ConfigurationRevisionId,
@@ -33,6 +35,7 @@ import type {
   DraftResource,
   DraftRevised,
 } from "./authoring.ts";
+import { checkedConfigurationPageQuery } from "./authoring.ts";
 import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
 import {
   dispatchNeedsExecutionHeadroom,
@@ -316,6 +319,11 @@ export interface NativeWeb {
       readonly canonical: CanonicalConfiguration;
     },
   ): Promise<AuthorizedResult<ConfigurationCreated>>;
+  configurations(
+    principal: Principal,
+    partition: Partition,
+    query: ConfigurationPageQuery,
+  ): Promise<AuthorizedResult<ConfigurationPage>>;
   createDraft(
     principal: Principal,
     input: {
@@ -383,7 +391,6 @@ function checkedInventoryLimit(limit: number): number {
 
 type NativeAuthoringMethods = Pick<
   NativeWeb,
-  | "configuration"
   | "draft"
   | "createConfiguration"
   | "createDraft"
@@ -391,15 +398,33 @@ type NativeAuthoringMethods = Pick<
   | "deleteDraft"
 >;
 
+function nativeConfigurationMethods(
+  access: ProjectAccess,
+  authoring: AuthoringStore,
+): Pick<NativeWeb, "configuration" | "configurations"> {
+  return {
+    configurations: async (principal, partition, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await authoring.configurations(
+              partition,
+              checkedConfigurationPageQuery(query),
+            ),
+          },
+    configuration: async (principal, partition, revision) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : authoring.configuration(partition, revision),
+  };
+}
+
 function nativeAuthoringMethods(
   access: ProjectAccess,
   authoring: AuthoringStore,
 ): NativeAuthoringMethods {
   return {
-    configuration: async (principal, partition, revision) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : authoring.configuration(partition, revision),
     draft: async (principal, partition, ticket) =>
       (await access.authorize(principal, partition, "Read")) === undefined
         ? undefined
@@ -560,6 +585,7 @@ export function nativeWeb(
   selectorContexts?: SelectorOperationalContextRead,
 ): NativeWeb {
   return {
+    ...nativeConfigurationMethods(access, authoring),
     ...nativeAuthoringMethods(access, authoring),
     ...nativeOperationalMethods(access, operationalReads, outputContents),
     selectorOperationalContext: nativeSelectorContextMethod(

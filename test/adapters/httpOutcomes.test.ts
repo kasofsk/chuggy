@@ -16,6 +16,7 @@ import {
   cancellationResponse,
   configurationCreationResponse,
   configurationResponse,
+  configurationsResponse,
   dispatchViewResponse,
   draftCreationResponse,
   draftDeletionResponse,
@@ -237,6 +238,24 @@ test("configuration outcomes are closed and location-bearing", () => {
     configurationCreationResponse({ result: "NotFound" }).status,
     404,
   );
+});
+
+test("configuration pages expose only an opaque continuation cursor", () => {
+  const nextAfter = {
+    createdAt: asPublicInstant("2026-08-24T12:00:00Z"),
+    revision: configuration.revision,
+  };
+  const found = configurationsResponse({
+    result: "Authorized",
+    value: { partition, configurations: [], nextAfter },
+  });
+  assert.equal(found.status, 200);
+  assert.equal(
+    typeof (found.body as { nextCursor: unknown }).nextCursor,
+    "string",
+  );
+  assert.equal(JSON.stringify(found.body).includes("nextAfter"), false);
+  assert.equal(configurationsResponse({ result: "NotFound" }).status, 404);
 });
 
 test("draft resources encode sets as stable JSON arrays", () => {
