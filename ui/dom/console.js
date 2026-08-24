@@ -280,6 +280,45 @@ async function consoleFollow(desk, start, submission) {
   }
   consoleDirty(desk);
   consoleSchedule(desk, 0);
+  return step;
+}
+
+async function consoleSubmitMutation(desk, ticket, mutation) {
+  const step = operationSubmitting(ticket);
+  desk.state.operations = [step, ...desk.state.operations].slice(
+    0,
+    operationsShownMax,
+  );
+  desk.onChanged();
+  const token = await consoleToken(desk);
+  if (token === undefined)
+    return {
+      result: /** @type {const} */ ("Failed"),
+      reason: "The session ended.",
+    };
+  const submission = {
+    operation: crypto.randomUUID(),
+    idempotencyKey: crypto.randomUUID(),
+    mutation,
+  };
+  const outcome = await desk.send(
+    submissionRequest(token, desk.state.partition, submission),
+  );
+  const terminal = await consoleFollow(
+    desk,
+    consoleAdvance(desk, step, submissionEvent(outcome)),
+    submission,
+  );
+  return terminal?.step === "Settled" && terminal.state === "Succeeded"
+    ? { result: /** @type {const} */ ("Succeeded") }
+    : {
+        result: /** @type {const} */ ("Failed"),
+        reason:
+          terminal?.step === "Settled"
+            ? (terminal.refusalCode ??
+              `The operation settled as ${terminal.state}.`)
+            : (terminal?.reason ?? "The operation did not complete."),
+      };
 }
 
 async function consoleDispatch(desk, row) {
@@ -444,6 +483,8 @@ export function createConsole(parts) {
     loadProjects: () => consoleLoadProjects(desk),
     openDetail: (execution) => consoleOpenDetail(desk, execution),
     previewArtifact: (ordinal) => consolePreview(desk, ordinal),
+    submitMutation: (ticket, mutation) =>
+      consoleSubmitMutation(desk, ticket, mutation),
     select: (partition) => consoleSelect(desk, partition),
     filter: (name, selection) => consoleFilter(desk, name, selection),
     resume: () => consoleResume(desk),

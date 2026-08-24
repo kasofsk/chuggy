@@ -97,6 +97,77 @@ input {
   padding: var(--gap) 1.25rem 3rem;
 }
 
+.ticket-page {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--gap) 1.25rem 5rem;
+}
+
+.ticket-home-list,
+.execution-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ticket-home-list .panel {
+  margin-bottom: var(--gap);
+}
+
+.ticket-home-list h2,
+.ticket-detail h1,
+.registry-actions h1 {
+  margin: 0;
+}
+
+.ticket-authoring,
+.ticket-authoring fieldset {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.ticket-authoring fieldset {
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.75rem;
+}
+
+.field-row {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.detail-line {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+}
+
+pre.preview,
+.ticket-page pre {
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 40rem) {
+  .masthead-controls,
+  .page-nav,
+  .registry-actions,
+  .field-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  input {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
 .registry-actions {
   justify-content: flex-end;
   margin-bottom: var(--gap);

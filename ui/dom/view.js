@@ -14,6 +14,9 @@ import {
 } from "../app/views.js";
 import { readers } from "./console.js";
 import { configurationRegistryPage } from "./configurationRegistryView.js";
+import { ticketCreationPage } from "./ticketCreationView.js";
+import { ticketDetailPage } from "./ticketDetailView.js";
+import { ticketHomePage } from "./ticketHomeView.js";
 import {
   boardBody,
   candidatesBody,
@@ -235,18 +238,30 @@ export function draw(page) {
   );
   page.select.disabled =
     controller === undefined || controller.state.projects.length === 0;
-  page.operationsPage.className =
-    page.selectedPage === "Operations" ? "primary" : "";
-  page.configurationsPage.className =
-    page.selectedPage === "Configurations" ? "primary" : "";
+  drawNavigation(page);
   if (controller === undefined || controller.state.partition === undefined) {
     page.host.className = "console standing";
     page.host.replaceChildren(standingCard(page));
     return;
   }
-  if (page.selectedPage === "Configurations") {
+  if (page.route.page === "Configurations") {
     page.host.className = "registry-shell";
     page.host.replaceChildren(configurationRegistryPage(page.registry));
+    return;
+  }
+  if (page.route.page === "Home") {
+    page.host.className = "ticket-page";
+    page.host.replaceChildren(ticketHomePage(page.ticketHome));
+    return;
+  }
+  if (page.route.page === "NewTicket") {
+    page.host.className = "ticket-page";
+    page.host.replaceChildren(ticketCreationPage(page.ticketCreation));
+    return;
+  }
+  if (page.route.page === "Ticket") {
+    page.host.className = "ticket-page";
+    page.host.replaceChildren(ticketDetailPage(page.ticketDetail));
     return;
   }
   const named = Object.fromEntries(
@@ -268,4 +283,17 @@ export function draw(page) {
       ...(detail === undefined ? [] : [detail]),
     ]),
   );
+}
+
+function drawNavigation(page) {
+  const entries = [
+    [page.homePage, "Home"],
+    [page.operationsPage, "Operations"],
+    [page.configurationsPage, "Configurations"],
+  ];
+  for (const [button, name] of entries) {
+    const selected = page.route.page === name;
+    button.className = selected ? "primary" : "";
+    button.setAttribute("aria-current", selected ? "page" : "false");
+  }
 }
