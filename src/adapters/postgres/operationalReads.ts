@@ -229,6 +229,7 @@ async function executionRows(
            AND t.request=e.source_request AND t.task=e.task
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND e.execution>${query.after ?? ""}
+           AND (${query.ticket ?? null}::bigint IS NULL OR e.ticket=${query.ticket ?? null})
            AND e.status=ANY(${[...selectedStatuses(query)]}::text[])
          ORDER BY e.execution LIMIT ${query.limit + 1}`,
   );

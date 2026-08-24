@@ -180,10 +180,20 @@ export interface ProjectResource {
   readonly sequence: number;
   readonly tickets: readonly TicketResource[];
   readonly nextAfter?: TicketId;
+  readonly nextRecentActivityAfter?: TicketActivityPosition;
 }
+
+export interface TicketActivityPosition {
+  readonly sequence: number;
+  readonly ticket: TicketId;
+}
+
+export type TicketListOrder = "Identity" | "RecentActivity";
 
 export interface ProjectReadQuery {
   readonly after?: TicketId;
+  readonly recentActivityAfter?: TicketActivityPosition;
+  readonly order?: TicketListOrder;
   readonly limit: number;
   readonly minimumSequence?: number;
   readonly phaseFilter?: TicketPhaseFilter;
@@ -203,6 +213,27 @@ export const projectPageLimitMax = 100;
 export function checkedProjectReadQuery(
   query: ProjectReadQuery,
 ): ProjectReadQuery {
+  if (
+    query.order !== undefined &&
+    query.order !== "Identity" &&
+    query.order !== "RecentActivity"
+  )
+    throw new RangeError("ticket list order is invalid");
+  if (query.order === "RecentActivity" && query.after !== undefined)
+    throw new RangeError("ticket identity cursor cannot order recent activity");
+  if (
+    query.order !== "RecentActivity" &&
+    query.recentActivityAfter !== undefined
+  )
+    throw new RangeError(
+      "ticket activity cursor requires recent activity order",
+    );
+  if (
+    query.recentActivityAfter !== undefined &&
+    (!Number.isSafeInteger(query.recentActivityAfter.sequence) ||
+      query.recentActivityAfter.sequence < 0)
+  )
+    throw new RangeError("ticket activity sequence is invalid");
   if (
     !Number.isSafeInteger(query.limit) ||
     query.limit < 1 ||

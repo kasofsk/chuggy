@@ -182,6 +182,26 @@ test("minimum sequence remains an authoritative projection response", () => {
   );
 });
 
+test("recent ticket pages expose only an opaque continuation cursor", () => {
+  const found = projectResponse({
+    result: "Found",
+    project: {
+      partition,
+      sequence: 7,
+      tickets: [{ ticket: id(2), phase: "Working", sequence: 7 }],
+      nextRecentActivityAfter: { sequence: 7, ticket: id(2) },
+    },
+  });
+  assert.equal(
+    typeof (found.body as { nextCursor: unknown }).nextCursor,
+    "string",
+  );
+  assert.equal(
+    JSON.stringify(found.body).includes("nextRecentActivityAfter"),
+    false,
+  );
+});
+
 test("cancellation maps every closed inbox result", () => {
   const cases = [
     { result: { cancelled: "Cancelled", operation: standing }, status: 200 },

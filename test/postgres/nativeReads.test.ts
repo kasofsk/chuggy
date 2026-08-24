@@ -124,6 +124,55 @@ test("project reads page by ticket identity and enforce a minimum sequence", asy
   );
 });
 
+test("project reads page newest activity with a stable identity tie-breaker", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-recent",
+  );
+  await subject.harness.query(
+    "UPDATE project SET head=9 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  for (const [ticket, sequence] of [
+    [1, 4],
+    [2, 9],
+    [3, 9],
+    [4, 2],
+  ] as const) {
+    await subject.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ($1,$2,$3,'Pending',$4)`,
+      [partition.tenant, partition.project, ticket, sequence],
+    );
+  }
+  const reads = postgresNativeReads(subject.pool);
+  const first = await reads.project(partition, {
+    limit: 2,
+    order: "RecentActivity",
+  });
+  assert.equal(first.result, "Found");
+  if (first.result !== "Found") return;
+  assert.deepEqual(
+    first.project.tickets.map(({ ticket }) => ticket),
+    [3, 2],
+  );
+  assert.deepEqual(first.project.nextRecentActivityAfter, {
+    sequence: 9,
+    ticket: 2,
+  });
+  const second = await reads.project(partition, {
+    limit: 2,
+    order: "RecentActivity",
+    recentActivityAfter: first.project.nextRecentActivityAfter,
+  });
+  assert.equal(second.result, "Found");
+  if (second.result !== "Found") return;
+  assert.deepEqual(
+    second.project.tickets.map(({ ticket }) => ticket),
+    [1, 4],
+  );
+});
+
 test("project reads filter before paging and expose one ticket detail", async () => {
   const partition = await filterProject();
   await subject.harness.query(

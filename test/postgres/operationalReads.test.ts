@@ -4,6 +4,7 @@ import { after, before, test } from "node:test";
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
+import { id } from "../domain/fixtures.ts";
 import {
   schedulerClaimFor,
   schedulerExecutions,
@@ -46,11 +47,20 @@ test("operational reads page scheduler-owned execution state", async () => {
   const reads = postgresOperationalReads(ingress);
   const page = await reads.executions(project.partition, {
     limit: 1,
+    ticket: id(project.ticket),
     selection: { selection: "NonTerminal" },
   });
   assert.equal(page.executions.length, 1);
   assert.equal(page.executions[0]?.status, "Queued");
   assert.ok(page.nextAfter !== undefined);
+  assert.deepEqual(
+    await reads.executions(project.partition, {
+      limit: 10,
+      ticket: id(project.ticket + 1),
+      selection: { selection: "Selected", states: ["Queued"] },
+    }),
+    { executions: [] },
+  );
   const detail = await reads.execution(
     project.partition,
     asExecutionId(durable[0]?.execution ?? "absent"),

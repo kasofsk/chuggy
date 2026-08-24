@@ -130,6 +130,7 @@ function projectResource(
   head: string,
   rows: readonly TicketProjectionRow[],
   limit: number,
+  order: ProjectReadQuery["order"],
 ): ProjectResource {
   const page = rows.slice(0, limit);
   const next = rows.length > limit ? page.at(-1) : undefined;
@@ -146,9 +147,20 @@ function projectResource(
     ? resource
     : {
         ...resource,
-        nextAfter: asTicketId(
-          projectRowCounter(next.ticket, "ticket page cursor"),
-        ),
+        ...(order === "RecentActivity"
+          ? {
+              nextRecentActivityAfter: {
+                sequence: projectRowCounter(next.seq, "ticket activity cursor"),
+                ticket: asTicketId(
+                  projectRowCounter(next.ticket, "ticket page cursor"),
+                ),
+              },
+            }
+          : {
+              nextAfter: asTicketId(
+                projectRowCounter(next.ticket, "ticket page cursor"),
+              ),
+            }),
       };
 }
 
@@ -193,21 +205,16 @@ async function readProject(
       await client.query("COMMIT");
       return { result: "Behind", observedSequence: head };
     }
-    const tickets = await client.query<TicketProjectionRow>(
-      sql`SELECT ticket,phase,seq FROM ticket_projection
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
-          AND ticket>${query.after ?? 0}
-          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
-        ORDER BY ticket LIMIT ${query.limit + 1}`,
-    );
+    const tickets = await readProjectTickets(client, partition, query);
     await client.query("COMMIT");
     return {
       result: "Found",
       project: projectResource(
         partition,
         standing.head,
-        tickets.rows,
+        tickets,
         query.limit,
+        query.order,
       ),
     };
   } catch (cause) {
@@ -216,6 +223,32 @@ async function readProject(
   } finally {
     client.release();
   }
+}
+
+async function readProjectTickets(
+  client: pg.PoolClient,
+  partition: Partition,
+  query: ProjectReadQuery,
+): Promise<readonly TicketProjectionRow[]> {
+  if (query.order === "RecentActivity") {
+    const found = await client.query<TicketProjectionRow>(
+      sql`SELECT ticket,phase,seq FROM ticket_projection
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
+            OR (seq,ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
+          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY seq DESC,ticket DESC LIMIT ${query.limit + 1}`,
+    );
+    return found.rows;
+  }
+  const found = await client.query<TicketProjectionRow>(
+    sql`SELECT ticket,phase,seq FROM ticket_projection
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND ticket>${query.after ?? 0}
+          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY ticket LIMIT ${query.limit + 1}`,
+  );
+  return found.rows;
 }
 
 /** Reads only API-safe columns through a pool carrying the API credential. */

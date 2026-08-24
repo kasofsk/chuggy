@@ -11,6 +11,7 @@ import {
   type ConfigurationRevisionId,
 } from "../../interpreter/authoring.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
+import type { TicketActivityPosition } from "../../interpreter/nativeWeb.ts";
 import {
   dispatchViewSchemaVersion,
   checkedSelectorDecisionReference,
@@ -290,6 +291,54 @@ const configurationCursorSchema = z.strictObject({
   }),
   revision: z.string().min(1),
 });
+
+const ticketActivityCursorSchema = z.strictObject({
+  version: z.literal(nativeHttpVersion),
+  tenant: z.string(),
+  project: z.string(),
+  sequence: z.number().int().safe().nonnegative(),
+  ticket: ticketSchema,
+});
+
+export function encodeTicketActivityCursor(
+  partition: Partition,
+  cursor: TicketActivityPosition,
+): string {
+  return Buffer.from(
+    JSON.stringify({
+      version: nativeHttpVersion,
+      tenant: partition.tenant,
+      project: partition.project,
+      sequence: cursor.sequence,
+      ticket: cursor.ticket,
+    }),
+  ).toString("base64url");
+}
+
+export function parseTicketActivityCursor(
+  value: string,
+  expected: Partition,
+): TicketActivityPosition {
+  if (value.length === 0 || value.length > nativeHttpCursorCharsMax)
+    throw new RangeError("ticket activity cursor is empty or too long");
+  const decoded: unknown = JSON.parse(
+    Buffer.from(value, "base64url").toString(),
+  );
+  const cursor = ticketActivityCursorSchema.parse(decoded);
+  const partition = parsePartition(cursor.tenant, cursor.project);
+  if (
+    partition.tenant !== expected.tenant ||
+    partition.project !== expected.project
+  )
+    throw new RangeError("ticket activity cursor belongs to another project");
+  const parsed = {
+    sequence: cursor.sequence,
+    ticket: asTicketId(cursor.ticket),
+  };
+  if (encodeTicketActivityCursor(partition, parsed) !== value)
+    throw new RangeError("ticket activity cursor is not canonically encoded");
+  return parsed;
+}
 
 export function encodeConfigurationCursor(
   partition: Partition,

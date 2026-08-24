@@ -5,6 +5,7 @@ import {
   asPrincipal,
   asProjectAccessKind,
   asPublicInstant,
+  checkedProjectReadQuery,
   nativeWeb,
   oidcPrincipal,
   type NativeWeb,
@@ -54,6 +55,22 @@ const authority = {
   kind: asAuthorityKind("User"),
   subject: asAuthoritySubject("internal-subject"),
 };
+
+test("ticket ordering cursors cannot cross ordering contracts", () => {
+  assert.throws(() =>
+    checkedProjectReadQuery({
+      limit: 10,
+      order: "RecentActivity",
+      after: id(1),
+    }),
+  );
+  assert.throws(() =>
+    checkedProjectReadQuery({
+      limit: 10,
+      recentActivityAfter: { sequence: 2, ticket: id(1) },
+    }),
+  );
+});
 
 function ticketRead(calls: string[]): NativeReadStore["ticket"] {
   return (_partition, ticket) => {

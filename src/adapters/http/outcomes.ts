@@ -38,6 +38,7 @@ import type { RepositoryConfigurationImportOutcome } from "../../interpreter/rep
 import {
   encodeConfigurationCursor,
   encodeInventoryCursor,
+  encodeTicketActivityCursor,
   nativeHttpError,
   nativeHttpMediaType,
 } from "./contract.ts";
@@ -218,7 +219,22 @@ export function projectResponse(result: ProjectRead): NativeHttpResponse {
         observedSequence: result.observedSequence,
       });
     case "Found":
-      return response(200, result.project);
+      return response(200, {
+        partition: result.project.partition,
+        sequence: result.project.sequence,
+        tickets: result.project.tickets,
+        ...(result.project.nextAfter === undefined
+          ? {}
+          : { nextAfter: result.project.nextAfter }),
+        ...(result.project.nextRecentActivityAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeTicketActivityCursor(
+                result.project.partition,
+                result.project.nextRecentActivityAfter,
+              ),
+            }),
+      });
   }
 }
 

@@ -9,7 +9,9 @@ import {
   nativeHttpMediaType,
   nativeHttpRoutes,
   encodeInventoryCursor,
+  encodeTicketActivityCursor,
   parseInventoryCursor,
+  parseTicketActivityCursor,
   parseConfigurationCreation,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
@@ -19,6 +21,7 @@ import {
 } from "../../src/adapters/http/contract.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
+import { id } from "../domain/fixtures.ts";
 
 test("the versioned route and media contracts move together", () => {
   assert.equal(nativeHttpBasePath, "/api/v1");
@@ -174,6 +177,17 @@ test("configuration cursors preserve the stable newest-first key", () => {
     }),
   ).toString("base64url");
   assert.throws(() => parseConfigurationCursor(invalidTimestamp, partition));
+});
+
+test("ticket activity cursors bind the composite position to one project", () => {
+  const partition = parsePartition("tenant", "project");
+  const position = { sequence: 7, ticket: id(3) };
+  const cursor = encodeTicketActivityCursor(partition, position);
+  assert.deepEqual(parseTicketActivityCursor(cursor, partition), position);
+  assert.throws(() =>
+    parseTicketActivityCursor(cursor, parsePartition("tenant", "other")),
+  );
+  assert.throws(() => parseTicketActivityCursor(`${cursor}=`, partition));
 });
 
 test("a purpose-specific mutation becomes its one application command", () => {

@@ -58,6 +58,7 @@ export type ExecutionSelection =
 
 export interface ExecutionListQuery {
   readonly after?: ExecutionId;
+  readonly ticket?: TicketId;
   readonly limit: number;
   readonly selection?: ExecutionSelection;
 }
