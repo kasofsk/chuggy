@@ -14,13 +14,15 @@ async function readProjectRepositoryBinding(
   partition: Partition,
 ): Promise<RepositoryBinding | undefined> {
   const found = await pool.query<{
-    repository: string;
-    recovery_epoch: string;
+    repository: string | null;
+    recovery_epoch: string | null;
   }>(
     sql`SELECT repository,recovery_epoch
           FROM read_project_repository_binding(${partition.tenant},${partition.project})`,
   );
   const row = found.rows[0];
+  if (row?.repository === null || row?.recovery_epoch === null)
+    throw new Error("repository binding read returned a partial binding");
   return row === undefined
     ? undefined
     : {

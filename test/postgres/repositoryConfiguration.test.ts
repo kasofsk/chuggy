@@ -38,14 +38,15 @@ test("repository binding reads are project-local and preserve their epoch", asyn
   if (epoch === undefined) throw new Error("recovery epoch fixture is absent");
   await harness.query(
     `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
-     VALUES ($1,$2,$3,$5),($1,$4,$6,$5)`,
+     VALUES ($1,$2,$3,$7),($4,$5,$6,$7)`,
     [
       first.tenant,
       first.project,
       "repository-first",
+      second.tenant,
       second.project,
-      epoch,
       "repository-second",
+      epoch,
     ],
   );
   const bindings = postgresProjectRepositoryBinding(pool);
