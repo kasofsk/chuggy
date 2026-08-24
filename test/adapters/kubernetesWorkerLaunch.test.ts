@@ -37,7 +37,7 @@ import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import {
   asAttemptId,
   asExecutionId,
-  type WorkerPlacement,
+  type AttemptPlacement,
 } from "../../src/interpreter/executionScheduler.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.ts";
@@ -56,6 +56,14 @@ const token = "cluster-token-value";
 const tokenFile = join(root, "token");
 writeFileSync(tokenFile, `${token}\n`);
 
+/**
+ * The one image this suite's site admits and its placement requires. They are
+ * written as the same value so that no case here turns on which of the two a
+ * container ends up running; that divergence is issue #250's, and the case
+ * that pins it belongs with the fix.
+ */
+const workerImage = "registry.invalid/worker:1";
+
 const config: KubernetesWorkerLaunchConfig = {
   apiBaseUrl: "https://cluster.invalid:6443",
   namespace: "chuggy-workers",
@@ -66,7 +74,7 @@ const config: KubernetesWorkerLaunchConfig = {
     {
       profile: "standard",
       runtimeVersion: "1",
-      image: "registry.invalid/worker:1",
+      image: workerImage,
     },
   ],
   resources: {
@@ -111,7 +119,7 @@ const configuration: PinnedTaskConfiguration = {
   review: { instructions: ["Walk the call paths the change reaches."] },
 };
 
-function taskInvocation(): WorkerPlacement["invocation"] {
+function taskInvocation(): AttemptPlacement["invocation"] {
   const composed = composeTaskInvocation(blessedPracticeCatalog, {
     purpose: "Work",
     pin: configuration,
@@ -124,7 +132,7 @@ function taskInvocation(): WorkerPlacement["invocation"] {
   return composed.invocation;
 }
 
-const placement: WorkerPlacement = {
+const placement: AttemptPlacement = {
   partition,
   execution: asExecutionId("execution-one"),
   attempt: asAttemptId("attempt-one"),
@@ -135,6 +143,14 @@ const placement: WorkerPlacement = {
   sourceRequest: "1:0:SpawnWork",
   configurationRevision: "revision",
   configurationDigest: "digest",
+  requirementIdentity: "requirement-one",
+  requirement: {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image: workerImage,
+  },
+  requirementDigest: "requirement-digest",
   profile: { profile: "standard", runtimeVersion: "1" },
   invocation: taskInvocation(),
 };
@@ -233,7 +249,7 @@ function expectedPod(name: string): unknown {
       containers: [
         {
           name: kubernetesWorkerContainerName,
-          image: "registry.invalid/worker:1",
+          image: workerImage,
           env: [{ name: kubernetesWorkerTaskVariable, value: expectedTask() }],
           resources: {
             requests: { cpu: "500m", memory: "1Gi" },
@@ -254,7 +270,7 @@ test("a placed attempt is one pod, named for its attempt and fenced by its annot
   );
   const placed = await workers.place(placement);
   const name = kubernetesWorkerPodName(config, partition, placement.attempt);
-  assert.deepEqual(placed, { placed: "Placed", workload: name });
+  assert.deepEqual(placed, { placed: "Placed", placement: name });
   const request = reached[0];
   assert.equal(request?.method, "POST");
   assert.equal(
@@ -286,13 +302,13 @@ test("a worker is handed the resolved authority and never the policy grant", asy
   assert.equal(task.authority.mayCompleteTask, false);
 });
 
-test("a deletion addresses the pod its attempt named", async () => {
+test("a cancellation addresses the pod its attempt named", async () => {
   const reached: ClusterReached[] = [];
   const workers = kubernetesWorkerLaunch(
     config,
     recordingCluster(reached, answering(200)),
   );
-  await workers.delete(partition, placement.attempt);
+  await workers.cancel(placement);
   const name = kubernetesWorkerPodName(config, partition, placement.attempt);
   assert.deepEqual(
     reached.map((request) => `${request.method} ${request.url}`),
@@ -339,7 +355,7 @@ test("an unadmitted placement never reaches the cluster", async () => {
 test("only a refusal of the document is definitive and every other answer holds", async () => {
   const placed = {
     placed: "Placed",
-    workload: kubernetesWorkerPodName(config, partition, placement.attempt),
+    placement: kubernetesWorkerPodName(config, partition, placement.attempt),
   };
   const held = { placed: "Unavailable", retryAfterSeconds: 15 };
   const denied = { placed: "Denied", reason: "ExecutionPolicyDenied" };

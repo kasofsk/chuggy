@@ -38,12 +38,10 @@ after(() => {
 const tokenFile = join(root, "token");
 writeFileSync(tokenFile, "cluster-token-value\n");
 
+const workerImage = "registry.invalid/worker:1";
+
 const images = [
-  {
-    profile: "standard",
-    runtimeVersion: "1",
-    image: "registry.invalid/worker:1",
-  },
+  { profile: "standard", runtimeVersion: "1", image: workerImage },
 ];
 
 const resources = {
@@ -273,6 +271,10 @@ function processFakes(reachable: boolean): string {
       sourceRequest: '1:0:SpawnWork', sourceSeq: 1, sourceEffect: 0, ticketVersion: 1,
       account: 'project', cluster: 'cluster',
       configurationRevision: 'revision', configurationDigest: 'digest',
+      requirementIdentity: 'requirement-one',
+      requirement: { mode: 'Container', operatingSystem: 'Linux', architecture: 'Amd64', image: ${JSON.stringify(workerImage)} },
+      requirementDigest: 'requirement-digest',
+      requirementSource: 'PlatformDefault', platformDefaultVersion: 1,
       status: 'Admitted', attemptsOpened: 0, retriesSpent: 0,
     };
     const attempt = {
@@ -287,7 +289,7 @@ function processFakes(reachable: boolean): string {
       reapLapsedAttempts: async () => 0,
       unlaunched: async () => [execution],
       openAttempt: async () => ({ opened: 'Opened', attempt }),
-      attemptPlaced: async (_attempt, workload) => { placed.push(workload); return true; },
+      attemptPlaced: async (_attempt, placement) => { placed.push(placement); return true; },
     };
     const configuration = ${JSON.stringify(configuration)};
   `;
@@ -311,7 +313,7 @@ function processProgram(reachable: boolean): string {
     ${processFakes(reachable)}
     const service = {
       store,
-      workers: launch.kubernetesWorkerLaunch(cluster, fetcher),
+      placement: launch.kubernetesWorkerLaunch(cluster, fetcher),
       policy: supplied.suppliedExecutionPolicy({
         profiles: new Map([['Work', {
           profile: { profile: 'standard', runtimeVersion: '1' },

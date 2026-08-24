@@ -16,7 +16,10 @@
  *
  * THE LOOP IS NEVER ENTERED. The last supplied precondition refuses, so the
  * runtime answers before a pass could write anything, and the database this
- * suite shares with its worker's other suites is left as it was found.
+ * suite shares with its worker's other suites is left as it was found. That is
+ * why the ports it hands the root are declared in `./schedulerRootPorts.ts`
+ * rather than inside the program text: nothing here dereferences them, so the
+ * compiler is what has to.
  */
 
 import assert from "node:assert/strict";
@@ -55,31 +58,12 @@ function schedulerRootUrl(): string {
 function schedulerRootProgram(): string {
   return `
     const roots = await import('./src/roots/controlPlane.ts');
-    const scheduler = await import('./src/interpreter/executionScheduler.ts');
-    const tickets = await import('./src/interpreter/ticketService.ts');
-    const finalizer = await import('./src/interpreter/finalizer.ts');
-    const briefing = await import('./src/interpreter/taskBriefing.ts');
+    const ports = await import('./test/postgres/schedulerRootPorts.ts');
     const called = { met: 0, unmet: 0 };
     const supplied = [
       { name: 'cluster-namespace-reachable', check: async () => { called.met += 1; return true; } },
       { name: 'cluster-quota-available', check: async () => { called.unmet += 1; return false; } },
     ];
-    const service = {
-      workers: {
-        place: async () => ({ placed: 'Unavailable', retryAfterSeconds: 1 }),
-        delete: async () => undefined,
-      },
-      policy: {
-        profileFor: async () => ({ resolved: 'Denied', reason: 'ExecutionProfileUnavailable' }),
-      },
-      configurations: { configuration: async () => ({ read: 'Unavailable' }) },
-      runtimeFacts: { facts: async () => ({ read: 'Unavailable' }) },
-      practices: briefing.blessedPracticeCatalog,
-      config: scheduler.executionSchedulerDefaults,
-      ticketService: tickets.ticketServiceDefaults,
-      finalizer: finalizer.finalizerDefaults,
-      metrics: scheduler.silentSchedulerTelemetry,
-    };
     const runtime = roots.schedulerProcessRoot({
       database: { url: ${JSON.stringify(schedulerRootUrl())} },
       runtime: { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 },
@@ -88,7 +72,7 @@ function schedulerRootProgram(): string {
         recoveryEpoch: ${JSON.stringify(epoch)},
         cluster: 'cluster',
       },
-      service,
+      service: ports.schedulerRootService,
       additional: supplied,
     });
     const started = await runtime.start();

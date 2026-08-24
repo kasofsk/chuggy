@@ -22,7 +22,7 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
     runtime: config.runtime,
     identity: config.identity,
     service: {
-      workers: kubernetesWorkerLaunch(config.workers),
+      placement: kubernetesWorkerLaunch(config.workers),
       policy: suppliedExecutionPolicy(config.policy),
       configurations: suppliedTaskConfigurations(config.configurations),
       runtimeFacts: suppliedRuntimeFacts(config.runtimeFacts),
