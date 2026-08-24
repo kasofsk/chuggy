@@ -29,6 +29,8 @@ import {
   parseTicketCommand,
 } from "../../src/interpreter/wire.ts";
 import { postgresHarnessEntry } from "./harness.ts";
+import { postgresHarnessEpoch, postgresHarnessProject } from "./harness.ts";
+import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
 
 const retainedImageRequired = [
   { version: 1, name: "the project foundation" },
@@ -616,6 +618,95 @@ async function applyMigration(
   assert.ok(migration, `migration ${version} is declared`);
   for (const statement of migration.statements) await subject.query(statement);
 }
+
+async function seedEscalatedProjections(subject: pg.Pool): Promise<void> {
+  const store = postgresProjectStore(subject);
+  const epoch = await postgresHarnessEpoch(store);
+  const partition = await postgresHarnessProject(store, "dependable-backfill");
+  const entries = [
+    {
+      seq: 1,
+      ticket: 1,
+      label: "ticket-revoked",
+      transitions: [{ ticket: 1, from: "Pending", to: "Escalated" }],
+    },
+    {
+      seq: 2,
+      ticket: 2,
+      label: "ticket-escalated rework_budget_exhausted",
+      transitions: [{ ticket: 2, from: "Evaluating", to: "Escalated" }],
+    },
+  ];
+  await subject.query("BEGIN");
+  for (const entry of entries) {
+    await subject.query(
+      `INSERT INTO decision_input
+          (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation,
+           state,decided_seq,terminal_at,settled_authority_kind,settled_authority_subject)
+         VALUES ($1,$2,$3,'Continuation',$4,'Continuation',1,'Journaled',$3,now(),
+                 'ProjectTicketWriter','owner')`,
+      [
+        partition.tenant,
+        partition.project,
+        entry.seq,
+        `cause-${String(entry.seq)}`,
+      ],
+    );
+    await subject.query(
+      `INSERT INTO journal_entry
+          (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+           recovery_epoch,cause_kind,cause_id)
+         VALUES ($1,$2,$3,$4,$5,$6,'owner',1,$7,'Continuation',$8)`,
+      [
+        partition.tenant,
+        partition.project,
+        entry.seq,
+        JSON.stringify({
+          seq: entry.seq,
+          event: { type: "Revoke", value: 99 },
+          rec: {
+            label: entry.label,
+            transitions: entry.transitions,
+            effects: [],
+          },
+        }),
+        `digest-${String(entry.seq)}`,
+        entry.seq === 1 ? "genesis" : "digest-1",
+        epoch,
+        `cause-${String(entry.seq)}`,
+      ],
+    );
+    await subject.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+         VALUES ($1,$2,$3,'Escalated',$4)`,
+      [partition.tenant, partition.project, entry.ticket, entry.seq],
+    );
+  }
+  await subject.query("COMMIT");
+}
+
+async function assertDependableBackfill(subject: pg.Pool): Promise<void> {
+  await migrationSeedApplied(subject, 23);
+  await seedEscalatedProjections(subject);
+  await applyMigration(subject, 23);
+  assert.deepEqual(
+    (
+      await subject.query<{ ticket: string; dependable: boolean }>(
+        `SELECT ticket::text,dependable FROM ticket_projection ORDER BY ticket`,
+      )
+    ).rows,
+    [
+      { ticket: "1", dependable: false },
+      { ticket: "2", dependable: true },
+    ],
+  );
+}
+
+test("migration 23 backfills only dependency-revoked escalations as undependable", async () => {
+  await migrationDatabase("dependable_backfill", async (subject) => {
+    await assertDependableBackfill(subject);
+  });
+});
 
 /** Every column is there and none of them is nullable. */
 async function assertRequirementColumns(subject: pg.Pool): Promise<void> {

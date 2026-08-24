@@ -11,9 +11,12 @@ export const migration023: Migration = {
     `ALTER TABLE ticket_projection ADD COLUMN dependable boolean NOT NULL DEFAULT true`,
     `UPDATE ticket_projection p SET dependable=false
       WHERE p.phase='Revoked' OR EXISTS (
-        SELECT 1 FROM journal_entry j
+        SELECT 1 FROM journal_entry j,
+          jsonb_array_elements(j.entry::jsonb->'rec'->'transitions') transition
          WHERE j.tenant=p.tenant AND j.project=p.project AND j.seq=p.seq
-           AND j.entry::jsonb->'rec'->>'label'='ticket-escalated dependency_revoked'
+           AND j.entry::jsonb->'rec'->>'label'='ticket-revoked'
+           AND transition->>'to'='Escalated'
+           AND (transition->>'ticket')::bigint=p.ticket
       )`,
     `GRANT SELECT ON deployment_authoring_policy TO ${apiRole},${ticketServiceRole}`,
     `GRANT INSERT ON deployment_authoring_policy TO ${ticketServiceRole}`,
