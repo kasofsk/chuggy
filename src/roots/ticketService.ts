@@ -13,6 +13,7 @@ import {
   decodedCommandConfiguration,
   positiveInteger,
 } from "./commandConfig.ts";
+import { domainConfigurationSchema } from "../interpreter/domainConfiguration.ts";
 import {
   ticketServiceProcessRoot,
   type TicketServiceProcessRootConfig,
@@ -21,12 +22,6 @@ import {
 const configurationVariable = "CHUG_TICKET_SERVICE_CONFIG";
 
 const positiveNumber = z.number().positive().finite();
-const budgeted = z
-  .object({
-    type: z.literal("Budgeted"),
-    value: z.number().int().nonnegative(),
-  })
-  .strict();
 const configurationSchema = z
   .object({
     database: commandDatabaseSchema,
@@ -37,21 +32,7 @@ const configurationSchema = z
         projectLeaseSeconds: positiveNumber,
       })
       .strict(),
-    domain: z
-      .object({
-        nTickets: positiveInteger,
-        nTasks: positiveInteger,
-        reworkPolicy: z
-          .object({
-            type: z.literal("BudgetedRework"),
-            value: z.number().int().nonnegative(),
-          })
-          .strict(),
-        gas: z.number().int().nonnegative(),
-        finalizationPricing: z.union([z.literal("DeadlineOnly"), budgeted]),
-        maxStages: positiveInteger,
-      })
-      .strict(),
+    domain: domainConfigurationSchema,
     owner: z.string().min(1),
     ticket: z
       .object({

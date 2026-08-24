@@ -36,6 +36,7 @@ import {
 } from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { projectRowCounter } from "./rows.ts";
 import { configurationRevisionDigest } from "./digest.ts";
+import { domainConfigurationOf } from "../../interpreter/domainConfiguration.ts";
 
 interface DraftRow {
   readonly ticket: string;
@@ -196,6 +197,103 @@ async function readConfiguration(
     : { ...resource, parent: asConfigurationRevisionId(row.parent) };
 }
 
+async function initializeDraft(
+  pool: pg.Pool,
+  partition: Partition,
+  revision: string,
+  dependencyCandidatesMax: number,
+) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const project = await client.query<{ head: string }>(
+      sql`SELECT head FROM project WHERE tenant=${partition.tenant} AND project=${partition.project}`,
+    );
+    const policy = await client.query<{ domain_configuration: string }>(
+      sql`SELECT domain_configuration FROM deployment_authoring_policy WHERE singleton=true`,
+    );
+    const configuration = await client.query<{
+      parent: string | null;
+      canonical: string;
+      digest: string;
+    }>(
+      sql`SELECT parent,canonical,digest FROM configuration_revision
+        WHERE tenant=${partition.tenant} AND project=${partition.project} AND revision=${revision}`,
+    );
+    const row = configuration.rows[0];
+    const standing = project.rows[0];
+    if (row === undefined || standing === undefined) {
+      await client.query("COMMIT");
+      return undefined;
+    }
+    const configured = policy.rows[0];
+    if (configured === undefined) {
+      await client.query("COMMIT");
+      return "PolicyUnavailable" as const;
+    }
+    const canonical = asCanonicalConfiguration(row.canonical);
+    if (configurationRevisionDigest(canonical) !== row.digest)
+      throw new Error("configuration revision content contradicts its digest");
+    const dependencies = await client.query<{ ticket: string }>(
+      sql`SELECT ticket FROM ticket_projection
+        WHERE tenant=${partition.tenant} AND project=${partition.project}
+          AND dependable=true
+        ORDER BY ticket LIMIT ${dependencyCandidatesMax + 1}`,
+    );
+    await client.query("COMMIT");
+    return initializedDraftOf({
+      partition,
+      revision,
+      row,
+      standing,
+      canonical,
+      dependencies: dependencies.rows,
+      dependencyCandidatesMax,
+      configured: configured.domain_configuration,
+    });
+  } catch (cause) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw cause;
+  } finally {
+    client.release();
+  }
+}
+
+function initializedDraftOf(input: {
+  readonly partition: Partition;
+  readonly revision: string;
+  readonly row: { readonly parent: string | null; readonly digest: string };
+  readonly standing: { readonly head: string };
+  readonly canonical: ReturnType<typeof asCanonicalConfiguration>;
+  readonly dependencies: readonly { readonly ticket: string }[];
+  readonly dependencyCandidatesMax: number;
+  readonly configured: string;
+}) {
+  return {
+    configuration: {
+      partition: input.partition,
+      revision: asConfigurationRevisionId(input.revision),
+      ...(input.row.parent === null
+        ? {}
+        : { parent: asConfigurationRevisionId(input.row.parent) }),
+      canonical: input.canonical,
+      digest: input.row.digest,
+    },
+    projectSequence: projectRowCounter(
+      input.standing.head,
+      "project initialization fence",
+    ),
+    dependencyCandidates: input.dependencies
+      .slice(0, input.dependencyCandidatesMax)
+      .map((candidate) =>
+        asTicketId(projectRowCounter(candidate.ticket, "dependency candidate")),
+      ),
+    dependencyCandidatesTruncated:
+      input.dependencies.length > input.dependencyCandidatesMax,
+    domain: domainConfigurationOf(JSON.parse(input.configured)),
+  };
+}
+
 async function requiredDraft(
   pool: pg.Pool,
   partition: Partition,
@@ -306,11 +404,12 @@ async function createDraft(
     result: string | null;
     ticket: string | null;
   }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")
     return { created: "ConfigurationNotFound" };
+  if (row?.result === "Stale") return { created: "Stale" };
   if (row?.result !== "Created" || row.ticket === null)
     throw new Error("draft creation returned no ticket");
   return {
@@ -396,6 +495,8 @@ export function postgresAuthoring(
   pool: pg.Pool,
 ): AuthoringStore & RepositoryConfigurationStore {
   return {
+    initializeDraft: (partition, revision, dependencyCandidatesMax) =>
+      initializeDraft(pool, partition, revision, dependencyCandidatesMax),
     configurations: (partition, query) =>
       readConfigurations(pool, partition, query),
     configuration: (partition, revision) =>

@@ -5,12 +5,13 @@ import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
   configurationRevisionSummary,
+  draftInitializationPolicy,
   encodeDraftAuthoring,
   parseDraftAuthoring,
   releaseConfigurationReadiness,
 } from "../../src/interpreter/authoring.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
-import { plainAuthoring } from "../actor/harness.ts";
+import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   encodeTicketCommand,
@@ -26,6 +27,22 @@ test("draft authoring round-trips through the generated domain codec", () => {
     parseDraftAuthoring(encodeDraftAuthoring(plainAuthoring)),
     plainAuthoring,
   );
+});
+
+test("draft initialization exposes deployment choices with server defaults", () => {
+  const policy = draftInitializationPolicy(refinementInstance);
+  assert.deepEqual(policy.defaults, {
+    deps: new Set(),
+    prog: [{ fanout: refinementInstance.nTasks, combinator: "UnanimousPass" }],
+    workFanout: 1,
+    reworkPolicy: { type: "BudgetedRework", value: 0 },
+    finalizationPricing: "DeadlineOnly",
+    resumePricing: "RetryCharged",
+    finalizer: "ManagedFinalizer",
+  });
+  assert.ok(policy.choices.workFanouts.includes(1));
+  assert.ok(policy.choices.reworkPolicies.some((choice) => choice.value === 0));
+  assert.ok(policy.choices.finalizers.includes("ManagedFinalizer"));
 });
 
 test("configuration must be canonical, bounded, and secret-free", () => {

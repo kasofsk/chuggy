@@ -95,7 +95,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   );
   assert.deepEqual(
     projectionChanges(released.view.post, dispatched.view.post),
-    [{ ticket: id(1), phase: "Working" }],
+    [{ ticket: id(1), phase: "Working", dependable: true }],
   );
   assert.deepEqual(
     projectionChanges(dispatched.view.post, dispatched.view.post),
@@ -108,7 +108,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   );
   assert.deepEqual(
     projectionChanges(dispatched.view.post, completed.view.post),
-    [{ ticket: id(1), phase: "Working" }],
+    [{ ticket: id(1), phase: "Working", dependable: true }],
   );
 });
 
@@ -120,6 +120,26 @@ test("a release is a change although it transitions nothing", () => {
   );
   assert.deepEqual(released.journal.at(-1)?.rec.transitions, []);
   assert.deepEqual(projectionChanges(genesis, released.view.post), [
-    { ticket: id(1), phase: "Pending" },
+    { ticket: id(1), phase: "Pending", dependable: true },
   ]);
+});
+
+test("dependency eligibility distinguishes the two escalated reasons", () => {
+  const released = execDecisionEvent(
+    refinementInstance,
+    genesis,
+    releaseTicketEvent(id(1), plainAuthoring),
+  ).post;
+  const ticket = released.tickets.get(id(1));
+  assert.ok(ticket !== undefined);
+  const escalated = (reason: "DependencyRevoked" | "GasExhausted"): Core => ({
+    tickets: new Map([
+      [id(1), { ...ticket, phase: "Escalated" as const, reason }],
+    ]),
+  });
+  assert.equal(
+    projectionOf(escalated("DependencyRevoked"))[0]?.dependable,
+    false,
+  );
+  assert.equal(projectionOf(escalated("GasExhausted"))[0]?.dependable, true);
 });

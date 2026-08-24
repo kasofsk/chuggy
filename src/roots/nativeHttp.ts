@@ -228,11 +228,10 @@ async function main(): Promise<void> {
       throw failure;
     },
   );
-  const access = postgresProjectAccess(pool);
   const web = composeNativeWeb(
     pool,
     keying,
-    access,
+    postgresProjectAccess(pool),
     postgresExecutionBacklogGuard(pool),
     undefined,
     undefined,

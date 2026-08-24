@@ -40,6 +40,7 @@ import {
   configurationsResponse,
   dispatchViewResponse,
   draftCreationResponse,
+  draftInitializationResponse,
   draftDeletionResponse,
   draftResponse,
   draftRevisionResponse,
@@ -84,6 +85,7 @@ type InitialNativeWeb = Pick<
   | "createConfiguration"
   | "importRepositoryConfigurations"
   | "createDraft"
+  | "initializeDraft"
   | "deleteDraft"
   | "dispatchView"
   | "draft"
@@ -609,6 +611,19 @@ function registerConfigurations(
 
 function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
   const root = "/api/v1/tenants/:tenant/projects/:project/drafts";
+  app.get(
+    "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
+    async (request, reply) => {
+      const result = await web.initializeDraft(
+        principalOf(request),
+        partitionOf(request),
+        asConfigurationRevisionId(
+          textField(record(request.params), "revision"),
+        ),
+      );
+      send(reply, draftInitializationResponse(result));
+    },
+  );
   app.post(
     root,
     { preValidation: requireVersionedJson },

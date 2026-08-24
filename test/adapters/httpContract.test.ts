@@ -44,6 +44,7 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
     "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
     "/api/v1/tenants/:tenant/projects/:project/drafts",
+    "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
     "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
   ]);
@@ -94,9 +95,16 @@ test("authoring DTOs translate into existing application types", () => {
     },
   );
   assert.deepEqual(
-    parseDraftCreation({ configurationRevision: "revision", authoring }),
+    parseDraftCreation({
+      configurationRevision: "revision",
+      configurationDigest: "a".repeat(64),
+      expectedProjectSequence: 7,
+      authoring,
+    }),
     {
       configurationRevision: "revision",
+      configurationDigest: "a".repeat(64),
+      expectedProjectSequence: 7,
       authoring: {
         deps: new Set([1, 2]),
         prog: authoring.program,

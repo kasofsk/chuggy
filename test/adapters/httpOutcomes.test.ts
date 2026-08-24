@@ -19,6 +19,7 @@ import {
   configurationsResponse,
   dispatchViewResponse,
   draftCreationResponse,
+  draftInitializationResponse,
   draftDeletionResponse,
   draftResponse,
   draftRevisionResponse,
@@ -318,6 +319,53 @@ test("draft resources encode sets as stable JSON arrays", () => {
     }).status,
     201,
   );
+});
+
+test("draft initialization outcomes remain discriminated at HTTP", () => {
+  for (const [initialized, status] of [
+    ["ConfigurationNotFound", 404],
+    ["ConfigurationIncomplete", 409],
+    ["PolicyUnavailable", 503],
+  ] as const)
+    assert.equal(
+      draftInitializationResponse({
+        result: "Authorized",
+        value: { initialized },
+      }).status,
+      status,
+    );
+  const response = draftInitializationResponse({
+    result: "Authorized",
+    value: {
+      initialized: "Initialized",
+      value: {
+        configuration: {
+          partition,
+          revision: asConfigurationRevisionId("revision"),
+          canonical: asCanonicalConfiguration("{}"),
+          digest: "a".repeat(64),
+        },
+        projectSequence: 2,
+        defaults: plainAuthoring,
+        choices: {
+          stages: plainAuthoring.prog,
+          programStagesMax: 1,
+          workFanouts: [1],
+          reworkPolicies: [plainAuthoring.reworkPolicy],
+          finalizationPricings: [plainAuthoring.finalizationPricing],
+          resumePricings: [plainAuthoring.resumePricing],
+          finalizers: [plainAuthoring.finalizer],
+        },
+        dependencyCandidates: [id(1)],
+        dependencyCandidatesTruncated: false,
+      },
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual((response.body as { fence: unknown }).fence, {
+    projectSequence: 2,
+    configurationDigest: "a".repeat(64),
+  });
 });
 
 test("draft revision and deletion map every closed result", () => {

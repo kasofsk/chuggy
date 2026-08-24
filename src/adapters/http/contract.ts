@@ -60,6 +60,7 @@ export const nativeHttpRoutes = {
   configurationImports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports`,
   configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
+  draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
   dispatchView: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/dispatch-view`,
 } as const;
@@ -187,6 +188,8 @@ const repositoryConfigurationImportSchema = z.strictObject({
 
 const draftCreationSchema = z.strictObject({
   configurationRevision: identitySchema,
+  configurationDigest: z.string().regex(/^[0-9a-f]{64}$/u),
+  expectedProjectSequence: versionSchema,
   authoring: authoringSchema,
 });
 
@@ -208,11 +211,15 @@ export function parseRepositoryConfigurationImport(body: unknown): GitObjectId {
 
 export interface ParsedDraftCreation {
   readonly configurationRevision: ConfigurationRevisionId;
+  readonly configurationDigest: string;
+  readonly expectedProjectSequence: number;
   readonly authoring: ReleaseAuthoring;
 }
 
-export interface ParsedDraftRevision extends ParsedDraftCreation {
+export interface ParsedDraftRevision {
   readonly expectedVersion: number;
+  readonly configurationRevision: ConfigurationRevisionId;
+  readonly authoring: ReleaseAuthoring;
 }
 
 function releaseAuthoring(
@@ -248,6 +255,8 @@ export function parseDraftCreation(body: unknown): ParsedDraftCreation {
     configurationRevision: asConfigurationRevisionId(
       value.configurationRevision,
     ),
+    configurationDigest: value.configurationDigest,
+    expectedProjectSequence: value.expectedProjectSequence,
     authoring: releaseAuthoring(value.authoring),
   };
 }

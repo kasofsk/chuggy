@@ -6,6 +6,7 @@ import type {
   ConfigurationPage,
   ConfigurationRevisionResource,
   DraftCreated,
+  DraftInitializationRead,
   DraftDeleted,
   DraftResource,
   DraftRevised,
@@ -503,6 +504,46 @@ export function draftResponse(
     : response(200, draftBody(resource));
 }
 
+export function draftInitializationResponse(
+  result: AuthorizedResult<DraftInitializationRead>,
+): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  const initialized = result.value;
+  if (initialized.initialized === "ConfigurationNotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (initialized.initialized === "ConfigurationIncomplete")
+    return response(
+      409,
+      nativeHttpError(
+        "ConfigurationIncomplete",
+        "The configuration is not ready.",
+      ),
+    );
+  if (initialized.initialized === "PolicyUnavailable")
+    return retry(503, 1, "DraftInitializationUnavailable");
+  const value = initialized.value;
+  return response(200, {
+    configuration: value.configuration,
+    fence: {
+      projectSequence: value.projectSequence,
+      configurationDigest: value.configuration.digest,
+    },
+    defaults: {
+      dependencies: [...value.defaults.deps],
+      program: value.defaults.prog,
+      workFanout: value.defaults.workFanout,
+      reworkPolicy: value.defaults.reworkPolicy,
+      finalizationPricing: value.defaults.finalizationPricing,
+      resumePricing: value.defaults.resumePricing,
+      finalizer: value.defaults.finalizer,
+    },
+    choices: value.choices,
+    dependencyCandidates: value.dependencyCandidates,
+    dependencyCandidatesTruncated: value.dependencyCandidatesTruncated,
+  });
+}
+
 function draftCreated(value: DraftCreated): NativeHttpResponse {
   switch (value.created) {
     case "Created":
@@ -515,6 +556,14 @@ function draftCreated(value: DraftCreated): NativeHttpResponse {
       });
     case "ConfigurationNotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Stale":
+      return response(
+        409,
+        nativeHttpError(
+          "DraftInitializationStale",
+          "The draft initialization is stale.",
+        ),
+      );
   }
 }
 
