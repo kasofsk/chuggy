@@ -58,6 +58,7 @@ const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
     version: 19,
     name: "the execution requirement a migrated database never got",
   },
+  { version: 20, name: "repository configuration provenance" },
 ]);
 
 const declaredLatest = Math.max(...migrations.map(({ version }) => version));
