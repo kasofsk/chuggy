@@ -349,6 +349,127 @@ function optionalText(fields, name, what) {
   return fields[name] === undefined ? undefined : text(fields, name, what);
 }
 
+export const configurationReadinesses = ["Ready", "Incomplete"];
+export const configurationProvenanceSources = ["Authored", "Repository"];
+export const repositoryConfigurationFaults = [
+  "TooManyDeclarations",
+  "PathInvalid",
+  "SymlinkRefused",
+  "ContentTooLarge",
+  "DocumentUnreadable",
+  "EnvelopeInvalid",
+  "NameInvalid",
+  "ConfigurationInvalid",
+  "DuplicateName",
+  "DuplicatePath",
+];
+
+/** @param {unknown} value */
+function configurationProvenance(value) {
+  const fields = record(value, "configuration provenance");
+  const source = member(
+    fields,
+    "source",
+    configurationProvenanceSources,
+    "configuration provenance",
+  );
+  if (source === "Authored")
+    return { source: /** @type {const} */ ("Authored") };
+  return {
+    source: /** @type {const} */ ("Repository"),
+    repository: text(fields, "repository", "configuration provenance"),
+    commit: text(fields, "commit", "configuration provenance"),
+    path: text(fields, "path", "configuration provenance"),
+    name: text(fields, "name", "configuration provenance"),
+  };
+}
+
+/** @param {unknown} value */
+function configurationSummary(value) {
+  const fields = record(value, "configuration summary");
+  const readiness = member(
+    fields,
+    "readiness",
+    configurationReadinesses,
+    "configuration summary",
+  );
+  const summary = {
+    revision: text(fields, "revision", "configuration summary"),
+    parent: optionalText(fields, "parent", "configuration summary"),
+    digest: text(fields, "digest", "configuration summary"),
+    createdAt: text(fields, "createdAt", "configuration summary"),
+    provenance: configurationProvenance(fields["provenance"]),
+  };
+  if (readiness === "Incomplete")
+    return { ...summary, readiness: /** @type {const} */ ("Incomplete") };
+  return {
+    ...summary,
+    readiness: /** @type {const} */ ("Ready"),
+    image: text(fields, "image", "configuration summary"),
+    practices: list(
+      fields["practices"],
+      "configuration practices",
+      itemsPerPageMax,
+    ).map((practice) => {
+      if (typeof practice !== "string" || practice.length === 0)
+        throw new ResourceError("configuration practice is not text");
+      return practice;
+    }),
+    workInstructionsCount: count(
+      fields,
+      "workInstructionsCount",
+      "configuration summary",
+    ),
+    reviewInstructionsCount: count(
+      fields,
+      "reviewInstructionsCount",
+      "configuration summary",
+    ),
+  };
+}
+
+/** @param {unknown} value */
+export function parseConfigurationsPage(value) {
+  const fields = record(value, "configurations page");
+  return {
+    configurations: list(
+      fields["configurations"],
+      "configurations",
+      itemsPerPageMax,
+    ).map(configurationSummary),
+    nextCursor: optionalText(fields, "nextCursor", "configurations page"),
+  };
+}
+
+/** @param {unknown} value */
+export function parseRepositoryConfigurationRefusal(value) {
+  const fields = record(value, "repository configuration refusal");
+  return {
+    path: text(fields, "path", "repository configuration refusal"),
+    fault: member(
+      fields,
+      "fault",
+      repositoryConfigurationFaults,
+      "repository configuration refusal",
+    ),
+    configurationFault: optionalText(
+      fields,
+      "configurationFault",
+      "repository configuration refusal",
+    ),
+  };
+}
+
+/** @param {unknown} value */
+export function parseRepositoryConfigurationRefusals(value) {
+  const fields = record(value, "repository configuration refusals");
+  return list(
+    fields["faults"],
+    "repository configuration faults",
+    itemsPerPageMax,
+  ).map(parseRepositoryConfigurationRefusal);
+}
+
 /** @param {unknown} value */
 function executionSummary(value) {
   const fields = record(value, "execution");

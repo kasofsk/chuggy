@@ -72,7 +72,12 @@ test("every failing outcome names why, and none of them is empty", () => {
     absent,
     { outcome: "Unauthenticated" as const },
     { outcome: "Conflict" as const, code: "ProjectionBehind", body: undefined },
-    { outcome: "Rejected" as const, code: "InvalidRequest", status: 400 },
+    {
+      outcome: "Rejected" as const,
+      code: "InvalidRequest",
+      status: 400,
+      body: undefined,
+    },
     { outcome: "Fault" as const, code: "Unreachable", status: 0 },
   ];
   for (const outcome of outcomes) {

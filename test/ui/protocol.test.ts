@@ -24,6 +24,7 @@ import {
   basePath,
   bodyBytesMax,
   classify,
+  configurationsRequest,
   cursorCharsMax,
   dispatchViewRequest,
   executionRequest,
@@ -38,6 +39,7 @@ import {
   pathSegmentCharsMax,
   phaseQuery,
   projectsRequest,
+  repositoryConfigurationImportRequest,
   retryAfterSeconds,
   retryAfterSecondsFallback,
   retryAfterSecondsMax,
@@ -57,6 +59,46 @@ test("the console's wire constants are the server's", () => {
   assert.equal(pageLimitMax, projectPageLimitMax);
   assert.equal(pageLimitMax, executionPageLimitMax);
   assert.equal(pathSegmentCharsMax, nativeHttpPathSegmentCharsMax);
+});
+
+test("configuration reads and repository imports use the public routes", () => {
+  assert.deepEqual(configurationsRequest(token, partition, undefined, 50), {
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/atlas/configurations?limit=50",
+    headers: { accept: mediaType, authorization: `Bearer ${token}` },
+  });
+  assert.deepEqual(configurationsRequest(token, partition, "next", 25), {
+    method: "GET",
+    url: "/api/v1/tenants/acme/projects/atlas/configurations?cursor=next&limit=25",
+    headers: { accept: mediaType, authorization: `Bearer ${token}` },
+  });
+  assert.deepEqual(
+    repositoryConfigurationImportRequest(token, partition, "a".repeat(40)),
+    {
+      method: "POST",
+      url: "/api/v1/tenants/acme/projects/atlas/configurations/imports",
+      headers: {
+        accept: mediaType,
+        authorization: `Bearer ${token}`,
+        "content-type": mediaType,
+      },
+      body: JSON.stringify({ commit: "a".repeat(40) }),
+    },
+  );
+});
+
+test("a rejected import retains its structured refusal body", () => {
+  const declarationPath = [".chug", "configurations", "work.json"].join("/");
+  const body = {
+    error: { code: "RepositoryConfigurationsRefused" },
+    faults: [{ path: declarationPath, fault: "EnvelopeInvalid" }],
+  };
+  assert.deepEqual(classify(422, noHeader, body), {
+    outcome: "Rejected",
+    code: "RepositoryConfigurationsRefused",
+    status: 422,
+    body,
+  });
 });
 
 test("every path the console builds is a route the server registers", () => {
