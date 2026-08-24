@@ -25,11 +25,17 @@ import {
   bodyBytesMax,
   classify,
   configurationsRequest,
+  configurationRequest,
   cursorCharsMax,
   dispatchViewRequest,
   executionRequest,
   executionStateQuery,
   executionsRequest,
+  draftCreationRequest,
+  draftDeletionRequest,
+  draftInitializationRequest,
+  draftRequest,
+  draftRevisionRequest,
   mediaType,
   notificationsRequest,
   operationRequest,
@@ -40,11 +46,14 @@ import {
   phaseQuery,
   projectsRequest,
   repositoryConfigurationImportRequest,
+  recentTicketsRequest,
+  releaseDraftMutation,
   retryAfterSeconds,
   retryAfterSecondsFallback,
   retryAfterSecondsMax,
   submissionRequest,
   ticketsRequest,
+  ticketRequest,
 } from "../../ui/app/protocol.js";
 
 const token = "opaque-access-token";
@@ -87,6 +96,74 @@ test("configuration reads and repository imports use the public routes", () => {
   );
 });
 
+test("ticket UI reads use the merged resource routes", () => {
+  assert.equal(
+    recentTicketsRequest(token, partition, { cursor: "next", limit: 25 }).url,
+    "/api/v1/tenants/acme/projects/atlas/tickets?order=RecentActivity&cursor=next&limit=25",
+  );
+  assert.ok(ticketRequest(token, partition, 3).url.endsWith("/tickets/3"));
+  assert.ok(
+    configurationRequest(token, partition, "revision/1").url.endsWith(
+      "/configurations/revision%2F1",
+    ),
+  );
+  assert.ok(
+    draftInitializationRequest(token, partition, "revision/1").url.endsWith(
+      "/draft-initializations/revision%2F1",
+    ),
+  );
+  assert.ok(draftRequest(token, partition, 3).url.endsWith("/drafts/3"));
+  assert.ok(
+    executionsRequest(token, partition, { limit: 50, ticket: 3 }).url.endsWith(
+      "/executions?limit=50&ticket=3",
+    ),
+  );
+});
+
+test("draft writes carry the server's fenced authoring contract", () => {
+  const authoring = {
+    dependencies: [],
+    program: [{ fanout: 1, combinator: "UnanimousPass" }],
+    workFanout: 1,
+    reworkPolicy: { type: "BudgetedRework", value: 0 },
+    finalizationPricing: "DeadlineOnly",
+    resumePricing: "RetryCharged",
+    finalizer: "ManagedFinalizer",
+  };
+  const creation = draftCreationRequest(token, partition, {
+    configurationRevision: "revision",
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 4,
+    authoring,
+  });
+  assert.equal(creation.method, "POST");
+  assert.deepEqual(JSON.parse(creation.body ?? ""), {
+    configurationRevision: "revision",
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 4,
+    authoring,
+  });
+  assert.equal(
+    draftRevisionRequest(token, partition, 2, {
+      expectedVersion: 1,
+      configurationRevision: "revision",
+      authoring,
+    }).method,
+    "PUT",
+  );
+  assert.ok(
+    draftDeletionRequest(token, partition, 2, 1).url.endsWith(
+      "/drafts/2?expectedVersion=1",
+    ),
+  );
+  assert.deepEqual(releaseDraftMutation(2, 1, "revision"), {
+    mutation: "ReleaseDraft",
+    ticket: 2,
+    authoringVersion: 1,
+    configurationRevision: "revision",
+  });
+});
+
 test("a rejected import retains its structured refusal body", () => {
   const declarationPath = [".chug", "configurations", "work.json"].join("/");
   const body = {
@@ -112,6 +189,7 @@ test("every path the console builds is a route the server registers", () => {
   const built = [
     projectsRequest(token, undefined, 50).url,
     ticketsRequest(token, partition, { limit: 50 }).url,
+    recentTicketsRequest(token, partition, { limit: 50 }).url,
     dispatchViewRequest(token, partition, { limit: 50 }).url,
     notificationsRequest(token, partition, 0, 50).url,
     operationalStatusRequest(token, partition).url,

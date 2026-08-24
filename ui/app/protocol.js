@@ -24,7 +24,7 @@ export const retryAfterSecondsFallback = 5;
 
 /**
  * @typedef {object} ApiRequest
- * @property {"GET" | "POST" | "DELETE"} method
+ * @property {"GET" | "POST" | "PUT" | "DELETE"} method
  * @property {string} url
  * @property {Record<string, string>} headers
  * @property {string} [body]
@@ -146,6 +146,37 @@ export function ticketsRequest(accessToken, partition, query) {
 }
 
 /**
+ * Recent activity has its own opaque cursor and cannot be mixed with identity
+ * paging.
+ *
+ * @param {string} accessToken
+ * @param {Partition} partition
+ * @param {{ cursor?: string, limit: number, minimumSequence?: number,
+ *   phases?: QueryFields }} query
+ */
+export function recentTicketsRequest(accessToken, partition, query) {
+  return readRequest(accessToken, `${partitionPath(partition)}/tickets`, [
+    ["order", "RecentActivity"],
+    ...optionalField(
+      "cursor",
+      query.cursor === undefined ? undefined : checkedCursor(query.cursor),
+    ),
+    ["limit", checkedLimit(query.limit)],
+    ...optionalField("minimumSequence", query.minimumSequence),
+    ...(query.phases ?? []),
+  ]);
+}
+
+/** @param {string} accessToken @param {Partition} partition @param {number} ticket */
+export function ticketRequest(accessToken, partition, ticket) {
+  return readRequest(
+    accessToken,
+    `${partitionPath(partition)}/tickets/${String(ticket)}`,
+    [],
+  );
+}
+
+/**
  * Configuration pages are newest-first and continue with an opaque cursor.
  *
  * @param {string} accessToken
@@ -165,6 +196,95 @@ export function configurationsRequest(accessToken, partition, cursor, limit) {
       ["limit", checkedLimit(limit)],
     ],
   );
+}
+
+/** @param {string} accessToken @param {Partition} partition @param {string} revision */
+export function configurationRequest(accessToken, partition, revision) {
+  return readRequest(
+    accessToken,
+    `${partitionPath(partition)}/configurations/${encodeURIComponent(revision)}`,
+    [],
+  );
+}
+
+/** @param {string} accessToken @param {Partition} partition @param {string} revision */
+export function draftInitializationRequest(accessToken, partition, revision) {
+  return readRequest(
+    accessToken,
+    `${partitionPath(partition)}/draft-initializations/${encodeURIComponent(revision)}`,
+    [],
+  );
+}
+
+/**
+ * @param {string} accessToken
+ * @param {Partition} partition
+ * @param {{ configurationRevision: string, configurationDigest: string,
+ *   expectedProjectSequence: number, authoring: unknown }} creation
+ */
+export function draftCreationRequest(accessToken, partition, creation) {
+  return jsonRequest(
+    "POST",
+    accessToken,
+    `${partitionPath(partition)}/drafts`,
+    creation,
+  );
+}
+
+/** @param {string} accessToken @param {Partition} partition @param {number} ticket */
+export function draftRequest(accessToken, partition, ticket) {
+  return readRequest(
+    accessToken,
+    `${partitionPath(partition)}/drafts/${String(ticket)}`,
+    [],
+  );
+}
+
+/**
+ * @param {string} accessToken
+ * @param {Partition} partition
+ * @param {number} ticket
+ * @param {{ expectedVersion: number, configurationRevision: string,
+ *   authoring: unknown }} revision
+ */
+export function draftRevisionRequest(accessToken, partition, ticket, revision) {
+  return jsonRequest(
+    "PUT",
+    accessToken,
+    `${partitionPath(partition)}/drafts/${String(ticket)}`,
+    revision,
+  );
+}
+
+/** @param {string} accessToken @param {Partition} partition @param {number} ticket @param {number} expectedVersion */
+export function draftDeletionRequest(
+  accessToken,
+  partition,
+  ticket,
+  expectedVersion,
+) {
+  return {
+    method: /** @type {const} */ ("DELETE"),
+    url: `${partitionPath(partition)}/drafts/${String(ticket)}?expectedVersion=${String(expectedVersion)}`,
+    headers: { accept: mediaType, authorization: `Bearer ${accessToken}` },
+  };
+}
+
+/** @param {"POST" | "PUT"} method @param {string} accessToken @param {string} url @param {unknown} value */
+function jsonRequest(method, accessToken, url, value) {
+  const body = JSON.stringify(value);
+  if (body.length > bodyBytesMax)
+    throw new RangeError("a request body is larger than the server accepts");
+  return {
+    method,
+    url,
+    headers: {
+      accept: mediaType,
+      authorization: `Bearer ${accessToken}`,
+      "content-type": mediaType,
+    },
+    body,
+  };
 }
 
 /**
@@ -252,12 +372,14 @@ export function executionStateQuery(filter) {
 /**
  * @param {string} accessToken
  * @param {Partition} partition
- * @param {{ after?: string, limit: number, states?: QueryFields }} query
+ * @param {{ after?: string, limit: number, states?: QueryFields,
+ *   ticket?: number }} query
  */
 export function executionsRequest(accessToken, partition, query) {
   return readRequest(accessToken, `${partitionPath(partition)}/executions`, [
     ...optionalField("after", query.after),
     ["limit", checkedLimit(query.limit)],
+    ...optionalField("ticket", query.ticket),
     ...(query.states ?? []),
   ]);
 }
@@ -330,6 +452,20 @@ export function submissionRequest(accessToken, partition, submission) {
       "idempotency-key": submission.idempotencyKey,
     },
     body,
+  };
+}
+
+/** @param {number} ticket @param {number} authoringVersion @param {string} configurationRevision */
+export function releaseDraftMutation(
+  ticket,
+  authoringVersion,
+  configurationRevision,
+) {
+  return {
+    mutation: /** @type {const} */ ("ReleaseDraft"),
+    ticket,
+    authoringVersion,
+    configurationRevision,
   };
 }
 
