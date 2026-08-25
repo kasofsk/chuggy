@@ -452,13 +452,44 @@ export function decideFinalizationResult(
 }
 
 export function decideAbandonHandoff(core: Core, id: TicketId): Decision {
-  return move(
-    withTicket(core, id, { ...ticketAt(core, id), resumeAt: "NoResume" }),
-    id,
-    "Abandoned",
-    "handoff-abandoned",
-    [],
+  const abandoned = new Set<TicketId>([id]);
+  for (let round = 0; round < core.tickets.size; round++) {
+    for (const candidate of ticketIds(core)) {
+      if (
+        [...ticketAt(core, candidate).deps].some((dependency) =>
+          abandoned.has(dependency as TicketId),
+        )
+      )
+        abandoned.add(candidate);
+    }
+  }
+  const settled = ticketIds(core).filter(
+    (candidate) =>
+      candidate === id ||
+      (abandoned.has(candidate) &&
+        ticketAt(core, candidate).phase === "Pending"),
   );
+  const tickets = new Map(core.tickets);
+  for (const candidate of settled) {
+    tickets.set(candidate, {
+      ...ticketAt(core, candidate),
+      phase: "Abandoned",
+      resumeAt: "NoResume",
+      reason: "NoReason",
+    });
+  }
+  return {
+    rec: {
+      label: "handoff-abandoned",
+      transitions: settled.map((candidate) => ({
+        ticket: candidate,
+        from: ticketAt(core, candidate).phase,
+        to: "Abandoned",
+      })),
+      effects: [],
+    },
+    post: { ...core, tickets },
+  };
 }
 
 /**

@@ -959,6 +959,12 @@ module chuggy_test {
     dHandoffRetried.post, 1, FinalizationSucceeded)
   pure val dHandoffAbandoned =
     DB::decideAbandonHandoff(dHandoffBlocked.post, 1)
+  pure val cHandoffDependents: Core = { tickets: Map(
+    1 -> dHandoffBlocked.post.tickets.get(1),
+    2 -> freshB(Set(1), progU2, NoFinalizer),
+    3 -> freshB(Set(2), progU2, NoFinalizer)
+  ) }
+  pure val dHandoffCascade = DB::decideAbandonHandoff(cHandoffDependents, 1)
 
   run postPromotionHandoffTest = assert(and {
     dPromotionAccepted.post.tickets.get(1).phase == PublishingHandoff,
@@ -975,6 +981,11 @@ module chuggy_test {
     dHandoffAbandoned.post.tickets.get(1).phase == Abandoned,
     dHandoffAbandoned.post.tickets.get(1).completions == 0,
     mB(dHandoffAbandoned.post) < mB(dHandoffBlocked.post),
+    dHandoffCascade.post.tickets.get(1).phase == Abandoned,
+    dHandoffCascade.post.tickets.get(2).phase == Abandoned,
+    dHandoffCascade.post.tickets.get(3).phase == Abandoned,
+    dHandoffCascade.rec.transitions.length() == 3,
+    mB(dHandoffCascade.post) < mB(cHandoffDependents),
     not(DB::revocableIn(dHandoffBlocked.post, 1)),
     not(DB::finalizationOutcomeEnabled(dHandoffBlocked.post, 1,
       FinalizationFailed))

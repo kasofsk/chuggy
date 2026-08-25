@@ -704,8 +704,25 @@ module chuggy_domain {
     }
 
   pure def decideAbandonHandoff(c: Core, j: int): Decision =
-    move(withTicket(c, j, { ...c.tickets.get(j), resumeAt: NoResume }),
-      j, Abandoned, "handoff-abandoned", [])
+    val doomedByJ = range(1, N_TICKETS + 1).foldl(Set(j), (dset, _) =>
+      dset.union(c.tickets.keys().filter(k =>
+        c.tickets.get(k).deps.exists(d => dset.contains(d)))))
+    val abandoned = doomedByJ.filter(k => or {
+      k == j,
+      c.tickets.get(k).phase == Pending
+    })
+    val abandonedList = range(1, N_TICKETS * 2 + 1).foldl([], (l, k) =>
+      if (abandoned.contains(k)) l.append(k) else l)
+    { rec: {
+        label: "handoff-abandoned",
+        transitions: abandonedList.foldl([], (l, k) =>
+          l.append({ ticket: k, from: c.tickets.get(k).phase, to: Abandoned })),
+        effects: []},
+      post: { ...c, tickets: c.tickets.keys().mapBy(k =>
+        if (abandoned.contains(k))
+          { ...c.tickets.get(k), phase: Abandoned,
+            resumeAt: NoResume, reason: NoReason }
+        else c.tickets.get(k)) } }
 
   /// Infrastructure cannot execute the current logical task set. Retire its
   /// outstanding tasks as Cancelled, preserve the source phase as the resume
@@ -1391,6 +1408,7 @@ module chuggy_domain {
         tickets.get(j).phase == Done,
         and {
           tickets.get(j).phase != Revoked,
+          tickets.get(j).phase != Abandoned,
           waitsOn(core, j).forall(d => cf.contains(d))
         }
       }))
@@ -1411,6 +1429,7 @@ module chuggy_domain {
   val noStructuralDeadlock: bool = liveTickets.forall(j => or {
     canFinishSet.contains(j),
     tickets.get(j).phase == Revoked,
+    tickets.get(j).phase == Abandoned,
     hasOpenHumanTask(tickets.get(j))
   })
 
