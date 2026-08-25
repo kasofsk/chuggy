@@ -137,8 +137,9 @@ authority its local ticket identifiers belong to. To adopt such a journal,
 the operator names its permanent canonical UUID for that one migration run:
 
 ```sh
-export CHUG_MIGRATE_ADOPT_INSTALLATION_ID="$(node -e "process.stdout.write(crypto.randomUUID())")"
-CHUG_MIGRATE_DATABASE_URL="$owner_url" npm run migrate
+installation_id="$(node -e "process.stdout.write(crypto.randomUUID())")"
+CHUG_MIGRATE_ADOPT_INSTALLATION_ID="$installation_id" \
+  CHUG_MIGRATE_DATABASE_URL="$owner_url" npm run migrate
 ```
 
 Record that value with the installation's backup inventory. The command
