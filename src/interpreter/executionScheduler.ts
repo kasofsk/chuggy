@@ -677,6 +677,14 @@ export interface ExecutionSchedulerStore {
     attemptsMax: number,
   ): Promise<number>;
 
+  /** Ended physical attempts whose external workload still needs idempotent removal. */
+  attemptsAwaitingCleanup(
+    attemptsMax: number,
+  ): Promise<readonly FencedAttempt[]>;
+
+  /** Acknowledges external cleanup only after the placement backend accepted removal. */
+  attemptCleanupCompleted(attempt: FencedAttempt): Promise<boolean>;
+
   /** At most `executionsMax` executions that own a slot and have no live attempt. */
   unlaunched(
     epoch: RecoveryEpoch,
