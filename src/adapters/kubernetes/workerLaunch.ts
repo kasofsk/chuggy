@@ -310,10 +310,15 @@ export function kubernetesWorkerLaunch(
         attempt.partition,
         attempt.attempt,
       );
-      await kubernetesReach(config, fetcher, {
+      const deleted = await kubernetesReach(config, fetcher, {
         method: "DELETE",
         path: `${kubernetesPodsPath(config)}/${encodeURIComponent(name)}`,
       });
+      return deleted.reached === "Status" &&
+        (deleted.status === 404 ||
+          (deleted.status >= 200 && deleted.status < 300))
+        ? { cancelled: "Accepted" }
+        : { cancelled: "Unavailable" };
     },
   };
 }

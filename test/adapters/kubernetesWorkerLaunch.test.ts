@@ -508,7 +508,9 @@ test("a cancellation addresses the pod its attempt named", async () => {
     config,
     recordingCluster(reached, answering(200)),
   );
-  await workers.cancel(placement);
+  assert.deepEqual(await workers.cancel(placement), {
+    cancelled: "Accepted",
+  });
   const name = kubernetesWorkerPodName(config, partition, placement.attempt);
   assert.deepEqual(
     reached.map((request) => `${request.method} ${request.url}`),
@@ -516,6 +518,19 @@ test("a cancellation addresses the pod its attempt named", async () => {
       `DELETE https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/pods/${name}`,
     ],
   );
+});
+
+test("idempotent absence is accepted but a refused deletion remains unavailable", async () => {
+  for (const [status, cancelled] of [
+    [404, "Accepted"],
+    [403, "Unavailable"],
+    [500, "Unavailable"],
+  ] as const) {
+    const workers = kubernetesWorkerLaunch(config, () =>
+      Promise.resolve(new Response(null, { status })),
+    );
+    assert.deepEqual(await workers.cancel(placement), { cancelled });
+  }
 });
 
 const nativeRequirement = {

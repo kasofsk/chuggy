@@ -30,7 +30,7 @@ export const schedulerRootService: Omit<
   placement: {
     place: () =>
       Promise.resolve({ placed: "Unavailable", retryAfterSeconds: 1 }),
-    cancel: () => Promise.resolve(),
+    cancel: () => Promise.resolve({ cancelled: "Accepted" }),
   },
   policy: {
     profileFor: () =>

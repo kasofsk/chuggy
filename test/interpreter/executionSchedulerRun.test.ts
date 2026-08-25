@@ -221,7 +221,7 @@ function serviceWith(
       calls.push(
         `cancelled:${cancelled.attempt}:${String(cancelled.generation)}`,
       );
-      return Promise.resolve();
+      return Promise.resolve({ cancelled: "Accepted" });
     },
   };
   return {
@@ -280,7 +280,7 @@ test("failed external cleanup remains durable debt for the next pass", async () 
       },
       placement: {
         ...service.placement,
-        cancel: () => Promise.reject(new Error("cluster unavailable")),
+        cancel: () => Promise.resolve({ cancelled: "Unavailable" }),
       },
     }),
   );
@@ -311,7 +311,7 @@ test("independent backends substitute at the same placement port", async () => {
         placement: asPlacementId(`${name}-placement`),
       });
     },
-    cancel: () => Promise.resolve(),
+    cancel: () => Promise.resolve({ cancelled: "Accepted" }),
   });
   for (const name of ["kubernetes", "registered-runner"]) {
     const service = serviceWith([], runnable, placedOk);

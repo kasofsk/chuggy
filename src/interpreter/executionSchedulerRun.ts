@@ -159,7 +159,9 @@ export async function executionSchedulerCleanup(
   );
   let cleaned = 0;
   for (const attempt of attempts) {
-    await service.placement.cancel(attempt);
+    const cancelled = await service.placement.cancel(attempt);
+    if (cancelled.cancelled === "Unavailable")
+      throw new Error("execution scheduler: attempt cleanup is unavailable");
     if (await service.store.attemptCleanupCompleted(attempt)) cleaned += 1;
   }
   return cleaned;
