@@ -141,6 +141,7 @@
 --   CHUG_PG_SELECTOR_SERVICE_PASSWORD=... \
 --   CHUG_PG_SCHEDULER_PASSWORD=... \
 --   CHUG_PG_FINALIZER_PASSWORD=... \
+--   CHUG_PG_WORKER_PLANE_PASSWORD=... \
 --   psql -f deploy/rig/postgres/postgres-roles.sql
 
 \set ON_ERROR_STOP on
@@ -150,6 +151,7 @@
 \getenv selector_service_password CHUG_PG_SELECTOR_SERVICE_PASSWORD
 \getenv scheduler_password CHUG_PG_SCHEDULER_PASSWORD
 \getenv finalizer_password CHUG_PG_FINALIZER_PASSWORD
+\getenv worker_plane_password CHUG_PG_WORKER_PLANE_PASSWORD
 BEGIN;
 
 -- The group roles the migration would otherwise be first to create. A DO block
@@ -159,7 +161,7 @@ SELECT format('CREATE ROLE %I NOLOGIN', role_name)
   FROM unnest(ARRAY['chuggy_boundary_owner', 'chuggy_ticket_service', 'chuggy_api',
                     'chuggy_selector_service', 'chuggy_selector_control',
                     'chuggy_selector_review', 'chuggy_scheduler',
-                    'chuggy_finalizer']) AS role_name
+                    'chuggy_finalizer', 'chuggy_worker_plane']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
 
@@ -167,7 +169,7 @@ SELECT format('CREATE ROLE %I NOLOGIN', role_name)
 SELECT format('CREATE ROLE %I LOGIN', role_name)
   FROM unnest(ARRAY['chuggy_owner', 'chuggy_ticket_service_login', 'chuggy_api_login',
                     'chuggy_selector_service_login', 'chuggy_scheduler_login',
-                    'chuggy_finalizer_login']) AS role_name
+                    'chuggy_finalizer_login', 'chuggy_worker_plane_login']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
 
@@ -189,6 +191,8 @@ ALTER ROLE chuggy_scheduler WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATE
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_finalizer WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
+ALTER ROLE chuggy_worker_plane WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_owner WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_ticket_service_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
@@ -201,6 +205,8 @@ ALTER ROLE chuggy_scheduler_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCR
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_finalizer_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
+ALTER ROLE chuggy_worker_plane_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 
 ALTER ROLE chuggy_owner PASSWORD :'owner_password';
 ALTER ROLE chuggy_ticket_service_login PASSWORD :'ticket_service_password';
@@ -208,6 +214,7 @@ ALTER ROLE chuggy_api_login PASSWORD :'api_password';
 ALTER ROLE chuggy_selector_service_login PASSWORD :'selector_service_password';
 ALTER ROLE chuggy_scheduler_login PASSWORD :'scheduler_password';
 ALTER ROLE chuggy_finalizer_login PASSWORD :'finalizer_password';
+ALTER ROLE chuggy_worker_plane_login PASSWORD :'worker_plane_password';
 
 -- A service holds its capability through the group and never directly, so
 -- widening one is an edit to the migration's grants and to nothing here.
@@ -216,10 +223,11 @@ GRANT chuggy_api TO chuggy_api_login;
 GRANT chuggy_selector_service TO chuggy_selector_service_login;
 GRANT chuggy_scheduler TO chuggy_scheduler_login;
 GRANT chuggy_finalizer TO chuggy_finalizer_login;
+GRANT chuggy_worker_plane TO chuggy_worker_plane_login;
 GRANT chuggy_selector_review TO chuggy_api_login;
 GRANT chuggy_boundary_owner, chuggy_ticket_service, chuggy_api, chuggy_selector_service,
       chuggy_selector_control, chuggy_selector_review, chuggy_scheduler,
-      chuggy_finalizer TO chuggy_owner;
+      chuggy_finalizer, chuggy_worker_plane TO chuggy_owner;
 
 -- CONNECT is granted to PUBLIC on a stock database and revoked on a hardened
 -- one, so it is named rather than assumed. current_database() keeps the file
@@ -227,13 +235,14 @@ GRANT chuggy_boundary_owner, chuggy_ticket_service, chuggy_api, chuggy_selector_
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_name)
   FROM unnest(ARRAY['chuggy_owner', 'chuggy_ticket_service_login', 'chuggy_api_login',
                     'chuggy_selector_service_login', 'chuggy_scheduler_login',
-                    'chuggy_finalizer_login']) AS role_name
+                    'chuggy_finalizer_login', 'chuggy_worker_plane_login']) AS role_name
 \gexec
 
 GRANT USAGE, CREATE ON SCHEMA public TO chuggy_owner;
 GRANT CREATE ON SCHEMA public TO chuggy_boundary_owner;
 GRANT USAGE ON SCHEMA public TO chuggy_boundary_owner, chuggy_ticket_service, chuggy_api,
                                 chuggy_selector_service, chuggy_selector_control,
-                                chuggy_selector_review, chuggy_scheduler, chuggy_finalizer;
+                                chuggy_selector_review, chuggy_scheduler, chuggy_finalizer,
+                                chuggy_worker_plane;
 
 COMMIT;

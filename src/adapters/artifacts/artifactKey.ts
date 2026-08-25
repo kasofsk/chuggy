@@ -91,3 +91,17 @@ export function artifactAttemptFile(
   );
   return artifactWithinProject(projectDirectory, file) ? file : undefined;
 }
+
+/** The directory containing every immutable output written by one attempt. */
+export function artifactAttemptRoot(
+  projectDirectory: string,
+  execution: string,
+  attempt: string,
+): string {
+  return resolve(
+    projectDirectory,
+    artifactAttemptDirectory,
+    artifactKeyOf(execution),
+    artifactKeyOf(attempt),
+  );
+}

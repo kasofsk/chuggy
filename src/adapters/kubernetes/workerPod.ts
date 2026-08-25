@@ -71,6 +71,8 @@ export interface KubernetesWorkerLaunchConfig {
   readonly activeDeadlineSecs: number;
   readonly requestTimeoutSecsMax: number;
   readonly unavailableRetryAfterSecs: number;
+  readonly workerPlaneUrl: string;
+  readonly capabilityFile: string;
 }
 
 /** The one container name a placed pod carries, so a reader of the cluster needs no lookup. */
@@ -116,6 +118,12 @@ export interface KubernetesWorkerTask {
     readonly text: string;
   };
   readonly authority: PolicyAuthorityGrant;
+  readonly workerPlane: {
+    readonly url: string;
+    readonly capabilityFile: string;
+    readonly capability: string;
+    readonly manifest: string;
+  };
 }
 
 /** One container of a worker pod, as the cluster API is given it. */
@@ -128,6 +136,31 @@ interface KubernetesContainer {
     readonly limits: Readonly<Record<string, string>>;
   };
   readonly securityContext: Readonly<Record<string, unknown>>;
+  readonly volumeMounts: readonly {
+    readonly name: string;
+    readonly mountPath: string;
+    readonly subPath: string;
+    readonly readOnly: true;
+  }[];
+}
+
+export interface KubernetesSecret {
+  readonly apiVersion: "v1";
+  readonly kind: "Secret";
+  readonly immutable: true;
+  readonly metadata: {
+    readonly name: string;
+    readonly namespace: string;
+    readonly ownerReferences: readonly {
+      readonly apiVersion: "v1";
+      readonly kind: "Pod";
+      readonly name: string;
+      readonly uid: string;
+      readonly controller: true;
+      readonly blockOwnerDeletion: true;
+    }[];
+  };
+  readonly stringData: { readonly bearer: string };
 }
 
 /** One worker pod, as the cluster API is given it. */
@@ -148,6 +181,17 @@ export interface KubernetesPod {
     readonly nodeSelector: Readonly<Record<string, string>>;
     readonly securityContext: Readonly<Record<string, unknown>>;
     readonly containers: readonly KubernetesContainer[];
+    readonly volumes: readonly {
+      readonly name: string;
+      readonly secret: {
+        readonly secretName: string;
+        readonly defaultMode: number;
+        readonly items: readonly {
+          readonly key: string;
+          readonly path: string;
+        }[];
+      };
+    }[];
   };
 }
 
@@ -187,6 +231,11 @@ export function checkedKubernetesWorkerLaunchConfig(
     );
   if (config.tokenFile.length === 0)
     throw new RangeError("cluster token file is empty");
+  const workerPlane = new URL(config.workerPlaneUrl);
+  if (workerPlane.username !== "" || workerPlane.password !== "")
+    throw new RangeError("worker plane URL must carry no credentials");
+  if (!config.capabilityFile.startsWith("/"))
+    throw new RangeError("worker capability file must be absolute");
   kubernetesPositive(config.activeDeadlineSecs, "worker active deadline");
   kubernetesPositive(config.requestTimeoutSecsMax, "cluster request timeout");
   kubernetesPositive(
@@ -210,6 +259,43 @@ export function kubernetesWorkerPodName(
     .join("/");
   const digest = createHash("sha256").update(identity).digest("hex");
   return `${config.podNamePrefix}-${digest}`;
+}
+
+export const kubernetesWorkerSecretName = kubernetesWorkerPodName;
+
+export function kubernetesWorkerSecret(
+  config: KubernetesWorkerLaunchConfig,
+  placement: AttemptPlacement,
+  podUid: string,
+): KubernetesSecret {
+  return {
+    apiVersion: "v1",
+    kind: "Secret",
+    immutable: true,
+    metadata: {
+      name: kubernetesWorkerSecretName(
+        config,
+        placement.partition,
+        placement.attempt,
+      ),
+      namespace: config.namespace,
+      ownerReferences: [
+        {
+          apiVersion: "v1",
+          kind: "Pod",
+          name: kubernetesWorkerPodName(
+            config,
+            placement.partition,
+            placement.attempt,
+          ),
+          uid: podUid,
+          controller: true,
+          blockOwnerDeletion: true,
+        },
+      ],
+    },
+    stringData: { bearer: placement.capability.secret },
+  };
 }
 
 /**
@@ -267,6 +353,7 @@ function kubernetesWorkerAnnotations(
 
 /** Everything the placement supplied, as the one document a worker is handed. */
 export function kubernetesWorkerTask(
+  config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
 ): KubernetesWorkerTask {
   const briefing = placement.invocation.briefing;
@@ -294,7 +381,33 @@ export function kubernetesWorkerTask(
       text: briefing.text,
     },
     authority: taskAuthorityGrant(placement.invocation.authority),
+    workerPlane: {
+      url: config.workerPlaneUrl,
+      capabilityFile: config.capabilityFile,
+      capability: placement.capability.id,
+      manifest: placement.capability.manifest,
+    },
   };
+}
+
+function kubernetesWorkerCapabilityVolumes(
+  config: KubernetesWorkerLaunchConfig,
+  placement: AttemptPlacement,
+): KubernetesPod["spec"]["volumes"] {
+  return [
+    {
+      name: "worker-capability",
+      secret: {
+        secretName: kubernetesWorkerSecretName(
+          config,
+          placement.partition,
+          placement.attempt,
+        ),
+        defaultMode: 0o400,
+        items: [{ key: "bearer", path: "bearer" }],
+      },
+    },
+  ];
 }
 
 /** The one bounded pod a scheduled attempt becomes, or the inability that stops it. */
@@ -334,7 +447,7 @@ export function kubernetesWorkerPodRequest(
             env: [
               {
                 name: kubernetesWorkerTaskVariable,
-                value: JSON.stringify(kubernetesWorkerTask(placement)),
+                value: JSON.stringify(kubernetesWorkerTask(config, placement)),
               },
             ],
             resources: {
@@ -348,8 +461,17 @@ export function kubernetesWorkerPodRequest(
               },
             },
             securityContext: config.containerSecurityContext,
+            volumeMounts: [
+              {
+                name: "worker-capability",
+                mountPath: config.capabilityFile,
+                subPath: "bearer",
+                readOnly: true,
+              },
+            ],
           },
         ],
+        volumes: kubernetesWorkerCapabilityVolumes(config, placement),
       },
     },
   };

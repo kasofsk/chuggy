@@ -46,6 +46,7 @@ import {
   checkedKubernetesWorkerLaunchConfig,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
+  kubernetesWorkerSecret,
   type KubernetesWorkerLaunchConfig,
 } from "./workerPod.ts";
 
@@ -54,7 +55,11 @@ const millisecondsPerSecond = 1_000;
 
 /** What one reach of the cluster API found, an outage never reading as an answer. */
 type KubernetesReached =
-  | { readonly reached: "Status"; readonly status: number }
+  | {
+      readonly reached: "Status";
+      readonly status: number;
+      readonly body: string;
+    }
   | { readonly reached: "Unreachable" };
 
 /** One request this adapter makes, the caller's signal beside the deadline it always has. */
@@ -68,6 +73,10 @@ interface KubernetesReach {
 /** The collection every worker pod of this deployment is created in and deleted from. */
 function kubernetesPodsPath(config: KubernetesWorkerLaunchConfig): string {
   return `/api/v1/namespaces/${config.namespace}/pods`;
+}
+
+function kubernetesSecretsPath(config: KubernetesWorkerLaunchConfig): string {
+  return `/api/v1/namespaces/${config.namespace}/secrets`;
 }
 
 /** Reaches the cluster API once, under the caller's signal and this deployment's deadline. */
@@ -97,10 +106,131 @@ async function kubernetesReach(
       },
       ...(reach.body === undefined ? {} : { body: reach.body }),
     });
-    return { reached: "Status", status: response.status };
+    return {
+      reached: "Status",
+      status: response.status,
+      body: await response.text(),
+    };
   } catch {
     return { reached: "Unreachable" };
   }
+}
+
+function kubernetesSecretMatches(
+  reached: KubernetesReached,
+  expected: ReturnType<typeof kubernetesWorkerSecret>,
+): boolean {
+  if (reached.reached !== "Status" || reached.status !== 200) return false;
+  try {
+    const document = JSON.parse(reached.body) as {
+      readonly apiVersion?: unknown;
+      readonly kind?: unknown;
+      readonly immutable?: unknown;
+      readonly metadata?: {
+        readonly name?: unknown;
+        readonly namespace?: unknown;
+        readonly ownerReferences?: unknown;
+      };
+      readonly data?: { readonly bearer?: unknown };
+    };
+    return (
+      document.apiVersion === expected.apiVersion &&
+      document.kind === expected.kind &&
+      document.immutable === true &&
+      document.metadata?.name === expected.metadata.name &&
+      document.metadata.namespace === expected.metadata.namespace &&
+      JSON.stringify(document.metadata.ownerReferences) ===
+        JSON.stringify(expected.metadata.ownerReferences) &&
+      document.data !== undefined &&
+      Object.keys(document.data).length === 1 &&
+      document.data.bearer ===
+        Buffer.from(expected.stringData.bearer).toString("base64")
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function kubernetesEnsureSecret(
+  config: KubernetesWorkerLaunchConfig,
+  fetcher: typeof fetch,
+  placement: Parameters<AttemptPlacementPort["place"]>[0],
+  podUid: string,
+): Promise<KubernetesReached> {
+  const secret = kubernetesWorkerSecret(config, placement, podUid);
+  const created = await kubernetesReach(config, fetcher, {
+    method: "POST",
+    path: kubernetesSecretsPath(config),
+    body: JSON.stringify(secret),
+  });
+  if (created.reached !== "Status" || created.status !== 409) return created;
+  const existing = await kubernetesReach(config, fetcher, {
+    method: "GET",
+    path: `${kubernetesSecretsPath(config)}/${encodeURIComponent(secret.metadata.name)}`,
+  });
+  return kubernetesSecretMatches(existing, secret)
+    ? { reached: "Status", status: 200, body: "" }
+    : { reached: "Unreachable" };
+}
+
+function kubernetesPodUid(
+  reached: KubernetesReached,
+  expected: {
+    readonly metadata: {
+      readonly name: string;
+      readonly namespace: string;
+      readonly annotations: Readonly<Record<string, string>>;
+    };
+  },
+): string | undefined {
+  if (
+    reached.reached !== "Status" ||
+    (reached.status !== 200 && reached.status !== 201)
+  )
+    return undefined;
+  try {
+    const document = JSON.parse(reached.body) as {
+      readonly metadata?: {
+        readonly uid?: unknown;
+        readonly name?: unknown;
+        readonly namespace?: unknown;
+        readonly annotations?: Readonly<Record<string, unknown>>;
+      };
+    };
+    const metadata = document.metadata;
+    if (
+      typeof metadata?.uid !== "string" ||
+      metadata.uid.length === 0 ||
+      metadata.name !== expected.metadata.name ||
+      metadata.namespace !== expected.metadata.namespace ||
+      Object.entries(expected.metadata.annotations).some(
+        ([name, value]) => metadata.annotations?.[name] !== value,
+      )
+    )
+      return undefined;
+    return metadata.uid;
+  } catch {
+    return undefined;
+  }
+}
+
+async function kubernetesCreatePod(
+  config: KubernetesWorkerLaunchConfig,
+  fetcher: typeof fetch,
+  pod: ReturnType<typeof kubernetesWorkerPodRequest> & {
+    readonly requested: "Pod";
+  },
+): Promise<KubernetesReached> {
+  const created = await kubernetesReach(config, fetcher, {
+    method: "POST",
+    path: kubernetesPodsPath(config),
+    body: JSON.stringify(pod.pod),
+  });
+  if (created.reached !== "Status" || created.status !== 409) return created;
+  return kubernetesReach(config, fetcher, {
+    method: "GET",
+    path: `${kubernetesPodsPath(config)}/${encodeURIComponent(pod.pod.metadata.name)}`,
+  });
 }
 
 /** The answers that refuse the submitted document itself rather than describe the cluster. */
@@ -141,16 +271,38 @@ export function kubernetesWorkerLaunch(
       const requested = kubernetesWorkerPodRequest(config, placement);
       if (requested.requested === "Denied")
         return { placed: "Denied", reason: requested.reason };
-      const reached = await kubernetesReach(config, fetcher, {
-        method: "POST",
-        path: kubernetesPodsPath(config),
-        body: JSON.stringify(requested.pod),
-      });
-      return kubernetesPlaced(
+      const reached = await kubernetesCreatePod(config, fetcher, requested);
+      const outcome = kubernetesPlaced(
         config,
         reached,
         asPlacementId(requested.pod.metadata.name),
       );
+      if (outcome.placed !== "Placed") return outcome;
+      const podUid = kubernetesPodUid(reached, requested.pod);
+      let failed: AttemptPlacementOutcome = {
+        placed: "Unavailable",
+        retryAfterSeconds: config.unavailableRetryAfterSecs,
+      };
+      if (podUid !== undefined) {
+        const secret = await kubernetesEnsureSecret(
+          config,
+          fetcher,
+          placement,
+          podUid,
+        );
+        const secretOutcome = kubernetesPlaced(
+          config,
+          secret,
+          asPlacementId(requested.pod.metadata.name),
+        );
+        if (secretOutcome.placed === "Placed") return secretOutcome;
+        failed = secretOutcome;
+      }
+      await kubernetesReach(config, fetcher, {
+        method: "DELETE",
+        path: `${kubernetesPodsPath(config)}/${encodeURIComponent(requested.pod.metadata.name)}`,
+      });
+      return failed;
     },
     cancel: async (attempt) => {
       const name = kubernetesWorkerPodName(
@@ -158,10 +310,15 @@ export function kubernetesWorkerLaunch(
         attempt.partition,
         attempt.attempt,
       );
-      await kubernetesReach(config, fetcher, {
+      const deleted = await kubernetesReach(config, fetcher, {
         method: "DELETE",
         path: `${kubernetesPodsPath(config)}/${encodeURIComponent(name)}`,
       });
+      return deleted.reached === "Status" &&
+        (deleted.status === 404 ||
+          (deleted.status >= 200 && deleted.status < 300))
+        ? { cancelled: "Accepted" }
+        : { cancelled: "Unavailable" };
     },
   };
 }

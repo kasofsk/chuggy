@@ -24,6 +24,7 @@ import {
   mkdtempSync,
   readdirSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -55,6 +56,7 @@ import {
   asAttemptId,
   asExecutionId,
 } from "../../src/interpreter/schedulerIdentity.ts";
+import type { WorkerAttemptAuthority } from "../../src/interpreter/workerPlane.ts";
 import { branchDiffOutput } from "../../src/interpreter/operationsView.ts";
 import {
   asProjectId,
@@ -75,6 +77,18 @@ const partition: Partition = {
 
 const execution = asExecutionId("execution-1");
 const attempt = asAttemptId("attempt-1");
+
+const workerAuthority: WorkerAttemptAuthority = {
+  live: true,
+  partition,
+  execution,
+  attempt,
+  generation: 1,
+  manifest: asResultManifestId("manifest-1"),
+  inputBundle: "bundle-1",
+  inputBundleDigest: "digest-1",
+  inputs: [],
+};
 
 /** One opened store and the root it was opened over. */
 interface Fixture {
@@ -479,6 +493,54 @@ test("a project-owned artifact is written read-only and answers with its own dig
     content: new TextEncoder().encode("evidence"),
   });
   assert.equal(again.written, "Artifact");
+});
+
+test("a worker upload is immutable, idempotent for the same bytes, and conflicts for different bytes", async (t) => {
+  const fixture = fixtureOpen(t);
+  const upload = (content: string) =>
+    fixture.store.store({
+      authority: workerAuthority,
+      path: "result.txt",
+      content: new TextEncoder().encode(content),
+    });
+  assert.deepEqual(await upload("result"), { stored: "Stored" });
+  assert.deepEqual(await upload("result"), { stored: "Stored" });
+  assert.deepEqual(await upload("changed"), { stored: "Conflict" });
+  const file = artifactAttemptFile(
+    artifactProjectDirectory(fixture.root, partition.tenant, partition.project),
+    execution,
+    attempt,
+    asArtifactPath("result.txt"),
+  );
+  if (file === undefined) assert.fail("the path resolved nowhere");
+  assert.equal(statSync(file).mode & 0o222, 0);
+});
+
+test("concurrent identical worker uploads both observe the immutable object", async (t) => {
+  const fixture = fixtureOpen(t);
+  const upload = () =>
+    fixture.store.store({
+      authority: workerAuthority,
+      path: "same.txt",
+      content: new TextEncoder().encode("same"),
+    });
+  assert.deepEqual(await Promise.all([upload(), upload()]), [
+    { stored: "Stored" },
+    { stored: "Stored" },
+  ]);
+});
+
+test("an invalid worker path is a typed refusal and writes nothing", async (t) => {
+  const fixture = fixtureOpen(t);
+  assert.deepEqual(
+    await fixture.store.store({
+      authority: workerAuthority,
+      path: "../escape",
+      content: new TextEncoder().encode("secret"),
+    }),
+    { stored: "Refused", reason: "InvalidPath" },
+  );
+  assert.deepEqual(readdirSync(fixture.root), []);
 });
 
 test("a store whose objects could be rewritten is refused at construction", () => {

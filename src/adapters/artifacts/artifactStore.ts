@@ -50,6 +50,7 @@ import { constants } from "node:fs";
 import {
   chmod,
   lstat,
+  link,
   mkdir,
   open,
   realpath,
@@ -79,6 +80,8 @@ import {
 } from "../../interpreter/operationsView.ts";
 import {
   asArtifactDigest,
+  asArtifactPath,
+  artifactPathRejection,
   type ArtifactFailure,
   type ArtifactRole,
   type ArtifactRow,
@@ -87,8 +90,13 @@ import {
   type ArtifactsVerified,
   type ResultManifest,
 } from "../../interpreter/resultManifest.ts";
+import type {
+  WorkerArtifactStored,
+  WorkerArtifactUploadPort,
+} from "../../interpreter/workerPlane.ts";
 import {
   artifactAttemptFile,
+  artifactAttemptRoot,
   artifactOwnedFile,
   artifactProjectDirectory,
   artifactWithinProject,
@@ -117,7 +125,8 @@ export const artifactStoreDefaults = {
 export type ArtifactStore = ArtifactVerificationPort &
   HandoffContentPort &
   ProjectArtifactPort &
-  OutputContentPort;
+  OutputContentPort &
+  WorkerArtifactUploadPort;
 
 /** The most bytes one read of a stored object draws at a time. */
 const artifactStoreChunkBytes = 65_536;
@@ -393,6 +402,31 @@ async function artifactStoreDiscard(pending: string): Promise<void> {
   }
 }
 
+async function artifactStoreCommitAttemptWrite(
+  own: ArtifactStoreState,
+  directory: string,
+  file: string,
+  pending: string,
+  content: Uint8Array,
+): Promise<WorkerArtifactStored> {
+  const existing = await artifactStoreEntryOf(directory, file);
+  if (existing.entry === "Object") {
+    if (existing.bytes !== content.byteLength) return { stored: "Conflict" };
+    const expected = createHash("sha256").update(content).digest("hex");
+    const digest = await artifactStoreDigestOf(file, existing.bytes);
+    return digest === expected ? { stored: "Stored" } : { stored: "Conflict" };
+  }
+  if (existing.entry === "Rejected" && existing.failure !== "Missing")
+    return { stored: "Conflict" };
+  if (existing.entry === "Unavailable")
+    return {
+      stored: "Unavailable",
+      retryAfterSeconds: own.unavailableRetrySecs,
+    };
+  await link(pending, file);
+  return { stored: "Stored" };
+}
+
 /** Writes one project-owned artifact read-only under a temporary name, then renames it into place. */
 async function artifactStoreWrite(
   own: ArtifactStoreState,
@@ -437,6 +471,77 @@ async function artifactStoreWrite(
       createHash("sha256").update(write.content).digest("hex"),
     ),
   };
+}
+
+async function artifactStoreAttemptWrite(
+  own: ArtifactStoreState,
+  input: Parameters<WorkerArtifactUploadPort["store"]>[0],
+): Promise<WorkerArtifactStored> {
+  if (input.content.byteLength > own.writeBytesMax)
+    return { stored: "Refused", reason: "QuotaExceeded" };
+  const directory = artifactProjectDirectory(
+    own.root,
+    input.authority.partition.tenant,
+    input.authority.partition.project,
+  );
+  if (artifactPathRejection(input.path) !== undefined)
+    return { stored: "Refused", reason: "InvalidPath" };
+  const path = asArtifactPath(input.path);
+  const file = artifactAttemptFile(
+    directory,
+    input.authority.execution,
+    input.authority.attempt,
+    path,
+  );
+  if (file === undefined) return { stored: "Refused", reason: "InvalidPath" };
+  const attemptDirectory = artifactAttemptRoot(
+    directory,
+    input.authority.execution,
+    input.authority.attempt,
+  );
+  const pendingDirectory = `${attemptDirectory}.upload-pending`;
+  const pending = `${pendingDirectory}/${randomUUID()}`;
+  try {
+    await mkdir(dirname(file), { recursive: true });
+    await mkdir(pendingDirectory, { recursive: true });
+    if ((await artifactStoreDirectoryRejection(directory, file)) !== undefined)
+      return {
+        stored: "Unavailable",
+        retryAfterSeconds: own.unavailableRetrySecs,
+      };
+    await writeFile(pending, input.content, {
+      mode: own.storedFileMode,
+      flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+    });
+    await chmod(pending, own.storedFileMode);
+    return await artifactStoreCommitAttemptWrite(
+      own,
+      directory,
+      file,
+      pending,
+      input.content,
+    );
+  } catch (refused: unknown) {
+    if (
+      typeof refused === "object" &&
+      refused !== null &&
+      (refused as { code?: unknown }).code === "EEXIST"
+    ) {
+      return artifactStoreCommitAttemptWrite(
+        own,
+        directory,
+        file,
+        pending,
+        input.content,
+      );
+    }
+    return {
+      stored: "Unavailable",
+      retryAfterSeconds: own.unavailableRetrySecs,
+    };
+  } finally {
+    await artifactStoreDiscard(pending);
+  }
 }
 
 async function artifactStoreOutput(
@@ -524,6 +629,7 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
     verifyManifest: (manifest) => artifactStoreVerify(own, manifest),
     readHandoff: (request) => artifactStoreRead(own, request),
     writeArtifact: (write) => artifactStoreWrite(own, write),
+    store: (input) => artifactStoreAttemptWrite(own, input),
     read: (input) => artifactStoreOutput(own, input),
   };
 }

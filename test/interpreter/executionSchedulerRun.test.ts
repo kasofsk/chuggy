@@ -18,6 +18,8 @@ import {
   asAttemptId,
   asCapacityAccountId,
   asClusterId,
+  asAttemptCapabilityId,
+  asAttemptCapabilitySecret,
   asExecutionId,
   asSchedulerOwnerId,
   asPlacementId,
@@ -37,11 +39,13 @@ import {
 import {
   executionSchedulerAdmit,
   executionSchedulerCancel,
+  executionSchedulerCleanup,
   executionSchedulerLaunch,
   executionSchedulerPass,
   executionSchedulerRegister,
   type ExecutionSchedulerService,
 } from "../../src/interpreter/executionSchedulerRun.ts";
+import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import {
   blessedPracticeCatalog,
   type ConfigurationRead,
@@ -113,6 +117,11 @@ const attempt: PhysicalAttempt = {
   recoveryEpoch: epoch,
   state: "Placing",
   authoritative: true,
+  capability: {
+    id: asAttemptCapabilityId("capability-one"),
+    secret: asAttemptCapabilitySecret("secret-one"),
+    manifest: asResultManifestId("manifest-one"),
+  },
 };
 
 /** A store that records every durable move asked of it and takes none. */
@@ -156,6 +165,8 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
     },
     execution: () => Promise.resolve(undefined),
     reapLapsedAttempts: () => Promise.resolve(0),
+    attemptsAwaitingCleanup: () => Promise.resolve([]),
+    attemptCleanupCompleted: () => Promise.resolve(true),
     unlaunched: () => Promise.resolve([execution]),
     fenceOldEpochAttempts: () => {
       calls.push("fenced");
@@ -210,7 +221,7 @@ function serviceWith(
       calls.push(
         `cancelled:${cancelled.attempt}:${String(cancelled.generation)}`,
       );
-      return Promise.resolve();
+      return Promise.resolve({ cancelled: "Accepted" });
     },
   };
   return {
@@ -238,6 +249,44 @@ const placedOk: AttemptPlacementOutcome = {
   placement: asPlacementId("placement-one"),
 };
 
+test("ended attempts are removed before their cleanup debt is acknowledged", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    attemptsAwaitingCleanup: () => Promise.resolve([attempt]),
+    attemptCleanupCompleted: (cleaned) => {
+      calls.push(`cleaned:${cleaned.attempt}`);
+      return Promise.resolve(true);
+    },
+  };
+  assert.equal(await executionSchedulerCleanup({ ...service, store }), 1);
+  assert.deepEqual(calls, ["cancelled:attempt-one:1", "cleaned:attempt-one"]);
+});
+
+test("failed external cleanup remains durable debt for the next pass", async () => {
+  const service = serviceWith([], runnable, placedOk);
+  let acknowledged = false;
+  await assert.rejects(() =>
+    executionSchedulerCleanup({
+      ...service,
+      store: {
+        ...service.store,
+        attemptsAwaitingCleanup: () => Promise.resolve([attempt]),
+        attemptCleanupCompleted: () => {
+          acknowledged = true;
+          return Promise.resolve(true);
+        },
+      },
+      placement: {
+        ...service.placement,
+        cancel: () => Promise.resolve({ cancelled: "Unavailable" }),
+      },
+    }),
+  );
+  assert.equal(acknowledged, false);
+});
+
 test("a placed attempt records its backend placement and nothing else", async () => {
   const calls: string[] = [];
   assert.equal(
@@ -262,7 +311,7 @@ test("independent backends substitute at the same placement port", async () => {
         placement: asPlacementId(`${name}-placement`),
       });
     },
-    cancel: () => Promise.resolve(),
+    cancel: () => Promise.resolve({ cancelled: "Accepted" }),
   });
   for (const name of ["kubernetes", "registered-runner"]) {
     const service = serviceWith([], runnable, placedOk);
@@ -501,7 +550,14 @@ test("a pass fences the older epoch before it moves anything else", async () => 
   };
   assert.deepEqual(
     await executionSchedulerPass({ ...service, store }, owner, epoch, cluster),
-    { fenced: 0, registered: 0, cancelled: 0, admitted: 0, placed: 0 },
+    {
+      fenced: 0,
+      cleaned: 0,
+      registered: 0,
+      cancelled: 0,
+      admitted: 0,
+      placed: 0,
+    },
   );
   assert.deepEqual(calls, [
     "fenced",
@@ -548,7 +604,14 @@ function passService(calls: string[]): ExecutionSchedulerService {
 test("a pass reports the count each of its steps moved", async () => {
   assert.deepEqual(
     await executionSchedulerPass(passService([]), owner, epoch, cluster),
-    { fenced: 4, registered: 1, cancelled: 3, admitted: 1, placed: 1 },
+    {
+      fenced: 4,
+      cleaned: 0,
+      registered: 1,
+      cancelled: 3,
+      admitted: 1,
+      placed: 1,
+    },
   );
 });
 

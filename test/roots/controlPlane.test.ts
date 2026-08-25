@@ -88,6 +88,8 @@ const successfulProcessProgram = `
         claimRequests: async () => [],
         admit: async () => ({ admitted: 'NoCandidate' }),
         reapLapsedAttempts: async () => 0,
+        attemptsAwaitingCleanup: async () => [],
+        attemptCleanupCompleted: async () => true,
         unlaunched: async () => [],
       },
       config: scheduler.executionSchedulerDefaults,

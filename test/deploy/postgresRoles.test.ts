@@ -69,7 +69,7 @@ import { test } from "node:test";
 
 import * as schema from "../../src/adapters/postgres/schema.ts";
 
-const { apiRole, migrations, selectorReviewRole } = schema;
+const { apiRole, migrations, selectorReviewRole, workerPlaneRole } = schema;
 const rolesFilePath = "deploy/rig/postgres/postgres-roles.sql";
 const rolesFile = readFileSync(rolesFilePath, "utf8")
   .replaceAll(/--.*$/gmu, " ")
@@ -213,11 +213,13 @@ test("every group role a serving command asserts is granted to a login role", ()
   );
 });
 
-test("exactly the groups a serving command asserts may read the ledger", () => {
+test("only serving groups with the schema-readiness contract read the ledger", () => {
+  const expected = new Set(rootAssertedRoles());
+  expected.delete(workerPlaneRole);
   assert.deepEqual(
     migrationLedgerReaders(),
-    rootAssertedRoles(),
-    "a group role a src/roots/ command connects as reads schema_migration before it serves, and a group no command connects as never does",
+    expected,
+    "the worker plane proves readiness through its EXECUTE-only functions; other serving groups read schema_migration before serving",
   );
 });
 

@@ -46,6 +46,7 @@ api-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 selector-service-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 scheduler-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 finalizer-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+worker-plane-password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
 EOF
 ```
 
@@ -78,6 +79,7 @@ export CHUG_PG_API_PASSWORD="$(secret chuggy-postgres-credentials api-password)"
 export CHUG_PG_SELECTOR_SERVICE_PASSWORD="$(secret chuggy-postgres-credentials selector-service-password)"
 export CHUG_PG_SCHEDULER_PASSWORD="$(secret chuggy-postgres-credentials scheduler-password)"
 export CHUG_PG_FINALIZER_PASSWORD="$(secret chuggy-postgres-credentials finalizer-password)"
+export CHUG_PG_WORKER_PLANE_PASSWORD="$(secret chuggy-postgres-credentials worker-plane-password)"
 
 : "${PGPASSWORD:?the superuser password did not read back}" \
   "${CHUG_PG_OWNER_PASSWORD:?owner-password did not read back}" \
@@ -85,7 +87,8 @@ export CHUG_PG_FINALIZER_PASSWORD="$(secret chuggy-postgres-credentials finalize
   "${CHUG_PG_API_PASSWORD:?api-password did not read back}" \
   "${CHUG_PG_SELECTOR_SERVICE_PASSWORD:?selector-service-password did not read back}" \
   "${CHUG_PG_SCHEDULER_PASSWORD:?scheduler-password did not read back}" \
-  "${CHUG_PG_FINALIZER_PASSWORD:?finalizer-password did not read back}" &&
+  "${CHUG_PG_FINALIZER_PASSWORD:?finalizer-password did not read back}" \
+  "${CHUG_PG_WORKER_PLANE_PASSWORD:?worker-plane-password did not read back}" &&
 psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy_rehearsal -f deploy/rig/postgres/postgres-roles.sql
 ```
 
@@ -251,6 +254,9 @@ spec:
         - name: CHUG_PG_FINALIZER_PASSWORD
           valueFrom:
             secretKeyRef: { name: chuggy-postgres-credentials, key: finalizer-password }
+        - name: CHUG_PG_WORKER_PLANE_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: chuggy-postgres-credentials, key: worker-plane-password }
 YAML
 kubectl -n chuggy wait --for=condition=Ready pod/probe
 
@@ -329,6 +335,7 @@ as chuggy_api_login CHUG_PG_API_PASSWORD chuggy_selector_review
 as chuggy_selector_service_login CHUG_PG_SELECTOR_SERVICE_PASSWORD chuggy_selector_service
 as chuggy_scheduler_login CHUG_PG_SCHEDULER_PASSWORD chuggy_scheduler
 as chuggy_finalizer_login CHUG_PG_FINALIZER_PASSWORD chuggy_finalizer
+as chuggy_worker_plane_login CHUG_PG_WORKER_PLANE_PASSWORD chuggy_worker_plane
 ```
 
 The owner's line asks about `chuggy_boundary_owner` rather than a service

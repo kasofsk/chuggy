@@ -63,7 +63,7 @@ import {
 
 /** Everything ingestion calls out through, which is not what a pass calls out through. */
 export interface ExecutionReportService {
-  readonly store: ExecutionSchedulerStore;
+  readonly store: Pick<ExecutionSchedulerStore, "attemptEnded" | "terminalize">;
   readonly artifacts: ArtifactVerificationPort;
   readonly digestOf: ManifestDigestFunction;
   readonly metrics: SchedulerTelemetry;
@@ -128,8 +128,8 @@ async function reportLost(
   service: ExecutionReportService,
   submission: AttemptSubmission,
   evidence: AttemptEvidence,
-): Promise<void> {
-  await service.store.attemptEnded(
+): Promise<boolean> {
+  const ended = await service.store.attemptEnded(
     submissionAttempt(submission),
     "Lost",
     evidence,
@@ -137,6 +137,7 @@ async function reportLost(
   recordScheduler(service.metrics, (metrics) => {
     metrics.attemptEnded("Lost", evidence);
   });
+  return ended;
 }
 
 /**
@@ -161,7 +162,8 @@ async function confirmedManifest(
     metrics.manifest(accepted.accepted);
   });
   if (accepted.accepted === "Rejected") {
-    await reportLost(service, submission, "ManifestInvalid");
+    if (!(await reportLost(service, submission, "ManifestInvalid")))
+      return { ingested: "Fenced" };
     return accepted.at === undefined
       ? { ingested: "Malformed", code: accepted.code }
       : { ingested: "Malformed", code: accepted.code, at: accepted.at };
@@ -174,7 +176,8 @@ async function confirmedManifest(
         retryAfterSeconds: confirmed.retryAfterSeconds,
       };
     case "Rejected":
-      await reportLost(service, submission, "ManifestInvalid");
+      if (!(await reportLost(service, submission, "ManifestInvalid")))
+        return { ingested: "Fenced" };
       return {
         ingested: "Unconfirmed",
         failure: confirmed.failure,
