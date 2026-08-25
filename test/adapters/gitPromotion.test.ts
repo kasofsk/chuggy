@@ -204,6 +204,24 @@ test("the remote's own default branch and tip are what a target is", async (t) =
   assert.equal(target.commit, fixtureGit(fixture.seed, "rev-parse", "HEAD"));
 });
 
+test("a configured target ref is observed instead of the remote default", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureGit(
+    fixture.seed,
+    "push",
+    "-q",
+    fixture.remote,
+    "HEAD:refs/heads/release-candidate",
+  );
+  const binding = {
+    ...fixtureBinding(fixture.remote),
+    targetRef: asGitRefName("refs/heads/release-candidate"),
+  };
+  const target = await fixtureTarget(fixturePort(fixture), binding);
+  assert.equal(target.ref, binding.targetRef);
+  assert.equal(target.commit, fixtureGit(fixture.seed, "rev-parse", "HEAD"));
+});
+
 test("a remote nobody can reach is unreadable, and one naming no branch is too", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture);

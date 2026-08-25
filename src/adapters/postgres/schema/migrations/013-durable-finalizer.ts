@@ -57,6 +57,11 @@ const nativeActionPairing = allNativeActionKinds
   )
   .join("\n              OR ");
 
+const legacyFinalizationOutcomeTags = [
+  "FinalizationSucceeded",
+  "FinalizationFailed",
+] as const;
+
 /**
  * The finalizer's authenticated submission door. Later outcome migrations
  * replace this body so an upgraded installation enforces the current evidence
@@ -547,7 +552,7 @@ const durableFinalizerBoundaries = [
            AND (command->>'requestGeneration')::numeric >= 1
            AND jsonb_typeof(command->'recoveryEpoch') = 'string'
            AND length(command->>'recoveryEpoch') BETWEEN 1 AND ${finalizerIdentityCharsMax}
-           AND command->>'outcome' IN (${schemaTextSet(finalizationOutcomeTags)});
+           AND command->>'outcome' IN (${schemaTextSet(legacyFinalizationOutcomeTags)});
        END IF;
        RETURN public_ticket_command_is_valid(command)
          AND command->'event'->>'type' IS DISTINCT FROM 'FinalizationResult';
@@ -627,7 +632,7 @@ const durableFinalizerBoundaries = [
        next_ordinal bigint; command_value jsonb; current_epoch text;
        scoped_digest text; settled text;
      BEGIN
-       IF in_outcome NOT IN (${schemaTextSet(finalizationOutcomeTags)}) THEN
+       IF in_outcome NOT IN (${schemaTextSet(legacyFinalizationOutcomeTags)}) THEN
          RAISE EXCEPTION 'finalization outcome % is not one this boundary submits', in_outcome
            USING ERRCODE = 'integrity_constraint_violation';
        END IF;

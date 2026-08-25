@@ -39,7 +39,7 @@ const mailbox = [
   "ticket_projection",
 ] as const;
 
-/** Every relation migration thirteen adds, which no prior role may reach at all. */
+/** Every finalizer-owned relation no prior role may reach at all. */
 const added = [
   "project_repository",
   "input_bundle",
@@ -47,6 +47,7 @@ const added = [
   "finalization_attempt",
   "commit_permit",
   "finalization_reconciliation",
+  "finalization_request_configuration",
 ] as const;
 
 /**
@@ -131,7 +132,7 @@ test("the scheduler rows a handoff is spelled across are readable and nothing mo
   }
 });
 
-test("no prior role reaches any relation migration thirteen adds", async () => {
+test("no prior role reaches any finalizer-owned relation", async () => {
   for (const role of [apiRole, selectorServiceRole, schedulerRole]) {
     for (const relation of added) {
       for (const statement of await everyVerb(relation)) {
@@ -145,7 +146,7 @@ test("no prior role reaches any relation migration thirteen adds", async () => {
   }
 });
 
-test("the ticket service reaches only the bundle relations of what migration thirteen adds", async () => {
+test("the ticket service reaches only the finalizer relations its boundary needs", async () => {
   for (const relation of [
     "project_repository",
     "commit_permit",
@@ -190,6 +191,46 @@ test("the ticket service reaches only the bundle relations of what migration thi
         statement,
       );
     }
+  }
+});
+
+test("only the ticket service publishes immutable handoff request configuration", async () => {
+  const privileges = (await harness.query(
+    `SELECT has_table_privilege($1,'finalization_request_configuration','INSERT') AS insert,
+            has_table_privilege($1,'finalization_request_configuration','SELECT') AS select,
+            has_table_privilege($1,'finalization_request_configuration','UPDATE') AS update,
+            has_table_privilege($1,'finalization_request_configuration','DELETE') AS delete`,
+    [ticketServiceRole],
+  )) as readonly {
+    insert: boolean;
+    select: boolean;
+    update: boolean;
+    delete: boolean;
+  }[];
+  assert.deepEqual(privileges[0], {
+    insert: true,
+    select: false,
+    update: false,
+    delete: false,
+  });
+});
+
+test("the ticket service reads accepted promotion only through its narrow door", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      ticketServiceRole,
+      "SELECT * FROM read_accepted_handoff_promotion('t','p',1)",
+    ),
+    undefined,
+  );
+  for (const relation of ["commit_permit", "finalization_reconciliation"]) {
+    assert.match(
+      (await harness.attemptAs(
+        ticketServiceRole,
+        `SELECT * FROM ${relation} LIMIT 1`,
+      )) ?? "",
+      postgresHarnessDenial(relation),
+    );
   }
 });
 
@@ -337,6 +378,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "finalization_attempt",
       "finalization_reconciliation",
       "finalization_request",
+      "finalization_request_configuration",
       "input_bundle",
       "input_bundle_reference",
       "native_action",

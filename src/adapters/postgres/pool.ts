@@ -160,6 +160,23 @@ async function postgresMigrateApplied(
   return new Set(applied.rows.map((row) => row.version));
 }
 
+/** Creates the migration ledger and marks this transaction only when no ledger existed before it. */
+async function postgresPrepareMigrationLedger(
+  client: pg.PoolClient,
+): Promise<void> {
+  await client.query<{ set_config: string | null }>(
+    sql`SELECT set_config('chuggy.initializing_journal','off',true)`,
+  );
+  const found = await client.query<{ existed: boolean }>(
+    sql`SELECT to_regclass('public.schema_migration') IS NOT NULL AS existed`,
+  );
+  await client.query(migrationLedger);
+  if (found.rows[0]?.existed === false)
+    await client.query<{ set_config: string | null }>(
+      sql`SELECT set_config('chuggy.initializing_journal','on',true)`,
+    );
+}
+
 async function postgresAppliedMigrations(
   client: pg.PoolClient,
 ): Promise<readonly RuntimeSchemaMigration[]> {
@@ -181,7 +198,7 @@ export async function postgresMigrate(
     await client.query<{ locked: string | null }>(
       sql`SELECT pg_advisory_xact_lock(${migrationLockKey})::text AS locked`,
     );
-    await client.query(migrationLedger);
+    await postgresPrepareMigrationLedger(client);
     const applied = await postgresMigrateApplied(client);
     const ran: number[] = [];
     for (const migration of migrations) {
@@ -221,7 +238,7 @@ export async function postgresMigrateCompatible(
       await client.query<{ locked: string | null }>(
         sql`SELECT pg_advisory_xact_lock(${migrationLockKey})::text AS locked`,
       );
-      await client.query(migrationLedger);
+      await postgresPrepareMigrationLedger(client);
       const applied = await postgresAppliedMigrations(client);
       const target = postgresMigrateCompatibleTarget(deployment);
       const plan = runtimeMigrationPlan(applied, target, deployment);

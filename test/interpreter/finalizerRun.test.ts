@@ -575,6 +575,65 @@ test("a clean preparation builds over the observed target and records one prepar
   );
 });
 
+test("a publication prepares only its pinned request in the handoff repository", async () => {
+  const request = "publish-unrelated-service";
+  const handoffRepository: RepositoryBinding = {
+    partition,
+    repository: asRepositoryId("ssh://git.internal/platform-releases"),
+    recoveryEpoch: epoch,
+    targetRef: asGitRefName("refs/heads/team-blue"),
+    credentialReference: "platform-release-writer",
+  };
+  const claim = { ...claimOf(request), kind: "PublishHandoff" as const };
+  const store = recordingStore([
+    {
+      lifecycle: "Active",
+      claim,
+      repository: handoffRepository,
+      handoffRequest: {
+        kind: "PublishHandoff",
+        configurationRevision: "revision-run",
+        configurationDigest: digestOf("revision-run"),
+        repository: handoffRepository,
+        acceptedWorkRepository: asRepositoryId(
+          "ssh://git.internal/unrelated-service",
+        ),
+        acceptedWorkCommit: asGitObjectId(commitOf("f")),
+        destinationPath: "builds/unrelated/request.json",
+        output: '{"source":"immutable"}',
+        requestDigest: digestOf("publication"),
+      },
+      approval: "Pending",
+      attemptsMade: 0,
+    },
+  ]);
+  const git = recordingGit();
+  git.observed = {
+    observed: "Target",
+    target: {
+      ref: asGitRefName("refs/heads/team-blue"),
+      commit: asGitObjectId(commitOf("a")),
+    },
+  };
+  const artifacts = recordingArtifacts();
+
+  await passOver(serviceOf(store, git, {}, artifacts));
+
+  assert.equal(artifacts.requests.length, 0);
+  assert.equal(git.preparations.length, 1);
+  assert.equal(
+    git.preparations[0]?.repository.repository,
+    handoffRepository.repository,
+  );
+  assert.deepEqual(git.preparations[0]?.files, [
+    {
+      path: "builds/unrelated/request.json",
+      content: new TextEncoder().encode('{"source":"immutable"}'),
+    },
+  ]);
+  assert.equal(store.attempts[0]?.configuration.revision, "revision-run");
+});
+
 test("the pinned revision is what says a candidate needs a person's approval", async () => {
   const store = recordingStore([preparableView("request-one")]);
   store.gathering = {

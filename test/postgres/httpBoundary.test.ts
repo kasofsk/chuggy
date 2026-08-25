@@ -8,6 +8,7 @@ import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/sched
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
+import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   projectWriterDecide,
@@ -113,6 +114,7 @@ test("real HTTP ingress accepts once and observes the separate writer", async ()
     web,
     { authenticateBearer: () => Promise.resolve(principal) },
     { ready: () => Promise.resolve(true) },
+    postgresInstallationAuthority(pool),
   );
   const address = await app.listen({ host: "127.0.0.1", port: 0 });
   try {

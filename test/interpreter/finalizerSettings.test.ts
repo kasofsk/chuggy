@@ -172,3 +172,25 @@ test("a credential source is a repository and a path, and nothing else is one", 
     );
   }
 });
+
+test("credential aliases are isolated by repository", () => {
+  const settings = finalizerSettingsOf({
+    ...complete,
+    CHUG_FINALIZER_CREDENTIAL_SOURCES: JSON.stringify([
+      { repository: "one", credentialReference: "writer", path: "/one" },
+      { repository: "two", credentialReference: "writer", path: "/two" },
+    ]),
+  });
+  assert.equal(settings.credentials.length, 2);
+  assert.throws(
+    () =>
+      finalizerSettingsOf({
+        ...complete,
+        CHUG_FINALIZER_CREDENTIAL_SOURCES: JSON.stringify([
+          { repository: "one", credentialReference: "writer", path: "/one" },
+          { repository: "one", credentialReference: "writer", path: "/two" },
+        ]),
+      }),
+    /names a credential twice/u,
+  );
+});

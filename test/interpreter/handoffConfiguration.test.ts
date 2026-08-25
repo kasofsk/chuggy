@@ -12,7 +12,6 @@ import {
 } from "../../src/interpreter/handoffConfiguration.ts";
 
 const commit = "a".repeat(40);
-const pin = { revision: "revision-17", digest: "b".repeat(64) };
 
 function document(overrides: Record<string, unknown> = {}): unknown {
   return {
@@ -74,16 +73,16 @@ function proposalDocument(
 }
 
 function ready(overrides: Record<string, unknown> = {}) {
-  const parsed = pinnedHandoffConfigurationReadiness(
-    canonicalConfigurationOf(document(overrides)),
-    pin,
-  );
+  const canonical = canonicalConfigurationOf(document(overrides));
+  const pin = { revision: "revision-17", digest: digest(canonical) };
+  const parsed = pinnedHandoffConfigurationReadiness(canonical, pin, digest);
   if (parsed.readiness === "Incomplete") throw new Error(parsed.fault);
   return parsed.configuration;
 }
 
 test("independent repository roles produce only pinned direct request configurations", () => {
   const pinned = ready();
+  const pin = pinned.pin;
   const promotion = promoteForHandoffConfiguration(pinned);
   const publication = publishHandoffConfiguration(pinned, commit, digest);
 
@@ -248,7 +247,14 @@ test("unsupported identities, modes, refs, paths, roles, and bounds are refused"
   ];
   for (const [value, fault] of cases) {
     assert.deepEqual(
-      pinnedHandoffConfigurationReadiness(canonicalConfigurationOf(value), pin),
+      pinnedHandoffConfigurationReadiness(
+        canonicalConfigurationOf(value),
+        {
+          revision: "revision-17",
+          digest: digest(canonicalConfigurationOf(value)),
+        },
+        digest,
+      ),
       { readiness: "Incomplete", fault },
     );
   }
@@ -285,10 +291,23 @@ test("configuration pins require bounded revisions and fixed-width digests", () 
       pinnedHandoffConfigurationReadiness(
         canonicalConfigurationOf(document()),
         malformed,
+        digest,
       ),
       { readiness: "Incomplete", fault: "ConfigurationPinInvalid" },
     );
   }
+});
+
+test("configuration pins identify the canonical bytes they accompany", () => {
+  const canonical = canonicalConfigurationOf(document());
+  assert.deepEqual(
+    pinnedHandoffConfigurationReadiness(
+      canonical,
+      { revision: "revision-17", digest: digest(`${canonical} `) },
+      digest,
+    ),
+    { readiness: "Incomplete", fault: "ConfigurationPinInvalid" },
+  );
 });
 
 test("request digests refuse malformed and input-independent hash results", () => {

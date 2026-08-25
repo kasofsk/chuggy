@@ -71,6 +71,45 @@ test("a repository this deployment names no file for is denied", async (t) => {
   });
 });
 
+test("repository roles resolve only their independently named credential", async (t) => {
+  const root = directory(t);
+  const workPath = join(root, "work");
+  const handoffPath = join(root, "handoff");
+  writeFileSync(workPath, "work-secret");
+  writeFileSync(handoffPath, "handoff-secret");
+  const source = credentialFiles({
+    sources: [
+      { repository: one, credentialReference: "work-reader", path: workPath },
+      {
+        repository: other,
+        credentialReference: "handoff-writer",
+        path: handoffPath,
+      },
+    ],
+  });
+  assert.deepEqual(
+    await source.credential({
+      ...binding(one),
+      credentialReference: "handoff-writer",
+    }),
+    { resolved: "Denied" },
+  );
+  assert.deepEqual(
+    await source.credential({
+      ...binding(other),
+      credentialReference: "handoff-writer",
+    }),
+    { resolved: "Credential", credential: "handoff-secret" },
+  );
+  assert.deepEqual(
+    await source.credential({
+      ...binding(other),
+      credentialReference: "unknown-role",
+    }),
+    { resolved: "Denied" },
+  );
+});
+
 test("a named file that cannot be read is an outage and not a denial", async (t) => {
   const root = directory(t);
   const absent = join(root, "absent");

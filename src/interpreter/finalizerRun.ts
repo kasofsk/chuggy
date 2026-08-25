@@ -482,6 +482,7 @@ function finalizerBundleOf(
   pinned: {
     readonly configuration: PinnedConfiguration;
     readonly manifests: readonly ResultManifestId[];
+    readonly acceptedWorkCommit?: GitObjectId;
   },
 ): InputBundle {
   const references: readonly InputBundleReference[] = [
@@ -495,6 +496,14 @@ function finalizerBundleOf(
       kind: "ResultManifest" as const,
       reference: manifest,
     })),
+    ...(pinned.acceptedWorkCommit === undefined
+      ? []
+      : [
+          {
+            kind: "TargetCommit" as const,
+            reference: pinned.acceptedWorkCommit,
+          },
+        ]),
   ];
   if (references.length > inputBundleReferencesMax) {
     throw new RangeError(
@@ -778,6 +787,10 @@ async function finalizerPrepare(
   target: ObservedTarget,
   tally: FinalizerTally,
 ): Promise<void> {
+  if (view.handoffRequest?.kind === "PublishHandoff") {
+    await finalizerPreparePublication(service, view, target, tally);
+    return;
+  }
   const gathered = await finalizerGathered(service, view, target, tally);
   if (gathered === undefined) return;
   const { subject, handoff } = gathered;
@@ -798,6 +811,53 @@ async function finalizerPrepare(
     return;
   }
   await finalizerBuild(service, subject, read.files, tally);
+}
+
+async function finalizerPreparePublication(
+  service: FinalizerService,
+  view: FinalizationView,
+  target: ObservedTarget,
+  tally: FinalizerTally,
+): Promise<void> {
+  const request = view.handoffRequest;
+  const repository = view.repository;
+  if (request?.kind !== "PublishHandoff" || repository === undefined)
+    throw new Error("finalizer publication: no pinned publication request");
+  const identity = service.identities.next(view.claim.partition);
+  const configuration: PinnedConfiguration = {
+    revision: request.configurationRevision,
+    digest: request.configurationDigest,
+  };
+  const subject: FinalizerPreparation = {
+    view,
+    repository,
+    identity,
+    bundle: finalizerBundleOf(
+      service,
+      view.claim,
+      identity.bundle,
+      repository,
+      {
+        configuration,
+        manifests: [],
+        acceptedWorkCommit: request.acceptedWorkCommit,
+      },
+    ),
+    target,
+    configuration,
+    approvalRequired: false,
+  };
+  await finalizerBuild(
+    service,
+    subject,
+    [
+      {
+        path: request.destinationPath,
+        content: new TextEncoder().encode(request.output),
+      },
+    ],
+    tally,
+  );
 }
 
 /** Opens the approval one prepared attempt needs, leaving the finalization where it stood. */

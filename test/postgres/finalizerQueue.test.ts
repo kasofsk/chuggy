@@ -217,8 +217,8 @@ test("the queue is drawn oldest first and one pass takes only what it is bounded
   await rig.harness.query(
     `INSERT INTO finalization_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
-        ticket_version, request_generation)
-     VALUES ($1,$2,$3,1,7,$4,1,1)`,
+        ticket_version, request_generation, kind)
+     VALUES ($1,$2,$3,1,7,$4,1,1,'RunFinalizer')`,
     [
       project.partition.tenant,
       project.partition.project,

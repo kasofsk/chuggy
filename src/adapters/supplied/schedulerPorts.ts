@@ -31,9 +31,17 @@ export interface SuppliedExecutionProfile {
   readonly grant: PolicyAuthorityGrant;
 }
 
-/** The execution policy a deployment states, one entry per kind of logical task. */
+/**
+ * The execution policy a deployment states: what each kind of logical task may
+ * do, and which images this site will run at all.
+ *
+ * THE ADMITTED LIST IS POLICY AND NOT PLACEMENT — which image a task runs is
+ * the pinned requirement's, so whether this site runs it belongs here rather
+ * than inside whichever backend places the pod.
+ */
 export interface SuppliedExecutionPolicyConfig {
   readonly profiles: ReadonlyMap<ExecutionTaskKind, SuppliedExecutionProfile>;
+  readonly imagesAdmitted: readonly string[];
 }
 
 /** What a deployment states about the workspace its worker image runs in. */
@@ -47,6 +55,10 @@ export function checkedSuppliedExecutionPolicyConfig(
 ): SuppliedExecutionPolicyConfig {
   if (config.profiles.size === 0)
     throw new RangeError("supplied execution policy grants no task kind");
+  if (config.imagesAdmitted.length === 0)
+    throw new RangeError("supplied execution policy admits no image");
+  if (config.imagesAdmitted.some((image) => image.length === 0))
+    throw new RangeError("supplied execution policy admits an empty image");
   for (const supplied of config.profiles.values()) {
     if (supplied.profile.profile.length === 0)
       throw new RangeError("supplied execution policy names an empty profile");
@@ -59,13 +71,33 @@ export function checkedSuppliedExecutionPolicyConfig(
   return config;
 }
 
-/** Resolves the profile a deployment states for this kind of logical task. */
+/**
+ * Whether this site runs what the execution's pinned requirement names. A
+ * native requirement is refused by capability rather than by policy: no image
+ * list can admit one, and the reason a caller reads should say which of the two
+ * it ran into.
+ */
+function suppliedAdmission(
+  config: SuppliedExecutionPolicyConfig,
+  execution: LogicalExecution,
+): ProfileResolved | undefined {
+  const requirement = execution.requirement;
+  if (requirement.mode === "Native")
+    return { resolved: "Denied", reason: "RequiredCapabilityUnavailable" };
+  return config.imagesAdmitted.some((image) => image === requirement.image)
+    ? undefined
+    : { resolved: "Denied", reason: "ExecutionPolicyDenied" };
+}
+
+/** Admits what this site runs, then resolves the profile it states for this kind of logical task. */
 export function suppliedExecutionPolicy(
   input: SuppliedExecutionPolicyConfig,
 ): ExecutionPolicy {
   const config = checkedSuppliedExecutionPolicyConfig(input);
   return {
     profileFor: (execution: LogicalExecution): Promise<ProfileResolved> => {
+      const refused = suppliedAdmission(config, execution);
+      if (refused !== undefined) return Promise.resolve(refused);
       const supplied = config.profiles.get(execution.taskKind);
       return Promise.resolve(
         supplied === undefined

@@ -111,6 +111,8 @@ import {
   asArtifactPath,
 } from "../../src/interpreter/resultManifest.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
+import { isCompletionDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
+import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
 import {
   asRecoveryEpoch,
   type Lifecycle,
@@ -127,6 +129,7 @@ import {
   postgresHarnessJournal,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessCompletion,
   postgresHarnessSubmission,
   postgresHarnessUrl,
   postgresHarnessWriter,
@@ -393,6 +396,15 @@ export async function finalizerAccept(
   label: string,
   event: DecisionEvent,
 ): Promise<string> {
+  if (isCompletionDecisionEvent(event)) {
+    await postgresHarnessCompletion(
+      harness,
+      partition,
+      `operation-${label}-${randomUUID()}`,
+      event,
+    );
+    return "Accepted";
+  }
   const accepted = await harness.inbox.accept({
     ...postgresHarnessSubmission(partition, label),
     command: {
@@ -892,8 +904,8 @@ async function finalizerCompletion(
     `INSERT INTO operation
        (tenant, project, operation, authority_kind, authority_subject, admission,
         key_version, key_digest, payload_digest, command, command_tag)
-     VALUES ($1,$2,$3,'Scheduler','fixture','CorrectnessReducing','fixture-v1',
-             $4,$4,'{}','TaskDone')`,
+     VALUES ($1,$2,$3,'${executionSchedulerAuthorityKind}','fixture',
+             'CorrectnessReducing','fixture-v1',$4,$4,'{}','TaskDone')`,
     [
       project.partition.tenant,
       project.partition.project,

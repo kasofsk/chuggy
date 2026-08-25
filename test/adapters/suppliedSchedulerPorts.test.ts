@@ -77,9 +77,12 @@ function executionOf(taskKind: ExecutionTaskKind): LogicalExecution {
   };
 }
 
+const admitted = ["registry.invalid/worker:v1"];
+
 test("a task kind the deployment states resolves to its profile and grant", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    imagesAdmitted: admitted,
   });
   assert.deepEqual(await policy.profileFor(executionOf("Work")), {
     resolved: "Profile",
@@ -91,6 +94,7 @@ test("a task kind the deployment states resolves to its profile and grant", asyn
 test("a task kind the deployment states nothing for is a definitive inability", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
+    imagesAdmitted: admitted,
   });
   assert.deepEqual(await policy.profileFor(executionOf("Evaluation")), {
     resolved: "Denied",
@@ -98,8 +102,66 @@ test("a task kind the deployment states nothing for is a definitive inability", 
   });
 });
 
+test("an image the site does not admit is a definitive policy denial", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: ["registry.invalid/other:v1"],
+  });
+  assert.deepEqual(await policy.profileFor(executionOf("Work")), {
+    resolved: "Denied",
+    reason: "ExecutionPolicyDenied",
+  });
+});
+
+test("a native requirement is refused by capability and never by the image list", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: admitted,
+  });
+  const native = executionOf("Work");
+  assert.deepEqual(
+    await policy.profileFor({
+      ...native,
+      requirement: {
+        mode: "Native",
+        architecture: "Arm64",
+        driver: "XcodeBuild",
+        xcodeVersionMin: 1,
+        sdkVersionMin: 1,
+      },
+    }),
+    { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
+  );
+});
+
+test("a policy admitting no image at all is refused where it is composed", () => {
+  assert.throws(
+    () =>
+      suppliedExecutionPolicy({
+        profiles: new Map([["Work", work]]),
+        imagesAdmitted: [],
+      }),
+    Error,
+  );
+  assert.throws(
+    () =>
+      suppliedExecutionPolicy({
+        profiles: new Map([["Work", work]]),
+        imagesAdmitted: [""],
+      }),
+    Error,
+  );
+});
+
 test("a policy that grants nothing, or grants a reach nothing names, is refused", () => {
-  assert.throws(() => suppliedExecutionPolicy({ profiles: new Map() }), Error);
+  assert.throws(
+    () =>
+      suppliedExecutionPolicy({
+        profiles: new Map(),
+        imagesAdmitted: admitted,
+      }),
+    Error,
+  );
   assert.throws(
     () =>
       suppliedExecutionPolicy({
@@ -112,6 +174,7 @@ test("a policy that grants nothing, or grants a reach nothing names, is refused"
             },
           ],
         ]),
+        imagesAdmitted: admitted,
       }),
     Error,
   );
@@ -121,6 +184,7 @@ test("a policy that grants nothing, or grants a reach nothing names, is refused"
         profiles: new Map([
           ["Work", { ...work, profile: { profile: "", runtimeVersion: "1" } }],
         ]),
+        imagesAdmitted: admitted,
       }),
     Error,
   );

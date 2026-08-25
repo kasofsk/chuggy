@@ -81,6 +81,12 @@ export interface DecisionInput {
           readonly requestGeneration: number;
           readonly open: boolean;
           readonly evidence?: FinalizationEvidence;
+          readonly acceptedPromotion?: {
+            readonly repository: string;
+            readonly commit: string;
+            readonly configurationRevision: string;
+            readonly configurationDigest: string;
+          };
         };
       }
     | {
