@@ -66,6 +66,53 @@ test("task precedence allows two tasks in one ticket to pin different requiremen
   });
 });
 
+test("stage-qualified evaluation defaults are exact keys with no bare fallback", () => {
+  const configuration = {
+    version: 1,
+    image: "platform",
+    evaluations: [
+      { instructions: ["Review."], practices: [] },
+      { instructions: ["Test."], practices: [] },
+    ],
+    executionRequirements: {
+      platformDefault: container("platform"),
+      platformDefaultVersion: 1,
+      taskKindDefaults: {
+        Evaluation: container("bare"),
+        "Evaluation:0": container("review"),
+      },
+    },
+  };
+  assert.deepEqual(
+    materializeExecutionRequirement(configuration, 1, "Evaluation", 0).value,
+    container("review"),
+  );
+  assert.deepEqual(
+    materializeExecutionRequirement(configuration, 2, "Evaluation", 1),
+    {
+      value: container("platform"),
+      source: "PlatformDefault",
+      platformDefaultVersion: 1,
+    },
+  );
+});
+
+test("legacy evaluation configurations retain the bare kind default", () => {
+  const configuration = {
+    version: 1,
+    image: "platform",
+    executionRequirements: {
+      platformDefault: container("platform"),
+      platformDefaultVersion: 1,
+      taskKindDefaults: { Evaluation: container("evaluation") },
+    },
+  };
+  assert.deepEqual(
+    materializeExecutionRequirement(configuration, 1, "Evaluation", 7).value,
+    container("evaluation"),
+  );
+});
+
 test("container task overrides retain the platform while selecting another image", () => {
   const configuration = {
     version: 1,

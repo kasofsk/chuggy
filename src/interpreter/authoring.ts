@@ -343,7 +343,12 @@ export interface DraftInitializationSnapshot extends Omit<
 /** The deployment policy exposed to authors; release validation consumes the same universes. */
 export function draftInitializationPolicy(
   config: Config,
+  configuration?: ReleaseConfiguration,
 ): Pick<DraftInitialization, "defaults" | "choices"> {
+  const programStagesMax = Math.min(
+    config.maxStages,
+    configuration?.evaluations?.length ?? config.maxStages,
+  );
   return {
     defaults: {
       deps: new Set(),
@@ -356,7 +361,7 @@ export function draftInitializationPolicy(
     },
     choices: {
       stages: stageChoices(config),
-      programStagesMax: config.maxStages,
+      programStagesMax,
       workFanouts: workFanoutChoices(config),
       reworkPolicies: reworkPolicyChoices(config),
       finalizationPricings: finalizationPricingChoices(config),

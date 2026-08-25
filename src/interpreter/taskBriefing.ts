@@ -65,6 +65,7 @@ import {
   briefingLinesMax,
   taskConfigurationLineFault,
   type AuthoredTaskConfiguration,
+  type EvaluationBlock,
   type PurposeBlock,
   type PracticeId,
   type TaskConfigurationFault,
@@ -77,6 +78,7 @@ export {
   briefingLineCharsMax,
   briefingLinesMax,
   type AuthoredTaskConfiguration,
+  type EvaluationBlock,
   type PurposeBlock,
   type PracticeId,
   type TaskConfigurationFault,
@@ -189,7 +191,8 @@ export type BriefingFault =
   | "EmptyLine"
   | "TextTooLong"
   | "TextUnreadable"
-  | "TooManyLines";
+  | "TooManyLines"
+  | "StageNotCovered";
 
 /** Every fault, so a suite iterates rather than restates. */
 export const allBriefingFaults: readonly BriefingFault[] = [
@@ -202,6 +205,7 @@ export const allBriefingFaults: readonly BriefingFault[] = [
   "TextTooLong",
   "TextUnreadable",
   "TooManyLines",
+  "StageNotCovered",
 ];
 
 /** What one line has to be to render: present, bounded, and free of anything a terminal eats. */
@@ -318,6 +322,7 @@ export interface RuntimeFactsPort {
 /** Everything composition reads, gathered before it runs so nothing is awaited inside it. */
 export interface BriefingView {
   readonly purpose: TaskPurpose;
+  readonly stage?: number;
   readonly pin: ConfigurationPin;
   readonly configuration: PinnedTaskConfiguration;
   readonly runtime: RuntimeFacts;
@@ -328,8 +333,17 @@ export interface BriefingView {
 function purposeBlock(
   configuration: PinnedTaskConfiguration,
   purpose: TaskPurpose,
-): PurposeBlock {
-  return purpose === "Work" ? configuration.work : configuration.review;
+  stage?: number,
+): PurposeBlock | EvaluationBlock | undefined {
+  if (purpose === "Work") return configuration.work;
+  if (configuration.evaluations === undefined) return configuration.review;
+  return stage === undefined ? undefined : configuration.evaluations[stage];
+}
+
+function purposePractices(view: BriefingView): readonly string[] | undefined {
+  const block = purposeBlock(view.configuration, view.purpose, view.stage);
+  if (block === undefined) return undefined;
+  return "practices" in block ? block.practices : view.configuration.practices;
 }
 
 /** Whether the revision that came back is the one the durable execution row pinned. */
@@ -351,6 +365,8 @@ function briefingConfigurationFault(
 ): BriefingFault | undefined {
   const pinned = briefingPinFault(view);
   if (pinned !== undefined) return pinned;
+  const block = purposeBlock(view.configuration, view.purpose, view.stage);
+  if (block === undefined) return "StageNotCovered";
   const brief = view.configuration.brief;
   if (brief.motivation.length === 0 && brief.acceptanceCriteria.length === 0) {
     return "EmptyBrief";
@@ -359,10 +375,7 @@ function briefingConfigurationFault(
     [brief.motivation, briefingLinesMax],
     [brief.acceptanceCriteria, briefingLinesMax],
     [brief.constraints, briefingLinesMax],
-    [
-      purposeBlock(view.configuration, view.purpose).instructions,
-      briefingLinesMax,
-    ],
+    [block.instructions, briefingLinesMax],
   ]);
 }
 
@@ -421,8 +434,9 @@ function briefingBodies(
     RoleInstructions: briefingRoleInstructions(view.purpose),
     WhyItMatters: view.configuration.brief.motivation,
     AcceptanceAndConstraints: briefingCriteriaLines(view.configuration.brief),
-    PurposeInstructions: purposeBlock(view.configuration, view.purpose)
-      .instructions,
+    PurposeInstructions:
+      purposeBlock(view.configuration, view.purpose, view.stage)
+        ?.instructions ?? [],
     Practices: practices.map((practice) =>
       briefingBullet(practice.instruction),
     ),
@@ -544,7 +558,11 @@ function briefingAuthorityRequests(
   view: BriefingView,
 ): readonly AuthorityRequest[] {
   const shared = view.configuration.authority;
-  const block = purposeBlock(view.configuration, view.purpose).authority;
+  const block = purposeBlock(
+    view.configuration,
+    view.purpose,
+    view.stage,
+  )?.authority;
   return [
     briefingAuthorityFloor,
     ...(shared === undefined ? [] : [shared]),
@@ -575,7 +593,7 @@ export function composeTaskInvocation(
   const resolved = resolvePractices(
     catalog,
     view.purpose,
-    view.configuration.practices,
+    purposePractices(view) ?? [],
   );
   if (resolved.resolved === "Refused") {
     return { composed: "Blocked", fault: resolved.fault };

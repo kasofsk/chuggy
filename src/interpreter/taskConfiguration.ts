@@ -15,12 +15,18 @@ export interface PurposeBlock {
   readonly authority?: AuthorityRequest;
 }
 
+/** What one indexed evaluation stage is told beyond the shared brief. */
+export interface EvaluationBlock extends PurposeBlock {
+  readonly practices: readonly string[];
+}
+
 /** The authored part of a task configuration, before storage supplies its immutable pin. */
 export interface AuthoredTaskConfiguration {
   readonly brief: TicketBrief;
   readonly practices: readonly string[];
   readonly work: PurposeBlock;
   readonly review: PurposeBlock;
+  readonly evaluations?: readonly EvaluationBlock[];
   readonly authority?: AuthorityRequest;
 }
 
@@ -41,6 +47,8 @@ export const briefingLineCharsMax = 512;
 /** The most lines one authored list may carry. */
 export const briefingLinesMax = 8;
 
+export const evaluationBlocksMax = 64;
+
 /** Why an authored document cannot supply the briefing contract. */
 export type TaskConfigurationFault =
   | "BriefingShapeMissing"
@@ -50,6 +58,7 @@ export type TaskConfigurationFault =
   | "PracticesInvalid"
   | "WorkInvalid"
   | "ReviewInvalid"
+  | "EvaluationsInvalid"
   | "AuthorityInvalid"
   | "EmptyBrief"
   | "UnknownPractice"
@@ -188,6 +197,81 @@ function authoredTaskConfigurationPurposeBlock(
   };
 }
 
+function authoredTaskConfigurationEvaluationBlock(
+  value: unknown,
+): EvaluationBlock | undefined {
+  const block = authoredTaskConfigurationPurposeBlock(value);
+  if (block === undefined || typeof value !== "object" || value === null)
+    return undefined;
+  const practices = authoredTaskConfigurationStringArray(
+    (value as Record<string, unknown>)["practices"],
+  );
+  return practices === undefined ? undefined : { ...block, practices };
+}
+
+function authoredTaskConfigurationEvaluationBlocks(
+  value: unknown,
+): readonly EvaluationBlock[] | undefined {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > evaluationBlocksMax
+  )
+    return undefined;
+  const blocks = value.map(authoredTaskConfigurationEvaluationBlock);
+  return blocks.every((block) => block !== undefined) ? blocks : undefined;
+}
+
+function authoredTaskConfigurationValidated(input: {
+  readonly motivation: readonly string[];
+  readonly acceptanceCriteria: readonly string[];
+  readonly constraints: readonly string[];
+  readonly practices: readonly string[];
+  readonly work: PurposeBlock;
+  readonly review: PurposeBlock;
+  readonly evaluations?: readonly EvaluationBlock[];
+  readonly authority?: AuthorityRequest;
+}): AuthoredTaskConfigurationReadiness {
+  if (input.motivation.length === 0 && input.acceptanceCriteria.length === 0)
+    return { readiness: "Incomplete", fault: "EmptyBrief" };
+  const practicesFault = authoredTaskConfigurationPracticesFault(
+    input.practices,
+  );
+  if (practicesFault !== undefined)
+    return { readiness: "Incomplete", fault: practicesFault };
+  for (const evaluation of input.evaluations ?? []) {
+    const fault = authoredTaskConfigurationPracticesFault(evaluation.practices);
+    if (fault !== undefined) return { readiness: "Incomplete", fault };
+  }
+  const textFault = taskConfigurationLinesFault([
+    input.motivation,
+    input.acceptanceCriteria,
+    input.constraints,
+    input.work.instructions,
+    input.review.instructions,
+    ...(input.evaluations ?? []).map((evaluation) => evaluation.instructions),
+  ]);
+  if (textFault !== undefined)
+    return { readiness: "Incomplete", fault: textFault };
+  return {
+    readiness: "Ready",
+    configuration: {
+      brief: {
+        motivation: input.motivation,
+        acceptanceCriteria: input.acceptanceCriteria,
+        constraints: input.constraints,
+      },
+      practices: input.practices,
+      work: input.work,
+      review: input.review,
+      ...(input.evaluations === undefined
+        ? {}
+        : { evaluations: input.evaluations }),
+      ...(input.authority === undefined ? {} : { authority: input.authority }),
+    },
+  };
+}
+
 function taskConfigurationLinesFault(
   lists: readonly (readonly string[])[],
 ): BriefingTextFault | undefined {
@@ -252,6 +336,13 @@ export function authoredTaskConfigurationReadiness(
   const review = authoredTaskConfigurationPurposeBlock(record["review"]);
   if (review === undefined)
     return { readiness: "Incomplete", fault: "ReviewInvalid" };
+  const evaluationsValue = record["evaluations"];
+  const evaluations =
+    evaluationsValue === undefined
+      ? undefined
+      : authoredTaskConfigurationEvaluationBlocks(evaluationsValue);
+  if (evaluationsValue !== undefined && evaluations === undefined)
+    return { readiness: "Incomplete", fault: "EvaluationsInvalid" };
   const authority = record["authority"];
   const parsedAuthority =
     authority === undefined
@@ -259,28 +350,14 @@ export function authoredTaskConfigurationReadiness(
       : authoredTaskConfigurationAuthorityRequest(authority);
   if (authority !== undefined && parsedAuthority === undefined)
     return { readiness: "Incomplete", fault: "AuthorityInvalid" };
-  if (motivation.length === 0 && acceptanceCriteria.length === 0)
-    return { readiness: "Incomplete", fault: "EmptyBrief" };
-  const practicesFault = authoredTaskConfigurationPracticesFault(practices);
-  if (practicesFault !== undefined)
-    return { readiness: "Incomplete", fault: practicesFault };
-  const textFault = taskConfigurationLinesFault([
+  return authoredTaskConfigurationValidated({
     motivation,
     acceptanceCriteria,
     constraints,
-    work.instructions,
-    review.instructions,
-  ]);
-  if (textFault !== undefined)
-    return { readiness: "Incomplete", fault: textFault };
-  return {
-    readiness: "Ready",
-    configuration: {
-      brief: { motivation, acceptanceCriteria, constraints },
-      practices,
-      work,
-      review,
-      ...(parsedAuthority === undefined ? {} : { authority: parsedAuthority }),
-    },
-  };
+    practices,
+    work,
+    review,
+    ...(evaluations === undefined ? {} : { evaluations }),
+    ...(parsedAuthority === undefined ? {} : { authority: parsedAuthority }),
+  });
 }
