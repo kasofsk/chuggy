@@ -82,6 +82,7 @@ import {
   type FinalizationOffer,
   type FinalizationSubmitted,
   type FinalizationView,
+  type HandoffFinalizationRequest,
   type FinalizerOwnerId,
   type FinalizerStore,
 } from "../../interpreter/finalizer.ts";
@@ -162,6 +163,101 @@ interface ViewRow {
   readonly approval_state: string | null;
   readonly approval_resolution: string | null;
   readonly attempts_made: string | null;
+  readonly request_configuration_kind: string | null;
+  readonly request_configuration_revision: string | null;
+  readonly request_configuration_digest: string | null;
+  readonly request_target_ref: string | null;
+  readonly credential_reference: string | null;
+  readonly accepted_work_repository: string | null;
+  readonly accepted_work_commit: string | null;
+  readonly destination_path: string | null;
+  readonly output: string | null;
+  readonly request_digest: string | null;
+}
+
+function finalizerRowHandoffRequest(
+  row: ViewRow,
+  repository: FinalizationView["repository"],
+): HandoffFinalizationRequest | undefined {
+  if (row.request_configuration_kind === null) return undefined;
+  if (
+    repository === undefined ||
+    row.request_configuration_revision === null ||
+    row.request_configuration_digest === null
+  )
+    return undefined;
+  const common = {
+    configurationRevision: row.request_configuration_revision,
+    configurationDigest: row.request_configuration_digest,
+    repository,
+  };
+  if (row.request_configuration_kind === "PromoteForHandoff")
+    return { kind: "PromoteForHandoff", ...common };
+  if (
+    row.request_configuration_kind !== "PublishHandoff" ||
+    row.accepted_work_repository === null ||
+    row.accepted_work_commit === null ||
+    row.destination_path === null ||
+    row.output === null ||
+    row.request_digest === null
+  )
+    throw new Error("finalization request configuration is incomplete");
+  return {
+    kind: "PublishHandoff",
+    ...common,
+    acceptedWorkRepository: asRepositoryId(row.accepted_work_repository),
+    acceptedWorkCommit: asGitObjectId(row.accepted_work_commit),
+    destinationPath: row.destination_path,
+    output: row.output,
+    requestDigest: row.request_digest,
+  };
+}
+
+function finalizerRowRepository(
+  row: ViewRow,
+  claim: FinalizationClaim,
+): FinalizationView["repository"] {
+  if (row.repository === null || row.binding_epoch === null) return undefined;
+  return {
+    partition: claim.partition,
+    repository: asRepositoryId(row.repository),
+    recoveryEpoch: asRecoveryEpoch(row.binding_epoch),
+    ...(row.request_target_ref === null
+      ? {}
+      : { targetRef: asGitRefName(row.request_target_ref) }),
+    ...(row.credential_reference === null
+      ? {}
+      : { credentialReference: row.credential_reference }),
+  };
+}
+
+function finalizerViewOf(
+  row: ViewRow,
+  claim: FinalizationClaim,
+): FinalizationView {
+  const attempt = finalizerRowAttempt(row, claim.request, claim.ticket);
+  const repository = finalizerRowRepository(row, claim);
+  const handoffRequest = finalizerRowHandoffRequest(row, repository);
+  return {
+    claim: {
+      ...claim,
+      state: finalizerRowValue(
+        allFinalizationRequestStates,
+        row.state,
+        "delivery state",
+      ),
+    },
+    lifecycle: finalizerRowValue(allLifecycles, row.lifecycle, "lifecycle"),
+    ...(repository === undefined ? {} : { repository }),
+    ...(handoffRequest === undefined ? {} : { handoffRequest }),
+    ...(attempt === undefined ? {} : { attempt }),
+    approval: finalizerRowApproval(row),
+    ...finalizerRowPermit(row),
+    attemptsMade: projectRowCounter(
+      finalizerRowPresent(row.attempts_made, "attempts made"),
+      "attempts made",
+    ),
+  };
 }
 
 /** What the one door returned about one offered conclusion. */
@@ -507,6 +603,10 @@ async function finalizerDurableView(
   const found = await client.query<ViewRow>(
     sql`SELECT
   f.state, j.lifecycle, b.repository, b.recovery_epoch AS binding_epoch,
+  h.kind AS request_configuration_kind, h.configuration_revision AS request_configuration_revision,
+  h.configuration_digest AS request_configuration_digest,
+  h.target_ref AS request_target_ref, h.credential_reference,
+  h.accepted_work_repository, h.accepted_work_commit, h.destination_path, h.output, h.request_digest,
   a.attempt, a.target_ref, a.target_commit, a.strategy,
   a.configuration_revision, a.configuration_digest, a.approval_required,
   a.outcome, a.candidate_commit, a.failure_kind, a.attempt_digest,
@@ -518,8 +618,13 @@ async function finalizerDurableView(
   c.made::text AS attempts_made
       FROM finalization_request f
   JOIN project j ON j.tenant = f.tenant AND j.project = f.project
-  LEFT JOIN project_repository b
-    ON b.tenant = f.tenant AND b.project = f.project
+  LEFT JOIN finalization_request_configuration h
+    ON h.tenant=f.tenant AND h.project=f.project AND h.request=f.request
+  LEFT JOIN LATERAL (
+    SELECT x.* FROM project_repository x
+     WHERE x.tenant=f.tenant AND x.project=f.project
+       AND (h.repository IS NULL OR x.repository=h.repository)
+     ORDER BY x.bound_at, x.repository LIMIT 1) b ON true
   LEFT JOIN LATERAL (
     SELECT x.* FROM finalization_attempt x
      WHERE x.tenant = f.tenant AND x.project = f.project AND x.request = f.request
@@ -538,35 +643,7 @@ async function finalizerDurableView(
         AND f.request = ${claim.request}`,
   );
   const row = found.rows[0];
-  if (row === undefined) return undefined;
-  const attempt = finalizerRowAttempt(row, claim.request, claim.ticket);
-  return {
-    claim: {
-      ...claim,
-      state: finalizerRowValue(
-        allFinalizationRequestStates,
-        row.state,
-        "delivery state",
-      ),
-    },
-    lifecycle: finalizerRowValue(allLifecycles, row.lifecycle, "lifecycle"),
-    ...(row.repository === null || row.binding_epoch === null
-      ? {}
-      : {
-          repository: {
-            partition: claim.partition,
-            repository: asRepositoryId(row.repository),
-            recoveryEpoch: asRecoveryEpoch(row.binding_epoch),
-          },
-        }),
-    ...(attempt === undefined ? {} : { attempt }),
-    approval: finalizerRowApproval(row),
-    ...finalizerRowPermit(row),
-    attemptsMade: projectRowCounter(
-      finalizerRowPresent(row.attempts_made, "attempts made"),
-      "attempts made",
-    ),
-  };
+  return row === undefined ? undefined : finalizerViewOf(row, claim);
 }
 
 /** Takes the request out of the open set for good, which a project admitting no result leaves behind. */

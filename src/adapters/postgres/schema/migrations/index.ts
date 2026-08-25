@@ -24,6 +24,7 @@ import { migration023 } from "./023-authoring-policy-and-dependencies.ts";
 import { migration024 } from "./024-sole-completion-authority.ts";
 import { migration025 } from "./025-installation-authority.ts";
 import { migration026 } from "./026-handoff-recovery-outcomes.ts";
+import { migration027 } from "./027-cross-repository-finalizer.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -54,4 +55,5 @@ export const migrations: readonly Migration[] = [
   migration024,
   migration025,
   migration026,
+  migration027,
 ];

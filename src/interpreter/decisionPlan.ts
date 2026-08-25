@@ -218,6 +218,14 @@ function effectPlans(
           ticketVersion: entry.seq,
           requestGeneration: entry.seq,
           kind: effect,
+          ...(effect === "PublishHandoff" &&
+          input.source.kind === "Operation" &&
+          input.source.finalizationRequest?.acceptedPromotion !== undefined
+            ? {
+                acceptedPromotion:
+                  input.source.finalizationRequest.acceptedPromotion,
+              }
+            : {}),
         });
         break;
       }

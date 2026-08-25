@@ -116,6 +116,27 @@ async function gitPromotionObserve(
   if (authorized.authorized === "Refused") {
     return { observed: "Unreadable", evidence: authorized.evidence };
   }
+  if (repository.targetRef !== undefined) {
+    const read = await scratchReadRef(
+      own.scratch,
+      repository.repository,
+      authorized.credential,
+      repository.targetRef,
+    );
+    switch (read.read) {
+      case "Value":
+        return {
+          observed: "Target",
+          target: { ref: repository.targetRef, commit: read.value },
+        };
+      case "Absent":
+        return { observed: "Unreadable", evidence: "RefUnreadable" };
+      case "Unreachable":
+        return { observed: "Unreadable", evidence: "RemoteUnreachable" };
+      default:
+        return assertNever(read);
+    }
+  }
   const read = await scratchObserveHead(
     own.scratch,
     repository.repository,

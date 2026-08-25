@@ -172,6 +172,10 @@ interface FinalizationAttemptRow {
   readonly conflict_manifest: string | null;
   readonly conflict_manifest_digest: string | null;
   readonly input_bundle: string;
+  readonly repository: string;
+  readonly candidate_commit: string | null;
+  readonly configuration_revision: string;
+  readonly configuration_digest: string;
 }
 
 /**
@@ -187,7 +191,8 @@ async function finalizationEvidenceOf(
   if (command.outcome !== "FinalizationFailed") return undefined;
   const found = await pool.query<FinalizationAttemptRow>(
     sql`SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
-            a.conflict_manifest_digest, a.input_bundle
+            a.conflict_manifest_digest, a.input_bundle, a.repository,
+            a.candidate_commit, a.configuration_revision, a.configuration_digest
        FROM finalization_attempt a
       WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
         AND a.attempt=${command.attempt} AND a.request=${command.request}`,
@@ -264,6 +269,10 @@ async function finalizationRequestSource(
     );
   const ticket = projectRowCounter(request.ticket, "finalization ticket");
   const evidence = await finalizationEvidenceOf(pool, partition, command);
+  const acceptedPromotion =
+    command.outcome === "PromotionAccepted"
+      ? await finalizationAcceptedPromotion(pool, partition, command)
+      : undefined;
   return {
     kind: "Operation",
     operation: asOperationId(operation),
@@ -280,7 +289,42 @@ async function finalizationRequestSource(
           "finalization request generation",
         ) === command.requestGeneration,
       ...(evidence === undefined ? {} : { evidence }),
+      ...(acceptedPromotion === undefined ? {} : { acceptedPromotion }),
     },
+  };
+}
+
+async function finalizationAcceptedPromotion(
+  pool: pg.Pool,
+  partition: Partition,
+  command: FinalizationSubmission,
+): Promise<
+  NonNullable<
+    Extract<
+      DecisionInput["source"],
+      { readonly kind: "Operation" }
+    >["finalizationRequest"]
+  >["acceptedPromotion"]
+> {
+  const found = await pool.query<FinalizationAttemptRow>(
+    sql`SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
+            a.conflict_manifest_digest, a.input_bundle, a.repository,
+            a.candidate_commit, a.configuration_revision, a.configuration_digest
+       FROM finalization_attempt a
+      WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+        AND a.attempt=${command.attempt} AND a.request=${command.request}`,
+  );
+  const attempt = found.rows[0];
+  if (
+    attempt?.candidate_commit === null ||
+    attempt?.candidate_commit === undefined
+  )
+    throw new Error("accepted promotion has no immutable candidate");
+  return {
+    repository: attempt.repository,
+    commit: attempt.candidate_commit,
+    configurationRevision: attempt.configuration_revision,
+    configurationDigest: attempt.configuration_digest,
   };
 }
 

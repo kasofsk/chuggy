@@ -420,20 +420,27 @@ test("a reconciliation belongs to a permit and there is one of it per permit", a
   }
 });
 
-test("one repository belongs to one project and one project binds one repository", async () => {
+test("a project binds multiple repositories while each repository keeps one owner", async () => {
   const unbound = await postgresHarnessProject(
     rig.harness.store,
     "constraints-exclusive",
   );
-  for (const [values, constraint] of [
-    [
+  assert.match(
+    await rig.ownerRefusal(
+      `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
+       VALUES ($1,$2,$3,$4)`,
       [unbound.tenant, unbound.project, project.repository, project.epoch],
-      "project_repository_is_exclusive",
-    ],
-    [
-      keys(finalizerIdentity("repository-second"), project.epoch),
-      "project_repository_pkey",
-    ],
+    ),
+    /project_repository_is_exclusive/u,
+  );
+  const second = finalizerIdentity("repository-second");
+  await rig.harness.query(
+    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
+     VALUES ($1,$2,$3,$4)`,
+    keys(second, project.epoch),
+  );
+  for (const [values, constraint] of [
+    [keys(second, project.epoch), "project_repository_pkey"],
     [
       [
         unbound.tenant,

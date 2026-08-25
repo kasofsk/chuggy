@@ -997,3 +997,31 @@ test("migration 26 replaces the finalization door on an upgraded database", asyn
     assert.match(after.rows[0]?.body ?? "", /HandoffPublicationUnproven/u);
   });
 });
+
+test("migration 27 makes cross-repository request configuration immutable", async () => {
+  await migrationDatabase("cross_repository_finalizer", async (subject) => {
+    await migrationSeedApplied(subject, 27);
+    await applyMigration(subject, 27);
+    const constraints = await subject.query<{ definition: string }>(
+      `SELECT pg_get_constraintdef(c.oid) AS definition
+         FROM pg_constraint c
+        WHERE c.conrelid='project_repository'::regclass
+          AND c.conname='project_repository_pkey'`,
+    );
+    assert.match(
+      constraints.rows[0]?.definition ?? "",
+      /PRIMARY KEY \(tenant, project, repository\)/u,
+    );
+    const trigger = await subject.query<{ enabled: string }>(
+      `SELECT t.tgenabled AS enabled FROM pg_trigger t
+        WHERE t.tgrelid='finalization_request_configuration'::regclass
+          AND t.tgname='finalization_request_configuration_is_written_once'`,
+    );
+    assert.equal(trigger.rows[0]?.enabled, "O");
+    const door = await subject.query<{ security_definer: boolean }>(
+      `SELECT p.prosecdef AS security_definer FROM pg_proc p
+        WHERE p.oid='read_accepted_handoff_promotion(text,text,bigint)'::regprocedure`,
+    );
+    assert.equal(door.rows[0]?.security_definer, true);
+  });
+});
