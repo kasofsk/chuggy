@@ -204,6 +204,15 @@ export type FinalizationRequestState =
 export const allFinalizationRequestStates: readonly FinalizationRequestState[] =
   ["Open", "Registered", "Fulfilled", "Invalidated"];
 
+/** The durable effect whose external work one finalization request performs. */
+export type FinalizationRequestKind = "RunFinalizer" | "PublishHandoff";
+
+/** Every finalization request kind, so storage and the live protocol share one roster. */
+export const allFinalizationRequestKinds: readonly FinalizationRequestKind[] = [
+  "RunFinalizer",
+  "PublishHandoff",
+];
+
 /**
  * How a candidate is integrated against its observed target.
  * `merge-tree --write-tree` is a deterministic function of two commits, where a
@@ -342,6 +351,7 @@ export interface FinalizationClaim {
   readonly requestGeneration: number;
   readonly claimGeneration: number;
   readonly state: FinalizationRequestState;
+  readonly kind: FinalizationRequestKind;
   readonly recoveryEpoch: RecoveryEpoch;
   readonly owner: FinalizerOwnerId;
 }
@@ -463,6 +473,13 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
 /** The one conclusive thing `Core` is told, which carries a kind only where the model prices a failure. */
 export type FinalizationConclusion =
   | { readonly outcome: Extract<FinalizationOutcome, "FinalizationSucceeded"> }
+  | { readonly outcome: Extract<FinalizationOutcome, "PromotionAccepted"> }
+  | {
+      readonly outcome: Extract<
+        FinalizationOutcome,
+        "HandoffPublicationUnproven"
+      >;
+    }
   | {
       readonly outcome: Extract<FinalizationOutcome, "FinalizationFailed">;
       readonly kind: FinalizationFailureKind;
@@ -582,7 +599,12 @@ function finalizationNextUnderPermit(
     if (reconciliation.verdict === "Promoted") {
       return {
         decide: "Conclude",
-        conclusion: { outcome: "FinalizationSucceeded" },
+        conclusion: {
+          outcome:
+            view.claim.kind === "RunFinalizer"
+              ? "PromotionAccepted"
+              : "FinalizationSucceeded",
+        },
       };
     }
     return finalizationNextRestart(config, view);
@@ -591,6 +613,12 @@ function finalizationNextUnderPermit(
     return { decide: "Reconcile", permit: permit.permit };
   }
   if (reconciliation.verdict === "Unreadable") {
+    if (view.claim.kind === "PublishHandoff") {
+      return {
+        decide: "Conclude",
+        conclusion: { outcome: "HandoffPublicationUnproven" },
+      };
+    }
     return { decide: "Hold", hold: "ReconciliationUnreadable" };
   }
   return { decide: "Hold", hold: "ContradictoryEvidence" };
@@ -609,7 +637,10 @@ function finalizationNextBeforePermit(
   if (attempt?.outcome === "Failed" && attempt.failureKind !== undefined) {
     return {
       decide: "Conclude",
-      conclusion: { outcome: "FinalizationFailed", kind: attempt.failureKind },
+      conclusion:
+        view.claim.kind === "RunFinalizer"
+          ? { outcome: "FinalizationFailed", kind: attempt.failureKind }
+          : { outcome: "HandoffPublicationUnproven" },
     };
   }
   const aborting = view.observedTarget ?? attempt?.target;

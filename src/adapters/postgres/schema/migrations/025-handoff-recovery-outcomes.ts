@@ -4,12 +4,22 @@ import {
   nativeActionResolutions,
 } from "../../../../interpreter/ticketCommand.ts";
 import { finalizationOutcomeTags } from "../../../../domain/generated/modelTypes.ts";
-import { finalizerIdentityCharsMax } from "../../../../interpreter/finalizer.ts";
+import {
+  allFinalizationRequestKinds,
+  finalizerIdentityCharsMax,
+} from "../../../../interpreter/finalizer.ts";
 import {
   acceptanceBody,
   publicCommandGrammarBody,
 } from "./005-durable-prioritized-decision-mailbox.ts";
-import { boundaryOwnerRole, schemaTextSet, type Migration } from "../shared.ts";
+import { finalizationSubmissionBody } from "./013-durable-finalizer.ts";
+import {
+  boundaryOwnerRole,
+  finalizationFunction,
+  finalizerRole,
+  schemaTextSet,
+  type Migration,
+} from "../shared.ts";
 
 const pairing = allNativeActionKinds
   .map(
@@ -24,6 +34,16 @@ export const migration025: Migration = {
   statements: [
     `CREATE OR REPLACE ${acceptanceBody}`,
     `CREATE OR REPLACE FUNCTION public_ticket_command_is_valid${publicCommandGrammarBody}`,
+    `ALTER TABLE finalization_request ADD COLUMN kind text NOT NULL DEFAULT 'RunFinalizer'`,
+    `ALTER TABLE finalization_request ALTER COLUMN kind DROP DEFAULT,
+       ADD CONSTRAINT finalization_request_kind_is_known CHECK (
+         kind IN (${schemaTextSet(allFinalizationRequestKinds)}))`,
+    `CREATE OR REPLACE FUNCTION ${finalizationSubmissionBody}`,
+    `ALTER FUNCTION ${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)
+       OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text) FROM PUBLIC`,
+    `GRANT EXECUTE ON FUNCTION ${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)
+       TO ${finalizerRole}`,
     `CREATE OR REPLACE FUNCTION ticket_command_is_valid(command jsonb) RETURNS boolean
        LANGUAGE plpgsql IMMUTABLE AS $$
        BEGIN

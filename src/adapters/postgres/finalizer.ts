@@ -65,6 +65,7 @@ import {
   allFinalizationAttemptOutcomes,
   allFinalizationFailureKinds,
   allFinalizationRequestStates,
+  allFinalizationRequestKinds,
   allIntegrationStrategies,
   allReconciliationVerdicts,
   asCommitPermitId,
@@ -130,6 +131,7 @@ interface ClaimRow {
   readonly request_generation: string | null;
   readonly claim_generation: string | null;
   readonly state: string;
+  readonly kind: string;
 }
 
 /** One gathered view row: the request, its binding, its latest attempt, and what followed from it. */
@@ -203,6 +205,11 @@ function finalizerRowClaim(
       row.state,
       "delivery state",
     ),
+    kind: finalizerRowValue(
+      allFinalizationRequestKinds,
+      row.kind,
+      "finalization request kind",
+    ),
     recoveryEpoch: epoch,
     owner,
   };
@@ -234,7 +241,7 @@ async function finalizerClaimRequests(
       RETURNING r.tenant, r.project, r.request, r.ticket::text AS ticket,
                 r.authorizing_seq::text AS authorizing_seq,
                 r.request_generation::text AS request_generation,
-                r.claim_generation::text AS claim_generation, r.state`,
+                r.claim_generation::text AS claim_generation, r.state, r.kind`,
   );
   return claimed.rows.map((row) => finalizerRowClaim(row, owner, epoch));
 }
