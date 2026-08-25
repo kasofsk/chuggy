@@ -942,9 +942,9 @@ test("the API repository binding read migrates without exposing its table", asyn
   });
 });
 
-test("migration 25 replaces the finalization door on an upgraded database", async () => {
+test("migration 26 replaces the finalization door on an upgraded database", async () => {
   await migrationDatabase("handoff_outcomes", async (subject) => {
-    await migrationSeedApplied(subject, 25);
+    await migrationSeedApplied(subject, 26);
     await subject.query(`INSERT INTO recovery_epoch (epoch) VALUES ('epoch')`);
     await subject.query(
       `INSERT INTO project (tenant,project,lifecycle,head,ingress_next)
@@ -972,7 +972,7 @@ test("migration 25 replaces the finalization door on an upgraded database", asyn
         request_generation) VALUES ('tenant','project','legacy-in-flight',1,1,1,1,1)`,
     );
 
-    await applyMigration(subject, 25);
+    await applyMigration(subject, 26);
 
     assert.equal(
       (
