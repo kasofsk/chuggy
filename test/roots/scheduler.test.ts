@@ -251,6 +251,12 @@ function processFakes(reachable: boolean): string {
     const fetcher = (input, init) => {
       asked.push(((init && init.method) || 'GET') + ' ' + String(input));
       if (!${String(reachable)}) return Promise.reject(new Error('connection refused'));
+      if (init && init.method === 'POST' && String(input).endsWith('/pods')) {
+        const submitted = JSON.parse(init.body);
+        return Promise.resolve(Response.json({
+          metadata: { ...submitted.metadata, uid: 'pod-uid-one' },
+        }, { status: 201 }));
+      }
       return Promise.resolve(new Response(null, { status: init && init.method === 'POST' ? 201 : 200 }));
     };
 
@@ -277,9 +283,12 @@ function processFakes(reachable: boolean): string {
       claimRequests: async () => [],
       admit: async () => ({ admitted: 'NoCandidate' }),
       reapLapsedAttempts: async () => 0,
+      attemptsAwaitingCleanup: async () => [],
+      attemptCleanupCompleted: async () => true,
       unlaunched: async () => [execution],
       openAttempt: async () => ({ opened: 'Opened', attempt }),
       attemptPlaced: async (_attempt, placement) => { placed.push(placement); return true; },
+      attemptEnded: async () => true,
     };
     const configuration = ${JSON.stringify(configuration)};
   `;
@@ -350,8 +359,8 @@ test("the scheduler process starts, places one worker, reports health and stops"
   assert.equal(found.placed.length, 1);
   assert.deepEqual(found.asked, [
     "GET https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers",
-    "POST https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/secrets",
     "POST https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/pods",
+    "POST https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/secrets",
   ]);
 });
 

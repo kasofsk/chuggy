@@ -516,6 +516,20 @@ test("a worker upload is immutable, idempotent for the same bytes, and conflicts
   assert.equal(statSync(file).mode & 0o222, 0);
 });
 
+test("concurrent identical worker uploads both observe the immutable object", async (t) => {
+  const fixture = fixtureOpen(t);
+  const upload = () =>
+    fixture.store.store({
+      authority: workerAuthority,
+      path: "same.txt",
+      content: new TextEncoder().encode("same"),
+    });
+  assert.deepEqual(await Promise.all([upload(), upload()]), [
+    { stored: "Stored" },
+    { stored: "Stored" },
+  ]);
+});
+
 test("an invalid worker path is a typed refusal and writes nothing", async (t) => {
   const fixture = fixtureOpen(t);
   assert.deepEqual(

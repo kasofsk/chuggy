@@ -774,9 +774,10 @@ export interface AttemptPlacementPort {
   place(placement: AttemptPlacement): Promise<AttemptPlacementOutcome>;
 
   /** Cancels this exact generation; correctness never waits on the backend. */
-  cancel(attempt: FencedAttempt): Promise<
-    | { readonly cancelled: "Accepted" }
-    | { readonly cancelled: "Unavailable" }
+  cancel(
+    attempt: FencedAttempt,
+  ): Promise<
+    { readonly cancelled: "Accepted" } | { readonly cancelled: "Unavailable" }
   >;
 }
 

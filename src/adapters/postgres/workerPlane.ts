@@ -12,6 +12,7 @@ import {
   type ExecutionSchedulerStore,
   type Terminalized,
 } from "../../interpreter/executionScheduler.ts";
+import { inputBundleReferencesMax } from "../../interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asResultManifestId } from "../../interpreter/resultManifest.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
@@ -71,7 +72,7 @@ async function workerAuthenticate(
   const row = found.rows[0];
   if (row === undefined) return undefined;
   const inputs = row.inputs;
-  if (!Array.isArray(inputs) || inputs.length > 512)
+  if (!Array.isArray(inputs) || inputs.length > inputBundleReferencesMax)
     throw new Error(
       "postgres worker plane: input references exceed their bound",
     );
@@ -122,7 +123,9 @@ export function postgresWorkerArtifactReservations(
         case "QuotaExceeded":
           return { reserved: "QuotaExceeded" };
         case undefined:
-          throw new Error("postgres worker plane: artifact reservation returned no verdict");
+          throw new Error(
+            "postgres worker plane: artifact reservation returned no verdict",
+          );
         default:
           throw new Error(
             `postgres worker plane: unknown artifact reservation ${verdict}`,

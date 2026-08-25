@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { after, test } from "node:test";
 
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
@@ -79,7 +80,10 @@ test("the worker role settles once and terminal authority is immediately fenced"
   const report = schedulerReport(attempt, "Pass");
   const first = await store.terminalize(report);
   assert.equal(first.terminalized, "Terminalized");
-  assert.equal(await authority.authenticate(attempt.capability.secret), undefined);
+  assert.equal(
+    (await authority.authenticate(attempt.capability.secret))?.live,
+    false,
+  );
   assert.deepEqual(await store.terminalize(report), {
     terminalized: "AlreadyTerminal",
     outcome: "Passed",
@@ -121,12 +125,12 @@ test("the worker boundary preserves the first result and records a contradiction
 
 test("a lost attempt cannot use its worker boundary", async () => {
   const attempt = await placedAttempt("worker-fenced");
-  assert.equal(
-    await rig.store.attemptEnded(attempt, "Lost", "Vanished"),
-    true,
-  );
+  assert.equal(await rig.store.attemptEnded(attempt, "Lost", "Vanished"), true);
   const authority = postgresWorkerPlaneAuthority(workerPool);
-  assert.equal(await authority.authenticate(attempt.capability.secret), undefined);
+  assert.equal(
+    await authority.authenticate(attempt.capability.secret),
+    undefined,
+  );
   assert.deepEqual(
     await postgresWorkerReportStore(
       workerPool,
@@ -168,10 +172,7 @@ test("artifact reservations are immutable, concurrent, bounded and fenced", asyn
   assert.deepEqual(await reserve("past-count.txt", digest), {
     reserved: "QuotaExceeded",
   });
-  assert.equal(
-    await rig.store.attemptEnded(attempt, "Lost", "Vanished"),
-    true,
-  );
+  assert.equal(await rig.store.attemptEnded(attempt, "Lost", "Vanished"), true);
   assert.deepEqual(await reserve("late.txt", digest), { reserved: "Fenced" });
 });
 
@@ -198,5 +199,40 @@ test("artifact reservation aggregate bytes are bounded without receiving content
       bytes: manifestBytesMax - full * artifactBytesMax + 1,
     }),
     { reserved: "QuotaExceeded" },
+  );
+});
+
+test("the executable result boundary refuses an over-count manifest independently", async () => {
+  const attempt = await placedAttempt("worker-result-bound");
+  const report = schedulerReport(attempt, "Pass");
+  const artifacts = Array.from(
+    { length: manifestArtifactsMax + 1 },
+    (_unused, index) => ({
+      ordinal: index + 1,
+      role: "Diagnostic",
+      path: `diagnostic-${String(index)}.txt`,
+      digest: "d".repeat(64),
+      bytes: 1,
+    }),
+  );
+  const refused = await workerPool.query<{ terminalized: string }>(
+    `SELECT terminalized FROM submit_worker_result($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
+    [
+      createHash("sha256")
+        .update(attempt.capability.secret, "utf8")
+        .digest("hex"),
+      attempt.generation,
+      report.manifest.manifest,
+      report.manifest.schemaVersion,
+      report.manifest.digest,
+      report.manifest.verdict,
+      JSON.stringify(artifacts),
+      "operation-over-count",
+    ],
+  );
+  assert.equal(refused.rows[0]?.terminalized, "Conflicting");
+  assert.notEqual(
+    (await rig.store.execution(attempt.partition, attempt.execution))?.status,
+    "Terminal",
   );
 });

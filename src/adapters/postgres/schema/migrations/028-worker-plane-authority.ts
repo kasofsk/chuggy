@@ -127,8 +127,8 @@ export const migration028: Migration = {
            JOIN execution_request q ON q.tenant=e.tenant AND q.project=e.project
                                    AND q.request=e.source_request
           WHERE a.capability_secret_digest=in_secret_digest
-            AND a.state IN ('Placing','Running')
-            AND e.status IN ('Launching','Running')
+            AND ((a.state IN ('Placing','Running') AND e.status IN ('Launching','Running'))
+              OR (a.state='Reported' AND e.status='Terminal'))
             AND a.recovery_epoch=(SELECT epoch FROM recovery_epoch
                                    ORDER BY ordinal DESC LIMIT 1)
        $$`,
@@ -219,6 +219,57 @@ export const migration028: Migration = {
          IF bound.manifest<>in_manifest OR in_generation IS DISTINCT FROM (
               SELECT generation FROM execution_attempt WHERE capability_secret_digest=in_secret_digest)
             OR in_verdict NOT IN ('Pass','Fail') THEN
+           incident_id='incident-'||gen_random_uuid()::text;
+           INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
+             VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,
+                    bound.attempt,'ForeignManifest');
+           RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
+         END IF;
+         IF jsonb_typeof(in_artifacts) IS DISTINCT FROM 'array'
+            OR jsonb_array_length(in_artifacts)>${manifestArtifactsMax}
+            OR EXISTS(SELECT 1 FROM jsonb_array_elements(in_artifacts) x(artifact)
+              WHERE jsonb_typeof(artifact) IS DISTINCT FROM 'object'
+                 OR artifact->>'role' NOT IN ('Handoff','Diagnostic')
+                 OR NOT (coalesce(artifact->>'ordinal','') ~ '^[0-9]+$')
+                 OR CASE WHEN coalesce(artifact->>'ordinal','') ~ '^[0-9]+$'
+                         THEN (artifact->>'ordinal')::bigint NOT BETWEEN 1 AND ${manifestArtifactsMax}
+                         ELSE true END
+                 OR length(coalesce(artifact->>'path','')) NOT BETWEEN 1 AND ${artifactPathCharsMax}
+                 OR coalesce(artifact->>'path','') ~ '^/'
+                 OR coalesce(artifact->>'path','') ~ '//'
+                 OR coalesce(artifact->>'path','') ~ '[\\\\]'
+                 OR coalesce(artifact->>'path','') ~ '(^|/)[.][.]?(/|$)'
+                 OR coalesce(artifact->>'path','') ~ '[[:cntrl:]]'
+                 OR coalesce(artifact->>'path','') ~ '(^|/)[[:space:]]'
+                 OR coalesce(artifact->>'path','') ~ '[[:space:]](/|$)'
+                 OR coalesce(artifact->>'digest','') !~ '^[0-9a-f]{${artifactDigestChars}}$'
+                 OR NOT (coalesce(artifact->>'bytes','') ~ '^[0-9]+$')
+                 OR CASE WHEN coalesce(artifact->>'bytes','') ~ '^[0-9]+$'
+                         THEN (artifact->>'bytes')::numeric NOT BETWEEN 0 AND ${artifactBytesMax}
+                         ELSE true END)
+            OR (SELECT count(DISTINCT artifact->>'ordinal')
+                  FROM jsonb_array_elements(in_artifacts) x(artifact))
+               <>jsonb_array_length(in_artifacts)
+            OR (SELECT count(DISTINCT artifact->>'path')
+                  FROM jsonb_array_elements(in_artifacts) x(artifact))
+               <>jsonb_array_length(in_artifacts)
+            OR (SELECT coalesce(sum(CASE
+                    WHEN coalesce(artifact->>'bytes','') ~ '^[0-9]+$'
+                    THEN (artifact->>'bytes')::numeric
+                    ELSE ${manifestBytesMax + 1} END),0)
+                  FROM jsonb_array_elements(in_artifacts) x(artifact))>${manifestBytesMax} THEN
+           incident_id='incident-'||gen_random_uuid()::text;
+           INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
+             VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,
+                    bound.attempt,'ForeignManifest');
+           RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
+         END IF;
+         IF EXISTS(SELECT 1 FROM jsonb_array_elements(in_artifacts) x(artifact)
+              WHERE NOT EXISTS(SELECT 1 FROM worker_artifact_reservation r
+                WHERE r.tenant=bound.tenant AND r.project=bound.project
+                  AND r.execution=bound.execution AND r.attempt=bound.attempt
+                  AND r.path=artifact->>'path' AND r.digest=artifact->>'digest'
+                  AND r.bytes=(artifact->>'bytes')::bigint)) THEN
            incident_id='incident-'||gen_random_uuid()::text;
            INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
              VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,

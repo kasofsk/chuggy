@@ -527,7 +527,13 @@ async function artifactStoreAttemptWrite(
       refused !== null &&
       (refused as { code?: unknown }).code === "EEXIST"
     ) {
-      return { stored: "Conflict" };
+      return artifactStoreCommitAttemptWrite(
+        own,
+        directory,
+        file,
+        pending,
+        input.content,
+      );
     }
     return {
       stored: "Unavailable",

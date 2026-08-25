@@ -91,9 +91,7 @@ function workerUploadRoute(
     if (!(request.body instanceof Uint8Array))
       return reply.code(415).send({ action: "stop" });
     if (artifactPathRejection(path) !== undefined)
-      return reply
-        .code(400)
-        .send({ action: "stop", reason: "InvalidPath" });
+      return reply.code(400).send({ action: "stop", reason: "InvalidPath" });
     const secret = workerBearer(request);
     if (secret === undefined) return reply.code(401).send({ action: "stop" });
     const digest = createHash("sha256").update(request.body).digest("hex");

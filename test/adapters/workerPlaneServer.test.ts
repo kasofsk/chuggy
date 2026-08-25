@@ -11,6 +11,7 @@ import {
   asExecutionId,
 } from "../../src/interpreter/executionScheduler.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 
 const authority = {
@@ -178,5 +179,48 @@ test("an exhausted attempt artifact quota is a terminal payload refusal", async 
     action: "stop",
     reason: "QuotaExceeded",
   });
+  await app.close();
+});
+
+test("identical terminal report redelivery reaches its absorbed operation", async () => {
+  let reports = 0;
+  const app = createWorkerPlaneApp({
+    authority: {
+      authenticate: () =>
+        Promise.resolve({ ...authority, live: reports === 0 }),
+    },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: {
+      report: () => {
+        reports += 1;
+        return Promise.resolve(
+          reports === 1
+            ? {
+                ingested: "Terminalized",
+                outcome: "Passed",
+                operation: asOperationId("operation-one"),
+              }
+            : {
+                ingested: "Absorbed",
+                outcome: "Passed",
+                operation: asOperationId("operation-one"),
+              },
+        );
+      },
+    },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  for (let delivery = 0; delivery < 2; delivery += 1) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/report",
+      headers: { authorization: "Bearer held", "content-type": "text/plain" },
+      payload: "{}",
+    });
+    assert.equal(response.statusCode, 202);
+  }
+  assert.equal(reports, 2);
   await app.close();
 });

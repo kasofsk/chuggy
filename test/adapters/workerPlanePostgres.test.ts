@@ -49,14 +49,14 @@ test("every worker boundary fences against the latest recovery epoch", () => {
     );
 });
 
-test("terminal attempts no longer authenticate their bearer", () => {
+test("terminal attempts authenticate only as non-live report authority", () => {
   const boundary = migration028.statements.find((statement) =>
     statement.includes("CREATE FUNCTION read_worker_attempt"),
   );
   assert.notEqual(boundary, undefined);
   assert.match(boundary ?? "", /a\.state IN \('Placing','Running'\)/u);
   assert.match(boundary ?? "", /e\.status IN \('Launching','Running'\)/u);
-  assert.doesNotMatch(boundary ?? "", /Reported|Terminal/u);
+  assert.match(boundary ?? "", /a\.state='Reported' AND e\.status='Terminal'/u);
 });
 
 test("result submission follows the scheduler completion lock order", () => {
