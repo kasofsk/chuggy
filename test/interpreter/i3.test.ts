@@ -142,7 +142,8 @@ test("every answer but the safety one is ordinary, and each belongs to one quest
       parsed: "Ok",
       value: offered,
     });
-    const reducing = resolution === safetyResolution;
+    const reducing =
+      resolution === safetyResolution || resolution === "AbandonHandoff";
     assert.deepEqual(
       classifyCommand({ ...command, resolution }),
       {
@@ -277,6 +278,41 @@ test("a decision leaving finalization withdraws the approval it left unanswered"
     entry,
   );
   assert.deepEqual(planned.withdrawActionsFor, [id(1)]);
+});
+
+test("promotion and an unproven publication materialize a resumable handoff hold", () => {
+  const before = finalizing();
+  const promotion = finalizationResultEvent(id(1), "PromotionAccepted");
+  const publishing = journalStep(refinementInstance, before, promotion);
+  const promotionEntry = publishing.journal.at(-1);
+  assert.ok(promotionEntry !== undefined);
+  const promotionPlan = materializationOf(
+    finalizationInput(promotion),
+    memoryCore(before),
+    memoryCore(publishing),
+    promotionEntry,
+  );
+  assert.equal(promotionPlan.finalization.length, 1);
+  assert.match(promotionPlan.finalization[0]?.request ?? "", /PublishHandoff/u);
+
+  const unproven = finalizationResultEvent(id(1), "HandoffPublicationUnproven");
+  const blocked = journalStep(refinementInstance, publishing, unproven);
+  const blockedEntry = blocked.journal.at(-1);
+  assert.ok(blockedEntry !== undefined);
+  const blockedPlan = materializationOf(
+    finalizationInput(unproven),
+    memoryCore(publishing),
+    memoryCore(blocked),
+    blockedEntry,
+  );
+  assert.deepEqual(
+    blockedPlan.actions.map((action) => action.kind),
+    ["HandoffBlock"],
+  );
+  assert.deepEqual(blockedPlan.actions[0]?.resolutions, [
+    "RetryHandoff",
+    "AbandonHandoff",
+  ]);
 });
 
 test("a decision that leaves a ticket where it found it withdraws nothing", () => {

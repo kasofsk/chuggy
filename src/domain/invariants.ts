@@ -76,7 +76,9 @@ export const revokedNeverCompletes: Invariant = (_config, view) =>
 export const noFinalizationWithoutAKind: Invariant = (_config, view) =>
   everyLiveTicket(
     view.post,
-    (t) => t.finalizer !== "NoFinalizer" || t.phase !== "Finalizing",
+    (t) =>
+      t.finalizer !== "NoFinalizer" ||
+      !["Finalizing", "PublishingHandoff", "HandoffBlocked"].includes(t.phase),
   );
 
 /** Nothing is Done without having produced the artifact its dependents read. */
@@ -90,9 +92,11 @@ export const artifactWellFormed: Invariant = (_config, view) =>
 export const finalizerWellFormed: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t) => finalizerChoices.includes(t.finalizer));
 
-/** The two terminals absorb: no transition ever leaves one. */
+/** Terminal outcomes absorb: no transition ever leaves one. */
 export const terminalsAbsorbing: Invariant = (_config, view) =>
-  view.rec.transitions.every((t) => t.from !== "Done" && t.from !== "Revoked");
+  view.rec.transitions.every(
+    (t) => !["Done", "Abandoned", "Revoked"].includes(t.from),
+  );
 
 /**
  * The desk's two equivalences. A ticket carries a reason exactly while it is
@@ -104,7 +108,9 @@ export const deskConsistent: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t) => {
     const parked = t.phase === "Escalated";
     const named = t.reason !== "NoReason";
-    const resumable = parked && t.reason !== "DependencyRevoked";
+    const resumable =
+      (parked && t.reason !== "DependencyRevoked") ||
+      t.phase === "HandoffBlocked";
     return parked === named && (t.resumeAt !== "NoResume") === resumable;
   });
 
@@ -310,7 +316,7 @@ function stepDescendsExempt(view: StepView): boolean {
   if (label === "ticket-resumed") {
     return view.rec.transitions.some(
       (t) =>
-        (t.to === "Evaluating" || t.to === "Finalizing") &&
+        ["Evaluating", "Finalizing", "PublishingHandoff"].includes(t.to) &&
         ticketAt(view.post, t.ticket as TicketId).resumePricing === "RetryFree",
     );
   }

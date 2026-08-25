@@ -18,7 +18,7 @@ import { evalStage, nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
  * it would need the equivalence proved.
  */
 export function hasOpenHumanTask(ticket: Ticket): boolean {
-  return ticket.phase === "Escalated";
+  return ticket.phase === "Escalated" || ticket.phase === "HandoffBlocked";
 }
 
 /**
@@ -61,7 +61,7 @@ export function retireLive(ticket: Ticket): Ticket {
   };
 }
 
-/** Whether this ticket has reached one of the three settled phases. */
+/** Whether this ticket has reached the measure's settled floor. */
 export function ticketIsSettled(ticket: Ticket): boolean {
   return isSettled(ticket.phase);
 }

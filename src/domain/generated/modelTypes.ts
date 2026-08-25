@@ -38,7 +38,10 @@ export type Phase =
   | "Working"
   | "Evaluating"
   | "Finalizing"
+  | "PublishingHandoff"
+  | "HandoffBlocked"
   | "Done"
+  | "Abandoned"
   | "Escalated"
   | "Revoked";
 export const phaseTags = [
@@ -46,7 +49,10 @@ export const phaseTags = [
   "Working",
   "Evaluating",
   "Finalizing",
+  "PublishingHandoff",
+  "HandoffBlocked",
   "Done",
+  "Abandoned",
   "Escalated",
   "Revoked",
 ] as const;
@@ -61,12 +67,17 @@ export type RetryPricing = "RetryCharged" | "RetryFree";
 export const retryPricingTags = ["RetryCharged", "RetryFree"] as const;
 
 export type Resume =
-  "NoResume" | "ResumeWorking" | "ResumeEvaluating" | "ResumeFinalizing";
+  | "NoResume"
+  | "ResumeWorking"
+  | "ResumeEvaluating"
+  | "ResumeFinalizing"
+  | "ResumePublishingHandoff";
 export const resumeTags = [
   "NoResume",
   "ResumeWorking",
   "ResumeEvaluating",
   "ResumeFinalizing",
+  "ResumePublishingHandoff",
 ] as const;
 
 export type Reason =
@@ -96,10 +107,15 @@ export const reasonTags = [
 ] as const;
 
 export type FinalizationOutcome =
-  "FinalizationSucceeded" | "FinalizationFailed";
+  | "FinalizationSucceeded"
+  | "FinalizationFailed"
+  | "PromotionAccepted"
+  | "HandoffPublicationUnproven";
 export const finalizationOutcomeTags = [
   "FinalizationSucceeded",
   "FinalizationFailed",
+  "PromotionAccepted",
+  "HandoffPublicationUnproven",
 ] as const;
 
 export type Finalizer = "NoFinalizer" | "ManagedFinalizer";
@@ -184,6 +200,7 @@ export type DecisionEvent =
         readonly out: FinalizationOutcome;
       };
     }
+  | { readonly type: "AbandonHandoff"; readonly value: number }
   | {
       readonly type: "ExecutionBlocked";
       readonly value: { readonly ticket: number; readonly reason: Reason };
@@ -197,6 +214,7 @@ export const decisionEventTags = [
   "WorkReduce",
   "EvalReduce",
   "FinalizationResult",
+  "AbandonHandoff",
   "ExecutionBlocked",
   "ResumeTicket",
 ] as const;

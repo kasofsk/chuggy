@@ -125,6 +125,7 @@ function executionRequest(
       };
     }
     case "RunFinalizer":
+    case "PublishHandoff":
     case "OpenHumanTask":
       throw new Error(`decision plan: ${effect} is not an execution request`);
   }
@@ -137,10 +138,22 @@ function nativeAction(
 ): NativeActionPlan {
   const ticket = subject(entry, effectPosition);
   const value = ticketAt(post, ticket);
-  if (value.phase !== "Escalated") {
+  if (value.phase !== "Escalated" && value.phase !== "HandoffBlocked") {
     throw new Error(
       "decision plan: a native action requires an escalated ticket",
     );
+  }
+  if (value.phase === "HandoffBlocked") {
+    return {
+      action: identity(entry, effectPosition, "HandoffBlock"),
+      effectPosition,
+      ticket,
+      version: entry.seq,
+      kind: "HandoffBlock",
+      reason: "NoReason",
+      capability: "ResolveTicket",
+      resolutions: ["RetryHandoff", "AbandonHandoff"],
+    };
   }
   const resolutions =
     value.reason === "DependencyRevoked" || value.resumeAt === "NoResume"
@@ -185,14 +198,17 @@ function effectPlans(
       case "OpenHumanTask":
         actions.push(nativeAction(entry, effectPosition, post));
         break;
-      case "RunFinalizer": {
+      case "RunFinalizer":
+      case "PublishHandoff": {
         const ticket = subject(entry, effectPosition);
+        const expectedPhase =
+          effect === "RunFinalizer" ? "Finalizing" : "PublishingHandoff";
         if (
-          pre.tickets.get(ticket)?.phase === "Finalizing" ||
-          ticketAt(post, ticket).phase !== "Finalizing"
+          pre.tickets.get(ticket)?.phase === expectedPhase ||
+          ticketAt(post, ticket).phase !== expectedPhase
         ) {
           throw new Error(
-            "decision plan: finalizer effect does not enter Finalizing",
+            `decision plan: ${effect} does not enter ${expectedPhase}`,
           );
         }
         finalization.push({
@@ -275,6 +291,8 @@ export function inputBundleReferencesOf(
 const materializationActionablePhases: readonly Phase[] = [
   "Escalated",
   "Finalizing",
+  "PublishingHandoff",
+  "HandoffBlocked",
 ];
 
 /**

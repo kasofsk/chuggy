@@ -155,8 +155,8 @@ module chuggy_test {
   pure val c6 = dEval2.post
   pure val dEvalReduce = DB::decideEvalStageReduce(c6, 1)  // final (only) stage passes
   pure val c7 = dEvalReduce.post
-  /// Finalization is one Core phase: operational preparation and approval
-  /// are not domain decisions. The conclusive result completes it.
+  /// A direct finalizer still completes from Finalizing; the post-promotion
+  /// route below takes the separately modeled handoff boundary.
   pure val dComplete = DB::decideFinalizationResult(c7, 1, FinalizationSucceeded)
   pure val c8 = dComplete.post
 
@@ -947,7 +947,38 @@ module chuggy_test {
   })
 
   run finalizationOutcomesDrawRuleTest = assert(
-    DB::finalizationOutcomes == Set(FinalizationSucceeded, FinalizationFailed))
+    DB::finalizationOutcomes == Set(FinalizationSucceeded, FinalizationFailed,
+      PromotionAccepted, HandoffPublicationUnproven))
+
+  pure val dPromotionAccepted =
+    DB::decideFinalizationResult(c7, 1, PromotionAccepted)
+  pure val dHandoffBlocked = DB::decideFinalizationResult(
+    dPromotionAccepted.post, 1, HandoffPublicationUnproven)
+  pure val dHandoffRetried = DB::decideResumeTicket(dHandoffBlocked.post, 1)
+  pure val dHandoffSucceeded = DB::decideFinalizationResult(
+    dHandoffRetried.post, 1, FinalizationSucceeded)
+  pure val dHandoffAbandoned =
+    DB::decideAbandonHandoff(dHandoffBlocked.post, 1)
+
+  run postPromotionHandoffTest = assert(and {
+    dPromotionAccepted.post.tickets.get(1).phase == PublishingHandoff,
+    dPromotionAccepted.rec.effects == ["PublishHandoff"],
+    mB(dPromotionAccepted.post) < mB(c7),
+    dHandoffBlocked.post.tickets.get(1).phase == HandoffBlocked,
+    dHandoffBlocked.post.tickets.get(1).resumeAt == ResumePublishingHandoff,
+    hasOpenHumanTask(dHandoffBlocked.post.tickets.get(1)),
+    mB(dHandoffBlocked.post) < mB(dPromotionAccepted.post),
+    dHandoffRetried.post.tickets.get(1).phase == PublishingHandoff,
+    dHandoffRetried.rec.effects == ["PublishHandoff"],
+    mB(dHandoffRetried.post) < mB(dHandoffBlocked.post),
+    dHandoffSucceeded.post.tickets.get(1).phase == Done,
+    dHandoffAbandoned.post.tickets.get(1).phase == Abandoned,
+    dHandoffAbandoned.post.tickets.get(1).completions == 0,
+    mB(dHandoffAbandoned.post) < mB(dHandoffBlocked.post),
+    not(DB::revocableIn(dHandoffBlocked.post, 1)),
+    not(DB::finalizationOutcomeEnabled(dHandoffBlocked.post, 1,
+      FinalizationFailed))
+  })
 
   /// ARTIFACT-BLINDNESS: no digit,
   /// weight or account radix reads the mark, so tickets identical but for it

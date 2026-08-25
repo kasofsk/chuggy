@@ -372,6 +372,11 @@ const refusals: readonly Refusal[] = [
     event: finalizationResultEvent(id(1), "FinalizationSucceeded"),
   },
   {
+    conjunct: "AbandonHandoff/HandoffBlocked",
+    at: pending,
+    event: { type: "AbandonHandoff", value: id(1) },
+  },
+  {
     conjunct: "ExecutionBlocked/taskPhaseIn",
     at: pending,
     event: executionBlockedEvent(id(1), "TicketConfigIncompatible"),

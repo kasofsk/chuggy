@@ -419,10 +419,46 @@ export function decideFinalizationResult(
 ): Decision {
   switch (outcome) {
     case "FinalizationSucceeded":
-      return completeTicket(core, id);
+      return ticketAt(core, id).phase === "PublishingHandoff"
+        ? move(
+            withTicket(core, id, {
+              ...ticketAt(core, id),
+              completions: ticketAt(core, id).completions + 1,
+            }),
+            id,
+            "Done",
+            "ticket-done handoff_succeeded",
+            [],
+          )
+        : completeTicket(core, id);
     case "FinalizationFailed":
       return finalizerFailure(core, id, "rework-started finalization_failed");
+    case "PromotionAccepted":
+      return move(core, id, "PublishingHandoff", "promotion-accepted", [
+        "PublishHandoff",
+      ]);
+    case "HandoffPublicationUnproven":
+      return move(
+        withTicket(core, id, {
+          ...ticketAt(core, id),
+          resumeAt: "ResumePublishingHandoff",
+        }),
+        id,
+        "HandoffBlocked",
+        "handoff-blocked",
+        ["OpenHumanTask"],
+      );
   }
+}
+
+export function decideAbandonHandoff(core: Core, id: TicketId): Decision {
+  return move(
+    withTicket(core, id, { ...ticketAt(core, id), resumeAt: "NoResume" }),
+    id,
+    "Abandoned",
+    "handoff-abandoned",
+    [],
+  );
 }
 
 /**
@@ -486,6 +522,14 @@ export function decideResumeTicket(core: Core, id: TicketId): Decision {
         "Finalizing",
         "ticket-resumed",
         ["RunFinalizer"],
+      );
+    case "ResumePublishingHandoff":
+      return move(
+        withTicket(core, id, resumed),
+        id,
+        "PublishingHandoff",
+        "ticket-resumed",
+        ["PublishHandoff"],
       );
     case "NoResume":
       return {

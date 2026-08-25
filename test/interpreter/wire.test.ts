@@ -77,6 +77,7 @@ const oneOfEach: Readonly<Record<DecisionEvent["type"], DecisionEvent>> = {
   WorkReduce: workReduceEvent(id(1)),
   EvalReduce: evalReduceEvent(id(1)),
   FinalizationResult: finalizationResultEvent(id(1), "FinalizationFailed"),
+  AbandonHandoff: { type: "AbandonHandoff", value: id(1) },
   ExecutionBlocked: executionBlockedEvent(id(1), "ExecutionPolicyDenied"),
   ResumeTicket: resumeTicketEvent(id(1)),
 };

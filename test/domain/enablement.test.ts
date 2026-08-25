@@ -350,10 +350,12 @@ test("a running ticket is not parked, so nothing about it is retryable", () => {
   assert.ok(!retryableIn(running, id(1)));
 });
 
-test("the finalizer reports one of two results, and a block names one of five reasons", () => {
+test("the finalizer reports every lifecycle result, and a block names an execution reason", () => {
   assert.deepEqual(finalizationOutcomes, [
     "FinalizationSucceeded",
     "FinalizationFailed",
+    "PromotionAccepted",
+    "HandoffPublicationUnproven",
   ]);
   assert.ok(
     !executionBlockedReasons.includes("WorkFailed"),

@@ -19,7 +19,11 @@ export type OperationDecisionEvent = Exclude<
   DecisionEvent,
   {
     readonly type:
-      "WorkReduce" | "EvalReduce" | "ReleaseTicket" | "FinalizationResult";
+      | "WorkReduce"
+      | "EvalReduce"
+      | "ReleaseTicket"
+      | "FinalizationResult"
+      | "AbandonHandoff";
   }
 >;
 
@@ -30,6 +34,7 @@ export type OperationDecisionEvent = Exclude<
  */
 export const nativeActionResolutions = {
   TicketEscalation: ["Resume", "Revoke"],
+  HandoffBlock: ["RetryHandoff", "AbandonHandoff"],
   FinalizationApproval: ["Approve", "Decline"],
 } as const;
 
@@ -44,6 +49,8 @@ export const allNativeActionKinds = Object.keys(
 /** The two answers an escalation admits, each of which names a domain command. */
 export type EscalationResolution =
   (typeof nativeActionResolutions)["TicketEscalation"][number];
+export type HandoffResolution =
+  (typeof nativeActionResolutions)["HandoffBlock"][number];
 
 /**
  * The two answers a finalization approval admits, and the first resolutions that
@@ -53,7 +60,8 @@ export type EscalationResolution =
 export type ApprovalResolution =
   (typeof nativeActionResolutions)["FinalizationApproval"][number];
 
-export type NativeActionResolution = EscalationResolution | ApprovalResolution;
+export type NativeActionResolution =
+  EscalationResolution | HandoffResolution | ApprovalResolution;
 
 /** Every resolution, so a suite and a database CHECK iterate rather than restate. */
 export const allNativeActionResolutions: readonly NativeActionResolution[] =
@@ -82,7 +90,8 @@ export function asOperationDecisionEvent(
     event.type === "WorkReduce" ||
     event.type === "EvalReduce" ||
     event.type === "ReleaseTicket" ||
-    event.type === "FinalizationResult"
+    event.type === "FinalizationResult" ||
+    event.type === "AbandonHandoff"
   ) {
     throw new RangeError("event is not a public decision command");
   }

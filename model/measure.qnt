@@ -293,8 +293,10 @@ module chuggy_measure {
   /// Evaluating edge, because within-phase progress lives in the stage
   /// digit rather than in new phases.
   ///
-  /// Finalizing is one domain phase. Queueing, approval, permits, and any
-  /// irreversible external action are operational protocol, not Core state.
+  /// Finalizing precedes the accepted-promotion boundary. PublishingHandoff
+  /// and HandoffBlocked make the irreversible side of that boundary explicit;
+  /// queueing, approval, permits, and immutable external identities remain
+  /// operational protocol rather than Core state.
   type Phase =
     Pending | Working | Evaluating | Finalizing | PublishingHandoff |
     HandoffBlocked | Done | Abandoned | Escalated | Revoked
@@ -400,7 +402,9 @@ module chuggy_measure {
   /// or parked with NO modeled resume: the dependency_revoked wall's only
   /// modeled exit is revoke (domain.qnt retryableIn), and stamping a
   /// resume point on it would be a lie to the desk.
-  type Resume = NoResume | ResumeWorking | ResumeEvaluating | ResumeFinalizing
+  type Resume =
+    NoResume | ResumeWorking | ResumeEvaluating | ResumeFinalizing |
+    ResumePublishingHandoff
 
   /// Why a ticket sits on the human desk. The termination requirement
   /// names no individual wall; the reason is
@@ -560,7 +564,7 @@ module chuggy_measure {
   /// through its dep, so the cascade parks it with a task of its OWN
   /// (DependencyRevoked; domain.qnt `cascadeSafety`).
   pure def hasOpenHumanTask(ticket: Ticket): bool =
-    ticket.phase == Escalated
+    ticket.phase == Escalated or ticket.phase == HandoffBlocked
 
   /// The machine's observed state, as the pure deciders see it. A record
   /// (not a bare map) so the ticket-source shape stays open.  attached
@@ -629,7 +633,8 @@ module chuggy_measure {
   /// Stalled merged into Escalated. Nothing is below settled.
   pure val rankSettled: int = 0
   /// Finalization resolves to completion, priced rework, or a wall.
-  pure val rankPublishingHandoff: int = rankSettled + 1
+  pure val rankHandoffBlocked: int = rankSettled + 1
+  pure val rankPublishingHandoff: int = rankHandoffBlocked + 1
   pure val rankFinalizing: int = rankPublishingHandoff + 1
   pure val rankEvaluating: int = rankFinalizing + 1
   pure val rankWorking: int = rankEvaluating + 1
@@ -653,6 +658,7 @@ module chuggy_measure {
       | Evaluating => rankEvaluating
       | Finalizing => rankFinalizing
       | PublishingHandoff => rankPublishingHandoff
+      | HandoffBlocked => rankHandoffBlocked
       | _ => rankSettled
     }
 
