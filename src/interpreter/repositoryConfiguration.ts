@@ -203,6 +203,33 @@ export async function importRepositoryConfigurations(input: {
   }
 }
 
+export interface RepositoryConfigurationPartitionImport {
+  readonly partition: Partition;
+  readonly outcome: RepositoryConfigurationImportOutcome;
+}
+
+/** Attempts every named partition at one commit, preserving each outcome for the caller to report. */
+export async function importRepositoryConfigurationPartitions(input: {
+  readonly partitions: readonly Partition[];
+  readonly commit: GitObjectId;
+  readonly authority: Authority;
+  readonly ports: RepositoryConfigurationImportPorts;
+}): Promise<readonly RepositoryConfigurationPartitionImport[]> {
+  const imports: RepositoryConfigurationPartitionImport[] = [];
+  for (const partition of input.partitions) {
+    imports.push({
+      partition,
+      outcome: await importRepositoryConfigurations({
+        partition,
+        commit: input.commit,
+        authority: input.authority,
+        ports: input.ports,
+      }),
+    });
+  }
+  return imports;
+}
+
 function repositoryConfigurationRevision(
   commit: GitObjectId,
   name: RepositoryConfigurationName,

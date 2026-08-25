@@ -6,11 +6,21 @@ import {
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import {
+  importRepositoryConfigurationPartitions,
   repositoryConfigurationDeclarationsMax,
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
   type RepositoryConfigurationFile,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+} from "../../src/interpreter/operationInbox.ts";
+import {
+  asProjectId,
+  asRecoveryEpoch,
+  asTenantId,
+} from "../../src/interpreter/projectStore.ts";
 
 const repository = asRepositoryId("repository-one");
 const commit = asGitObjectId("a".repeat(40));
@@ -148,4 +158,59 @@ test("the declaration collection is explicitly bounded", () => {
       ],
     },
   );
+});
+
+test("partition imports continue after one partition is refused", async () => {
+  const first = { tenant: asTenantId("tenant"), project: asProjectId("first") };
+  const second = {
+    tenant: asTenantId("tenant"),
+    project: asProjectId("second"),
+  };
+  const calls: string[] = [];
+  const imports = await importRepositoryConfigurationPartitions({
+    partitions: [first, second],
+    commit,
+    authority: {
+      kind: asAuthorityKind("Service"),
+      subject: asAuthoritySubject("configuration-mirror-importer"),
+    },
+    ports: {
+      bindings: {
+        binding: (partition) => {
+          calls.push(`binding:${partition.project}`);
+          return Promise.resolve(
+            partition.project === first.project
+              ? undefined
+              : {
+                  partition,
+                  repository,
+                  recoveryEpoch: asRecoveryEpoch("epoch"),
+                },
+          );
+        },
+      },
+      snapshots: {
+        snapshot: () => {
+          calls.push("snapshot");
+          return Promise.resolve({ read: "Snapshot", files: [] });
+        },
+      },
+      store: {
+        importRepositoryConfigurations: () => {
+          calls.push("store");
+          return Promise.resolve({ imported: "Imported" });
+        },
+      },
+    },
+  });
+  assert.deepEqual(
+    imports.map(({ outcome }) => outcome),
+    [{ result: "RepositoryAbsent" }, { result: "Imported" }],
+  );
+  assert.deepEqual(calls, [
+    "binding:first",
+    "binding:second",
+    "snapshot",
+    "store",
+  ]);
 });

@@ -1032,7 +1032,7 @@ test("the configuration importer is fenced and holds only its two functions", as
     await applyMigration(subject, 29);
     for (const [signature, granted] of [
       [
-        "import_repository_configuration(text,text,text,text,text,text,text,text,text,text,text,text,text)",
+        "import_repository_configuration(text,text,text,text,text,text,text,text,text,text,text,text)",
         true,
       ],
       [`${repositoryBindingReadFunction}(text,text)`, true],

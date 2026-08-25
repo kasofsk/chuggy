@@ -17,7 +17,7 @@ export const migration029: Migration = {
     `DROP FUNCTION ${repositoryConfigurationImportFunction}(text,text,text,text,text,text,text,text,text,text,text)`,
     `CREATE FUNCTION ${repositoryConfigurationImportFunction}(
        in_tenant text,in_project text,in_expected_repository text,in_expected_recovery_epoch text,
-       in_revision text,in_canonical text,in_digest text,in_repository text,in_commit text,
+       in_revision text,in_canonical text,in_digest text,in_commit text,
        in_path text,in_name text,in_kind text,in_subject text) RETURNS text
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE standing project_repository%ROWTYPE;
@@ -43,11 +43,11 @@ export const migration029: Migration = {
        END IF;
        INSERT INTO repository_configuration_provenance
          (tenant,project,revision,digest,repository,repository_commit,path,name)
-       VALUES (in_tenant,in_project,in_revision,in_digest,in_repository,in_commit,in_path,in_name)
+       VALUES (in_tenant,in_project,in_revision,in_digest,in_expected_repository,in_commit,in_path,in_name)
        ON CONFLICT (tenant,project,revision) DO NOTHING;
        SELECT * INTO provenance FROM repository_configuration_provenance
         WHERE tenant=in_tenant AND project=in_project AND revision=in_revision;
-       IF provenance.digest<>in_digest OR provenance.repository<>in_repository
+       IF provenance.digest<>in_digest OR provenance.repository<>in_expected_repository
           OR provenance.repository_commit<>in_commit OR provenance.path<>in_path OR provenance.name<>in_name
          THEN RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='repository configuration provenance conflict'; END IF;
        IF inserted THEN
@@ -58,11 +58,11 @@ export const migration029: Migration = {
      EXCEPTION WHEN unique_violation OR foreign_key_violation OR check_violation THEN
        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='repository configuration identity conflict';
      END $$`,
-    `ALTER FUNCTION ${repositoryConfigurationImportFunction}(text,text,text,text,text,text,text,text,text,text,text,text,text)
+    `ALTER FUNCTION ${repositoryConfigurationImportFunction}(text,text,text,text,text,text,text,text,text,text,text,text)
        OWNER TO ${boundaryOwnerRole}`,
-    `REVOKE ALL ON FUNCTION ${repositoryConfigurationImportFunction}(text,text,text,text,text,text,text,text,text,text,text,text,text)
+    `REVOKE ALL ON FUNCTION ${repositoryConfigurationImportFunction}(text,text,text,text,text,text,text,text,text,text,text,text)
        FROM PUBLIC`,
-    `GRANT EXECUTE ON FUNCTION ${repositoryConfigurationImportFunction}(text,text,text,text,text,text,text,text,text,text,text,text,text)
+    `GRANT EXECUTE ON FUNCTION ${repositoryConfigurationImportFunction}(text,text,text,text,text,text,text,text,text,text,text,text)
        TO ${apiRole},${configurationImporterRole}`,
     `GRANT EXECUTE ON FUNCTION ${repositoryBindingReadFunction}(text,text)
        TO ${configurationImporterRole}`,

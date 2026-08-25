@@ -14,7 +14,7 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../interpreter/operationInbox.ts";
-import { importRepositoryConfigurations } from "../interpreter/repositoryConfiguration.ts";
+import { importRepositoryConfigurationPartitions } from "../interpreter/repositoryConfiguration.ts";
 import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
 import { finalizerGitEnvironmentNames } from "../interpreter/finalizerSettings.ts";
 import { configurationImporterConfig } from "./configurationImporterConfig.ts";
@@ -80,21 +80,29 @@ async function main(): Promise<void> {
       snapshots,
       store: authoring,
     };
-    for (const partition of config.partitions) {
-      const outcome = await importRepositoryConfigurations({
-        partition,
-        commit: config.commit,
-        authority,
-        ports,
-      });
-      if (outcome.result !== "Imported")
-        throw new Error(
-          `configuration import ${partition.tenant}/${partition.project}: ${JSON.stringify(outcome)}`,
+    const imports = await importRepositoryConfigurationPartitions({
+      partitions: config.partitions,
+      commit: config.commit,
+      authority,
+      ports,
+    });
+    const failures = imports.filter(
+      ({ outcome }) => outcome.result !== "Imported",
+    );
+    for (const { partition, outcome } of imports)
+      if (outcome.result === "Imported")
+        process.stdout.write(
+          `${partition.tenant}/${partition.project} imported ${config.commit}\n`,
         );
-      process.stdout.write(
-        `${partition.tenant}/${partition.project} imported ${config.commit}\n`,
+    if (failures.length > 0)
+      throw new Error(
+        failures
+          .map(
+            ({ partition, outcome }) =>
+              `${partition.tenant}/${partition.project}: ${JSON.stringify(outcome)}`,
+          )
+          .join("; "),
       );
-    }
   } finally {
     await pool.end();
   }
