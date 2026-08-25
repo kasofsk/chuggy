@@ -24,7 +24,6 @@ export const migration028: Migration = {
   name: "attempt-scoped worker plane authority",
   statements: [
     roleStatement(workerPlaneRole),
-    `ALTER ROLE ${workerPlaneRole} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
     `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${workerPlaneRole}`,
     `REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM ${workerPlaneRole}`,
     `GRANT USAGE ON SCHEMA public TO ${workerPlaneRole}`,
