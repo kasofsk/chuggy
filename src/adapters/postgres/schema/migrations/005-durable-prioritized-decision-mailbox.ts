@@ -83,8 +83,6 @@ export const acceptanceBody = `FUNCTION ${acceptanceFunction}(
        IF command_tag = 'Revoke' OR
           (command_tag = 'ResolveNativeAction' AND action_resolution = '${safetyResolution}') THEN
          priority := 'Safety'; admission_class := 'CorrectnessReducing';
-       ELSIF command_tag IN ('TaskDone', 'ExecutionBlocked', 'FinalizationResult') THEN
-         priority := 'Completion'; admission_class := 'CorrectnessReducing';
        ELSIF command_tag IN ('ReleaseDraft', 'Dispatch', 'ResumeTicket') OR
              (command_tag = 'ResolveNativeAction' AND action_resolution IN (${schemaTextSet(acceptanceOrdinaryResolutions)})) THEN
          priority := 'Ordinary'; admission_class := 'Ordinary';

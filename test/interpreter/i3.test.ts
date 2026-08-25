@@ -33,6 +33,7 @@ import {
 } from "../../src/interpreter/ticketCommand.ts";
 import {
   encodeTicketCommand,
+  parseStoredTicketCommand,
   parseTicketCommand,
 } from "../../src/interpreter/wire.ts";
 import {
@@ -85,27 +86,34 @@ test("typed commands round-trip and internal reducers are not operation commands
   );
 });
 
-test("trusted classification reserves completion and safety traffic", () => {
-  const completion = {
-    version: 1,
-    command: "Decide",
-    event: asOperationDecisionEvent(
-      taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
-    ),
-  } as const;
+test("trusted classification reserves safety traffic", () => {
   const safety = {
     version: 1,
     command: "Decide",
     event: asOperationDecisionEvent({ type: "Revoke", value: id(1) }),
   } as const;
-  assert.deepEqual(classifyCommand(completion), {
-    admission: "CorrectnessReducing",
-    priority: "Completion",
-  });
   assert.deepEqual(classifyCommand(safety), {
     admission: "CorrectnessReducing",
     priority: "Safety",
   });
+});
+
+test("a completion is no command a principal may offer, and a writer still reads one", () => {
+  for (const event of [
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    executionBlockedEvent(id(1), "ExecutionProfileUnavailable"),
+  ]) {
+    assert.throws(
+      () => asOperationDecisionEvent(event),
+      /not a public decision command/,
+    );
+    const stored = JSON.stringify({ version: 1, command: "Decide", event });
+    assert.equal(parseTicketCommand(stored).parsed, "Refused");
+    assert.deepEqual(parseStoredTicketCommand(stored), {
+      parsed: "Ok",
+      value: { version: 1, command: "Decide", event },
+    });
+  }
 });
 
 test("native-action resume is ordinary while revoke remains safety traffic", () => {

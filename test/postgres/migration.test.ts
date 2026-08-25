@@ -55,14 +55,22 @@ const publishingImageRequired = [
   ...retainedImageRequired,
   { version: 18, name: "selector review schema readiness" },
 ] as const;
+/**
+ * The retained image's staged tail is every migration declared past the one it
+ * published, read from the declared list rather than copied beside it: a
+ * staged advance is only possible where the retained image understands the
+ * whole target, so a literal tail is a copy that must equal the declaration and
+ * silently stops the case testing anything the day it does not.
+ */
 const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
   ...publishingImageRequired,
-  {
-    version: 19,
-    name: "the execution requirement a migrated database never got",
-  },
-  { version: 20, name: "repository configuration provenance" },
-  { version: 21, name: "API repository binding read" },
+  ...migrations
+    .filter(
+      ({ version }) =>
+        version >
+        Math.max(...publishingImageRequired.map((each) => each.version)),
+    )
+    .map(({ version, name }) => ({ version, name })),
 ]);
 
 const declaredLatest = Math.max(...migrations.map(({ version }) => version));

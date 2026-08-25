@@ -8,6 +8,16 @@
  * `TicketCommand` — a `Decide` carrying one and a submission offering one are
  * both unspellable rather than merely refused. `ReleaseTicket` has been kept
  * out this way since I3, and this is the same device at a second seam.
+ *
+ * `TaskDone` AND `ExecutionBlocked` ARE THE THIRD SEAM. Only the execution
+ * scheduler settles a logical task, and settling one is not a decision a
+ * principal holding `Mutate` may offer: a forged pass would conclude work that
+ * never ran, and a forged block would park a ticket no infrastructure refused.
+ * So both leave `OperationDecisionEvent` for the same reason the finalizer's
+ * event did, and `SchedulerCompletion` below is the envelope the scheduler's
+ * own boundary writes. The two arrive at a writer through
+ * `parseStoredTicketCommand` and never through the ingress parser, which is
+ * what makes the exclusion a shape rather than a check that could be skipped.
  */
 
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
@@ -19,9 +29,33 @@ export type OperationDecisionEvent = Exclude<
   DecisionEvent,
   {
     readonly type:
-      "WorkReduce" | "EvalReduce" | "ReleaseTicket" | "FinalizationResult";
+      | "WorkReduce"
+      | "EvalReduce"
+      | "ReleaseTicket"
+      | "FinalizationResult"
+      | "TaskDone"
+      | "ExecutionBlocked";
   }
 >;
+
+/** The two events only the execution scheduler's own boundary submits. */
+export type CompletionDecisionEvent = Extract<
+  DecisionEvent,
+  { readonly type: "TaskDone" | "ExecutionBlocked" }
+>;
+
+/** Every event kind a `Decide` envelope may carry that no principal may offer. */
+export const completionEventTypes = [
+  "TaskDone",
+  "ExecutionBlocked",
+] as const satisfies readonly CompletionDecisionEvent["type"][];
+
+/** Whether one decision event is a completion the scheduler alone may submit. */
+export function isCompletionDecisionEvent(
+  event: DecisionEvent,
+): event is CompletionDecisionEvent {
+  return completionEventTypes.some((type) => type === event.type);
+}
 
 /**
  * What each kind of native action asks a person for, and the answers it admits.
@@ -82,7 +116,8 @@ export function asOperationDecisionEvent(
     event.type === "WorkReduce" ||
     event.type === "EvalReduce" ||
     event.type === "ReleaseTicket" ||
-    event.type === "FinalizationResult"
+    event.type === "FinalizationResult" ||
+    isCompletionDecisionEvent(event)
   ) {
     throw new RangeError("event is not a public decision command");
   }
@@ -140,5 +175,19 @@ export interface FinalizationSubmission {
   readonly outcome: FinalizationOutcome;
 }
 
-/** What a stored operation may carry: a public command, or the one envelope only a boundary writes. */
-export type StoredTicketCommand = TicketCommand | FinalizationSubmission;
+/**
+ * The execution scheduler's own submission. `submit_task_completion` builds the
+ * event from the durable execution, attempt and result rows it has already
+ * locked and validated, so what is stored is the settled event itself rather
+ * than a binding a writer would resolve a second time — which is the one way
+ * this envelope differs from the finalizer's above.
+ */
+export interface SchedulerCompletion {
+  readonly version: 1;
+  readonly command: "Decide";
+  readonly event: CompletionDecisionEvent;
+}
+
+/** What a stored operation may carry: a public command, or one of the two envelopes only a boundary writes. */
+export type StoredTicketCommand =
+  TicketCommand | FinalizationSubmission | SchedulerCompletion;

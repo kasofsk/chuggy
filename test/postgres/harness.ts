@@ -45,6 +45,9 @@ import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDis
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
 import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
 import { postgresProjectMembership } from "../../src/adapters/postgres/projectMembership.ts";
+import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
+import { isCompletionDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
+import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
 import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
 import type { ProjectMembershipAdministration } from "../../src/interpreter/projectMembership.ts";
 import type { RepositoryConfigurationStore } from "../../src/interpreter/repositoryConfiguration.ts";
@@ -436,6 +439,59 @@ export function postgresHarnessSubmission(
       event: asOperationDecisionEvent({ type: "ResumeTicket", value: id(1) }),
     },
   };
+}
+
+/**
+ * One completion written the way `submit_task_completion` writes it: under the
+ * scheduler's own authority, at the project's next ingress ordinal, and with
+ * the `Completion` priority no ingress classification produces. A case that
+ * needs a settled logical task takes this rather than the public inbox, because
+ * a completion is no command a principal may offer.
+ */
+export async function postgresHarnessCompletion(
+  harness: PostgresHarness,
+  partition: Partition,
+  operation: string,
+  event: DecisionEvent,
+): Promise<void> {
+  if (!isCompletionDecisionEvent(event))
+    throw new Error("postgres harness: that event is not a completion");
+  const command = JSON.stringify({ version: 1, command: "Decide", event });
+  await harness.query(
+    `WITH claimed AS (
+       UPDATE project SET ingress_next = ingress_next + 1
+        WHERE tenant = $1 AND project = $2
+        RETURNING ingress_next - 1 AS ordinal, lifecycle_generation
+     ), written AS (
+       INSERT INTO operation
+         (tenant, project, operation, authority_kind, authority_subject, admission,
+          key_version, key_digest, payload_digest, command, command_tag)
+       SELECT $1, $2, $3, $4, 'scheduler', 'CorrectnessReducing', 'scheduler-v1',
+              encode(sha256(convert_to($3, 'UTF8')), 'hex'),
+              encode(sha256(convert_to($5, 'UTF8')), 'hex'), $5, $6
+         FROM claimed
+       RETURNING operation
+     ), queued AS (
+       INSERT INTO decision_input
+         (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
+       SELECT $1, $2, claimed.ordinal, 'Operation', $3, 'Completion',
+              claimed.lifecycle_generation
+         FROM claimed
+       RETURNING ordinal
+     )
+     INSERT INTO project_readiness (tenant, project, ready, generation)
+     VALUES ($1, $2, true, 1)
+     ON CONFLICT (tenant, project) DO UPDATE
+       SET ready = true, generation = project_readiness.generation + 1`,
+    [
+      partition.tenant,
+      partition.project,
+      operation,
+      executionSchedulerAuthorityKind,
+      command,
+      event.type,
+    ],
+  );
 }
 
 /**

@@ -207,10 +207,14 @@ export const allPriorityClasses: readonly PriorityClass[] = [
   "Ordinary",
 ];
 
-/** Trusted ingress policy. Callers never provide either classification. */
+/**
+ * Trusted ingress policy. Callers never provide either classification, and
+ * `Completion` is not among the ones reachable here: a settled logical task is
+ * its boundary's to submit, so no envelope this takes carries one.
+ */
 export function classifyCommand(command: TicketCommand): {
   readonly admission: AdmissionClass;
-  readonly priority: Exclude<PriorityClass, "Continuation">;
+  readonly priority: Exclude<PriorityClass, "Continuation" | "Completion">;
 } {
   if (
     command.command === "ReleaseDraft" ||
@@ -228,9 +232,6 @@ export function classifyCommand(command: TicketCommand): {
   switch (command.event.type) {
     case "Revoke":
       return { admission: "CorrectnessReducing", priority: "Safety" };
-    case "TaskDone":
-    case "ExecutionBlocked":
-      return { admission: "CorrectnessReducing", priority: "Completion" };
     case "Dispatch":
     case "ResumeTicket":
       return { admission: "Ordinary", priority: "Ordinary" };

@@ -340,6 +340,14 @@ async function operationSource(
     return finalizationRequestSource(pool, partition, row.input_id, command);
   }
   if (command.command === "Decide") {
+    /**
+     * A completion reaches here with no join because `accept_operation` answers
+     * `InvalidCommand` for its tag, which leaves `submit_task_completion` the
+     * only writer of one — and that builds the event from the execution, request
+     * and result rows it locked and checked the binding against. Every other
+     * `Decide` is a public command, whose event is the whole of what its
+     * principal offered.
+     */
     return {
       kind: "Operation",
       operation: asOperationId(row.input_id),
