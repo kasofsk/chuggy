@@ -36,6 +36,22 @@ import {
 import { postgresProjectDecision } from "../adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
+import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
+import { postgresExecutionSourceHistory } from "../adapters/postgres/executionSourceHistory.ts";
+import { executionSourceObservation } from "../interpreter/executionSourceObservation.ts";
+import {
+  credentialFiles,
+  credentialFilesPrecondition,
+  type CredentialFilesOptions,
+} from "../adapters/credentials/credentialFiles.ts";
+import {
+  gitPromotion,
+  type GitPromotionOptions,
+} from "../adapters/git/gitPromotion.ts";
+import {
+  gitAvailablePrecondition,
+  gitScratchWritablePrecondition,
+} from "../adapters/git/gitPrerequisites.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import {
@@ -273,6 +289,8 @@ export interface TicketServiceProcessRootConfig {
   readonly domain: Config;
   readonly owner: string;
   readonly ticket?: TicketServiceConfig;
+  readonly source: Omit<GitPromotionOptions, "credentials"> &
+    CredentialFilesOptions;
 }
 
 /** Owns the writer-role pool and composes the independently deployable ticket service. */
@@ -280,6 +298,8 @@ export function ticketServiceProcessRoot(
   config: TicketServiceProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
+  const credentials = credentialFiles(config.source);
+  const git = gitPromotion({ ...config.source, credentials });
   const service: TicketServiceRuntimeService = {
     domain: config.domain,
     discovery: postgresProjectDiscovery(pool),
@@ -287,6 +307,11 @@ export function ticketServiceProcessRoot(
     projects: postgresProjectStore(pool),
     owner: asOwnerId(config.owner),
     monotonicNow: () => performance.now(),
+    executionSources: executionSourceObservation(
+      postgresProjectRepositoryBinding(pool),
+      git,
+      postgresExecutionSourceHistory(pool),
+    ),
     ...(config.ticket === undefined ? {} : { ticketConfig: config.ticket }),
   };
   return ownedProcess(
@@ -299,6 +324,9 @@ export function ticketServiceProcessRoot(
         additional: [
           postgresRolePrecondition(pool, ticketServiceRole),
           postgresDomainConfigurationPrecondition(pool, config.domain),
+          gitAvailablePrecondition(config.source.environment),
+          gitScratchWritablePrecondition(config.source.scratchDirectory),
+          credentialFilesPrecondition(config.source),
         ],
       },
       config.runtime,

@@ -43,6 +43,10 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
+import {
+  asGitObjectId,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
 import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
 import { postgresProjectMembership } from "../../src/adapters/postgres/projectMembership.ts";
 import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
@@ -664,6 +668,17 @@ export function postgresHarnessWriter(
     config: refinementInstance,
     store: harness.store,
     decisions: harness.decisions,
+    executionSources: {
+      observe: () =>
+        Promise.resolve({
+          observed: "Source",
+          source: {
+            repository: asRepositoryId("repository"),
+            target: { commit: asGitObjectId("a".repeat(40)) },
+            manifests: [],
+          },
+        }),
+    },
   };
 }
 

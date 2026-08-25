@@ -103,6 +103,8 @@ export interface KubernetesWorkerTask {
   readonly taskKind: string;
   readonly stage?: number;
   readonly sourceRequest: string;
+  readonly inputBundle: string;
+  readonly inputBundleDigest: string;
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly profile: ExecutionProfile;
@@ -240,6 +242,8 @@ function kubernetesWorkerAnnotations(
     task: String(placement.task),
     "task-kind": placement.taskKind,
     "source-request": placement.sourceRequest,
+    "input-bundle": placement.inputBundle,
+    "input-bundle-digest": placement.inputBundleDigest,
     "configuration-revision": placement.configurationRevision,
     "configuration-digest": placement.configurationDigest,
     profile: placement.profile.profile,
@@ -277,6 +281,8 @@ export function kubernetesWorkerTask(
     taskKind: placement.taskKind,
     ...(placement.stage === undefined ? {} : { stage: placement.stage }),
     sourceRequest: placement.sourceRequest,
+    inputBundle: placement.inputBundle,
+    inputBundleDigest: placement.inputBundleDigest,
     configurationRevision: placement.configurationRevision,
     configurationDigest: placement.configurationDigest,
     profile: placement.profile,

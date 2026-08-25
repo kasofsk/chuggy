@@ -357,6 +357,8 @@ export interface LogicalExecution {
   readonly taskKind: ExecutionTaskKind;
   readonly stage?: number;
   readonly sourceRequest: string;
+  readonly inputBundle: string;
+  readonly inputBundleDigest: string;
   readonly sourceSeq: number;
   readonly sourceEffect: number;
   readonly ticketVersion: number;
@@ -678,6 +680,8 @@ export interface AttemptPlacement extends FencedAttempt {
   readonly taskKind: ExecutionTaskKind;
   readonly stage?: number;
   readonly sourceRequest: string;
+  readonly inputBundle: string;
+  readonly inputBundleDigest: string;
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly requirementIdentity: string;

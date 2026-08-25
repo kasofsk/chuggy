@@ -6,6 +6,7 @@ import {
   projectTicketWriterRun,
   type ProjectTicketWriter,
 } from "./projectWriter.ts";
+import type { ExecutionSourceObservationPort } from "./executionSource.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -23,6 +24,7 @@ export interface TicketServiceRuntimeService {
   readonly discovery: ProjectDiscovery;
   readonly decisions: ProjectDecision;
   readonly projects: ProjectStore;
+  readonly executionSources: ExecutionSourceObservationPort;
   readonly owner: OwnerId;
   readonly monotonicNow: () => number;
   readonly ticketConfig?: TicketServiceConfig;
@@ -58,6 +60,7 @@ export async function ticketServiceRunOnce(
     config: service.domain,
     store: service.projects,
     decisions: service.decisions,
+    executionSources: service.executionSources,
   };
   let activated = 0;
   for (const ready of readiness) {

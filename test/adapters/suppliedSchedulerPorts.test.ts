@@ -54,6 +54,8 @@ function executionOf(taskKind: ExecutionTaskKind): LogicalExecution {
     task: asTaskId(1),
     taskKind,
     sourceRequest: "1:0:SpawnWork",
+    inputBundle: "1:0:InputBundle",
+    inputBundleDigest: "b".repeat(64),
     sourceSeq: 1,
     sourceEffect: 0,
     ticketVersion: 1,

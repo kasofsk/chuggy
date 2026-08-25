@@ -14,6 +14,7 @@ import {
   positiveInteger,
 } from "./commandConfig.ts";
 import { domainConfigurationSchema } from "../interpreter/domainConfiguration.ts";
+import { asRepositoryId } from "../interpreter/finalizer.ts";
 import {
   ticketServiceProcessRoot,
   type TicketServiceProcessRootConfig,
@@ -34,6 +35,31 @@ const configurationSchema = z
       .strict(),
     domain: domainConfigurationSchema,
     owner: z.string().min(1),
+    source: z
+      .object({
+        scratchDirectory: z.string().min(1),
+        identity: z
+          .object({ name: z.string().min(1), email: z.string().min(1) })
+          .strict(),
+        environment: z.record(z.string(), z.string().optional()),
+        sources: z
+          .array(
+            z
+              .object({
+                repository: z.string().min(1),
+                credentialReference: z.string().min(1).optional(),
+                path: z.string().min(1),
+              })
+              .strict(),
+          )
+          .min(1),
+        credentialBytesMax: positiveInteger.optional(),
+        credentialUsername: z.string().min(1).optional(),
+        localTimeoutSecsMax: positiveInteger.optional(),
+        remoteTimeoutSecsMax: positiveInteger.optional(),
+        promotionTimeoutSecsMax: positiveInteger.optional(),
+      })
+      .strict(),
     ticket: z
       .object({
         agingIntervalSeconds: positiveNumber,
@@ -82,6 +108,33 @@ export function ticketServiceConfiguration(
     pass: data.pass,
     domain: data.domain,
     owner: data.owner,
+    source: {
+      scratchDirectory: data.source.scratchDirectory,
+      identity: data.source.identity,
+      environment: data.source.environment,
+      sources: data.source.sources.map((source) => ({
+        repository: asRepositoryId(source.repository),
+        path: source.path,
+        ...(source.credentialReference === undefined
+          ? {}
+          : { credentialReference: source.credentialReference }),
+      })),
+      ...(data.source.credentialBytesMax === undefined
+        ? {}
+        : { credentialBytesMax: data.source.credentialBytesMax }),
+      ...(data.source.credentialUsername === undefined
+        ? {}
+        : { credentialUsername: data.source.credentialUsername }),
+      ...(data.source.localTimeoutSecsMax === undefined
+        ? {}
+        : { localTimeoutSecsMax: data.source.localTimeoutSecsMax }),
+      ...(data.source.remoteTimeoutSecsMax === undefined
+        ? {}
+        : { remoteTimeoutSecsMax: data.source.remoteTimeoutSecsMax }),
+      ...(data.source.promotionTimeoutSecsMax === undefined
+        ? {}
+        : { promotionTimeoutSecsMax: data.source.promotionTimeoutSecsMax }),
+    },
     ...(data.ticket === undefined ? {} : { ticket: data.ticket }),
   };
 }

@@ -37,8 +37,13 @@ import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
 import type { Core } from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
+import { effectFromLabel } from "../domain/effect.ts";
 import { asTicketId } from "../domain/ids.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
+import type {
+  ExecutionSourceObservation,
+  ExecutionSourceObservationPort,
+} from "./executionSource.ts";
 import type { ProjectDiscovery, Readiness } from "./projectDiscovery.ts";
 import type {
   Decided,
@@ -68,6 +73,7 @@ export interface ProjectTicketWriter {
   readonly config: Config;
   readonly store: ProjectStore;
   readonly decisions: ProjectDecision;
+  readonly executionSources: ExecutionSourceObservationPort;
 }
 
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
@@ -248,6 +254,7 @@ function journaledPlan(
   memory: ProjectMemory,
   item: DecisionInput,
   command: DecisionEvent,
+  executionSource: ExecutionSourceObservation | undefined,
 ): ProjectPlan {
   const decision = execDecisionEvent(writer.config, memory.core, command);
   const entry: Entry = {
@@ -290,6 +297,7 @@ function journaledPlan(
         memory.core,
         decision.post,
         entry,
+        executionSource,
       ),
       ...(candidates === undefined
         ? {}
@@ -308,11 +316,11 @@ function journaledPlan(
  * What one inbox item asks of the state in hand: a decision the machine would
  * take, or the refusal it earns. Nothing here reaches the world.
  */
-function projectWriterPlan(
+function projectWriterPreflight(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
-): ProjectPlan {
+): ProjectPlan | { readonly command: DecisionEvent } {
   const command =
     item.source.kind === "Operation"
       ? item.source.resolvedEvent
@@ -351,7 +359,55 @@ function projectWriterPlan(
       post: memory.core,
     };
   }
-  return journaledPlan(writer, memory, item, command);
+  return { command };
+}
+
+function projectWriterSourceConfiguration(
+  memory: ProjectMemory,
+  item: DecisionInput,
+  ticket: number,
+): string | undefined {
+  const draft =
+    item.source.kind === "Operation" ? item.source.draftRelease : undefined;
+  const contract = draft ?? memory.dispatchContracts?.get(ticket);
+  return contract?.configurationCanonical;
+}
+
+async function projectWriterExecutionSource(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  item: DecisionInput,
+  command: DecisionEvent,
+): Promise<ExecutionSourceObservation | undefined> {
+  if (
+    item.source.kind === "Operation" &&
+    item.source.finalizationRequest?.evidence !== undefined
+  )
+    return undefined;
+  const rec = execDecisionEvent(writer.config, memory.core, command).rec;
+  const spawn = rec.effects.find((label) => {
+    const effect = effectFromLabel(label);
+    return effect === "SpawnWorkTasks" || effect === "SpawnEvalTasks";
+  });
+  if (spawn === undefined) return undefined;
+  const effect = effectFromLabel(spawn);
+  const ticket = rec.transitions[rec.effects.indexOf(spawn)]?.ticket;
+  if (ticket === undefined)
+    throw new IntegrityContradiction("a spawn effect has no ticket transition");
+  const configurationCanonical = projectWriterSourceConfiguration(
+    memory,
+    item,
+    ticket,
+  );
+  const observed = await writer.executionSources.observe({
+    partition: memory.lease.partition,
+    ticket,
+    kind: effect === "SpawnWorkTasks" ? "Work" : "Evaluation",
+    ...(configurationCanonical === undefined ? {} : { configurationCanonical }),
+  });
+  if (observed.observed !== "Source")
+    throw new Error(`project writer: execution source is ${observed.evidence}`);
+  return observed.source;
 }
 
 /**
@@ -363,7 +419,22 @@ export async function projectWriterDecide(
   memory: ProjectMemory,
   item: DecisionInput,
 ): Promise<ProjectDecided> {
-  const plan = projectWriterPlan(writer, memory, item);
+  const preflight = projectWriterPreflight(writer, memory, item);
+  const plan =
+    "command" in preflight
+      ? journaledPlan(
+          writer,
+          memory,
+          item,
+          preflight.command,
+          await projectWriterExecutionSource(
+            writer,
+            memory,
+            item,
+            preflight.command,
+          ),
+        )
+      : preflight;
   const decided = await writer.decisions.decide({
     lease: memory.lease,
     cause:

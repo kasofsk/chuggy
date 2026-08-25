@@ -473,6 +473,8 @@ async function schedulerPlace(
     taskKind: execution.taskKind,
     ...(execution.stage === undefined ? {} : { stage: execution.stage }),
     sourceRequest: execution.sourceRequest,
+    inputBundle: execution.inputBundle,
+    inputBundleDigest: execution.inputBundleDigest,
     configurationRevision: execution.configurationRevision,
     configurationDigest: execution.configurationDigest,
     requirementIdentity: execution.requirementIdentity,
