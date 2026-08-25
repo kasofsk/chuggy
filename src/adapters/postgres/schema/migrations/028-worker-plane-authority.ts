@@ -54,8 +54,8 @@ export const migration028: Migration = {
            JOIN execution_request q ON q.tenant=e.tenant AND q.project=e.project
                                    AND q.request=e.source_request
           WHERE a.capability_secret_digest=in_secret_digest
-            AND ((a.state IN ('Placing','Running') AND e.status IN ('Launching','Running'))
-              OR (a.state='Reported' AND e.status='Terminal'))
+            AND a.state IN ('Placing','Running')
+            AND e.status IN ('Launching','Running')
             AND a.recovery_epoch=(SELECT epoch FROM recovery_epoch
                                    ORDER BY ordinal DESC LIMIT 1)
        $$`,
