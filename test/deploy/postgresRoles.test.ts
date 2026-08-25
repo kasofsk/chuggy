@@ -176,6 +176,23 @@ test("it restates the attributes of every one of them", () => {
   assert.deepEqual(attributed, declared);
 });
 
+test("the worker plane migration leaves its role attributes to the deployment", () => {
+  const migration = migrations.find(
+    ({ name }) => name === "attempt-scoped worker plane authority",
+  );
+  assert.notEqual(migration, undefined);
+  assert.ok(
+    migration?.statements.some((statement) =>
+      statement.includes(`CREATE ROLE ${workerPlaneRole} NOLOGIN`),
+    ),
+  );
+  assert.ok(
+    migration?.statements.every(
+      (statement) => !statement.includes(`ALTER ROLE ${workerPlaneRole}`),
+    ),
+  );
+});
+
 test("the migrating identity is a member of every one of them", () => {
   assert.deepEqual(
     rolesFileNames(/GRANT ((?:chuggy_\w+,? )+)TO chuggy_owner;/u),
