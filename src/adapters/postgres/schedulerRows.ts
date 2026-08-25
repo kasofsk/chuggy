@@ -64,6 +64,8 @@ export interface ExecutionRow {
   readonly task_kind: string;
   readonly stage: string | null;
   readonly source_request: string;
+  readonly input_bundle: string;
+  readonly input_bundle_digest: string;
   readonly source_seq: string;
   readonly source_effect: string;
   readonly ticket_version: string;
@@ -115,6 +117,7 @@ export const executionRowFrom = `
 export const executionRowColumns = `
   e.tenant, e.project, e.execution, e.ticket::text AS ticket, e.task::text AS task,
   t.kind AS task_kind, t.stage::text AS stage, e.source_request,
+  q.input_bundle, q.input_bundle_digest,
   q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
   q.ticket_version::text AS ticket_version, e.account, e.cluster,
   e.configuration_revision, e.configuration_digest, e.requirement_identity,
@@ -225,6 +228,8 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
       ? {}
       : { stage: asStageIndex(projectRowCounter(row.stage, "task stage")) }),
     sourceRequest: row.source_request,
+    inputBundle: row.input_bundle,
+    inputBundleDigest: row.input_bundle_digest,
     sourceSeq: projectRowCounter(row.source_seq, "authorizing sequence"),
     sourceEffect: projectRowCounter(row.source_effect, "effect position"),
     ticketVersion: projectRowCounter(row.ticket_version, "ticket version"),
