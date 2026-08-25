@@ -152,6 +152,59 @@ test("the API acceptance boundary rejects malformed command bytes", async () => 
   );
 });
 
+test("a well-formed completion offered as an ordinary command reaches no mailbox", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "privilege-forged-completion",
+  );
+  for (const [operation, command] of [
+    [
+      "forged-pass",
+      `{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"tid":1,"verdict":"Pass","result":{"manifest":1,"digest":1,"schema":1}}}}`,
+    ],
+    [
+      "forged-block",
+      `{"version":1,"command":"Decide","event":{"type":"ExecutionBlocked","value":{"ticket":1,"reason":"ExecutionProfileUnavailable"}}}`,
+    ],
+  ]) {
+    const failure = await harness.attemptAs(
+      apiRole,
+      `SELECT * FROM ${acceptanceFunction}(
+        '${partition.tenant}', '${partition.project}', '${operation}', 'User', 'subject',
+        'v1', 'key-${operation}', 'payload', ARRAY['key-${operation}'], ARRAY['payload'],
+        '${command}', 10, 20)`,
+    );
+    assert.match(failure ?? "", /operation_completion_is_its_boundary_s/);
+  }
+  assert.deepEqual(
+    await harness.query(
+      `SELECT count(*)::text AS count FROM operation
+       WHERE tenant=$1 AND project=$2`,
+      [partition.tenant, partition.project],
+    ),
+    [{ count: "0" }],
+  );
+});
+
+test("no membership may be granted the authority a boundary submits under", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "privilege-boundary-membership",
+  );
+  for (const kind of ["ExecutionScheduler", "Finalizer"]) {
+    await assert.rejects(
+      harness.query(
+        `INSERT INTO project_membership
+           (principal,tenant,project,authority_kind,authority_subject,
+            may_read,may_mutate,may_dispatch,may_propose)
+         VALUES ($1,$2,$3,$4,'subject',true,true,false,false)`,
+        [`principal-${kind}`, partition.tenant, partition.project, kind],
+      ),
+      /project_membership_authority_is_no_boundary_s/,
+    );
+  }
+});
+
 test("the API cannot append history or create focused work", async () => {
   for (const relation of [
     "journal_entry",

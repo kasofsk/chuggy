@@ -340,6 +340,13 @@ async function operationSource(
     return finalizationRequestSource(pool, partition, row.input_id, command);
   }
   if (command.command === "Decide") {
+    /**
+     * A completion reaches here with no join because its row could not exist
+     * without one: `operation_completion_is_its_boundary_s` ties the tag to the
+     * scheduler's authority, and `submit_task_completion` built the event from
+     * the execution it had already locked. Every other `Decide` is a public
+     * command, whose event is the whole of what its principal offered.
+     */
     return {
       kind: "Operation",
       operation: asOperationId(row.input_id),
