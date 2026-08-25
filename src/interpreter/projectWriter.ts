@@ -34,6 +34,12 @@ import {
 } from "../actor/decisionEvent.ts";
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
+import type {
+  ObservedTarget,
+  RepositoryBinding,
+  RepositoryId,
+  TargetObserved,
+} from "./finalizer.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
 import type { Core } from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
@@ -68,6 +74,24 @@ export interface ProjectTicketWriter {
   readonly config: Config;
   readonly store: ProjectStore;
   readonly decisions: ProjectDecision;
+  readonly executionSources?: ExecutionSourceObservationPort;
+}
+
+/** A source read gathered before the pure decision plan is constructed. */
+export interface ExecutionSourceObservation {
+  readonly repository: RepositoryId;
+  readonly target: ObservedTarget;
+}
+
+/** Resolves one configured or default repository ref without exposing its credential. */
+export interface ExecutionSourceObservationPort {
+  observe(input: {
+    readonly partition: Lease["partition"];
+    readonly repository?: RepositoryBinding;
+  }): Promise<
+    | { readonly observed: "Source"; readonly source: ExecutionSourceObservation }
+    | Exclude<TargetObserved, { readonly observed: "Target" }>
+  >;
 }
 
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */

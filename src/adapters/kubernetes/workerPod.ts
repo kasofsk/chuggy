@@ -103,6 +103,8 @@ export interface KubernetesWorkerTask {
   readonly taskKind: string;
   readonly stage?: number;
   readonly sourceRequest: string;
+  readonly inputBundle: string;
+  readonly inputBundleDigest: string;
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly profile: ExecutionProfile;
