@@ -84,6 +84,8 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_CLUSTER_API_URL: "https://cluster.invalid:6443",
   CHUG_SCHEDULER_CLUSTER_NAMESPACE: "chuggy-workers",
   CHUG_SCHEDULER_CLUSTER_TOKEN_FILE: tokenFile,
+  CHUG_SCHEDULER_WORKER_PLANE_URL: "https://worker-plane.invalid",
+  CHUG_SCHEDULER_WORKER_CAPABILITY_FILE: "/run/chuggy/capability",
   CHUG_SCHEDULER_WORKER_SERVICE_ACCOUNT: "chuggy-worker",
   CHUG_SCHEDULER_ADMITTED_IMAGES: JSON.stringify(images),
   CHUG_SCHEDULER_WORKER_RESOURCES: JSON.stringify(resources),
@@ -150,6 +152,8 @@ test("a complete environment parses into the plain data the process root takes",
         apiBaseUrl: "https://cluster.invalid:6443",
         namespace: "chuggy-workers",
         tokenFile,
+        workerPlaneUrl: "https://worker-plane.invalid",
+        capabilityFile: "/run/chuggy/capability",
         serviceAccountName: "chuggy-worker",
         podNamePrefix: "chuggy-worker",
         resources,
@@ -232,6 +236,8 @@ function processFakes(reachable: boolean): string {
       apiBaseUrl: 'https://cluster.invalid:6443',
       namespace: 'chuggy-workers',
       tokenFile: ${JSON.stringify(tokenFile)},
+      workerPlaneUrl: 'https://worker-plane.invalid',
+      capabilityFile: '/run/chuggy/capability',
       serviceAccountName: 'chuggy-worker',
       podNamePrefix: 'chuggy-worker',
       resources: ${JSON.stringify(resources)},
@@ -263,6 +269,7 @@ function processFakes(reachable: boolean): string {
     const attempt = {
       partition, execution: 'execution-one', attempt: 'attempt-one', generation: 1,
       attemptNumber: 1, recoveryEpoch: 'epoch-one', state: 'Placing', authoritative: true,
+      capability: { id: 'capability-one', secret: 'secret-one', manifest: 'manifest-one' },
     };
     const placed = [];
     const store = {
@@ -343,6 +350,7 @@ test("the scheduler process starts, places one worker, reports health and stops"
   assert.equal(found.placed.length, 1);
   assert.deepEqual(found.asked, [
     "GET https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers",
+    "POST https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/secrets",
     "POST https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/pods",
   ]);
 });

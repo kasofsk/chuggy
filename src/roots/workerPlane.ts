@@ -22,10 +22,9 @@ function required(name: string): string {
 function positive(name: string, fallback: number): number {
   const value = process.env[name];
   if (value === undefined) return fallback;
-  if (!/^[1-9][0-9]*$/u.test(value))
-    throw new Error(`${name} must be a positive integer`);
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) throw new Error(`${name} is too large`);
+  if (!/^[1-9][0-9]*$/u.test(value) || !Number.isSafeInteger(parsed))
+    throw new Error(`${name} must be a positive integer`);
   return parsed;
 }
 

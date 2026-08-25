@@ -19,6 +19,35 @@ const partition = {
   project: asProjectId("project"),
 };
 
+const configuredWorkSource = canonicalConfigurationOf({
+  finalizationHandoff: {
+    version: 1,
+    mode: "DirectCommit",
+    repositories: {
+      work: {
+        repository: "work-repository",
+        targetRef: "refs/heads/work",
+      },
+      handoff: {
+        repository: "handoff-repository",
+        targetRef: "refs/heads/handoff",
+      },
+    },
+    credentials: { work: "work-reader", handoff: "handoff-writer" },
+    renderer: {
+      identity: "ContainerBuildRequest",
+      version: 1,
+      parameters: {
+        targetImageRepository: "registry.example/work",
+        builderProfile: "rootless",
+        platforms: ["linux/amd64"],
+      },
+    },
+    destinationPath: "build/request.json",
+    outputBytesMax: 4_096,
+  },
+});
+
 test("configured work source selects its own repository, ref and credential", async () => {
   const observed: unknown[] = [];
   const subject = executionSourceObservation(
@@ -44,41 +73,13 @@ test("configured work source selects its own repository, ref and credential", as
     },
     { workSource: () => Promise.resolve(undefined) },
   );
-  const configurationCanonical = canonicalConfigurationOf({
-    finalizationHandoff: {
-      version: 1,
-      mode: "DirectCommit",
-      repositories: {
-        work: {
-          repository: "work-repository",
-          targetRef: "refs/heads/work",
-        },
-        handoff: {
-          repository: "handoff-repository",
-          targetRef: "refs/heads/handoff",
-        },
-      },
-      credentials: { work: "work-reader", handoff: "handoff-writer" },
-      renderer: {
-        identity: "ContainerBuildRequest",
-        version: 1,
-        parameters: {
-          targetImageRepository: "registry.example/work",
-          builderProfile: "rootless",
-          platforms: ["linux/amd64"],
-        },
-      },
-      destinationPath: "build/request.json",
-      outputBytesMax: 4_096,
-    },
-  });
   assert.equal(
     (
       await subject.observe({
         partition,
         ticket: 1,
         kind: "Work",
-        configurationCanonical,
+        configurationCanonical: configuredWorkSource,
       })
     ).observed,
     "Source",
