@@ -6,9 +6,17 @@ import {
   workerPlaneRole,
   workerAttemptReadFunction,
   workerAttemptLostFunction,
+  workerArtifactReserveFunction,
   workerResultSubmitFunction,
   type Migration,
 } from "../shared.ts";
+import {
+  artifactBytesMax,
+  artifactDigestChars,
+  artifactPathCharsMax,
+  manifestArtifactsMax,
+  manifestBytesMax,
+} from "../../../../interpreter/resultManifest.ts";
 
 /** Durable attempt-scoped authority for the private worker ingress. */
 export const migration028: Migration = {
@@ -37,6 +45,69 @@ export const migration028: Migration = {
        ADD CONSTRAINT execution_attempt_manifest_is_unique UNIQUE (manifest),
        ADD CONSTRAINT execution_attempt_capability_digest_is_sha256 CHECK (
          capability_secret_digest ~ '^[0-9a-f]{64}$')`,
+    `CREATE TABLE worker_artifact_reservation (
+       tenant text NOT NULL, project text NOT NULL, execution text NOT NULL,
+       attempt text NOT NULL, path text NOT NULL, digest text NOT NULL, bytes bigint NOT NULL,
+       PRIMARY KEY (tenant,project,execution,attempt,path),
+       FOREIGN KEY (tenant,project,execution,attempt)
+         REFERENCES execution_attempt (tenant,project,execution,attempt),
+       CHECK (length(path) BETWEEN 1 AND ${artifactPathCharsMax}
+         AND path !~ '^/' AND path !~ '//' AND path !~ '[\\\\]'
+         AND path !~ '(^|/)[.][.]?(/|$)' AND path !~ '[[:cntrl:]]'
+         AND path !~ '(^|/)[[:space:]]' AND path !~ '[[:space:]](/|$)'),
+       CHECK (digest ~ '^[0-9a-f]{${artifactDigestChars}}$'),
+       CHECK (bytes BETWEEN 0 AND ${artifactBytesMax}))`,
+    `CREATE FUNCTION ${workerArtifactReserveFunction}(
+       in_secret_digest text,in_path text,in_digest text,in_bytes bigint)
+       RETURNS text LANGUAGE plpgsql SECURITY DEFINER
+       SET search_path=pg_catalog,public,pg_temp AS $$
+       DECLARE bound record; existing record; used record;
+       BEGIN
+         SELECT a.tenant,a.project,a.execution,a.attempt,a.state,a.recovery_epoch,e.status
+           INTO bound FROM execution_attempt a
+           JOIN execution e ON e.tenant=a.tenant AND e.project=a.project
+                           AND e.execution=a.execution
+          WHERE a.capability_secret_digest=in_secret_digest FOR UPDATE OF a;
+         IF NOT FOUND OR bound.state NOT IN ('Placing','Running')
+            OR bound.status NOT IN ('Launching','Running')
+            OR bound.recovery_epoch<>(SELECT epoch FROM recovery_epoch
+                                      ORDER BY ordinal DESC LIMIT 1) THEN
+           RETURN 'Fenced';
+         END IF;
+         IF length(in_path) NOT BETWEEN 1 AND ${artifactPathCharsMax}
+            OR in_path ~ '^/' OR in_path ~ '//' OR in_path ~ '[\\\\]'
+            OR in_path ~ '(^|/)[.][.]?(/|$)' OR in_path ~ '[[:cntrl:]]'
+            OR in_path ~ '(^|/)[[:space:]]' OR in_path ~ '[[:space:]](/|$)'
+            OR in_digest !~ '^[0-9a-f]{${artifactDigestChars}}$'
+            OR in_bytes NOT BETWEEN 0 AND ${artifactBytesMax} THEN
+           RETURN 'Conflict';
+         END IF;
+         SELECT digest,bytes INTO existing FROM worker_artifact_reservation
+          WHERE tenant=bound.tenant AND project=bound.project
+            AND execution=bound.execution AND attempt=bound.attempt AND path=in_path;
+         IF FOUND THEN
+           RETURN CASE WHEN existing.digest=in_digest AND existing.bytes=in_bytes
+                       THEN 'Reserved' ELSE 'Conflict' END;
+         END IF;
+         SELECT count(*)::bigint AS artifacts,coalesce(sum(bytes),0)::bigint AS bytes
+           INTO used FROM worker_artifact_reservation
+          WHERE tenant=bound.tenant AND project=bound.project
+            AND execution=bound.execution AND attempt=bound.attempt;
+         IF used.artifacts+1>${manifestArtifactsMax}
+            OR used.bytes+in_bytes>${manifestBytesMax} THEN
+           RETURN 'QuotaExceeded';
+         END IF;
+         INSERT INTO worker_artifact_reservation
+           (tenant,project,execution,attempt,path,digest,bytes)
+         VALUES(bound.tenant,bound.project,bound.execution,bound.attempt,
+                in_path,in_digest,in_bytes);
+         RETURN 'Reserved';
+       END $$`,
+    `ALTER FUNCTION ${workerArtifactReserveFunction}(text,text,text,bigint)
+       OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${workerArtifactReserveFunction}(text,text,text,bigint) FROM PUBLIC`,
+    `GRANT EXECUTE ON FUNCTION ${workerArtifactReserveFunction}(text,text,text,bigint)
+       TO ${workerPlaneRole}`,
     `CREATE FUNCTION ${workerAttemptReadFunction}(in_secret_digest text)
        RETURNS TABLE(tenant text,project text,execution text,attempt text,generation bigint,
                      manifest text,input_bundle text,input_bundle_digest text,live boolean,inputs jsonb)
@@ -200,9 +271,11 @@ export const migration028: Migration = {
     `GRANT EXECUTE ON FUNCTION ${workerResultSubmitFunction}(text,bigint,text,integer,text,text,jsonb,text)
        TO ${workerPlaneRole}`,
     `GRANT SELECT ON recovery_epoch,project,execution_request,execution_request_task,
-                     execution,execution_attempt,execution_result,input_bundle,input_bundle_reference
+                     execution,execution_attempt,execution_result,input_bundle,input_bundle_reference,
+                     worker_artifact_reservation
        TO ${boundaryOwnerRole}`,
-    `GRANT INSERT ON execution_result,execution_result_artifact,scheduler_incident
+    `GRANT INSERT ON execution_result,execution_result_artifact,scheduler_incident,
+                     worker_artifact_reservation
        TO ${boundaryOwnerRole}`,
     `GRANT UPDATE (manifest_next) ON project TO ${boundaryOwnerRole}`,
     `GRANT UPDATE (state) ON execution_request TO ${boundaryOwnerRole}`,

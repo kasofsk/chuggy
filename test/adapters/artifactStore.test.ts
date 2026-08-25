@@ -26,7 +26,6 @@ import {
   rmSync,
   statSync,
   symlinkSync,
-  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,7 +34,6 @@ import { test, type TestContext } from "node:test";
 
 import {
   artifactAttemptFile,
-  artifactAttemptRoot,
   artifactOwnedFile,
   artifactProjectDirectory,
   artifactWithinProject,
@@ -518,96 +516,6 @@ test("a worker upload is immutable, idempotent for the same bytes, and conflicts
   assert.equal(statSync(file).mode & 0o222, 0);
 });
 
-test("worker upload count and byte quotas are cumulative per attempt", async (t) => {
-  const root = fixtureOpen(t).root;
-  const countStore = artifactStore({
-    root,
-    attemptArtifactsMax: 1,
-    attemptBytesMax: 16,
-  });
-  const store = (path: string, content: string) =>
-    countStore.store({
-      authority: workerAuthority,
-      path,
-      content: new TextEncoder().encode(content),
-    });
-  assert.deepEqual(await store("one.txt", "one"), { stored: "Stored" });
-  assert.deepEqual(await store("two.txt", "two"), {
-    stored: "Refused",
-    reason: "QuotaExceeded",
-  });
-
-  const bytesStore = artifactStore({
-    root,
-    attemptArtifactsMax: 4,
-    attemptBytesMax: 3,
-  });
-  assert.deepEqual(
-    await bytesStore.store({
-      authority: { ...workerAuthority, attempt: asAttemptId("attempt-2") },
-      path: "one.txt",
-      content: new TextEncoder().encode("12"),
-    }),
-    { stored: "Stored" },
-  );
-  assert.deepEqual(
-    await bytesStore.store({
-      authority: { ...workerAuthority, attempt: asAttemptId("attempt-2") },
-      path: "two.txt",
-      content: new TextEncoder().encode("34"),
-    }),
-    { stored: "Refused", reason: "QuotaExceeded" },
-  );
-});
-
-test("concurrent distinct uploads cannot pass the same remaining quota", async (t) => {
-  const fixture = artifactStore({
-    root: fixtureOpen(t).root,
-    attemptArtifactsMax: 1,
-    attemptBytesMax: 2,
-  });
-  const results = await Promise.all(
-    ["one.txt", "two.txt"].map((path) =>
-      fixture.store({
-        authority: workerAuthority,
-        path,
-        content: new TextEncoder().encode("12"),
-      }),
-    ),
-  );
-  assert.equal(
-    results.filter((result) => result.stored === "Stored").length,
-    1,
-  );
-  assert.equal(
-    results.filter((result) => result.stored === "Refused").length,
-    1,
-  );
-
-  const byteBound = artifactStore({
-    root: fixtureOpen(t).root,
-    attemptArtifactsMax: 4,
-    attemptBytesMax: 3,
-  });
-  const byteResults = await Promise.all(
-    ["one.txt", "two.txt"].map((path) =>
-      byteBound.store({
-        authority: workerAuthority,
-        path,
-        content: new TextEncoder().encode("12"),
-      }),
-    ),
-  );
-  assert.equal(
-    byteResults.filter((result) => result.stored === "Stored").length,
-    1,
-  );
-  assert.equal(
-    byteResults.filter((result) => result.stored === "Refused").length,
-    1,
-  );
-});
-
 test("an invalid worker path is a typed refusal and writes nothing", async (t) => {
   const fixture = fixtureOpen(t);
   assert.deepEqual(
@@ -619,55 +527,6 @@ test("an invalid worker path is a typed refusal and writes nothing", async (t) =
     { stored: "Refused", reason: "InvalidPath" },
   );
   assert.deepEqual(readdirSync(fixture.root), []);
-});
-
-test("an abandoned upload lock is recovered after its bounded lease", async (t) => {
-  const opened = fixtureOpen(t);
-  const directory = artifactProjectDirectory(
-    opened.root,
-    partition.tenant,
-    partition.project,
-  );
-  const lock = `${artifactAttemptRoot(directory, execution, attempt)}.upload-lock`;
-  mkdirSync(lock, { recursive: true });
-  utimesSync(lock, new Date(0), new Date(0));
-  const store = artifactStore({
-    root: opened.root,
-    uploadLockStaleSecs: 1,
-  });
-  assert.deepEqual(
-    await store.store({
-      authority: workerAuthority,
-      path: "result.txt",
-      content: new TextEncoder().encode("result"),
-    }),
-    { stored: "Stored" },
-  );
-});
-
-test("an expired active holder cannot commit or release its successor's lock", async (t) => {
-  const opened = fixtureOpen(t);
-  for (let index = 0; index < 500; index += 1)
-    fixtureStore(opened, `existing-${String(index)}.txt`, "x");
-  const store = artifactStore({
-    root: opened.root,
-    attemptArtifactsMax: 501,
-    attemptBytesMax: 501,
-    uploadLockStaleSecs: 0.000_001,
-  });
-  const results = await Promise.all(
-    Array.from(
-      { length: 20 },
-      (_unused, index) => `new-${String(index)}.txt`,
-    ).map((path) =>
-      store.store({
-        authority: workerAuthority,
-        path,
-        content: new TextEncoder().encode("y"),
-      }),
-    ),
-  );
-  assert.ok(results.filter((result) => result.stored === "Stored").length <= 1);
 });
 
 test("a store whose objects could be rewritten is refused at construction", () => {

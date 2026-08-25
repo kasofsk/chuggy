@@ -41,6 +41,7 @@ export const workerPlaneRole = "chuggy_worker_plane";
 export const workerAttemptReadFunction = "read_worker_attempt";
 export const workerAttemptLostFunction = "lose_worker_attempt";
 export const workerResultSubmitFunction = "submit_worker_result";
+export const workerArtifactReserveFunction = "reserve_worker_artifact";
 export const finalizerRole = "chuggy_finalizer";
 export const completionFunction = "submit_task_completion";
 export const finalizationFunction = "submit_finalization_result";

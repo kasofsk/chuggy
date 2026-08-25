@@ -5,8 +5,14 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresWorkerPlaneAuthority,
+  postgresWorkerArtifactReservations,
   postgresWorkerReportStore,
 } from "../../src/adapters/postgres/workerPlane.ts";
+import {
+  artifactBytesMax,
+  manifestArtifactsMax,
+  manifestBytesMax,
+} from "../../src/interpreter/resultManifest.ts";
 import { asPlacementId } from "../../src/interpreter/executionScheduler.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import {
@@ -127,5 +133,70 @@ test("a lost attempt cannot use its worker boundary", async () => {
       attempt.capability.secret,
     ).terminalize(schedulerReport(attempt, "Pass")),
     { terminalized: "Fenced" },
+  );
+});
+
+test("artifact reservations are immutable, concurrent, bounded and fenced", async () => {
+  const attempt = await placedAttempt("worker-artifacts");
+  const reservations = postgresWorkerArtifactReservations(workerPool);
+  const reserve = (path: string, digest: string, bytes = 1) =>
+    reservations.reserve({
+      secret: attempt.capability.secret,
+      path,
+      digest,
+      bytes,
+    });
+  const digest = "a".repeat(64);
+  assert.deepEqual(await reserve("same.txt", digest), {
+    reserved: "Reserved",
+  });
+  assert.deepEqual(await reserve("same.txt", digest), {
+    reserved: "Reserved",
+  });
+  assert.deepEqual(await reserve("same.txt", "b".repeat(64)), {
+    reserved: "Conflict",
+  });
+  const concurrent = await Promise.all(
+    Array.from({ length: manifestArtifactsMax - 1 }, (_unused, index) =>
+      reserve(`artifact-${String(index)}.txt`, digest),
+    ),
+  );
+  assert.equal(
+    concurrent.filter((result) => result.reserved === "Reserved").length,
+    manifestArtifactsMax - 1,
+  );
+  assert.deepEqual(await reserve("past-count.txt", digest), {
+    reserved: "QuotaExceeded",
+  });
+  assert.equal(
+    await rig.store.attemptEnded(attempt, "Lost", "Vanished"),
+    true,
+  );
+  assert.deepEqual(await reserve("late.txt", digest), { reserved: "Fenced" });
+});
+
+test("artifact reservation aggregate bytes are bounded without receiving content", async () => {
+  const attempt = await placedAttempt("worker-artifact-bytes");
+  const reservations = postgresWorkerArtifactReservations(workerPool);
+  const digest = "c".repeat(64);
+  const full = Math.floor(manifestBytesMax / artifactBytesMax);
+  for (let index = 0; index < full; index += 1)
+    assert.deepEqual(
+      await reservations.reserve({
+        secret: attempt.capability.secret,
+        path: `large-${String(index)}.bin`,
+        digest,
+        bytes: artifactBytesMax,
+      }),
+      { reserved: "Reserved" },
+    );
+  assert.deepEqual(
+    await reservations.reserve({
+      secret: attempt.capability.secret,
+      path: "past-bytes.bin",
+      digest,
+      bytes: manifestBytesMax - full * artifactBytesMax + 1,
+    }),
+    { reserved: "QuotaExceeded" },
   );
 });

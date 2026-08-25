@@ -48,6 +48,19 @@ export interface WorkerArtifactUploadPort {
   }): Promise<WorkerArtifactStored>;
 }
 
+export type WorkerArtifactReserved =
+  | { readonly reserved: "Reserved" }
+  | { readonly reserved: "Conflict" | "Fenced" | "QuotaExceeded" };
+
+export interface WorkerArtifactReservationPort {
+  reserve(input: {
+    readonly secret: AttemptCapabilitySecret;
+    readonly path: string;
+    readonly digest: string;
+    readonly bytes: number;
+  }): Promise<WorkerArtifactReserved>;
+}
+
 export interface WorkerReportPort {
   report(
     secret: AttemptCapabilitySecret,

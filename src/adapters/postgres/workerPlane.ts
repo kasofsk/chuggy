@@ -17,6 +17,7 @@ import { asResultManifestId } from "../../interpreter/resultManifest.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import type {
   WorkerAttemptAuthority,
+  WorkerArtifactReservationPort,
   WorkerInputReference,
   WorkerPlaneAuthority,
 } from "../../interpreter/workerPlane.ts";
@@ -96,6 +97,39 @@ export function postgresWorkerPlaneAuthority(
   pool: pg.Pool,
 ): WorkerPlaneAuthority {
   return { authenticate: (secret) => workerAuthenticate(pool, secret) };
+}
+
+export function postgresWorkerArtifactReservations(
+  pool: pg.Pool,
+): WorkerArtifactReservationPort {
+  return {
+    reserve: async (input) => {
+      const secretDigest = createHash("sha256")
+        .update(input.secret, "utf8")
+        .digest("hex");
+      const reserved = await pool.query<{ reserved: string }>(
+        sql`SELECT reserve_worker_artifact(
+          ${secretDigest},${input.path},${input.digest},${input.bytes}) AS reserved`,
+      );
+      const verdict = reserved.rows[0]?.reserved;
+      switch (verdict) {
+        case "Reserved":
+          return { reserved: "Reserved" };
+        case "Conflict":
+          return { reserved: "Conflict" };
+        case "Fenced":
+          return { reserved: "Fenced" };
+        case "QuotaExceeded":
+          return { reserved: "QuotaExceeded" };
+        case undefined:
+          throw new Error("postgres worker plane: artifact reservation returned no verdict");
+        default:
+          throw new Error(
+            `postgres worker plane: unknown artifact reservation ${verdict}`,
+          );
+      }
+    },
+  };
 }
 
 interface WorkerResultRow {

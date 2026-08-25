@@ -1,8 +1,13 @@
+import { createHash } from "node:crypto";
 import fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 
 import { asAttemptCapabilitySecret } from "../../interpreter/executionScheduler.ts";
-import { resultManifestTextCharsMax } from "../../interpreter/resultManifest.ts";
+import {
+  artifactPathRejection,
+  resultManifestTextCharsMax,
+} from "../../interpreter/resultManifest.ts";
 import type {
+  WorkerArtifactReservationPort,
   WorkerArtifactUploadPort,
   WorkerAttemptAuthority,
   WorkerPlaneAuthority,
@@ -20,6 +25,7 @@ export const workerPlaneRoutes = [
 export interface WorkerPlaneServerService {
   readonly authority: WorkerPlaneAuthority;
   readonly artifacts: WorkerArtifactUploadPort;
+  readonly reservations: WorkerArtifactReservationPort;
   readonly reports: WorkerReportPort;
   readonly ready: () => Promise<boolean>;
   readonly uploadBytesMax: number;
@@ -84,6 +90,23 @@ function workerUploadRoute(
     const path = (request.params as { "*": string })["*"];
     if (!(request.body instanceof Uint8Array))
       return reply.code(415).send({ action: "stop" });
+    if (artifactPathRejection(path) !== undefined)
+      return reply
+        .code(400)
+        .send({ action: "stop", reason: "InvalidPath" });
+    const secret = workerBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const digest = createHash("sha256").update(request.body).digest("hex");
+    const reserved = await service.reservations.reserve({
+      secret,
+      path,
+      digest,
+      bytes: request.body.byteLength,
+    });
+    if (reserved.reserved !== "Reserved")
+      return reply
+        .code(reserved.reserved === "QuotaExceeded" ? 413 : 409)
+        .send({ action: "stop", reason: reserved.reserved });
     const stored = await service.artifacts.store({
       authority,
       path,

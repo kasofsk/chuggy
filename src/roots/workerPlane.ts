@@ -7,6 +7,7 @@ import { postgresPool } from "../adapters/postgres/pool.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import {
   postgresWorkerPlaneAuthority,
+  postgresWorkerArtifactReservations,
   postgresWorkerReportStore,
 } from "../adapters/postgres/workerPlane.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
@@ -40,6 +41,7 @@ async function main(): Promise<void> {
   });
   const app = createWorkerPlaneApp({
     authority: postgresWorkerPlaneAuthority(pool),
+    reservations: postgresWorkerArtifactReservations(pool),
     artifacts,
     reports: {
       report: (secret, submission) =>

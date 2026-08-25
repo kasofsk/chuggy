@@ -44,6 +44,7 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
           secret === asAttemptCapabilitySecret("held") ? authority : undefined,
         ),
     },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: {
       store: (input) => {
         uploaded.push(input);
@@ -93,6 +94,7 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
   let acts = 0;
   const app = createWorkerPlaneApp({
     authority: { authenticate: () => Promise.resolve(undefined) },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: {
       store: () => {
         acts += 1;
@@ -123,6 +125,7 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
 test("an invalid worker-controlled artifact path is a predictable client refusal", async () => {
   const app = createWorkerPlaneApp({
     authority: { authenticate: () => Promise.resolve(authority) },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: {
       store: () =>
         Promise.resolve({ stored: "Refused", reason: "InvalidPath" }),
@@ -151,9 +154,11 @@ test("an invalid worker-controlled artifact path is a predictable client refusal
 test("an exhausted attempt artifact quota is a terminal payload refusal", async () => {
   const app = createWorkerPlaneApp({
     authority: { authenticate: () => Promise.resolve(authority) },
+    reservations: {
+      reserve: () => Promise.resolve({ reserved: "QuotaExceeded" }),
+    },
     artifacts: {
-      store: () =>
-        Promise.resolve({ stored: "Refused", reason: "QuotaExceeded" }),
+      store: () => Promise.resolve({ stored: "Stored" }),
     },
     reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
     ready: () => Promise.resolve(true),

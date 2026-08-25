@@ -24,7 +24,7 @@ test("the worker role reaches database state only through its three boundaries",
   const grants = migration028.statements.filter((statement) =>
     statement.includes(`TO ${workerPlaneRole}`),
   );
-  assert.equal(grants.length, 4);
+  assert.equal(grants.length, 5);
   for (const grant of grants)
     assert.match(grant, /^GRANT (?:EXECUTE ON FUNCTION|USAGE ON SCHEMA)/u);
   assert.doesNotMatch(
