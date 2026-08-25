@@ -186,7 +186,7 @@ export interface DecisionMaterialization {
     readonly ticket: TicketId;
     readonly ticketVersion: number;
     readonly requestGeneration: number;
-    readonly kind: "RunFinalizer" | "PublishHandoff";
+    readonly kind: "RunFinalizer" | "PromoteForHandoff" | "PublishHandoff";
   }[];
   readonly fulfillFinalizationFor: readonly TicketId[];
   readonly withdrawActionsFor: readonly TicketId[];

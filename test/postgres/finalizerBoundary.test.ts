@@ -140,8 +140,27 @@ test("a succeeded result the durable rows support is submitted exactly once", as
 
 test("promotion acceptance requires the same concluded promotion proof as success", async () => {
   const { project, attempt } = await promoted("submit-promotion-accepted");
+  await rig.as(
+    `UPDATE finalization_request SET kind='PromoteForHandoff'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [project.partition.tenant, project.partition.project, project.request],
+  );
   assert.equal(
     await submit(project, attempt, "PromotionAccepted", null),
+    "Submitted",
+  );
+});
+
+test("a legacy finalizer cannot submit handoff promotion from the same proof", async () => {
+  const { project, attempt } = await promoted("submit-wrong-kind-promotion");
+  const before = await mailbox(project);
+  assert.equal(
+    await submit(project, attempt, "PromotionAccepted", null),
+    "BindingMismatch",
+  );
+  assert.deepEqual(await mailbox(project), before);
+  assert.equal(
+    await submit(project, attempt, "FinalizationSucceeded", null),
     "Submitted",
   );
 });
