@@ -28,8 +28,8 @@ const pairing = allNativeActionKinds
   )
   .join("\n              OR ");
 
-export const migration024: Migration = {
-  version: 24,
+export const migration026: Migration = {
+  version: 26,
   name: "post-promotion handoff recovery outcomes",
   statements: [
     `CREATE OR REPLACE ${acceptanceBody}`,

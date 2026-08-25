@@ -1,5 +1,6 @@
 import { apiRole } from "../adapters/postgres/schema.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
+import { postgresInstallationAuthority } from "../adapters/postgres/installationAuthority.ts";
 import { postgresProjectAccess } from "../adapters/postgres/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerContext.ts";
 import { createNativeHttpApp } from "../adapters/http/server.ts";
@@ -244,6 +245,7 @@ async function main(): Promise<void> {
     web,
     authentication,
     nativeReadiness(pool, selectorReviewPool),
+    postgresInstallationAuthority(pool),
   );
   app.addHook("onClose", () => closePools(pool, selectorReviewPool));
   const drainMs = positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000);

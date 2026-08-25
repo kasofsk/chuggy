@@ -2,8 +2,8 @@
 # Shell test for rehearse.sh, over what it names here and no more: the stdin the
 # `kubectl` stub below does and does not take, the mode an archive full of
 # verifiers is held to, the digest and receipt comparisons standing between
-# `verify` and `destroy`, the inventory `restore` needs before it can say
-# anything about what came back, the derivation `epoch` holds the establish to,
+# `verify` and `destroy`, the inventory and exact installation authority the
+# restore stages need before they can say anything about what came back, the derivation `epoch` holds the establish to,
 # the witness partition every later stage reads, what `teardown` observes before
 # it says anything, and what a status from a tool underneath is worth by the
 # time it leaves.
@@ -268,6 +268,31 @@ printf -- '!3\n' > "$REPLIES"
 run destroy
 check "a statement the server refused leaves as a finding" 1 "$RC" "the cluster was reached 1 time(s)"
 
+# --- verify: exact installation authority, not merely its row count ---------
+
+fresh_case
+printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|installation_authority|1\n' > "$A/inventory-live.txt"
+run verify
+check "verify refuses when snapshot recorded no installation authority" 2 "$RC" "no installation authority recorded"
+check "verify without an authority reaches nothing" 2 "$RC" "$untouched"
+
+fresh_case
+printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|installation_authority|1\n' > "$A/inventory-live.txt"
+printf 'authority-a\n' > "$A/installation-before.txt"
+printf -- '-\n-\n-\nrows|installation_authority|1\n-\n' > "$REPLIES"
+run verify
+check "verify rejects a missing restored installation authority" 1 "$RC" "scratch restore carries no installation authority"
+
+fresh_case
+printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|installation_authority|1\n' > "$A/inventory-live.txt"
+printf 'authority-a\n' > "$A/installation-before.txt"
+printf -- '-\n-\n-\nrows|installation_authority|1\nauthority-b\n' > "$REPLIES"
+run verify
+check "verify rejects a changed installation authority" 1 "$RC" "scratch restore carries a different installation authority"
+
 # --- epoch: the derivation the establish is held to --------------------------
 
 # With no recovery_epoch row count there is nothing to derive an expectation
@@ -323,6 +348,7 @@ fresh_case
 printf 'a dump\n' > "$A/fixture.dump"
 printf 'rows|project|7\n' > "$A/inventory-live.txt"
 printf 'tenant t\n' > "$A/witness-before.txt"
+printf 'authority-a\n' > "$A/installation-before.txt"
 run restore
 check "restore refuses when snapshot recorded no partition" 2 "$RC" "there is no witness recorded in"
 check "restore without a partition reaches nothing" 2 "$RC" "$untouched"
@@ -331,6 +357,7 @@ fresh_case
 printf 'a dump\n' > "$A/fixture.dump"
 printf 'rows|project|7\n' > "$A/inventory-live.txt"
 printf 'tenant t\n' > "$A/witness-before.txt"
+printf 'authority-a\n' > "$A/installation-before.txt"
 printf 'tenant t\n' > "$A/witness-partition.txt"
 run restore
 check "restore refuses a partition naming only the tenant" 2 "$RC" "names no partition"
@@ -340,10 +367,40 @@ fresh_case
 printf 'a dump\n' > "$A/fixture.dump"
 printf 'rows|project|7\n' > "$A/inventory-live.txt"
 printf 'tenant t\n' > "$A/witness-before.txt"
+printf 'authority-a\n' > "$A/installation-before.txt"
 printf 'project p\n' > "$A/witness-partition.txt"
 run restore
 check "restore refuses a partition naming only the project" 2 "$RC" "names no partition"
 check "restore with the other half reaches nothing" 2 "$RC" "$untouched"
+
+fresh_case
+printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|project|7\n' > "$A/inventory-live.txt"
+printf 'tenant t\n' > "$A/witness-before.txt"
+printf 'tenant t\nproject p\n' > "$A/witness-partition.txt"
+run restore
+check "restore refuses when snapshot recorded no installation authority" 2 "$RC" "no installation authority recorded"
+check "restore without an authority reaches nothing" 2 "$RC" "$untouched"
+
+fresh_case
+printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|project|7\n' > "$A/inventory-live.txt"
+printf 'tenant t\n' > "$A/witness-before.txt"
+printf 'tenant t\nproject p\n' > "$A/witness-partition.txt"
+printf 'authority-a\n' > "$A/installation-before.txt"
+printf -- '-\nrows|project|7\n-\n' > "$REPLIES"
+run restore
+check "restore rejects a missing installation authority" 1 "$RC" "restored database carries no installation authority"
+
+fresh_case
+printf 'a dump\n' > "$A/fixture.dump"
+printf 'rows|project|7\n' > "$A/inventory-live.txt"
+printf 'tenant t\n' > "$A/witness-before.txt"
+printf 'tenant t\nproject p\n' > "$A/witness-partition.txt"
+printf 'authority-a\n' > "$A/installation-before.txt"
+printf -- '-\nrows|project|7\nauthority-b\n' > "$REPLIES"
+run restore
+check "restore rejects a changed installation authority" 1 "$RC" "restored database carries a different installation authority"
 
 # The mirror: the inventory and both fields are there, so the stage goes on to
 # the cluster and fails on the comparison instead of before it.
@@ -352,6 +409,7 @@ printf 'a dump\n' > "$A/fixture.dump"
 printf 'rows|project|7\n' > "$A/inventory-live.txt"
 printf 'tenant t\n' > "$A/witness-before.txt"
 printf 'tenant t\nproject p\n' > "$A/witness-partition.txt"
+printf 'authority-a\n' > "$A/installation-before.txt"
 run restore
 check "restore accepts a live inventory and a partition naming both fields" 1 "$RC" "what came back is not what was dumped"
 

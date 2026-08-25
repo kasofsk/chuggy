@@ -27,7 +27,10 @@ import {
 } from "../domain/generated/modelTypes.ts";
 import {
   allNativeActionResolutions,
+  completionEventTypes,
+  isCompletionDecisionEvent,
   type FinalizationSubmission,
+  type SchedulerCompletion,
   type StoredTicketCommand,
   type TicketCommand,
 } from "./ticketCommand.ts";
@@ -159,6 +162,7 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
         event.type === "EvalReduce" ||
         event.type === "ReleaseTicket" ||
         event.type === "FinalizationResult" ||
+        isCompletionDecisionEvent(event) ||
         event.type === "AbandonHandoff"
       ) {
         throw new TypeError("event is not a public decision command");
@@ -227,9 +231,37 @@ function checkedFinalizationSubmission(
 }
 
 /**
- * Reads one stored command, which is either a public envelope or the finalizer
- * boundary's own. Only a writer reading its inbox calls this; ingress parses the
- * public set alone.
+ * Whether a stored envelope claims to be the scheduler's completion, read off
+ * the undecoded event so an ordinary command is not decoded twice on the way
+ * to the parser that owns it.
+ */
+function claimsCompletion(
+  record: Record<string, unknown> | undefined,
+): boolean {
+  const event = record?.["event"];
+  if (record?.["command"] !== "Decide" || typeof event !== "object")
+    return false;
+  const type = (event as Record<string, unknown> | null)?.["type"];
+  return completionEventTypes.some((known) => known === type);
+}
+
+/** The scheduler boundary's stored envelope, refused by the ingress parser by design. */
+function storedSchedulerCompletion(
+  record: Record<string, unknown>,
+): SchedulerCompletion {
+  if (record["version"] !== 1)
+    throw new TypeError("stored completion version is not 1");
+  const event = decodeDecisionEvent(record["event"]);
+  if (!isCompletionDecisionEvent(event))
+    throw new TypeError("stored completion carries no completion event");
+  return { version: 1, command: "Decide", event };
+}
+
+/**
+ * Reads one stored command, which is either a public envelope or one a boundary
+ * wrote. Only a writer reading its inbox calls this; ingress parses the public
+ * set alone, which is why the two boundary envelopes are readable here and
+ * unspellable there.
  */
 export function parseStoredTicketCommand(
   text: string,
@@ -240,10 +272,13 @@ export function parseStoredTicketCommand(
     if (typeof raw === "object" && raw !== null) {
       record = raw as Record<string, unknown>;
     }
-    if (record?.["command"] !== "SubmitFinalizationResult") {
-      return parseTicketCommand(text);
+    if (record?.["command"] === "SubmitFinalizationResult") {
+      return { parsed: "Ok", value: checkedFinalizationSubmission(record) };
     }
-    return { parsed: "Ok", value: checkedFinalizationSubmission(record) };
+    if (record !== undefined && claimsCompletion(record)) {
+      return { parsed: "Ok", value: storedSchedulerCompletion(record) };
+    }
+    return parseTicketCommand(text);
   } catch (error: unknown) {
     return { parsed: "Refused", why: parseRefusal(error) };
   }

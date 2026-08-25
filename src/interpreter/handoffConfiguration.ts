@@ -1,6 +1,7 @@
 /** Pinned configuration and deterministic rendering for a direct Git handoff. */
 
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
+import type { CanonicalConfiguration } from "./authoring.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -339,8 +340,9 @@ export function authoredHandoffConfigurationReadiness(
 
 /** Parses only the immutable revision and digest supplied by the accepted work. */
 export function pinnedHandoffConfigurationReadiness(
-  canonical: string,
+  canonical: CanonicalConfiguration,
   pin: UncheckedHandoffConfigurationPin,
+  digestOf: HandoffDigestFunction,
 ): HandoffConfigurationReadiness {
   const authored = authoredHandoffConfigurationReadiness(JSON.parse(canonical));
   let checkedPin: HandoffConfigurationPin;
@@ -349,6 +351,8 @@ export function pinnedHandoffConfigurationReadiness(
       revision: asHandoffConfigurationRevision(pin.revision),
       digest: asArtifactDigest(pin.digest),
     };
+    if (asArtifactDigest(digestOf(canonical)) !== checkedPin.digest)
+      return { readiness: "Incomplete", fault: "ConfigurationPinInvalid" };
   } catch {
     return { readiness: "Incomplete", fault: "ConfigurationPinInvalid" };
   }
