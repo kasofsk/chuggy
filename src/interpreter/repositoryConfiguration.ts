@@ -14,6 +14,7 @@ import type {
   RepositoryId,
 } from "./finalizer.ts";
 import type { TaskConfigurationFault } from "./taskConfiguration.ts";
+import type { HandoffConfigurationFault } from "./handoffConfiguration.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import {
@@ -90,7 +91,8 @@ export type RepositoryConfigurationFault =
 export interface RepositoryConfigurationRefusal {
   readonly path: string;
   readonly fault: RepositoryConfigurationFault;
-  readonly configurationFault?: "ReleaseShapeInvalid" | TaskConfigurationFault;
+  readonly configurationFault?:
+    "ReleaseShapeInvalid" | TaskConfigurationFault | HandoffConfigurationFault;
 }
 
 export type RepositoryConfigurationImportReadiness =

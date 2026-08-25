@@ -28,6 +28,11 @@ import type {
 import { encodeDecisionEventText, parseDecisionEventText } from "./wire.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
 import {
+  authoredHandoffConfigurationReadiness,
+  handoffConfigurationField,
+  type HandoffConfigurationFault,
+} from "./handoffConfiguration.ts";
+import {
   authoredTaskConfigurationReadiness,
   type AuthoredTaskConfiguration,
   type TaskConfigurationFault,
@@ -56,7 +61,10 @@ export type ReleaseConfigurationReadiness =
     }
   | {
       readonly readiness: "Incomplete";
-      readonly fault: "ReleaseShapeInvalid" | TaskConfigurationFault;
+      readonly fault:
+        | "ReleaseShapeInvalid"
+        | TaskConfigurationFault
+        | HandoffConfigurationFault;
     };
 
 function boundedText(value: string, what: string, maximum: number): string {
@@ -119,6 +127,12 @@ export function releaseConfigurationReadiness(
     return { readiness: "Incomplete", fault: "ReleaseShapeInvalid" };
   }
   if (authored.readiness === "Incomplete") return authored;
+  if (
+    (value as Record<string, unknown>)[handoffConfigurationField] !== undefined
+  ) {
+    const handoff = authoredHandoffConfigurationReadiness(value);
+    if (handoff.readiness === "Incomplete") return handoff;
+  }
   return {
     readiness: "Ready",
     configuration: value as ReleaseConfiguration,
