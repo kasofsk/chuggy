@@ -44,6 +44,7 @@ export const nativeHttpPathSegmentCharsMax = 256;
 
 export const nativeHttpRoutes = {
   contract: `${nativeHttpBasePath}/contract`,
+  installation: `${nativeHttpBasePath}/installation`,
   projects: `${nativeHttpBasePath}/projects`,
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
@@ -86,6 +87,7 @@ export function nativeHttpContractDocument(): unknown {
       selected: "repeat phase with one or more exact phase names",
     },
     identities: {
+      installation: "canonical UUID authority identity",
       tenant: "percent-encoded opaque UTF-8 path segment",
       project: "percent-encoded opaque UTF-8 path segment",
       ticket: "canonical positive decimal integer",

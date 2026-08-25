@@ -50,6 +50,23 @@ test("every runtime role may read only the migration ledger contract", async () 
   }
 });
 
+test("the API reads but cannot replace the installation authority", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT installation_id FROM installation_authority",
+    ),
+    undefined,
+  );
+  assert.match(
+    (await harness.attemptAs(
+      apiRole,
+      "UPDATE installation_authority SET installation_id=installation_id",
+    )) ?? "",
+    postgresHarnessDenial("installation_authority"),
+  );
+});
+
 test("only ingress and the writer may name a project's capacity account", async () => {
   const naming = `SELECT ${accountIdentityFunction}('tenant','project')`;
   assert.equal(await harness.attemptAs(ticketServiceRole, naming), undefined);
