@@ -49,6 +49,21 @@ const validConfiguration = {
     maxStages: 2,
   },
   owner: "ticket-service-1",
+  source: {
+    scratchDirectory: "/tmp/chuggy-ticket-source",
+    identity: { name: "Chuggy", email: "chuggy@example.invalid" },
+    environment: {
+      PATH: process.env["PATH"],
+      HOME: process.env["HOME"],
+      TMPDIR: process.env["TMPDIR"],
+    },
+    sources: [
+      {
+        repository: "repository",
+        path: "/run/secrets/repository-read",
+      },
+    ],
+  },
 };
 
 test("the command parses its complete plain-data configuration", async () => {
