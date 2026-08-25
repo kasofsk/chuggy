@@ -145,6 +145,8 @@ export interface ChangeProposalEvidence {
   readonly marker: ProposalMarker;
   readonly head: ChangeProposalRequest["head"];
   readonly base: ChangeProposalRequest["base"];
+  readonly title: string;
+  readonly body: string;
   readonly status: ChangeProposalStatus;
   readonly url?: ProposalDisplayUrl;
 }
@@ -157,6 +159,7 @@ export type ChangeProposalContradiction =
   | "RepositoryMismatch"
   | "HeadMismatch"
   | "BaseMismatch"
+  | "MetadataMismatch"
   | "MarkerMismatch";
 
 export type ChangeProposalCreated =
@@ -296,6 +299,8 @@ function proposalContradiction(
     evidence.base.commit !== request.base.commit
   )
     return "BaseMismatch";
+  if (evidence.title !== request.title || evidence.body !== request.body)
+    return "MetadataMismatch";
   if (evidence.status === "Closed") return "Closed";
   if (evidence.status === "Merged") return "Merged";
   if (evidence.status === "Superseded") return "Superseded";

@@ -1,4 +1,4 @@
-/** Pinned configuration and deterministic rendering for a release handoff. */
+/** Pinned configuration and deterministic rendering for a direct Git handoff. */
 
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
 import type { CanonicalConfiguration } from "./authoring.ts";
@@ -9,16 +9,6 @@ import {
   finalizerIdentityCharsMax,
 } from "./finalizer.ts";
 import { asArtifactDigest, type ArtifactDigest } from "./resultManifest.ts";
-import {
-  asChangeProposalRequestIdentity,
-  asForgeBindingId,
-  asForgeCredentialReference,
-  proposalBodyCharsMax,
-  proposalHeadRefOf,
-  proposalMarkerOf,
-  proposalTitleCharsMax,
-  type ForgeBinding,
-} from "./changeProposal.ts";
 
 declare const credentialReferenceBrand: unique symbol;
 declare const handoffPathBrand: unique symbol;
@@ -86,9 +76,10 @@ export interface ContainerBuildParameters {
   readonly platforms: readonly string[];
 }
 
-interface HandoffConfigurationBase {
+export interface PinnedHandoffConfiguration {
   readonly pin: HandoffConfigurationPin;
   readonly version: typeof handoffConfigurationVersion;
+  readonly mode: "DirectCommit";
   readonly work: HandoffRepositoryRole;
   readonly handoff: HandoffRepositoryRole;
   readonly renderer: {
@@ -100,31 +91,15 @@ interface HandoffConfigurationBase {
   readonly outputBytesMax: number;
 }
 
-export interface PinnedDirectCommitHandoffConfiguration extends HandoffConfigurationBase {
-  readonly mode: "DirectCommit";
-}
-
-export interface PinnedProposalHandoffConfiguration extends HandoffConfigurationBase {
-  readonly mode: "Proposal";
-  readonly proposal: {
-    readonly binding: ForgeBinding;
-    readonly title: string;
-    readonly body: string;
-  };
-}
-
-export type PinnedHandoffConfiguration =
-  PinnedDirectCommitHandoffConfiguration | PinnedProposalHandoffConfiguration;
-
-export type AuthoredHandoffConfiguration =
-  | Omit<PinnedDirectCommitHandoffConfiguration, "pin">
-  | Omit<PinnedProposalHandoffConfiguration, "pin">;
+export type AuthoredHandoffConfiguration = Omit<
+  PinnedHandoffConfiguration,
+  "pin"
+>;
 
 export type HandoffConfigurationFault =
   | "HandoffShapeMissing"
   | "HandoffVersionUnknown"
   | "HandoffModeUnsupported"
-  | "ProposalConfigurationInvalid"
   | "RepositoryRoleInvalid"
   | "RepositoryRoleDuplicated"
   | "CredentialReferenceInvalid"
@@ -155,18 +130,13 @@ export type AuthoredHandoffConfigurationReadiness =
       readonly fault: HandoffConfigurationFault;
     };
 
-type AuthoredHandoffConfigurationCommon = Omit<
-  PinnedDirectCommitHandoffConfiguration,
-  "pin" | "mode"
->;
-
 export interface PromoteForHandoffRequestConfiguration {
   readonly kind: "PromoteForHandoff";
   readonly pin: HandoffConfigurationPin;
   readonly repository: HandoffRepositoryRole;
 }
 
-export interface DirectCommitHandoffRequestConfiguration {
+export interface PublishHandoffRequestConfiguration {
   readonly kind: "PublishHandoff";
   readonly pin: HandoffConfigurationPin;
   readonly repository: HandoffRepositoryRole;
@@ -177,28 +147,6 @@ export interface DirectCommitHandoffRequestConfiguration {
   readonly output: string;
   readonly requestDigest: HandoffRequestDigest;
 }
-
-export interface ProposalHandoffRequestConfiguration {
-  readonly kind: "PublishHandoff";
-  readonly pin: HandoffConfigurationPin;
-  readonly repository: HandoffRepositoryRole;
-  readonly acceptedWorkRepository: RepositoryId;
-  readonly acceptedWorkCommit: GitObjectId;
-  readonly mode: "Proposal";
-  readonly destinationPath: HandoffPath;
-  readonly output: string;
-  readonly requestDigest: HandoffRequestDigest;
-  readonly proposal: {
-    readonly binding: ForgeBinding;
-    readonly marker: ReturnType<typeof proposalMarkerOf>;
-    readonly headRef: ReturnType<typeof proposalHeadRefOf>;
-    readonly title: string;
-    readonly body: string;
-  };
-}
-
-export type PublishHandoffRequestConfiguration =
-  DirectCommitHandoffRequestConfiguration | ProposalHandoffRequestConfiguration;
 
 function handoffRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -326,61 +274,6 @@ function handoffParameters(
   };
 }
 
-function handoffProposal(
-  value: unknown,
-  credentialValue: unknown,
-): PinnedProposalHandoffConfiguration["proposal"] | undefined {
-  const record = handoffRecord(value);
-  const forge = handoffBoundedText(record?.["forge"]);
-  const credential = handoffCredential(credentialValue);
-  const title = record?.["title"];
-  const body = record?.["body"];
-  if (
-    forge === undefined ||
-    credential === undefined ||
-    typeof title !== "string" ||
-    title.length === 0 ||
-    title.length > proposalTitleCharsMax ||
-    !title.isWellFormed() ||
-    typeof body !== "string" ||
-    body.length > proposalBodyCharsMax ||
-    !body.isWellFormed()
-  )
-    return undefined;
-  try {
-    return {
-      binding: {
-        forge: asForgeBindingId(forge),
-        credential: asForgeCredentialReference(credential),
-      },
-      title,
-      body,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function handoffConfigurationForMode(
-  mode: "DirectCommit" | "Proposal",
-  common: AuthoredHandoffConfigurationCommon,
-  proposalValue: unknown,
-  proposalCredential: unknown,
-): AuthoredHandoffConfigurationReadiness {
-  if (mode === "DirectCommit")
-    return {
-      readiness: "Ready",
-      configuration: { ...common, mode },
-    };
-  const proposal = handoffProposal(proposalValue, proposalCredential);
-  return proposal === undefined
-    ? { readiness: "Incomplete", fault: "ProposalConfigurationInvalid" }
-    : {
-        readiness: "Ready",
-        configuration: { ...common, mode, proposal },
-      };
-}
-
 /** Validates the authored handoff shape without resolving any operational binding. */
 export function authoredHandoffConfigurationReadiness(
   value: unknown,
@@ -391,8 +284,7 @@ export function authoredHandoffConfigurationReadiness(
     return { readiness: "Incomplete", fault: "HandoffShapeMissing" };
   if (handoff["version"] !== handoffConfigurationVersion)
     return { readiness: "Incomplete", fault: "HandoffVersionUnknown" };
-  const mode = handoff["mode"];
-  if (mode !== "DirectCommit" && mode !== "Proposal")
+  if (handoff["mode"] !== "DirectCommit")
     return { readiness: "Incomplete", fault: "HandoffModeUnsupported" };
   const repositories = handoffRecord(handoff["repositories"]);
   const credentials = handoffRecord(handoff["credentials"]);
@@ -428,24 +320,22 @@ export function authoredHandoffConfigurationReadiness(
     (outputBytesMax as number) > handoffOutputBytesMaxLimit
   )
     return { readiness: "Incomplete", fault: "OutputBoundInvalid" };
-  const common = {
-    version: handoffConfigurationVersion,
-    work,
-    handoff: target,
-    renderer: {
-      identity: handoffRendererIdentity,
-      version: handoffRendererVersion,
-      parameters,
+  return {
+    readiness: "Ready",
+    configuration: {
+      version: handoffConfigurationVersion,
+      mode: "DirectCommit",
+      work,
+      handoff: target,
+      renderer: {
+        identity: handoffRendererIdentity,
+        version: handoffRendererVersion,
+        parameters,
+      },
+      destinationPath,
+      outputBytesMax: outputBytesMax as number,
     },
-    destinationPath,
-    outputBytesMax: outputBytesMax as number,
-  } as const;
-  return handoffConfigurationForMode(
-    mode,
-    common,
-    handoff["proposal"],
-    credentials["proposal"],
-  );
+  };
 }
 
 /** Parses only the immutable revision and digest supplied by the accepted work. */
@@ -539,19 +429,8 @@ export function publishHandoffConfiguration(
     output,
     outputBytesMax: pinned.outputBytesMax,
     rendererInput,
-    ...(pinned.mode === "Proposal"
-      ? {
-          proposal: {
-            body: pinned.proposal.body,
-            forge: pinned.proposal.binding.forge,
-            title: pinned.proposal.title,
-          },
-        }
-      : {}),
   });
   const requestDigest = asHandoffRequestDigest(digestOf(identityInput));
-  const proposalRequestIdentity =
-    asChangeProposalRequestIdentity(requestDigest);
   const probeDigest = asHandoffRequestDigest(
     digestOf(`${identityInput.length}:${identityInput}:probe`),
   );
@@ -559,7 +438,7 @@ export function publishHandoffConfiguration(
     throw new RangeError(
       "handoff digest function does not depend on its input",
     );
-  const common = {
+  return {
     kind: "PublishHandoff",
     pin: pinned.pin,
     repository: pinned.handoff,
@@ -569,18 +448,5 @@ export function publishHandoffConfiguration(
     destinationPath: pinned.destinationPath,
     output,
     requestDigest,
-  } as const;
-  return pinned.mode === "DirectCommit"
-    ? { ...common, mode: pinned.mode }
-    : {
-        ...common,
-        mode: pinned.mode,
-        proposal: {
-          binding: pinned.proposal.binding,
-          marker: proposalMarkerOf(proposalRequestIdentity),
-          headRef: proposalHeadRefOf(proposalRequestIdentity),
-          title: pinned.proposal.title,
-          body: pinned.proposal.body,
-        },
-      };
+  };
 }

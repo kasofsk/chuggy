@@ -47,6 +47,8 @@ function evidence(
     marker: request.marker,
     head: request.head,
     base: request.base,
+    title: request.title,
+    body: request.body,
     status: "Open",
     url: asProposalDisplayUrl("https://forge.invalid/proposals/proposal-17"),
     ...overrides,
@@ -116,6 +118,8 @@ test("closed, merged, retargeted, and mismatched proposals are explicit contradi
       "BaseMismatch",
     ],
     [{ repository: asRepositoryId("other-repository") }, "RepositoryMismatch"],
+    [{ title: "Changed title" }, "MetadataMismatch"],
+    [{ body: "Changed body" }, "MetadataMismatch"],
     [
       {
         identity: {
