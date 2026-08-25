@@ -26,9 +26,9 @@ import {
 } from "../../src/interpreter/finalizer.ts";
 import {
   projectWriterDecide,
-  type ExecutionSourceObservationPort,
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
+import type { ExecutionSourceObservationPort } from "../../src/interpreter/executionSource.ts";
 import {
   deriveDispatchCandidates,
   dispatchViewDigest,
@@ -140,7 +140,14 @@ test("a source observation is gathered before a spawn bundle is materialized", a
       },
     },
   );
-  assert.deepEqual(observed, [{ partition, ticket: id(1), kind: "Work" }]);
+  assert.deepEqual(observed, [
+    {
+      partition,
+      ticket: id(1),
+      kind: "Work",
+      configurationCanonical: '{"worker":"one"}',
+    },
+  ]);
   assert.deepEqual(
     decision.outcome.outcome === "Journaled"
       ? decision.outcome.materialization.execution[0]?.bundle?.source

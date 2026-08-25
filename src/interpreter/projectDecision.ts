@@ -120,7 +120,7 @@ export interface ExecutionRequestBundle {
   readonly evidence?: FinalizationEvidence;
   readonly source?: {
     readonly repository: string;
-    readonly targetRef: string;
+    readonly targetRef?: string;
     readonly targetCommit: string;
     readonly manifests: readonly string[];
   };

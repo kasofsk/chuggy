@@ -34,20 +34,16 @@ import {
 } from "../actor/decisionEvent.ts";
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
-import type {
-  ObservedTarget,
-  RepositoryId,
-  TargetObserved,
-} from "./finalizer.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
 import type { Core } from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
 import { effectFromLabel } from "../domain/effect.ts";
 import { asTicketId } from "../domain/ids.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
-import { authoredHandoffConfigurationReadiness } from "./handoffConfiguration.ts";
-import type { HandoffRepositoryRole } from "./handoffConfiguration.ts";
-import type { ResultManifestId } from "./resultManifest.ts";
+import type {
+  ExecutionSourceObservation,
+  ExecutionSourceObservationPort,
+} from "./executionSource.ts";
 import type { ProjectDiscovery, Readiness } from "./projectDiscovery.ts";
 import type {
   Decided,
@@ -78,31 +74,6 @@ export interface ProjectTicketWriter {
   readonly store: ProjectStore;
   readonly decisions: ProjectDecision;
   readonly executionSources?: ExecutionSourceObservationPort;
-}
-
-/** A source read gathered before the pure decision plan is constructed. */
-export interface ExecutionSourceObservation {
-  readonly repository: RepositoryId;
-  readonly target: ObservedTarget;
-  readonly manifests: readonly ResultManifestId[];
-}
-
-/** Resolves one configured or default repository ref without exposing its credential. */
-export interface ExecutionSourceObservationPort {
-  observe(input: {
-    readonly partition: Lease["partition"];
-    readonly ticket: number;
-    readonly kind: "Work" | "Evaluation";
-    readonly repository?: RepositoryId;
-    readonly ref?: ObservedTarget["ref"];
-    readonly credentialReference?: string;
-  }): Promise<
-    | {
-        readonly observed: "Source";
-        readonly source: ExecutionSourceObservation;
-      }
-    | Exclude<TargetObserved, { readonly observed: "Target" }>
-  >;
 }
 
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
@@ -392,19 +363,15 @@ function projectWriterPlan(
   return journaledPlan(writer, memory, item, command, executionSource);
 }
 
-function projectWriterSourceRepository(
+function projectWriterSourceConfiguration(
   memory: ProjectMemory,
   item: DecisionInput,
   ticket: number,
-): HandoffRepositoryRole | undefined {
+): string | undefined {
   const draft =
     item.source.kind === "Operation" ? item.source.draftRelease : undefined;
   const contract = draft ?? memory.dispatchContracts?.get(ticket);
-  if (contract === undefined) return undefined;
-  const parsed = authoredHandoffConfigurationReadiness(
-    JSON.parse(contract.configurationCanonical) as unknown,
-  );
-  return parsed.readiness === "Ready" ? parsed.configuration.work : undefined;
+  return contract?.configurationCanonical;
 }
 
 async function projectWriterExecutionSource(
@@ -429,18 +396,16 @@ async function projectWriterExecutionSource(
   const ticket = rec.transitions[rec.effects.indexOf(spawn)]?.ticket;
   if (ticket === undefined)
     throw new IntegrityContradiction("a spawn effect has no ticket transition");
-  const repository = projectWriterSourceRepository(memory, item, ticket);
+  const configurationCanonical = projectWriterSourceConfiguration(
+    memory,
+    item,
+    ticket,
+  );
   const observed = await writer.executionSources.observe({
     partition: memory.lease.partition,
     ticket,
     kind: effect === "SpawnWorkTasks" ? "Work" : "Evaluation",
-    ...(repository === undefined
-      ? {}
-      : {
-          repository: repository.repository,
-          ref: repository.targetRef,
-          credentialReference: repository.credential,
-        }),
+    ...(configurationCanonical === undefined ? {} : { configurationCanonical }),
   });
   if (observed.observed !== "Source")
     throw new Error(`project writer: execution source is ${observed.evidence}`);

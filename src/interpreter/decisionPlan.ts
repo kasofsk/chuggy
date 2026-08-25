@@ -7,7 +7,7 @@ import { asTicketId, type TicketId } from "../domain/ids.ts";
 import { tasksInIdOrder } from "../domain/task.ts";
 import { reducibleEvalIn, reducibleWorkIn } from "../domain/enablement.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
-import type { ExecutionSourceObservation } from "./projectWriter.ts";
+import type { ExecutionSourceObservation } from "./executionSource.ts";
 import {
   inputBundleReferencesMax,
   type InputBundleReference,
@@ -71,7 +71,9 @@ function executionRequestBundle(
       : {
           source: {
             repository: source.repository,
-            targetRef: source.target.ref,
+            ...(source.target.ref === undefined
+              ? {}
+              : { targetRef: source.target.ref }),
             targetCommit: source.target.commit,
             manifests: source.manifests,
           },
