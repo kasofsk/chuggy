@@ -354,9 +354,13 @@ async function importRepositoryConfigurations(
     for (const declaration of input.declarations) {
       const digest = configurationRevisionDigest(declaration.canonical);
       const imported = await client.query<{ result: string | null }>(
-        sql`SELECT import_repository_configuration(${input.partition.tenant},${input.partition.project},${declaration.revision},${declaration.canonical},${digest},${declaration.repository},${declaration.commit},${declaration.path},${declaration.name},${input.authority.kind},${input.authority.subject})::text AS result`,
+        sql`SELECT import_repository_configuration(${input.partition.tenant},${input.partition.project},${input.binding.repository},${input.binding.recoveryEpoch},${declaration.revision},${declaration.canonical},${digest},${declaration.repository},${declaration.commit},${declaration.path},${declaration.name},${input.authority.kind},${input.authority.subject})::text AS result`,
       );
       const result = imported.rows[0]?.result;
+      if (result === "StaleBinding") {
+        await client.query("ROLLBACK");
+        return { imported: "StaleBinding" };
+      }
       if (result !== "Imported" && result !== "AlreadyImported")
         throw new Error(
           `repository configuration transition returned ${String(result)}`,

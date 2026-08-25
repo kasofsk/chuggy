@@ -17,6 +17,7 @@ import type { TaskConfigurationFault } from "./taskConfiguration.ts";
 import type { HandoffConfigurationFault } from "./handoffConfiguration.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
+import { assertNever } from "../domain/assertNever.ts";
 import {
   asRepositoryConfigurationName,
   asRepositoryConfigurationPath,
@@ -106,11 +107,14 @@ export type RepositoryConfigurationImportReadiness =
     };
 
 export type RepositoryConfigurationsImported =
-  { readonly imported: "Imported" } | { readonly imported: "IdentityConflict" };
+  | { readonly imported: "Imported" }
+  | { readonly imported: "IdentityConflict" }
+  | { readonly imported: "StaleBinding" };
 
 export interface RepositoryConfigurationStore {
   importRepositoryConfigurations(input: {
     readonly partition: Partition;
+    readonly binding: RepositoryBinding;
     readonly authority: Authority;
     readonly declarations: readonly RepositoryConfigurationDeclaration[];
   }): Promise<RepositoryConfigurationsImported>;
@@ -146,7 +150,58 @@ export type RepositoryConfigurationImportOutcome =
       readonly faults: readonly RepositoryConfigurationRefusal[];
     }
   | { readonly result: "IdentityConflict" }
+  | { readonly result: "StaleBinding" }
   | { readonly result: "Imported" };
+
+/** Imports the declarations at one exact repository commit under an already-resolved authority. */
+export async function importRepositoryConfigurations(input: {
+  readonly partition: Partition;
+  readonly commit: GitObjectId;
+  readonly authority: Authority;
+  readonly ports: RepositoryConfigurationImportPorts;
+}): Promise<RepositoryConfigurationImportOutcome> {
+  const binding = await input.ports.bindings.binding(input.partition);
+  if (binding === undefined) return { result: "RepositoryAbsent" };
+  const snapshot = await input.ports.snapshots.snapshot({
+    repository: binding,
+    commit: input.commit,
+  });
+  switch (snapshot.read) {
+    case "Absent":
+      return { result: "SnapshotAbsent", absent: snapshot.absent };
+    case "Unavailable":
+      return { result: "Unavailable", unavailable: snapshot.unavailable };
+    case "Refused":
+      return { result: "SnapshotRefused", refused: snapshot.refused };
+    case "Snapshot": {
+      const readiness = repositoryConfigurationImportReadiness({
+        repository: binding.repository,
+        commit: input.commit,
+        files: snapshot.files,
+      });
+      if (readiness.readiness === "Refused")
+        return { result: "DeclarationsRefused", faults: readiness.faults };
+      const imported = await input.ports.store.importRepositoryConfigurations({
+        partition: input.partition,
+        binding,
+        authority: input.authority,
+        declarations: readiness.declarations,
+      });
+      switch (imported.imported) {
+        case "Imported":
+          return { result: "Imported" };
+        case "IdentityConflict":
+          return { result: "IdentityConflict" };
+        case "StaleBinding":
+          return { result: "StaleBinding" };
+        default:
+          return assertNever(imported);
+      }
+    }
+    default:
+      return assertNever(snapshot);
+  }
+}
 
 function repositoryConfigurationRevision(
   commit: GitObjectId,

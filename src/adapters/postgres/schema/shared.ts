@@ -38,6 +38,7 @@ export const boundaryOwnerRole = "chuggy_boundary_owner";
 export const projectAuthorizationFunction = "authorize_project_access";
 export const schedulerRole = "chuggy_scheduler";
 export const workerPlaneRole = "chuggy_worker_plane";
+export const configurationImporterRole = "chuggy_configuration_importer";
 export const workerAttemptReadFunction = "read_worker_attempt";
 export const workerAttemptLostFunction = "lose_worker_attempt";
 export const workerResultSubmitFunction = "submit_worker_result";

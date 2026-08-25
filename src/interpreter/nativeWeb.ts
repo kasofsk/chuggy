@@ -9,7 +9,6 @@
  */
 
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
-import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type {
   Accepted,
@@ -76,7 +75,7 @@ import type { SelectorOperationalContext } from "./selector.ts";
 import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
 import type { GitObjectId } from "./finalizer.ts";
 import {
-  repositoryConfigurationImportReadiness,
+  importRepositoryConfigurations,
   type RepositoryConfigurationImportOutcome,
   type RepositoryConfigurationImportPorts,
 } from "./repositoryConfiguration.ts";
@@ -536,39 +535,12 @@ function nativeRepositoryConfigurationImportMethod(
     if (authority === undefined) return { result: "NotFound" };
     if (ports === undefined)
       return { result: "Unavailable", unavailable: "Repository" };
-    const binding = await ports.bindings.binding(partition);
-    if (binding === undefined) return { result: "RepositoryAbsent" };
-    const snapshot = await ports.snapshots.snapshot({
-      repository: binding,
+    return importRepositoryConfigurations({
+      partition,
       commit,
+      authority,
+      ports,
     });
-    switch (snapshot.read) {
-      case "Absent":
-        return { result: "SnapshotAbsent", absent: snapshot.absent };
-      case "Unavailable":
-        return { result: "Unavailable", unavailable: snapshot.unavailable };
-      case "Refused":
-        return { result: "SnapshotRefused", refused: snapshot.refused };
-      case "Snapshot": {
-        const readiness = repositoryConfigurationImportReadiness({
-          repository: binding.repository,
-          commit,
-          files: snapshot.files,
-        });
-        if (readiness.readiness === "Refused")
-          return { result: "DeclarationsRefused", faults: readiness.faults };
-        const imported = await ports.store.importRepositoryConfigurations({
-          partition,
-          authority,
-          declarations: readiness.declarations,
-        });
-        return imported.imported === "Imported"
-          ? { result: "Imported" }
-          : { result: "IdentityConflict" };
-      }
-      default:
-        return assertNever(snapshot);
-    }
   };
 }
 
