@@ -46,6 +46,14 @@
  */
 
 import type { Verdict } from "../domain/generated/modelTypes.ts";
+import {
+  asGitObjectId,
+  asGitRefName,
+  asRepositoryId,
+  type GitObjectId,
+  type GitRefName,
+  type RepositoryId,
+} from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import { asSchedulerText } from "./schedulerIdentity.ts";
@@ -71,8 +79,12 @@ export type CanonicalManifest = string & {
   readonly [canonicalManifestBrand]: true;
 };
 
-/** The schema version this module reads, and the only one it accepts. */
-export const resultManifestSchemaVersion = 1;
+/** The schema version workers author now; retained version-one manifests remain readable. */
+export const resultManifestSchemaVersion = 2;
+
+/** The schema versions retained manifests may carry. */
+export type ResultManifestSchemaVersion =
+  1 | typeof resultManifestSchemaVersion;
 
 /** The longest artifact path a stored row carries, which an object key must still hold. */
 export const artifactPathCharsMax = 256;
@@ -154,6 +166,14 @@ export interface ManifestAttemptBinding {
   readonly attempt: AttemptId;
 }
 
+/** One immutable worker-produced candidate and the base it was built from. */
+export interface SourceHandoff {
+  readonly repository: RepositoryId;
+  readonly ref: GitRefName;
+  readonly commit: GitObjectId;
+  readonly base: GitObjectId;
+}
+
 /**
  * The seal a sealed manifest carries. It is not exported, so no other module
  * can produce a value of its type and therefore none can build a manifest.
@@ -163,11 +183,12 @@ const manifestSeal = Symbol("chuggy:result-manifest");
 /** One accepted immutable result, sealed so nothing outside this module can claim to be one. */
 export interface ResultManifest {
   readonly seal: typeof manifestSeal;
-  readonly schemaVersion: typeof resultManifestSchemaVersion;
+  readonly schemaVersion: ResultManifestSchemaVersion;
   readonly manifest: ResultManifestId;
   readonly binding: ManifestAttemptBinding;
   readonly verdict: Verdict;
   readonly handoffs: readonly ArtifactRow[];
+  readonly source?: SourceHandoff;
   readonly diagnostics: readonly ArtifactRow[];
   readonly digest: ArtifactDigest;
 }
@@ -215,6 +236,9 @@ export type ManifestRejection =
   | "TooManyHandoffs"
   | "TooManyDiagnostics"
   | "HandoffsOnFailedVerdict"
+  | "SourceMalformed"
+  | "SourceOnFailedVerdict"
+  | "SourceAndHandoffs"
   | "ArtifactBytesNotCounted"
   | "ArtifactTooLarge"
   | "ManifestTooLarge"
@@ -233,6 +257,9 @@ export const allManifestRejections: readonly ManifestRejection[] = [
   "TooManyHandoffs",
   "TooManyDiagnostics",
   "HandoffsOnFailedVerdict",
+  "SourceMalformed",
+  "SourceOnFailedVerdict",
+  "SourceAndHandoffs",
   "ArtifactBytesNotCounted",
   "ArtifactTooLarge",
   "ManifestTooLarge",
@@ -333,7 +360,8 @@ export function asArtifactPath(value: string): ArtifactPath {
 }
 
 /** The label that separates this construction from any other digest this tree computes. */
-const resultManifestFormat = "chuggy:result-manifest:v1";
+const resultManifestFormatV1 = "chuggy:result-manifest:v1";
+const resultManifestFormatV2 = "chuggy:result-manifest:v2";
 
 /** Length-prefixes each part, so no opaque value can spell out a boundary. */
 function resultManifestInput(parts: readonly string[]): string {
@@ -352,8 +380,11 @@ function resultManifestRowParts(rows: readonly ArtifactRow[]): string[] {
 export function canonicalResultManifest(
   manifest: ResultManifest,
 ): CanonicalManifest {
+  const source = manifest.source;
   return resultManifestInput([
-    resultManifestFormat,
+    manifest.schemaVersion === 1
+      ? resultManifestFormatV1
+      : resultManifestFormatV2,
     manifest.binding.partition.tenant,
     manifest.binding.partition.project,
     manifest.binding.execution,
@@ -363,6 +394,11 @@ export function canonicalResultManifest(
     manifest.verdict,
     ...resultManifestRowParts(manifest.handoffs),
     ...resultManifestRowParts(manifest.diagnostics),
+    ...(manifest.schemaVersion === 1
+      ? []
+      : source === undefined
+        ? ["0"]
+        : ["1", source.repository, source.ref, source.commit, source.base]),
   ]) as CanonicalManifest;
 }
 
@@ -485,15 +521,52 @@ function manifestEnvelope(
   }
   const record = manifestRecord(parsed);
   if (record === undefined) return manifestRejected("TextUnreadable");
-  if (
-    !manifestKeysAre(record, ["version", "verdict", "handoffs", "diagnostics"])
-  )
-    return manifestRejected("UnexpectedField");
-  if (record["version"] !== resultManifestSchemaVersion)
+  const version = record["version"];
+  if (version !== 1 && version !== resultManifestSchemaVersion)
     return manifestRejected("UnsupportedSchemaVersion");
+  const keys =
+    version === 1
+      ? ["version", "verdict", "handoffs", "diagnostics"]
+      : ["version", "verdict", "handoffs", "diagnostics", "source"];
+  if (!manifestKeysAre(record, keys))
+    return manifestRejected("UnexpectedField");
   if (record["verdict"] !== "Pass" && record["verdict"] !== "Fail")
     return manifestRejected("UnknownVerdict");
   return { value: record };
+}
+
+/** One source handoff, or the refusal reading its four bounded identities earns. */
+function manifestSource(
+  record: Record<string, unknown>,
+): SourceHandoff | undefined | ManifestAccepted {
+  if (record["version"] === 1 || record["source"] === null) return undefined;
+  const source = manifestRecord(record["source"]);
+  if (
+    source === undefined ||
+    !manifestKeysAre(source, ["repository", "ref", "commit", "base"])
+  )
+    return manifestRejected("SourceMalformed");
+  const repository = source["repository"];
+  const ref = source["ref"];
+  const commit = source["commit"];
+  const base = source["base"];
+  if (
+    typeof repository !== "string" ||
+    typeof ref !== "string" ||
+    typeof commit !== "string" ||
+    typeof base !== "string"
+  )
+    return manifestRejected("SourceMalformed");
+  try {
+    return {
+      repository: asRepositoryId(repository),
+      ref: asGitRefName(ref),
+      commit: asGitObjectId(commit),
+      base: asGitObjectId(base),
+    };
+  } catch {
+    return manifestRejected("SourceMalformed");
+  }
 }
 
 /** The two lists a report declares, sorted, or the refusal reading them earns. */
@@ -543,13 +616,20 @@ export function acceptResultManifest(
   if ("accepted" in envelope) return envelope;
   const lists = manifestLists(envelope.value);
   if ("accepted" in lists) return lists;
+  const source = manifestSource(envelope.value);
+  if (source !== undefined && "accepted" in source) return source;
+  if (source !== undefined && envelope.value["verdict"] === "Fail")
+    return manifestRejected("SourceOnFailedVerdict");
+  if (source !== undefined && lists.handoffs.length > 0)
+    return manifestRejected("SourceAndHandoffs");
   const unsealed: ResultManifest = {
     seal: manifestSeal,
-    schemaVersion: resultManifestSchemaVersion,
+    schemaVersion: envelope.value["version"] as ResultManifestSchemaVersion,
     manifest,
     binding,
     verdict: envelope.value["verdict"] as Verdict,
     handoffs: lists.handoffs,
+    ...(source === undefined ? {} : { source }),
     diagnostics: lists.diagnostics,
     digest: "" as ArtifactDigest,
   };

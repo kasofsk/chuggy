@@ -23,6 +23,14 @@ import {
   type PostgresHarness,
 } from "./harness.ts";
 
+const sourceInsertColumns =
+  "base,commit,expected_base,manifest,project,ref,repository,tenant";
+const schedulerSourceInsertPrivilege = {
+  table_name: "execution_result_source",
+  privilege_type: "INSERT",
+  columns: sourceInsertColumns,
+};
+
 let harness: PostgresHarness;
 before(async () => {
   harness = await postgresHarnessOpen();
@@ -607,6 +615,7 @@ test("the scheduler's write surface is exactly the columns execution and capacit
         privilege_type: "INSERT",
         columns: "bytes,digest,manifest,ordinal,path,project,role,tenant",
       },
+      schedulerSourceInsertPrivilege,
       {
         table_name: "project",
         privilege_type: "UPDATE",
@@ -643,6 +652,7 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "execution_request_task",
       "execution_result",
       "execution_result_artifact",
+      "execution_result_source",
       "project",
       "recovery_epoch",
       "scheduler_incident",

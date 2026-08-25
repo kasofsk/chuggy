@@ -10,9 +10,11 @@ import {
   postgresWorkerReportStore,
 } from "../../src/adapters/postgres/workerPlane.ts";
 import {
+  acceptResultManifest,
   artifactBytesMax,
   manifestArtifactsMax,
   manifestBytesMax,
+  type CanonicalManifest,
 } from "../../src/interpreter/resultManifest.ts";
 import { asPlacementId } from "../../src/interpreter/executionScheduler.ts";
 import { postgresHarnessUrl } from "./harness.ts";
@@ -102,6 +104,64 @@ test("the worker role settles once and terminal authority is immediately fenced"
       (candidate) => candidate.attempt === attempt.attempt,
     ),
     false,
+  );
+});
+
+test("the worker boundary retains a source handoff with its manifest", async () => {
+  const attempt = await placedAttempt("worker-source");
+  const target = await rig.harness.query(
+    `SELECT b.reference_id FROM execution e
+       JOIN execution_request q
+         ON q.tenant=e.tenant AND q.project=e.project AND q.request=e.source_request
+       JOIN input_bundle_reference b
+         ON b.tenant=q.tenant AND b.project=q.project AND b.bundle=q.input_bundle
+      WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$3
+        AND b.reference_kind='TargetCommit'`,
+    [attempt.partition.tenant, attempt.partition.project, attempt.execution],
+  );
+  assert.equal(target.length, 1);
+  const targetCommit = target[0]?.["reference_id"];
+  assert.equal(typeof targetCommit, "string");
+  const source = {
+    repository: "repository-one",
+    ref: "refs/heads/chuggy/tickets/ticket-one/attempts/attempt-one",
+    commit: "a".repeat(40),
+    base:
+      typeof targetCommit === "string"
+        ? targetCommit
+        : assert.fail("no target commit"),
+  };
+  const accepted = acceptResultManifest(
+    attempt,
+    attempt.capability.manifest,
+    JSON.stringify({
+      version: 2,
+      verdict: "Pass",
+      handoffs: [],
+      diagnostics: [],
+      source,
+    }),
+    (canonical: CanonicalManifest) =>
+      createHash("sha256").update(canonical).digest("hex"),
+  );
+  assert.equal(accepted.accepted, "Accepted");
+  if (accepted.accepted !== "Accepted") return;
+  const result = await postgresWorkerReportStore(
+    workerPool,
+    attempt.capability.secret,
+  ).terminalize({ ...attempt, manifest: accepted.manifest });
+  assert.equal(result.terminalized, "Terminalized");
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT repository,ref,commit,base FROM execution_result_source
+        WHERE tenant=$1 AND project=$2 AND manifest=$3`,
+      [
+        attempt.partition.tenant,
+        attempt.partition.project,
+        attempt.capability.manifest,
+      ],
+    ),
+    [source],
   );
 });
 
@@ -216,7 +276,7 @@ test("the executable result boundary refuses an over-count manifest independentl
     }),
   );
   const refused = await workerPool.query<{ terminalized: string }>(
-    `SELECT terminalized FROM submit_worker_result($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
+    `SELECT terminalized FROM submit_worker_result($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`,
     [
       createHash("sha256")
         .update(attempt.capability.secret, "utf8")
@@ -227,6 +287,7 @@ test("the executable result boundary refuses an over-count manifest independentl
       report.manifest.digest,
       report.manifest.verdict,
       JSON.stringify(artifacts),
+      null,
       "operation-over-count",
     ],
   );
@@ -247,7 +308,7 @@ test("the executable result boundary refuses an over-count manifest independentl
     ],
   ] as const) {
     const malformed = await workerPool.query<{ terminalized: string }>(
-      `SELECT terminalized FROM submit_worker_result($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
+      `SELECT terminalized FROM submit_worker_result($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`,
       [
         createHash("sha256")
           .update(attempt.capability.secret, "utf8")
@@ -258,6 +319,7 @@ test("the executable result boundary refuses an over-count manifest independentl
         report.manifest.digest,
         report.manifest.verdict,
         JSON.stringify(artifactsValue),
+        null,
         operation,
       ],
     );

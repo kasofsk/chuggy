@@ -20,6 +20,16 @@ export interface EvaluationBlock extends PurposeBlock {
   readonly practices: readonly string[];
 }
 
+/** Runtime inputs whose canonical authored bytes travel with every task invocation. */
+export interface WorkerConfiguration {
+  readonly arguments: readonly string[];
+  readonly setup: readonly string[];
+  readonly files: readonly {
+    readonly path: string;
+    readonly content: string;
+  }[];
+}
+
 /** The authored part of a task configuration, before storage supplies its immutable pin. */
 export interface AuthoredTaskConfiguration {
   readonly brief: TicketBrief;
@@ -28,6 +38,7 @@ export interface AuthoredTaskConfiguration {
   readonly review: PurposeBlock;
   readonly evaluations?: readonly EvaluationBlock[];
   readonly authority?: AuthorityRequest;
+  readonly worker?: WorkerConfiguration;
 }
 
 /** The blessed practice identities accepted in authored configuration. */
@@ -60,6 +71,7 @@ export type TaskConfigurationFault =
   | "ReviewInvalid"
   | "EvaluationsInvalid"
   | "AuthorityInvalid"
+  | "WorkerInvalid"
   | "EmptyBrief"
   | "UnknownPractice"
   | "DuplicatePractice"
@@ -91,6 +103,9 @@ type BriefingTextFault = Extract<
 const briefingFirstPrintable = 0x20;
 const briefingFirstUpperControl = 0x7f;
 const briefingLastUpperControl = 0x9f;
+
+const workerEntriesMax = 64;
+const workerContentCharsMax = 65_536;
 
 /** Returns the bounded text fault one authored line earns, if any. */
 export function taskConfigurationLineFault(
@@ -197,6 +212,42 @@ function authoredTaskConfigurationPurposeBlock(
   };
 }
 
+function authoredWorkerConfiguration(
+  value: unknown,
+): WorkerConfiguration | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return undefined;
+  const record = value as Record<string, unknown>;
+  const args = authoredTaskConfigurationStringArray(record["arguments"]);
+  const setup = authoredTaskConfigurationStringArray(record["setup"]);
+  const files = record["files"];
+  if (
+    args === undefined ||
+    setup === undefined ||
+    !Array.isArray(files) ||
+    args.length > workerEntriesMax ||
+    setup.length > workerEntriesMax ||
+    files.length > workerEntriesMax
+  )
+    return undefined;
+  const parsedFiles = files.map((file) => {
+    if (typeof file !== "object" || file === null || Array.isArray(file))
+      return undefined;
+    const fields = file as Record<string, unknown>;
+    return typeof fields["path"] === "string" &&
+      typeof fields["content"] === "string" &&
+      fields["content"].length <= workerContentCharsMax
+      ? { path: fields["path"], content: fields["content"] }
+      : undefined;
+  });
+  if (parsedFiles.some((file) => file === undefined)) return undefined;
+  return {
+    arguments: args,
+    setup,
+    files: parsedFiles as WorkerConfiguration["files"],
+  };
+}
+
 function authoredTaskConfigurationEvaluationBlock(
   value: unknown,
 ): EvaluationBlock | undefined {
@@ -231,6 +282,7 @@ function authoredTaskConfigurationValidated(input: {
   readonly review: PurposeBlock;
   readonly evaluations?: readonly EvaluationBlock[];
   readonly authority?: AuthorityRequest;
+  readonly worker?: WorkerConfiguration;
 }): AuthoredTaskConfigurationReadiness {
   if (input.motivation.length === 0 && input.acceptanceCriteria.length === 0)
     return { readiness: "Incomplete", fault: "EmptyBrief" };
@@ -268,6 +320,7 @@ function authoredTaskConfigurationValidated(input: {
         ? {}
         : { evaluations: input.evaluations }),
       ...(input.authority === undefined ? {} : { authority: input.authority }),
+      ...(input.worker === undefined ? {} : { worker: input.worker }),
     },
   };
 }
@@ -350,6 +403,13 @@ export function authoredTaskConfigurationReadiness(
       : authoredTaskConfigurationAuthorityRequest(authority);
   if (authority !== undefined && parsedAuthority === undefined)
     return { readiness: "Incomplete", fault: "AuthorityInvalid" };
+  const workerValue = record["worker"];
+  const worker =
+    workerValue === undefined
+      ? undefined
+      : authoredWorkerConfiguration(workerValue);
+  if (workerValue !== undefined && worker === undefined)
+    return { readiness: "Incomplete", fault: "WorkerInvalid" };
   return authoredTaskConfigurationValidated({
     motivation,
     acceptanceCriteria,
@@ -359,5 +419,6 @@ export function authoredTaskConfigurationReadiness(
     review,
     ...(evaluations === undefined ? {} : { evaluations }),
     ...(parsedAuthority === undefined ? {} : { authority: parsedAuthority }),
+    ...(worker === undefined ? {} : { worker }),
   });
 }

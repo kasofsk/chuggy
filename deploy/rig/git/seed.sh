@@ -15,6 +15,7 @@ namespace=chuggy-git
 repository=rig.git
 sync_user=sync
 operator_user=operator
+worker_user=worker
 
 for tool in kubectl git openssl base64 curl; do
 	command -v "$tool" > /dev/null 2>&1 || {
@@ -72,20 +73,35 @@ credential_digest() {
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
-# --- The two static credential classes --------------------------------------
-# The sync reader, and the operator's break-glass. Per-job tokens are the
-# ticket service's to mint and are not rehearsed here.
+# --- The static credential classes ------------------------------------------
+# The sync reader, the worker's create-only writer and the operator's
+# break-glass. The pre-receive hook below narrows the worker independently of
+# nginx admitting it to receive-pack.
 if kubectl -n "$namespace" get secret git-sync > /dev/null 2>&1; then
 	sync_token="$(secret_password git-sync)"
 	operator_token="$(secret_password git-operator)"
+	if kubectl -n "$namespace" get secret git-worker > /dev/null 2>&1; then
+		worker_token="$(secret_password git-worker)"
+	else
+		worker_token="$(openssl rand -hex 32)"
+		(
+			umask 077
+			printf '%s' "$worker_token" > "$work_dir/worker-token"
+		)
+		kubectl -n "$namespace" create secret generic git-worker \
+			--from-literal=username="$worker_user" \
+			--from-file=password="$work_dir/worker-token" > /dev/null
+	fi
 	echo "seed: reusing the existing credentials"
 else
 	sync_token="$(openssl rand -hex 32)"
 	operator_token="$(openssl rand -hex 32)"
+	worker_token="$(openssl rand -hex 32)"
 	(
 		umask 077
 		printf '%s' "$sync_token" > "$work_dir/sync-token"
 		printf '%s' "$operator_token" > "$work_dir/operator-token"
+		printf '%s' "$worker_token" > "$work_dir/worker-token"
 	)
 	kubectl -n "$namespace" create secret generic git-sync \
 		--from-literal=username="$sync_user" \
@@ -93,12 +109,17 @@ else
 	kubectl -n "$namespace" create secret generic git-operator \
 		--from-literal=username="$operator_user" \
 		--from-file=password="$work_dir/operator-token" > /dev/null
-	echo "seed: minted the sync and operator credentials"
+	kubectl -n "$namespace" create secret generic git-worker \
+		--from-literal=username="$worker_user" \
+		--from-file=password="$work_dir/worker-token" > /dev/null
+	echo "seed: minted the sync, worker and operator credentials"
 fi
 
 readers="$sync_user:{SHA}$(credential_digest "$sync_token")
-$operator_user:{SHA}$(credential_digest "$operator_token")"
-writers="$operator_user:{SHA}$(credential_digest "$operator_token")"
+$operator_user:{SHA}$(credential_digest "$operator_token")
+$worker_user:{SHA}$(credential_digest "$worker_token")"
+writers="$operator_user:{SHA}$(credential_digest "$operator_token")
+$worker_user:{SHA}$(credential_digest "$worker_token")"
 
 kubectl -n "$namespace" create secret generic git-credentials \
 	--from-literal=readers="$readers" \
@@ -126,6 +147,22 @@ kubectl -n "$namespace" exec "$pod" -- sh -c '
 		git -C "/git/$repository" config http.receivepack true
 		git -C "/git/$repository" symbolic-ref HEAD refs/heads/main
 	fi
+	cat > "/git/$repository/hooks/pre-receive" <<'"'"'HOOK'"'"'
+#!/bin/sh
+set -eu
+
+[ "${REMOTE_USER:-}" = worker ] || exit 0
+zero=0000000000000000000000000000000000000000
+while read -r old new ref; do
+	if [ "$old" != "$zero" ] || [ "$new" = "$zero" ] || \
+		! printf '%s\n' "$ref" | grep -Eq \
+		'^refs/heads/chuggy/tickets/[0-9]+/attempts/[0-9a-f]{64}$'; then
+		echo "worker may only create an attempt-scoped ticket branch" >&2
+		exit 1
+	fi
+done
+HOOK
+	chmod 0555 "/git/$repository/hooks/pre-receive"
 ' sh "$repository"
 
 # --- The default branch -----------------------------------------------------

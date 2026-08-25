@@ -79,6 +79,7 @@ const exhaustedManifestText = JSON.stringify({
   verdict: "Fail",
   handoffs: [],
   diagnostics: [],
+  source: null,
 });
 
 /**
@@ -290,6 +291,24 @@ async function schedulerWriteManifest(
                ${ordinal}::bigint,${manifest.schemaVersion},${manifest.digest},
                ${manifest.verdict})`,
   );
+  if (manifest.source !== undefined) {
+    await client.query(
+      sql`INSERT INTO execution_result_source
+           (tenant,project,manifest,repository,ref,commit,base,expected_base)
+         SELECT e.tenant,e.project,${manifest.manifest},${manifest.source.repository},
+                ${manifest.source.ref},${manifest.source.commit},${manifest.source.base},
+                b.reference_id
+           FROM execution e
+           JOIN execution_request q
+             ON q.tenant=e.tenant AND q.project=e.project AND q.request=e.source_request
+           JOIN input_bundle_reference b
+             ON b.tenant=q.tenant AND b.project=q.project AND b.bundle=q.input_bundle
+                AND b.reference_kind='TargetCommit'
+          WHERE e.tenant=${manifest.binding.partition.tenant}
+            AND e.project=${manifest.binding.partition.project}
+            AND e.execution=${manifest.binding.execution}`,
+    );
+  }
   const handoffs = await schedulerWriteArtifacts(
     client,
     manifest,

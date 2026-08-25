@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "name": "chuggy-development",
+  "configuration": {
+    "version": 1,
+    "image": "worker:v1",
+    "authority": {
+      "tools": ["claude-code", "shell"],
+      "credentials": ["chuggy-git-worker", "claude-code"],
+      "network": true,
+      "filesystem": "WriteWorkspace",
+      "mayCompleteTask": false
+    },
+    "worker": {
+      "arguments": [
+        "--allowedTools",
+        "Bash,Edit,Read,Write,Glob,Grep"
+      ],
+      "setup": [],
+      "files": []
+    },
+    "brief": {
+      "motivation": [
+        "Develop Chuggy itself in the same repository-native environment used by its maintainers."
+      ],
+      "acceptanceCriteria": [
+        "The ticket-specific acceptance criteria are satisfied and the relevant repository checks pass."
+      ],
+      "constraints": [
+        "Read CLAUDE.md and .chug/tasks/review-change.md before changing the repository."
+      ]
+    },
+    "practices": [
+      "RegressionCoverage",
+      "AcceptanceCriteria"
+    ],
+    "work": {
+      "instructions": [
+        "Implement the requested change, add focused regression coverage, and run the checks relevant to the files changed."
+      ]
+    },
+    "review": {
+      "instructions": [
+        "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
+      ]
+    },
+    "evaluations": [
+      {
+        "instructions": [
+          "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
+        ],
+        "practices": [
+          "ChangedCallPaths",
+          "AcceptanceCriteria"
+        ]
+      },
+      {
+        "instructions": [
+          "Run .chug/tasks/ci.sh and pass only when it exits cleanly; exit 2 means the evaluation could not run and is not a pass."
+        ],
+        "practices": [
+          "AcceptanceCriteria"
+        ]
+      }
+    ]
+  }
+}

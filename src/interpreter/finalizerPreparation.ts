@@ -53,6 +53,7 @@ import {
   type FinalizationClaim,
   type FinalizationFailureKind,
   type GitObjectId,
+  type GitRefName,
   type InputBundle,
   type InputBundleId,
   type InputBundleReference,
@@ -143,19 +144,41 @@ export interface HandoffArtifact {
   readonly bytes: number;
 }
 
+/** One immutable Git candidate declared by a passed work execution. */
+export interface HandoffSource {
+  readonly execution: ExecutionId;
+  readonly attempt: AttemptId;
+  readonly repository: RepositoryId;
+  readonly ref: GitRefName;
+  readonly commit: GitObjectId;
+  readonly base: GitObjectId;
+  readonly expectedBase: GitObjectId;
+}
+
 /** Everything one ticket's passed work declared, gathered before any decision runs. */
 export interface HandoffGathering {
   readonly work: readonly HandoffWork[];
   readonly artifacts: readonly HandoffArtifact[];
+  readonly sources: readonly HandoffSource[];
 }
 
 /** The passed work one finalization promotes, and the revision that work ran under. */
-export interface TicketHandoff {
+interface TicketHandoffBase {
   readonly manifests: readonly ResultManifestId[];
-  readonly artifacts: readonly HandoffArtifact[];
   readonly configuration: PinnedConfiguration;
   readonly approvalRequired: boolean;
 }
+
+/** The one form of authoritative work a finalizer may prepare. */
+export type TicketHandoff =
+  | (TicketHandoffBase & {
+      readonly kind: "Artifacts";
+      readonly artifacts: readonly HandoffArtifact[];
+    })
+  | (TicketHandoffBase & {
+      readonly kind: "Source";
+      readonly source: HandoffSource;
+    });
 
 /**
  * Why one ticket's work cannot become a candidate. Every arm is a property of
@@ -168,7 +191,10 @@ export type HandoffRefusal =
   | "PathIsDeclaredTwice"
   | "TooManyArtifacts"
   | "TooManyBytes"
-  | "TooManyExecutions";
+  | "TooManyExecutions"
+  | "SourceDeclaredTwice"
+  | "SourceAndArtifactsMixed"
+  | "SourceBaseDisagrees";
 
 /** Every refusal, so a suite iterates rather than restates. */
 export const allHandoffRefusals: readonly HandoffRefusal[] = [
@@ -179,6 +205,9 @@ export const allHandoffRefusals: readonly HandoffRefusal[] = [
   "TooManyArtifacts",
   "TooManyBytes",
   "TooManyExecutions",
+  "SourceDeclaredTwice",
+  "SourceAndArtifactsMixed",
+  "SourceBaseDisagrees",
 ];
 
 /**
@@ -261,6 +290,27 @@ export function handoffAccepted(gathering: HandoffGathering): HandoffAccepted {
   if (gathering.work.length > candidateExecutionsMax) {
     return { accepted: "Refused", refusal: "TooManyExecutions", configuration };
   }
+  if (gathering.sources.length > 1) {
+    return {
+      accepted: "Refused",
+      refusal: "SourceDeclaredTwice",
+      configuration,
+    };
+  }
+  if (gathering.sources.length > 0 && gathering.artifacts.length > 0) {
+    return {
+      accepted: "Refused",
+      refusal: "SourceAndArtifactsMixed",
+      configuration,
+    };
+  }
+  if (gathering.sources.some((source) => source.base !== source.expectedBase)) {
+    return {
+      accepted: "Refused",
+      refusal: "SourceBaseDisagrees",
+      configuration,
+    };
+  }
   const refusal = handoffArtifactRefusal(gathering.artifacts);
   if (refusal !== undefined) {
     return { accepted: "Refused", refusal, configuration };
@@ -284,9 +334,11 @@ export function handoffAccepted(gathering: HandoffGathering): HandoffAccepted {
     accepted: "Handoff",
     handoff: {
       manifests: [...new Set(gathering.work.map((each) => each.manifest))],
-      artifacts: gathering.artifacts,
       configuration,
       approvalRequired,
+      ...(gathering.sources[0] === undefined
+        ? { kind: "Artifacts", artifacts: gathering.artifacts }
+        : { kind: "Source", source: gathering.sources[0] }),
     },
   };
 }

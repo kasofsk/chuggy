@@ -29,6 +29,7 @@ import { migration028 } from "./028-worker-plane-authority.ts";
 import { migration029 } from "./029-repository-configuration-binding-fence.ts";
 import { migration030 } from "./030-api-dispatch-view-cursor-read.ts";
 import { migration031 } from "./031-ticket-service-repository-binding-read.ts";
+import { migration032 } from "./032-worker-source-handoff.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -64,4 +65,5 @@ export const migrations: readonly Migration[] = [
   migration029,
   migration030,
   migration031,
+  migration032,
 ];

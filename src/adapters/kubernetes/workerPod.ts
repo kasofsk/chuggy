@@ -53,6 +53,14 @@ export interface KubernetesResourceBudget {
   readonly cpuLimit: string;
   readonly memoryRequest: string;
   readonly memoryLimit: string;
+  readonly ephemeralStorageLimit: string;
+}
+
+/** One site-owned Secret key that may satisfy a policy's named credential. */
+export interface KubernetesWorkerCredentialMount {
+  readonly secretName: string;
+  readonly key: string;
+  readonly mountPath: string;
 }
 
 /** Everything a deployment supplies the worker-launch adapter, and the bounds it works within. */
@@ -73,6 +81,11 @@ export interface KubernetesWorkerLaunchConfig {
   readonly unavailableRetryAfterSecs: number;
   readonly workerPlaneUrl: string;
   readonly capabilityFile: string;
+  readonly workspacePath: string;
+  readonly credentialMounts: Readonly<
+    Record<string, KubernetesWorkerCredentialMount>
+  >;
+  readonly environment: Readonly<Record<string, string>>;
 }
 
 /** The one container name a placed pod carries, so a reader of the cluster needs no lookup. */
@@ -118,6 +131,7 @@ export interface KubernetesWorkerTask {
     readonly text: string;
   };
   readonly authority: PolicyAuthorityGrant;
+  readonly worker?: NonNullable<AttemptPlacement["invocation"]["worker"]>;
   readonly workerPlane: {
     readonly url: string;
     readonly capabilityFile: string;
@@ -139,8 +153,8 @@ interface KubernetesContainer {
   readonly volumeMounts: readonly {
     readonly name: string;
     readonly mountPath: string;
-    readonly subPath: string;
-    readonly readOnly: true;
+    readonly subPath?: string;
+    readonly readOnly: boolean;
   }[];
 }
 
@@ -183,7 +197,7 @@ export interface KubernetesPod {
     readonly containers: readonly KubernetesContainer[];
     readonly volumes: readonly {
       readonly name: string;
-      readonly secret: {
+      readonly secret?: {
         readonly secretName: string;
         readonly defaultMode: number;
         readonly items: readonly {
@@ -191,6 +205,7 @@ export interface KubernetesPod {
           readonly path: string;
         }[];
       };
+      readonly emptyDir?: { readonly sizeLimit?: string };
     }[];
   };
 }
@@ -236,6 +251,27 @@ export function checkedKubernetesWorkerLaunchConfig(
     throw new RangeError("worker plane URL must carry no credentials");
   if (!config.capabilityFile.startsWith("/"))
     throw new RangeError("worker capability file must be absolute");
+  if (!config.workspacePath.startsWith("/"))
+    throw new RangeError("worker workspace path must be absolute");
+  const paths = new Set([config.capabilityFile, config.workspacePath]);
+  if (Object.hasOwn(config.environment, kubernetesWorkerTaskVariable))
+    throw new RangeError(
+      `worker environment may not replace ${kubernetesWorkerTaskVariable}`,
+    );
+  for (const [credential, mount] of Object.entries(config.credentialMounts)) {
+    if (credential.length === 0)
+      throw new RangeError("worker credential name is empty");
+    kubernetesName(mount.secretName, `worker credential ${credential} Secret`);
+    if (mount.key.length === 0)
+      throw new RangeError(`worker credential ${credential} key is empty`);
+    if (!mount.mountPath.startsWith("/"))
+      throw new RangeError(
+        `worker credential ${credential} mount path must be absolute`,
+      );
+    if (paths.has(mount.mountPath))
+      throw new RangeError(`worker mount path ${mount.mountPath} is repeated`);
+    paths.add(mount.mountPath);
+  }
   kubernetesPositive(config.activeDeadlineSecs, "worker active deadline");
   kubernetesPositive(config.requestTimeoutSecsMax, "cluster request timeout");
   kubernetesPositive(
@@ -381,6 +417,9 @@ export function kubernetesWorkerTask(
       text: briefing.text,
     },
     authority: taskAuthorityGrant(placement.invocation.authority),
+    ...(placement.invocation.worker === undefined
+      ? {}
+      : { worker: placement.invocation.worker }),
     workerPlane: {
       url: config.workerPlaneUrl,
       capabilityFile: config.capabilityFile,
@@ -410,6 +449,90 @@ function kubernetesWorkerCapabilityVolumes(
   ];
 }
 
+interface KubernetesWorkerCredentialSelection {
+  readonly volumes: KubernetesPod["spec"]["volumes"];
+  readonly mounts: KubernetesContainer["volumeMounts"];
+}
+
+/** Resolves only credentials the authority granted, refusing an unserved name. */
+function kubernetesWorkerCredentials(
+  config: KubernetesWorkerLaunchConfig,
+  authority: PolicyAuthorityGrant,
+): KubernetesWorkerCredentialSelection | undefined {
+  const volumes: KubernetesPod["spec"]["volumes"][number][] = [];
+  const mounts: KubernetesContainer["volumeMounts"][number][] = [];
+  for (const [index, credential] of authority.credentials.entries()) {
+    const supplied = config.credentialMounts[credential];
+    if (supplied === undefined) return undefined;
+    const name = `worker-credential-${String(index)}`;
+    volumes.push({
+      name,
+      secret: {
+        secretName: supplied.secretName,
+        defaultMode: 0o400,
+        items: [{ key: supplied.key, path: "credential" }],
+      },
+    });
+    mounts.push({
+      name,
+      mountPath: supplied.mountPath,
+      subPath: "credential",
+      readOnly: true,
+    });
+  }
+  return { volumes, mounts };
+}
+
+/** The one worker container, separated from its pod so both documents stay reviewable. */
+function kubernetesWorkerContainer(
+  config: KubernetesWorkerLaunchConfig,
+  placement: AttemptPlacement,
+  image: string,
+  credentials: KubernetesWorkerCredentialSelection,
+): KubernetesContainer {
+  return {
+    name: kubernetesWorkerContainerName,
+    image,
+    env: [
+      {
+        name: kubernetesWorkerTaskVariable,
+        value: JSON.stringify(kubernetesWorkerTask(config, placement)),
+      },
+      ...Object.entries(config.environment).map(([name, value]) => ({
+        name,
+        value,
+      })),
+    ],
+    resources: {
+      requests: {
+        cpu: config.resources.cpuRequest,
+        memory: config.resources.memoryRequest,
+        "ephemeral-storage": config.resources.ephemeralStorageLimit,
+      },
+      limits: {
+        cpu: config.resources.cpuLimit,
+        memory: config.resources.memoryLimit,
+        "ephemeral-storage": config.resources.ephemeralStorageLimit,
+      },
+    },
+    securityContext: config.containerSecurityContext,
+    volumeMounts: [
+      {
+        name: "worker-capability",
+        mountPath: config.capabilityFile,
+        subPath: "bearer",
+        readOnly: true,
+      },
+      {
+        name: "worker-workspace",
+        mountPath: config.workspacePath,
+        readOnly: false,
+      },
+      ...credentials.mounts,
+    ],
+  };
+}
+
 /** The one bounded pod a scheduled attempt becomes, or the inability that stops it. */
 export function kubernetesWorkerPodRequest(
   config: KubernetesWorkerLaunchConfig,
@@ -418,6 +541,12 @@ export function kubernetesWorkerPodRequest(
   const admitted = kubernetesWorkerImage(placement.requirement);
   if ("reason" in admitted)
     return { requested: "Denied", reason: admitted.reason };
+  const credentials = kubernetesWorkerCredentials(
+    config,
+    taskAuthorityGrant(placement.invocation.authority),
+  );
+  if (credentials === undefined)
+    return { requested: "Denied", reason: "RequiredCapabilityUnavailable" };
   return {
     requested: "Pod",
     pod: {
@@ -441,37 +570,21 @@ export function kubernetesWorkerPodRequest(
         nodeSelector: config.nodeSelector,
         securityContext: config.podSecurityContext,
         containers: [
-          {
-            name: kubernetesWorkerContainerName,
-            image: admitted.image,
-            env: [
-              {
-                name: kubernetesWorkerTaskVariable,
-                value: JSON.stringify(kubernetesWorkerTask(config, placement)),
-              },
-            ],
-            resources: {
-              requests: {
-                cpu: config.resources.cpuRequest,
-                memory: config.resources.memoryRequest,
-              },
-              limits: {
-                cpu: config.resources.cpuLimit,
-                memory: config.resources.memoryLimit,
-              },
-            },
-            securityContext: config.containerSecurityContext,
-            volumeMounts: [
-              {
-                name: "worker-capability",
-                mountPath: config.capabilityFile,
-                subPath: "bearer",
-                readOnly: true,
-              },
-            ],
-          },
+          kubernetesWorkerContainer(
+            config,
+            placement,
+            admitted.image,
+            credentials,
+          ),
         ],
-        volumes: kubernetesWorkerCapabilityVolumes(config, placement),
+        volumes: [
+          ...kubernetesWorkerCapabilityVolumes(config, placement),
+          {
+            name: "worker-workspace",
+            emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
+          },
+          ...credentials.volumes,
+        ],
       },
     },
   };

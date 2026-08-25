@@ -84,6 +84,7 @@ export {
   type TaskConfigurationFault,
   type TaskConfigurationReadFault,
   type TicketBrief,
+  type WorkerConfiguration,
 } from "./taskConfiguration.ts";
 import {
   briefingHeading,
@@ -575,6 +576,7 @@ export interface TaskInvocation {
   readonly briefing: RenderedBriefing;
   readonly authority: TaskAuthority;
   readonly provenance: BriefingProvenance;
+  readonly worker?: AuthoredTaskConfiguration["worker"];
 }
 
 /** What composing one invocation found, the refusal a value like every other here. */
@@ -608,6 +610,9 @@ export function composeTaskInvocation(
         briefingAuthorityRequests(view),
       ),
       provenance: briefingProvenance(briefing, view.pin, resolved.practices),
+      ...(view.configuration.worker === undefined
+        ? {}
+        : { worker: view.configuration.worker }),
     },
   };
 }

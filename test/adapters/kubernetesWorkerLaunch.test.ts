@@ -68,6 +68,15 @@ const config: KubernetesWorkerLaunchConfig = {
   tokenFile,
   workerPlaneUrl: "http://chuggy-worker-plane:8080",
   capabilityFile: "/run/chuggy/capability",
+  workspacePath: "/workspace",
+  credentialMounts: {
+    workspace: {
+      secretName: "workspace-credential",
+      key: "token",
+      mountPath: "/run/chuggy/credentials/workspace",
+    },
+  },
+  environment: { CHUG_WORKER_REPOSITORIES: '{"repository":"url"}' },
   serviceAccountName: "chuggy-worker",
   podNamePrefix: "chuggy-worker",
   resources: {
@@ -75,6 +84,7 @@ const config: KubernetesWorkerLaunchConfig = {
     cpuLimit: "1",
     memoryRequest: "1Gi",
     memoryLimit: "2Gi",
+    ephemeralStorageLimit: "10Gi",
   },
   podLabels: { "app.kubernetes.io/name": "chuggy-worker" },
   podAnnotations: { "site.invalid/tier": "batch" },
@@ -242,6 +252,49 @@ function expectedTask(): string {
   });
 }
 
+/** The whole worker container, including every site value and mounted capability. */
+function expectedContainer(): unknown {
+  return {
+    name: kubernetesWorkerContainerName,
+    image: workerImage,
+    env: [
+      { name: kubernetesWorkerTaskVariable, value: expectedTask() },
+      {
+        name: "CHUG_WORKER_REPOSITORIES",
+        value: '{"repository":"url"}',
+      },
+    ],
+    resources: {
+      requests: {
+        cpu: "500m",
+        memory: "1Gi",
+        "ephemeral-storage": "10Gi",
+      },
+      limits: {
+        cpu: "1",
+        memory: "2Gi",
+        "ephemeral-storage": "10Gi",
+      },
+    },
+    securityContext: { allowPrivilegeEscalation: false },
+    volumeMounts: [
+      {
+        name: "worker-capability",
+        mountPath: "/run/chuggy/capability",
+        subPath: "bearer",
+        readOnly: true,
+      },
+      { name: "worker-workspace", mountPath: "/workspace", readOnly: false },
+      {
+        name: "worker-credential-0",
+        mountPath: "/run/chuggy/credentials/workspace",
+        subPath: "credential",
+        readOnly: true,
+      },
+    ],
+  };
+}
+
 /** The whole pod this placement is, so the assertion is the document and not a sample of it. */
 function expectedPod(name: string): unknown {
   return {
@@ -279,26 +332,7 @@ function expectedPod(name: string): unknown {
       activeDeadlineSeconds: 3_600,
       nodeSelector: { "kubernetes.io/os": "linux" },
       securityContext: { runAsNonRoot: true },
-      containers: [
-        {
-          name: kubernetesWorkerContainerName,
-          image: workerImage,
-          env: [{ name: kubernetesWorkerTaskVariable, value: expectedTask() }],
-          resources: {
-            requests: { cpu: "500m", memory: "1Gi" },
-            limits: { cpu: "1", memory: "2Gi" },
-          },
-          securityContext: { allowPrivilegeEscalation: false },
-          volumeMounts: [
-            {
-              name: "worker-capability",
-              mountPath: "/run/chuggy/capability",
-              subPath: "bearer",
-              readOnly: true,
-            },
-          ],
-        },
-      ],
+      containers: [expectedContainer()],
       volumes: [
         {
           name: "worker-capability",
@@ -306,6 +340,15 @@ function expectedPod(name: string): unknown {
             secretName: name,
             defaultMode: 0o400,
             items: [{ key: "bearer", path: "bearer" }],
+          },
+        },
+        { name: "worker-workspace", emptyDir: { sizeLimit: "10Gi" } },
+        {
+          name: "worker-credential-0",
+          secret: {
+            secretName: "workspace-credential",
+            defaultMode: 0o400,
+            items: [{ key: "token", path: "credential" }],
           },
         },
       ],
@@ -562,6 +605,19 @@ test("a placement this backend cannot serve never reaches the cluster", async ()
   assert.deepEqual(reached, []);
 });
 
+test("an authority credential the site cannot mount is a definitive inability", async () => {
+  const reached: ClusterReached[] = [];
+  const workers = kubernetesWorkerLaunch(
+    { ...config, credentialMounts: {} },
+    recordingCluster(reached, answering(201)),
+  );
+  assert.deepEqual(await workers.place(placement), {
+    placed: "Denied",
+    reason: "RequiredCapabilityUnavailable",
+  });
+  assert.deepEqual(reached, []);
+});
+
 test("the image a pod runs is the requirement's own", async () => {
   const reached: ClusterReached[] = [];
   const workers = kubernetesWorkerLaunch(
@@ -705,5 +761,16 @@ test("a deployment that cannot address a cluster is refused where it is composed
   assert.ok(
     kubernetesWorkerPodName(config, partition, placement.attempt).length <=
       kubernetesNameCharsMax,
+  );
+});
+
+test("site environment cannot replace the worker task document", () => {
+  assert.throws(
+    () =>
+      checkedKubernetesWorkerLaunchConfig({
+        ...config,
+        environment: { [kubernetesWorkerTaskVariable]: "replacement" },
+      }),
+    /CHUG_WORKER_TASK/u,
   );
 });

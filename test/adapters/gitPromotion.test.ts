@@ -43,6 +43,7 @@ import {
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   asCommitPermitId,
+  asGitObjectId,
   asGitRefName,
   asInputBundleId,
   asRepositoryCredential,
@@ -412,6 +413,45 @@ test("an observed commit the remote no longer holds cannot be built on", async (
     files: fixtureFiles([["new.txt", "new\n"]]),
   });
   assert.deepEqual(prepared, { prepared: "Failed", evidence: "ObjectMissing" });
+});
+
+test("a worker source is accepted only at the commit its remote ref names", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const base = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  writeFileSync(join(fixture.seed, "worker.txt"), "worker\n");
+  fixtureGit(fixture.seed, "add", "worker.txt");
+  fixtureGit(
+    fixture.seed,
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-qm",
+    "worker",
+  );
+  const commit = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  const ref = "refs/heads/chuggy/tickets/1/attempts/" + "a".repeat(64);
+  fixtureGit(fixture.seed, "push", "-q", fixture.remote, `HEAD:${ref}`);
+  const port = fixturePort(fixture);
+
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(ref),
+      commit: asGitObjectId(commit),
+      base: asGitObjectId(base),
+    }),
+    { prepared: "Candidate", candidate: commit },
+  );
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(ref),
+      commit: asGitObjectId(base),
+      base: asGitObjectId(base),
+    }),
+    { prepared: "Failed", evidence: "ObjectMissing" },
+  );
 });
 
 test("a target the candidate already contains integrates to the candidate itself", async (t) => {

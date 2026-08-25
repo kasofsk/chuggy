@@ -239,7 +239,9 @@ export function postgresWorkerReportStore(
         sql`SELECT terminalized,outcome,operation,incident FROM submit_worker_result(
           ${secretDigest},${report.generation},${report.manifest.manifest},
           ${report.manifest.schemaVersion},${report.manifest.digest},${report.manifest.verdict},
-          ${JSON.stringify(artifacts)}::jsonb,${operation})`,
+          ${JSON.stringify(artifacts)}::jsonb,
+          ${report.manifest.source === undefined ? null : JSON.stringify(report.manifest.source)}::jsonb,
+          ${operation})`,
       );
       const row = result.rows[0];
       if (row === undefined)
