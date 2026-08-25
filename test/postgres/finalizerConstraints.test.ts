@@ -553,8 +553,8 @@ test("a request's claim is fenced by an epoch and one stays live per ticket", as
     await rig.ownerRefusal(
       `INSERT INTO finalization_request
          (tenant, project, request, authorizing_seq, effect_position, ticket,
-          ticket_version, request_generation)
-       VALUES ($1,$2,$3,$4,$5,$6,$4,1)`,
+          ticket_version, request_generation, kind)
+       VALUES ($1,$2,$3,$4,$5,$6,$4,1,'RunFinalizer')`,
       keys(
         finalizerIdentity("request-second"),
         project.authorizingSeq,
@@ -574,8 +574,8 @@ test("a request's claim is fenced by an epoch and one stays live per ticket", as
     await rig.ownerRefusal(
       `INSERT INTO finalization_request
          (tenant, project, request, authorizing_seq, effect_position, ticket,
-          ticket_version, request_generation)
-       VALUES ($1,$2,$3,$4,$5,$6,$4,1)`,
+          ticket_version, request_generation, kind)
+       VALUES ($1,$2,$3,$4,$5,$6,$4,1,'RunFinalizer')`,
       keys(
         finalizerIdentity("request-held"),
         project.authorizingSeq,

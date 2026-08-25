@@ -883,9 +883,23 @@ test("the API repository binding read migrates without exposing its table", asyn
   });
 });
 
-test("migration 24 replaces the finalization door on an upgraded database", async () => {
+test("migration 25 replaces the finalization door on an upgraded database", async () => {
   await migrationDatabase("handoff_outcomes", async (subject) => {
-    await migrationSeedApplied(subject, 24);
+    await migrationSeedApplied(subject, 25);
+    await subject.query(`INSERT INTO recovery_epoch (epoch) VALUES ('epoch')`);
+    await subject.query(
+      `INSERT INTO project (tenant,project,lifecycle,head,ingress_next)
+       VALUES ('tenant','project','Active',1,1)`,
+    );
+    await subject.query(`SET session_replication_role = replica`);
+    await subject.query(
+      `INSERT INTO journal_entry
+       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+        recovery_epoch,cause_kind,cause_id) VALUES
+       ('tenant','project',1,'{}','digest','genesis','owner',1,'epoch',
+        'Operation','legacy-operation')`,
+    );
+    await subject.query(`SET session_replication_role = origin`);
     const before = await subject.query<{ body: string }>(
       `SELECT pg_get_functiondef($1::regprocedure) AS body`,
       [
@@ -899,7 +913,7 @@ test("migration 24 replaces the finalization door on an upgraded database", asyn
         request_generation) VALUES ('tenant','project','legacy-in-flight',1,1,1,1,1)`,
     );
 
-    await applyMigration(subject, 24);
+    await applyMigration(subject, 25);
 
     assert.equal(
       (
