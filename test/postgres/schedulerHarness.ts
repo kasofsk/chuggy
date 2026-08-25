@@ -57,6 +57,7 @@ import {
   type AttemptReport,
   type ExecutionSchedulerStore,
   type FencedAttempt,
+  type PhysicalAttempt,
   type RequestClaim,
   type SchedulerOwnerId,
 } from "../../src/interpreter/executionScheduler.ts";
@@ -347,7 +348,7 @@ export function schedulerArtifact(
  * a case cannot offer the store a result that skipped validation.
  */
 export function schedulerReport(
-  attempt: FencedAttempt,
+  attempt: FencedAttempt & Partial<Pick<PhysicalAttempt, "capability">>,
   verdict: "Pass" | "Fail",
   handoffs: readonly { path: string; digest: string; bytes: number }[] = [],
 ): AttemptReport {
@@ -357,7 +358,9 @@ export function schedulerReport(
       execution: attempt.execution,
       attempt: attempt.attempt,
     },
-    asResultManifestId(`manifest-${randomUUID()}`),
+    "capability" in attempt
+      ? attempt.capability.manifest
+      : asResultManifestId(`manifest-${randomUUID()}`),
     JSON.stringify({ version: 1, verdict, handoffs, diagnostics: [] }),
     schedulerDigest,
   );

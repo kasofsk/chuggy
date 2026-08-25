@@ -25,15 +25,15 @@ import type {
 import { projectRowCounter } from "./rows.ts";
 
 interface WorkerAuthorityRow {
-  readonly tenant: string;
-  readonly project: string;
-  readonly execution: string;
-  readonly attempt: string;
-  readonly generation: string;
-  readonly manifest: string;
-  readonly input_bundle: string;
-  readonly input_bundle_digest: string;
-  readonly live: boolean;
+  readonly tenant: string | null;
+  readonly project: string | null;
+  readonly execution: string | null;
+  readonly attempt: string | null;
+  readonly generation: string | null;
+  readonly manifest: string | null;
+  readonly input_bundle: string | null;
+  readonly input_bundle_digest: string | null;
+  readonly live: boolean | null;
   readonly inputs: unknown;
 }
 
@@ -71,6 +71,18 @@ async function workerAuthenticate(
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
+  if (
+    row.tenant === null ||
+    row.project === null ||
+    row.execution === null ||
+    row.attempt === null ||
+    row.generation === null ||
+    row.manifest === null ||
+    row.input_bundle === null ||
+    row.input_bundle_digest === null ||
+    row.live === null
+  )
+    throw new Error("postgres worker plane: authority has an invalid shape");
   const inputs = row.inputs;
   if (!Array.isArray(inputs) || inputs.length > inputBundleReferencesMax)
     throw new Error(
@@ -108,9 +120,9 @@ export function postgresWorkerArtifactReservations(
       const secretDigest = createHash("sha256")
         .update(input.secret, "utf8")
         .digest("hex");
-      const reserved = await pool.query<{ reserved: string }>(
+      const reserved = await pool.query<{ reserved: string | null }>(
         sql`SELECT reserve_worker_artifact(
-          ${secretDigest},${input.path},${input.digest},${input.bytes}) AS reserved`,
+          ${secretDigest},${input.path},${input.digest},${input.bytes})::text AS reserved`,
       );
       const verdict = reserved.rows[0]?.reserved;
       switch (verdict) {
@@ -126,9 +138,13 @@ export function postgresWorkerArtifactReservations(
           throw new Error(
             "postgres worker plane: artifact reservation returned no verdict",
           );
+        case null:
+          throw new Error(
+            "postgres worker plane: artifact reservation returned a null verdict",
+          );
         default:
           throw new Error(
-            `postgres worker plane: unknown artifact reservation ${verdict}`,
+            `postgres worker plane: unknown artifact reservation ${String(verdict)}`,
           );
       }
     },
@@ -136,7 +152,7 @@ export function postgresWorkerArtifactReservations(
 }
 
 interface WorkerResultRow {
-  readonly terminalized: string;
+  readonly terminalized: string | null;
   readonly outcome: string | null;
   readonly operation: string | null;
   readonly incident: string | null;
@@ -168,6 +184,10 @@ function workerTerminalized(row: WorkerResultRow): Terminalized {
       if (row.incident === null)
         throw new Error("postgres worker plane: conflict omitted its incident");
       return { terminalized: "Conflicting", incident: row.incident };
+    case null:
+      throw new Error(
+        "postgres worker plane: terminal result omitted its verdict",
+      );
     default:
       throw new Error(
         `postgres worker plane: unknown terminal result ${row.terminalized}`,
@@ -192,8 +212,8 @@ export function postgresWorkerReportStore(
         throw new Error(
           "postgres worker plane: ingress may only lose a reporting attempt",
         );
-      const ended = await pool.query<{ ended: boolean }>(
-        sql`SELECT lose_worker_attempt(${secretDigest},${_attempt.generation},${evidence}) AS ended`,
+      const ended = await pool.query<{ ended: boolean | null }>(
+        sql`SELECT lose_worker_attempt(${secretDigest},${_attempt.generation},${evidence})::boolean AS ended`,
       );
       return ended.rows[0]?.ended === true;
     },

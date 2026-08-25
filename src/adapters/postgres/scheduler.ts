@@ -702,11 +702,12 @@ interface LaunchRow extends ExecutionRow {
 /** The insert-returning shape PostgreSQL reports before table constraints are applied. */
 interface OpenedAttemptRow extends Omit<
   AttemptRow,
-  "attempt_number" | "generation" | "authoritative"
+  "attempt_number" | "generation" | "authoritative" | "capability_secret"
 > {
   readonly attempt_number: string | null;
   readonly generation: string | null;
   readonly authoritative: boolean | null;
+  readonly capability_secret: string | null;
 }
 
 /** Restores the non-null attempt contract enforced by the execution_attempt table. */
@@ -714,11 +715,15 @@ function schedulerOpenedAttempt(row: OpenedAttemptRow): AttemptRow {
   if (row.authoritative === null) {
     throw new Error("postgres scheduler: opened attempt authority is null");
   }
+  if (row.capability_secret === null) {
+    throw new Error("postgres scheduler: opened attempt secret is null");
+  }
   return {
     ...row,
     attempt_number: claimRowRequired(row.attempt_number, "attempt number"),
     generation: claimRowRequired(row.generation, "attempt generation"),
     authoritative: row.authoritative,
+    capability_secret: row.capability_secret,
   };
 }
 

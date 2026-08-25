@@ -267,9 +267,10 @@ async function schedulerAttempt(
   )) as readonly { attempt_number: string }[];
   await harness.query(
     `INSERT INTO execution_attempt (tenant,project,execution,attempt,attempt_number,
-       generation,recovery_epoch,state,ended_at)
+       generation,recovery_epoch,state,ended_at,capability,capability_secret_digest,manifest)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
-       CASE WHEN $8 IN ('Placing','Running') THEN NULL ELSE now() END)`,
+       CASE WHEN $8 IN ('Placing','Running') THEN NULL ELSE now() END,
+       'capability-' || gen_random_uuid(),repeat('0',64),'manifest-' || gen_random_uuid())`,
     [
       fixture.partition.tenant,
       fixture.partition.project,
@@ -535,8 +536,9 @@ test("a value outside the interpreter's vocabulary is refused by the roster that
     ],
     [
       `INSERT INTO execution_attempt (tenant,project,execution,attempt,attempt_number,
-         recovery_epoch,state,ended_at)
-       VALUES ($1,$2,$3,$4,99,$5,'Paused',now())`,
+         recovery_epoch,state,ended_at,capability,capability_secret_digest,manifest)
+       VALUES ($1,$2,$3,$4,99,$5,'Paused',now(),
+         'capability-' || gen_random_uuid(),repeat('0',64),'manifest-' || gen_random_uuid())`,
       [
         ...partition,
         execution,
@@ -589,9 +591,10 @@ async function schedulerStoredStates(
     const numbered = schedulerRosterAttemptFrom + at;
     const written = await scratch.query(
       `INSERT INTO execution_attempt (tenant,project,execution,attempt,attempt_number,
-         recovery_epoch,state,ended_at)
+         recovery_epoch,state,ended_at,capability,capability_secret_digest,manifest)
        VALUES ($1,$2,$3,$4,$5,$6,$7,
-         CASE WHEN $7 IN ('Placing','Running') THEN NULL ELSE now() END)
+         CASE WHEN $7 IN ('Placing','Running') THEN NULL ELSE now() END,
+         'capability-' || gen_random_uuid(),repeat('0',64),'manifest-' || gen_random_uuid())
        RETURNING state`,
       [
         ...partition,
@@ -1397,9 +1400,10 @@ test("the scheduler's own credential drives a registration and still meets the t
     await harness.attemptAs(
       schedulerRole,
       `INSERT INTO execution_attempt (tenant,project,execution,attempt,attempt_number,
-         recovery_epoch)
+         recovery_epoch,capability,capability_secret_digest,manifest)
        VALUES ('${fixture.partition.tenant}','${fixture.partition.project}',
-         '${execution}','attempt-credential-${randomUUID()}',1,'${fixture.epoch}')`,
+         '${execution}','attempt-credential-${randomUUID()}',1,'${fixture.epoch}',
+         'capability-' || gen_random_uuid(),repeat('0',64),'manifest-' || gen_random_uuid())`,
     ),
     undefined,
   );
