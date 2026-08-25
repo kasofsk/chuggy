@@ -17,7 +17,7 @@ export function postgresExecutionSourceHistory(
         manifests: string[];
       }>(
         sql`WITH work AS (
-              SELECT input_bundle
+              SELECT request,input_bundle
                 FROM execution_request
                WHERE tenant=${partition.tenant} AND project=${partition.project}
                  AND ticket=${ticket} AND kind='SpawnWork'
@@ -35,11 +35,7 @@ export function postgresExecutionSourceHistory(
                 FILTER (WHERE e.result_manifest IS NOT NULL), ARRAY[]::text[]) manifests
               FROM execution e, work
              WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
-               AND e.ticket=${ticket} AND e.source_request IN (
-                 SELECT request FROM execution_request
-                  WHERE tenant=${partition.tenant} AND project=${partition.project}
-                    AND ticket=${ticket} AND kind='SpawnWork'
-               )`,
+               AND e.ticket=${ticket} AND e.source_request=work.request`,
       );
       const row = found.rows[0];
       if (
