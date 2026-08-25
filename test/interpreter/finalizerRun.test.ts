@@ -136,6 +136,7 @@ function claimOf(request: string): FinalizationClaim {
     requestGeneration: 1,
     claimGeneration: 1,
     state: "Registered",
+    kind: "RunFinalizer",
     recoveryEpoch: epoch,
     owner: asFinalizerOwnerId("owner-run"),
   };

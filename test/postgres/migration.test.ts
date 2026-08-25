@@ -7,6 +7,7 @@ import {
   accountIdentityFunction,
   apiRole,
   boundaryOwnerRole,
+  finalizationFunction,
   migrationLedger,
   migrations,
   schedulerRole,
@@ -938,5 +939,61 @@ test("the API repository binding read migrates without exposing its table", asyn
       ).rows[0]?.granted,
       false,
     );
+  });
+});
+
+test("migration 26 replaces the finalization door on an upgraded database", async () => {
+  await migrationDatabase("handoff_outcomes", async (subject) => {
+    await migrationSeedApplied(subject, 26);
+    await subject.query(`INSERT INTO recovery_epoch (epoch) VALUES ('epoch')`);
+    await subject.query(
+      `INSERT INTO project (tenant,project,lifecycle,head,ingress_next)
+       VALUES ('tenant','project','Active',1,1)`,
+    );
+    await subject.query(`SET session_replication_role = replica`);
+    await subject.query(
+      `INSERT INTO journal_entry
+       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+        recovery_epoch,cause_kind,cause_id) VALUES
+       ('tenant','project',1,'{}','digest','genesis','owner',1,'epoch',
+        'Operation','legacy-operation')`,
+    );
+    await subject.query(`SET session_replication_role = origin`);
+    const before = await subject.query<{ body: string }>(
+      `SELECT pg_get_functiondef($1::regprocedure) AS body`,
+      [
+        `${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)`,
+      ],
+    );
+    assert.doesNotMatch(before.rows[0]?.body ?? "", /PromotionAccepted/u);
+    await subject.query(
+      `INSERT INTO finalization_request
+       (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
+        request_generation) VALUES ('tenant','project','legacy-in-flight',1,1,1,1,1)`,
+    );
+
+    await applyMigration(subject, 26);
+
+    assert.equal(
+      (
+        await subject.query<{ kind: string }>(
+          `SELECT kind FROM finalization_request WHERE request='legacy-in-flight'`,
+        )
+      ).rows[0]?.kind,
+      "RunFinalizer",
+    );
+
+    const after = await subject.query<{ body: string }>(
+      `SELECT pg_get_functiondef($1::regprocedure) AS body`,
+      [
+        `${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)`,
+      ],
+    );
+    assert.match(after.rows[0]?.body ?? "", /PromotionAccepted/u);
+    assert.match(
+      after.rows[0]?.body ?? "",
+      /bound\.verdict IS NOT DISTINCT FROM 'Promoted'/u,
+    );
+    assert.match(after.rows[0]?.body ?? "", /HandoffPublicationUnproven/u);
   });
 });

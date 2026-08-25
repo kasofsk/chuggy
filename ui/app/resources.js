@@ -12,7 +12,10 @@ export const phaseRoster = [
   "Working",
   "Evaluating",
   "Finalizing",
+  "PublishingHandoff",
+  "HandoffBlocked",
   "Done",
+  "Abandoned",
   "Escalated",
   "Revoked",
 ];

@@ -138,6 +138,67 @@ test("a succeeded result the durable rows support is submitted exactly once", as
   assert.deepEqual(await mailbox(project), after);
 });
 
+test("promotion acceptance requires the same concluded promotion proof as success", async () => {
+  const { project, attempt } = await promoted("submit-promotion-accepted");
+  await rig.harness.query(
+    `UPDATE finalization_request SET kind='PromoteForHandoff'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [project.partition.tenant, project.partition.project, project.request],
+  );
+  assert.equal(
+    await submit(project, attempt, "PromotionAccepted", null),
+    "Submitted",
+  );
+});
+
+test("a legacy finalizer cannot submit handoff promotion from the same proof", async () => {
+  const { project, attempt } = await promoted("submit-wrong-kind-promotion");
+  const before = await mailbox(project);
+  assert.equal(
+    await submit(project, attempt, "PromotionAccepted", null),
+    "BindingMismatch",
+  );
+  assert.deepEqual(await mailbox(project), before);
+  assert.equal(
+    await submit(project, attempt, "FinalizationSucceeded", null),
+    "Submitted",
+  );
+});
+
+test("promotion evidence cannot masquerade as publication evidence", async () => {
+  const { project, attempt } = await promoted("submit-publication-unproven");
+  const before = await mailbox(project);
+  assert.equal(
+    await submit(project, attempt, "HandoffPublicationUnproven", null),
+    "BindingMismatch",
+  );
+  assert.deepEqual(await mailbox(project), before);
+});
+
+test("publication failure is submitted only for a publication request", async () => {
+  const project = await finalizerProject(rig, "submit-publication-failed");
+  await rig.harness.query(
+    `UPDATE finalization_request SET kind='PublishHandoff'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [project.partition.tenant, project.partition.project, project.request],
+  );
+  await finalizerClaim(
+    rig,
+    project,
+    finalizerIdentity("owner-publication-failed"),
+  );
+  const attempt = await finalizerPrepare(
+    rig,
+    project,
+    "submit-publication-failed",
+    { outcome: "Failed", failureKind: "PreparationFailed" },
+  );
+  assert.equal(
+    await submit(project, attempt, "HandoffPublicationUnproven", null),
+    "Submitted",
+  );
+});
+
 test("a failed result is submitted only against the attempt and kind that failed", async () => {
   const project = await finalizerProject(rig, "submit-failed");
   await finalizerClaim(rig, project, finalizerIdentity("owner-submit-failed"));

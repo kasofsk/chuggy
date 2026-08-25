@@ -96,6 +96,10 @@ test("the board keeps every phase visible, empty or not", () => {
     view.columns.find((column) => column.phase === "Done")?.settled,
     true,
   );
+  assert.equal(
+    view.columns.find((column) => column.phase === "Abandoned")?.settled,
+    true,
+  );
 });
 
 test("headroom is derived, and an exhausted limit says it is exhausted", () => {

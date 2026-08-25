@@ -128,7 +128,7 @@ grep -qF "$GOLDEN state 1" "$OUT" || {
 fixture "$WORK/misfiled" mc_chuggy_retryfree
 run_gate "$WORK/misfiled"
 check "a row replayed under another instance's constants is a finding" 1 "$RC" "came back false"
-grep -qF "accountsBounded" "$OUT" || {
+grep -qF "ticketIdsWellFormed" "$OUT" || {
 	echo "FAIL - the finding did not name the leaf that came back false"
 	fail=$((fail + 1))
 }

@@ -338,10 +338,10 @@ async function decisionFinalization(
     await client.query(
       sql`INSERT INTO finalization_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
-        ticket_version, request_generation)
+        ticket_version, request_generation, kind)
        VALUES (${partition.tenant},${partition.project},${request.request},${seq},
                ${request.effectPosition},${request.ticket},${request.ticketVersion},
-               ${request.requestGeneration})`,
+               ${request.requestGeneration},${request.kind})`,
     );
   }
 }

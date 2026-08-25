@@ -43,7 +43,14 @@ import { outstandingCount } from "./task.ts";
 /** Anything not settled and not past the point of no return. */
 export function revocableIn(core: Core, id: TicketId): boolean {
   const phase = ticketAt(core, id).phase;
-  return phase !== "Done" && phase !== "Revoked" && phase !== "Finalizing";
+  return ![
+    "Done",
+    "Abandoned",
+    "Revoked",
+    "Finalizing",
+    "PublishingHandoff",
+    "HandoffBlocked",
+  ].includes(phase);
 }
 
 /**
@@ -60,9 +67,16 @@ export function resumeCharge(ticket: Ticket, at: Resume): number {
 export function retryableIn(core: Core, id: TicketId): boolean {
   const ticket = ticketAt(core, id);
   return (
-    ticket.phase === "Escalated" &&
+    (ticket.phase === "Escalated" || ticket.phase === "HandoffBlocked") &&
     ticket.resumeAt !== "NoResume" &&
     resumeCharge(ticket, ticket.resumeAt) <= ticket.gasLeft
+  );
+}
+
+/** Post-promotion tickets whose handoff may be explicitly abandoned. */
+export function abandonableHandoffsIn(core: Core): readonly TicketId[] {
+  return ticketIds(core).filter(
+    (id) => ticketAt(core, id).phase === "HandoffBlocked",
   );
 }
 
@@ -183,13 +197,35 @@ export function dispatchableIn(core: Core, id: TicketId): boolean {
 
 /** The phase that holds the finalizer obligation, and so may take its result. */
 export function finalizableIn(core: Core, id: TicketId): boolean {
-  return core.tickets.has(id) && ticketAt(core, id).phase === "Finalizing";
+  return (
+    core.tickets.has(id) &&
+    ["Finalizing", "PublishingHandoff"].includes(ticketAt(core, id).phase)
+  );
+}
+
+export function finalizationOutcomeEnabled(
+  core: Core,
+  id: TicketId,
+  outcome: FinalizationOutcome,
+): boolean {
+  const phase = ticketAt(core, id).phase;
+  switch (outcome) {
+    case "FinalizationSucceeded":
+      return phase === "Finalizing" || phase === "PublishingHandoff";
+    case "FinalizationFailed":
+    case "PromotionAccepted":
+      return phase === "Finalizing";
+    case "HandoffPublicationUnproven":
+      return phase === "PublishingHandoff";
+  }
 }
 
 /** Both results the finalizer service may report. */
 export const finalizationOutcomes: readonly FinalizationOutcome[] = [
   "FinalizationSucceeded",
   "FinalizationFailed",
+  "PromotionAccepted",
+  "HandoffPublicationUnproven",
 ];
 
 /**
@@ -263,8 +299,8 @@ export function releasableIdsIn(
 
 /** Tickets running their finalizer, which is the phase a result may be reported for. */
 export function finalizingIn(core: Core): readonly TicketId[] {
-  return ticketIds(core).filter(
-    (j) => ticketAt(core, j).phase === "Finalizing",
+  return ticketIds(core).filter((j) =>
+    ["Finalizing", "PublishingHandoff"].includes(ticketAt(core, j).phase),
   );
 }
 
@@ -278,7 +314,7 @@ export function quietIn(config: Config, core: Core): boolean {
     releasableIdsIn(config, core).length === 0 &&
     ticketIds(core).every((j) => {
       const phase = ticketAt(core, j).phase;
-      return phase === "Done" || phase === "Revoked";
+      return phase === "Done" || phase === "Abandoned" || phase === "Revoked";
     })
   );
 }

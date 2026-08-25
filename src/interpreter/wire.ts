@@ -162,7 +162,8 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
         event.type === "EvalReduce" ||
         event.type === "ReleaseTicket" ||
         event.type === "FinalizationResult" ||
-        isCompletionDecisionEvent(event)
+        isCompletionDecisionEvent(event) ||
+        event.type === "AbandonHandoff"
       ) {
         throw new TypeError("event is not a public decision command");
       }

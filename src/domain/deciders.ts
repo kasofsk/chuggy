@@ -419,10 +419,77 @@ export function decideFinalizationResult(
 ): Decision {
   switch (outcome) {
     case "FinalizationSucceeded":
-      return completeTicket(core, id);
+      return ticketAt(core, id).phase === "PublishingHandoff"
+        ? move(
+            withTicket(core, id, {
+              ...ticketAt(core, id),
+              completions: ticketAt(core, id).completions + 1,
+            }),
+            id,
+            "Done",
+            "ticket-done handoff_succeeded",
+            [],
+          )
+        : completeTicket(core, id);
     case "FinalizationFailed":
       return finalizerFailure(core, id, "rework-started finalization_failed");
+    case "PromotionAccepted":
+      return move(core, id, "PublishingHandoff", "promotion-accepted", [
+        "PublishHandoff",
+      ]);
+    case "HandoffPublicationUnproven":
+      return move(
+        withTicket(core, id, {
+          ...ticketAt(core, id),
+          resumeAt: "ResumePublishingHandoff",
+        }),
+        id,
+        "HandoffBlocked",
+        "handoff-blocked",
+        ["OpenHumanTask"],
+      );
   }
+}
+
+export function decideAbandonHandoff(core: Core, id: TicketId): Decision {
+  const abandoned = new Set<TicketId>([id]);
+  for (let round = 0; round < core.tickets.size; round++) {
+    for (const candidate of ticketIds(core)) {
+      if (
+        [...ticketAt(core, candidate).deps].some((dependency) =>
+          abandoned.has(dependency as TicketId),
+        )
+      )
+        abandoned.add(candidate);
+    }
+  }
+  const settled = ticketIds(core).filter(
+    (candidate) =>
+      candidate === id ||
+      (abandoned.has(candidate) &&
+        ticketAt(core, candidate).phase === "Pending"),
+  );
+  const tickets = new Map(core.tickets);
+  for (const candidate of settled) {
+    tickets.set(candidate, {
+      ...ticketAt(core, candidate),
+      phase: "Abandoned",
+      resumeAt: "NoResume",
+      reason: "NoReason",
+    });
+  }
+  return {
+    rec: {
+      label: "handoff-abandoned",
+      transitions: settled.map((candidate) => ({
+        ticket: candidate,
+        from: ticketAt(core, candidate).phase,
+        to: "Abandoned",
+      })),
+      effects: [],
+    },
+    post: { ...core, tickets },
+  };
 }
 
 /**
@@ -486,6 +553,14 @@ export function decideResumeTicket(core: Core, id: TicketId): Decision {
         "Finalizing",
         "ticket-resumed",
         ["RunFinalizer"],
+      );
+    case "ResumePublishingHandoff":
+      return move(
+        withTicket(core, id, resumed),
+        id,
+        "PublishingHandoff",
+        "ticket-resumed",
+        ["PublishHandoff"],
       );
     case "NoResume":
       return {

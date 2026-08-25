@@ -319,9 +319,11 @@ async function nativeActionSource(
   return {
     ...answered,
     resolvedEvent:
-      command.resolution === "Resume"
+      command.resolution === "Resume" || command.resolution === "RetryHandoff"
         ? { type: "ResumeTicket", value: ticket }
-        : { type: "Revoke", value: ticket },
+        : command.resolution === "AbandonHandoff"
+          ? { type: "AbandonHandoff", value: ticket }
+          : { type: "Revoke", value: ticket },
   };
 }
 

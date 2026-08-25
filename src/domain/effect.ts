@@ -22,11 +22,12 @@
 
 import { assertNever } from "./assertNever.ts";
 
-/** The five effects, one per string the model emits. */
+/** The closed effects, one per string the model emits. */
 export type Effect =
   | "SpawnWorkTasks"
   | "SpawnEvalTasks"
   | "RunFinalizer"
+  | "PublishHandoff"
   | "OpenHumanTask"
   | "CancelTicketWork";
 
@@ -39,6 +40,7 @@ export const allEffects: readonly Effect[] = [
   "SpawnWorkTasks",
   "SpawnEvalTasks",
   "RunFinalizer",
+  "PublishHandoff",
   "OpenHumanTask",
   "CancelTicketWork",
 ];
@@ -55,6 +57,8 @@ export function effectLabel(effect: Effect): string {
       return "SpawnEvalTasks";
     case "RunFinalizer":
       return "RunFinalizer";
+    case "PublishHandoff":
+      return "PublishHandoff";
     case "OpenHumanTask":
       return "OpenHumanTask";
     case "CancelTicketWork":

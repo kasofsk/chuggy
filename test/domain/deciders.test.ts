@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import { boundsOf, defaultProgram } from "../../src/domain/config.ts";
 import { ticketAt } from "../../src/domain/core.ts";
 import {
+  decideAbandonHandoff,
   decideDispatch,
   decideEvalStageReduce,
   decideExecutionBlocked,
@@ -346,6 +347,64 @@ test("a successful finalization is the ticket's one completion", () => {
   assert.deepEqual(decision.rec.effects, []);
   assert.equal(ticketAt(decision.post, id(1)).completions, 1);
   assert.ok(measure(decision.post) < measure(pre));
+});
+
+test("accepted promotion can only publish, retry publication, succeed, or abandon", () => {
+  const pre = finalizing(config, { gasLeft: 2 });
+  const promoted = decideFinalizationResult(pre, id(1), "PromotionAccepted");
+  assert.equal(ticketAt(promoted.post, id(1)).phase, "PublishingHandoff");
+  assert.deepEqual(promoted.rec.effects, ["PublishHandoff"]);
+
+  const blocked = decideFinalizationResult(
+    promoted.post,
+    id(1),
+    "HandoffPublicationUnproven",
+  );
+  assert.equal(ticketAt(blocked.post, id(1)).phase, "HandoffBlocked");
+  assert.equal(
+    ticketAt(blocked.post, id(1)).resumeAt,
+    "ResumePublishingHandoff",
+  );
+
+  const retried = decideResumeTicket(blocked.post, id(1));
+  assert.equal(ticketAt(retried.post, id(1)).phase, "PublishingHandoff");
+  assert.deepEqual(retried.rec.effects, ["PublishHandoff"]);
+  const succeeded = decideFinalizationResult(
+    retried.post,
+    id(1),
+    "FinalizationSucceeded",
+  );
+  assert.equal(ticketAt(succeeded.post, id(1)).phase, "Done");
+
+  const abandoned = decideAbandonHandoff(blocked.post, id(1));
+  assert.equal(ticketAt(abandoned.post, id(1)).phase, "Abandoned");
+  assert.equal(ticketAt(abandoned.post, id(1)).completions, 0);
+  assert.ok(measure(abandoned.post) < measure(blocked.post));
+});
+
+test("handoff abandonment atomically settles every transitive pending dependent", () => {
+  const fleet = coreOf([
+    ticketOn(config, "ManagedFinalizer", {
+      phase: "HandoffBlocked",
+      resumeAt: "ResumePublishingHandoff",
+    }),
+    ticketOn(config, "NoFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, "NoFinalizer", { phase: "Pending", deps: depsOf(2) }),
+  ]);
+  const abandoned = decideAbandonHandoff(fleet, id(1));
+  assert.deepEqual(
+    abandoned.rec.transitions,
+    [1, 2, 3].map((ticket) => ({
+      ticket: id(ticket),
+      from: ticket === 1 ? "HandoffBlocked" : "Pending",
+      to: "Abandoned" as const,
+    })),
+  );
+  for (const ticket of [1, 2, 3]) {
+    assert.equal(ticketAt(abandoned.post, id(ticket)).phase, "Abandoned");
+    assert.equal(ticketAt(abandoned.post, id(ticket)).completions, 0);
+  }
+  assert.ok(measure(abandoned.post) < measure(fleet));
 });
 
 test("a failed finalization spends the account its ticket was authored with", () => {

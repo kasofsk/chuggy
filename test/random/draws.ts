@@ -30,10 +30,12 @@ import {
   type Config,
 } from "../../src/domain/config.ts";
 import {
+  abandonableHandoffsIn,
   dependableIn,
   dispatchableIn,
   executionBlockedReasons,
   finalizationOutcomes,
+  finalizationOutcomeEnabled,
   finalizingIn,
   outstandingTaskIdsIn,
   quietIn,
@@ -228,15 +230,24 @@ const taskDone: WalkAction = {
 const finalizationResult: WalkAction = {
   action: "finalizationResult",
   enabledIn: (_config, core) => finalizingIn(core).length > 0,
-  drawIn: (_config, core, random) => ({
-    ticket: pickFrom(random, finalizingIn(core)),
-    outcome: pickFrom(random, finalizationOutcomes),
-  }),
+  drawIn: (_config, core, random) => {
+    const ticket = pickFrom(random, finalizingIn(core));
+    return {
+      ticket,
+      outcome: pickFrom(
+        random,
+        finalizationOutcomes.filter((outcome) =>
+          finalizationOutcomeEnabled(core, ticket, outcome),
+        ),
+      ),
+    };
+  },
   permitsIn: (_config, core, drawn) =>
     drawn.ticket !== undefined &&
     drawn.outcome !== undefined &&
     finalizingIn(core).includes(drawn.ticket) &&
-    finalizationOutcomes.includes(drawn.outcome),
+    finalizationOutcomes.includes(drawn.outcome) &&
+    finalizationOutcomeEnabled(core, drawn.ticket, drawn.outcome),
 };
 
 const executionBlocked: WalkAction = {
@@ -269,6 +280,9 @@ export const walkActions: readonly WalkAction[] = [
   overTicketSet("workReduce", (_config, core) => reducibleWorkIn(core)),
   overTicketSet("evalReduce", (_config, core) => reducibleEvalIn(core)),
   finalizationResult,
+  overTicketSet("abandonHandoff", (_config, core) =>
+    abandonableHandoffsIn(core),
+  ),
   executionBlocked,
   overTicketSet("resumeTicket", (_config, core) => retryablesIn(core)),
   settle,

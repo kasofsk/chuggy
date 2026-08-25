@@ -124,7 +124,14 @@ const publicMutationSchema = z.discriminatedUnion("mutation", [
     mutation: z.literal("ResolveNativeAction"),
     action: z.string(),
     authorizingSequence: versionSchema,
-    resolution: z.enum(["Resume", "Revoke", "Approve", "Decline"]),
+    resolution: z.enum([
+      "Resume",
+      "Revoke",
+      "RetryHandoff",
+      "AbandonHandoff",
+      "Approve",
+      "Decline",
+    ]),
   }),
   z.strictObject({
     mutation: z.literal("ManualDispatch"),
