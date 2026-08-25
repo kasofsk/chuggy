@@ -7,6 +7,7 @@ import {
   accountIdentityFunction,
   apiRole,
   boundaryOwnerRole,
+  configurationImporterRole,
   finalizationFunction,
   migrationLedger,
   migrations,
@@ -1018,6 +1019,38 @@ test("the API repository binding read migrates without exposing its table", asyn
         await subject.query<{ granted: boolean }>(
           "SELECT has_table_privilege($1,'project_repository','SELECT') AS granted",
           [apiRole],
+        )
+      ).rows[0]?.granted,
+      false,
+    );
+  });
+});
+
+test("the configuration importer is fenced and holds only its two functions", async () => {
+  await migrationDatabase("configurationimporter", async (subject) => {
+    await migrationSeedApplied(subject, 29);
+    await applyMigration(subject, 29);
+    for (const [signature, granted] of [
+      [
+        "import_repository_configuration(text,text,text,text,text,text,text,text,text,text,text,text)",
+        true,
+      ],
+      [`${repositoryBindingReadFunction}(text,text)`, true],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+            [configurationImporterRole, signature],
+          )
+        ).rows[0]?.granted,
+        granted,
+      );
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_table_privilege($1,'project','SELECT') AS granted",
+          [configurationImporterRole],
         )
       ).rows[0]?.granted,
       false,

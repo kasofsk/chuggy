@@ -489,6 +489,14 @@ export function repositoryConfigurationImportResponse(
           "The configuration identity conflicts.",
         ),
       );
+    case "StaleBinding":
+      return response(
+        409,
+        nativeHttpError(
+          "RepositoryBindingChanged",
+          "The repository binding changed.",
+        ),
+      );
     case "Imported":
       return response(200, { imported: true });
     default:

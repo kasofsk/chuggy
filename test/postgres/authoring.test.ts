@@ -29,6 +29,10 @@ import {
   projectWriterDecide,
   projectWriterLoad,
 } from "../../src/interpreter/projectWriter.ts";
+import {
+  asRecoveryEpoch,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import {
   postgresHarnessHeld,
@@ -56,6 +60,23 @@ const authority = {
   kind: asAuthorityKind("User"),
   subject: asAuthoritySubject("author"),
 };
+
+async function repositoryBinding(partition: Partition) {
+  const [row] = await harness.query(`SELECT epoch FROM recovery_epoch LIMIT 1`);
+  const epoch = row?.["epoch"];
+  if (typeof epoch !== "string") throw new Error("recovery epoch is absent");
+  const recoveryEpoch = asRecoveryEpoch(epoch);
+  await harness.query(
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
+       VALUES ($1,$2,$3,$4)`,
+    [partition.tenant, partition.project, "repository", recoveryEpoch],
+  );
+  return {
+    partition,
+    repository: asRepositoryId("repository"),
+    recoveryEpoch,
+  };
+}
 
 test("the ticket service refuses policy drift from the installed authority", async () => {
   assert.equal(
@@ -317,11 +338,13 @@ test("repository configuration imports are idempotent and expose provenance", as
     "repository-configuration-import",
   );
   const declarations = repositoryDeclarations("a".repeat(40), ["work"]);
+  const binding = await repositoryBinding(partition);
   for (const expected of ["Imported", "Imported"]) {
     assert.equal(
       (
         await harness.authoring.importRepositoryConfigurations({
           partition,
+          binding,
           authority,
           declarations,
         })
@@ -360,21 +383,33 @@ test("repository imports retain changed commits and partition their identity", a
   );
   const oldDeclarations = repositoryDeclarations("b".repeat(40), ["work"]);
   const newDeclarations = repositoryDeclarations("c".repeat(40), ["work"]);
-  for (const partition of [first, second])
+  const bindings = new Map([
+    [first, await repositoryBinding(first)],
+    [second, await repositoryBinding(second)],
+  ]);
+  for (const partition of [first, second]) {
+    const binding = bindings.get(partition);
+    if (binding === undefined) throw new Error("repository binding is absent");
     assert.equal(
       (
         await harness.authoring.importRepositoryConfigurations({
           partition,
+          binding,
           authority,
           declarations: oldDeclarations,
         })
       ).imported,
       "Imported",
     );
+  }
+  const firstBinding = bindings.get(first);
+  if (firstBinding === undefined)
+    throw new Error("repository binding is absent");
   assert.equal(
     (
       await harness.authoring.importRepositoryConfigurations({
         partition: first,
+        binding: firstBinding,
         authority,
         declarations: newDeclarations,
       })
@@ -402,6 +437,7 @@ test("a repository import conflict rolls back the entire snapshot", async () => 
     "first",
     "second",
   ]);
+  const binding = await repositoryBinding(partition);
   const conflict = declarations[1];
   if (conflict === undefined) throw new Error("conflict fixture is absent");
   await harness.authoring.createConfiguration({
@@ -413,6 +449,7 @@ test("a repository import conflict rolls back the entire snapshot", async () => 
   assert.deepEqual(
     await harness.authoring.importRepositoryConfigurations({
       partition,
+      binding,
       authority,
       declarations,
     }),
@@ -428,6 +465,39 @@ test("a repository import conflict rolls back the entire snapshot", async () => 
     await harness.query(
       `SELECT revision FROM repository_configuration_provenance
         WHERE tenant=$1 AND project=$2`,
+      [partition.tenant, partition.project],
+    ),
+    [],
+  );
+});
+
+test("a changed repository binding fences the entire import", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-binding-fence",
+  );
+  const binding = await repositoryBinding(partition);
+  const changedRecoveryEpoch = await harness.store.establishRecoveryEpoch(
+    asRecoveryEpoch(`changed-${randomUUID()}`),
+  );
+  await harness.query(
+    `UPDATE project_repository SET recovery_epoch=$4
+       WHERE tenant=$1 AND project=$2 AND repository=$3`,
+    [partition.tenant, partition.project, "repository", changedRecoveryEpoch],
+  );
+  assert.deepEqual(
+    await harness.authoring.importRepositoryConfigurations({
+      partition,
+      binding,
+      authority,
+      declarations: repositoryDeclarations("e".repeat(40), ["work"]),
+    }),
+    { imported: "StaleBinding" },
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT revision FROM repository_configuration_provenance
+         WHERE tenant=$1 AND project=$2`,
       [partition.tenant, partition.project],
     ),
     [],

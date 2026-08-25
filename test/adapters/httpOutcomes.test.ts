@@ -70,6 +70,10 @@ test("repository import outcomes distinguish retry, refusal, and conflict", () =
     409,
   );
   assert.equal(
+    repositoryConfigurationImportResponse({ result: "StaleBinding" }).status,
+    409,
+  );
+  assert.equal(
     repositoryConfigurationImportResponse({ result: "Imported" }).status,
     200,
   );
