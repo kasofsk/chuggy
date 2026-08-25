@@ -1,5 +1,6 @@
 import type { GitPromotionPort, RepositoryBinding } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
+import { authoredHandoffConfigurationReadiness } from "./handoffConfiguration.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import type {
   ExecutionSourceObservation,
@@ -21,22 +22,14 @@ function executionSourceConfiguredWork(canonical: string | undefined):
     }
   | undefined {
   if (canonical === undefined) return undefined;
-  const root = JSON.parse(canonical) as Record<string, unknown>;
-  const handoff = root["finalizationHandoff"] as
-    Record<string, unknown> | undefined;
-  const work = handoff?.["work"] as Record<string, unknown> | undefined;
-  const credentials = handoff?.["credentials"] as
-    Record<string, unknown> | undefined;
-  if (
-    typeof work?.["repository"] !== "string" ||
-    typeof work["targetRef"] !== "string" ||
-    typeof credentials?.["work"] !== "string"
-  )
-    return undefined;
+  const readiness = authoredHandoffConfigurationReadiness(
+    JSON.parse(canonical) as unknown,
+  );
+  if (readiness.readiness === "Incomplete") return undefined;
   return {
-    repository: work["repository"] as RepositoryBinding["repository"],
-    targetRef: work["targetRef"] as NonNullable<RepositoryBinding["targetRef"]>,
-    credentialReference: credentials["work"],
+    repository: readiness.configuration.work.repository,
+    targetRef: readiness.configuration.work.targetRef,
+    credentialReference: readiness.configuration.work.credential,
   };
 }
 
@@ -53,6 +46,7 @@ export function executionSourceObservation(
           request.ticket,
         );
         if (source !== undefined) return { observed: "Source", source };
+        return { observed: "Unreadable", evidence: "RefUnreadable" };
       }
       const project = await bindings.binding(request.partition);
       if (project === undefined)

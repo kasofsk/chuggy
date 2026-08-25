@@ -316,12 +316,11 @@ function journaledPlan(
  * What one inbox item asks of the state in hand: a decision the machine would
  * take, or the refusal it earns. Nothing here reaches the world.
  */
-function projectWriterPlan(
+function projectWriterPreflight(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
-  executionSource: ExecutionSourceObservation | undefined,
-): ProjectPlan {
+): ProjectPlan | { readonly command: DecisionEvent } {
   const command =
     item.source.kind === "Operation"
       ? item.source.resolvedEvent
@@ -360,7 +359,7 @@ function projectWriterPlan(
       post: memory.core,
     };
   }
-  return journaledPlan(writer, memory, item, command, executionSource);
+  return { command };
 }
 
 function projectWriterSourceConfiguration(
@@ -420,15 +419,22 @@ export async function projectWriterDecide(
   memory: ProjectMemory,
   item: DecisionInput,
 ): Promise<ProjectDecided> {
-  const command =
-    item.source.kind === "Operation"
-      ? item.source.resolvedEvent
-      : item.source.command;
-  const executionSource =
-    command === undefined
-      ? undefined
-      : await projectWriterExecutionSource(writer, memory, item, command);
-  const plan = projectWriterPlan(writer, memory, item, executionSource);
+  const preflight = projectWriterPreflight(writer, memory, item);
+  const plan =
+    "command" in preflight
+      ? journaledPlan(
+          writer,
+          memory,
+          item,
+          preflight.command,
+          await projectWriterExecutionSource(
+            writer,
+            memory,
+            item,
+            preflight.command,
+          ),
+        )
+      : preflight;
   const decided = await writer.decisions.decide({
     lease: memory.lease,
     cause:

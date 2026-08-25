@@ -172,12 +172,20 @@ test("a source observation is gathered before a spawn bundle is materialized", a
 });
 
 test("manual dispatch distinguishes a stale ticket from a disabled ticket", async () => {
-  const decision = await planned(releasedMemory(), {
-    version: 1,
-    command: "ManualDispatch",
-    ticket: id(1),
-    expectedTicketVersion: 2,
-  });
+  const decision = await planned(
+    releasedMemory(),
+    {
+      version: 1,
+      command: "ManualDispatch",
+      ticket: id(1),
+      expectedTicketVersion: 2,
+    },
+    {
+      observe: () => {
+        throw new Error("a stale command must not observe Git");
+      },
+    },
+  );
   assert.deepEqual(decision.outcome, {
     outcome: "Refused",
     code: "TicketChanged",
