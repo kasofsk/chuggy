@@ -148,10 +148,10 @@ function postgresRolePool(role: string) {
   return postgresPool(url.toString());
 }
 
-test("a release atomically materializes a digest-fenced current dispatch view", async () => {
+test("the API role reads a released ticket from the current dispatch view", async () => {
   const partition = await postgresHarnessProject(harness.store, "i5-view");
   const memory = await postgresHarnessHistory(harness, partition, "i5-view", 1);
-  const pool = postgresPool(postgresHarnessUrl());
+  const pool = postgresRolePool(apiRole);
   try {
     const page = await postgresDispatchViews(pool).read(partition, {
       limit: 10,
