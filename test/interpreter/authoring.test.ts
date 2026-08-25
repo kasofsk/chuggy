@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
+  canonicalConfigurationOf,
   configurationRevisionSummary,
   draftInitializationPolicy,
   encodeDraftAuthoring,
@@ -43,6 +44,28 @@ test("draft initialization exposes deployment choices with server defaults", () 
   assert.ok(policy.choices.workFanouts.includes(1));
   assert.ok(policy.choices.reworkPolicies.some((choice) => choice.value === 0));
   assert.ok(policy.choices.finalizers.includes("ManagedFinalizer"));
+});
+
+test("stage-specific configuration bounds the authored evaluation program", () => {
+  const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
+  const readiness = releaseConfigurationReadiness(
+    canonicalConfigurationOf({
+      ...parsed,
+      evaluations: [
+        { instructions: ["Review."], practices: [] },
+        { instructions: ["Test."], practices: [] },
+      ],
+    }),
+  );
+  assert.equal(readiness.readiness, "Ready");
+  if (readiness.readiness !== "Ready") return;
+  assert.equal(
+    draftInitializationPolicy(
+      { ...refinementInstance, maxStages: 4 },
+      readiness.configuration,
+    ).choices.programStagesMax,
+    2,
+  );
 });
 
 test("configuration must be canonical, bounded, and secret-free", () => {

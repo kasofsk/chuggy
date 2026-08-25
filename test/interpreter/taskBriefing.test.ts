@@ -40,6 +40,7 @@ import {
   type BriefingFault,
   type BriefingSection,
   type BriefingView,
+  type EvaluationBlock,
   type PurposeBlock,
   type RenderedBriefing,
   type RuntimeFacts,
@@ -263,6 +264,7 @@ test("the largest accepted authored collections fit the canonical storage bound"
 /** One view, with the parts a case is about replacing the ordinary ones. */
 function viewOf(parts: {
   readonly purpose?: TaskPurpose;
+  readonly stage?: number;
   readonly pin?: ConfigurationPin;
   readonly revision?: string;
   readonly digest?: string;
@@ -270,6 +272,7 @@ function viewOf(parts: {
   readonly practices?: readonly string[];
   readonly block?: PurposeBlock;
   readonly blockReview?: PurposeBlock;
+  readonly evaluations?: readonly EvaluationBlock[];
   readonly authority?: AuthorityRequest;
   readonly runtime?: RuntimeFacts;
   readonly grant?: PolicyAuthorityGrant;
@@ -277,6 +280,7 @@ function viewOf(parts: {
   const block = parts.block ?? { instructions: [] };
   return {
     purpose: parts.purpose ?? "Work",
+    ...(parts.stage === undefined ? {} : { stage: parts.stage }),
     pin: parts.pin ?? pin,
     configuration: {
       configurationRevision: parts.revision ?? pin.configurationRevision,
@@ -285,6 +289,9 @@ function viewOf(parts: {
       practices: parts.practices ?? [],
       work: block,
       review: parts.blockReview ?? block,
+      ...(parts.evaluations === undefined
+        ? {}
+        : { evaluations: parts.evaluations }),
       ...(parts.authority === undefined ? {} : { authority: parts.authority }),
     },
     runtime: parts.runtime ?? noFacts,
@@ -461,6 +468,33 @@ test("each role is briefed from its own block and never the other's", () => {
   );
 });
 
+test("each evaluation stage selects its own block, practices, and authority", () => {
+  const evaluations = [
+    {
+      instructions: ["Review the change."],
+      practices: ["ChangedCallPaths"],
+      authority: { tools: ["editor"] },
+    },
+    {
+      instructions: ["Run the command suite."],
+      practices: ["AcceptanceCriteria"],
+      authority: { tools: ["shell"] },
+    },
+  ];
+  const first = composed(viewOf({ purpose: "Review", stage: 0, evaluations }));
+  const second = composed(viewOf({ purpose: "Review", stage: 1, evaluations }));
+  assert.deepEqual(
+    first.briefing.sections.find(
+      (section) => section.section === "PurposeInstructions",
+    )?.lines,
+    ["Review the change."],
+  );
+  assert.deepEqual(first.provenance.practices, ["ChangedCallPaths"]);
+  assert.deepEqual(second.provenance.practices, ["AcceptanceCriteria"]);
+  assert.deepEqual(taskAuthorityGrant(first.authority).tools, ["editor"]);
+  assert.deepEqual(taskAuthorityGrant(second.authority).tools, ["shell"]);
+});
+
 test("a fault in one role's block does not refuse the other role's briefing", () => {
   const view = viewOf({
     block: { instructions: ["Change the importer and nothing beside it."] },
@@ -587,6 +621,13 @@ test("every fault is reachable from a pinned configuration or a runtime fact", (
     blockedFault(
       viewOf({
         brief: { motivation: [], acceptanceCriteria: [], constraints: [] },
+      }),
+    ),
+    blockedFault(
+      viewOf({
+        purpose: "Review",
+        stage: 1,
+        evaluations: [{ instructions: ["Review the change."], practices: [] }],
       }),
     ),
     blockedFault(viewOf({ brief: { ...brief, constraints: [""] } })),

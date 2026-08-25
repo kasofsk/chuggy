@@ -103,7 +103,7 @@ import type {
   RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
-import { asTicketId } from "../../domain/ids.ts";
+import { asStageIndex, asTicketId } from "../../domain/ids.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -357,12 +357,13 @@ async function schedulerCreateExecutions(
   const inputs = await client.query<{
     task: string;
     kind: string;
+    stage: string | null;
     canonical: string;
     configuration_revision: string;
     configuration_digest: string;
     capacity_account: string;
     cluster: string;
-  }>(sql`SELECT t.task::text AS task,t.kind,c.canonical,q.configuration_revision,
+  }>(sql`SELECT t.task::text AS task,t.kind,t.stage::text AS stage,c.canonical,q.configuration_revision,
        q.configuration_digest,q.capacity_account,a.cluster
      FROM execution_request q
      JOIN execution_request_task t
@@ -383,6 +384,7 @@ async function schedulerCreateExecutions(
       JSON.parse(input.canonical) as unknown,
       task,
       executionRowTaskKind(input.kind),
+      input.stage === null ? undefined : asStageIndex(Number(input.stage)),
     );
     const execution = `${executionStem}-${input.task}`;
     const requirementIdentity = execution;

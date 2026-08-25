@@ -13,16 +13,18 @@ export function postgresDomainConfigurationPrecondition(
   return {
     name: "authoritative domain configuration",
     check: async () => {
-      const found = await pool.query<{ matches: boolean }>(
+      const found = await pool.query<{ matches: boolean | null }>(
         sql`WITH installed AS (
           INSERT INTO deployment_authoring_policy (singleton,domain_configuration)
           VALUES (true,${encoded}) ON CONFLICT (singleton) DO NOTHING
           RETURNING domain_configuration
         )
-        SELECT domain_configuration=${encoded} AS matches FROM installed
-        UNION ALL
-        SELECT domain_configuration=${encoded} AS matches FROM deployment_authoring_policy
-         WHERE singleton=true AND NOT EXISTS (SELECT 1 FROM installed)`,
+        SELECT COALESCE(
+          (SELECT domain_configuration IS NOT DISTINCT FROM ${encoded} FROM installed),
+          (SELECT domain_configuration IS NOT DISTINCT FROM ${encoded}
+             FROM deployment_authoring_policy WHERE singleton=true),
+          false
+        ) AS matches`,
       );
       return found.rows[0]?.matches === true;
     },

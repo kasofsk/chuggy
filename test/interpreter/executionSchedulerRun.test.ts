@@ -816,20 +816,43 @@ test("a launched worker is handed the briefing its pinned revision composes to",
   );
 });
 
-test("an evaluation task is briefed from the review template", async () => {
+test("an evaluation task is briefed from the block matching its placement stage", async () => {
   const placements: AttemptPlacement[] = [];
-  const service = placingService([], placements);
+  const stageInstruction = "Run the command suite.";
+  const stagedConfiguration: PinnedTaskConfiguration = {
+    ...configuration,
+    evaluations: [
+      {
+        instructions: [reviewInstruction],
+        practices: ["ChangedCallPaths"],
+      },
+      {
+        instructions: [stageInstruction],
+        practices: ["AcceptanceCriteria"],
+      },
+    ],
+  };
+  const service = placingService([], placements, {
+    read: "Configuration",
+    configuration: stagedConfiguration,
+  });
   const store: ExecutionSchedulerStore = {
     ...service.store,
     unlaunched: () =>
       Promise.resolve([{ ...execution, taskKind: "Evaluation", stage: 1 }]),
   };
   await executionSchedulerLaunch({ ...service, store }, epoch);
-  const briefing = placements[0]?.invocation.briefing;
-  assert.ok(briefing !== undefined);
+  const placement = placements[0];
+  assert.ok(placement !== undefined);
+  const briefing = placement.invocation.briefing;
+  assert.equal(placement.stage, 1);
   assert.equal(briefing.purpose, "Review");
-  assert.ok(briefing.text.includes(reviewInstruction));
+  assert.ok(briefing.text.includes(stageInstruction));
+  assert.equal(briefing.text.includes(reviewInstruction), false);
   assert.equal(briefing.text.includes(workInstruction), false);
+  assert.deepEqual(placement.invocation.provenance.practices, [
+    "AcceptanceCriteria",
+  ]);
 });
 
 test("a launched worker holds no authority to complete its own task", async () => {

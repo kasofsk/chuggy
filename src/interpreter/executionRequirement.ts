@@ -1,6 +1,7 @@
 export type OperatingSystem = "Linux" | "MacOS";
 export type Architecture = "Amd64" | "Arm64";
 export type ExecutionTaskKind = "Work" | "Evaluation";
+export type ExecutionTaskKindKey = ExecutionTaskKind | `Evaluation:${number}`;
 export interface Platform {
   readonly operatingSystem: OperatingSystem;
   readonly architecture: Architecture;
@@ -47,9 +48,10 @@ interface RequirementConfiguration {
   readonly platformDefaultVersion: number;
   readonly ticketDefault?: ExecutionRequirement;
   readonly taskKindDefaults?: Readonly<
-    Partial<Record<ExecutionTaskKind, ExecutionRequirement>>
+    Partial<Record<ExecutionTaskKindKey, ExecutionRequirement>>
   >;
   readonly taskDefaults?: Readonly<Record<string, ExecutionRequirement>>;
+  readonly stageQualifiedEvaluation: boolean;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -165,6 +167,7 @@ function requirementMap(
 function configuredRequirements(
   value: unknown,
   legacy: ExecutionRequirement,
+  stageQualifiedEvaluation: boolean,
 ): RequirementConfiguration | undefined {
   const configured = record(value);
   if (
@@ -199,8 +202,11 @@ function configuredRequirements(
     return undefined;
   const taskKindDefaults = requirementMap(
     configured?.["taskKindDefaults"],
-    (key) => key === "Work" || key === "Evaluation",
-  ) as Partial<Record<ExecutionTaskKind, ExecutionRequirement>> | undefined;
+    (key) =>
+      key === "Work" ||
+      key === "Evaluation" ||
+      /^Evaluation:(0|[1-9][0-9]*)$/u.test(key),
+  ) as Partial<Record<ExecutionTaskKindKey, ExecutionRequirement>> | undefined;
   const taskDefaults = requirementMap(configured?.["taskDefaults"], (key) =>
     /^[1-9][0-9]*$/u.test(key),
   );
@@ -224,6 +230,7 @@ function configuredRequirements(
     ...(ticketDefault === undefined ? {} : { ticketDefault }),
     taskKindDefaults,
     taskDefaults,
+    stageQualifiedEvaluation,
   };
 }
 
@@ -245,8 +252,16 @@ function parsedConfiguration(
     image: root["image"],
   };
   if (root["executionRequirements"] !== undefined)
-    return configuredRequirements(root["executionRequirements"], legacy);
-  return { platformDefault: legacy, platformDefaultVersion: 1 };
+    return configuredRequirements(
+      root["executionRequirements"],
+      legacy,
+      root["evaluations"] !== undefined,
+    );
+  return {
+    platformDefault: legacy,
+    platformDefaultVersion: 1,
+    stageQualifiedEvaluation: root["evaluations"] !== undefined,
+  };
 }
 
 export function executionRequirementConfigurationIsValid(
@@ -259,14 +274,25 @@ export function materializeExecutionRequirement(
   configuration: unknown,
   task: number,
   kind: ExecutionTaskKind,
+  stage?: number,
 ): MaterializedExecutionRequirement {
   const parsed = parsedConfiguration(configuration);
   if (parsed === undefined)
     throw new TypeError(
       "execution requirement configuration is malformed or widening",
     );
+  if (
+    (kind === "Work" && stage !== undefined) ||
+    (kind === "Evaluation" &&
+      (stage === undefined || !Number.isSafeInteger(stage) || stage < 0))
+  )
+    throw new TypeError("execution task kind and stage are inconsistent");
   const explicit = parsed.taskDefaults?.[String(task)];
-  const kindDefault = parsed.taskKindDefaults?.[kind];
+  const kindKey: ExecutionTaskKindKey =
+    kind === "Work" || !parsed.stageQualifiedEvaluation
+      ? kind
+      : `Evaluation:${stage as number}`;
+  const kindDefault = parsed.taskKindDefaults?.[kindKey];
   const value =
     explicit ?? kindDefault ?? parsed.ticketDefault ?? parsed.platformDefault;
   const source: RequirementSource =
