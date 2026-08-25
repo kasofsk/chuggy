@@ -37,6 +37,7 @@ export type FinalizerEnvironment = Readonly<Record<string, string | undefined>>;
 /** One repository's credential, named as the file it stands in rather than as a value. */
 export interface RepositoryCredentialFile {
   readonly repository: RepositoryId;
+  readonly credentialReference?: string;
   readonly path: string;
 }
 
@@ -166,7 +167,18 @@ function finalizerSettingsCredentialFile(
     path.length === 0
   )
     throw new Error(`${variable} has an invalid entry`);
-  return { repository: asRepositoryId(fields["repository"]), path };
+  const credentialReference = fields["credentialReference"];
+  if (
+    credentialReference !== undefined &&
+    (typeof credentialReference !== "string" ||
+      credentialReference.length === 0)
+  )
+    throw new Error(`${variable} has an invalid entry`);
+  return {
+    repository: asRepositoryId(fields["repository"]),
+    ...(credentialReference === undefined ? {} : { credentialReference }),
+    path,
+  };
 }
 
 /** Parses one bounded repository-to-credential-file mapping without reading its files. */
@@ -183,9 +195,11 @@ export function repositoryCredentialFilesOf(
   const files = parsed.map((entry) =>
     finalizerSettingsCredentialFile(entry, variable),
   );
-  const repositories = new Set(files.map((file) => file.repository));
-  if (repositories.size !== files.length)
-    throw new Error(`${variable} names a repository twice`);
+  const identities = new Set(
+    files.map((file) => file.credentialReference ?? file.repository),
+  );
+  if (identities.size !== files.length)
+    throw new Error(`${variable} names a credential twice`);
   return files;
 }
 

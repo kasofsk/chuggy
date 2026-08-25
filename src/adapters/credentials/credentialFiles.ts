@@ -25,7 +25,6 @@ import {
   asRepositoryCredential,
   type CredentialResolved,
   type RepositoryCredentialPort,
-  type RepositoryId,
 } from "../../interpreter/finalizer.ts";
 import type { RepositoryCredentialFile } from "../../interpreter/finalizerSettings.ts";
 import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
@@ -41,7 +40,7 @@ export const credentialFilesDefaults = { credentialBytesMax: 4_096 } as const;
 
 /** Where each repository's credential stands, and how much of one file may be read. */
 interface CredentialFilesState {
-  readonly paths: ReadonlyMap<RepositoryId, string>;
+  readonly paths: ReadonlyMap<string, string>;
   readonly credentialBytesMax: number;
 }
 
@@ -72,13 +71,16 @@ async function credentialFilesRead(
 function credentialFilesState(
   options: CredentialFilesOptions,
 ): CredentialFilesState {
-  const paths = new Map<RepositoryId, string>();
+  const paths = new Map<string, string>();
   for (const source of options.sources) {
-    if (paths.has(source.repository))
+    const identity = source.credentialReference ?? source.repository;
+    if (paths.has(identity))
       throw new RangeError(
-        "repository credentials: a repository names two files",
+        source.credentialReference === undefined
+          ? "repository credentials: a repository names two files"
+          : "repository credentials: a credential names two files",
       );
-    paths.set(source.repository, source.path);
+    paths.set(identity, source.path);
   }
   return {
     paths,
@@ -94,7 +96,9 @@ export function credentialFiles(
   const own = credentialFilesState(options);
   return {
     credential: (repository): Promise<CredentialResolved> => {
-      const path = own.paths.get(repository.repository);
+      const path = own.paths.get(
+        repository.credentialReference ?? repository.repository,
+      );
       if (path === undefined) return Promise.resolve({ resolved: "Denied" });
       return credentialFilesRead(path, own.credentialBytesMax);
     },

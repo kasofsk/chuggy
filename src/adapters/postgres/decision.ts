@@ -81,6 +81,13 @@ import {
   type DispatchCandidate,
 } from "../../interpreter/dispatchView.ts";
 import { asInputBundleId } from "../../interpreter/finalizer.ts";
+import {
+  pinnedHandoffConfigurationReadiness,
+  promoteForHandoffConfiguration,
+  publishHandoffConfiguration,
+  type PromoteForHandoffRequestConfiguration,
+  type PublishHandoffRequestConfiguration,
+} from "../../interpreter/handoffConfiguration.ts";
 import { inputBundleReferencesOf } from "../../interpreter/decisionPlan.ts";
 import {
   postgresInputBundleOf,
@@ -244,32 +251,44 @@ async function replaceDispatchView(
   }
 }
 
+interface DecisionConfiguration extends ConfigurationPin {
+  readonly canonical: string;
+}
+
 async function decisionConfiguration(
   client: pg.PoolClient,
   partition: Partition,
   outcome: JournaledOutcome,
   release: Decision["draftRelease"],
-): Promise<ConfigurationPin> {
-  if (release !== undefined) return release;
+): Promise<DecisionConfiguration> {
+  if (release !== undefined)
+    return { ...release, canonical: release.configurationCanonical };
   const ticket = decisionEventSubject(outcome.entry.event);
   const found = await client.query<{
     configuration_revision: string | null;
     configuration_digest: string | null;
+    canonical: string | null;
   }>(
-    sql`SELECT configuration_revision,configuration_digest FROM ticket_projection
-      WHERE tenant=${partition.tenant} AND project=${partition.project} AND ticket=${ticket}`,
+    sql`SELECT p.configuration_revision,p.configuration_digest,c.canonical
+      FROM ticket_projection p
+      JOIN configuration_revision c
+        ON c.tenant=p.tenant AND c.project=p.project
+       AND c.revision=p.configuration_revision AND c.digest=p.configuration_digest
+      WHERE p.tenant=${partition.tenant} AND p.project=${partition.project} AND p.ticket=${ticket}`,
   );
   const row = found.rows[0];
   if (
     row?.configuration_revision === null ||
     row?.configuration_revision === undefined ||
-    row.configuration_digest === null
+    row.configuration_digest === null ||
+    row.canonical === null
   ) {
     throw new Error("journal decision has no retained ticket configuration");
   }
   return {
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
+    canonical: row.canonical,
   };
 }
 
@@ -325,6 +344,7 @@ async function decisionFinalization(
   client: pg.PoolClient,
   partition: Partition,
   outcome: JournaledOutcome,
+  configuration: DecisionConfiguration,
 ): Promise<void> {
   const seq = outcome.entry.seq;
   for (const ticket of outcome.materialization.fulfillFinalizationFor) {
@@ -335,15 +355,138 @@ async function decisionFinalization(
     );
   }
   for (const request of outcome.materialization.finalization) {
+    const acceptedPromotion =
+      request.kind === "PublishHandoff"
+        ? await decisionAcceptedPromotion(
+            client,
+            partition,
+            request.ticket,
+            request.acceptedPromotion,
+          )
+        : undefined;
+    const handoff = decisionHandoffRequest(
+      request,
+      configuration,
+      acceptedPromotion,
+    );
+    const kind = handoff?.kind ?? request.kind;
     await client.query(
       sql`INSERT INTO finalization_request
        (tenant, project, request, authorizing_seq, effect_position, ticket,
         ticket_version, request_generation, kind)
        VALUES (${partition.tenant},${partition.project},${request.request},${seq},
                ${request.effectPosition},${request.ticket},${request.ticketVersion},
-               ${request.requestGeneration},${request.kind})`,
+               ${request.requestGeneration},${kind})`,
+    );
+    if (handoff !== undefined) {
+      await decisionHandoffConfiguration(
+        client,
+        partition,
+        request.request,
+        handoff,
+      );
+    }
+  }
+}
+
+type AcceptedPromotion = NonNullable<
+  JournaledOutcome["materialization"]["finalization"][number]["acceptedPromotion"]
+>;
+
+async function decisionAcceptedPromotion(
+  client: pg.PoolClient,
+  partition: Partition,
+  ticket: number,
+  offered: AcceptedPromotion | undefined,
+): Promise<AcceptedPromotion> {
+  if (offered !== undefined) return offered;
+  const found = await client.query<{
+    repository: string;
+    candidate_commit: string;
+    configuration_revision: string;
+    configuration_digest: string;
+  }>(
+    sql`SELECT repository,candidate_commit,configuration_revision,configuration_digest
+      FROM read_accepted_handoff_promotion(
+        ${partition.tenant},${partition.project},${ticket})`,
+  );
+  const accepted = found.rows[0];
+  if (accepted === undefined)
+    throw new Error("handoff retry has no accepted work promotion");
+  return {
+    repository: accepted.repository,
+    commit: accepted.candidate_commit,
+    configurationRevision: accepted.configuration_revision,
+    configurationDigest: accepted.configuration_digest,
+  };
+}
+
+type DecisionHandoffConfiguration =
+  PromoteForHandoffRequestConfiguration | PublishHandoffRequestConfiguration;
+
+function decisionHandoffRequest(
+  request: JournaledOutcome["materialization"]["finalization"][number],
+  configuration: DecisionConfiguration,
+  acceptedPromotion: AcceptedPromotion | undefined,
+): DecisionHandoffConfiguration | undefined {
+  const readiness = pinnedHandoffConfigurationReadiness(
+    configuration.canonical,
+    {
+      revision: configuration.configurationRevision,
+      digest: configuration.configurationDigest,
+    },
+  );
+  if (readiness.readiness === "Incomplete") {
+    if (
+      request.kind === "RunFinalizer" &&
+      readiness.fault === "HandoffShapeMissing"
+    )
+      return undefined;
+    throw new Error(
+      `finalization handoff configuration is incomplete: ${readiness.fault}`,
     );
   }
+  if (request.kind === "RunFinalizer")
+    return promoteForHandoffConfiguration(readiness.configuration);
+  if (request.kind !== "PublishHandoff") return undefined;
+  const accepted = acceptedPromotion;
+  if (
+    accepted === undefined ||
+    accepted.configurationRevision !== configuration.configurationRevision ||
+    accepted.configurationDigest !== configuration.configurationDigest ||
+    accepted.repository !== readiness.configuration.work.repository
+  )
+    throw new Error(
+      "handoff publication is not bound to its accepted promotion",
+    );
+  return publishHandoffConfiguration(
+    readiness.configuration,
+    accepted.commit,
+    configurationRevisionDigest,
+  );
+}
+
+async function decisionHandoffConfiguration(
+  client: pg.PoolClient,
+  partition: Partition,
+  request: string,
+  configuration: DecisionHandoffConfiguration,
+): Promise<void> {
+  await client.query(
+    sql`INSERT INTO finalization_request_configuration
+      (tenant,project,request,kind,configuration_revision,configuration_digest,
+       repository,target_ref,credential_reference,accepted_work_repository,
+       accepted_work_commit,destination_path,output,request_digest)
+      VALUES (${partition.tenant},${partition.project},${request},${configuration.kind},
+       ${configuration.pin.revision},${configuration.pin.digest},
+       ${configuration.repository.repository},${configuration.repository.targetRef},
+       ${configuration.repository.credential},
+       ${configuration.kind === "PublishHandoff" ? configuration.acceptedWorkRepository : null},
+       ${configuration.kind === "PublishHandoff" ? configuration.acceptedWorkCommit : null},
+       ${configuration.kind === "PublishHandoff" ? configuration.destinationPath : null},
+       ${configuration.kind === "PublishHandoff" ? configuration.output : null},
+       ${configuration.kind === "PublishHandoff" ? configuration.requestDigest : null})`,
+  );
 }
 
 /**
@@ -442,10 +585,10 @@ async function decisionMaterialize(
   client: pg.PoolClient,
   lease: Lease,
   outcome: JournaledOutcome,
-  configuration: ConfigurationPin,
+  configuration: DecisionConfiguration,
 ): Promise<void> {
   await decisionExecution(client, lease.partition, outcome, configuration);
-  await decisionFinalization(client, lease.partition, outcome);
+  await decisionFinalization(client, lease.partition, outcome, configuration);
   await decisionActions(client, lease.partition, outcome);
   await decisionContinuation(client, lease.partition, outcome);
 }

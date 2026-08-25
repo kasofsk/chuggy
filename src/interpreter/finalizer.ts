@@ -336,7 +336,31 @@ export interface RepositoryBinding {
   readonly partition: Partition;
   readonly repository: RepositoryId;
   readonly recoveryEpoch: RecoveryEpoch;
+  readonly targetRef?: GitRefName;
+  readonly credentialReference?: string;
 }
+
+export interface PromoteForHandoffRequest {
+  readonly kind: "PromoteForHandoff";
+  readonly configurationRevision: string;
+  readonly configurationDigest: string;
+  readonly repository: RepositoryBinding;
+}
+
+export interface PublishHandoffRequest {
+  readonly kind: "PublishHandoff";
+  readonly configurationRevision: string;
+  readonly configurationDigest: string;
+  readonly repository: RepositoryBinding;
+  readonly acceptedWorkRepository: RepositoryId;
+  readonly acceptedWorkCommit: GitObjectId;
+  readonly destinationPath: string;
+  readonly output: string;
+  readonly requestDigest: string;
+}
+
+export type HandoffFinalizationRequest =
+  PromoteForHandoffRequest | PublishHandoffRequest;
 
 /** The immutable target one preparation observed, re-read from the remote and never remembered. */
 export interface ObservedTarget {
@@ -445,6 +469,7 @@ export interface FinalizationView {
   readonly claim: FinalizationClaim;
   readonly lifecycle: Lifecycle;
   readonly repository?: RepositoryBinding;
+  readonly handoffRequest?: HandoffFinalizationRequest;
   readonly observedTarget?: ObservedTarget;
   readonly attempt?: FinalizationAttempt;
   readonly approval: ApprovalStanding;

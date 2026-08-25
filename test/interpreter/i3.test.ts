@@ -260,6 +260,12 @@ function finalizationInput(event: DecisionEvent): DecisionInput {
         request: command.request,
         requestGeneration: command.requestGeneration,
         open: true,
+        acceptedPromotion: {
+          repository: "unrelated-work",
+          commit: "a".repeat(40),
+          configurationRevision: "revision",
+          configurationDigest: "b".repeat(64),
+        },
       },
     },
   };
@@ -294,6 +300,10 @@ test("promotion and an unproven publication materialize a resumable handoff hold
   );
   assert.equal(promotionPlan.finalization.length, 1);
   assert.match(promotionPlan.finalization[0]?.request ?? "", /PublishHandoff/u);
+  assert.equal(
+    promotionPlan.finalization[0]?.acceptedPromotion?.repository,
+    "unrelated-work",
+  );
 
   const unproven = finalizationResultEvent(id(1), "HandoffPublicationUnproven");
   const blocked = journalStep(refinementInstance, publishing, unproven);
