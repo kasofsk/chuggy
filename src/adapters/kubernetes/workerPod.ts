@@ -71,6 +71,8 @@ export interface KubernetesWorkerLaunchConfig {
   readonly activeDeadlineSecs: number;
   readonly requestTimeoutSecsMax: number;
   readonly unavailableRetryAfterSecs: number;
+  readonly workerPlaneUrl: string;
+  readonly capabilityFile: string;
 }
 
 /** The one container name a placed pod carries, so a reader of the cluster needs no lookup. */
@@ -116,6 +118,12 @@ export interface KubernetesWorkerTask {
     readonly text: string;
   };
   readonly authority: PolicyAuthorityGrant;
+  readonly workerPlane: {
+    readonly url: string;
+    readonly capabilityFile: string;
+    readonly capability: string;
+    readonly manifest: string;
+  };
 }
 
 /** One container of a worker pod, as the cluster API is given it. */
@@ -187,6 +195,11 @@ export function checkedKubernetesWorkerLaunchConfig(
     );
   if (config.tokenFile.length === 0)
     throw new RangeError("cluster token file is empty");
+  const workerPlane = new URL(config.workerPlaneUrl);
+  if (workerPlane.username !== "" || workerPlane.password !== "")
+    throw new RangeError("worker plane URL must carry no credentials");
+  if (!config.capabilityFile.startsWith("/"))
+    throw new RangeError("worker capability file must be absolute");
   kubernetesPositive(config.activeDeadlineSecs, "worker active deadline");
   kubernetesPositive(config.requestTimeoutSecsMax, "cluster request timeout");
   kubernetesPositive(
@@ -267,6 +280,7 @@ function kubernetesWorkerAnnotations(
 
 /** Everything the placement supplied, as the one document a worker is handed. */
 export function kubernetesWorkerTask(
+  config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
 ): KubernetesWorkerTask {
   const briefing = placement.invocation.briefing;
@@ -294,6 +308,12 @@ export function kubernetesWorkerTask(
       text: briefing.text,
     },
     authority: taskAuthorityGrant(placement.invocation.authority),
+    workerPlane: {
+      url: config.workerPlaneUrl,
+      capabilityFile: config.capabilityFile,
+      capability: placement.capability.id,
+      manifest: placement.capability.manifest,
+    },
   };
 }
 
@@ -334,7 +354,7 @@ export function kubernetesWorkerPodRequest(
             env: [
               {
                 name: kubernetesWorkerTaskVariable,
-                value: JSON.stringify(kubernetesWorkerTask(placement)),
+                value: JSON.stringify(kubernetesWorkerTask(config, placement)),
               },
             ],
             resources: {

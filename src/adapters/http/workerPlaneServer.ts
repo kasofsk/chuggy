@@ -1,0 +1,116 @@
+import fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+
+import { asAttemptCapabilitySecret } from "../../interpreter/executionScheduler.ts";
+import { resultManifestTextCharsMax } from "../../interpreter/resultManifest.ts";
+import type {
+  WorkerArtifactUploadPort,
+  WorkerAttemptAuthority,
+  WorkerPlaneAuthority,
+  WorkerReportPort,
+} from "../../interpreter/workerPlane.ts";
+
+export const workerPlaneRoutes = [
+  "/health/live",
+  "/health/ready",
+  "/v1/input",
+  "/v1/artifacts/*",
+  "/v1/report",
+] as const;
+
+export interface WorkerPlaneServerService {
+  readonly authority: WorkerPlaneAuthority;
+  readonly artifacts: WorkerArtifactUploadPort;
+  readonly reports: WorkerReportPort;
+  readonly ready: () => Promise<boolean>;
+  readonly uploadBytesMax: number;
+}
+
+async function workerAuthority(
+  service: WorkerPlaneServerService,
+  request: FastifyRequest,
+): Promise<WorkerAttemptAuthority | undefined> {
+  const header = request.headers.authorization;
+  if (header === undefined || !header.startsWith("Bearer ")) return undefined;
+  const token = header.slice("Bearer ".length);
+  if (token.length === 0 || token.length > 256) return undefined;
+  return service.authority.authenticate(asAttemptCapabilitySecret(token));
+}
+
+export function createWorkerPlaneApp(
+  service: WorkerPlaneServerService,
+): FastifyInstance {
+  const app = fastify({ logger: false, bodyLimit: service.uploadBytesMax });
+  app.addContentTypeParser(
+    "application/octet-stream",
+    { parseAs: "buffer" },
+    (_request, body, done) => done(null, body),
+  );
+  app.get(workerPlaneRoutes[0], async () => ({ status: "live" }));
+  app.get(workerPlaneRoutes[1], async (_request, reply) =>
+    (await service.ready())
+      ? { status: "ready" }
+      : reply.code(503).send({ status: "unready" }),
+  );
+  app.get(workerPlaneRoutes[2], async (request, reply) => {
+    const authority = await workerAuthority(service, request);
+    if (authority === undefined) return reply.code(401).send({ action: "stop" });
+    return {
+      bundle: authority.inputBundle,
+      digest: authority.inputBundleDigest,
+      references: authority.inputs,
+    };
+  });
+  app.put(workerPlaneRoutes[3], async (request, reply) => {
+    const authority = await workerAuthority(service, request);
+    if (authority === undefined) return reply.code(401).send({ action: "stop" });
+    const path = (request.params as { "*": string })["*"];
+    if (!(request.body instanceof Uint8Array))
+      return reply.code(415).send({ action: "stop" });
+    const stored = await service.artifacts.store({
+      authority,
+      path,
+      content: request.body,
+    });
+    switch (stored.stored) {
+      case "Stored":
+        return reply.code(204).send();
+      case "Conflict":
+        return reply.code(409).send({ action: "stop" });
+      case "Unavailable":
+        return reply
+          .header("retry-after", String(stored.retryAfterSeconds))
+          .code(503)
+          .send({ action: "retry" });
+    }
+  });
+  app.post(workerPlaneRoutes[4], async (request, reply) => {
+    const authority = await workerAuthority(service, request);
+    if (authority === undefined) return reply.code(401).send({ action: "stop" });
+    if (typeof request.body !== "string" || request.body.length > resultManifestTextCharsMax)
+      return reply.code(400).send({ action: "stop" });
+    const ingested = await service.reports.report({
+      partition: authority.partition,
+      execution: authority.execution,
+      attempt: authority.attempt,
+      generation: authority.generation,
+      manifest: authority.manifest,
+      text: request.body,
+    });
+    switch (ingested.ingested) {
+      case "Terminalized":
+      case "Absorbed":
+        return reply.code(202).send({ action: "stop" });
+      case "Unavailable":
+        return reply.header("retry-after", String(ingested.retryAfterSeconds)).code(503).send({ action: "retry" });
+      case "Fenced":
+      case "Stale":
+      case "NotAdmitted":
+      case "Conflicting":
+      case "Malformed":
+      case "Unconfirmed":
+        return reply.code(409).send({ action: "stop" });
+    }
+  });
+  return app;
+}
+

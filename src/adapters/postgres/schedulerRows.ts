@@ -29,6 +29,8 @@ import {
   allExecutionOutcomes,
   allExecutionStatuses,
   asAttemptId,
+  asAttemptCapabilityId,
+  asAttemptCapabilitySecret,
   asCapacityAccountId,
   asClusterId,
   asExecutionId,
@@ -98,6 +100,9 @@ export interface AttemptRow {
   readonly state: string;
   readonly workload: string | null;
   readonly authoritative: boolean;
+  readonly capability: string;
+  readonly capability_secret: string;
+  readonly manifest: string;
 }
 
 /**
@@ -136,7 +141,8 @@ export const executionRowColumns = `
 export const attemptRowColumns = `
   tenant, project, execution, attempt, attempt_number::text AS attempt_number,
   generation::text AS generation, recovery_epoch, state, workload,
-  (state IN ('Placing', 'Running')) AS authoritative
+  (state IN ('Placing', 'Running')) AS authoritative,
+  capability, capability_secret_digest AS capability_secret, manifest
 `;
 
 /** The partition a scheduler row belongs to. */
@@ -265,6 +271,11 @@ export function attemptRowPhysical(row: AttemptRow): PhysicalAttempt {
     recoveryEpoch: asRecoveryEpoch(row.recovery_epoch),
     state: attemptRowState(row.state),
     authoritative: row.authoritative,
+    capability: {
+      id: asAttemptCapabilityId(row.capability),
+      secret: asAttemptCapabilitySecret(row.capability_secret),
+      manifest: asResultManifestId(row.manifest),
+    },
     ...(row.workload === null
       ? {}
       : { placement: asPlacementId(row.workload) }),

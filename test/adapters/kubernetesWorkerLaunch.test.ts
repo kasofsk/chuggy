@@ -35,10 +35,13 @@ import {
 } from "../../src/adapters/kubernetes/workerPod.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import {
+  asAttemptCapabilityId,
+  asAttemptCapabilitySecret,
   asAttemptId,
   asExecutionId,
   type AttemptPlacement,
 } from "../../src/interpreter/executionScheduler.ts";
+import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.ts";
 import {
@@ -63,6 +66,8 @@ const config: KubernetesWorkerLaunchConfig = {
   apiBaseUrl: "https://cluster.invalid:6443",
   namespace: "chuggy-workers",
   tokenFile,
+  workerPlaneUrl: "http://chuggy-worker-plane:8080",
+  capabilityFile: "/run/chuggy/capability",
   serviceAccountName: "chuggy-worker",
   podNamePrefix: "chuggy-worker",
   resources: {
@@ -143,6 +148,11 @@ const placement: AttemptPlacement = {
   requirementDigest: "requirement-digest",
   profile: { profile: "standard", runtimeVersion: "1" },
   invocation: taskInvocation(),
+  capability: {
+    id: asAttemptCapabilityId("capability-one"),
+    secret: asAttemptCapabilitySecret("secret-one"),
+    manifest: asResultManifestId("manifest-one"),
+  },
 };
 
 /** One request this adapter made, kept as text so the whole body can be asserted. */
@@ -204,6 +214,12 @@ function expectedTask(): string {
       text: placement.invocation.briefing.text,
     },
     authority: { ...grant, mayCompleteTask: false },
+    workerPlane: {
+      url: config.workerPlaneUrl,
+      capabilityFile: config.capabilityFile,
+      capability: "capability-one",
+      manifest: "manifest-one",
+    },
   });
 }
 

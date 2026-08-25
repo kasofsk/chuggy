@@ -810,18 +810,27 @@ async function schedulerOpenAttempt(
   }
   if (row.backing_off === true) return { opened: "BackingOff" };
   const attempt = `attempt-${randomUUID()}`;
+  const capability = `capability-${randomUUID()}`;
+  const capabilitySecret = randomUUID();
+  const capabilitySecretDigest = createHash("sha256")
+    .update(capabilitySecret, "utf8")
+    .digest("hex");
+  const manifest = `manifest-${randomUUID()}`;
   const attemptNumber = await schedulerTakeAttemptNumber(client, opening);
   const opened = await client.query<OpenedAttemptRow>(
     sql`INSERT INTO execution_attempt
        (tenant, project, execution, attempt, attempt_number, generation,
-        recovery_epoch, state, lease_owner, lease_expires_at)
+        recovery_epoch, state, lease_owner, lease_expires_at,
+        capability, capability_secret_digest, manifest)
      VALUES (${opening.partition.tenant},${opening.partition.project},${opening.execution},
              ${attempt},${attemptNumber}::bigint,1,${opening.epoch},'Placing',${attempt},
-             now() + make_interval(secs => ${opening.leaseSecs}::double precision))
+             now() + make_interval(secs => ${opening.leaseSecs}::double precision),
+             ${capability},${capabilitySecretDigest},${manifest})
      RETURNING tenant, project, execution, attempt,
                attempt_number::text AS attempt_number,
                generation::text AS generation, recovery_epoch, state, workload,
-               (state IN ('Placing', 'Running')) AS authoritative`,
+               (state IN ('Placing', 'Running')) AS authoritative,
+               capability, ${capabilitySecret}::text AS capability_secret, manifest`,
   );
   const written = opened.rows[0];
   if (written === undefined) {

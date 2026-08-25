@@ -50,6 +50,7 @@ import { constants } from "node:fs";
 import {
   chmod,
   lstat,
+  link,
   mkdir,
   open,
   realpath,
@@ -79,6 +80,7 @@ import {
 } from "../../interpreter/operationsView.ts";
 import {
   asArtifactDigest,
+  asArtifactPath,
   type ArtifactFailure,
   type ArtifactRole,
   type ArtifactRow,
@@ -87,6 +89,10 @@ import {
   type ArtifactsVerified,
   type ResultManifest,
 } from "../../interpreter/resultManifest.ts";
+import type {
+  WorkerArtifactStored,
+  WorkerArtifactUploadPort,
+} from "../../interpreter/workerPlane.ts";
 import {
   artifactAttemptFile,
   artifactOwnedFile,
@@ -117,7 +123,8 @@ export const artifactStoreDefaults = {
 export type ArtifactStore = ArtifactVerificationPort &
   HandoffContentPort &
   ProjectArtifactPort &
-  OutputContentPort;
+  OutputContentPort &
+  WorkerArtifactUploadPort;
 
 /** The most bytes one read of a stored object draws at a time. */
 const artifactStoreChunkBytes = 65_536;
@@ -439,6 +446,56 @@ async function artifactStoreWrite(
   };
 }
 
+async function artifactStoreAttemptWrite(
+  own: ArtifactStoreState,
+  input: Parameters<WorkerArtifactUploadPort["store"]>[0],
+): Promise<WorkerArtifactStored> {
+  if (input.content.byteLength > own.writeBytesMax)
+    throw new RangeError("artifact store: worker upload is past the byte bound");
+  const directory = artifactProjectDirectory(
+    own.root,
+    input.authority.partition.tenant,
+    input.authority.partition.project,
+  );
+  const path = asArtifactPath(input.path);
+  const file = artifactAttemptFile(
+    directory,
+    input.authority.execution,
+    input.authority.attempt,
+    path,
+  );
+  if (file === undefined) return { stored: "Conflict" };
+  const pending = `${file}.${randomUUID()}`;
+  try {
+    await mkdir(dirname(file), { recursive: true });
+    if ((await artifactStoreDirectoryRejection(directory, file)) !== undefined)
+      return { stored: "Unavailable", retryAfterSeconds: own.unavailableRetrySecs };
+    await writeFile(pending, input.content, {
+      mode: own.storedFileMode,
+      flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+    });
+    await chmod(pending, own.storedFileMode);
+    await link(pending, file);
+    await artifactStoreDiscard(pending);
+    return { stored: "Stored" };
+  } catch (refused: unknown) {
+    await artifactStoreDiscard(pending);
+    if (
+      typeof refused === "object" &&
+      refused !== null &&
+      (refused as { code?: unknown }).code === "EEXIST"
+    ) {
+      const expected = createHash("sha256").update(input.content).digest("hex");
+      const found = await artifactStoreEntryOf(directory, file);
+      if (found.entry !== "Object" || found.bytes !== input.content.byteLength)
+        return { stored: "Conflict" };
+      const digest = await artifactStoreDigestOf(file, found.bytes);
+      return digest === expected ? { stored: "Stored" } : { stored: "Conflict" };
+    }
+    return { stored: "Unavailable", retryAfterSeconds: own.unavailableRetrySecs };
+  }
+}
+
 async function artifactStoreOutput(
   own: ArtifactStoreState,
   input: Parameters<OutputContentPort["read"]>[0],
@@ -524,6 +581,7 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
     verifyManifest: (manifest) => artifactStoreVerify(own, manifest),
     readHandoff: (request) => artifactStoreRead(own, request),
     writeArtifact: (write) => artifactStoreWrite(own, write),
+    store: (input) => artifactStoreAttemptWrite(own, input),
     read: (input) => artifactStoreOutput(own, input),
   };
 }

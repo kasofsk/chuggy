@@ -482,6 +482,7 @@ async function schedulerPlace(
     requirementDigest: execution.requirementDigest,
     profile: launch.profile,
     invocation: launch.invocation,
+    capability: attempt.capability,
   });
   recordScheduler(service.metrics, (metrics) => {
     metrics.placement(placed.placed);

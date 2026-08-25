@@ -18,6 +18,8 @@ import {
   asAttemptId,
   asCapacityAccountId,
   asClusterId,
+  asAttemptCapabilityId,
+  asAttemptCapabilitySecret,
   asExecutionId,
   asSchedulerOwnerId,
   asPlacementId,
@@ -42,6 +44,7 @@ import {
   executionSchedulerRegister,
   type ExecutionSchedulerService,
 } from "../../src/interpreter/executionSchedulerRun.ts";
+import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import {
   blessedPracticeCatalog,
   type ConfigurationRead,
@@ -113,6 +116,11 @@ const attempt: PhysicalAttempt = {
   recoveryEpoch: epoch,
   state: "Placing",
   authoritative: true,
+  capability: {
+    id: asAttemptCapabilityId("capability-one"),
+    secret: asAttemptCapabilitySecret("secret-one"),
+    manifest: asResultManifestId("manifest-one"),
+  },
 };
 
 /** A store that records every durable move asked of it and takes none. */
