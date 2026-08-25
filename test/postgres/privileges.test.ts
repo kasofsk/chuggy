@@ -566,13 +566,13 @@ test("the scheduler's write surface is exactly the columns execution and capacit
         table_name: "execution_attempt",
         privilege_type: "INSERT",
         columns:
-          "attempt,attempt_number,ended_at,evidence,execution,generation,lease_expires_at,lease_owner,opened_at,project,recovery_epoch,state,tenant,workload",
+          "attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,lease_expires_at,lease_owner,manifest,opened_at,project,recovery_epoch,state,tenant,workload",
       },
       {
         table_name: "execution_attempt",
         privilege_type: "UPDATE",
         columns:
-          "ended_at,evidence,generation,lease_expires_at,lease_owner,state,workload",
+          "cleanup_completed_at,ended_at,evidence,generation,lease_expires_at,lease_owner,state,workload",
       },
       {
         table_name: "execution_request",

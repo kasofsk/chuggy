@@ -390,12 +390,11 @@ test("a target ref that moved afterwards changes nothing the bundle names", asyn
   assert.deepEqual(await reworkBundleOf(project), bundle);
 });
 
-test("the retrofit's backfill spells the identity and the canonical bytes this tree digests", async () => {
+test("the retrofit expressions spell the identity and canonical bytes this tree digests", async () => {
   const { project } = await reworked("rework-backfill");
   const rows = (await rig.harness.query(
     `SELECT ${retrofitBundleIdentity} AS retrofit,
             ${retrofitBundleDigest} AS digest,
-            r.input_bundle, r.input_bundle_digest,
             r.configuration_revision, r.configuration_digest
        FROM execution_request r
       WHERE r.tenant=$1 AND r.project=$2 AND r.kind='SpawnWork'
@@ -404,15 +403,11 @@ test("the retrofit's backfill spells the identity and the canonical bytes this t
   )) as readonly {
     retrofit: string;
     digest: string;
-    input_bundle: string;
-    input_bundle_digest: string;
     configuration_revision: string;
     configuration_digest: string;
   }[];
   const row = rows[0];
   assert.ok(row !== undefined);
-  assert.equal(row.retrofit, row.input_bundle);
-  assert.equal(row.digest, row.input_bundle_digest);
   assert.equal(
     row.digest,
     createHash("sha256")

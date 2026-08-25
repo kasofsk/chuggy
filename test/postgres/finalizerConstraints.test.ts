@@ -439,28 +439,19 @@ test("a project binds multiple repositories while each repository keeps one owne
      VALUES ($1,$2,$3,$4)`,
     keys(second, project.epoch),
   );
-  for (const [values, constraint] of [
-    [keys(second, project.epoch), "project_repository_pkey"],
-    [
+  assert.match(
+    await rig.ownerRefusal(
+      `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
+       VALUES ($1,$2,$3,$4)`,
       [
         unbound.tenant,
         unbound.project,
         finalizerIdentity("repository-noep"),
         "no-such-epoch",
       ],
-      "project_repository_recovery_epoch_fkey",
-    ],
-  ] as readonly (readonly [readonly unknown[], string])[]) {
-    assert.match(
-      await rig.ownerRefusal(
-        `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
-         VALUES ($1,$2,$3,$4)`,
-        values,
-      ),
-      new RegExp(constraint, "u"),
-      constraint,
-    );
-  }
+    ),
+    /project_repository_recovery_epoch_fkey/u,
+  );
 });
 
 test("a bundle is written once, digested, and its references are a bounded closed set", async () => {

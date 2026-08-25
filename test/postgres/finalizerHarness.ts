@@ -980,8 +980,10 @@ export async function finalizerPassedWork(
   );
   await rig.harness.query(
     `INSERT INTO execution_attempt
-       (tenant, project, execution, attempt, attempt_number, recovery_epoch, state, ended_at)
-     VALUES ($1,$2,$3,$4,1,$5,'Reported',now())`,
+       (tenant, project, execution, attempt, attempt_number, recovery_epoch, state, ended_at,
+        capability, capability_secret_digest, manifest)
+     VALUES ($1,$2,$3,$4,1,$5,'Reported',now(),
+             'capability-' || gen_random_uuid(), repeat('0',64), 'manifest-' || gen_random_uuid())`,
     [tenant, named, work.execution, work.attempt, project.epoch],
   );
   await rig.harness.query(

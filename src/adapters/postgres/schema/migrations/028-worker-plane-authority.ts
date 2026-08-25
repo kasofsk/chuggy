@@ -45,6 +45,36 @@ export const migration028: Migration = {
        ADD CONSTRAINT execution_attempt_manifest_is_unique UNIQUE (manifest),
        ADD CONSTRAINT execution_attempt_capability_digest_is_sha256 CHECK (
          capability_secret_digest ~ '^[0-9a-f]{64}$')`,
+    `CREATE OR REPLACE FUNCTION execution_attempt_is_fenced() RETURNS trigger
+       LANGUAGE plpgsql AS $$
+       BEGIN
+         IF OLD.state NOT IN ('Placing', 'Running') THEN
+           IF OLD.cleanup_completed_at IS NULL AND NEW.cleanup_completed_at IS NOT NULL
+              AND (to_jsonb(NEW) - 'cleanup_completed_at')
+                  IS NOT DISTINCT FROM (to_jsonb(OLD) - 'cleanup_completed_at') THEN
+             RETURN NEW;
+           END IF;
+           RAISE EXCEPTION 'attempt % is already %, and a finished attempt is written once',
+             OLD.attempt, OLD.state USING ERRCODE = 'integrity_constraint_violation';
+         END IF;
+         IF (NEW.tenant, NEW.project, NEW.execution, NEW.attempt, NEW.attempt_number,
+             NEW.recovery_epoch)
+            IS DISTINCT FROM
+            (OLD.tenant, OLD.project, OLD.execution, OLD.attempt, OLD.attempt_number,
+             OLD.recovery_epoch) THEN
+           RAISE EXCEPTION 'attempt % would change the identity or epoch it was issued under',
+             OLD.attempt USING ERRCODE = 'integrity_constraint_violation';
+         END IF;
+         IF NEW.generation < OLD.generation THEN
+           RAISE EXCEPTION 'attempt % would move its generation backwards', OLD.attempt
+             USING ERRCODE = 'integrity_constraint_violation';
+         END IF;
+         IF OLD.state = 'Running' AND NEW.state = 'Placing' THEN
+           RAISE EXCEPTION 'attempt % would return to placement after running', OLD.attempt
+             USING ERRCODE = 'integrity_constraint_violation';
+         END IF;
+         RETURN NEW;
+       END $$`,
     `CREATE TABLE worker_artifact_reservation (
        tenant text NOT NULL, project text NOT NULL, execution text NOT NULL,
        attempt text NOT NULL, path text NOT NULL, digest text NOT NULL, bytes bigint NOT NULL,
@@ -172,7 +202,7 @@ export const migration028: Migration = {
        RETURNS TABLE(terminalized text,outcome text,operation text,incident text)
        LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
        DECLARE bound record; next_manifest bigint; submitted record; incident_id text;
-         settled_outcome text; artifact jsonb; project_lifecycle text;
+         settled_outcome text; submitted_artifact jsonb; project_lifecycle text;
        BEGIN
          SELECT a.tenant,a.project,a.execution,e.source_request INTO bound
            FROM execution_attempt a
@@ -300,10 +330,11 @@ export const migration028: Migration = {
                                       schema_version,digest,verdict)
            VALUES(bound.tenant,bound.project,in_manifest,bound.execution,bound.attempt,next_manifest,
                   in_schema,in_digest,in_verdict);
-         FOR artifact IN SELECT value FROM jsonb_array_elements(in_artifacts) LOOP
+         FOR submitted_artifact IN SELECT value FROM jsonb_array_elements(in_artifacts) LOOP
            INSERT INTO execution_result_artifact(tenant,project,manifest,ordinal,role,path,digest,bytes)
-             VALUES(bound.tenant,bound.project,in_manifest,(artifact->>'ordinal')::integer,
-                    artifact->>'role',artifact->>'path',artifact->>'digest',(artifact->>'bytes')::bigint);
+             VALUES(bound.tenant,bound.project,in_manifest,(submitted_artifact->>'ordinal')::integer,
+                    submitted_artifact->>'role',submitted_artifact->>'path',submitted_artifact->>'digest',
+                    (submitted_artifact->>'bytes')::bigint);
          END LOOP;
          settled_outcome=CASE in_verdict WHEN 'Pass' THEN 'Passed' ELSE 'Failed' END;
          SELECT result,s.operation INTO submitted FROM ${completionFunction}(

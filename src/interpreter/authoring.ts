@@ -32,6 +32,7 @@ import {
   handoffConfigurationField,
   type HandoffConfigurationFault,
 } from "./handoffConfiguration.ts";
+import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import {
   authoredTaskConfigurationReadiness,
   type AuthoredTaskConfiguration,
@@ -39,15 +40,12 @@ import {
 } from "./taskConfiguration.ts";
 
 declare const configurationRevisionBrand: unique symbol;
-declare const canonicalConfigurationBrand: unique symbol;
 
 export type ConfigurationRevisionId = string & {
   readonly [configurationRevisionBrand]: true;
 };
 
-export type CanonicalConfiguration = string & {
-  readonly [canonicalConfigurationBrand]: true;
-};
+export type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 
 export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
   readonly version: 1;

@@ -122,7 +122,8 @@ export async function schedulerLockExecution(
     sql`SELECT
           e.tenant, e.project, e.execution, e.ticket::text AS ticket,
           e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage,
-          e.source_request, q.authorizing_seq::text AS source_seq,
+          e.source_request, q.input_bundle, q.input_bundle_digest,
+          q.authorizing_seq::text AS source_seq,
           q.effect_position::text AS source_effect,
           q.ticket_version::text AS ticket_version, e.account, e.cluster,
           e.configuration_revision, e.configuration_digest, e.requirement_identity,

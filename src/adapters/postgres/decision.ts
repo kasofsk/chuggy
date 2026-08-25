@@ -269,9 +269,9 @@ async function decisionConfiguration(
     };
   const ticket = decisionEventSubject(outcome.entry.event);
   const found = await client.query<{
-    configuration_revision: string | null;
-    configuration_digest: string | null;
-    canonical: string | null;
+    configuration_revision: string;
+    configuration_digest: string;
+    canonical: string;
   }>(
     sql`SELECT p.configuration_revision,p.configuration_digest,c.canonical
       FROM ticket_projection p
@@ -281,12 +281,7 @@ async function decisionConfiguration(
       WHERE p.tenant=${partition.tenant} AND p.project=${partition.project} AND p.ticket=${ticket}`,
   );
   const row = found.rows[0];
-  if (
-    row?.configuration_revision === null ||
-    row?.configuration_revision === undefined ||
-    row.configuration_digest === null ||
-    row.canonical === null
-  ) {
+  if (row === undefined) {
     throw new Error("journal decision has no retained ticket configuration");
   }
   return {
@@ -405,17 +400,23 @@ async function decisionAcceptedPromotion(
 ): Promise<AcceptedPromotion> {
   if (offered !== undefined) return offered;
   const found = await client.query<{
-    repository: string;
-    candidate_commit: string;
-    configuration_revision: string;
-    configuration_digest: string;
+    repository: string | null;
+    candidate_commit: string | null;
+    configuration_revision: string | null;
+    configuration_digest: string | null;
   }>(
     sql`SELECT repository,candidate_commit,configuration_revision,configuration_digest
       FROM read_accepted_handoff_promotion(
         ${partition.tenant},${partition.project},${ticket})`,
   );
   const accepted = found.rows[0];
-  if (accepted === undefined)
+  if (
+    accepted === undefined ||
+    accepted.repository === null ||
+    accepted.candidate_commit === null ||
+    accepted.configuration_revision === null ||
+    accepted.configuration_digest === null
+  )
     throw new Error("handoff retry has no accepted work promotion");
   return {
     repository: accepted.repository,
