@@ -58,6 +58,121 @@ const nativeActionPairing = allNativeActionKinds
   .join("\n              OR ");
 
 /**
+ * The finalizer's authenticated submission door. Later outcome migrations
+ * replace this body so an upgraded installation enforces the current evidence
+ * contract rather than retaining the function installed with I7.
+ */
+export const finalizationSubmissionBody = `${finalizationFunction}(
+      in_tenant text, in_project text, in_request text, in_attempt text,
+      in_outcome text, in_failure_kind text, in_request_generation bigint,
+      in_recovery_epoch text, in_operation text, in_authority_subject text)
+     RETURNS TABLE(result text, operation text, ordinal bigint)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+     DECLARE bound record; project_lifecycle text; project_generation bigint;
+       next_ordinal bigint; command_value jsonb; current_epoch text;
+       scoped_digest text; settled text;
+     BEGIN
+       IF in_outcome NOT IN (${schemaTextSet(finalizationOutcomeTags)}) THEN
+         RAISE EXCEPTION 'finalization outcome % is not one this boundary submits', in_outcome
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       scoped_digest := encode(sha256(convert_to('finalization:' || in_request, 'UTF8')), 'hex');
+       SELECT f.ticket, f.state, f.request_generation, f.recovery_epoch, f.kind,
+              a.attempt, a.outcome AS attempt_outcome, a.failure_kind,
+              p.state AS permit_state, r.verdict
+         INTO bound
+         FROM finalization_request f
+         LEFT JOIN finalization_attempt a
+           ON a.tenant = f.tenant AND a.project = f.project
+              AND a.request = f.request AND a.attempt = in_attempt
+         LEFT JOIN commit_permit p
+           ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
+         LEFT JOIN finalization_reconciliation r
+           ON r.tenant = p.tenant AND r.project = p.project AND r.permit = p.permit
+        WHERE f.tenant = in_tenant AND f.project = in_project AND f.request = in_request
+        FOR UPDATE OF f;
+       IF NOT FOUND THEN
+         RETURN QUERY SELECT 'UnknownRequest'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       SELECT o.operation INTO settled FROM operation o
+        WHERE o.tenant = in_tenant AND o.project = in_project
+          AND o.authority_kind = '${finalizerAuthorityKind}' AND o.key_digest = scoped_digest;
+       IF FOUND THEN
+         RETURN QUERY SELECT 'AlreadySubmitted'::text, settled,
+           (SELECT d.ordinal FROM decision_input d
+             WHERE d.tenant = in_tenant AND d.project = in_project
+               AND d.input_kind = 'Operation' AND d.input_id = settled);
+         RETURN;
+       END IF;
+       SELECT e.epoch INTO current_epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1;
+       IF bound.state NOT IN ('Open', 'Registered')
+          OR bound.request_generation <> in_request_generation
+          OR bound.recovery_epoch IS DISTINCT FROM in_recovery_epoch
+          OR current_epoch IS DISTINCT FROM in_recovery_epoch
+          OR bound.attempt IS NULL
+          OR NOT (
+            (in_outcome = 'FinalizationFailed'
+              AND bound.kind = 'RunFinalizer'
+              AND bound.attempt_outcome = 'Failed'
+              AND bound.failure_kind IS NOT DISTINCT FROM in_failure_kind)
+            OR (in_outcome = 'FinalizationSucceeded'
+              AND in_failure_kind IS NULL
+              AND bound.attempt_outcome = 'Prepared'
+              AND bound.permit_state IS NOT DISTINCT FROM 'Concluded'
+              AND bound.verdict IS NOT DISTINCT FROM 'Promoted')
+            OR (in_outcome = 'PromotionAccepted'
+              AND bound.kind = 'RunFinalizer'
+              AND in_failure_kind IS NULL
+              AND bound.attempt_outcome = 'Prepared'
+              AND bound.permit_state IS NOT DISTINCT FROM 'Concluded'
+              AND bound.verdict IS NOT DISTINCT FROM 'Promoted')
+            OR (in_outcome = 'HandoffPublicationUnproven'
+              AND bound.kind = 'PublishHandoff'
+              AND in_failure_kind IS NULL
+              AND ((bound.attempt_outcome = 'Failed')
+                OR (bound.attempt_outcome = 'Prepared'
+                  AND bound.permit_state IS NOT DISTINCT FROM 'Granted'
+                  AND bound.verdict IS NOT DISTINCT FROM 'Unreadable'))))
+       THEN
+         RETURN QUERY SELECT 'BindingMismatch'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       SELECT p.lifecycle, p.lifecycle_generation
+         INTO STRICT project_lifecycle, project_generation
+         FROM project p WHERE p.tenant = in_tenant AND p.project = in_project FOR UPDATE;
+       IF project_lifecycle = 'Retention' THEN
+         RETURN QUERY SELECT 'NotAdmitted'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       command_value := jsonb_build_object('version', 1,
+         'command', 'SubmitFinalizationResult', 'request', in_request,
+         'attempt', in_attempt, 'requestGeneration', in_request_generation,
+         'recoveryEpoch', in_recovery_epoch, 'outcome', in_outcome);
+       IF ticket_command_is_valid(command_value) IS NOT TRUE THEN
+         RAISE EXCEPTION 'the finalization result this boundary built is not one the mailbox admits'
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       UPDATE project p SET ingress_next = p.ingress_next + 1
+        WHERE p.tenant = in_tenant AND p.project = in_project
+        RETURNING p.ingress_next - 1 INTO next_ordinal;
+       INSERT INTO operation
+         (tenant, project, operation, authority_kind, authority_subject, admission,
+          key_version, key_digest, payload_digest, command, command_tag)
+       VALUES (in_tenant, in_project, in_operation, '${finalizerAuthorityKind}',
+          in_authority_subject, 'CorrectnessReducing', '${finalizerKeyVersion}',
+          scoped_digest,
+          encode(sha256(convert_to(command_value::text, 'UTF8')), 'hex'),
+          command_value::text, 'FinalizationResult');
+       INSERT INTO decision_input
+         (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
+       VALUES (in_tenant, in_project, next_ordinal, 'Operation', in_operation,
+          'Completion', project_generation);
+       INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES (in_tenant, in_project, true, 1)
+       ON CONFLICT (tenant, project) DO UPDATE
+         SET ready = true, generation = project_readiness.generation + 1;
+       RETURN QUERY SELECT 'Submitted'::text, in_operation, next_ordinal;
+     END $$`;
+
+/**
  * The bundle identity a registration predating I7 is given, spelled exactly as
  * the deciding transaction spells one so a replayed decision reproduces it.
  */

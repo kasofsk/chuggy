@@ -667,6 +667,7 @@ export async function finalizerClaim(
     requestGeneration: project.requestGeneration,
     claimGeneration: Number(row["claim_generation"]),
     state: "Registered",
+    kind: "RunFinalizer",
     recoveryEpoch: asRecoveryEpoch(project.epoch),
     owner: asFinalizerOwnerId(owner),
   };

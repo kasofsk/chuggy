@@ -7,6 +7,7 @@ import {
   accountIdentityFunction,
   apiRole,
   boundaryOwnerRole,
+  finalizationFunction,
   migrationLedger,
   migrations,
   schedulerRole,
@@ -871,5 +872,33 @@ test("the API repository binding read migrates without exposing its table", asyn
       ).rows[0]?.granted,
       false,
     );
+  });
+});
+
+test("migration 24 replaces the finalization door on an upgraded database", async () => {
+  await migrationDatabase("handoff_outcomes", async (subject) => {
+    await migrationSeedApplied(subject, 24);
+    const before = await subject.query<{ body: string }>(
+      `SELECT pg_get_functiondef($1::regprocedure) AS body`,
+      [
+        `${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)`,
+      ],
+    );
+    assert.doesNotMatch(before.rows[0]?.body ?? "", /PromotionAccepted/u);
+
+    await applyMigration(subject, 24);
+
+    const after = await subject.query<{ body: string }>(
+      `SELECT pg_get_functiondef($1::regprocedure) AS body`,
+      [
+        `${finalizationFunction}(text,text,text,text,text,text,bigint,text,text,text)`,
+      ],
+    );
+    assert.match(after.rows[0]?.body ?? "", /PromotionAccepted/u);
+    assert.match(
+      after.rows[0]?.body ?? "",
+      /bound\.verdict IS NOT DISTINCT FROM 'Promoted'/u,
+    );
+    assert.match(after.rows[0]?.body ?? "", /HandoffPublicationUnproven/u);
   });
 });

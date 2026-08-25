@@ -217,6 +217,7 @@ function effectPlans(
           ticket,
           ticketVersion: entry.seq,
           requestGeneration: entry.seq,
+          kind: effect,
         });
         break;
       }

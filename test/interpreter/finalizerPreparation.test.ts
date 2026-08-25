@@ -195,6 +195,7 @@ const claim: FinalizationClaim = {
   requestGeneration: 1,
   claimGeneration: 1,
   state: "Registered",
+  kind: "RunFinalizer",
   recoveryEpoch: asRecoveryEpoch("epoch-a"),
   owner: asFinalizerOwnerId("owner-a"),
 };
