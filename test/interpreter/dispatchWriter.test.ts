@@ -20,7 +20,13 @@ import {
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
 import {
+  asGitObjectId,
+  asGitRefName,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
+import {
   projectWriterDecide,
+  type ExecutionSourceObservationPort,
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import {
@@ -83,6 +89,7 @@ function operationInput(command: TicketCommand): DecisionInput {
 async function planned(
   memory: ProjectMemory,
   command: TicketCommand,
+  executionSources?: ExecutionSourceObservationPort,
 ): Promise<Decision> {
   let captured: Decision | undefined;
   const decisions: ProjectDecision = {
@@ -92,13 +99,60 @@ async function planned(
     },
   };
   await projectWriterDecide(
-    { config: refinementInstance, store: {} as ProjectStore, decisions },
+    {
+      config: refinementInstance,
+      store: {} as ProjectStore,
+      decisions,
+      ...(executionSources === undefined ? {} : { executionSources }),
+    },
     memory,
     operationInput(command),
   );
   assert.ok(captured !== undefined);
   return captured;
 }
+
+test("a source observation is gathered before a spawn bundle is materialized", async () => {
+  const observed: Parameters<ExecutionSourceObservationPort["observe"]>[0][] =
+    [];
+  const decision = await planned(
+    releasedMemory(),
+    {
+      version: 1,
+      command: "ManualDispatch",
+      ticket: id(1),
+      expectedTicketVersion: 1,
+    },
+    {
+      observe: (request) => {
+        observed.push(request);
+        return Promise.resolve({
+          observed: "Source",
+          source: {
+            repository: asRepositoryId("repository"),
+            target: {
+              ref: asGitRefName("refs/heads/main"),
+              commit: asGitObjectId("a".repeat(40)),
+            },
+            manifests: [],
+          },
+        });
+      },
+    },
+  );
+  assert.deepEqual(observed, [{ partition, ticket: id(1), kind: "Work" }]);
+  assert.deepEqual(
+    decision.outcome.outcome === "Journaled"
+      ? decision.outcome.materialization.execution[0]?.bundle?.source
+      : undefined,
+    {
+      repository: "repository",
+      targetRef: "refs/heads/main",
+      targetCommit: "a".repeat(40),
+      manifests: [],
+    },
+  );
+});
 
 test("manual dispatch distinguishes a stale ticket from a disabled ticket", async () => {
   const decision = await planned(releasedMemory(), {

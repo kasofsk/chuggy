@@ -14,6 +14,13 @@ import {
 import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
 import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
 import { materializationOf } from "../../src/interpreter/decisionPlan.ts";
+import { inputBundleReferencesOf } from "../../src/interpreter/decisionPlan.ts";
+import {
+  asGitObjectId,
+  asGitRefName,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
+import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -194,6 +201,26 @@ test("dispatch materializes exact logical work tasks from the pure state delta",
   assert.equal(planned.execution.length, 1);
   assert.equal(planned.execution[0]?.kind, "SpawnWork");
   assert.equal(planned.execution[0]?.tasks.length, plainAuthoring.workFanout);
+});
+
+test("a spawn bundle pins its exact source and prior result manifests", () => {
+  const references = inputBundleReferencesOf(
+    { configurationRevision: "revision", configurationDigest: "d".repeat(64) },
+    {
+      bundle: "bundle",
+      source: {
+        repository: asRepositoryId("repository"),
+        targetRef: asGitRefName("refs/heads/main"),
+        targetCommit: asGitObjectId("a".repeat(40)),
+        manifests: [asResultManifestId("manifest-one")],
+      },
+    },
+  );
+  assert.deepEqual(references.slice(1), [
+    { kind: "Repository", reference: "repository" },
+    { kind: "TargetCommit", reference: "a".repeat(40) },
+    { kind: "ResultManifest", reference: "manifest-one" },
+  ]);
 });
 
 test("a decision leaving escalation withdraws its open native action", () => {

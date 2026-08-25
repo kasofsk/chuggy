@@ -36,15 +36,18 @@ import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
 import type {
   ObservedTarget,
-  RepositoryBinding,
   RepositoryId,
   TargetObserved,
 } from "./finalizer.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
 import type { Core } from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
+import { effectFromLabel } from "../domain/effect.ts";
 import { asTicketId } from "../domain/ids.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
+import { authoredHandoffConfigurationReadiness } from "./handoffConfiguration.ts";
+import type { HandoffRepositoryRole } from "./handoffConfiguration.ts";
+import type { ResultManifestId } from "./resultManifest.ts";
 import type { ProjectDiscovery, Readiness } from "./projectDiscovery.ts";
 import type {
   Decided,
@@ -81,15 +84,23 @@ export interface ProjectTicketWriter {
 export interface ExecutionSourceObservation {
   readonly repository: RepositoryId;
   readonly target: ObservedTarget;
+  readonly manifests: readonly ResultManifestId[];
 }
 
 /** Resolves one configured or default repository ref without exposing its credential. */
 export interface ExecutionSourceObservationPort {
   observe(input: {
     readonly partition: Lease["partition"];
-    readonly repository?: RepositoryBinding;
+    readonly ticket: number;
+    readonly kind: "Work" | "Evaluation";
+    readonly repository?: RepositoryId;
+    readonly ref?: ObservedTarget["ref"];
+    readonly credentialReference?: string;
   }): Promise<
-    | { readonly observed: "Source"; readonly source: ExecutionSourceObservation }
+    | {
+        readonly observed: "Source";
+        readonly source: ExecutionSourceObservation;
+      }
     | Exclude<TargetObserved, { readonly observed: "Target" }>
   >;
 }
@@ -272,6 +283,7 @@ function journaledPlan(
   memory: ProjectMemory,
   item: DecisionInput,
   command: DecisionEvent,
+  executionSource: ExecutionSourceObservation | undefined,
 ): ProjectPlan {
   const decision = execDecisionEvent(writer.config, memory.core, command);
   const entry: Entry = {
@@ -314,6 +326,7 @@ function journaledPlan(
         memory.core,
         decision.post,
         entry,
+        executionSource,
       ),
       ...(candidates === undefined
         ? {}
@@ -336,6 +349,7 @@ function projectWriterPlan(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
+  executionSource: ExecutionSourceObservation | undefined,
 ): ProjectPlan {
   const command =
     item.source.kind === "Operation"
@@ -375,7 +389,62 @@ function projectWriterPlan(
       post: memory.core,
     };
   }
-  return journaledPlan(writer, memory, item, command);
+  return journaledPlan(writer, memory, item, command, executionSource);
+}
+
+function projectWriterSourceRepository(
+  memory: ProjectMemory,
+  item: DecisionInput,
+  ticket: number,
+): HandoffRepositoryRole | undefined {
+  const draft =
+    item.source.kind === "Operation" ? item.source.draftRelease : undefined;
+  const contract = draft ?? memory.dispatchContracts?.get(ticket);
+  if (contract === undefined) return undefined;
+  const parsed = authoredHandoffConfigurationReadiness(
+    JSON.parse(contract.configurationCanonical) as unknown,
+  );
+  return parsed.readiness === "Ready" ? parsed.configuration.work : undefined;
+}
+
+async function projectWriterExecutionSource(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  item: DecisionInput,
+  command: DecisionEvent,
+): Promise<ExecutionSourceObservation | undefined> {
+  if (
+    item.source.kind === "Operation" &&
+    item.source.finalizationRequest?.evidence !== undefined
+  )
+    return undefined;
+  const rec = execDecisionEvent(writer.config, memory.core, command).rec;
+  const spawn = rec.effects.find((label) => {
+    const effect = effectFromLabel(label);
+    return effect === "SpawnWorkTasks" || effect === "SpawnEvalTasks";
+  });
+  if (spawn === undefined || writer.executionSources === undefined)
+    return undefined;
+  const effect = effectFromLabel(spawn);
+  const ticket = rec.transitions[rec.effects.indexOf(spawn)]?.ticket;
+  if (ticket === undefined)
+    throw new IntegrityContradiction("a spawn effect has no ticket transition");
+  const repository = projectWriterSourceRepository(memory, item, ticket);
+  const observed = await writer.executionSources.observe({
+    partition: memory.lease.partition,
+    ticket,
+    kind: effect === "SpawnWorkTasks" ? "Work" : "Evaluation",
+    ...(repository === undefined
+      ? {}
+      : {
+          repository: repository.repository,
+          ref: repository.targetRef,
+          credentialReference: repository.credential,
+        }),
+  });
+  if (observed.observed !== "Source")
+    throw new Error(`project writer: execution source is ${observed.evidence}`);
+  return observed.source;
 }
 
 /**
@@ -387,7 +456,15 @@ export async function projectWriterDecide(
   memory: ProjectMemory,
   item: DecisionInput,
 ): Promise<ProjectDecided> {
-  const plan = projectWriterPlan(writer, memory, item);
+  const command =
+    item.source.kind === "Operation"
+      ? item.source.resolvedEvent
+      : item.source.command;
+  const executionSource =
+    command === undefined
+      ? undefined
+      : await projectWriterExecutionSource(writer, memory, item, command);
+  const plan = projectWriterPlan(writer, memory, item, executionSource);
   const decided = await writer.decisions.decide({
     lease: memory.lease,
     cause:

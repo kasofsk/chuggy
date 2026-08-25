@@ -7,6 +7,7 @@ import { asTicketId, type TicketId } from "../domain/ids.ts";
 import { tasksInIdOrder } from "../domain/task.ts";
 import { reducibleEvalIn, reducibleWorkIn } from "../domain/enablement.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
+import type { ExecutionSourceObservation } from "./projectWriter.ts";
 import {
   inputBundleReferencesMax,
   type InputBundleReference,
@@ -54,6 +55,7 @@ function executionRequestBundle(
   input: DecisionInput,
   entry: Entry,
   effectPosition: number,
+  source: ExecutionSourceObservation | undefined,
 ): ExecutionRequestBundle {
   const evidence =
     input.source.kind === "Operation" &&
@@ -64,6 +66,16 @@ function executionRequestBundle(
   return {
     bundle: identity(entry, effectPosition, inputBundleIdentityKind),
     ...(evidence === undefined ? {} : { evidence }),
+    ...(source === undefined
+      ? {}
+      : {
+          source: {
+            repository: source.repository,
+            targetRef: source.target.ref,
+            targetCommit: source.target.commit,
+            manifests: source.manifests,
+          },
+        }),
   };
 }
 
@@ -73,6 +85,7 @@ function executionRequest(
   effectPosition: number,
   pre: Core,
   post: Core,
+  source: ExecutionSourceObservation | undefined,
 ): ExecutionRequestPlan {
   const ticket = subject(entry, effectPosition);
   const effect = effectFromLabel(entry.rec.effects[effectPosition] ?? "");
@@ -101,7 +114,7 @@ function executionRequest(
         ticket,
         ticketVersion: entry.seq,
         kind,
-        bundle: executionRequestBundle(input, entry, effectPosition),
+        bundle: executionRequestBundle(input, entry, effectPosition, source),
         tasks: requestTasks(created),
       };
     }
@@ -176,6 +189,7 @@ function effectPlans(
   entry: Entry,
   pre: Core,
   post: Core,
+  source: ExecutionSourceObservation | undefined,
 ): {
   readonly execution: readonly ExecutionRequestPlan[];
   readonly actions: readonly NativeActionPlan[];
@@ -192,7 +206,7 @@ function effectPlans(
       case "SpawnEvalTasks":
       case "CancelTicketWork":
         execution.push(
-          executionRequest(input, entry, effectPosition, pre, post),
+          executionRequest(input, entry, effectPosition, pre, post, source),
         );
         break;
       case "OpenHumanTask":
@@ -247,12 +261,23 @@ export function inputBundleReferencesOf(
   bundle: ExecutionRequestBundle,
 ): readonly InputBundleReference[] {
   const evidence = bundle.evidence;
+  const source = bundle.source;
   const named: readonly InputBundleReference[] = [
     {
       kind: "ConfigurationRevision",
       reference: configuration.configurationRevision,
       digest: configuration.configurationDigest,
     },
+    ...(source === undefined
+      ? []
+      : [
+          { kind: "Repository" as const, reference: source.repository },
+          { kind: "TargetCommit" as const, reference: source.targetCommit },
+          ...source.manifests.map((manifest) => ({
+            kind: "ResultManifest" as const,
+            reference: manifest,
+          })),
+        ]),
     ...(evidence === undefined
       ? []
       : [
@@ -341,8 +366,9 @@ export function materializationOf(
   pre: Core,
   post: Core,
   entry: Entry,
+  source?: ExecutionSourceObservation,
 ): DecisionMaterialization {
-  const effects = effectPlans(input, entry, pre, post);
+  const effects = effectPlans(input, entry, pre, post, source);
 
   const eventTicket =
     entry.event.type === "TaskDone"

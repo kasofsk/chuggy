@@ -118,6 +118,12 @@ export interface TicketProjection {
 export interface ExecutionRequestBundle {
   readonly bundle: string;
   readonly evidence?: FinalizationEvidence;
+  readonly source?: {
+    readonly repository: string;
+    readonly targetRef: string;
+    readonly targetCommit: string;
+    readonly manifests: readonly string[];
+  };
 }
 
 /** The kind part of a spawn bundle's derived identity, which the schema's backfill spells too. */
