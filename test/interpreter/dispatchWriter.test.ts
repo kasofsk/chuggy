@@ -103,7 +103,17 @@ async function planned(
       config: refinementInstance,
       store: {} as ProjectStore,
       decisions,
-      ...(executionSources === undefined ? {} : { executionSources }),
+      executionSources: executionSources ?? {
+        observe: () =>
+          Promise.resolve({
+            observed: "Source",
+            source: {
+              repository: asRepositoryId("repository"),
+              target: { commit: asGitObjectId("a".repeat(40)) },
+              manifests: [],
+            },
+          }),
+      },
     },
     memory,
     operationInput(command),

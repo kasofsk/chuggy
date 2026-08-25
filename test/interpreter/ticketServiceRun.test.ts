@@ -32,6 +32,14 @@ function unreachablePromise<Result>(): Promise<Result> {
   return Promise.reject(new Error("unreachable test port"));
 }
 
+const executionSources = {
+  observe: () =>
+    Promise.resolve({
+      observed: "Unreadable" as const,
+      evidence: "RefUnreadable" as const,
+    }),
+};
+
 test("one pass leases each discovered project and releases it after idle", async () => {
   const calls: string[] = [];
   const projects: ProjectStore = {
@@ -73,6 +81,7 @@ test("one pass leases each discovered project and releases it after idle", async
         discovery,
         decisions,
         projects,
+        executionSources,
         owner,
         monotonicNow: () => 0,
       },
@@ -98,6 +107,7 @@ test("a project held by another writer is discovered but not activated", async (
         discovery,
         decisions: { decide: () => unreachablePromise() },
         projects,
+        executionSources,
         owner,
         monotonicNow: () => 0,
       },

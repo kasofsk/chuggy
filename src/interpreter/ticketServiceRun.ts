@@ -24,7 +24,7 @@ export interface TicketServiceRuntimeService {
   readonly discovery: ProjectDiscovery;
   readonly decisions: ProjectDecision;
   readonly projects: ProjectStore;
-  readonly executionSources?: ExecutionSourceObservationPort;
+  readonly executionSources: ExecutionSourceObservationPort;
   readonly owner: OwnerId;
   readonly monotonicNow: () => number;
   readonly ticketConfig?: TicketServiceConfig;
@@ -60,9 +60,7 @@ export async function ticketServiceRunOnce(
     config: service.domain,
     store: service.projects,
     decisions: service.decisions,
-    ...(service.executionSources === undefined
-      ? {}
-      : { executionSources: service.executionSources }),
+    executionSources: service.executionSources,
   };
   let activated = 0;
   for (const ready of readiness) {

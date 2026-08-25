@@ -73,7 +73,7 @@ export interface ProjectTicketWriter {
   readonly config: Config;
   readonly store: ProjectStore;
   readonly decisions: ProjectDecision;
-  readonly executionSources?: ExecutionSourceObservationPort;
+  readonly executionSources: ExecutionSourceObservationPort;
 }
 
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
@@ -390,8 +390,7 @@ async function projectWriterExecutionSource(
     const effect = effectFromLabel(label);
     return effect === "SpawnWorkTasks" || effect === "SpawnEvalTasks";
   });
-  if (spawn === undefined || writer.executionSources === undefined)
-    return undefined;
+  if (spawn === undefined) return undefined;
   const effect = effectFromLabel(spawn);
   const ticket = rec.transitions[rec.effects.indexOf(spawn)]?.ticket;
   if (ticket === undefined)
