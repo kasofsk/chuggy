@@ -173,6 +173,36 @@ interface ViewRow {
   readonly destination_path: string | null;
   readonly output: string | null;
   readonly request_digest: string | null;
+  readonly request_outputs: string;
+  readonly source_repository: string | null;
+  readonly source_commit: string | null;
+}
+
+function finalizerRowOutputs(row: ViewRow): readonly {
+  readonly path: string;
+  readonly content: string;
+}[] {
+  const parsed: unknown = JSON.parse(row.request_outputs);
+  if (!Array.isArray(parsed))
+    throw new Error("finalization request outputs are unreadable");
+  const outputs = parsed.map((value) => {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value) ||
+      typeof (value as Record<string, unknown>)["path"] !== "string" ||
+      typeof (value as Record<string, unknown>)["content"] !== "string"
+    )
+      throw new Error("finalization request output is incomplete");
+    return {
+      path: (value as Record<string, string>)["path"] as string,
+      content: (value as Record<string, string>)["content"] as string,
+    };
+  });
+  if (outputs.length > 0) return outputs;
+  if (row.destination_path === null || row.output === null)
+    throw new Error("finalization request configuration is incomplete");
+  return [{ path: row.destination_path, content: row.output }];
 }
 
 function finalizerRowHandoffRequest(
@@ -193,12 +223,26 @@ function finalizerRowHandoffRequest(
   };
   if (row.request_configuration_kind === "PromoteForHandoff")
     return { kind: "PromoteForHandoff", ...common };
+  if (row.request_configuration_kind === "RunFinalizer") {
+    if (
+      row.source_repository === null ||
+      row.source_commit === null ||
+      row.request_digest === null
+    )
+      throw new Error("direct finalization request is incomplete");
+    return {
+      kind: "RunFinalizer",
+      ...common,
+      sourceRepository: asRepositoryId(row.source_repository),
+      sourceCommit: asGitObjectId(row.source_commit),
+      outputs: finalizerRowOutputs(row),
+      requestDigest: row.request_digest,
+    };
+  }
   if (
     row.request_configuration_kind !== "PublishHandoff" ||
     row.accepted_work_repository === null ||
     row.accepted_work_commit === null ||
-    row.destination_path === null ||
-    row.output === null ||
     row.request_digest === null
   )
     throw new Error("finalization request configuration is incomplete");
@@ -207,8 +251,7 @@ function finalizerRowHandoffRequest(
     ...common,
     acceptedWorkRepository: asRepositoryId(row.accepted_work_repository),
     acceptedWorkCommit: asGitObjectId(row.accepted_work_commit),
-    destinationPath: row.destination_path,
-    output: row.output,
+    outputs: finalizerRowOutputs(row),
     requestDigest: row.request_digest,
   };
 }
@@ -607,6 +650,11 @@ async function finalizerDurableView(
   h.configuration_digest AS request_configuration_digest,
   h.target_ref AS request_target_ref, h.credential_reference,
   h.accepted_work_repository, h.accepted_work_commit, h.destination_path, h.output, h.request_digest,
+  h.source_repository,h.source_commit,
+  (SELECT coalesce(jsonb_agg(jsonb_build_object('path',o.path,'content',o.content)
+      ORDER BY o.ordinal),'[]'::jsonb)::text
+     FROM finalization_request_output o
+    WHERE o.tenant=f.tenant AND o.project=f.project AND o.request=f.request) AS request_outputs,
   a.attempt, a.target_ref, a.target_commit, a.strategy,
   a.configuration_revision, a.configuration_digest, a.approval_required,
   a.outcome, a.candidate_commit, a.failure_kind, a.attempt_digest,

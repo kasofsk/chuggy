@@ -88,6 +88,11 @@ export interface DraftReleaseFence extends ConfigurationPin {
   readonly ticket: number;
   readonly authoringVersion: number;
   readonly configurationCanonical: string;
+  readonly finalizationInput?: {
+    readonly repository: string;
+    readonly requestedRef: string;
+    readonly resolvedCommit: string;
+  };
 }
 
 /**

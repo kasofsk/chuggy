@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "name": "explicit-full-deploy",
+  "configuration": {
+    "version": 1,
+    "image": "worker:v1",
+    "brief": {
+      "motivation": [
+        "Deploy an explicitly requested immutable Chuggy revision through chuggy-fabric."
+      ],
+      "acceptanceCriteria": [
+        "The requested source ref resolves to the immutable Chuggy commit inspected by work and evaluation.",
+        "Finalization publishes API and Web UI build requests for that same commit to chuggy-fabric."
+      ],
+      "constraints": [
+        "Do not modify Chuggy or chuggy-fabric during work or evaluation; finalization alone publishes the generated build requests."
+      ]
+    },
+    "practices": [
+      "AcceptanceCriteria"
+    ],
+    "work": {
+      "instructions": [
+        "Inspect the pinned Chuggy revision and verify that it is the revision the ticket intends to deploy; do not author a source change."
+      ]
+    },
+    "review": {
+      "instructions": [
+        "Read .chug/tasks/review-change.md and verify the pinned revision and full-deploy intent without authoring changes."
+      ]
+    },
+    "evaluations": [
+      {
+        "instructions": [
+          "Run .chug/tasks/ci.sh against the pinned revision and pass only when it exits cleanly; exit 2 is not a pass."
+        ],
+        "practices": [
+          "AcceptanceCriteria"
+        ]
+      }
+    ],
+    "finalizationHandoff": {
+      "version": 2,
+      "source": {
+        "kind": "PinnedSource",
+        "git": {
+          "repository": "https://github.com/vteng/chuggy.git"
+        },
+        "build": {
+          "repositoryId": "chuggy",
+          "url": "https://github.com/vteng/chuggy.git"
+        }
+      },
+      "destination": {
+        "repository": "https://github.com/gdoteof/chuggy-fabric.git",
+        "targetRef": "refs/heads/main"
+      },
+      "credentials": {
+        "sourceGit": "vteng-chuggy-read",
+        "destinationGit": "chuggy-fabric-write",
+        "buildSource": "vteng-chuggy-build-read",
+        "buildOutput": "chuggy-registry-build-push"
+      },
+      "outputs": [
+        {
+          "name": "api",
+          "contextDirectory": ".",
+          "dockerfile": "images/api/Dockerfile",
+          "targetImageRepository": "registry.chuggy.internal/chuggy/api"
+        },
+        {
+          "name": "web",
+          "contextDirectory": ".",
+          "dockerfile": "images/web/Dockerfile",
+          "targetImageRepository": "registry.chuggy.internal/chuggy/web"
+        }
+      ],
+      "outputBytesMax": 524288
+    }
+  }
+}

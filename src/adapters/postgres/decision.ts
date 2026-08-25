@@ -89,6 +89,15 @@ import {
   type PromoteForHandoffRequestConfiguration,
   type PublishHandoffRequestConfiguration,
 } from "../../interpreter/handoffConfiguration.ts";
+import {
+  buildHandoffPromotionConfiguration,
+  buildHandoffPublicationConfiguration,
+  buildHandoffDirectConfiguration,
+  pinnedBuildHandoffConfigurationReadiness,
+  type BuildHandoffPromotionConfiguration,
+  type BuildHandoffPublicationConfiguration,
+  type BuildHandoffDirectConfiguration,
+} from "../../interpreter/buildHandoffConfiguration.ts";
 import { inputBundleReferencesOf } from "../../interpreter/decisionPlan.ts";
 import {
   postgresInputBundleOf,
@@ -254,6 +263,11 @@ async function replaceDispatchView(
 
 interface DecisionConfiguration extends ConfigurationPin {
   readonly canonical: CanonicalConfiguration;
+  readonly finalizationInput?: {
+    readonly repository: string;
+    readonly requestedRef: string;
+    readonly resolvedCommit: string;
+  };
 }
 
 async function decisionConfiguration(
@@ -266,18 +280,27 @@ async function decisionConfiguration(
     return {
       ...release,
       canonical: asCanonicalConfiguration(release.configurationCanonical),
+      ...(release.finalizationInput === undefined
+        ? {}
+        : { finalizationInput: release.finalizationInput }),
     };
   const ticket = decisionEventSubject(outcome.entry.event);
   const found = await client.query<{
     configuration_revision: string;
     configuration_digest: string;
     canonical: string;
+    repository: string | null;
+    requested_ref: string | null;
+    resolved_commit: string | null;
   }>(
-    sql`SELECT p.configuration_revision,p.configuration_digest,c.canonical
+    sql`SELECT p.configuration_revision,p.configuration_digest,c.canonical,
+      i.repository,i.requested_ref,i.resolved_commit
       FROM ticket_projection p
       JOIN configuration_revision c
         ON c.tenant=p.tenant AND c.project=p.project
        AND c.revision=p.configuration_revision AND c.digest=p.configuration_digest
+      LEFT JOIN ticket_finalization_input i
+        ON i.tenant=p.tenant AND i.project=p.project AND i.ticket=p.ticket
       WHERE p.tenant=${partition.tenant} AND p.project=${partition.project} AND p.ticket=${ticket}`,
   );
   const row = found.rows[0];
@@ -288,7 +311,45 @@ async function decisionConfiguration(
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     canonical: asCanonicalConfiguration(row.canonical),
+    ...(row.repository === null ||
+    row.requested_ref === null ||
+    row.resolved_commit === null
+      ? {}
+      : {
+          finalizationInput: {
+            repository: row.repository,
+            requestedRef: row.requested_ref,
+            resolvedCommit: row.resolved_commit,
+          },
+        }),
   };
+}
+
+async function decisionFinalizationInput(
+  client: pg.PoolClient,
+  partition: Partition,
+  ticket: number,
+  configuration: DecisionConfiguration,
+): Promise<void> {
+  const input = configuration.finalizationInput;
+  if (input === undefined) return;
+  const inputDigest = configurationRevisionDigest(
+    JSON.stringify({
+      configurationDigest: configuration.configurationDigest,
+      configurationRevision: configuration.configurationRevision,
+      repository: input.repository,
+      requestedRef: input.requestedRef,
+      resolvedCommit: input.resolvedCommit,
+    }),
+  );
+  await client.query(
+    sql`INSERT INTO ticket_finalization_input
+      (tenant,project,ticket,configuration_revision,configuration_digest,
+       repository,requested_ref,resolved_commit,input_digest)
+      VALUES (${partition.tenant},${partition.project},${ticket},
+       ${configuration.configurationRevision},${configuration.configurationDigest},
+       ${input.repository},${input.requestedRef},${input.resolvedCommit},${inputDigest})`,
+  );
 }
 
 type JournaledOutcome = Extract<
@@ -427,13 +488,69 @@ async function decisionAcceptedPromotion(
 }
 
 type DecisionHandoffConfiguration =
-  PromoteForHandoffRequestConfiguration | PublishHandoffRequestConfiguration;
+  | PromoteForHandoffRequestConfiguration
+  | PublishHandoffRequestConfiguration
+  | BuildHandoffPromotionConfiguration
+  | BuildHandoffPublicationConfiguration
+  | BuildHandoffDirectConfiguration;
+
+function decisionBuildHandoffRequest(
+  request: JournaledOutcome["materialization"]["finalization"][number],
+  configuration: DecisionConfiguration,
+  acceptedPromotion: AcceptedPromotion | undefined,
+): DecisionHandoffConfiguration | undefined {
+  const readiness = pinnedBuildHandoffConfigurationReadiness(
+    configuration.canonical,
+    {
+      revision: configuration.configurationRevision,
+      digest: configuration.configurationDigest,
+    },
+    configurationRevisionDigest,
+  );
+  if (readiness.readiness === "Incomplete") return undefined;
+  if (readiness.configuration.source.kind === "PinnedSource") {
+    const input = configuration.finalizationInput;
+    if (request.kind !== "RunFinalizer" || input === undefined)
+      return undefined;
+    if (input.repository !== readiness.configuration.source.git.repository)
+      throw new Error("build handoff input names another source repository");
+    return buildHandoffDirectConfiguration(
+      readiness.configuration,
+      input.resolvedCommit,
+      configurationRevisionDigest,
+    );
+  }
+  if (request.kind === "RunFinalizer")
+    return buildHandoffPromotionConfiguration(readiness.configuration);
+  if (request.kind !== "PublishHandoff") return undefined;
+  const accepted = acceptedPromotion;
+  if (
+    accepted === undefined ||
+    accepted.configurationRevision !== configuration.configurationRevision ||
+    accepted.configurationDigest !== configuration.configurationDigest ||
+    accepted.repository !== readiness.configuration.source.git.repository
+  )
+    throw new Error(
+      "build handoff publication is not bound to its accepted promotion",
+    );
+  return buildHandoffPublicationConfiguration(
+    readiness.configuration,
+    accepted.commit,
+    configurationRevisionDigest,
+  );
+}
 
 function decisionHandoffRequest(
   request: JournaledOutcome["materialization"]["finalization"][number],
   configuration: DecisionConfiguration,
   acceptedPromotion: AcceptedPromotion | undefined,
 ): DecisionHandoffConfiguration | undefined {
+  const build = decisionBuildHandoffRequest(
+    request,
+    configuration,
+    acceptedPromotion,
+  );
+  if (build !== undefined) return build;
   const readiness = pinnedHandoffConfigurationReadiness(
     configuration.canonical,
     {
@@ -482,17 +599,29 @@ async function decisionHandoffConfiguration(
     sql`INSERT INTO finalization_request_configuration
       (tenant,project,request,kind,configuration_revision,configuration_digest,
        repository,target_ref,credential_reference,accepted_work_repository,
-       accepted_work_commit,destination_path,output,request_digest)
+       accepted_work_commit,source_repository,source_commit,
+       destination_path,output,request_digest)
       VALUES (${partition.tenant},${partition.project},${request},${configuration.kind},
        ${configuration.pin.revision},${configuration.pin.digest},
        ${configuration.repository.repository},${configuration.repository.targetRef},
-       ${configuration.repository.credential},
+       ${"credential" in configuration.repository ? configuration.repository.credential : configuration.repository.credentialReference},
        ${configuration.kind === "PublishHandoff" ? configuration.acceptedWorkRepository : null},
        ${configuration.kind === "PublishHandoff" ? configuration.acceptedWorkCommit : null},
-       ${configuration.kind === "PublishHandoff" ? configuration.destinationPath : null},
-       ${configuration.kind === "PublishHandoff" ? configuration.output : null},
+       ${configuration.kind === "RunFinalizer" && "sourceRepository" in configuration ? configuration.sourceRepository : null},
+       ${configuration.kind === "RunFinalizer" && "sourceCommit" in configuration ? configuration.sourceCommit : null},
+       ${configuration.kind === "PublishHandoff" && "destinationPath" in configuration ? configuration.destinationPath : null},
+       ${configuration.kind === "PublishHandoff" && "output" in configuration ? configuration.output : null},
        ${configuration.kind === "PublishHandoff" ? configuration.requestDigest : null})`,
   );
+  if ("outputs" in configuration) {
+    for (const [ordinal, output] of configuration.outputs.entries()) {
+      await client.query(
+        sql`INSERT INTO finalization_request_output
+          (tenant,project,request,ordinal,path,content)
+          VALUES (${partition.tenant},${partition.project},${request},${ordinal},${output.path},${output.content})`,
+      );
+    }
+  }
 }
 
 /**
@@ -739,6 +868,13 @@ async function decisionApplyJournaled(
     outcome.projection,
     configuration,
   );
+  if (draftRelease?.finalizationInput !== undefined)
+    await decisionFinalizationInput(
+      client,
+      lease.partition,
+      draftRelease.ticket,
+      configuration,
+    );
   if (outcome.dispatchView !== undefined)
     await replaceDispatchView(
       client,

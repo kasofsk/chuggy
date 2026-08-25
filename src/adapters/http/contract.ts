@@ -119,6 +119,9 @@ const publicMutationSchema = z.discriminatedUnion("mutation", [
     ticket: ticketSchema,
     authoringVersion: versionSchema,
     configurationRevision: z.string(),
+    finalizationInput: z
+      .strictObject({ requestedRef: z.string().min(1).max(256) })
+      .optional(),
   }),
   z.strictObject({
     mutation: z.literal("ResolveNativeAction"),
@@ -457,6 +460,9 @@ function publicMutationCommand(mutation: PublicMutation): TicketCommand {
         ticket: asTicketId(mutation.ticket),
         authoringVersion: mutation.authoringVersion,
         configurationRevision: mutation.configurationRevision,
+        ...(mutation.finalizationInput === undefined
+          ? {}
+          : { finalizationInput: mutation.finalizationInput }),
       };
     case "ResolveNativeAction":
       return {

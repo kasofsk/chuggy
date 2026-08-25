@@ -354,13 +354,29 @@ export interface PublishHandoffRequest {
   readonly repository: RepositoryBinding;
   readonly acceptedWorkRepository: RepositoryId;
   readonly acceptedWorkCommit: GitObjectId;
-  readonly destinationPath: string;
-  readonly output: string;
+  readonly outputs: readonly {
+    readonly path: string;
+    readonly content: string;
+  }[];
+  readonly requestDigest: string;
+}
+
+export interface DirectFinalizationRequest {
+  readonly kind: "RunFinalizer";
+  readonly configurationRevision: string;
+  readonly configurationDigest: string;
+  readonly repository: RepositoryBinding;
+  readonly sourceRepository: RepositoryId;
+  readonly sourceCommit: GitObjectId;
+  readonly outputs: readonly {
+    readonly path: string;
+    readonly content: string;
+  }[];
   readonly requestDigest: string;
 }
 
 export type HandoffFinalizationRequest =
-  PromoteForHandoffRequest | PublishHandoffRequest;
+  PromoteForHandoffRequest | PublishHandoffRequest | DirectFinalizationRequest;
 
 /** The immutable target one preparation observed, re-read from the remote and never remembered. */
 export interface ObservedTarget {

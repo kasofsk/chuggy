@@ -787,7 +787,10 @@ async function finalizerPrepare(
   target: ObservedTarget,
   tally: FinalizerTally,
 ): Promise<void> {
-  if (view.handoffRequest?.kind === "PublishHandoff") {
+  if (
+    view.handoffRequest?.kind === "PublishHandoff" ||
+    view.handoffRequest?.kind === "RunFinalizer"
+  ) {
     await finalizerPreparePublication(service, view, target, tally);
     return;
   }
@@ -821,7 +824,10 @@ async function finalizerPreparePublication(
 ): Promise<void> {
   const request = view.handoffRequest;
   const repository = view.repository;
-  if (request?.kind !== "PublishHandoff" || repository === undefined)
+  if (
+    (request?.kind !== "PublishHandoff" && request?.kind !== "RunFinalizer") ||
+    repository === undefined
+  )
     throw new Error("finalizer publication: no pinned publication request");
   const identity = service.identities.next(view.claim.partition);
   const configuration: PinnedConfiguration = {
@@ -840,7 +846,10 @@ async function finalizerPreparePublication(
       {
         configuration,
         manifests: [],
-        acceptedWorkCommit: request.acceptedWorkCommit,
+        acceptedWorkCommit:
+          request.kind === "PublishHandoff"
+            ? request.acceptedWorkCommit
+            : request.sourceCommit,
       },
     ),
     target,
@@ -850,12 +859,10 @@ async function finalizerPreparePublication(
   await finalizerBuild(
     service,
     subject,
-    [
-      {
-        path: request.destinationPath,
-        content: new TextEncoder().encode(request.output),
-      },
-    ],
+    request.outputs.map((output) => ({
+      path: output.path,
+      content: new TextEncoder().encode(output.content),
+    })),
     tally,
   );
 }

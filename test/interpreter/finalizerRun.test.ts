@@ -599,8 +599,12 @@ test("a publication prepares only its pinned request in the handoff repository",
           "ssh://git.internal/unrelated-service",
         ),
         acceptedWorkCommit: asGitObjectId(commitOf("f")),
-        destinationPath: "builds/unrelated/request.json",
-        output: '{"source":"immutable"}',
+        outputs: [
+          {
+            path: "builds/unrelated/request.json",
+            content: '{"source":"immutable"}',
+          },
+        ],
         requestDigest: digestOf("publication"),
       },
       approval: "Pending",
@@ -631,6 +635,52 @@ test("a publication prepares only its pinned request in the handoff repository",
       content: new TextEncoder().encode('{"source":"immutable"}'),
     },
   ]);
+  assert.equal(store.attempts[0]?.configuration.revision, "revision-run");
+});
+
+test("a direct deployment prepares every generated build request in the fabric repository", async () => {
+  const request = "deploy-pinned-source";
+  const handoffRepository: RepositoryBinding = {
+    partition,
+    repository: asRepositoryId("ssh://git.internal/chuggy-fabric"),
+    recoveryEpoch: epoch,
+    targetRef: asGitRefName("refs/heads/main"),
+    credentialReference: "fabric-writer",
+  };
+  const store = recordingStore([
+    {
+      lifecycle: "Active",
+      claim: claimOf(request),
+      repository: handoffRepository,
+      handoffRequest: {
+        kind: "RunFinalizer",
+        configurationRevision: "revision-run",
+        configurationDigest: digestOf("revision-run"),
+        repository: handoffRepository,
+        sourceRepository: asRepositoryId("ssh://git.internal/chuggy"),
+        sourceCommit: asGitObjectId(commitOf("f")),
+        outputs: [
+          { path: "builds/chuggy/api.yaml", content: "api" },
+          { path: "builds/chuggy/web.yaml", content: "web" },
+        ],
+        requestDigest: digestOf("direct-deployment"),
+      },
+      approval: "Pending",
+      attemptsMade: 0,
+    },
+  ]);
+  const git = recordingGit();
+
+  await passOver(serviceOf(store, git));
+
+  assert.deepEqual(
+    git.preparations[0]?.files.map((file) => file.path),
+    ["builds/chuggy/api.yaml", "builds/chuggy/web.yaml"],
+  );
+  assert.equal(
+    git.preparations[0]?.repository.repository,
+    handoffRepository.repository,
+  );
   assert.equal(store.attempts[0]?.configuration.revision, "revision-run");
 });
 

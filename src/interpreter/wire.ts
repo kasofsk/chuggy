@@ -183,7 +183,17 @@ export function parseTicketCommand(text: string): Parsed<TicketCommand> {
       Number.isSafeInteger(record["authoringVersion"]) &&
       record["authoringVersion"] >= 1 &&
       typeof record["configurationRevision"] === "string" &&
-      record["configurationRevision"].length > 0
+      record["configurationRevision"].length > 0 &&
+      (record["finalizationInput"] === undefined ||
+        (typeof record["finalizationInput"] === "object" &&
+          record["finalizationInput"] !== null &&
+          !Array.isArray(record["finalizationInput"]) &&
+          typeof (record["finalizationInput"] as Record<string, unknown>)[
+            "requestedRef"
+          ] === "string" &&
+          ((record["finalizationInput"] as Record<string, string>)[
+            "requestedRef"
+          ]?.length ?? 0) > 0))
     ) {
       return { parsed: "Ok", value: record as TicketCommand };
     }

@@ -149,6 +149,9 @@ export type TicketCommand =
       readonly ticket: TicketId;
       readonly authoringVersion: number;
       readonly configurationRevision: string;
+      readonly finalizationInput?: {
+        readonly requestedRef: string;
+      };
     }
   | {
       readonly version: 1;

@@ -1,6 +1,7 @@
 import type { GitPromotionPort, RepositoryBinding } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
 import { authoredHandoffConfigurationReadiness } from "./handoffConfiguration.ts";
+import { authoredBuildHandoffConfigurationReadiness } from "./buildHandoffConfiguration.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import type {
   ExecutionSourceObservation,
@@ -22,9 +23,18 @@ function executionSourceConfiguredWork(canonical: string | undefined):
     }
   | undefined {
   if (canonical === undefined) return undefined;
-  const readiness = authoredHandoffConfigurationReadiness(
-    JSON.parse(canonical) as unknown,
-  );
+  const parsed = JSON.parse(canonical) as unknown;
+  const build = authoredBuildHandoffConfigurationReadiness(parsed);
+  if (
+    build.readiness === "Ready" &&
+    build.configuration.source.kind === "AcceptedWork"
+  )
+    return {
+      repository: build.configuration.source.git.repository,
+      targetRef: build.configuration.source.git.targetRef,
+      credentialReference: build.configuration.source.git.credentialReference,
+    };
+  const readiness = authoredHandoffConfigurationReadiness(parsed);
   if (readiness.readiness === "Incomplete") return undefined;
   return {
     repository: readiness.configuration.work.repository,
@@ -54,13 +64,15 @@ export function executionSourceObservation(
       const work = executionSourceConfiguredWork(
         request.configurationCanonical,
       );
+      const targetRef = request.ref ?? work?.targetRef;
+      const credentialReference =
+        request.credentialReference ?? work?.credentialReference;
       const repository: RepositoryBinding = {
         ...project,
-        ...(work === undefined ? {} : { repository: work.repository }),
-        ...(work === undefined ? {} : { targetRef: work.targetRef }),
-        ...(work === undefined
-          ? {}
-          : { credentialReference: work.credentialReference }),
+        repository:
+          request.repository ?? work?.repository ?? project.repository,
+        ...(targetRef === undefined ? {} : { targetRef }),
+        ...(credentialReference === undefined ? {} : { credentialReference }),
       };
       const observed = await git.observeTarget(repository);
       return observed.observed === "Target"

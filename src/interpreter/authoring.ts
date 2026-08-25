@@ -32,6 +32,11 @@ import {
   handoffConfigurationField,
   type HandoffConfigurationFault,
 } from "./handoffConfiguration.ts";
+import {
+  authoredBuildHandoffConfigurationReadiness,
+  buildHandoffConfigurationVersion,
+  type BuildHandoffConfigurationFault,
+} from "./buildHandoffConfiguration.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import {
   authoredTaskConfigurationReadiness,
@@ -62,7 +67,8 @@ export type ReleaseConfigurationReadiness =
       readonly fault:
         | "ReleaseShapeInvalid"
         | TaskConfigurationFault
-        | HandoffConfigurationFault;
+        | HandoffConfigurationFault
+        | BuildHandoffConfigurationFault;
     };
 
 function boundedText(value: string, what: string, maximum: number): string {
@@ -128,7 +134,17 @@ export function releaseConfigurationReadiness(
   if (
     (value as Record<string, unknown>)[handoffConfigurationField] !== undefined
   ) {
-    const handoff = authoredHandoffConfigurationReadiness(value);
+    const handoffValue = (value as Record<string, unknown>)[
+      handoffConfigurationField
+    ];
+    const handoff =
+      typeof handoffValue === "object" &&
+      handoffValue !== null &&
+      !Array.isArray(handoffValue) &&
+      (handoffValue as Record<string, unknown>)["version"] ===
+        buildHandoffConfigurationVersion
+        ? authoredBuildHandoffConfigurationReadiness(value)
+        : authoredHandoffConfigurationReadiness(value);
     if (handoff.readiness === "Incomplete") return handoff;
   }
   return {

@@ -44,6 +44,8 @@ import type {
   ExecutionSourceObservation,
   ExecutionSourceObservationPort,
 } from "./executionSource.ts";
+import { authoredBuildHandoffConfigurationReadiness } from "./buildHandoffConfiguration.ts";
+import { asGitObjectId, asGitRefName, asRepositoryId } from "./finalizer.ts";
 import type { ProjectDiscovery, Readiness } from "./projectDiscovery.ts";
 import type {
   Decided,
@@ -394,6 +396,16 @@ async function projectWriterExecutionSource(
   const ticket = rec.transitions[rec.effects.indexOf(spawn)]?.ticket;
   if (ticket === undefined)
     throw new IntegrityContradiction("a spawn effect has no ticket transition");
+  const finalizationInput =
+    item.source.kind === "Operation"
+      ? item.source.draftRelease?.finalizationInput
+      : undefined;
+  if (finalizationInput !== undefined)
+    return {
+      repository: asRepositoryId(finalizationInput.repository),
+      target: { commit: asGitObjectId(finalizationInput.resolvedCommit) },
+      manifests: [],
+    };
   const configurationCanonical = projectWriterSourceConfiguration(
     memory,
     item,
@@ -410,6 +422,77 @@ async function projectWriterExecutionSource(
   return observed.source;
 }
 
+async function projectWriterReleaseInput(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  item: DecisionInput,
+): Promise<DecisionInput | DecisionOutcome> {
+  const release =
+    item.source.kind === "Operation" ? item.source.draftRelease : undefined;
+  if (release === undefined) return item;
+  const readiness = authoredBuildHandoffConfigurationReadiness(
+    JSON.parse(release.configurationCanonical) as unknown,
+  );
+  const supplied =
+    item.source.kind === "Operation" &&
+    item.source.command.command === "ReleaseDraft"
+      ? item.source.command.finalizationInput
+      : undefined;
+  if (readiness.readiness === "Incomplete") return item;
+  if (readiness.configuration.source.kind !== "PinnedSource")
+    return supplied === undefined
+      ? item
+      : { outcome: "Refused", code: "ConfigurationInvalid" };
+  if (supplied === undefined)
+    return { outcome: "Refused", code: "ConfigurationInvalid" };
+  const source = readiness.configuration.source;
+  const observed = await writer.executionSources.observe({
+    partition: memory.lease.partition,
+    ticket: release.ticket,
+    kind: "Work",
+    repository: source.git.repository,
+    ref: asGitRefName(supplied.requestedRef),
+    credentialReference: source.git.credentialReference,
+  });
+  if (observed.observed !== "Source")
+    throw new Error(
+      `project writer: finalization source is ${observed.evidence}`,
+    );
+  if (item.source.kind !== "Operation")
+    throw new IntegrityContradiction("a draft release is not an operation");
+  return {
+    ...item,
+    source: {
+      ...item.source,
+      draftRelease: {
+        ...release,
+        finalizationInput: {
+          repository: source.git.repository,
+          requestedRef: supplied.requestedRef,
+          resolvedCommit: observed.source.target.commit,
+        },
+      },
+    },
+  };
+}
+
+async function projectWriterRefuseReleaseInput(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  item: DecisionInput,
+  outcome: DecisionOutcome,
+): Promise<ProjectDecided> {
+  const decided = await writer.decisions.decide({
+    lease: memory.lease,
+    cause:
+      item.source.kind === "Operation"
+        ? { kind: "Operation", id: item.source.operation }
+        : { kind: "Continuation", id: item.source.continuation },
+    outcome,
+  });
+  return { memory, decided };
+}
+
 /**
  * Decides one named inbox item and installs the result only if it committed.
  * Every other outcome leaves the memory it was given exactly as it was.
@@ -419,18 +502,22 @@ export async function projectWriterDecide(
   memory: ProjectMemory,
   item: DecisionInput,
 ): Promise<ProjectDecided> {
-  const preflight = projectWriterPreflight(writer, memory, item);
+  const resolved = await projectWriterReleaseInput(writer, memory, item);
+  if ("outcome" in resolved)
+    return projectWriterRefuseReleaseInput(writer, memory, item, resolved);
+  const resolvedItem = resolved;
+  const preflight = projectWriterPreflight(writer, memory, resolvedItem);
   const plan =
     "command" in preflight
       ? journaledPlan(
           writer,
           memory,
-          item,
+          resolvedItem,
           preflight.command,
           await projectWriterExecutionSource(
             writer,
             memory,
-            item,
+            resolvedItem,
             preflight.command,
           ),
         )
@@ -438,13 +525,13 @@ export async function projectWriterDecide(
   const decided = await writer.decisions.decide({
     lease: memory.lease,
     cause:
-      item.source.kind === "Operation"
-        ? { kind: "Operation", id: item.source.operation }
-        : { kind: "Continuation", id: item.source.continuation },
+      resolvedItem.source.kind === "Operation"
+        ? { kind: "Operation", id: resolvedItem.source.operation }
+        : { kind: "Continuation", id: resolvedItem.source.continuation },
     outcome: plan.outcome,
-    ...(item.source.kind === "Operation" &&
-    item.source.draftRelease !== undefined
-      ? { draftRelease: item.source.draftRelease }
+    ...(resolvedItem.source.kind === "Operation" &&
+    resolvedItem.source.draftRelease !== undefined
+      ? { draftRelease: resolvedItem.source.draftRelease }
       : {}),
   });
   if (decided.decided !== "Committed") return { memory, decided };
@@ -454,13 +541,16 @@ export async function projectWriterDecide(
     for (const row of plan.outcome.projection)
       ticketVersions.set(row.ticket, plan.outcome.entry.seq);
     if (
-      item.source.kind === "Operation" &&
-      item.source.draftRelease !== undefined
+      resolvedItem.source.kind === "Operation" &&
+      resolvedItem.source.draftRelease !== undefined
     )
-      dispatchContracts.set(item.source.draftRelease.ticket, {
-        configurationRevision: item.source.draftRelease.configurationRevision,
-        configurationDigest: item.source.draftRelease.configurationDigest,
-        configurationCanonical: item.source.draftRelease.configurationCanonical,
+      dispatchContracts.set(resolvedItem.source.draftRelease.ticket, {
+        configurationRevision:
+          resolvedItem.source.draftRelease.configurationRevision,
+        configurationDigest:
+          resolvedItem.source.draftRelease.configurationDigest,
+        configurationCanonical:
+          resolvedItem.source.draftRelease.configurationCanonical,
       });
   }
   return {

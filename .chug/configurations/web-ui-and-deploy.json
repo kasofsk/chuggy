@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "name": "web-ui-and-deploy",
+  "configuration": {
+    "version": 1,
+    "image": "worker:v1",
+    "brief": {
+      "motivation": [
+        "Implement and deploy a Chuggy Web UI change from the accepted ticket commit."
+      ],
+      "acceptanceCriteria": [
+        "The requested Web UI behavior is implemented and covered by focused checks.",
+        "Finalization publishes only the Web UI build request to chuggy-fabric."
+      ],
+      "constraints": [
+        "Follow the repository's checked-in agent instructions and do not deploy or modify chuggy-fabric during work or evaluation."
+      ]
+    },
+    "practices": [
+      "RegressionCoverage",
+      "AcceptanceCriteria"
+    ],
+    "work": {
+      "instructions": [
+        "Implement the requested Web UI change in Chuggy, add focused regression coverage, and run the relevant checks."
+      ]
+    },
+    "review": {
+      "instructions": [
+        "Read .chug/tasks/review-change.md and review the Web UI change exactly as that brief requires."
+      ]
+    },
+    "evaluations": [
+      {
+        "instructions": [
+          "Read .chug/tasks/review-change.md and verify the accepted Chuggy change satisfies the ticket without changing deployment state."
+        ],
+        "practices": [
+          "ChangedCallPaths",
+          "AcceptanceCriteria"
+        ]
+      },
+      {
+        "instructions": [
+          "Run .chug/tasks/ci.sh and pass only when it exits cleanly; exit 2 means the evaluation could not run and is not a pass."
+        ],
+        "practices": [
+          "AcceptanceCriteria"
+        ]
+      }
+    ],
+    "finalizationHandoff": {
+      "version": 2,
+      "source": {
+        "kind": "AcceptedWork",
+        "git": {
+          "repository": "https://github.com/vteng/chuggy.git",
+          "targetRef": "refs/heads/main"
+        },
+        "build": {
+          "repositoryId": "chuggy",
+          "url": "https://github.com/vteng/chuggy.git"
+        }
+      },
+      "destination": {
+        "repository": "https://github.com/gdoteof/chuggy-fabric.git",
+        "targetRef": "refs/heads/main"
+      },
+      "credentials": {
+        "sourceGit": "vteng-chuggy-write",
+        "destinationGit": "chuggy-fabric-write",
+        "buildSource": "vteng-chuggy-build-read",
+        "buildOutput": "chuggy-registry-build-push"
+      },
+      "outputs": [
+        {
+          "name": "web",
+          "contextDirectory": ".",
+          "dockerfile": "images/web/Dockerfile",
+          "targetImageRepository": "registry.chuggy.internal/chuggy/web"
+        }
+      ],
+      "outputBytesMax": 262144
+    }
+  }
+}

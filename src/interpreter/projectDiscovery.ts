@@ -74,6 +74,11 @@ export interface DecisionInput {
           readonly configurationRevision: string;
           readonly configurationDigest: string;
           readonly configurationCanonical: string;
+          readonly finalizationInput?: {
+            readonly repository: string;
+            readonly requestedRef: string;
+            readonly resolvedCommit: string;
+          };
         };
         readonly nativeAction?: NativeActionAnswer;
         readonly finalizationRequest?: {
