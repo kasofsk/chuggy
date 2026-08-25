@@ -33,6 +33,7 @@ import {
 import { postgresHarnessEntry } from "./harness.ts";
 import { postgresHarnessEpoch, postgresHarnessProject } from "./harness.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
+import { asInstallationId } from "../../src/domain/ids.ts";
 
 const retainedImageRequired = [
   { version: 1, name: "the project foundation" },
@@ -132,11 +133,20 @@ async function migrationSeedApplied(
 /** Runs the migration command against one database and returns what it reported. */
 async function migrationCommandRun(
   url: string,
+  adoptingInstallationId?: string,
 ): Promise<{ readonly code: number; readonly report: string }> {
   const run = promisify(execFile)(
     process.execPath,
     ["--experimental-strip-types", "src/roots/migrate.ts"],
-    { cwd: process.cwd(), env: { CHUG_MIGRATE_DATABASE_URL: url } },
+    {
+      cwd: process.cwd(),
+      env: {
+        CHUG_MIGRATE_DATABASE_URL: url,
+        ...(adoptingInstallationId === undefined
+          ? {}
+          : { CHUG_MIGRATE_ADOPT_INSTALLATION_ID: adoptingInstallationId }),
+      },
+    },
   );
   const settled = await run.catch((failure: unknown) => failure);
   const { stdout, stderr, code } = settled as {
@@ -524,6 +534,66 @@ test("an initialized legacy journal cannot silently acquire an authority", async
         )
       ).rows,
       [{ relation: null }],
+    );
+  });
+});
+
+test("an operator can adopt an initialized legacy journal under a named authority", async () => {
+  await migrationDatabase("authority_adopt", async (subject, url) => {
+    await migrationSeedApplied(subject, installationAuthorityMigration.version);
+    await subject.query(
+      "INSERT INTO project (tenant,project,lifecycle) VALUES ('tenant','project','Active')",
+    );
+    const adopted = "b1fc3e12-c1fb-4cc0-89ea-fb4018428cbc";
+    assert.deepEqual(await migrationCommandRun(url, adopted), {
+      code: 0,
+      report: `migrate: applied ${migrations
+        .filter(
+          ({ version }) => version >= installationAuthorityMigration.version,
+        )
+        .map(({ version }) => version)
+        .join(",")}`,
+    });
+    assert.deepEqual(
+      (
+        await subject.query<{ installation_id: string }>(
+          "SELECT installation_id FROM installation_authority",
+        )
+      ).rows,
+      [{ installation_id: adopted }],
+    );
+  });
+});
+
+test("adoption is refused unless installation authority migration is pending", async () => {
+  await migrationDatabase("authority_not_pending", async (subject) => {
+    await postgresMigrate(subject);
+    await assert.rejects(
+      postgresMigrateCompatible(
+        subject,
+        {
+          current: currentRuntimeSchemaContract,
+          retainedPrevious: currentRuntimeSchemaContract,
+        },
+        asInstallationId("f8cf696a-91fa-4db9-97c5-9ef49ae85cdc"),
+      ),
+      /adoption was requested but its migration is not pending/u,
+    );
+  });
+});
+
+test("a fresh journal refuses an adoption identity", async () => {
+  await migrationDatabase("authority_fresh_adopt", async (subject) => {
+    await assert.rejects(
+      postgresMigrateCompatible(
+        subject,
+        {
+          current: currentRuntimeSchemaContract,
+          retainedPrevious: currentRuntimeSchemaContract,
+        },
+        asInstallationId("209989e8-c688-4ba2-9449-f80a87f169c5"),
+      ),
+      /fresh journal generates its installation authority/u,
     );
   });
 });

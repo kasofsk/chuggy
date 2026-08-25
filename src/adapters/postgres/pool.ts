@@ -54,6 +54,7 @@ import {
   type RuntimeDeploymentSchema,
   type RuntimeSchemaMigration,
 } from "../../interpreter/serviceRuntime.ts";
+import type { InstallationId } from "../../domain/ids.ts";
 
 /** How many connections one pool opens, how long a caller waits for one, and how long any one statement may run. */
 export interface PostgresLimits {
@@ -163,6 +164,7 @@ async function postgresMigrateApplied(
 /** Creates the migration ledger and marks this transaction only when no ledger existed before it. */
 async function postgresPrepareMigrationLedger(
   client: pg.PoolClient,
+  adoptingInstallationId?: InstallationId,
 ): Promise<void> {
   await client.query<{ set_config: string | null }>(
     sql`SELECT set_config('chuggy.initializing_journal','off',true)`,
@@ -174,6 +176,10 @@ async function postgresPrepareMigrationLedger(
   if (found.rows[0]?.existed === false)
     await client.query<{ set_config: string | null }>(
       sql`SELECT set_config('chuggy.initializing_journal','on',true)`,
+    );
+  if (adoptingInstallationId !== undefined)
+    await client.query<{ set_config: string | null }>(
+      sql`SELECT set_config('chuggy.adopting_installation_id',${adoptingInstallationId},true)`,
     );
 }
 
@@ -232,17 +238,25 @@ function postgresMigrateCompatibleTarget(
 export async function postgresMigrateCompatible(
   pool: pg.Pool,
   deployment: RuntimeDeploymentSchema,
+  adoptingInstallationId?: InstallationId,
 ): Promise<PostgresCompatibleMigration> {
   try {
     return await postgresTransaction(pool, async (client) => {
       await client.query<{ locked: string | null }>(
         sql`SELECT pg_advisory_xact_lock(${migrationLockKey})::text AS locked`,
       );
-      await postgresPrepareMigrationLedger(client);
+      await postgresPrepareMigrationLedger(client, adoptingInstallationId);
       const applied = await postgresAppliedMigrations(client);
       const target = postgresMigrateCompatibleTarget(deployment);
       const plan = runtimeMigrationPlan(applied, target, deployment);
       if (plan.planned === "Incompatible") throw new IncompatibleMigration();
+      if (
+        adoptingInstallationId !== undefined &&
+        !plan.pending.some(({ version }) => version === 25)
+      )
+        throw new Error(
+          "installation authority adoption was requested but its migration is not pending",
+        );
       const pending = new Set(plan.pending.map(({ version }) => version));
       const versions: number[] = [];
       for (const migration of migrations) {

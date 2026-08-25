@@ -46,12 +46,14 @@ import {
 } from "../adapters/postgres/pool.ts";
 import { currentRuntimeSchemaContract } from "../adapters/postgres/runtimeSchema.ts";
 import type { RuntimeDeploymentSchema } from "../interpreter/serviceRuntime.ts";
+import { asInstallationId, type InstallationId } from "../domain/ids.ts";
 
 /** An environment as this command takes it: names to values, and never a global. */
 export type MigrateEnvironment = Readonly<Record<string, string | undefined>>;
 
 const databaseUrlVariable = "CHUG_MIGRATE_DATABASE_URL";
 const statementTimeoutVariable = "CHUG_MIGRATE_STATEMENT_TIMEOUT_MS";
+const adoptingInstallationIdVariable = "CHUG_MIGRATE_ADOPT_INSTALLATION_ID";
 
 /**
  * How long one migration statement may run before the server ends it. A schema
@@ -71,6 +73,7 @@ export interface MigrateSettings {
   readonly databaseUrl: string;
   readonly limits: PostgresLimits;
   readonly deployment: RuntimeDeploymentSchema;
+  readonly adoptingInstallationId?: InstallationId;
 }
 
 /** The one value a deployment may not leave to a default. */
@@ -107,6 +110,7 @@ function migrateSettingsBoundOr(
 export function migrateSettingsOf(
   environment: MigrateEnvironment,
 ): MigrateSettings {
+  const adoptingInstallationId = environment[adoptingInstallationIdVariable];
   return {
     databaseUrl: migrateSettingsRequired(environment, databaseUrlVariable),
     limits: {
@@ -122,6 +126,10 @@ export function migrateSettingsOf(
       current: currentRuntimeSchemaContract,
       retainedPrevious: currentRuntimeSchemaContract,
     },
+    ...(adoptingInstallationId === undefined ||
+    adoptingInstallationId.length === 0
+      ? {}
+      : { adoptingInstallationId: asInstallationId(adoptingInstallationId) }),
   };
 }
 
@@ -142,7 +150,11 @@ export async function migrateRun(
       );
     });
     proved.release();
-    return await postgresMigrateCompatible(pool, settings.deployment);
+    return await postgresMigrateCompatible(
+      pool,
+      settings.deployment,
+      settings.adoptingInstallationId,
+    );
   } finally {
     await pool.end();
   }
