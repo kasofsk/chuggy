@@ -133,6 +133,13 @@ function authoringControls(controller, state) {
     controller.edit({ ...state.authoring, [field]: value });
   const choices = state.initialization.choices;
   return [
+    briefingLines(controller, state, "Motivation", "motivation"),
+    briefingLines(
+      controller,
+      state,
+      "Acceptance criteria",
+      "acceptanceCriteria",
+    ),
     choiceSet(
       "Dependencies",
       state.initialization.dependencyCandidates,
@@ -171,6 +178,26 @@ function authoringControls(controller, state) {
       (value) => edit("finalizer", value),
     ),
   ];
+}
+
+/** @param {any} controller @param {Extract<import("../app/ticketCreation.js").TicketCreationState, {step: "Editing"}>} state @param {string} label @param {"motivation" | "acceptanceCriteria"} field */
+function briefingLines(controller, state, label, field) {
+  const input = element("textarea", { rows: "4" }, [
+    state.brief[field].join("\n"),
+  ]);
+  input.addEventListener("input", () =>
+    controller.edit(state.authoring, {
+      ...state.brief,
+      [field]: input.value
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+    }),
+  );
+  return element("label", { class: "field" }, [
+    element("span", { class: "eyebrow" }, [label]),
+    input,
+  ]);
 }
 
 /** @param {any} controller @param {Extract<import("../app/ticketCreation.js").TicketCreationState, {step: "Editing"}>} state */
@@ -264,15 +291,18 @@ export function ticketCreationPage(controller) {
   }
   if (
     state.step === "Initializing" ||
+    state.step === "CreatingConfiguration" ||
     state.step === "Creating" ||
     state.step === "Releasing"
   )
     return element("p", { "aria-live": "polite" }, [
       state.step === "Initializing"
         ? "Loading ticket defaults…"
-        : state.step === "Creating"
-          ? "Creating draft…"
-          : "Releasing ticket…",
+        : state.step === "CreatingConfiguration"
+          ? "Saving ticket briefing…"
+          : state.step === "Creating"
+            ? "Creating draft…"
+            : "Releasing ticket…",
     ]);
   if (state.step === "InitializationFailed")
     return element("p", { role: "alert", class: "note", "data-tone": "halt" }, [

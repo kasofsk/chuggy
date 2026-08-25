@@ -207,6 +207,16 @@ export function configurationRequest(accessToken, partition, revision) {
   );
 }
 
+/** @param {string} accessToken @param {Partition} partition @param {{ revision: string, parent: string, canonical: string }} creation */
+export function configurationCreationRequest(accessToken, partition, creation) {
+  return jsonRequest(
+    "POST",
+    accessToken,
+    `${partitionPath(partition)}/configurations`,
+    creation,
+  );
+}
+
 /** @param {string} accessToken @param {Partition} partition @param {string} revision */
 export function draftInitializationRequest(accessToken, partition, revision) {
   return readRequest(

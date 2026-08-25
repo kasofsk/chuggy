@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ticketCreationConfigurationSubmitted,
   ticketCreationCreated,
   ticketCreationEdited,
   ticketCreationInitialized,
@@ -28,7 +29,8 @@ const initialization = parseDraftInitialization({
     partition,
     revision: "revision-1",
     parent: undefined,
-    canonical: '{"image":"worker:v1"}',
+    canonical:
+      '{"brief":{"acceptanceCriteria":["It works."],"constraints":[],"motivation":["It matters."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
     digest: "digest-1",
   },
   fence: { projectSequence: 19, configurationDigest: "digest-1" },
@@ -64,6 +66,48 @@ test("selection reads initialization and adopts every server default", () => {
   });
   assert.equal(state.step, "Editing");
   if (state.step === "Editing") assert.deepEqual(state.authoring, defaults);
+  if (state.step === "Editing")
+    assert.deepEqual(state.brief, {
+      motivation: ["It matters."],
+      acceptanceCriteria: ["It works."],
+    });
+});
+
+test("ticket briefing is saved as an immutable child configuration", () => {
+  const state = ticketCreationInitialized("revision-1", {
+    outcome: "Ok",
+    body: initialization,
+  });
+  assert.equal(state.step, "Editing");
+  if (state.step !== "Editing") return;
+  const submitted = ticketCreationConfigurationSubmitted(
+    {
+      ...state,
+      brief: {
+        motivation: ["Fix the bug."],
+        acceptanceCriteria: ["The regression passes."],
+      },
+    },
+    "token",
+    partition,
+    "ticket-7",
+  );
+  assert.ok(submitted.request);
+  const body = JSON.parse(submitted.request?.body ?? "") as {
+    revision: string;
+    parent: string;
+    canonical: string;
+  };
+  assert.equal(body.revision, "ticket-7");
+  assert.equal(body.parent, "revision-1");
+  const canonical = JSON.parse(body.canonical) as {
+    brief: Record<string, unknown>;
+  };
+  assert.deepEqual(canonical.brief, {
+    acceptanceCriteria: ["The regression passes."],
+    constraints: [],
+    motivation: ["Fix the bug."],
+  });
 });
 
 test("every authoring field can change within returned choices and creation keeps the fence", () => {

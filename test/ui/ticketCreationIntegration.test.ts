@@ -19,17 +19,39 @@ test("controller initializes, creates, emits release, and navigates only after s
     send: (request) => {
       requests.push(`${request.method} ${request.url}`);
       return Promise.resolve(
-        request.method === "GET"
-          ? { outcome: "Ok" as const, body: ticketCreationInitialization }
-          : {
+        request.url.endsWith("/configurations")
+          ? {
               outcome: "Ok" as const,
-              body: ticketCreationDraft(),
-            },
+              body: {
+                ...ticketCreationInitialization.configuration,
+                revision: "ticket-test",
+                parent: "ready",
+              },
+            }
+          : request.method === "GET"
+            ? {
+                outcome: "Ok" as const,
+                body: request.url.endsWith("/ticket-test")
+                  ? {
+                      ...ticketCreationInitialization,
+                      configuration: {
+                        ...ticketCreationInitialization.configuration,
+                        revision: "ticket-test",
+                        parent: "ready",
+                      },
+                    }
+                  : ticketCreationInitialization,
+              }
+            : {
+                outcome: "Ok" as const,
+                body: ticketCreationDraft("ticket-test"),
+              },
       );
     },
     onChanged: () => undefined,
     onRelease: (event) => releases.push(event),
     onNavigate: (ticket) => navigations.push(ticket),
+    revision: () => "ticket-test",
   });
   controller.selectProject(ticketCreationPartition, [
     { revision: "ready", readiness: "Ready" },
@@ -43,13 +65,15 @@ test("controller initializes, creates, emits release, and navigates only after s
       event: "ReleaseDraft",
       ticket: 8,
       authoringVersion: 1,
-      configurationRevision: "ready",
+      configurationRevision: "ticket-test",
     },
   ]);
   controller.releaseAnswered({ result: "Succeeded" });
   assert.deepEqual(navigations, [8]);
   assert.deepEqual(requests, [
     "GET /api/v1/tenants/acme/projects/atlas/draft-initializations/ready",
+    "POST /api/v1/tenants/acme/projects/atlas/configurations",
+    "GET /api/v1/tenants/acme/projects/atlas/draft-initializations/ticket-test",
     "POST /api/v1/tenants/acme/projects/atlas/drafts",
   ]);
 });

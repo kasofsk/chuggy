@@ -31,12 +31,30 @@ function shellSend(requests: string[]) {
     if (request.url.includes("draft-initializations"))
       return Promise.resolve({
         outcome: "Ok" as const,
-        body: ticketCreationInitialization,
+        body: request.url.endsWith("/ticket-test")
+          ? {
+              ...ticketCreationInitialization,
+              configuration: {
+                ...ticketCreationInitialization.configuration,
+                revision: "ticket-test",
+                parent: "ready",
+              },
+            }
+          : ticketCreationInitialization,
+      });
+    if (request.url.endsWith("/configurations"))
+      return Promise.resolve({
+        outcome: "Ok" as const,
+        body: {
+          ...ticketCreationInitialization.configuration,
+          revision: "ticket-test",
+          parent: "ready",
+        },
       });
     if (request.url.endsWith("/drafts"))
       return Promise.resolve({
         outcome: "Ok" as const,
-        body: ticketCreationDraft(),
+        body: ticketCreationDraft("ticket-test"),
       });
     return Promise.resolve({
       outcome: "Accepted" as const,
@@ -86,6 +104,7 @@ test("the shell follows draft release before navigating to ticket detail", async
     onNavigate: (ticket) => {
       resolveNavigation(ticket);
     },
+    revision: () => "ticket-test",
   });
   creation.selectProject(ticketCreationPartition, [
     { revision: "ready", readiness: "Ready" },

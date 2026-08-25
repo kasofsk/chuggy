@@ -6,6 +6,7 @@
 
 import { readResult, unavailableReason } from "./outcomes.js";
 import {
+  configurationCreationRequest,
   draftCreationRequest,
   draftInitializationRequest,
 } from "./protocol.js";
@@ -13,6 +14,51 @@ import { parseDraft, parseDraftInitialization } from "./resources.js";
 
 /** @typedef {ReturnType<typeof parseDraftInitialization>} Initialization */
 /** @typedef {Initialization["defaults"]} Authoring */
+/** @typedef {{ motivation: readonly string[], acceptanceCriteria: readonly string[] }} TicketBrief */
+
+/** @param {unknown} value @param {string} what */
+function record(value, what) {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new TypeError(`${what} is not an object`);
+  return /** @type {Record<string, unknown>} */ (value);
+}
+
+/** @param {unknown} value @param {string} what */
+function lines(value, what) {
+  if (!Array.isArray(value) || !value.every((line) => typeof line === "string"))
+    throw new TypeError(`${what} is not a list of text`);
+  return /** @type {string[]} */ (value);
+}
+
+/** @param {Initialization} initialization @returns {TicketBrief} */
+function ticketBrief(initialization) {
+  const configuration = record(
+    /** @type {unknown} */ (JSON.parse(initialization.configuration.canonical)),
+    "configuration",
+  );
+  const brief = record(configuration["brief"], "ticket brief");
+  return {
+    motivation: lines(brief["motivation"], "ticket motivation"),
+    acceptanceCriteria: lines(
+      brief["acceptanceCriteria"],
+      "ticket acceptance criteria",
+    ),
+  };
+}
+
+/** @param {TicketBrief} brief */
+function briefAllowed(brief) {
+  const lines = [...brief.motivation, ...brief.acceptanceCriteria];
+  return (
+    lines.length > 0 &&
+    brief.motivation.length <= 8 &&
+    brief.acceptanceCriteria.length <= 8 &&
+    lines.every(
+      (line) =>
+        typeof line === "string" && line.length > 0 && line.length <= 512,
+    )
+  );
+}
 
 /** @param {readonly unknown[]} values @param {unknown} value */
 function includesValue(values, value) {
@@ -43,13 +89,23 @@ function authoringAllowed(initialization, authoring) {
 }
 
 /** @param {Initialization} initialization @param {Authoring} authoring */
-function edited(initialization, authoring) {
-  return authoringAllowed(initialization, authoring)
-    ? { step: /** @type {const} */ ("Editing"), initialization, authoring }
+function edited(
+  initialization,
+  authoring,
+  brief = ticketBrief(initialization),
+) {
+  return authoringAllowed(initialization, authoring) && briefAllowed(brief)
+    ? {
+        step: /** @type {const} */ ("Editing"),
+        initialization,
+        authoring,
+        brief,
+      }
     : {
         step: /** @type {const} */ ("Editing"),
         initialization,
         authoring: initialization.defaults,
+        brief: ticketBrief(initialization),
         issue: "The selected value is no longer offered by the server.",
       };
 }
@@ -96,9 +152,53 @@ export function ticketCreationInitialized(revision, outcome) {
   };
 }
 
-/** @param {Initialization} initialization @param {Authoring} authoring */
-export function ticketCreationEdited(initialization, authoring) {
-  return edited(initialization, authoring);
+/** @param {Initialization} initialization @param {Authoring} authoring @param {TicketBrief} [brief] */
+export function ticketCreationEdited(initialization, authoring, brief) {
+  return edited(initialization, authoring, brief);
+}
+
+/** @param {Extract<TicketCreationState, { step: "Editing" }>} state @param {string} accessToken @param {import("./protocol.js").Partition} partition @param {string} revision */
+export function ticketCreationConfigurationSubmitted(
+  state,
+  accessToken,
+  partition,
+  revision,
+) {
+  if (!briefAllowed(state.brief))
+    return {
+      state: {
+        ...state,
+        issue: "Enter a motivation or acceptance criterion.",
+      },
+    };
+  const source = record(
+    /** @type {unknown} */ (
+      JSON.parse(state.initialization.configuration.canonical)
+    ),
+    "configuration",
+  );
+  const sourceBrief = record(source["brief"], "ticket brief");
+  const canonical = JSON.stringify({
+    ...source,
+    brief: {
+      acceptanceCriteria: state.brief.acceptanceCriteria,
+      constraints: lines(sourceBrief["constraints"], "ticket constraints"),
+      motivation: state.brief.motivation,
+    },
+  });
+  return {
+    state: {
+      step: /** @type {const} */ ("CreatingConfiguration"),
+      initialization: state.initialization,
+      authoring: state.authoring,
+      brief: state.brief,
+    },
+    request: configurationCreationRequest(accessToken, partition, {
+      revision,
+      parent: state.initialization.configuration.revision,
+      canonical,
+    }),
+  };
 }
 
 /**
@@ -140,9 +240,7 @@ export function ticketCreationCreated(initialization, authoring, outcome) {
     }
   }
   return {
-    step: /** @type {const} */ ("Editing"),
-    initialization,
-    authoring,
+    ...edited(initialization, authoring),
     issue: creationFailure(outcome),
   };
 }
@@ -161,7 +259,8 @@ export function ticketCreationReleaseEvent(draft) {
  * @typedef {{ step: "Choosing" }
  * | { step: "Initializing", revision: string }
  * | { step: "InitializationFailed", revision: string, reason: string }
- * | { step: "Editing", initialization: Initialization, authoring: Authoring, issue?: string }
+ * | { step: "Editing", initialization: Initialization, authoring: Authoring, brief: TicketBrief, issue?: string }
+ * | { step: "CreatingConfiguration", initialization: Initialization, authoring: Authoring, brief: TicketBrief }
  * | { step: "Creating", initialization: Initialization, authoring: Authoring }
  * | { step: "DraftCreated", draft: ReturnType<typeof parseDraft> }
  * | { step: "Releasing", draft: ReturnType<typeof parseDraft> }
