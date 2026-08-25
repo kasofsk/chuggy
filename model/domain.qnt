@@ -315,11 +315,14 @@ module chuggy_domain {
 
   // --- Pure guard predicates ------
 
-  /// Every phase but the two absorbing terminals may be revoked.
+  /// Revocation stops before finalization and cannot rewrite a terminal outcome.
   pure def revocableIn(c: Core, j: int): bool =
     c.tickets.get(j).phase != Done and
+      c.tickets.get(j).phase != Abandoned and
       c.tickets.get(j).phase != Revoked and
-      c.tickets.get(j).phase != Finalizing
+      c.tickets.get(j).phase != Finalizing and
+      c.tickets.get(j).phase != PublishingHandoff and
+      c.tickets.get(j).phase != HandoffBlocked
 
   /// What one operator resume costs by flavor. One decider —
   /// decideResumeTicket — carries every resume and this table prices it:
@@ -336,8 +339,8 @@ module chuggy_domain {
       | _ => match ticket.resumePricing { | RetryCharged => 1 | RetryFree => 0 }
     }
 
-  /// May the operator Retry this parked ticket? Parked is Escalated (the
-  /// only desk phase now); a resume must EXIST (resumeAt != NoResume) and be
+  /// May the operator retry this ticket's open human action? A resume must
+  /// EXIST (resumeAt != NoResume) and be
   /// AFFORDABLE (a charging resume needs gas). The one wall with no
   /// modeled resume is dependency_revoked (resumeAt NoResume) — a DELIBERATE
   /// RESTRICTION: deps are immutable in this model (no re-authoring
@@ -347,7 +350,7 @@ module chuggy_domain {
   /// only modeled exit is revoke; dep re-authoring is future work (README,
   /// deliberately-absent table).
   pure def retryableIn(c: Core, j: int): bool = and {
-    c.tickets.get(j).phase == Escalated,
+    c.tickets.get(j).phase == Escalated or c.tickets.get(j).phase == HandoffBlocked,
     c.tickets.get(j).resumeAt != NoResume,
     resumeCharge(c.tickets.get(j), c.tickets.get(j).resumeAt) <= c.tickets.get(j).gasLeft
   }
@@ -625,7 +628,17 @@ module chuggy_domain {
   /// preparation, approval, permits and reconciliation are focused durable
   /// operational records; Core does not learn a finalizer implementation.
   pure def finalizationOutcomes: Set[FinalizationOutcome] =
-    Set(FinalizationSucceeded, FinalizationFailed)
+    Set(FinalizationSucceeded, FinalizationFailed, PromotionAccepted,
+      HandoffPublicationUnproven)
+
+  pure def finalizationOutcomeEnabled(c: Core, j: int, out: FinalizationOutcome): bool =
+    match out {
+      | FinalizationSucceeded =>
+        Set(Finalizing, PublishingHandoff).contains(c.tickets.get(j).phase)
+      | FinalizationFailed => c.tickets.get(j).phase == Finalizing
+      | PromotionAccepted => c.tickets.get(j).phase == Finalizing
+      | HandoffPublicationUnproven => c.tickets.get(j).phase == PublishingHandoff
+    }
 
   pure def finalizerFailure(c: Core, j: int, label: str): Decision =
     val jb = c.tickets.get(j)
@@ -660,6 +673,15 @@ module chuggy_domain {
         { ...c.tickets.get(j), phase: Done,
           completions: c.tickets.get(j).completions + 1 }) }
 
+  pure def completeHandoffTicket(c: Core, j: int): Decision =
+    { rec: {
+        label: "ticket-done handoff_succeeded",
+        transitions: [{ ticket: j, from: c.tickets.get(j).phase, to: Done }],
+        effects: []},
+      post: withTicket(c, j,
+        { ...c.tickets.get(j), phase: Done,
+          completions: c.tickets.get(j).completions + 1 }) }
+
   /// A conclusive result resolves only from Finalizing. A success is
   /// the ticket's single completion
   /// (completeTicket: ghost `completions` counts it, one per ticket). A
@@ -668,9 +690,22 @@ module chuggy_domain {
   /// reports one abstract, conclusive verdict.
   pure def decideFinalizationResult(c: Core, j: int, out: FinalizationOutcome): Decision =
     match out {
-      | FinalizationSucceeded => completeTicket(c, j)
+      | FinalizationSucceeded =>
+        if (c.tickets.get(j).phase == PublishingHandoff)
+          completeHandoffTicket(c, j)
+        else completeTicket(c, j)
       | FinalizationFailed => finalizerFailure(c, j, "rework-started finalization_failed")
+      | PromotionAccepted =>
+        move(c, j, PublishingHandoff, "promotion-accepted", ["PublishHandoff"])
+      | HandoffPublicationUnproven =>
+        move(withTicket(c, j, { ...c.tickets.get(j),
+          resumeAt: ResumePublishingHandoff }),
+          j, HandoffBlocked, "handoff-blocked", ["OpenHumanTask"])
     }
+
+  pure def decideAbandonHandoff(c: Core, j: int): Decision =
+    move(withTicket(c, j, { ...c.tickets.get(j), resumeAt: NoResume }),
+      j, Abandoned, "handoff-abandoned", [])
 
   /// Infrastructure cannot execute the current logical task set. Retire its
   /// outstanding tasks as Cancelled, preserve the source phase as the resume
@@ -710,6 +745,9 @@ module chuggy_domain {
           j, Evaluating, "ticket-resumed", ["SpawnEvalTasks"])
       | ResumeFinalizing =>
         move(withTicket(c, j, resumed), j, Finalizing, "ticket-resumed", ["RunFinalizer"])
+      | ResumePublishingHandoff =>
+        move(withTicket(c, j, resumed), j, PublishingHandoff,
+          "ticket-resumed", ["PublishHandoff"])
       | NoResume =>
         // Unreachable: retryableIn refuses a ticket with no modeled resume
         // (the dependency_revoked wall — its only exit is revoke).
@@ -813,7 +851,8 @@ module chuggy_domain {
   val taskPhaseTickets: Set[int] = taskPhaseIn(core)
   val reducibleWork: Set[int] = reducibleWorkIn(core)
   val reducibleEval: Set[int] = reducibleEvalIn(core)
-  val finalizerTickets: Set[int] = liveTickets.filter(j => tickets.get(j).phase == Finalizing)
+  val finalizerTickets: Set[int] = liveTickets.filter(j =>
+    Set(Finalizing, PublishingHandoff).contains(tickets.get(j).phase))
   val doneTickets: Set[int] = doneIn(core)
   /// Parked tickets the operator may Retry (retryableIn: a modeled resume
   /// exists and is affordable). Under RetryCharged a charging resume with
@@ -831,7 +870,7 @@ module chuggy_domain {
   /// runs never deadlock.
   val quiet: bool = and {
     releasableIds.size() == 0,
-    liveTickets.forall(j => tickets.get(j).phase == Done or tickets.get(j).phase == Revoked)
+    liveTickets.forall(j => Set(Done, Abandoned, Revoked).contains(tickets.get(j).phase))
   }
 
   // --- init -----------------------------------------------------------------
@@ -969,10 +1008,19 @@ module chuggy_domain {
   /// The external finalizer returns one conclusive domain result. Queueing,
   /// approval, permits and implementation are durable operational state.
   action finalizationResult = all {
-    liveTickets.exists(k => tickets.get(k).phase == Finalizing),
-    nondet j = liveTickets.filter(k => tickets.get(k).phase == Finalizing).oneOf()
+    finalizerTickets.size() > 0,
+    nondet j = finalizerTickets.oneOf()
     nondet out = finalizationOutcomes.oneOf()
-    apply(decideFinalizationResult(core, j, out))
+    all {
+      finalizationOutcomeEnabled(core, j, out),
+      apply(decideFinalizationResult(core, j, out))
+    }
+  }
+
+  action abandonHandoff = all {
+    liveTickets.exists(k => tickets.get(k).phase == HandoffBlocked),
+    nondet j = liveTickets.filter(k => tickets.get(k).phase == HandoffBlocked).oneOf()
+    apply(decideAbandonHandoff(core, j))
   }
 
   action executionBlocked = all {
@@ -1009,6 +1057,7 @@ module chuggy_domain {
     workReduce,
     evalReduce,
     finalizationResult,
+    abandonHandoff,
     executionBlocked,
     resumeTicket,
     settle
@@ -1043,7 +1092,7 @@ module chuggy_domain {
   /// REVOKED NEVER COMPLETES: a revoked ticket
   /// has emitted no completion effect — and never will: Revoked is absorbing
   /// (terminalsAbsorbing), no decider touches a revoked
-  /// ticket's `completions`. Finalizing is deliberately not revocable. Stated as its own named
+  /// ticket's `completions`. Post-evaluation phases are deliberately not revocable. Stated as its own named
   /// invariant because it is the model's exclusivity half, though
   /// state-wise it is a corollary of completionExclusive (completions = 1 iff
   /// Done, completions <= 1, Revoked != Done ⇒ completions = 0) — same
@@ -1054,7 +1103,8 @@ module chuggy_domain {
   /// A NoFinalizer ticket never enters Finalizing.
   val noFinalizationWithoutAKind: bool = liveTickets.forall(j =>
     (tickets.get(j).finalizer == NoFinalizer) implies and {
-      tickets.get(j).phase != Finalizing
+      not(Set(Finalizing, PublishingHandoff, HandoffBlocked).contains(
+        tickets.get(j).phase))
     })
 
   /// A COMPLETED TICKET PRODUCED SOMETHING (design 002). Deliberately the
@@ -1071,12 +1121,11 @@ module chuggy_domain {
   val finalizerWellFormed: bool = liveTickets.forall(j =>
     finalizerChoices.contains(tickets.get(j).finalizer))
 
-  /// The two absorbing terminals never transition OUT. Checked against the
-  /// observed step record: no transition ever leaves Done or Revoked.
+  /// The absorbing terminals never transition OUT.
   /// Both carry it here, because Revoked is reachable.
   val terminalsAbsorbing: bool =
     lastStep.transitions.foldl(true, (b, t) =>
-      b and t.from != Done and t.from != Revoked)
+      b and t.from != Done and t.from != Abandoned and t.from != Revoked)
 
   /// The human desk is consistent. The reason-iff-parked half is a named
   /// wall iff parked — and parked just IS Escalated. The resumeAt half is
@@ -1091,8 +1140,9 @@ module chuggy_domain {
   val deskConsistent: bool = liveTickets.forall(j => and {
     (tickets.get(j).phase == Escalated) iff (tickets.get(j).reason != NoReason),
     (tickets.get(j).resumeAt != NoResume) iff
-      (tickets.get(j).phase == Escalated and
-       tickets.get(j).reason != DependencyRevoked)
+      ((tickets.get(j).phase == Escalated and
+        tickets.get(j).reason != DependencyRevoked) or
+       tickets.get(j).phase == HandoffBlocked)
   })
 
   /// The gate-budget wall exists only under Budgeted pricing (the wall
@@ -1426,7 +1476,7 @@ module chuggy_domain {
         lastStep.transitions.foldl(false, (isFree, t) => or {
           isFree,
           and {
-            Set(Evaluating, Finalizing).contains(t.to),
+            Set(Evaluating, Finalizing, PublishingHandoff).contains(t.to),
             tickets.get(t.ticket).resumePricing == RetryFree
           }
         })
@@ -1469,7 +1519,7 @@ module chuggy_domain {
       lastStep.label == "ticket-resumed",
       lastStep.transitions.foldl(false, (b, t) =>
         b or and {
-          Set(Evaluating, Finalizing).contains(t.to),
+          Set(Evaluating, Finalizing, PublishingHandoff).contains(t.to),
           tickets.get(t.ticket).resumePricing == RetryFree
         }),
       currentMeasure > prevMeasure

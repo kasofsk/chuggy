@@ -23,6 +23,7 @@
 import type { Config } from "../domain/config.ts";
 import { ticketAt, type Decision } from "../domain/core.ts";
 import {
+  decideAbandonHandoff,
   decideDispatch,
   decideEvalStageReduce,
   decideExecutionBlocked,
@@ -39,6 +40,7 @@ import {
   doneIn,
   executionBlockedReasons,
   finalizableIn,
+  finalizationOutcomeEnabled,
   finalizationOutcomes,
   outstandingTaskIn,
   readiesIn,
@@ -144,6 +146,10 @@ export function resumeTicketEvent(ticket: TicketId): DecisionEvent {
   return { type: "ResumeTicket", value: ticket };
 }
 
+export function abandonHandoffEvent(ticket: TicketId): DecisionEvent {
+  return { type: "AbandonHandoff", value: ticket };
+}
+
 /** Total dispatch onto the pure deciders — THE actor's decide step, and nothing else's. */
 export function execDecisionEvent(
   config: Config,
@@ -184,6 +190,8 @@ export function execDecisionEvent(
         asTicketId(event.value.ticket),
         event.value.out,
       );
+    case "AbandonHandoff":
+      return decideAbandonHandoff(core, asTicketId(event.value));
     case "ExecutionBlocked":
       return decideExecutionBlocked(
         core,
@@ -236,9 +244,12 @@ export function decisionEventEnabled(
       const id = asTicketId(event.value.ticket);
       return (
         finalizableIn(core, id) &&
-        finalizationOutcomes.includes(event.value.out)
+        finalizationOutcomes.includes(event.value.out) &&
+        finalizationOutcomeEnabled(core, id, event.value.out)
       );
     }
+    case "AbandonHandoff":
+      return ticketAt(core, asTicketId(event.value)).phase === "HandoffBlocked";
     case "ExecutionBlocked": {
       const id = asTicketId(event.value.ticket);
       return (
@@ -264,6 +275,7 @@ export function decisionEventSubject(event: DecisionEvent): TicketId {
     case "WorkReduce":
     case "EvalReduce":
     case "ResumeTicket":
+    case "AbandonHandoff":
       return asTicketId(event.value);
   }
 }

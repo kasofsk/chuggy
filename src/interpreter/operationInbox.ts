@@ -223,7 +223,9 @@ export function classifyCommand(command: TicketCommand): {
   )
     return { admission: "Ordinary", priority: "Ordinary" };
   if (command.command === "ResolveNativeAction") {
-    const reducing = command.resolution === safetyResolution;
+    const reducing =
+      command.resolution === safetyResolution ||
+      command.resolution === "AbandonHandoff";
     return {
       admission: reducing ? "CorrectnessReducing" : "Ordinary",
       priority: reducing ? "Safety" : "Ordinary",

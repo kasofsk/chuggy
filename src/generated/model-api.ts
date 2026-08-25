@@ -212,7 +212,10 @@ export const phaseSchema: z.ZodType<Phase> = z.union([
   z.literal("Working"),
   z.literal("Evaluating"),
   z.literal("Finalizing"),
+  z.literal("PublishingHandoff"),
+  z.literal("HandoffBlocked"),
   z.literal("Done"),
+  z.literal("Abandoned"),
   z.literal("Escalated"),
   z.literal("Revoked"),
 ]);
@@ -221,7 +224,10 @@ const phaseSchemaWire: z.ZodType<Phase> = z.union([
   z.literal("Working"),
   z.literal("Evaluating"),
   z.literal("Finalizing"),
+  z.literal("PublishingHandoff"),
+  z.literal("HandoffBlocked"),
   z.literal("Done"),
+  z.literal("Abandoned"),
   z.literal("Escalated"),
   z.literal("Revoked"),
 ]);
@@ -265,12 +271,14 @@ export const resumeSchema: z.ZodType<Resume> = z.union([
   z.literal("ResumeWorking"),
   z.literal("ResumeEvaluating"),
   z.literal("ResumeFinalizing"),
+  z.literal("ResumePublishingHandoff"),
 ]);
 const resumeSchemaWire: z.ZodType<Resume> = z.union([
   z.literal("NoResume"),
   z.literal("ResumeWorking"),
   z.literal("ResumeEvaluating"),
   z.literal("ResumeFinalizing"),
+  z.literal("ResumePublishingHandoff"),
 ]);
 export function encodeResume(value: Resume): ModelJson {
   return encodeJson(value);
@@ -316,10 +324,14 @@ export const finalizationOutcomeSchema: z.ZodType<FinalizationOutcome> =
   z.union([
     z.literal("FinalizationSucceeded"),
     z.literal("FinalizationFailed"),
+    z.literal("PromotionAccepted"),
+    z.literal("HandoffPublicationUnproven"),
   ]);
 const finalizationOutcomeSchemaWire: z.ZodType<FinalizationOutcome> = z.union([
   z.literal("FinalizationSucceeded"),
   z.literal("FinalizationFailed"),
+  z.literal("PromotionAccepted"),
+  z.literal("HandoffPublicationUnproven"),
 ]);
 export function encodeFinalizationOutcome(
   value: FinalizationOutcome,
@@ -566,6 +578,12 @@ export const decisionEventSchema: z.ZodType<DecisionEvent> = z.union([
     .readonly(),
   z
     .object({
+      type: z.literal("AbandonHandoff"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
       type: z.literal("ExecutionBlocked"),
       value: z
         .object({ ticket: z.number().int().safe(), reason: reasonSchema })
@@ -631,6 +649,12 @@ const decisionEventSchemaWire: z.ZodType<DecisionEvent> = z.union([
           out: finalizationOutcomeSchemaWire,
         })
         .readonly(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("AbandonHandoff"),
+      value: z.number().int().safe(),
     })
     .readonly(),
   z

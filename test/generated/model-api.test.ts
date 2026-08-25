@@ -106,7 +106,10 @@ test("generated constructor roster is the exhaustive model phase vocabulary", ()
     "Working",
     "Evaluating",
     "Finalizing",
+    "PublishingHandoff",
+    "HandoffBlocked",
     "Done",
+    "Abandoned",
     "Escalated",
     "Revoked",
   ]);

@@ -27,7 +27,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"ticket-escalated execution_blocked\"",
-      "steps": 13,
+      "steps": 7,
       "quintVersion": "0.32.0",
       "purpose": "Infrastructure refuses to run an intact contract. It is not failed work: the set retires as cancelled, no rework or finalization budget is spent, and the wall names its own reason."
     },
@@ -41,7 +41,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"eval-stage-passed\"",
-      "steps": 14,
+      "steps": 10,
       "quintVersion": "0.32.0",
       "purpose": "The stage advance, which stepDescends deliberately does not exempt: it must descend like any other progress step, and that is the stage digit earning its keep."
     },
@@ -55,7 +55,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"rework-started finalization_failed\"",
-      "steps": 16,
+      "steps": 11,
       "quintVersion": "0.32.0",
       "purpose": "A finalizer reports failure and the ticket re-enters work, spending its finalization account and its gas."
     },
@@ -69,7 +69,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastStep.label != \"ticket-escalated work_failed\"",
-      "steps": 8,
+      "steps": 14,
       "quintVersion": "0.32.0",
       "purpose": "The work wall, and the operator-retry that follows it \u2014 which is where the pre-work resume exemption arm is fired."
     },
@@ -83,7 +83,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-escalated finalization_budget_exhausted\"",
-      "steps": 24,
+      "steps": 15,
       "quintVersion": "0.32.0",
       "purpose": "The finalization account runs out before gas does, so the wall names that account rather than gas."
     },
@@ -97,9 +97,65 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-escalated rework_budget_exhausted\"",
-      "steps": 26,
+      "steps": 32,
       "quintVersion": "0.32.0",
       "purpose": "The rework budget spent out while gas remains, which is the branch gas_exhausted is not."
+    },
+    {
+      "name": "budgeted-handoff-retry",
+      "instance": "mc_chuggy_budgeted",
+      "module": "mc_chuggy_directed_budgeted",
+      "source": "model/mc/mc_chuggy_directed.qnt",
+      "step": "gateLoopStep",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 60,
+      "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or t.to == PublishingHandoff))",
+      "steps": 20,
+      "quintVersion": "0.32.0",
+      "purpose": "An accepted promotion whose publication cannot be proven enters the hold and an operator retry returns only to publication."
+    },
+    {
+      "name": "budgeted-direct-finalization-succeeded",
+      "instance": "mc_chuggy_budgeted",
+      "module": "mc_chuggy_directed_budgeted",
+      "source": "model/mc/mc_chuggy_directed.qnt",
+      "step": "gateLoopStep",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 60,
+      "invariant": "lastStep.label != \"ticket-done\"",
+      "steps": 57,
+      "quintVersion": "0.32.0",
+      "purpose": "A managed finalizer without a post-promotion handoff retains its direct successful completion route."
+    },
+    {
+      "name": "budgeted-handoff-succeeded",
+      "instance": "mc_chuggy_budgeted",
+      "module": "mc_chuggy_directed_budgeted",
+      "source": "model/mc/mc_chuggy_directed.qnt",
+      "step": "gateLoopStep",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 60,
+      "invariant": "lastStep.label != \"ticket-done handoff_succeeded\"",
+      "steps": 47,
+      "quintVersion": "0.32.0",
+      "purpose": "A publication success completes the ticket only after the accepted promotion."
+    },
+    {
+      "name": "budgeted-handoff-abandoned",
+      "instance": "mc_chuggy_budgeted",
+      "module": "mc_chuggy_directed_budgeted",
+      "source": "model/mc/mc_chuggy_directed.qnt",
+      "step": "gateLoopStep",
+      "seed": "0x1",
+      "maxSamples": 60000,
+      "maxSteps": 60,
+      "invariant": "lastStep.label != \"handoff-abandoned\"",
+      "steps": 22,
+      "quintVersion": "0.32.0",
+      "purpose": "An operator can terminally abandon a blocked handoff without recording successful completion."
     },
     {
       "name": "deadline-only-walk",
@@ -125,7 +181,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-escalated gas_exhausted\"",
-      "steps": 49,
+      "steps": 17,
       "quintVersion": "0.32.0",
       "purpose": "The gas account emptied by the uncapped gate loop DeadlineOnly allows. Under Budgeted the finalization budget runs out first, so this is the branch that reaches it."
     },
@@ -153,7 +209,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (Set(Evaluating, Finalizing).contains(t.to) and tickets.get(t.ticket).resumePricing == RetryFree)))",
-      "steps": 29,
+      "steps": 9,
       "quintVersion": "0.32.0",
       "purpose": "The RetryFree CHURN arm: a pipeline resume that costs nothing. It is the arm freeClimbNever is violated by, and the reason a ticket may be authored RetryFree at all."
     }

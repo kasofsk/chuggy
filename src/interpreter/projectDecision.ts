@@ -56,10 +56,7 @@ import {
 import type { Lease, Lifecycle } from "./projectStore.ts";
 import type { DispatchCandidate } from "./dispatchView.ts";
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
-import type {
-  EscalationResolution,
-  NativeActionResolution,
-} from "./ticketCommand.ts";
+import type { NativeActionResolution } from "./ticketCommand.ts";
 
 /**
  * The finite vocabulary a refused operation answers with. It is closed because
@@ -154,10 +151,10 @@ export interface NativeActionPlan {
   readonly effectPosition: number;
   readonly ticket: TicketId;
   readonly version: number;
-  readonly kind: "TicketEscalation";
+  readonly kind: "TicketEscalation" | "HandoffBlock";
   readonly reason: string;
   readonly capability: "ResolveTicket";
-  readonly resolutions: readonly EscalationResolution[];
+  readonly resolutions: readonly NativeActionResolution[];
 }
 
 /**

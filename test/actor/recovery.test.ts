@@ -16,12 +16,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  abandonHandoffEvent,
   decisionEventEnabled,
   dispatchEvent,
   evalReduceEvent,
   finalizationResultEvent,
   releaseTicketEvent,
   taskDoneEvent,
+  resumeTicketEvent,
   workReduceEvent,
 } from "../../src/actor/decisionEvent.ts";
 import {
@@ -192,6 +194,62 @@ test("crash, recover, continue: the disciplined machine at every observable seam
   );
 });
 
+function passWorkAndEvaluationTasks(state: ActorState): ActorState {
+  state = stepEmit(
+    config,
+    state,
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    "task-done",
+  );
+  state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
+  return stepEmit(
+    config,
+    state,
+    taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
+    "task-done",
+  );
+}
+
+test("post-promotion publication recovers without returning to promotion", () => {
+  let state = passWorkAndEvaluationTasks(phaseDispatchChargeSurvives());
+  state = stepEmit(config, state, evalReduceEvent(id(1)), "eval-passed");
+  state = stepEmit(
+    config,
+    state,
+    finalizationResultEvent(id(1), "PromotionAccepted"),
+    "promotion-accepted",
+  );
+  state = journalStep(
+    config,
+    state,
+    finalizationResultEvent(id(1), "HandoffPublicationUnproven"),
+  );
+  const blocked = crashRecoverTo(config, state, state.applied);
+  assert.equal(ticketAt(memoryCore(blocked), id(1)).phase, "HandoffBlocked");
+
+  let retried = stepEmit(
+    config,
+    blocked,
+    resumeTicketEvent(id(1)),
+    "ticket-resumed",
+  );
+  assert.equal(
+    retried.journal.filter((entry) => entry.rec.label === "promotion-accepted")
+      .length,
+    1,
+  );
+  retried = journalStep(
+    config,
+    retried,
+    finalizationResultEvent(id(1), "FinalizationSucceeded"),
+  );
+  assert.equal(ticketAt(memoryCore(retried), id(1)).phase, "Done");
+
+  const abandoned = journalStep(config, blocked, abandonHandoffEvent(id(1)));
+  assert.equal(ticketAt(memoryCore(abandoned), id(1)).phase, "Abandoned");
+  assert.equal(ticketAt(memoryCore(abandoned), id(1)).completions, 0);
+});
+
 /** The finalizer-free ticket journaled to the completion its passing evaluation is. */
 function walkFinalizerFreeToCompletion(): ActorState {
   let state = stepEmit(
@@ -202,19 +260,7 @@ function walkFinalizerFreeToCompletion(): ActorState {
   );
   assert.equal(ticketAt(memoryCore(state), id(1)).finalizer, "NoFinalizer");
   state = stepEmit(config, state, dispatchEvent(id(1)), "dispatch");
-  state = stepEmit(
-    config,
-    state,
-    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
-    "task-done",
-  );
-  state = stepEmit(config, state, workReduceEvent(id(1)), "work-passed");
-  state = stepEmit(
-    config,
-    state,
-    taskDoneEvent(id(1), asTaskId(2), "Pass", plainResult),
-    "task-done",
-  );
+  state = passWorkAndEvaluationTasks(state);
   state = journalStep(config, state, evalReduceEvent(id(1)));
   assert.equal(state.view.rec.label, "ticket-done");
   assert.deepEqual(state.view.rec.transitions, [
