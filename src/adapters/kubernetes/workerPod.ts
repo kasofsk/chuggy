@@ -148,7 +148,18 @@ export interface KubernetesSecret {
   readonly apiVersion: "v1";
   readonly kind: "Secret";
   readonly immutable: true;
-  readonly metadata: { readonly name: string; readonly namespace: string };
+  readonly metadata: {
+    readonly name: string;
+    readonly namespace: string;
+    readonly ownerReferences: readonly {
+      readonly apiVersion: "v1";
+      readonly kind: "Pod";
+      readonly name: string;
+      readonly uid: string;
+      readonly controller: true;
+      readonly blockOwnerDeletion: true;
+    }[];
+  };
   readonly stringData: { readonly bearer: string };
 }
 
@@ -255,6 +266,7 @@ export const kubernetesWorkerSecretName = kubernetesWorkerPodName;
 export function kubernetesWorkerSecret(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
+  podUid: string,
 ): KubernetesSecret {
   return {
     apiVersion: "v1",
@@ -267,6 +279,20 @@ export function kubernetesWorkerSecret(
         placement.attempt,
       ),
       namespace: config.namespace,
+      ownerReferences: [
+        {
+          apiVersion: "v1",
+          kind: "Pod",
+          name: kubernetesWorkerPodName(
+            config,
+            placement.partition,
+            placement.attempt,
+          ),
+          uid: podUid,
+          controller: true,
+          blockOwnerDeletion: true,
+        },
+      ],
     },
     stringData: { bearer: placement.capability.secret },
   };

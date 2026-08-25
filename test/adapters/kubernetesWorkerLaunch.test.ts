@@ -166,11 +166,11 @@ interface ClusterReached {
 /** A cluster that records what it was asked and answers what a case is about. */
 function recordingCluster(
   reached: ClusterReached[],
-  answer: () => Response,
+  answer: (request: ClusterReached) => Response,
 ): typeof fetch {
   return (input, init) => {
     const headers = new Headers(init?.headers);
-    reached.push({
+    const request = {
       url:
         input instanceof URL
           ? input.href
@@ -180,8 +180,27 @@ function recordingCluster(
       method: init?.method ?? "GET",
       authorization: headers.get("authorization") ?? undefined,
       body: typeof init?.body === "string" ? init.body : undefined,
-    });
-    return Promise.resolve(answer());
+    };
+    reached.push(request);
+    const response = answer(request);
+    const submitted = JSON.parse(request.body ?? "{}") as {
+      readonly metadata?: Readonly<Record<string, unknown>>;
+    };
+    return Promise.resolve(
+      (init?.method ?? "GET") === "POST" &&
+        request.url.endsWith("/pods") &&
+        (response.status === 200 || response.status === 201)
+        ? Response.json(
+            {
+              metadata: {
+                ...submitted.metadata,
+                uid: "pod-uid-one",
+              },
+            },
+            { status: response.status },
+          )
+        : response,
+    );
   };
 }
 
@@ -303,8 +322,8 @@ test("a placed attempt is one pod, named for its attempt and fenced by its annot
   const placed = await workers.place(placement);
   const name = kubernetesWorkerPodName(config, partition, placement.attempt);
   assert.deepEqual(placed, { placed: "Placed", placement: name });
-  const request = reached[0];
-  const podRequest = reached[1];
+  const podRequest = reached[0];
+  const request = reached[1];
   assert.equal(request?.method, "POST");
   assert.equal(
     request.url,
@@ -314,7 +333,20 @@ test("a placed attempt is one pod, named for its attempt and fenced by its annot
     apiVersion: "v1",
     kind: "Secret",
     immutable: true,
-    metadata: { name, namespace: "chuggy-workers" },
+    metadata: {
+      name,
+      namespace: "chuggy-workers",
+      ownerReferences: [
+        {
+          apiVersion: "v1",
+          kind: "Pod",
+          name,
+          uid: "pod-uid-one",
+          controller: true,
+          blockOwnerDeletion: true,
+        },
+      ],
+    },
     stringData: { bearer: "secret-one" },
   });
   assert.equal(podRequest?.method, "POST");
@@ -336,22 +368,49 @@ test("an existing Secret is accepted only when its immutable identity and bearer
       { metadata: { name: "another", namespace: config.namespace } },
       "Unavailable",
     ],
+    [
+      {
+        metadata: {
+          name,
+          namespace: config.namespace,
+          ownerReferences: [],
+        },
+      },
+      "Unavailable",
+    ],
     [{ bearer: "another-secret" }, "Unavailable"],
   ] as const) {
-    let answerNumber = 0;
     const reached: ClusterReached[] = [];
     const workers = kubernetesWorkerLaunch(
       config,
-      recordingCluster(reached, () => {
-        answerNumber += 1;
-        if (answerNumber === 1) return new Response(null, { status: 409 });
-        if (answerNumber === 2)
+      recordingCluster(reached, (request) => {
+        if (request.url.endsWith("/pods"))
+          return Response.json(
+            { metadata: { uid: "pod-uid-one" } },
+            { status: 201 },
+          );
+        if (request.url.endsWith("/secrets"))
+          return new Response(null, { status: 409 });
+        if (request.method === "GET")
           return Response.json(
             {
               apiVersion: "v1",
               kind: "Secret",
               immutable: true,
-              metadata: { name, namespace: config.namespace },
+              metadata: {
+                name,
+                namespace: config.namespace,
+                ownerReferences: [
+                  {
+                    apiVersion: "v1",
+                    kind: "Pod",
+                    name,
+                    uid: "pod-uid-one",
+                    controller: true,
+                    blockOwnerDeletion: true,
+                  },
+                ],
+              },
               data: {
                 bearer: Buffer.from(
                   "bearer" in existing ? existing.bearer : "secret-one",
@@ -361,16 +420,48 @@ test("an existing Secret is accepted only when its immutable identity and bearer
             },
             { status: 200 },
           );
-        return new Response(null, { status: 201 });
+        return new Response(null, { status: 200 });
       }),
     );
     assert.equal((await workers.place(placement)).placed, expected);
-    assert.equal(reached[1]?.body, undefined);
-    assert.equal(reached.length, expected === "Placed" ? 3 : 2);
+    assert.equal(reached[2]?.body, undefined);
+    assert.equal(reached.length, expected === "Placed" ? 3 : 4);
   }
 });
 
-test("a failed pod create removes the attempt Secret", async () => {
+test("a retried placement owns its Secret with the existing Pod UID", async () => {
+  const name = kubernetesWorkerPodName(config, partition, placement.attempt);
+  const metadata = (
+    expectedPod(name) as {
+      readonly metadata: Readonly<Record<string, unknown>>;
+    }
+  ).metadata;
+  const reached: ClusterReached[] = [];
+  const workers = kubernetesWorkerLaunch(
+    config,
+    recordingCluster(reached, (request) => {
+      if (request.method === "POST" && request.url.endsWith("/pods"))
+        return new Response(null, { status: 409 });
+      if (request.method === "GET" && request.url.includes("/pods/"))
+        return Response.json({
+          metadata: {
+            ...metadata,
+            uid: "existing-pod-uid",
+          },
+        });
+      return new Response(null, { status: 201 });
+    }),
+  );
+  assert.equal((await workers.place(placement)).placed, "Placed");
+  const secret = JSON.parse(reached[2]?.body ?? "") as {
+    readonly metadata: {
+      readonly ownerReferences: readonly { readonly uid: string }[];
+    };
+  };
+  assert.equal(secret.metadata.ownerReferences[0]?.uid, "existing-pod-uid");
+});
+
+test("a failed Secret create removes the attempt Pod", async () => {
   let answerNumber = 0;
   const reached: ClusterReached[] = [];
   const workers = kubernetesWorkerLaunch(
@@ -397,7 +488,7 @@ test("a worker is handed the resolved authority and never the policy grant", asy
     recordingCluster(reached, answering(201)),
   );
   await workers.place(placement);
-  const pod = JSON.parse(reached[1]?.body ?? "") as {
+  const pod = JSON.parse(reached[0]?.body ?? "") as {
     readonly spec: {
       readonly containers: readonly {
         readonly env: readonly { readonly value: string }[];
@@ -423,7 +514,6 @@ test("a cancellation addresses the pod its attempt named", async () => {
     reached.map((request) => `${request.method} ${request.url}`),
     [
       `DELETE https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/pods/${name}`,
-      `DELETE https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/secrets/${name}`,
     ],
   );
 });
@@ -473,7 +563,7 @@ test("the image a pod runs is the requirement's own", async () => {
     },
   });
   assert.equal(reached.length, 2);
-  const pod = JSON.parse(reached[1]?.body ?? "") as {
+  const pod = JSON.parse(reached[0]?.body ?? "") as {
     readonly spec: {
       readonly containers: readonly { readonly image: string }[];
     };
