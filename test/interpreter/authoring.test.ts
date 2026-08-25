@@ -66,6 +66,16 @@ test("stage-specific configuration bounds the authored evaluation program", () =
     ).choices.programStagesMax,
     2,
   );
+  assert.deepEqual(
+    draftInitializationPolicy(
+      { ...refinementInstance, maxStages: 4 },
+      readiness.configuration,
+    ).defaults.prog,
+    [
+      { fanout: 1, combinator: "UnanimousPass" },
+      { fanout: 1, combinator: "UnanimousPass" },
+    ],
+  );
 });
 
 test("configuration must be canonical, bounded, and secret-free", () => {

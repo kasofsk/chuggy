@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "basic-coding",
+  "configuration": {
+    "version": 1,
+    "image": "worker:v1",
+    "brief": {
+      "motivation": [
+        "Implement the ticket's requested repository change."
+      ],
+      "acceptanceCriteria": [
+        "The ticket-specific acceptance criteria are satisfied."
+      ],
+      "constraints": [
+        "Follow the repository's checked-in agent instructions and do not perform destructive operations without approval."
+      ]
+    },
+    "practices": [
+      "RegressionCoverage",
+      "AcceptanceCriteria"
+    ],
+    "work": {
+      "instructions": [
+        "Implement the requested change, add focused regression coverage, and run the checks relevant to the files changed."
+      ]
+    },
+    "review": {
+      "instructions": [
+        "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
+      ]
+    },
+    "evaluations": [
+      {
+        "instructions": [
+          "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
+        ],
+        "practices": [
+          "ChangedCallPaths",
+          "AcceptanceCriteria"
+        ]
+      },
+      {
+        "instructions": [
+          "Run .chug/tasks/ci.sh and pass only when it exits cleanly; exit 2 means the evaluation could not run and is not a pass."
+        ],
+        "practices": [
+          "AcceptanceCriteria"
+        ]
+      }
+    ]
+  }
+}

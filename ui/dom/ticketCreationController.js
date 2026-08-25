@@ -1,4 +1,5 @@
 import {
+  ticketCreationConfigurationSubmitted,
   ticketCreationCreated,
   ticketCreationEdited,
   ticketCreationInitialized,
@@ -22,6 +23,51 @@ async function creatorInitialize(creator, read, generation) {
   creator.onChanged();
 }
 
+/** @param {Creator} creator @param {Extract<import("../app/ticketCreation.js").TicketCreationState, {step: "Editing"}>} state @param {string} token @param {Partition} partition @param {import("../app/protocol.js").ApiRequest} request @param {number} generation */
+async function creatorInitializeChild(
+  creator,
+  state,
+  token,
+  partition,
+  request,
+  generation,
+) {
+  const outcome = await creator.send(request);
+  if (generation !== creator.generation) return undefined;
+  if (outcome.outcome !== "Ok" && outcome.outcome !== "Accepted") {
+    creator.state.creation = {
+      ...state,
+      issue: "The ticket configuration could not be created.",
+    };
+    creator.onChanged();
+    return undefined;
+  }
+  const value = outcome.body;
+  const revision =
+    value !== null &&
+    typeof value === "object" &&
+    "revision" in value &&
+    typeof value.revision === "string"
+      ? value.revision
+      : undefined;
+  if (revision === undefined) {
+    creator.state.creation = {
+      ...state,
+      issue: "The ticket configuration could not be created.",
+    };
+    creator.onChanged();
+    return undefined;
+  }
+  const initializedOutcome = await creator.send(
+    ticketCreationSelected(token, partition, revision).request,
+  );
+  if (generation !== creator.generation) return undefined;
+  const initialized = ticketCreationInitialized(revision, initializedOutcome);
+  creator.state.creation = initialized;
+  creator.onChanged();
+  return initialized.step === "Editing" ? initialized : undefined;
+}
+
 /** @param {Creator} creator */
 async function creatorSubmit(creator) {
   creator.generation += 1;
@@ -36,7 +82,30 @@ async function creatorSubmit(creator) {
     generation !== creator.generation
   )
     return;
-  const submitted = ticketCreationSubmitted(state, token, partition);
+  const configured = ticketCreationConfigurationSubmitted(
+    state,
+    token,
+    partition,
+    creator.revision(),
+  );
+  creator.state.creation = configured.state;
+  creator.onChanged();
+  if (configured.request === undefined) return;
+  const initialized = await creatorInitializeChild(
+    creator,
+    state,
+    token,
+    partition,
+    configured.request,
+    generation,
+  );
+  if (initialized === undefined) return;
+  const preserved = ticketCreationEdited(
+    initialized.initialization,
+    state.authoring,
+    state.brief,
+  );
+  const submitted = ticketCreationSubmitted(preserved, token, partition);
   creator.state.creation = submitted.state;
   creator.onChanged();
   if (submitted.request === undefined) return;
@@ -57,14 +126,16 @@ async function creatorSubmit(creator) {
  * onRelease: (event: ReturnType<typeof ticketCreationReleaseEvent>) => void,
  * onNavigate: (ticket: number) => void, generation: number,
  * state: { partition: Partition | undefined, configurations: readonly unknown[],
- *   creation: import("../app/ticketCreation.js").TicketCreationState } }} Creator
+ *   creation: import("../app/ticketCreation.js").TicketCreationState }, revision: () => string }} Creator
  */
 
-/** @param {Pick<Creator, "session" | "send" | "onChanged" | "onRelease" | "onNavigate">} parts */
+/** @param {Pick<Creator, "session" | "send" | "onChanged" | "onRelease" | "onNavigate"> & { revision?: () => string }} parts */
 export function createTicketCreation(parts) {
   /** @type {Creator} */
   const creator = {
     ...parts,
+    revision:
+      parts.revision ?? (() => `ticket-${globalThis.crypto.randomUUID()}`),
     generation: 0,
     state: {
       partition: undefined,
@@ -72,6 +143,11 @@ export function createTicketCreation(parts) {
       creation: { step: "Choosing" },
     },
   };
+  return ticketCreationControls(creator);
+}
+
+/** @param {Creator} creator */
+function ticketCreationControls(creator) {
   return {
     state: creator.state,
     /** @param {Partition} partition @param {readonly unknown[]} configurations */
@@ -99,13 +175,14 @@ export function createTicketCreation(parts) {
         generation,
       );
     },
-    /** @param {import("../app/ticketCreation.js").Authoring} authoring */
-    edit: (authoring) => {
+    /** @param {import("../app/ticketCreation.js").Authoring} authoring @param {import("../app/ticketCreation.js").TicketBrief} [brief] */
+    edit: (authoring, brief) => {
       const state = creator.state.creation;
       if (state.step !== "Editing") return;
       creator.state.creation = ticketCreationEdited(
         state.initialization,
         authoring,
+        brief ?? state.brief,
       );
       creator.onChanged();
     },

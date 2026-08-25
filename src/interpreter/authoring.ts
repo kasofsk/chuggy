@@ -350,7 +350,13 @@ export function draftInitializationPolicy(
   return {
     defaults: {
       deps: new Set(),
-      prog: defaultProgram(config),
+      prog:
+        configuration?.evaluations === undefined
+          ? defaultProgram(config)
+          : configuration.evaluations.map(() => ({
+              fanout: 1,
+              combinator: "UnanimousPass" as const,
+            })),
       workFanout: 1,
       reworkPolicy: reworkBudgetOf(0),
       finalizationPricing: "DeadlineOnly",

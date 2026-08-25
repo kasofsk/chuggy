@@ -13,7 +13,8 @@ export const ticketCreationInitialization = {
     partition: ticketCreationPartition,
     revision: "ready",
     parent: undefined,
-    canonical: "{}",
+    canonical:
+      '{"brief":{"acceptanceCriteria":["The change works."],"constraints":[],"motivation":["The change is needed."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
     digest: "digest",
   },
   fence: { projectSequence: 4, configurationDigest: "digest" },
@@ -31,13 +32,13 @@ export const ticketCreationInitialization = {
   dependencyCandidatesTruncated: false,
 };
 
-export function ticketCreationDraft() {
+export function ticketCreationDraft(configurationRevision = "ready") {
   return {
     partition: ticketCreationPartition,
     ticket: 8,
     authoringVersion: 1,
     state: "Draft",
-    configurationRevision: "ready",
+    configurationRevision,
     authoring: ticketCreationAuthoring,
   };
 }
