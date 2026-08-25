@@ -36,6 +36,7 @@ export const proposalBodyCharsMax = 16_384;
 export const proposalMarkerCharsMax = 128;
 export const proposalDisplayUrlCharsMax = 2_048;
 export const proposalBranchPrefix = "refs/heads/chuggy/handoff/";
+export const changeProposalRequestIdentityChars = 64;
 
 export function asForgeBindingId(value: string): ForgeBindingId {
   return asBoundedText(
@@ -74,11 +75,12 @@ export function asProposalDisplayUrl(value: string): ProposalDisplayUrl {
 export function asChangeProposalRequestIdentity(
   value: string,
 ): ChangeProposalRequestIdentity {
-  return asBoundedText(
-    value,
-    "change proposal request",
-    finalizerIdentityCharsMax,
-  ) as ChangeProposalRequestIdentity;
+  if (
+    value.length !== changeProposalRequestIdentityChars ||
+    !/^[0-9a-f]+$/u.test(value)
+  )
+    throw new RangeError("change proposal request is not a canonical digest");
+  return value as ChangeProposalRequestIdentity;
 }
 
 export function asForgeCredentialReference(
@@ -151,6 +153,7 @@ export type ChangeProposalContradiction =
   | "Closed"
   | "Merged"
   | "Superseded"
+  | "ForgeMismatch"
   | "RepositoryMismatch"
   | "HeadMismatch"
   | "BaseMismatch"
@@ -280,6 +283,7 @@ function proposalContradiction(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
 ): ChangeProposalContradiction | undefined {
+  if (evidence.identity.forge !== request.binding.forge) return "ForgeMismatch";
   if (evidence.marker !== request.marker) return "MarkerMismatch";
   if (evidence.repository !== request.repository) return "RepositoryMismatch";
   if (
@@ -357,13 +361,8 @@ export function changeProposalPublicationNext(
   switch (view.creation.created) {
     case "Created":
     case "AlreadyExists":
-      return proposalAcceptedNext(request, view.creation.evidence);
     case "Contradictory":
-      return {
-        next: "Refused",
-        contradiction: view.creation.contradiction,
-        evidence: view.creation.evidence,
-      };
+      return proposalAcceptedNext(request, view.creation.evidence);
     case "Unavailable":
       return { next: "Held", reason: "Unavailable" };
     case "Denied":
@@ -372,14 +371,11 @@ export function changeProposalPublicationNext(
       break;
   }
   const reconciled = view.reconciliation;
-  if (reconciled?.reconciled === "Accepted")
-    return { next: "Accepted", evidence: reconciled.evidence };
-  if (reconciled?.reconciled === "Contradictory")
-    return {
-      next: "Refused",
-      contradiction: reconciled.contradiction,
-      evidence: reconciled.evidence,
-    };
+  if (
+    reconciled?.reconciled === "Accepted" ||
+    reconciled?.reconciled === "Contradictory"
+  )
+    return proposalAcceptedNext(request, reconciled.evidence);
   if (reconciled?.reconciled === "Denied")
     return { next: "Held", reason: "Denied" };
   return view.reconciliations < reconciliationsMax

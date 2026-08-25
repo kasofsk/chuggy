@@ -118,6 +118,15 @@ test("closed, merged, retargeted, and mismatched proposals are explicit contradi
     [{ repository: asRepositoryId("other-repository") }, "RepositoryMismatch"],
     [
       {
+        identity: {
+          forge: asForgeBindingId("forge-beta"),
+          remote: asProposalRemoteIdentity("proposal-17"),
+        },
+      },
+      "ForgeMismatch",
+    ],
+    [
+      {
         head: {
           ref: request.head.ref,
           commit: asGitObjectId("d".repeat(40)),
@@ -131,6 +140,60 @@ test("closed, merged, retargeted, and mismatched proposals are explicit contradi
     assert.deepEqual(
       reconcileChangeProposal(request, { read: "Found", evidence: found }),
       { reconciled: "Contradictory", contradiction, evidence: found },
+    );
+  }
+});
+
+test("created and existing evidence from another forge is never accepted", () => {
+  const wrongForge = evidence({
+    identity: {
+      forge: asForgeBindingId("forge-beta"),
+      remote: asProposalRemoteIdentity("proposal-17"),
+    },
+  });
+  for (const created of ["Created", "AlreadyExists"] as const) {
+    assert.deepEqual(
+      changeProposalPublicationNext(
+        request,
+        {
+          creation: { created, evidence: wrongForge },
+          reconciliations: 0,
+        },
+        2,
+      ),
+      {
+        next: "Refused",
+        contradiction: "ForgeMismatch",
+        evidence: wrongForge,
+      },
+    );
+  }
+});
+
+test("stored reconciliation results are rebound to the current request", () => {
+  const creation = { created: "Ambiguous" } as const;
+  const stale = evidence({
+    repository: asRepositoryId("stale-repository"),
+  });
+  for (const reconciliation of [
+    { reconciled: "Accepted", evidence: stale },
+    {
+      reconciled: "Contradictory",
+      contradiction: "Closed",
+      evidence: stale,
+    },
+  ] as const) {
+    assert.deepEqual(
+      changeProposalPublicationNext(
+        request,
+        { creation, reconciliation, reconciliations: 1 },
+        2,
+      ),
+      {
+        next: "Refused",
+        contradiction: "RepositoryMismatch",
+        evidence: stale,
+      },
     );
   }
 });
@@ -191,4 +254,13 @@ test("proposal metadata and deterministic branch identity are bounded", () => {
     request.head.ref,
     `refs/heads/chuggy/handoff/${requestIdentity}`,
   );
+  assert.equal(asChangeProposalRequestIdentity("f".repeat(64)).length, 64);
+  for (const malformed of [
+    "f".repeat(63),
+    "f".repeat(65),
+    "F".repeat(64),
+    `${"f".repeat(63)}g`,
+  ]) {
+    assert.throws(() => asChangeProposalRequestIdentity(malformed), RangeError);
+  }
 });
