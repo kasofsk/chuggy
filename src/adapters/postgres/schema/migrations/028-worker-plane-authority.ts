@@ -225,14 +225,20 @@ export const migration028: Migration = {
                     bound.attempt,'ForeignManifest');
            RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
          END IF;
-         IF jsonb_typeof(in_artifacts) IS DISTINCT FROM 'array'
-            OR jsonb_array_length(in_artifacts)>${manifestArtifactsMax}
+         IF jsonb_typeof(in_artifacts) IS DISTINCT FROM 'array' THEN
+           incident_id='incident-'||gen_random_uuid()::text;
+           INSERT INTO scheduler_incident(tenant,project,incident,kind,execution,attempt,evidence)
+             VALUES(bound.tenant,bound.project,incident_id,'ConflictingResult',bound.execution,
+                    bound.attempt,'ForeignManifest');
+           RETURN QUERY SELECT 'Conflicting'::text,NULL::text,NULL::text,incident_id; RETURN;
+         END IF;
+         IF jsonb_array_length(in_artifacts)>${manifestArtifactsMax}
             OR EXISTS(SELECT 1 FROM jsonb_array_elements(in_artifacts) x(artifact)
               WHERE jsonb_typeof(artifact) IS DISTINCT FROM 'object'
                  OR artifact->>'role' NOT IN ('Handoff','Diagnostic')
                  OR NOT (coalesce(artifact->>'ordinal','') ~ '^[0-9]+$')
                  OR CASE WHEN coalesce(artifact->>'ordinal','') ~ '^[0-9]+$'
-                         THEN (artifact->>'ordinal')::bigint NOT BETWEEN 1 AND ${manifestArtifactsMax}
+                         THEN (artifact->>'ordinal')::numeric NOT BETWEEN 1 AND ${manifestArtifactsMax}
                          ELSE true END
                  OR length(coalesce(artifact->>'path','')) NOT BETWEEN 1 AND ${artifactPathCharsMax}
                  OR coalesce(artifact->>'path','') ~ '^/'

@@ -231,6 +231,38 @@ test("the executable result boundary refuses an over-count manifest independentl
     ],
   );
   assert.equal(refused.rows[0]?.terminalized, "Conflicting");
+  for (const [artifactsValue, operation] of [
+    [{ not: "an array" }, "operation-object"],
+    [
+      [
+        {
+          ordinal: "9".repeat(10_000),
+          role: "Diagnostic",
+          path: "oversized-ordinal.txt",
+          digest: "d".repeat(64),
+          bytes: 1,
+        },
+      ],
+      "operation-oversized-ordinal",
+    ],
+  ] as const) {
+    const malformed = await workerPool.query<{ terminalized: string }>(
+      `SELECT terminalized FROM submit_worker_result($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
+      [
+        createHash("sha256")
+          .update(attempt.capability.secret, "utf8")
+          .digest("hex"),
+        attempt.generation,
+        report.manifest.manifest,
+        report.manifest.schemaVersion,
+        report.manifest.digest,
+        report.manifest.verdict,
+        JSON.stringify(artifactsValue),
+        operation,
+      ],
+    );
+    assert.equal(malformed.rows[0]?.terminalized, "Conflicting");
+  }
   assert.notEqual(
     (await rig.store.execution(attempt.partition, attempt.execution))?.status,
     "Terminal",
