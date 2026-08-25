@@ -5,6 +5,7 @@ import fastify, {
 } from "fastify";
 
 import type { TicketId } from "../../domain/ids.ts";
+import type { InstallationAuthorityRead } from "../../interpreter/installationAuthority.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
 import {
   allExecutionStatuses,
@@ -272,6 +273,21 @@ function registerContract(app: FastifyInstance): void {
         .header("cache-control", "no-cache")
         .type(nativeHttpMediaType)
         .send(nativeHttpContractDocument());
+    },
+  );
+}
+
+function registerInstallation(
+  app: FastifyInstance,
+  authority: InstallationAuthorityRead,
+): void {
+  app.get(
+    "/api/v1/installation",
+    { config: { public: true } },
+    async (_request, reply) => {
+      void reply
+        .type(nativeHttpMediaType)
+        .send({ installation: await authority.installationAuthority() });
     },
   );
 }
@@ -717,6 +733,7 @@ export function createNativeHttpApp(
   web: InitialNativeWeb,
   authentication: PrincipalAuthentication,
   readiness: NativeHttpReadiness,
+  authority: InstallationAuthorityRead,
   limits: NativeHttpLimits = nativeHttpLimitsDefault,
 ): FastifyInstance {
   const app = fastify({
@@ -741,6 +758,7 @@ export function createNativeHttpApp(
   registerAuthentication(app, authentication);
   registerHealth(app, readiness);
   registerContract(app);
+  registerInstallation(app, authority);
   registerInventory(app, web);
   registerProject(app, web);
   registerSelectorContext(app, web);

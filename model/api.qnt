@@ -8,6 +8,7 @@
 module chuggy_api {
   import chuggy_measure.* from "./measure"
   import chuggy_refinement.* from "./refinement"
+  import chuggy_identity.* from "./identity"
 
   type ApiPhase = Phase
   type ApiTaskKind = TaskKind
@@ -26,6 +27,8 @@ module chuggy_api {
   type ApiFinalizer = Finalizer
   type ApiArtifactMark = ArtifactMark
   type ApiTicket = Ticket
+  type ApiInstallationId = InstallationId
+  type ApiTicketRef = TicketRef
   // `Core` is exposed only to model-facing tooling. Product code should use
   // projections; its map codec is retained so the generator's mapping remains
   // explicit and tested.

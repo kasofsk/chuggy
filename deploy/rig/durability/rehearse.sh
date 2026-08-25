@@ -165,6 +165,9 @@ witness_before_file="$archive/witness-before.txt"
 witness_restored_file="$archive/witness-restored.txt"
 witness_fenced_file="$archive/witness-fenced.txt"
 witness_standing_file="$archive/witness-standing.txt"
+installation_before_file="$archive/installation-before.txt"
+installation_scratch_file="$archive/installation-scratch.txt"
+installation_restored_file="$archive/installation-restored.txt"
 
 # --- Talking to the server --------------------------------------------------
 # One shape for every connection: a psql in the client pod, as the named role,
@@ -234,6 +237,11 @@ SELECT line FROM (
    WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'r'
 ) inventory ORDER BY line
 SQL
+}
+
+installation_identity() { # <database>
+	echo "SELECT installation_id FROM installation_authority WHERE singleton=true" \
+		| client_psql postgres "$1"
 }
 
 latest_epoch="SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1"
@@ -354,6 +362,8 @@ YAML
 
 stage_snapshot() {
 	inventory "$database" > "$live_inventory"
+	installation_identity "$database" > "$installation_before_file"
+	[ -s "$installation_before_file" ] || cannot "the database carries no installation authority"
 	echo "SELECT ordinal, epoch FROM recovery_epoch ORDER BY ordinal" \
 		| client_psql chuggy_owner "$database" > "$archive/epochs-before.txt"
 	echo "SELECT tenant, project, lifecycle, lifecycle_generation, fencing_epoch, head, owner, lease_expires_at, recovery_epoch FROM project WHERE owner IS NOT NULL ORDER BY tenant, project" \
@@ -410,6 +420,7 @@ stage_dump() {
 stage_verify() {
 	[ -s "$dump_file" ] || cannot "there is no dump in $archive to verify"
 	[ -s "$live_inventory" ] || cannot "there is no live inventory to compare against; run snapshot first"
+	[ -s "$installation_before_file" ] || cannot "there is no installation authority recorded; run snapshot first"
 	rm -f "$verified_file"
 
 	echo "DROP DATABASE IF EXISTS $scratch WITH (FORCE)" | client_psql postgres postgres
@@ -424,6 +435,10 @@ stage_verify() {
 	if ! diff -u "$live_inventory" "$scratch_inventory"; then
 		die "the dump restored into something the live database is not, and NOTHING HAS BEEN DESTROYED"
 	fi
+	installation_identity "$scratch" > "$installation_scratch_file"
+	[ -s "$installation_scratch_file" ] || die "the scratch restore carries no installation authority"
+	diff -u "$installation_before_file" "$installation_scratch_file" \
+		|| die "the scratch restore carries a different installation authority"
 	echo "DROP DATABASE $scratch WITH (FORCE)" | client_psql postgres postgres
 
 	# The digest goes in on a line of its own and under a name, so `destroy` can
@@ -483,6 +498,7 @@ stage_restore() {
 	[ -s "$dump_file" ] || cannot "there is no dump in $archive to restore"
 	[ -s "$live_inventory" ] || cannot "there is no live inventory to compare against; run snapshot first"
 	[ -s "$witness_before_file" ] || cannot "there is no witness recorded in $archive; run snapshot first"
+	[ -s "$installation_before_file" ] || cannot "there is no installation authority recorded; run snapshot first"
 	read_witness_partition
 	kube cp "$dump_file" "$namespace/$client:/tmp/restore.dump"
 	kube exec "$client" -- env CHUG_HOST="$service" sh -c '
@@ -492,6 +508,10 @@ stage_restore() {
 	'
 	inventory "$database" > "$restored_inventory"
 	diff -u "$live_inventory" "$restored_inventory" || die "what came back is not what was dumped"
+	installation_identity "$database" > "$installation_restored_file"
+	[ -s "$installation_restored_file" ] || die "the restored database carries no installation authority"
+	diff -u "$installation_before_file" "$installation_restored_file" \
+		|| die "the restored database carries a different installation authority"
 
 	# The inventory counts rows and cannot see an ownership row that came back
 	# changed, because an UPDATE changes no count — and the ownership row is the
@@ -504,7 +524,7 @@ stage_restore() {
 	diff -u "$witness_before_file" "$witness_restored_file" \
 		|| die "the witness lease came back as something the dump did not hold"
 
-	say "the database is back, its inventory is the one $live_inventory recorded, and the witness lease came out of the dump unchanged"
+	say "the database is back with the same installation authority and inventory, and the witness lease came out of the dump unchanged"
 }
 
 stage_epoch() {
