@@ -57,15 +57,6 @@ export function isCompletionDecisionEvent(
   return completionEventTypes.some((type) => type === event.type);
 }
 
-/** Narrows to the completion an event is, refusing every event that is not one. */
-export function asCompletionDecisionEvent(
-  event: DecisionEvent,
-): CompletionDecisionEvent {
-  if (!isCompletionDecisionEvent(event))
-    throw new RangeError("event is not a completion");
-  return event;
-}
-
 /**
  * What each kind of native action asks a person for, and the answers it admits.
  * The pairing is the roster this layer, the command grammar and the database

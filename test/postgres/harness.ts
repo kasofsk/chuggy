@@ -46,7 +46,8 @@ import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.t
 import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
 import { postgresProjectMembership } from "../../src/adapters/postgres/projectMembership.ts";
 import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
-import type { CompletionDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
+import { isCompletionDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
+import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
 import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
 import type { ProjectMembershipAdministration } from "../../src/interpreter/projectMembership.ts";
 import type { RepositoryConfigurationStore } from "../../src/interpreter/repositoryConfiguration.ts";
@@ -451,8 +452,10 @@ export async function postgresHarnessCompletion(
   harness: PostgresHarness,
   partition: Partition,
   operation: string,
-  event: CompletionDecisionEvent,
+  event: DecisionEvent,
 ): Promise<void> {
+  if (!isCompletionDecisionEvent(event))
+    throw new Error("postgres harness: that event is not a completion");
   const command = JSON.stringify({ version: 1, command: "Decide", event });
   await harness.query(
     `WITH claimed AS (

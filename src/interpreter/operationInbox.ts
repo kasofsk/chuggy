@@ -214,7 +214,7 @@ export const allPriorityClasses: readonly PriorityClass[] = [
  */
 export function classifyCommand(command: TicketCommand): {
   readonly admission: AdmissionClass;
-  readonly priority: Exclude<PriorityClass, "Continuation">;
+  readonly priority: Exclude<PriorityClass, "Continuation" | "Completion">;
 } {
   if (
     command.command === "ReleaseDraft" ||

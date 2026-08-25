@@ -65,7 +65,11 @@ const publishingImageRequired = [
 const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
   ...publishingImageRequired,
   ...migrations
-    .filter(({ version }) => version > publishingImageRequired.length)
+    .filter(
+      ({ version }) =>
+        version >
+        Math.max(...publishingImageRequired.map((each) => each.version)),
+    )
     .map(({ version, name }) => ({ version, name })),
 ]);
 

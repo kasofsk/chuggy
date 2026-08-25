@@ -152,29 +152,34 @@ test("the API acceptance boundary rejects malformed command bytes", async () => 
   );
 });
 
-test("a well-formed completion offered as an ordinary command reaches no mailbox", async () => {
+test("a well-formed completion is refused whatever authority it claims", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "privilege-forged-completion",
   );
-  for (const [operation, command] of [
-    [
-      "forged-pass",
-      `{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"tid":1,"verdict":"Pass","result":{"manifest":1,"digest":1,"schema":1}}}}`,
-    ],
-    [
-      "forged-block",
-      `{"version":1,"command":"Decide","event":{"type":"ExecutionBlocked","value":{"ticket":1,"reason":"ExecutionProfileUnavailable"}}}`,
-    ],
-  ]) {
-    const failure = await harness.attemptAs(
-      apiRole,
-      `SELECT * FROM ${acceptanceFunction}(
-        '${partition.tenant}', '${partition.project}', '${operation}', 'User', 'subject',
-        'v1', 'key-${operation}', 'payload', ARRAY['key-${operation}'], ARRAY['payload'],
-        '${command}', 10, 20)`,
-    );
-    assert.match(failure ?? "", /operation_completion_is_its_boundary_s/);
+  const completions = [
+    `{"version":1,"command":"Decide","event":{"type":"TaskDone","value":{"ticket":1,"tid":1,"verdict":"Pass","result":{"manifest":1,"digest":1,"schema":1}}}}`,
+    `{"version":1,"command":"Decide","event":{"type":"ExecutionBlocked","value":{"ticket":1,"reason":"ExecutionProfileUnavailable"}}}`,
+  ];
+  /**
+   * The claimed kind is the caller's own text and acceptance compares it to
+   * nothing, so the boundary's own kind has to be refused exactly as a
+   * principal's is: a rule that only caught `User` would cost a forger one
+   * string.
+   */
+  const kinds = ["User", "ExecutionScheduler", "Finalizer"];
+  for (const [index, command] of completions.entries()) {
+    for (const kind of kinds) {
+      const operation = `forged-${String(index)}-${kind}`;
+      const failure = await harness.attemptAs(
+        apiRole,
+        `SELECT * FROM ${acceptanceFunction}(
+          '${partition.tenant}', '${partition.project}', '${operation}', '${kind}', 'subject',
+          'v1', 'key-${operation}', 'payload', ARRAY['key-${operation}'], ARRAY['payload'],
+          '${command}', 10, 20)`,
+      );
+      assert.equal(failure, undefined);
+    }
   }
   assert.deepEqual(
     await harness.query(
@@ -200,7 +205,7 @@ test("no membership may be granted the authority a boundary submits under", asyn
          VALUES ($1,$2,$3,$4,'subject',true,true,false,false)`,
         [`principal-${kind}`, partition.tenant, partition.project, kind],
       ),
-      /project_membership_authority_is_no_boundary_s/,
+      /project_membership_grants_no_boundary_authority/,
     );
   }
 });

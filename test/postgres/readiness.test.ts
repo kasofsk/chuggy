@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
-import { asCompletionDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainResult } from "../actor/harness.ts";
@@ -31,9 +30,7 @@ async function completion(
     harness,
     partition,
     operation,
-    asCompletionDecisionEvent(
-      taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
-    ),
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
   );
   return operation;
 }
