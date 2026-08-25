@@ -70,6 +70,19 @@ test("a statement bound that is not a positive count is refused by name", async 
   }
 });
 
+test("an adoption identity must be a canonical UUID", async () => {
+  assert.deepEqual(
+    await migrateMainExit({
+      CHUG_MIGRATE_DATABASE_URL: "postgres://host/chuggy",
+      CHUG_MIGRATE_ADOPT_INSTALLATION_ID: "not-an-installation-id",
+    }),
+    {
+      code: 1,
+      report: "installation id: not-an-installation-id is not a canonical UUID",
+    },
+  );
+});
+
 test("the command opens one connection and plans against its own contract", async () => {
   const found = JSON.parse(
     await migrateEvaluated(`
