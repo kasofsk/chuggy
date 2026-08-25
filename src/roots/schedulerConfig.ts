@@ -143,6 +143,15 @@ const schedulerResourcesSchema = z.strictObject({
   memoryLimit: schedulerTextSchema,
 });
 
+const schedulerCredentialMountsSchema = z.record(
+  schedulerTextSchema,
+  z.strictObject({
+    secretName: schedulerTextSchema,
+    key: schedulerTextSchema,
+    mountPath: schedulerTextSchema,
+  }),
+);
+
 /** The value of one variable, refusing an absent or empty one by name. */
 function schedulerRequired(
   environment: SchedulerEnvironment,
@@ -335,6 +344,18 @@ function schedulerWorkers(
     tokenFile: schedulerRequired(environment, "CLUSTER_TOKEN_FILE"),
     workerPlaneUrl: schedulerRequired(environment, "WORKER_PLANE_URL"),
     capabilityFile: schedulerRequired(environment, "WORKER_CAPABILITY_FILE"),
+    workspacePath: schedulerRequired(environment, "WORKER_WORKSPACE_PATH"),
+    credentialMounts: schedulerJson(
+      environment,
+      "WORKER_CREDENTIAL_MOUNTS",
+      schedulerCredentialMountsSchema,
+    ),
+    environment: schedulerJsonOr(
+      environment,
+      "WORKER_ENVIRONMENT",
+      schedulerTextMapSchema,
+      {},
+    ),
     serviceAccountName: schedulerRequired(
       environment,
       "WORKER_SERVICE_ACCOUNT",

@@ -46,6 +46,7 @@ import {
   type RuntimeFacts,
   type TaskInvocation,
   type TicketBrief,
+  type WorkerConfiguration,
 } from "../../src/interpreter/taskBriefing.ts";
 import {
   taskAuthorityGrant,
@@ -88,6 +89,32 @@ test("an authored document parses the complete task briefing contract", () => {
     readiness: "Ready",
     configuration: authoredConfiguration,
   });
+});
+
+test("worker setup is parsed and carried into the composed invocation", () => {
+  const worker: WorkerConfiguration = {
+    arguments: ["--allowedTools", "Read,Edit"],
+    setup: ["just hooks"],
+    files: [{ path: ".claude/settings.json", content: '{"env":{}}' }],
+  };
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({ ...authoredConfiguration, worker }),
+    {
+      readiness: "Ready",
+      configuration: { ...authoredConfiguration, worker },
+    },
+  );
+  assert.deepEqual(composed(viewOf({ worker })).worker, worker);
+});
+
+test("an unreadable worker setup is refused at release parsing", () => {
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      worker: { arguments: [], setup: [], files: [{ path: 1, content: "x" }] },
+    }),
+    { readiness: "Incomplete", fault: "WorkerInvalid" },
+  );
 });
 
 test("an authored document without the briefing shape is refused by name", () => {
@@ -274,6 +301,7 @@ function viewOf(parts: {
   readonly blockReview?: PurposeBlock;
   readonly evaluations?: readonly EvaluationBlock[];
   readonly authority?: AuthorityRequest;
+  readonly worker?: WorkerConfiguration;
   readonly runtime?: RuntimeFacts;
   readonly grant?: PolicyAuthorityGrant;
 }): BriefingView {
@@ -293,6 +321,7 @@ function viewOf(parts: {
         ? {}
         : { evaluations: parts.evaluations }),
       ...(parts.authority === undefined ? {} : { authority: parts.authority }),
+      ...(parts.worker === undefined ? {} : { worker: parts.worker }),
     },
     runtime: parts.runtime ?? noFacts,
     grant: parts.grant ?? grant,
