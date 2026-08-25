@@ -136,6 +136,20 @@ interface KubernetesContainer {
     readonly limits: Readonly<Record<string, string>>;
   };
   readonly securityContext: Readonly<Record<string, unknown>>;
+  readonly volumeMounts: readonly {
+    readonly name: string;
+    readonly mountPath: string;
+    readonly subPath: string;
+    readonly readOnly: true;
+  }[];
+}
+
+export interface KubernetesSecret {
+  readonly apiVersion: "v1";
+  readonly kind: "Secret";
+  readonly immutable: true;
+  readonly metadata: { readonly name: string; readonly namespace: string };
+  readonly stringData: { readonly bearer: string };
 }
 
 /** One worker pod, as the cluster API is given it. */
@@ -156,6 +170,17 @@ export interface KubernetesPod {
     readonly nodeSelector: Readonly<Record<string, string>>;
     readonly securityContext: Readonly<Record<string, unknown>>;
     readonly containers: readonly KubernetesContainer[];
+    readonly volumes: readonly {
+      readonly name: string;
+      readonly secret: {
+        readonly secretName: string;
+        readonly defaultMode: number;
+        readonly items: readonly {
+          readonly key: string;
+          readonly path: string;
+        }[];
+      };
+    }[];
   };
 }
 
@@ -223,6 +248,28 @@ export function kubernetesWorkerPodName(
     .join("/");
   const digest = createHash("sha256").update(identity).digest("hex");
   return `${config.podNamePrefix}-${digest}`;
+}
+
+export const kubernetesWorkerSecretName = kubernetesWorkerPodName;
+
+export function kubernetesWorkerSecret(
+  config: KubernetesWorkerLaunchConfig,
+  placement: AttemptPlacement,
+): KubernetesSecret {
+  return {
+    apiVersion: "v1",
+    kind: "Secret",
+    immutable: true,
+    metadata: {
+      name: kubernetesWorkerSecretName(
+        config,
+        placement.partition,
+        placement.attempt,
+      ),
+      namespace: config.namespace,
+    },
+    stringData: { bearer: placement.capability.secret },
+  };
 }
 
 /**
@@ -317,6 +364,26 @@ export function kubernetesWorkerTask(
   };
 }
 
+function kubernetesWorkerCapabilityVolumes(
+  config: KubernetesWorkerLaunchConfig,
+  placement: AttemptPlacement,
+): KubernetesPod["spec"]["volumes"] {
+  return [
+    {
+      name: "worker-capability",
+      secret: {
+        secretName: kubernetesWorkerSecretName(
+          config,
+          placement.partition,
+          placement.attempt,
+        ),
+        defaultMode: 0o400,
+        items: [{ key: "bearer", path: "bearer" }],
+      },
+    },
+  ];
+}
+
 /** The one bounded pod a scheduled attempt becomes, or the inability that stops it. */
 export function kubernetesWorkerPodRequest(
   config: KubernetesWorkerLaunchConfig,
@@ -368,8 +435,17 @@ export function kubernetesWorkerPodRequest(
               },
             },
             securityContext: config.containerSecurityContext,
+            volumeMounts: [
+              {
+                name: "worker-capability",
+                mountPath: config.capabilityFile,
+                subPath: "bearer",
+                readOnly: true,
+              },
+            ],
           },
         ],
+        volumes: kubernetesWorkerCapabilityVolumes(config, placement),
       },
     },
   };

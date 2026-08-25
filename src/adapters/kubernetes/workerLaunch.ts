@@ -46,6 +46,8 @@ import {
   checkedKubernetesWorkerLaunchConfig,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
+  kubernetesWorkerSecret,
+  kubernetesWorkerSecretName,
   type KubernetesWorkerLaunchConfig,
 } from "./workerPod.ts";
 
@@ -54,7 +56,11 @@ const millisecondsPerSecond = 1_000;
 
 /** What one reach of the cluster API found, an outage never reading as an answer. */
 type KubernetesReached =
-  | { readonly reached: "Status"; readonly status: number }
+  | {
+      readonly reached: "Status";
+      readonly status: number;
+      readonly body: string;
+    }
   | { readonly reached: "Unreachable" };
 
 /** One request this adapter makes, the caller's signal beside the deadline it always has. */
@@ -68,6 +74,10 @@ interface KubernetesReach {
 /** The collection every worker pod of this deployment is created in and deleted from. */
 function kubernetesPodsPath(config: KubernetesWorkerLaunchConfig): string {
   return `/api/v1/namespaces/${config.namespace}/pods`;
+}
+
+function kubernetesSecretsPath(config: KubernetesWorkerLaunchConfig): string {
+  return `/api/v1/namespaces/${config.namespace}/secrets`;
 }
 
 /** Reaches the cluster API once, under the caller's signal and this deployment's deadline. */
@@ -97,10 +107,83 @@ async function kubernetesReach(
       },
       ...(reach.body === undefined ? {} : { body: reach.body }),
     });
-    return { reached: "Status", status: response.status };
+    return {
+      reached: "Status",
+      status: response.status,
+      body: await response.text(),
+    };
   } catch {
     return { reached: "Unreachable" };
   }
+}
+
+function kubernetesSecretMatches(
+  reached: KubernetesReached,
+  expected: ReturnType<typeof kubernetesWorkerSecret>,
+): boolean {
+  if (reached.reached !== "Status" || reached.status !== 200) return false;
+  try {
+    const document = JSON.parse(reached.body) as {
+      readonly apiVersion?: unknown;
+      readonly kind?: unknown;
+      readonly immutable?: unknown;
+      readonly metadata?: {
+        readonly name?: unknown;
+        readonly namespace?: unknown;
+      };
+      readonly data?: { readonly bearer?: unknown };
+    };
+    return (
+      document.apiVersion === expected.apiVersion &&
+      document.kind === expected.kind &&
+      document.immutable === true &&
+      document.metadata?.name === expected.metadata.name &&
+      document.metadata.namespace === expected.metadata.namespace &&
+      document.data !== undefined &&
+      Object.keys(document.data).length === 1 &&
+      document.data.bearer ===
+        Buffer.from(expected.stringData.bearer).toString("base64")
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function kubernetesEnsureSecret(
+  config: KubernetesWorkerLaunchConfig,
+  fetcher: typeof fetch,
+  placement: Parameters<AttemptPlacementPort["place"]>[0],
+): Promise<KubernetesReached> {
+  const secret = kubernetesWorkerSecret(config, placement);
+  const created = await kubernetesReach(config, fetcher, {
+    method: "POST",
+    path: kubernetesSecretsPath(config),
+    body: JSON.stringify(secret),
+  });
+  if (created.reached !== "Status" || created.status !== 409) return created;
+  const existing = await kubernetesReach(config, fetcher, {
+    method: "GET",
+    path: `${kubernetesSecretsPath(config)}/${encodeURIComponent(secret.metadata.name)}`,
+  });
+  return kubernetesSecretMatches(existing, secret)
+    ? { reached: "Status", status: 200, body: "" }
+    : { reached: "Unreachable" };
+}
+
+async function kubernetesDeleteAttemptSecret(
+  config: KubernetesWorkerLaunchConfig,
+  fetcher: typeof fetch,
+  attempt: Parameters<AttemptPlacementPort["cancel"]>[0],
+): Promise<void> {
+  const name = kubernetesWorkerSecretName(
+    config,
+    attempt.partition,
+    attempt.attempt,
+  );
+  await kubernetesReach(config, fetcher, {
+    method: "DELETE",
+    path: `${kubernetesSecretsPath(config)}/${encodeURIComponent(name)}`,
+  });
 }
 
 /** The answers that refuse the submitted document itself rather than describe the cluster. */
@@ -141,16 +224,26 @@ export function kubernetesWorkerLaunch(
       const requested = kubernetesWorkerPodRequest(config, placement);
       if (requested.requested === "Denied")
         return { placed: "Denied", reason: requested.reason };
+      const secret = await kubernetesEnsureSecret(config, fetcher, placement);
+      const secretOutcome = kubernetesPlaced(
+        config,
+        secret,
+        asPlacementId(requested.pod.metadata.name),
+      );
+      if (secretOutcome.placed !== "Placed") return secretOutcome;
       const reached = await kubernetesReach(config, fetcher, {
         method: "POST",
         path: kubernetesPodsPath(config),
         body: JSON.stringify(requested.pod),
       });
-      return kubernetesPlaced(
+      const outcome = kubernetesPlaced(
         config,
         reached,
         asPlacementId(requested.pod.metadata.name),
       );
+      if (outcome.placed !== "Placed")
+        await kubernetesDeleteAttemptSecret(config, fetcher, placement);
+      return outcome;
     },
     cancel: async (attempt) => {
       const name = kubernetesWorkerPodName(
@@ -162,6 +255,7 @@ export function kubernetesWorkerLaunch(
         method: "DELETE",
         path: `${kubernetesPodsPath(config)}/${encodeURIComponent(name)}`,
       });
+      await kubernetesDeleteAttemptSecret(config, fetcher, attempt);
     },
   };
 }

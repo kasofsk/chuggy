@@ -270,6 +270,24 @@ function expectedPod(name: string): unknown {
             limits: { cpu: "1", memory: "2Gi" },
           },
           securityContext: { allowPrivilegeEscalation: false },
+          volumeMounts: [
+            {
+              name: "worker-capability",
+              mountPath: "/run/chuggy/capability",
+              subPath: "bearer",
+              readOnly: true,
+            },
+          ],
+        },
+      ],
+      volumes: [
+        {
+          name: "worker-capability",
+          secret: {
+            secretName: name,
+            defaultMode: 0o400,
+            items: [{ key: "bearer", path: "bearer" }],
+          },
         },
       ],
     },
@@ -286,13 +304,90 @@ test("a placed attempt is one pod, named for its attempt and fenced by its annot
   const name = kubernetesWorkerPodName(config, partition, placement.attempt);
   assert.deepEqual(placed, { placed: "Placed", placement: name });
   const request = reached[0];
+  const podRequest = reached[1];
   assert.equal(request?.method, "POST");
   assert.equal(
     request.url,
+    "https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/secrets",
+  );
+  assert.deepEqual(JSON.parse(request.body ?? ""), {
+    apiVersion: "v1",
+    kind: "Secret",
+    immutable: true,
+    metadata: { name, namespace: "chuggy-workers" },
+    stringData: { bearer: "secret-one" },
+  });
+  assert.equal(podRequest?.method, "POST");
+  assert.equal(
+    podRequest?.url,
     "https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/pods",
   );
   assert.equal(request.authorization, `Bearer ${token}`);
-  assert.deepEqual(JSON.parse(request.body ?? ""), expectedPod(name));
+  assert.deepEqual(JSON.parse(podRequest?.body ?? ""), expectedPod(name));
+  assert.equal(podRequest?.body?.includes("secret-one"), false);
+});
+
+test("an existing Secret is accepted only when its immutable identity and bearer match", async () => {
+  const name = kubernetesWorkerPodName(config, partition, placement.attempt);
+  for (const [existing, expected] of [
+    [{}, "Placed"],
+    [{ immutable: false }, "Unavailable"],
+    [
+      { metadata: { name: "another", namespace: config.namespace } },
+      "Unavailable",
+    ],
+    [{ bearer: "another-secret" }, "Unavailable"],
+  ] as const) {
+    let answerNumber = 0;
+    const reached: ClusterReached[] = [];
+    const workers = kubernetesWorkerLaunch(
+      config,
+      recordingCluster(reached, () => {
+        answerNumber += 1;
+        if (answerNumber === 1) return new Response(null, { status: 409 });
+        if (answerNumber === 2)
+          return Response.json(
+            {
+              apiVersion: "v1",
+              kind: "Secret",
+              immutable: true,
+              metadata: { name, namespace: config.namespace },
+              data: {
+                bearer: Buffer.from(
+                  "bearer" in existing ? existing.bearer : "secret-one",
+                ).toString("base64"),
+              },
+              ...existing,
+            },
+            { status: 200 },
+          );
+        return new Response(null, { status: 201 });
+      }),
+    );
+    assert.equal((await workers.place(placement)).placed, expected);
+    assert.equal(reached[1]?.body, undefined);
+    assert.equal(reached.length, expected === "Placed" ? 3 : 2);
+  }
+});
+
+test("a failed pod create removes the attempt Secret", async () => {
+  let answerNumber = 0;
+  const reached: ClusterReached[] = [];
+  const workers = kubernetesWorkerLaunch(
+    config,
+    recordingCluster(reached, () => {
+      answerNumber += 1;
+      return new Response(null, { status: answerNumber === 2 ? 422 : 201 });
+    }),
+  );
+  assert.deepEqual(await workers.place(placement), {
+    placed: "Denied",
+    reason: "ExecutionPolicyDenied",
+  });
+  assert.deepEqual(
+    reached.map((request) => request.method),
+    ["POST", "POST", "DELETE"],
+  );
 });
 
 test("a worker is handed the resolved authority and never the policy grant", async () => {
@@ -302,7 +397,7 @@ test("a worker is handed the resolved authority and never the policy grant", asy
     recordingCluster(reached, answering(201)),
   );
   await workers.place(placement);
-  const pod = JSON.parse(reached[0]?.body ?? "") as {
+  const pod = JSON.parse(reached[1]?.body ?? "") as {
     readonly spec: {
       readonly containers: readonly {
         readonly env: readonly { readonly value: string }[];
@@ -328,6 +423,7 @@ test("a cancellation addresses the pod its attempt named", async () => {
     reached.map((request) => `${request.method} ${request.url}`),
     [
       `DELETE https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/pods/${name}`,
+      `DELETE https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/secrets/${name}`,
     ],
   );
 });
@@ -376,8 +472,8 @@ test("the image a pod runs is the requirement's own", async () => {
       image: "registry.invalid/other:v9",
     },
   });
-  assert.equal(reached.length, 1);
-  const pod = JSON.parse(reached[0]?.body ?? "") as {
+  assert.equal(reached.length, 2);
+  const pod = JSON.parse(reached[1]?.body ?? "") as {
     readonly spec: {
       readonly containers: readonly { readonly image: string }[];
     };
@@ -395,7 +491,7 @@ test("only a refusal of the document is definitive and every other answer holds"
   const outcomes: readonly (readonly [number, unknown])[] = [
     [200, placed],
     [201, placed],
-    [409, placed],
+    [409, held],
     [400, denied],
     [413, denied],
     [415, denied],
