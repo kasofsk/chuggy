@@ -25,6 +25,18 @@ export interface WorkerPlaneServerService {
   readonly uploadBytesMax: number;
 }
 
+function workerHealthRoutes(
+  app: FastifyInstance,
+  service: WorkerPlaneServerService,
+): void {
+  app.get(workerPlaneRoutes[0], () => ({ status: "live" }));
+  app.get(workerPlaneRoutes[1], async (_request, reply) =>
+    (await service.ready())
+      ? { status: "ready" }
+      : reply.code(503).send({ status: "unready" }),
+  );
+}
+
 async function workerAuthority(
   service: WorkerPlaneServerService,
   request: FastifyRequest,
@@ -36,33 +48,39 @@ async function workerAuthority(
   return service.authority.authenticate(asAttemptCapabilitySecret(token));
 }
 
-export function createWorkerPlaneApp(
+function workerBearer(request: FastifyRequest) {
+  const header = request.headers.authorization;
+  if (header === undefined || !header.startsWith("Bearer ")) return undefined;
+  const token = header.slice("Bearer ".length);
+  return token.length > 0 && token.length <= 256
+    ? asAttemptCapabilitySecret(token)
+    : undefined;
+}
+
+function workerInputRoute(
+  app: FastifyInstance,
   service: WorkerPlaneServerService,
-): FastifyInstance {
-  const app = fastify({ logger: false, bodyLimit: service.uploadBytesMax });
-  app.addContentTypeParser(
-    "application/octet-stream",
-    { parseAs: "buffer" },
-    (_request, body, done) => done(null, body),
-  );
-  app.get(workerPlaneRoutes[0], async () => ({ status: "live" }));
-  app.get(workerPlaneRoutes[1], async (_request, reply) =>
-    (await service.ready())
-      ? { status: "ready" }
-      : reply.code(503).send({ status: "unready" }),
-  );
+): void {
   app.get(workerPlaneRoutes[2], async (request, reply) => {
     const authority = await workerAuthority(service, request);
-    if (authority === undefined) return reply.code(401).send({ action: "stop" });
+    if (authority === undefined || !authority.live)
+      return reply.code(401).send({ action: "stop" });
     return {
       bundle: authority.inputBundle,
       digest: authority.inputBundleDigest,
       references: authority.inputs,
     };
   });
+}
+
+function workerUploadRoute(
+  app: FastifyInstance,
+  service: WorkerPlaneServerService,
+): void {
   app.put(workerPlaneRoutes[3], async (request, reply) => {
     const authority = await workerAuthority(service, request);
-    if (authority === undefined) return reply.code(401).send({ action: "stop" });
+    if (authority === undefined || !authority.live)
+      return reply.code(401).send({ action: "stop" });
     const path = (request.params as { "*": string })["*"];
     if (!(request.body instanceof Uint8Array))
       return reply.code(415).send({ action: "stop" });
@@ -83,12 +101,24 @@ export function createWorkerPlaneApp(
           .send({ action: "retry" });
     }
   });
+}
+
+function workerReportRoute(
+  app: FastifyInstance,
+  service: WorkerPlaneServerService,
+): void {
   app.post(workerPlaneRoutes[4], async (request, reply) => {
+    const secret = workerBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
     const authority = await workerAuthority(service, request);
-    if (authority === undefined) return reply.code(401).send({ action: "stop" });
-    if (typeof request.body !== "string" || request.body.length > resultManifestTextCharsMax)
+    if (authority === undefined)
+      return reply.code(401).send({ action: "stop" });
+    if (
+      typeof request.body !== "string" ||
+      request.body.length > resultManifestTextCharsMax
+    )
       return reply.code(400).send({ action: "stop" });
-    const ingested = await service.reports.report({
+    const ingested = await service.reports.report(secret, {
       partition: authority.partition,
       execution: authority.execution,
       attempt: authority.attempt,
@@ -101,7 +131,10 @@ export function createWorkerPlaneApp(
       case "Absorbed":
         return reply.code(202).send({ action: "stop" });
       case "Unavailable":
-        return reply.header("retry-after", String(ingested.retryAfterSeconds)).code(503).send({ action: "retry" });
+        return reply
+          .header("retry-after", String(ingested.retryAfterSeconds))
+          .code(503)
+          .send({ action: "retry" });
       case "Fenced":
       case "Stale":
       case "NotAdmitted":
@@ -111,6 +144,22 @@ export function createWorkerPlaneApp(
         return reply.code(409).send({ action: "stop" });
     }
   });
-  return app;
 }
 
+export function createWorkerPlaneApp(
+  service: WorkerPlaneServerService,
+): FastifyInstance {
+  const app = fastify({ logger: false, bodyLimit: service.uploadBytesMax });
+  app.addContentTypeParser(
+    "application/octet-stream",
+    { parseAs: "buffer" },
+    (_request, body, done) => {
+      done(null, body);
+    },
+  );
+  workerHealthRoutes(app, service);
+  workerInputRoute(app, service);
+  workerUploadRoute(app, service);
+  workerReportRoute(app, service);
+  return app;
+}

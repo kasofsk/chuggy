@@ -2,7 +2,10 @@ import type {
   AttemptCapabilitySecret,
   FencedAttempt,
 } from "./executionScheduler.ts";
-import type { AttemptSubmission, ReportIngested } from "./executionSchedulerReport.ts";
+import type {
+  AttemptSubmission,
+  ReportIngested,
+} from "./executionSchedulerReport.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 
 /** The bounded metadata of one immutable reference pinned by an attempt's input bundle. */
@@ -15,6 +18,7 @@ export interface WorkerInputReference {
 
 /** Authority recovered only from a live attempt's bearer. */
 export interface WorkerAttemptAuthority extends FencedAttempt {
+  readonly live: boolean;
   readonly manifest: ResultManifestId;
   readonly inputBundle: string;
   readonly inputBundleDigest: string;
@@ -22,7 +26,9 @@ export interface WorkerAttemptAuthority extends FencedAttempt {
 }
 
 export interface WorkerPlaneAuthority {
-  authenticate(secret: AttemptCapabilitySecret): Promise<WorkerAttemptAuthority | undefined>;
+  authenticate(
+    secret: AttemptCapabilitySecret,
+  ): Promise<WorkerAttemptAuthority | undefined>;
 }
 
 export type WorkerArtifactStored =
@@ -39,6 +45,8 @@ export interface WorkerArtifactUploadPort {
 }
 
 export interface WorkerReportPort {
-  report(submission: AttemptSubmission): Promise<ReportIngested>;
+  report(
+    secret: AttemptCapabilitySecret,
+    submission: AttemptSubmission,
+  ): Promise<ReportIngested>;
 }
-

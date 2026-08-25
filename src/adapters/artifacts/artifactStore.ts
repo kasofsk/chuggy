@@ -451,7 +451,9 @@ async function artifactStoreAttemptWrite(
   input: Parameters<WorkerArtifactUploadPort["store"]>[0],
 ): Promise<WorkerArtifactStored> {
   if (input.content.byteLength > own.writeBytesMax)
-    throw new RangeError("artifact store: worker upload is past the byte bound");
+    throw new RangeError(
+      "artifact store: worker upload is past the byte bound",
+    );
   const directory = artifactProjectDirectory(
     own.root,
     input.authority.partition.tenant,
@@ -469,7 +471,10 @@ async function artifactStoreAttemptWrite(
   try {
     await mkdir(dirname(file), { recursive: true });
     if ((await artifactStoreDirectoryRejection(directory, file)) !== undefined)
-      return { stored: "Unavailable", retryAfterSeconds: own.unavailableRetrySecs };
+      return {
+        stored: "Unavailable",
+        retryAfterSeconds: own.unavailableRetrySecs,
+      };
     await writeFile(pending, input.content, {
       mode: own.storedFileMode,
       flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
@@ -490,9 +495,14 @@ async function artifactStoreAttemptWrite(
       if (found.entry !== "Object" || found.bytes !== input.content.byteLength)
         return { stored: "Conflict" };
       const digest = await artifactStoreDigestOf(file, found.bytes);
-      return digest === expected ? { stored: "Stored" } : { stored: "Conflict" };
+      return digest === expected
+        ? { stored: "Stored" }
+        : { stored: "Conflict" };
     }
-    return { stored: "Unavailable", retryAfterSeconds: own.unavailableRetrySecs };
+    return {
+      stored: "Unavailable",
+      retryAfterSeconds: own.unavailableRetrySecs,
+    };
   }
 }
 

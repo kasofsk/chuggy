@@ -334,10 +334,7 @@ function schedulerWorkers(
     namespace: schedulerRequired(environment, "CLUSTER_NAMESPACE"),
     tokenFile: schedulerRequired(environment, "CLUSTER_TOKEN_FILE"),
     workerPlaneUrl: schedulerRequired(environment, "WORKER_PLANE_URL"),
-    capabilityFile: schedulerRequired(
-      environment,
-      "WORKER_CAPABILITY_FILE",
-    ),
+    capabilityFile: schedulerRequired(environment, "WORKER_CAPABILITY_FILE"),
     serviceAccountName: schedulerRequired(
       environment,
       "WORKER_SERVICE_ACCOUNT",

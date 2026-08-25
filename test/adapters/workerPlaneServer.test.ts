@@ -14,6 +14,7 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 
 const authority = {
+  live: true,
   partition: { tenant: asTenantId("tenant"), project: asProjectId("project") },
   execution: asExecutionId("execution"),
   attempt: asAttemptId("attempt"),
@@ -21,7 +22,9 @@ const authority = {
   manifest: asResultManifestId("manifest"),
   inputBundle: "bundle",
   inputBundleDigest: "digest",
-  inputs: [{ ordinal: 1, kind: "Repository", reference: "source", digest: "pin" }],
+  inputs: [
+    { ordinal: 1, kind: "Repository", reference: "source", digest: "pin" },
+  ],
 } as const;
 
 test("the worker plane has no tenant-shaped or project-shaped route", () => {
@@ -36,28 +39,33 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
   const reported: unknown[] = [];
   const app = createWorkerPlaneApp({
     authority: {
-      authenticate: async (secret) =>
-        secret === asAttemptCapabilitySecret("held") ? authority : undefined,
+      authenticate: (secret) =>
+        Promise.resolve(
+          secret === asAttemptCapabilitySecret("held") ? authority : undefined,
+        ),
     },
     artifacts: {
-      store: async (input) => {
+      store: (input) => {
         uploaded.push(input);
-        return { stored: "Stored" };
+        return Promise.resolve({ stored: "Stored" });
       },
     },
     reports: {
-      report: async (submission) => {
+      report: (_secret, submission) => {
         reported.push(submission);
-        return { ingested: "Fenced" };
+        return Promise.resolve({ ingested: "Fenced" });
       },
     },
-    ready: async () => true,
+    ready: () => Promise.resolve(true),
     uploadBytesMax: 64,
   });
   const headers = { authorization: "Bearer held" };
   const input = await app.inject({ method: "GET", url: "/v1/input", headers });
   assert.equal(input.statusCode, 200);
-  assert.deepEqual(input.json().references, authority.inputs);
+  assert.deepEqual(
+    (JSON.parse(input.body) as { references: unknown }).references,
+    authority.inputs,
+  );
   const upload = await app.inject({
     method: "PUT",
     url: "/v1/artifacts/out.txt",
@@ -74,17 +82,30 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
   });
   assert.equal(report.statusCode, 409);
   assert.equal(reported.length, 1);
-  assert.equal((reported[0] as { manifest: string }).manifest, authority.manifest);
+  assert.equal(
+    (reported[0] as { manifest: string }).manifest,
+    authority.manifest,
+  );
   await app.close();
 });
 
 test("an unknown or oversized bearer reaches no attempt act", async () => {
   let acts = 0;
   const app = createWorkerPlaneApp({
-    authority: { authenticate: async () => undefined },
-    artifacts: { store: async () => { acts += 1; return { stored: "Stored" }; } },
-    reports: { report: async () => { acts += 1; return { ingested: "Fenced" }; } },
-    ready: async () => true,
+    authority: { authenticate: () => Promise.resolve(undefined) },
+    artifacts: {
+      store: () => {
+        acts += 1;
+        return Promise.resolve({ stored: "Stored" });
+      },
+    },
+    reports: {
+      report: () => {
+        acts += 1;
+        return Promise.resolve({ ingested: "Fenced" });
+      },
+    },
+    ready: () => Promise.resolve(true),
     uploadBytesMax: 64,
   });
   for (const token of ["missing", "x".repeat(257)]) {
@@ -98,4 +119,3 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
   assert.equal(acts, 0);
   await app.close();
 });
-
