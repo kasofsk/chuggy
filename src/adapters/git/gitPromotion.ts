@@ -32,6 +32,7 @@ import type {
   CandidateIntegration,
   CandidatePrepared,
   CandidatePreparation,
+  CandidateSourcePreparation,
   CandidatePromoted,
   CandidatePromotion,
   GitEvidence,
@@ -167,6 +168,56 @@ async function gitPromotionPrepare(
     return { prepared: "Failed", evidence: authorized.evidence };
   }
   return candidatePrepare(own.scratch, authorized.credential, preparation);
+}
+
+/** Imports a worker candidate only where the remote ref, commit and base agree. */
+async function gitPromotionPrepareSource(
+  own: GitPromotionState,
+  preparation: CandidateSourcePreparation,
+): Promise<CandidatePrepared> {
+  const authorized = await gitPromotionCredentialOf(
+    own,
+    preparation.repository,
+  );
+  if (authorized.authorized === "Refused") {
+    return { prepared: "Failed", evidence: authorized.evidence };
+  }
+  const repository = preparation.repository.repository;
+  const observed = await scratchReadRef(
+    own.scratch,
+    repository,
+    authorized.credential,
+    preparation.ref,
+  );
+  if (observed.read === "Unreachable") {
+    return { prepared: "Failed", evidence: "RemoteUnreachable" };
+  }
+  if (observed.read !== "Value") {
+    return { prepared: "Failed", evidence: "RefUnreadable" };
+  }
+  if (observed.value !== preparation.commit) {
+    return { prepared: "Failed", evidence: "ObjectMissing" };
+  }
+  if (
+    !(await scratchFetchRef(
+      own.scratch,
+      repository,
+      authorized.credential,
+      preparation.ref,
+    )) ||
+    !(await scratchHasCommit(own.scratch, repository, preparation.commit))
+  ) {
+    return { prepared: "Failed", evidence: "ObjectMissing" };
+  }
+  const descends = await scratchIsAncestor(
+    own.scratch,
+    repository,
+    preparation.base,
+    preparation.commit,
+  );
+  return descends === true
+    ? { prepared: "Candidate", candidate: preparation.commit }
+    : { prepared: "Failed", evidence: "ObjectMissing" };
 }
 
 /** Integrates one candidate against one observed target. */
@@ -311,6 +362,7 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
   return {
     observeTarget: (repository) => gitPromotionObserve(own, repository),
     prepareCandidate: (preparation) => gitPromotionPrepare(own, preparation),
+    prepareSource: (preparation) => gitPromotionPrepareSource(own, preparation),
     integrateCandidate: (integration) =>
       gitPromotionIntegrate(own, integration),
     promoteCandidate: (promotion) => gitPromotionPromote(own, promotion),

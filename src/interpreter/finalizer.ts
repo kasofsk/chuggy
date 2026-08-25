@@ -755,6 +755,14 @@ export interface CandidatePreparation {
   readonly files: readonly CandidateFile[];
 }
 
+/** One worker-authored candidate whose immutable identity must be proven from its remote ref. */
+export interface CandidateSourcePreparation {
+  readonly repository: RepositoryBinding;
+  readonly ref: GitRefName;
+  readonly commit: GitObjectId;
+  readonly base: GitObjectId;
+}
+
 /** What constructing a candidate found, a git refusal a value like every other here. */
 export type CandidatePrepared =
   | { readonly prepared: "Candidate"; readonly candidate: GitObjectId }
@@ -831,6 +839,11 @@ export interface GitPromotionPort {
   /** Writes the candidate tree and commit into a bare scratch repository, with no working tree at any point. */
   prepareCandidate(
     preparation: CandidatePreparation,
+  ): Promise<CandidatePrepared>;
+
+  /** Fetches a worker source ref and proves its exact commit descends from its declared base. */
+  prepareSource(
+    preparation: CandidateSourcePreparation,
   ): Promise<CandidatePrepared>;
 
   /** Integrates one candidate against one observed target, deterministically. */

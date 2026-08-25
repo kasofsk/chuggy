@@ -6,7 +6,7 @@
     "image": "worker:v1",
     "authority": {
       "tools": ["claude-code", "shell"],
-      "credentials": ["chuggy-git", "claude-code"],
+      "credentials": ["chuggy-git-worker", "claude-code"],
       "network": true,
       "filesystem": "WriteWorkspace",
       "mayCompleteTask": false

@@ -766,6 +766,13 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       }
       return Promise.resolve(fake.preparation);
     },
+    prepareSource: () => {
+      fake.acts.push("prepare-source");
+      if (fake.preparation === undefined) {
+        throw new Error("finalizer harness: the pass asked for a preparation");
+      }
+      return Promise.resolve(fake.preparation);
+    },
     integrateCandidate: () => {
       fake.acts.push("integrate");
       if (fake.integration === undefined) {

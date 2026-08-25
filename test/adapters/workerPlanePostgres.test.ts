@@ -137,3 +137,57 @@ test("the result boundary's durable conflict stays distinct from fencing", async
     incident: "incident-one",
   });
 });
+
+test("a source handoff crosses the worker boundary as a distinct value", async () => {
+  const statements: unknown[] = [];
+  const pool = {
+    query: (statement: unknown) => {
+      statements.push(statement);
+      return Promise.resolve({
+        rows: [
+          {
+            terminalized: "Terminalized",
+            outcome: "Passed",
+            operation: "operation-one",
+            incident: null,
+          },
+        ],
+      });
+    },
+  } as unknown as pg.Pool;
+  const store = postgresWorkerReportStore(
+    pool,
+    asAttemptCapabilitySecret("held"),
+  );
+  await store.terminalize({
+    ...attempt,
+    manifest: {
+      manifest: "manifest",
+      schemaVersion: 2,
+      digest: "d".repeat(64),
+      verdict: "Pass",
+      handoffs: [],
+      diagnostics: [],
+      source: {
+        repository: "repository-one",
+        ref: "refs/heads/chuggy/tickets/ticket-one/attempts/attempt-one",
+        commit: "a".repeat(40),
+        base: "b".repeat(40),
+      },
+    },
+  } as never);
+  const statement = statements[0] as {
+    readonly template: readonly string[];
+    readonly rawValues: readonly unknown[];
+  };
+  assert.match(statement.template.join(""), /::jsonb,\s*::jsonb/u);
+  assert.equal(
+    statement.rawValues[7],
+    JSON.stringify({
+      repository: "repository-one",
+      ref: "refs/heads/chuggy/tickets/ticket-one/attempts/attempt-one",
+      commit: "a".repeat(40),
+      base: "b".repeat(40),
+    }),
+  );
+});

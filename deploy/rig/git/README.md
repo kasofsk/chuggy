@@ -52,6 +52,7 @@ path that reaches the backend; no query string enters the choice.
 |---|---|---|
 | `git-sync` | the sync reader, referenced by the `GitRepository` | read |
 | `git-operator` | the operator's break-glass | read and push |
+| `git-worker` | development workers | read and create-only under `chuggy/tickets/<ticket>/attempts/<attempt>` |
 | `git-credentials` | what nginx validates against | — |
 
 Read a token back with:

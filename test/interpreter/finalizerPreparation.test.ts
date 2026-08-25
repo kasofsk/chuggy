@@ -40,6 +40,7 @@ import {
   type AttemptRecord,
   type HandoffArtifact,
   type HandoffGathering,
+  type HandoffSource,
   type HandoffWork,
 } from "../../src/interpreter/finalizerPreparation.ts";
 import {
@@ -91,10 +92,23 @@ function artifactOf(path: string, bytes = 1): HandoffArtifact {
   };
 }
 
+function sourceOf(marker: string): HandoffSource {
+  return {
+    execution: asExecutionId(`execution-${marker}`),
+    attempt: asAttemptId(`attempt-${marker}`),
+    repository: asRepositoryId("repository-a"),
+    ref: asGitRefName(`refs/heads/source-${marker}`),
+    commit: asGitObjectId(commitOf(marker)),
+    base: asGitObjectId(commitOf("f")),
+    expectedBase: asGitObjectId(commitOf("f")),
+  };
+}
+
 /** The plainest gathering there is: one passed execution and one artifact. */
 const plain: HandoffGathering = {
   work: [workOf('{"image":"i","version":1}')],
   artifacts: [artifactOf("one.txt")],
+  sources: [],
 };
 
 test("a gathering with one passed execution is a candidate's worth of artifacts", () => {
@@ -106,14 +120,20 @@ test("a gathering with one passed execution is a candidate's worth of artifacts"
 });
 
 test("a ticket whose work has no result names no configuration and so is its own answer", () => {
-  assert.deepEqual(handoffAccepted({ work: [], artifacts: [] }), {
+  assert.deepEqual(handoffAccepted({ work: [], artifacts: [], sources: [] }), {
     accepted: "NoPassedWork",
   });
 });
 
 test("a passed execution with no handoff at all is still a candidate", () => {
-  const accepted = handoffAccepted({ work: plain.work, artifacts: [] });
+  const accepted = handoffAccepted({
+    work: plain.work,
+    artifacts: [],
+    sources: [],
+  });
   if (accepted.accepted !== "Handoff") assert.fail(JSON.stringify(accepted));
+  assert.equal(accepted.handoff.kind, "Artifacts");
+  if (accepted.handoff.kind !== "Artifacts") assert.fail("artifact handoff");
   assert.deepEqual(accepted.handoff.artifacts, []);
 });
 
@@ -140,6 +160,7 @@ test("every refusal names the revision an attempt must pin, and none of them is 
     handoffAccepted({
       work: [workOf('{"image":"i"}', "a"), workOf('{"image":"j"}', "c")],
       artifacts: plain.artifacts,
+      sources: [],
     }),
     handoffAccepted({
       ...plain,
@@ -154,6 +175,15 @@ test("every refusal names the revision an attempt must pin, and none of them is 
       artifacts: Array.from({ length: candidateFilesMax + 1 }, (_each, index) =>
         artifactOf(`file-${String(index)}.txt`),
       ),
+    }),
+    handoffAccepted({ ...plain, sources: [sourceOf("a"), sourceOf("b")] }),
+    handoffAccepted({ ...plain, sources: [sourceOf("a")] }),
+    handoffAccepted({
+      ...plain,
+      artifacts: [],
+      sources: [
+        { ...sourceOf("a"), expectedBase: asGitObjectId(commitOf("e")) },
+      ],
     }),
     handoffAccepted({
       ...plain,
@@ -175,6 +205,9 @@ test("every refusal names the revision an attempt must pin, and none of them is 
       "PathIsReserved",
       "PathIsDeclaredTwice",
       "TooManyArtifacts",
+      "SourceDeclaredTwice",
+      "SourceAndArtifactsMixed",
+      "SourceBaseDisagrees",
       "TooManyBytes",
       "TooManyExecutions",
     ],

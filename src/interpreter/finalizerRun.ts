@@ -686,6 +686,16 @@ async function finalizerBuild(
     finalizerHold(service, tally, "CandidateUnbuilt");
     return;
   }
+  await finalizerIntegratePrepared(service, subject, prepared.candidate, tally);
+}
+
+/** Re-observes and integrates one candidate, however that candidate was prepared. */
+async function finalizerIntegratePrepared(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  candidate: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
   const observed = await service.git.observeTarget(subject.repository);
   if (observed.observed !== "Target") {
     finalizerHold(service, tally, "TargetUnobserved");
@@ -694,17 +704,41 @@ async function finalizerBuild(
   const integrated = await service.git.integrateCandidate({
     repository: subject.repository,
     target: observed.target,
-    candidate: prepared.candidate,
+    candidate,
     strategy: finalizerStrategy,
   });
   await finalizerIntegrated(
     service,
     subject,
     observed.target,
-    prepared.candidate,
+    candidate,
     integrated,
     tally,
   );
+}
+
+/** Verifies and integrates the immutable source commit a worker published. */
+async function finalizerBuildSource(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  source: TicketHandoff & { readonly kind: "Source" },
+  tally: FinalizerTally,
+): Promise<void> {
+  if (source.source.repository !== subject.repository.repository) {
+    await finalizerPreparationFailed(service, subject, subject.target, tally);
+    return;
+  }
+  const prepared = await service.git.prepareSource({
+    repository: subject.repository,
+    ref: source.source.ref,
+    commit: source.source.commit,
+    base: source.source.base,
+  });
+  if (prepared.prepared !== "Candidate") {
+    finalizerHold(service, tally, "CandidateUnbuilt");
+    return;
+  }
+  await finalizerIntegratePrepared(service, subject, prepared.candidate, tally);
 }
 
 /**
@@ -796,6 +830,10 @@ async function finalizerPrepare(
   const { subject, handoff } = gathered;
   if (handoff === undefined) {
     await finalizerPreparationFailed(service, subject, target, tally);
+    return;
+  }
+  if (handoff.kind === "Source") {
+    await finalizerBuildSource(service, subject, handoff, tally);
     return;
   }
   const read = await service.handoffs.readHandoff({

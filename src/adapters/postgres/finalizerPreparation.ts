@@ -58,11 +58,15 @@ import type {
   AttemptRecorded,
   HandoffArtifact,
   HandoffGathering,
+  HandoffSource,
   HandoffWork,
 } from "../../interpreter/finalizerPreparation.ts";
 import { allApprovalRefusals } from "../../interpreter/finalizerPreparation.ts";
 import type { FinalizationClaim } from "../../interpreter/finalizer.ts";
 import {
+  asGitObjectId,
+  asGitRefName,
+  asRepositoryId,
   candidateExecutionsMax,
   candidateFilesMax,
 } from "../../interpreter/finalizer.ts";
@@ -97,6 +101,17 @@ interface ArtifactRow {
   readonly path: string;
   readonly digest: string;
   readonly bytes: string;
+}
+
+/** One source handoff declared by passed work. */
+interface SourceRow {
+  readonly execution: string;
+  readonly attempt: string;
+  readonly repository: string;
+  readonly ref: string;
+  readonly commit: string;
+  readonly base: string;
+  readonly expected_base: string;
 }
 
 /** What the approval door answered about one prepared attempt. */
@@ -174,6 +189,33 @@ async function preparationPassedArtifacts(
   return found.rows;
 }
 
+/** The immutable source candidates that passed work declared. */
+async function preparationPassedSources(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<readonly SourceRow[]> {
+  const { tenant, project } = claim.partition;
+  const found = await client.query<SourceRow>(
+    sql`SELECT e.execution, r.attempt, s.repository, s.ref, s.commit, s.base,
+               s.expected_base
+      FROM execution e
+      JOIN execution_request_task t
+        ON t.tenant = e.tenant AND t.project = e.project
+           AND t.request = e.source_request AND t.task = e.task
+      JOIN execution_result r
+        ON r.tenant = e.tenant AND r.project = e.project
+           AND r.execution = e.execution
+      JOIN execution_result_source s
+        ON s.tenant = r.tenant AND s.project = r.project
+           AND s.manifest = r.manifest
+     WHERE e.tenant = ${tenant} AND e.project = ${project} AND e.ticket = ${claim.ticket}
+       AND t.kind = 'Work' AND e.status = 'Terminal' AND e.outcome = 'Passed'
+       AND r.verdict = 'Pass'
+     ORDER BY e.execution LIMIT 2`,
+  );
+  return found.rows;
+}
+
 /** Everything the ticket's passed work declared, gathered before any decision runs. */
 export async function finalizerPreparationGathering(
   client: pg.PoolClient,
@@ -181,6 +223,7 @@ export async function finalizerPreparationGathering(
 ): Promise<HandoffGathering> {
   const work = await preparationPassedWork(client, claim);
   const artifacts = await preparationPassedArtifacts(client, claim);
+  const sources = await preparationPassedSources(client, claim);
   return {
     work: work.map((row): HandoffWork => ({
       execution: asExecutionId(row.execution),
@@ -198,6 +241,15 @@ export async function finalizerPreparationGathering(
       path: asArtifactPath(row.path),
       digest: asArtifactDigest(row.digest),
       bytes: projectRowCounter(row.bytes, "artifact bytes"),
+    })),
+    sources: sources.map((row): HandoffSource => ({
+      execution: asExecutionId(row.execution),
+      attempt: asAttemptId(row.attempt),
+      repository: asRepositoryId(row.repository),
+      ref: asGitRefName(row.ref),
+      commit: asGitObjectId(row.commit),
+      base: asGitObjectId(row.base),
+      expectedBase: asGitObjectId(row.expected_base),
     })),
   };
 }

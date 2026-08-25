@@ -375,6 +375,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "execution_request_task",
       "execution_result",
       "execution_result_artifact",
+      "execution_result_source",
       "finalization_attempt",
       "finalization_reconciliation",
       "finalization_request",

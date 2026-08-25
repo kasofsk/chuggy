@@ -6,6 +6,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { URL } from "node:url";
 
+import { commitAndPushSource, resultDocument } from "./source.mjs";
+
 const executeFile = promisify(execFile);
 let activeTask;
 let activeBearer;
@@ -158,38 +160,6 @@ async function runClaude(task, directory) {
   return { output, result };
 }
 
-async function changedPaths(task, directory) {
-  const deleted = await command(
-    "git",
-    ["diff", "--name-only", "--diff-filter=D", "HEAD"],
-    { cwd: directory },
-  );
-  if (deleted.stdout.trim().length > 0)
-    throw new Error("worker handoffs cannot represent deleted files");
-  const tracked = await command(
-    "git",
-    ["diff", "--name-only", "--diff-filter=ACMRTUXB", "-z", "HEAD"],
-    { cwd: directory, encoding: "buffer" },
-  );
-  const untracked = await command(
-    "git",
-    ["ls-files", "--others", "--exclude-standard", "-z"],
-    { cwd: directory, encoding: "buffer" },
-  );
-  const setupFiles = new Set(
-    (task.worker?.files ?? []).map((file) => file.path),
-  );
-  return [
-    ...new Set(
-      Buffer.concat([tracked.stdout, untracked.stdout])
-        .toString("utf8")
-        .split("\0"),
-    ),
-  ]
-    .filter((path) => path.length > 0 && !setupFiles.has(path))
-    .sort();
-}
-
 function artifact(path, content) {
   return {
     path,
@@ -207,14 +177,29 @@ async function upload(task, bearer, path, content) {
   return artifact(path, content);
 }
 
-async function workHandoffs(task, bearer, directory, verdict) {
-  if (task.taskKind !== "Work" || verdict !== "Pass") return [];
-  const handoffs = [];
-  for (const path of await changedPaths(task, directory)) {
-    const content = await readFile(join(directory, path));
-    handoffs.push(await upload(task, bearer, path, content));
-  }
-  return handoffs;
+async function workSource(
+  task,
+  repositoryId,
+  repository,
+  base,
+  directory,
+  verdict,
+) {
+  if (task.taskKind !== "Work" || verdict !== "Pass") return undefined;
+  const environment = {
+    ...process.env,
+    GIT_ASKPASS: "/usr/local/lib/chuggy/git-askpass.sh",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+  return commitAndPushSource({
+    task,
+    repositoryId,
+    repository,
+    base,
+    directory,
+    command,
+    environment,
+  });
 }
 
 async function diagnostic(task, bearer, result) {
@@ -226,14 +211,14 @@ async function report(task, bearer, manifest) {
   await workerRequest(task, bearer, "/v1/report", {
     method: "POST",
     headers: { "content-type": "text/plain; charset=utf-8" },
-    body: JSON.stringify({ version: 1, ...manifest }),
+    body: JSON.stringify(resultDocument(manifest)),
   });
 }
 
 async function main() {
   const task = parsed("CHUG_WORKER_TASK");
   activeTask = task;
-  for (const credential of ["chuggy-git", "claude-code"])
+  for (const credential of ["chuggy-git-worker", "claude-code"])
     if (!task.authority.credentials.includes(credential))
       throw new Error(`worker authority does not grant ${credential}`);
   if (!task.authority.network || task.authority.filesystem !== "WriteWorkspace")
@@ -250,18 +235,27 @@ async function main() {
   const repository = repositories[repositoryId];
   if (typeof repository !== "string")
     throw new Error(`no repository location for ${repositoryId}`);
+  const base = oneReference(input, "TargetCommit");
   const directory = await cloneRepository(
     repository,
-    oneReference(input, "TargetCommit"),
+    base,
     required("CHUG_WORKER_WORKSPACE"),
   );
   await prepareWorker(task, directory);
   const { output, result } = await runClaude(task, directory);
-  const handoffs = await workHandoffs(task, bearer, directory, result.verdict);
+  const source = await workSource(
+    task,
+    repositoryId,
+    repository,
+    base,
+    directory,
+    result.verdict,
+  );
   const diagnostics = [await diagnostic(task, bearer, output)];
   await report(task, bearer, {
     verdict: result.verdict,
-    handoffs,
+    handoffs: [],
+    ...(source === undefined ? {} : { source }),
     diagnostics,
   });
 }

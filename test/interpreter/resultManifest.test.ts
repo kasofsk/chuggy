@@ -77,6 +77,28 @@ function report(
   return JSON.stringify({ version: 1, verdict, handoffs, diagnostics });
 }
 
+/** One version-two report carrying the candidate branch instead of changed files. */
+function sourceReport(
+  verdict: string,
+  source: unknown,
+  handoffs: readonly Record<string, unknown>[] = [],
+): string {
+  return JSON.stringify({
+    version: 2,
+    verdict,
+    handoffs,
+    diagnostics: [],
+    source,
+  });
+}
+
+const source = {
+  repository: "repository-one",
+  ref: "refs/heads/chuggy/tickets/ticket-one/attempts/attempt-one",
+  commit: "a".repeat(40),
+  base: "b".repeat(40),
+};
+
 /** Accepts the body under the shared binding, which every case starts from. */
 function accept(text: string): ManifestAccepted {
   return acceptResultManifest(binding, manifestId, text, digestOf);
@@ -105,11 +127,55 @@ test("an explicit empty manifest is accepted and is not the absence of one", () 
   assert.equal(rejection('{"version":1,"verdict":"Pass"}'), "UnexpectedField");
 });
 
+test("a version-two passing manifest carries one bounded source handoff", () => {
+  const manifest = accepted(sourceReport("Pass", source));
+  assert.deepEqual(manifest.source, source);
+  assert.equal(manifest.schemaVersion, 2);
+});
+
+test("a source handoff is exclusive with artifact handoffs and a failed verdict", () => {
+  assert.equal(
+    rejection(sourceReport("Pass", source, [row("out/a")])),
+    "SourceAndHandoffs",
+  );
+  assert.equal(
+    rejection(sourceReport("Fail", source)),
+    "SourceOnFailedVerdict",
+  );
+  assert.equal(accepted(sourceReport("Fail", null)).source, undefined);
+});
+
+test("each source identity is validated rather than accepted as opaque wire text", () => {
+  for (const [field, value] of [
+    ["repository", ""],
+    ["ref", ""],
+    ["commit", "not-an-object"],
+    ["base", "c".repeat(39)],
+  ] as const) {
+    assert.equal(
+      rejection(sourceReport("Pass", { ...source, [field]: value })),
+      "SourceMalformed",
+    );
+  }
+  assert.equal(
+    rejection(sourceReport("Pass", { ...source, extra: "ignored" })),
+    "SourceMalformed",
+  );
+});
+
+test("the source handoff is covered by the canonical manifest digest", () => {
+  const first = accepted(sourceReport("Pass", source));
+  const second = accepted(
+    sourceReport("Pass", { ...source, commit: "c".repeat(40) }),
+  );
+  assert.notEqual(first.digest, second.digest);
+});
+
 test("the schema version is read before any row is", () => {
   assert.equal(
     rejection(
       JSON.stringify({
-        version: 2,
+        version: 3,
         verdict: "Pass",
         handoffs: [row("../escape")],
         diagnostics: [],
@@ -360,6 +426,17 @@ function everyRejectionReached(): ReadonlySet<ManifestRejection> {
         diagnostics: [],
       }),
     ),
+    rejection(
+      JSON.stringify({
+        version: 3,
+        verdict: "Pass",
+        handoffs: [],
+        diagnostics: [],
+      }),
+    ),
+    rejection(sourceReport("Pass", { ...source, commit: "not-an-object" })),
+    rejection(sourceReport("Fail", source)),
+    rejection(sourceReport("Pass", source, [row("out/a")])),
     rejection(report("Skip", [])),
     rejection(report("Pass", [...handoffs, row("out/extra")])),
     rejection(

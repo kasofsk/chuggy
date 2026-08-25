@@ -31,6 +31,7 @@ import {
   type CandidateIntegration,
   type CandidatePrepared,
   type CandidatePreparation,
+  type CandidateSourcePreparation,
   type CandidatePromoted,
   type CandidatePromotion,
   type CommitPermit,
@@ -219,7 +220,11 @@ function recordingStore(
     submitted: [],
     attempts: [],
     asks: [],
-    gathering: { work: [passedWork], artifacts: [handoffOf("one.txt", "one")] },
+    gathering: {
+      work: [passedWork],
+      artifacts: [handoffOf("one.txt", "one")],
+      sources: [],
+    },
     asked: { asked: "Requested" },
     handoffGathering: () => Promise.resolve(own.gathering),
     recordAttempt: (record) => {
@@ -276,6 +281,7 @@ interface GitRecorder extends GitPromotionPort {
   readonly promotions: CandidatePromotion[];
   readonly proofs: AncestryProof[];
   readonly preparations: CandidatePreparation[];
+  readonly sourcePreparations: CandidateSourcePreparation[];
   readonly integrations: CandidateIntegration[];
   promoted: CandidatePromoted;
   proved: AncestryProved;
@@ -290,6 +296,7 @@ function recordingGit(): GitRecorder {
     promotions: [],
     proofs: [],
     preparations: [],
+    sourcePreparations: [],
     integrations: [],
     promoted: { promoted: "Advanced" },
     proved: { proved: "Ancestor", observed: asGitObjectId(commitOf("c")) },
@@ -305,6 +312,10 @@ function recordingGit(): GitRecorder {
     observeTarget: () => Promise.resolve(own.observed),
     prepareCandidate: (preparation) => {
       own.preparations.push(preparation);
+      return Promise.resolve(own.prepared);
+    },
+    prepareSource: (preparation) => {
+      own.sourcePreparations.push(preparation);
       return Promise.resolve(own.prepared);
     },
     integrateCandidate: (integration) => {
@@ -575,6 +586,43 @@ test("a clean preparation builds over the observed target and records one prepar
   );
 });
 
+test("a source handoff is verified from Git and integrated without reading artifact bytes", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  store.gathering = {
+    work: [passedWork],
+    artifacts: [],
+    sources: [
+      {
+        execution: passedWork.execution,
+        attempt: passedWork.attempt,
+        repository: binding.repository,
+        ref: asGitRefName(
+          "refs/heads/chuggy/tickets/1/attempts/" + "a".repeat(64),
+        ),
+        commit: asGitObjectId(commitOf("c")),
+        base: asGitObjectId(commitOf("a")),
+        expectedBase: asGitObjectId(commitOf("a")),
+      },
+    ],
+  };
+  const git = recordingGit();
+  const artifacts = recordingArtifacts();
+
+  await passOver(serviceOf(store, git, {}, artifacts));
+
+  assert.deepEqual(artifacts.requests, []);
+  assert.deepEqual(git.preparations, []);
+  assert.deepEqual(git.sourcePreparations, [
+    {
+      repository: binding,
+      ref: "refs/heads/chuggy/tickets/1/attempts/" + "a".repeat(64),
+      commit: commitOf("c"),
+      base: commitOf("a"),
+    },
+  ]);
+  assert.equal(store.attempts[0]?.outcome, "Prepared");
+});
+
 test("a publication prepares only its pinned request in the handoff repository", async () => {
   const request = "publish-unrelated-service";
   const handoffRepository: RepositoryBinding = {
@@ -646,6 +694,7 @@ test("the pinned revision is what says a candidate needs a person's approval", a
       },
     ],
     artifacts: store.gathering.artifacts,
+    sources: [],
   };
   await passOver(serviceOf(store, recordingGit()));
   assert.equal(store.attempts[0]?.approvalRequired, true);
@@ -774,6 +823,7 @@ test("a handoff naming the repository itself is refused before any blob is writt
   store.gathering = {
     work: [passedWork],
     artifacts: [handoffOf(".git/config", "hijacked")],
+    sources: [],
   };
   const git = recordingGit();
   await passOver(serviceOf(store, git));
@@ -783,7 +833,7 @@ test("a handoff naming the repository itself is refused before any blob is writt
 
 test("a ticket whose passed work has no result at all is a hold and never a failure", async () => {
   const store = recordingStore([preparableView("request-one")]);
-  store.gathering = { work: [], artifacts: [] };
+  store.gathering = { work: [], artifacts: [], sources: [] };
   const report = await passOver(serviceOf(store, recordingGit()));
   assert.equal(report.holds, 1);
   assert.deepEqual(store.attempts, []);
@@ -834,7 +884,7 @@ test("a closing project whose passed work is gone holds rather than pricing a fa
   const store = recordingStore([
     { ...promotableView("request-one"), lifecycle: "Deleting" },
   ]);
-  store.gathering = { work: [], artifacts: [] };
+  store.gathering = { work: [], artifacts: [], sources: [] };
   const report = await passOver(serviceOf(store, recordingGit()));
   assert.equal(report.holds, 1);
   assert.deepEqual(store.attempts, []);
