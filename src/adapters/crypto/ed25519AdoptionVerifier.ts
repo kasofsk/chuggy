@@ -24,7 +24,12 @@ export function ed25519AdoptionVerifier(): AdoptionSignatureVerificationPort {
           format: "der",
           type: "spki",
         });
-        if (key.asymmetricKeyType !== "ed25519" || signature.length !== 64)
+        const canonicalPublicKey = key.export({ format: "der", type: "spki" });
+        if (
+          key.asymmetricKeyType !== "ed25519" ||
+          signature.length !== 64 ||
+          !canonicalPublicKey.equals(publicKey)
+        )
           return "Malformed";
         return verify(null, Buffer.from(input.payload), key, signature)
           ? "Valid"

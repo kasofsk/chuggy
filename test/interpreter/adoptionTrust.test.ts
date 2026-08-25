@@ -173,6 +173,24 @@ test("unknown, malformed, invalid, revoked, expired, and not-yet-valid evidence 
     );
 });
 
+test("noncanonical public-key DER with trailing bytes is malformed", () => {
+  for (const suffix of [Buffer.of(0), Buffer.of(0, 1, 2)]) {
+    const noncanonical = Buffer.concat([
+      Buffer.from(publicKey, "base64url"),
+      suffix,
+    ]).toString("base64url");
+    const trustPolicy = policy("SignatureRequired", {
+      ...publisherKey,
+      publicKey: noncanonical,
+    });
+    assert.equal(
+      decideAdoptionTrust(statement, trustPolicy, [signature()], verifier)
+        .evidence[0]?.outcome,
+      "Malformed",
+    );
+  }
+});
+
 test("verification time and trust roots are pinned inputs with no discovery path", () => {
   const beforeRevocation = policy("SignatureRequired", {
     ...publisherKey,
