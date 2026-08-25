@@ -14,6 +14,7 @@ export const migration029: Migration = {
   name: "repository configuration binding fence",
   statements: [
     roleStatement(configurationImporterRole),
+    `GRANT SELECT,UPDATE (recovery_epoch) ON project_repository TO ${boundaryOwnerRole}`,
     `DROP FUNCTION ${repositoryConfigurationImportFunction}(text,text,text,text,text,text,text,text,text,text,text)`,
     `CREATE FUNCTION ${repositoryConfigurationImportFunction}(
        in_tenant text,in_project text,in_expected_repository text,in_expected_recovery_epoch text,
