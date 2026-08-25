@@ -17,6 +17,7 @@ ENV DISABLE_AUTOUPDATER=1 \
     CHUG_WORKER_WORKSPACE=/workspace
 
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
+COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs
 COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh
 
 USER 1000:1000
