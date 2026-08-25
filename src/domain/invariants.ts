@@ -291,7 +291,10 @@ export const noStructuralDeadlock: Invariant = (_config, view) => {
   return everyLiveTicket(
     view.post,
     (t, id) =>
-      finishable.has(id) || t.phase === "Revoked" || hasOpenHumanTask(t),
+      finishable.has(id) ||
+      t.phase === "Revoked" ||
+      t.phase === "Abandoned" ||
+      hasOpenHumanTask(t),
   );
 };
 

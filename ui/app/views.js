@@ -8,7 +8,7 @@
 import { phaseRoster } from "./resources.js";
 
 /** Settled phases share a rank in the model and share a column group here. */
-export const phaseSettled = ["Done", "Escalated", "Revoked"];
+export const phaseSettled = ["Done", "Abandoned", "Escalated", "Revoked"];
 
 /** Non-terminal execution statuses: what an operator is watching move. */
 export const executionStatusesActive = [

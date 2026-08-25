@@ -152,10 +152,10 @@
       "seed": "0x1",
       "maxSamples": 60000,
       "maxSteps": 60,
-      "invariant": "lastStep.label != \"handoff-abandoned\"",
+      "invariant": "not(lastStep.label == \"handoff-abandoned\" and lastStep.transitions.length() > 1)",
       "steps": 22,
       "quintVersion": "0.32.0",
-      "purpose": "An operator can terminally abandon a blocked handoff without recording successful completion."
+      "purpose": "An operator terminally abandons a blocked handoff and its transitive pending dependents without recording successful completion."
     },
     {
       "name": "deadline-only-walk",

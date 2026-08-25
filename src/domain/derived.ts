@@ -98,6 +98,7 @@ export function canFinishSet(core: Core): ReadonlySet<TicketId> {
     return (
       phase === "Done" ||
       (phase !== "Revoked" &&
+        phase !== "Abandoned" &&
         [...waitsOn(c, id)].every((d) => finishable.has(d as TicketId)))
     );
   });

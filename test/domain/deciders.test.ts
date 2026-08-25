@@ -382,6 +382,31 @@ test("accepted promotion can only publish, retry publication, succeed, or abando
   assert.ok(measure(abandoned.post) < measure(blocked.post));
 });
 
+test("handoff abandonment atomically settles every transitive pending dependent", () => {
+  const fleet = coreOf([
+    ticketOn(config, "ManagedFinalizer", {
+      phase: "HandoffBlocked",
+      resumeAt: "ResumePublishingHandoff",
+    }),
+    ticketOn(config, "NoFinalizer", { phase: "Pending", deps: depsOf(1) }),
+    ticketOn(config, "NoFinalizer", { phase: "Pending", deps: depsOf(2) }),
+  ]);
+  const abandoned = decideAbandonHandoff(fleet, id(1));
+  assert.deepEqual(
+    abandoned.rec.transitions,
+    [1, 2, 3].map((ticket) => ({
+      ticket: id(ticket),
+      from: ticket === 1 ? "HandoffBlocked" : "Pending",
+      to: "Abandoned" as const,
+    })),
+  );
+  for (const ticket of [1, 2, 3]) {
+    assert.equal(ticketAt(abandoned.post, id(ticket)).phase, "Abandoned");
+    assert.equal(ticketAt(abandoned.post, id(ticket)).completions, 0);
+  }
+  assert.ok(measure(abandoned.post) < measure(fleet));
+});
+
 test("a failed finalization spends the account its ticket was authored with", () => {
   const budgetedTicket = finalizing(config, {
     finalizationLeft: 1,

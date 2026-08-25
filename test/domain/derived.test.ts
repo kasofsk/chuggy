@@ -162,6 +162,15 @@ test("finishability grows upward from the terminal and a cycle never enters it",
     [],
     "a cycle has no base case, which is why this walk runs the other way from stuckness",
   );
+  const abandoned = coreOf([
+    ticketOn(config, "ManagedFinalizer", { phase: "Abandoned" }),
+    ticketOn(config, "ManagedFinalizer", { phase: "Pending", deps: depsOf(1) }),
+  ]);
+  assert.deepEqual(
+    ordered(canFinishSet(abandoned)),
+    [],
+    "abandonment settles its ticket but can never satisfy a dependency gate",
+  );
   const parked = coreOf([
     ticketOn(config, "ManagedFinalizer", {
       phase: "Escalated",

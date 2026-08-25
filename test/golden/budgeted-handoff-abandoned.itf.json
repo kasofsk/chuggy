@@ -11595,6 +11595,23 @@
         "transitions": [
           {
             "from": {
+              "tag": "Pending",
+              "value": {
+                "#tup": []
+              }
+            },
+            "ticket": {
+              "#bigint": "1"
+            },
+            "to": {
+              "tag": "Abandoned",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "from": {
               "tag": "HandoffBlocked",
               "value": {
                 "#tup": []
@@ -11801,7 +11818,7 @@
                 "#bigint": "3"
               },
               "phase": {
-                "tag": "Pending",
+                "tag": "Abandoned",
                 "value": {
                   "#tup": []
                 }
