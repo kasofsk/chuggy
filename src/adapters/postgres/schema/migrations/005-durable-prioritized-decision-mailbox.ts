@@ -503,6 +503,10 @@ const durableMailbox = [
        INSERT INTO decision_input (tenant, project, ordinal, input_kind, input_id, base_priority, lifecycle_generation)
        SELECT in_tenant, in_project, in_ordinal, 'Continuation', in_continuation, 'Continuation', lifecycle_generation
          FROM project WHERE tenant=in_tenant AND project=in_project;
+       INSERT INTO project_readiness (tenant, project, ready, generation)
+       VALUES (in_tenant, in_project, true, 1)
+       ON CONFLICT (tenant, project) DO UPDATE
+         SET ready=true, generation=project_readiness.generation+1;
      END $$`,
   `CREATE OR REPLACE FUNCTION ${cancellationFunction}(
      in_tenant text, in_project text, in_operation text,

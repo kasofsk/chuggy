@@ -578,12 +578,6 @@ async function decisionContinuation(
     await client.query<{ published: string | null }>(
       sql`SELECT publish_continuation(${partition.tenant},${partition.project},${ordinal}::bigint,${continuation.continuation})::text AS published`,
     );
-    await client.query(
-      sql`INSERT INTO project_readiness (tenant, project, ready, generation)
-       VALUES (${partition.tenant},${partition.project},true,1)
-       ON CONFLICT (tenant,project)
-       DO UPDATE SET ready=true, generation=project_readiness.generation+1`,
-    );
   }
 }
 
