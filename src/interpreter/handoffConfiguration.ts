@@ -7,10 +7,12 @@ import {
   asRepositoryId,
   finalizerIdentityCharsMax,
 } from "./finalizer.ts";
+import { asArtifactDigest, type ArtifactDigest } from "./resultManifest.ts";
 
 declare const credentialReferenceBrand: unique symbol;
 declare const handoffPathBrand: unique symbol;
 declare const handoffRequestDigestBrand: unique symbol;
+declare const handoffConfigurationRevisionBrand: unique symbol;
 
 export type CredentialReference = string & {
   readonly [credentialReferenceBrand]: true;
@@ -19,10 +21,18 @@ export type HandoffPath = string & { readonly [handoffPathBrand]: true };
 export type HandoffRequestDigest = string & {
   readonly [handoffRequestDigestBrand]: true;
 };
+export type HandoffConfigurationRevision = string & {
+  readonly [handoffConfigurationRevisionBrand]: true;
+};
 
 export type HandoffDigestFunction = (canonical: string) => string;
 
 export interface HandoffConfigurationPin {
+  readonly revision: HandoffConfigurationRevision;
+  readonly digest: ArtifactDigest;
+}
+
+export interface UncheckedHandoffConfigurationPin {
   readonly revision: string;
   readonly digest: string;
 }
@@ -35,6 +45,23 @@ export const handoffOutputBytesMaxLimit = 262_144;
 export const handoffPlatformsMax = 16;
 export const handoffParameterCharsMax = 256;
 export const handoffPathCharsMax = 512;
+export const handoffConfigurationRevisionCharsMax = 256;
+
+export function asHandoffConfigurationRevision(
+  value: string,
+): HandoffConfigurationRevision {
+  if (
+    value.length === 0 ||
+    value.length > handoffConfigurationRevisionCharsMax ||
+    !value.isWellFormed()
+  )
+    throw new RangeError("handoff configuration revision is not bounded text");
+  return value as HandoffConfigurationRevision;
+}
+
+export function asHandoffRequestDigest(value: string): HandoffRequestDigest {
+  return asArtifactDigest(value) as string as HandoffRequestDigest;
+}
 
 export interface HandoffRepositoryRole {
   readonly repository: RepositoryId;
@@ -79,7 +106,8 @@ export type HandoffConfigurationFault =
   | "RendererUnknown"
   | "RendererParametersInvalid"
   | "DestinationPathInvalid"
-  | "OutputBoundInvalid";
+  | "OutputBoundInvalid"
+  | "ConfigurationPinInvalid";
 
 export type HandoffConfigurationReadiness =
   | {
@@ -312,13 +340,22 @@ export function authoredHandoffConfigurationReadiness(
 /** Parses only the immutable revision and digest supplied by the accepted work. */
 export function pinnedHandoffConfigurationReadiness(
   canonical: string,
-  pin: HandoffConfigurationPin,
+  pin: UncheckedHandoffConfigurationPin,
 ): HandoffConfigurationReadiness {
   const authored = authoredHandoffConfigurationReadiness(JSON.parse(canonical));
+  let checkedPin: HandoffConfigurationPin;
+  try {
+    checkedPin = {
+      revision: asHandoffConfigurationRevision(pin.revision),
+      digest: asArtifactDigest(pin.digest),
+    };
+  } catch {
+    return { readiness: "Incomplete", fault: "ConfigurationPinInvalid" };
+  }
   return authored.readiness === "Ready"
     ? {
         readiness: "Ready",
-        configuration: { pin, ...authored.configuration },
+        configuration: { pin: checkedPin, ...authored.configuration },
       }
     : authored;
 }
@@ -389,6 +426,14 @@ export function publishHandoffConfiguration(
     outputBytesMax: pinned.outputBytesMax,
     rendererInput,
   });
+  const requestDigest = asHandoffRequestDigest(digestOf(identityInput));
+  const probeDigest = asHandoffRequestDigest(
+    digestOf(`${identityInput.length}:${identityInput}:probe`),
+  );
+  if (requestDigest === probeDigest)
+    throw new RangeError(
+      "handoff digest function does not depend on its input",
+    );
   return {
     kind: "PublishHandoff",
     pin: pinned.pin,
@@ -398,6 +443,6 @@ export function publishHandoffConfiguration(
     mode: pinned.mode,
     destinationPath: pinned.destinationPath,
     output,
-    requestDigest: digestOf(identityInput) as HandoffRequestDigest,
+    requestDigest,
   };
 }

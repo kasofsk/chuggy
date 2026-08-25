@@ -5,6 +5,7 @@ import test from "node:test";
 import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import {
   authoredHandoffConfigurationReadiness,
+  asHandoffRequestDigest,
   pinnedHandoffConfigurationReadiness,
   promoteForHandoffConfiguration,
   publishHandoffConfiguration,
@@ -207,5 +208,37 @@ test("the pinned output bound is enforced against encoded bytes", () => {
   assert.throws(
     () => publishHandoffConfiguration(pinned, commit, digest),
     /output exceeds/u,
+  );
+});
+
+test("configuration pins require bounded revisions and fixed-width digests", () => {
+  for (const malformed of [
+    { revision: "", digest: "b".repeat(64) },
+    { revision: "r".repeat(257), digest: "b".repeat(64) },
+    { revision: "revision", digest: "" },
+    { revision: "revision", digest: "B".repeat(64) },
+    { revision: "revision", digest: "b".repeat(63) },
+  ]) {
+    assert.deepEqual(
+      pinnedHandoffConfigurationReadiness(
+        canonicalConfigurationOf(document()),
+        malformed,
+      ),
+      { readiness: "Incomplete", fault: "ConfigurationPinInvalid" },
+    );
+  }
+});
+
+test("request digests refuse malformed and input-independent hash results", () => {
+  for (const malformed of ["", "f".repeat(63), "F".repeat(64), "not-hex"]) {
+    assert.throws(() => asHandoffRequestDigest(malformed), RangeError);
+    assert.throws(
+      () => publishHandoffConfiguration(ready(), commit, () => malformed),
+      RangeError,
+    );
+  }
+  assert.throws(
+    () => publishHandoffConfiguration(ready(), commit, () => "d".repeat(64)),
+    /does not depend on its input/u,
   );
 });
