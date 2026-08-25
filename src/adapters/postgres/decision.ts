@@ -59,6 +59,7 @@ import { decisionEventSubject } from "../../actor/decisionEvent.ts";
 import {
   asCanonicalConfiguration,
   releaseConfigurationReadiness,
+  type CanonicalConfiguration,
 } from "../../interpreter/authoring.ts";
 import {
   allRefusalCodes,
@@ -252,7 +253,7 @@ async function replaceDispatchView(
 }
 
 interface DecisionConfiguration extends ConfigurationPin {
-  readonly canonical: string;
+  readonly canonical: CanonicalConfiguration;
 }
 
 async function decisionConfiguration(
@@ -262,7 +263,10 @@ async function decisionConfiguration(
   release: Decision["draftRelease"],
 ): Promise<DecisionConfiguration> {
   if (release !== undefined)
-    return { ...release, canonical: release.configurationCanonical };
+    return {
+      ...release,
+      canonical: asCanonicalConfiguration(release.configurationCanonical),
+    };
   const ticket = decisionEventSubject(outcome.entry.event);
   const found = await client.query<{
     configuration_revision: string | null;
@@ -288,7 +292,7 @@ async function decisionConfiguration(
   return {
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
-    canonical: row.canonical,
+    canonical: asCanonicalConfiguration(row.canonical),
   };
 }
 
@@ -435,6 +439,7 @@ function decisionHandoffRequest(
       revision: configuration.configurationRevision,
       digest: configuration.configurationDigest,
     },
+    configurationRevisionDigest,
   );
   if (readiness.readiness === "Incomplete") {
     if (

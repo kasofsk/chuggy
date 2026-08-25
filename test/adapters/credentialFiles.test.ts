@@ -92,6 +92,13 @@ test("repository roles resolve only their independently named credential", async
       ...binding(one),
       credentialReference: "handoff-writer",
     }),
+    { resolved: "Denied" },
+  );
+  assert.deepEqual(
+    await source.credential({
+      ...binding(other),
+      credentialReference: "handoff-writer",
+    }),
     { resolved: "Credential", credential: "handoff-secret" },
   );
   assert.deepEqual(

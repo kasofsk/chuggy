@@ -420,15 +420,18 @@ test("a reconciliation belongs to a permit and there is one of it per permit", a
   }
 });
 
-test("projects bind independently named repositories without global ownership", async () => {
+test("a project binds multiple repositories while each repository keeps one owner", async () => {
   const unbound = await postgresHarnessProject(
     rig.harness.store,
     "constraints-exclusive",
   );
-  await rig.harness.query(
-    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
-     VALUES ($1,$2,$3,$4)`,
-    [unbound.tenant, unbound.project, project.repository, project.epoch],
+  assert.match(
+    await rig.ownerRefusal(
+      `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
+       VALUES ($1,$2,$3,$4)`,
+      [unbound.tenant, unbound.project, project.repository, project.epoch],
+    ),
+    /project_repository_is_exclusive/u,
   );
   const second = finalizerIdentity("repository-second");
   await rig.harness.query(
@@ -557,8 +560,8 @@ test("a request's claim is fenced by an epoch and one stays live per ticket", as
     await rig.ownerRefusal(
       `INSERT INTO finalization_request
          (tenant, project, request, authorizing_seq, effect_position, ticket,
-          ticket_version, request_generation)
-       VALUES ($1,$2,$3,$4,$5,$6,$4,1)`,
+          ticket_version, request_generation, kind)
+       VALUES ($1,$2,$3,$4,$5,$6,$4,1,'RunFinalizer')`,
       keys(
         finalizerIdentity("request-second"),
         project.authorizingSeq,
@@ -578,8 +581,8 @@ test("a request's claim is fenced by an epoch and one stays live per ticket", as
     await rig.ownerRefusal(
       `INSERT INTO finalization_request
          (tenant, project, request, authorizing_seq, effect_position, ticket,
-          ticket_version, request_generation)
-       VALUES ($1,$2,$3,$4,$5,$6,$4,1)`,
+          ticket_version, request_generation, kind)
+       VALUES ($1,$2,$3,$4,$5,$6,$4,1,'RunFinalizer')`,
       keys(
         finalizerIdentity("request-held"),
         project.authorizingSeq,

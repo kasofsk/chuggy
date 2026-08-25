@@ -196,7 +196,12 @@ export function repositoryCredentialFilesOf(
     finalizerSettingsCredentialFile(entry, variable),
   );
   const identities = new Set(
-    files.map((file) => file.credentialReference ?? file.repository),
+    files.map((file) =>
+      JSON.stringify([
+        file.repository,
+        file.credentialReference ?? file.repository,
+      ]),
+    ),
   );
   if (identities.size !== files.length)
     throw new Error(`${variable} names a credential twice`);

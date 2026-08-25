@@ -140,7 +140,7 @@ test("a succeeded result the durable rows support is submitted exactly once", as
 
 test("promotion acceptance requires the same concluded promotion proof as success", async () => {
   const { project, attempt } = await promoted("submit-promotion-accepted");
-  await rig.as(
+  await rig.harness.query(
     `UPDATE finalization_request SET kind='PromoteForHandoff'
       WHERE tenant=$1 AND project=$2 AND request=$3`,
     [project.partition.tenant, project.partition.project, project.request],
@@ -177,7 +177,7 @@ test("promotion evidence cannot masquerade as publication evidence", async () =>
 
 test("publication failure is submitted only for a publication request", async () => {
   const project = await finalizerProject(rig, "submit-publication-failed");
-  await rig.as(
+  await rig.harness.query(
     `UPDATE finalization_request SET kind='PublishHandoff'
       WHERE tenant=$1 AND project=$2 AND request=$3`,
     [project.partition.tenant, project.partition.project, project.request],

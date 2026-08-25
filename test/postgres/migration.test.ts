@@ -14,6 +14,7 @@ import {
   repositoryBindingReadFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
+  postgresMigrate,
   postgresMigrateCompatible,
   postgresPool,
 } from "../../src/adapters/postgres/pool.ts";
@@ -56,14 +57,22 @@ const publishingImageRequired = [
   ...retainedImageRequired,
   { version: 18, name: "selector review schema readiness" },
 ] as const;
+/**
+ * The retained image's staged tail is every migration declared past the one it
+ * published, read from the declared list rather than copied beside it: a
+ * staged advance is only possible where the retained image understands the
+ * whole target, so a literal tail is a copy that must equal the declaration and
+ * silently stops the case testing anything the day it does not.
+ */
 const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
   ...publishingImageRequired,
-  {
-    version: 19,
-    name: "the execution requirement a migrated database never got",
-  },
-  { version: 20, name: "repository configuration provenance" },
-  { version: 21, name: "API repository binding read" },
+  ...migrations
+    .filter(
+      ({ version }) =>
+        version >
+        Math.max(...publishingImageRequired.map((each) => each.version)),
+    )
+    .map(({ version, name }) => ({ version, name })),
 ]);
 
 const declaredLatest = Math.max(...migrations.map(({ version }) => version));
@@ -102,8 +111,12 @@ async function migrationSeedApplied(
   for (const migration of migrations.filter(
     ({ version }) => version < beyond,
   )) {
+    if (migration.version === 25)
+      await subject.query("SET chuggy.initializing_journal = 'on'");
     for (const statement of migration.statements)
       await subject.query(statement);
+    if (migration.version === 25)
+      await subject.query("RESET chuggy.initializing_journal");
     await subject.query(
       "INSERT INTO schema_migration (version,name) VALUES ($1,$2)",
       [migration.version, migration.name],
@@ -371,12 +384,19 @@ test("each migration runs forward over the rows the slice before it left", async
       await subject.query("COMMIT");
     }
     await seedBeforeI7(subject);
-    for (const migration of migrations.slice(10)) {
+    for (const migration of migrations.slice(10, -1)) {
       await subject.query("BEGIN");
       for (const statement of migration.statements)
         await subject.query(statement);
       await subject.query("COMMIT");
     }
+
+    await subject.query("BEGIN");
+    await assert.rejects(async () => {
+      for (const statement of migrations.at(-1)?.statements ?? [])
+        await subject.query(statement);
+    }, /existing journal has no installation authority/u);
+    await subject.query("ROLLBACK");
 
     await assertMigratedI2(subject);
     await assertMigratedI3(subject);
@@ -407,21 +427,26 @@ test("an incompatible rollout leaves an untouched database untouched", async () 
   });
 });
 
-test("a staged migration advances after its publishing image is retained", async () => {
+test("an empty staged legacy journal cannot silently acquire an authority", async () => {
   await migrationDatabase("stage", async (subject) => {
     await migrationSeedApplied(subject, declaredLatest);
+    await subject.query("SET chuggy.initializing_journal = 'on'");
     await assertDivergentMigrationRefused(subject);
-    assert.deepEqual(
-      await postgresMigrateCompatible(subject, {
+    const retainedAfterPublication = runtimeSchemaContract(
+      retainedImageContract.required,
+      migrations.map(({ version, name }) => ({ version, name })),
+    );
+    await assert.rejects(
+      postgresMigrateCompatible(subject, {
         current: currentRuntimeSchemaContract,
-        retainedPrevious: retainedImageContract,
+        retainedPrevious: retainedAfterPublication,
       }),
-      { migrated: "Applied", versions: [declaredLatest] },
+      /existing journal has no installation authority/u,
     );
     assert.equal(
       await schemaCompatibilityPrecondition(
         postgresRuntimeSchema(subject),
-        retainedImageContract,
+        retainedAfterPublication,
       ).check(new AbortController().signal),
       true,
     );
@@ -444,6 +469,48 @@ test("the command applies the declared schema and the run after it applies nothi
         currentRuntimeSchemaContract,
       ).check(new AbortController().signal),
       true,
+    );
+  });
+});
+
+test("fresh journals receive different durable installation authorities", async () => {
+  const identities: string[] = [];
+  for (const label of ["authority_a", "authority_b"]) {
+    await migrationDatabase(label, async (subject) => {
+      await postgresMigrate(subject);
+      const first = await subject.query<{ installation_id: string }>(
+        "SELECT installation_id FROM installation_authority",
+      );
+      await postgresMigrate(subject);
+      const restarted = await subject.query<{ installation_id: string }>(
+        "SELECT installation_id FROM installation_authority",
+      );
+      assert.deepEqual(restarted.rows, first.rows);
+      identities.push(first.rows[0]?.installation_id ?? "");
+    });
+  }
+  assert.equal(identities.length, 2);
+  assert.notEqual(identities[0], identities[1]);
+});
+
+test("an initialized legacy journal cannot silently acquire an authority", async () => {
+  await migrationDatabase("authority_legacy", async (subject) => {
+    await migrationSeedApplied(subject, declaredLatest);
+    await subject.query(
+      "INSERT INTO project (tenant,project,lifecycle) VALUES ('tenant','project','Active')",
+    );
+    await subject.query("SET chuggy.initializing_journal = 'on'");
+    await assert.rejects(
+      postgresMigrate(subject),
+      /existing journal has no installation authority/u,
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ relation: string | null }>(
+          "SELECT to_regclass('public.installation_authority')::text AS relation",
+        )
+      ).rows,
+      [{ relation: null }],
     );
   });
 });
@@ -875,9 +942,23 @@ test("the API repository binding read migrates without exposing its table", asyn
   });
 });
 
-test("migration 24 replaces the finalization door on an upgraded database", async () => {
+test("migration 26 replaces the finalization door on an upgraded database", async () => {
   await migrationDatabase("handoff_outcomes", async (subject) => {
-    await migrationSeedApplied(subject, 24);
+    await migrationSeedApplied(subject, 26);
+    await subject.query(`INSERT INTO recovery_epoch (epoch) VALUES ('epoch')`);
+    await subject.query(
+      `INSERT INTO project (tenant,project,lifecycle,head,ingress_next)
+       VALUES ('tenant','project','Active',1,1)`,
+    );
+    await subject.query(`SET session_replication_role = replica`);
+    await subject.query(
+      `INSERT INTO journal_entry
+       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+        recovery_epoch,cause_kind,cause_id) VALUES
+       ('tenant','project',1,'{}','digest','genesis','owner',1,'epoch',
+        'Operation','legacy-operation')`,
+    );
+    await subject.query(`SET session_replication_role = origin`);
     const before = await subject.query<{ body: string }>(
       `SELECT pg_get_functiondef($1::regprocedure) AS body`,
       [
@@ -891,7 +972,7 @@ test("migration 24 replaces the finalization door on an upgraded database", asyn
         request_generation) VALUES ('tenant','project','legacy-in-flight',1,1,1,1,1)`,
     );
 
-    await applyMigration(subject, 24);
+    await applyMigration(subject, 26);
 
     assert.equal(
       (
@@ -917,10 +998,10 @@ test("migration 24 replaces the finalization door on an upgraded database", asyn
   });
 });
 
-test("migration 25 makes cross-repository request configuration immutable", async () => {
+test("migration 27 makes cross-repository request configuration immutable", async () => {
   await migrationDatabase("cross_repository_finalizer", async (subject) => {
-    await migrationSeedApplied(subject, 25);
-    await applyMigration(subject, 25);
+    await migrationSeedApplied(subject, 27);
+    await applyMigration(subject, 27);
     const constraints = await subject.query<{ definition: string }>(
       `SELECT pg_get_constraintdef(c.oid) AS definition
          FROM pg_constraint c

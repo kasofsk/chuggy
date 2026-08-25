@@ -19,12 +19,11 @@ import {
   type Migration,
 } from "../shared.ts";
 
-export const migration025: Migration = {
-  version: 25,
+export const migration027: Migration = {
+  version: 27,
   name: "durable cross repository finalization",
   statements: [
     `ALTER TABLE project_repository DROP CONSTRAINT project_repository_pkey,
-       DROP CONSTRAINT project_repository_is_exclusive,
        ADD CONSTRAINT project_repository_pkey PRIMARY KEY (tenant, project, repository)`,
     `CREATE OR REPLACE FUNCTION ${repositoryBindingReadFunction}(in_tenant text,in_project text)
        RETURNS TABLE(repository text,recovery_epoch text)

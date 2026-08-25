@@ -44,6 +44,13 @@ interface CredentialFilesState {
   readonly credentialBytesMax: number;
 }
 
+function credentialFilesIdentity(
+  repository: string,
+  credentialReference: string | undefined,
+): string {
+  return JSON.stringify([repository, credentialReference ?? repository]);
+}
+
 /** Reads one file's whole credential, every way of failing being an outage rather than an answer. */
 async function credentialFilesRead(
   path: string,
@@ -73,7 +80,10 @@ function credentialFilesState(
 ): CredentialFilesState {
   const paths = new Map<string, string>();
   for (const source of options.sources) {
-    const identity = source.credentialReference ?? source.repository;
+    const identity = credentialFilesIdentity(
+      source.repository,
+      source.credentialReference,
+    );
     if (paths.has(identity))
       throw new RangeError(
         source.credentialReference === undefined
@@ -97,7 +107,10 @@ export function credentialFiles(
   return {
     credential: (repository): Promise<CredentialResolved> => {
       const path = own.paths.get(
-        repository.credentialReference ?? repository.repository,
+        credentialFilesIdentity(
+          repository.repository,
+          repository.credentialReference,
+        ),
       );
       if (path === undefined) return Promise.resolve({ resolved: "Denied" });
       return credentialFilesRead(path, own.credentialBytesMax);

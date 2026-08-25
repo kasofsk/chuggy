@@ -8,10 +8,10 @@
  * else — a claim a per-field assertion cannot make, since the field nobody
  * thought to assert is exactly the one that leaks.
  *
- * THE NEGATIVE SPACE IS HALF THE POINT. A profile no site image is admitted
- * for, a runtime version none carries, a refused create, an unreachable
- * cluster and an unreadable credential must each be the arm 006 gives it: a
- * definitive inability retires the execution, and a temporary one holds it.
+ * THE NEGATIVE SPACE IS HALF THE POINT. A native requirement no container
+ * backend can serve, a refused create, an unreachable cluster and an unreadable
+ * credential must each be the arm 006 gives it: a definitive inability retires
+ * the execution, and a temporary one holds it.
  */
 
 import assert from "node:assert/strict";
@@ -56,12 +56,7 @@ const token = "cluster-token-value";
 const tokenFile = join(root, "token");
 writeFileSync(tokenFile, `${token}\n`);
 
-/**
- * The one image this suite's site admits and its placement requires. They are
- * written as the same value so that no case here turns on which of the two a
- * container ends up running; that divergence is issue #250's, and the case
- * that pins it belongs with the fix.
- */
+/** The image this suite's placement requires, which is the one a container runs. */
 const workerImage = "registry.invalid/worker:1";
 
 const config: KubernetesWorkerLaunchConfig = {
@@ -70,13 +65,6 @@ const config: KubernetesWorkerLaunchConfig = {
   tokenFile,
   serviceAccountName: "chuggy-worker",
   podNamePrefix: "chuggy-worker",
-  imagesAdmitted: [
-    {
-      profile: "standard",
-      runtimeVersion: "1",
-      image: workerImage,
-    },
-  ],
   resources: {
     cpuRequest: "500m",
     cpuLimit: "1",
@@ -204,6 +192,8 @@ function expectedTask(): string {
     configurationRevision: "revision",
     configurationDigest: "digest",
     profile: { profile: "standard", runtimeVersion: "1" },
+    requirementIdentity: "requirement-one",
+    requirementDigest: "requirement-digest",
     briefing: {
       templateVersion: placement.invocation.briefing.templateVersion,
       purpose: "Work",
@@ -237,6 +227,8 @@ function expectedPod(name: string): unknown {
         "chuggy.internal/configuration-digest": "digest",
         "chuggy.internal/profile": "standard",
         "chuggy.internal/runtime-version": "1",
+        "chuggy.internal/requirement": "requirement-one",
+        "chuggy.internal/requirement-digest": "requirement-digest",
       },
     },
     spec: {
@@ -318,28 +310,36 @@ test("a cancellation addresses the pod its attempt named", async () => {
   );
 });
 
-test("a profile no admitted image runs is a definitive inability", async () => {
+const nativeRequirement = {
+  mode: "Native",
+  architecture: "Arm64",
+  driver: "XcodeBuild",
+  xcodeVersionMin: 1,
+  sdkVersionMin: 1,
+} as const;
+
+test("a native requirement is a definitive inability for a container backend", async () => {
   const workers = kubernetesWorkerLaunch(
     config,
     recordingCluster([], answering(201)),
   );
   assert.deepEqual(
-    await workers.place({
-      ...placement,
-      profile: { profile: "elevated", runtimeVersion: "1" },
-    }),
-    { placed: "Denied", reason: "ExecutionProfileUnavailable" },
-  );
-  assert.deepEqual(
-    await workers.place({
-      ...placement,
-      profile: { profile: "standard", runtimeVersion: "2" },
-    }),
-    { placed: "Denied", reason: "RuntimeVersionUnsupported" },
+    await workers.place({ ...placement, requirement: nativeRequirement }),
+    { placed: "Denied", reason: "RequiredCapabilityUnavailable" },
   );
 });
 
-test("an unadmitted placement never reaches the cluster", async () => {
+test("a placement this backend cannot serve never reaches the cluster", async () => {
+  const reached: ClusterReached[] = [];
+  const workers = kubernetesWorkerLaunch(
+    config,
+    recordingCluster(reached, answering(201)),
+  );
+  await workers.place({ ...placement, requirement: nativeRequirement });
+  assert.deepEqual(reached, []);
+});
+
+test("the image a pod runs is the requirement's own", async () => {
   const reached: ClusterReached[] = [];
   const workers = kubernetesWorkerLaunch(
     config,
@@ -347,9 +347,20 @@ test("an unadmitted placement never reaches the cluster", async () => {
   );
   await workers.place({
     ...placement,
-    profile: { profile: "elevated", runtimeVersion: "1" },
+    requirement: {
+      mode: "Container",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      image: "registry.invalid/other:v9",
+    },
   });
-  assert.deepEqual(reached, []);
+  assert.equal(reached.length, 1);
+  const pod = JSON.parse(reached[0]?.body ?? "") as {
+    readonly spec: {
+      readonly containers: readonly { readonly image: string }[];
+    };
+  };
+  assert.equal(pod.spec.containers[0]?.image, "registry.invalid/other:v9");
 });
 
 test("only a refusal of the document is definitive and every other answer holds", async () => {
@@ -456,7 +467,6 @@ test("a deployment that cannot address a cluster is refused where it is composed
     { podNamePrefix: "worker-" },
     { podNamePrefix: "w".repeat(kubernetesNameCharsMax) },
     { tokenFile: "" },
-    { imagesAdmitted: [] },
     { activeDeadlineSecs: 0 },
     { requestTimeoutSecsMax: 0 },
     { unavailableRetryAfterSecs: 0 },

@@ -40,9 +40,7 @@ writeFileSync(tokenFile, "cluster-token-value\n");
 
 const workerImage = "registry.invalid/worker:1";
 
-const images = [
-  { profile: "standard", runtimeVersion: "1", image: workerImage },
-];
+const images = [workerImage];
 
 const resources = {
   cpuRequest: "500m",
@@ -87,7 +85,7 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_CLUSTER_NAMESPACE: "chuggy-workers",
   CHUG_SCHEDULER_CLUSTER_TOKEN_FILE: tokenFile,
   CHUG_SCHEDULER_WORKER_SERVICE_ACCOUNT: "chuggy-worker",
-  CHUG_SCHEDULER_WORKER_IMAGES: JSON.stringify(images),
+  CHUG_SCHEDULER_ADMITTED_IMAGES: JSON.stringify(images),
   CHUG_SCHEDULER_WORKER_RESOURCES: JSON.stringify(resources),
   CHUG_SCHEDULER_EXECUTION_POLICY: JSON.stringify(policy),
 };
@@ -113,7 +111,7 @@ function parseProgram(named: Readonly<Record<string, string>>): string {
     try {
       const parsed = config.schedulerCommandConfig(environment);
       process.stdout.write(JSON.stringify({
-        parsed: { ...parsed, policy: { profiles: Object.fromEntries(parsed.policy.profiles) } },
+        parsed: { ...parsed, policy: { ...parsed.policy, profiles: Object.fromEntries(parsed.policy.profiles) } },
       }));
     } catch (failure) {
       process.stdout.write(JSON.stringify({ refused: failure.message }));
@@ -154,7 +152,6 @@ test("a complete environment parses into the plain data the process root takes",
         tokenFile,
         serviceAccountName: "chuggy-worker",
         podNamePrefix: "chuggy-worker",
-        imagesAdmitted: images,
         resources,
         activeDeadlineSecs: 3_600,
         requestTimeoutSecsMax: 30,
@@ -167,6 +164,7 @@ test("a complete environment parses into the plain data the process root takes",
             grant,
           },
         },
+        imagesAdmitted: images,
       },
       runtimeFacts: {},
     },
@@ -236,7 +234,6 @@ function processFakes(reachable: boolean): string {
       tokenFile: ${JSON.stringify(tokenFile)},
       serviceAccountName: 'chuggy-worker',
       podNamePrefix: 'chuggy-worker',
-      imagesAdmitted: ${JSON.stringify(images)},
       resources: ${JSON.stringify(resources)},
       podLabels: {}, podAnnotations: {}, nodeSelector: {},
       podSecurityContext: {}, containerSecurityContext: {},
@@ -305,6 +302,7 @@ function processProgram(reachable: boolean): string {
           profile: { profile: 'standard', runtimeVersion: '1' },
           grant: ${JSON.stringify(grant)},
         }]]),
+        imagesAdmitted: ${JSON.stringify(images)},
       }),
       configurations: {
         configuration: async () => ({ read: 'Configuration', configuration }),

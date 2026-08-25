@@ -199,7 +199,7 @@ test("a revocation offered after entry is refused and the finalizer's request st
   assert.deepEqual(await requestsOf(partition), standing);
 });
 
-test("two acceptances racing on the project row are still resolved by mailbox order", async () => {
+test("a boundary write and an acceptance racing on the project row are still resolved by mailbox order", async () => {
   const { partition, memory } = await finalizerEntering(rig, "revoke-race");
   const blockade = await schedulerBlockade(
     "SELECT lifecycle FROM project WHERE tenant=$1 AND project=$2 FOR UPDATE",
@@ -224,6 +224,11 @@ test("two acceptances racing on the project row are still resolved by mailbox or
       ]),
     );
     await blockade.stalled(2);
+    /**
+     * Only the revoke is an acceptance now: a completion is no command a
+     * principal may offer, so its half of this race is the boundary write that
+     * takes the same project row under a mode of its own.
+     */
     assert.equal(
       await blockade.stalledHolds("project", acceptanceRowMode),
       true,

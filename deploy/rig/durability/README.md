@@ -83,6 +83,13 @@ are asked for through the catalog rather than from a list of tables in the
 script, so a migration that adds a relation is covered without the script being
 edited.
 
+The installation identity is recorded separately at `snapshot`. Both `verify`
+and `restore` read the exact value from the database they restored and require
+it to equal that recording; a row count cannot distinguish one authority from
+another. A bootstrap intended to create another installation must use a fresh
+database and let migration initialize a different identity. Copying the row
+would copy authority rather than create an autonomous installation.
+
 ## What is proved, and what is only exercised
 
 **Proved on a real server, by this procedure.** That a dump of this database

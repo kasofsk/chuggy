@@ -17,6 +17,7 @@
 declare const ticketIdBrand: unique symbol;
 declare const taskIdBrand: unique symbol;
 declare const stageIndexBrand: unique symbol;
+declare const installationIdBrand: unique symbol;
 
 /** A ticket's identity: supplied at release from a bounded universe, sparse, never reused. */
 export type TicketId = number & { readonly [ticketIdBrand]: true };
@@ -26,6 +27,28 @@ export type TaskId = number & { readonly [taskIdBrand]: true };
 
 /** A zero-based index into a ticket's authored program. */
 export type StageIndex = number & { readonly [stageIndexBrand]: true };
+
+/** The durable authority whose journal gives local ticket identities meaning. */
+export type InstallationId = string & {
+  readonly [installationIdBrand]: true;
+};
+
+/** A ticket identity that remains unambiguous outside its installation. */
+export interface TicketRef {
+  readonly installation: InstallationId;
+  readonly ticket: TicketId;
+}
+
+/** Parses the canonical UUID stored for one installation authority. */
+export function asInstallationId(value: string): InstallationId {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+      value,
+    )
+  )
+    throw new RangeError(`installation id: ${value} is not a canonical UUID`);
+  return value as InstallationId;
+}
 
 /**
  * Refuses a number JavaScript cannot represent exactly. Every quantity here is
