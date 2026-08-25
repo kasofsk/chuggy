@@ -80,6 +80,19 @@ test("the worker role settles once and terminal authority is immediately fenced"
     operation:
       first.terminalized === "Terminalized" ? first.operation : assert.fail(),
   });
+  assert.ok(
+    (await rig.store.attemptsAwaitingCleanup(200)).some(
+      (candidate) => candidate.attempt === attempt.attempt,
+    ),
+  );
+  assert.equal(await rig.store.attemptCleanupCompleted(attempt), true);
+  assert.equal(await rig.store.attemptCleanupCompleted(attempt), false);
+  assert.equal(
+    (await rig.store.attemptsAwaitingCleanup(200)).some(
+      (candidate) => candidate.attempt === attempt.attempt,
+    ),
+    false,
+  );
 });
 
 test("the worker boundary preserves the first result and records a contradiction", async () => {

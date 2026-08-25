@@ -2,6 +2,7 @@ import {
   boundaryOwnerRole,
   completionFunction,
   roleStatement,
+  schedulerRole,
   workerPlaneRole,
   workerAttemptReadFunction,
   workerAttemptLostFunction,
@@ -22,7 +23,8 @@ export const migration028: Migration = {
     `ALTER TABLE execution_attempt
        ADD COLUMN capability text,
        ADD COLUMN capability_secret_digest text,
-       ADD COLUMN manifest text`,
+       ADD COLUMN manifest text,
+       ADD COLUMN cleanup_completed_at timestamptz`,
     `UPDATE execution_attempt SET
        capability = 'capability-' || gen_random_uuid()::text,
        capability_secret_digest = encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'hex'),
@@ -207,5 +209,6 @@ export const migration028: Migration = {
     `GRANT UPDATE (retries_spent,placement_backoff_from) ON execution TO ${boundaryOwnerRole}`,
     `GRANT UPDATE (state,evidence,ended_at,lease_owner,lease_expires_at)
        ON execution_attempt TO ${boundaryOwnerRole}`,
+    `GRANT UPDATE (cleanup_completed_at) ON execution_attempt TO ${schedulerRole}`,
   ],
 };

@@ -645,6 +645,31 @@ test("an abandoned upload lock is recovered after its bounded lease", async (t) 
   );
 });
 
+test("an expired active holder cannot commit or release its successor's lock", async (t) => {
+  const opened = fixtureOpen(t);
+  for (let index = 0; index < 500; index += 1)
+    fixtureStore(opened, `existing-${String(index)}.txt`, "x");
+  const store = artifactStore({
+    root: opened.root,
+    attemptArtifactsMax: 501,
+    attemptBytesMax: 501,
+    uploadLockStaleSecs: 0.000_001,
+  });
+  const results = await Promise.all(
+    Array.from(
+      { length: 20 },
+      (_unused, index) => `new-${String(index)}.txt`,
+    ).map((path) =>
+      store.store({
+        authority: workerAuthority,
+        path,
+        content: new TextEncoder().encode("y"),
+      }),
+    ),
+  );
+  assert.ok(results.filter((result) => result.stored === "Stored").length <= 1);
+});
+
 test("a store whose objects could be rewritten is refused at construction", () => {
   assert.throws(
     () => artifactStore({ root: "/tmp", storedFileMode: 0o640 }),

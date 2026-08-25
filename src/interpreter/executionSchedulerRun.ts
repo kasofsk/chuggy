@@ -138,10 +138,31 @@ export interface ExecutionSchedulerService {
 /** What one bounded pass moved, which is what a deployment's loop paces itself by. */
 export interface SchedulerPassReport {
   readonly fenced: number;
+  readonly cleaned: number;
   readonly registered: number;
   readonly cancelled: number;
   readonly admitted: number;
   readonly placed: number;
+}
+
+/** Removes a bounded batch of ended physical workloads, acknowledging only accepted cleanup. */
+export async function executionSchedulerCleanup(
+  service: ExecutionSchedulerService,
+): Promise<number> {
+  const config = checkedExecutionSchedulerConfig(
+    service.config,
+    service.ticketService,
+    service.finalizer,
+  );
+  const attempts = await service.store.attemptsAwaitingCleanup(
+    config.attemptsPerPassMax,
+  );
+  let cleaned = 0;
+  for (const attempt of attempts) {
+    await service.placement.cancel(attempt);
+    if (await service.store.attemptCleanupCompleted(attempt)) cleaned += 1;
+  }
+  return cleaned;
 }
 
 /** Ends one attempt without a result, which is the one place this module records that. */
@@ -596,9 +617,10 @@ export async function executionSchedulerPass(
   cluster: ClusterId,
 ): Promise<SchedulerPassReport> {
   const fenced = await executionSchedulerFence(service, epoch);
+  const cleaned = await executionSchedulerCleanup(service);
   const cancelled = await executionSchedulerCancel(service, owner);
   const registered = await executionSchedulerRegister(service, owner);
   const admitted = await executionSchedulerAdmit(service, cluster);
   const placed = await executionSchedulerLaunch(service, epoch);
-  return { fenced, registered, cancelled, admitted, placed };
+  return { fenced, cleaned, registered, cancelled, admitted, placed };
 }

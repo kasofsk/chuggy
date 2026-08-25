@@ -56,7 +56,9 @@ import {
   readdir,
   realpath,
   rename,
+  rmdir,
   rm,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -470,7 +472,8 @@ async function artifactStoreRecoverUploadLock(
 async function artifactStoreAcquireUploadLock(
   lock: string,
   staleSecs: number,
-): Promise<boolean> {
+): Promise<string | undefined> {
+  const token = randomUUID();
   for (
     let attempt = 0;
     attempt < artifactStoreUploadLockAttemptsMax;
@@ -478,19 +481,58 @@ async function artifactStoreAcquireUploadLock(
   ) {
     try {
       await mkdir(lock);
-      return true;
+      await writeFile(`${lock}/${token}`, "", {
+        flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+      });
+      return token;
     } catch (refused: unknown) {
       if (
         typeof refused !== "object" ||
         refused === null ||
         (refused as { code?: unknown }).code !== "EEXIST"
       )
-        return false;
+        return undefined;
       await artifactStoreRecoverUploadLock(lock, staleSecs);
       await delay(artifactStoreUploadLockRetryMs);
     }
   }
-  return false;
+  return undefined;
+}
+
+async function artifactStoreOwnsUploadLock(
+  lock: string,
+  token: string,
+): Promise<boolean> {
+  try {
+    return (await lstat(`${lock}/${token}`)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function artifactStoreReleaseUploadLock(
+  lock: string,
+  token: string,
+): Promise<void> {
+  try {
+    await unlink(`${lock}/${token}`);
+    await rmdir(lock);
+  } catch {
+    return;
+  }
+}
+
+async function artifactStoreRollbackOwnLink(
+  file: string,
+  pending: string,
+): Promise<void> {
+  try {
+    const [stored, source] = await Promise.all([lstat(file), lstat(pending)]);
+    if (stored.dev === source.dev && stored.ino === source.ino)
+      await unlink(file);
+  } catch {
+    return;
+  }
 }
 
 async function artifactStoreCommitAttemptWrite(
@@ -502,12 +544,21 @@ async function artifactStoreCommitAttemptWrite(
   content: Uint8Array,
 ): Promise<WorkerArtifactStored> {
   const lock = `${attemptDirectory}.upload-lock`;
-  if (!(await artifactStoreAcquireUploadLock(lock, own.uploadLockStaleSecs)))
+  const token = await artifactStoreAcquireUploadLock(
+    lock,
+    own.uploadLockStaleSecs,
+  );
+  if (token === undefined)
     return {
       stored: "Unavailable",
       retryAfterSeconds: own.unavailableRetrySecs,
     };
   try {
+    if (!(await artifactStoreOwnsUploadLock(lock, token)))
+      return {
+        stored: "Unavailable",
+        retryAfterSeconds: own.unavailableRetrySecs,
+      };
     const existing = await artifactStoreEntryOf(directory, file);
     if (existing.entry === "Object") {
       if (existing.bytes !== content.byteLength) return { stored: "Conflict" };
@@ -535,10 +586,22 @@ async function artifactStoreCommitAttemptWrite(
       usage.bytes + content.byteLength > own.attemptBytesMax
     )
       return { stored: "Refused", reason: "QuotaExceeded" };
+    if (!(await artifactStoreOwnsUploadLock(lock, token)))
+      return {
+        stored: "Unavailable",
+        retryAfterSeconds: own.unavailableRetrySecs,
+      };
     await link(pending, file);
+    if (!(await artifactStoreOwnsUploadLock(lock, token))) {
+      await artifactStoreRollbackOwnLink(file, pending);
+      return {
+        stored: "Unavailable",
+        retryAfterSeconds: own.unavailableRetrySecs,
+      };
+    }
     return { stored: "Stored" };
   } finally {
-    await rm(lock, { recursive: true, force: true });
+    await artifactStoreReleaseUploadLock(lock, token);
   }
 }
 
@@ -730,7 +793,6 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
     ["writeBytesMax", own.writeBytesMax],
     ["attemptArtifactsMax", own.attemptArtifactsMax],
     ["attemptBytesMax", own.attemptBytesMax],
-    ["uploadLockStaleSecs", own.uploadLockStaleSecs],
     ["unavailableRetrySecs", own.unavailableRetrySecs],
   ] as const) {
     if (!Number.isSafeInteger(bound) || bound <= 0) {
@@ -739,6 +801,10 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
       );
     }
   }
+  if (!Number.isFinite(own.uploadLockStaleSecs) || own.uploadLockStaleSecs <= 0)
+    throw new RangeError(
+      "artifact store: uploadLockStaleSecs must be positive and finite",
+    );
   if ((own.storedFileMode & artifactStoreWritableBits) !== 0) {
     throw new RangeError(
       "artifact store: a stored object may not be written after it is stored",

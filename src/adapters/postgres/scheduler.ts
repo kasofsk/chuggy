@@ -102,6 +102,7 @@ import type {
   Partition,
   RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
+import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
@@ -1037,6 +1038,54 @@ async function schedulerFenceOldEpochs(
   return fenced.rowCount ?? 0;
 }
 
+interface CleanupAttemptRow {
+  readonly tenant: string;
+  readonly project: string;
+  readonly execution: string;
+  readonly attempt: string;
+  readonly generation: string;
+}
+
+/** Reads a bounded stable prefix of ended attempts whose external placement still needs removal. */
+async function schedulerAttemptsAwaitingCleanup(
+  pool: pg.Pool,
+  attemptsMax: number,
+): Promise<readonly FencedAttempt[]> {
+  schedulerRequirePositive(attemptsMax, "attemptsMax");
+  const found = await pool.query<CleanupAttemptRow>(
+    sql`SELECT tenant,project,execution,attempt,generation::text AS generation
+          FROM execution_attempt
+         WHERE state IN ('Reported','Lost','Withdrawn','Superseded')
+           AND cleanup_completed_at IS NULL
+         ORDER BY tenant,project,execution,attempt LIMIT ${attemptsMax}`,
+  );
+  return found.rows.map((row) => ({
+    partition: {
+      tenant: asTenantId(row.tenant),
+      project: asProjectId(row.project),
+    },
+    execution: asExecutionId(row.execution),
+    attempt: asAttemptId(row.attempt),
+    generation: projectRowCounter(row.generation, "attempt generation"),
+  }));
+}
+
+/** Acknowledges cleanup only for the same ended generation a backend removed. */
+async function schedulerAttemptCleanupCompleted(
+  pool: pg.Pool,
+  attempt: FencedAttempt,
+): Promise<boolean> {
+  const completed = await pool.query(
+    sql`UPDATE execution_attempt SET cleanup_completed_at=now()
+         WHERE tenant=${attempt.partition.tenant} AND project=${attempt.partition.project}
+           AND execution=${attempt.execution} AND attempt=${attempt.attempt}
+           AND generation=${attempt.generation}
+           AND state IN ('Reported','Lost','Withdrawn','Superseded')
+           AND cleanup_completed_at IS NULL`,
+  );
+  return completed.rowCount === 1;
+}
+
 /** What one execution durably says about itself, which resolves an ambiguous commit. */
 async function schedulerExecution(
   pool: pg.Pool,
@@ -1116,6 +1165,10 @@ export function postgresExecutionScheduler(
       postgresTransaction(pool, (client) =>
         schedulerReapLapsedAttempts(client, epoch, attemptsMax),
       ),
+    attemptsAwaitingCleanup: (attemptsMax) =>
+      schedulerAttemptsAwaitingCleanup(pool, attemptsMax),
+    attemptCleanupCompleted: (attempt) =>
+      schedulerAttemptCleanupCompleted(pool, attempt),
     unlaunched: (epoch, executionsMax) =>
       postgresTransaction(pool, (client) =>
         schedulerUnlaunched(client, epoch, executionsMax),
