@@ -53,6 +53,26 @@ function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function proposalDocument(
+  proposalOverrides: Record<string, unknown> = {},
+  proposalCredential = "proposal-api-writer",
+): unknown {
+  return document({
+    mode: "Proposal",
+    credentials: {
+      work: "ledger-release-writer",
+      handoff: "platform-request-writer",
+      proposal: proposalCredential,
+    },
+    proposal: {
+      forge: "code-forge-east",
+      title: "Build the accepted ledger revision",
+      body: "Publishes one immutable build request.",
+      ...proposalOverrides,
+    },
+  });
+}
+
 function ready(overrides: Record<string, unknown> = {}) {
   const parsed = pinnedHandoffConfigurationReadiness(
     canonicalConfigurationOf(document(overrides)),
@@ -90,6 +110,47 @@ test("rendering the same pin and accepted commit is byte and identity stable", (
   assert.equal(first.output, second.output);
   assert.equal(first.destinationPath, second.destinationPath);
   assert.equal(first.requestDigest, second.requestDigest);
+});
+
+test("proposal mode pins an independent forge binding and deterministic identity", () => {
+  const parsed = pinnedHandoffConfigurationReadiness(
+    canonicalConfigurationOf(proposalDocument()),
+    pin,
+  );
+  if (parsed.readiness === "Incomplete") throw new Error(parsed.fault);
+  const publication = publishHandoffConfiguration(
+    parsed.configuration,
+    commit,
+    digest,
+  );
+  assert.equal(publication.mode, "Proposal");
+  if (publication.mode !== "Proposal") throw new Error("proposal mode lost");
+  assert.equal(publication.repository.credential, "platform-request-writer");
+  assert.equal(publication.proposal.binding.forge, "code-forge-east");
+  assert.equal(publication.proposal.binding.credential, "proposal-api-writer");
+  assert.equal(
+    publication.proposal.headRef,
+    `refs/heads/chuggy/handoff/${publication.requestDigest}`,
+  );
+  assert.equal(
+    publication.proposal.marker,
+    `chuggy-handoff:${publication.requestDigest}`,
+  );
+});
+
+test("proposal API credentials are excluded from deterministic handoff identity", () => {
+  function publication(credential: string) {
+    const parsed = pinnedHandoffConfigurationReadiness(
+      canonicalConfigurationOf(proposalDocument({}, credential)),
+      pin,
+    );
+    if (parsed.readiness === "Incomplete") throw new Error(parsed.fault);
+    return publishHandoffConfiguration(parsed.configuration, commit, digest);
+  }
+  assert.equal(
+    publication("proposal-writer-one").requestDigest,
+    publication("proposal-writer-two").requestDigest,
+  );
 });
 
 test("every publication-affecting field changes the request identity", () => {
@@ -154,7 +215,8 @@ test("credentials are independently selected and excluded from output and identi
 
 test("unsupported identities, modes, refs, paths, roles, and bounds are refused", () => {
   const cases: readonly [unknown, string][] = [
-    [document({ mode: "Proposal" }), "HandoffModeUnsupported"],
+    [document({ mode: "PatchUpload" }), "HandoffModeUnsupported"],
+    [document({ mode: "Proposal" }), "ProposalConfigurationInvalid"],
     [
       document({ renderer: { identity: "Shell", version: 1, parameters: {} } }),
       "RendererUnknown",
