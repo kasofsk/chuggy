@@ -535,7 +535,7 @@ test("a concluded reconciliation promotes or restarts, and nothing else", () => 
         reconciliation: reconciliationOf("Promoted"),
       }),
     ),
-    { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } },
+    { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
   );
   assert.deepEqual(
     finalizationNext(
@@ -548,6 +548,34 @@ test("a concluded reconciliation promotes or restarts, and nothing else", () => 
       }),
     ),
     { decide: "Prepare", target, restartsSpent: 0 },
+  );
+});
+
+test("handoff promotion requires its explicit durable request kind", () => {
+  const promoting = {
+    ...viewWith({}),
+    claim: { ...viewWith({}).claim, kind: "PromoteForHandoff" as const },
+  };
+  assert.deepEqual(
+    finalizationNext(finalizerDefaults, {
+      ...promoting,
+      attempt: prepared,
+      attemptsMade: 1,
+      permit: permitIn("Concluded"),
+      reconciliation: reconciliationOf("Promoted"),
+    }),
+    { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } },
+  );
+  assert.deepEqual(
+    finalizationNext(finalizerDefaults, {
+      ...promoting,
+      attempt: attemptFailed("MergeConflict"),
+      attemptsMade: 1,
+    }),
+    {
+      decide: "Conclude",
+      conclusion: { outcome: "FinalizationFailed", kind: "MergeConflict" },
+    },
   );
 });
 

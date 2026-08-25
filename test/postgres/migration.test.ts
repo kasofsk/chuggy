@@ -893,8 +893,22 @@ test("migration 24 replaces the finalization door on an upgraded database", asyn
       ],
     );
     assert.doesNotMatch(before.rows[0]?.body ?? "", /PromotionAccepted/u);
+    await subject.query(
+      `INSERT INTO finalization_request
+       (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
+        request_generation) VALUES ('tenant','project','legacy-in-flight',1,1,1,1,1)`,
+    );
 
     await applyMigration(subject, 24);
+
+    assert.equal(
+      (
+        await subject.query<{ kind: string }>(
+          `SELECT kind FROM finalization_request WHERE request='legacy-in-flight'`,
+        )
+      ).rows[0]?.kind,
+      "RunFinalizer",
+    );
 
     const after = await subject.query<{ body: string }>(
       `SELECT pg_get_functiondef($1::regprocedure) AS body`,

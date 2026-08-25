@@ -112,16 +112,17 @@ export const finalizationSubmissionBody = `${finalizationFunction}(
           OR bound.attempt IS NULL
           OR NOT (
             (in_outcome = 'FinalizationFailed'
-              AND bound.kind = 'RunFinalizer'
+              AND bound.kind IN ('RunFinalizer', 'PromoteForHandoff')
               AND bound.attempt_outcome = 'Failed'
               AND bound.failure_kind IS NOT DISTINCT FROM in_failure_kind)
             OR (in_outcome = 'FinalizationSucceeded'
+              AND bound.kind IN ('RunFinalizer', 'PublishHandoff')
               AND in_failure_kind IS NULL
               AND bound.attempt_outcome = 'Prepared'
               AND bound.permit_state IS NOT DISTINCT FROM 'Concluded'
               AND bound.verdict IS NOT DISTINCT FROM 'Promoted')
             OR (in_outcome = 'PromotionAccepted'
-              AND bound.kind = 'RunFinalizer'
+              AND bound.kind = 'PromoteForHandoff'
               AND in_failure_kind IS NULL
               AND bound.attempt_outcome = 'Prepared'
               AND bound.permit_state IS NOT DISTINCT FROM 'Concluded'

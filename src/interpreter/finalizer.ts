@@ -205,11 +205,13 @@ export const allFinalizationRequestStates: readonly FinalizationRequestState[] =
   ["Open", "Registered", "Fulfilled", "Invalidated"];
 
 /** The durable effect whose external work one finalization request performs. */
-export type FinalizationRequestKind = "RunFinalizer" | "PublishHandoff";
+export type FinalizationRequestKind =
+  "RunFinalizer" | "PromoteForHandoff" | "PublishHandoff";
 
 /** Every finalization request kind, so storage and the live protocol share one roster. */
 export const allFinalizationRequestKinds: readonly FinalizationRequestKind[] = [
   "RunFinalizer",
+  "PromoteForHandoff",
   "PublishHandoff",
 ];
 
@@ -601,7 +603,7 @@ function finalizationNextUnderPermit(
         decide: "Conclude",
         conclusion: {
           outcome:
-            view.claim.kind === "RunFinalizer"
+            view.claim.kind === "PromoteForHandoff"
               ? "PromotionAccepted"
               : "FinalizationSucceeded",
         },
@@ -638,9 +640,9 @@ function finalizationNextBeforePermit(
     return {
       decide: "Conclude",
       conclusion:
-        view.claim.kind === "RunFinalizer"
-          ? { outcome: "FinalizationFailed", kind: attempt.failureKind }
-          : { outcome: "HandoffPublicationUnproven" },
+        view.claim.kind === "PublishHandoff"
+          ? { outcome: "HandoffPublicationUnproven" }
+          : { outcome: "FinalizationFailed", kind: attempt.failureKind },
     };
   }
   const aborting = view.observedTarget ?? attempt?.target;
