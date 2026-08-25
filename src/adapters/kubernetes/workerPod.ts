@@ -1,15 +1,16 @@
 /**
  * The pod one scheduled attempt becomes: the site data a deployment supplies,
- * the image an execution profile is admitted to run under, and the request the
- * cluster API is asked for.
+ * the image its pinned requirement names, and the request the cluster API is
+ * asked for.
  *
- * NOTHING HERE IS A SITE DECISION. The namespace, the service account, the node
- * selector, the two security contexts, the resource budget and the admitted
- * images all arrive as plain data on the configuration, so a site that changes
- * one of them changes its deployment rather than this adapter. What is decided
- * here is the translation: which supplied image an execution profile resolves
- * to, and which definitive inability the cluster is told about when it resolves
- * to none.
+ * NOTHING HERE IS A SITE DECISION, AND NOW NOT AN IMAGE ONE EITHER. The
+ * namespace, the service account, the node selector, the two security contexts
+ * and the resource budget all arrive as plain data on the configuration, so a
+ * site that changes one of them changes its deployment rather than this
+ * adapter. Which image an attempt runs is its requirement's, and whether this
+ * site runs that image was `ExecutionPolicy`'s answer before the attempt was
+ * placed; what is left here is the one contract a container backend cannot
+ * serve whatever policy said, which is a native requirement.
  *
  * A POD IS NAMED FOR ITS ATTEMPT AND FOR NOTHING ELSE. `AttemptPlacementPort`
  * places and cancels the same fenced attempt, so the name has to be derivable
@@ -35,6 +36,7 @@
 
 import { createHash } from "node:crypto";
 
+import type { ExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import type {
   AttemptPlacement,
   BlockedReason,
@@ -44,13 +46,6 @@ import type { AttemptId } from "../../interpreter/schedulerIdentity.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { taskAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
-
-/** One image a site admits, named by the execution profile and runtime version it runs. */
-export interface KubernetesWorkerImage {
-  readonly profile: string;
-  readonly runtimeVersion: string;
-  readonly image: string;
-}
 
 /** What one worker container may request and may not exceed. */
 export interface KubernetesResourceBudget {
@@ -67,7 +62,6 @@ export interface KubernetesWorkerLaunchConfig {
   readonly tokenFile: string;
   readonly serviceAccountName: string;
   readonly podNamePrefix: string;
-  readonly imagesAdmitted: readonly KubernetesWorkerImage[];
   readonly resources: KubernetesResourceBudget;
   readonly podLabels: Readonly<Record<string, string>>;
   readonly podAnnotations: Readonly<Record<string, string>>;
@@ -112,6 +106,8 @@ export interface KubernetesWorkerTask {
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly profile: ExecutionProfile;
+  readonly requirementIdentity: string;
+  readonly requirementDigest: string;
   readonly briefing: {
     readonly templateVersion: number;
     readonly purpose: string;
@@ -189,8 +185,6 @@ export function checkedKubernetesWorkerLaunchConfig(
     );
   if (config.tokenFile.length === 0)
     throw new RangeError("cluster token file is empty");
-  if (config.imagesAdmitted.length === 0)
-    throw new RangeError("no worker image is admitted");
   kubernetesPositive(config.activeDeadlineSecs, "worker active deadline");
   kubernetesPositive(config.requestTimeoutSecsMax, "cluster request timeout");
   kubernetesPositive(
@@ -216,20 +210,19 @@ export function kubernetesWorkerPodName(
   return `${config.podNamePrefix}-${digest}`;
 }
 
-/** The image this profile is admitted to run, or which inability the site's list states. */
+/**
+ * The image this attempt runs, which is the pinned requirement's and not a
+ * lookup. Whether the site runs it at all was policy's answer before an
+ * attempt was opened; what is left here is the one case a container backend
+ * cannot serve whatever policy said, so a native requirement arriving is
+ * refused rather than placed as a container.
+ */
 function kubernetesWorkerImage(
-  config: KubernetesWorkerLaunchConfig,
-  profile: ExecutionProfile,
+  requirement: ExecutionRequirement,
 ): { readonly image: string } | { readonly reason: BlockedReason } {
-  const named = config.imagesAdmitted.filter(
-    (each) => each.profile === profile.profile,
-  );
-  if (named.length === 0) return { reason: "ExecutionProfileUnavailable" };
-  const found = named.find(
-    (each) => each.runtimeVersion === profile.runtimeVersion,
-  );
-  if (found === undefined) return { reason: "RuntimeVersionUnsupported" };
-  return { image: found.image };
+  return requirement.mode === "Container"
+    ? { image: requirement.image }
+    : { reason: "RequiredCapabilityUnavailable" };
 }
 
 /** The fenced identity and the pinned inputs, as the annotations a placed pod carries. */
@@ -251,6 +244,8 @@ function kubernetesWorkerAnnotations(
     "configuration-digest": placement.configurationDigest,
     profile: placement.profile.profile,
     "runtime-version": placement.profile.runtimeVersion,
+    requirement: placement.requirementIdentity,
+    "requirement-digest": placement.requirementDigest,
     ...(placement.stage === undefined
       ? {}
       : { stage: String(placement.stage) }),
@@ -285,6 +280,8 @@ export function kubernetesWorkerTask(
     configurationRevision: placement.configurationRevision,
     configurationDigest: placement.configurationDigest,
     profile: placement.profile,
+    requirementIdentity: placement.requirementIdentity,
+    requirementDigest: placement.requirementDigest,
     briefing: {
       templateVersion: briefing.templateVersion,
       purpose: briefing.purpose,
@@ -299,7 +296,7 @@ export function kubernetesWorkerPodRequest(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
 ): KubernetesPodRequested {
-  const admitted = kubernetesWorkerImage(config, placement.profile);
+  const admitted = kubernetesWorkerImage(placement.requirement);
   if ("reason" in admitted)
     return { requested: "Denied", reason: admitted.reason };
   return {

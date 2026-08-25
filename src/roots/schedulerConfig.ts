@@ -134,15 +134,7 @@ const schedulerTaskKinds = Object.keys(
   schedulerPolicyShape,
 ) as readonly ExecutionTaskKind[];
 
-const schedulerImagesSchema = z
-  .array(
-    z.strictObject({
-      profile: schedulerTextSchema,
-      runtimeVersion: schedulerTextSchema,
-      image: schedulerTextSchema,
-    }),
-  )
-  .min(1);
+const schedulerImagesSchema = z.array(schedulerTextSchema).min(1);
 
 const schedulerResourcesSchema = z.strictObject({
   cpuRequest: schedulerTextSchema,
@@ -277,7 +269,14 @@ function schedulerPolicy(
       grant: supplied.grant,
     });
   }
-  return { profiles };
+  return {
+    profiles,
+    imagesAdmitted: schedulerJson(
+      environment,
+      "ADMITTED_IMAGES",
+      schedulerImagesSchema,
+    ),
+  };
 }
 
 /** The site policy a placed pod carries, every value of it read and handed on unread. */
@@ -341,11 +340,6 @@ function schedulerWorkers(
     podNamePrefix:
       schedulerOptional(environment, "WORKER_POD_NAME_PREFIX") ??
       schedulerCommandDefaults.workerPodNamePrefix,
-    imagesAdmitted: schedulerJson(
-      environment,
-      "WORKER_IMAGES",
-      schedulerImagesSchema,
-    ),
     resources: schedulerJson(
       environment,
       "WORKER_RESOURCES",
