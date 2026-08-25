@@ -119,3 +119,59 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
   assert.equal(acts, 0);
   await app.close();
 });
+
+test("an invalid worker-controlled artifact path is a predictable client refusal", async () => {
+  const app = createWorkerPlaneApp({
+    authority: { authenticate: () => Promise.resolve(authority) },
+    artifacts: {
+      store: () =>
+        Promise.resolve({ stored: "Refused", reason: "InvalidPath" }),
+    },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  const response = await app.inject({
+    method: "PUT",
+    url: "/v1/artifacts/%2E%2E%2Fescape",
+    headers: {
+      authorization: "Bearer held",
+      "content-type": "application/octet-stream",
+    },
+    payload: Buffer.from("result"),
+  });
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(JSON.parse(response.body), {
+    action: "stop",
+    reason: "InvalidPath",
+  });
+  await app.close();
+});
+
+test("an exhausted attempt artifact quota is a terminal payload refusal", async () => {
+  const app = createWorkerPlaneApp({
+    authority: { authenticate: () => Promise.resolve(authority) },
+    artifacts: {
+      store: () =>
+        Promise.resolve({ stored: "Refused", reason: "QuotaExceeded" }),
+    },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  const response = await app.inject({
+    method: "PUT",
+    url: "/v1/artifacts/result.txt",
+    headers: {
+      authorization: "Bearer held",
+      "content-type": "application/octet-stream",
+    },
+    payload: Buffer.from("result"),
+  });
+  assert.equal(response.statusCode, 413);
+  assert.deepEqual(JSON.parse(response.body), {
+    action: "stop",
+    reason: "QuotaExceeded",
+  });
+  await app.close();
+});

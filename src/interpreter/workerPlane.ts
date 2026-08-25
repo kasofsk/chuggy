@@ -33,6 +33,10 @@ export interface WorkerPlaneAuthority {
 
 export type WorkerArtifactStored =
   | { readonly stored: "Stored" }
+  | {
+      readonly stored: "Refused";
+      readonly reason: "InvalidPath" | "QuotaExceeded";
+    }
   | { readonly stored: "Conflict" }
   | { readonly stored: "Unavailable"; readonly retryAfterSeconds: number };
 

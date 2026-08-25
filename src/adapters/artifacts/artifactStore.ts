@@ -53,12 +53,14 @@ import {
   link,
   mkdir,
   open,
+  readdir,
   realpath,
   rename,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { dirname } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   candidateBytesMax,
@@ -81,6 +83,9 @@ import {
 import {
   asArtifactDigest,
   asArtifactPath,
+  artifactPathRejection,
+  manifestArtifactsMax,
+  manifestBytesMax,
   type ArtifactFailure,
   type ArtifactRole,
   type ArtifactRow,
@@ -95,6 +100,7 @@ import type {
 } from "../../interpreter/workerPlane.ts";
 import {
   artifactAttemptFile,
+  artifactAttemptRoot,
   artifactOwnedFile,
   artifactProjectDirectory,
   artifactWithinProject,
@@ -106,6 +112,9 @@ export interface ArtifactStoreOptions {
   readonly readArtifactsMax?: number;
   readonly readBytesMax?: number;
   readonly writeBytesMax?: number;
+  readonly attemptArtifactsMax?: number;
+  readonly attemptBytesMax?: number;
+  readonly uploadLockStaleSecs?: number;
   readonly unavailableRetrySecs?: number;
   readonly storedFileMode?: number;
 }
@@ -115,6 +124,9 @@ export const artifactStoreDefaults = {
   readArtifactsMax: candidateFilesMax,
   readBytesMax: candidateBytesMax,
   writeBytesMax: 4_194_304,
+  attemptArtifactsMax: manifestArtifactsMax,
+  attemptBytesMax: manifestBytesMax,
+  uploadLockStaleSecs: 300,
   unavailableRetrySecs: 30,
   storedFileMode: 0o440,
 } as const;
@@ -135,12 +147,21 @@ const artifactStoreWritableBits = 0o222;
 /** How a stored object is opened: to be read, and never through a link standing where it should be. */
 const artifactStoreReadFlags = constants.O_RDONLY | constants.O_NOFOLLOW;
 
+/** The bounded number of turns an upload waits for another upload to commit. */
+const artifactStoreUploadLockAttemptsMax = 100;
+
+/** The interval between attempts to acquire one attempt's upload lock. */
+const artifactStoreUploadLockRetryMs = 10;
+
 /** What the store holds across calls, resolved once so no call re-reads its own options. */
 interface ArtifactStoreState {
   readonly root: string;
   readonly readArtifactsMax: number;
   readonly readBytesMax: number;
   readonly writeBytesMax: number;
+  readonly attemptArtifactsMax: number;
+  readonly attemptBytesMax: number;
+  readonly uploadLockStaleSecs: number;
   readonly unavailableRetrySecs: number;
   readonly storedFileMode: number;
 }
@@ -400,6 +421,127 @@ async function artifactStoreDiscard(pending: string): Promise<void> {
   }
 }
 
+interface ArtifactStoreUsage {
+  readonly artifacts: number;
+  readonly bytes: number;
+}
+
+async function artifactStoreAttemptUsage(
+  directory: string,
+): Promise<ArtifactStoreUsage | undefined> {
+  let artifacts = 0;
+  let bytes = 0;
+  const pending = [directory];
+  try {
+    while (pending.length > 0) {
+      const current = pending.pop();
+      if (current === undefined) break;
+      for (const entry of await readdir(current, { withFileTypes: true })) {
+        const path = `${current}/${entry.name}`;
+        if (entry.isDirectory()) pending.push(path);
+        else if (entry.isFile()) {
+          const found = await lstat(path);
+          artifacts += 1;
+          bytes += found.size;
+        } else return undefined;
+      }
+    }
+    return { artifacts, bytes };
+  } catch (refused: unknown) {
+    return artifactStoreMissing(refused)
+      ? { artifacts: 0, bytes: 0 }
+      : undefined;
+  }
+}
+
+async function artifactStoreRecoverUploadLock(
+  lock: string,
+  staleSecs: number,
+): Promise<void> {
+  try {
+    const found = await lstat(lock);
+    if (Date.now() - found.mtimeMs > staleSecs * 1_000)
+      await rm(lock, { recursive: true, force: true });
+  } catch {
+    return;
+  }
+}
+
+async function artifactStoreAcquireUploadLock(
+  lock: string,
+  staleSecs: number,
+): Promise<boolean> {
+  for (
+    let attempt = 0;
+    attempt < artifactStoreUploadLockAttemptsMax;
+    attempt += 1
+  ) {
+    try {
+      await mkdir(lock);
+      return true;
+    } catch (refused: unknown) {
+      if (
+        typeof refused !== "object" ||
+        refused === null ||
+        (refused as { code?: unknown }).code !== "EEXIST"
+      )
+        return false;
+      await artifactStoreRecoverUploadLock(lock, staleSecs);
+      await delay(artifactStoreUploadLockRetryMs);
+    }
+  }
+  return false;
+}
+
+async function artifactStoreCommitAttemptWrite(
+  own: ArtifactStoreState,
+  directory: string,
+  attemptDirectory: string,
+  file: string,
+  pending: string,
+  content: Uint8Array,
+): Promise<WorkerArtifactStored> {
+  const lock = `${attemptDirectory}.upload-lock`;
+  if (!(await artifactStoreAcquireUploadLock(lock, own.uploadLockStaleSecs)))
+    return {
+      stored: "Unavailable",
+      retryAfterSeconds: own.unavailableRetrySecs,
+    };
+  try {
+    const existing = await artifactStoreEntryOf(directory, file);
+    if (existing.entry === "Object") {
+      if (existing.bytes !== content.byteLength) return { stored: "Conflict" };
+      const expected = createHash("sha256").update(content).digest("hex");
+      const digest = await artifactStoreDigestOf(file, existing.bytes);
+      return digest === expected
+        ? { stored: "Stored" }
+        : { stored: "Conflict" };
+    }
+    if (existing.entry === "Rejected" && existing.failure !== "Missing")
+      return { stored: "Conflict" };
+    if (existing.entry === "Unavailable")
+      return {
+        stored: "Unavailable",
+        retryAfterSeconds: own.unavailableRetrySecs,
+      };
+    const usage = await artifactStoreAttemptUsage(attemptDirectory);
+    if (usage === undefined)
+      return {
+        stored: "Unavailable",
+        retryAfterSeconds: own.unavailableRetrySecs,
+      };
+    if (
+      usage.artifacts + 1 > own.attemptArtifactsMax ||
+      usage.bytes + content.byteLength > own.attemptBytesMax
+    )
+      return { stored: "Refused", reason: "QuotaExceeded" };
+    await link(pending, file);
+    return { stored: "Stored" };
+  } finally {
+    await rm(lock, { recursive: true, force: true });
+  }
+}
+
 /** Writes one project-owned artifact read-only under a temporary name, then renames it into place. */
 async function artifactStoreWrite(
   own: ArtifactStoreState,
@@ -451,14 +593,14 @@ async function artifactStoreAttemptWrite(
   input: Parameters<WorkerArtifactUploadPort["store"]>[0],
 ): Promise<WorkerArtifactStored> {
   if (input.content.byteLength > own.writeBytesMax)
-    throw new RangeError(
-      "artifact store: worker upload is past the byte bound",
-    );
+    return { stored: "Refused", reason: "QuotaExceeded" };
   const directory = artifactProjectDirectory(
     own.root,
     input.authority.partition.tenant,
     input.authority.partition.project,
   );
+  if (artifactPathRejection(input.path) !== undefined)
+    return { stored: "Refused", reason: "InvalidPath" };
   const path = asArtifactPath(input.path);
   const file = artifactAttemptFile(
     directory,
@@ -466,10 +608,17 @@ async function artifactStoreAttemptWrite(
     input.authority.attempt,
     path,
   );
-  if (file === undefined) return { stored: "Conflict" };
-  const pending = `${file}.${randomUUID()}`;
+  if (file === undefined) return { stored: "Refused", reason: "InvalidPath" };
+  const attemptDirectory = artifactAttemptRoot(
+    directory,
+    input.authority.execution,
+    input.authority.attempt,
+  );
+  const pendingDirectory = `${attemptDirectory}.upload-pending`;
+  const pending = `${pendingDirectory}/${randomUUID()}`;
   try {
     await mkdir(dirname(file), { recursive: true });
+    await mkdir(pendingDirectory, { recursive: true });
     if ((await artifactStoreDirectoryRejection(directory, file)) !== undefined)
       return {
         stored: "Unavailable",
@@ -480,29 +629,28 @@ async function artifactStoreAttemptWrite(
       flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
     });
     await chmod(pending, own.storedFileMode);
-    await link(pending, file);
-    await artifactStoreDiscard(pending);
-    return { stored: "Stored" };
+    return await artifactStoreCommitAttemptWrite(
+      own,
+      directory,
+      attemptDirectory,
+      file,
+      pending,
+      input.content,
+    );
   } catch (refused: unknown) {
-    await artifactStoreDiscard(pending);
     if (
       typeof refused === "object" &&
       refused !== null &&
       (refused as { code?: unknown }).code === "EEXIST"
     ) {
-      const expected = createHash("sha256").update(input.content).digest("hex");
-      const found = await artifactStoreEntryOf(directory, file);
-      if (found.entry !== "Object" || found.bytes !== input.content.byteLength)
-        return { stored: "Conflict" };
-      const digest = await artifactStoreDigestOf(file, found.bytes);
-      return digest === expected
-        ? { stored: "Stored" }
-        : { stored: "Conflict" };
+      return { stored: "Conflict" };
     }
     return {
       stored: "Unavailable",
       retryAfterSeconds: own.unavailableRetrySecs,
     };
+  } finally {
+    await artifactStoreDiscard(pending);
   }
 }
 
@@ -564,6 +712,12 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
       options.readArtifactsMax ?? artifactStoreDefaults.readArtifactsMax,
     readBytesMax: options.readBytesMax ?? artifactStoreDefaults.readBytesMax,
     writeBytesMax: options.writeBytesMax ?? artifactStoreDefaults.writeBytesMax,
+    attemptArtifactsMax:
+      options.attemptArtifactsMax ?? artifactStoreDefaults.attemptArtifactsMax,
+    attemptBytesMax:
+      options.attemptBytesMax ?? artifactStoreDefaults.attemptBytesMax,
+    uploadLockStaleSecs:
+      options.uploadLockStaleSecs ?? artifactStoreDefaults.uploadLockStaleSecs,
     unavailableRetrySecs:
       options.unavailableRetrySecs ??
       artifactStoreDefaults.unavailableRetrySecs,
@@ -574,6 +728,9 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
     ["readArtifactsMax", own.readArtifactsMax],
     ["readBytesMax", own.readBytesMax],
     ["writeBytesMax", own.writeBytesMax],
+    ["attemptArtifactsMax", own.attemptArtifactsMax],
+    ["attemptBytesMax", own.attemptBytesMax],
+    ["uploadLockStaleSecs", own.uploadLockStaleSecs],
     ["unavailableRetrySecs", own.unavailableRetrySecs],
   ] as const) {
     if (!Number.isSafeInteger(bound) || bound <= 0) {

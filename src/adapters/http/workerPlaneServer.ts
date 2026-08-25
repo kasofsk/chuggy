@@ -94,6 +94,10 @@ function workerUploadRoute(
         return reply.code(204).send();
       case "Conflict":
         return reply.code(409).send({ action: "stop" });
+      case "Refused":
+        return reply
+          .code(stored.reason === "InvalidPath" ? 400 : 413)
+          .send({ action: "stop", reason: stored.reason });
       case "Unavailable":
         return reply
           .header("retry-after", String(stored.retryAfterSeconds))
