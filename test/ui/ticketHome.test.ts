@@ -7,7 +7,7 @@ import {
   ticketHomeNext,
   ticketHomeReceived,
   ticketHomeRefresh,
-} from "../../ui/app/ticketHome.js";
+} from "../../ui/console/app/ticketHome.js";
 
 const partition = { tenant: "acme", project: "atlas" };
 

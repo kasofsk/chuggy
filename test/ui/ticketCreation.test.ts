@@ -9,8 +9,8 @@ import {
   ticketCreationReleaseEvent,
   ticketCreationSelected,
   ticketCreationSubmitted,
-} from "../../ui/app/ticketCreation.js";
-import { parseDraftInitialization } from "../../ui/app/resources.js";
+} from "../../ui/console/app/ticketCreation.js";
+import { parseDraftInitialization } from "../../ui/console/app/resources.js";
 
 const partition = { tenant: "acme", project: "atlas" };
 type DraftInitialization = ReturnType<typeof parseDraftInitialization>;

@@ -6,8 +6,8 @@ import {
   repositoryConfigurationImportEdited,
   repositoryConfigurationImportInitial,
   repositoryConfigurationImportSubmitted,
-} from "../../ui/app/repositoryConfigurationImport.js";
-import { unreadableReason } from "../../ui/app/outcomes.js";
+} from "../../ui/console/app/repositoryConfigurationImport.js";
+import { unreadableReason } from "../../ui/console/app/outcomes.js";
 
 const partition = { tenant: "acme", project: "atlas" };
 const commit = "a".repeat(40);

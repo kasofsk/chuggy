@@ -24,13 +24,13 @@ import {
   pollSucceeded,
   pollTicksMax,
   retryDelayMs,
-} from "../../ui/app/polling.js";
+} from "../../ui/console/app/polling.js";
 import {
   pagingItemsMax,
   pagingPagesMax,
   pagingStart,
   pagingStep,
-} from "../../ui/app/paging.js";
+} from "../../ui/console/app/paging.js";
 
 test("backoff doubles from the base and stops at the ceiling", () => {
   assert.equal(backoffDelayMs(0), pollIntervalMsBase);

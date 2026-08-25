@@ -7,7 +7,7 @@ import {
   ticketDetailExecutionsNext,
   ticketDetailExecutionsReceived,
   ticketDetailInitial,
-} from "../../ui/app/ticketDetail.js";
+} from "../../ui/console/app/ticketDetail.js";
 
 const partition = { tenant: "acme", project: "atlas" };
 

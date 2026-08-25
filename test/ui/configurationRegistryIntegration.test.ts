@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createConfigurationRegistry } from "../../ui/dom/configurationRegistryController.js";
+import { createConfigurationRegistry } from "../../ui/console/dom/configurationRegistryController.js";
 import { deferred } from "./deferred.ts";
-import type { ApiOutcome } from "../../ui/app/protocol.js";
+import type { ApiOutcome } from "../../ui/console/app/protocol.js";
 
 const partition = { tenant: "acme", project: "atlas" };
 const commit = "a".repeat(40);

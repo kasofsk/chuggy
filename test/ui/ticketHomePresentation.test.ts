@@ -3,7 +3,7 @@ import test from "node:test";
 import { content, elements } from "./domHarness.ts";
 import type { TestElement } from "./domHarness.ts";
 
-const ticketHomePresentationModule = "../../ui/dom/ticketHomeView.js";
+const ticketHomePresentationModule = "../../ui/console/dom/ticketHomeView.js";
 const { ticketHomePage } = (await import(ticketHomePresentationModule)) as {
   ticketHomePage: (controller: unknown) => unknown;
 };

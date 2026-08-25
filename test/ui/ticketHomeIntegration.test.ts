@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createTicketHome } from "../../ui/dom/ticketHomeController.js";
+import { createTicketHome } from "../../ui/console/dom/ticketHomeController.js";
 import { deferred } from "./deferred.ts";
-import type { ApiOutcome } from "../../ui/app/protocol.js";
+import type { ApiOutcome } from "../../ui/console/app/protocol.js";
 
 const partition = { tenant: "acme", project: "atlas" };
 

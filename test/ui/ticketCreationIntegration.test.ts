@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createTicketCreation } from "../../ui/dom/ticketCreationController.js";
-import type { ApiOutcome } from "../../ui/app/protocol.js";
+import { createTicketCreation } from "../../ui/console/dom/ticketCreationController.js";
+import type { ApiOutcome } from "../../ui/console/app/protocol.js";
 import {
   ticketCreationDraft,
   ticketCreationInitialization,

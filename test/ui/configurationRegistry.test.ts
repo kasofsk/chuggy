@@ -7,7 +7,7 @@ import {
   configurationRegistryNext,
   configurationRegistryReceived,
   configurationRegistryRefresh,
-} from "../../ui/app/configurationRegistry.js";
+} from "../../ui/console/app/configurationRegistry.js";
 
 const accessToken = "token";
 const partition = { tenant: "acme", project: "atlas" };

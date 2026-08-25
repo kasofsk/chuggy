@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { elements } from "./domHarness.ts";
 import type { TestElement } from "./domHarness.ts";
-import { ticketCreationEdited } from "../../ui/app/ticketCreation.js";
-import { parseDraftInitialization } from "../../ui/app/resources.js";
+import { ticketCreationEdited } from "../../ui/console/app/ticketCreation.js";
+import { parseDraftInitialization } from "../../ui/console/app/resources.js";
 import { ticketCreationInitialization } from "./ticketCreationFixture.ts";
 
-const ticketCreationPresentationModule = "../../ui/dom/ticketCreationView.js";
+const ticketCreationPresentationModule =
+  "../../ui/console/dom/ticketCreationView.js";
 const { ticketCreationPage } = (await import(
   ticketCreationPresentationModule
 )) as {

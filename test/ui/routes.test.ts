@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { routeParsed, routePath } from "../../ui/app/routes.js";
+import { routeParsed, routePath } from "../../ui/console/app/routes.js";
 
 test("browser routes are bounded and round trip", () => {
   const routes = [

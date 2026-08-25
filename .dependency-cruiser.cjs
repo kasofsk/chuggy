@@ -146,17 +146,52 @@ module.exports = {
     {
       name: "console-decisions-touch-no-document",
       comment:
-        "ui/app/ is the console's decision layer and ui/dom/ is what performs " +
-        "its effects, which is the same split the interpreter and the " +
-        "adapters have and it is enforced the same way. What it buys is that " +
-        "every arrangement the console can show is reachable from a suite " +
-        "with no browser: a decision that reached the document would need one " +
-        "to be tested, and this tree has no browser harness to give it. " +
-        "Reachability again, because a relay belonging to neither directory " +
-        "is the shape a per-import rule misses.",
+        "ui/<console>/app/ is a console's decision layer and its sibling " +
+        "dom/ is what performs that console's effects, which is the same " +
+        "split the interpreter and the adapters have and it is enforced the " +
+        "same way. What it buys is that every arrangement a console can show " +
+        "is reachable from a suite with no browser: a decision that reached " +
+        "the document would need one to be tested, and this tree has no " +
+        "browser harness to give it. Reachability again, because a relay " +
+        "belonging to neither directory is the shape a per-import rule " +
+        "misses. It is stated over EVERY dom/ under ui/ rather than the " +
+        "matching one, which is wider than the split it names and is sound " +
+        "only because no-console-sees-another holds below: a decision that " +
+        "reached a sibling console's document layer is already a finding " +
+        "there, so the two rules together admit exactly the one edge this " +
+        "one is about. A $1 backreference would say it exactly, and does " +
+        "not work — dependency-cruiser substitutes a capture group into " +
+        "`to.pathNot`, and into `to.path` on a plain dependency rule, but " +
+        "not into `to.path` on a `reachable` one, where it matches nothing " +
+        "and the rule passes everything. check-boundaries.test.sh carries " +
+        "the case that would go quiet if someone tries it again.",
       severity: "error",
-      from: { path: "^ui/app/" },
-      to: { reachable: true, path: "^ui/dom/" },
+      from: { path: "^ui/[^/]+/app/" },
+      to: { reachable: true, path: "^ui/[^/]+/dom/" },
+    },
+    {
+      name: "no-console-sees-another",
+      comment:
+        "Each directory under ui/ is a whole console: its own document root, " +
+        "its own configuration, its own image. Two that need each other are " +
+        "either one console or a shared module, and a shared module under " +
+        "ui/ is the client dependency console-reaches-no-source refuses on " +
+        "the server side and would have no reason to permit here — what a " +
+        "browser fetches for one console would be decided by the other's " +
+        "needs. So a constant two consoles both need is written twice, and " +
+        "test/ui/ holds the copies equal, which is the arrangement already " +
+        "in force between the console and the server. Capture group and " +
+        "segment anchor for the same reasons no-adapter-sees-another states " +
+        "them: the interesting violation is a reachable helper rather than " +
+        "one console importing another by name, and an unanchored name " +
+        "excuses every sibling it is a prefix of.",
+      severity: "error",
+      from: { path: "^ui/([^/]+)" },
+      to: {
+        reachable: true,
+        path: "^ui/",
+        pathNot: "^ui/$1(/|$)",
+      },
     },
     {
       name: "no-circular-dependency",
