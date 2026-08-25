@@ -476,10 +476,10 @@ function nativeDraftInitializationMethod(
           result: "Authorized",
           value: { initialized: "PolicyUnavailable" },
         };
-      if (
-        releaseConfigurationReadiness(snapshot.configuration.canonical)
-          .readiness === "Incomplete"
-      )
+      const readiness = releaseConfigurationReadiness(
+        snapshot.configuration.canonical,
+      );
+      if (readiness.readiness === "Incomplete")
         return {
           result: "Authorized",
           value: { initialized: "ConfigurationIncomplete" },
@@ -494,7 +494,10 @@ function nativeDraftInitializationMethod(
             dependencyCandidates: snapshot.dependencyCandidates,
             dependencyCandidatesTruncated:
               snapshot.dependencyCandidatesTruncated,
-            ...draftInitializationPolicy(snapshot.domain),
+            ...draftInitializationPolicy(
+              snapshot.domain,
+              readiness.configuration,
+            ),
           },
         },
       };

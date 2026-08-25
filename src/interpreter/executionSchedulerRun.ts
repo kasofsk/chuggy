@@ -432,6 +432,7 @@ async function schedulerPrepare(
   }
   const composed = composeTaskInvocation(service.practices, {
     purpose: taskPurposeForKind(execution.taskKind),
+    ...(execution.stage === undefined ? {} : { stage: execution.stage }),
     pin: execution,
     configuration,
     runtime,
