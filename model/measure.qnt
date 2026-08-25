@@ -296,7 +296,8 @@ module chuggy_measure {
   /// Finalizing is one domain phase. Queueing, approval, permits, and any
   /// irreversible external action are operational protocol, not Core state.
   type Phase =
-    Pending | Working | Evaluating | Finalizing | Done | Escalated | Revoked
+    Pending | Working | Evaluating | Finalizing | PublishingHandoff |
+    HandoffBlocked | Done | Abandoned | Escalated | Revoked
 
   /// What a task IS for (task records are first-class — they carry the
   /// anatomy):
@@ -425,7 +426,9 @@ module chuggy_measure {
   ///   - WOk      the step committed the artifact.
   ///   - WFailed  it did not, and is drawable only when the environment
   ///              invalidated the artifact (domain.qnt finalizerOutcomes).
-  type FinalizationOutcome = FinalizationSucceeded | FinalizationFailed
+  type FinalizationOutcome =
+    FinalizationSucceeded | FinalizationFailed | PromotionAccepted |
+    HandoffPublicationUnproven
 
   /// HOW A TICKET FINISHES (design 002), authored data on the ticket exactly
   /// like the eval program — eval-is-data applied one seam later.
@@ -626,7 +629,8 @@ module chuggy_measure {
   /// Stalled merged into Escalated. Nothing is below settled.
   pure val rankSettled: int = 0
   /// Finalization resolves to completion, priced rework, or a wall.
-  pure val rankFinalizing: int = rankSettled + 1
+  pure val rankPublishingHandoff: int = rankSettled + 1
+  pure val rankFinalizing: int = rankPublishingHandoff + 1
   pure val rankEvaluating: int = rankFinalizing + 1
   pure val rankWorking: int = rankEvaluating + 1
   /// The released waiting room (Ready/Blocked derive from it).
@@ -648,6 +652,7 @@ module chuggy_measure {
       | Working => rankWorking
       | Evaluating => rankEvaluating
       | Finalizing => rankFinalizing
+      | PublishingHandoff => rankPublishingHandoff
       | _ => rankSettled
     }
 
