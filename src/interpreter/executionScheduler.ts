@@ -393,6 +393,36 @@ export interface FencedAttempt {
   readonly generation: number;
 }
 
+declare const attemptCapabilityIdBrand: unique symbol;
+declare const attemptCapabilitySecretBrand: unique symbol;
+
+/** The public identity of one attempt-scoped worker-plane capability. */
+export type AttemptCapabilityId = string & {
+  readonly [attemptCapabilityIdBrand]: true;
+};
+
+/** The bearer secret returned exactly once when its durable capability is minted. */
+export type AttemptCapabilitySecret = string & {
+  readonly [attemptCapabilitySecretBrand]: true;
+};
+
+/** The authority minted atomically with an attempt and handed only to its launcher. */
+export interface AttemptCapability {
+  readonly id: AttemptCapabilityId;
+  readonly secret: AttemptCapabilitySecret;
+  readonly manifest: ResultManifestId;
+}
+
+export function asAttemptCapabilityId(value: string): AttemptCapabilityId {
+  return value as AttemptCapabilityId;
+}
+
+export function asAttemptCapabilitySecret(
+  value: string,
+): AttemptCapabilitySecret {
+  return value as AttemptCapabilitySecret;
+}
+
 /** One physical attempt: its fenced identity, its lease, and what it has reported. */
 export interface PhysicalAttempt extends FencedAttempt {
   readonly attemptNumber: number;
@@ -400,6 +430,7 @@ export interface PhysicalAttempt extends FencedAttempt {
   readonly state: AttemptState;
   readonly authoritative: boolean;
   readonly placement?: PlacementId;
+  readonly capability: AttemptCapability;
 }
 
 /** What an attempt is doing, which is below the logical grain and never reaches `Core`. */
@@ -689,6 +720,7 @@ export interface AttemptPlacement extends FencedAttempt {
   readonly requirementDigest: string;
   readonly profile: ExecutionProfile;
   readonly invocation: TaskInvocation;
+  readonly capability: AttemptCapability;
 }
 
 /**
