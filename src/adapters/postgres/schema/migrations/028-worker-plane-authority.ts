@@ -56,7 +56,8 @@ export const migration028: Migration = {
           WHERE a.capability_secret_digest=in_secret_digest
             AND ((a.state IN ('Placing','Running') AND e.status IN ('Launching','Running'))
               OR (a.state='Reported' AND e.status='Terminal'))
-            AND a.recovery_epoch=(SELECT epoch FROM recovery_epoch)
+            AND a.recovery_epoch=(SELECT epoch FROM recovery_epoch
+                                   ORDER BY ordinal DESC LIMIT 1)
        $$`,
     `ALTER FUNCTION ${workerAttemptReadFunction}(text) OWNER TO ${boundaryOwnerRole}`,
     `REVOKE ALL ON FUNCTION ${workerAttemptReadFunction}(text) FROM PUBLIC`,
@@ -79,7 +80,8 @@ export const migration028: Migration = {
                 lease_owner=NULL,lease_expires_at=NULL
           WHERE a.capability_secret_digest=in_secret_digest
             AND a.generation=in_generation AND a.state IN ('Placing','Running')
-            AND a.recovery_epoch=(SELECT epoch FROM recovery_epoch);
+            AND a.recovery_epoch=(SELECT epoch FROM recovery_epoch
+                                   ORDER BY ordinal DESC LIMIT 1);
          IF NOT FOUND THEN RETURN false; END IF;
          UPDATE execution e SET retries_spent=e.retries_spent+1,
                                 placement_backoff_from=now()
@@ -109,7 +111,8 @@ export const migration028: Migration = {
                                    AND q.request=e.source_request
           WHERE a.capability_secret_digest=in_secret_digest
           FOR UPDATE OF q,e,a;
-         IF NOT FOUND OR bound.recovery_epoch<>(SELECT epoch FROM recovery_epoch)
+         IF NOT FOUND OR bound.recovery_epoch<>(SELECT epoch FROM recovery_epoch
+                                                ORDER BY ordinal DESC LIMIT 1)
             OR bound.state NOT IN ('Placing','Running','Reported') THEN
            RETURN QUERY SELECT 'Fenced'::text,NULL::text,NULL::text,NULL::text; RETURN;
          END IF;

@@ -33,6 +33,22 @@ test("the worker role reaches database state only through its three boundaries",
   );
 });
 
+test("every worker boundary fences against the latest recovery epoch", () => {
+  const boundaries = migration028.statements.filter(
+    (statement) =>
+      statement.startsWith("CREATE FUNCTION") &&
+      /(?:read_worker_attempt|lose_worker_attempt|submit_worker_result)/u.test(
+        statement,
+      ),
+  );
+  assert.equal(boundaries.length, 3);
+  for (const boundary of boundaries)
+    assert.match(
+      boundary,
+      /SELECT epoch FROM recovery_epoch\s+ORDER BY ordinal DESC LIMIT 1/u,
+    );
+});
+
 test("losing a report passes only the capability digest, generation and closed evidence", async () => {
   const statements: unknown[] = [];
   const pool = {
