@@ -284,6 +284,23 @@ test("the API reads one repository binding only through its boundary", async () 
   );
 });
 
+test("the ticket service reads one repository binding only through its boundary", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      ticketServiceRole,
+      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project')`,
+    ),
+    undefined,
+  );
+  assert.match(
+    (await harness.attemptAs(
+      ticketServiceRole,
+      "SELECT * FROM project_repository",
+    )) ?? "",
+    postgresHarnessDenial("project_repository"),
+  );
+});
+
 test("runtime roles cannot write notification rows directly", async () => {
   for (const role of [apiRole, ticketServiceRole]) {
     for (const [statement, object] of [
