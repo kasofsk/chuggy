@@ -49,6 +49,21 @@ test("every worker boundary fences against the latest recovery epoch", () => {
     );
 });
 
+test("result submission follows the scheduler completion lock order", () => {
+  const boundary = migration028.statements.find((statement) =>
+    statement.includes("CREATE FUNCTION submit_worker_result"),
+  );
+  assert.notEqual(boundary, undefined);
+  const request = boundary?.indexOf("FROM execution_request q") ?? -1;
+  const execution = boundary?.indexOf("FOR UPDATE OF e") ?? -1;
+  const project = boundary?.indexOf("FROM project") ?? -1;
+  const attempt = boundary?.indexOf("UPDATE execution_attempt") ?? -1;
+  assert.ok(request >= 0 && request < execution);
+  assert.ok(execution < project);
+  assert.ok(project < attempt);
+  assert.doesNotMatch(boundary ?? "", /FOR UPDATE OF q,e,a/u);
+});
+
 test("losing a report passes only the capability digest, generation and closed evidence", async () => {
   const statements: unknown[] = [];
   const pool = {

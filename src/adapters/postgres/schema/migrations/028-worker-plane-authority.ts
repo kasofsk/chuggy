@@ -101,6 +101,17 @@ export const migration028: Migration = {
        DECLARE bound record; next_manifest bigint; submitted record; incident_id text;
          settled_outcome text; artifact jsonb; project_lifecycle text;
        BEGIN
+         SELECT a.tenant,a.project,a.execution,e.source_request INTO bound
+           FROM execution_attempt a
+           JOIN execution e ON e.tenant=a.tenant AND e.project=a.project
+                           AND e.execution=a.execution
+          WHERE a.capability_secret_digest=in_secret_digest;
+         IF NOT FOUND THEN
+           RETURN QUERY SELECT 'Fenced'::text,NULL::text,NULL::text,NULL::text; RETURN;
+         END IF;
+         PERFORM 1 FROM execution_request q
+          WHERE q.tenant=bound.tenant AND q.project=bound.project
+            AND q.request=bound.source_request FOR UPDATE;
          SELECT a.tenant,a.project,a.execution,a.attempt,a.manifest,a.state,a.recovery_epoch,
                 e.status,e.outcome,e.result_manifest,e.completion_operation,e.ticket,e.task,
                 e.source_request,q.effect_position
@@ -110,7 +121,7 @@ export const migration028: Migration = {
            JOIN execution_request q ON q.tenant=e.tenant AND q.project=e.project
                                    AND q.request=e.source_request
           WHERE a.capability_secret_digest=in_secret_digest
-          FOR UPDATE OF q,e,a;
+          FOR UPDATE OF e;
          IF NOT FOUND OR bound.recovery_epoch<>(SELECT epoch FROM recovery_epoch
                                                 ORDER BY ordinal DESC LIMIT 1)
             OR bound.state NOT IN ('Placing','Running','Reported') THEN
