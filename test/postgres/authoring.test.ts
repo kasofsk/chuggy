@@ -66,14 +66,17 @@ async function repositoryBinding(partition: Partition) {
   const epoch = row?.["epoch"];
   if (typeof epoch !== "string") throw new Error("recovery epoch is absent");
   const recoveryEpoch = asRecoveryEpoch(epoch);
+  const repository = asRepositoryId(
+    `repository-${partition.tenant}-${partition.project}`,
+  );
   await harness.query(
     `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
        VALUES ($1,$2,$3,$4)`,
-    [partition.tenant, partition.project, "repository", recoveryEpoch],
+    [partition.tenant, partition.project, repository, recoveryEpoch],
   );
   return {
     partition,
-    repository: asRepositoryId("repository"),
+    repository,
     recoveryEpoch,
   };
 }
@@ -358,7 +361,7 @@ test("repository configuration imports are idempotent and expose provenance", as
     [
       {
         source: "Repository",
-        repository: "repository",
+        repository: binding.repository,
         commit: "a".repeat(40),
         path: [".chug", "configurations", "work.json"].join("/"),
         name: "work",
@@ -483,7 +486,12 @@ test("a changed repository binding fences the entire import", async () => {
   await harness.query(
     `UPDATE project_repository SET recovery_epoch=$4
        WHERE tenant=$1 AND project=$2 AND repository=$3`,
-    [partition.tenant, partition.project, "repository", changedRecoveryEpoch],
+    [
+      partition.tenant,
+      partition.project,
+      binding.repository,
+      changedRecoveryEpoch,
+    ],
   );
   assert.deepEqual(
     await harness.authoring.importRepositoryConfigurations({

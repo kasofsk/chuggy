@@ -1055,6 +1055,15 @@ test("the configuration importer is fenced and holds only its two functions", as
       ).rows[0]?.granted,
       false,
     );
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_column_privilege($1,'project_repository','recovery_epoch','UPDATE') AS granted",
+          [boundaryOwnerRole],
+        )
+      ).rows[0]?.granted,
+      true,
+    );
   });
 });
 
