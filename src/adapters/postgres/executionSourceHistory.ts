@@ -14,7 +14,7 @@ export function postgresExecutionSourceHistory(
       const found = await pool.query<{
         repository: string | null;
         target_commit: string | null;
-        manifests: string[];
+        manifests: (string | null)[];
       }>(
         sql`WITH work AS (
               SELECT request,input_bundle
@@ -47,7 +47,9 @@ export function postgresExecutionSourceHistory(
       return {
         repository: asRepositoryId(row.repository),
         target: { commit: asGitObjectId(row.target_commit) },
-        manifests: row.manifests.map(asResultManifestId),
+        manifests: row.manifests
+          .filter((manifest): manifest is string => manifest !== null)
+          .map(asResultManifestId),
       };
     },
   };

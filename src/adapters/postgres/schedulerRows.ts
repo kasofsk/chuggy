@@ -66,8 +66,8 @@ export interface ExecutionRow {
   readonly task_kind: string;
   readonly stage: string | null;
   readonly source_request: string;
-  readonly input_bundle: string;
-  readonly input_bundle_digest: string;
+  readonly input_bundle: string | null;
+  readonly input_bundle_digest: string | null;
   readonly source_seq: string;
   readonly source_effect: string;
   readonly ticket_version: string;
@@ -224,6 +224,8 @@ function executionRowSettlement(row: ExecutionRow) {
 
 /** What one joined execution row says about itself. */
 export function executionRowLogical(row: ExecutionRow): LogicalExecution {
+  if (row.input_bundle === null || row.input_bundle_digest === null)
+    throw new Error("execution row: a registered task has no input bundle");
   return {
     partition: schedulerRowPartition(row),
     execution: asExecutionId(row.execution),

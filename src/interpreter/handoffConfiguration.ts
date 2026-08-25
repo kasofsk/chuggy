@@ -1,7 +1,7 @@
 /** Pinned configuration and deterministic rendering for a direct Git handoff. */
 
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
-import type { CanonicalConfiguration } from "./authoring.ts";
+import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import {
   asGitObjectId,
   asGitRefName,

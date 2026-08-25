@@ -76,6 +76,11 @@ const retainedImageContract = runtimeSchemaContract(publishingImageRequired, [
 ]);
 
 const declaredLatest = Math.max(...migrations.map(({ version }) => version));
+const installationAuthorityMigration = migrations.find(
+  ({ name }) => name === "the installation authority",
+);
+if (installationAuthorityMigration === undefined)
+  throw new Error("the installation authority migration is not declared");
 
 function databaseUrl(database: string): string {
   const url = new URL(postgresHarnessUrl());
@@ -211,6 +216,7 @@ async function seedI2(subject: pg.Pool): Promise<void> {
 
 async function assertDivergentMigrationRefused(
   subject: pg.Pool,
+  appliedLatest: number,
 ): Promise<void> {
   const divergentRetained = runtimeSchemaContract(
     retainedImageContract.required,
@@ -232,7 +238,7 @@ async function assertDivergentMigrationRefused(
         "SELECT version FROM schema_migration ORDER BY version DESC LIMIT 1",
       )
     ).rows,
-    [{ version: declaredLatest - 1 }],
+    [{ version: appliedLatest }],
   );
 }
 
@@ -384,7 +390,11 @@ test("each migration runs forward over the rows the slice before it left", async
       await subject.query("COMMIT");
     }
     await seedBeforeI7(subject);
-    for (const migration of migrations.slice(10, -1)) {
+    for (const migration of migrations
+      .slice(10)
+      .filter(
+        ({ version }) => version < installationAuthorityMigration.version,
+      )) {
       await subject.query("BEGIN");
       for (const statement of migration.statements)
         await subject.query(statement);
@@ -393,7 +403,7 @@ test("each migration runs forward over the rows the slice before it left", async
 
     await subject.query("BEGIN");
     await assert.rejects(async () => {
-      for (const statement of migrations.at(-1)?.statements ?? [])
+      for (const statement of installationAuthorityMigration.statements)
         await subject.query(statement);
     }, /existing journal has no installation authority/u);
     await subject.query("ROLLBACK");
@@ -429,9 +439,12 @@ test("an incompatible rollout leaves an untouched database untouched", async () 
 
 test("an empty staged legacy journal cannot silently acquire an authority", async () => {
   await migrationDatabase("stage", async (subject) => {
-    await migrationSeedApplied(subject, declaredLatest);
+    await migrationSeedApplied(subject, installationAuthorityMigration.version);
     await subject.query("SET chuggy.initializing_journal = 'on'");
-    await assertDivergentMigrationRefused(subject);
+    await assertDivergentMigrationRefused(
+      subject,
+      installationAuthorityMigration.version - 1,
+    );
     const retainedAfterPublication = runtimeSchemaContract(
       retainedImageContract.required,
       migrations.map(({ version, name }) => ({ version, name })),
@@ -495,7 +508,7 @@ test("fresh journals receive different durable installation authorities", async 
 
 test("an initialized legacy journal cannot silently acquire an authority", async () => {
   await migrationDatabase("authority_legacy", async (subject) => {
-    await migrationSeedApplied(subject, declaredLatest);
+    await migrationSeedApplied(subject, installationAuthorityMigration.version);
     await subject.query(
       "INSERT INTO project (tenant,project,lifecycle) VALUES ('tenant','project','Active')",
     );
