@@ -4,9 +4,9 @@ import { Buffer } from "node:buffer";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { URL } from "node:url";
 
 import { commitAndPushSource, resultDocument } from "./source.mjs";
+import { workerRequest } from "./transport.mjs";
 
 const executeFile = promisify(execFile);
 let activeTask;
@@ -21,16 +21,6 @@ function required(name) {
 
 function parsed(name) {
   return JSON.parse(required(name));
-}
-
-async function workerRequest(task, bearer, path, init = {}) {
-  const response = await globalThis.fetch(new URL(path, task.workerPlane.url), {
-    ...init,
-    headers: { authorization: `Bearer ${bearer}`, ...init.headers },
-  });
-  if (!response.ok)
-    throw new Error(`worker plane ${path} answered ${String(response.status)}`);
-  return response;
 }
 
 function oneReference(input, kind) {
