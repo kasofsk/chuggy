@@ -53,6 +53,7 @@ export interface KubernetesResourceBudget {
   readonly cpuLimit: string;
   readonly memoryRequest: string;
   readonly memoryLimit: string;
+  readonly ephemeralStorageLimit: string;
 }
 
 /** One site-owned Secret key that may satisfy a policy's named credential. */
@@ -204,7 +205,7 @@ export interface KubernetesPod {
           readonly path: string;
         }[];
       };
-      readonly emptyDir?: Readonly<Record<string, never>>;
+      readonly emptyDir?: { readonly sizeLimit?: string };
     }[];
   };
 }
@@ -506,10 +507,12 @@ function kubernetesWorkerContainer(
       requests: {
         cpu: config.resources.cpuRequest,
         memory: config.resources.memoryRequest,
+        "ephemeral-storage": config.resources.ephemeralStorageLimit,
       },
       limits: {
         cpu: config.resources.cpuLimit,
         memory: config.resources.memoryLimit,
+        "ephemeral-storage": config.resources.ephemeralStorageLimit,
       },
     },
     securityContext: config.containerSecurityContext,
@@ -576,7 +579,10 @@ export function kubernetesWorkerPodRequest(
         ],
         volumes: [
           ...kubernetesWorkerCapabilityVolumes(config, placement),
-          { name: "worker-workspace", emptyDir: {} },
+          {
+            name: "worker-workspace",
+            emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
+          },
           ...credentials.volumes,
         ],
       },

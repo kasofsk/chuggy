@@ -47,6 +47,7 @@ const resources = {
   cpuLimit: "1",
   memoryRequest: "1Gi",
   memoryLimit: "2Gi",
+  ephemeralStorageLimit: "10Gi",
 };
 
 const grant = {

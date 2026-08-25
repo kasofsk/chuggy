@@ -141,6 +141,7 @@ const schedulerResourcesSchema = z.strictObject({
   cpuLimit: schedulerTextSchema,
   memoryRequest: schedulerTextSchema,
   memoryLimit: schedulerTextSchema,
+  ephemeralStorageLimit: schedulerTextSchema,
 });
 
 const schedulerCredentialMountsSchema = z.record(

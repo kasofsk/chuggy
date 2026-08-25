@@ -84,6 +84,7 @@ const config: KubernetesWorkerLaunchConfig = {
     cpuLimit: "1",
     memoryRequest: "1Gi",
     memoryLimit: "2Gi",
+    ephemeralStorageLimit: "10Gi",
   },
   podLabels: { "app.kubernetes.io/name": "chuggy-worker" },
   podAnnotations: { "site.invalid/tier": "batch" },
@@ -264,8 +265,16 @@ function expectedContainer(): unknown {
       },
     ],
     resources: {
-      requests: { cpu: "500m", memory: "1Gi" },
-      limits: { cpu: "1", memory: "2Gi" },
+      requests: {
+        cpu: "500m",
+        memory: "1Gi",
+        "ephemeral-storage": "10Gi",
+      },
+      limits: {
+        cpu: "1",
+        memory: "2Gi",
+        "ephemeral-storage": "10Gi",
+      },
     },
     securityContext: { allowPrivilegeEscalation: false },
     volumeMounts: [
@@ -333,7 +342,7 @@ function expectedPod(name: string): unknown {
             items: [{ key: "bearer", path: "bearer" }],
           },
         },
-        { name: "worker-workspace", emptyDir: {} },
+        { name: "worker-workspace", emptyDir: { sizeLimit: "10Gi" } },
         {
           name: "worker-credential-0",
           secret: {
