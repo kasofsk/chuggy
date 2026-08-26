@@ -2,9 +2,10 @@
 # The module graph points inward, and `src/domain/` reaches nothing outside
 # itself by any path through it.
 #
-# The consoles are cruised beside them: `ui/` reaches nothing outside itself, so
-# what a browser is served needs no build step and no client dependency, each
-# console's `app/` reaches no document, and no console reaches another.
+# The consoles are cruised beside them: no console reaches this tree's source,
+# the console with no build step reaches no package either — so what a browser
+# is served there is what the directory holds — that console's `app/` reaches no
+# document, and no console reaches another.
 #
 # This is house rule 2's graph half; `eslint.config.js` holds the ambient half.
 # What no per-file check can see is reachability — a helper inside the domain

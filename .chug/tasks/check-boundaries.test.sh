@@ -332,6 +332,49 @@ printf '%s\n' 'import { relay } from "./relay.js"' 'export const decide = () => 
 seal
 check "a console decision may not REACH the document layer" 1 "$RC" "console-decisions-touch-no-document:"
 
+# The rule over every console stops at this tree's source, so it is the one
+# that answers for a console nothing else here names. A package is what it
+# leaves alone and the case below it is what proves the difference.
+fixture
+mkdir -p "$R/ui/built/app" "$R/src/adapters"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const stub = 1' > "$R/src/adapters/stub.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { stub } from "../../../src/adapters/stub.ts"' 'export const decide = () => stub' > "$R/ui/built/app/decide.js"
+seal
+check "a console that builds may not reach an adapter either" 1 "$RC" "console-reaches-no-source:"
+
+# A package is the client dependency the unbuilt console exists without, and
+# the console that builds fetches its bundle rather than the package, so only
+# the first is bound. The pair is what says the scope is the rule.
+fixture
+mkdir -p "$R/ui/console/app"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { z } from "zod"' 'export const decide = () => z' > "$R/ui/console/app/decide.js"
+seal
+check "the unbuilt console may not reach a package" 1 "$RC" "unbuilt-console-uses-no-package:"
+
+fixture
+mkdir -p "$R/ui/built/app"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { z } from "zod"' 'export const decide = () => z' > "$R/ui/built/app/decide.js"
+seal
+check "a console that builds may reach a package" 0 "$RC" "graph clean"
+
+# The decision/document split is the unbuilt console's own, and a console
+# layered some other way states its own. Both halves are needed: a rule written
+# over every console binds a directory pair that means nothing there.
+fixture
+mkdir -p "$R/ui/built/app" "$R/ui/built/dom"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const write = () => 1' > "$R/ui/built/dom/write.js"
+printf '%s\n' 'import { write } from "../dom/write.js"' 'export const decide = () => write()' > "$R/ui/built/app/decide.js"
+seal
+check "another console's decisions may touch its own document layer" 0 "$RC" "graph clean"
+
 # Two consoles are two artifacts, and a helper reachable from both is the
 # client dependency neither has. Reachability again, and through a relay,
 # because one console importing another by name is the shape a per-import rule
