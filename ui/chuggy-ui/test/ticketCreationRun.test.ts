@@ -14,6 +14,7 @@ import type { ApiPorts } from "../app/core/apiRequest.ts";
 import {
   configurationPagesMax,
   createAndReleaseTicket,
+  creationContextSentence,
   readCreationContext,
 } from "../app/core/ticketCreationRun.ts";
 import {
@@ -104,7 +105,18 @@ test("the configuration is walked for, newest first, until one is ready", async 
   );
 });
 
-test("a project with no ready revision is a state, and the walk is bounded", async () => {
+test("a project whose revisions run out with none ready says exactly that", async () => {
+  const held = answering(() =>
+    ok({ configurations: [creationSummary("r4", "Incomplete")] }),
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(read.outcome === "Ok" && read.value.context).toBe(
+    "NoReadyConfiguration",
+  );
+  expect(held.calls.length).toBe(1);
+});
+
+test("a walk that runs out of budget knows nothing about the project", async () => {
   const held = answering(() =>
     ok({
       configurations: [creationSummary("r4", "Incomplete")],
@@ -112,10 +124,22 @@ test("a project with no ready revision is a state, and the walk is bounded", asy
     }),
   );
   const read = await readCreationContext(held.ports, creationPartition);
-  expect(read.outcome === "Ok" && read.value.context).toBe(
-    "NoReadyConfiguration",
-  );
+  expect(read.outcome === "Ok" && read.value).toStrictEqual({
+    context: "ReadyConfigurationUnknown",
+    pagesRead: configurationPagesMax,
+  });
   expect(held.calls.length).toBe(configurationPagesMax);
+});
+
+test("not knowing and there being none are not drawn as the same sentence", () => {
+  const none = creationContextSentence({ context: "NoReadyConfiguration" });
+  const unknown = creationContextSentence({
+    context: "ReadyConfigurationUnknown",
+    pagesRead: configurationPagesMax,
+  });
+  expect(none).not.toBe(unknown);
+  expect(none).toContain("no ready configuration");
+  expect(unknown).toContain(String(configurationPagesMax));
 });
 
 test("an initialization that cannot be read is the outcome, not a blank form", async () => {

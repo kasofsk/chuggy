@@ -20,7 +20,7 @@ import {
   briefBranchPrefix,
   briefIntentCharsMax,
   briefIntentLinesMax,
-  briefLinkCharsMax,
+  briefLineCharsMax,
   briefLinkScheme,
   briefLinksMax,
 } from "../../../../src/contract/brief.ts";
@@ -109,21 +109,44 @@ export function creationIntentLines(intent: string): readonly string[] {
     .filter((line) => line.trim().length > 0);
 }
 
-/** The full reference a typed branch name becomes, and nothing for no name. */
-export function creationBranchRef(branchName: string): string | undefined {
+/**
+ * What one branch field holds: nothing, the reference a typed name becomes, or
+ * an input this field will not read. A reference pasted where a name is asked
+ * for would otherwise be prefixed a second time and name a branch that does not
+ * exist, and nothing downstream refuses that — the doubled value is a
+ * well-formed reference name.
+ */
+export type CreationBranch =
+  | { readonly named: "None" }
+  | { readonly named: "Ref"; readonly ref: string }
+  | { readonly named: "Prefixed" };
+
+export function creationBranchOf(branchName: string): CreationBranch {
   const named = branchName.trim();
-  return named === "" ? undefined : `${briefBranchPrefix}${named}`;
+  if (named === "") return { named: "None" };
+  if (named.startsWith(briefBranchPrefix)) return { named: "Prefixed" };
+  return { named: "Ref", ref: `${briefBranchPrefix}${named}` };
 }
 
-/** What the reader has to satisfy for this field, in the bounds the wire states. */
+/** What the branch field asks for, said beside it rather than only when refused. */
+export const creationBranchHint = `a branch name, not a reference: this console sends it as ${briefBranchPrefix}<name>`;
+
+/** The one input the branch field refuses, said as the edit that fixes it. */
+export const creationBranchPrefixedSentence = `enter the branch name, not the ref: this console adds ${briefBranchPrefix} itself`;
+
+/**
+ * What this form checked and the reader has to satisfy, and no more than that.
+ * The grammar a reference name obeys is not among them — the contract carries
+ * no statement of it, so a name the server's grammar refuses is refused there.
+ */
 export function creationFaultSentence(field: CreationField): string {
   switch (field) {
     case "intent":
       return `state what this ticket is for: at least one line, at most ${String(briefIntentLinesMax)} printed lines and ${String(briefIntentCharsMax)} characters`;
     case "links":
-      return `each link is an ${briefLinkScheme} URL of at most ${String(briefLinkCharsMax)} characters, and one ticket carries at most ${String(briefLinksMax)}`;
+      return `each link is an ${briefLinkScheme} URL of at most ${String(briefLineCharsMax)} characters, and one ticket carries at most ${String(briefLinksMax)}`;
     case "branch":
-      return `a branch name is one this project's repository can name, and its full reference is at most ${String(briefBranchCharsMax)} characters`;
+      return `a branch is named here without its ${briefBranchPrefix} prefix, and the whole reference is at most ${String(briefBranchCharsMax)} characters`;
     case "authoring":
       return "one advanced setting is not one this project offers";
     case "fence":
@@ -138,22 +161,46 @@ function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   return path[1] === "branch" ? "branch" : "links";
 }
 
+/**
+ * The faults a field earns, with the ones this form stated itself first: a
+ * field the form already has a sentence for is not given the field's general
+ * one a second time.
+ */
 function creationFaultsOf(
   issues: readonly { readonly path: readonly PropertyKey[] }[],
+  stated: readonly CreationFault[],
 ): readonly CreationFault[] {
+  const named = new Set(stated.map((fault) => fault.field));
   const fields = new Set(issues.map((issue) => creationFieldOf(issue.path)));
-  return [...fields].map((field) => ({
-    field,
-    reason: creationFaultSentence(field),
-  }));
+  return [
+    ...stated,
+    ...[...fields]
+      .filter((field) => !named.has(field))
+      .map((field) => ({ field, reason: creationFaultSentence(field) })),
+  ];
 }
 
-function creationBriefOf(form: TicketCreationForm): unknown {
-  const branch = creationBranchRef(form.branchName);
+/** The faults this form decides for itself, the wire's parser deciding the rest. */
+function creationStatedFaults(
+  form: TicketCreationForm,
+  branch: CreationBranch,
+): readonly CreationFault[] {
+  const stated: CreationFault[] = [];
+  if (creationIntentLines(form.intent).length > briefIntentLinesMax)
+    stated.push({ field: "intent", reason: creationFaultSentence("intent") });
+  if (branch.named === "Prefixed")
+    stated.push({ field: "branch", reason: creationBranchPrefixedSentence });
+  return stated;
+}
+
+function creationBriefOf(
+  form: TicketCreationForm,
+  branch: CreationBranch,
+): unknown {
   return {
     intent: creationIntentNormalized(form.intent).trim(),
     links: form.links.map((link) => link.trim()).filter((link) => link !== ""),
-    ...(branch === undefined ? {} : { branch }),
+    ...(branch.named === "Ref" ? { branch: branch.ref } : {}),
   };
 }
 
@@ -166,6 +213,7 @@ export function creationBodyFrom(
   initialization: DraftInitializationResponse,
   form: TicketCreationForm,
 ): CreationAssembly {
+  const branch = creationBranchOf(form.branchName);
   const candidate = {
     configurationRevision: initialization.configuration.revision,
     configurationDigest: initialization.fence.configurationDigest,
@@ -179,18 +227,14 @@ export function creationBodyFrom(
       resumePricing: form.resumePricing,
       finalizer: form.finalizer,
     },
-    brief: creationBriefOf(form),
+    brief: creationBriefOf(form, branch),
   };
-  const overLines =
-    creationIntentLines(form.intent).length > briefIntentLinesMax;
+  const stated = creationStatedFaults(form, branch);
   const parsed = draftCreationSchema.safeParse(candidate);
-  if (parsed.success && !overLines)
+  if (parsed.success && stated.length === 0)
     return { assembled: "Body", body: parsed.data };
   const issues = parsed.success ? [] : parsed.error.issues;
-  const faults = creationFaultsOf(
-    overLines ? [...issues, { path: ["brief", "intent"] }] : issues,
-  );
-  return { assembled: "Faults", faults };
+  return { assembled: "Faults", faults: creationFaultsOf(issues, stated) };
 }
 
 /** The mutation that turns the draft just created into a ticket the machine runs. */

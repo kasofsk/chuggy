@@ -21,11 +21,13 @@ import type {
   DraftInitializationResponse,
   DraftResponse,
 } from "../../../../src/contract/responses.ts";
+import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import { projectListKey } from "../core/projectQueryKeys.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import {
   creationBodyFrom,
+  creationBranchHint,
   creationConfigurationSentence,
   creationFormFrom,
   creationStepSentence,
@@ -37,6 +39,7 @@ import type {
 } from "../core/ticketCreation.ts";
 import {
   createAndReleaseTicket,
+  creationContextSentence,
   readCreationContext,
 } from "../core/ticketCreationRun.ts";
 import type { CreationContext } from "../core/ticketCreationRun.ts";
@@ -58,6 +61,7 @@ type Attempt =
       readonly attempt: "Failed";
       readonly reason: string;
       readonly draft: DraftResponse | undefined;
+      readonly operation: string;
     }
   | { readonly attempt: "Stale"; readonly reason: string };
 
@@ -152,9 +156,7 @@ function Branch(props: FormEdit): ReactNode {
           onChange({ ...form, branchName: event.target.value });
         }}
       />
-      <span className="creation-hint">
-        a name, which this console sends as a full reference under refs/heads/
-      </span>
+      <span className="creation-hint">{creationBranchHint}</span>
     </label>
   );
 }
@@ -227,22 +229,43 @@ interface CreationSubmit {
 }
 
 /**
+ * What a resubmission reuses, a draft that was never created reusing neither.
+ * The operation identity is what the API keys a submission by, so a fresh one
+ * would ask about a release nobody made rather than the one still in flight.
+ */
+function creationResubmission(attempt: Attempt): {
+  readonly operation: string;
+  readonly draft: DraftResponse | undefined;
+} {
+  const held =
+    attempt.attempt === "Failed" && attempt.draft !== undefined
+      ? attempt
+      : undefined;
+  return {
+    operation:
+      held?.operation ?? base64urlFromBytes(drawBytes(operationIdBytesCount)),
+    draft: held?.draft,
+  };
+}
+
+/**
  * One submit, from the body it assembles to the state it leaves behind. The
  * form's faults are set by the caller's own setter, so nothing but this hook
  * knows how far the attempt got.
  */
 function useCreationSubmit(props: {
+  readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly initialization: DraftInitializationResponse;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
+  readonly onCreated: (ticket: number) => void;
 }): CreationSubmit {
-  const ports = useApiPorts();
   const client = useQueryClient();
-  const navigate = useNavigate();
   const mounted = useMounted();
   const [attempt, setAttempt] = useState<Attempt>({ attempt: "Idle" });
-  const { initialization, onFaults, partition, queryKey } = props;
+  const { initialization, onCreated, onFaults, ports, partition, queryKey } =
+    props;
 
   const submit = async (form: TicketCreationForm): Promise<void> => {
     const assembled = creationBodyFrom(initialization, form);
@@ -251,25 +274,19 @@ function useCreationSubmit(props: {
       return;
     }
     onFaults([]);
+    const resubmitted = creationResubmission(attempt);
     setAttempt({ attempt: "Running", step: operationSubmitting() });
     const created = await createAndReleaseTicket(
       ports,
       partition,
-      {
-        body: assembled.body,
-        operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
-        draft: attempt.attempt === "Failed" ? attempt.draft : undefined,
-      },
+      { body: assembled.body, ...resubmitted },
       (step) => {
         if (mounted.current) setAttempt({ attempt: "Running", step });
       },
     );
     if (!mounted.current) return;
     if (created.created === "Created") {
-      await navigate({
-        to: "/$tenant/$project/tickets/$ticket",
-        params: { ...partition, ticket: String(created.ticket) },
-      });
+      onCreated(created.ticket);
       return;
     }
     if (created.created === "Stale") {
@@ -281,16 +298,24 @@ function useCreationSubmit(props: {
       attempt: "Failed",
       reason: created.reason,
       draft: created.draft,
+      operation: resubmitted.operation,
     });
   };
 
   return { attempt, submit };
 }
 
-function CreationForm(props: {
+/**
+ * The form itself, which reaches the network and the address bar through its
+ * caller: the route component below owns the session and the router, and this
+ * owns what one screenful of typing becomes.
+ */
+export function CreationForm(props: {
+  readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
+  readonly onCreated: (ticket: number) => void;
 }): ReactNode {
   const [edited, setEdited] = useState<TicketCreationForm | undefined>(
     undefined,
@@ -298,10 +323,12 @@ function CreationForm(props: {
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
   const initialization = props.context.initialization;
   const running = useCreationSubmit({
+    ports: props.ports,
     partition: props.partition,
     queryKey: props.queryKey,
     initialization,
     onFaults: setFaults,
+    onCreated: props.onCreated,
   });
   const form = edited ?? creationFormFrom(initialization);
   return (
@@ -328,6 +355,8 @@ function CreationForm(props: {
 
 export function TicketCreation(): ReactNode {
   const params = useParams({ from: "/$tenant/$project" });
+  const ports = useApiPorts();
+  const navigate = useNavigate();
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,
@@ -337,23 +366,27 @@ export function TicketCreation(): ReactNode {
     "Configuration",
     creationContextName,
   );
-  const state = usePanelQuery(queryKey, (ports) =>
-    readCreationContext(ports, partition),
+  const state = usePanelQuery(queryKey, (readPorts) =>
+    readCreationContext(readPorts, partition),
   );
   return (
     <Panel title="new ticket" state={state}>
       {(context) =>
-        context.context === "NoReadyConfiguration" ? (
-          <p className="panel-absent">
-            this project has no ready configuration, so there is nothing to
-            shape a ticket with yet
-          </p>
-        ) : (
+        context.context === "Ready" ? (
           <CreationForm
+            ports={ports}
             partition={partition}
             queryKey={queryKey}
             context={context}
+            onCreated={(ticket) => {
+              void navigate({
+                to: "/$tenant/$project/tickets/$ticket",
+                params: { ...partition, ticket: String(ticket) },
+              });
+            }}
           />
+        ) : (
+          <p className="panel-absent">{creationContextSentence(context)}</p>
         )
       }
     </Panel>

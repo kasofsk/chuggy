@@ -14,14 +14,15 @@ import {
   briefBranchPrefix,
   briefIntentCharsMax,
   briefIntentLinesMax,
-  briefLinkCharsMax,
+  briefLineCharsMax,
   briefLinkScheme,
   briefLinksMax,
 } from "../../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../../src/contract/requests.ts";
 import {
   creationBodyFrom,
-  creationBranchRef,
+  creationBranchOf,
+  creationBranchPrefixedSentence,
   creationIntentLines,
   creationOffered,
   latestReadyConfiguration,
@@ -93,12 +94,34 @@ test("the fence the initialization stated is what the body carries", () => {
 });
 
 test("a branch is a name here and a full reference on the wire", () => {
-  expect(creationBranchRef("topic/one")).toBe("refs/heads/topic/one");
-  expect(creationBranchRef("  ")).toBe(undefined);
+  expect(creationBranchOf("topic/one")).toStrictEqual({
+    named: "Ref",
+    ref: "refs/heads/topic/one",
+  });
+  expect(creationBranchOf("  ")).toStrictEqual({ named: "None" });
   const assembled = creationBodyFrom(creationInitialization, creationForm());
   expect(
     assembled.assembled === "Body" && "branch" in assembled.body.brief,
   ).toBe(false);
+});
+
+/**
+ * A reader who has seen the wire pastes the reference. Prefixing that a second
+ * time names a branch nobody has, and every layer below accepts it: the doubled
+ * value is a well-formed reference name.
+ */
+test("a reference pasted where a name was asked for is refused, not prefixed twice", () => {
+  expect(creationBranchOf("refs/heads/main")).toStrictEqual({
+    named: "Prefixed",
+  });
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm({ branchName: "refs/heads/main" }),
+  );
+  expect(assembled.assembled).toBe("Faults");
+  expect(assembled.assembled === "Faults" && assembled.faults).toStrictEqual([
+    { field: "branch", reason: creationBranchPrefixedSentence },
+  ]);
 });
 
 test("a branch name the wire's reference bound refuses is a fault, not a body", () => {
@@ -115,7 +138,7 @@ test("a branch name the wire's reference bound refuses is a fault, not a body", 
  * that moves in `src/contract/brief.ts` moves this case with it.
  */
 test("each bound the contract states is where the form's verdict turns", () => {
-  const linkAt = `${briefLinkScheme}${"a".repeat(briefLinkCharsMax - briefLinkScheme.length)}`;
+  const linkAt = `${briefLinkScheme}${"a".repeat(briefLineCharsMax - briefLinkScheme.length)}`;
   const branchAt = "b".repeat(briefBranchCharsMax - briefBranchPrefix.length);
   const atBound: readonly Partial<TicketCreationForm>[] = [
     { intent: "x".repeat(briefIntentCharsMax) },

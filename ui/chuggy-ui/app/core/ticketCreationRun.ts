@@ -40,7 +40,11 @@ import {
   latestReadyConfiguration,
 } from "./ticketCreation.ts";
 
-/** How far back through a project's revisions a ready one is looked for. */
+/**
+ * How far back through a project's revisions a ready one is looked for. A walk
+ * that ends here has established nothing about the project, so it answers
+ * `ReadyConfigurationUnknown` and the reader is told how far it looked.
+ */
 export const configurationPagesMax = 8;
 
 export type CreationContext =
@@ -49,7 +53,20 @@ export type CreationContext =
       readonly configuration: ConfigurationSummary;
       readonly initialization: DraftInitializationResponse;
     }
-  | { readonly context: "NoReadyConfiguration" };
+  | { readonly context: "NoReadyConfiguration" }
+  | {
+      readonly context: "ReadyConfigurationUnknown";
+      readonly pagesRead: number;
+    };
+
+/** What a context with no configuration in it says, absence and not-knowing apart. */
+export function creationContextSentence(
+  context: Exclude<CreationContext, { context: "Ready" }>,
+): string {
+  return context.context === "NoReadyConfiguration"
+    ? "this project has no ready configuration, so there is nothing to shape a ticket with yet"
+    : `the newest ${String(context.pagesRead)} pages of this project's revisions are all incomplete, so this console could not find a ready configuration to shape a ticket with`;
+}
 
 export interface TicketCreationRequest {
   readonly body: z.infer<typeof draftCreationSchema>;
@@ -70,20 +87,40 @@ export type TicketCreated =
 export const creationStaleSentence =
   "the project moved while this form was open — it has been read again, so submitting now uses the current one";
 
+/**
+ * What the walk found, with the two ways of finding nothing kept apart: the
+ * revisions ran out, or the budget did.
+ */
+type ReadyConfiguration =
+  | {
+      readonly found: "Configuration";
+      readonly configuration: ConfigurationSummary;
+    }
+  | { readonly found: "None" }
+  | { readonly found: "Unknown"; readonly pagesRead: number };
+
 async function readyConfiguration(
   ports: ApiPorts,
   partition: PartitionIdentity,
-): Promise<ApiResult<ConfigurationSummary | undefined>> {
+): Promise<ApiResult<ReadyConfiguration>> {
   let cursor: string | undefined;
   for (let page = 0; page < configurationPagesMax; page += 1) {
     const answered = await apiConfigurations(ports, partition, { cursor });
     if (answered.outcome !== "Ok") return answered;
     const ready = latestReadyConfiguration(answered.value.configurations);
-    if (ready !== undefined) return { outcome: "Ok", value: ready };
+    if (ready !== undefined)
+      return {
+        outcome: "Ok",
+        value: { found: "Configuration", configuration: ready },
+      };
     cursor = answered.value.nextCursor;
-    if (cursor === undefined) break;
+    if (cursor === undefined)
+      return { outcome: "Ok", value: { found: "None" } };
   }
-  return { outcome: "Ok", value: undefined };
+  return {
+    outcome: "Ok",
+    value: { found: "Unknown", pagesRead: configurationPagesMax },
+  };
 }
 
 /** The revision a ticket would be shaped by, and the defaults it is fenced with. */
@@ -93,9 +130,17 @@ export async function readCreationContext(
 ): Promise<ApiResult<CreationContext>> {
   const found = await readyConfiguration(ports, partition);
   if (found.outcome !== "Ok") return found;
-  const configuration = found.value;
-  if (configuration === undefined)
+  if (found.value.found === "None")
     return { outcome: "Ok", value: { context: "NoReadyConfiguration" } };
+  if (found.value.found === "Unknown")
+    return {
+      outcome: "Ok",
+      value: {
+        context: "ReadyConfigurationUnknown",
+        pagesRead: found.value.pagesRead,
+      },
+    };
+  const configuration = found.value.configuration;
   const initialized = await apiDraftInitialization(
     ports,
     partition,
