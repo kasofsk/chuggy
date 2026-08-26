@@ -450,4 +450,54 @@ printf '%s\n' 'import { relay } from "./relay.js"' 'export const decide = () => 
 seal
 check "one console may not REACH another" 1 "$RC" "no-console-sees-another:"
 
+# --- The console that builds, and its own two boundaries -------------------
+
+# Node's own modules are not packages, and the console that builds is the one
+# that could plausibly reach for one: it has a toolchain, so `node:fs` resolves
+# for it at build time and is gone by the time a browser has the bundle.
+fixture
+mkdir -p "$R/ui/built/src"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { readFileSync } from "node:fs"' 'export const read = readFileSync' > "$R/ui/built/src/decide.ts"
+seal
+check "a console that builds may not reach a platform module" 1 "$RC" "console-reaches-no-source:"
+
+# The served source and the build's own configuration are two kinds of file in
+# one directory, and only the first is fetched. The relay is the shape a
+# per-import rule misses.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/browser"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const built = 1' > "$R/ui/chuggy-ui/vite.config.ts"
+printf '%s\n' 'import { built } from "../../vite.config.ts"' 'export const relay = built' > "$R/ui/chuggy-ui/app/browser/relay.ts"
+printf '%s\n' 'import { relay } from "./relay.ts"' 'export const draw = () => relay' > "$R/ui/chuggy-ui/app/browser/draw.ts"
+seal
+check "the served source may not REACH the build's own configuration" 1 "$RC" "chuggy-ui-is-what-a-browser-fetches:"
+
+# The decision layer's own bound, through a relay for the same reason.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/core" "$R/ui/chuggy-ui/app/browser"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const draw = () => 1' > "$R/ui/chuggy-ui/app/browser/draw.ts"
+printf '%s\n' 'import { draw } from "../browser/draw.ts"' 'export const relay = draw' > "$R/ui/chuggy-ui/app/core/relay.ts"
+printf '%s\n' 'import { relay } from "./relay.ts"' 'export const decide = () => relay()' > "$R/ui/chuggy-ui/app/core/decide.ts"
+seal
+check "a decision may not REACH the layer that draws it" 1 "$RC" "chuggy-ui-decisions-render-nothing:"
+
+# The two directions the pair above exists to leave open: a decision reads the
+# public contract and the parser it is written in, and what draws reads the
+# decisions. A red here would mean the rule has closed the console.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/core" "$R/ui/chuggy-ui/app/browser" "$R/src/contract"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { z } from "zod"' 'export const wire = z.literal(1)' > "$R/src/contract/wire.ts"
+printf '%s\n' 'import { wire } from "../../../../src/contract/wire.ts"' 'export const decide = () => wire' > "$R/ui/chuggy-ui/app/core/decide.ts"
+printf '%s\n' 'import { decide } from "../core/decide.ts"' 'export const draw = () => decide()' > "$R/ui/chuggy-ui/app/browser/draw.ts"
+seal
+check "a decision may reach the contract, and what draws may reach it" 0 "$RC" "graph clean"
+
 done_ "check-boundaries.test.sh"

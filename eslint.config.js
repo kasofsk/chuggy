@@ -184,6 +184,14 @@ export default tseslint.config(
   // exhausts the heap on a checkout hosting a few. `.prettierignore` declines
   // the directory and `.jscpd.json` the worktrees under it, each for its own
   // tool; the gates scoped by `git ls-files` never see an untracked tree.
+  //
+  // A console that BUILDS is declined whole, source and output alike, because
+  // neither half is this configuration's to judge: its sources are TypeScript
+  // outside `tsconfig.json`'s program, so the type-aware rules would have no
+  // program to ask, and the browser-globals block below is scoped to `.js` and
+  // would not reach them anyway. What lints it is its own config, run by its
+  // own `lint` script, which `.chug/tasks/check-console.sh` calls. Prettier
+  // still owns its sources: there is one formatter in this tree.
   {
     ignores: [
       "node_modules/**",
@@ -191,6 +199,7 @@ export default tseslint.config(
       "docs/**",
       ".chug/**",
       ".claude/**",
+      "ui/chuggy-ui/**",
     ],
   },
   eslint.configs.recommended,

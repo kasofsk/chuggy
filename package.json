@@ -16,6 +16,7 @@
     "typescript-eslint": "^8.67.0"
   },
   "type": "module",
+  "workspaces": ["ui/chuggy-ui"],
   "scripts": {
     "check": "./.chug/tasks/ci.sh",
     "migrate": "node --experimental-strip-types src/roots/migrate.ts",

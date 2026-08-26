@@ -1,0 +1,120 @@
+/**
+ * The routes, checked on the two things a caller cannot see going wrong: the
+ * path a function asks for and where a paged read stops.
+ *
+ * A path is built from the contract's own `partitionPath`, so what is asserted
+ * here is the segment and the query this console puts after it.
+ */
+
+import { expect, test } from "vitest";
+
+import { nativeHttpBasePath } from "../../../src/contract/http.ts";
+import {
+  apiConfiguration,
+  apiExecutions,
+  apiProject,
+  apiProjectInventory,
+  apiProjectInventoryAll,
+  apiTicket,
+  projectInventoryPagesMax,
+} from "../app/core/apiRoutes.ts";
+import type { ApiPorts } from "../app/core/apiRequest.ts";
+
+const partition = { tenant: "acme", project: "at las" };
+
+function recording(bodyFor: (url: string) => unknown): {
+  readonly ports: ApiPorts;
+  readonly urls: string[];
+} {
+  const urls: string[] = [];
+  return {
+    urls,
+    ports: {
+      fetch: (url) => {
+        urls.push(url);
+        return Promise.resolve({
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(JSON.stringify(bodyFor(url))),
+        } as unknown as Response);
+      },
+      bearer: () => Promise.resolve("token"),
+      sleepMs: () => Promise.resolve(),
+    },
+  };
+}
+
+const projectBody = {
+  partition: { tenant: "acme", project: "at las" },
+  sequence: 1,
+  tickets: [],
+};
+
+test("a partition segment is encoded rather than pasted into the path", async () => {
+  const held = recording(() => projectBody);
+  await apiProject(held.ports, partition);
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las`,
+  );
+});
+
+test("each resource hangs from its partition under its own segment", async () => {
+  const held = recording(() => ({ ticket: 1, phase: "Working", sequence: 1 }));
+  await apiTicket(held.ports, partition, 12);
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/tickets/12`,
+  );
+});
+
+test("a revision that looks like a path is one segment, not several", async () => {
+  const held = recording(() => ({
+    partition: { tenant: "acme", project: "at las" },
+    revision: "repository:commit:work",
+    canonical: "{}",
+    digest: "a".repeat(64),
+  }));
+  await apiConfiguration(held.ports, partition, "repository:commit:work");
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/configurations/repository%3Acommit%3Awork`,
+  );
+});
+
+test("only the page fields a caller gave become query parameters", async () => {
+  const held = recording(() => ({ executions: [] }));
+  await apiExecutions(held.ports, partition, { ticket: 4 });
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/executions?ticket=4`,
+  );
+});
+
+test("the inventory carries its cursor and stops when there is none", async () => {
+  const held = recording((url) =>
+    url.includes("cursor=next")
+      ? { projects: [{ tenant: "acme", project: "beta" }] }
+      : {
+          projects: [{ tenant: "acme", project: "atlas" }],
+          nextCursor: "next",
+        },
+  );
+  const result = await apiProjectInventoryAll(held.ports);
+  expect(held.urls.length).toBe(2);
+  expect(result.outcome === "Ok" && result.value.length).toBe(2);
+});
+
+test("an inventory that never stops is stopped by the page budget", async () => {
+  const held = recording(() => ({
+    projects: [{ tenant: "acme", project: "atlas" }],
+    nextCursor: "again",
+  }));
+  const result = await apiProjectInventoryAll(held.ports);
+  expect(held.urls.length).toBe(projectInventoryPagesMax);
+  expect(result.outcome === "Ok" && result.value.length).toBe(
+    projectInventoryPagesMax,
+  );
+});
+
+test("a page read on its own asks for exactly the cursor it was given", async () => {
+  const held = recording(() => ({ projects: [] }));
+  await apiProjectInventory(held.ports, { cursor: "opaque" });
+  expect(held.urls[0]).toBe(`${nativeHttpBasePath}/projects?cursor=opaque`);
+});

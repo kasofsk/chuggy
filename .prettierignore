@@ -17,6 +17,9 @@
 #   model/             Quint, which Prettier does not parse.
 #   .claude/           not this tree's file to format.
 #   package-lock.json  npm writes it, in npm's format.
+#   ui/*/dist/         a console's build output, which nobody edits and which
+#                      is not in git. The console's SOURCE is not here: it is
+#                      this tree's code and this tree has one formatter.
 #
 # A file this list covers is not unformatted; it is judged by whatever the line
 # beside it names. Everything else Prettier parses, Prettier formats.
@@ -35,3 +38,4 @@ node_modules/
 model/
 .claude/
 package-lock.json
+ui/*/dist/

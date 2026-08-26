@@ -1,0 +1,7 @@
+{
+  "issuer": "https://auth.vteng.io",
+  "clientId": "chuggy-web",
+  "audience": "https://chuggy.vteng.io/api",
+  "redirectUri": "https://chuggy.vteng.io/auth/callback",
+  "scopes": ["openid", "offline_access"]
+}

@@ -71,15 +71,15 @@ ci_gate_selected() { # <gate id>
 	case "$gate" in
 	doc-lint) ci_changed '*.md' .chug/tasks/doc-lint.sh ;;
 	check-figures) ci_changed '*.md' '*.svg' '*.png' '*.jpg' '*.jpeg' .chug/tasks/check-figures.sh ;;
-	check-paths) ci_changed '*.md' '*.ts' '*.js' '*.sh' .chug/tasks/check-paths.sh ;;
+	check-paths) ci_changed '*.md' '*.ts' '*.tsx' '*.js' '*.sh' .chug/tasks/check-paths.sh ;;
 	check-shell-quoting) ci_changed '*.sh' .githooks/pre-commit .chug/tasks/check-shell-quoting.sh ;;
-	check-duplication) ci_changed '*.ts' '*.js' '*.sh' '*.qnt' .jscpd.json .chug/tasks/check-duplication.sh || ci_toolchain_changed ;;
+	check-duplication) ci_changed '*.ts' '*.tsx' '*.js' '*.sh' '*.qnt' .jscpd.json .chug/tasks/check-duplication.sh || ci_toolchain_changed ;;
 	check-gates) ci_changed '.chug/tasks/*.sh' .githooks/pre-commit .chug/tasks/check-gates.sh ;;
-	check-comments) ci_changed '*.ts' .chug/tasks/check-comments.sh ;;
+	check-comments) ci_changed '*.ts' '*.tsx' .chug/tasks/check-comments.sh ;;
 	check-knowledge) ci_changed '.chug/**' 'docs/design/*.md' CLAUDE.md .chug/tasks/check-knowledge.sh ;;
 	check-roster) ci_changed CLAUDE.md '.agents/**' '.codex/**' .chug/tasks/check-roster.sh ;;
-	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'ui/*.js' 'ui/**/*.js' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
-	source-static) ci_changed '*.ts' '*.js' '*.json' '*.cjs' '*.mjs' '*.yaml' '*.yml' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
+	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'ui/*.js' 'ui/**/*.js' 'ui/**/*.ts' 'ui/**/*.tsx' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
+	source-static) ci_changed '*.ts' '*.tsx' '*.js' '*.json' '*.cjs' '*.mjs' '*.yaml' '*.yml' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
 	source-unit) ci_changed 'src/**' 'test/**' 'ui/**' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
 	check-console) ci_changed 'ui/**' 'src/contract/**' .chug/tasks/check-console.sh ;;
 	check-conformance) ci_changed 'src/domain/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/domain.qnt' 'model/measure.qnt' .chug/tasks/check-conformance.sh ;;

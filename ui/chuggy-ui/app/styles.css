@@ -1,0 +1,208 @@
+/* The console's whole stylesheet: tokens first, then the shell and the panel.
+ *
+ * Dark is the design, because this is a desk somebody watches; the light block
+ * at the end is legibility for a browser that asks for it and is not a second
+ * design. No CSS is written from JavaScript, because the policy the web image
+ * serves this under admits no inline style. */
+
+:root {
+  color-scheme: dark;
+
+  --ink: #d7dde5;
+  --ink-dim: #8b96a5;
+  --ink-bright: #f2f6fb;
+  --ground: #0d1117;
+  --ground-raised: #151b23;
+  --ground-sunken: #090c11;
+  --edge: #232c38;
+  --accent: #4da3ff;
+  --warn: #e3b341;
+  --bad: #f85149;
+
+  --gap: 0.5rem;
+  --gap-wide: 1rem;
+  --radius: 3px;
+  --text: 13px;
+  --text-small: 11px;
+  --family:
+    ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: var(--text) / 1.45 var(--family);
+}
+
+h1,
+h2 {
+  margin: 0;
+  font-size: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover,
+a:focus-visible {
+  text-decoration: underline;
+}
+
+button,
+select {
+  background: var(--ground-raised);
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover,
+select:hover {
+  border-color: var(--accent);
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.shell-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-wide);
+  padding: var(--gap) var(--gap-wide);
+  background: var(--ground-sunken);
+  border-bottom: 1px solid var(--edge);
+}
+
+.brand {
+  color: var(--ink-bright);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.shell-nav {
+  display: flex;
+  gap: var(--gap-wide);
+  margin-left: auto;
+}
+
+.shell-nav a {
+  color: var(--ink-dim);
+}
+
+.shell-nav a.here {
+  color: var(--ink-bright);
+  border-bottom: 1px solid var(--accent);
+}
+
+.shell-body {
+  flex: 1;
+  padding: var(--gap-wide);
+  display: grid;
+  gap: var(--gap-wide);
+}
+
+.switcher-note {
+  color: var(--warn);
+  font-size: var(--text-small);
+}
+
+.banner {
+  padding: var(--gap) var(--gap-wide);
+  background: color-mix(in srgb, var(--warn) 14%, var(--ground));
+  border-bottom: 1px solid var(--warn);
+  color: var(--ink-bright);
+}
+
+.banner strong {
+  color: var(--warn);
+}
+
+.panel {
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--ground-raised);
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap);
+  padding: var(--gap) var(--gap-wide);
+  border-bottom: 1px solid var(--edge);
+}
+
+.panel-note,
+.panel-absent,
+.panel-failed {
+  margin: 0;
+  padding: var(--gap) var(--gap-wide);
+}
+
+.panel-note {
+  color: var(--ink-dim);
+}
+
+.panel-absent {
+  color: var(--warn);
+}
+
+.panel-failed {
+  color: var(--bad);
+}
+
+.freshness {
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+}
+
+.freshness-stale {
+  color: var(--warn);
+}
+
+.placeholder {
+  color: var(--ink-dim);
+}
+
+.notice {
+  max-width: 34rem;
+  margin: 12vh auto;
+  padding: var(--gap-wide);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--ground-raised);
+  display: grid;
+  gap: var(--gap-wide);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --ink: #1f2429;
+    --ink-dim: #5b6672;
+    --ink-bright: #0b0e12;
+    --ground: #f6f7f9;
+    --ground-raised: #ffffff;
+    --ground-sunken: #eceff3;
+    --edge: #ccd3db;
+    --accent: #0b62c4;
+    --warn: #8a6100;
+    --bad: #b3261e;
+  }
+}
