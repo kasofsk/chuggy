@@ -254,3 +254,43 @@ test("a walk refused partway keeps what it had and calls itself truncated", asyn
   expect(kept?.execution.execution).toBe("All-2");
   expect(kept?.complete).toBe(false);
 });
+
+/**
+ * The merge's other direction: a ticket whose truncated first walk holds a
+ * newer terminal execution while the running walk carries an older one still
+ * queued. Taking the arriving entry would draw a failed ticket as running, and
+ * call it joined.
+ */
+test("the running walk does not replace a newer entry with an older one", () => {
+  const answering = (selection: ProjectExecutionSelection) =>
+    Promise.resolve<ApiResult<ExecutionsResponse>>({
+      outcome: "Ok",
+      value: {
+        executions: [
+          selection === "All"
+            ? execution({
+                execution: "e-later",
+                ticket: 1,
+                registeredAt: "2026-08-26T12:00:00.000Z",
+                status: "Terminal",
+                outcome: "Failed",
+              })
+            : execution({
+                execution: "e-earlier",
+                ticket: 1,
+                registeredAt: "2026-08-26T09:00:00.000Z",
+                status: "Queued",
+              }),
+        ],
+        ...(selection === "All" ? { nextAfter: "e-later" } : {}),
+      },
+    });
+  return projectExecutionIndexRead(answering).then((answered) => {
+    const kept =
+      answered.outcome === "Ok"
+        ? projectExecutionIndexAt(answered.value, 1)
+        : undefined;
+    expect(kept?.execution.execution).toBe("e-later");
+    expect(kept?.complete).toBe(false);
+  });
+});
