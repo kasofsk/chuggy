@@ -74,6 +74,12 @@ const authoring = {
   finalizer: "ManagedFinalizer",
 } as const;
 
+const brief = {
+  intent: "Serve the brief on the ticket resource.",
+  links: ["https://example.test/issues/340"],
+  branch: "refs/heads/rt/ticket-brief",
+} as const;
+
 test("authoring DTOs translate into existing application types", () => {
   assert.equal(
     parseRepositoryConfigurationImport({ commit: "a".repeat(40) }),
@@ -103,6 +109,7 @@ test("authoring DTOs translate into existing application types", () => {
       configurationDigest: "a".repeat(64),
       expectedProjectSequence: 7,
       authoring,
+      brief,
     }),
     {
       configurationRevision: "revision",
@@ -124,6 +131,7 @@ test("authoring DTOs translate into existing application types", () => {
       expectedVersion: 3,
       configurationRevision: "revision",
       authoring,
+      brief,
     }).expectedVersion,
     3,
   );
