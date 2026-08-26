@@ -8,6 +8,7 @@ import { createInterface } from "node:readline";
 
 import { claudeInvocation, claudeResult } from "./claude.mjs";
 import { keepWorkerLease } from "./lease.mjs";
+import { startLocalPostgres } from "./postgres.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
 
@@ -184,6 +185,7 @@ async function main() {
   ).trim();
   activeBearer = bearer;
   const stopLease = keepWorkerLease(task, bearer);
+  let stopPostgres = async () => undefined;
   try {
     const input = await (await workerRequest(task, bearer, "/v1/input")).json();
     const repositoryId = oneReference(input, "Repository");
@@ -196,6 +198,7 @@ async function main() {
       base,
       required("CHUG_WORKER_WORKSPACE"),
     );
+    stopPostgres = await startLocalPostgres(required("CHUG_WORKER_WORKSPACE"));
     await prepareWorker(task, directory);
     const { output, result } = await runClaude(task, directory);
     const source = await workSource(
@@ -215,7 +218,11 @@ async function main() {
       diagnostics,
     });
   } finally {
-    await stopLease();
+    try {
+      await stopPostgres();
+    } finally {
+      await stopLease();
+    }
   }
 }
 

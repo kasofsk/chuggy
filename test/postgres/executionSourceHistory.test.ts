@@ -6,8 +6,10 @@ import { postgresExecutionSourceHistory } from "../../src/adapters/postgres/exec
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { postgresHarnessUrl } from "./harness.ts";
+import { ticketServiceRole } from "../../src/adapters/postgres/schema.ts";
 
 let pool: pg.Pool;
+let ticketServicePool: pg.Pool;
 
 before(async () => {
   pool = postgresPool(postgresHarnessUrl(), {
@@ -15,6 +17,9 @@ before(async () => {
     connectionWaitMs: 5_000,
     statementTimeoutMs: 5_000,
   });
+  const ticketServiceUrl = new URL(postgresHarnessUrl());
+  ticketServiceUrl.searchParams.set("options", `-c role=${ticketServiceRole}`);
+  ticketServicePool = postgresPool(ticketServiceUrl.toString());
   await pool.query(`CREATE TEMP TABLE execution_request (
     tenant text, project text, request text, input_bundle text,
     ticket bigint, kind text, authorizing_seq bigint)`);
@@ -36,7 +41,10 @@ before(async () => {
     ('tenant','project',1,2,'latest','manifest-latest')`);
 });
 
-after(async () => pool.end());
+after(async () => {
+  await ticketServicePool.end();
+  await pool.end();
+});
 
 test("evaluation reads only the latest work generation's source and manifests", async () => {
   const source = await postgresExecutionSourceHistory(pool).workSource(
@@ -48,4 +56,14 @@ test("evaluation reads only the latest work generation's source and manifests", 
     target: { commit: "b".repeat(40) },
     manifests: ["manifest-latest"],
   });
+});
+
+test("the ticket service can observe completed work source through its own role", async () => {
+  assert.equal(
+    await postgresExecutionSourceHistory(ticketServicePool).workSource(
+      { tenant: asTenantId("absent"), project: asProjectId("absent") },
+      1,
+    ),
+    undefined,
+  );
 });
