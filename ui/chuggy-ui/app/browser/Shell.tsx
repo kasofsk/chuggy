@@ -11,9 +11,11 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
+import { inboxCountLabel } from "../core/inboxList.ts";
 import { lastProjectWrite } from "../core/lastProject.ts";
 import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
 import { usePanelQuery } from "./api.ts";
+import { useInboxRows } from "./Inbox.tsx";
 import { persistentStore } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
 import {
@@ -77,6 +79,21 @@ function ProjectSwitcher(props: {
   );
 }
 
+/** The same rows the inbox draws, so the count and the list are one value. */
+function InboxCount(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  const rows = useInboxRows(props.partition);
+  const label = inboxCountLabel(
+    rows.state.state === "Ready" ? rows.state.value : undefined,
+  );
+  return label === undefined ? null : (
+    <span className="nav-count" aria-label="tickets needing you">
+      {label}
+    </span>
+  );
+}
+
 export function Shell(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -103,7 +120,7 @@ export function Shell(props: {
             params={params}
             activeProps={{ className: "here" }}
           >
-            inbox
+            inbox <InboxCount partition={props.partition} />
           </Link>
           <Link
             to="/$tenant/$project/tickets/new"

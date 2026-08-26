@@ -22,6 +22,7 @@ import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
 import { usePanelQuery } from "./api.ts";
+import { Inbox } from "./Inbox.tsx";
 import { Panel } from "./Panel.tsx";
 import { persistentStore } from "./ports.ts";
 import { ProjectTable } from "./ProjectTable.tsx";
@@ -103,7 +104,7 @@ const projectRoute = createRoute({
 const inboxRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/inbox",
-  component: () => <Heading title="escalation inbox" />,
+  component: Inbox,
 });
 
 const ticketCreationRoute = createRoute({

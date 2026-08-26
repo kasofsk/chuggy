@@ -438,6 +438,42 @@ select:hover {
   color: var(--bad);
 }
 
+/* The inbox: a badge on the nav item that leads to it, and answers that sit in
+ * the row they are about. */
+
+.nav-count {
+  padding: 0 0.35rem;
+  border-radius: var(--radius);
+  background: var(--warn);
+  color: var(--ground);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.row-actions-inner {
+  display: flex;
+  gap: var(--gap);
+  align-items: baseline;
+}
+
+.row-action {
+  padding: 0 0.4rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--ground-raised);
+  color: var(--ink);
+  font-size: var(--text-small);
+}
+
+.row-action:hover:enabled {
+  border-color: var(--accent);
+  color: var(--ink-bright);
+}
+
+.row-action:disabled {
+  color: var(--ink-dim);
+}
+
 .notice {
   max-width: 34rem;
   margin: 12vh auto;

@@ -111,6 +111,17 @@ export function projectTableRow(
   };
 }
 
+/** The status, refined by the outcome where the execution has reached one, and
+ * nothing at all where no execution is joined to the row. */
+export function projectTableExecutionPhrase(
+  row: ProjectTableRow,
+): string | undefined {
+  if (row.executionStatus === undefined) return undefined;
+  return row.executionOutcome === undefined
+    ? row.executionStatus
+    : `${row.executionStatus} · ${row.executionOutcome}`;
+}
+
 export function projectTableRows(
   tickets: readonly TicketResponse[],
   index: ProjectExecutionIndex,
