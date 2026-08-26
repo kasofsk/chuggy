@@ -179,7 +179,8 @@ function handoffRefHasInvalidCharacter(value: string): boolean {
   return false;
 }
 
-function handoffRef(value: unknown): GitRefName | undefined {
+/** The one reference-name grammar this tree accepts, wherever a ref is written. */
+export function handoffRef(value: unknown): GitRefName | undefined {
   if (
     typeof value !== "string" ||
     !value.startsWith("refs/heads/") ||

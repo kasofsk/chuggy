@@ -295,6 +295,9 @@ test("the API cannot bypass versioned authoring functions", async () => {
     ],
     ["INSERT INTO draft DEFAULT VALUES", "draft"],
     ["INSERT INTO draft_revision DEFAULT VALUES", "draft_revision"],
+    ["INSERT INTO draft_brief DEFAULT VALUES", "draft_brief"],
+    ["INSERT INTO draft_brief_link DEFAULT VALUES", "draft_brief_link"],
+    ["UPDATE draft_brief SET intent='forged'", "draft_brief"],
     [
       "INSERT INTO repository_configuration_provenance DEFAULT VALUES",
       "repository_configuration_provenance",
@@ -742,6 +745,8 @@ test("the scheduler reads execution and capacity, and of the project only its li
     [
       "capacity_account",
       "configuration_revision",
+      "draft_brief",
+      "draft_brief_link",
       "execution",
       "execution_attempt",
       "execution_cluster",

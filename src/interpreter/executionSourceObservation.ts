@@ -1,3 +1,9 @@
+/**
+ * What a ticket's work is observed against: the project's binding, narrowed by
+ * the configuration's handoff role and then by the ticket's own branch, which
+ * is the most specific of the three and therefore the last word.
+ */
+
 import type { GitPromotionPort, RepositoryBinding } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
 import { authoredHandoffConfigurationReadiness } from "./handoffConfiguration.ts";
@@ -61,6 +67,7 @@ export function executionSourceObservation(
         ...(work === undefined
           ? {}
           : { credentialReference: work.credentialReference }),
+        ...(request.ref === undefined ? {} : { targetRef: request.ref }),
       };
       const observed = await git.observeTarget(repository);
       return observed.observed === "Target"

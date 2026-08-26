@@ -124,6 +124,11 @@ test("authoring DTOs translate into existing application types", () => {
         resumePricing: "RetryCharged",
         finalizer: "ManagedFinalizer",
       },
+      brief: {
+        intent: "Serve the brief on the ticket resource.",
+        links: ["https://example.test/issues/340"],
+        branch: "refs/heads/rt/ticket-brief",
+      },
     },
   );
   assert.equal(
@@ -255,5 +260,33 @@ test("submission identities retain their owning normalization and bounds", () =>
   );
   assert.throws(() =>
     parseSubmission("", "key", { mutation: "ResumeTicket", ticket: 3 }),
+  );
+});
+
+test("a brief the interpreter would refuse never reaches a draft", () => {
+  const creation = {
+    configurationRevision: "revision",
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 7,
+    authoring,
+  };
+  for (const refused of [
+    { intent: "", links: [] },
+    { intent: "Fix it.\u0007", links: [] },
+    { intent: "Fix it.", links: ["http://example.test/one"] },
+    { intent: "Fix it.", links: [], branch: "rt/ticket-brief" },
+    { intent: "Fix it.", links: [], branch: "refs/heads/one..two" },
+    { intent: "Fix it.", links: [], branch: "refs/heads/one.lock" },
+  ])
+    assert.throws(
+      () => parseDraftCreation({ ...creation, brief: refused }),
+      `a brief is refused: ${JSON.stringify(refused)}`,
+    );
+  assert.deepEqual(
+    parseDraftCreation({
+      ...creation,
+      brief: { intent: "Fix it.", links: [] },
+    }).brief,
+    { intent: "Fix it.", links: [] },
   );
 });

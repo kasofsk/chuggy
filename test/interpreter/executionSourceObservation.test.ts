@@ -48,9 +48,11 @@ const configuredWorkSource = canonicalConfigurationOf({
   },
 });
 
-test("configured work source selects its own repository, ref and credential", async () => {
-  const observed: unknown[] = [];
-  const subject = executionSourceObservation(
+/** An observation over the project's default binding, recording what was asked about. */
+function observingBinding(
+  observed: unknown[],
+): ReturnType<typeof executionSourceObservation> {
+  return executionSourceObservation(
     {
       binding: () =>
         Promise.resolve({
@@ -65,7 +67,7 @@ test("configured work source selects its own repository, ref and credential", as
         return Promise.resolve({
           observed: "Target",
           target: {
-            ref: asGitRefName("refs/heads/work"),
+            ref: asGitRefName(repository.targetRef ?? "refs/heads/work"),
             commit: asGitObjectId("a".repeat(40)),
           },
         });
@@ -73,6 +75,11 @@ test("configured work source selects its own repository, ref and credential", as
     },
     { workSource: () => Promise.resolve(undefined) },
   );
+}
+
+test("configured work source selects its own repository, ref and credential", async () => {
+  const observed: unknown[] = [];
+  const subject = observingBinding(observed);
   assert.equal(
     (
       await subject.observe({
@@ -116,4 +123,29 @@ test("evaluation without retained work source never reads mutable Git", async ()
     { observed: "Unreadable", evidence: "RefUnreadable" },
   );
   assert.equal(bindingReads, 0);
+});
+
+test("the ticket's own branch is the last word on what work is observed against", async () => {
+  const observed: unknown[] = [];
+  const subject = observingBinding(observed);
+  const source = await subject.observe({
+    partition,
+    ticket: 1,
+    kind: "Work",
+    configurationCanonical: configuredWorkSource,
+    ref: asGitRefName("refs/heads/ticket"),
+  });
+  assert.deepEqual(observed, [
+    {
+      partition,
+      repository: "work-repository",
+      recoveryEpoch: "epoch",
+      targetRef: "refs/heads/ticket",
+      credentialReference: "work-reader",
+    },
+  ]);
+  assert.equal(
+    source.observed === "Source" ? source.source.target.ref : undefined,
+    "refs/heads/ticket",
+  );
 });

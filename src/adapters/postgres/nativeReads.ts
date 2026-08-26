@@ -28,6 +28,7 @@ import {
 } from "../../interpreter/operationInbox.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { projectRowCounter } from "./rows.ts";
+import { draftBriefOf, type DraftBriefRow } from "./ticketBrief.ts";
 
 interface PublicOperationRow {
   readonly operation: string;
@@ -282,13 +283,22 @@ export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
     },
     project: (partition, query) => readProject(pool, partition, query),
     ticket: async (partition, ticket) => {
-      const found = await pool.query<TicketProjectionRow>(
-        sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-          WHERE tenant=${partition.tenant} AND project=${partition.project}
-            AND ticket=${ticket}`,
+      const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
+        sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.intent,b.branch,
+                   (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
+                     WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links
+              FROM ticket_projection t
+              LEFT JOIN draft_brief b
+                ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+             WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+               AND t.ticket=${ticket}`,
       );
       const row = found.rows[0];
-      return row === undefined ? undefined : ticketResource(row);
+      if (row === undefined) return undefined;
+      const brief = draftBriefOf(row);
+      return brief === undefined
+        ? ticketResource(row)
+        : { ...ticketResource(row), brief };
     },
   };
 }

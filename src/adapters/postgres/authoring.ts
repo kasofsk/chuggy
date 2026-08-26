@@ -23,6 +23,7 @@ import {
   type ConfigurationRevisionProvenance,
 } from "../../interpreter/authoring.ts";
 import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
+import { draftBriefOf } from "./ticketBrief.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import {
@@ -44,6 +45,9 @@ interface DraftRow {
   readonly state: string;
   readonly configuration_revision: string;
   readonly authoring: string;
+  readonly intent: string | null;
+  readonly branch: string | null;
+  readonly links: string[] | null;
 }
 
 interface ConfigurationPageRow {
@@ -145,13 +149,19 @@ async function readDraft(
   ticket: number,
 ): Promise<DraftResource | undefined> {
   const found = await pool.query<DraftRow>(
-    sql`SELECT d.ticket,d.authoring_version,d.state,d.configuration_revision,r.authoring
+    sql`SELECT d.ticket,d.authoring_version,d.state,d.configuration_revision,r.authoring,
+              b.intent,b.branch,
+              (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
+                WHERE k.tenant=d.tenant AND k.project=d.project AND k.ticket=d.ticket) AS links
        FROM draft d JOIN draft_revision r USING (tenant,project,ticket,authoring_version)
+       LEFT JOIN draft_brief b
+         ON b.tenant=d.tenant AND b.project=d.project AND b.ticket=d.ticket
       WHERE d.tenant=${partition.tenant} AND d.project=${partition.project}
         AND d.ticket=${ticket}`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
+  const brief = draftBriefOf(row);
   return {
     partition,
     ticket: asTicketId(projectRowCounter(row.ticket, "draft ticket")),
@@ -164,6 +174,7 @@ async function readDraft(
       row.configuration_revision,
     ),
     authoring: parseDraftAuthoring(row.authoring),
+    ...(brief === undefined ? {} : { brief }),
   };
 }
 
@@ -408,7 +419,7 @@ async function createDraft(
     result: string | null;
     ticket: string | null;
   }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.intent},${[...input.brief.links]},${input.brief.branch ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")
@@ -431,7 +442,7 @@ async function reviseDraft(
     authoring_version: string | null;
     state: string | null;
   }>(
-    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.intent},${[...input.brief.links]},${input.brief.branch ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")

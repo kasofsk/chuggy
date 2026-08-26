@@ -1,0 +1,120 @@
+/**
+ * The brief one ticket carries: the intent a human stated, the links they
+ * pointed at, and the branch the work happens on.
+ *
+ * IT IS NOT AUTHORING. Authoring is the model's release event, and every value
+ * of it decides how the machine runs the ticket. None of these do: they are
+ * read by the agent and by the observation that names a target, and the
+ * machine never sees them. So they live beside the draft rather than inside
+ * the event, and nothing here reaches the domain.
+ *
+ * AN INTENT IS STORED AS IT RENDERS. Every value that gets this far has
+ * already been split into the lines a briefing would print and refused unless
+ * each of them passes the same line rule an authored line does, so a stored
+ * brief cannot be one the scheduler will later be unable to render.
+ *
+ * A BRANCH IS A REFERENCE NAME AND SHARES ITS GRAMMAR. `handoffRef` is the one
+ * statement of what a reference name is in this tree, and a second spelling of
+ * it here would be a second answer to the same question.
+ *
+ * A RELEASED TICKET'S BRIEF NO LONGER MOVES, which is what lets a retry read it
+ * rather than pin it: a revision is refused for a draft that is not one, so the
+ * row a ticket reaches is frozen the moment the ticket exists.
+ */
+
+import {
+  briefBranchCharsMax,
+  briefIntentCharsMax,
+  briefIntentLinesMax,
+  briefLinkCharsMax,
+  briefLinkScheme,
+  briefLinksMax,
+} from "../contract/brief.ts";
+import type { GitRefName } from "./finalizer.ts";
+import { handoffRef } from "./handoffConfiguration.ts";
+import type { Partition } from "./projectStore.ts";
+import { taskConfigurationLineFault } from "./taskConfiguration.ts";
+
+declare const briefIntentBrand: unique symbol;
+declare const briefLinkUrlBrand: unique symbol;
+
+export type BriefIntent = string & { readonly [briefIntentBrand]: true };
+export type BriefLinkUrl = string & { readonly [briefLinkUrlBrand]: true };
+
+/** One ticket's brief, as everything but the wire holds it. */
+export interface DraftBrief {
+  readonly intent: BriefIntent;
+  readonly links: readonly BriefLinkUrl[];
+  readonly branch?: GitRefName;
+}
+
+/** The lines one intent renders as, which is the form it is bounded and stored in. */
+export function briefIntentLines(intent: BriefIntent): readonly string[] {
+  return intent.split("\n").filter((line) => line.trim().length > 0);
+}
+
+/** Normalizes line endings so a browser's newline is the one this tree bounds. */
+function briefIntentNormalized(value: string): string {
+  return value.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+}
+
+/**
+ * Brands an intent, refusing anything a briefing could not print: an empty
+ * statement, one longer than a draft stores, or one carrying a line no
+ * authored line could carry.
+ */
+export function asBriefIntent(value: string): BriefIntent {
+  const normalized = briefIntentNormalized(value);
+  if (normalized.length === 0 || normalized.length > briefIntentCharsMax)
+    throw new RangeError("ticket intent: the statement is empty or too long");
+  const lines = briefIntentLines(normalized as BriefIntent);
+  if (lines.length === 0 || lines.length > briefIntentLinesMax)
+    throw new RangeError("ticket intent: the statement is empty or too long");
+  for (const line of lines) {
+    if (taskConfigurationLineFault(line) !== undefined)
+      throw new RangeError("ticket intent: a line does not render");
+  }
+  return normalized as BriefIntent;
+}
+
+/** Brands a link, refusing anything this tree would not fetch or could not print. */
+export function asBriefLinkUrl(value: string): BriefLinkUrl {
+  if (
+    !value.startsWith(briefLinkScheme) ||
+    value.length > briefLinkCharsMax ||
+    taskConfigurationLineFault(value) !== undefined
+  )
+    throw new RangeError("ticket link: the URL is not a printable https URL");
+  return value as BriefLinkUrl;
+}
+
+/** Brands a branch through the one reference-name grammar this tree states. */
+export function asBriefBranch(value: string): GitRefName {
+  const ref =
+    value.length > briefBranchCharsMax ? undefined : handoffRef(value);
+  if (ref === undefined)
+    throw new RangeError("ticket branch: the value is not a reference name");
+  return ref;
+}
+
+/** Brands one whole brief, which is the only way an unchecked one becomes a stored one. */
+export function asDraftBrief(value: {
+  readonly intent: string;
+  readonly links: readonly string[];
+  readonly branch?: string;
+}): DraftBrief {
+  if (value.links.length > briefLinksMax)
+    throw new RangeError("ticket brief: more links than one brief carries");
+  return {
+    intent: asBriefIntent(value.intent),
+    links: value.links.map(asBriefLinkUrl),
+    ...(value.branch === undefined
+      ? {}
+      : { branch: asBriefBranch(value.branch) }),
+  };
+}
+
+/** The brief a ticket carries, behind a typed port, absent for a ticket authored without one. */
+export interface TicketBriefPort {
+  brief(partition: Partition, ticket: number): Promise<DraftBrief | undefined>;
+}

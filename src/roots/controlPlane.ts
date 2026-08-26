@@ -54,6 +54,7 @@ import {
 } from "../adapters/git/gitPrerequisites.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresPriorWorkReports } from "../adapters/postgres/evaluationReports.ts";
+import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import {
   finalizerRole,
@@ -313,6 +314,7 @@ export function ticketServiceProcessRoot(
       git,
       postgresExecutionSourceHistory(pool),
     ),
+    ticketBriefs: postgresTicketBrief(pool),
     ...(config.ticket === undefined ? {} : { ticketConfig: config.ticket }),
   };
   return ownedProcess(
