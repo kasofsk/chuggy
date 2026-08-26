@@ -22,6 +22,7 @@ COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
 COPY images/worker/claude.mjs /usr/local/lib/chuggy/claude.mjs
 COPY images/worker/lease.mjs /usr/local/lib/chuggy/lease.mjs
 COPY images/worker/postgres.mjs /usr/local/lib/chuggy/postgres.mjs
+COPY images/worker/repository.mjs /usr/local/lib/chuggy/repository.mjs
 COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs
 COPY images/worker/transport.mjs /usr/local/lib/chuggy/transport.mjs
 COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh

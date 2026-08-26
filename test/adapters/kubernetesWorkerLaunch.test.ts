@@ -21,6 +21,10 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import {
+  workerRepositories,
+  workerRepository,
+} from "../../images/worker/repository.mjs";
+import {
   kubernetesNamespacePrecondition,
   kubernetesWorkerLaunch,
 } from "../../src/adapters/kubernetes/workerLaunch.ts";
@@ -28,6 +32,7 @@ import {
   checkedKubernetesWorkerLaunchConfig,
   kubernetesNameCharsMax,
   kubernetesWorkerContainerName,
+  kubernetesWorkerCredentialFilesVariable,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
   kubernetesWorkerTaskVariable,
@@ -69,6 +74,14 @@ const workspaceCredentialMount = {
   mountPath: "/run/chuggy/credentials/workspace",
 } as const;
 
+const workerRepositoriesValue = JSON.stringify({
+  repository: {
+    url: "https://git.invalid/repository.git",
+    credential: "workspace",
+    credentialUsername: "worker",
+  },
+});
+
 const config: KubernetesWorkerLaunchConfig = {
   apiBaseUrl: "https://cluster.invalid:6443",
   namespace: "chuggy-workers",
@@ -79,7 +92,7 @@ const config: KubernetesWorkerLaunchConfig = {
   credentialMounts: {
     workspace: workspaceCredentialMount,
   },
-  environment: { CHUG_WORKER_REPOSITORIES: '{"repository":"url"}' },
+  environment: { CHUG_WORKER_REPOSITORIES: workerRepositoriesValue },
   serviceAccountName: "chuggy-worker",
   podNamePrefix: "chuggy-worker",
   resources: {
@@ -266,8 +279,14 @@ function expectedContainer(): unknown {
     env: [
       { name: kubernetesWorkerTaskVariable, value: expectedTask() },
       {
+        name: kubernetesWorkerCredentialFilesVariable,
+        value: JSON.stringify({
+          workspace: workspaceCredentialMount.mountPath,
+        }),
+      },
+      {
         name: "CHUG_WORKER_REPOSITORIES",
-        value: '{"repository":"url"}',
+        value: workerRepositoriesValue,
       },
     ],
     resources: {
@@ -366,6 +385,30 @@ function expectedPod(name: string): unknown {
     },
   };
 }
+
+test("the launched repository configuration is accepted by the worker", () => {
+  const requested = kubernetesWorkerPodRequest(config, placement);
+  assert.equal(requested.requested, "Pod");
+  if (requested.requested !== "Pod") return;
+  const variable = requested.pod.spec.containers[0]?.env.find(
+    ({ name }) => name === "CHUG_WORKER_REPOSITORIES",
+  );
+  assert.ok(variable);
+  const credentialFilesVariable = requested.pod.spec.containers[0]?.env.find(
+    ({ name }) => name === kubernetesWorkerCredentialFilesVariable,
+  );
+  assert.ok(credentialFilesVariable);
+  const selected = workerRepository(
+    workerRepositories(variable.value),
+    workerRepositories(credentialFilesVariable.value),
+    "repository",
+  );
+  assert.equal(selected.repository, "https://git.invalid/repository.git");
+  assert.equal(
+    selected.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
+    workspaceCredentialMount.mountPath,
+  );
+});
 
 test("a placed attempt is one pod, named for its attempt and fenced by its annotations", async () => {
   const reached: ClusterReached[] = [];
@@ -824,15 +867,20 @@ test("a deployment that cannot address a cluster is refused where it is composed
   );
 });
 
-test("site environment cannot replace the worker task document", () => {
-  assert.throws(
-    () =>
-      checkedKubernetesWorkerLaunchConfig({
-        ...config,
-        environment: { [kubernetesWorkerTaskVariable]: "replacement" },
-      }),
-    /CHUG_WORKER_TASK/u,
-  );
+test("site environment cannot replace worker-owned documents", () => {
+  for (const variable of [
+    kubernetesWorkerTaskVariable,
+    kubernetesWorkerCredentialFilesVariable,
+  ]) {
+    assert.throws(
+      () =>
+        checkedKubernetesWorkerLaunchConfig({
+          ...config,
+          environment: { [variable]: "replacement" },
+        }),
+      new RegExp(variable, "u"),
+    );
+  }
 });
 
 test("credential directory mounts cannot replace workspace or capability mounts", () => {
@@ -852,6 +900,24 @@ test("credential directory mounts cannot replace workspace or capability mounts"
           },
         }),
       new RegExp(`worker mount path .*${target}`, "u"),
+    );
+  }
+});
+
+test("credential files require one canonical path", () => {
+  for (const mountPath of [
+    "/run/chuggy/credentials/workspace/",
+    "/run/chuggy/credentials/./workspace",
+  ]) {
+    assert.throws(
+      () =>
+        checkedKubernetesWorkerLaunchConfig({
+          ...config,
+          credentialMounts: {
+            workspace: { ...workspaceCredentialMount, mountPath },
+          },
+        }),
+      /worker credential workspace mount path must be canonical/u,
     );
   }
 });
