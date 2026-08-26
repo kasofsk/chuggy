@@ -3,7 +3,9 @@
  *
  * Each roster is held against `src/contract/`, which is where the wire's own
  * copy lives and which `test/contract/rosters.test.ts` in turn holds against
- * the model and the interpreter.
+ * the model and the interpreter. Order is part of the claim: `ui/console/app/views.js`
+ * builds the board's columns by walking the phase roster, so a roster that
+ * agreed as a set and disagreed as a sequence would reorder the board.
  */
 
 import assert from "node:assert/strict";
@@ -48,8 +50,6 @@ import {
   schedulerFreshnessRoster,
 } from "../../ui/console/app/resources.js";
 import { populated } from "../interpreter/roster.ts";
-
-const sorted = (values: readonly string[]) => [...values].sort();
 
 /** The console's roster beside the contract's, one pair per closed set. */
 const pairs: readonly (readonly [
@@ -104,9 +104,9 @@ const pairs: readonly (readonly [
   ],
 ];
 
-test("every roster the console restates is the contract's", () => {
+test("every roster the console restates is the contract's, in order", () => {
   for (const [named, console_, wire] of populated(pairs, "the roster pairs"))
-    assert.deepEqual(sorted(console_), sorted(wire), named);
+    assert.deepEqual([...console_], [...wire], named);
 });
 
 const authoring = {

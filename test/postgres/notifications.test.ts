@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { notificationKinds } from "../../src/contract/rosters.ts";
 import { postgresNotifications } from "../../src/adapters/postgres/notifications.ts";
 import { notificationPublishFunction } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -10,6 +11,21 @@ import {
 import { postgresReadHarness } from "./readHarness.ts";
 
 const subject = postgresReadHarness();
+
+test("the kinds the wire names are the kinds the log admits", async () => {
+  const constraint = await subject.pool.query<{ definition: string }>(
+    `SELECT pg_get_constraintdef(c.oid) AS definition
+       FROM pg_constraint c
+      WHERE c.conrelid = 'project_notification'::regclass
+        AND c.conname = 'project_notification_kind_is_known'`,
+  );
+  const definition = constraint.rows[0]?.definition;
+  assert.ok(definition !== undefined, "the kind constraint was not found");
+  const admitted = [...definition.matchAll(/'([A-Za-z]+)'/gu)].map(
+    ([, name]) => name,
+  );
+  assert.deepEqual([...admitted].sort(), [...notificationKinds].sort());
+});
 
 test("cancellation publishes only an operation identity", async () => {
   const partition = await postgresHarnessProject(

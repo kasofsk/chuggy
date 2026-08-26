@@ -3,7 +3,11 @@
  *
  * The same value shapes appear in a draft body, in a draft read, in the
  * initialization's offered choices and in a dispatch candidate, so they are
- * written once here.
+ * written once here — twice over, because a request body is refused for a
+ * field the server does not know and a read of a hand-assembled resource drops
+ * one instead, which is the rule `responses.ts` states and it has to hold at
+ * every depth or a field added inside `authoring` stops every loaded browser
+ * reading a draft.
  */
 
 import { z } from "zod";
@@ -28,9 +32,14 @@ export const reworkPolicySchema = z.strictObject({
   value: countSchema,
 });
 
+const budgetedFinalizationSchema = z.strictObject({
+  type: z.literal("Budgeted"),
+  value: countSchema,
+});
+
 export const finalizationPricingSchema = z.union([
   z.literal("DeadlineOnly"),
-  z.strictObject({ type: z.literal("Budgeted"), value: countSchema }),
+  budgetedFinalizationSchema,
 ]);
 
 export const resumePricingSchema = z.enum(resumePricings);
@@ -50,3 +59,18 @@ export const authoringSchema = z.strictObject({
 });
 
 export type ReleaseAuthoringBody = z.infer<typeof authoringSchema>;
+
+export const programStageResponseSchema = programStageSchema.strip();
+export const reworkPolicyResponseSchema = reworkPolicySchema.strip();
+
+export const finalizationPricingResponseSchema = z.union([
+  z.literal("DeadlineOnly"),
+  budgetedFinalizationSchema.strip(),
+]);
+
+/** The same authoring read back, dropping a field the reader does not know. */
+export const authoringResponseSchema = authoringSchema.strip().extend({
+  program: z.array(programStageResponseSchema).max(nativeHttpDraftStagesMax),
+  reworkPolicy: reworkPolicyResponseSchema,
+  finalizationPricing: finalizationPricingResponseSchema,
+});

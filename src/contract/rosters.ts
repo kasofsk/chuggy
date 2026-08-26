@@ -2,10 +2,13 @@
  * The closed sets the public wire names, each as a runtime list and the union
  * it induces.
  *
- * A roster here is a restatement of one the model or the interpreter owns:
- * `test/contract/rosters.test.ts` holds each against its source, against a
- * runtime list where one exists and otherwise against a record the compiler
- * rejects when the union gains or loses a member.
+ * A roster here is a restatement of one the model or the interpreter owns, and
+ * `test/contract/rosters.test.ts` holds each against its source — against a
+ * runtime list where one exists, and otherwise against a record the compiler
+ * rejects when the union gains or loses a member. `notificationKinds` is the
+ * exception and the only one: the wire owns it outright, `src/interpreter/
+ * notifications.ts` takes `NotificationKind` from here, and what stands behind
+ * it instead is the relation to `projectChangeKinds` that the same suite pins.
  */
 
 export const phaseRoster = [
@@ -81,7 +84,11 @@ export const operationRefusalCodes = [
 ] as const;
 export type OperationRefusalCode = (typeof operationRefusalCodes)[number];
 
-/** Which resource a polled notification says has moved. */
+/**
+ * Which resource a polled notification says has moved. Owned here rather than
+ * restated: the durable log's rows are this list, and the interpreter imports
+ * it.
+ */
 export const notificationKinds = [
   "Operation",
   "Ticket",

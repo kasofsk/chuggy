@@ -59,6 +59,10 @@ export const countSchema = z.number().int().safe().nonnegative();
 export const ticketNumberSchema = z.number().int().safe().positive();
 export const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
 export const instantSchema = z.string().min(1);
+/**
+ * All the wire says about a cursor. It is opaque to every reader but the server
+ * that issued it, whose own module holds what one decodes to.
+ */
 export const cursorSchema = z.string().min(1).max(nativeHttpCursorCharsMax);
 
 export const partitionSchema = z.strictObject({

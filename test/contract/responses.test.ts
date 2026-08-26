@@ -46,107 +46,27 @@ import {
   repositoryConfigurationRefusalsSchema,
   ticketResponseSchema,
 } from "../../src/contract/responses.ts";
+import { authoringSchema } from "../../src/contract/authoring.ts";
 import { errorEnvelopeSchema } from "../../src/contract/http.ts";
-import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
-import {
-  asCanonicalConfiguration,
-  asConfigurationRevisionId,
-} from "../../src/interpreter/authoring.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import {
   asAuthorityKind,
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import {
-  asAttemptId,
-  asClusterId,
-  asExecutionId,
-} from "../../src/interpreter/schedulerIdentity.ts";
-import {
-  asArtifactDigest,
-  asArtifactPath,
-  asResultManifestId,
-} from "../../src/interpreter/resultManifest.ts";
-import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
-import { workSummaryOutput } from "../../src/interpreter/operationsView.ts";
-import type { ExecutionResource } from "../../src/interpreter/operationsView.ts";
-
-const partition = {
-  tenant: asTenantId("acme"),
-  project: asProjectId("atlas"),
-};
-const revision = asConfigurationRevisionId("revision-one");
-const digest = "a".repeat(64);
-const instant = asPublicInstant("2026-08-26T00:00:00Z");
-
-const authoring = {
-  deps: new Set([asTicketId(1)]),
-  prog: [{ fanout: 1, combinator: "UnanimousPass" }],
-  workFanout: 1,
-  reworkPolicy: { type: "BudgetedRework", value: 0 },
-  finalizationPricing: "DeadlineOnly",
-  resumePricing: "RetryCharged",
-  finalizer: "ManagedFinalizer",
-} as const;
-
-const requirement: ExecutionRequirement = {
-  mode: "Container",
-  operatingSystem: "Linux",
-  architecture: "Amd64",
-  image: "worker:v1",
-};
-
-const executionSummary = {
-  execution: asExecutionId("execution-one"),
-  ticket: asTicketId(3),
-  task: asTaskId(1),
-  taskKind: "Work",
-  cluster: asClusterId("cluster-one"),
-  configurationRevision: revision,
-  requirementIdentity: "requirement-one",
-  requirement,
-  requirementDigest: digest,
-  requirementSource: "PlatformDefault",
-  platformDefaultVersion: 1,
-  status: "Terminal",
-  outcome: "Passed",
-  retriesSpent: 2,
-  registeredAt: instant,
-  terminalAt: instant,
-} as const;
-
-const execution: ExecutionResource = {
-  ...executionSummary,
-  attempts: [
-    {
-      attempt: asAttemptId("attempt-one"),
-      number: 1,
-      generation: 1,
-      state: "Reported",
-      openedAt: instant,
-      endedAt: instant,
-    },
-  ],
-  result: {
-    manifest: asResultManifestId("manifest-one"),
-    attempt: asAttemptId("attempt-one"),
-    schemaVersion: 1,
-    digest: asArtifactDigest(digest),
-    verdict: "Pass",
-    recordedAt: instant,
-    artifacts: [
-      {
-        ordinal: 0,
-        role: "Handoff",
-        path: asArtifactPath(".chuggy/outputs/summary.md"),
-        digest: asArtifactDigest(digest),
-        bytes: 12,
-        output: workSummaryOutput,
-      },
-    ],
-  },
-};
+  authoring,
+  authoringWireBody,
+  configuration,
+  digest,
+  draft as draftResource,
+  execution,
+  executionSummary,
+  instant,
+  partition,
+  revision,
+} from "./representations.ts";
 
 test("a project read and a ticket read parse as the contract names them", () => {
   const project = projectResponse({
@@ -297,15 +217,10 @@ test("a notification batch and a dispatch page parse as the server sends them", 
 });
 
 test("a configuration read and its page parse with readiness and provenance", () => {
-  const configuration = configurationResponseSchema.parse(
-    configurationResponse({
-      partition,
-      revision,
-      canonical: asCanonicalConfiguration("{}"),
-      digest,
-    }).body,
+  const read = configurationResponseSchema.parse(
+    configurationResponse(configuration).body,
   );
-  assert.equal(configuration.revision, "revision-one");
+  assert.equal(read.revision, "revision-one");
   const page = configurationsResponseSchema.parse(
     configurationsResponse({
       result: "Authorized",
@@ -331,16 +246,7 @@ test("a configuration read and its page parse with readiness and provenance", ()
 });
 
 test("a draft and its initialization parse with the authoring the wire carries", () => {
-  const draft = draftResponseSchema.parse(
-    draftResponse({
-      partition,
-      ticket: asTicketId(3),
-      authoringVersion: 2,
-      state: "Draft",
-      configurationRevision: revision,
-      authoring,
-    }).body,
-  );
+  const draft = draftResponseSchema.parse(draftResponse(draftResource).body);
   assert.deepEqual(draft.authoring.dependencies, [1]);
   const initialization = draftInitializationResponseSchema.parse(
     draftInitializationResponse({
@@ -348,12 +254,7 @@ test("a draft and its initialization parse with the authoring the wire carries",
       value: {
         initialized: "Initialized",
         value: {
-          configuration: {
-            partition,
-            revision,
-            canonical: asCanonicalConfiguration("{}"),
-            digest,
-          },
+          configuration,
           projectSequence: 9,
           defaults: authoring,
           choices: {
@@ -373,6 +274,45 @@ test("a draft and its initialization parse with the authoring the wire carries",
   );
   assert.equal(initialization.fence.projectSequence, 9);
   assert.deepEqual(initialization.choices.workFanouts, [1, 2]);
+});
+
+test("a hand-assembled read drops an unknown field at every depth", () => {
+  const body = draftResponse(draftResource).body as Record<string, unknown>;
+  const inner = body["authoring"] as Record<string, unknown>;
+  const later = {
+    ...body,
+    intent: "a sentence #319b adds",
+    partition: { ...partition, region: "eu" },
+    authoring: {
+      ...inner,
+      links: ["https://example.invalid/one"],
+      reworkPolicy: { type: "BudgetedRework", value: 0, ceiling: 4 },
+      program: [{ fanout: 1, combinator: "UnanimousPass", label: "review" }],
+    },
+  };
+  const parsed = draftResponseSchema.parse(later);
+  assert.equal(parsed.state, "Draft");
+  assert.deepEqual(parsed.authoring.program, [
+    { fanout: 1, combinator: "UnanimousPass" },
+  ]);
+  assert.deepEqual(parsed.partition, { tenant: "acme", project: "atlas" });
+  assert.equal(Object.hasOwn(parsed.authoring, "links"), false);
+  assert.equal(Object.hasOwn(parsed, "intent"), false);
+});
+
+test("the request body is refused for the field a read would have dropped", () => {
+  assert.throws(() =>
+    authoringSchema.parse({
+      ...authoringWireBody,
+      links: ["https://example.invalid/one"],
+    }),
+  );
+  assert.throws(() =>
+    authoringSchema.parse({
+      ...authoringWireBody,
+      program: [{ fanout: 1, combinator: "UnanimousPass", label: "review" }],
+    }),
+  );
 });
 
 test("a repository import refusal parses with the faults it names", () => {

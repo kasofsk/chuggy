@@ -135,9 +135,10 @@ printf '%s\n' 'import { wire } from "../src/contract/wire.ts"' 'import { x } fro
 seal
 check "the contract may not import a platform module" 1 "$RC" "contract-reaches-only-zod:"
 
-# The relay belongs to neither directory, so no edge leaves src/contract/ for
-# src/interpreter/ and only reachability sees it. Without `reachable: true` on
-# the rule this tree is clean and no other case notices.
+# A relay is a module outside src/contract/ like any other, so this rule catches
+# it at the first edge and needs no reachability to. The case is here because
+# the relay is the shape a reader expects to be missed, and it is one of the
+# reds deleting the rule leaves.
 fixture
 mkdir -p "$R/src/contract" "$R/src/interpreter" "$R/src/shared"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
@@ -146,7 +147,7 @@ printf '%s\n' 'import { port } from "../interpreter/port.ts"' 'export const rela
 printf '%s\n' 'import { relay } from "../shared/relay.ts"' 'export const wire = relay' > "$R/src/contract/wire.ts"
 printf '%s\n' 'import { wire } from "../src/contract/wire.ts"' 'import { x } from "../src/domain/a.ts"' 'export const y = wire + x' > "$R/test/a.test.ts"
 seal
-check "the contract may not REACH the interpreter through a relay" 1 "$RC" "contract-reaches-only-zod:"
+check "a relay out of the contract is caught like any other module" 1 "$RC" "contract-reaches-only-zod:"
 
 # --- actor-sees-domain-only --------------------------------------------------
 

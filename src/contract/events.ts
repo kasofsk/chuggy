@@ -3,18 +3,30 @@
  *
  * A change frame names its kind in `event:`, the change log's global sequence
  * in `id:`, and carries in `data:` the resource identity together with the
- * representation the kind's GET route would have answered with. A browser
- * writes that representation into its cache under that identity and does not
- * refetch on a live event; a null representation is a tombstone, meaning the
- * resource is no longer readable and the cache entry is dropped. `ready` opens
- * the stream, `reset` says the requested `Last-Event-ID` is no longer retained
- * and the client must reload from the GET routes, and `source` reports whether
- * the change log behind the stream is live or degraded.
+ * representation the kind's GET route would have answered with — exactly that
+ * body, parsed here by exactly that schema, which is what
+ * `projectChangeRepresentationSchemas` pins kind by kind. A browser writes the
+ * representation into its cache under that identity and does not refetch on a
+ * live event; a null representation is a tombstone, meaning the resource is no
+ * longer readable and the cache entry is dropped. `Project` is the one kind
+ * that is not written: its representation is the inventory entry, which is less
+ * than a project read returns, so a `Project` frame invalidates the project
+ * head and the browser refetches it. `ready` opens the stream,
+ * `reset` says the requested `Last-Event-ID` is no longer retained and the
+ * client must reload from the GET routes, and `source` reports whether the
+ * change log behind the stream is live or degraded.
  */
 
 import { z } from "zod";
 
-import { countSchema, identitySchema } from "./http.ts";
+import { countSchema, identitySchema, partitionSchema } from "./http.ts";
+import {
+  configurationResponseSchema,
+  draftResponseSchema,
+  executionResponseSchema,
+  operationResponseSchema,
+  ticketResponseSchema,
+} from "./responses.ts";
 
 export const projectStreamVersion = 1;
 
@@ -37,13 +49,47 @@ export type ProjectSourceState = (typeof projectSourceStates)[number];
 
 const versionSchema = z.literal(projectStreamVersion);
 
+/**
+ * The body each kind's GET route answers with. `Project` is the entry
+ * `GET /api/v1/projects` lists, which is the identity a project is addressed
+ * by rather than the ticket page reading it returns.
+ */
+export const projectChangeRepresentationSchemas = {
+  Operation: operationResponseSchema,
+  Ticket: ticketResponseSchema,
+  Draft: draftResponseSchema,
+  Configuration: configurationResponseSchema,
+  Project: partitionSchema,
+  Execution: executionResponseSchema,
+} as const satisfies Record<ProjectChangeKind, z.ZodType>;
+
+export type ProjectChangeRepresentation<Kind extends ProjectChangeKind> =
+  z.infer<(typeof projectChangeRepresentationSchemas)[Kind]>;
+
 /** The identity the changed kind's GET route takes, as its own path segment. */
-export const projectChangeDataSchema = z.strictObject({
-  version: versionSchema,
-  resource: identitySchema,
-  representation: z.record(z.string(), z.unknown()).nullable(),
-});
-export type ProjectChangeData = z.infer<typeof projectChangeDataSchema>;
+const changeDataSchema = <Representation extends z.ZodType>(
+  representation: Representation,
+) =>
+  z.strictObject({
+    version: versionSchema,
+    resource: identitySchema,
+    representation: representation.nullable(),
+  });
+
+export const projectChangeDataSchemas = {
+  Operation: changeDataSchema(projectChangeRepresentationSchemas.Operation),
+  Ticket: changeDataSchema(projectChangeRepresentationSchemas.Ticket),
+  Draft: changeDataSchema(projectChangeRepresentationSchemas.Draft),
+  Configuration: changeDataSchema(
+    projectChangeRepresentationSchemas.Configuration,
+  ),
+  Project: changeDataSchema(projectChangeRepresentationSchemas.Project),
+  Execution: changeDataSchema(projectChangeRepresentationSchemas.Execution),
+} as const;
+
+export type ProjectChangeData<Kind extends ProjectChangeKind> = z.infer<
+  (typeof projectChangeDataSchemas)[Kind]
+>;
 
 export const projectReadyDataSchema = z.strictObject({
   version: versionSchema,
@@ -61,12 +107,16 @@ export const projectSourceDataSchema = z.strictObject({
 });
 export type ProjectSourceData = z.infer<typeof projectSourceDataSchema>;
 
+export type ProjectChangeEvent = {
+  [Kind in ProjectChangeKind]: {
+    readonly event: Kind;
+    readonly sequence: number;
+    readonly data: ProjectChangeData<Kind>;
+  };
+}[ProjectChangeKind];
+
 export type ProjectStreamEvent =
-  | {
-      readonly event: ProjectChangeKind;
-      readonly sequence: number;
-      readonly data: ProjectChangeData;
-    }
+  | ProjectChangeEvent
   | { readonly event: "ready"; readonly data: ProjectReadyData }
   | { readonly event: "reset"; readonly data: ProjectResetData }
   | { readonly event: "source"; readonly data: ProjectSourceData };
@@ -84,17 +134,30 @@ const sequenceSchema = z
   .transform(Number)
   .pipe(countSchema);
 
+/** Each arm parses with its own kind's schema, so the member is typed by it. */
 function projectChangeEvent(
   kind: ProjectChangeKind,
   frame: ProjectStreamFrame,
-): ProjectStreamEvent {
+): ProjectChangeEvent {
   if (frame.id === undefined)
     throw new RangeError("a project change frame carries no sequence");
-  return {
-    event: kind,
-    sequence: sequenceSchema.parse(frame.id),
-    data: projectChangeDataSchema.parse(frame.data),
-  };
+  const sequence = sequenceSchema.parse(frame.id);
+  const body: unknown = frame.data;
+  const schemas = projectChangeDataSchemas;
+  switch (kind) {
+    case "Operation":
+      return { event: kind, sequence, data: schemas.Operation.parse(body) };
+    case "Ticket":
+      return { event: kind, sequence, data: schemas.Ticket.parse(body) };
+    case "Draft":
+      return { event: kind, sequence, data: schemas.Draft.parse(body) };
+    case "Configuration":
+      return { event: kind, sequence, data: schemas.Configuration.parse(body) };
+    case "Project":
+      return { event: kind, sequence, data: schemas.Project.parse(body) };
+    case "Execution":
+      return { event: kind, sequence, data: schemas.Execution.parse(body) };
+  }
 }
 
 export function parseProjectStreamEvent(

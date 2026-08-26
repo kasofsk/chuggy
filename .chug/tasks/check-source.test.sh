@@ -247,6 +247,14 @@ mkdir -p "$R/src/interpreter"
 	printf '%s\n' 'export const stamped = Date.now();'
 	printf '%s\n' 'export const drawn = Math.random();'
 } > "$R/src/interpreter/ambient.ts"
+# And the contract, which neither of its own boundary halves can see here: a
+# browser global names no module for the graph rule, and the browser stage
+# accepts it because a browser is exactly what provides it.
+{
+	printf '%s\n' 'export const stamped = Date.now();'
+	printf '%s\n' 'export const drawn = Math.random();'
+	printf '%s\n' 'export const identity = crypto.randomUUID();'
+} > "$R/src/contract/ambient.ts"
 {
 	printf '%s\n' 'type Kind = { k: "a" } | { k: "b" };'
 	printf '%s\n' 'export function pick(v: Kind): string {'
@@ -315,6 +323,9 @@ check "the actor may not read a clock either" 1 "$RC" "the journaled actor takes
 check "the actor may not draw randomness either" 1 "$RC" "the journaled actor takes its draws as arguments"
 check "the interpreter may not read a clock either" 1 "$RC" "the interpreter takes time as an argument"
 check "the interpreter may not draw randomness either" 1 "$RC" "the interpreter takes its draws as arguments"
+check "the contract may not read a clock" 1 "$RC" "the public contract takes time"
+check "the contract may not draw randomness" 1 "$RC" "the public contract takes its draws"
+check "the contract may not draw an identifier" 1 "$RC" "the public contract takes identifiers"
 check "an untagged query template is a finding" 1 "$RC" "an untagged template is invisible to check-queries"
 check "a plain-string query is a finding" 1 "$RC" "a plain string is invisible to check-queries"
 check "a query under another tag is a finding" 1 "$RC" "another tag is not checked"

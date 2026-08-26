@@ -1,10 +1,10 @@
 /**
- * Every request body the public wire accepts, and the payloads its opaque
- * cursors carry.
+ * Every request body the public wire accepts.
  *
  * The schemas parse into plain wire values; turning one into an interpreter
- * type is the server's own step, and encoding a cursor payload into base64url
- * is too.
+ * type is the server's own step. A cursor is not here: it is opaque to every
+ * reader but the server that issued it, so its payload is that server's shape
+ * rather than the wire's, and `cursorSchema` is all the wire says about one.
  */
 
 import { z } from "zod";
@@ -13,7 +13,6 @@ import {
   countSchema,
   digestSchema,
   dispatchViewSchemaVersion,
-  nativeHttpVersion,
   ticketNumberSchema,
 } from "./http.ts";
 import { authoringSchema } from "./authoring.ts";
@@ -92,28 +91,4 @@ export const draftRevisionSchema = z.strictObject({
 export const submissionSchema = z.strictObject({
   operation: bodyIdentitySchema,
   mutation: publicMutationSchema,
-});
-
-export const inventoryCursorSchema = z.strictObject({
-  version: z.literal(nativeHttpVersion),
-  tenant: z.string(),
-  project: z.string(),
-});
-
-export const configurationCursorSchema = z.strictObject({
-  version: z.literal(nativeHttpVersion),
-  tenant: z.string(),
-  project: z.string(),
-  createdAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), {
-    message: "Expected a timestamp",
-  }),
-  revision: z.string().min(1),
-});
-
-export const ticketActivityCursorSchema = z.strictObject({
-  version: z.literal(nativeHttpVersion),
-  tenant: z.string(),
-  project: z.string(),
-  sequence: countSchema,
-  ticket: ticketNumberSchema,
 });

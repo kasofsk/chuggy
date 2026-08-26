@@ -23,6 +23,15 @@
 // capabilities, and a capability it reached past them would be one no port
 // declares, no adapter answers and no boundary rule can see. That it awaits is
 // beside the point — the roster below is ambient authority, not asynchrony.
+//
+// AND SO DOES THE CONTRACT, where the argument is at its strongest:
+// `src/contract/` is parsers a browser runs and a server runs, and a clock
+// read or a drawn identifier inside one is non-determinism in the single place
+// both sides trust. Its graph half is `contract-reaches-only-zod`, and it sees
+// none of this — a browser global names no module, so it takes no path for a
+// graph rule to find, and `tsconfig.contract.json` accepts it precisely
+// because a browser provides it.
+//
 // `src/adapters/` is the one layer with no such block, because holding ambient
 // capability is what an adapter is for and banning it there would ban the
 // layer. What stands behind a stub that quietly read a clock is the reviewer
@@ -283,6 +292,13 @@ export default tseslint.config(
     rules: {
       "no-restricted-globals": noAmbientGlobals("the interpreter"),
       "no-restricted-properties": noAmbientDraws("the interpreter"),
+    },
+  },
+  {
+    files: ["src/contract/**/*.ts"],
+    rules: {
+      "no-restricted-globals": noAmbientGlobals("the public contract"),
+      "no-restricted-properties": noAmbientDraws("the public contract"),
     },
   },
   // Untagged query strings and unread handles are findings everywhere in the

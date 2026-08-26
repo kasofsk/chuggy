@@ -6,6 +6,8 @@
  * describes them — is `src/contract/`, which the browser imports too.
  */
 
+import { z } from "zod";
+
 import { revokeEvent, resumeTicketEvent } from "../../actor/decisionEvent.ts";
 import type { ReleaseAuthoring } from "../../actor/decisionEvent.ts";
 import {
@@ -15,13 +17,10 @@ import {
 import type { ReleaseAuthoringBody } from "../../contract/authoring.ts";
 import {
   configurationCreationSchema,
-  configurationCursorSchema,
   draftCreationSchema,
   draftRevisionSchema,
-  inventoryCursorSchema,
   publicMutationSchema,
   repositoryConfigurationImportSchema,
-  ticketActivityCursorSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
 import { asTicketId } from "../../domain/ids.ts";
@@ -52,6 +51,34 @@ import {
   asGitObjectId,
   type GitObjectId,
 } from "../../interpreter/finalizer.ts";
+
+/**
+ * What a cursor carries once decoded. The reader is always the server that
+ * issued it, which is why the shape is here and not in the contract.
+ */
+const inventoryCursorSchema = z.strictObject({
+  version: z.literal(nativeHttpVersion),
+  tenant: z.string(),
+  project: z.string(),
+});
+
+const configurationCursorSchema = z.strictObject({
+  version: z.literal(nativeHttpVersion),
+  tenant: z.string(),
+  project: z.string(),
+  createdAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), {
+    message: "Expected a timestamp",
+  }),
+  revision: z.string().min(1),
+});
+
+const ticketActivityCursorSchema = z.strictObject({
+  version: z.literal(nativeHttpVersion),
+  tenant: z.string(),
+  project: z.string(),
+  sequence: z.number().int().safe().nonnegative(),
+  ticket: z.number().int().safe().positive(),
+});
 
 export interface ParsedConfigurationCreation {
   readonly revision: ConfigurationRevisionId;

@@ -23,12 +23,15 @@ import {
   ticketNumberSchema,
 } from "./http.ts";
 import {
-  authoringSchema,
+  authoringResponseSchema,
+  finalizationPricingResponseSchema,
   finalizationPricingSchema,
   finalizerSchema,
+  programStageResponseSchema,
   programStageSchema,
   resumePricingSchema,
   reworkPolicySchema,
+  reworkPolicyResponseSchema,
 } from "./authoring.ts";
 import {
   artifactRoles,
@@ -49,6 +52,10 @@ import {
 
 const page = <T extends z.ZodType>(item: T) =>
   z.array(item).max(nativeHttpPageItemsMax);
+
+/** The partition inside a hand-assembled representation, which drops rather
+ * than refuses. */
+const partitionValueSchema = partitionSchema.strip();
 
 export const installationResponseSchema = z.object({
   installation: identitySchema,
@@ -71,7 +78,7 @@ export const ticketResponseSchema = z.object({
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
 
 export const projectResponseSchema = z.object({
-  partition: partitionSchema,
+  partition: partitionValueSchema,
   sequence: countSchema,
   tickets: page(ticketResponseSchema),
   nextAfter: ticketNumberSchema.optional(),
@@ -253,7 +260,7 @@ export const dispatchViewResponseSchema = z.discriminatedUnion("result", [
 export type DispatchViewResponse = z.infer<typeof dispatchViewResponseSchema>;
 
 export const configurationResponseSchema = z.object({
-  partition: partitionSchema,
+  partition: partitionValueSchema,
   revision: identitySchema,
   parent: identitySchema.optional(),
   canonical: z.string().min(1),
@@ -322,12 +329,12 @@ export type RepositoryConfigurationRefusals = z.infer<
 >;
 
 export const draftResponseSchema = z.object({
-  partition: partitionSchema,
+  partition: partitionValueSchema,
   ticket: ticketNumberSchema,
   authoringVersion: countSchema,
   state: z.enum(draftStates),
   configurationRevision: identitySchema,
-  authoring: authoringSchema,
+  authoring: authoringResponseSchema,
 });
 export type DraftResponse = z.infer<typeof draftResponseSchema>;
 
@@ -337,13 +344,13 @@ export const draftInitializationResponseSchema = z.object({
     projectSequence: countSchema,
     configurationDigest: digestSchema,
   }),
-  defaults: authoringSchema,
+  defaults: authoringResponseSchema,
   choices: z.object({
-    stages: page(programStageSchema),
+    stages: page(programStageResponseSchema),
     programStagesMax: countSchema,
     workFanouts: page(ticketNumberSchema),
-    reworkPolicies: page(reworkPolicySchema),
-    finalizationPricings: page(finalizationPricingSchema),
+    reworkPolicies: page(reworkPolicyResponseSchema),
+    finalizationPricings: page(finalizationPricingResponseSchema),
     resumePricings: page(resumePricingSchema),
     finalizers: page(finalizerSchema),
   }),

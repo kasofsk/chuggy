@@ -53,20 +53,24 @@ module.exports = {
         "bundle must carry and a browser must run. So it reaches nothing " +
         "outside itself but the parser library, transitively, by any path — " +
         "no platform module, no framework, and nothing from the layers that " +
-        "own the server. Stated as reachability because the shape that " +
-        "breaks it is a helper belonging to neither directory that the " +
-        "contract imports and the interpreter answers, which is the same " +
-        "relay the layers above are each already forbidden to be. The " +
-        "direction is one-way and no rule here says so: the layers may read " +
-        "the contract, and a cycle is what would make that unanswerable, " +
-        "which no-circular-dependency already forbids. The parser's " +
-        "exemption is not anchored at the path root because a fixture tree " +
-        "reaches its node_modules through a symlink and resolves the same " +
-        "package to a path outside itself.",
+        "own the server. NOT STATED AS REACHABILITY, and alone here in that: " +
+        "this rule's `to` is the complement of its `from`, so every path out " +
+        "of src/contract/ has a first edge that already violates it and a " +
+        "relay is caught as the module outside the directory that it is. The " +
+        "flag would be unfalsifiable rather than merely redundant — no " +
+        "fixture could redden its absence — and check-boundaries.test.sh " +
+        "requires a rule carrying it to have one. The rules above take it " +
+        "because their `to` names a directory rather than everything else, " +
+        "which is what leaves a relay belonging to neither of them invisible " +
+        "to a per-import check. The direction is one-way and no rule here " +
+        "says so: the layers may read the contract, and a cycle is what " +
+        "would make that unanswerable, which no-circular-dependency already " +
+        "forbids. The parser's exemption is not anchored at the path root " +
+        "because a fixture tree reaches its node_modules through a symlink " +
+        "and resolves the same package to a path outside itself.",
       severity: "error",
       from: { path: "^src/contract/" },
       to: {
-        reachable: true,
         path: "^(?!src/contract/)",
         pathNot: "(^|/)node_modules/zod/",
       },
@@ -176,7 +180,11 @@ module.exports = {
         "two copies equal for instead.",
       severity: "error",
       from: { path: "^ui/" },
-      to: { reachable: true, path: "^(?!ui/)", pathNot: "node_modules/|^src/contract/" },
+      to: {
+        reachable: true,
+        path: "^(?!ui/)",
+        pathNot: "node_modules/|^src/contract/",
+      },
     },
     {
       name: "unbuilt-console-uses-no-package",
