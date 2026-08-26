@@ -13,9 +13,14 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   DraftResponse,
+  TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import { apiDraft, apiTicket } from "../core/apiRoutes.ts";
+import {
+  apiDraft,
+  apiTicket,
+  apiTicketNativeActions,
+} from "../core/apiRoutes.ts";
 import { escalationReasonSentence } from "../core/codeSentences.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
@@ -45,6 +50,7 @@ function TicketBody(props: {
   readonly ticket: number;
   readonly ticketState: PanelState<TicketResponse>;
   readonly draftState: PanelState<DraftResponse>;
+  readonly openState: PanelState<TicketNativeActionsResponse>;
 }): ReactNode {
   return (
     <>
@@ -56,6 +62,7 @@ function TicketBody(props: {
         partition={props.partition}
         ticket={props.ticket}
         state={props.ticketState}
+        openState={props.openState}
       />
       <TicketProvenance partition={props.partition} state={props.draftState} />
       <TicketExecutions partition={props.partition} ticket={props.ticket} />
@@ -78,6 +85,10 @@ export function TicketPage(): ReactNode {
     projectResourceKey(partition, "Draft", String(ticket)),
     (ports) => apiDraft(ports, partition, ticket),
   );
+  const openState = usePanelQuery(
+    projectResourceKey(partition, "NativeAction", String(ticket)),
+    (ports) => apiTicketNativeActions(ports, partition, ticket),
+  );
   if (!Number.isSafeInteger(ticket) || ticket <= 0)
     return (
       <p className="panel-absent">
@@ -90,6 +101,7 @@ export function TicketPage(): ReactNode {
       ticket={ticket}
       ticketState={ticketState}
       draftState={draftState}
+      openState={openState}
     />
   );
 }
