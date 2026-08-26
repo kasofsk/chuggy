@@ -238,11 +238,19 @@ test("a walk that will not read at all answers with the refusal", async () => {
   expect(answered.outcome).toBe("Unreachable");
 });
 
+/**
+ * The refused walk is given pages until it reaches a ticket the one-page
+ * running walk cannot answer for, because a ticket both walks carry is one the
+ * merge would supply whether or not the refused walk kept anything.
+ */
 test("a walk refused partway keeps what it had and calls itself truncated", async () => {
-  const held = walking(() => 3, 2);
+  const held = walking((selection) => (selection === "All" ? 5 : 1), 3);
   const answered = await projectExecutionIndexRead(held.readPage);
   expect(answered.outcome === "Ok" && answered.value.truncated).toBe(true);
-  expect(
-    answered.outcome === "Ok" && projectExecutionIndexAt(answered.value, 1),
-  ).toBeDefined();
+  const kept =
+    answered.outcome === "Ok"
+      ? projectExecutionIndexAt(answered.value, 2)
+      : undefined;
+  expect(kept?.execution.execution).toBe("All-2");
+  expect(kept?.complete).toBe(false);
 });

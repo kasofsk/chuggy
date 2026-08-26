@@ -22,7 +22,11 @@
  * drawing it as current would report a failed ticket as passed. Presence is not
  * completeness, and `complete` is the difference; a live frame is complete,
  * because the stream reports every change and the frame is the newest thing
- * that has happened to that execution.
+ * that has happened to that execution. That is less than the frame being the
+ * ticket's latest — a truncated index given a frame about a superseded
+ * execution promotes that one — and it is the trade taken deliberately, because
+ * the alternative leaves a truncated index saying "not read" for as long as the
+ * tab is open.
  */
 
 import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
