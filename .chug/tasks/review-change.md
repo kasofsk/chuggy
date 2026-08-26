@@ -150,7 +150,12 @@ number. Cite one by name. A change that needs one of them to be false is an
   separates clean from could-not-run, and why a new check is run against a tree
   carrying the defect it names before it is trusted.
 - **A dependency needs its justification in the commit message.** Each one is a
-  supply chain, an upgrade obligation and a surface.
+  supply chain, an upgrade obligation and a surface. A runtime dependency of
+  `src/` is argued one at a time. A console with its own `package.json` argues
+  its direct dependencies once, as a set, in the commit that introduces them:
+  a framework and the packages it is used with are chosen together, and a
+  per-package argument for each of them is the same argument repeated. What is
+  not covered by that set is argued one at a time like any other.
 
 ## The discipline that makes this useful
 

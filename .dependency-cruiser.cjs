@@ -130,26 +130,53 @@ module.exports = {
     {
       name: "console-reaches-no-source",
       comment:
-        "ui/ is served to a browser as static files, so a module it reaches " +
-        "is a module the browser must fetch. Reaching src/ would mean either " +
-        "shipping TypeScript no browser parses or acquiring the build step " +
-        "this console exists without; reaching a package would be the client " +
-        "dependency it also exists without. Stated as reachability and as one " +
-        "rule over the whole directory, because the shape that breaks it is a " +
-        "shared helper somebody adds between the console and the server to " +
-        "stop writing a constant twice — which is what test/ui/ holds the two " +
-        "copies equal for instead.",
+        "A console is served to a browser, so a module it reaches is a module " +
+        "the browser must fetch, and nothing this tree holds outside ui/ is " +
+        "something a browser can be served: src/ would mean shipping " +
+        "TypeScript no browser parses, and test/ or model/ would mean " +
+        "shipping what is not the product at all. A package is the one thing " +
+        "outside ui/ this rule leaves to the console, because whether a " +
+        "client dependency is available to it depends on whether it builds, " +
+        "and the console that does not build answers for that below. Node's " +
+        "own modules are not packages: they resolve to a bare specifier, so " +
+        "this rule refuses them to every console. A package is recognised by " +
+        "the node_modules directory holding it and not by where that " +
+        "directory is, because the resolver reports the install it actually " +
+        "found — hoisted, linked, or beside the module. Stated as " +
+        "reachability and " +
+        "as one rule over the whole directory, because the shape that breaks " +
+        "it is a shared helper somebody adds between a console and the server " +
+        "to stop writing a constant twice — which is what test/ui/ holds the " +
+        "two copies equal for instead.",
       severity: "error",
       from: { path: "^ui/" },
-      to: { reachable: true, path: "^(?!ui/)" },
+      to: { reachable: true, path: "^(?!ui/)", pathNot: "node_modules/" },
+    },
+    {
+      name: "unbuilt-console-uses-no-package",
+      comment:
+        "ui/console/ is plain files a browser fetches as they stand, so a " +
+        "package it reached would have to be fetched the same way — which is " +
+        "the client dependency a console without a build step exists " +
+        "without. This is the half of the rule above that stops being true " +
+        "of a console the moment it builds, which is why it is stated over " +
+        "the console it is true of rather than over ui/: a console that " +
+        "builds collects the rule bounding what it may reach in the commit " +
+        "that lands its directory, as every other directory here does.",
+      severity: "error",
+      from: { path: "^ui/console/" },
+      to: { reachable: true, path: "node_modules/" },
     },
     {
       name: "console-decisions-touch-no-document",
       comment:
-        "ui/<console>/app/ is a console's decision layer and its sibling " +
-        "dom/ is what performs that console's effects, which is the same " +
-        "split the interpreter and the adapters have and it is enforced the " +
-        "same way. What it buys is that every arrangement a console can show " +
+        "ui/console/app/ is that console's decision layer and its sibling " +
+        "dom/ is what performs its effects, which is the same split the " +
+        "interpreter and the adapters have and it is enforced the same way. " +
+        "The split is that console's own and the rule names it: a console " +
+        "layered some other way is not bound by a rule about a layering it " +
+        "does not have, and states its own with the commit that lands it. " +
+        "What it buys is that every arrangement the console can show " +
         "is reachable from a suite with no browser: a decision that reached " +
         "the document would need one to be tested, and this tree has no " +
         "browser harness to give it. Reachability again, because a relay " +
@@ -159,14 +186,15 @@ module.exports = {
         "only because no-console-sees-another holds below: a decision that " +
         "reached a sibling console's document layer is already a finding " +
         "there, so the two rules together admit exactly the one edge this " +
-        "one is about. A $1 backreference would say it exactly, and does " +
-        "not work — dependency-cruiser substitutes a capture group into " +
+        "one is about. Writing the pair over every console with a $1 " +
+        "backreference would say it exactly, and does not work — " +
+        "dependency-cruiser substitutes a capture group into " +
         "`to.pathNot`, and into `to.path` on a plain dependency rule, but " +
         "not into `to.path` on a `reachable` one, where it matches nothing " +
         "and the rule passes everything. check-boundaries.test.sh carries " +
         "the case that would go quiet if someone tries it again.",
       severity: "error",
-      from: { path: "^ui/[^/]+/app/" },
+      from: { path: "^ui/console/app/" },
       to: { reachable: true, path: "^ui/[^/]+/dom/" },
     },
     {

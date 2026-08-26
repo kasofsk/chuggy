@@ -2,7 +2,9 @@
 
 A browser console over the public HTTP contract in `src/adapters/http/`. It is
 plain HTML, CSS and ES modules: no build step, no bundler, no client
-dependency, so what is in this directory is what a browser runs.
+dependency, so what is in this directory is what a browser runs. That is this
+console's shape rather than every console's — a sibling that builds is served
+its bundle instead.
 
 `ui/` holds one directory per console, and this is the operations one. What
 separates them is that each is a whole artifact — its own document root, its
@@ -22,9 +24,9 @@ own `config.json`, its own image — so nothing here is shared with a sibling.
 - `ui/console/config.example.json` — the shape of the runtime configuration
   below.
 
-Those splits are rules in `.dependency-cruiser.cjs` rather than conventions:
-`ui/` reaches nothing outside itself, a console's `app/` reaches nothing in its
-own `dom/`, and no console reaches another.
+Those splits are rules in `.dependency-cruiser.cjs` rather than conventions: no
+console reaches this tree's source, this console reaches no package either, its
+`app/` reaches nothing in its own `dom/`, and no console reaches another.
 
 ## Runtime configuration
 
