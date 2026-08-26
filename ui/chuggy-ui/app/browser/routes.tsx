@@ -23,6 +23,7 @@ import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
 import { usePanelQuery } from "./api.ts";
 import { Panel } from "./Panel.tsx";
 import { persistentStore } from "./ports.ts";
+import { ProjectTable } from "./ProjectTable.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
 
@@ -94,7 +95,7 @@ const partitionRoute = createRoute({
 const projectRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/",
-  component: () => <Heading title="project" />,
+  component: ProjectTable,
 });
 
 const inboxRoute = createRoute({
