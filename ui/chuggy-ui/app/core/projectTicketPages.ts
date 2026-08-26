@@ -116,10 +116,7 @@ export async function projectTicketRowsRead(
   previous: ProjectTicketRows | undefined,
   readPage: (cursor: string | undefined) => Promise<ApiResult<ProjectResponse>>,
 ): Promise<ApiResult<ProjectTicketRows>> {
-  const wanted = Math.min(
-    Math.max(previous?.pagesRead ?? 1, 1),
-    projectTicketPagesMax,
-  );
+  const wanted = Math.max(previous?.pagesRead ?? 1, 1);
   let rows = projectTicketRowsEmpty;
   for (let page = 0; page < wanted; page += 1) {
     const answered = await readPage(

@@ -1,25 +1,31 @@
 /**
  * What each ticket ran, kept by ticket so that one execution's frame moves one
- * row.
+ * row, and marked with whether that answer is provably the ticket's latest.
  *
  * A ticket may have had several executions and the table has one column for
- * them, so the index holds the latest one registered — what is running while it
- * runs, and its terminal outcome afterwards, which is also where a settled
- * ticket's configuration revision comes from. The value is a record keyed by
- * the ticket number as text, because that is what a cache entry can hold and
- * diff.
+ * them, so the index holds the latest one it saw registered — what is running
+ * while it runs, and its terminal outcome afterwards, which is also where a
+ * settled ticket's configuration revision comes from.
  *
- * THE READ IS TWO WALKS AND THE SECOND IS THE TRUNCATION'S REMEDY. The
- * executions route orders by execution identity ascending and offers no cursor
- * from the other end, so a walk that stops at its page budget has the earliest
- * executions and is missing the newest — exactly the running ones the table
- * exists to show. So a truncated walk over every status is followed by a walk
- * over the non-terminal ones, whose size is bounded by what a cluster can run
- * at once. What is then still missing is the middle of a long project's
- * history, and `truncated` is what says so rather than a row quietly drawing a
- * dash.
+ * THE READ IS TWO WALKS, AND NEITHER ARGUMENT DEPENDS ON AN ORDERING. The
+ * executions route pages an identity that `src/interpreter/schedulerIdentity.ts`
+ * declares opaque, so what a walk stopped at its page budget holds is an
+ * arbitrary subset and not an era: the newest may be inside it and the oldest
+ * outside. That is why a truncated walk over every status is followed by one
+ * over the non-terminal executions, whose size is bounded by what a cluster can
+ * run at once — a complete enumeration of that set answers what is running for
+ * every ticket in it, whatever the first walk happened to reach.
+ *
+ * SO AN ENTRY CARRIES WHETHER THE WALK THAT PUT IT THERE FINISHED. An entry
+ * from a walk that stopped early is a ticket's latest only by accident — the
+ * execution that superseded it may be one of the ones not reached — and a row
+ * drawing it as current would report a failed ticket as passed. Presence is not
+ * completeness, and `complete` is the difference; a live frame is complete,
+ * because the stream reports every change and the frame is the newest thing
+ * that has happened to that execution.
  */
 
+import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
 import { executionSummarySchema } from "../../../../src/contract/responses.ts";
 import type {
   ExecutionSummary,
@@ -27,15 +33,21 @@ import type {
 } from "../../../../src/contract/responses.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import type { ExecutionsPage } from "./apiRoutes.ts";
 
-/** Pages per walk. A project whose history outruns this is one whose settled
+/** Pages per walk. A project whose history outruns this is one whose unreached
  * rows say so, and the walk after it is what keeps the running rows exact. */
 export const projectExecutionPagesMax = 8;
 
 export type ProjectExecutionSelection = "All" | "NonTerminal";
 
+export interface ProjectExecutionKnown {
+  readonly execution: ExecutionSummary;
+  readonly complete: boolean;
+}
+
 export interface ProjectExecutionIndex {
-  readonly latest: Readonly<Record<string, ExecutionSummary>>;
+  readonly latest: Readonly<Record<string, ProjectExecutionKnown>>;
   readonly truncated: boolean;
 }
 
@@ -54,44 +66,74 @@ export const projectExecutionIndexUnread: ProjectExecutionIndex = {
 /** Later registration wins, and the execution's own identity breaks a tie so
  * that the answer does not depend on the order the wire gave. */
 function projectExecutionLater(
-  held: ExecutionSummary | undefined,
+  held: ProjectExecutionKnown | undefined,
   arriving: ExecutionSummary,
 ): boolean {
   if (held === undefined) return true;
-  if (held.execution === arriving.execution) return true;
-  if (held.registeredAt === arriving.registeredAt)
-    return held.execution < arriving.execution;
-  return held.registeredAt < arriving.registeredAt;
+  const mine = held.execution;
+  if (mine.execution === arriving.execution) return true;
+  if (mine.registeredAt === arriving.registeredAt)
+    return mine.execution < arriving.execution;
+  return mine.registeredAt < arriving.registeredAt;
 }
 
 function projectExecutionIndexWith(
-  index: ProjectExecutionIndex,
+  latest: Readonly<Record<string, ProjectExecutionKnown>>,
   executions: readonly ExecutionSummary[],
-): ProjectExecutionIndex {
-  const latest: Record<string, ExecutionSummary> = { ...index.latest };
+  complete: boolean,
+): Record<string, ProjectExecutionKnown> {
+  const gathered: Record<string, ProjectExecutionKnown> = { ...latest };
   for (const execution of executions) {
     const at = String(execution.ticket);
-    if (projectExecutionLater(latest[at], execution)) latest[at] = execution;
+    if (projectExecutionLater(gathered[at], execution))
+      gathered[at] = { execution, complete };
   }
-  return { ...index, latest };
+  return gathered;
 }
 
+/** Every entry a finished walk left, promoted at once: which of them is the
+ * ticket's latest is only knowable when the walk that gathered them ends. */
+function projectExecutionIndexCompleted(
+  latest: Readonly<Record<string, ProjectExecutionKnown>>,
+): Record<string, ProjectExecutionKnown> {
+  const promoted: Record<string, ProjectExecutionKnown> = {};
+  for (const [at, known] of Object.entries(latest))
+    promoted[at] = { ...known, complete: true };
+  return promoted;
+}
+
+function projectExecutionIndexMerged(
+  held: Readonly<Record<string, ProjectExecutionKnown>>,
+  arriving: Readonly<Record<string, ProjectExecutionKnown>>,
+): Record<string, ProjectExecutionKnown> {
+  const merged: Record<string, ProjectExecutionKnown> = { ...held };
+  for (const [at, known] of Object.entries(arriving))
+    if (projectExecutionLater(merged[at], known.execution)) merged[at] = known;
+  return merged;
+}
+
+/** The index a complete set of executions makes, which is what a caller holding
+ * one already has. */
 export function projectExecutionIndexOf(
   executions: readonly ExecutionSummary[],
 ): ProjectExecutionIndex {
-  return projectExecutionIndexWith(projectExecutionIndexEmpty, executions);
+  return {
+    latest: projectExecutionIndexWith({}, executions, true),
+    truncated: false,
+  };
 }
 
 export function projectExecutionIndexAt(
   index: ProjectExecutionIndex,
   ticket: number,
-): ExecutionSummary | undefined {
+): ProjectExecutionKnown | undefined {
   return index.latest[String(ticket)];
 }
 
 interface ProjectExecutionWalk {
-  readonly index: ProjectExecutionIndex;
+  readonly latest: Readonly<Record<string, ProjectExecutionKnown>>;
   readonly pagesRead: number;
+  readonly finished: boolean;
   readonly failure: ApiFailure | undefined;
 }
 
@@ -100,56 +142,77 @@ export type ProjectExecutionReadPage = (
   after: string | undefined,
 ) => Promise<ApiResult<ExecutionsResponse>>;
 
-/** One walk under the page budget; a refusal ends it with whatever it had. */
+/** The page one step of a walk asks for: the size it wants, the selection it is
+ * walking, and the cursor the page before it answered with. */
+export function projectExecutionPage(
+  selection: ProjectExecutionSelection,
+  after: string | undefined,
+): ExecutionsPage {
+  return {
+    limit: nativeHttpPageItemsMax,
+    ...(selection === "NonTerminal" ? { state: selection } : {}),
+    ...(after === undefined ? {} : { after }),
+  };
+}
+
+/**
+ * One walk under the page budget, gathering entries no page can yet call
+ * complete. A refusal ends it with what it had, and only a walk the wire ended
+ * is finished.
+ */
 async function projectExecutionWalk(
-  index: ProjectExecutionIndex,
   selection: ProjectExecutionSelection,
   readPage: ProjectExecutionReadPage,
 ): Promise<ProjectExecutionWalk> {
-  let gathered = index;
+  let latest: Readonly<Record<string, ProjectExecutionKnown>> = {};
   let after: string | undefined;
   for (let page = 0; page < projectExecutionPagesMax; page += 1) {
     const answered = await readPage(selection, after);
     if (answered.outcome !== "Ok")
-      return { index: gathered, pagesRead: page, failure: answered };
-    gathered = projectExecutionIndexWith(gathered, answered.value.executions);
+      return { latest, pagesRead: page, finished: false, failure: answered };
+    latest = projectExecutionIndexWith(
+      latest,
+      answered.value.executions,
+      false,
+    );
     after = answered.value.nextAfter;
     if (after === undefined)
-      return { index: gathered, pagesRead: page + 1, failure: undefined };
+      return {
+        latest: projectExecutionIndexCompleted(latest),
+        pagesRead: page + 1,
+        finished: true,
+        failure: undefined,
+      };
   }
   return {
-    index: { ...gathered, truncated: true },
+    latest,
     pagesRead: projectExecutionPagesMax,
+    finished: false,
     failure: undefined,
   };
 }
 
 /**
- * The index a screen reads, walked under its budget and marked when the wire
- * had more to give than the budget allowed.
- *
- * A read that gathered nothing answers with its refusal, so the panel draws the
- * failure rather than an index that looks empty.
+ * The index a screen reads, walked under its budget and marked where the wire
+ * had more to give than the budget allowed. A read that gathered nothing
+ * answers with its refusal, so the panel draws the failure rather than an index
+ * that looks empty.
  */
 export async function projectExecutionIndexRead(
   readPage: ProjectExecutionReadPage,
 ): Promise<ApiResult<ProjectExecutionIndex>> {
-  const all = await projectExecutionWalk(
-    projectExecutionIndexEmpty,
-    "All",
-    readPage,
-  );
-  if (all.failure !== undefined)
-    return all.pagesRead === 0
-      ? all.failure
-      : { outcome: "Ok", value: { ...all.index, truncated: true } };
-  if (!all.index.truncated) return { outcome: "Ok", value: all.index };
-  const running = await projectExecutionWalk(
-    all.index,
-    "NonTerminal",
-    readPage,
-  );
-  return { outcome: "Ok", value: { ...running.index, truncated: true } };
+  const all = await projectExecutionWalk("All", readPage);
+  if (all.failure !== undefined && all.pagesRead === 0) return all.failure;
+  if (all.finished)
+    return { outcome: "Ok", value: { latest: all.latest, truncated: false } };
+  const running = await projectExecutionWalk("NonTerminal", readPage);
+  return {
+    outcome: "Ok",
+    value: {
+      latest: projectExecutionIndexMerged(all.latest, running.latest),
+      truncated: true,
+    },
+  };
 }
 
 /**
@@ -167,5 +230,11 @@ export function projectExecutionIndexFold(
   const arriving = read.data;
   const at = String(arriving.ticket);
   if (!projectExecutionLater(previous.latest[at], arriving)) return previous;
-  return { ...previous, latest: { ...previous.latest, [at]: arriving } };
+  return {
+    ...previous,
+    latest: {
+      ...previous.latest,
+      [at]: { execution: arriving, complete: true },
+    },
+  };
 }

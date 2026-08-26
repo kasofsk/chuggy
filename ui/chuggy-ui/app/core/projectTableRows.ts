@@ -12,16 +12,19 @@
  * columns do not move.
  *
  * A row therefore says which of three things is true of its execution columns:
- * they are joined, the index is complete and this ticket has never run, or the
- * index was cut short and this row is one it did not reach. The third is drawn
- * as itself, because a dash meaning "not read" and a dash meaning "never ran"
- * are the same dash.
+ * they are joined, this ticket has never run, or what the index holds for it is
+ * not answerable. The third is drawn as itself, because a dash meaning "not
+ * read" and a dash meaning "never ran" are the same dash.
+ *
+ * AND JOINED IS DECIDED ON COMPLETENESS, NOT ON PRESENCE. An entry a truncated
+ * walk left behind may have been superseded by an execution that walk never
+ * reached, so drawing it as current would report a failed ticket as passed —
+ * the same conflation, one level down. Such a row is unreachable rather than
+ * joined, and its execution columns are not filled from an answer that may be
+ * stale.
  */
 
-import type {
-  ExecutionSummary,
-  TicketResponse,
-} from "../../../../src/contract/responses.ts";
+import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type {
   ExecutionOutcome,
   ExecutionStatus,
@@ -29,7 +32,10 @@ import type {
 } from "../../../../src/contract/rosters.ts";
 
 import { projectExecutionIndexAt } from "./projectExecutionIndex.ts";
-import type { ProjectExecutionIndex } from "./projectExecutionIndex.ts";
+import type {
+  ProjectExecutionIndex,
+  ProjectExecutionKnown,
+} from "./projectExecutionIndex.ts";
 import { ticketBadgeLabel, ticketSectionOf } from "./ticketSections.ts";
 import type { TicketSection } from "./ticketSections.ts";
 
@@ -58,7 +64,7 @@ export interface ProjectTableRow {
 /** What the task was placed on, in the one phrase the requirement's mode makes
  * available: a container is its image and a native task is its driver. */
 export function projectTableRunsOn(
-  requirement: ExecutionSummary["requirement"],
+  requirement: ProjectExecutionKnown["execution"]["requirement"],
 ): string {
   switch (requirement.mode) {
     case "Container":
@@ -68,24 +74,31 @@ export function projectTableRunsOn(
   }
 }
 
+/** An entry no walk finished is not this ticket's latest, so the row is one the
+ * index did not answer rather than one it did. */
+export function projectTableExecutionRead(
+  known: ProjectExecutionKnown | undefined,
+  indexTruncated: boolean,
+): ProjectTableExecutionRead {
+  if (known !== undefined) return known.complete ? "Joined" : "IndexTruncated";
+  return indexTruncated ? "IndexTruncated" : "NoneRegistered";
+}
+
 /** The ticket's own last activity is its sequence; an instant is the execution's,
  * because that is where the wire states one. */
 export function projectTableRow(
   ticket: TicketResponse,
-  execution: ExecutionSummary | undefined,
+  known: ProjectExecutionKnown | undefined,
   indexTruncated: boolean,
 ): ProjectTableRow {
+  const read = projectTableExecutionRead(known, indexTruncated);
+  const execution = read === "Joined" ? known?.execution : undefined;
   return {
     ticket: ticket.ticket,
     phase: ticket.phase,
     section: ticketSectionOf(ticket.phase),
     badge: ticketBadgeLabel(ticket.phase, ticket.reason),
-    executionRead:
-      execution !== undefined
-        ? "Joined"
-        : indexTruncated
-          ? "IndexTruncated"
-          : "NoneRegistered",
+    executionRead: read,
     configurationRevision: execution?.configurationRevision,
     executionStatus: execution?.status,
     executionOutcome: execution?.outcome,

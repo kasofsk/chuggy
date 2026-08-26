@@ -18,23 +18,22 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import { apiExecutions, apiProject } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
   projectExecutionIndexFold,
   projectExecutionIndexRead,
   projectExecutionIndexUnread,
+  projectExecutionPage,
 } from "../core/projectExecutionIndex.ts";
-import type {
-  ProjectExecutionIndex,
-  ProjectExecutionSelection,
-} from "../core/projectExecutionIndex.ts";
+import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
 import { projectListKey } from "../core/projectQueryKeys.ts";
 import {
   ticketFilterAll,
@@ -72,6 +71,24 @@ interface TicketRowsHeld {
   readonly reading: boolean;
 }
 
+/**
+ * The read the ticket query runs, which takes how many pages to gather from the
+ * entry it is about to replace. Exported because that is the whole of what
+ * makes a refetch keep a reader's pages, and a suite can hand it a cache.
+ */
+export function ticketRowsRead(
+  client: QueryClient,
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  filter: TicketFilter,
+): Promise<ApiResult<ProjectTicketRows>> {
+  const key = ticketFilterKey(partition, filter);
+  return projectTicketRowsRead(
+    client.getQueryData<ProjectTicketRows>(key),
+    (cursor) => apiProject(ports, partition, ticketFilterPage(filter, cursor)),
+  );
+}
+
 /** The rows for one filter, the fold that keeps them live, and the read that
  * appends the next page to them. */
 function useTicketRows(
@@ -83,10 +100,7 @@ function useTicketRows(
   const ports = useApiPorts();
   const [reading, setReading] = useState(false);
   const state = usePanelQuery<ProjectTicketRows>(key, (at) =>
-    projectTicketRowsRead(
-      client.getQueryData<ProjectTicketRows>(key),
-      (cursor) => apiProject(at, partition, ticketFilterPage(filter, cursor)),
-    ),
+    ticketRowsRead(client, at, partition, filter),
   );
   useProjectListFold("Ticket", key, (previous, change) =>
     projectTicketRowsFold(
@@ -128,13 +142,8 @@ function useExecutionIndex(
 ): PanelState<ProjectExecutionIndex> {
   const key = projectListKey(partition, "Execution", "latest");
   const state = usePanelQuery<ProjectExecutionIndex>(key, (at) =>
-    projectExecutionIndexRead(
-      (selection: ProjectExecutionSelection, after: string | undefined) =>
-        apiExecutions(at, partition, {
-          limit: nativeHttpPageItemsMax,
-          ...(selection === "NonTerminal" ? { state: selection } : {}),
-          ...(after === undefined ? {} : { after }),
-        }),
+    projectExecutionIndexRead((selection, after) =>
+      apiExecutions(at, partition, projectExecutionPage(selection, after)),
     ),
   );
   useProjectListFold("Execution", key, (previous, change) =>
