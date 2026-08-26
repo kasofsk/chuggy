@@ -68,6 +68,10 @@ import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { recordingMetrics, throwingMetrics } from "./schedulerSinks.ts";
+import {
+  asDraftBrief,
+  type DraftBrief,
+} from "../../src/interpreter/ticketBrief.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -211,6 +215,7 @@ function serviceWith(
   placed: AttemptPlacementOutcome,
   read: ConfigurationRead = { read: "Configuration", configuration },
   facts: RuntimeFactsRead = { read: "Facts", facts: noFacts },
+  brief?: DraftBrief,
 ): ExecutionSchedulerService {
   const policy: ExecutionPolicy = {
     profileFor: () => Promise.resolve(resolved),
@@ -231,6 +236,7 @@ function serviceWith(
     configurations: { configuration: () => Promise.resolve(read) },
     runtimeFacts: { facts: () => Promise.resolve(facts) },
     priorWorkReports: { reports: () => Promise.resolve({ reports: [] }) },
+    ticketBriefs: { brief: () => Promise.resolve(brief) },
     practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
     ticketService: ticketServiceDefaults,
@@ -781,8 +787,9 @@ function placingService(
   into: AttemptPlacement[],
   read: ConfigurationRead = { read: "Configuration", configuration },
   facts: RuntimeFactsRead = { read: "Facts", facts: noFacts },
+  brief?: DraftBrief,
 ): ExecutionSchedulerService {
-  const service = serviceWith(calls, runnable, placedOk, read, facts);
+  const service = serviceWith(calls, runnable, placedOk, read, facts, brief);
   return {
     ...service,
     placement: {
@@ -1041,4 +1048,50 @@ test("a practice no catalog blesses blocks the ticket rather than briefing witho
     "ended:Withdrawn:PolicyDenied",
     "blocked:TicketConfigIncompatible",
   ]);
+});
+
+const ticketBrief = asDraftBrief({
+  intent: "Fix the importer.",
+  links: ["https://example.test/issues/340"],
+  branch: "refs/heads/rt/ticket-brief",
+});
+
+test("a launched worker is handed the brief its ticket was created with", async () => {
+  const placements: AttemptPlacement[] = [];
+  await executionSchedulerLaunch(
+    placingService(
+      [],
+      placements,
+      { read: "Configuration", configuration },
+      { read: "Facts", facts: noFacts },
+      ticketBrief,
+    ),
+    epoch,
+  );
+  const placement = placements[0];
+  assert.ok(placement !== undefined);
+  assert.deepEqual(
+    placement.invocation.briefing.sections
+      .filter(
+        (section) =>
+          section.section === "TicketIntent" ||
+          section.section === "TicketLinks",
+      )
+      .map((section) => section.lines),
+    [["Fix the importer."], ["- https://example.test/issues/340"]],
+  );
+});
+
+test("a ticket with no brief is briefed without the sections one would fill", async () => {
+  const placements: AttemptPlacement[] = [];
+  await executionSchedulerLaunch(placingService([], placements), epoch);
+  const placement = placements[0];
+  assert.ok(placement !== undefined);
+  assert.equal(
+    placement.invocation.briefing.sections.some(
+      (section) =>
+        section.section === "TicketIntent" || section.section === "TicketLinks",
+    ),
+    false,
+  );
 });

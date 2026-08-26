@@ -34,7 +34,11 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { briefLinksMax } from "../../src/contract/brief.ts";
+import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
+import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import {
+  postgresHarnessBrief,
   postgresHarnessHeld,
   postgresHarnessConfiguration,
   postgresHarnessReleaseSubmission,
@@ -154,6 +158,7 @@ async function draftFixture(canonical = postgresHarnessConfiguration) {
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
   });
   if (created.created !== "Created")
     throw new Error("draft fixture was not created");
@@ -188,6 +193,7 @@ test("draft creation rejects a stale initialization fence", async () => {
       configurationDigest: initialized.configuration.digest,
       expectedProjectSequence: initialized.projectSequence,
       authoring: plainAuthoring,
+      brief: postgresHarnessBrief,
     }),
     { created: "Stale" },
   );
@@ -594,6 +600,7 @@ test("draft edits are versioned and deletion leaves an unreusable identity", asy
       expectedVersion: 0,
       configurationRevision: revision,
       authoring: plainAuthoring,
+      brief: postgresHarnessBrief,
     }),
     { revised: "Stale", currentVersion: 1 },
   );
@@ -604,6 +611,7 @@ test("draft edits are versioned and deletion leaves an unreusable identity", asy
     expectedVersion: 1,
     configurationRevision: revision,
     authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
   });
   assert.equal(revised.revised, "Revised");
   const deleted = await store.deleteDraft({
@@ -625,6 +633,7 @@ test("draft edits are versioned and deletion leaves an unreusable identity", asy
       expectedVersion: 3,
       configurationRevision: revision,
       authoring: plainAuthoring,
+      brief: postgresHarnessBrief,
     }),
     { revised: "NotDraft", state: "Deleted" },
   );
@@ -638,6 +647,7 @@ test("draft edits are versioned and deletion leaves an unreusable identity", asy
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
   });
   assert.equal(
     next.created === "Created" ? next.draft.ticket : 0,
@@ -693,6 +703,7 @@ test("a domain release advances the shared ticket identity allocator", async () 
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
   });
   assert.equal(created.created === "Created" ? created.draft.ticket : 0, 2);
 });
@@ -805,6 +816,7 @@ test("an edit after acceptance durably refuses release without an entry", async 
     expectedVersion: 1,
     configurationRevision: fixture.revision,
     authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
   });
   const lease = await postgresHarnessHeld(
     harness.store,
@@ -853,4 +865,127 @@ test("release acceptance rejects a revision that was never retained", async () =
     "InvalidCommand",
   );
   assert.equal(await harness.discovery.next(fixture.partition), undefined);
+});
+
+test("the brief is written with the draft, replaced with it, and read back beside it", async () => {
+  const { partition, store, revision, draft } = await draftFixture();
+  assert.deepEqual(draft.brief, postgresHarnessBrief);
+  const later = asDraftBrief({
+    intent: "Serve it on the ticket too.\nAnd on the draft.",
+    links: ["https://example.test/one", "https://example.test/two"],
+  });
+  const revised = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: later,
+  });
+  assert.deepEqual(
+    revised.revised === "Revised" ? revised.draft.brief : undefined,
+    later,
+  );
+  assert.deepEqual((await store.draft(partition, draft.ticket))?.brief, later);
+  assert.deepEqual(
+    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    later,
+  );
+});
+
+test("a draft authored before a brief existed reads back without one", async () => {
+  const { partition, store, draft } = await draftFixture();
+  await harness.query(
+    "DELETE FROM draft_brief_link WHERE tenant=$1 AND project=$2 AND ticket=$3",
+    [partition.tenant, partition.project, draft.ticket],
+  );
+  await harness.query(
+    "DELETE FROM draft_brief WHERE tenant=$1 AND project=$2 AND ticket=$3",
+    [partition.tenant, partition.project, draft.ticket],
+  );
+  assert.equal((await store.draft(partition, draft.ticket))?.brief, undefined);
+  assert.equal(
+    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    undefined,
+  );
+});
+
+test("the server refuses a brief that reached it around the interpreter's rules", async () => {
+  const { partition, draft } = await draftFixture();
+  for (const [column, value] of [
+    ["intent", ""],
+    ["intent", "Fix it.\u0007"],
+    ["branch", "rt/ticket-brief"],
+  ] as const)
+    await assert.rejects(
+      harness.query(
+        `UPDATE draft_brief SET ${column}=$4 WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+        [partition.tenant, partition.project, draft.ticket, value],
+      ),
+      `the brief refuses ${column}=${JSON.stringify(value)}`,
+    );
+  await assert.rejects(
+    harness.query(
+      `INSERT INTO draft_brief_link (tenant,project,ticket,ordinal,url)
+       VALUES ($1,$2,$3,2,'http://example.test/one')`,
+      [partition.tenant, partition.project, draft.ticket],
+    ),
+  );
+  await assert.rejects(
+    harness.query(
+      `INSERT INTO draft_brief_link (tenant,project,ticket,ordinal,url)
+       VALUES ($1,$2,$3,$4,'https://example.test/one')`,
+      [partition.tenant, partition.project, draft.ticket, briefLinksMax + 1],
+    ),
+  );
+});
+
+/** Releases a fixture's draft through the writer, which is what freezes its brief. */
+async function releaseFixtureDraft(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  label: string,
+): Promise<void> {
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  const writer = postgresHarnessWriter(harness);
+  const decided = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(
+      writer,
+      await postgresHarnessHeld(harness.store, fixture.partition, label),
+    ),
+    input,
+  );
+  assert.equal(decided.decided.decided, "Committed");
+}
+
+test("a released ticket's brief no longer moves, which is what lets a retry read it", async () => {
+  const fixture = await draftFixture();
+  await releaseFixtureDraft(fixture, "brief-freeze");
+  const reader = postgresTicketBrief(pool);
+  const released = await reader.brief(fixture.partition, fixture.draft.ticket);
+  assert.deepEqual(released, postgresHarnessBrief);
+  assert.deepEqual(
+    await fixture.store.reviseDraft({
+      partition: fixture.partition,
+      authority,
+      ticket: fixture.draft.ticket,
+      expectedVersion: fixture.draft.authoringVersion,
+      configurationRevision: fixture.revision,
+      authoring: plainAuthoring,
+      brief: asDraftBrief({
+        intent: "FORGED intent under a running execution.",
+        links: ["https://example.test/forged"],
+        branch: "refs/heads/forged",
+      }),
+    }),
+    { revised: "NotDraft", state: "Released" },
+  );
+  assert.deepEqual(
+    await reader.brief(fixture.partition, fixture.draft.ticket),
+    released,
+  );
 });

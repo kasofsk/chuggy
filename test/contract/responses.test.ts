@@ -62,6 +62,8 @@ import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import {
   authoring,
   authoringWireBody,
+  brief,
+  briefedDraft,
   configuration,
   digest,
   draft as draftResource,
@@ -404,33 +406,37 @@ test("a configuration read and its page parse with readiness and provenance", ()
   assert.equal(page.configurations[0]?.readiness, "Ready");
 });
 
+/** The initialization body the server assembles, which two cases read differently. */
+function initializationBody(): Record<string, unknown> {
+  return draftInitializationResponse({
+    result: "Authorized",
+    value: {
+      initialized: "Initialized",
+      value: {
+        configuration,
+        projectSequence: 9,
+        defaults: authoring,
+        choices: {
+          stages: [{ fanout: 1, combinator: "UnanimousPass" }],
+          programStagesMax: 4,
+          workFanouts: [1, 2],
+          reworkPolicies: [authoring.reworkPolicy],
+          finalizationPricings: [authoring.finalizationPricing],
+          resumePricings: [authoring.resumePricing],
+          finalizers: [authoring.finalizer],
+        },
+        dependencyCandidates: [asTicketId(1), asTicketId(2)],
+        dependencyCandidatesTruncated: false,
+      },
+    },
+  }).body as Record<string, unknown>;
+}
+
 test("a draft and its initialization parse with the authoring the wire carries", () => {
   const draft = draftResponseSchema.parse(draftResponse(draftResource).body);
   assert.deepEqual(draft.authoring.dependencies, [1]);
-  const initialization = draftInitializationResponseSchema.parse(
-    draftInitializationResponse({
-      result: "Authorized",
-      value: {
-        initialized: "Initialized",
-        value: {
-          configuration,
-          projectSequence: 9,
-          defaults: authoring,
-          choices: {
-            stages: [{ fanout: 1, combinator: "UnanimousPass" }],
-            programStagesMax: 4,
-            workFanouts: [1, 2],
-            reworkPolicies: [authoring.reworkPolicy],
-            finalizationPricings: [authoring.finalizationPricing],
-            resumePricings: [authoring.resumePricing],
-            finalizers: [authoring.finalizer],
-          },
-          dependencyCandidates: [asTicketId(1), asTicketId(2)],
-          dependencyCandidatesTruncated: false,
-        },
-      },
-    }).body,
-  );
+  const initialization =
+    draftInitializationResponseSchema.parse(initializationBody());
   assert.equal(initialization.fence.projectSequence, 9);
   assert.deepEqual(initialization.choices.workFanouts, [1, 2]);
 });
@@ -512,5 +518,43 @@ test("a body the contract does not name is a parse failure, not a default", () =
       accountMaximum: 8,
       accountActive: 0,
     }),
+  );
+});
+
+test("a briefed draft and ticket read carry the brief, and an older one omits it", () => {
+  const briefed = draftResponseSchema.parse(draftResponse(briefedDraft).body);
+  assert.deepEqual(briefed.brief, {
+    intent: "Serve the brief on the ticket resource.",
+    links: ["https://example.test/issues/340"],
+    branch: "refs/heads/rt/ticket-brief",
+  });
+  assert.equal(
+    draftResponseSchema.parse(draftResponse(draftResource).body).brief,
+    undefined,
+  );
+  const ticket = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Working",
+      sequence: 9,
+      brief,
+    }).body,
+  );
+  assert.deepEqual(ticket.brief?.links, ["https://example.test/issues/340"]);
+  assert.equal(
+    ticketResponseSchema.parse(
+      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
+        .body,
+    ).brief,
+    undefined,
+  );
+});
+
+test("a draft initialization offers no default brief, an intent having no default", () => {
+  const body = initializationBody();
+  assert.equal(Object.hasOwn(body, "brief"), false);
+  assert.equal(
+    Object.hasOwn(body["defaults"] as Record<string, unknown>, "brief"),
+    false,
   );
 });

@@ -47,6 +47,7 @@ import {
   releaseConfigurationReadiness,
 } from "./authoring.ts";
 import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
+import type { DraftBrief } from "./ticketBrief.ts";
 import {
   dispatchNeedsExecutionHeadroom,
   type BacklogScope,
@@ -178,12 +179,16 @@ export type OperationResource =
   | (OperationResourceBase & { readonly state: "Answered" })
   | (OperationResourceBase & { readonly state: "Cancelled" });
 
-/** The reason is present exactly when the ticket is parked on the desk. */
+/**
+ * The reason is present exactly when the ticket is parked on the desk, and the
+ * brief exactly when the ticket was authored with one.
+ */
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly phase: Phase;
   readonly sequence: number;
   readonly reason?: EscalationReason;
+  readonly brief?: DraftBrief;
 }
 
 /**
@@ -460,6 +465,7 @@ export interface NativeWeb {
       readonly configurationDigest: string;
       readonly expectedProjectSequence: number;
       readonly authoring: ReleaseAuthoring;
+      readonly brief: DraftBrief;
     },
   ): Promise<AuthorizedResult<DraftCreated>>;
   initializeDraft(
@@ -475,6 +481,7 @@ export interface NativeWeb {
       readonly expectedVersion: number;
       readonly configurationRevision: ConfigurationRevisionId;
       readonly authoring: ReleaseAuthoring;
+      readonly brief: DraftBrief;
     },
   ): Promise<AuthorizedResult<DraftRevised>>;
   deleteDraft(

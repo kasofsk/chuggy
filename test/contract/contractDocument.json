@@ -389,13 +389,40 @@
             "finalizer"
           ],
           "additionalProperties": false
+        },
+        "brief": {
+          "type": "object",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            },
+            "links": {
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^https:\\/\\/.*"
+              }
+            },
+            "branch": {
+              "type": "string",
+              "maxLength": 256,
+              "pattern": "^refs\\/heads\\/.*"
+            }
+          },
+          "required": ["intent", "links"],
+          "additionalProperties": false
         }
       },
       "required": [
         "configurationRevision",
         "configurationDigest",
         "expectedProjectSequence",
-        "authoring"
+        "authoring",
+        "brief"
       ],
       "additionalProperties": false
     },
@@ -508,9 +535,40 @@
             "finalizer"
           ],
           "additionalProperties": false
+        },
+        "brief": {
+          "type": "object",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            },
+            "links": {
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^https:\\/\\/.*"
+              }
+            },
+            "branch": {
+              "type": "string",
+              "maxLength": 256,
+              "pattern": "^refs\\/heads\\/.*"
+            }
+          },
+          "required": ["intent", "links"],
+          "additionalProperties": false
         }
       },
-      "required": ["expectedVersion", "configurationRevision", "authoring"],
+      "required": [
+        "expectedVersion",
+        "configurationRevision",
+        "authoring",
+        "brief"
+      ],
       "additionalProperties": false
     }
   }

@@ -33,6 +33,7 @@ import {
   type HandoffConfigurationFault,
 } from "./handoffConfiguration.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
+import type { DraftBrief } from "./ticketBrief.ts";
 import {
   authoredTaskConfigurationReadiness,
   type AuthoredTaskConfiguration,
@@ -182,6 +183,7 @@ export function parseDraftAuthoring(value: string): ReleaseAuthoring {
 
 export type DraftState = "Draft" | "Released" | "Deleted";
 
+/** The brief is absent exactly for a draft authored before a draft carried one. */
 export interface DraftResource {
   readonly partition: Partition;
   readonly ticket: TicketId;
@@ -189,6 +191,7 @@ export interface DraftResource {
   readonly state: DraftState;
   readonly configurationRevision: ConfigurationRevisionId;
   readonly authoring: ReleaseAuthoring;
+  readonly brief?: DraftBrief;
 }
 
 export interface ConfigurationRevisionResource {
@@ -426,6 +429,7 @@ export interface AuthoringStore {
     readonly configurationDigest: string;
     readonly expectedProjectSequence: number;
     readonly authoring: ReleaseAuthoring;
+    readonly brief: DraftBrief;
   }): Promise<DraftCreated>;
   reviseDraft(input: {
     readonly partition: Partition;
@@ -434,6 +438,7 @@ export interface AuthoringStore {
     readonly expectedVersion: number;
     readonly configurationRevision: ConfigurationRevisionId;
     readonly authoring: ReleaseAuthoring;
+    readonly brief: DraftBrief;
   }): Promise<DraftRevised>;
   deleteDraft(input: {
     readonly partition: Partition;

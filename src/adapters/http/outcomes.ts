@@ -37,6 +37,7 @@ import type {
 } from "../../interpreter/operationInbox.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
+import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
 import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
 import {
@@ -414,6 +415,15 @@ function resourcePath(
   ].join("/");
 }
 
+/** The brief as the wire reads it, absent for a draft authored without one. */
+function briefBody(brief: DraftBrief): unknown {
+  return {
+    intent: brief.intent,
+    links: [...brief.links],
+    ...(brief.branch === undefined ? {} : { branch: brief.branch }),
+  };
+}
+
 function draftBody(draft: DraftResource): unknown {
   return {
     partition: draft.partition,
@@ -430,6 +440,7 @@ function draftBody(draft: DraftResource): unknown {
       resumePricing: draft.authoring.resumePricing,
       finalizer: draft.authoring.finalizer,
     },
+    ...(draft.brief === undefined ? {} : { brief: briefBody(draft.brief) }),
   };
 }
 

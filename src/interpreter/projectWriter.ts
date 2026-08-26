@@ -59,6 +59,7 @@ import {
   type DispatchContractPin,
 } from "./dispatchView.ts";
 import { dispatchViewSchemaVersion } from "../contract/http.ts";
+import type { TicketBriefPort } from "./ticketBrief.ts";
 import {
   checkedTicketServiceConfig,
   observe,
@@ -74,6 +75,7 @@ export interface ProjectTicketWriter {
   readonly store: ProjectStore;
   readonly decisions: ProjectDecision;
   readonly executionSources: ExecutionSourceObservationPort;
+  readonly ticketBriefs: TicketBriefPort;
 }
 
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
@@ -400,11 +402,13 @@ async function projectWriterExecutionSource(
     item,
     ticket,
   );
+  const brief = await writer.ticketBriefs.brief(memory.lease.partition, ticket);
   const observed = await writer.executionSources.observe({
     partition: memory.lease.partition,
     ticket,
     kind: effect === "SpawnWorkTasks" ? "Work" : "Evaluation",
     ...(configurationCanonical === undefined ? {} : { configurationCanonical }),
+    ...(brief?.branch === undefined ? {} : { ref: brief.branch }),
   });
   if (observed.observed !== "Source")
     throw new Error(`project writer: execution source is ${observed.evidence}`);

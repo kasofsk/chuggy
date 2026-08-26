@@ -15,6 +15,7 @@ import {
   nativeHttpVersion,
 } from "../../contract/http.ts";
 import type { ReleaseAuthoringBody } from "../../contract/authoring.ts";
+import type { TicketBriefBody } from "../../contract/brief.ts";
 import {
   configurationCreationSchema,
   draftCreationSchema,
@@ -54,6 +55,10 @@ import {
   asGitObjectId,
   type GitObjectId,
 } from "../../interpreter/finalizer.ts";
+import {
+  asDraftBrief,
+  type DraftBrief,
+} from "../../interpreter/ticketBrief.ts";
 
 /**
  * What a cursor carries once decoded. The reader is always the server that
@@ -106,12 +111,14 @@ export interface ParsedDraftCreation {
   readonly configurationDigest: string;
   readonly expectedProjectSequence: number;
   readonly authoring: ReleaseAuthoring;
+  readonly brief: DraftBrief;
 }
 
 export interface ParsedDraftRevision {
   readonly expectedVersion: number;
   readonly configurationRevision: ConfigurationRevisionId;
   readonly authoring: ReleaseAuthoring;
+  readonly brief: DraftBrief;
 }
 
 function releaseAuthoring(value: ReleaseAuthoringBody): ReleaseAuthoring {
@@ -124,6 +131,15 @@ function releaseAuthoring(value: ReleaseAuthoringBody): ReleaseAuthoring {
     resumePricing: value.resumePricing,
     finalizer: value.finalizer,
   };
+}
+
+/** The brief beside it, branded through the rules the interpreter states once. */
+function releaseBrief(value: TicketBriefBody): DraftBrief {
+  return asDraftBrief({
+    intent: value.intent,
+    links: value.links,
+    ...(value.branch === undefined ? {} : { branch: value.branch }),
+  });
 }
 
 export function parseConfigurationCreation(
@@ -148,6 +164,7 @@ export function parseDraftCreation(body: unknown): ParsedDraftCreation {
     configurationDigest: value.configurationDigest,
     expectedProjectSequence: value.expectedProjectSequence,
     authoring: releaseAuthoring(value.authoring),
+    brief: releaseBrief(value.brief),
   };
 }
 
@@ -159,6 +176,7 @@ export function parseDraftRevision(body: unknown): ParsedDraftRevision {
       value.configurationRevision,
     ),
     authoring: releaseAuthoring(value.authoring),
+    brief: releaseBrief(value.brief),
   };
 }
 

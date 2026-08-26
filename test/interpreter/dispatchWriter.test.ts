@@ -30,6 +30,10 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import type { ExecutionSourceObservationPort } from "../../src/interpreter/executionSource.ts";
 import {
+  asDraftBrief,
+  type TicketBriefPort,
+} from "../../src/interpreter/ticketBrief.ts";
+import {
   deriveDispatchCandidates,
   dispatchViewDigest,
 } from "../../src/interpreter/dispatchView.ts";
@@ -90,6 +94,7 @@ async function planned(
   memory: ProjectMemory,
   command: TicketCommand,
   executionSources?: ExecutionSourceObservationPort,
+  ticketBriefs?: TicketBriefPort,
 ): Promise<Decision> {
   let captured: Decision | undefined;
   const decisions: ProjectDecision = {
@@ -103,6 +108,9 @@ async function planned(
       config: refinementInstance,
       store: {} as ProjectStore,
       decisions,
+      ticketBriefs: ticketBriefs ?? {
+        brief: () => Promise.resolve(undefined),
+      },
       executionSources: executionSources ?? {
         observe: () =>
           Promise.resolve({
@@ -122,33 +130,42 @@ async function planned(
   return captured;
 }
 
+/** A port that records what it was asked to observe and answers at the ref it was given. */
+function recordingSources(
+  into: Parameters<ExecutionSourceObservationPort["observe"]>[0][],
+): ExecutionSourceObservationPort {
+  return {
+    observe: (request) => {
+      into.push(request);
+      return Promise.resolve({
+        observed: "Source",
+        source: {
+          repository: asRepositoryId("repository"),
+          target: {
+            ref: asGitRefName(request.ref ?? "refs/heads/main"),
+            commit: asGitObjectId("a".repeat(40)),
+          },
+          manifests: [],
+        },
+      });
+    },
+  };
+}
+
+const manualDispatch: TicketCommand = {
+  version: 1,
+  command: "ManualDispatch",
+  ticket: id(1),
+  expectedTicketVersion: 1,
+};
+
 test("a source observation is gathered before a spawn bundle is materialized", async () => {
   const observed: Parameters<ExecutionSourceObservationPort["observe"]>[0][] =
     [];
   const decision = await planned(
     releasedMemory(),
-    {
-      version: 1,
-      command: "ManualDispatch",
-      ticket: id(1),
-      expectedTicketVersion: 1,
-    },
-    {
-      observe: (request) => {
-        observed.push(request);
-        return Promise.resolve({
-          observed: "Source",
-          source: {
-            repository: asRepositoryId("repository"),
-            target: {
-              ref: asGitRefName("refs/heads/main"),
-              commit: asGitObjectId("a".repeat(40)),
-            },
-            manifests: [],
-          },
-        });
-      },
-    },
+    manualDispatch,
+    recordingSources(observed),
   );
   assert.deepEqual(observed, [
     {
@@ -242,4 +259,34 @@ test("proposal digest and recovery epoch mismatches are SelectionChanged", async
       code: "SelectionChanged",
     });
   }
+});
+
+test("the branch a ticket was briefed with names the ref its work is observed at", async () => {
+  const observed: Parameters<ExecutionSourceObservationPort["observe"]>[0][] =
+    [];
+  const decision = await planned(
+    releasedMemory(),
+    manualDispatch,
+    recordingSources(observed),
+    {
+      brief: () =>
+        Promise.resolve(
+          asDraftBrief({
+            intent: "Fix the importer.",
+            links: [],
+            branch: "refs/heads/rt/ticket-brief",
+          }),
+        ),
+    },
+  );
+  assert.deepEqual(
+    observed.map((request) => request.ref),
+    ["refs/heads/rt/ticket-brief"],
+  );
+  assert.equal(
+    decision.outcome.outcome === "Journaled"
+      ? decision.outcome.materialization.execution[0]?.bundle?.source?.targetRef
+      : undefined,
+    "refs/heads/rt/ticket-brief",
+  );
 });

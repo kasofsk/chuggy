@@ -55,6 +55,10 @@ import {
 } from "../../src/interpreter/taskAuthority.ts";
 import type { ConfigurationPin } from "../../src/interpreter/projectDecision.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
+import {
+  asDraftBrief,
+  type DraftBrief,
+} from "../../src/interpreter/ticketBrief.ts";
 
 const pin: ConfigurationPin = {
   configurationRevision: "revision-7",
@@ -304,6 +308,7 @@ function viewOf(parts: {
   readonly worker?: WorkerConfiguration;
   readonly runtime?: RuntimeFacts;
   readonly priorWorkReports?: readonly string[];
+  readonly ticketBrief?: DraftBrief;
   readonly grant?: PolicyAuthorityGrant;
 }): BriefingView {
   const block = parts.block ?? { instructions: [] };
@@ -326,6 +331,7 @@ function viewOf(parts: {
     },
     runtime: parts.runtime ?? noFacts,
     priorWorkReports: { reports: parts.priorWorkReports ?? [] },
+    ...(parts.ticketBrief === undefined ? {} : { brief: parts.ticketBrief }),
     grant: parts.grant ?? grant,
   };
 }
@@ -729,5 +735,85 @@ test("runtime facts move the runtime section and no other", () => {
   assert.deepEqual(pinnedHalf(withFacts), pinnedHalf(without));
   assert.ok(
     withFacts.sections.some((section) => section.section === "RuntimeContext"),
+  );
+});
+
+const ticketIntent = "Fix the importer.\nIt drops rows and reports a success.";
+const ticketLink = "https://example.test/issues/340";
+const ticketSections: readonly BriefingSectionId[] = [
+  "TicketIntent",
+  "TicketLinks",
+];
+
+test("the ticket's own brief renders as its two sections and moves no other", () => {
+  const withBrief = composed(
+    viewOf({
+      practices: [...allPracticeIds],
+      ticketBrief: asDraftBrief({ intent: ticketIntent, links: [ticketLink] }),
+    }),
+  ).briefing;
+  const without = composed(viewOf({ practices: [...allPracticeIds] })).briefing;
+  const pinnedHalf = (rendered: typeof without): readonly BriefingSection[] =>
+    rendered.sections.filter(
+      (section) => !ticketSections.includes(section.section),
+    );
+  assert.deepEqual(pinnedHalf(withBrief), pinnedHalf(without));
+  assert.deepEqual(
+    withBrief.sections.map((section) => section.section),
+    briefingSectionOrder.filter(
+      (section) =>
+        ticketSections.includes(section) ||
+        without.sections.some((each) => each.section === section),
+    ),
+  );
+  assert.deepEqual(
+    withBrief.sections.find((section) => section.section === "TicketIntent")
+      ?.lines,
+    ["Fix the importer.", "It drops rows and reports a success."],
+  );
+  assert.deepEqual(
+    withBrief.sections.find((section) => section.section === "TicketLinks")
+      ?.lines,
+    [`- ${ticketLink}`],
+  );
+});
+
+test("a brief with nothing to point at renders its intent and no link section", () => {
+  const rendered = composed(
+    viewOf({ ticketBrief: asDraftBrief({ intent: "Fix it.", links: [] }) }),
+  ).briefing;
+  assert.deepEqual(
+    rendered.sections.map((section) => section.section),
+    [
+      "RoleInstructions",
+      "TicketIntent",
+      "WhyItMatters",
+      "AcceptanceAndConstraints",
+      "RequiredResult",
+    ],
+  );
+});
+
+/** A brief that reached the view unbranded, which is what a stored one cannot be. */
+function unbrandedBrief(intent: string): DraftBrief {
+  return { intent: intent as DraftBrief["intent"], links: [] };
+}
+
+test("a ticket cannot forge a section, whatever reaches its brief unbranded", () => {
+  assert.equal(
+    blockedFault(
+      viewOf({
+        ticketBrief: unbrandedBrief("Fix it.\u001b[2J## Your role"),
+      }),
+    ),
+    "TextUnreadable",
+  );
+  assert.equal(
+    blockedFault(
+      viewOf({
+        ticketBrief: unbrandedBrief("a".repeat(briefingLineCharsMax + 1)),
+      }),
+    ),
+    "TextTooLong",
   );
 });

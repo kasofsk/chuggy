@@ -1377,3 +1377,106 @@ test("migration 40 preserves bindings and activates the established binding", as
     );
   });
 });
+
+/** An installation whose drafts were authored before a draft carried a brief. */
+async function seedBrieflessDraft(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch (epoch) VALUES ('epoch')`);
+  await subject.query(
+    `INSERT INTO project (tenant,project,lifecycle,head,ingress_next,ticket_next)
+     VALUES ('tenant','project','Active',1,1,2)`,
+  );
+  await subject.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES ('tenant','project','revision','{}','digest','User','author')`,
+  );
+  await subject.query(
+    `INSERT INTO draft VALUES ('tenant','project',1,1,'Draft','revision')`,
+  );
+  await subject.query(
+    `INSERT INTO draft_revision
+       (tenant,project,ticket,authoring_version,configuration_revision,authoring,
+        authority_kind,authority_subject)
+     VALUES ('tenant','project',1,1,'revision','authoring','User','author')`,
+  );
+}
+
+test("migration 42 opens the brief's doors to the roles that reach it and no others", async () => {
+  await migrationDatabase("ticket_brief_grants", async (subject) => {
+    await migrationSeedApplied(subject, 42);
+    await applyMigration(subject, 42);
+    for (const [role, relation, privilege, granted] of [
+      [apiRole, "draft_brief", "SELECT", true],
+      [apiRole, "draft_brief", "INSERT", false],
+      [apiRole, "draft_brief", "UPDATE", false],
+      [apiRole, "draft_brief_link", "SELECT", true],
+      [apiRole, "draft_brief_link", "INSERT", false],
+      [ticketServiceRole, "draft_brief", "SELECT", true],
+      [ticketServiceRole, "draft_brief", "UPDATE", false],
+      [schedulerRole, "draft_brief", "SELECT", true],
+      [schedulerRole, "draft_brief_link", "SELECT", true],
+      [boundaryOwnerRole, "draft_brief", "INSERT", true],
+      [boundaryOwnerRole, "draft_brief_link", "DELETE", true],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_table_privilege($1,$2,$3) AS granted",
+            [role, relation, privilege],
+          )
+        ).rows[0]?.granted,
+        granted,
+        `${role} holds ${privilege} on ${relation}`,
+      );
+  });
+});
+
+test("migration 42 leaves an upgraded database's drafts unbriefed and briefs the next", async () => {
+  await migrationDatabase("ticket_brief", async (subject) => {
+    await migrationSeedApplied(subject, 42);
+    await seedBrieflessDraft(subject);
+
+    await applyMigration(subject, 42);
+
+    assert.deepEqual(
+      (await subject.query("SELECT ticket FROM draft_brief")).rows,
+      [],
+      "an upgraded installation's drafts are the ones with no brief",
+    );
+    const created = await subject.query<{ result: string; ticket: string }>(
+      `SELECT result,ticket::text AS ticket FROM create_draft('tenant','project','revision','digest',1,
+         'authoring','Fix the importer.',ARRAY['https://example.test/one'],
+         'refs/heads/rt/ticket-brief','User','author')`,
+    );
+    assert.equal(created.rows[0]?.result, "Created");
+    assert.deepEqual(
+      (
+        await subject.query<{ ticket: string; intent: string; branch: string }>(
+          "SELECT ticket::text AS ticket,intent,branch FROM draft_brief ORDER BY ticket",
+        )
+      ).rows,
+      [
+        {
+          ticket: created.rows[0]?.ticket ?? "",
+          intent: "Fix the importer.",
+          branch: "refs/heads/rt/ticket-brief",
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ ordinal: number; url: string }>(
+          "SELECT ordinal,url FROM draft_brief_link ORDER BY ordinal",
+        )
+      ).rows,
+      [{ ordinal: 1, url: "https://example.test/one" }],
+    );
+    await assert.rejects(
+      subject.query(
+        "UPDATE draft_brief SET branch='rt/ticket-brief' WHERE ticket=$1",
+        [created.rows[0]?.ticket],
+      ),
+      "the branch a brief names is a reference under one namespace",
+    );
+  });
+});

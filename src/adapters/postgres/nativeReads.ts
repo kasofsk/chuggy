@@ -36,6 +36,7 @@ import {
 } from "../../interpreter/operationInbox.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { projectRowCounter } from "./rows.ts";
+import { draftBriefOf, type DraftBriefRow } from "./ticketBrief.ts";
 
 interface PublicOperationRow {
   readonly operation: string;
@@ -357,8 +358,10 @@ async function readProjectTickets(
   return found.rows;
 }
 
-/** Reads only API-safe columns through a pool carrying the API credential. */
-export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
+/** The three resource reads, each answering one route from the projection. */
+function nativeReadsResources(
+  pool: pg.Pool,
+): Pick<NativeReadStore, "operation" | "project" | "ticket"> {
   return {
     operation: async (partition, operation) => {
       const found = await pool.query<PublicOperationRow>(
@@ -376,14 +379,31 @@ export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
     },
     project: (partition, query) => readProject(pool, partition, query),
     ticket: async (partition, ticket) => {
-      const found = await pool.query<TicketProjectionRow>(
-        sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-          WHERE tenant=${partition.tenant} AND project=${partition.project}
-            AND ticket=${ticket}`,
+      const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
+        sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.intent,b.branch,
+                   (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
+                     WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links
+              FROM ticket_projection t
+              LEFT JOIN draft_brief b
+                ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+             WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+               AND t.ticket=${ticket}`,
       );
       const row = found.rows[0];
-      return row === undefined ? undefined : ticketResource(row);
+      if (row === undefined) return undefined;
+      const brief = draftBriefOf(row);
+      return brief === undefined
+        ? ticketResource(row)
+        : { ...ticketResource(row), brief };
     },
+  };
+}
+
+/** The two desk reads, which are the open native actions a ticket and a project carry. */
+function nativeReadsActions(
+  pool: pg.Pool,
+): Pick<NativeReadStore, "ticketNativeActions" | "nativeActions"> {
+  return {
     ticketNativeActions: async (partition, ticket) => {
       const found = await pool.query<OpenNativeActionRow>(
         sql`SELECT a.action,a.kind,a.authorizing_seq::text AS authorizing_seq,
@@ -425,4 +445,9 @@ export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
       return nativeActionPage(found.rows, query.limit);
     },
   };
+}
+
+/** Reads only API-safe columns through a pool carrying the API credential. */
+export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
+  return { ...nativeReadsResources(pool), ...nativeReadsActions(pool) };
 }

@@ -45,6 +45,8 @@ export const allTaskPurposes: readonly TaskPurpose[] = [
 /** The sections a briefing is made of, named so a rendered one can be inspected by identity. */
 export type BriefingSectionId =
   | "RoleInstructions"
+  | "TicketIntent"
+  | "TicketLinks"
   | "WhyItMatters"
   | "AcceptanceAndConstraints"
   | "PriorWorkReports"
@@ -56,6 +58,8 @@ export type BriefingSectionId =
 /** The fixed order #97 pins, and the only statement of it in this tree. */
 export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "RoleInstructions",
+  "TicketIntent",
+  "TicketLinks",
   "WhyItMatters",
   "AcceptanceAndConstraints",
   "PriorWorkReports",
@@ -72,7 +76,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 2;
+export const briefingTemplateVersion = 3;
 
 /** The heading one section renders under, which is the only one that varies by role. */
 export function briefingHeading(
@@ -82,6 +86,10 @@ export function briefingHeading(
   switch (section) {
     case "RoleInstructions":
       return "Your role";
+    case "TicketIntent":
+      return "What this ticket asks for";
+    case "TicketLinks":
+      return "What to read first";
     case "WhyItMatters":
       return "Why this ticket matters";
     case "AcceptanceAndConstraints":

@@ -121,6 +121,7 @@ import {
   type TaskPurpose,
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
+import type { TicketBriefPort } from "./ticketBrief.ts";
 
 /** Everything a scheduler pass calls out through, and the bounds it works within. */
 export interface ExecutionSchedulerService {
@@ -130,6 +131,7 @@ export interface ExecutionSchedulerService {
   readonly configurations: PinnedConfigurationPort;
   readonly runtimeFacts: RuntimeFactsPort;
   readonly priorWorkReports: PriorWorkReportsPort;
+  readonly ticketBriefs: TicketBriefPort;
   readonly practices: PracticeCatalog;
   readonly config: ExecutionSchedulerConfig;
   readonly ticketService: TicketServiceConfig;
@@ -470,6 +472,10 @@ async function schedulerPrepare(
     execution.partition,
     execution.execution,
   );
+  const brief = await service.ticketBriefs.brief(
+    execution.partition,
+    execution.ticket,
+  );
   const composed = composeTaskInvocation(service.practices, {
     purpose: schedulerTaskPurpose(execution, configuration),
     ...(execution.stage === undefined ? {} : { stage: execution.stage }),
@@ -477,6 +483,7 @@ async function schedulerPrepare(
     configuration,
     runtime,
     priorWorkReports,
+    ...(brief === undefined ? {} : { brief }),
     grant: policy.grant,
   });
   switch (composed.composed) {

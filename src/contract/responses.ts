@@ -33,6 +33,7 @@ import {
   reworkPolicySchema,
   reworkPolicyResponseSchema,
 } from "./authoring.ts";
+import { briefResponseSchema } from "./brief.ts";
 import {
   architectures,
   artifactRoles,
@@ -80,12 +81,17 @@ export type ProjectInventoryResponse = z.infer<
   typeof projectInventoryResponseSchema
 >;
 
-/** A ticket as the project table and its own read both carry it. */
+/**
+ * A ticket as the project table and its own read both carry it. The brief is
+ * the ticket's own read alone: an intent is a paragraph, and a page of them is
+ * a page of documents rather than a table.
+ */
 export const ticketResponseSchema = z.object({
   ticket: ticketNumberSchema,
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   reason: z.enum(escalationReasons).optional(),
+  brief: briefResponseSchema.optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
 
@@ -435,6 +441,7 @@ export const draftResponseSchema = z.object({
   state: z.enum(draftStates),
   configurationRevision: identitySchema,
   authoring: authoringResponseSchema,
+  brief: briefResponseSchema.optional(),
 });
 export type DraftResponse = z.infer<typeof draftResponseSchema>;
 

@@ -39,6 +39,7 @@ import { migration038 } from "./038-durable-project-change-log.ts";
 import { migration039 } from "./039-escalation-reason-projection.ts";
 import { migration040 } from "./040-repository-activation.ts";
 import { migration041 } from "./041-api-native-action-read.ts";
+import { migration042 } from "./042-ticket-brief.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -84,4 +85,5 @@ export const migrations: readonly Migration[] = [
   migration039,
   migration040,
   migration041,
+  migration042,
 ];

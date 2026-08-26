@@ -653,11 +653,18 @@ const publicAuthoring = {
   finalizer: "ManagedFinalizer",
 };
 
+const publicBrief = {
+  intent: "Serve the brief on the ticket resource.",
+  links: ["https://example.test/issues/340"],
+  branch: "refs/heads/rt/ticket-brief",
+};
+
 const publicDraftCreation = {
   configurationRevision: "revision",
   configurationDigest: "a".repeat(64),
   expectedProjectSequence: 7,
   authoring: publicAuthoring,
+  brief: publicBrief,
 };
 
 test("authoring and dispatch routes remain thin NativeWeb adapters", async () => {
@@ -705,6 +712,7 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
       expectedVersion: 2,
       configurationRevision: "revision",
       authoring: publicAuthoring,
+      brief: publicBrief,
     },
   });
   await app.inject({

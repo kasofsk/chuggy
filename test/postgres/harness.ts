@@ -36,6 +36,14 @@ import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
+
+/** The brief every harness draft is created with, so a case names one only when it is about one. */
+export const postgresHarnessBrief = asDraftBrief({
+  intent: "Make the harness ticket do the one thing it is for.",
+  links: ["https://example.test/harness"],
+  branch: "refs/heads/harness",
+});
 import { id } from "../domain/fixtures.ts";
 import type { IdempotencyKeying } from "../../src/adapters/postgres/keying.ts";
 import { postgresOperationInbox } from "../../src/adapters/postgres/operationInbox.ts";
@@ -585,6 +593,7 @@ export async function postgresHarnessReleaseSubmission(
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
   });
   if (created.created !== "Created")
     throw new Error("postgres harness: release draft was not created");
@@ -679,6 +688,7 @@ export function postgresHarnessWriter(
           },
         }),
     },
+    ticketBriefs: { brief: () => Promise.resolve(undefined) },
   };
 }
 

@@ -17,6 +17,7 @@ import type {
   DraftResource,
 } from "../../src/interpreter/authoring.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
 import type {
   ExecutionResource,
@@ -68,6 +69,21 @@ export const authoringWireBody = {
   finalizer: "ManagedFinalizer",
 };
 
+/** The brief a ticket carries, as everything but the wire holds it. */
+export const brief = asDraftBrief({
+  intent: "Serve the brief on the ticket resource.",
+  links: ["https://example.test/issues/340"],
+  branch: "refs/heads/rt/ticket-brief",
+});
+
+/** The same brief as a request body writes it. */
+export const briefWireBody = {
+  intent: "Serve the brief on the ticket resource.",
+  links: ["https://example.test/issues/340"],
+  branch: "refs/heads/rt/ticket-brief",
+};
+
+/** A draft authored before a draft carried a brief, which is what an absent one looks like. */
 export const draft: DraftResource = {
   partition,
   ticket: asTicketId(3),
@@ -76,6 +92,8 @@ export const draft: DraftResource = {
   configurationRevision: revision,
   authoring,
 };
+
+export const briefedDraft: DraftResource = { ...draft, brief };
 
 export const operation: OperationResource = {
   operation: asOperationId("operation-one"),
