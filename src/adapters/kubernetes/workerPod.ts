@@ -35,7 +35,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { basename, dirname } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 
 import type { ExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import type {
@@ -63,6 +63,9 @@ export interface KubernetesWorkerCredentialMount {
   readonly key: string;
   readonly mountPath: string;
 }
+
+export const kubernetesWorkerCredentialFilesVariable =
+  "CHUG_WORKER_CREDENTIAL_FILES";
 
 /** Everything a deployment supplies the worker-launch adapter, and the bounds it works within. */
 export interface KubernetesWorkerLaunchConfig {
@@ -272,15 +275,25 @@ export function checkedKubernetesWorkerLaunchConfig(
     throw new RangeError(
       `worker environment may not replace ${kubernetesWorkerTaskVariable}`,
     );
+  if (
+    Object.hasOwn(config.environment, kubernetesWorkerCredentialFilesVariable)
+  )
+    throw new RangeError(
+      `worker environment may not replace ${kubernetesWorkerCredentialFilesVariable}`,
+    );
   for (const [credential, mount] of Object.entries(config.credentialMounts)) {
     if (credential.length === 0)
       throw new RangeError("worker credential name is empty");
     kubernetesName(mount.secretName, `worker credential ${credential} Secret`);
     if (mount.key.length === 0)
       throw new RangeError(`worker credential ${credential} key is empty`);
-    if (!mount.mountPath.startsWith("/"))
+    if (!isAbsolute(mount.mountPath))
       throw new RangeError(
         `worker credential ${credential} mount path must be absolute`,
+      );
+    if (resolve(mount.mountPath) !== mount.mountPath)
+      throw new RangeError(
+        `worker credential ${credential} mount path must be canonical`,
       );
     const directory = dirname(mount.mountPath);
     if (directory === "/")
@@ -473,6 +486,7 @@ function kubernetesWorkerCapabilityVolumes(
 interface KubernetesWorkerCredentialSelection {
   readonly volumes: KubernetesPod["spec"]["volumes"];
   readonly mounts: KubernetesContainer["volumeMounts"];
+  readonly files: Readonly<Record<string, string>>;
 }
 
 /** Resolves only credentials the authority granted, refusing an unserved name. */
@@ -495,6 +509,7 @@ function kubernetesWorkerCredentials(
       }[];
     }
   >();
+  const files: Record<string, string> = {};
   for (const credential of authority.credentials) {
     const supplied = config.credentialMounts[credential];
     if (supplied === undefined) return undefined;
@@ -510,6 +525,7 @@ function kubernetesWorkerCredentials(
       },
     });
     directories.set(directory, selected);
+    files[credential] = supplied.mountPath;
   }
   return {
     volumes: [...directories.values()].map(({ name, sources }) => ({
@@ -521,6 +537,7 @@ function kubernetesWorkerCredentials(
       mountPath,
       readOnly: true,
     })),
+    files,
   };
 }
 
@@ -538,6 +555,10 @@ function kubernetesWorkerContainer(
       {
         name: kubernetesWorkerTaskVariable,
         value: JSON.stringify(kubernetesWorkerTask(config, placement)),
+      },
+      {
+        name: kubernetesWorkerCredentialFilesVariable,
+        value: JSON.stringify(credentials.files),
       },
       ...Object.entries(config.environment).map(([name, value]) => ({
         name,

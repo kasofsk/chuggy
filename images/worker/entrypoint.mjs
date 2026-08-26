@@ -9,6 +9,7 @@ import { createInterface } from "node:readline";
 import { claudeInvocation, claudeResult } from "./claude.mjs";
 import { keepWorkerLease } from "./lease.mjs";
 import { startLocalPostgres } from "./postgres.mjs";
+import { workerRepositories, workerRepository } from "./repository.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
 
@@ -43,13 +44,8 @@ async function command(executable, args, options = {}) {
   });
 }
 
-async function cloneRepository(repository, commit, workspace) {
+async function cloneRepository(repository, commit, workspace, environment) {
   const directory = join(workspace, "repository");
-  const environment = {
-    ...process.env,
-    GIT_ASKPASS: "/usr/local/lib/chuggy/git-askpass.sh",
-    GIT_TERMINAL_PROMPT: "0",
-  };
   await command("git", ["clone", "--no-checkout", repository, directory], {
     env: environment,
   });
@@ -138,13 +134,9 @@ async function workSource(
   base,
   directory,
   verdict,
+  environment,
 ) {
   if (task.taskKind !== "Work" || verdict !== "Pass") return undefined;
-  const environment = {
-    ...process.env,
-    GIT_ASKPASS: "/usr/local/lib/chuggy/git-askpass.sh",
-    GIT_TERMINAL_PROMPT: "0",
-  };
   return commitAndPushSource({
     task,
     repositoryId,
@@ -176,14 +168,16 @@ function reportSummary(summary) {
 async function main() {
   const task = parsed("CHUG_WORKER_TASK");
   activeTask = task;
-  for (const credential of ["chuggy-git-worker", "claude-code"])
-    if (!task.authority.credentials.includes(credential))
-      throw new Error(`worker authority does not grant ${credential}`);
+  if (!task.authority.credentials.includes("claude-code"))
+    throw new Error("worker authority does not grant claude-code");
   if (!task.authority.network || task.authority.filesystem !== "WriteWorkspace")
     throw new Error(
       "development worker requires network and workspace write authority",
     );
-  const repositories = parsed("CHUG_WORKER_REPOSITORIES");
+  const repositories = workerRepositories(required("CHUG_WORKER_REPOSITORIES"));
+  const credentialFiles = workerRepositories(
+    required("CHUG_WORKER_CREDENTIAL_FILES"),
+  );
   const bearer = (
     await readFile(task.workerPlane.capabilityFile, "utf8")
   ).trim();
@@ -193,14 +187,19 @@ async function main() {
   try {
     const input = await (await workerRequest(task, bearer, "/v1/input")).json();
     const repositoryId = oneReference(input, "Repository");
-    const repository = repositories[repositoryId];
-    if (typeof repository !== "string")
-      throw new Error(`no repository location for ${repositoryId}`);
+    const { repository, credential, environment } = workerRepository(
+      repositories,
+      credentialFiles,
+      repositoryId,
+    );
+    if (!task.authority.credentials.includes(credential))
+      throw new Error(`worker authority does not grant ${credential}`);
     const base = oneReference(input, "TargetCommit");
     const directory = await cloneRepository(
       repository,
       base,
       required("CHUG_WORKER_WORKSPACE"),
+      environment,
     );
     stopPostgres = await startLocalPostgres(required("CHUG_WORKER_WORKSPACE"));
     await prepareWorker(task, directory);
@@ -212,6 +211,7 @@ async function main() {
       base,
       directory,
       result.verdict,
+      environment,
     );
     const diagnostics = [await diagnostic(task, bearer, output)];
     await stopLease();
