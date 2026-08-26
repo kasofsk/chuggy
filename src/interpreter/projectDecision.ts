@@ -46,7 +46,7 @@
  */
 
 import type { Entry } from "../actor/journal.ts";
-import type { Phase } from "../domain/generated/modelTypes.ts";
+import type { Phase, Reason } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
   asAuthorityKind,
@@ -108,6 +108,7 @@ export interface TicketProjection {
   readonly ticket: TicketId;
   readonly phase: Phase;
   readonly dependable: boolean;
+  readonly reason: Reason;
 }
 
 /**

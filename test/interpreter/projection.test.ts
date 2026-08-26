@@ -95,7 +95,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   );
   assert.deepEqual(
     projectionChanges(released.view.post, dispatched.view.post),
-    [{ ticket: id(1), phase: "Working", dependable: true }],
+    [{ ticket: id(1), phase: "Working", dependable: true, reason: "NoReason" }],
   );
   assert.deepEqual(
     projectionChanges(dispatched.view.post, dispatched.view.post),
@@ -108,7 +108,7 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   );
   assert.deepEqual(
     projectionChanges(dispatched.view.post, completed.view.post),
-    [{ ticket: id(1), phase: "Working", dependable: true }],
+    [{ ticket: id(1), phase: "Working", dependable: true, reason: "NoReason" }],
   );
 });
 
@@ -120,7 +120,7 @@ test("a release is a change although it transitions nothing", () => {
   );
   assert.deepEqual(released.journal.at(-1)?.rec.transitions, []);
   assert.deepEqual(projectionChanges(genesis, released.view.post), [
-    { ticket: id(1), phase: "Pending", dependable: true },
+    { ticket: id(1), phase: "Pending", dependable: true, reason: "NoReason" },
   ]);
 });
 

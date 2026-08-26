@@ -8,6 +8,7 @@
  * project actor nor owns a database transaction.
  */
 
+import type { EscalationReason } from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type {
@@ -173,10 +174,12 @@ export type OperationResource =
   | (OperationResourceBase & { readonly state: "Answered" })
   | (OperationResourceBase & { readonly state: "Cancelled" });
 
+/** The reason is present exactly when the ticket is parked on the desk. */
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly phase: Phase;
   readonly sequence: number;
+  readonly reason?: EscalationReason;
 }
 
 export interface ProjectResource {

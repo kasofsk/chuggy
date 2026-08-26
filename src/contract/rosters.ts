@@ -25,6 +25,25 @@ export const phaseRoster = [
 ] as const;
 export type TicketPhase = (typeof phaseRoster)[number];
 
+/**
+ * Which wall a parked ticket hit, in the order the model declares them.
+ * The model's `NoReason` is not among them: the machine holds a reason exactly
+ * when a ticket is escalated, so the wire omits the field instead of naming it.
+ */
+export const escalationReasons = [
+  "WorkFailed",
+  "ReworkBudgetExhausted",
+  "FinalizationBudgetExhausted",
+  "GasExhausted",
+  "DependencyRevoked",
+  "ExecutionPolicyDenied",
+  "TicketConfigIncompatible",
+  "ExecutionProfileUnavailable",
+  "RuntimeVersionUnsupported",
+  "RequiredCapabilityUnavailable",
+] as const;
+export type EscalationReason = (typeof escalationReasons)[number];
+
 export const executionStatuses = [
   "Queued",
   "Admitted",
@@ -40,6 +59,29 @@ export type ExecutionOutcome = (typeof executionOutcomes)[number];
 
 export const executionTaskKinds = ["Work", "Evaluation"] as const;
 export type ExecutionTaskKind = (typeof executionTaskKinds)[number];
+
+/** The platform halves a container requirement names, and the native driver's. */
+export const operatingSystems = ["Linux", "MacOS"] as const;
+export type OperatingSystem = (typeof operatingSystems)[number];
+
+export const architectures = ["Amd64", "Arm64"] as const;
+export type Architecture = (typeof architectures)[number];
+
+export const nativeDrivers = [
+  "XcodeBuild",
+  "XcodeTesting",
+  "IosSimulatorTesting",
+] as const;
+export type NativeDriver = (typeof nativeDrivers)[number];
+
+/** Which default a materialized requirement came from, narrowest first. */
+export const requirementSources = [
+  "ExplicitTask",
+  "TaskKindDefault",
+  "TicketDefault",
+  "PlatformDefault",
+] as const;
+export type RequirementSource = (typeof requirementSources)[number];
 
 export const attemptStates = [
   "Placing",

@@ -199,11 +199,12 @@ async function decisionProject(
   for (const row of projection) {
     await client.query(
       sql`INSERT INTO ticket_projection
-       (tenant, project, ticket, phase, seq, dependable, configuration_revision, configuration_digest)
+       (tenant, project, ticket, phase, seq, dependable, reason, configuration_revision, configuration_digest)
        VALUES (${partition.tenant}, ${partition.project}, ${row.ticket}, ${row.phase}, ${seq}, ${row.dependable},
-               ${configuration.configurationRevision}, ${configuration.configurationDigest})
+               ${row.reason}, ${configuration.configurationRevision}, ${configuration.configurationDigest})
        ON CONFLICT (tenant, project, ticket)
-       DO UPDATE SET phase = EXCLUDED.phase, seq = EXCLUDED.seq, dependable = EXCLUDED.dependable`,
+       DO UPDATE SET phase = EXCLUDED.phase, seq = EXCLUDED.seq, dependable = EXCLUDED.dependable,
+                     reason = EXCLUDED.reason`,
     );
   }
 }
