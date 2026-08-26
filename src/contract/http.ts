@@ -38,6 +38,7 @@ export const nativeHttpRoutes = {
   operations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations`,
   operation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations/:operation`,
   notifications: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/notifications`,
+  events: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/events`,
   configurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations`,
   configurationImports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports`,
   configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,

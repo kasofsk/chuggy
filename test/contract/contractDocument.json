@@ -8,6 +8,7 @@
     "principal": "length-prefixed issuer and subject"
   },
   "notifications": "bounded-polling",
+  "events": "sse",
   "caching": "no-store",
   "cors": "same-origin",
   "credentials": "authorization bearer header; no cookies",
@@ -40,6 +41,7 @@
     "operations": "/api/v1/tenants/:tenant/projects/:project/operations",
     "operation": "/api/v1/tenants/:tenant/projects/:project/operations/:operation",
     "notifications": "/api/v1/tenants/:tenant/projects/:project/notifications",
+    "events": "/api/v1/tenants/:tenant/projects/:project/events",
     "configurations": "/api/v1/tenants/:tenant/projects/:project/configurations",
     "configurationImports": "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
     "configuration": "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",

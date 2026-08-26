@@ -31,6 +31,7 @@ export function nativeHttpContractDocument(): unknown {
       principal: "length-prefixed issuer and subject",
     },
     notifications: "bounded-polling",
+    events: "sse",
     caching: "no-store",
     cors: "same-origin",
     credentials: "authorization bearer header; no cookies",
