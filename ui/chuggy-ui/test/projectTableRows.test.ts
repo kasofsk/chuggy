@@ -48,7 +48,7 @@ const tickets: readonly TicketResponse[] = [
 ];
 
 test("a running ticket's row carries its status, what it runs on and its revision", () => {
-  const row = projectTableRow(working, container);
+  const row = projectTableRow(working, container, false);
   expect(row.executionStatus).toBe("Running");
   expect(row.runsOn).toBe("registry/worker:1");
   expect(row.configurationRevision).toBe("repository:abc:work");
@@ -60,6 +60,7 @@ test("a ticket running nothing states no execution rather than a blank one", () 
   const row = projectTableRow(
     { ticket: 4, phase: "Pending", sequence: 1 },
     undefined,
+    false,
   );
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
@@ -69,14 +70,48 @@ test("a ticket running nothing states no execution rather than a blank one", () 
 });
 
 test("a terminal execution's instant is when it ended", () => {
-  const row = projectTableRow(working, {
-    ...container,
-    status: "Terminal",
-    outcome: "Failed",
-    terminalAt: "2026-08-26T12:00:00.000Z",
-  });
+  const row = projectTableRow(
+    working,
+    {
+      ...container,
+      status: "Terminal",
+      outcome: "Failed",
+      terminalAt: "2026-08-26T12:00:00.000Z",
+    },
+    false,
+  );
   expect(row.activityAt).toBe("2026-08-26T12:00:00.000Z");
   expect(row.executionOutcome).toBe("Failed");
+});
+
+test("a row the index reached says so, and one it never ran says that", () => {
+  expect(projectTableRow(working, container, false).executionRead).toBe(
+    "Joined",
+  );
+  expect(projectTableRow(working, undefined, false).executionRead).toBe(
+    "NoneRegistered",
+  );
+});
+
+test("a row a truncated index did not reach is not a row that never ran", () => {
+  expect(projectTableRow(working, undefined, true).executionRead).toBe(
+    "IndexTruncated",
+  );
+  expect(projectTableRow(working, container, true).executionRead).toBe(
+    "Joined",
+  );
+});
+
+test("a truncated index marks every row it did not reach", () => {
+  const rows = projectTableRows(tickets, {
+    latest: {},
+    truncated: true,
+  });
+  expect(rows.map((row) => row.executionRead)).toStrictEqual([
+    "IndexTruncated",
+    "IndexTruncated",
+    "IndexTruncated",
+  ]);
 });
 
 test("what a task runs on is its image or its driver, by the mode it names", () => {

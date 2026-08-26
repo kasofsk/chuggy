@@ -2,13 +2,17 @@
  * The project table: the first screen inside a project, and the only one that
  * answers "what needs me, what is moving, what is next".
  *
- * The tickets and what they are running are two reads under two keys, so a
- * `Ticket` frame moves a row between sections and an `Execution` frame changes
- * one row's status column without either disturbing the other. Each section is
- * its own panel over the same read, which is what gives every heading its own
- * freshness caption; paging writes the next page into the same entry rather
- * than reading the earlier ones again, so the rows a reader has do not
- * disappear while the next page is in flight.
+ * The tickets and what they ran are two reads under two keys, so a `Ticket`
+ * frame moves a row between sections and an `Execution` frame changes one row's
+ * status column without either disturbing the other. Each section is its own
+ * panel over the same read, so the five captions state one instant — the one
+ * the rows were observed at — rather than five.
+ *
+ * A read gathers as many pages as the reader had asked for, because the entry
+ * it writes is under the partition prefix that the degraded stream's fallback
+ * and a `Project` frame both invalidate; rebuilding it from the first page
+ * would take a reader's pages away on a timer. "More" appends one page to the
+ * entry instead of reading them all again.
  *
  * There is no dispatch control here, deliberately: dispatch is the selector's.
  */
@@ -18,18 +22,28 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
+import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { apiExecutions, apiProject } from "../core/apiRoutes.ts";
-import type { ProjectPage } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
-  projectExecutionIndexEmpty,
   projectExecutionIndexFold,
-  projectExecutionIndexOf,
+  projectExecutionIndexRead,
+  projectExecutionIndexUnread,
 } from "../core/projectExecutionIndex.ts";
-import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
+import type {
+  ProjectExecutionIndex,
+  ProjectExecutionSelection,
+} from "../core/projectExecutionIndex.ts";
 import { projectListKey } from "../core/projectQueryKeys.ts";
-import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
+import {
+  ticketFilterAll,
+  ticketFilterKey,
+  ticketFilterMoreCursor,
+  ticketFilterPage,
+  ticketFilterPhases,
+} from "../core/projectTableFilters.ts";
+import type { TicketFilter } from "../core/projectTableFilters.ts";
 import {
   projectTableRows,
   projectTableRowsIn,
@@ -37,14 +51,11 @@ import {
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
   projectTicketRowsAfterPage,
-  projectTicketRowsAppend,
-  projectTicketRowsEmpty,
   projectTicketRowsFold,
-  projectTicketRowsHaveMore,
+  projectTicketRowsRead,
 } from "../core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import {
-  ticketSectionPhases,
   ticketSectionRoster,
   ticketSectionTitles,
 } from "../core/ticketSections.ts";
@@ -53,31 +64,7 @@ import { useApiPorts, usePanelQuery } from "./api.ts";
 import { Panel } from "./Panel.tsx";
 import { useProjectListFold } from "./stream.tsx";
 
-export type TicketFilter = TicketSection | "All";
-
-const ticketFilterAll = "All";
-
 const emDash = "—";
-
-function ticketFilterKey(
-  partition: PartitionIdentity,
-  filter: TicketFilter,
-): ProjectQueryKey {
-  return projectListKey(partition, "Ticket", `table:${filter}`);
-}
-
-function ticketFilterPage(
-  filter: TicketFilter,
-  cursor: string | undefined,
-): ProjectPage {
-  return {
-    order: "RecentActivity",
-    ...(cursor === undefined ? {} : { cursor }),
-    ...(filter === ticketFilterAll
-      ? {}
-      : { phase: ticketSectionPhases(filter) }),
-  };
-}
 
 interface TicketRowsHeld {
   readonly state: PanelState<ProjectTicketRows>;
@@ -95,31 +82,22 @@ function useTicketRows(
   const client = useQueryClient();
   const ports = useApiPorts();
   const [reading, setReading] = useState(false);
-  const state = usePanelQuery<ProjectTicketRows>(key, async (at) => {
-    const answered = await apiProject(
-      at,
-      partition,
-      ticketFilterPage(filter, undefined),
-    );
-    if (answered.outcome !== "Ok") return answered;
-    return {
-      outcome: "Ok",
-      value: projectTicketRowsAppend(projectTicketRowsEmpty, answered.value),
-    };
-  });
+  const state = usePanelQuery<ProjectTicketRows>(key, (at) =>
+    projectTicketRowsRead(
+      client.getQueryData<ProjectTicketRows>(key),
+      (cursor) => apiProject(at, partition, ticketFilterPage(filter, cursor)),
+    ),
+  );
   useProjectListFold("Ticket", key, (previous, change) =>
     projectTicketRowsFold(
       previous as ProjectTicketRows | undefined,
       change.resource,
       change.representation,
-      filter === ticketFilterAll ? undefined : ticketSectionPhases(filter),
+      ticketFilterPhases(filter),
     ),
   );
   const rows = state.state === "Ready" ? state.value : undefined;
-  const cursor =
-    rows !== undefined && projectTicketRowsHaveMore(rows)
-      ? rows.nextCursor
-      : undefined;
+  const cursor = rows === undefined ? undefined : ticketFilterMoreCursor(rows);
   const readMore = () => {
     setReading(true);
     void (async () => {
@@ -143,21 +121,22 @@ function useTicketRows(
   };
 }
 
-/** What every ticket is running now, folded by execution frames as they land. */
+/** What every ticket ran, walked under its budget and folded by execution
+ * frames as they land. */
 function useExecutionIndex(
   partition: PartitionIdentity,
 ): PanelState<ProjectExecutionIndex> {
-  const key = projectListKey(partition, "Execution", "running");
-  const state = usePanelQuery<ProjectExecutionIndex>(key, async (at) => {
-    const answered = await apiExecutions(at, partition, {
-      state: "NonTerminal",
-    });
-    if (answered.outcome !== "Ok") return answered;
-    return {
-      outcome: "Ok",
-      value: projectExecutionIndexOf(answered.value.executions),
-    };
-  });
+  const key = projectListKey(partition, "Execution", "latest");
+  const state = usePanelQuery<ProjectExecutionIndex>(key, (at) =>
+    projectExecutionIndexRead(
+      (selection: ProjectExecutionSelection, after: string | undefined) =>
+        apiExecutions(at, partition, {
+          limit: nativeHttpPageItemsMax,
+          ...(selection === "NonTerminal" ? { state: selection } : {}),
+          ...(after === undefined ? {} : { after }),
+        }),
+    ),
+  );
   useProjectListFold("Execution", key, (previous, change) =>
     projectExecutionIndexFold(
       previous as ProjectExecutionIndex | undefined,
@@ -167,14 +146,23 @@ function useExecutionIndex(
   return state;
 }
 
+const executionUnread = "not read";
+
+/** The three execution columns say the same thing when there is nothing to
+ * join, and it is not the same thing as a dash. */
+function ticketRowExecution(row: ProjectTableRow, drawn: string | undefined) {
+  if (row.executionRead === "IndexTruncated") return executionUnread;
+  return drawn ?? emDash;
+}
+
 function TicketRow(props: {
   readonly row: ProjectTableRow;
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const row = props.row;
-  const execution =
+  const status =
     row.executionStatus === undefined
-      ? emDash
+      ? undefined
       : `${row.executionStatus}${row.executionOutcome === undefined ? "" : ` · ${row.executionOutcome}`}`;
   return (
     <tr>
@@ -186,7 +174,11 @@ function TicketRow(props: {
           {row.ticket}
         </Link>
       </th>
-      <td className="cell-dim">{row.configurationRevision ?? emDash}</td>
+      <td className="cell-dim">
+        <span className="clipped">
+          {ticketRowExecution(row, row.configurationRevision)}
+        </span>
+      </td>
       <td>{row.phase}</td>
       <td>
         {row.badge === undefined ? (
@@ -195,8 +187,10 @@ function TicketRow(props: {
           <span className="badge">{row.badge}</span>
         )}
       </td>
-      <td>{execution}</td>
-      <td className="cell-dim">{row.runsOn ?? emDash}</td>
+      <td>{ticketRowExecution(row, status)}</td>
+      <td className="cell-dim">
+        <span className="clipped">{ticketRowExecution(row, row.runsOn)}</span>
+      </td>
       <td className="cell-dim">
         {row.sequence}
         {row.activityAt === undefined ? "" : ` · ${row.activityAt}`}
@@ -289,7 +283,7 @@ export function ProjectTable(): ReactNode {
   const index =
     executions.state === "Ready"
       ? executions.value
-      : projectExecutionIndexEmpty;
+      : projectExecutionIndexUnread;
   const sections: readonly TicketSection[] =
     filter === ticketFilterAll ? ticketSectionRoster : [filter];
   const partialFailure =

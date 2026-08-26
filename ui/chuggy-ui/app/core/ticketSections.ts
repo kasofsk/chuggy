@@ -93,12 +93,13 @@ export function escalationBadgeLabel(reason: EscalationReason): string {
   }
 }
 
-/** A blocked handoff is an open human task carrying no reason field, so the
- * phase is what its badge says. */
+/** An open human task with no reason field to say why is still an open human
+ * task, so the phase is what its badge says. */
 export function ticketBadgeLabel(
   phase: TicketPhase,
   reason: EscalationReason | undefined,
 ): string | undefined {
   if (reason !== undefined) return escalationBadgeLabel(reason);
-  return phase === "HandoffBlocked" ? "handoff blocked" : undefined;
+  if (phase === "HandoffBlocked") return "handoff blocked";
+  return phase === "Escalated" ? "escalated" : undefined;
 }

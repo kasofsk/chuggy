@@ -2,14 +2,20 @@
  * One row of the project table: a ticket, joined to whatever it is running.
  *
  * The join is derived on the way to the screen rather than stored, so the two
- * reads behind it — the ticket page and the executions running now — stay
- * separate cache entries that separate frames fold into.
+ * reads behind it — the ticket page and the index of what each ticket ran —
+ * stay separate cache entries that separate frames fold into.
  *
  * THE FIRST COLUMN IS A SLOT. A ticket resource carries no intent, so what the
  * slot shows is the configuration revision the ticket's execution ran from,
  * which is the only thing on the wire that says what a ticket is made of. When
  * a ticket states its own intent, this is where it goes and the row's other
  * columns do not move.
+ *
+ * A row therefore says which of three things is true of its execution columns:
+ * they are joined, the index is complete and this ticket has never run, or the
+ * index was cut short and this row is one it did not reach. The third is drawn
+ * as itself, because a dash meaning "not read" and a dash meaning "never ran"
+ * are the same dash.
  */
 
 import type {
@@ -27,11 +33,20 @@ import type { ProjectExecutionIndex } from "./projectExecutionIndex.ts";
 import { ticketBadgeLabel, ticketSectionOf } from "./ticketSections.ts";
 import type { TicketSection } from "./ticketSections.ts";
 
+export const projectTableExecutionReads = [
+  "Joined",
+  "NoneRegistered",
+  "IndexTruncated",
+] as const;
+export type ProjectTableExecutionRead =
+  (typeof projectTableExecutionReads)[number];
+
 export interface ProjectTableRow {
   readonly ticket: number;
   readonly phase: TicketPhase;
   readonly section: TicketSection;
   readonly badge: string | undefined;
+  readonly executionRead: ProjectTableExecutionRead;
   readonly configurationRevision: string | undefined;
   readonly executionStatus: ExecutionStatus | undefined;
   readonly executionOutcome: ExecutionOutcome | undefined;
@@ -58,12 +73,19 @@ export function projectTableRunsOn(
 export function projectTableRow(
   ticket: TicketResponse,
   execution: ExecutionSummary | undefined,
+  indexTruncated: boolean,
 ): ProjectTableRow {
   return {
     ticket: ticket.ticket,
     phase: ticket.phase,
     section: ticketSectionOf(ticket.phase),
     badge: ticketBadgeLabel(ticket.phase, ticket.reason),
+    executionRead:
+      execution !== undefined
+        ? "Joined"
+        : indexTruncated
+          ? "IndexTruncated"
+          : "NoneRegistered",
     configurationRevision: execution?.configurationRevision,
     executionStatus: execution?.status,
     executionOutcome: execution?.outcome,
@@ -81,7 +103,11 @@ export function projectTableRows(
   index: ProjectExecutionIndex,
 ): readonly ProjectTableRow[] {
   return tickets.map((ticket) =>
-    projectTableRow(ticket, projectExecutionIndexAt(index, ticket.ticket)),
+    projectTableRow(
+      ticket,
+      projectExecutionIndexAt(index, ticket.ticket),
+      index.truncated,
+    ),
   );
 }
 

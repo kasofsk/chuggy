@@ -82,3 +82,7 @@ test("an escalated row's badge is its reason and a blocked handoff's is its phas
 test("a row with nothing to answer for carries no badge", () => {
   expect(ticketBadgeLabel("Working", undefined)).toBeUndefined();
 });
+
+test("an escalated row whose reason did not arrive still says it is escalated", () => {
+  expect(ticketBadgeLabel("Escalated", undefined)).toBe("escalated");
+});

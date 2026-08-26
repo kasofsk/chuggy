@@ -8,12 +8,15 @@
  * the rows already there and records why, because a table that empties itself
  * on a refusal is a table that says the project is empty.
  *
- * Both bounds are explicit: a server that keeps answering with a cursor stops
- * this walk, and the rows it has already given are capped independently, so a
- * page larger than the wire admits cannot grow the list past the cap either.
+ * TWO BOUNDS, AND NEITHER IMPLIES THE OTHER. The page budget stops a server
+ * that keeps answering with a cursor, and bites first when the pages are small.
+ * The row cap is the browser's own and bites first when they are full: it is
+ * how many rows this table will hold at once, and a reader who has paged past
+ * it wants a filter rather than more rows. Deriving one from the other would
+ * make whichever came second unreachable, and an unreachable bound is one
+ * nothing can prove.
  */
 
-import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
 import { ticketResponseSchema } from "../../../../src/contract/responses.ts";
 import type {
   ProjectResponse,
@@ -25,8 +28,7 @@ import type { ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
 
 export const projectTicketPagesMax = 20;
-export const projectTicketRowsMax =
-  nativeHttpPageItemsMax * projectTicketPagesMax;
+export const projectTicketRowsMax = 500;
 
 export interface ProjectTicketRows {
   readonly tickets: readonly TicketResponse[];
@@ -96,6 +98,45 @@ export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
     rows.pagesRead < projectTicketPagesMax &&
     rows.tickets.length < projectTicketRowsMax
   );
+}
+
+/**
+ * The pages a read gathers, which is one on a first read and as many as the
+ * reader had asked for on a refetch.
+ *
+ * A refetch is not a first read: the entry it replaces is invalidated by the
+ * degraded stream's fallback and by a `Project` frame, and rebuilding it from
+ * the first page alone would take the pages a reader pressed for away on a
+ * timer. A refused page is answered with the rows there are — the ones just
+ * gathered, or the ones being replaced — so that the panel keeps drawing them
+ * with the refusal beside them; only a read that has no rows at all answers
+ * with the refusal itself.
+ */
+export async function projectTicketRowsRead(
+  previous: ProjectTicketRows | undefined,
+  readPage: (cursor: string | undefined) => Promise<ApiResult<ProjectResponse>>,
+): Promise<ApiResult<ProjectTicketRows>> {
+  const wanted = Math.min(
+    Math.max(previous?.pagesRead ?? 1, 1),
+    projectTicketPagesMax,
+  );
+  let rows = projectTicketRowsEmpty;
+  for (let page = 0; page < wanted; page += 1) {
+    const answered = await readPage(
+      rows.pagesRead === 0 ? undefined : rows.nextCursor,
+    );
+    if (answered.outcome !== "Ok") {
+      const held = rows.pagesRead === 0 ? previous : rows;
+      if (held === undefined) return answered;
+      return {
+        outcome: "Ok",
+        value: projectTicketRowsFailed(held, panelReason(answered)),
+      };
+    }
+    rows = projectTicketRowsAppend(rows, answered.value);
+    if (!projectTicketRowsHaveMore(rows)) break;
+  }
+  return { outcome: "Ok", value: rows };
 }
 
 function projectTicketRowsWithout(

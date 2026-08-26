@@ -187,6 +187,7 @@ export function apiOperationalStatus(
 
 export interface ExecutionsPage {
   readonly after?: string | undefined;
+  readonly limit?: number | undefined;
   readonly ticket?: number | undefined;
   readonly state?: string | undefined;
 }
@@ -200,6 +201,7 @@ export function apiExecutions(
     ports,
     apiPath(apiSegments(partition, "executions"), {
       after: page.after,
+      limit: page.limit,
       ticket: page.ticket,
       state: page.state,
     }),

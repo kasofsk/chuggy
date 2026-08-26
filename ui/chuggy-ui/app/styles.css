@@ -248,9 +248,17 @@ select:hover {
 
 .cell-dim {
   color: var(--ink-dim);
-  overflow: hidden;
+}
+
+/* An inline block, because a `td` clips only under a fixed table layout and
+ * this table sizes its columns from what is in them. */
+.clipped {
+  display: inline-block;
   max-width: 22rem;
+  overflow: hidden;
   text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
 }
 
 .badge {
