@@ -28,6 +28,7 @@ import { persistentStore } from "./ports.ts";
 import { ProjectTable } from "./ProjectTable.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
+import { TicketCreation } from "./TicketCreation.tsx";
 import { TicketPage } from "./TicketPage.tsx";
 
 function Landing(): ReactNode {
@@ -110,7 +111,7 @@ const inboxRoute = createRoute({
 const ticketCreationRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/new",
-  component: () => <Heading title="new ticket" />,
+  component: TicketCreation,
 });
 
 const ticketRoute = createRoute({
