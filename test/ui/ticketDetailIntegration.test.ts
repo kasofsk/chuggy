@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createTicketDetail } from "../../ui/dom/ticketDetailController.js";
+import { createTicketDetail } from "../../ui/console/dom/ticketDetailController.js";
 import { deferred } from "./deferred.ts";
 
 const partition = { tenant: "acme", project: "atlas" };

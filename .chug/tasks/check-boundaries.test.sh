@@ -287,41 +287,63 @@ printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$
 seal
 check "an orphan module is a finding" 1 "$RC" "no-orphan-module:"
 
-# --- The console's own two boundaries ----------------------------------------
+# --- A console's own boundaries, and the one between consoles ----------------
+
+# Every case below puts the console under a name, because the rules are written
+# per console: a fixture that put app/ and dom/ directly under ui/ would name
+# the console "app", and the pair rule would then be looking for a dom/ inside
+# it and finding nothing to fire on.
 
 # The allowed direction first: the document layer reads the decision layer, and
 # a red here would mean the rule over-fires on the one edge the split exists to
 # take. The src/ pair is what keeps the tracked-source precondition satisfied
 # and neither file an orphan.
 fixture
-mkdir -p "$R/ui/app" "$R/ui/dom"
+mkdir -p "$R/ui/console/app" "$R/ui/console/dom"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'export const decide = () => 1' > "$R/ui/app/decide.js"
-printf '%s\n' 'import { decide } from "../app/decide.js"' 'export const draw = () => decide()' > "$R/ui/dom/draw.js"
+printf '%s\n' 'export const decide = () => 1' > "$R/ui/console/app/decide.js"
+printf '%s\n' 'import { decide } from "../app/decide.js"' 'export const draw = () => decide()' > "$R/ui/console/dom/draw.js"
 seal
 check "the console's document layer may read its decisions" 0 "$RC" "graph clean"
 
 # Every file is individually innocent: only a path through the graph reaches
 # out of ui/, which is what the rule's `reachable` flag is for.
 fixture
-mkdir -p "$R/ui/app"
+mkdir -p "$R/ui/console/app"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../../src/domain/a.ts"' 'export const shared = x' > "$R/ui/app/shared.js"
-printf '%s\n' 'import { shared } from "./shared.js"' 'export const decide = () => shared' > "$R/ui/app/decide.js"
+printf '%s\n' 'import { x } from "../../../src/domain/a.ts"' 'export const shared = x' > "$R/ui/console/app/shared.js"
+printf '%s\n' 'import { shared } from "./shared.js"' 'export const decide = () => shared' > "$R/ui/console/app/decide.js"
 seal
 check "the console may not REACH the server's source" 1 "$RC" "console-reaches-no-source:"
 
 # The same shape one directory down: a relay belonging to neither is what a
-# per-import rule would miss.
+# per-import rule would miss. This case is also what holds the pair rule to a
+# construct that fires: written with a `$1` backreference in a `reachable`
+# rule's `to.path` it matches nothing, and the only symptom is this line going
+# green.
 fixture
-mkdir -p "$R/ui/app" "$R/ui/dom"
+mkdir -p "$R/ui/console/app" "$R/ui/console/dom"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'export const write = () => 1' > "$R/ui/dom/write.js"
-printf '%s\n' 'import { write } from "../dom/write.js"' 'export const relay = write' > "$R/ui/app/relay.js"
-printf '%s\n' 'import { relay } from "./relay.js"' 'export const decide = () => relay()' > "$R/ui/app/decide.js"
+printf '%s\n' 'export const write = () => 1' > "$R/ui/console/dom/write.js"
+printf '%s\n' 'import { write } from "../dom/write.js"' 'export const relay = write' > "$R/ui/console/app/relay.js"
+printf '%s\n' 'import { relay } from "./relay.js"' 'export const decide = () => relay()' > "$R/ui/console/app/decide.js"
 seal
 check "a console decision may not REACH the document layer" 1 "$RC" "console-decisions-touch-no-document:"
+
+# Two consoles are two artifacts, and a helper reachable from both is the
+# client dependency neither has. Reachability again, and through a relay,
+# because one console importing another by name is the shape a per-import rule
+# would already catch.
+fixture
+mkdir -p "$R/ui/console/app" "$R/ui/admin/app"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const shared = () => 1' > "$R/ui/console/app/shared.js"
+printf '%s\n' 'import { shared } from "../../console/app/shared.js"' 'export const relay = shared' > "$R/ui/admin/app/relay.js"
+printf '%s\n' 'import { relay } from "./relay.js"' 'export const decide = () => relay()' > "$R/ui/admin/app/decide.js"
+seal
+check "one console may not REACH another" 1 "$RC" "no-console-sees-another:"
 
 done_ "check-boundaries.test.sh"

@@ -328,14 +328,14 @@ export default tseslint.config(
         },
       ]
     : []),
-  // The configs themselves, and the console's document layer. Both sit outside
-  // tsconfig.json's include, so the type-aware rules have no program to ask and
-  // are turned off rather than left to fail on every run. `ui/app/` is inside
-  // that include and is excluded here, so the console's decisions keep house
-  // rules 3 and 4 while the DOM writes beneath them do not.
+  // The configs themselves, and every console's document layer. Both sit
+  // outside tsconfig.json's include, so the type-aware rules have no program to
+  // ask and are turned off rather than left to fail on every run. A console's
+  // `app/` is inside that include and is excluded here, so its decisions keep
+  // house rules 3 and 4 while the DOM writes beneath them do not.
   {
     files: ["**/*.js", "**/*.mjs"],
-    ignores: ["ui/app/**"],
+    ignores: ["ui/*/app/**"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: { process: "readonly" },

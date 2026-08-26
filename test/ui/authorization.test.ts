@@ -22,14 +22,17 @@ import {
   sessionRefreshSecondsBefore,
   tokenExchangeRequest,
   tokenRefreshRequest,
-} from "../../ui/app/authorization.js";
-import { base64urlDecoded, base64urlEncoded } from "../../ui/app/encoding.js";
+} from "../../ui/console/app/authorization.js";
+import {
+  base64urlDecoded,
+  base64urlEncoded,
+} from "../../ui/console/app/encoding.js";
 import {
   challengeFromVerifier,
   challengeMethod,
   verifierBytesCount,
   verifierFromBytes,
-} from "../../ui/app/pkce.js";
+} from "../../ui/console/app/pkce.js";
 
 const declared = {
   issuer: "https://auth.vteng.io/",

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseConfigurationsPage } from "../../ui/app/resources.js";
+import { parseConfigurationsPage } from "../../ui/console/app/resources.js";
 import { content, elements } from "./domHarness.ts";
 import type { TestElement } from "./domHarness.ts";
 
-const presentationModule = "../../ui/dom/configurationRegistry.js";
+const presentationModule = "../../ui/console/dom/configurationRegistry.js";
 const { configurationRegistry } = (await import(presentationModule)) as {
   configurationRegistry: (state: unknown) => unknown;
 };

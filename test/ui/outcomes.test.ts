@@ -17,9 +17,12 @@ import {
   submissionEvent,
   unavailableReason,
   unreadableReason,
-} from "../../ui/app/outcomes.js";
-import { panelForKind } from "../../ui/app/panels.js";
-import { notificationKinds, parseOperation } from "../../ui/app/resources.js";
+} from "../../ui/console/app/outcomes.js";
+import { panelForKind } from "../../ui/console/app/panels.js";
+import {
+  notificationKinds,
+  parseOperation,
+} from "../../ui/console/app/resources.js";
 
 const ok = (body: unknown) => ({ outcome: "Ok" as const, body });
 const accepted = (body: unknown) => ({

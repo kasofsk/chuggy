@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { releaseDraftMutation } from "../../ui/app/protocol.js";
-import { createTicketCreation } from "../../ui/dom/ticketCreationController.js";
+import { releaseDraftMutation } from "../../ui/console/app/protocol.js";
+import { createTicketCreation } from "../../ui/console/dom/ticketCreationController.js";
 import {
   ticketCreationDraft,
   ticketCreationInitialization,
@@ -11,7 +11,7 @@ import {
 
 type Partition = { readonly tenant: string; readonly project: string };
 
-const operationsModule = "../../ui/dom/console.js";
+const operationsModule = "../../ui/console/dom/console.js";
 const { createConsole } = (await import(operationsModule)) as {
   createConsole: (parts: unknown) => {
     select: (partition: Partition) => void;

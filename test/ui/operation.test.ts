@@ -15,10 +15,13 @@ import {
   operationPolls,
   operationSubmitting,
   operationTerminalStates,
-} from "../../ui/app/operation.js";
-import { submissionEvent } from "../../ui/app/outcomes.js";
-import { candidateRows, manualDispatchMutation } from "../../ui/app/views.js";
-import { parseDispatchView } from "../../ui/app/resources.js";
+} from "../../ui/console/app/operation.js";
+import { submissionEvent } from "../../ui/console/app/outcomes.js";
+import {
+  candidateRows,
+  manualDispatchMutation,
+} from "../../ui/console/app/views.js";
+import { parseDispatchView } from "../../ui/console/app/resources.js";
 
 const page = parseDispatchView({
   result: "Page",

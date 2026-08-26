@@ -54,7 +54,7 @@ import {
   submissionRequest,
   ticketsRequest,
   ticketRequest,
-} from "../../ui/app/protocol.js";
+} from "../../ui/console/app/protocol.js";
 
 const token = "opaque-access-token";
 const partition = { tenant: "acme", project: "atlas" };

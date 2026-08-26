@@ -37,6 +37,6 @@
     "src/**/*.ts",
     "test/**/*.ts",
     "scripts/**/*.ts",
-    "ui/app/**/*.js"
+    "ui/*/app/**/*.js"
   ]
 }

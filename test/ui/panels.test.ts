@@ -21,9 +21,9 @@ import {
   panelReady,
   panelUnavailable,
   panelUnknown,
-} from "../../ui/app/panels.js";
-import { board, executionRows, scheduler } from "../../ui/app/views.js";
-import { phaseRoster } from "../../ui/app/resources.js";
+} from "../../ui/console/app/panels.js";
+import { board, executionRows, scheduler } from "../../ui/console/app/views.js";
+import { phaseRoster } from "../../ui/console/app/resources.js";
 
 test("a panel that has never read holds nothing and says so", () => {
   assert.equal(panelHeld(panelUnknown), undefined);

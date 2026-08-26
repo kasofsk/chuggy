@@ -69,7 +69,7 @@ import {
   resultVerdicts,
   repositoryConfigurationFaults,
   schedulerFreshnessRoster,
-} from "../../ui/app/resources.js";
+} from "../../ui/console/app/resources.js";
 
 function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
   return Object.keys(record).sort();
