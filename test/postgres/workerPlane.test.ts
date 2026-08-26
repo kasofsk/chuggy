@@ -69,6 +69,35 @@ async function placedAttempt(label: string) {
   return opened.attempt;
 }
 
+function acceptedSourceManifest(
+  attempt: Awaited<ReturnType<typeof placedAttempt>>,
+  source: {
+    repository: string;
+    ref: string;
+    commit: string;
+    base: string;
+  },
+  diagnostics: readonly {
+    path: string;
+    digest: string;
+    bytes: number;
+  }[] = [],
+) {
+  return acceptResultManifest(
+    attempt,
+    attempt.capability.manifest,
+    JSON.stringify({
+      version: 2,
+      verdict: "Pass",
+      handoffs: [],
+      diagnostics,
+      source,
+    }),
+    (canonical: CanonicalManifest) =>
+      createHash("sha256").update(canonical).digest("hex"),
+  );
+}
+
 test("the worker role settles once and terminal authority is immediately fenced", async () => {
   const attempt = await placedAttempt("worker-terminal");
   const authority = postgresWorkerPlaneAuthority(workerPool);
@@ -132,19 +161,19 @@ test("the worker boundary retains a source handoff with its manifest", async () 
         ? targetCommit
         : assert.fail("no target commit"),
   };
-  const accepted = acceptResultManifest(
-    attempt,
-    attempt.capability.manifest,
-    JSON.stringify({
-      version: 2,
-      verdict: "Pass",
-      handoffs: [],
-      diagnostics: [],
-      source,
+  const diagnostic = {
+    path: ".chuggy/claude-result.json",
+    digest: "d".repeat(64),
+    bytes: 37,
+  };
+  assert.deepEqual(
+    await postgresWorkerArtifactReservations(workerPool).reserve({
+      secret: attempt.capability.secret,
+      ...diagnostic,
     }),
-    (canonical: CanonicalManifest) =>
-      createHash("sha256").update(canonical).digest("hex"),
+    { reserved: "Reserved" },
   );
+  const accepted = acceptedSourceManifest(attempt, source, [diagnostic]);
   assert.equal(accepted.accepted, "Accepted");
   if (accepted.accepted !== "Accepted") return;
   const result = await postgresWorkerReportStore(
@@ -163,6 +192,40 @@ test("the worker boundary retains a source handoff with its manifest", async () 
       ],
     ),
     [source],
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT role,path,digest,bytes FROM execution_result_artifact
+        WHERE tenant=$1 AND project=$2 AND manifest=$3`,
+      [
+        attempt.partition.tenant,
+        attempt.partition.project,
+        attempt.capability.manifest,
+      ],
+    ),
+    [{ role: "Diagnostic", ...diagnostic, bytes: String(diagnostic.bytes) }],
+  );
+});
+
+test("the worker boundary records an incident for a foreign source base", async () => {
+  const attempt = await placedAttempt("worker-foreign-source");
+  const source = {
+    repository: "repository-one",
+    ref: "refs/heads/chuggy/tickets/ticket-one/attempts/attempt-one",
+    commit: "a".repeat(40),
+    base: "b".repeat(40),
+  };
+  const accepted = acceptedSourceManifest(attempt, source);
+  assert.equal(accepted.accepted, "Accepted");
+  if (accepted.accepted !== "Accepted") return;
+  const result = await postgresWorkerReportStore(
+    workerPool,
+    attempt.capability.secret,
+  ).terminalize({ ...attempt, manifest: accepted.manifest });
+  assert.equal(result.terminalized, "Conflicting");
+  assert.ok(
+    result.terminalized === "Conflicting" &&
+      result.incident.startsWith("incident-"),
   );
 });
 

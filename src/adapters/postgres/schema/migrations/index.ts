@@ -32,6 +32,7 @@ import { migration031 } from "./031-ticket-service-repository-binding-read.ts";
 import { migration032 } from "./032-worker-source-handoff.ts";
 import { migration033 } from "./033-continuation-readiness.ts";
 import { migration034 } from "./034-worker-attempt-heartbeat.ts";
+import { migration035 } from "./035-source-diagnostics.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -70,4 +71,5 @@ export const migrations: readonly Migration[] = [
   migration032,
   migration033,
   migration034,
+  migration035,
 ];
