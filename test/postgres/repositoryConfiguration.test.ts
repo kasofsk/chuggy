@@ -10,6 +10,7 @@ import {
   postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
+import "./repositoryActivation.cases.ts";
 
 let harness: PostgresHarness;
 let pool: pg.Pool;

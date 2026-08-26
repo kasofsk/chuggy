@@ -6,6 +6,7 @@ import {
   apiRole,
   boundaryOwnerRole,
   cancellationFunction,
+  configurationImporterRole,
   continuationFunction,
   finalizerRole,
   notificationPublishFunction,
@@ -14,10 +15,12 @@ import {
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   repositoryBindingReadFunction,
+  repositoryActivationFunction,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
   ticketServiceRole,
+  workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresHarnessDenial,
@@ -62,6 +65,33 @@ test("every runtime role may read only the migration ledger contract", async () 
         "SELECT version,name FROM schema_migration ORDER BY version",
       ),
       undefined,
+    );
+  }
+});
+
+test("runtime roles cannot activate or write repository history", async () => {
+  for (const role of [
+    apiRole,
+    ticketServiceRole,
+    selectorServiceRole,
+    schedulerRole,
+    finalizerRole,
+    workerPlaneRole,
+    configurationImporterRole,
+  ]) {
+    assert.match(
+      (await harness.attemptAs(
+        role,
+        `SELECT ${repositoryActivationFunction}('tenant','project','old','new','epoch','operation','kind','subject')`,
+      )) ?? "",
+      postgresHarnessDenial(repositoryActivationFunction),
+    );
+    assert.match(
+      (await harness.attemptAs(
+        role,
+        "INSERT INTO project_repository_activation DEFAULT VALUES",
+      )) ?? "",
+      postgresHarnessDenial("project_repository_activation"),
     );
   }
 });

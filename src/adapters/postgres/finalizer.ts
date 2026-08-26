@@ -623,8 +623,9 @@ async function finalizerDurableView(
   LEFT JOIN LATERAL (
     SELECT x.* FROM project_repository x
      WHERE x.tenant=f.tenant AND x.project=f.project
-       AND (h.repository IS NULL OR x.repository=h.repository)
-     ORDER BY x.bound_at, x.repository LIMIT 1) b ON true
+       AND x.repository=coalesce(h.repository,(
+         SELECT active.repository FROM read_project_repository_binding(f.tenant,f.project) active))
+     LIMIT 1) b ON true
   LEFT JOIN LATERAL (
     SELECT x.* FROM finalization_attempt x
      WHERE x.tenant = f.tenant AND x.project = f.project AND x.request = f.request
