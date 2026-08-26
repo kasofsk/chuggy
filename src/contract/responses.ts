@@ -37,6 +37,7 @@ import {
   artifactRoles,
   attemptStates,
   draftStates,
+  escalationReasons,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
@@ -70,10 +71,12 @@ export type ProjectInventoryResponse = z.infer<
   typeof projectInventoryResponseSchema
 >;
 
+/** A ticket as the project table and its own read both carry it. */
 export const ticketResponseSchema = z.object({
   ticket: ticketNumberSchema,
   phase: z.enum(phaseRoster),
   sequence: countSchema,
+  reason: z.enum(escalationReasons).optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
 

@@ -95,6 +95,29 @@ test("a project read and a ticket read parse as the contract names them", () => 
   );
 });
 
+test("an escalated ticket names its wall and an unparked one omits it", () => {
+  const escalated = ticketResponseSchema.parse({
+    ticket: 3,
+    phase: "Escalated",
+    sequence: 9,
+    reason: "GasExhausted",
+  });
+  assert.equal(escalated.reason, "GasExhausted");
+  assert.equal(
+    ticketResponseSchema.parse({ ticket: 3, phase: "Working", sequence: 9 })
+      .reason,
+    undefined,
+  );
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Escalated",
+      sequence: 9,
+      reason: "NoReason",
+    }),
+  );
+});
+
 test("a project inventory page parses with the cursor the server encoded", () => {
   const page = projectInventoryResponseSchema.parse(
     inventoryResponse({ projects: [partition], nextAfter: partition }).body,

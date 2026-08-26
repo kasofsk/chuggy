@@ -25,6 +25,25 @@ export const phaseRoster = [
 ] as const;
 export type TicketPhase = (typeof phaseRoster)[number];
 
+/**
+ * Which wall a parked ticket hit, in the order the model declares them.
+ * The model's `NoReason` is not among them: the machine holds a reason exactly
+ * when a ticket is escalated, so the wire omits the field instead of naming it.
+ */
+export const escalationReasons = [
+  "WorkFailed",
+  "ReworkBudgetExhausted",
+  "FinalizationBudgetExhausted",
+  "GasExhausted",
+  "DependencyRevoked",
+  "ExecutionPolicyDenied",
+  "TicketConfigIncompatible",
+  "ExecutionProfileUnavailable",
+  "RuntimeVersionUnsupported",
+  "RequiredCapabilityUnavailable",
+] as const;
+export type EscalationReason = (typeof escalationReasons)[number];
+
 export const executionStatuses = [
   "Queued",
   "Admitted",

@@ -18,6 +18,7 @@ import {
   configurationReadinesses,
   draftStates,
   dispatchViewResults,
+  escalationReasons,
   evaluationCombinators,
   executionOutcomes,
   executionStatuses,
@@ -37,7 +38,7 @@ import {
 } from "../../src/contract/rosters.ts";
 import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
-import { phaseTags } from "../../src/domain/generated/modelTypes.ts";
+import { phaseTags, reasonTags } from "../../src/domain/generated/modelTypes.ts";
 import type {
   Combinator,
   Finalizer,
@@ -80,6 +81,13 @@ function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
 }
 
 const sorted = (values: readonly string[]) => [...values].sort();
+
+test("the escalation reasons are the model's, less the absent one", () => {
+  assert.deepEqual(
+    [...escalationReasons],
+    reasonTags.filter((tag) => tag !== "NoReason"),
+  );
+});
 
 test("the phase and scheduler rosters are the model's", () => {
   assert.deepEqual([...phaseRoster], [...phaseTags]);
