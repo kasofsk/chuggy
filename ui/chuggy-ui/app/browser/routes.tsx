@@ -78,10 +78,6 @@ function PartitionLayout(): ReactNode {
   );
 }
 
-function Heading(props: { readonly title: string }): ReactNode {
-  return <h1 className="placeholder">{props.title}</h1>;
-}
-
 const rootRoute = createRootRoute({ component: Outlet });
 
 const landingRoute = createRoute({

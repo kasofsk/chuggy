@@ -48,7 +48,7 @@ import type { OperationStep } from "../core/operationFollow.ts";
 import { usePanelQuery, useApiPorts } from "./api.ts";
 import { Panel } from "./Panel.tsx";
 import { drawBytes } from "./ports.ts";
-import { operationIdBytesCount } from "./TicketActions.tsx";
+import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
 
 /** The one list key this screen reads under, the context being the project's. */
