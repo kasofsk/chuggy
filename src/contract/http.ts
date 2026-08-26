@@ -30,6 +30,8 @@ export const nativeHttpRoutes = {
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
   ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket`,
+  ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,
+  nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
   operationalStatus: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operational-status`,
   selectorContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-context`,
   executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,

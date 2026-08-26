@@ -25,6 +25,8 @@ import {
   executionStatuses,
   executionTaskKinds,
   finalizers,
+  nativeActionKindResolutions,
+  nativeActionKinds,
   nativeActionResolutions,
   nativeDrivers,
   notificationKinds,
@@ -64,7 +66,11 @@ import type {
   RequirementSource as MaterializedRequirementSource,
 } from "../../src/interpreter/executionRequirement.ts";
 import { allArtifactRoles } from "../../src/interpreter/resultManifest.ts";
-import { allNativeActionResolutions } from "../../src/interpreter/ticketCommand.ts";
+import {
+  allNativeActionKinds,
+  allNativeActionResolutions,
+  nativeActionResolutions as interpretedNativeActionResolutions,
+} from "../../src/interpreter/ticketCommand.ts";
 import { projectPageLimitMax } from "../../src/interpreter/nativeWeb.ts";
 import type { OperationRefusalCode } from "../../src/interpreter/nativeWeb.ts";
 import {
@@ -112,6 +118,16 @@ test("the phase and scheduler rosters are the model's", () => {
     sorted(nativeActionResolutions),
     sorted(allNativeActionResolutions),
   );
+});
+
+test("the wire pairs each action kind with the answers the interpreter admits", () => {
+  assert.deepEqual(sorted(nativeActionKinds), sorted(allNativeActionKinds));
+  for (const kind of allNativeActionKinds) {
+    assert.deepEqual(
+      [...nativeActionKindResolutions[kind]],
+      [...interpretedNativeActionResolutions[kind]],
+    );
+  }
 });
 
 test("the requirement rosters are exhaustive over the interpreter's unions", () => {

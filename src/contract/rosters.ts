@@ -187,13 +187,29 @@ export const repositoryConfigurationFaults = [
 export type RepositoryConfigurationFault =
   (typeof repositoryConfigurationFaults)[number];
 
-/** The resolutions a native escalation action accepts. */
+/** The kinds of question a native action puts to a person. */
+export const nativeActionKinds = [
+  "TicketEscalation",
+  "HandoffBlock",
+  "FinalizationApproval",
+] as const;
+export type NativeActionKind = (typeof nativeActionKinds)[number];
+
+/**
+ * The answers each kind may ask for. One open action offers a subset of its
+ * kind's — an escalation with no modeled resumption offers only the revoke —
+ * so a read answers with what that action admits rather than with this.
+ */
+export const nativeActionKindResolutions = {
+  TicketEscalation: ["Resume", "Revoke"],
+  HandoffBlock: ["RetryHandoff", "AbandonHandoff"],
+  FinalizationApproval: ["Approve", "Decline"],
+} as const;
+
+/** Every resolution the wire names, which is every kind's flattened in kind order. */
 export const nativeActionResolutions = [
-  "Resume",
-  "Revoke",
-  "RetryHandoff",
-  "AbandonHandoff",
-  "Approve",
-  "Decline",
+  ...nativeActionKindResolutions.TicketEscalation,
+  ...nativeActionKindResolutions.HandoffBlock,
+  ...nativeActionKindResolutions.FinalizationApproval,
 ] as const;
 export type NativeActionResolution = (typeof nativeActionResolutions)[number];

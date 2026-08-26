@@ -42,8 +42,13 @@ import {
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
+  nativeActionKindResolutions,
+  nativeActionKinds,
+  nativeActionResolutions,
   nativeDrivers,
   notificationKinds,
+  type NativeActionKind,
+  type NativeActionResolution,
   operatingSystems,
   operationRefusalCodes,
   operationStates,
@@ -92,6 +97,68 @@ export const projectResponseSchema = z.object({
   nextCursor: cursorSchema.optional(),
 });
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;
+
+/**
+ * One open native action: the fence a `ResolveNativeAction` must name, and the
+ * answers this action admits. Those are a subset of what its kind may ask for —
+ * an escalation the machine has no resumption for admits only the revoke.
+ */
+const nativeActionFields = {
+  action: identitySchema,
+  kind: z.enum(nativeActionKinds),
+  authorizingSequence: countSchema,
+  admits: z
+    .array(z.enum(nativeActionResolutions))
+    .min(1)
+    .max(nativeActionResolutions.length),
+};
+
+function nativeActionKindAdmits(
+  kind: NativeActionKind,
+): readonly NativeActionResolution[] {
+  return nativeActionKindResolutions[kind];
+}
+
+const nativeActionAdmitsItsKind = (value: {
+  readonly kind: NativeActionKind;
+  readonly admits: readonly NativeActionResolution[];
+}) =>
+  value.admits.every((resolution) =>
+    nativeActionKindAdmits(value.kind).includes(resolution),
+  );
+
+const nativeActionPairing =
+  "a native action admits an answer its kind does not ask for";
+
+export const nativeActionResponseSchema = z
+  .object(nativeActionFields)
+  .refine(nativeActionAdmitsItsKind, nativeActionPairing);
+export type NativeActionResponse = z.infer<typeof nativeActionResponseSchema>;
+
+/** Every action a ticket has open, which the ticket read deliberately omits. */
+export const ticketNativeActionsResponseSchema = z.object({
+  actions: page(nativeActionResponseSchema),
+});
+export type TicketNativeActionsResponse = z.infer<
+  typeof ticketNativeActionsResponseSchema
+>;
+
+/** The same action named across a project, where the ticket is not the path. */
+export const projectNativeActionResponseSchema = z
+  .object({ ticket: ticketNumberSchema, ...nativeActionFields })
+  .refine(nativeActionAdmitsItsKind, nativeActionPairing);
+export type ProjectNativeActionResponse = z.infer<
+  typeof projectNativeActionResponseSchema
+>;
+
+/** A project's open actions, newest fence first, one bounded page at a time. */
+export const projectNativeActionsResponseSchema = z.object({
+  actions: page(projectNativeActionResponseSchema),
+  nextCursor: cursorSchema.optional(),
+});
+export type ProjectNativeActionsResponse = z.infer<
+  typeof projectNativeActionsResponseSchema
+>;
 
 export const operationalStatusResponseSchema = z.object({
   observedAt: instantSchema,

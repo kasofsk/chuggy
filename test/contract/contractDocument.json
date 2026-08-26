@@ -33,6 +33,8 @@
     "project": "/api/v1/tenants/:tenant/projects/:project",
     "tickets": "/api/v1/tenants/:tenant/projects/:project/tickets",
     "ticket": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket",
+    "ticketNativeActions": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/native-actions",
+    "nativeActions": "/api/v1/tenants/:tenant/projects/:project/native-actions",
     "operationalStatus": "/api/v1/tenants/:tenant/projects/:project/operational-status",
     "selectorContext": "/api/v1/tenants/:tenant/projects/:project/selector-context",
     "executions": "/api/v1/tenants/:tenant/projects/:project/executions",
