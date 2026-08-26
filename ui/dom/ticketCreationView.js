@@ -185,7 +185,7 @@ function briefingLines(controller, state, label, field) {
   const input = element("textarea", { rows: "4" }, [
     state.brief[field].join("\n"),
   ]);
-  input.addEventListener("input", () =>
+  input.addEventListener("change", () =>
     controller.edit(state.authoring, {
       ...state.brief,
       [field]: input.value

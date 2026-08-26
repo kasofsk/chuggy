@@ -303,6 +303,7 @@ function viewOf(parts: {
   readonly authority?: AuthorityRequest;
   readonly worker?: WorkerConfiguration;
   readonly runtime?: RuntimeFacts;
+  readonly priorWorkReports?: readonly string[];
   readonly grant?: PolicyAuthorityGrant;
 }): BriefingView {
   const block = parts.block ?? { instructions: [] };
@@ -324,6 +325,7 @@ function viewOf(parts: {
       ...(parts.worker === undefined ? {} : { worker: parts.worker }),
     },
     runtime: parts.runtime ?? noFacts,
+    priorWorkReports: { reports: parts.priorWorkReports ?? [] },
     grant: parts.grant ?? grant,
   };
 }
@@ -407,6 +409,9 @@ function viewPresenting(
     runtime: present.has("RuntimeContext")
       ? { workspace: "/work/importer", changedFiles: [], handoff: [] }
       : noFacts,
+    priorWorkReports: present.has("PriorWorkReports")
+      ? ["The worker changed the importer and ran the focused gate."]
+      : [],
   });
 }
 
@@ -500,11 +505,13 @@ test("each role is briefed from its own block and never the other's", () => {
 test("each evaluation stage selects its own block, practices, and authority", () => {
   const evaluations = [
     {
+      purpose: "Review" as const,
       instructions: ["Review the change."],
       practices: ["ChangedCallPaths"],
       authority: { tools: ["editor"] },
     },
     {
+      purpose: "Check" as const,
       instructions: ["Run the command suite."],
       practices: ["AcceptanceCriteria"],
       authority: { tools: ["shell"] },
@@ -656,7 +663,13 @@ test("every fault is reachable from a pinned configuration or a runtime fact", (
       viewOf({
         purpose: "Review",
         stage: 1,
-        evaluations: [{ instructions: ["Review the change."], practices: [] }],
+        evaluations: [
+          {
+            purpose: "Review",
+            instructions: ["Review the change."],
+            practices: [],
+          },
+        ],
       }),
     ),
     blockedFault(viewOf({ brief: { ...brief, constraints: [""] } })),

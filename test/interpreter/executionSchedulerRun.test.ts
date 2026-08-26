@@ -230,6 +230,7 @@ function serviceWith(
     policy,
     configurations: { configuration: () => Promise.resolve(read) },
     runtimeFacts: { facts: () => Promise.resolve(facts) },
+    priorWorkReports: { reports: () => Promise.resolve({ reports: [] }) },
     practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
     ticketService: ticketServiceDefaults,
@@ -823,10 +824,12 @@ test("an evaluation task is briefed from the block matching its placement stage"
     ...configuration,
     evaluations: [
       {
+        purpose: "Review",
         instructions: [reviewInstruction],
         practices: ["ChangedCallPaths"],
       },
       {
+        purpose: "Check",
         instructions: [stageInstruction],
         practices: ["AcceptanceCriteria"],
       },
@@ -846,13 +849,59 @@ test("an evaluation task is briefed from the block matching its placement stage"
   assert.ok(placement !== undefined);
   const briefing = placement.invocation.briefing;
   assert.equal(placement.stage, 1);
-  assert.equal(briefing.purpose, "Review");
+  assert.equal(briefing.purpose, "Check");
   assert.ok(briefing.text.includes(stageInstruction));
   assert.equal(briefing.text.includes(reviewInstruction), false);
   assert.equal(briefing.text.includes(workInstruction), false);
   assert.deepEqual(placement.invocation.provenance.practices, [
     "AcceptanceCriteria",
   ]);
+});
+
+test("a code review receives the prior work report without giving it to the check stage", async () => {
+  const placements: AttemptPlacement[] = [];
+  const reports = ["Changed the parser and ran its focused test."];
+  const service = {
+    ...placingService([], placements, {
+      read: "Configuration" as const,
+      configuration: {
+        ...configuration,
+        evaluations: [
+          {
+            purpose: "Review" as const,
+            instructions: [reviewInstruction],
+            practices: ["ChangedCallPaths"],
+          },
+          {
+            purpose: "Check" as const,
+            instructions: ["Run the command suite."],
+            practices: ["AcceptanceCriteria"],
+          },
+        ],
+      },
+    }),
+    priorWorkReports: {
+      reports: () => Promise.resolve({ reports }),
+    },
+  };
+  const reviewStore: ExecutionSchedulerStore = {
+    ...service.store,
+    unlaunched: () =>
+      Promise.resolve([{ ...execution, taskKind: "Evaluation", stage: 0 }]),
+  };
+  await executionSchedulerLaunch({ ...service, store: reviewStore }, epoch);
+  assert.ok(placements[0]?.invocation.briefing.text.includes(reports[0] ?? ""));
+  placements.length = 0;
+  const checkStore: ExecutionSchedulerStore = {
+    ...service.store,
+    unlaunched: () =>
+      Promise.resolve([{ ...execution, taskKind: "Evaluation", stage: 1 }]),
+  };
+  await executionSchedulerLaunch({ ...service, store: checkStore }, epoch);
+  assert.equal(
+    placements[0]?.invocation.briefing.text.includes(reports[0] ?? ""),
+    false,
+  );
 });
 
 test("a launched worker holds no authority to complete its own task", async () => {

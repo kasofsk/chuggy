@@ -96,6 +96,7 @@ import {
   type BriefingSectionId,
   type TaskPurpose,
 } from "./briefingTemplate.ts";
+export type { TaskPurpose } from "./briefingTemplate.ts";
 import {
   resolveTaskAuthority,
   type AuthorityRequest,
@@ -104,7 +105,7 @@ import {
 } from "./taskAuthority.ts";
 
 /** Which roles a practice speaks to, which is what makes one shared list serve both. */
-export type PracticeScope = "Work" | "Review" | "Both";
+export type PracticeScope = "Work" | "Review" | "Check" | "Both";
 
 /** One blessed practice: what it tells an agent to do, and whose briefing it belongs in. */
 export interface BlessedPractice {
@@ -175,6 +176,21 @@ export interface RuntimeFacts {
   readonly changedFiles: readonly string[];
   readonly handoff: readonly string[];
 }
+
+/** The bounded summaries earlier work tasks reported for a review to understand, not verify. */
+export interface PriorWorkReports {
+  readonly reports: readonly string[];
+}
+
+export interface PriorWorkReportsPort {
+  reports(
+    partition: Partition,
+    execution: ExecutionId,
+  ): Promise<PriorWorkReports>;
+}
+
+/** Work fanout is bounded to this many reports by the release contract. */
+export const priorWorkReportsMax = 8;
 
 /** The most changed files a runtime context may name before it stops being context. */
 export const runtimeChangedFilesMax = 64;
@@ -327,6 +343,7 @@ export interface BriefingView {
   readonly pin: ConfigurationPin;
   readonly configuration: PinnedTaskConfiguration;
   readonly runtime: RuntimeFacts;
+  readonly priorWorkReports: PriorWorkReports;
   readonly grant: PolicyAuthorityGrant;
 }
 
@@ -383,11 +400,13 @@ function briefingConfigurationFault(
 /** What the gathered runtime facts have to be to render, which is bounded and printable. */
 function briefingRuntimeFault(
   runtime: RuntimeFacts,
+  priorWorkReports: PriorWorkReports,
 ): BriefingFault | undefined {
   return briefingListsFault([
     [runtime.workspace === undefined ? [] : [runtime.workspace], 1],
     [runtime.changedFiles, runtimeChangedFilesMax],
     [runtime.handoff, runtimeHandoffLinesMax],
+    [priorWorkReports.reports, priorWorkReportsMax],
   ]);
 }
 
@@ -435,6 +454,13 @@ function briefingBodies(
     RoleInstructions: briefingRoleInstructions(view.purpose),
     WhyItMatters: view.configuration.brief.motivation,
     AcceptanceAndConstraints: briefingCriteriaLines(view.configuration.brief),
+    PriorWorkReports:
+      view.purpose === "Review"
+        ? briefingLabelled(
+            briefingLabels.workReports,
+            view.priorWorkReports.reports,
+          )
+        : [],
     PurposeInstructions:
       purposeBlock(view.configuration, view.purpose, view.stage)
         ?.instructions ?? [],
@@ -590,7 +616,8 @@ export function composeTaskInvocation(
   view: BriefingView,
 ): TaskComposed {
   const fault =
-    briefingConfigurationFault(view) ?? briefingRuntimeFault(view.runtime);
+    briefingConfigurationFault(view) ??
+    briefingRuntimeFault(view.runtime, view.priorWorkReports);
   if (fault !== undefined) return { composed: "Blocked", fault };
   const resolved = resolvePractices(
     catalog,

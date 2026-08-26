@@ -92,6 +92,18 @@ function sourceReport(
   });
 }
 
+/** One current report carrying the summary later evaluations receive. */
+function currentReport(verdict: string, report: unknown): string {
+  return JSON.stringify({
+    version: 3,
+    verdict,
+    report,
+    handoffs: [],
+    diagnostics: [],
+    source: null,
+  });
+}
+
 const source = {
   repository: "repository-one",
   ref: "refs/heads/chuggy/tickets/ticket-one/attempts/attempt-one",
@@ -175,7 +187,7 @@ test("the schema version is read before any row is", () => {
   assert.equal(
     rejection(
       JSON.stringify({
-        version: 3,
+        version: 4,
         verdict: "Pass",
         handoffs: [row("../escape")],
         diagnostics: [],
@@ -428,12 +440,13 @@ function everyRejectionReached(): ReadonlySet<ManifestRejection> {
     ),
     rejection(
       JSON.stringify({
-        version: 3,
+        version: 4,
         verdict: "Pass",
         handoffs: [],
         diagnostics: [],
       }),
     ),
+    rejection(currentReport("Pass", "")),
     rejection(sourceReport("Pass", { ...source, commit: "not-an-object" })),
     rejection(sourceReport("Fail", source)),
     rejection(sourceReport("Pass", source, [row("out/a")])),

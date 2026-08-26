@@ -10,6 +10,7 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { postgresWorkerReportStore } from "../../src/adapters/postgres/workerPlane.ts";
 import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-worker-plane-authority.ts";
+import { migration037 } from "../../src/adapters/postgres/schema/migrations/037-evaluation-work-reports.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
@@ -19,6 +20,23 @@ const attempt = {
   attempt: asAttemptId("attempt"),
   generation: 4,
 };
+
+function transactionalPool(
+  query: (statement: unknown) => Promise<{ readonly rows: readonly unknown[] }>,
+): pg.Pool {
+  return {
+    connect: () =>
+      Promise.resolve({
+        query: (statement: unknown) =>
+          typeof statement === "string"
+            ? Promise.resolve({ rows: [] })
+            : query(statement),
+        on: () => undefined,
+        removeListener: () => undefined,
+        release: () => undefined,
+      }),
+  } as unknown as pg.Pool;
+}
 
 test("the worker role reaches database state only through its three boundaries", () => {
   const grants = migration028.statements.filter((statement) =>
@@ -31,6 +49,17 @@ test("the worker role reaches database state only through its three boundaries",
     grants.join("\n"),
     /open|admit|fence_old|execution_attempt\s+TO/u,
   );
+});
+
+test("the report summary boundary grants no table authority to the worker role", () => {
+  const grants = migration037.statements.filter(
+    (statement) =>
+      statement.startsWith("GRANT") &&
+      statement.includes(`TO ${workerPlaneRole}`),
+  );
+  assert.equal(grants.length, 1);
+  assert.match(grants[0] ?? "", /^GRANT EXECUTE ON FUNCTION/u);
+  assert.doesNotMatch(grants[0] ?? "", /execution_result_report\s+TO/u);
 });
 
 test("every worker boundary fences against the latest recovery epoch", () => {
@@ -101,19 +130,18 @@ test("losing a report passes only the capability digest, generation and closed e
 });
 
 test("the result boundary's durable conflict stays distinct from fencing", async () => {
-  const pool = {
-    query: () =>
-      Promise.resolve({
-        rows: [
-          {
-            terminalized: "Conflicting",
-            outcome: null,
-            operation: null,
-            incident: "incident-one",
-          },
-        ],
-      }),
-  } as unknown as pg.Pool;
+  const pool = transactionalPool(() =>
+    Promise.resolve({
+      rows: [
+        {
+          terminalized: "Conflicting",
+          outcome: null,
+          operation: null,
+          incident: "incident-one",
+        },
+      ],
+    }),
+  );
   const store = postgresWorkerReportStore(
     pool,
     asAttemptCapabilitySecret("held"),
@@ -140,21 +168,19 @@ test("the result boundary's durable conflict stays distinct from fencing", async
 
 test("a source handoff crosses the worker boundary as a distinct value", async () => {
   const statements: unknown[] = [];
-  const pool = {
-    query: (statement: unknown) => {
-      statements.push(statement);
-      return Promise.resolve({
-        rows: [
-          {
-            terminalized: "Terminalized",
-            outcome: "Passed",
-            operation: "operation-one",
-            incident: null,
-          },
-        ],
-      });
-    },
-  } as unknown as pg.Pool;
+  const pool = transactionalPool((statement: unknown) => {
+    statements.push(statement);
+    return Promise.resolve({
+      rows: [
+        {
+          terminalized: "Terminalized",
+          outcome: "Passed",
+          operation: "operation-one",
+          incident: null,
+        },
+      ],
+    });
+  });
   const store = postgresWorkerReportStore(
     pool,
     asAttemptCapabilitySecret("held"),
@@ -189,5 +215,50 @@ test("a source handoff crosses the worker boundary as a distinct value", async (
       commit: "a".repeat(40),
       base: "b".repeat(40),
     }),
+  );
+});
+
+test("a current worker result persists its report in the completion transaction", async () => {
+  const statements: unknown[] = [];
+  const pool = transactionalPool((statement) => {
+    statements.push(statement);
+    return Promise.resolve({
+      rows:
+        statements.length === 1
+          ? [
+              {
+                terminalized: "Terminalized",
+                outcome: "Passed",
+                operation: "operation-one",
+                incident: null,
+              },
+            ]
+          : [{ stored: true }],
+    });
+  });
+  const store = postgresWorkerReportStore(
+    pool,
+    asAttemptCapabilitySecret("held"),
+  );
+  await store.terminalize({
+    ...attempt,
+    manifest: {
+      manifest: "manifest",
+      schemaVersion: 3,
+      digest: "d".repeat(64),
+      verdict: "Pass",
+      report: "Changed the parser and ran its focused test.",
+      handoffs: [],
+      diagnostics: [],
+    },
+  } as never);
+  const stored = statements[1] as {
+    readonly template: readonly string[];
+    readonly rawValues: readonly unknown[];
+  };
+  assert.match(stored.template.join(""), /store_worker_result_report/u);
+  assert.equal(
+    stored.rawValues[2],
+    "Changed the parser and ran its focused test.",
   );
 });

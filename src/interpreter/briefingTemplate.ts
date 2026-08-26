@@ -33,16 +33,21 @@
  */
 
 /** The role a briefing is written for, which is also the role a practice is scoped to. */
-export type TaskPurpose = "Work" | "Review";
+export type TaskPurpose = "Work" | "Review" | "Check";
 
 /** Every purpose, so a suite and a resolver iterate rather than restate. */
-export const allTaskPurposes: readonly TaskPurpose[] = ["Work", "Review"];
+export const allTaskPurposes: readonly TaskPurpose[] = [
+  "Work",
+  "Review",
+  "Check",
+];
 
 /** The sections a briefing is made of, named so a rendered one can be inspected by identity. */
 export type BriefingSectionId =
   | "RoleInstructions"
   | "WhyItMatters"
   | "AcceptanceAndConstraints"
+  | "PriorWorkReports"
   | "PurposeInstructions"
   | "Practices"
   | "RuntimeContext"
@@ -53,6 +58,7 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "RoleInstructions",
   "WhyItMatters",
   "AcceptanceAndConstraints",
+  "PriorWorkReports",
   "PurposeInstructions",
   "Practices",
   "RuntimeContext",
@@ -66,7 +72,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 1;
+export const briefingTemplateVersion = 2;
 
 /** The heading one section renders under, which is the only one that varies by role. */
 export function briefingHeading(
@@ -80,10 +86,14 @@ export function briefingHeading(
       return "Why this ticket matters";
     case "AcceptanceAndConstraints":
       return "Acceptance criteria and constraints";
+    case "PriorWorkReports":
+      return "Reports from the work tasks";
     case "PurposeInstructions":
       return purpose === "Work"
         ? "Implementation instructions"
-        : "Review focus";
+        : purpose === "Review"
+          ? "Review focus"
+          : "Check instructions";
     case "Practices":
       return "Practices for this task";
     case "RuntimeContext":
@@ -100,6 +110,7 @@ export const briefingLabels = {
   workspace: "Workspace:",
   changedFiles: "Changed files:",
   handoff: "Handoff from the earlier task:",
+  workReports: "Worker reports:",
 } as const;
 
 /** The standing responsibilities of the role, which no ticket may edit. */
@@ -118,8 +129,16 @@ export function briefingRoleInstructions(
       return [
         "You are reviewing a change made for this ticket, and you did not write it.",
         "Read the change itself rather than its author's account of what it does.",
+        "Review code only: do not run tests or commands, and do not treat reported test results as proof.",
+        "A separate CI evaluation owns executable checks; this review owns correctness found by reading.",
         "Judge it against the acceptance criteria and constraints below, and against nothing you would merely have preferred.",
         "If the change satisfies every criterion, say so; a finding that names no criterion is not a finding.",
+      ];
+    case "Check":
+      return [
+        "You are running the separate executable check stage for this ticket.",
+        "Run only the commands named below and judge their actual exit status.",
+        "Exit 2 means the check could not run and is not a pass.",
       ];
   }
 }
@@ -140,6 +159,11 @@ export function briefingRequiredResult(
         "Report one result manifest: a verdict, and one finding for each criterion or constraint the change fails.",
         "Give every finding a file, a line and the criterion or constraint it fails.",
         "Report a pass only when every criterion above is met by the change as it stands.",
+      ];
+    case "Check":
+      return [
+        "Report one result manifest with the command and its actual exit status.",
+        "Report a pass only when every requested command exits cleanly.",
       ];
   }
 }

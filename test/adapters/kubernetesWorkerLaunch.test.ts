@@ -128,6 +128,7 @@ function taskInvocation(): AttemptPlacement["invocation"] {
     pin: configuration,
     configuration,
     runtime: { changedFiles: [], handoff: [] },
+    priorWorkReports: { reports: [] },
     grant,
   });
   if (composed.composed !== "Composed")

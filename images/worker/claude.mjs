@@ -4,7 +4,7 @@ const resultSchema = JSON.stringify({
   required: ["verdict", "summary"],
   properties: {
     verdict: { enum: ["Pass", "Fail"] },
-    summary: { type: "string" },
+    summary: { type: "string", minLength: 1, maxLength: 8192 },
   },
 });
 

@@ -24,6 +24,7 @@ import type {
   WorkerPlaneAuthority,
 } from "../../interpreter/workerPlane.ts";
 import { projectRowCounter } from "./rows.ts";
+import { postgresTransaction } from "./pool.ts";
 
 interface WorkerAuthorityRow {
   readonly tenant: string | null;
@@ -211,6 +212,59 @@ function workerTerminalized(row: WorkerResultRow): Terminalized {
   }
 }
 
+async function workerTerminalizeReport(
+  pool: pg.Pool,
+  secretDigest: string,
+  report: AttemptReport,
+): Promise<Terminalized> {
+  const artifacts = [
+    ...report.manifest.handoffs.map((artifact, index) => ({
+      ordinal: index + 1,
+      role: "Handoff",
+      path: artifact.path,
+      digest: artifact.digest,
+      bytes: artifact.bytes,
+    })),
+    ...report.manifest.diagnostics.map((artifact, index) => ({
+      ordinal: report.manifest.handoffs.length + index + 1,
+      role: "Diagnostic",
+      path: artifact.path,
+      digest: artifact.digest,
+      bytes: artifact.bytes,
+    })),
+  ];
+  const operation = `completion-${randomUUID()}`;
+  return postgresTransaction(pool, async (client) => {
+    const result = await client.query<WorkerResultRow>(
+      sql`SELECT terminalized,outcome,operation,incident FROM submit_worker_result(
+        ${secretDigest},${report.generation},${report.manifest.manifest},
+        ${report.manifest.schemaVersion},${report.manifest.digest},${report.manifest.verdict},
+        ${JSON.stringify(artifacts)}::jsonb,
+        ${report.manifest.source === undefined ? null : JSON.stringify(report.manifest.source)}::jsonb,
+        ${operation})`,
+    );
+    const row = result.rows[0];
+    if (row === undefined)
+      throw new Error(
+        "postgres worker plane: result boundary returned no outcome",
+      );
+    const terminalized = workerTerminalized(row);
+    if (
+      report.manifest.report !== undefined &&
+      (terminalized.terminalized === "Terminalized" ||
+        terminalized.terminalized === "AlreadyTerminal")
+    ) {
+      const stored = await client.query<{ stored: boolean | null }>(
+        sql`SELECT store_worker_result_report(
+              ${secretDigest},${report.manifest.manifest},${report.manifest.report})::boolean AS stored`,
+      );
+      if (stored.rows[0]?.stored !== true)
+        throw new Error("postgres worker plane: result report was refused");
+    }
+    return terminalized;
+  });
+}
+
 export function postgresWorkerReportStore(
   pool: pg.Pool,
   secret: AttemptCapabilitySecret,
@@ -233,38 +287,7 @@ export function postgresWorkerReportStore(
       );
       return ended.rows[0]?.ended === true;
     },
-    terminalize: async (report: AttemptReport) => {
-      const artifacts = [
-        ...report.manifest.handoffs.map((artifact, index) => ({
-          ordinal: index + 1,
-          role: "Handoff",
-          path: artifact.path,
-          digest: artifact.digest,
-          bytes: artifact.bytes,
-        })),
-        ...report.manifest.diagnostics.map((artifact, index) => ({
-          ordinal: report.manifest.handoffs.length + index + 1,
-          role: "Diagnostic",
-          path: artifact.path,
-          digest: artifact.digest,
-          bytes: artifact.bytes,
-        })),
-      ];
-      const operation = `completion-${randomUUID()}`;
-      const result = await pool.query<WorkerResultRow>(
-        sql`SELECT terminalized,outcome,operation,incident FROM submit_worker_result(
-          ${secretDigest},${report.generation},${report.manifest.manifest},
-          ${report.manifest.schemaVersion},${report.manifest.digest},${report.manifest.verdict},
-          ${JSON.stringify(artifacts)}::jsonb,
-          ${report.manifest.source === undefined ? null : JSON.stringify(report.manifest.source)}::jsonb,
-          ${operation})`,
-      );
-      const row = result.rows[0];
-      if (row === undefined)
-        throw new Error(
-          "postgres worker plane: result boundary returned no outcome",
-        );
-      return workerTerminalized(row);
-    },
+    terminalize: (report) =>
+      workerTerminalizeReport(pool, secretDigest, report),
   };
 }

@@ -43,6 +43,7 @@
     },
     "evaluations": [
       {
+        "purpose": "Review",
         "instructions": [
           "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
         ],
@@ -52,6 +53,7 @@
         ]
       },
       {
+        "purpose": "Check",
         "instructions": [
           "Run .chug/tasks/ci.sh and pass only when it exits cleanly; exit 2 means the evaluation could not run and is not a pass."
         ],
