@@ -22,6 +22,7 @@ import {
   credentialFilesPrecondition,
 } from "../../src/adapters/credentials/credentialFiles.ts";
 import {
+  finalizerIdentityCharsMax,
   asRepositoryId,
   type RepositoryBinding,
 } from "../../src/interpreter/finalizer.ts";
@@ -59,6 +60,19 @@ test("a configured repository resolves to what its file holds", async (t) => {
     resolved: "Credential",
     credential: "secret-a1b2c3",
   });
+});
+
+test("a credential larger than a stored identity remains available", async (t) => {
+  const root = directory(t);
+  const path = join(root, "one");
+  const credential = "s".repeat(finalizerIdentityCharsMax + 1);
+  writeFileSync(path, credential);
+  assert.deepEqual(
+    await credentialFiles({ sources: [{ repository: one, path }] }).credential(
+      binding(),
+    ),
+    { resolved: "Credential", credential },
+  );
 });
 
 test("a repository this deployment names no file for is denied", async (t) => {
@@ -131,10 +145,13 @@ test("a named file that cannot be read is an outage and not a denial", async (t)
   }
 });
 
-test("a value longer than a stored identity admits is refused, not truncated", async (t) => {
+test("a value longer than the credential source admits is refused, not truncated", async (t) => {
   const root = directory(t);
   const path = join(root, "one");
-  writeFileSync(path, "s".repeat(1_024));
+  writeFileSync(
+    path,
+    "s".repeat(credentialFilesDefaults.credentialBytesMax + 1),
+  );
   assert.deepEqual(
     await credentialFiles({ sources: [{ repository: one, path }] }).credential(
       binding(),

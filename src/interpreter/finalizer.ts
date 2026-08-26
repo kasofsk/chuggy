@@ -113,6 +113,9 @@ export type RepositoryCredential = string & {
 /** The longest opaque finalizer identity a stored row carries. */
 export const finalizerIdentityCharsMax = 256;
 
+/** The longest repository credential accepted from a bounded credential source. */
+export const repositoryCredentialCharsMax = 4_096;
+
 /** The longest reference name a stored row carries. */
 export const gitRefNameCharsMax = 256;
 
@@ -192,7 +195,7 @@ export function asRepositoryCredential(value: string): RepositoryCredential {
   return asBoundedText(
     value,
     "repository credential",
-    finalizerIdentityCharsMax,
+    repositoryCredentialCharsMax,
   ) as RepositoryCredential;
 }
 
