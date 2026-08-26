@@ -1401,10 +1401,10 @@ async function seedBrieflessDraft(subject: pg.Pool): Promise<void> {
   );
 }
 
-test("migration 41 opens the brief's doors to the roles that reach it and no others", async () => {
+test("migration 42 opens the brief's doors to the roles that reach it and no others", async () => {
   await migrationDatabase("ticket_brief_grants", async (subject) => {
-    await migrationSeedApplied(subject, 41);
-    await applyMigration(subject, 41);
+    await migrationSeedApplied(subject, 42);
+    await applyMigration(subject, 42);
     for (const [role, relation, privilege, granted] of [
       [apiRole, "draft_brief", "SELECT", true],
       [apiRole, "draft_brief", "INSERT", false],
@@ -1431,12 +1431,12 @@ test("migration 41 opens the brief's doors to the roles that reach it and no oth
   });
 });
 
-test("migration 41 leaves an upgraded database's drafts unbriefed and briefs the next", async () => {
+test("migration 42 leaves an upgraded database's drafts unbriefed and briefs the next", async () => {
   await migrationDatabase("ticket_brief", async (subject) => {
-    await migrationSeedApplied(subject, 41);
+    await migrationSeedApplied(subject, 42);
     await seedBrieflessDraft(subject);
 
-    await applyMigration(subject, 41);
+    await applyMigration(subject, 42);
 
     assert.deepEqual(
       (await subject.query("SELECT ticket FROM draft_brief")).rows,

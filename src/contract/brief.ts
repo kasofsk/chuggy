@@ -12,21 +12,21 @@
 
 import { z } from "zod";
 
-/** The longest line a briefing renders, which is what bounds one line of intent. */
-export const briefIntentLineCharsMax = 512;
+/**
+ * The longest line a briefing renders, which is the whole of what a brief is
+ * measured in: an intent renders as lines and a link renders as one, so this
+ * is the bound the wire publishes, the server enforces and the CHECK stores.
+ */
+export const briefLineCharsMax = 512;
 
 /** The longest intent a draft stores, an intent being a paragraph and not a line. */
 export const briefIntentCharsMax = 16_384;
 
 /** The most lines an intent renders as, which is what the two bounds above divide out to. */
-export const briefIntentLinesMax =
-  briefIntentCharsMax / briefIntentLineCharsMax;
+export const briefIntentLinesMax = briefIntentCharsMax / briefLineCharsMax;
 
 /** The most links one brief carries, a link list being a briefing list like any other. */
 export const briefLinksMax = 8;
-
-/** The longest link one brief carries, a link being a displayed URL like any other. */
-export const briefLinkCharsMax = 2_048;
 
 /** The longest branch one brief names, a branch being a stored reference name. */
 export const briefBranchCharsMax = 256;
@@ -39,7 +39,7 @@ export const briefBranchPrefix = "refs/heads/";
 
 export const briefLinkSchema = z
   .string()
-  .max(briefLinkCharsMax)
+  .max(briefLineCharsMax)
   .startsWith(briefLinkScheme);
 
 export const briefBranchSchema = z

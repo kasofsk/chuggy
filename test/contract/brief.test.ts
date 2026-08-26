@@ -15,18 +15,17 @@ import {
   briefBranchCharsMax,
   briefBranchPrefix,
   briefIntentCharsMax,
-  briefIntentLineCharsMax,
   briefIntentLinesMax,
-  briefLinkCharsMax,
+  briefLineCharsMax,
+  briefLinkSchema,
+  briefLinkScheme,
   briefLinksMax,
   briefSchema,
 } from "../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../src/contract/requests.ts";
-import {
-  proposalBodyCharsMax,
-  proposalDisplayUrlCharsMax,
-} from "../../src/interpreter/changeProposal.ts";
+import { proposalBodyCharsMax } from "../../src/interpreter/changeProposal.ts";
 import { gitRefNameCharsMax } from "../../src/interpreter/finalizer.ts";
+import { handoffRefPrefix } from "../../src/interpreter/handoffConfiguration.ts";
 import {
   briefingLineCharsMax,
   briefingLinesMax,
@@ -35,17 +34,27 @@ import { authoringWireBody } from "./representations.ts";
 
 test("every wire bound on a brief is the interpreter bound it was taken from", () => {
   assert.equal(briefIntentCharsMax, proposalBodyCharsMax);
-  assert.equal(briefIntentLineCharsMax, briefingLineCharsMax);
-  assert.equal(briefLinkCharsMax, proposalDisplayUrlCharsMax);
+  assert.equal(briefLineCharsMax, briefingLineCharsMax);
   assert.equal(briefLinksMax, briefingLinesMax);
   assert.equal(briefBranchCharsMax, gitRefNameCharsMax);
+  assert.equal(briefBranchPrefix, handoffRefPrefix);
 });
 
 test("the lines an intent renders as are what its two bounds divide out to", () => {
   assert.ok(Number.isSafeInteger(briefIntentLinesMax));
+  assert.equal(briefIntentLinesMax * briefLineCharsMax, briefIntentCharsMax);
+});
+
+test("the longest link the wire publishes is the longest one it accepts", () => {
+  const linkOf = (chars: number) =>
+    `${briefLinkScheme}${"a".repeat(chars - briefLinkScheme.length)}`;
   assert.equal(
-    briefIntentLinesMax * briefIntentLineCharsMax,
-    briefIntentCharsMax,
+    briefLinkSchema.safeParse(linkOf(briefLineCharsMax)).success,
+    true,
+  );
+  assert.equal(
+    briefLinkSchema.safeParse(linkOf(briefLineCharsMax + 1)).success,
+    false,
   );
 });
 
@@ -73,7 +82,7 @@ test("a brief carrying no intent, an oversized one or an unreadable link is refu
     { intent: "Do it.", links: ["ftp://example.test/one"] },
     {
       intent: "Do it.",
-      links: [`https://example.test/${"a".repeat(briefLinkCharsMax)}`],
+      links: [`https://example.test/${"a".repeat(briefLineCharsMax)}`],
     },
     {
       intent: "Do it.",

@@ -2,7 +2,7 @@ import {
   briefBranchCharsMax,
   briefBranchPrefix,
   briefIntentCharsMax,
-  briefLinkCharsMax,
+  briefLineCharsMax,
   briefLinkScheme,
   briefLinksMax,
 } from "../../../../contract/brief.ts";
@@ -50,7 +50,7 @@ const briefRelations = [
      CONSTRAINT draft_brief_link_ordinal_is_bounded
        CHECK (ordinal BETWEEN 1 AND ${briefLinksMax}),
      CONSTRAINT draft_brief_link_is_a_bounded_https_url
-       CHECK (length(url) BETWEEN 1 AND ${briefLinkCharsMax}
+       CHECK (length(url) BETWEEN 1 AND ${briefLineCharsMax}
          AND url LIKE '${briefLinkScheme}%' AND url !~ '[[:cntrl:]]')
    )`,
 ];
@@ -124,8 +124,8 @@ const briefWriters = [
  * The brief a ticket carries, beside the draft and outside the model's
  * authoring event, written by the same two doors the authoring is.
  */
-export const migration041: Migration = {
-  version: 41,
+export const migration042: Migration = {
+  version: 42,
   name: "the ticket brief",
   statements: [
     ...briefRelations,

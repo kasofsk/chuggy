@@ -19,14 +19,14 @@
  *
  * A RELEASED TICKET'S BRIEF NO LONGER MOVES, which is what lets a retry read it
  * rather than pin it: a revision is refused for a draft that is not one, so the
- * row a ticket reaches is frozen the moment the ticket exists.
+ * row a ticket reaches is frozen the moment the ticket exists. That refusal is
+ * the server's, so the case for it is `test/postgres/authoring.test.ts`'s.
  */
 
 import {
   briefBranchCharsMax,
   briefIntentCharsMax,
   briefIntentLinesMax,
-  briefLinkCharsMax,
   briefLinkScheme,
   briefLinksMax,
 } from "../contract/brief.ts";
@@ -77,11 +77,14 @@ export function asBriefIntent(value: string): BriefIntent {
   return normalized as BriefIntent;
 }
 
-/** Brands a link, refusing anything this tree would not fetch or could not print. */
+/**
+ * Brands a link, refusing anything this tree would not fetch or could not
+ * print. A link renders as one briefing line, so the line rule is the whole of
+ * what bounds it and there is no second bound here to disagree with the wire.
+ */
 export function asBriefLinkUrl(value: string): BriefLinkUrl {
   if (
     !value.startsWith(briefLinkScheme) ||
-    value.length > briefLinkCharsMax ||
     taskConfigurationLineFault(value) !== undefined
   )
     throw new RangeError("ticket link: the URL is not a printable https URL");

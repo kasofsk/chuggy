@@ -179,11 +179,14 @@ function handoffRefHasInvalidCharacter(value: string): boolean {
   return false;
 }
 
+/** The one reference namespace this tree writes to, wherever a ref is written. */
+export const handoffRefPrefix = "refs/heads/";
+
 /** The one reference-name grammar this tree accepts, wherever a ref is written. */
 export function handoffRef(value: unknown): GitRefName | undefined {
   if (
     typeof value !== "string" ||
-    !value.startsWith("refs/heads/") ||
+    !value.startsWith(handoffRefPrefix) ||
     value.endsWith("/") ||
     value.endsWith(".") ||
     value.includes("..") ||

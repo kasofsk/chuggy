@@ -940,3 +940,52 @@ test("the server refuses a brief that reached it around the interpreter's rules"
     ),
   );
 });
+
+/** Releases a fixture's draft through the writer, which is what freezes its brief. */
+async function releaseFixtureDraft(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  label: string,
+): Promise<void> {
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  const writer = postgresHarnessWriter(harness);
+  const decided = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(
+      writer,
+      await postgresHarnessHeld(harness.store, fixture.partition, label),
+    ),
+    input,
+  );
+  assert.equal(decided.decided.decided, "Committed");
+}
+
+test("a released ticket's brief no longer moves, which is what lets a retry read it", async () => {
+  const fixture = await draftFixture();
+  await releaseFixtureDraft(fixture, "brief-freeze");
+  const reader = postgresTicketBrief(pool);
+  const released = await reader.brief(fixture.partition, fixture.draft.ticket);
+  assert.deepEqual(released, postgresHarnessBrief);
+  assert.deepEqual(
+    await fixture.store.reviseDraft({
+      partition: fixture.partition,
+      authority,
+      ticket: fixture.draft.ticket,
+      expectedVersion: fixture.draft.authoringVersion,
+      configurationRevision: fixture.revision,
+      authoring: plainAuthoring,
+      brief: asDraftBrief({
+        intent: "FORGED intent under a running execution.",
+        links: ["https://example.test/forged"],
+        branch: "refs/heads/forged",
+      }),
+    }),
+    { revised: "NotDraft", state: "Released" },
+  );
+  assert.deepEqual(
+    await reader.brief(fixture.partition, fixture.draft.ticket),
+    released,
+  );
+});
