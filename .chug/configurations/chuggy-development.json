@@ -3,7 +3,7 @@
   "name": "chuggy-development",
   "configuration": {
     "version": 1,
-    "image": "registry.chuggy.internal/chuggy/worker@sha256:cfe57dd168347730f91aec689be4adaf53750f237af54bb9effedf53319d34a6",
+    "image": "registry.chuggy.internal/chuggy/worker@sha256:49cc3c3d713e4b40341f68dfb83e1bf1acabb6d5986e1f1786ea5706afe0690f",
     "authority": {
       "tools": ["claude-code", "shell"],
       "credentials": ["chuggy-git-worker", "claude-code"],
@@ -12,10 +12,7 @@
       "mayCompleteTask": false
     },
     "worker": {
-      "arguments": [
-        "--allowedTools",
-        "Bash,Edit,Read,Write,Glob,Grep"
-      ],
+      "arguments": ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"],
       "setup": [],
       "files": []
     },
