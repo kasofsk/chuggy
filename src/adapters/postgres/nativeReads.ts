@@ -358,8 +358,10 @@ async function readProjectTickets(
   return found.rows;
 }
 
-/** Reads only API-safe columns through a pool carrying the API credential. */
-export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
+/** The three resource reads, each answering one route from the projection. */
+function nativeReadsResources(
+  pool: pg.Pool,
+): Pick<NativeReadStore, "operation" | "project" | "ticket"> {
   return {
     operation: async (partition, operation) => {
       const found = await pool.query<PublicOperationRow>(
@@ -394,6 +396,14 @@ export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
         ? ticketResource(row)
         : { ...ticketResource(row), brief };
     },
+  };
+}
+
+/** The two desk reads, which are the open native actions a ticket and a project carry. */
+function nativeReadsActions(
+  pool: pg.Pool,
+): Pick<NativeReadStore, "ticketNativeActions" | "nativeActions"> {
+  return {
     ticketNativeActions: async (partition, ticket) => {
       const found = await pool.query<OpenNativeActionRow>(
         sql`SELECT a.action,a.kind,a.authorizing_seq::text AS authorizing_seq,
@@ -435,4 +445,9 @@ export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
       return nativeActionPage(found.rows, query.limit);
     },
   };
+}
+
+/** Reads only API-safe columns through a pool carrying the API credential. */
+export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
+  return { ...nativeReadsResources(pool), ...nativeReadsActions(pool) };
 }
