@@ -46,6 +46,32 @@ module.exports = {
       },
     },
     {
+      name: "contract-reaches-only-zod",
+      comment:
+        "src/contract/ is the one public HTTP contract, and the server and " +
+        "the browser both import it: a module it reaches is a module a " +
+        "bundle must carry and a browser must run. So it reaches nothing " +
+        "outside itself but the parser library, transitively, by any path — " +
+        "no platform module, no framework, and nothing from the layers that " +
+        "own the server. Stated as reachability because the shape that " +
+        "breaks it is a helper belonging to neither directory that the " +
+        "contract imports and the interpreter answers, which is the same " +
+        "relay the layers above are each already forbidden to be. The " +
+        "direction is one-way and no rule here says so: the layers may read " +
+        "the contract, and a cycle is what would make that unanswerable, " +
+        "which no-circular-dependency already forbids. The parser's " +
+        "exemption is not anchored at the path root because a fixture tree " +
+        "reaches its node_modules through a symlink and resolves the same " +
+        "package to a path outside itself.",
+      severity: "error",
+      from: { path: "^src/contract/" },
+      to: {
+        reachable: true,
+        path: "^(?!src/contract/)",
+        pathNot: "(^|/)node_modules/zod/",
+      },
+    },
+    {
       name: "actor-sees-domain-only",
       comment:
         "The actor is the journaled decision layer: it reads the domain and " +
@@ -150,7 +176,7 @@ module.exports = {
         "two copies equal for instead.",
       severity: "error",
       from: { path: "^ui/" },
-      to: { reachable: true, path: "^(?!ui/)", pathNot: "node_modules/" },
+      to: { reachable: true, path: "^(?!ui/)", pathNot: "node_modules/|^src/contract/" },
     },
     {
       name: "unbuilt-console-uses-no-package",

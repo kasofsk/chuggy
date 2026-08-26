@@ -9,7 +9,8 @@ import {
   projectInventoryResponseSchema,
   proposalSubmissionResponseSchema,
 } from "./codecs.ts";
-import { encodeInventoryCursor, nativeHttpMediaType } from "./contract.ts";
+import { nativeHttpMediaType } from "../../contract/http.ts";
+import { encodeInventoryCursor } from "./contract.ts";
 
 export interface NativeHttpClientConfig {
   readonly baseUrl: string;

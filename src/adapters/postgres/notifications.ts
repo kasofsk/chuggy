@@ -3,10 +3,10 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import type { NotificationKind } from "../../contract/rosters.ts";
 import {
   checkedNotificationCursor,
   type NotificationBatch,
-  type NotificationKind,
   type NotificationStore,
   type ProjectNotification,
 } from "../../interpreter/notifications.ts";

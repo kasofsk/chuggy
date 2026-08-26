@@ -56,9 +56,9 @@ import { materializationOf } from "./decisionPlan.ts";
 import {
   deriveDispatchCandidates,
   dispatchViewDigest,
-  dispatchViewSchemaVersion,
   type DispatchContractPin,
 } from "./dispatchView.ts";
+import { dispatchViewSchemaVersion } from "../contract/http.ts";
 import {
   checkedTicketServiceConfig,
   observe,

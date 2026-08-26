@@ -42,8 +42,8 @@ run_in() { # <dir> [mode]
 # while this tree's rules were broken.
 fixture() { # [--no-modules]
 	rm -rf "$R"
-	mkdir -p "$R/src/domain" "$R/test/domain"
-	for f in tsconfig.json eslint.config.js .prettierrc.json .prettierignore; do
+	mkdir -p "$R/src/domain" "$R/src/contract" "$R/test/domain"
+	for f in tsconfig.json tsconfig.contract.json eslint.config.js .prettierrc.json .prettierignore; do
 		cp "$ROOT/$f" "$R/$f"
 	done
 	# Written in the formatter's own output shape, or the format stage fails in
@@ -61,10 +61,13 @@ fixture() { # [--no-modules]
 	git -C "$R" config user.name t
 }
 
-# Every fixture needs one clean source and one passing suite, so a case testing
-# one stage is not silently also failing another.
+# Every fixture needs one clean source, one clean contract module and one
+# passing suite, so a case testing one stage is not silently also failing
+# another. The contract module is what gives the browser stage an input: `tsc`
+# over a program with no files is a failure of its own.
 clean_source() {
 	printf '%s\n' 'export const answer = 42;' > "$R/src/domain/a.ts"
+	printf '%s\n' 'export const wireVersion = 1;' > "$R/src/contract/wire.ts"
 	{
 		printf '%s\n' 'import { test } from "node:test";'
 		printf '%s\n' 'import assert from "node:assert/strict";'
@@ -139,11 +142,11 @@ set -e
 check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
 # The tally is asserted rather than trusted: it is what says the run measured
 # something.
-check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 4 run"
-check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed, 4 run"
+check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 5 run"
+check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed, 5 run"
 
 run_in "$R" --static
-check "static mode runs only the three static stages" 0 "$RC" "0 stage(s) failed, 3 run"
+check "static mode runs only the four static stages" 0 "$RC" "0 stage(s) failed, 4 run"
 check "static mode does not discover unit suites" 0 "$RC" "typecheck: clean"
 
 run_in "$R" --unit
@@ -190,6 +193,23 @@ check "the owning gates' suites are not this stage's" 0 "$RC" "0 stage(s) failed
 # The split is asserted against a fixture whose suites this file wrote, so the
 # line cannot report a scope the run did not have.
 check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 3 left to check-conformance, check-random and check-postgres"
+
+# --- What the browser stage sees that the first typecheck does not ------------
+#
+# A platform import inside the contract typechecks against `tsconfig.json`,
+# which gives every source the platform's own types. Only the second program
+# refuses it, so this case is what says the browser stage ran at all.
+
+fixture
+clean_source
+{
+	printf '%s\n' 'import { randomUUID } from "node:crypto";'
+	printf '%s\n' 'export const identity = (): string => randomUUID();'
+} > "$R/src/contract/identity.ts"
+seal
+check "a platform import in the contract fails the browser stage" 1 "$RC" "1 stage(s) failed"
+check "the first typecheck accepts what the browser stage refuses" 1 "$RC" "typecheck: clean"
+check "the browser stage names the module it refused" 1 "$RC" "src/contract/identity.ts"
 
 # --- The house rules ---------------------------------------------------------
 #

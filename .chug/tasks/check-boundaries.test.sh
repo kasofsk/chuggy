@@ -113,6 +113,41 @@ printf '%s\n' 'import { port } from "../interpreter/port.ts"' 'export const x = 
 seal
 check "the domain may not reach outward" 1 "$RC" "domain-is-pure:"
 
+# --- contract-reaches-only-zod -----------------------------------------------
+
+# The allowed direction first: the contract imports its parser and the server's
+# layers import the contract. A red here would mean the rule over-fires on the
+# two edges the module exists to have.
+fixture
+mkdir -p "$R/src/contract" "$R/src/interpreter"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { z } from "zod"' 'export const wire = z.literal(1)' > "$R/src/contract/wire.ts"
+printf '%s\n' 'import { wire } from "../contract/wire.ts"' 'export const port = wire' > "$R/src/interpreter/port.ts"
+printf '%s\n' 'import { port } from "../src/interpreter/port.ts"' 'import { x } from "../src/domain/a.ts"' 'export const z = port ? x : x' > "$R/test/a.test.ts"
+seal
+check "the contract may import its parser and be imported" 0 "$RC" "graph clean"
+
+fixture
+mkdir -p "$R/src/contract"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { join } from "node:path"' 'export const wire = join("a", "b")' > "$R/src/contract/wire.ts"
+printf '%s\n' 'import { wire } from "../src/contract/wire.ts"' 'import { x } from "../src/domain/a.ts"' 'export const y = wire + String(x)' > "$R/test/a.test.ts"
+seal
+check "the contract may not import a platform module" 1 "$RC" "contract-reaches-only-zod:"
+
+# The relay belongs to neither directory, so no edge leaves src/contract/ for
+# src/interpreter/ and only reachability sees it. Without `reachable: true` on
+# the rule this tree is clean and no other case notices.
+fixture
+mkdir -p "$R/src/contract" "$R/src/interpreter" "$R/src/shared"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const port = 1' > "$R/src/interpreter/port.ts"
+printf '%s\n' 'import { port } from "../interpreter/port.ts"' 'export const relay = port' > "$R/src/shared/relay.ts"
+printf '%s\n' 'import { relay } from "../shared/relay.ts"' 'export const wire = relay' > "$R/src/contract/wire.ts"
+printf '%s\n' 'import { wire } from "../src/contract/wire.ts"' 'import { x } from "../src/domain/a.ts"' 'export const y = wire + x' > "$R/test/a.test.ts"
+seal
+check "the contract may not REACH the interpreter through a relay" 1 "$RC" "contract-reaches-only-zod:"
+
 # --- actor-sees-domain-only --------------------------------------------------
 
 # The actor importing the domain is the allowed direction, so the rule's clean
@@ -306,6 +341,31 @@ printf '%s\n' 'export const decide = () => 1' > "$R/ui/console/app/decide.js"
 printf '%s\n' 'import { decide } from "../app/decide.js"' 'export const draw = () => decide()' > "$R/ui/console/dom/draw.js"
 seal
 check "the console's document layer may read its decisions" 0 "$RC" "graph clean"
+
+# The public contract is the one module outside ui/ a console may reach, and it
+# is why the console the next slices build has no second copy of the wire. The
+# fixture's contract imports nothing, because whether a console may reach the
+# parser the real one imports is the separate question kasofsk/chuggy#315
+# answers over the console that builds.
+fixture
+mkdir -p "$R/ui/console/app" "$R/src/contract"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const wireVersion = 1' > "$R/src/contract/wire.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { wireVersion } from "../../../src/contract/wire.ts"' 'export const decide = () => wireVersion' > "$R/ui/console/app/decide.js"
+seal
+check "a console may reach the public contract" 0 "$RC" "graph clean"
+
+# The exemption is the contract and nothing beside it: a console reaching the
+# server's own layers is the finding the rule exists for.
+fixture
+mkdir -p "$R/ui/console/app" "$R/src/adapters"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'export const stub = 1' > "$R/src/adapters/stub.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { stub } from "../../../src/adapters/stub.js"' 'export const decide = () => stub' > "$R/ui/console/app/decide.js"
+seal
+check "a console may not reach an adapter" 1 "$RC" "console-reaches-no-source:"
 
 # Every file is individually innocent: only a path through the graph reaches
 # out of ui/, which is what the rule's `reachable` flag is for.

@@ -3,7 +3,7 @@ import net from "node:net";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
-import type { HttpErrorEnvelope } from "../../src/adapters/http/contract.ts";
+import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
   createNativeHttpApp,
   type NativeHttpLimits,

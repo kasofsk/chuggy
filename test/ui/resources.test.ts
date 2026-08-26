@@ -1,38 +1,15 @@
 /**
- * The console's DTO parsers, and its copies of the server's closed sets.
+ * The console's DTO parsers, and its copies of the public wire's closed sets.
  *
- * Each roster is held against the server's own — against a runtime list where
- * one exists, and otherwise against an exhaustive record the compiler rejects
- * when the union gains or loses a member.
+ * Each roster is held against `src/contract/`, which is where the wire's own
+ * copy lives and which `test/contract/rosters.test.ts` in turn holds against
+ * the model and the interpreter.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { phaseTags } from "../../src/domain/generated/modelTypes.ts";
-import {
-  allAttemptStates,
-  allExecutionOutcomes,
-  allExecutionStatuses,
-} from "../../src/interpreter/executionScheduler.ts";
-import type { ExecutionTaskKind } from "../../src/interpreter/executionScheduler.ts";
-import type { OutputRenderer } from "../../src/interpreter/operationsView.ts";
-import type { ProjectOperationalStatus } from "../../src/interpreter/operationsView.ts";
-import type { OperationRefusalCode } from "../../src/interpreter/nativeWeb.ts";
-import type { OperationState } from "../../src/interpreter/operationInbox.ts";
-import { allArtifactRoles } from "../../src/interpreter/resultManifest.ts";
-import type { ExecutionResultResource } from "../../src/interpreter/operationsView.ts";
-import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
-import type { NotificationBatch } from "../../src/interpreter/notifications.ts";
-import type { NotificationKind } from "../../src/interpreter/notifications.ts";
-import type { ConfigurationRevisionProvenance } from "../../src/interpreter/authoring.ts";
-import type { DraftState } from "../../src/interpreter/authoring.ts";
-import type {
-  Combinator,
-  Finalizer,
-  RetryPricing,
-} from "../../src/domain/generated/modelTypes.ts";
-import type { RepositoryConfigurationFault } from "../../src/interpreter/repositoryConfiguration.ts";
+import * as contract from "../../src/contract/rosters.ts";
 import {
   artifactRoles,
   attemptStates,
@@ -70,132 +47,66 @@ import {
   repositoryConfigurationFaults,
   schedulerFreshnessRoster,
 } from "../../ui/console/app/resources.js";
-
-function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
-  return Object.keys(record).sort();
-}
+import { populated } from "../interpreter/roster.ts";
 
 const sorted = (values: readonly string[]) => [...values].sort();
 
-function assertConfigurationRosters(): void {
-  const provenance: Record<ConfigurationRevisionProvenance["source"], true> = {
-    Authored: true,
-    Repository: true,
-  };
-  const readiness: Record<"Ready" | "Incomplete", true> = {
-    Ready: true,
-    Incomplete: true,
-  };
-  const faults: Record<RepositoryConfigurationFault, true> = {
-    TooManyDeclarations: true,
-    PathInvalid: true,
-    SymlinkRefused: true,
-    ContentTooLarge: true,
-    DocumentUnreadable: true,
-    EnvelopeInvalid: true,
-    NameInvalid: true,
-    ConfigurationInvalid: true,
-    DuplicateName: true,
-    DuplicatePath: true,
-  };
-  assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
-  assert.deepEqual(sorted(configurationReadinesses), keysOf(readiness));
-  assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
-}
+/** The console's roster beside the contract's, one pair per closed set. */
+const pairs: readonly (readonly [
+  string,
+  readonly string[],
+  readonly string[],
+])[] = [
+  ["phases", phaseRoster, contract.phaseRoster],
+  ["execution statuses", executionStatuses, contract.executionStatuses],
+  ["execution outcomes", executionOutcomes, contract.executionOutcomes],
+  ["attempt states", attemptStates, contract.attemptStates],
+  ["artifact roles", artifactRoles, contract.artifactRoles],
+  ["execution task kinds", executionTaskKinds, contract.executionTaskKinds],
+  ["output renderers", outputRenderers, contract.outputRenderers],
+  ["operation states", operationStates, contract.operationStates],
+  [
+    "operation refusal codes",
+    operationRefusalCodes,
+    contract.operationRefusalCodes,
+  ],
+  ["notification kinds", notificationKinds, contract.notificationKinds],
+  ["notification results", notificationResults, contract.notificationResults],
+  [
+    "scheduler freshness",
+    schedulerFreshnessRoster,
+    contract.schedulerFreshnesses,
+  ],
+  ["result verdicts", resultVerdicts, contract.resultVerdicts],
+  ["dispatch view results", dispatchViewResults, contract.dispatchViewResults],
+  ["draft states", draftStates, contract.draftStates],
+  [
+    "evaluation combinators",
+    evaluationCombinators,
+    contract.evaluationCombinators,
+  ],
+  ["resume pricings", resumePricings, contract.resumePricings],
+  ["finalizers", finalizers, contract.finalizers],
+  [
+    "configuration provenance",
+    configurationProvenanceSources,
+    contract.configurationProvenanceSources,
+  ],
+  [
+    "configuration readiness",
+    configurationReadinesses,
+    contract.configurationReadinesses,
+  ],
+  [
+    "repository configuration faults",
+    repositoryConfigurationFaults,
+    contract.repositoryConfigurationFaults,
+  ],
+];
 
-test("the phase and scheduler rosters are the model's", () => {
-  assert.deepEqual(phaseRoster, [...phaseTags]);
-  assert.deepEqual(executionStatuses, [...allExecutionStatuses]);
-  assert.deepEqual(executionOutcomes, [...allExecutionOutcomes]);
-  assert.deepEqual(attemptStates, [...allAttemptStates]);
-  assert.deepEqual(artifactRoles, [...allArtifactRoles]);
-});
-
-test("the rosters with no runtime list are exhaustive over their unions", () => {
-  const kinds: Record<ExecutionTaskKind, true> = {
-    Work: true,
-    Evaluation: true,
-  };
-  const renderers: Record<OutputRenderer, true> = {
-    UnifiedDiff: true,
-    Markdown: true,
-    Json: true,
-    Text: true,
-  };
-  const states: Record<OperationState, true> = {
-    Pending: true,
-    Succeeded: true,
-    Refused: true,
-    Answered: true,
-    Cancelled: true,
-  };
-  const refusals: Record<OperationRefusalCode, true> = {
-    NotEnabled: true,
-    AuthoringChanged: true,
-    ConfigurationInvalid: true,
-    TicketChanged: true,
-    SelectionChanged: true,
-    CommandUnreadable: true,
-  };
-  const notifications: Record<NotificationKind, true> = {
-    Operation: true,
-    Ticket: true,
-    Draft: true,
-    Configuration: true,
-    Project: true,
-  };
-  const freshness: Record<
-    ProjectOperationalStatus["schedulerFreshness"],
-    true
-  > = {
-    Unknown: true,
-  };
-  const verdicts: Record<ExecutionResultResource["verdict"], true> = {
-    Pass: true,
-    Fail: true,
-  };
-  const dispatchResults: Record<DispatchViewPage["result"], true> = {
-    Page: true,
-    Reset: true,
-  };
-  const notificationBatches: Record<NotificationBatch["result"], true> = {
-    Events: true,
-    Reset: true,
-  };
-  assert.deepEqual(sorted(executionTaskKinds), keysOf(kinds));
-  assert.deepEqual(sorted(outputRenderers), keysOf(renderers));
-  assert.deepEqual(sorted(operationStates), keysOf(states));
-  assert.deepEqual(sorted(operationRefusalCodes), keysOf(refusals));
-  assert.deepEqual(sorted(notificationKinds), keysOf(notifications));
-  assert.deepEqual(sorted(schedulerFreshnessRoster), keysOf(freshness));
-  assert.deepEqual(sorted(resultVerdicts), keysOf(verdicts));
-  assert.deepEqual(sorted(dispatchViewResults), keysOf(dispatchResults));
-  assert.deepEqual(sorted(notificationResults), keysOf(notificationBatches));
-  assertConfigurationRosters();
-});
-
-test("ticket authoring rosters are exhaustive over the model unions", () => {
-  const states: Record<DraftState, true> = {
-    Draft: true,
-    Released: true,
-    Deleted: true,
-  };
-  const combinators: Record<Combinator, true> = {
-    UnanimousPass: true,
-    AnyPass: true,
-  };
-  const pricing: Record<RetryPricing, true> = {
-    RetryCharged: true,
-    RetryFree: true,
-  };
-  const finalizer: Record<Finalizer, true> = {
-    NoFinalizer: true,
-    ManagedFinalizer: true,
-  };
-  assert.deepEqual(sorted(draftStates), keysOf(states));
-  assert.deepEqual(sorted(evaluationCombinators), keysOf(combinators));
-  assert.deepEqual(sorted(resumePricings), keysOf(pricing));
-  assert.deepEqual(sorted(finalizers), keysOf(finalizer));
+test("every roster the console restates is the contract's", () => {
+  for (const [named, console_, wire] of populated(pairs, "the roster pairs"))
+    assert.deepEqual(sorted(console_), sorted(wire), named);
 });
 
 const authoring = {

@@ -34,10 +34,8 @@ import {
   type StoredTicketCommand,
   type TicketCommand,
 } from "./ticketCommand.ts";
-import {
-  checkedSelectorDecisionReference,
-  dispatchViewSchemaVersion,
-} from "./dispatchView.ts";
+import { checkedSelectorDecisionReference } from "./dispatchView.ts";
+import { dispatchViewSchemaVersion } from "../contract/http.ts";
 import { asTicketId } from "../domain/ids.ts";
 
 /** Writes one `Entry` as the text a store keeps. */

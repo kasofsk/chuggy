@@ -16,7 +16,7 @@ import {
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
-} from "../../src/adapters/http/contract.ts";
+} from "../../src/contract/http.ts";
 import { projectPageLimitMax } from "../../src/interpreter/nativeWeb.ts";
 import { executionPageLimitMax } from "../../src/interpreter/operationsView.ts";
 import {
