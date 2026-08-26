@@ -79,14 +79,11 @@ function ProjectSwitcher(props: {
   );
 }
 
-/** The same rows the inbox draws, so the count and the list are one value. */
+/** The same union the inbox draws, so the count and the list are one value. */
 function InboxCount(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
-  const rows = useInboxRows(props.partition);
-  const label = inboxCountLabel(
-    rows.state.state === "Ready" ? rows.state.value : undefined,
-  );
+  const label = inboxCountLabel(useInboxRows(props.partition).union);
   return label === undefined ? null : (
     <span className="nav-count" aria-label="tickets needing you">
       {label}

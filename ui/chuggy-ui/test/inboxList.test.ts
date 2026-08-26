@@ -5,6 +5,10 @@
  * The membership case walks every phase the wire names, because the inbox is
  * the section's own definition and a phase that changed section without
  * changing the inbox is exactly what would go unnoticed.
+ *
+ * The badge counts the union of both reads, so every count here goes through
+ * the union with no open actions in it: what these cases pin is the rule the
+ * badge applies, and `inboxUnion.test.ts` is where the join itself is held.
  */
 
 import { expect, test } from "vitest";
@@ -16,10 +20,12 @@ import type {
   TicketResponse,
 } from "../../../src/contract/responses.ts";
 import {
+  inboxActionsPage,
   inboxCountLabel,
   inboxPage,
   inboxPhases,
 } from "../app/core/inboxList.ts";
+import { inboxUnion } from "../app/core/inboxUnion.ts";
 import {
   projectTicketPagesMax,
   projectTicketRowsAppend,
@@ -30,6 +36,14 @@ import type { ProjectTicketRows } from "../app/core/projectTicketPages.ts";
 import { actionsFor } from "../app/core/ticketActions.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
+
+/** The badge over a project with no open native action, which is the phase
+ * page's own count. */
+function phaseCountLabel(
+  rows: ProjectTicketRows | undefined,
+): string | undefined {
+  return inboxCountLabel(inboxUnion(rows, undefined));
+}
 
 function page(
   tickets: readonly TicketResponse[],
@@ -113,23 +127,37 @@ test("the page states its own size and it is the largest the wire allows", () =>
   expect(inboxPage("after-four").limit).toBe(nativeHttpPageItemsMax);
 });
 
+/**
+ * The second read's page, held to the same two things. The cursor is the half
+ * with consequences: the walk resumes by handing it back through this function,
+ * so a page that dropped it would re-read the first page to its budget, keep
+ * `nextCursor` set, and leave an approval on page two unreachable while
+ * reporting nothing wrong.
+ */
+test("the open-actions page states its own size and carries its cursor", () => {
+  expect(inboxActionsPage(undefined).limit).toBe(nativeHttpPageItemsMax);
+  expect(inboxActionsPage(undefined).cursor).toBeUndefined();
+  expect(inboxActionsPage("after-eleven").limit).toBe(nativeHttpPageItemsMax);
+  expect(inboxActionsPage("after-eleven").cursor).toBe("after-eleven");
+});
+
 test("the count is the rows a page gave, and follows a frame that moves one", () => {
   const held = projectTicketRowsAppend(projectTicketRowsEmpty, parked);
-  expect(inboxCountLabel(held)).toBe("2");
+  expect(phaseCountLabel(held)).toBe("2");
   const resumed = projectTicketRowsFold(
     held,
     "4",
     { ticket: 4, phase: "Working", sequence: 13 },
     inboxPhases,
   );
-  expect(inboxCountLabel(resumed)).toBe("1");
+  expect(phaseCountLabel(resumed)).toBe("1");
   const arriving = projectTicketRowsFold(
     resumed,
     "9",
     { ticket: 9, phase: "Escalated", sequence: 14, reason: "GasExhausted" },
     inboxPhases,
   );
-  expect(inboxCountLabel(arriving)).toBe("2");
+  expect(phaseCountLabel(arriving)).toBe("2");
 });
 
 test("folding one frame twice counts the same as folding it once", () => {
@@ -143,13 +171,13 @@ test("folding one frame twice counts the same as folding it once", () => {
   const once = projectTicketRowsFold(held, "9", arriving, inboxPhases);
   const twice = projectTicketRowsFold(once, "9", arriving, inboxPhases);
   expect(twice?.tickets).toStrictEqual(once?.tickets);
-  expect(inboxCountLabel(twice)).toBe(inboxCountLabel(once));
-  expect(inboxCountLabel(twice)).toBe("3");
+  expect(phaseCountLabel(twice)).toBe(phaseCountLabel(once));
+  expect(phaseCountLabel(twice)).toBe("3");
 });
 
 test("an empty inbox is counted as nothing rather than as a zero", () => {
-  expect(inboxCountLabel(projectTicketRowsEmpty)).toBeUndefined();
-  expect(inboxCountLabel(undefined)).toBeUndefined();
+  expect(phaseCountLabel(projectTicketRowsEmpty)).toBeUndefined();
+  expect(phaseCountLabel(undefined)).toBeUndefined();
 });
 
 /**
@@ -162,7 +190,7 @@ test("a count with a further page unread says so, at the page cap too", () => {
     projectTicketRowsEmpty,
     page([{ ticket: 4, phase: "Escalated", sequence: 9 }], "after-four"),
   );
-  expect(inboxCountLabel(held)).toBe("1+");
+  expect(phaseCountLabel(held)).toBe("1+");
   let walked: ProjectTicketRows = projectTicketRowsEmpty;
   for (let read = 0; read < projectTicketPagesMax; read += 1)
     walked = projectTicketRowsAppend(
@@ -170,9 +198,9 @@ test("a count with a further page unread says so, at the page cap too", () => {
       page([{ ticket: read + 1, phase: "Escalated", sequence: 1 }], "again"),
     );
   expect(walked.nextCursor).toBe("again");
-  expect(inboxCountLabel(walked)).toBe(`${String(projectTicketPagesMax)}+`);
+  expect(phaseCountLabel(walked)).toBe(`${String(projectTicketPagesMax)}+`);
   expect(
-    inboxCountLabel(
+    phaseCountLabel(
       projectTicketRowsAppend(
         projectTicketRowsEmpty,
         page([{ ticket: 4, phase: "Escalated", sequence: 9 }]),

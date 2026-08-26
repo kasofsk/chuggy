@@ -12,10 +12,12 @@ import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import {
   apiConfiguration,
   apiExecutions,
+  apiNativeActions,
   apiProject,
   apiProjectInventory,
   apiProjectInventoryAll,
   apiTicket,
+  apiTicketNativeActions,
   projectInventoryPagesMax,
 } from "../app/core/apiRoutes.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
@@ -163,6 +165,30 @@ test("an inventory that never stops is stopped by the page budget", async () => 
   expect(held.urls.length).toBe(projectInventoryPagesMax);
   expect(result.outcome === "Ok" && result.value.length).toBe(
     projectInventoryPagesMax,
+  );
+});
+
+test("a ticket's open questions hang from that ticket's own segment", async () => {
+  const held = recording(() => ({ actions: [] }));
+  await apiTicketNativeActions(held.ports, partition, 12);
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/tickets/12/native-actions`,
+  );
+});
+
+test("the project's open questions are one segment under the partition", async () => {
+  const held = recording(() => ({ actions: [] }));
+  await apiNativeActions(held.ports, partition);
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/native-actions`,
+  );
+  await apiNativeActions(held.ports, partition, {
+    cursor: "after-eleven",
+    limit: 100,
+  });
+  expect(held.urls[1]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
+      `/native-actions?cursor=after-eleven&limit=100`,
   );
 });
 

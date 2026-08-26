@@ -1,26 +1,28 @@
 /**
- * Which tickets the inbox holds, the page it asks the wire for, and what the
- * shell's badge counts.
+ * Which tickets the inbox holds, the two pages it asks the wire for, and what
+ * the shell's badge counts.
  *
- * Membership is the project table's "needs you" section rather than a second
- * definition of it, so a phase that changes section changes what the inbox
- * holds in the same edit and neither screen can disagree with the other about
- * whether a ticket needs a human. The page size is asked for rather than left
- * to the route's default, so the rows drawn are a number this console chose.
+ * Phase membership is the project table's "needs you" section rather than a
+ * second definition of it, so a phase that changes section changes what the
+ * inbox holds in the same edit and neither screen can disagree with the other
+ * about whether a ticket needs a human. A ticket with an open native action
+ * needs one too, and `inboxUnion.ts` is where the two reads become one list.
+ * Each page size is asked for rather than left to the route's default, so the
+ * rows drawn are a number this console chose.
  *
- * THE BADGE COUNTS THE ROWS HELD, AND SAYS SO WHEN THE WIRE HAS MORE. The
- * question it asks is whether a further page is unread, which is the cursor the
- * last page answered with; whether the reader may ask for that page is a
- * different question, bounded by the accumulation's own caps, and answering the
- * first with the second would print a bare number at exactly the point it
- * became short.
+ * THE BADGE COUNTS THE UNION HELD, AND SAYS SO WHEN THE WIRE HAS MORE. The
+ * question it asks is whether a further page is unread on either read, which is
+ * the cursor the last page answered with; whether the reader may ask for that
+ * page is a different question, bounded by the accumulations' own caps, and
+ * answering the first with the second would print a bare number at exactly the
+ * point it became short.
  */
 
 import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
-import type { ProjectPage } from "./apiRoutes.ts";
-import type { ProjectTicketRows } from "./projectTicketPages.ts";
+import type { NativeActionsPage, ProjectPage } from "./apiRoutes.ts";
+import type { InboxUnion } from "./inboxUnion.ts";
 import { ticketSectionPhases } from "./ticketSections.ts";
 
 export const inboxSection = "NeedsYou" as const;
@@ -38,12 +40,19 @@ export function inboxPage(cursor: string | undefined): ProjectPage {
   };
 }
 
+/** The open actions the inbox joins its phase page with, newest fence first. */
+export function inboxActionsPage(
+  cursor: string | undefined,
+): NativeActionsPage {
+  return {
+    limit: nativeHttpPageItemsMax,
+    ...(cursor === undefined ? {} : { cursor }),
+  };
+}
+
 /** Nothing where the inbox is empty, so an empty badge is not drawn as a zero. */
-export function inboxCountLabel(
-  rows: ProjectTicketRows | undefined,
-): string | undefined {
-  if (rows === undefined) return undefined;
-  const held = rows.tickets.length;
+export function inboxCountLabel(union: InboxUnion): string | undefined {
+  const held = union.entries.length;
   if (held === 0) return undefined;
-  return rows.nextCursor === undefined ? String(held) : `${String(held)}+`;
+  return union.more ? `${String(held)}+` : String(held);
 }

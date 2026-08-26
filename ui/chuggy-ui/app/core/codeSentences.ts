@@ -17,6 +17,7 @@
 import {
   operationRefusalCodes,
   type EscalationReason,
+  type NativeActionKind,
   type OperationRefusalCode,
   type OperationState,
 } from "../../../../src/contract/rosters.ts";
@@ -45,6 +46,18 @@ export function escalationReasonSentence(reason: EscalationReason): string {
       return "the runtime version this ticket requires is not supported";
     case "RequiredCapabilityUnavailable":
       return "a capability this ticket requires is not available to run it";
+  }
+}
+
+/** What an open native action is asking, short enough for a badge to carry. */
+export function nativeActionKindSentence(kind: NativeActionKind): string {
+  switch (kind) {
+    case "TicketEscalation":
+      return "escalated";
+    case "HandoffBlock":
+      return "handoff blocked";
+    case "FinalizationApproval":
+      return "awaiting your approval";
   }
 }
 

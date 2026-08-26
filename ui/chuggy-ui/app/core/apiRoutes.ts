@@ -25,8 +25,10 @@ import {
   operationalStatusResponseSchema,
   outputContentResponseSchema,
   projectInventoryResponseSchema,
+  projectNativeActionsResponseSchema,
   projectResponseSchema,
   repositoryConfigurationImportedSchema,
+  ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../../../src/contract/responses.ts";
 import type {
@@ -43,7 +45,9 @@ import type {
   OperationalStatusResponse,
   OutputContentResponse,
   ProjectInventoryResponse,
+  ProjectNativeActionsResponse,
   ProjectResponse,
+  TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
@@ -177,6 +181,40 @@ export function apiTicket(
 ): Promise<ApiResult<TicketResponse>> {
   return apiGet(ports, apiSegments(partition, "tickets", ticket), (value) =>
     ticketResponseSchema.parse(value),
+  );
+}
+
+/** Every question this one ticket has open, which the ticket read omits. */
+export function apiTicketNativeActions(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+): Promise<ApiResult<TicketNativeActionsResponse>> {
+  return apiGet(
+    ports,
+    apiSegments(partition, "tickets", ticket, "native-actions"),
+    (value) => ticketNativeActionsResponseSchema.parse(value),
+  );
+}
+
+export interface NativeActionsPage {
+  readonly cursor?: string | undefined;
+  readonly limit?: number | undefined;
+}
+
+/** The same questions across a project, where the ticket is not the path. */
+export function apiNativeActions(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  page: NativeActionsPage = {},
+): Promise<ApiResult<ProjectNativeActionsResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "native-actions"), {
+      cursor: page.cursor,
+      limit: page.limit,
+    }),
+    (value) => projectNativeActionsResponseSchema.parse(value),
   );
 }
 

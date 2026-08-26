@@ -2,11 +2,18 @@
  * The mutations this ticket's phase enables, submitted and followed to
  * settlement.
  *
- * Which buttons exist is `actionsFor`'s decision and this file draws it; what
- * happens after the click is `followOperation`'s, and every step it passes
- * through is drawn as it arrives, so a submission the API is deferring reads as
- * that rather than as a screen doing nothing. The confirmed ticket is written
- * into the cache the page reads, which is what makes it read its own write.
+ * Which buttons exist is a decision the core makes twice over: an open native
+ * action offers exactly the answers it admits, and where the ticket has none
+ * the phase alone says what `actionsFor` enables. What happens after the click
+ * is `followOperation`'s, and every step it passes through is drawn as it
+ * arrives, so a submission the API is deferring reads as that rather than as a
+ * screen doing nothing. The confirmed ticket is written into the cache the page
+ * reads, which is what makes it read its own write.
+ *
+ * AN ANSWERED QUESTION IS RE-READ RATHER THAN ASSUMED GONE. Answering an
+ * approval settles without journalling anything, so no `Ticket` frame follows
+ * it; the open actions are read again once the follow ends, and the live
+ * `NativeAction` frame empties them wherever the stream is carrying changes.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,7 +21,10 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { TicketResponse } from "../../../../src/contract/responses.ts";
+import type {
+  TicketNativeActionsResponse,
+  TicketResponse,
+} from "../../../../src/contract/responses.ts";
 import { apiCancelOperation } from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
@@ -25,6 +35,7 @@ import {
   operationStateSentence,
 } from "../core/codeSentences.ts";
 import type { PanelState } from "../core/freshness.ts";
+import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import {
   followOperation,
   operationIdBytesCount,
@@ -157,7 +168,9 @@ interface Submitting {
  * One submission at a time, followed to settlement and merged into the ticket
  * this page reads. The confirmed row goes through `ticketConfirmed` rather than
  * over the entry, because it is a narrower projection than the ticket's own
- * read and a live frame may already have written a later one.
+ * read and a live frame may already have written a later one. The ticket's open
+ * actions are invalidated rather than written, because what the follow learned
+ * is that the question was answered and not what is open now.
  */
 function useSubmitting(
   partition: PartitionIdentity,
@@ -169,6 +182,7 @@ function useSubmitting(
   const [attempt, setAttempt] = useState<Attempt | undefined>(undefined);
   const [cancelled, setCancelled] = useState<string | undefined>(undefined);
   const key = projectResourceKey(partition, "Ticket", String(ticket));
+  const openKey = projectResourceKey(partition, "NativeAction", String(ticket));
 
   const follow = async (action: TicketAction): Promise<void> => {
     setCancelled(undefined);
@@ -185,8 +199,10 @@ function useSubmitting(
       },
       controller.signal,
     );
+    if (controller.signal.aborted) return;
+    void client.invalidateQueries({ queryKey: openKey, exact: true });
     const confirmed = followed.ticket;
-    if (controller.signal.aborted || confirmed === undefined) return;
+    if (confirmed === undefined) return;
     client.setQueryData(key, (held: TicketResponse | undefined) =>
       ticketConfirmed(held, confirmed),
     );
@@ -216,18 +232,23 @@ export function TicketActions(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
   readonly state: PanelState<TicketResponse>;
+  readonly openState: PanelState<TicketNativeActionsResponse>;
 }): ReactNode {
   const submitting = useSubmitting(props.partition, props.ticket);
   const step = submitting.attempt?.step;
   const pending = step?.step === "Following" ? step.operation : undefined;
   const busy =
     step !== undefined && step.step !== "Settled" && step.step !== "Abandoned";
+  const open =
+    props.openState.state === "Ready" ? props.openState.value.actions : [];
   return (
     <Panel title="actions" state={props.state}>
       {(value) => (
         <div className="action-panel">
           <ActionButtons
-            actions={actionsFor(value)}
+            actions={
+              open.length === 0 ? actionsFor(value) : nativeActionsAnswers(open)
+            }
             busy={busy}
             onChoose={submitting.submit}
           />

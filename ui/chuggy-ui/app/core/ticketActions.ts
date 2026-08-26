@@ -31,7 +31,14 @@ export const ticketResumablePhases: readonly TicketPhase[] = [
   "HandoffBlocked",
 ];
 
-export type TicketActionName = "Resume" | "Revoke";
+/**
+ * Every word a button in this console carries. `actionsFor` reaches the first
+ * two from the phase alone; the rest arrive with an open native action, whose
+ * admitted answers `nativeActionAnswers.ts` maps onto this same pair of fields
+ * so that one component draws both.
+ */
+export type TicketActionName =
+  "Resume" | "Revoke" | "Retry" | "Abandon" | "Approve" | "Decline";
 
 export interface TicketAction {
   readonly action: TicketActionName;
@@ -69,5 +76,13 @@ export function ticketActionSentence(action: TicketActionName): string {
       return "rejoin the pipeline at the point this ticket was parked at";
     case "Revoke":
       return "revoke this ticket, and park every ticket that depends on it";
+    case "Retry":
+      return "publish this ticket's handoff again";
+    case "Abandon":
+      return "abandon this ticket, and every waiting ticket that depends on it";
+    case "Approve":
+      return "let this ticket's finalization go ahead";
+    case "Decline":
+      return "hold this ticket's finalization back";
   }
 }
