@@ -10,6 +10,7 @@ import {
   finalizerRole,
   notificationPublishFunction,
   projectAuthorizationFunction,
+  projectChangeAppendFunction,
   repositoryBindingReadFunction,
   schedulerRole,
   selectorReviewRole,
@@ -335,6 +336,48 @@ test("runtime roles cannot write notification rows directly", async () => {
   assert.match(
     refusal ?? "",
     postgresHarnessDenial(notificationPublishFunction),
+  );
+});
+
+test("the change log is written through its own boundary and read by the API alone", async () => {
+  for (const role of [
+    apiRole,
+    ticketServiceRole,
+    schedulerRole,
+    finalizerRole,
+  ]) {
+    for (const statement of [
+      `INSERT INTO project_change (tenant,project,kind,resource)
+       VALUES ('tenant','project','Ticket','1')`,
+      "UPDATE project_change SET resource=resource",
+      "DELETE FROM project_change",
+    ]) {
+      assert.match(
+        (await harness.attemptAs(role, statement)) ?? "",
+        postgresHarnessDenial("project_change"),
+      );
+    }
+    assert.match(
+      (await harness.attemptAs(
+        role,
+        "INSERT INTO project_notification DEFAULT VALUES",
+      )) ?? "",
+      postgresHarnessDenial("project_notification"),
+    );
+  }
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT sequence,tenant,project,kind,resource,created_at FROM project_change",
+    ),
+    undefined,
+  );
+  assert.match(
+    (await harness.attemptAs(
+      apiRole,
+      `SELECT ${projectChangeAppendFunction}('tenant','project','Ticket','1')`,
+    )) ?? "",
+    postgresHarnessDenial(projectChangeAppendFunction),
   );
 });
 

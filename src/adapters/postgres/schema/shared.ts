@@ -34,6 +34,12 @@ export const draftReviseFunction = "revise_draft";
 export const draftDeleteFunction = "delete_draft";
 export const draftReleaseFunction = "release_draft_fenced";
 export const notificationPublishFunction = "publish_project_notification";
+export const projectChangeAppendFunction = "append_project_change";
+export const projectChangeBridgeFunction =
+  "project_notification_appends_a_change";
+export const projectChangeExecutionFunction = "execution_appends_a_change";
+export const projectChangeArtifactFunction =
+  "execution_result_artifact_appends_a_change";
 export const boundaryOwnerRole = "chuggy_boundary_owner";
 export const projectAuthorizationFunction = "authorize_project_access";
 export const schedulerRole = "chuggy_scheduler";

@@ -9,10 +9,14 @@ import {
   boundaryOwnerRole,
   configurationImporterRole,
   finalizationFunction,
+  finalizerRole,
   migrationLedger,
   migrations,
+  notificationPublishFunction,
+  projectChangeAppendFunction,
   schedulerRole,
   repositoryBindingReadFunction,
+  ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresMigrate,
@@ -1148,5 +1152,64 @@ test("migration 27 makes cross-repository request configuration immutable", asyn
         WHERE p.oid='read_accepted_handoff_promotion(text,text,bigint)'::regprocedure`,
     );
     assert.equal(door.rows[0]?.security_definer, true);
+  });
+});
+
+test("migration 38 gives an upgraded database the change log and its boundary alone", async () => {
+  await migrationDatabase("project_change", async (subject) => {
+    await migrationSeedApplied(subject, 38);
+    await applyMigration(subject, 38);
+    for (const [role, granted] of [
+      [schedulerRole, true],
+      [finalizerRole, true],
+      [apiRole, false],
+      [ticketServiceRole, false],
+    ] as const) {
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+            [role, `${projectChangeAppendFunction}(text,text,text,text)`],
+          )
+        ).rows[0]?.granted,
+        granted,
+        `${role} may execute the append boundary`,
+      );
+    }
+    for (const [privilege, granted] of [
+      ["SELECT", true],
+      ["INSERT", false],
+      ["UPDATE", false],
+      ["DELETE", false],
+    ] as const) {
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_table_privilege($1,'project_change',$2) AS granted",
+            [apiRole, privilege],
+          )
+        ).rows[0]?.granted,
+        granted,
+        `${apiRole} holds ${privilege} on the change log`,
+      );
+    }
+    await subject.query(
+      "INSERT INTO recovery_epoch (epoch) VALUES ('epoch-project-change')",
+    );
+    await subject.query(
+      `INSERT INTO project (tenant,project,lifecycle,head,ingress_next)
+       VALUES ('tenant','project','Active',1,1)`,
+    );
+    await subject.query(
+      `SELECT ${notificationPublishFunction}('tenant','project','Draft','draft',NULL,NULL)`,
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ kind: string; resource: string }>(
+          "SELECT kind,resource FROM project_change ORDER BY sequence",
+        )
+      ).rows,
+      [{ kind: "Draft", resource: "draft" }],
+    );
   });
 });
