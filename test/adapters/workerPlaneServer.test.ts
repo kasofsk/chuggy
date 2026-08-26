@@ -28,6 +28,11 @@ const authority = {
   ],
 } as const;
 
+const heartbeatService = {
+  heartbeats: { heartbeat: () => Promise.resolve(true) },
+  heartbeatLeaseSecs: 300,
+} as const;
+
 test("the worker plane has no tenant-shaped or project-shaped route", () => {
   for (const route of workerPlaneRoutes) {
     assert.doesNotMatch(route, /tenant|project/u);
@@ -39,6 +44,7 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
   const uploaded: unknown[] = [];
   const reported: unknown[] = [];
   const app = createWorkerPlaneApp({
+    ...heartbeatService,
     authority: {
       authenticate: (secret) =>
         Promise.resolve(
@@ -94,6 +100,7 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
 test("an unknown or oversized bearer reaches no attempt act", async () => {
   let acts = 0;
   const app = createWorkerPlaneApp({
+    ...heartbeatService,
     authority: { authenticate: () => Promise.resolve(undefined) },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: {
@@ -123,8 +130,42 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
   await app.close();
 });
 
+test("a live bearer renews only its fenced attempt generation", async () => {
+  const calls: unknown[] = [];
+  const app = createWorkerPlaneApp({
+    ...heartbeatService,
+    authority: { authenticate: () => Promise.resolve(authority) },
+    heartbeats: {
+      heartbeat: (secret, generation, leaseSecs) => {
+        calls.push({ secret, generation, leaseSecs });
+        return Promise.resolve(true);
+      },
+    },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  const response = await app.inject({
+    method: "POST",
+    url: "/v1/heartbeat",
+    headers: { authorization: "Bearer held" },
+  });
+  assert.equal(response.statusCode, 204);
+  assert.deepEqual(calls, [
+    {
+      secret: asAttemptCapabilitySecret("held"),
+      generation: authority.generation,
+      leaseSecs: 300,
+    },
+  ]);
+  await app.close();
+});
+
 test("an invalid worker-controlled artifact path is a predictable client refusal", async () => {
   const app = createWorkerPlaneApp({
+    ...heartbeatService,
     authority: { authenticate: () => Promise.resolve(authority) },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: {
@@ -154,6 +195,7 @@ test("an invalid worker-controlled artifact path is a predictable client refusal
 
 test("an exhausted attempt artifact quota is a terminal payload refusal", async () => {
   const app = createWorkerPlaneApp({
+    ...heartbeatService,
     authority: { authenticate: () => Promise.resolve(authority) },
     reservations: {
       reserve: () => Promise.resolve({ reserved: "QuotaExceeded" }),
@@ -185,6 +227,7 @@ test("an exhausted attempt artifact quota is a terminal payload refusal", async 
 test("identical terminal report redelivery reaches its absorbed operation", async () => {
   let reports = 0;
   const app = createWorkerPlaneApp({
+    ...heartbeatService,
     authority: {
       authenticate: () =>
         Promise.resolve({ ...authority, live: reports === 0 }),

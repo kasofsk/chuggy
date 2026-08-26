@@ -45,7 +45,8 @@ export function claudeInvocation(task) {
   return [
     "-p",
     "--output-format",
-    "json",
+    "stream-json",
+    "--verbose",
     "--json-schema",
     resultSchema,
     "--permission-mode",
@@ -56,4 +57,15 @@ export function claudeInvocation(task) {
     ...configuredArguments(task),
     task.briefing.text,
   ];
+}
+
+export function claudeResult(events) {
+  const output = events.findLast(
+    (event) =>
+      event?.type === "result" && event.structured_output !== undefined,
+  );
+  const result = output?.structured_output;
+  if (result?.verdict !== "Pass" && result?.verdict !== "Fail")
+    throw new Error("Claude Code returned no structured verdict");
+  return { output, result };
 }

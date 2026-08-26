@@ -40,6 +40,7 @@ export const schedulerRole = "chuggy_scheduler";
 export const workerPlaneRole = "chuggy_worker_plane";
 export const configurationImporterRole = "chuggy_configuration_importer";
 export const workerAttemptReadFunction = "read_worker_attempt";
+export const workerAttemptHeartbeatFunction = "heartbeat_worker_attempt";
 export const workerAttemptLostFunction = "lose_worker_attempt";
 export const workerResultSubmitFunction = "submit_worker_result";
 export const workerArtifactReserveFunction = "reserve_worker_artifact";

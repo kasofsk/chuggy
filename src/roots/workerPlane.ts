@@ -7,6 +7,7 @@ import { postgresPool } from "../adapters/postgres/pool.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import {
   postgresWorkerPlaneAuthority,
+  postgresWorkerAttemptHeartbeats,
   postgresWorkerArtifactReservations,
   postgresWorkerReportStore,
 } from "../adapters/postgres/workerPlane.ts";
@@ -41,6 +42,8 @@ async function main(): Promise<void> {
   });
   const app = createWorkerPlaneApp({
     authority: postgresWorkerPlaneAuthority(pool),
+    heartbeats: postgresWorkerAttemptHeartbeats(pool),
+    heartbeatLeaseSecs: positive("CHUG_WORKER_PLANE_HEARTBEAT_LEASE_SECS", 300),
     reservations: postgresWorkerArtifactReservations(pool),
     artifacts,
     reports: {

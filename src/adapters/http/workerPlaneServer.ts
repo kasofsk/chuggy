@@ -9,6 +9,7 @@ import {
 import type {
   WorkerArtifactReservationPort,
   WorkerArtifactUploadPort,
+  WorkerAttemptHeartbeatPort,
   WorkerAttemptAuthority,
   WorkerPlaneAuthority,
   WorkerReportPort,
@@ -18,17 +19,40 @@ export const workerPlaneRoutes = [
   "/health/live",
   "/health/ready",
   "/v1/input",
+  "/v1/heartbeat",
   "/v1/artifacts/*",
   "/v1/report",
 ] as const;
 
 export interface WorkerPlaneServerService {
   readonly authority: WorkerPlaneAuthority;
+  readonly heartbeats: WorkerAttemptHeartbeatPort;
+  readonly heartbeatLeaseSecs: number;
   readonly artifacts: WorkerArtifactUploadPort;
   readonly reservations: WorkerArtifactReservationPort;
   readonly reports: WorkerReportPort;
   readonly ready: () => Promise<boolean>;
   readonly uploadBytesMax: number;
+}
+
+function workerHeartbeatRoute(
+  app: FastifyInstance,
+  service: WorkerPlaneServerService,
+): void {
+  app.post(workerPlaneRoutes[3], async (request, reply) => {
+    const secret = workerBearer(request);
+    if (secret === undefined) return reply.code(401).send({ action: "stop" });
+    const authority = await workerAuthority(service, request);
+    if (authority === undefined || !authority.live)
+      return reply.code(401).send({ action: "stop" });
+    return (await service.heartbeats.heartbeat(
+      secret,
+      authority.generation,
+      service.heartbeatLeaseSecs,
+    ))
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop" });
+  });
 }
 
 function workerHealthRoutes(
@@ -83,7 +107,7 @@ function workerUploadRoute(
   app: FastifyInstance,
   service: WorkerPlaneServerService,
 ): void {
-  app.put(workerPlaneRoutes[3], async (request, reply) => {
+  app.put(workerPlaneRoutes[4], async (request, reply) => {
     const authority = await workerAuthority(service, request);
     if (authority === undefined || !authority.live)
       return reply.code(401).send({ action: "stop" });
@@ -132,7 +156,7 @@ function workerReportRoute(
   app: FastifyInstance,
   service: WorkerPlaneServerService,
 ): void {
-  app.post(workerPlaneRoutes[4], async (request, reply) => {
+  app.post(workerPlaneRoutes[5], async (request, reply) => {
     const secret = workerBearer(request);
     if (secret === undefined) return reply.code(401).send({ action: "stop" });
     const authority = await workerAuthority(service, request);
@@ -184,6 +208,7 @@ export function createWorkerPlaneApp(
   );
   workerHealthRoutes(app, service);
   workerInputRoute(app, service);
+  workerHeartbeatRoute(app, service);
   workerUploadRoute(app, service);
   workerReportRoute(app, service);
   return app;
