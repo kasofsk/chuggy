@@ -28,6 +28,7 @@ import {
   projectResponse,
   repositoryConfigurationImportResponse,
   submissionResponse,
+  ticketNativeActionsResponse,
   ticketResponse,
 } from "../../src/adapters/http/outcomes.ts";
 import {
@@ -46,6 +47,7 @@ import {
   projectInventoryResponseSchema,
   projectResponseSchema,
   repositoryConfigurationRefusalsSchema,
+  ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../src/contract/responses.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
@@ -123,6 +125,57 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
       phase: "Escalated",
       sequence: 9,
       reason: "NoReason",
+    }),
+  );
+});
+
+test("a ticket's open actions carry a fence and only answers their kind asks for", () => {
+  const listed = ticketNativeActionsResponseSchema.parse(
+    ticketNativeActionsResponse([
+      {
+        action: "escalation",
+        kind: "TicketEscalation",
+        authorizingSequence: 11,
+        admits: ["Revoke"],
+      },
+    ]).body,
+  );
+  assert.deepEqual(listed.actions, [
+    {
+      action: "escalation",
+      kind: "TicketEscalation",
+      authorizingSequence: 11,
+      admits: ["Revoke"],
+    },
+  ]);
+  assert.deepEqual(
+    ticketNativeActionsResponseSchema.parse(
+      ticketNativeActionsResponse([]).body,
+    ).actions,
+    [],
+  );
+  assert.throws(() =>
+    ticketNativeActionsResponseSchema.parse({
+      actions: [
+        {
+          action: "escalation",
+          kind: "TicketEscalation",
+          authorizingSequence: 11,
+          admits: ["Approve"],
+        },
+      ],
+    }),
+  );
+  assert.throws(() =>
+    ticketNativeActionsResponseSchema.parse({
+      actions: [
+        {
+          action: "escalation",
+          kind: "TicketEscalation",
+          authorizingSequence: 11,
+          admits: [],
+        },
+      ],
     }),
   );
 });

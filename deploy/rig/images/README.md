@@ -111,6 +111,11 @@ to start without the required ones.
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |
 | `CHUG_API_OIDC_DISCOVERY_TIMEOUT_MS` | | |
 | `CHUG_API_OIDC_JWKS_TIMEOUT_MS` | | |
+| `CHUG_API_STREAM_CONNECTIONS_MAX` | | how many project event streams one process holds open at once |
+| `CHUG_API_STREAM_MAX_AGE_MS` | | how long one stream lives before the client is made to reconnect |
+| `CHUG_API_STREAM_HEARTBEAT_MS` | | keeps a quiet stream from reading as idle to the Cloudflare edge in front of the rig, whose cutoff was measured by holding `curl -N` on the route until the edge closed it |
+| `CHUG_API_STREAM_SWEEP_MS` | | how often the API trims the change log, which is also how often it reads the log without being rung |
+| `CHUG_API_STREAM_SWEEP_ROWS_MAX` | | how many rows one trim may remove; this and the interval above are the whole of the log's retention, because the API is the only process that trims it, so their quotient must outpace the installation's appends — a sweeper that falls behind grows the log rather than resetting a consumer, which is the direction to fall behind in |
 | `CHUG_API_SELECTOR_FEEDBACK_MAX` | | how much review feedback one operational context carries |
 | `CHUG_SCHEDULER_PROJECT_BACKLOG_MAX` | | how much of a project's backlog it carries |
 | `CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX` | | how much of the installation's it carries |

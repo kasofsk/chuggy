@@ -22,7 +22,11 @@ import type {
 } from "./operationInbox.ts";
 import type { OperationInbox } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
-import type { TicketCommand } from "./ticketCommand.ts";
+import type {
+  NativeActionKind,
+  NativeActionResolution,
+  TicketCommand,
+} from "./ticketCommand.ts";
 import type {
   AuthoringStore,
   CanonicalConfiguration,
@@ -187,6 +191,62 @@ export interface TicketResource {
   readonly brief?: DraftBrief;
 }
 
+/**
+ * One question a ticket has open, with the fence a resolution must name and the
+ * answers this action offered. Those are what was recorded when the action was
+ * opened, which is a subset of what its kind may ask for.
+ */
+export interface TicketNativeAction {
+  readonly action: string;
+  readonly kind: NativeActionKind;
+  readonly authorizingSequence: number;
+  readonly admits: readonly NativeActionResolution[];
+}
+
+/** The same action listed across a project, where the ticket is not the path. */
+export interface ProjectNativeAction extends TicketNativeAction {
+  readonly ticket: TicketId;
+}
+
+/** Where a page of open actions resumes: the fence, and the identity that breaks its tie. */
+export interface NativeActionPosition {
+  readonly authorizingSequence: number;
+  readonly action: string;
+}
+
+export interface NativeActionPageQuery {
+  readonly after?: NativeActionPosition;
+  readonly limit: number;
+}
+
+export interface NativeActionPage {
+  readonly actions: readonly ProjectNativeAction[];
+  readonly nextAfter?: NativeActionPosition;
+}
+
+export const nativeActionPageLimitMax = 100;
+
+export function checkedNativeActionPageQuery(
+  query: NativeActionPageQuery,
+): NativeActionPageQuery {
+  if (
+    !Number.isSafeInteger(query.limit) ||
+    query.limit < 1 ||
+    query.limit > nativeActionPageLimitMax
+  )
+    throw new RangeError(
+      `native action page limit must be between 1 and ${String(nativeActionPageLimitMax)}`,
+    );
+  if (
+    query.after !== undefined &&
+    (!Number.isSafeInteger(query.after.authorizingSequence) ||
+      query.after.authorizingSequence < 1 ||
+      query.after.action.length === 0)
+  )
+    throw new RangeError("native action page cursor is invalid");
+  return query;
+}
+
 export interface ProjectResource {
   readonly partition: Partition;
   readonly sequence: number;
@@ -285,6 +345,14 @@ export interface NativeReadStore {
     partition: Partition,
     ticket: TicketId,
   ): Promise<TicketResource | undefined>;
+  ticketNativeActions(
+    partition: Partition,
+    ticket: TicketId,
+  ): Promise<readonly TicketNativeAction[] | undefined>;
+  nativeActions(
+    partition: Partition,
+    query: NativeActionPageQuery,
+  ): Promise<NativeActionPage>;
 }
 
 export interface NativeSubmission {
@@ -331,6 +399,16 @@ export interface NativeWeb {
     partition: Partition,
     ticket: TicketId,
   ): Promise<TicketResource | undefined>;
+  ticketNativeActions(
+    principal: Principal,
+    partition: Partition,
+    ticket: TicketId,
+  ): Promise<readonly TicketNativeAction[] | undefined>;
+  nativeActions(
+    principal: Principal,
+    partition: Partition,
+    query: NativeActionPageQuery,
+  ): Promise<AuthorizedResult<NativeActionPage>>;
   operationalStatus(
     principal: Principal,
     partition: Partition,
@@ -704,6 +782,33 @@ function nativeOperationalMethods(
   };
 }
 
+/** The ticket reads, each reauthorizing before it reaches the projection. */
+function nativeTicketMethods(
+  access: ProjectAccess,
+  reads: NativeReadStore,
+): Pick<NativeWeb, "ticket" | "ticketNativeActions" | "nativeActions"> {
+  return {
+    ticket: async (principal, partition, ticket) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : reads.ticket(partition, ticket),
+    ticketNativeActions: async (principal, partition, ticket) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : reads.ticketNativeActions(partition, ticket),
+    nativeActions: async (principal, partition, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await reads.nativeActions(
+              partition,
+              checkedNativeActionPageQuery(query),
+            ),
+          },
+  };
+}
+
 /** Builds the application boundary from authorization, read, and inbox ports. */
 export function nativeWeb(
   access: ProjectAccess,
@@ -741,10 +846,7 @@ export function nativeWeb(
       (await access.authorize(principal, partition, "Read")) === undefined
         ? { result: "NotFound" }
         : reads.project(partition, checkedProjectReadQuery(query)),
-    ticket: async (principal, partition, ticket) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : reads.ticket(partition, ticket),
+    ...nativeTicketMethods(access, reads),
     cancel: async (principal, partition, operation) => {
       const authority = await access.authorize(principal, partition, "Mutate");
       if (authority === undefined) return { result: "NotFound" };

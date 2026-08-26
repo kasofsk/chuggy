@@ -21,6 +21,8 @@ const discoverySchema = z.object({
   jwks_uri: z.string(),
 });
 
+const millisecondsPerSecond = 1_000;
+
 function positiveDuration(value: number, what: string): number {
   if (!Number.isSafeInteger(value) || value < 1)
     throw new RangeError(`${what} must be a positive integer`);
@@ -88,7 +90,13 @@ export async function oidcAuthentication(
       });
       const subject = verified.payload.sub;
       if (subject === undefined) throw new Error("OIDC token has no subject");
-      return oidcPrincipal(config.issuer, subject);
+      const expiry = verified.payload.exp;
+      return {
+        principal: oidcPrincipal(config.issuer, subject),
+        ...(expiry === undefined
+          ? {}
+          : { expiresAtMs: expiry * millisecondsPerSecond }),
+      };
     },
   };
 }

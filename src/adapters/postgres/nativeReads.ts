@@ -12,15 +12,23 @@ import { nonTerminalPhaseTags } from "../../domain/phase.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
   asPublicInstant,
+  type NativeActionPage,
   type NativeReadStore,
   type OperationRefusalCode,
   type OperationResource,
   type ProjectRead,
   type ProjectReadQuery,
   type ProjectResource,
+  type TicketNativeAction,
   type TicketPhaseFilter,
   type TicketResource,
 } from "../../interpreter/nativeWeb.ts";
+import {
+  allNativeActionKinds,
+  nativeActionResolutions,
+  type NativeActionKind,
+  type NativeActionResolution,
+} from "../../interpreter/ticketCommand.ts";
 import {
   allOperationStates,
   asOperationId,
@@ -45,6 +53,23 @@ interface TicketProjectionRow {
   readonly phase: string;
   readonly seq: string;
   readonly reason: string;
+}
+
+/** One open action, or a ticket that has none: every column is then null. */
+interface OpenNativeActionRow {
+  readonly action: string | null;
+  readonly kind: string | null;
+  readonly authorizing_seq: string | null;
+  readonly resolutions: (string | null)[] | null;
+}
+
+/** The same action inside a project's page, where the join names every column. */
+interface ProjectNativeActionRow {
+  readonly ticket: string;
+  readonly action: string;
+  readonly kind: string;
+  readonly authorizing_seq: string;
+  readonly resolutions: string[] | null;
 }
 
 function operationState(value: string): OperationState {
@@ -194,6 +219,75 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
   };
 }
 
+function nativeActionKind(value: string): NativeActionKind {
+  const kind = allNativeActionKinds.find((candidate) => candidate === value);
+  if (kind === undefined)
+    throw new Error(`native read: ${value} is not a native action kind`);
+  return kind;
+}
+
+/**
+ * The answers one open action offered, in the order its kind declares them. A
+ * stored answer that kind never asks for means this layer and the database
+ * disagree about the pairing, so it raises rather than being quietly dropped.
+ */
+function nativeActionAdmits(
+  kind: NativeActionKind,
+  stored: readonly (string | null)[],
+): readonly NativeActionResolution[] {
+  const admits = nativeActionResolutions[kind].filter((resolution) =>
+    stored.includes(resolution),
+  );
+  if (admits.length !== stored.length)
+    throw new Error(
+      `native read: a ${kind} offers an answer it cannot ask for`,
+    );
+  return admits;
+}
+
+function openNativeAction(row: OpenNativeActionRow): TicketNativeAction {
+  if (
+    row.action === null ||
+    row.kind === null ||
+    row.authorizing_seq === null ||
+    row.resolutions === null
+  )
+    throw new Error("native read: an open action is missing its fence");
+  const kind = nativeActionKind(row.kind);
+  return {
+    action: row.action,
+    kind,
+    authorizingSequence: projectRowCounter(
+      row.authorizing_seq,
+      "native action authorizing sequence",
+    ),
+    admits: nativeActionAdmits(kind, row.resolutions),
+  };
+}
+
+/** One page of a project's open actions, and where the next one resumes. */
+function nativeActionPage(
+  rows: readonly ProjectNativeActionRow[],
+  limit: number,
+): NativeActionPage {
+  const listed = rows.slice(0, limit).map((row) => ({
+    ticket: asTicketId(projectRowCounter(row.ticket, "native action ticket")),
+    ...openNativeAction(row),
+  }));
+  const next = rows.length > limit ? listed.at(-1) : undefined;
+  return {
+    actions: listed,
+    ...(next === undefined
+      ? {}
+      : {
+          nextAfter: {
+            authorizingSequence: next.authorizingSequence,
+            action: next.action,
+          },
+        }),
+  };
+}
+
 async function readProject(
   pool: pg.Pool,
   partition: Partition,
@@ -299,6 +393,46 @@ export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
       return brief === undefined
         ? ticketResource(row)
         : { ...ticketResource(row), brief };
+    },
+    ticketNativeActions: async (partition, ticket) => {
+      const found = await pool.query<OpenNativeActionRow>(
+        sql`SELECT a.action,a.kind,a.authorizing_seq::text AS authorizing_seq,
+                array_agg(r.resolution) FILTER (WHERE r.resolution IS NOT NULL)
+                  AS resolutions
+           FROM ticket_projection t
+           LEFT JOIN native_action a
+             ON a.tenant=t.tenant AND a.project=t.project
+            AND a.ticket=t.ticket AND a.state='Open'
+           LEFT JOIN native_action_resolution r
+             ON r.tenant=a.tenant AND r.project=a.project AND r.action=a.action
+          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+            AND t.ticket=${ticket}
+          GROUP BY a.action,a.kind,a.authorizing_seq
+          ORDER BY a.action`,
+      );
+      if (found.rows.length === 0) return undefined;
+      return found.rows
+        .filter((row) => row.action !== null)
+        .map(openNativeAction);
+    },
+    nativeActions: async (partition, query) => {
+      const found = await pool.query<ProjectNativeActionRow>(
+        sql`SELECT a.ticket::text AS ticket,a.action,a.kind,
+                a.authorizing_seq::text AS authorizing_seq,
+                array_agg(r.resolution) AS resolutions
+           FROM native_action a
+           JOIN native_action_resolution r
+             ON r.tenant=a.tenant AND r.project=a.project AND r.action=a.action
+          WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+            AND a.state='Open'
+            AND (${query.after?.authorizingSequence ?? null}::bigint IS NULL
+              OR (a.authorizing_seq,a.action) <
+                 (${query.after?.authorizingSequence ?? null},${query.after?.action ?? null}))
+          GROUP BY a.ticket,a.action,a.kind,a.authorizing_seq
+          ORDER BY a.authorizing_seq DESC,a.action DESC
+          LIMIT ${query.limit + 1}`,
+      );
+      return nativeActionPage(found.rows, query.limit);
     },
   };
 }

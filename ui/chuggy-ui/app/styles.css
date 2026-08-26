@@ -179,6 +179,96 @@ select:hover {
   color: var(--ink-dim);
 }
 
+/* The project table: dense rows, one line each, and a badge that is read
+ * before the row it sits in. */
+
+.table-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-wide);
+}
+
+.filters {
+  display: flex;
+  gap: var(--gap);
+  flex-wrap: wrap;
+}
+
+.filters .here {
+  border-color: var(--accent);
+  color: var(--ink-bright);
+}
+
+.action {
+  margin-left: auto;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--ground-raised);
+}
+
+.more {
+  justify-self: start;
+}
+
+.ticket-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket-table th,
+.ticket-table td {
+  padding: 0.15rem var(--gap-wide);
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--ground-sunken);
+}
+
+.ticket-table thead th {
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ticket-table tbody tr:hover {
+  background: var(--ground-sunken);
+}
+
+.ticket-table tbody th {
+  font-weight: 400;
+}
+
+.ticket-table tbody th a:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cell-dim {
+  color: var(--ink-dim);
+}
+
+/* An inline block, because a `td` clips only under a fixed table layout and
+ * this table sizes its columns from what is in them. */
+.clipped {
+  display: inline-block;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.badge {
+  padding: 0 0.35rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  color: var(--warn);
+  font-size: var(--text-small);
+}
+
 .notice {
   max-width: 34rem;
   margin: 12vh auto;

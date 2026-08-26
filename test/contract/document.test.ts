@@ -39,9 +39,11 @@ test("the golden is the document and not an empty stand-in", () => {
     "draft",
     "draftInitialization",
     "drafts",
+    "events",
     "execution",
     "executions",
     "installation",
+    "nativeActions",
     "notifications",
     "operation",
     "operationalStatus",
@@ -51,6 +53,7 @@ test("the golden is the document and not an empty stand-in", () => {
     "projects",
     "selectorContext",
     "ticket",
+    "ticketNativeActions",
     "tickets",
   ]);
   assert.deepEqual(Object.keys(document.schemas).sort(), [

@@ -11,8 +11,10 @@ import {
   encodeConfigurationCursor,
   parseConfigurationCursor,
   encodeInventoryCursor,
+  encodeNativeActionCursor,
   encodeTicketActivityCursor,
   parseInventoryCursor,
+  parseNativeActionCursor,
   parseTicketActivityCursor,
   parseConfigurationCreation,
   parseRepositoryConfigurationImport,
@@ -35,6 +37,8 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project",
     "/api/v1/tenants/:tenant/projects/:project/tickets",
     "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket",
+    "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/native-actions",
+    "/api/v1/tenants/:tenant/projects/:project/native-actions",
     "/api/v1/tenants/:tenant/projects/:project/operational-status",
     "/api/v1/tenants/:tenant/projects/:project/selector-context",
     "/api/v1/tenants/:tenant/projects/:project/executions",
@@ -43,6 +47,7 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/operations",
     "/api/v1/tenants/:tenant/projects/:project/operations/:operation",
     "/api/v1/tenants/:tenant/projects/:project/notifications",
+    "/api/v1/tenants/:tenant/projects/:project/events",
     "/api/v1/tenants/:tenant/projects/:project/configurations",
     "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
     "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
@@ -57,10 +62,12 @@ test("the frontend contract is generated from the checked request schemas", () =
   const document = nativeHttpContractDocument() as {
     schemas: { publicMutation: { oneOf: unknown[] } };
     notifications: string;
+    events: string;
     caching: string;
   };
   assert.ok(document.schemas.publicMutation.oneOf.length > 0);
   assert.equal(document.notifications, "bounded-polling");
+  assert.equal(document.events, "sse");
   assert.equal(document.caching, "no-store");
 });
 
@@ -212,6 +219,18 @@ test("ticket activity cursors bind the composite position to one project", () =>
     parseTicketActivityCursor(cursor, parsePartition("tenant", "other")),
   );
   assert.throws(() => parseTicketActivityCursor(`${cursor}=`, partition));
+});
+
+test("native action cursors bind the fence and its tie-breaker to one project", () => {
+  const partition = parsePartition("tenant", "project");
+  const position = { authorizingSequence: 7, action: "escalation" };
+  const cursor = encodeNativeActionCursor(partition, position);
+  assert.deepEqual(parseNativeActionCursor(cursor, partition), position);
+  assert.throws(() =>
+    parseNativeActionCursor(cursor, parsePartition("tenant", "other")),
+  );
+  assert.throws(() => parseNativeActionCursor(`${cursor}=`, partition));
+  assert.throws(() => parseNativeActionCursor("not-json", partition));
 });
 
 test("a purpose-specific mutation becomes its one application command", () => {
