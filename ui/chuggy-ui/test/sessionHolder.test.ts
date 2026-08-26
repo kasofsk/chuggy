@@ -191,6 +191,47 @@ test("signing out clears the store and revokes where the issuer offers it", asyn
   );
 });
 
+test("concurrent callers share one renewal rather than spending the token twice", async () => {
+  const held = harness();
+  held.persistent.held.set(sessionRefreshTokenKey, "renew");
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  const asked = held.asked.length;
+  const tokens = await Promise.all([
+    holder.bearer(),
+    holder.bearer(),
+    holder.bearer(),
+  ]);
+  const presented = held.asked
+    .slice(asked)
+    .filter((request) => typeof request !== "string");
+  expect(presented.length).toBe(1);
+  expect(tokens).toEqual(["access", "access", "access"]);
+});
+
+test("a renewal that has settled does not stop the next one from starting", async () => {
+  const held = harness();
+  held.persistent.held.set(sessionRefreshTokenKey, "renew");
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  const asked = held.asked.length;
+  expect(await holder.refresh()).toBe(true);
+  expect(await holder.refresh()).toBe(true);
+  expect(held.asked.length - asked).toBe(2);
+});
+
+test("a sign-in the issuer refused is drawn with the reason it gave", async () => {
+  const held = harness();
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  const answer = await holder.completeCallback(
+    "?error=access_denied&error_description=the+operator+said+no",
+  );
+  expect(answer.result).toBe("Denied");
+  holder.refuse(answer.result === "Denied" ? answer.reason : "");
+  expect(holder.snapshot().reason).toContain("the operator said no");
+});
+
 test("a renewal changes the generation, which is what reopens a stream", async () => {
   const held = harness();
   held.persistent.held.set(sessionRefreshTokenKey, "renew");

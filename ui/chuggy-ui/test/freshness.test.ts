@@ -16,7 +16,6 @@ import {
   panelObservedAtMs,
   panelReason,
   panelStateFromQuery,
-  panelStateFromResult,
 } from "../app/core/freshness.ts";
 
 const nowMs = Date.parse("2026-08-26T12:00:00Z");
@@ -51,11 +50,23 @@ test("a resource that states when it was observed is believed over the cache", (
 });
 
 test("absence and failure are separate states, each carrying its reason", () => {
-  const absent = panelStateFromResult({ outcome: "Absent" }, nowMs);
-  const failed = panelStateFromResult(
-    { outcome: "Fault", code: "InternalError", status: 500 },
-    nowMs,
-  );
+  const absent = panelStateFromQuery({
+    data: undefined,
+    error: new ApiOutcomeError({ outcome: "Absent" }, "gone"),
+    isPending: false,
+    dataUpdatedAt: 0,
+  });
+  const fault = {
+    outcome: "Fault",
+    code: "InternalError",
+    status: 500,
+  } as const;
+  const failed = panelStateFromQuery({
+    data: undefined,
+    error: new ApiOutcomeError(fault, panelReason(fault)),
+    isPending: false,
+    dataUpdatedAt: 0,
+  });
   expect(absent.state).toBe("Absent");
   expect(failed.state).toBe("Failed");
   expect(failed.state === "Failed" && failed.reason).toContain("InternalError");

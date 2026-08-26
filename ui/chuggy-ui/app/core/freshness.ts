@@ -9,7 +9,7 @@
  */
 
 import { ApiOutcomeError } from "./apiRequest.ts";
-import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 
 export const freshnessStaleAfterMs = 60_000;
 
@@ -57,21 +57,6 @@ export function panelReason(result: ApiFailure): string {
     case "Unreadable":
       return `the API answered something this console cannot read: ${result.reason}`;
   }
-}
-
-export function panelStateFromResult<T>(
-  result: ApiResult<T>,
-  dataUpdatedAtMs: number | undefined,
-): PanelState<T> {
-  if (result.outcome === "Ok")
-    return {
-      state: "Ready",
-      value: result.value,
-      observedAtMs: panelObservedAtMs(result.value, dataUpdatedAtMs),
-    };
-  if (result.outcome === "Absent")
-    return { state: "Absent", reason: panelReason(result) };
-  return { state: "Failed", reason: panelReason(result) };
 }
 
 export interface PanelQuery<T> {

@@ -134,6 +134,36 @@ test("opens that will not stay open are given up after the budget", async () => 
   expect(seen.statuses.at(-1)?.reason).toBe("the stream would not stay open");
 });
 
+/**
+ * The handling a representation the wire rejects gets, now that the contract
+ * parses it: the connection ends and the reopen budget bounds the retrying.
+ */
+test("a frame the contract rejects ends the connection rather than being skipped", async () => {
+  const server = streamServer([
+    {
+      status: 200,
+      chunks: [
+        frame("Ticket", "9", {
+          version: 1,
+          resource: "3",
+          representation: { ticket: "three" },
+        }),
+        frame("Ticket", "10", {
+          version: 1,
+          resource: "4",
+          representation: { ticket: 4, phase: "Working", sequence: 1 },
+        }),
+      ],
+    },
+    { status: 401 },
+  ]);
+  const seen = collector();
+  await openProjectStream(server.ports, partition, seen.handlers).finished;
+  expect(seen.events).toEqual([]);
+  expect(server.headersSeen.length).toBe(2);
+  expect(server.headersSeen[1]?.["last-event-id"]).toBeUndefined();
+});
+
 test("the reopen delay doubles from the floor and stops at the ceiling", () => {
   expect(projectStreamDelayMs(1)).toBe(streamReopenDelayMsMin);
   expect(projectStreamDelayMs(2)).toBe(streamReopenDelayMsMin * 2);

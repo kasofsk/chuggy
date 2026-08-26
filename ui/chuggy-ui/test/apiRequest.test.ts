@@ -124,7 +124,7 @@ test("retry-after is honoured, bounded by the attempt count", async () => {
   expect(outcome.outcome).toBe("Retryable");
 });
 
-test("a hostile retry-after is capped at the wire's own bound", async () => {
+test("a hostile retry-after arrives already capped by the wire", async () => {
   const held = harness([
     { status: 429, headers: { "retry-after": "99999" }, body: {} },
     { status: 200, body: { installation: "one" } },

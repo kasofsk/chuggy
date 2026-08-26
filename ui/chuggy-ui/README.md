@@ -55,7 +55,9 @@ build output is in `.prettierignore`.
 
 `build` writes the bundle and then runs `scripts/check-console-policy.ts` over
 what it wrote, which holds the emitted document to the policy the web image
-serves it under: no inline script, no inline style, no other origin.
+serves it under: no inline script, no inline style, no other origin. What it
+decides is `scripts/console-policy.ts`, and `test/scripts/consolePolicy.test.ts`
+holds that to every finding it names.
 
 ## Runtime configuration
 

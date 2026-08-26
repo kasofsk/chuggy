@@ -81,7 +81,7 @@ ci_gate_selected() { # <gate id>
 	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'ui/*.js' 'ui/**/*.js' 'ui/**/*.ts' 'ui/**/*.tsx' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
 	source-static) ci_changed '*.ts' '*.tsx' '*.js' '*.json' '*.cjs' '*.mjs' '*.yaml' '*.yml' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
 	source-unit) ci_changed 'src/**' 'test/**' 'ui/**' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
-	check-console) ci_changed 'ui/**' 'src/contract/**' .chug/tasks/check-console.sh ;;
+	check-console) ci_changed 'ui/**' 'src/contract/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' .chug/tasks/check-console.sh ;;
 	check-conformance) ci_changed 'src/domain/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/domain.qnt' 'model/measure.qnt' .chug/tasks/check-conformance.sh ;;
 	check-random) ci_changed 'src/domain/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/domain.qnt' 'model/measure.qnt' 'model/mc/mc_chuggy.qnt' .chug/tasks/check-random.sh ;;
 	check-postgres) ci_changed 'src/**' 'test/postgres/**' .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh || ci_toolchain_changed ;;

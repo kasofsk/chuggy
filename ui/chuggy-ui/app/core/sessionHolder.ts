@@ -33,6 +33,7 @@ import {
 import type { PkceDigestPort } from "./pkce.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import {
+  sessionAfterRefreshFailure,
   sessionCanRefresh,
   sessionFromRefreshToken,
   sessionFromTokens,
@@ -82,6 +83,7 @@ export interface SessionHolder {
   readonly signOut: () => Promise<void>;
   readonly bearer: () => Promise<string | undefined>;
   readonly refresh: () => Promise<boolean>;
+  readonly refuse: (reason: string) => void;
   readonly refreshDueAtMs: () => number | undefined;
   readonly generation: () => number;
   readonly snapshot: () => SessionSnapshot;
@@ -98,6 +100,7 @@ interface SessionInner {
   session: SessionState;
   generation: number;
   snapshot: SessionSnapshot;
+  renewal: Promise<boolean> | undefined;
 }
 
 function sessionReason(failure: unknown): string {
@@ -173,7 +176,26 @@ function sessionForget(inner: SessionInner, reason: string | undefined): void {
   sessionSettle(inner);
 }
 
-async function sessionRefresh(inner: SessionInner): Promise<boolean> {
+/**
+ * One renewal at a time, shared by everyone who asked while it was in flight,
+ * and cleared when it settles so the next caller past the renewal point starts
+ * a new one.
+ *
+ * An issuer that rotates refresh tokens invalidates the whole chain when a
+ * spent one is presented again, so a second caller renewing against the token
+ * the first is already spending would end the session rather than extend it.
+ */
+function sessionRefresh(inner: SessionInner): Promise<boolean> {
+  const inflight = inner.renewal;
+  if (inflight !== undefined) return inflight;
+  const started = sessionRenew(inner).finally(() => {
+    inner.renewal = undefined;
+  });
+  inner.renewal = started;
+  return started;
+}
+
+async function sessionRenew(inner: SessionInner): Promise<boolean> {
   const { configuration, endpoints, session } = inner;
   if (session.state !== "Held" || configuration === undefined) return false;
   if (endpoints === undefined) return false;
@@ -194,13 +216,11 @@ async function sessionRefresh(inner: SessionInner): Promise<boolean> {
     );
     return true;
   } catch (failure: unknown) {
-    const failed = {
-      ...session.held,
-      refreshFailures: session.held.refreshFailures + 1,
-    };
-    inner.session = { state: "Held", held: failed };
-    if (sessionCanRefresh(failed)) sessionAnnounce(inner);
-    else sessionForget(inner, sessionReason(failure));
+    const spent = sessionAfterRefreshFailure(session.held);
+    if (spent.state === "Held") {
+      inner.session = spent;
+      sessionAnnounce(inner);
+    } else sessionForget(inner, sessionReason(failure));
     return false;
   }
 }
@@ -304,6 +324,12 @@ async function sessionSignOut(inner: SessionInner): Promise<void> {
     await inner.ports.fetchJson(revocation).catch(() => undefined);
 }
 
+/** What the sign-in was refused for, kept where the tree that draws it reads. */
+function sessionRefuse(inner: SessionInner, reason: string): void {
+  inner.reason = reason;
+  sessionAnnounce(inner);
+}
+
 function sessionRefreshDue(inner: SessionInner): number | undefined {
   if (inner.session.state !== "Held") return undefined;
   if (inner.session.held.accessToken === "") return undefined;
@@ -320,6 +346,7 @@ export function createSessionHolder(ports: SessionHolderPorts): SessionHolder {
     endpoints: undefined,
     session: sessionSignedOut,
     generation: 0,
+    renewal: undefined,
     snapshot: {
       phase: "Loading",
       reason: undefined,
@@ -334,6 +361,9 @@ export function createSessionHolder(ports: SessionHolderPorts): SessionHolder {
     signOut: () => sessionSignOut(inner),
     bearer: () => sessionBearer(inner),
     refresh: () => sessionRefresh(inner),
+    refuse: (reason: string) => {
+      sessionRefuse(inner, reason);
+    },
     refreshDueAtMs: () => sessionRefreshDue(inner),
     generation: () => inner.generation,
     snapshot: () => inner.snapshot,

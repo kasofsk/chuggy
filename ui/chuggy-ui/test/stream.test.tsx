@@ -14,10 +14,12 @@ import { expect, test } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import type { ProjectChangeKind } from "../../../src/contract/events.ts";
 import {
   projectListKey,
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
+import type { ProjectQueryKey } from "../app/core/projectQueryKeys.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import {
@@ -46,6 +48,7 @@ function holderDouble(): SessionHolder & { renew: () => void } {
     signOut: () => Promise.resolve(),
     bearer: () => Promise.resolve("token"),
     refresh: () => Promise.resolve(true),
+    refuse: () => undefined,
     refreshDueAtMs: () => undefined,
     generation: () => generation,
     snapshot: () => snapshot,
@@ -130,9 +133,15 @@ test("a live frame is written into the cache and nothing is refetched", async ()
   );
 });
 
-test("a registered list fold is offered the same representation", async () => {
+/**
+ * One `Ticket` change, and a list fold registered for whichever kind the case
+ * is about, so that what separates the two cases below is the kind alone.
+ */
+async function foldedResources(
+  registeredKind: ProjectChangeKind,
+  key: ProjectQueryKey,
+): Promise<unknown> {
   const client = new QueryClient();
-  const key = projectListKey(atlas, "Ticket", "frontier");
   client.setQueryData(key, []);
   const server = streamServer([
     {
@@ -148,7 +157,7 @@ test("a registered list fold is offered the same representation", async () => {
     },
   ]);
   function Folder(): ReactNode {
-    useProjectListFold("Ticket", key, (previous, change) => [
+    useProjectListFold(registeredKind, key, (previous, change) => [
       ...(previous as unknown[]),
       change.resource,
     ]);
@@ -165,7 +174,23 @@ test("a registered list fold is offered the same representation", async () => {
     </Harness>,
   );
   await settled();
-  expect(client.getQueryData(key)).toEqual(["3"]);
+  return client.getQueryData(key);
+}
+
+test("a registered list fold is offered the same representation", async () => {
+  const folded = await foldedResources(
+    "Ticket",
+    projectListKey(atlas, "Ticket", "frontier"),
+  );
+  expect(folded).toEqual(["3"]);
+});
+
+test("a fold registered for one kind is not offered another kind's change", async () => {
+  const folded = await foldedResources(
+    "Draft",
+    projectListKey(atlas, "Draft", "drafts"),
+  );
+  expect(folded).toEqual([]);
 });
 
 test("a project change abandons the connection and opens the next one", async () => {

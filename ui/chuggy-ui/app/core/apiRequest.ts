@@ -2,17 +2,15 @@
  * One public request: bearer, media type, timeout, bounded retry, and the
  * contract's classification of whatever came back.
  *
- * `classify` from `src/contract/outcomes.ts` decides what a status means and
- * this module adds only what a browser owns: a deadline on every request, a
- * bounded honouring of `retry-after`, and the two answers a network gives that
- * no status describes. A 202 is folded into `Ok` because the acceptance body is
- * what a caller of the one route that answers 202 reads.
+ * `classify` from `src/contract/outcomes.ts` decides what a status means, and
+ * caps `retry-after` before handing it over; what this module adds is a
+ * deadline on every request, a bound on how many times that delay is honoured,
+ * and the two answers a network gives that no status describes. A 202 is folded
+ * into `Ok` because the acceptance body is what a caller of the one route that
+ * answers 202 reads.
  */
 
-import {
-  classify,
-  retryAfterSecondsMax,
-} from "../../../../src/contract/outcomes.ts";
+import { classify } from "../../../../src/contract/outcomes.ts";
 import type { ApiOutcome } from "../../../../src/contract/outcomes.ts";
 import { nativeHttpMediaType } from "../../../../src/contract/http.ts";
 
@@ -167,10 +165,7 @@ function apiReason(failure: unknown): string {
   return failure instanceof Error ? failure.message : "the request failed";
 }
 
-/**
- * The retry is the server's own instruction, honoured a bounded number of times
- * and never longer than the wire's own `retryAfterSecondsMax`.
- */
+/** The retry is the server's own instruction, honoured a bounded number of times. */
 export async function apiSend(
   ports: ApiPorts,
   request: ApiRequest,
@@ -186,8 +181,7 @@ export async function apiSend(
     }
     if (last.outcome !== "Retryable") return last;
     if (attempt + 1 === apiAttemptsMax) return last;
-    const seconds = Math.min(last.retryAfterSeconds, retryAfterSecondsMax);
-    await ports.sleepMs(seconds * 1_000, request.signal);
+    await ports.sleepMs(last.retryAfterSeconds * 1_000, request.signal);
   }
   return last ?? { outcome: "Unreachable", reason: "no attempt was made" };
 }
