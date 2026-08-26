@@ -60,12 +60,20 @@ import type { ApiPorts, ApiRequest, ApiResult } from "./apiRequest.ts";
 
 export const projectInventoryPagesMax = 32;
 
-type Query = Readonly<Record<string, string | number | undefined>>;
+type QueryValue = string | number | readonly string[] | undefined;
 
+type Query = Readonly<Record<string, QueryValue>>;
+
+/** A parameter the route reads repeatedly is given as a list and appended once
+ * per member, because that is the only way the wire says two of them. */
 function apiPath(base: string, query: Query = {}): string {
   const search = new URLSearchParams();
-  for (const [name, value] of Object.entries(query))
-    if (value !== undefined) search.set(name, String(value));
+  for (const [name, value] of Object.entries(query)) {
+    if (value === undefined) continue;
+    if (typeof value === "string" || typeof value === "number")
+      search.set(name, String(value));
+    else for (const member of value) search.append(name, member);
+  }
   const rendered = search.toString();
   return rendered === "" ? base : `${base}?${rendered}`;
 }
@@ -135,8 +143,9 @@ export async function apiProjectInventoryAll(
 export interface ProjectPage {
   readonly after?: number | undefined;
   readonly cursor?: string | undefined;
+  readonly limit?: number | undefined;
   readonly order?: "RecentActivity" | undefined;
-  readonly phase?: string | undefined;
+  readonly phase?: readonly string[] | undefined;
 }
 
 export function apiProject(
@@ -149,6 +158,7 @@ export function apiProject(
     apiPath(partitionPath(partition), {
       after: page.after,
       cursor: page.cursor,
+      limit: page.limit,
       order: page.order,
       phase: page.phase,
     }),
@@ -177,6 +187,7 @@ export function apiOperationalStatus(
 
 export interface ExecutionsPage {
   readonly after?: string | undefined;
+  readonly limit?: number | undefined;
   readonly ticket?: number | undefined;
   readonly state?: string | undefined;
 }
@@ -190,6 +201,7 @@ export function apiExecutions(
     ports,
     apiPath(apiSegments(partition, "executions"), {
       after: page.after,
+      limit: page.limit,
       ticket: page.ticket,
       state: page.state,
     }),

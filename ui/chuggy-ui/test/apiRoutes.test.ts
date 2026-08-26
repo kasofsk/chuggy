@@ -87,6 +87,39 @@ test("only the page fields a caller gave become query parameters", async () => {
   );
 });
 
+test("a filter names every phase it selects, not only the last of them", async () => {
+  const held = recording(() => projectBody);
+  await apiProject(held.ports, partition, {
+    order: "RecentActivity",
+    limit: 100,
+    phase: ["HandoffBlocked", "Escalated"],
+  });
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
+      `?limit=100&order=RecentActivity&phase=HandoffBlocked&phase=Escalated`,
+  );
+});
+
+test("an unfiltered page names no phase", async () => {
+  const held = recording(() => projectBody);
+  await apiProject(held.ports, partition, { order: "RecentActivity" });
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las?order=RecentActivity`,
+  );
+});
+
+test("an executions page asks for the size it wants", async () => {
+  const held = recording(() => ({ executions: [] }));
+  await apiExecutions(held.ports, partition, {
+    limit: 100,
+    state: "NonTerminal",
+  });
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
+      `/executions?limit=100&state=NonTerminal`,
+  );
+});
+
 test("the inventory carries its cursor and stops when there is none", async () => {
   const held = recording((url) =>
     url.includes("cursor=next")
