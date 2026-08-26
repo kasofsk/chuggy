@@ -25,7 +25,7 @@ import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 /** Everything `schedulerProcessRoot` takes but the store it opens for itself. */
 export const schedulerRootService: Omit<
   ExecutionSchedulerService,
-  "store" | "configurations" | "priorWorkReports"
+  "store" | "configurations" | "priorWorkReports" | "ticketBriefs"
 > = {
   placement: {
     place: () =>

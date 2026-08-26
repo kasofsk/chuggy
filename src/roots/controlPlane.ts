@@ -347,7 +347,7 @@ export interface SchedulerProcessRootConfig {
   };
   readonly service: Omit<
     ExecutionSchedulerService,
-    "store" | "configurations" | "priorWorkReports"
+    "store" | "configurations" | "priorWorkReports" | "ticketBriefs"
   >;
   readonly additional?: readonly RuntimePrecondition[];
 }
@@ -362,6 +362,7 @@ export function schedulerProcessRootService(
     store: postgresExecutionScheduler(pool),
     configurations: postgresPinnedConfigurations(pool),
     priorWorkReports: postgresPriorWorkReports(pool),
+    ticketBriefs: postgresTicketBrief(pool),
   };
 }
 

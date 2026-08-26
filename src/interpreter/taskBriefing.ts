@@ -29,9 +29,10 @@
  * grant and no authored block can leave a worker able to conclude a task
  * itself.
  *
- * A RUNTIME FACT CANNOT FORGE A SECTION. Every line rendered here is refused if
- * it carries a control character, so a handoff from an earlier agent cannot
- * open a heading of its own, and it could gain nothing by it if it could —
+ * A RUNTIME FACT CANNOT FORGE A SECTION, AND NEITHER CAN A TICKET. Every line
+ * rendered here is refused if it carries a control character, so neither a
+ * handoff from an earlier agent nor the intent a human stated can open a
+ * heading of its own, and either could gain nothing by it if it could —
  * headings are not read back and authority is not prose.
  *
  * A RENDERED BRIEFING CARRIES A SEAL, AND THE SEAL IS A COMPILE-TIME CLAIM. Its
@@ -56,6 +57,7 @@
  * what `Core` understands.
  */
 
+import { briefIntentLinesMax, briefLinksMax } from "../contract/brief.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ExecutionId } from "./schedulerIdentity.ts";
@@ -97,6 +99,7 @@ import {
   type TaskPurpose,
 } from "./briefingTemplate.ts";
 export type { TaskPurpose } from "./briefingTemplate.ts";
+import { briefIntentLines, type DraftBrief } from "./ticketBrief.ts";
 import {
   resolveTaskAuthority,
   type AuthorityRequest,
@@ -344,6 +347,7 @@ export interface BriefingView {
   readonly configuration: PinnedTaskConfiguration;
   readonly runtime: RuntimeFacts;
   readonly priorWorkReports: PriorWorkReports;
+  readonly brief?: DraftBrief;
   readonly grant: PolicyAuthorityGrant;
 }
 
@@ -410,6 +414,18 @@ function briefingRuntimeFault(
   ]);
 }
 
+/** What the ticket's own brief has to be to render, which is bounded and printable. */
+function briefingTicketBriefFault(
+  brief: DraftBrief | undefined,
+): BriefingFault | undefined {
+  return brief === undefined
+    ? undefined
+    : briefingListsFault([
+        [briefIntentLines(brief.intent), briefIntentLinesMax],
+        [brief.links, briefLinksMax],
+      ]);
+}
+
 /** One list member as it renders, which is the only list shape a briefing has. */
 function briefingBullet(line: string): string {
   return `- ${line}`;
@@ -452,6 +468,10 @@ function briefingBodies(
 ): Record<BriefingSectionId, readonly string[]> {
   return {
     RoleInstructions: briefingRoleInstructions(view.purpose),
+    TicketIntent:
+      view.brief === undefined ? [] : briefIntentLines(view.brief.intent),
+    TicketLinks:
+      view.brief === undefined ? [] : view.brief.links.map(briefingBullet),
     WhyItMatters: view.configuration.brief.motivation,
     AcceptanceAndConstraints: briefingCriteriaLines(view.configuration.brief),
     PriorWorkReports:
@@ -617,7 +637,8 @@ export function composeTaskInvocation(
 ): TaskComposed {
   const fault =
     briefingConfigurationFault(view) ??
-    briefingRuntimeFault(view.runtime, view.priorWorkReports);
+    briefingRuntimeFault(view.runtime, view.priorWorkReports) ??
+    briefingTicketBriefFault(view.brief);
   if (fault !== undefined) return { composed: "Blocked", fault };
   const resolved = resolvePractices(
     catalog,

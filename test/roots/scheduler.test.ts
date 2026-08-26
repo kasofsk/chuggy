@@ -334,6 +334,7 @@ function processProgram(reachable: boolean): string {
       },
       runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
       priorWorkReports: { reports: async () => ({ reports: [] }) },
+      ticketBriefs: { brief: async () => undefined },
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,
       ticketService: tickets.ticketServiceDefaults,
