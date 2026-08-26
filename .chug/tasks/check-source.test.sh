@@ -192,7 +192,27 @@ seal
 check "the owning gates' suites are not this stage's" 0 "$RC" "0 stage(s) failed"
 # The split is asserted against a fixture whose suites this file wrote, so the
 # line cannot report a scope the run did not have.
-check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 3 left to check-conformance, check-random and check-postgres"
+check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 3 left to check-conformance, check-random, check-postgres and check-console"
+
+# A console's own suite is written for the runner its manifest pins, so this
+# runner is not merely a second one for it - it is the wrong one, and the
+# fixture says so by importing a name only that runner provides. Nested a
+# directory deeper than a console would put it, because the subtraction is the
+# whole subtree rather than one level of it.
+fixture
+clean_source
+mkdir -p "$R/ui/built/test/deep"
+{
+	printf '%s\n' 'import { expect } from "a-runner-this-tree-does-not-have"'
+	printf '%s\n' 'expect(1).toBe(1)'
+} > "$R/ui/built/test/deep/console.test.ts"
+git -C "$R" add -A
+# Unit mode alone: the static stages have their own opinion of a console that
+# builds and it is not what this case is about.
+run_in "$R" --unit
+
+check "a console's own suite is not this stage's, at any depth" 0 "$RC" "0 stage(s) failed"
+check "and the split counts it as another gate's" 0 "$RC" "unit ran 1 suite(s); 1 left to"
 
 # --- What the browser stage sees that the first typecheck does not ------------
 #

@@ -27,6 +27,15 @@
 # could-not-run and the remedy is printed with the directory it belongs in. Two
 # is not a pass.
 #
+# WHAT IS ASKED IS RESOLUTION, NOT A DIRECTORY. A console may be a workspace of
+# the tree that holds it, and an install then puts its packages in the root's
+# `node_modules` and leaves the console with a `node_modules` holding only
+# whatever could not be hoisted — sometimes nothing at all. So the presence of
+# a directory beside the manifest is not the question; whether each declared
+# package resolves from the console's own directory is, because that is what
+# the console's own toolchain will ask a moment later. The walk up the
+# ancestors is the resolver's own, and is bounded.
+#
 # Usage:
 #   .chug/tasks/check-console.sh
 #
@@ -112,6 +121,41 @@ for (const name of process.argv.slice(2)) {
 ' "$@" 2>/dev/null || echo UNREADABLE
 }
 
+# The declared packages that do not resolve from the console's directory. The
+# ancestor walk is the resolver's and is bounded; a manifest that will not parse
+# answers for itself in `declared_scripts` rather than twice.
+unresolved_packages() { # <manifest> <dir>
+	node -e '
+const fs = require("fs")
+const path = require("path")
+const ancestorsMax = 64
+function installed(from, name) {
+  let at = path.resolve(from)
+  for (let step = 0; step < ancestorsMax; step += 1) {
+    if (fs.existsSync(path.join(at, "node_modules", name, "package.json")))
+      return true
+    const up = path.dirname(at)
+    if (up === at) return false
+    at = up
+  }
+  return false
+}
+let manifest
+try {
+  manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+} catch {
+  process.exit(0)
+}
+const declared = [
+  ...Object.keys((manifest && manifest.dependencies) || {}),
+  ...Object.keys((manifest && manifest.devDependencies) || {}),
+]
+for (const name of declared) {
+  if (!installed(process.argv[2], name)) console.log(name)
+}
+' "$@" 2>/dev/null || true
+}
+
 set -f
 IFS='
 '
@@ -127,9 +171,10 @@ consoles=0
 for manifest in "$@"; do
 	consoles=$((consoles + 1))
 	dir="${manifest%/package.json}"
-	if [ ! -d "$dir/node_modules" ]; then
-		echo "check-console: LINTER ERROR — $dir has no installed packages"
-		echo "check-console: install them with: npm ci --prefix $dir"
+	unresolved="$(unresolved_packages "$manifest" "$dir")"
+	if [ -n "$unresolved" ]; then
+		echo "check-console: LINTER ERROR — $dir has no installed packages: $(printf '%s' "$unresolved" | tr '\n' ' ')"
+		echo "check-console: install them with: npm ci --prefix $dir, or npm ci at the root of the tree the console is a workspace of"
 		exit 2
 	fi
 	# shellcheck disable=SC2086 # the required names are space-separated

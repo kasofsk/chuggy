@@ -35,8 +35,11 @@
 # toward shorter comments. A string literal containing `//` is not a comment,
 # and neither is a regex literal matching one; both are tracked.
 #
-# SCOPE: tracked `*.ts`. The gates are shell and the model is Quint; each has
-# its own comment culture and its own header stating it.
+# SCOPE: tracked `*.ts` and `*.tsx`. Both, because a console that builds writes
+# its components in the second and they are TypeScript in every way this rule
+# is about; a file type left out of the glob is a file type the rule silently
+# stops applying to. The gates are shell and the model is Quint; each has its
+# own comment culture and its own header stating it.
 #
 # Usage:
 #   .chug/tasks/check-comments.sh [<file>...]
@@ -54,9 +57,9 @@ cd "$root" || exit 2
 
 set -f
 if [ "$#" -eq 0 ]; then
-	corpus="$(git ls-files '*.ts' 2>/dev/null || true)"
+	corpus="$(git ls-files '*.ts' '*.tsx' 2>/dev/null || true)"
 	if [ -z "$corpus" ]; then
-		echo "check-comments: LINTER ERROR — no tracked *.ts; the glob matched nothing"
+		echo "check-comments: LINTER ERROR — no tracked *.ts or *.tsx; the glob matched nothing"
 		exit 2
 	fi
 	IFS='

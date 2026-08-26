@@ -256,6 +256,53 @@ module.exports = {
       },
     },
     {
+      name: "chuggy-ui-is-what-a-browser-fetches",
+      comment:
+        "ui/chuggy-ui/app/ is the console's whole served graph: its entry " +
+        "document names one module in it, the bundler follows what that " +
+        "reaches, and every file it reaches is shipped. So the directory is " +
+        "the boundary, and the rule the commit landing this console owes is " +
+        "this one — what the browser is handed reaches its own files, the " +
+        "public contract and a package, and nothing else here. The contract " +
+        "and the packages are console-reaches-no-source's exemptions and are " +
+        "not restated; what this adds is the rest of the console's OWN " +
+        "directory, because a build has a second kind of file in it — the " +
+        "build's configuration, which imports the bundler and reads a " +
+        "filesystem. Nothing stops a shared constant being lifted into one " +
+        "of those and imported from a component, and the result is a bundle " +
+        "carrying a build tool. Reachability, because that lift arrives as a " +
+        "helper belonging to neither half.",
+      severity: "error",
+      from: { path: "^ui/chuggy-ui/app/" },
+      to: { reachable: true, path: "^ui/chuggy-ui/(?!app/)" },
+    },
+    {
+      name: "chuggy-ui-decisions-render-nothing",
+      comment:
+        "ui/chuggy-ui/app/core/ is that console's decision layer and " +
+        "ui/chuggy-ui/app/browser/ is what performs its effects and draws " +
+        "them, which is " +
+        "the split ui/console/ has under another pair of names and is the " +
+        "reason this console states its own rather than inheriting one about " +
+        "a layering it does not have. The core reaches its own files, the " +
+        "public contract, and the parser the contract is written in — a " +
+        "closed list, so React, the router, the query cache and the " +
+        "platform's own globals are all outside it. What it buys is that the " +
+        "client, the parsers, the authorization flow, the stream and the " +
+        "cache decisions are all reachable from a suite with no renderer: a " +
+        "decision that reached a component would need one mounted to be " +
+        "tested, and a suite that mounts a tree to check a bound is a suite " +
+        "nobody adds a case to. Reachability, because the shape that breaks " +
+        "it is a hook somebody adds between the two.",
+      severity: "error",
+      from: { path: "^ui/chuggy-ui/app/core/" },
+      to: {
+        reachable: true,
+        path: "^(?!ui/chuggy-ui/app/core/)",
+        pathNot: "^src/contract/|node_modules/zod/",
+      },
+    },
+    {
       name: "no-circular-dependency",
       comment: "A cycle makes the layer a module belongs to unanswerable.",
       severity: "error",
@@ -278,6 +325,12 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: "node_modules" },
+    // A console's build output is not this tree's source: it is generated,
+    // it is not in git, and a bundle is one module reaching everything by
+    // construction. Every other gate is scoped by `git ls-files`; this one
+    // walks directories, so the one kind of directory that is output rather
+    // than input is named here.
+    exclude: { path: "^ui/[^/]+/dist/" },
     tsConfig: { fileName: "tsconfig.json" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {

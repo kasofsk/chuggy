@@ -26,7 +26,12 @@
 # replays the corpus, `check-random.sh` walks the seeded sweep and
 # `check-postgres.sh` drives a real server, each over its own directory;
 # discovering those here as well would replay and walk twice per `ci.sh` run,
-# and would fail every check on a machine with no database. So this stage
+# and would fail every check on a machine with no database. `ui/` is subtracted
+# for a different reason and a stronger one: a console that builds pins its own
+# runner, and a suite written for it would not merely run twice here — it would
+# run under a runner it was never written for, and report the import failure as
+# a defect in the console. `check-console.sh` is what runs those, through the
+# console's own `test` script. So this stage
 # subtracts their directories from the tracked
 # suites rather than naming the ones it wants — a suite added anywhere else
 # runs here without being listed, and a directory nothing covers is a glob
@@ -119,10 +124,13 @@ if [ "$run_unit" -eq 1 ]; then
 		exit 2
 	fi
 
-# The pattern mirrors how those gates find their own work — the directory
-# itself, not below it — so a suite nested deeper than they look is this
-# stage's, which is what keeps the two halves a partition.
-	owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$|^test/postgres/[^/]*\.test\.ts$'
+# The three server-side arms mirror how those gates find their own work — the
+# directory itself, not below it — so a suite nested deeper than they look is
+# this stage's, which is what keeps the two halves a partition. The `ui/` arm
+# is the whole subtree instead, because a console owns every file under its own
+# directory and there is no depth at which one of its suites becomes this
+# runner's.
+	owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$|^test/postgres/[^/]*\.test\.ts$|^ui/'
 	unit_suites="$(printf '%s\n' "$suites" | grep -Ev "$owned" || true)"
 	if [ -z "$unit_suites" ]; then
 		echo "check-source: LINTER ERROR — every tracked suite belongs to another gate; this stage would run nothing"
@@ -140,7 +148,7 @@ if [ "$run_unit" -eq 1 ]; then
 	set +f
 
 	stage "  unit     " node --test --test-reporter=dot "$@"
-	echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance, check-random and check-postgres"
+	echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance, check-random, check-postgres and check-console"
 fi
 
 echo "check-source: $failed stage(s) failed, $ran run"
