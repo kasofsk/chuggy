@@ -142,7 +142,26 @@ async function countedProject(label: string): Promise<SchedulerProject> {
   return project;
 }
 
+/**
+ * What the installation was already carrying, read from the server rather than
+ * through the port the case is about: a baseline the mapping under test
+ * produced would cancel a constant error in that mapping on both sides.
+ */
+async function installationBacklog(label: string): Promise<number> {
+  const idle = await schedulerProject(rig, label);
+  const read = await ingress.query<{ carried: string }>(
+    `SELECT installation_backlog::text AS carried FROM ${backlogFunction}($1,$2)`,
+    [idle.partition.tenant, idle.partition.project],
+  );
+  const carried = read.rows[0]?.carried;
+  if (carried === undefined) {
+    throw new Error("postgres scheduler context: the backlog read nothing");
+  }
+  return Number(carried);
+}
+
 test("the advisory context reports this project's own work and this cluster's total", async () => {
+  const carried = await installationBacklog("context-carried");
   const project = await countedProject("context");
   const account = `${String(Buffer.byteLength(project.partition.tenant))}:${project.partition.tenant}${String(Buffer.byteLength(project.partition.project))}:${project.partition.project}`;
   assert.deepEqual(await context.context(project.partition), {
@@ -161,7 +180,10 @@ test("the advisory context reports this project's own work and this cluster's to
       accountReservationDeficit: counted.reserved - counted.admissions,
     },
     account,
-    backlog: { project: counted.tasks, installation: counted.tasks + 1 },
+    backlog: {
+      project: counted.tasks,
+      installation: carried + counted.tasks + 1,
+    },
   });
 });
 
