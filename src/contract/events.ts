@@ -11,10 +11,14 @@
  * longer readable and the cache entry is dropped. `Project` is the one kind
  * that is not written: its representation is the inventory entry, which is less
  * than a project read returns, so a `Project` frame invalidates the project
- * head and the browser refetches it. `ready` opens the stream,
- * `reset` says the requested `Last-Event-ID` is no longer retained and the
- * client must reload from the GET routes, and `source` reports whether the
- * change log behind the stream is live or degraded.
+ * head and the browser refetches it. `NativeAction` names a ticket as its
+ * identity too, and carries what that ticket has open for a person to answer
+ * rather than the ticket itself: an approval is opened and answered without the
+ * ticket's own phase or sequence moving, so the two are separate resources
+ * under one identity. `ready` opens the stream, `reset` says the requested
+ * `Last-Event-ID` is no longer retained and the client must reload from the GET
+ * routes, and `source` reports whether the change log behind the stream is live
+ * or degraded.
  */
 
 import { z } from "zod";
@@ -25,6 +29,7 @@ import {
   draftResponseSchema,
   executionResponseSchema,
   operationResponseSchema,
+  ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "./responses.ts";
 
@@ -37,6 +42,7 @@ export const projectChangeKinds = [
   "Configuration",
   "Project",
   "Execution",
+  "NativeAction",
 ] as const;
 export type ProjectChangeKind = (typeof projectChangeKinds)[number];
 
@@ -61,6 +67,7 @@ export const projectChangeRepresentationSchemas = {
   Configuration: configurationResponseSchema,
   Project: partitionSchema,
   Execution: executionResponseSchema,
+  NativeAction: ticketNativeActionsResponseSchema,
 } as const satisfies Record<ProjectChangeKind, z.ZodType>;
 
 export type ProjectChangeRepresentation<Kind extends ProjectChangeKind> =
@@ -85,6 +92,9 @@ export const projectChangeDataSchemas = {
   ),
   Project: changeDataSchema(projectChangeRepresentationSchemas.Project),
   Execution: changeDataSchema(projectChangeRepresentationSchemas.Execution),
+  NativeAction: changeDataSchema(
+    projectChangeRepresentationSchemas.NativeAction,
+  ),
 } as const;
 
 export type ProjectChangeData<Kind extends ProjectChangeKind> = z.infer<
@@ -157,6 +167,8 @@ function projectChangeEvent(
       return { event: kind, sequence, data: schemas.Project.parse(body) };
     case "Execution":
       return { event: kind, sequence, data: schemas.Execution.parse(body) };
+    case "NativeAction":
+      return { event: kind, sequence, data: schemas.NativeAction.parse(body) };
   }
 }
 

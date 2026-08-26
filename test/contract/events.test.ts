@@ -16,6 +16,7 @@ import {
   draftResponse,
   executionResponse,
   operationResponse,
+  ticketNativeActionsResponse,
   ticketResponse,
 } from "../../src/adapters/http/outcomes.ts";
 import {
@@ -43,6 +44,15 @@ const ticketRepresentation = ticketResponse({
   sequence: 9,
 }).body;
 
+const nativeActionRepresentation = ticketNativeActionsResponse([
+  {
+    action: "approval",
+    kind: "FinalizationApproval",
+    authorizingSequence: 11,
+    admits: ["Approve", "Decline"],
+  },
+]).body;
+
 /** One representation per kind, each as the kind's own GET route emits it. */
 const representations: Readonly<Record<ProjectChangeKind, unknown>> = {
   Ticket: ticketRepresentation,
@@ -51,6 +61,7 @@ const representations: Readonly<Record<ProjectChangeKind, unknown>> = {
   Configuration: configurationResponse(configuration).body,
   Operation: operationResponse(operation).body,
   Project: partition,
+  NativeAction: nativeActionRepresentation,
 };
 
 test("a change frame carries the GET's own representation under its identity", () => {
@@ -108,6 +119,44 @@ test("a representation another kind's route would answer with is refused", () =>
     projectChangeDataSchemas.Project.parse({
       version: projectStreamVersion,
       resource: "atlas",
+      representation: ticketRepresentation,
+    }),
+  );
+});
+
+test("a ticket's open actions are its own resource under the ticket's identity", () => {
+  const opened = parseProjectStreamEvent({
+    event: "NativeAction",
+    id: "12",
+    data: {
+      version: projectStreamVersion,
+      resource: "3",
+      representation: nativeActionRepresentation,
+    },
+  });
+  assert.deepEqual(
+    opened.event === "NativeAction"
+      ? opened.data.representation?.actions.map((action) => action.kind)
+      : undefined,
+    ["FinalizationApproval"],
+  );
+  const answered = projectChangeDataSchemas.NativeAction.parse({
+    version: projectStreamVersion,
+    resource: "3",
+    representation: ticketNativeActionsResponse([]).body,
+  });
+  assert.deepEqual(answered.representation, { actions: [] });
+  assert.throws(() =>
+    projectChangeDataSchemas.Ticket.parse({
+      version: projectStreamVersion,
+      resource: "3",
+      representation: nativeActionRepresentation,
+    }),
+  );
+  assert.throws(() =>
+    projectChangeDataSchemas.NativeAction.parse({
+      version: projectStreamVersion,
+      resource: "3",
       representation: ticketRepresentation,
     }),
   );
