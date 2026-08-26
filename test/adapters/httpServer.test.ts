@@ -798,7 +798,8 @@ test("a corrupt stored document is a server fault, not a malformed request", asy
   await using app = createNativeHttpApp(
     failing,
     {
-      authenticateBearer: () => Promise.resolve(asPrincipal("issuer subject")),
+      authenticateBearer: () =>
+        Promise.resolve({ principal: asPrincipal("issuer subject") }),
     },
     { ready: () => Promise.resolve(true) },
     authority,
