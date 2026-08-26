@@ -36,11 +36,19 @@ fixture() {
 	git -C "$R" config user.name t
 }
 
-# `node_modules` is a directory rather than an install: the gate asks whether
-# the packages are there, and the fixture scripts need none.
+# A console whose manifest declares no package needs no install: what the gate
+# asks is whether each DECLARED package resolves, and the fixture scripts are
+# shell one-liners that declare none.
 console() { # <name> <package.json body>
-	mkdir -p "$R/ui/$1/node_modules"
+	mkdir -p "$R/ui/$1"
 	printf '%s\n' "$2" > "$R/ui/$1/package.json"
+}
+
+# A package installed where a resolver would find it from a directory below,
+# which is a directory holding a manifest and nothing else.
+installed_package() { # <node_modules holder> <name>
+	mkdir -p "$1/node_modules/$2"
+	printf '%s\n' '{ "name": "'"$2"'", "version": "0.0.0" }' > "$1/node_modules/$2/package.json"
 }
 
 WHOLE='{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
@@ -156,13 +164,27 @@ check "a manifest that is not JSON is a finding" 1 "$RC" "not readable as JSON"
 
 # Packages absent is not a console that passes, and the remedy names the
 # directory it has to be run in.
+DECLARING='{ "name": "c", "version": "0.0.0", "private": true,
+	"dependencies": { "a-package-nobody-installed": "^1.0.0" },
+	"scripts": { "typecheck": "true", "lint": "true", "test": "true",
+	"build": "true" } }'
+
 fixture
-console built "$WHOLE"
-rmdir "$R/ui/built/node_modules"
+console built "$DECLARING"
 seal
 check "a console with no packages installed exits 2, not 0" 2 "$RC" "has no installed packages"
+check "the error names the package that did not resolve" 2 "$RC" "a-package-nobody-installed"
 check "the remedy names the directory" 2 "$RC" "npm ci --prefix ui/built"
 refute "and no console is reported clean" "script(s) clean"
+
+# The workspace shape, which is the reason the question is resolution rather
+# than a directory: the console's packages are installed at the root of the
+# tree that holds it and there is no `node_modules` beside its manifest at all.
+fixture
+console built "$DECLARING"
+installed_package "$R" a-package-nobody-installed
+seal
+check "a console installed at the root of its workspace is checked" 0 "$RC" "4 script(s) clean across 1 built console(s)"
 
 # A listing that failed leaves the same empty list a tree with no built console
 # leaves, and the gate would then report on a tree it could not read.
