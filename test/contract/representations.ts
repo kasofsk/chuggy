@@ -90,7 +90,7 @@ export const configuration: ConfigurationRevisionResource = {
   digest,
 };
 
-const requirement: ExecutionRequirement = {
+export const requirement: ExecutionRequirement = {
   mode: "Container",
   operatingSystem: "Linux",
   architecture: "Amd64",

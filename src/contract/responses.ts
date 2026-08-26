@@ -34,6 +34,7 @@ import {
   reworkPolicyResponseSchema,
 } from "./authoring.ts";
 import {
+  architectures,
   artifactRoles,
   attemptStates,
   draftStates,
@@ -41,12 +42,15 @@ import {
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
+  nativeDrivers,
   notificationKinds,
+  operatingSystems,
   operationRefusalCodes,
   operationStates,
   outputRenderers,
   phaseRoster,
   repositoryConfigurationFaults,
+  requirementSources,
   resultVerdicts,
   schedulerFreshnesses,
 } from "./rosters.ts";
@@ -106,6 +110,27 @@ export type OperationalStatusResponse = z.infer<
   typeof operationalStatusResponseSchema
 >;
 
+/**
+ * What a task was required to run on, as the scheduler materialized it. The
+ * arms are strict because the interpreter refuses a requirement carrying a key
+ * outside the mode it names.
+ */
+const executionRequirementSchema = z.discriminatedUnion("mode", [
+  z.strictObject({
+    mode: z.literal("Container"),
+    operatingSystem: z.enum(operatingSystems),
+    architecture: z.enum(architectures),
+    image: z.string().min(1),
+  }),
+  z.strictObject({
+    mode: z.literal("Native"),
+    architecture: z.enum(architectures),
+    driver: z.enum(nativeDrivers),
+    xcodeVersionMin: ticketNumberSchema,
+    sdkVersionMin: ticketNumberSchema,
+  }),
+]);
+
 export const executionSummarySchema = z.object({
   execution: identitySchema,
   ticket: ticketNumberSchema,
@@ -114,6 +139,11 @@ export const executionSummarySchema = z.object({
   stage: countSchema.optional(),
   cluster: identitySchema,
   configurationRevision: identitySchema,
+  requirementIdentity: identitySchema,
+  requirement: executionRequirementSchema,
+  requirementDigest: digestSchema,
+  requirementSource: z.enum(requirementSources),
+  platformDefaultVersion: ticketNumberSchema,
   status: z.enum(executionStatuses),
   outcome: z.enum(executionOutcomes).optional(),
   retriesSpent: countSchema,

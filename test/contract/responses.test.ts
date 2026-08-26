@@ -10,6 +10,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+
 import {
   configurationResponse,
   configurationsResponse,
@@ -63,6 +65,7 @@ import {
   draft as draftResource,
   execution,
   executionSummary,
+  requirement,
   instant,
   partition,
   revision,
@@ -96,16 +99,20 @@ test("a project read and a ticket read parse as the contract names them", () => 
 });
 
 test("an escalated ticket names its wall and an unparked one omits it", () => {
-  const escalated = ticketResponseSchema.parse({
-    ticket: 3,
-    phase: "Escalated",
-    sequence: 9,
-    reason: "GasExhausted",
-  });
+  const escalated = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Escalated",
+      sequence: 9,
+      reason: "GasExhausted",
+    }).body,
+  );
   assert.equal(escalated.reason, "GasExhausted");
   assert.equal(
-    ticketResponseSchema.parse({ ticket: 3, phase: "Working", sequence: 9 })
-      .reason,
+    ticketResponseSchema.parse(
+      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
+        .body,
+    ).reason,
     undefined,
   );
   assert.throws(() =>
@@ -168,6 +175,82 @@ test("an execution page and an execution detail parse with their results", () =>
   assert.equal(detail.result?.verdict, "Pass");
   assert.equal(detail.result?.artifacts[0]?.output?.renderer, "Markdown");
   assert.throws(() => executionResponseSchema.parse(page.executions[0]));
+});
+
+test("an execution names what it ran on, in either mode", () => {
+  const page = executionsResponseSchema.parse(
+    executionsResponse({
+      result: "Authorized",
+      value: { executions: [executionSummary] },
+    }).body,
+  );
+  assert.deepEqual(page.executions[0]?.requirement, {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image: "worker:v1",
+  });
+  assert.equal(page.executions[0]?.requirementSource, "PlatformDefault");
+  assert.equal(page.executions[0]?.requirementIdentity, "requirement-one");
+  assert.equal(page.executions[0]?.platformDefaultVersion, 1);
+  const native = executionResponseSchema.parse(
+    executionResponse({
+      ...execution,
+      requirement: {
+        mode: "Native",
+        architecture: "Arm64",
+        driver: "XcodeTesting",
+        xcodeVersionMin: 16,
+        sdkVersionMin: 18,
+      },
+    }).body,
+  );
+  assert.equal(
+    native.requirement.mode === "Native" && native.requirement.driver,
+    "XcodeTesting",
+  );
+});
+
+/** The page body one execution carrying this requirement would be sent as. */
+function pageWithRequirement(value: unknown): unknown {
+  return executionsResponse({
+    result: "Authorized",
+    value: {
+      executions: [
+        { ...executionSummary, requirement: value as ExecutionRequirement },
+      ],
+    },
+  }).body;
+}
+
+test("a requirement carrying a key its mode does not name is refused", () => {
+  assert.throws(() =>
+    executionsResponseSchema.parse(
+      pageWithRequirement({ ...requirement, driver: "XcodeBuild" }),
+    ),
+  );
+  assert.throws(() =>
+    executionsResponseSchema.parse(
+      pageWithRequirement({
+        mode: "Native",
+        architecture: "Arm64",
+        driver: "XcodeBuild",
+        xcodeVersionMin: 16,
+        sdkVersionMin: 18,
+        image: "worker:v1",
+      }),
+    ),
+  );
+  assert.throws(() =>
+    executionsResponseSchema.parse(
+      executionsResponse({
+        result: "Authorized",
+        value: {
+          executions: [{ ...executionSummary, platformDefaultVersion: 0 }],
+        },
+      }).body,
+    ),
+  );
 });
 
 test("an artifact preview parses as text with the renderer the server chose", () => {

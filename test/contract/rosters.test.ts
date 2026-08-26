@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  architectures,
   artifactRoles,
   attemptStates,
   configurationProvenanceSources,
@@ -25,20 +26,26 @@ import {
   executionTaskKinds,
   finalizers,
   nativeActionResolutions,
+  nativeDrivers,
   notificationKinds,
   notificationResults,
+  operatingSystems,
   operationRefusalCodes,
   operationStates,
   outputRenderers,
   phaseRoster,
   repositoryConfigurationFaults,
+  requirementSources,
   resultVerdicts,
   resumePricings,
   schedulerFreshnesses,
 } from "../../src/contract/rosters.ts";
 import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
-import { phaseTags, reasonTags } from "../../src/domain/generated/modelTypes.ts";
+import {
+  phaseTags,
+  reasonTags,
+} from "../../src/domain/generated/modelTypes.ts";
 import type {
   Combinator,
   Finalizer,
@@ -50,6 +57,12 @@ import {
   allExecutionStatuses,
 } from "../../src/interpreter/executionScheduler.ts";
 import type { ExecutionTaskKind } from "../../src/interpreter/executionScheduler.ts";
+import type {
+  Architecture as RequiredArchitecture,
+  NativeDriver as RequiredNativeDriver,
+  OperatingSystem as RequiredOperatingSystem,
+  RequirementSource as MaterializedRequirementSource,
+} from "../../src/interpreter/executionRequirement.ts";
 import { allArtifactRoles } from "../../src/interpreter/resultManifest.ts";
 import { allNativeActionResolutions } from "../../src/interpreter/ticketCommand.ts";
 import { projectPageLimitMax } from "../../src/interpreter/nativeWeb.ts";
@@ -99,6 +112,32 @@ test("the phase and scheduler rosters are the model's", () => {
     sorted(nativeActionResolutions),
     sorted(allNativeActionResolutions),
   );
+});
+
+test("the requirement rosters are exhaustive over the interpreter's unions", () => {
+  const systems: Record<RequiredOperatingSystem, true> = {
+    Linux: true,
+    MacOS: true,
+  };
+  const widths: Record<RequiredArchitecture, true> = {
+    Amd64: true,
+    Arm64: true,
+  };
+  const drivers: Record<RequiredNativeDriver, true> = {
+    XcodeBuild: true,
+    XcodeTesting: true,
+    IosSimulatorTesting: true,
+  };
+  const sources: Record<MaterializedRequirementSource, true> = {
+    ExplicitTask: true,
+    TaskKindDefault: true,
+    TicketDefault: true,
+    PlatformDefault: true,
+  };
+  assert.deepEqual(sorted(operatingSystems), keysOf(systems));
+  assert.deepEqual(sorted(architectures), keysOf(widths));
+  assert.deepEqual(sorted(nativeDrivers), keysOf(drivers));
+  assert.deepEqual(sorted(requirementSources), keysOf(sources));
 });
 
 test("one page bound serves every collection route", () => {
