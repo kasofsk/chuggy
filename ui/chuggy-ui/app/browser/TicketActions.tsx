@@ -11,7 +11,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
@@ -19,12 +19,13 @@ import { apiCancelOperation } from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
+  mutationDeferralSentence,
   operationFailureSentence,
   operationRefusalSentence,
   operationStateSentence,
 } from "../core/codeSentences.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { followOperation } from "../core/operationFollow.ts";
+import { followOperation, ticketConfirmed } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
@@ -48,7 +49,7 @@ function StepNote(props: { readonly step: OperationStep }): ReactNode {
     case "Backlogged":
       return (
         <p className="panel-absent">
-          the API is deferring this ({step.code}); trying again in{" "}
+          {mutationDeferralSentence(step.code)}; trying again in{" "}
           {step.retryAfterSeconds}s
         </p>
       );
@@ -82,8 +83,14 @@ async function cancelOperation(
   ports: ApiPorts,
   partition: PartitionIdentity,
   operation: string,
+  signal: AbortSignal | undefined,
 ): Promise<string> {
-  const answered = await apiCancelOperation(ports, partition, operation);
+  const answered = await apiCancelOperation(
+    ports,
+    partition,
+    operation,
+    signal,
+  );
   return answered.outcome === "Ok"
     ? "the cancellation was accepted"
     : operationFailureSentence(answered);
@@ -119,32 +126,52 @@ function ActionButtons(props: {
   );
 }
 
-/** A follow that outlived its screen has nowhere to report, so it stops here. */
-function useLiving(): { readonly current: boolean } {
-  const living = useRef(true);
-  useEffect(() => {
-    living.current = true;
-    return () => {
-      living.current = false;
-    };
-  }, []);
-  return living;
+/**
+ * A follow is abandoned with the screen that asked for it: the controller this
+ * holds aborts the requests still in flight and the waits between them, and its
+ * signal is what stops anything being reported afterwards.
+ */
+function useAbandonOnUnmount(): RefObject<AbortController | undefined> {
+  const runningRef = useRef<AbortController | undefined>(undefined);
+  useEffect(
+    () => () => {
+      runningRef.current?.abort(
+        new Error("the screen that asked for this is gone"),
+      );
+    },
+    [],
+  );
+  return runningRef;
 }
 
-export function TicketActions(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-  readonly state: PanelState<TicketResponse>;
-}): ReactNode {
+interface Submitting {
+  readonly attempt: Attempt | undefined;
+  readonly cancelled: string | undefined;
+  readonly submit: (action: TicketAction) => void;
+  readonly cancel: (operation: string) => void;
+}
+
+/**
+ * One submission at a time, followed to settlement and merged into the ticket
+ * this page reads. The confirmed row goes through `ticketConfirmed` rather than
+ * over the entry, because it is a narrower projection than the ticket's own
+ * read and a live frame may already have written a later one.
+ */
+function useSubmitting(
+  partition: PartitionIdentity,
+  ticket: number,
+): Submitting {
   const ports = useApiPorts();
   const client = useQueryClient();
-  const living = useLiving();
+  const runningRef = useAbandonOnUnmount();
   const [attempt, setAttempt] = useState<Attempt | undefined>(undefined);
   const [cancelled, setCancelled] = useState<string | undefined>(undefined);
-  const { partition, ticket } = props;
+  const key = projectResourceKey(partition, "Ticket", String(ticket));
 
-  const submit = async (action: TicketAction): Promise<void> => {
+  const follow = async (action: TicketAction): Promise<void> => {
     setCancelled(undefined);
+    const controller = new AbortController();
+    runningRef.current = controller;
     const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
     const followed = await followOperation(
       ports,
@@ -152,48 +179,69 @@ export function TicketActions(props: {
       { operation, mutation: action.mutation },
       ticket,
       (step) => {
-        if (living.current) setAttempt({ action, step });
+        if (!controller.signal.aborted) setAttempt({ action, step });
       },
+      controller.signal,
     );
-    if (followed.ticket !== undefined)
-      client.setQueryData(
-        projectResourceKey(partition, "Ticket", String(ticket)),
-        followed.ticket,
-      );
+    const confirmed = followed.ticket;
+    if (controller.signal.aborted || confirmed === undefined) return;
+    client.setQueryData(key, (held: TicketResponse | undefined) =>
+      ticketConfirmed(held, confirmed),
+    );
   };
 
-  const step = attempt?.step;
+  return {
+    attempt,
+    cancelled,
+    submit: (action) => {
+      void follow(action);
+    },
+    cancel: (operation) => {
+      const controller = runningRef.current;
+      void cancelOperation(
+        ports,
+        partition,
+        operation,
+        controller?.signal,
+      ).then((said) => {
+        if (controller?.signal.aborted !== true) setCancelled(said);
+      });
+    },
+  };
+}
+
+export function TicketActions(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly state: PanelState<TicketResponse>;
+}): ReactNode {
+  const submitting = useSubmitting(props.partition, props.ticket);
+  const step = submitting.attempt?.step;
   const pending = step?.step === "Following" ? step.operation : undefined;
+  const busy =
+    step !== undefined && step.step !== "Settled" && step.step !== "Abandoned";
   return (
     <Panel title="actions" state={props.state}>
       {(value) => (
         <div className="action-panel">
           <ActionButtons
             actions={actionsFor(value)}
-            busy={
-              step !== undefined &&
-              step.step !== "Settled" &&
-              step.step !== "Abandoned"
-            }
-            onChoose={(action) => {
-              void submit(action);
-            }}
+            busy={busy}
+            onChoose={submitting.submit}
           />
           {step === undefined ? null : <StepNote step={step} />}
           {pending === undefined ? null : (
             <button
               type="button"
               onClick={() => {
-                void cancelOperation(ports, partition, pending).then((said) => {
-                  if (living.current) setCancelled(said);
-                });
+                submitting.cancel(pending);
               }}
             >
               cancel operation
             </button>
           )}
-          {cancelled === undefined ? null : (
-            <p className="panel-note">{cancelled}</p>
+          {submitting.cancelled === undefined ? null : (
+            <p className="panel-note">{submitting.cancelled}</p>
           )}
         </div>
       )}

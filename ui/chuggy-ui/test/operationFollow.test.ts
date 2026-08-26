@@ -8,11 +8,16 @@
 
 import { expect, test } from "vitest";
 
+import { operationStates } from "../../../src/contract/rosters.ts";
+import type { OperationState } from "../../../src/contract/rosters.ts";
+import type { OperationResponse } from "../../../src/contract/responses.ts";
 import {
   operationAdvanced,
   operationAttemptsMax,
+  operationConfirmationPage,
   operationRequest,
   operationSubmitting,
+  ticketConfirmed,
 } from "../app/core/operationFollow.ts";
 import type {
   OperationEvent,
@@ -114,6 +119,114 @@ test("a refusal settles carrying the code that explains it", () => {
     state: "Refused",
     refusalCode: "NotEnabled",
   });
+});
+
+/** Each state as the wire's own union writes it, so every arm is polled. */
+function answered(state: OperationState): OperationResponse {
+  const identity = { operation: "op-1", acceptedAt };
+  switch (state) {
+    case "Pending":
+      return { ...identity, state };
+    case "Succeeded":
+      return { ...identity, state, decidedSequence: 91 };
+    case "Refused":
+      return {
+        ...identity,
+        state,
+        code: "NotEnabled",
+        refusedHead: 4,
+        refusedLifecycleGeneration: 1,
+      };
+    case "Answered":
+    case "Cancelled":
+      return { ...identity, state };
+  }
+}
+
+test("every operation state the wire has is polled, and only Pending waits", () => {
+  const following = operationAdvanced(operationSubmitting(), {
+    event: "Accepted",
+    operation: "op-1",
+  });
+  for (const state of operationStates) {
+    const step = operationAdvanced(following, {
+      event: "Polled",
+      operation: answered(state),
+    });
+    if (state === "Pending") expect(step.step).toBe("Following");
+    else if (state === "Succeeded") expect(step.step).toBe("Confirming");
+    else expect(step).toMatchObject({ step: "Settled", state });
+  }
+});
+
+test("a cancelled operation settles as cancelled and asks for nothing more", () => {
+  const following = operationAdvanced(operationSubmitting(), {
+    event: "Accepted",
+    operation: "op-1",
+  });
+  const step = operationAdvanced(following, {
+    event: "Polled",
+    operation: answered("Cancelled"),
+  });
+  expect(step).toEqual({
+    step: "Settled",
+    operation: "op-1",
+    state: "Cancelled",
+    refusalCode: undefined,
+  });
+  expect(operationRequest(step)).toBeUndefined();
+});
+
+test("the confirmation addresses the first ticket without an exclusive cursor", () => {
+  expect(operationConfirmationPage(1, 91)).toEqual({
+    limit: 1,
+    minimumSequence: 91,
+  });
+  expect(operationConfirmationPage(2, 91)).toEqual({
+    after: 1,
+    limit: 1,
+    minimumSequence: 91,
+  });
+});
+
+test("a confirmation keeps the fields the project row does not carry", () => {
+  const brief = { intent: "ship it", links: [] };
+  expect(
+    ticketConfirmed(
+      { ticket: 7, phase: "Escalated", sequence: 4, brief },
+      { ticket: 7, phase: "Working", sequence: 9 },
+    ),
+  ).toEqual({ ticket: 7, phase: "Working", sequence: 9, brief });
+});
+
+test("a confirmation drops the fields the project row supersedes", () => {
+  expect(
+    ticketConfirmed(
+      { ticket: 7, phase: "Escalated", sequence: 4, reason: "WorkFailed" },
+      { ticket: 7, phase: "Working", sequence: 9 },
+    ).reason,
+  ).toBeUndefined();
+});
+
+test("a confirmation older than what is held does not put it back", () => {
+  const newer = { ticket: 7, phase: "Done", sequence: 12 } as const;
+  expect(
+    ticketConfirmed(newer, { ticket: 7, phase: "Working", sequence: 9 }),
+  ).toBe(newer);
+});
+
+test("a confirmation at the same sequence is written, not dropped", () => {
+  expect(
+    ticketConfirmed(
+      { ticket: 7, phase: "Working", sequence: 9 },
+      { ticket: 7, phase: "Done", sequence: 9 },
+    ).phase,
+  ).toBe("Done");
+});
+
+test("a confirmation with nothing held is what the page reads", () => {
+  const confirmed = { ticket: 7, phase: "Done", sequence: 9 } as const;
+  expect(ticketConfirmed(undefined, confirmed)).toBe(confirmed);
 });
 
 test("a server that keeps deferring is abandoned at the budget", () => {

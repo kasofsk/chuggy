@@ -352,6 +352,17 @@ select:hover {
   gap: var(--gap);
 }
 
+.intent {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
 .executions,
 .artifacts {
   list-style: none;

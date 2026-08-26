@@ -153,6 +153,7 @@ export function apiProject(
   ports: ApiPorts,
   partition: PartitionIdentity,
   page: ProjectPage = {},
+  signal?: AbortSignal,
 ): Promise<ApiResult<ProjectResponse>> {
   return apiGet(
     ports,
@@ -165,6 +166,7 @@ export function apiProject(
       phase: page.phase,
     }),
     (value) => projectResponseSchema.parse(value),
+    signal,
   );
 }
 
@@ -240,11 +242,13 @@ export function apiOperation(
   ports: ApiPorts,
   partition: PartitionIdentity,
   operation: string,
+  signal?: AbortSignal,
 ): Promise<ApiResult<OperationResponse>> {
   return apiGet(
     ports,
     apiSegments(partition, "operations", operation),
     (value) => operationResponseSchema.parse(value),
+    signal,
   );
 }
 
@@ -310,6 +314,7 @@ export function apiSubmitOperation(
   ports: ApiPorts,
   partition: PartitionIdentity,
   submission: z.infer<typeof submissionSchema>,
+  signal?: AbortSignal,
 ): Promise<ApiResult<OperationAcceptance>> {
   return apiRead(
     ports,
@@ -318,6 +323,7 @@ export function apiSubmitOperation(
       path: apiSegments(partition, "operations"),
       body: submission,
       idempotencyKey: submission.operation,
+      ...(signal ? { signal } : {}),
     },
     (value) => operationAcceptanceSchema.parse(value),
   );
@@ -327,10 +333,15 @@ export function apiCancelOperation(
   ports: ApiPorts,
   partition: PartitionIdentity,
   operation: string,
+  signal?: AbortSignal,
 ): Promise<ApiResult<OperationAcceptance>> {
   return apiRead(
     ports,
-    { method: "DELETE", path: apiSegments(partition, "operations", operation) },
+    {
+      method: "DELETE",
+      path: apiSegments(partition, "operations", operation),
+      ...(signal ? { signal } : {}),
+    },
     (value) => operationAcceptanceSchema.parse(value),
   );
 }

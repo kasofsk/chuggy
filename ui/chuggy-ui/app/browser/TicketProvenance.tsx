@@ -11,6 +11,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
 import type { DraftResponse } from "../../../../src/contract/responses.ts";
 import { apiConfiguration } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -31,9 +32,36 @@ function Field(props: {
 }
 
 /**
- * The intent, links and branch a ticket is written from are not on this wire
- * yet, and the revision is what stands in the meanwhile.
+ * What a person asked for. A ticket released before the brief was on the wire
+ * carries none, and says so rather than drawing empty fields.
  */
+function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
+  const { intent, links, branch } = props.brief;
+  return (
+    <>
+      <Field name="intent">
+        <p className="intent">{intent}</p>
+      </Field>
+      <Field name="links">
+        {links.length === 0 ? (
+          "none"
+        ) : (
+          <ul className="links">
+            {links.map((link) => (
+              <li key={link}>
+                <a href={link} rel="noopener noreferrer" target="_blank">
+                  {link}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Field>
+      <Field name="branch">{branch ?? "none"}</Field>
+    </>
+  );
+}
+
 export function TicketBrief(props: {
   readonly state: PanelState<DraftResponse>;
 }): ReactNode {
@@ -41,14 +69,18 @@ export function TicketBrief(props: {
     <Panel title="brief" state={props.state}>
       {(draft) => (
         <dl className="fields">
+          {draft.brief === undefined ? (
+            <Field name="intent, links, branch">
+              <span className="panel-absent">
+                this ticket was released before a brief was kept for one
+              </span>
+            </Field>
+          ) : (
+            <Brief brief={draft.brief} />
+          )}
           <Field name="released under">{draft.configurationRevision}</Field>
           <Field name="draft">
             {draft.state} at version {draft.authoringVersion}
-          </Field>
-          <Field name="intent, links, branch">
-            <span className="panel-absent">
-              this ticket resource carries none
-            </span>
           </Field>
         </dl>
       )}

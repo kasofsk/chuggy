@@ -128,12 +128,24 @@ test("a page nothing has read stays unread rather than being invented", () => {
   ).toBeUndefined();
 });
 
+/** The row names this ticket, so the schema is the only thing left that can
+ * reject it. */
 test("a representation this console cannot read leaves the page alone", () => {
   const held = page([execution("e1")]);
   expect(
     ticketExecutionsFolded(7, held, {
-      resource: "e1",
-      representation: { execution: "e1" },
+      resource: "e2",
+      representation: { execution: "e2", ticket: 7 },
     }),
   ).toBe(held);
+});
+
+test("a listed row this console cannot read is not written over the good one", () => {
+  const held = page([execution("e1", { status: "Running" })]);
+  const folded = ticketExecutionsFolded(7, held, {
+    resource: "e1",
+    representation: { execution: "e1", ticket: 7, status: "Terminal" },
+  });
+  expect(folded).toBe(held);
+  expect(folded?.executions[0]?.status).toBe("Running");
 });

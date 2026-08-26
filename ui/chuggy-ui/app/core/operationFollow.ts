@@ -25,6 +25,7 @@ import type {
 import type { z } from "zod";
 
 import { apiOperation, apiProject, apiSubmitOperation } from "./apiRoutes.ts";
+import type { ProjectPage } from "./apiRoutes.ts";
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import { operationFailureSentence } from "./codeSentences.ts";
 
@@ -251,6 +252,39 @@ function operationEventOf<T>(
 }
 
 /**
+ * What the confirmation's answer does to the ticket the page is already
+ * holding. The project row is a narrower projection than the ticket's own read
+ * — it carries no `brief` — so the field the row cannot carry survives, and a
+ * row older than what a live frame has already written is dropped, because the
+ * frames are the only other writer and they arrive in sequence order.
+ */
+export function ticketConfirmed(
+  held: TicketResponse | undefined,
+  confirmed: TicketResponse,
+): TicketResponse {
+  if (held === undefined) return confirmed;
+  if (held.sequence > confirmed.sequence) return held;
+  return {
+    ...confirmed,
+    ...(confirmed.brief === undefined && held.brief !== undefined
+      ? { brief: held.brief }
+      : {}),
+  };
+}
+
+/** The route's `after` is exclusive and names a ticket, so the first has none. */
+export function operationConfirmationPage(
+  ticket: number,
+  minimumSequence: number,
+): ProjectPage {
+  return {
+    ...(ticket > 1 ? { after: ticket - 1 } : {}),
+    limit: 1,
+    minimumSequence,
+  };
+}
+
+/**
  * The projection read that makes the page read its own write: one ticket, at a
  * head no lower than the sequence the decision was recorded at.
  */
@@ -259,15 +293,17 @@ async function operationConfirmation(
   partition: PartitionIdentity,
   ticket: number,
   minimumSequence: number,
+  signal: AbortSignal | undefined,
 ): Promise<{
   readonly event: OperationEvent;
   readonly ticket?: TicketResponse;
 }> {
-  const answered = await apiProject(ports, partition, {
-    after: ticket - 1,
-    limit: 1,
-    minimumSequence,
-  });
+  const answered = await apiProject(
+    ports,
+    partition,
+    operationConfirmationPage(ticket, minimumSequence),
+    signal,
+  );
   if (answered.outcome === "Conflict") return { event: { event: "Behind" } };
   const event = operationEventOf(answered, () => ({ event: "Confirmed" }));
   if (answered.outcome !== "Ok") return { event };
@@ -293,10 +329,16 @@ async function operationTurn(
   submission: OperationSubmission,
   ticket: number,
   step: OperationStep,
+  signal: AbortSignal | undefined,
 ): Promise<OperationTurn> {
   const request = operationRequest(step);
   if (request === "Submit") {
-    const answered = await apiSubmitOperation(ports, partition, submission);
+    const answered = await apiSubmitOperation(
+      ports,
+      partition,
+      submission,
+      signal,
+    );
     return {
       event: operationEventOf(answered, (value) => ({
         event: "Accepted",
@@ -305,7 +347,12 @@ async function operationTurn(
     };
   }
   if (request === "Poll" && step.step === "Following") {
-    const answered = await apiOperation(ports, partition, step.operation);
+    const answered = await apiOperation(
+      ports,
+      partition,
+      step.operation,
+      signal,
+    );
     return {
       event: operationEventOf(answered, (value) => ({
         event: "Polled",
@@ -319,6 +366,7 @@ async function operationTurn(
       partition,
       ticket,
       step.minimumSequence,
+      signal,
     );
   return {
     event: {
@@ -328,6 +376,8 @@ async function operationTurn(
   };
 }
 
+/** The wait precedes the request the CURRENT step will make, so it is read
+ * from that step and never from the one it replaced. */
 function operationWaitMs(step: OperationStep): number {
   return step.step === "Backlogged"
     ? step.retryAfterSeconds * 1_000
@@ -344,6 +394,7 @@ export async function followOperation(
   submission: OperationSubmission,
   ticket: number,
   onStep: (step: OperationStep) => void,
+  signal?: AbortSignal,
 ): Promise<OperationFollowed> {
   let step = operationSubmitting();
   let confirmed: TicketResponse | undefined;
@@ -351,20 +402,28 @@ export async function followOperation(
   for (let taken = 0; taken < operationStepsMax; taken += 1) {
     if (operationRequest(step) === undefined)
       return { step, ticket: confirmed };
-    const before = step;
     const turn = await operationTurn(
       ports,
       partition,
       submission,
       ticket,
       step,
+      signal,
     );
     if (turn.ticket !== undefined) confirmed = turn.ticket;
     step = operationAdvanced(step, turn.event);
     onStep(step);
     if (operationRequest(step) === undefined)
       return { step, ticket: confirmed };
-    await ports.sleepMs(operationWaitMs(before), undefined);
+    try {
+      await ports.sleepMs(operationWaitMs(step), signal);
+    } catch {
+      const abandoned = operationAbandoned(
+        "the screen that asked for this is gone",
+      );
+      onStep(abandoned);
+      return { step: abandoned, ticket: confirmed };
+    }
   }
   const exhausted = operationAbandoned(
     "the follow took more steps than it is allowed to take",

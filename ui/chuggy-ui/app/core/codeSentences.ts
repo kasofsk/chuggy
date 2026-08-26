@@ -3,8 +3,15 @@
  *
  * A code is the API's word to another program; a screen that prints it makes
  * the reader look it up, and there is nowhere to look. Each switch is total
- * over the contract's own roster, so a member the wire gains stops compiling
- * here rather than reaching a reader as an unexplained word.
+ * over the roster it speaks for, so a member gained stops compiling here rather
+ * than reaching a reader as an unexplained word, and
+ * `test/ui/mutationSentences.test.ts` drives the boundary's own response
+ * builders to hold the two rosters below to what those routes can answer with.
+ *
+ * EVERY FALLBACK NAMES ITSELF AS ONE. A code belonging to no roster is said to
+ * be unknown rather than explained away, so a reader is told the console has
+ * nothing for it — and so the suite above can tell a rostered answer from a
+ * fallback, which is the only thing that makes its forward direction bite.
  */
 
 import {
@@ -75,15 +82,75 @@ export function operationRefusalSentence(code: OperationRefusalCode): string {
   }
 }
 
+/**
+ * The coded refusals the boundary itself answers a submission or a cancellation
+ * with, which is a roster disjoint from the actor's own: a refusal there is a
+ * decision the actor made, and one here is the boundary declining to carry the
+ * request to it at all. `ProjectionBehind` is not among them because the follow
+ * reads it as a step rather than as a failure.
+ */
+export const mutationRefusalCodes = [
+  "IdempotencyConflict",
+  "InvalidMutation",
+  "MutationNotAdmitted",
+  "OperationNotPending",
+] as const;
+export type MutationRefusalCode = (typeof mutationRefusalCodes)[number];
+
+export function mutationRefusalSentence(code: MutationRefusalCode): string {
+  switch (code) {
+    case "IdempotencyConflict":
+      return "a different command was already submitted under this one's key";
+    case "InvalidMutation":
+      return "the API would not accept the mutation this console built";
+    case "MutationNotAdmitted":
+      return "the project is not admitting this kind of mutation at the moment";
+    case "OperationNotPending":
+      return "that operation had already been decided, so there was nothing left to call off";
+  }
+}
+
+/** The coded deferrals the same two routes answer with, each meaning try again. */
+export const mutationDeferralCodes = [
+  "DispatchBacklog",
+  "MailboxBackpressure",
+  "MailboxUnavailable",
+] as const;
+export type MutationDeferralCode = (typeof mutationDeferralCodes)[number];
+
+export function mutationDeferralSentence(code: string): string {
+  switch (mutationDeferralCodeOf(code)) {
+    case "DispatchBacklog":
+      return "the project has more waiting to be dispatched than it will take at once";
+    case "MailboxBackpressure":
+      return "the actor's mailbox is full";
+    case "MailboxUnavailable":
+      return "the actor's mailbox is not reachable";
+    case undefined:
+      return `the API asked for this to be sent again, and named a reason this console does not know (${code})`;
+  }
+}
+
 function operationRefusalCodeOf(
   code: string,
 ): OperationRefusalCode | undefined {
   return operationRefusalCodes.find((known) => known === code);
 }
 
+function mutationRefusalCodeOf(code: string): MutationRefusalCode | undefined {
+  return mutationRefusalCodes.find((known) => known === code);
+}
+
+function mutationDeferralCodeOf(
+  code: string,
+): MutationDeferralCode | undefined {
+  return mutationDeferralCodes.find((known) => known === code);
+}
+
 /**
- * Why a submission did not get through. A refusal the actor named is read from
- * its own roster; anything else is what the transport or the status said.
+ * Why a submission did not get through. A coded reason is read from whichever
+ * roster owns it; one belonging to neither is named as unrecognised rather than
+ * offered to the reader as the explanation.
  */
 export function operationFailureSentence(failure: ApiFailure): string {
   switch (failure.outcome) {
@@ -92,7 +159,7 @@ export function operationFailureSentence(failure: ApiFailure): string {
     case "Absent":
       return "the API has no such operation, or will not show it to you";
     case "Retryable":
-      return `the API kept asking to be tried again (${failure.code})`;
+      return `it kept being sent again and kept being deferred: ${mutationDeferralSentence(failure.code)}`;
     case "Unreachable":
       return `the API could not be reached: ${failure.reason}`;
     case "Unreadable":
@@ -101,9 +168,10 @@ export function operationFailureSentence(failure: ApiFailure): string {
     case "Rejected":
     case "Fault": {
       const refusal = operationRefusalCodeOf(failure.code);
-      return refusal === undefined
-        ? `the API answered ${failure.code}`
-        : operationRefusalSentence(refusal);
+      if (refusal !== undefined) return operationRefusalSentence(refusal);
+      const declined = mutationRefusalCodeOf(failure.code);
+      if (declined !== undefined) return mutationRefusalSentence(declined);
+      return `the API refused this, and named a reason this console does not know (${failure.code})`;
     }
   }
 }
