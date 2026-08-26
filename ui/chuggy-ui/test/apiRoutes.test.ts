@@ -58,6 +58,26 @@ test("a partition segment is encoded rather than pasted into the path", async ()
   );
 });
 
+test("a project read carries the page and the fence it was asked for", async () => {
+  const held = recording(() => projectBody);
+  await apiProject(held.ports, partition, {
+    after: 6,
+    limit: 1,
+    minimumSequence: 91,
+  });
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las?after=6&limit=1&minimumSequence=91`,
+  );
+});
+
+test("a project read omits the page fields it was not asked for", async () => {
+  const held = recording(() => projectBody);
+  await apiProject(held.ports, partition, { minimumSequence: 91 });
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las?minimumSequence=91`,
+  );
+});
+
 test("each resource hangs from its partition under its own segment", async () => {
   const held = recording(() => ({ ticket: 1, phase: "Working", sequence: 1 }));
   await apiTicket(held.ports, partition, 12);

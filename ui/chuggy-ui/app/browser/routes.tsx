@@ -2,8 +2,9 @@
  * The route tree, which carries the partition in the path.
  *
  * Every screen below `/$tenant/$project` is inside one stream and one shell, so
- * a project change is a navigation and the connection follows it. The three
- * leaves are headings until the screens that belong there are built.
+ * a project change is a navigation and the connection follows it. The leaves
+ * with no screen yet are headings until the screens that belong there are
+ * built.
  */
 
 import {
@@ -26,6 +27,7 @@ import { persistentStore } from "./ports.ts";
 import { ProjectTable } from "./ProjectTable.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
+import { TicketPage } from "./TicketPage.tsx";
 
 function Landing(): ReactNode {
   const navigate = useNavigate();
@@ -113,7 +115,7 @@ const ticketCreationRoute = createRoute({
 const ticketRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/$ticket",
-  component: () => <Heading title="ticket" />,
+  component: TicketPage,
 });
 
 const routeTree = rootRoute.addChildren([

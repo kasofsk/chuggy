@@ -269,6 +269,175 @@ select:hover {
   font-size: var(--text-small);
 }
 
+.ticket-head,
+.action-panel,
+.configuration,
+.execution-detail,
+.result {
+  display: grid;
+  gap: var(--gap);
+  padding: var(--gap) var(--gap-wide);
+}
+
+.ticket-head {
+  grid-auto-flow: column;
+  justify-content: start;
+  align-items: baseline;
+  gap: var(--gap-wide);
+}
+
+.phase {
+  color: var(--ink-bright);
+  font-weight: 700;
+}
+
+.phase-escalated,
+.phase-handoffblocked {
+  color: var(--warn);
+}
+
+.phase-revoked,
+.phase-abandoned {
+  color: var(--bad);
+}
+
+.ticket-sequence,
+.execution-source,
+.artifact-bytes {
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+}
+
+.ticket-reason {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--warn);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0 var(--gap-wide);
+  margin: 0;
+  padding: var(--gap) var(--gap-wide);
+}
+
+.field {
+  display: contents;
+}
+
+.fields dt {
+  color: var(--ink-dim);
+}
+
+.fields dd {
+  margin: 0;
+}
+
+.canonical,
+.preview {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 0;
+  padding: var(--gap);
+  background: var(--ground-sunken);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.actions {
+  display: flex;
+  gap: var(--gap);
+}
+
+.intent {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.executions,
+.artifacts {
+  list-style: none;
+  margin: 0;
+  padding: var(--gap) var(--gap-wide);
+  display: grid;
+  gap: var(--gap);
+}
+
+.execution {
+  border-top: 1px solid var(--edge);
+  padding-top: var(--gap);
+}
+
+.execution-head {
+  display: grid;
+  grid-template-columns: 10rem 6rem 6rem 1fr;
+  gap: var(--gap-wide);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.execution-status,
+.execution-outcome {
+  color: var(--ink-dim);
+}
+
+.execution-source {
+  margin: 0;
+}
+
+.attempts {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.attempts th,
+.attempts td {
+  text-align: left;
+  padding: 0.1rem var(--gap);
+  border-bottom: 1px solid var(--edge);
+  font-weight: 400;
+}
+
+.attempts th {
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+}
+
+.artifact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap);
+}
+
+.artifact-role {
+  color: var(--ink-dim);
+}
+
+.artifact .panel {
+  flex-basis: 100%;
+}
+
+.verdict-pass {
+  color: var(--accent);
+}
+
+.verdict-fail {
+  color: var(--bad);
+}
+
 .notice {
   max-width: 34rem;
   margin: 12vh auto;
