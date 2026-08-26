@@ -16,13 +16,15 @@ import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import { asExecutionId } from "../../interpreter/schedulerIdentity.ts";
 import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
+import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
   nativeHttpBodyBytesMax,
-  nativeHttpContractDocument,
   nativeHttpError,
   nativeHttpHeaderBytesMax,
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
+} from "../../contract/http.ts";
+import {
   parseConfigurationCursor,
   parseInventoryCursor,
   parseTicketActivityCursor,

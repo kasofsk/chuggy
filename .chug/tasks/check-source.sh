@@ -1,6 +1,17 @@
 #!/bin/sh
-# The TypeScript gate. Typechecks the sources and the suites, lints them, holds
-# them to the formatter's output, and runs the unit suites.
+# The TypeScript gate. Typechecks the sources and the suites, typechecks the
+# public contract a second time as a browser sees it, lints them, holds them to
+# the formatter's output, and runs the unit suites.
+#
+# THE BROWSER STAGE IS A SECOND PROGRAM OVER ONE DIRECTORY. `src/contract/` is
+# imported by the server and by a browser, and `tsconfig.json` gives every
+# source the platform's own globals and library — under which a `node:` import
+# or a platform type in the contract typechecks and then fails in a browser at
+# run time. `tsconfig.contract.json` is the same directory with the browser's
+# library and no ambient platform types, so the import that cannot work there
+# is a finding here. `check-boundaries.sh` holds the graph half of the same
+# claim; neither sees what the other does, because a type is not an edge and an
+# edge is not a type.
 #
 # ONE GATE PER TOOLCHAIN, NOT ONE PER TOOL. The rules the tools apply are
 # stated where they are enforced — `eslint.config.js`, `.prettierrc.json`
@@ -90,6 +101,7 @@ stage() { # <label> <command>...
 
 if [ "$run_static" -eq 1 ]; then
 	stage "  typecheck" ./node_modules/.bin/tsc --noEmit
+	stage "  browser  " ./node_modules/.bin/tsc --noEmit -p tsconfig.contract.json
 	# Lint is the server-free half of the query checking: the SafeQL block in
 	# eslint.config.js activates on CHUG_SAFEQL_DATABASE_URL, and an operator
 	# who exports it shell-wide must not make this stage need a database.

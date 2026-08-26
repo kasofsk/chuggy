@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { nativeHttpContractDocument } from "../../src/contract/document.ts";
+import {
+  nativeHttpBasePath,
+  nativeHttpMediaType,
+  nativeHttpRoutes,
+} from "../../src/contract/http.ts";
 import {
   encodeConfigurationCursor,
   parseConfigurationCursor,
-  nativeHttpBasePath,
-  nativeHttpContractDocument,
-  nativeHttpMediaType,
-  nativeHttpRoutes,
   encodeInventoryCursor,
   encodeTicketActivityCursor,
   parseInventoryCursor,

@@ -4,9 +4,12 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
+  notificationKinds,
+  type NotificationKind,
+} from "../../contract/rosters.ts";
+import {
   checkedNotificationCursor,
   type NotificationBatch,
-  type NotificationKind,
   type NotificationStore,
   type ProjectNotification,
 } from "../../interpreter/notifications.ts";
@@ -28,15 +31,10 @@ interface NotificationRow {
 }
 
 function notificationKind(value: string): NotificationKind {
-  if (
-    value === "Operation" ||
-    value === "Ticket" ||
-    value === "Draft" ||
-    value === "Configuration" ||
-    value === "Project"
-  )
-    return value;
-  throw new Error(`notification row: unknown kind ${value}`);
+  const kind = notificationKinds.find((known) => known === value);
+  if (kind === undefined)
+    throw new Error(`notification row: unknown kind ${value}`);
+  return kind;
 }
 
 function optionalCounter(

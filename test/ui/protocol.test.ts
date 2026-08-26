@@ -16,7 +16,13 @@ import {
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
-} from "../../src/adapters/http/contract.ts";
+} from "../../src/contract/http.ts";
+import {
+  classify as wireClassify,
+  retryAfterSeconds as wireRetryAfterSeconds,
+  retryAfterSecondsFallback as wireRetryAfterSecondsFallback,
+  retryAfterSecondsMax as wireRetryAfterSecondsMax,
+} from "../../src/contract/outcomes.ts";
 import { projectPageLimitMax } from "../../src/interpreter/nativeWeb.ts";
 import { executionPageLimitMax } from "../../src/interpreter/operationsView.ts";
 import {
@@ -55,6 +61,7 @@ import {
   ticketsRequest,
   ticketRequest,
 } from "../../ui/console/app/protocol.js";
+import { populated } from "../interpreter/roster.ts";
 
 const token = "opaque-access-token";
 const partition = { tenant: "acme", project: "atlas" };
@@ -68,6 +75,51 @@ test("the console's wire constants are the server's", () => {
   assert.equal(pageLimitMax, projectPageLimitMax);
   assert.equal(pageLimitMax, executionPageLimitMax);
   assert.equal(pathSegmentCharsMax, nativeHttpPathSegmentCharsMax);
+  assert.equal(retryAfterSecondsMax, wireRetryAfterSecondsMax);
+  assert.equal(retryAfterSecondsFallback, wireRetryAfterSecondsFallback);
+});
+
+/** Every status either copy of `classify` reaches a different arm on. */
+const classifiedStatuses = [
+  200, 201, 202, 204, 400, 401, 403, 404, 409, 413, 415, 422, 429, 500, 502,
+  503,
+];
+
+test("the console's classification is the contract's, arm for arm", () => {
+  const header = (name: string) =>
+    name === "retry-after" ? "7" : "/api/v1/operations/one";
+  const bodies: readonly unknown[] = [
+    undefined,
+    { error: { code: "Named", message: "A message." } },
+    { error: { code: "Named" }, observedSequence: 4 },
+    { unexpected: true },
+  ];
+  for (const status of populated(classifiedStatuses, "the status roster"))
+    for (const body of populated(bodies, "the body roster"))
+      assert.deepEqual(
+        classify(status, header, body),
+        wireClassify(status, header, body),
+        String(status),
+      );
+});
+
+test("the console's retry-after bound is the contract's, input for input", () => {
+  const headers = [
+    undefined,
+    null,
+    "",
+    " 3 ",
+    "not a number",
+    "-4",
+    "2.1",
+    "99999999",
+  ];
+  for (const header of populated(headers, "the retry-after roster"))
+    assert.equal(
+      retryAfterSeconds(header),
+      wireRetryAfterSeconds(header),
+      String(header),
+    );
 });
 
 test("configuration reads and repository imports use the public routes", () => {

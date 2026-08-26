@@ -1,0 +1,513 @@
+{
+  "version": 1,
+  "basePath": "/api/v1",
+  "mediaType": "application/vnd.chuggy.v1+json",
+  "authentication": {
+    "scheme": "Bearer",
+    "format": "OIDC JWT",
+    "principal": "length-prefixed issuer and subject"
+  },
+  "notifications": "bounded-polling",
+  "caching": "no-store",
+  "cors": "same-origin",
+  "credentials": "authorization bearer header; no cookies",
+  "ticketPhaseFilter": {
+    "query": "phase",
+    "all": "omit phase",
+    "nonTerminal": "phase=NonTerminal",
+    "selected": "repeat phase with one or more exact phase names"
+  },
+  "identities": {
+    "installation": "canonical UUID authority identity",
+    "tenant": "percent-encoded opaque UTF-8 path segment",
+    "project": "percent-encoded opaque UTF-8 path segment",
+    "ticket": "canonical positive decimal integer",
+    "operation": "percent-encoded opaque UTF-8 path segment",
+    "cursor": "opaque canonical base64url"
+  },
+  "routes": {
+    "contract": "/api/v1/contract",
+    "installation": "/api/v1/installation",
+    "projects": "/api/v1/projects",
+    "project": "/api/v1/tenants/:tenant/projects/:project",
+    "tickets": "/api/v1/tenants/:tenant/projects/:project/tickets",
+    "ticket": "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket",
+    "operationalStatus": "/api/v1/tenants/:tenant/projects/:project/operational-status",
+    "selectorContext": "/api/v1/tenants/:tenant/projects/:project/selector-context",
+    "executions": "/api/v1/tenants/:tenant/projects/:project/executions",
+    "execution": "/api/v1/tenants/:tenant/projects/:project/executions/:execution",
+    "outputContent": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal",
+    "operations": "/api/v1/tenants/:tenant/projects/:project/operations",
+    "operation": "/api/v1/tenants/:tenant/projects/:project/operations/:operation",
+    "notifications": "/api/v1/tenants/:tenant/projects/:project/notifications",
+    "configurations": "/api/v1/tenants/:tenant/projects/:project/configurations",
+    "configurationImports": "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
+    "configuration": "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
+    "drafts": "/api/v1/tenants/:tenant/projects/:project/drafts",
+    "draftInitialization": "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
+    "draft": "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
+    "dispatchView": "/api/v1/tenants/:tenant/projects/:project/dispatch-view"
+  },
+  "schemas": {
+    "publicMutation": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "mutation": {
+              "type": "string",
+              "const": "RevokeTicket"
+            },
+            "ticket": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["mutation", "ticket"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mutation": {
+              "type": "string",
+              "const": "ResumeTicket"
+            },
+            "ticket": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["mutation", "ticket"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mutation": {
+              "type": "string",
+              "const": "ReleaseDraft"
+            },
+            "ticket": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "authoringVersion": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "configurationRevision": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutation",
+            "ticket",
+            "authoringVersion",
+            "configurationRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mutation": {
+              "type": "string",
+              "const": "ResolveNativeAction"
+            },
+            "action": {
+              "type": "string"
+            },
+            "authorizingSequence": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "resolution": {
+              "type": "string",
+              "enum": [
+                "Resume",
+                "Revoke",
+                "RetryHandoff",
+                "AbandonHandoff",
+                "Approve",
+                "Decline"
+              ]
+            }
+          },
+          "required": [
+            "mutation",
+            "action",
+            "authorizingSequence",
+            "resolution"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mutation": {
+              "type": "string",
+              "const": "ManualDispatch"
+            },
+            "ticket": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "expectedTicketVersion": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["mutation", "ticket", "expectedTicketVersion"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mutation": {
+              "type": "string",
+              "const": "ProposeDispatch"
+            },
+            "ticket": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "expectedTicketVersion": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "observedViewToken": {
+              "type": "object",
+              "properties": {
+                "tenant": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "project": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "recoveryEpoch": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "schemaVersion": {
+                  "type": "number",
+                  "const": 1
+                },
+                "watermark": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "tenant",
+                "project",
+                "recoveryEpoch",
+                "schemaVersion",
+                "watermark",
+                "digest"
+              ],
+              "additionalProperties": false
+            },
+            "selectorDecisionReference": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutation",
+            "ticket",
+            "expectedTicketVersion",
+            "observedViewToken",
+            "selectorDecisionReference"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "configurationCreation": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonical": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["revision", "canonical"],
+      "additionalProperties": false
+    },
+    "repositoryConfigurationImport": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["commit"],
+      "additionalProperties": false
+    },
+    "draftCreation": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "configurationRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configurationDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "expectedProjectSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "authoring": {
+          "type": "object",
+          "properties": {
+            "dependencies": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "program": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "fanout": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "combinator": {
+                    "type": "string",
+                    "enum": ["UnanimousPass", "AnyPass"]
+                  }
+                },
+                "required": ["fanout", "combinator"],
+                "additionalProperties": false
+              }
+            },
+            "workFanout": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "reworkPolicy": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "BudgetedRework"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["type", "value"],
+              "additionalProperties": false
+            },
+            "finalizationPricing": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "DeadlineOnly"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "Budgeted"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["type", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "resumePricing": {
+              "type": "string",
+              "enum": ["RetryCharged", "RetryFree"]
+            },
+            "finalizer": {
+              "type": "string",
+              "enum": ["NoFinalizer", "ManagedFinalizer"]
+            }
+          },
+          "required": [
+            "dependencies",
+            "program",
+            "workFanout",
+            "reworkPolicy",
+            "finalizationPricing",
+            "resumePricing",
+            "finalizer"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "configurationRevision",
+        "configurationDigest",
+        "expectedProjectSequence",
+        "authoring"
+      ],
+      "additionalProperties": false
+    },
+    "draftRevision": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "configurationRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authoring": {
+          "type": "object",
+          "properties": {
+            "dependencies": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "program": {
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "fanout": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "combinator": {
+                    "type": "string",
+                    "enum": ["UnanimousPass", "AnyPass"]
+                  }
+                },
+                "required": ["fanout", "combinator"],
+                "additionalProperties": false
+              }
+            },
+            "workFanout": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "reworkPolicy": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "BudgetedRework"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["type", "value"],
+              "additionalProperties": false
+            },
+            "finalizationPricing": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "DeadlineOnly"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "Budgeted"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["type", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "resumePricing": {
+              "type": "string",
+              "enum": ["RetryCharged", "RetryFree"]
+            },
+            "finalizer": {
+              "type": "string",
+              "enum": ["NoFinalizer", "ManagedFinalizer"]
+            }
+          },
+          "required": [
+            "dependencies",
+            "program",
+            "workFanout",
+            "reworkPolicy",
+            "finalizationPricing",
+            "resumePricing",
+            "finalizer"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": ["expectedVersion", "configurationRevision", "authoring"],
+      "additionalProperties": false
+    }
+  }
+}

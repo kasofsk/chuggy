@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { dispatchViewSchemaVersion } from "../contract/http.ts";
+
 import { decisionEventEnabled } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
@@ -15,7 +17,6 @@ import {
   type ModelJson,
 } from "../generated/model-api.ts";
 
-export const dispatchViewSchemaVersion = 1;
 export const dispatchViewPageLimitMax = 100;
 export const selectorDecisionReferenceCharsMax = 256;
 

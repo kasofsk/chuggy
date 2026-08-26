@@ -36,12 +36,11 @@ import type {
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
+import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
 import {
   encodeConfigurationCursor,
   encodeInventoryCursor,
   encodeTicketActivityCursor,
-  nativeHttpError,
-  nativeHttpMediaType,
 } from "./contract.ts";
 import {
   encodeDispatchViewResponse,

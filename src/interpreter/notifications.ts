@@ -1,9 +1,7 @@
 /** Bounded project notifications used to accelerate authoritative reads. */
 
+import type { NotificationKind } from "../contract/rosters.ts";
 import type { Partition } from "./projectStore.ts";
-
-export type NotificationKind =
-  "Operation" | "Ticket" | "Draft" | "Configuration" | "Project";
 
 export interface ProjectNotification {
   readonly ordinal: number;

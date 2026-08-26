@@ -6,7 +6,7 @@ import {
 } from "../../interpreter/operationInbox.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { SelectorOperationalContextRead } from "../../interpreter/selectorOperationalContext.ts";
-import { nativeHttpMediaType } from "./contract.ts";
+import { nativeHttpMediaType } from "../../contract/http.ts";
 
 const counter = z.number().int().safe().nonnegative();
 const authoritySchema = z.strictObject({
