@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { SignJWT, exportJWK, generateKeyPair } from "jose";
+
 import { oidcAuthentication } from "../../src/adapters/http/oidc.ts";
 
 const config = {
@@ -222,4 +224,72 @@ test("OIDC discovery treats an unsuccessful response as a failure", async () => 
       Promise.resolve(new Response("", { status: 500 })),
     ),
   );
+});
+
+/**
+ * A provider this suite holds the signing key for, so a case can say what a
+ * token claims and read back what the adapter made of it. The key set is
+ * fetched by `jose` rather than by the adapter, so the platform's own `fetch`
+ * is what answers for it and is put back afterwards.
+ */
+async function signingProvider(claims: Readonly<Record<string, unknown>>) {
+  const keys = await generateKeyPair("RS256", { extractable: true });
+  const jwk = {
+    ...(await exportJWK(keys.publicKey)),
+    alg: "RS256",
+    kid: "one",
+  };
+  const token = await new SignJWT(claims)
+    .setProtectedHeader({ alg: "RS256", kid: "one" })
+    .setIssuer(config.issuer)
+    .setAudience(config.audience)
+    .sign(keys.privateKey);
+  const served = globalThis.fetch;
+  globalThis.fetch = () => Promise.resolve(Response.json({ keys: [jwk] }));
+  const authentication = await oidcAuthentication(config, () =>
+    Promise.resolve(
+      Response.json({
+        issuer: config.issuer,
+        jwks_uri: "https://accounts.example.test/jwks",
+      }),
+    ),
+  );
+  return {
+    token,
+    authentication,
+    restore: () => {
+      globalThis.fetch = served;
+    },
+  };
+}
+
+/** What one bearer resolves to, with the platform's `fetch` restored either way. */
+async function verified(claims: Readonly<Record<string, unknown>>) {
+  const provider = await signingProvider(claims);
+  try {
+    return await provider.authentication.authenticateBearer(provider.token);
+  } finally {
+    provider.restore();
+  }
+}
+
+const expirySeconds = Math.floor(Date.now() / 1_000) + 600;
+
+test("a verified bearer answers with the principal its issuer and subject make", async () => {
+  const bearer = await verified({ sub: "subject-one", exp: expirySeconds });
+  assert.equal(
+    bearer?.principal,
+    `${String(config.issuer.length)}:${config.issuer}subject-one`,
+  );
+});
+
+test("the bearer's expiry is carried in milliseconds, not the seconds it claims", async () => {
+  const bearer = await verified({ sub: "subject-one", exp: expirySeconds });
+  assert.equal(bearer?.expiresAtMs, expirySeconds * 1_000);
+});
+
+test("a bearer claiming no expiry names none rather than one at the epoch", async () => {
+  const bearer = await verified({ sub: "subject-one" });
+  assert.equal(bearer?.expiresAtMs, undefined);
+  assert.ok(bearer?.principal !== undefined);
 });

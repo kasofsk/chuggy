@@ -238,6 +238,13 @@ export function projectResponse(result: ProjectRead): NativeHttpResponse {
   }
 }
 
+/** One project as the inventory lists it, which is the representation a project-level change carries. */
+export function projectEntryResponse(result: ProjectRead): NativeHttpResponse {
+  return result.result === "Found"
+    ? response(200, result.project.partition)
+    : response(404, nativeHttpError("NotFound", "Resource not found."));
+}
+
 export function ticketResponse(
   resource: TicketResource | undefined,
 ): NativeHttpResponse {

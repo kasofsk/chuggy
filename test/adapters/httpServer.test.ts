@@ -200,7 +200,7 @@ function appOf(
       authenticateBearer: (token) =>
         Promise.resolve(
           authenticated && token === "valid"
-            ? asPrincipal("issuer\u0000subject")
+            ? { principal: asPrincipal("issuer\u0000subject") }
             : undefined,
         ),
     },
@@ -567,7 +567,8 @@ test("a failing NativeWeb call is a server fault, not a client fault", async () 
   await using app = createNativeHttpApp(
     failing,
     {
-      authenticateBearer: () => Promise.resolve(asPrincipal("issuer subject")),
+      authenticateBearer: () =>
+        Promise.resolve({ principal: asPrincipal("issuer subject") }),
     },
     { ready: () => Promise.resolve(true) },
     authority,
