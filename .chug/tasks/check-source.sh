@@ -118,12 +118,15 @@ fi
 # list would send it back to whole-tree discovery; the glob is checked first
 # and separately.
 if [ "$run_unit" -eq 1 ]; then
-	suites="$(git ls-files '*.test.ts' 2>/dev/null || true)"
+	suites="$(git ls-files '*.test.ts' '*.test.mjs' 2>/dev/null || true)"
 	if [ -z "$suites" ]; then
-		echo "check-source: LINTER ERROR — no tracked *.test.ts; the suite glob matched nothing"
+		echo "check-source: LINTER ERROR — no tracked suite; the suite glob matched nothing"
 		exit 2
 	fi
 
+# A suite an image ships is discovered here for the same reason: it is a suite
+# no other gate owns, and one this stage does not run is one nothing runs.
+#
 # The three server-side arms mirror how those gates find their own work — the
 # directory itself, not below it — so a suite nested deeper than they look is
 # this stage's, which is what keeps the two halves a partition. The `ui/` arm
