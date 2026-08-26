@@ -495,6 +495,56 @@ kill "$forward"
 `chuggy` and `chuggy_rehearsal` match none of those three, which is what keeps
 this from being a command that drops the deployment.
 
+## The workers' server
+
+**A second server, not this one.** Work runs agent-authored code and needs a
+database to run this tree's own gates against; the server above holds the rows
+that decide whether that work is accepted. `worker-database-roles.sql` argues
+why those cannot be one server, and it is the only file here that belongs to
+the other one. The StatefulSet and Service are chuggy-fabric's, like every other
+manifest; what this repository owns is the identity workers reach it as and what
+an attempt does with that identity.
+
+Issue its credential and create the role the same way as above, against the
+workers' server rather than this one:
+
+```sh
+kubectl -n chuggy create secret generic chuggy-worker-database \
+  --from-env-file=/dev/stdin <<EOF
+password=$(head -c 32 /dev/urandom | base64 | tr -d '=+/')
+EOF
+
+CHUG_PG_WORKER_PASSWORD=... \
+  psql -h 127.0.0.1 -p <the forwarded port> -U postgres \
+    -f deploy/rig/postgres/worker-database-roles.sql
+```
+
+**The scheduler names a Secret and never a URL.** `CHUG_SCHEDULER_WORKER_DATABASE`
+carries `{"secretName": ..., "key": ...}`, and the key holds a whole connection
+URL for `chuggy_worker`. Every worker pod then gets that key as a `secretKeyRef`
+and the name of the one database it may make as a plain value, so the URL is
+read by the kubelet and passes through neither the scheduler nor the pod spec it
+submits. A site that names no such Secret places workers that are told of no
+server, and work that then needs one fails in the container.
+
+**The URL must be reachable without resolving a name.** A worker namespace
+denies what it is not given, and the rehearsal in `deploy/rig/isolation/` denies
+DNS along with the rest — deliberately, and `work-denies-all.yaml` says why. So
+the destination is added there as an egress rule naming this server, and the URL
+in the Secret names an address rather than a name unless that namespace also
+admits a resolver.
+
+**What an attempt leaves behind.** `images/worker/postgres.mjs` makes a role
+named for the attempt, gives it one database, and drops every database that role
+owns when the attempt ends. A pod killed before that runs leaves them, and they
+are attributable: every name carries the attempt's own, which is also what keeps
+two attempts running `.chug/tasks/check-postgres.sh` at once from colliding.
+A sweep is by owner:
+
+```sh
+psql -c "SELECT rolname FROM pg_roles WHERE rolname LIKE 'chug\_%'"
+```
+
 ## Reversing it
 
 ```sh

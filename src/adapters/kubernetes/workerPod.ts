@@ -32,6 +32,15 @@
  * carries the composed briefing, the resolved authority grant and the pinned
  * configuration identity, every one of them taken from the placement; no
  * credential, no cluster fact and no value this module reached for itself.
+ *
+ * A SHARED SERVER IS NAMED, NEVER CARRIED. Work that needs PostgreSQL gets a
+ * server the site runs rather than one baked into the image beside it, and the
+ * URL that reaches it is a credential: it arrives at the container as a
+ * `secretKeyRef` into a Secret the site owns, so the value passes through
+ * neither this process nor the pod spec this module submits. What this module
+ * does supply is the one database name on that server the attempt may make,
+ * derived from the attempt the way the pod name is and for the same reason —
+ * a second placement of one attempt names what the first created.
  */
 
 import { createHash } from "node:crypto";
@@ -64,6 +73,12 @@ export interface KubernetesWorkerCredentialMount {
   readonly mountPath: string;
 }
 
+/** The Secret key holding the URL of the PostgreSQL every worker of this site shares. */
+export interface KubernetesWorkerDatabase {
+  readonly secretName: string;
+  readonly key: string;
+}
+
 export const kubernetesWorkerCredentialFilesVariable =
   "CHUG_WORKER_CREDENTIAL_FILES";
 
@@ -90,6 +105,7 @@ export interface KubernetesWorkerLaunchConfig {
     Record<string, KubernetesWorkerCredentialMount>
   >;
   readonly environment: Readonly<Record<string, string>>;
+  readonly database?: KubernetesWorkerDatabase;
 }
 
 /** The one container name a placed pod carries, so a reader of the cluster needs no lookup. */
@@ -97,6 +113,21 @@ export const kubernetesWorkerContainerName = "worker";
 
 /** The environment variable a placed worker reads its whole task from. */
 export const kubernetesWorkerTaskVariable = "CHUG_WORKER_TASK";
+
+/** The environment variable a placed worker reaches the site's shared PostgreSQL by. */
+export const kubernetesWorkerDatabaseUrlVariable = "CHUG_WORKER_DATABASE_URL";
+
+/** The environment variable naming the one database on that server the attempt may make. */
+export const kubernetesWorkerDatabaseScopeVariable =
+  "CHUG_WORKER_DATABASE_SCOPE";
+
+/** The names this adapter writes itself, which a site's own environment may not take. */
+const kubernetesWorkerReservedVariables = [
+  kubernetesWorkerTaskVariable,
+  kubernetesWorkerCredentialFilesVariable,
+  kubernetesWorkerDatabaseUrlVariable,
+  kubernetesWorkerDatabaseScopeVariable,
+] as const;
 
 /** The annotation namespace every identity this adapter writes is qualified by. */
 const kubernetesWorkerAnnotationPrefix = "chuggy.internal/";
@@ -109,6 +140,9 @@ export const kubernetesNameCharsMax = 253;
 
 /** How much of a pod name the attempt digest takes, measured from the digest itself. */
 const kubernetesWorkerDigestChars = createHash("sha256").digest("hex").length;
+
+/** How much of that digest a scoped database name carries, which a PostgreSQL name bounds. */
+const kubernetesWorkerScopeDigestChars = kubernetesWorkerDigestChars / 2;
 
 /** What a worker is handed: its fenced identity, its pinned inputs and what it may do. */
 export interface KubernetesWorkerTask {
@@ -144,11 +178,26 @@ export interface KubernetesWorkerTask {
   };
 }
 
+/**
+ * One variable a worker container is given, which is a value or a reference to
+ * one. A site's secret is the second kind: the pod spec names the Secret and
+ * the kubelet is what reads it, so the value is in no document this adapter
+ * writes and in no request it sends.
+ */
+type KubernetesContainerVariable =
+  | { readonly name: string; readonly value: string }
+  | {
+      readonly name: string;
+      readonly valueFrom: {
+        readonly secretKeyRef: { readonly name: string; readonly key: string };
+      };
+    };
+
 /** One container of a worker pod, as the cluster API is given it. */
 interface KubernetesContainer {
   readonly name: string;
   readonly image: string;
-  readonly env: readonly { readonly name: string; readonly value: string }[];
+  readonly env: readonly KubernetesContainerVariable[];
   readonly resources: {
     readonly requests: Readonly<Record<string, string>>;
     readonly limits: Readonly<Record<string, string>>;
@@ -271,16 +320,14 @@ export function checkedKubernetesWorkerLaunchConfig(
     throw new RangeError("worker workspace path must be absolute");
   const mountPaths = new Set([config.capabilityFile, config.workspacePath]);
   const credentialPaths = new Set<string>();
-  if (Object.hasOwn(config.environment, kubernetesWorkerTaskVariable))
-    throw new RangeError(
-      `worker environment may not replace ${kubernetesWorkerTaskVariable}`,
-    );
-  if (
-    Object.hasOwn(config.environment, kubernetesWorkerCredentialFilesVariable)
-  )
-    throw new RangeError(
-      `worker environment may not replace ${kubernetesWorkerCredentialFilesVariable}`,
-    );
+  for (const reserved of kubernetesWorkerReservedVariables)
+    if (Object.hasOwn(config.environment, reserved))
+      throw new RangeError(`worker environment may not replace ${reserved}`);
+  if (config.database !== undefined) {
+    kubernetesName(config.database.secretName, "worker database Secret");
+    if (config.database.key.length === 0)
+      throw new RangeError("worker database key is empty");
+  }
   for (const [credential, mount] of Object.entries(config.credentialMounts)) {
     if (credential.length === 0)
       throw new RangeError("worker credential name is empty");
@@ -315,6 +362,17 @@ export function checkedKubernetesWorkerLaunchConfig(
   return config;
 }
 
+/** The one attempt a pod and its database are both named for, as a digest of it. */
+function kubernetesWorkerAttemptDigest(
+  partition: Partition,
+  attempt: AttemptId,
+): string {
+  const identity = [partition.tenant, partition.project, attempt]
+    .map((part) => `${String(part.length)}:${part}`)
+    .join("/");
+  return createHash("sha256").update(identity).digest("hex");
+}
+
 /**
  * The object name one attempt's pod has, which the cancellation path derives
  * from the same two values without holding anything.
@@ -324,11 +382,23 @@ export function kubernetesWorkerPodName(
   partition: Partition,
   attempt: AttemptId,
 ): string {
-  const identity = [partition.tenant, partition.project, attempt]
-    .map((part) => `${String(part.length)}:${part}`)
-    .join("/");
-  const digest = createHash("sha256").update(identity).digest("hex");
-  return `${config.podNamePrefix}-${digest}`;
+  return `${config.podNamePrefix}-${kubernetesWorkerAttemptDigest(partition, attempt)}`;
+}
+
+/**
+ * The database on the shared server this attempt may make, and the prefix of
+ * every name it may make beside it.
+ *
+ * A PostgreSQL identifier is bounded where an object name is not, so the digest
+ * is carried in part and opens with a letter — leaving room for the names a run
+ * makes inside this one, at what that truncation costs in collision resistance.
+ */
+export function kubernetesWorkerDatabaseScope(
+  partition: Partition,
+  attempt: AttemptId,
+): string {
+  const digest = kubernetesWorkerAttemptDigest(partition, attempt);
+  return `chug_${digest.slice(0, kubernetesWorkerScopeDigestChars)}`;
 }
 
 export const kubernetesWorkerSecretName = kubernetesWorkerPodName;
@@ -541,6 +611,37 @@ function kubernetesWorkerCredentials(
   };
 }
 
+/**
+ * The shared server a worker reaches and the database on it that is the
+ * attempt's, or nothing where the site runs no such server: work that then
+ * asks for one fails in the container rather than being placed against a
+ * server this module invented an address for.
+ */
+function kubernetesWorkerDatabaseVariables(
+  config: KubernetesWorkerLaunchConfig,
+  placement: AttemptPlacement,
+): readonly KubernetesContainerVariable[] {
+  if (config.database === undefined) return [];
+  return [
+    {
+      name: kubernetesWorkerDatabaseUrlVariable,
+      valueFrom: {
+        secretKeyRef: {
+          name: config.database.secretName,
+          key: config.database.key,
+        },
+      },
+    },
+    {
+      name: kubernetesWorkerDatabaseScopeVariable,
+      value: kubernetesWorkerDatabaseScope(
+        placement.partition,
+        placement.attempt,
+      ),
+    },
+  ];
+}
+
 /** The one worker container, separated from its pod so both documents stay reviewable. */
 function kubernetesWorkerContainer(
   config: KubernetesWorkerLaunchConfig,
@@ -560,6 +661,7 @@ function kubernetesWorkerContainer(
         name: kubernetesWorkerCredentialFilesVariable,
         value: JSON.stringify(credentials.files),
       },
+      ...kubernetesWorkerDatabaseVariables(config, placement),
       ...Object.entries(config.environment).map(([name, value]) => ({
         name,
         value,

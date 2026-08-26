@@ -4,7 +4,7 @@ ARG CLAUDE_CODE_VERSION=latest
 
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends \
-    build-essential ca-certificates curl fd-find git jq postgresql postgresql-client python3 ripgrep \
+    build-essential ca-certificates curl fd-find git jq postgresql-client python3 ripgrep \
   && curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
     --location https://just.systems/install.sh \
     | bash -s -- --to /usr/local/bin \
@@ -12,7 +12,7 @@ RUN apt-get update \
   && claude --version \
   && psql --version \
   && apt-get clean \
-  && rm -rf /var/lib/apt/lists/* /var/lib/postgresql/*
+  && rm -rf /var/lib/apt/lists/*
 
 ENV DISABLE_AUTOUPDATER=1 \
     CHUG_WORKER_WORKSPACE=/workspace \

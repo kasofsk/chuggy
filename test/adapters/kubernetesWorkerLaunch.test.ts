@@ -33,9 +33,13 @@ import {
   kubernetesNameCharsMax,
   kubernetesWorkerContainerName,
   kubernetesWorkerCredentialFilesVariable,
+  kubernetesWorkerDatabaseScope,
+  kubernetesWorkerDatabaseScopeVariable,
+  kubernetesWorkerDatabaseUrlVariable,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
   kubernetesWorkerTaskVariable,
+  type KubernetesPod,
   type KubernetesWorkerLaunchConfig,
   type KubernetesWorkerTask,
 } from "../../src/adapters/kubernetes/workerPod.ts";
@@ -74,6 +78,9 @@ const token = "cluster-token-value";
 const tokenFile = join(root, "token");
 writeFileSync(tokenFile, `${token}\n`);
 
+/** The longest identifier PostgreSQL keeps whole, which a scoped name may not exceed. */
+const postgresNameCharsMax = 63;
+
 /** The image this suite's placement requires, which is the one a container runs. */
 const workerImage = "registry.invalid/worker:1";
 
@@ -82,6 +89,18 @@ const workspaceCredentialMount = {
   key: "token",
   mountPath: "/run/chuggy/credentials/workspace",
 } as const;
+
+const workerDatabase = {
+  secretName: "worker-database",
+  key: "url",
+} as const;
+
+/**
+ * The database this suite's attempt is given, written out rather than derived.
+ * A deployment's databases outlive one release, so a rule that changed would
+ * orphan every one of them and make a repeated placement name a new database.
+ */
+const workerDatabaseScope = "chug_5a25ede16b900033994d5ce97a23b573";
 
 const workerRepositoriesValue = JSON.stringify({
   repository: {
@@ -102,6 +121,7 @@ const config: KubernetesWorkerLaunchConfig = {
     workspace: workspaceCredentialMount,
   },
   environment: { CHUG_WORKER_REPOSITORIES: workerRepositoriesValue },
+  database: workerDatabase,
   serviceAccountName: "chuggy-worker",
   podNamePrefix: "chuggy-worker",
   resources: {
@@ -294,6 +314,16 @@ function expectedContainer(): unknown {
         }),
       },
       {
+        name: kubernetesWorkerDatabaseUrlVariable,
+        valueFrom: {
+          secretKeyRef: { name: "worker-database", key: "url" },
+        },
+      },
+      {
+        name: kubernetesWorkerDatabaseScopeVariable,
+        value: workerDatabaseScope,
+      },
+      {
         name: "CHUG_WORKER_REPOSITORIES",
         value: workerRepositoriesValue,
       },
@@ -395,21 +425,26 @@ function expectedPod(name: string): unknown {
   };
 }
 
+/** The text one variable carries, which a variable naming a Secret does not have. */
+function suppliedValue(pod: KubernetesPod, name: string): string {
+  const variable = pod.spec.containers[0]?.env.find(
+    (entry) => entry.name === name,
+  );
+  assert.ok(variable !== undefined && "value" in variable);
+  return variable.value;
+}
+
 test("the launched repository configuration is accepted by the worker", () => {
   const requested = kubernetesWorkerPodRequest(config, placement);
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
-  const variable = requested.pod.spec.containers[0]?.env.find(
-    ({ name }) => name === "CHUG_WORKER_REPOSITORIES",
-  );
-  assert.ok(variable);
-  const credentialFilesVariable = requested.pod.spec.containers[0]?.env.find(
-    ({ name }) => name === kubernetesWorkerCredentialFilesVariable,
-  );
-  assert.ok(credentialFilesVariable);
   const selected = workerRepository(
-    workerRepositories(variable.value),
-    workerRepositories(credentialFilesVariable.value),
+    workerRepositories(
+      suppliedValue(requested.pod, "CHUG_WORKER_REPOSITORIES"),
+    ),
+    workerRepositories(
+      suppliedValue(requested.pod, kubernetesWorkerCredentialFilesVariable),
+    ),
     "repository",
   );
   assert.equal(selected.repository, "https://git.invalid/repository.git");
@@ -858,6 +893,8 @@ test("a deployment that cannot address a cluster is refused where it is composed
     { podNamePrefix: "worker-" },
     { podNamePrefix: "w".repeat(kubernetesNameCharsMax) },
     { tokenFile: "" },
+    { database: { secretName: "Worker_Database", key: "url" } },
+    { database: { secretName: "worker-database", key: "" } },
     { activeDeadlineSecs: 0 },
     { requestTimeoutSecsMax: 0 },
     { unavailableRetryAfterSecs: 0 },
@@ -880,6 +917,8 @@ test("site environment cannot replace worker-owned documents", () => {
   for (const variable of [
     kubernetesWorkerTaskVariable,
     kubernetesWorkerCredentialFilesVariable,
+    kubernetesWorkerDatabaseUrlVariable,
+    kubernetesWorkerDatabaseScopeVariable,
   ]) {
     assert.throws(
       () =>
@@ -890,6 +929,38 @@ test("site environment cannot replace worker-owned documents", () => {
       new RegExp(variable, "u"),
     );
   }
+});
+
+test("an attempt's database is named for the attempt and for nothing else", () => {
+  const scope = kubernetesWorkerDatabaseScope(partition, placement.attempt);
+  assert.equal(scope, workerDatabaseScope);
+  assert.notEqual(
+    scope,
+    kubernetesWorkerDatabaseScope(partition, asAttemptId("attempt-two")),
+  );
+  assert.notEqual(
+    scope,
+    kubernetesWorkerDatabaseScope(
+      { ...partition, project: asProjectId("other") },
+      placement.attempt,
+    ),
+  );
+  assert.match(scope, /^[a-z][a-z0-9_]*$/u);
+  assert.ok(scope.length <= postgresNameCharsMax);
+});
+
+test("a site that runs no shared server tells its workers of none", () => {
+  const siteless: KubernetesWorkerLaunchConfig = { ...config };
+  delete (siteless as { database?: unknown }).database;
+  const requested = kubernetesWorkerPodRequest(siteless, placement);
+  assert.equal(requested.requested, "Pod");
+  if (requested.requested !== "Pod") return;
+  assert.deepEqual(
+    requested.pod.spec.containers[0]?.env.filter(({ name }) =>
+      name.startsWith("CHUG_WORKER_DATABASE"),
+    ),
+    [],
+  );
 });
 
 test("credential directory mounts cannot replace workspace or capability mounts", () => {
@@ -1011,11 +1082,9 @@ test("the heaviest task a composition admits still fits the pod env that carries
   });
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
-  const variable = requested.pod.spec.containers[0]?.env.find(
-    ({ name }) => name === kubernetesWorkerTaskVariable,
-  );
-  assert.ok(variable);
-  const carried = new TextEncoder().encode(variable.value).byteLength;
+  const carried = new TextEncoder().encode(
+    suppliedValue(requested.pod, kubernetesWorkerTaskVariable),
+  ).byteLength;
   assert.ok(carried > 0, "the task variable is empty, so this proves nothing");
   assert.ok(
     carried < taskEnvelopeBytesMax,

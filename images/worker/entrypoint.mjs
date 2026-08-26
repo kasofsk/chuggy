@@ -8,7 +8,7 @@ import { createInterface } from "node:readline";
 
 import { claudeInvocation, claudeResult } from "./claude.mjs";
 import { keepWorkerLease } from "./lease.mjs";
-import { startLocalPostgres } from "./postgres.mjs";
+import { scopedDatabase } from "./postgres.mjs";
 import { workerRepositories, workerRepository } from "./repository.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
@@ -183,7 +183,7 @@ async function main() {
   ).trim();
   activeBearer = bearer;
   const stopLease = keepWorkerLease(task, bearer);
-  let stopPostgres = async () => undefined;
+  let dropDatabase = async () => undefined;
   try {
     const input = await (await workerRequest(task, bearer, "/v1/input")).json();
     const repositoryId = oneReference(input, "Repository");
@@ -201,7 +201,10 @@ async function main() {
       required("CHUG_WORKER_WORKSPACE"),
       environment,
     );
-    stopPostgres = await startLocalPostgres(required("CHUG_WORKER_WORKSPACE"));
+    dropDatabase = await scopedDatabase(
+      required("CHUG_WORKER_DATABASE_URL"),
+      required("CHUG_WORKER_DATABASE_SCOPE"),
+    );
     await prepareWorker(task, directory);
     const { output, result } = await runClaude(task, directory);
     const source = await workSource(
@@ -224,7 +227,7 @@ async function main() {
     });
   } finally {
     try {
-      await stopPostgres();
+      await dropDatabase();
     } finally {
       await stopLease();
     }
