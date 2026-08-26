@@ -190,5 +190,22 @@ check "a slash inside a character class does not end the pattern" 0 "$RC" "0 fin
 source_saying 'export const half = 10 / 2;' '// a note'
 check "a comment after a division is still a comment" 1 "$RC" "a line comment"
 
+# A component file is TypeScript in every way this rule is about, and the
+# extension is the only thing separating it from a file the corpus already
+# reads.
+fresh_repo "$R"
+{
+	printf '%s\n' '/** A header. */'
+	printf '%s\n' '// a note in a component'
+	printf '%s\n' 'export const view = null;'
+} > "$R/a.tsx"
+git -C "$R" add -A
+run_in "$R"
+check "a component file is in the corpus too" 1 "$RC" "a line comment"
+
+# And it is a corpus of its own: a tree with components and no other
+# TypeScript is scanned rather than reported as having nothing to read.
+check "a tree of components alone is not an empty corpus" 1 "$RC" "1 finding(s)"
+
 
 done_ "check-comments.test.sh"
