@@ -3,10 +3,10 @@
   "name": "chuggy-development",
   "configuration": {
     "version": 1,
-    "image": "registry.chuggy.internal/chuggy/worker@sha256:c50b3333142063e90c6d7d6143119bcf1dd9b138e8aa740b831dc48699896e1f",
+    "image": "registry.chuggy.internal/chuggy/worker@sha256:9949c44297be92b3a49d11c3982b897730e4e283031f1b8b21b285e0ca04dbbe",
     "authority": {
       "tools": ["claude-code", "shell"],
-      "credentials": ["chuggy-git-worker", "claude-code"],
+      "credentials": ["chuggy-github-worker", "claude-code"],
       "network": true,
       "filesystem": "WriteWorkspace",
       "mayCompleteTask": false
