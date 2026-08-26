@@ -20,6 +20,7 @@ import type {
   TicketResponse,
 } from "../../../src/contract/responses.ts";
 import {
+  inboxActionsPage,
   inboxCountLabel,
   inboxPage,
   inboxPhases,
@@ -124,6 +125,20 @@ test("the page asks for both phases, newest activity first", () => {
 test("the page states its own size and it is the largest the wire allows", () => {
   expect(inboxPage(undefined).limit).toBe(nativeHttpPageItemsMax);
   expect(inboxPage("after-four").limit).toBe(nativeHttpPageItemsMax);
+});
+
+/**
+ * The second read's page, held to the same two things. The cursor is the half
+ * with consequences: the walk resumes by handing it back through this function,
+ * so a page that dropped it would re-read the first page to its budget, keep
+ * `nextCursor` set, and leave an approval on page two unreachable while
+ * reporting nothing wrong.
+ */
+test("the open-actions page states its own size and carries its cursor", () => {
+  expect(inboxActionsPage(undefined).limit).toBe(nativeHttpPageItemsMax);
+  expect(inboxActionsPage(undefined).cursor).toBeUndefined();
+  expect(inboxActionsPage("after-eleven").limit).toBe(nativeHttpPageItemsMax);
+  expect(inboxActionsPage("after-eleven").cursor).toBe("after-eleven");
 });
 
 test("the count is the rows a page gave, and follows a frame that moves one", () => {

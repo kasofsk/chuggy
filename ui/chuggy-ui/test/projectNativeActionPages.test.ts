@@ -9,6 +9,7 @@
 
 import { expect, test } from "vitest";
 
+import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
 import type {
   ProjectNativeActionResponse,
   ProjectNativeActionsResponse,
@@ -195,6 +196,39 @@ test("the walk stops at its row cap too", () => {
   );
   expect(rows.actions.length).toBe(projectNativeActionRowsMax);
   expect(projectNativeActionRowsHaveMore(rows)).toBe(false);
+});
+
+/**
+ * The fold's own site of the same bound, which a frame can reach without the
+ * walk being involved: a list already at the cap keeps up to that many actions
+ * for other tickets, and one frame carries up to the contract's whole page for
+ * the ticket it names. Nothing trims the sum but the fold itself, and the
+ * frames arrive on a stream the reader does not control.
+ */
+test("a frame cannot grow the list past its cap, however often it arrives", () => {
+  const full = projectNativeActionRowsAppend(
+    projectNativeActionRowsEmpty,
+    page(
+      Array.from({ length: projectNativeActionRowsMax }, (_unused, at) =>
+        approval(at + 1, `action-${String(at)}`),
+      ),
+    ),
+  );
+  expect(full.actions.length).toBe(projectNativeActionRowsMax);
+  const arriving = {
+    actions: Array.from({ length: nativeHttpPageItemsMax }, (_unused, at) => ({
+      action: `action-arriving-${String(at)}`,
+      kind: "FinalizationApproval",
+      authorizingSequence: 500 + at,
+      admits: ["Approve", "Decline"],
+    })),
+  };
+  const once = projectNativeActionRowsFold(full, "1", arriving);
+  expect(once?.actions.length).toBe(projectNativeActionRowsMax);
+  const twice = projectNativeActionRowsFold(once, "1", arriving);
+  expect(twice?.actions.length).toBe(projectNativeActionRowsMax);
+  const thrice = projectNativeActionRowsFold(twice, "1", arriving);
+  expect(thrice?.actions.length).toBe(projectNativeActionRowsMax);
 });
 
 test("a refusal after a page keeps what was read and says why", async () => {

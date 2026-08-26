@@ -9,9 +9,9 @@
  * and the list are read as the one value they are meant to be.
  */
 
-// jscpd:ignore-start -- a vi.mock factory is hoisted into the file declaring it
+// jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -47,7 +47,10 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
+/** The runner has no globals, so a case's tree is torn down here rather than by
+ * the library's own hook — a second case would otherwise read the first's. */
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -58,15 +61,26 @@ const approval = {
   admits: ["Approve", "Decline"],
 };
 
+/** The routes a mounted inbox reads, with the two the cases vary given as
+ * whatever that case wants those two reads to answer. */
+function serving(served: {
+  readonly actions: () => Response;
+  readonly phase: () => Response;
+}): (url: string) => Response {
+  return (url) => {
+    if (url.includes("/native-actions")) return served.actions();
+    if (url.includes("/executions")) return answer({ executions: [] });
+    if (url.includes("/tenants/")) return served.phase();
+    return answer({ projects: [atlas] });
+  };
+}
+
 /** Nothing in an inbox phase and nothing open that a first read can see, so the
  * stream is the only way a row gets here. */
-function served(url: string): Response {
-  if (url.includes("/native-actions")) return answer({ actions: [] });
-  if (url.includes("/executions")) return answer({ executions: [] });
-  if (url.includes("/tenants/"))
-    return answer({ partition: atlas, sequence: 9, tickets: [] });
-  return answer({ projects: [atlas] });
-}
+const served = serving({
+  actions: () => answer({ actions: [] }),
+  phase: () => answer({ partition: atlas, sequence: 9, tickets: [] }),
+});
 
 function badge(): string | undefined {
   return (
@@ -82,8 +96,11 @@ function openActions(actions: readonly unknown[]): string {
   });
 }
 
-test("an approval opening puts its ticket in the inbox and its answer takes it out", async () => {
-  const api = apiDouble({ operation: operationAt("Pending"), route: served });
+function mounted(route: (url: string) => Response): {
+  readonly api: ReturnType<typeof apiDouble>;
+  readonly server: ReturnType<typeof openedStream>;
+} {
+  const api = apiDouble({ operation: operationAt("Pending"), route });
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
   render(
@@ -96,6 +113,13 @@ test("an approval opening puts its ticket in the inbox and its answer takes it o
       <InboxScreen partition={atlas} />
     </ScreenHarness>,
   );
+  return { api, server };
+}
+
+test("an approval opening puts its ticket in the inbox and its answer takes it out", async () => {
+  const held = mounted(served);
+  const api = held.api;
+  const server = held.server;
   await settled();
   expect(screen.getByText(/nothing needs you here/u)).toBeDefined();
   expect(badge()).toBeUndefined();
@@ -124,4 +148,27 @@ test("an approval opening puts its ticket in the inbox and its answer takes it o
   expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
   expect(screen.getByText(/nothing needs you here/u)).toBeDefined();
   expect(badge()).toBeUndefined();
+});
+
+/**
+ * The crossed pair: the phase page refuses and the open-actions read answers.
+ * A badge counting a question the panel will not draw is worse than either half
+ * alone — the person is told something needs them and given nowhere to do it.
+ */
+test("a phase page that refuses leaves the approval it did not list answerable", async () => {
+  mounted(
+    serving({
+      actions: () => answer({ actions: [{ ticket: 11, ...approval }] }),
+      phase: () => answer({ code: "InternalError" }, 500),
+    }),
+  );
+  await settled();
+  expect(badge()).toBe("1");
+  expect(screen.getByRole("button", { name: "approve" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "decline" })).toBeDefined();
+  expect(screen.getByText("awaiting your approval")).toBeDefined();
+  expect(
+    screen.getByText(/the tickets a phase parks could not be read/u),
+  ).toBeDefined();
+  expect(screen.queryByText(/nothing needs you here/u)).toBeNull();
 });

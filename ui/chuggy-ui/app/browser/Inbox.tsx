@@ -4,8 +4,10 @@
  *
  * Two reads make the list — the phase page and the project's open native
  * actions — and `inboxUnion` is where they become one row per ticket. The shell
- * badge reads the same union, so the count and the list are the same value and
- * cannot disagree, and what a row ran is the project table's own index under the
+ * badge and this panel both take those two reads through `useInboxRows`, so the
+ * count and the rows are one value: a read that refused becomes a notice beside
+ * the rows the other one supplied rather than an empty panel under a badge that
+ * still counts them. What a row ran is the project table's own index under the
  * project table's own key. What a row offers is the core's decision and what
  * happens after the click is `followOperation`'s, both shared with the ticket
  * page, because a second account of what the machine accepts is a second account
@@ -46,8 +48,17 @@ import {
   inboxPhases,
   inboxSection,
 } from "../core/inboxList.ts";
-import { inboxUnion, inboxUnionEmpty } from "../core/inboxUnion.ts";
-import type { InboxEntry, InboxUnion } from "../core/inboxUnion.ts";
+import {
+  inboxUnion,
+  inboxUnionEmpty,
+  inboxUnionRefusals,
+  inboxUnionState,
+} from "../core/inboxUnion.ts";
+import type {
+  InboxEntry,
+  InboxRefusals,
+  InboxUnion,
+} from "../core/inboxUnion.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import {
   followOperation,
@@ -98,8 +109,10 @@ const inboxListName = "inbox";
 
 export interface InboxRowsHeld {
   readonly union: InboxUnion;
-  readonly state: PanelState<ProjectTicketRows>;
-  readonly openState: PanelState<ProjectNativeActionRows>;
+  readonly panel: PanelState<InboxUnion>;
+  readonly refusals: InboxRefusals;
+  readonly pageFailure: string | undefined;
+  readonly openPageFailure: string | undefined;
   readonly readMore: (() => void) | undefined;
   readonly reading: boolean;
 }
@@ -174,21 +187,27 @@ function useInboxPhaseRows(partition: PartitionIdentity): {
   };
 }
 
-/** Both reads and the union they make, which the shell's badge counts. */
+/**
+ * Both reads, the union they make and the one state that draws it. The badge
+ * and the panel take the same two values through the same two functions, which
+ * is what makes the header's claim above true rather than merely intended.
+ */
 export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
   const phase = useInboxPhaseRows(partition);
-  const openState = useInboxOpenActions(partition);
+  const open = useInboxOpenActions(partition);
+  const held = phase.state.state === "Ready" ? phase.state.value : undefined;
+  const openHeld = open.state === "Ready" ? open.value : undefined;
   const union =
-    phase.state.state === "Ready" || openState.state === "Ready"
-      ? inboxUnion(
-          phase.state.state === "Ready" ? phase.state.value : undefined,
-          openState.state === "Ready" ? openState.value : undefined,
-        )
-      : inboxUnionEmpty;
+    held === undefined && openHeld === undefined
+      ? inboxUnionEmpty
+      : inboxUnion(held, openHeld);
+  const panel = inboxUnionState(union, phase.state, open);
   return {
     union,
-    state: phase.state,
-    openState,
+    panel,
+    refusals: inboxUnionRefusals(panel, phase.state, open),
+    pageFailure: held?.failure,
+    openPageFailure: openHeld?.failure,
     readMore: phase.readMore,
     reading: phase.reading,
   };
@@ -413,28 +432,36 @@ function useInboxAnswers(partition: PartitionIdentity): {
   return { steps, answer };
 }
 
-/** What could not be read, said as itself rather than drawn as an empty list. */
+/**
+ * What could not be read, said as itself beside the rows that could. A read
+ * that refused while the other answered is a notice here rather than an empty
+ * panel, so the half a person can still act on stays on screen.
+ */
 function InboxNotices(props: {
   readonly executions: PanelState<ProjectExecutionIndex>;
   readonly index: ProjectExecutionIndex;
-  readonly openState: PanelState<ProjectNativeActionRows>;
-  readonly failure: string | undefined;
+  readonly held: InboxRowsHeld;
 }): ReactNode {
-  const open = props.openState;
+  const held = props.held;
   return (
     <>
-      {open.state === "Failed" || open.state === "Absent" ? (
+      {held.refusals.phase === undefined ? null : (
+        <p className="panel-failed">
+          the tickets a phase parks could not be read — {held.refusals.phase}
+        </p>
+      )}
+      {held.refusals.open === undefined ? null : (
         <p className="panel-failed">
           the tickets waiting on an answer from you could not be read —{" "}
-          {open.reason}
+          {held.refusals.open}
         </p>
-      ) : null}
-      {open.state === "Ready" && open.value.failure !== undefined ? (
+      )}
+      {held.openPageFailure === undefined ? null : (
         <p className="panel-failed">
           a further page of open questions could not be read —{" "}
-          {open.value.failure}
+          {held.openPageFailure}
         </p>
-      ) : null}
+      )}
       {props.executions.state === "Failed" ? (
         <p className="panel-failed">
           what each ticket ran could not be read — {props.executions.reason}
@@ -446,9 +473,9 @@ function InboxNotices(props: {
           the rows it did not reach say “not read” rather than nothing
         </p>
       ) : null}
-      {props.failure === undefined ? null : (
+      {held.pageFailure === undefined ? null : (
         <p className="panel-failed">
-          a further page could not be read — {props.failure}
+          a further page could not be read — {held.pageFailure}
         </p>
       )}
     </>
@@ -462,7 +489,6 @@ export function InboxScreen(props: {
 }): ReactNode {
   const partition = props.partition;
   const inbox = useInboxRows(partition);
-  const held = inbox.state.state === "Ready" ? inbox.state.value : undefined;
   const executions = useProjectExecutionIndex(partition);
   const index =
     executions.state === "Ready"
@@ -471,21 +497,16 @@ export function InboxScreen(props: {
   const answers = useInboxAnswers(partition);
   return (
     <>
-      <InboxNotices
-        executions={executions}
-        index={index}
-        openState={inbox.openState}
-        failure={held?.failure}
-      />
-      <Panel title={ticketSectionTitles[inboxSection]} state={inbox.state}>
-        {() =>
-          inbox.union.entries.length === 0 ? (
+      <InboxNotices executions={executions} index={index} held={inbox} />
+      <Panel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
+        {(union) =>
+          union.entries.length === 0 ? (
             <p className="panel-note">
               nothing needs you here — every ticket is the machine&rsquo;s
             </p>
           ) : (
             <InboxTable
-              entries={inbox.union.entries}
+              entries={union.entries}
               index={index}
               partition={partition}
               steps={answers.steps}

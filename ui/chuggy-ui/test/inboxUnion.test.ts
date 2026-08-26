@@ -7,6 +7,10 @@
  * would tell a person two things need them when one does — and one that
  * intersected them would hide every approval, which is the whole reason this
  * join exists.
+ *
+ * The crossed pairs are the other half: the badge and the panel take the same
+ * two states through these functions, so what one of them draws when a read
+ * refuses is decided once, here, rather than twice on the screen.
  */
 
 import { expect, test } from "vitest";
@@ -17,8 +21,16 @@ import type {
   ProjectResponse,
   TicketResponse,
 } from "../../../src/contract/responses.ts";
+import type { PanelState } from "../app/core/freshness.ts";
 import { inboxCountLabel } from "../app/core/inboxList.ts";
-import { inboxUnion } from "../app/core/inboxUnion.ts";
+import {
+  inboxUnion,
+  inboxUnionEmpty,
+  inboxUnionRefusals,
+  inboxUnionState,
+} from "../app/core/inboxUnion.ts";
+import type { ProjectNativeActionRows } from "../app/core/projectNativeActionPages.ts";
+import type { ProjectTicketRows } from "../app/core/projectTicketPages.ts";
 import {
   projectNativeActionRowsAppend,
   projectNativeActionRowsEmpty,
@@ -170,4 +182,86 @@ test("one read alone is the whole union while the other is still arriving", () =
   expect(
     inboxUnion(undefined, open).entries.map((entry) => entry.ticket),
   ).toStrictEqual([11, 4]);
+});
+
+function ready<T>(value: T, observedAtMs = 40): PanelState<T> {
+  return { state: "Ready", value, observedAtMs };
+}
+
+const pending: PanelState<never> = { state: "Pending" };
+
+const phaseFailed: PanelState<ProjectTicketRows> = {
+  state: "Failed",
+  reason: "the API failed with InternalError",
+};
+
+const openFailed: PanelState<ProjectNativeActionRows> = {
+  state: "Failed",
+  reason: "the API could not be reached",
+};
+
+/**
+ * The finding this file exists to keep closed: a badge counting rows the panel
+ * refuses to draw. Either read answering has to draw the union, because the
+ * question the console did read is the one a person came here to answer.
+ */
+test("a read that refused does not take the other read's rows off the panel", () => {
+  const union = inboxUnion(undefined, open);
+  const state = inboxUnionState(union, phaseFailed, ready(open));
+  expect(state.state).toBe("Ready");
+  expect(state.state === "Ready" && state.value.entries.length).toBe(2);
+  expect(inboxCountLabel(union)).toBe("2");
+  expect(inboxUnionRefusals(state, phaseFailed, ready(open))).toStrictEqual({
+    phase: "the API failed with InternalError",
+    open: undefined,
+  });
+});
+
+test("the same holds the other way round, and the refusal is said as itself", () => {
+  const union = inboxUnion(parked, undefined);
+  const state = inboxUnionState(union, ready(parked), openFailed);
+  expect(state.state).toBe("Ready");
+  expect(state.state === "Ready" && state.value.entries.length).toBe(2);
+  expect(inboxUnionRefusals(state, ready(parked), openFailed)).toStrictEqual({
+    phase: undefined,
+    open: "the API could not be reached",
+  });
+});
+
+test("a screen holding neither answer refuses, with the phase page's reason", () => {
+  const refused = inboxUnionState(inboxUnionEmpty, phaseFailed, openFailed);
+  expect(refused).toStrictEqual(phaseFailed);
+  expect(
+    inboxUnionRefusals(refused, phaseFailed, openFailed),
+    "a refusal the panel is already drawing was repeated beside it",
+  ).toStrictEqual({ phase: undefined, open: undefined });
+});
+
+test("both reads still arriving is pending, and one of them arriving is not", () => {
+  expect(inboxUnionState(inboxUnionEmpty, pending, pending)).toStrictEqual({
+    state: "Pending",
+  });
+  expect(inboxUnionState(inboxUnionEmpty, phaseFailed, pending).state).toBe(
+    "Failed",
+  );
+  expect(
+    inboxUnionState(inboxUnion(parked, undefined), ready(parked), pending)
+      .state,
+  ).toBe("Ready");
+});
+
+/** A panel is as fresh as the stalest half of what it draws. */
+test("the panel is observed at the older of the two reads", () => {
+  const state = inboxUnionState(
+    inboxUnion(parked, open),
+    ready(parked, 90),
+    ready(open, 40),
+  );
+  expect(state.state === "Ready" && state.observedAtMs).toBe(40);
+  const alone = inboxUnionState(
+    inboxUnion(parked, undefined),
+    ready(parked, 90),
+    pending,
+  );
+  expect(alone.state === "Ready" && alone.observedAtMs).toBe(90);
 });

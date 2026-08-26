@@ -10,7 +10,7 @@
  * one is served by.
  */
 
-// jscpd:ignore-start -- a vi.mock factory is hoisted into the file declaring it
+// jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
