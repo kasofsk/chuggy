@@ -25,7 +25,11 @@ import {
   operationStateSentence,
 } from "../core/codeSentences.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { followOperation, ticketConfirmed } from "../core/operationFollow.ts";
+import {
+  followOperation,
+  operationIdBytesCount,
+  ticketConfirmed,
+} from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
@@ -33,8 +37,6 @@ import type { TicketAction } from "../core/ticketActions.ts";
 import { useApiPorts } from "./api.ts";
 import { Panel } from "./Panel.tsx";
 import { drawBytes } from "./ports.ts";
-
-export const operationIdBytesCount = 16;
 
 interface Attempt {
   readonly action: TicketAction;

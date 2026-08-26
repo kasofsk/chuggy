@@ -3,7 +3,8 @@
  *
  * It answers a scripted list of openings, so a suite says what the server does
  * on the first connection and the second and reads what the client did about
- * it; a body that never ends is how an abort is observed.
+ * it; a body that never ends is how an abort is observed, and `push` is how a
+ * suite sends a frame after the screen it is testing has done something.
  */
 
 import type {
@@ -25,23 +26,30 @@ export interface StreamServer {
   readonly aborts: number[];
   /** Settles once a held body is waiting, so a suite aborts a real read. */
   readonly holding: Promise<void>;
+  /** One more frame down the connection that is open, whenever the suite says. */
+  readonly push: (chunk: string) => void;
 }
+
+type StreamChunkRead =
+  | { readonly done: false; readonly value: Uint8Array }
+  | { readonly done: true };
+
+type StreamChunkWaiter = (read: StreamChunkRead) => void;
 
 const encoder = new TextEncoder();
 
 function bodyOf(
-  chunks: readonly string[],
+  queued: string[],
   hold: boolean,
   signal: AbortSignal,
   aborts: number[],
   held: () => void,
+  waiting: (waiter: StreamChunkWaiter | undefined) => void,
 ): StreamBody {
-  let at = 0;
   return {
     getReader: () => ({
       read: async () => {
-        const chunk = chunks[at];
-        at += 1;
+        const chunk = queued.shift();
         if (chunk !== undefined)
           return { done: false, value: encoder.encode(chunk) };
         if (!hold) return { done: true };
@@ -49,11 +57,16 @@ function bodyOf(
           aborts.push(1);
           return { done: true };
         }
-        return new Promise((resolve) => {
+        return new Promise<StreamChunkRead>((resolve) => {
+          waiting((read) => {
+            waiting(undefined);
+            resolve(read);
+          });
           signal.addEventListener(
             "abort",
             () => {
               aborts.push(1);
+              waiting(undefined);
               resolve({ done: true });
             },
             { once: true },
@@ -79,21 +92,27 @@ export function streamServer(
   });
   let opened = 0;
   let clockMs = 0;
+  let pending: StreamChunkWaiter | undefined;
+  let queued: string[] = [];
   const ports: ProjectStreamPorts = {
     fetch: (_url, init) => {
       headersSeen.push(init.headers);
       const opening = openings[opened] ?? { status: 500 };
       opened += 1;
+      queued = [...(opening.chunks ?? [])];
       const response: StreamResponse = {
         status: opening.status,
         body:
           opening.status >= 200 && opening.status < 300
             ? bodyOf(
-                opening.chunks ?? [],
+                queued,
                 opening.hold ?? false,
                 init.signal,
                 aborts,
                 held,
+                (waiter) => {
+                  pending = waiter;
+                },
               )
             : null,
       };
@@ -109,7 +128,17 @@ export function streamServer(
     },
     nowMs: () => clockMs,
   };
-  return { ports, headersSeen, delaysMs, aborts, holding };
+  /** Handed straight to a read that is waiting, and queued for the next one when
+   * none is. */
+  const push = (chunk: string): void => {
+    const waiter = pending;
+    if (waiter === undefined) {
+      queued.push(chunk);
+      return;
+    }
+    waiter({ done: false, value: encoder.encode(chunk) });
+  };
+  return { ports, headersSeen, delaysMs, aborts, holding, push };
 }
 
 export function frame(

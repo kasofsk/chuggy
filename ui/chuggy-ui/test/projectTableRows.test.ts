@@ -12,6 +12,7 @@ import type {
 import { projectExecutionIndexOf } from "../app/core/projectExecutionIndex.ts";
 import type { ProjectExecutionKnown } from "../app/core/projectExecutionIndex.ts";
 import {
+  projectTableExecutionPhrase,
   projectTableRow,
   projectTableRows,
   projectTableRowsIn,
@@ -174,4 +175,15 @@ test("the rows of one section are that section's and in the order read", () => {
     projectTableRowsIn(rows, "UpNext").map((row) => row.ticket),
   ).toStrictEqual([3]);
   expect(projectTableRowsIn(rows, "Done")).toStrictEqual([]);
+});
+
+test("the execution cell is the status, refined only where an outcome exists", () => {
+  const running = projectTableRow(working, known(container), false);
+  expect(projectTableExecutionPhrase(running)).toBe("Running");
+  expect(
+    projectTableExecutionPhrase({ ...running, executionOutcome: "Failed" }),
+  ).toBe("Running \u00b7 Failed");
+  expect(
+    projectTableExecutionPhrase({ ...running, executionStatus: undefined }),
+  ).toBeUndefined();
 });

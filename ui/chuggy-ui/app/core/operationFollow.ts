@@ -29,6 +29,11 @@ import type { ProjectPage } from "./apiRoutes.ts";
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import { operationFailureSentence } from "./codeSentences.ts";
 
+/** How much entropy an operation identity is drawn with. It is also the
+ * idempotency key the route refuses a submission without, so every screen that
+ * builds one draws it the same size. */
+export const operationIdBytesCount = 16;
+
 export const operationAttemptsMax = 40;
 export const operationPollIntervalMs = 1_000;
 

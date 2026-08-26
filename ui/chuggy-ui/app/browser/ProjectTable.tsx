@@ -25,16 +25,10 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
-import { apiExecutions, apiProject } from "../core/apiRoutes.ts";
+import { apiProject } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
-import {
-  projectExecutionIndexFold,
-  projectExecutionIndexRead,
-  projectExecutionIndexUnread,
-  projectExecutionPage,
-} from "../core/projectExecutionIndex.ts";
+import { projectExecutionIndexUnread } from "../core/projectExecutionIndex.ts";
 import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
-import { projectListKey } from "../core/projectQueryKeys.ts";
 import {
   ticketFilterAll,
   ticketFilterKey,
@@ -44,6 +38,7 @@ import {
 } from "../core/projectTableFilters.ts";
 import type { TicketFilter } from "../core/projectTableFilters.ts";
 import {
+  projectTableExecutionPhrase,
   projectTableRows,
   projectTableRowsIn,
 } from "../core/projectTableRows.ts";
@@ -60,10 +55,14 @@ import {
 } from "../core/ticketSections.ts";
 import type { TicketSection } from "../core/ticketSections.ts";
 import { useApiPorts, usePanelQuery } from "./api.ts";
+import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { Panel } from "./Panel.tsx";
+import {
+  cellAbsent,
+  ticketRowExecutionCell,
+  TicketNumberCell,
+} from "./TicketCells.tsx";
 import { useProjectListFold } from "./stream.tsx";
-
-const emDash = "—";
 
 interface TicketRowsHeld {
   readonly state: PanelState<ProjectTicketRows>;
@@ -135,70 +134,33 @@ function useTicketRows(
   };
 }
 
-/** What every ticket ran, walked under its budget and folded by execution
- * frames as they land. */
-function useExecutionIndex(
-  partition: PartitionIdentity,
-): PanelState<ProjectExecutionIndex> {
-  const key = projectListKey(partition, "Execution", "latest");
-  const state = usePanelQuery<ProjectExecutionIndex>(key, (at) =>
-    projectExecutionIndexRead((selection, after) =>
-      apiExecutions(at, partition, projectExecutionPage(selection, after)),
-    ),
-  );
-  useProjectListFold("Execution", key, (previous, change) =>
-    projectExecutionIndexFold(
-      previous as ProjectExecutionIndex | undefined,
-      change.representation,
-    ),
-  );
-  return state;
-}
-
-const executionUnread = "not read";
-
-/** The three execution columns say the same thing when there is nothing to
- * join, and it is not the same thing as a dash. */
-function ticketRowExecution(row: ProjectTableRow, drawn: string | undefined) {
-  if (row.executionRead === "IndexTruncated") return executionUnread;
-  return drawn ?? emDash;
-}
-
 function TicketRow(props: {
   readonly row: ProjectTableRow;
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const row = props.row;
-  const status =
-    row.executionStatus === undefined
-      ? undefined
-      : `${row.executionStatus}${row.executionOutcome === undefined ? "" : ` · ${row.executionOutcome}`}`;
+  const status = projectTableExecutionPhrase(row);
   return (
     <tr>
-      <th scope="row">
-        <Link
-          to="/$tenant/$project/tickets/$ticket"
-          params={{ ...props.partition, ticket: String(row.ticket) }}
-        >
-          {row.ticket}
-        </Link>
-      </th>
+      <TicketNumberCell partition={props.partition} ticket={row.ticket} />
       <td className="cell-dim">
         <span className="clipped">
-          {ticketRowExecution(row, row.configurationRevision)}
+          {ticketRowExecutionCell(row, row.configurationRevision)}
         </span>
       </td>
       <td>{row.phase}</td>
       <td>
         {row.badge === undefined ? (
-          <span className="cell-dim">{emDash}</span>
+          <span className="cell-dim">{cellAbsent}</span>
         ) : (
           <span className="badge">{row.badge}</span>
         )}
       </td>
-      <td>{ticketRowExecution(row, status)}</td>
+      <td>{ticketRowExecutionCell(row, status)}</td>
       <td className="cell-dim">
-        <span className="clipped">{ticketRowExecution(row, row.runsOn)}</span>
+        <span className="clipped">
+          {ticketRowExecutionCell(row, row.runsOn)}
+        </span>
       </td>
       <td className="cell-dim">
         {row.sequence}
@@ -288,7 +250,7 @@ export function ProjectTable(): ReactNode {
   const partition = useParams({ from: "/$tenant/$project" });
   const [filter, setFilter] = useState<TicketFilter>(ticketFilterAll);
   const tickets = useTicketRows(partition, filter);
-  const executions = useExecutionIndex(partition);
+  const executions = useProjectExecutionIndex(partition);
   const index =
     executions.state === "Ready"
       ? executions.value
