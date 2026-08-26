@@ -3,6 +3,10 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import {
+  escalationReasons,
+  type EscalationReason,
+} from "../../contract/rosters.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
 import { nonTerminalPhaseTags } from "../../domain/phase.ts";
 import { asTicketId } from "../../domain/ids.ts";
@@ -39,6 +43,7 @@ interface TicketProjectionRow {
   readonly ticket: string;
   readonly phase: string;
   readonly seq: string;
+  readonly reason: string;
 }
 
 function operationState(value: string): OperationState {
@@ -137,11 +142,7 @@ function projectResource(
   const resource: ProjectResource = {
     partition,
     sequence: projectRowCounter(head, "project projection watermark"),
-    tickets: page.map((row) => ({
-      ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
-      phase: projectionPhase(row.phase),
-      sequence: projectRowCounter(row.seq, "ticket projection sequence"),
-    })),
+    tickets: page.map(ticketResource),
   };
   return next === undefined
     ? resource
@@ -173,11 +174,22 @@ function selectedPhases(
     : filter.phases;
 }
 
+/** The stored `NoReason` is the machine's absent value, which the wire omits. */
+function projectionReason(value: string): EscalationReason | undefined {
+  if (value === "NoReason") return undefined;
+  const reason = escalationReasons.find((candidate) => candidate === value);
+  if (reason === undefined)
+    throw new Error(`native read: ${value} is not an escalation reason`);
+  return reason;
+}
+
 function ticketResource(row: TicketProjectionRow): TicketResource {
+  const reason = projectionReason(row.reason);
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
+    ...(reason === undefined ? {} : { reason }),
   };
 }
 
@@ -232,7 +244,7 @@ async function readProjectTickets(
 ): Promise<readonly TicketProjectionRow[]> {
   if (query.order === "RecentActivity") {
     const found = await client.query<TicketProjectionRow>(
-      sql`SELECT ticket,phase,seq FROM ticket_projection
+      sql`SELECT ticket,phase,seq,reason FROM ticket_projection
         WHERE tenant=${partition.tenant} AND project=${partition.project}
           AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
             OR (seq,ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
@@ -242,7 +254,7 @@ async function readProjectTickets(
     return found.rows;
   }
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT ticket,phase,seq FROM ticket_projection
+    sql`SELECT ticket,phase,seq,reason FROM ticket_projection
         WHERE tenant=${partition.tenant} AND project=${partition.project}
           AND ticket>${query.after ?? 0}
           AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
@@ -271,7 +283,7 @@ export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
     project: (partition, query) => readProject(pool, partition, query),
     ticket: async (partition, ticket) => {
       const found = await pool.query<TicketProjectionRow>(
-        sql`SELECT ticket,phase,seq FROM ticket_projection
+        sql`SELECT ticket,phase,seq,reason FROM ticket_projection
           WHERE tenant=${partition.tenant} AND project=${partition.project}
             AND ticket=${ticket}`,
       );

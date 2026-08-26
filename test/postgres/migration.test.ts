@@ -1243,3 +1243,100 @@ test("migration 38 leaves an upgraded database bridging and replayable from noth
     );
   });
 });
+
+/** An upgraded installation's escalation: parked in the projection, named only on the desk. */
+async function seedDeskOnlyEscalation(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch (epoch) VALUES ('epoch')`);
+  await subject.query(
+    `INSERT INTO project (tenant,project,lifecycle,head,ingress_next)
+     VALUES ('tenant','project','Active',1,1)`,
+  );
+  await subject.query(`SET session_replication_role = replica`);
+  await subject.query(
+    `INSERT INTO journal_entry
+     (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+      recovery_epoch,cause_kind,cause_id) VALUES
+     ('tenant','project',1,'{}','digest','genesis','owner',1,'epoch',
+      'Operation','legacy-operation')`,
+  );
+  for (const [ticket, phase] of [
+    [1, "Escalated"],
+    [2, "Working"],
+  ] as const)
+    await subject.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ('tenant','project',$1,$2,1)`,
+      [ticket, phase],
+    );
+  await subject.query(
+    `INSERT INTO native_action
+     (tenant,project,action,authorizing_seq,effect_position,ticket,action_version,
+      kind,reason,required_capability)
+     VALUES ('tenant','project','escalation',1,0,1,1,
+       'TicketEscalation','GasExhausted','ResolveTicket')`,
+  );
+  await subject.query(`SET session_replication_role = origin`);
+}
+
+async function assertProjectedReasonGrants(subject: pg.Pool): Promise<void> {
+  for (const [role, privilege, granted] of [
+    [apiRole, "SELECT", true],
+    [apiRole, "UPDATE", false],
+    [ticketServiceRole, "UPDATE", true],
+  ] as const)
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_column_privilege($1,'ticket_projection','reason',$2) AS granted",
+          [role, privilege],
+        )
+      ).rows[0]?.granted,
+      granted,
+      `${role} holds ${privilege} on the projected reason`,
+    );
+}
+
+test("migration 39 projects the reason an upgraded database kept only on the desk", async () => {
+  await migrationDatabase("escalation_reason", async (subject) => {
+    await migrationSeedApplied(subject, 39);
+    await seedDeskOnlyEscalation(subject);
+
+    await applyMigration(subject, 39);
+
+    assert.deepEqual(
+      (
+        await subject.query<{ ticket: string; reason: string }>(
+          "SELECT ticket,reason FROM ticket_projection ORDER BY ticket",
+        )
+      ).rows,
+      [
+        { ticket: "1", reason: "GasExhausted" },
+        { ticket: "2", reason: "NoReason" },
+      ],
+    );
+    await assertProjectedReasonGrants(subject);
+    await assert.rejects(
+      subject.query(
+        "UPDATE ticket_projection SET reason='NotAWall' WHERE ticket=1",
+      ),
+    );
+  });
+});
+
+test("the migration that projects the reason leaves a database already carrying it alone", async () => {
+  await migrationDatabase("escalation_reason_again", async (subject) => {
+    await migrationSeedApplied(subject, 39);
+    await seedDeskOnlyEscalation(subject);
+    await applyMigration(subject, 39);
+    await applyMigration(subject, 39);
+    assert.deepEqual(
+      (
+        await subject.query<{ reason: string }>(
+          "SELECT reason FROM ticket_projection WHERE ticket=1",
+        )
+      ).rows,
+      [{ reason: "GasExhausted" }],
+    );
+    await assertProjectedReasonGrants(subject);
+  });
+});

@@ -99,6 +99,7 @@ export function projectionOf(core: Core): readonly TicketProjection[] {
     ticket,
     phase: ticketAt(core, ticket).phase,
     dependable: dependable.has(ticket),
+    reason: ticketAt(core, ticket).reason,
   }));
 }
 

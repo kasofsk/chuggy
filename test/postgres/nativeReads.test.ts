@@ -18,6 +18,29 @@ async function filterProject() {
   return postgresHarnessProject(subject.harness.store, "native-filter");
 }
 
+/** One ticket of each terminal shape, and one parked with the wall it hit. */
+async function seedFilterProjection(partition: {
+  tenant: string;
+  project: string;
+}) {
+  await subject.harness.query(
+    "UPDATE project SET head=4 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  for (const [ticket, phase, reason] of [
+    [1, "Done", "NoReason"],
+    [2, "Pending", "NoReason"],
+    [3, "Revoked", "NoReason"],
+    [4, "Escalated", "GasExhausted"],
+  ] as const) {
+    await subject.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,reason)
+       VALUES ($1,$2,$3,$4,$3,$5)`,
+      [partition.tenant, partition.project, ticket, phase, reason],
+    );
+  }
+}
+
 test("public operations omit commands, authority, and storage coordination", () => {
   const resource = publicOperation({
     operation: "operation",
@@ -175,22 +198,7 @@ test("project reads page newest activity with a stable identity tie-breaker", as
 
 test("project reads filter before paging and expose one ticket detail", async () => {
   const partition = await filterProject();
-  await subject.harness.query(
-    "UPDATE project SET head=4 WHERE tenant=$1 AND project=$2",
-    [partition.tenant, partition.project],
-  );
-  for (const [ticket, phase] of [
-    [1, "Done"],
-    [2, "Pending"],
-    [3, "Revoked"],
-    [4, "Escalated"],
-  ] as const) {
-    await subject.harness.query(
-      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
-       VALUES ($1,$2,$3,$4,$3)`,
-      [partition.tenant, partition.project, ticket, phase],
-    );
-  }
+  await seedFilterProjection(partition);
   const reads = postgresNativeReads(subject.pool);
   const nonTerminal = await reads.project(partition, {
     limit: 1,
@@ -213,7 +221,14 @@ test("project reads filter before paging and expose one ticket detail", async ()
       project: {
         partition,
         sequence: 4,
-        tickets: [{ ticket: 4, phase: "Escalated", sequence: 4 }],
+        tickets: [
+          {
+            ticket: 4,
+            phase: "Escalated",
+            sequence: 4,
+            reason: "GasExhausted",
+          },
+        ],
       },
     },
   );
@@ -238,6 +253,7 @@ test("project reads filter before paging and expose one ticket detail", async ()
     ticket: 4,
     phase: "Escalated",
     sequence: 4,
+    reason: "GasExhausted",
   });
   assert.equal(await reads.ticket(partition, id(9)), undefined);
 });
