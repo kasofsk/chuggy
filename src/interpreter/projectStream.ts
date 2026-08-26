@@ -280,6 +280,12 @@ function changeEvent(
         sequence,
         data: schemas.Execution.parse(carried),
       };
+    case "NativeAction":
+      return {
+        event: row.kind,
+        sequence,
+        data: schemas.NativeAction.parse(carried),
+      };
     default:
       return assertNever(row.kind);
   }

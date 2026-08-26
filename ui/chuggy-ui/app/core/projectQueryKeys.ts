@@ -8,8 +8,9 @@
  * the partition by prefix and a project switch leaves the other partition's
  * entries where they are. `["projects"]` is the inventory, which belongs to no
  * partition. The `resource` element is what the change frame carries for that
- * kind: a ticket number for `Ticket` and `Draft`, an execution id, an operation
- * id, a configuration revision, and the project's own identity for `Project`.
+ * kind: a ticket number for `Ticket`, `Draft` and `NativeAction`, an execution
+ * id, an operation id, a configuration revision, and the project's own identity
+ * for `Project`.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";

@@ -33,6 +33,7 @@ import {
   executionResponse,
   operationResponse,
   projectEntryResponse,
+  ticketNativeActionsResponse,
   ticketResponse,
   type NativeHttpResponse,
 } from "./outcomes.ts";
@@ -42,7 +43,13 @@ export const projectStreamMediaType = "text/event-stream";
 /** What a change row's identity means to the kind that named it. */
 export type StreamedNativeWeb = Pick<
   NativeWeb,
-  "configuration" | "draft" | "execution" | "operation" | "project" | "ticket"
+  | "configuration"
+  | "draft"
+  | "execution"
+  | "operation"
+  | "project"
+  | "ticket"
+  | "ticketNativeActions"
 >;
 
 const projectEntryLimit = 1;
@@ -72,6 +79,16 @@ export function projectResourceReader(
           return representationOf(
             ticketResponse(
               await web.ticket(principal, partition, ticketOf(resource)),
+            ),
+          );
+        case "NativeAction":
+          return representationOf(
+            ticketNativeActionsResponse(
+              await web.ticketNativeActions(
+                principal,
+                partition,
+                ticketOf(resource),
+              ),
             ),
           );
         case "Draft":

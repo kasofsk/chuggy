@@ -43,6 +43,8 @@ export const projectChangeBridgeFunction =
 export const projectChangeExecutionFunction = "execution_appends_a_change";
 export const projectChangeArtifactFunction =
   "execution_result_artifact_appends_a_change";
+export const projectChangeNativeActionFunction =
+  "native_action_appends_a_change";
 export const boundaryOwnerRole = "chuggy_boundary_owner";
 export const projectAuthorizationFunction = "authorize_project_access";
 export const schedulerRole = "chuggy_scheduler";

@@ -14,6 +14,12 @@
  * real project writer, so what a case proves is the path rather than the row it
  * would have liked the path to write.
  *
+ * WHAT REACHES THE STREAM IS PROVED BY THE LOG AND NOT BY A CALL. Neither door
+ * publishes: a trigger on `native_action` appends inside the boundary function
+ * that opens the ask and inside the transaction that answers it, so the case
+ * reads `project_change` either side of each rather than asserting something
+ * was invoked.
+ *
  * AN UNANSWERED ASK IS PROVED DEAD BY THE ROW THAT FOLLOWS IT. `native_action`
  * admits one open row per ticket, so the case about a ticket leaving the phase
  * drives the writer on to the escalation the same ticket then needs: a
@@ -206,6 +212,49 @@ test("the public read publishes the ask, its fence, and its two answers", async 
   assert.deepEqual(
     await reads.ticketNativeActions(subject.project.partition, ticket),
     [],
+  );
+});
+
+/** Every change this project has appended, oldest first, as kind and resource. */
+async function changes(project: FinalizerProject): Promise<readonly string[]> {
+  const found = await rig.harness.query(
+    `SELECT kind, resource FROM project_change
+      WHERE tenant=$1 AND project=$2 ORDER BY sequence`,
+    [project.partition.tenant, project.partition.project],
+  );
+  return found.map(
+    (row) => `${String(row["kind"])} ${String(row["resource"])}`,
+  );
+}
+
+test("opening an approval and answering it each append a change naming the ticket", async () => {
+  const label = "streamed";
+  const project = await finalizerProject(rig, label);
+  const claim = await finalizerClaim(
+    rig,
+    project,
+    finalizerIdentity(`owner-${label}`),
+  );
+  const attempt = await finalizerPrepare(rig, project, label, {
+    approvalRequired: true,
+  });
+  const named = `NativeAction ${String(project.ticket)}`;
+  const before = await changes(project);
+  const action = finalizerIdentity(`action-${label}`);
+  assert.equal(
+    (await finalizerRequestApproval(rig, project, attempt, action))["result"],
+    "Requested",
+  );
+  const opened = await changes(project);
+  assert.deepEqual(opened.slice(before.length), [named]);
+
+  const subject = { project, claim, attempt, action };
+  assert.equal(await answer(subject, "Decline", label), "Accepted");
+  await finalizerDrain(rig.harness, project.partition, project.memory);
+  const settled = (await changes(project)).slice(opened.length);
+  assert.deepEqual(
+    settled.filter((change) => change.startsWith("NativeAction ")),
+    [named],
   );
 });
 

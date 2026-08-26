@@ -32,6 +32,7 @@ import {
   asPrincipal,
   asPublicInstant,
   type NativeWeb,
+  type TicketNativeAction,
 } from "../../src/interpreter/nativeWeb.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
 import {
@@ -87,12 +88,15 @@ type ServedWeb = Pick<
   | "outputContent"
 >;
 
-function servedWeb(readable: boolean): ServedWeb {
+function servedWeb(
+  readable: boolean,
+  actions: () => readonly TicketNativeAction[] | undefined,
+): ServedWeb {
   return {
     cancel: notFound,
     configuration: () => Promise.resolve(undefined),
     configurations: notFound,
-    ticketNativeActions: () => Promise.resolve(undefined),
+    ticketNativeActions: () => Promise.resolve(actions()),
     nativeActions: notFound,
     createConfiguration: notFound,
     importRepositoryConfigurations: notFound,
@@ -147,11 +151,15 @@ async function served(
     limits?: Partial<ProjectStreamLimits>;
     httpLimits?: NativeHttpLimits;
     expiresInMs?: number;
+    actions?: () => readonly TicketNativeAction[] | undefined;
   } = {},
 ): Promise<Served> {
   const log = fakeLog();
   const doorbell = fakeDoorbell();
-  const web = servedWeb(options.readable ?? true);
+  const web = servedWeb(
+    options.readable ?? true,
+    options.actions ?? (() => []),
+  );
   const hub = projectStreamHub({
     log: log.log,
     doorbell: doorbell.doorbell,
@@ -360,6 +368,7 @@ const kindResources: Readonly<Record<string, string>> = {
   Configuration: "revision-one",
   Project: "project",
   Execution: "execution-one",
+  NativeAction: "3",
 };
 
 test("every kind the log can name reaches the stream as its own schema", async () => {
@@ -381,6 +390,34 @@ test("every kind the log can name reaches the stream as its own schema", async (
       .nullable()
       .parse(changeData(opened));
   }
+});
+
+test("an approval reaches the stream when it opens and again when it is answered", async () => {
+  const approval: TicketNativeAction = {
+    action: "approval-one",
+    kind: "FinalizationApproval",
+    authorizingSequence: 11,
+    admits: ["Approve", "Decline"],
+  };
+  let waiting = true;
+  const rig = await rigOf({ actions: () => (waiting ? [approval] : []) });
+  const opened = await stream(rig);
+  assert.ok(await reaches(() => opened.body().includes("event: source")));
+  rig.log.append(changeRow(51, partition, "NativeAction", "3"));
+  rig.doorbell.ring();
+  assert.ok(await reaches(() => opened.body().includes("id: 51")));
+  assert.deepEqual(
+    projectChangeRepresentationSchemas.NativeAction.parse(changeData(opened)),
+    { actions: [approval] },
+  );
+  waiting = false;
+  rig.log.append(changeRow(52, partition, "NativeAction", "3"));
+  rig.doorbell.ring();
+  assert.ok(await reaches(() => opened.body().includes("id: 52")));
+  assert.deepEqual(
+    projectChangeRepresentationSchemas.NativeAction.parse(changeData(opened)),
+    { actions: [] },
+  );
 });
 
 test("a project change carries the entry the inventory would list", async () => {
