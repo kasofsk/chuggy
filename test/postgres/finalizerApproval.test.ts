@@ -51,15 +51,24 @@ import {
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
-import { postgresHarnessSubmission } from "./harness.ts";
+import type pg from "pg";
+import { postgresPool } from "../../src/adapters/postgres/pool.ts";
+import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
+import type { NativeReadStore } from "../../src/interpreter/nativeWeb.ts";
+import { postgresHarnessSubmission, postgresHarnessUrl } from "./harness.ts";
 
 let rig: FinalizerRig;
 let store: FinalizerStore;
+let readPool: pg.Pool;
+let reads: NativeReadStore;
 before(async () => {
   rig = await finalizerRigOpen();
   store = postgresFinalizer(rig.pool);
+  readPool = postgresPool(postgresHarnessUrl());
+  reads = postgresNativeReads(readPool);
 });
 after(async () => {
+  await readPool.end();
   await rig.close();
 });
 
@@ -172,6 +181,32 @@ test("the door offers exactly the two answers an approval admits", async () => {
     state: "Open",
     resolution: null,
   });
+});
+
+test("the public read publishes the ask, its fence, and its two answers", async () => {
+  const subject = await asked("published");
+  const ticket = asTicketId(subject.project.ticket);
+  assert.deepEqual(
+    await reads.ticketNativeActions(subject.project.partition, ticket),
+    [
+      {
+        action: subject.action,
+        kind: "FinalizationApproval",
+        authorizingSequence: subject.project.authorizingSeq,
+        admits: ["Approve", "Decline"],
+      },
+    ],
+  );
+  assert.equal(await answer(subject, "Approve", "published"), "Accepted");
+  await finalizerDrain(
+    rig.harness,
+    subject.project.partition,
+    subject.project.memory,
+  );
+  assert.deepEqual(
+    await reads.ticketNativeActions(subject.project.partition, ticket),
+    [],
+  );
 });
 
 test("an answer settles its operation and leaves the journal and the ticket alone", async () => {

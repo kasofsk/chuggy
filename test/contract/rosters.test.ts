@@ -25,6 +25,8 @@ import {
   executionStatuses,
   executionTaskKinds,
   finalizers,
+  nativeActionKindResolutions,
+  nativeActionKinds,
   nativeActionResolutions,
   nativeDrivers,
   notificationKinds,
@@ -64,8 +66,15 @@ import type {
   RequirementSource as MaterializedRequirementSource,
 } from "../../src/interpreter/executionRequirement.ts";
 import { allArtifactRoles } from "../../src/interpreter/resultManifest.ts";
-import { allNativeActionResolutions } from "../../src/interpreter/ticketCommand.ts";
-import { projectPageLimitMax } from "../../src/interpreter/nativeWeb.ts";
+import {
+  allNativeActionKinds,
+  allNativeActionResolutions,
+  nativeActionResolutions as interpretedNativeActionResolutions,
+} from "../../src/interpreter/ticketCommand.ts";
+import {
+  nativeActionPageLimitMax,
+  projectPageLimitMax,
+} from "../../src/interpreter/nativeWeb.ts";
 import type { OperationRefusalCode } from "../../src/interpreter/nativeWeb.ts";
 import {
   executionPageLimitMax,
@@ -114,6 +123,16 @@ test("the phase and scheduler rosters are the model's", () => {
   );
 });
 
+test("the wire pairs each action kind with the answers the interpreter admits", () => {
+  assert.deepEqual(sorted(nativeActionKinds), sorted(allNativeActionKinds));
+  for (const kind of allNativeActionKinds) {
+    assert.deepEqual(
+      [...nativeActionKindResolutions[kind]],
+      [...interpretedNativeActionResolutions[kind]],
+    );
+  }
+});
+
 test("the requirement rosters are exhaustive over the interpreter's unions", () => {
   const systems: Record<RequiredOperatingSystem, true> = {
     Linux: true,
@@ -145,6 +164,7 @@ test("one page bound serves every collection route", () => {
   assert.equal(nativeHttpPageItemsMax, executionPageLimitMax);
   assert.equal(nativeHttpPageItemsMax, notificationPageLimitMax);
   assert.equal(nativeHttpPageItemsMax, dispatchViewPageLimitMax);
+  assert.equal(nativeHttpPageItemsMax, nativeActionPageLimitMax);
 });
 
 test("the rosters with no runtime list are exhaustive over their unions", () => {

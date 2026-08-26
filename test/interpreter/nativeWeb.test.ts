@@ -6,6 +6,7 @@ import {
   asProjectAccessKind,
   asPublicInstant,
   checkedProjectReadQuery,
+  nativeActionPageLimitMax,
   nativeWeb,
   oidcPrincipal,
   type NativeWeb,
@@ -84,6 +85,22 @@ function ticketRead(calls: string[]): NativeReadStore["ticket"] {
   };
 }
 
+function nativeActionsRead(
+  calls: string[],
+): NativeReadStore["ticketNativeActions"] {
+  return (_partition, ticket) => {
+    calls.push(`read:nativeActions:${String(ticket)}`);
+    return Promise.resolve([
+      {
+        action: "action",
+        kind: "TicketEscalation" as const,
+        authorizingSequence: 7,
+        admits: ["Resume" as const, "Revoke" as const],
+      },
+    ]);
+  };
+}
+
 function authoringStore(
   calls: string[],
   initialization: ReturnType<
@@ -114,23 +131,8 @@ function authoringStore(
   };
 }
 
-function boundary(
-  allowed: boolean,
-  backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
-  repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
-  initialization?: ReturnType<AuthoringStore["initializeDraft"]>,
-): {
-  readonly web: ReturnType<typeof nativeWeb>;
-  readonly calls: string[];
-} {
-  const calls: string[] = [];
-  const access: ProjectAccess = {
-    authorize: (_principal, _partition, kind) => {
-      calls.push(`authorize:${kind}`);
-      return Promise.resolve(allowed ? authority : undefined);
-    },
-  };
-  const reads: NativeReadStore = {
+function readStore(calls: string[]): NativeReadStore {
+  return {
     operation: () => {
       calls.push("read:operation");
       return Promise.resolve({
@@ -147,7 +149,31 @@ function boundary(
       });
     },
     ticket: ticketRead(calls),
+    ticketNativeActions: nativeActionsRead(calls),
+    nativeActions: (_partition, query) => {
+      calls.push(`read:nativeActions:page:${String(query.limit)}`);
+      return Promise.resolve({ actions: [] });
+    },
   };
+}
+
+function boundary(
+  allowed: boolean,
+  backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
+  repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
+  initialization?: ReturnType<AuthoringStore["initializeDraft"]>,
+): {
+  readonly web: ReturnType<typeof nativeWeb>;
+  readonly calls: string[];
+} {
+  const calls: string[] = [];
+  const access: ProjectAccess = {
+    authorize: (_principal, _partition, kind) => {
+      calls.push(`authorize:${kind}`);
+      return Promise.resolve(allowed ? authority : undefined);
+    },
+  };
+  const reads = readStore(calls);
   const inbox: OperationInbox = {
     accept: () => {
       calls.push("accept");
@@ -354,6 +380,55 @@ test("ticket detail reauthorizes and conceals inaccessible tickets", async () =>
     id(1),
   );
   assert.deepEqual(allowed.calls, ["authorize:Read", "read:ticket:1"]);
+});
+
+test("a ticket's open actions reauthorize and conceal an inaccessible ticket", async () => {
+  const denied = boundary(false);
+  assert.equal(
+    await denied.web.ticketNativeActions(principal, partition, id(1)),
+    undefined,
+  );
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
+
+  const allowed = boundary(true);
+  assert.deepEqual(
+    await allowed.web.ticketNativeActions(principal, partition, id(1)),
+    [
+      {
+        action: "action",
+        kind: "TicketEscalation",
+        authorizingSequence: 7,
+        admits: ["Resume", "Revoke"],
+      },
+    ],
+  );
+  assert.deepEqual(allowed.calls, ["authorize:Read", "read:nativeActions:1"]);
+});
+
+test("a project's open actions authorize and enforce their page bound", async () => {
+  const denied = boundary(false);
+  assert.deepEqual(
+    await denied.web.nativeActions(principal, partition, { limit: 10 }),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
+
+  const allowed = boundary(true);
+  assert.deepEqual(
+    await allowed.web.nativeActions(principal, partition, { limit: 10 }),
+    { result: "Authorized", value: { actions: [] } },
+  );
+  assert.deepEqual(allowed.calls, [
+    "authorize:Read",
+    "read:nativeActions:page:10",
+  ]);
+  await assert.rejects(
+    () =>
+      allowed.web.nativeActions(principal, partition, {
+        limit: nativeActionPageLimitMax + 1,
+      }),
+    RangeError,
+  );
 });
 
 test("configuration pages authorize and enforce their bound before reading", async () => {

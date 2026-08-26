@@ -12,9 +12,14 @@ import {
   asPrincipal,
   asPublicInstant,
   type NativeWeb,
+  type TicketNativeAction,
 } from "../../src/interpreter/nativeWeb.ts";
+import {
+  projectNativeActionsResponseSchema,
+  ticketNativeActionsResponseSchema,
+} from "../../src/contract/responses.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
-import { asInstallationId } from "../../src/domain/ids.ts";
+import { asInstallationId, asTicketId } from "../../src/domain/ids.ts";
 
 const authority = {
   installationAuthority: () =>
@@ -40,6 +45,8 @@ type ServedNativeWeb = Pick<
   | "reviseDraft"
   | "submit"
   | "ticket"
+  | "ticketNativeActions"
+  | "nativeActions"
   | "execution"
   | "executions"
   | "operationalStatus"
@@ -51,6 +58,74 @@ function fakeTicket(calls: string[]): NativeWeb["ticket"] {
   return (_principal, _partition, ticket) => {
     calls.push(`ticket:${String(ticket)}`);
     return Promise.resolve({ ticket, phase: "Working", sequence: 4 });
+  };
+}
+
+/** One ticket per kind, one whose action was resolved, and one that never existed. */
+const nativeActionsByTicket = new Map<number, readonly TicketNativeAction[]>([
+  [
+    1,
+    [
+      {
+        action: "escalation",
+        kind: "TicketEscalation",
+        authorizingSequence: 11,
+        admits: ["Resume", "Revoke"],
+      },
+    ],
+  ],
+  [
+    2,
+    [
+      {
+        action: "handoff",
+        kind: "HandoffBlock",
+        authorizingSequence: 12,
+        admits: ["RetryHandoff", "AbandonHandoff"],
+      },
+    ],
+  ],
+  [
+    3,
+    [
+      {
+        action: "approval",
+        kind: "FinalizationApproval",
+        authorizingSequence: 13,
+        admits: ["Approve", "Decline"],
+      },
+    ],
+  ],
+  [4, []],
+]);
+
+function fakeTicketNativeActions(
+  calls: string[],
+): NativeWeb["ticketNativeActions"] {
+  return (_principal, _partition, ticket) => {
+    calls.push(`nativeActions:${String(ticket)}`);
+    return Promise.resolve(nativeActionsByTicket.get(ticket));
+  };
+}
+
+/** One page of a project's open actions, with a cursor position to encode. */
+function fakeNativeActions(calls: string[]): NativeWeb["nativeActions"] {
+  return (_principal, _partition, query) => {
+    calls.push(
+      `nativeActionsPage:${String(query.limit)}:${query.after?.action ?? ""}`,
+    );
+    const listed = [...nativeActionsByTicket].flatMap(([ticket, actions]) =>
+      actions.map((action) => ({ ticket: asTicketId(ticket), ...action })),
+    );
+    return Promise.resolve({
+      result: "Authorized",
+      value: {
+        actions: listed,
+        ...(query.after === undefined
+          ? { nextAfter: { authorizingSequence: 13, action: "approval" } }
+          : {}),
+      },
+    });
   };
 }
 
@@ -119,14 +194,13 @@ function fakeConfigurations(
   };
 }
 
-function fakeWeb(calls: string[]): ServedNativeWeb {
+function fakeDrafts(
+  calls: string[],
+): Pick<
+  NativeWeb,
+  "createDraft" | "initializeDraft" | "deleteDraft" | "reviseDraft" | "draft"
+> {
   return {
-    ...fakeOperations(calls),
-    ...fakeConfigurations(calls),
-    cancel: (_principal, _partition, operation) => {
-      calls.push(`cancel:${operation}`);
-      return Promise.resolve({ result: "NotFound" });
-    },
     createDraft: () => {
       calls.push("createDraft");
       return Promise.resolve({ result: "NotFound" });
@@ -139,13 +213,29 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
       calls.push(`deleteDraft:${String(input.expectedVersion)}`);
       return Promise.resolve({ result: "NotFound" });
     },
-    dispatchView: (_principal, _partition, query) => {
-      calls.push(`dispatchView:${String(query.limit)}`);
+    reviseDraft: (_principal, input) => {
+      calls.push(`reviseDraft:${String(input.expectedVersion)}`);
       return Promise.resolve({ result: "NotFound" });
     },
     draft: (_principal, _partition, ticket) => {
       calls.push(`draft:${String(ticket)}`);
       return Promise.resolve(undefined);
+    },
+  };
+}
+
+function fakeWeb(calls: string[]): ServedNativeWeb {
+  return {
+    ...fakeOperations(calls),
+    ...fakeConfigurations(calls),
+    ...fakeDrafts(calls),
+    cancel: (_principal, _partition, operation) => {
+      calls.push(`cancel:${operation}`);
+      return Promise.resolve({ result: "NotFound" });
+    },
+    dispatchView: (_principal, _partition, query) => {
+      calls.push(`dispatchView:${String(query.limit)}`);
+      return Promise.resolve({ result: "NotFound" });
     },
     notifications: (_principal, _partition, cursor) => {
       calls.push(
@@ -174,10 +264,6 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
       calls.push(`inventory:${String(limit)}`);
       return Promise.resolve({ projects: [] });
     },
-    reviseDraft: (_principal, input) => {
-      calls.push(`reviseDraft:${String(input.expectedVersion)}`);
-      return Promise.resolve({ result: "NotFound" });
-    },
     submit: (_principal, submission) => {
       calls.push(`submit:${submission.command.command}`);
       return Promise.resolve({
@@ -186,6 +272,8 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
       });
     },
     ticket: fakeTicket(calls),
+    ticketNativeActions: fakeTicketNativeActions(calls),
+    nativeActions: fakeNativeActions(calls),
   };
 }
 
@@ -385,6 +473,113 @@ test("ticket phase filters and detail are parsed before NativeWeb", async () => 
   ]);
 });
 
+test("a ticket's open actions answer per kind with the fence and the answers", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  const listed = async (ticket: number) => {
+    const found = await app.inject({
+      url: `${root}/${String(ticket)}/native-actions`,
+      headers,
+    });
+    assert.equal(found.statusCode, 200);
+    return ticketNativeActionsResponseSchema.parse(found.json()).actions;
+  };
+  assert.deepEqual(await listed(1), [
+    {
+      action: "escalation",
+      kind: "TicketEscalation",
+      authorizingSequence: 11,
+      admits: ["Resume", "Revoke"],
+    },
+  ]);
+  assert.deepEqual(await listed(2), [
+    {
+      action: "handoff",
+      kind: "HandoffBlock",
+      authorizingSequence: 12,
+      admits: ["RetryHandoff", "AbandonHandoff"],
+    },
+  ]);
+  assert.deepEqual(await listed(3), [
+    {
+      action: "approval",
+      kind: "FinalizationApproval",
+      authorizingSequence: 13,
+      admits: ["Approve", "Decline"],
+    },
+  ]);
+  assert.deepEqual(await listed(4), []);
+  assert.deepEqual(calls, [
+    "nativeActions:1",
+    "nativeActions:2",
+    "nativeActions:3",
+    "nativeActions:4",
+  ]);
+});
+
+test("an unreadable ticket's actions are a not-found, and a bad identity a fault", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  const concealed = await app.inject({
+    url: `${root}/9/native-actions`,
+    headers,
+  });
+  assert.equal(concealed.statusCode, 404);
+  assert.equal(concealed.json<HttpErrorEnvelope>().error.code, "NotFound");
+  assert.equal(
+    (await app.inject({ url: `${root}/0/native-actions`, headers })).statusCode,
+    400,
+  );
+  assert.equal(
+    (await app.inject({ url: `${root}/9/native-actions` })).statusCode,
+    401,
+  );
+  assert.deepEqual(calls, ["nativeActions:9"]);
+});
+
+test("a project's open actions page behind an opaque cursor of its own", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/native-actions";
+  const headers = { authorization: "Bearer valid" };
+  const first = await app.inject({ url: `${root}?limit=2`, headers });
+  assert.equal(first.statusCode, 200);
+  const page = projectNativeActionsResponseSchema.parse(first.json());
+  assert.deepEqual(
+    page.actions.map(({ ticket, kind }) => [ticket, kind]),
+    [
+      [1, "TicketEscalation"],
+      [2, "HandoffBlock"],
+      [3, "FinalizationApproval"],
+    ],
+  );
+  const cursor = page.nextCursor;
+  assert.ok(cursor !== undefined);
+  const next = await app.inject({
+    url: `${root}?cursor=${encodeURIComponent(cursor)}`,
+    headers,
+  });
+  assert.equal(next.statusCode, 200);
+  assert.equal(
+    projectNativeActionsResponseSchema.parse(next.json()).nextCursor,
+    undefined,
+  );
+  assert.equal(
+    (await app.inject({ url: `${root}?cursor=not-a-cursor`, headers }))
+      .statusCode,
+    400,
+  );
+  assert.equal((await app.inject({ url: root })).statusCode, 401);
+  assert.deepEqual(calls, [
+    "nativeActionsPage:2:",
+    "nativeActionsPage:50:approval",
+  ]);
+});
+
 test("recent activity ordering requires its opaque cursor contract", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
@@ -402,6 +597,15 @@ test("recent activity ordering requires its opaque cursor contract", async () =>
   assert.equal(
     (await app.inject({ url: `${root}?order=RecentActivity&after=1`, headers }))
       .statusCode,
+    400,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}?order=RecentActivity&cursor=not-a-cursor`,
+        headers,
+      })
+    ).statusCode,
     400,
   );
   assert.deepEqual(calls, ["project:50:RecentActivity:"]);
@@ -580,6 +784,31 @@ test("a failing NativeWeb call is a server fault, not a client fault", async () 
   assert.equal(found.statusCode, 500);
   assert.equal(found.json<HttpErrorEnvelope>().error.code, "InternalError");
   assert.ok(!found.body.includes("pool"));
+});
+
+test("a corrupt stored document is a server fault, not a malformed request", async () => {
+  const calls: string[] = [];
+  const failing = {
+    ...fakeWeb(calls),
+    draft: () =>
+      Promise.reject(
+        new SyntaxError("Unexpected token } in JSON at position 7"),
+      ),
+  };
+  await using app = createNativeHttpApp(
+    failing,
+    {
+      authenticateBearer: () => Promise.resolve(asPrincipal("issuer subject")),
+    },
+    { ready: () => Promise.resolve(true) },
+    authority,
+  );
+  const found = await app.inject({
+    url: "/api/v1/tenants/tenant/projects/project/drafts/1",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(found.statusCode, 500);
+  assert.equal(found.json<HttpErrorEnvelope>().error.code, "InternalError");
 });
 
 const capacityPollAttemptsMax = 200;
