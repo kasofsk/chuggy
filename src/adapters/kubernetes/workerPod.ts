@@ -35,6 +35,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { basename, dirname } from "node:path";
 
 import type { ExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import type {
@@ -254,6 +255,7 @@ export function checkedKubernetesWorkerLaunchConfig(
   if (!config.workspacePath.startsWith("/"))
     throw new RangeError("worker workspace path must be absolute");
   const paths = new Set([config.capabilityFile, config.workspacePath]);
+  const credentialDirectories = new Set<string>();
   if (Object.hasOwn(config.environment, kubernetesWorkerTaskVariable))
     throw new RangeError(
       `worker environment may not replace ${kubernetesWorkerTaskVariable}`,
@@ -268,8 +270,18 @@ export function checkedKubernetesWorkerLaunchConfig(
       throw new RangeError(
         `worker credential ${credential} mount path must be absolute`,
       );
+    const directory = dirname(mount.mountPath);
+    if (directory === "/")
+      throw new RangeError(
+        `worker credential ${credential} mount path must have a dedicated directory`,
+      );
+    if (credentialDirectories.has(directory))
+      throw new RangeError(
+        `worker credential directory ${directory} is repeated`,
+      );
     if (paths.has(mount.mountPath))
       throw new RangeError(`worker mount path ${mount.mountPath} is repeated`);
+    credentialDirectories.add(directory);
     paths.add(mount.mountPath);
   }
   kubernetesPositive(config.activeDeadlineSecs, "worker active deadline");
@@ -470,13 +482,12 @@ function kubernetesWorkerCredentials(
       secret: {
         secretName: supplied.secretName,
         defaultMode: 0o400,
-        items: [{ key: supplied.key, path: "credential" }],
+        items: [{ key: supplied.key, path: basename(supplied.mountPath) }],
       },
     });
     mounts.push({
       name,
-      mountPath: supplied.mountPath,
-      subPath: "credential",
+      mountPath: dirname(supplied.mountPath),
       readOnly: true,
     });
   }

@@ -288,8 +288,7 @@ function expectedContainer(): unknown {
       { name: "worker-workspace", mountPath: "/workspace", readOnly: false },
       {
         name: "worker-credential-0",
-        mountPath: "/run/chuggy/credentials/workspace",
-        subPath: "credential",
+        mountPath: "/run/chuggy/credentials",
         readOnly: true,
       },
     ],
@@ -349,7 +348,7 @@ function expectedPod(name: string): unknown {
           secret: {
             secretName: "workspace-credential",
             defaultMode: 0o400,
-            items: [{ key: "token", path: "credential" }],
+            items: [{ key: "token", path: "workspace" }],
           },
         },
       ],
