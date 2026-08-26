@@ -49,33 +49,22 @@ export interface ApiRequest {
   readonly signal?: AbortSignal;
 }
 
-export type ApiResult<T> =
-  | { readonly outcome: "Ok"; readonly value: T }
-  | { readonly outcome: "Unauthenticated" }
-  | { readonly outcome: "Absent" }
-  | {
-      readonly outcome: "Conflict";
-      readonly code: string;
-      readonly body: unknown;
-    }
-  | {
-      readonly outcome: "Retryable";
-      readonly code: string;
-      readonly retryAfterSeconds: number;
-    }
-  | {
-      readonly outcome: "Rejected";
-      readonly code: string;
-      readonly status: number;
-      readonly body: unknown;
-    }
-  | {
-      readonly outcome: "Fault";
-      readonly code: string;
-      readonly status: number;
-    }
+/**
+ * The refusals are the contract's own members, subtracted rather than
+ * restated: a member it gains arrives here, and one it renames stops compiling.
+ */
+type ApiRefusal = Exclude<
+  ApiOutcome,
+  { readonly outcome: "Ok" } | { readonly outcome: "Accepted" }
+>;
+
+/** What a network answers with instead of a status, and what a parser answers. */
+type ApiNoAnswer =
   | { readonly outcome: "Unreachable"; readonly reason: string }
   | { readonly outcome: "Unreadable"; readonly reason: string };
+
+export type ApiResult<T> =
+  { readonly outcome: "Ok"; readonly value: T } | ApiRefusal | ApiNoAnswer;
 
 export type ApiFailure = Exclude<
   ApiResult<unknown>,

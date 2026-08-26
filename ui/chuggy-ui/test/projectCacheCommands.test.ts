@@ -80,6 +80,28 @@ test("a null representation drops the entry rather than leaving it stale", () =>
   });
 });
 
+test("a Project frame invalidates the partition rather than writing", () => {
+  const commands = projectCacheCommands(partition, {
+    event: "Project",
+    sequence: 20,
+    data: { version: 1, resource: "atlas", representation: partition },
+  });
+  expect(commands).toEqual([
+    { command: "InvalidatePartition", key: projectPartitionKey(partition) },
+  ]);
+});
+
+test("a Project tombstone invalidates too, and drops nothing by hand", () => {
+  const commands = projectCacheCommands(partition, {
+    event: "Project",
+    sequence: 21,
+    data: { version: 1, resource: "atlas", representation: null },
+  });
+  expect(commands).toEqual([
+    { command: "InvalidatePartition", key: projectPartitionKey(partition) },
+  ]);
+});
+
 test("a representation the kind's schema rejects invalidates instead", () => {
   expect(
     projectCacheCommands(partition, {

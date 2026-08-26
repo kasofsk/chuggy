@@ -1,14 +1,21 @@
 /**
  * What one stream event does to the cache, decided without touching it.
  *
- * A change frame already carries the representation the kind's GET would have
- * answered with, so the console writes it and never refetches; a null
- * representation is a tombstone and the entry is dropped rather than left
- * stale, and a representation the kind's schema rejects invalidates the
- * partition instead, because a refetch is the honest answer to a frame this
- * console cannot read. The commands are returned rather than performed, which
- * is what lets every case be held against the contract's own events with no
- * cache present.
+ * A change frame carries the representation the kind's GET would have answered
+ * with, so the console writes it and never refetches; a null representation is
+ * a tombstone and the entry is dropped rather than left stale, and a
+ * representation the kind's schema rejects invalidates the partition instead,
+ * because a refetch is the honest answer to a frame this console cannot read.
+ *
+ * `Project` IS THE ONE KIND THAT INVALIDATES RATHER THAN WRITES, and it is the
+ * exception because of what its frame carries: the inventory entry, which is
+ * the partition's identity and not the project's head. There is nothing in it
+ * to write into a project query, so the partition is invalidated and every
+ * query under it reads again. Every other kind carries its own GET body and is
+ * written under its resource's key.
+ *
+ * The commands are returned rather than performed, which is what lets every
+ * case be held against the contract's own events with no cache present.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -20,6 +27,7 @@ import type {
 import { projectPartitionKey, projectResourceKey } from "./projectQueryKeys.ts";
 import type { ProjectQueryKey } from "./projectQueryKeys.ts";
 import { projectChangeRepresentationParsers } from "./projectRepresentations.ts";
+import type { ProjectWrittenKind } from "./projectRepresentations.ts";
 
 export type ProjectRepresentation = unknown;
 
@@ -46,24 +54,29 @@ function projectCacheInvalidation(
   ];
 }
 
+function projectCacheTombstone(
+  key: ProjectQueryKey,
+  kind: ProjectWrittenKind,
+  resource: string,
+): readonly ProjectCacheCommand[] {
+  return [
+    { command: "DropResource", key },
+    { command: "FoldLists", kind, resource, representation: null },
+  ];
+}
+
 export function projectCacheCommands(
   partition: PartitionIdentity,
   event: ProjectStreamEvent,
 ): readonly ProjectCacheCommand[] {
   if (event.event === "reset") return projectCacheInvalidation(partition);
   if (event.event === "ready" || event.event === "source") return [];
+  if (event.event === "Project") return projectCacheInvalidation(partition);
   const kind = event.event;
-  const key = projectResourceKey(partition, kind, event.data.resource);
+  const resource = event.data.resource;
+  const key = projectResourceKey(partition, kind, resource);
   if (event.data.representation === null)
-    return [
-      { command: "DropResource", key },
-      {
-        command: "FoldLists",
-        kind,
-        resource: event.data.resource,
-        representation: null,
-      },
-    ];
+    return projectCacheTombstone(key, kind, resource);
   let representation: unknown;
   try {
     representation = projectChangeRepresentationParsers[kind](
@@ -74,11 +87,6 @@ export function projectCacheCommands(
   }
   return [
     { command: "WriteResource", key, representation },
-    {
-      command: "FoldLists",
-      kind,
-      resource: event.data.resource,
-      representation,
-    },
+    { command: "FoldLists", kind, resource, representation },
   ];
 }

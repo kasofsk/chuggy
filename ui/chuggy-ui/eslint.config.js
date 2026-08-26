@@ -38,6 +38,7 @@ export default tseslint.config(
     },
     rules: {
       "no-undef": "off",
+      /* jscpd:ignore-start — house rules 3, 4 and 5 restated over a second program, not a second version of them */
       "@typescript-eslint/switch-exhaustiveness-check": [
         "error",
         {
@@ -62,6 +63,7 @@ export default tseslint.config(
       "@typescript-eslint/no-unnecessary-type-arguments": "error",
       "@typescript-eslint/no-confusing-void-expression": "error",
       eqeqeq: ["error", "always"],
+      /* jscpd:ignore-end — the rule list above is the root's, deliberately */
     },
   },
   // This file, which no program of the console's typechecks and which runs on

@@ -37,7 +37,7 @@ server is allowed to read the repository root and because the production build
 follows the import like any other; there is no alias, so `tsc` and
 `.chug/tasks/check-boundaries.sh` see the same edges a bundler does.
 
-## The four commands
+## The commands the gate runs
 
 `.chug/tasks/check-console.sh` runs these, in this order, from this directory:
 
