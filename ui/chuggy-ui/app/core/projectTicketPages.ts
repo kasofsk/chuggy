@@ -8,6 +8,12 @@
  * the rows already there and records why, because a table that empties itself
  * on a refusal is a table that says the project is empty.
  *
+ * A REFETCH IS NOT A FIRST READ. The entry this accumulation lives in sits
+ * under the partition prefix that the degraded stream's fallback and a
+ * `Project` frame both invalidate, so rebuilding it from the first page alone
+ * would take a reader's pages away on a timer. That is why a read gathers as
+ * many pages as the entry it is replacing had, and why a refusal keeps them.
+ *
  * TWO BOUNDS, AND NEITHER IMPLIES THE OTHER. The page budget stops a server
  * that keeps answering with a cursor, and bites first when the pages are small.
  * The row cap is the browser's own and bites first when they are full: it is
@@ -101,16 +107,10 @@ export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
 }
 
 /**
- * The pages a read gathers, which is one on a first read and as many as the
- * reader had asked for on a refetch.
- *
- * A refetch is not a first read: the entry it replaces is invalidated by the
- * degraded stream's fallback and by a `Project` frame, and rebuilding it from
- * the first page alone would take the pages a reader pressed for away on a
- * timer. A refused page is answered with the rows there are — the ones just
- * gathered, or the ones being replaced — so that the panel keeps drawing them
- * with the refusal beside them; only a read that has no rows at all answers
- * with the refusal itself.
+ * The pages a read gathers: one on a first read, and as many as the reader had
+ * asked for on a refetch. A refusal is answered with the rows there are — the
+ * ones just gathered, or the ones being replaced — and only a read holding none
+ * at all answers with the refusal itself.
  */
 export async function projectTicketRowsRead(
   previous: ProjectTicketRows | undefined,
