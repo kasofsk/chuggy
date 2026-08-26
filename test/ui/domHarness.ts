@@ -8,6 +8,7 @@ export class TextNode {
 export class TestElement {
   readonly attributes = new Map<string, string>();
   readonly children: (TestElement | TextNode)[] = [];
+  value = "";
   readonly listeners = new Map<
     string,
     (event: { preventDefault: () => void }) => void
