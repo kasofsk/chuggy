@@ -1,8 +1,12 @@
 # Thin wrappers. `.chug/tasks/ci.sh` is the real logic — the sequencing has one
 # definition, and it is the one the platform will run as a job evaluator later.
 
-# Every gate, in order.
+# Gates whose dependency cone intersects the current change.
 check:
+    ./.chug/tasks/ci.sh
+
+# Every gate, for release qualification and periodic coverage.
+check-full:
     CHUG_CI_FULL=1 ./.chug/tasks/ci.sh
 
 # The gates' own tests, without the sequencer.

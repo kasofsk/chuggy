@@ -9,8 +9,8 @@
 # rather than going through `just`, which may not be installed.
 #
 # THE FAST SUBSET ONLY. Both slow stages sit this out — the shell suites and the
-# model gate — and belong in `just check`. This file prints its own elapsed time
-# on every run, so what admitting another gate costs is measured here rather
+# model gate — and belong in the affected `just check` when their inputs change.
+# This file prints its own elapsed time on every run, so what admitting another gate costs is measured here rather
 # than asserted in a comment that nothing re-checks.
 #
 # THE CALL IS THE ROSTER. A gate named below must exist and be executable, and
