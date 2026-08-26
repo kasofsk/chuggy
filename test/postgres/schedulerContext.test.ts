@@ -142,7 +142,19 @@ async function countedProject(label: string): Promise<SchedulerProject> {
   return project;
 }
 
+/**
+ * What the installation was already carrying, read through a project of its own
+ * that registers nothing. The installation backlog counts every project in the
+ * database and the gate gives a worker one database for several suites, so the
+ * count below is a delta rather than a total.
+ */
+async function installationBacklog(label: string): Promise<number> {
+  const idle = await schedulerProject(rig, label);
+  return (await context.context(idle.partition)).backlog.installation;
+}
+
 test("the advisory context reports this project's own work and this cluster's total", async () => {
+  const carried = await installationBacklog("context-carried");
   const project = await countedProject("context");
   const account = `${String(Buffer.byteLength(project.partition.tenant))}:${project.partition.tenant}${String(Buffer.byteLength(project.partition.project))}:${project.partition.project}`;
   assert.deepEqual(await context.context(project.partition), {
@@ -161,7 +173,10 @@ test("the advisory context reports this project's own work and this cluster's to
       accountReservationDeficit: counted.reserved - counted.admissions,
     },
     account,
-    backlog: { project: counted.tasks, installation: counted.tasks + 1 },
+    backlog: {
+      project: counted.tasks,
+      installation: carried + counted.tasks + 1,
+    },
   });
 });
 
