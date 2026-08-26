@@ -10,8 +10,12 @@
 import { expect, test } from "vitest";
 
 import {
+  briefBranchCharsMax,
+  briefBranchPrefix,
   briefIntentCharsMax,
   briefIntentLinesMax,
+  briefLinkCharsMax,
+  briefLinkScheme,
   briefLinksMax,
 } from "../../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../../src/contract/requests.ts";
@@ -31,6 +35,13 @@ import {
   creationInitialization,
   creationSummary,
 } from "./ticketCreationFixture.ts";
+
+/** An intent that prints exactly the given number of lines. */
+function intentOf(lines: number): string {
+  return Array.from({ length: lines }, (_, at) => `line ${String(at)}`).join(
+    "\n",
+  );
+}
 
 function faultFields(form: TicketCreationForm): readonly string[] {
   const assembled = creationBodyFrom(creationInitialization, form);
@@ -92,8 +103,43 @@ test("a branch is a name here and a full reference on the wire", () => {
 
 test("a branch name the wire's reference bound refuses is a fault, not a body", () => {
   expect(
-    faultFields(creationForm({ branchName: "b".repeat(300) })),
+    faultFields(
+      creationForm({ branchName: "b".repeat(briefBranchCharsMax + 1) }),
+    ),
   ).toStrictEqual(["branch"]);
+});
+
+/**
+ * The form states no bound of its own: the wire's parser is what it runs, so
+ * its verdict turns exactly where the contract's constants say it does. A bound
+ * that moves in `src/contract/brief.ts` moves this case with it.
+ */
+test("each bound the contract states is where the form's verdict turns", () => {
+  const linkAt = `${briefLinkScheme}${"a".repeat(briefLinkCharsMax - briefLinkScheme.length)}`;
+  const branchAt = "b".repeat(briefBranchCharsMax - briefBranchPrefix.length);
+  const atBound: readonly Partial<TicketCreationForm>[] = [
+    { intent: "x".repeat(briefIntentCharsMax) },
+    { intent: intentOf(briefIntentLinesMax) },
+    { links: Array.from({ length: briefLinksMax }, () => "https://a.test") },
+    { links: [linkAt] },
+    { branchName: branchAt },
+  ];
+  const overBound: readonly Partial<TicketCreationForm>[] = [
+    { intent: "x".repeat(briefIntentCharsMax + 1) },
+    { intent: intentOf(briefIntentLinesMax + 1) },
+    {
+      links: Array.from({ length: briefLinksMax + 1 }, () => "https://a.test"),
+    },
+    { links: [`${linkAt}a`] },
+    { branchName: `${branchAt}b` },
+  ];
+  for (const over of atBound)
+    expect([over, faultFields(creationForm(over))]).toStrictEqual([over, []]);
+  for (const over of overBound)
+    expect([over, faultFields(creationForm(over))]).not.toStrictEqual([
+      over,
+      [],
+    ]);
 });
 
 test("the links a brief carries are bounded and read over one scheme", () => {
