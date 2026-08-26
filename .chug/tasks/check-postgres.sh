@@ -20,6 +20,13 @@
 # worker count is bounded and defaults conservatively; changing it affects
 # throughput and server connection pressure, not test semantics.
 #
+# EVERY DATABASE THIS RUN MAKES IS NAMED INSIDE THE ONE IT CONNECTS TO. A pid
+# is unique on a machine and a shared server is not one: two attempts running
+# this gate in their own containers can hold the same pid, and then one run's
+# CREATE lands on the other's database or its DROP takes it away. The connected
+# database is the one name a caller has already given this run alone — which is
+# also what makes a database left behind by a killed run attributable to it.
+#
 # NO DOCKER IS A COULD-NOT-RUN, NOT A PASS. Failure to acquire the server or
 # prepare the cloned databases also means the suite did not execute and exits
 # two. Once workers start, any red worker is a finding and exits one.
@@ -67,7 +74,29 @@ if [ "$workers" -gt "$suite_count" ]; then workers="$suite_count"; fi
 postgres_acquire "check-postgres"
 
 run_id="$(printf '%s' "$$" | tr -cd '0-9')"
-template="chuggy_template_${run_id}"
+# The database this run connects to, as the first half of every name it makes.
+# A name the server would truncate is one two runs could collide under, so a
+# long one is carried in part and a digest of the whole distinguishes it.
+run_scope="$(node -e '
+const { createHash } = require("node:crypto");
+let named = "";
+try {
+  const at = new URL(process.argv[1]);
+  named = at.searchParams.get("dbname") ?? decodeURIComponent(at.pathname.replace(/^\//u, ""));
+} catch {
+  named = /(?:^|\s)dbname=(\S+)/u.exec(process.argv[1])?.[1] ?? "";
+}
+let name = named.toLowerCase().replace(/[^a-z0-9_]/gu, "_") || "postgres";
+if (!/^[a-z]/u.test(name)) name = `d${name}`;
+if (name.length > 32)
+  name = `${name.slice(0, 23)}_${createHash("sha256").update(name).digest("hex").slice(0, 8)}`;
+process.stdout.write(`${name}_${process.argv[2]}`);
+' "$base_url" "$run_id")"
+if [ -z "$run_scope" ]; then
+	echo "check-postgres: LINTER ERROR — could not name this run's databases from the server it connects to"
+	exit 2
+fi
+template="${run_scope}_t"
 database_helper="$root/.chug/tasks/postgres-databases.ts"
 work="${TMPDIR:-/tmp}/chuggy-postgres-${run_id}"
 mkdir -p "$work"
@@ -119,7 +148,7 @@ done
 
 worker=1
 while [ "$worker" -le "$workers" ]; do
-	database="chuggy_worker_${run_id}_${worker}"
+	database="${run_scope}_w${worker}"
 	databases="$database $databases"
 	if ! node --experimental-strip-types "$database_helper" clone "$base_url" "$database" "$template"; then
 		echo "check-postgres: LINTER ERROR — could not clone worker database $worker"

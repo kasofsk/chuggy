@@ -15,6 +15,12 @@
 # anything about a script would leave a machine without one unable to check the
 # script either.
 #
+# THE NAMES THE RUN MAKES ARE ASSERTED THROUGH THE HELPER LOG, and what they
+# have to carry is the database the URL named — `ignored`, in every case here.
+# A run whose names stopped depending on that would still create and drop
+# consistently, and would still collide with another run of the same pid on a
+# server they share, which is the whole of what naming them this way is for.
+#
 # THE SPELLINGS OF A UNIX SOCKET ARE DRIVEN SEPARATELY, because only the empty
 # authority leaves an empty host in the URL: the others put the path where a
 # host name goes, or in a parameter, and would be probed as if they named a
@@ -167,7 +173,7 @@ HELPER_LOG="$WORK/.helper"
 run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$HELPER_LOG"
 check "a red worker is a finding" 1 "$RC" "a worker went red against the server CHUG_PG_URL names"
 OUT="$HELPER_LOG"
-check "a red worker still removes every database" 0 0 "drop chuggy_worker_"
+check "a red worker still removes every database" 0 0 "drop ignored_"
 
 # --- Preparation failure is could-not-run and still cleans up ---------------
 
@@ -179,7 +185,7 @@ HELPER_LOG="$WORK/.helper"
 run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$HELPER_LOG" CHUG_PG_HELPER_FAIL=clone
 check "a worker database that cannot be cloned is a could-not-run" 2 "$RC" "could not clone worker database"
 OUT="$HELPER_LOG"
-check "a partial preparation removes its clone name and template" 0 0 "drop chuggy_worker_"
+check "a partial preparation removes its clone name and template" 0 0 "drop ignored_"
 
 # --- An interrupted run terminates its worker and cleans up -----------------
 
@@ -202,7 +208,7 @@ RC=$?
 set -e
 check "an interrupted run is a could-not-run" 2 "$RC" "interrupted before the workers completed"
 OUT="$CHUG_PG_HELPER_LOG"
-check "an interrupted run removes its databases" 0 0 "drop chuggy_worker_"
+check "an interrupted run removes its databases" 0 0 "drop ignored_"
 
 # --- A green run is clean, and says what it consumed --------------------------
 
@@ -217,7 +223,8 @@ check "a green suite is clean" 0 "$RC" "clean against the server CHUG_PG_URL nam
 check "the clean line counts the suites it ran" 0 "$RC" "2 suite(s) clean"
 check "the active worker count is reported" 0 "$RC" "with 2 worker(s)"
 OUT="$HELPER_LOG"
-check "a green run prepares the schema once" 0 0 "prepare chuggy_template_"
-check "a green run removes its databases" 0 0 "drop chuggy_worker_"
+check "a green run prepares the schema once" 0 0 "prepare ignored_"
+check "a green run removes its databases" 0 0 "drop ignored_"
+check "every database it made is named inside the one it connected to" 0 0 "_t"
 
 done_ "check-postgres.test.sh"
