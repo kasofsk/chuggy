@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
+import { claudeInvocation } from "./claude.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
 
@@ -56,49 +57,6 @@ async function cloneRepository(repository, commit, workspace) {
   return directory;
 }
 
-const resultSchema = JSON.stringify({
-  type: "object",
-  additionalProperties: false,
-  required: ["verdict", "summary"],
-  properties: {
-    verdict: { enum: ["Pass", "Fail"] },
-    summary: { type: "string" },
-  },
-});
-
-const reservedClaudeArguments = [
-  "-p",
-  "--print",
-  "--output-format",
-  "--input-format",
-  "--json-schema",
-  "--permission-mode",
-  "--dangerously-skip-permissions",
-  "--mcp-config",
-  "--strict-mcp-config",
-  "--cwd",
-  "--add-dir",
-  "--worktree",
-  "--resume",
-  "--continue",
-];
-
-function claudeArguments(task) {
-  const args = task.worker?.arguments ?? [];
-  for (const argument of args) {
-    if (
-      reservedClaudeArguments.some(
-        (reserved) =>
-          argument === reserved || argument.startsWith(`${reserved}=`),
-      )
-    )
-      throw new Error(
-        `worker configuration reserves Claude argument ${argument}`,
-      );
-  }
-  return args;
-}
-
 function workspaceFile(directory, path) {
   const target = resolve(directory, path);
   const within = relative(directory, target);
@@ -122,27 +80,10 @@ async function runClaude(task, directory) {
   const token = (
     await readFile("/var/run/chuggy/credentials/claude-code", "utf8")
   ).trim();
-  const { stdout } = await command(
-    "claude",
-    [
-      "-p",
-      "--output-format",
-      "json",
-      "--json-schema",
-      resultSchema,
-      "--permission-mode",
-      "bypassPermissions",
-      "--strict-mcp-config",
-      "--mcp-config",
-      "{}",
-      ...claudeArguments(task),
-      task.briefing.text,
-    ],
-    {
-      cwd: directory,
-      env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token },
-    },
-  );
+  const { stdout } = await command("claude", claudeInvocation(task), {
+    cwd: directory,
+    env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token },
+  });
   const output = JSON.parse(stdout);
   const result = output.structured_output;
   if (result?.verdict !== "Pass" && result?.verdict !== "Fail")
