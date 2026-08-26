@@ -20,10 +20,11 @@
  * fills the log by insert rather than through the append boundary because what
  * it is about is which rows survive rather than how they arrived.
  *
- * THE EXECUTION SIDE IS DRIVEN AS `chuggy_scheduler`. Every trigger on those
- * four relations fires as whoever wrote the row, so a case driving them as the
- * migration owner would prove the trigger bodies parse rather than that the
- * deployment may run them.
+ * A TRIGGERED RELATION IS DRIVEN AS THE ROLE THAT WRITES IT — the four
+ * execution relations as `chuggy_scheduler` and `native_action` as
+ * `chuggy_ticket_service`. Every trigger fires as whoever wrote the row, so a
+ * case driving them as the migration owner would prove the trigger bodies parse
+ * rather than that the deployment may run them.
  */
 
 import assert from "node:assert/strict";
@@ -38,6 +39,7 @@ import {
   projectChangeAppendFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
+  ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { notificationKinds } from "../../src/contract/rosters.ts";
 import {
@@ -46,7 +48,11 @@ import {
   projectChangeRetentionMax,
 } from "../../src/interpreter/projectChange.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { postgresHarnessProject, postgresHarnessUrl } from "./harness.ts";
+import {
+  postgresHarnessProject,
+  postgresHarnessRolePool,
+  postgresHarnessUrl,
+} from "./harness.ts";
 import {
   schedulerClaimFor,
   schedulerOwner,
@@ -56,12 +62,15 @@ import {
 } from "./schedulerHarness.ts";
 
 let rig: SchedulerRig;
+let ticketService: pg.Pool;
 
 before(async () => {
   rig = await schedulerRigOpen();
+  ticketService = postgresHarnessRolePool(ticketServiceRole);
 });
 
 after(async () => {
+  await ticketService.end();
   await rig.close();
 });
 
@@ -348,6 +357,42 @@ test("each execution relation's own write appends one change naming the executio
     [...new Set(appended.map((row) => `${row.kind} ${row.resource}`))],
     [`Execution ${execution}`],
   );
+});
+
+test("a native action's own write appends one change naming its ticket", async () => {
+  const project = await schedulerProject(rig, "native-action-writes");
+  const named = [project.partition.tenant, project.partition.project];
+  const authorizing = (await rig.harness.query(
+    "SELECT max(seq)::text AS seq FROM journal_entry WHERE tenant=$1 AND project=$2",
+    named,
+  )) as readonly { seq: string | null }[];
+  const seq = authorizing[0]?.seq;
+  assert.ok(seq, "the project's journal names a sequence to authorize against");
+  const action = `action-${randomUUID()}`;
+  const before = await changeCount(project.partition);
+
+  await ticketService.query(
+    `INSERT INTO native_action (tenant,project,action,authorizing_seq,effect_position,
+       ticket,action_version,kind,reason,required_capability)
+     VALUES ($1,$2,$3,$4,0,$5,$4,'TicketEscalation','NoReason','ResolveTicket')`,
+    [...named, action, seq, project.ticket],
+  );
+  assert.equal(await changeCount(project.partition), before + 1);
+
+  await ticketService.query(
+    `INSERT INTO native_action_resolution (tenant,project,action,resolution)
+     VALUES ($1,$2,$3,'Revoke')`,
+    [...named, action],
+  );
+  await ticketService.query(
+    `UPDATE native_action SET state='Resolved',resolution='Revoke'
+      WHERE tenant=$1 AND project=$2 AND action=$3`,
+    [...named, action],
+  );
+  assert.deepEqual((await changesOf(project.partition)).slice(before), [
+    { kind: "NativeAction", resource: String(project.ticket) },
+    { kind: "NativeAction", resource: String(project.ticket) },
+  ]);
 });
 
 test("an attempt update touching only the lease appends nothing", async () => {

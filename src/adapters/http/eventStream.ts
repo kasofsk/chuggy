@@ -20,12 +20,13 @@ import { assertNever } from "../../domain/assertNever.ts";
 import { asTicketId, type TicketId } from "../../domain/ids.ts";
 import type { ProjectStreamEvent } from "../../contract/events.ts";
 import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
-import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
+import type { NativeWeb, Principal } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import type {
   ProjectResourceReader,
   ProjectStreamSink,
 } from "../../interpreter/projectStream.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import { asExecutionId } from "../../interpreter/schedulerIdentity.ts";
 import {
   configurationResponse,
@@ -33,6 +34,7 @@ import {
   executionResponse,
   operationResponse,
   projectEntryResponse,
+  ticketNativeActionsResponse,
   ticketResponse,
   type NativeHttpResponse,
 } from "./outcomes.ts";
@@ -42,7 +44,13 @@ export const projectStreamMediaType = "text/event-stream";
 /** What a change row's identity means to the kind that named it. */
 export type StreamedNativeWeb = Pick<
   NativeWeb,
-  "configuration" | "draft" | "execution" | "operation" | "project" | "ticket"
+  | "configuration"
+  | "draft"
+  | "execution"
+  | "operation"
+  | "project"
+  | "ticket"
+  | "ticketNativeActions"
 >;
 
 const projectEntryLimit = 1;
@@ -61,6 +69,26 @@ function representationOf(
     : null;
 }
 
+/** The three kinds a change row names by ticket number, each its own resource. */
+async function ticketKeyedRead(
+  web: StreamedNativeWeb,
+  kind: "Ticket" | "Draft" | "NativeAction",
+  principal: Principal,
+  partition: Partition,
+  ticket: TicketId,
+): Promise<NativeHttpResponse> {
+  switch (kind) {
+    case "Ticket":
+      return ticketResponse(await web.ticket(principal, partition, ticket));
+    case "Draft":
+      return draftResponse(await web.draft(principal, partition, ticket));
+    case "NativeAction":
+      return ticketNativeActionsResponse(
+        await web.ticketNativeActions(principal, partition, ticket),
+      );
+  }
+}
+
 /** Every kind's read, through the builder its own route answers with. */
 export function projectResourceReader(
   web: StreamedNativeWeb,
@@ -69,15 +97,15 @@ export function projectResourceReader(
     read: async (principal, partition, kind, resource) => {
       switch (kind) {
         case "Ticket":
-          return representationOf(
-            ticketResponse(
-              await web.ticket(principal, partition, ticketOf(resource)),
-            ),
-          );
         case "Draft":
+        case "NativeAction":
           return representationOf(
-            draftResponse(
-              await web.draft(principal, partition, ticketOf(resource)),
+            await ticketKeyedRead(
+              web,
+              kind,
+              principal,
+              partition,
+              ticketOf(resource),
             ),
           );
         case "Operation":

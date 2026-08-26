@@ -80,6 +80,7 @@ import {
   postgresHarnessJournal,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessRolePool,
   postgresHarnessSubmission,
   postgresHarnessUrl,
   postgresHarnessWriter,
@@ -88,9 +89,7 @@ import {
 
 /** A pool whose every session runs as the execution scheduler's own role. */
 export function schedulerRolePool(): pg.Pool {
-  const url = new URL(postgresHarnessUrl());
-  url.searchParams.set("options", `-c role=${schedulerRole}`);
-  return postgresPool(url.toString());
+  return postgresHarnessRolePool(schedulerRole);
 }
 
 /** One opened subject: the owner's harness, the scheduler's pool, and the store over it. */
@@ -572,7 +571,5 @@ export async function schedulerRivalRequest(
 
 /** A pool whose every session runs as the authenticated web application's role. */
 export function schedulerIngressPool(): pg.Pool {
-  const url = new URL(postgresHarnessUrl());
-  url.searchParams.set("options", `-c role=${apiRole}`);
-  return postgresPool(url.toString());
+  return postgresHarnessRolePool(apiRole);
 }

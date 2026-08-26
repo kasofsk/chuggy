@@ -423,6 +423,13 @@ test("the change log is written through its own boundary and read by the API alo
       postgresHarnessDenial(projectChangeSweepFunction),
     );
   }
+  assert.equal(
+    await harness.attemptAs(
+      ticketServiceRole,
+      `SELECT ${projectChangeAppendFunction}('tenant','project','NativeAction','1')`,
+    ),
+    undefined,
+  );
   assert.match(
     (await harness.attemptAs(
       finalizerRole,

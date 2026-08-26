@@ -266,9 +266,9 @@ test("the authoring rosters are exhaustive over the model unions", () => {
   assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
 });
 
-test("the stream carries every polled kind and the executions polling omits", () => {
+test("the stream carries every polled kind and the two polling omits", () => {
   assert.deepEqual(
     sorted(projectChangeKinds),
-    sorted([...notificationKinds, "Execution"]),
+    sorted([...notificationKinds, "Execution", "NativeAction"]),
   );
 });

@@ -18,6 +18,7 @@ import {
   projectChangeSweepFunction,
   schedulerRole,
   repositoryBindingReadFunction,
+  schemaTextSet,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -30,6 +31,7 @@ import {
   postgresRuntimeSchema,
   runtimeSchemaContract,
 } from "../../src/adapters/postgres/runtimeSchema.ts";
+import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
@@ -1477,6 +1479,38 @@ test("migration 42 leaves an upgraded database's drafts unbriefed and briefs the
         [created.rows[0]?.ticket],
       ),
       "the branch a brief names is a reference under one namespace",
+    );
+  });
+});
+
+test("migration 43 widens a kind check installed before that kind existed", async () => {
+  await migrationDatabase("native_action_change", async (subject) => {
+    await migrationSeedApplied(subject, 43);
+    await subject.query(
+      `ALTER TABLE project_change
+         DROP CONSTRAINT project_change_kind_is_known,
+         ADD CONSTRAINT project_change_kind_is_known CHECK
+           (kind IN (${schemaTextSet(
+             allProjectChangeKinds.filter((kind) => kind !== "NativeAction"),
+           )}))`,
+    );
+    const append = `SELECT ${projectChangeAppendFunction}('tenant','project','NativeAction','1')`;
+    await assert.rejects(
+      () => subject.query(append),
+      /project_change_kind_is_known/u,
+      "the log installed with 38 refuses a kind it was created before",
+    );
+
+    await applyMigration(subject, 43);
+
+    await subject.query(append);
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT kind,resource FROM project_change ORDER BY sequence",
+        )
+      ).rows,
+      [{ kind: "NativeAction", resource: "1" }],
     );
   });
 });
