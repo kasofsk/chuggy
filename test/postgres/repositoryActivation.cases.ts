@@ -117,6 +117,25 @@ test("activation appends a binding and preserves the former binding", async () =
   );
 });
 
+test("activation audit is immutable even to the migration owner", async () => {
+  const standing = await fixture("activation-immutable");
+  const activation = request(standing, `repository-next-${randomUUID()}`);
+  assert.equal(
+    await postgresRepositoryActivation(pool).activate(activation),
+    "Activated",
+  );
+  for (const statement of [
+    `UPDATE project_repository_activation SET authority_subject=authority_subject
+      WHERE operation=$1`,
+    `DELETE FROM project_repository_activation WHERE operation=$1`,
+  ]) {
+    await assert.rejects(
+      () => harness.query(statement, [activation.operation]),
+      /repository activations are immutable/u,
+    );
+  }
+});
+
 test("an operation retries exactly and refuses changed inputs", async () => {
   const standing = await fixture("activation-idempotency");
   const operation = `operation-${randomUUID()}`;

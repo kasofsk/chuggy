@@ -47,6 +47,14 @@ export const migration040: Migration = {
          AND length(authority_kind) BETWEEN 1 AND ${authorityCharsMax}
          AND length(authority_subject) BETWEEN 1 AND ${authorityCharsMax})
      )`,
+    `CREATE FUNCTION project_repository_activation_is_immutable() RETURNS trigger
+       LANGUAGE plpgsql AS $$ BEGIN
+       RAISE EXCEPTION 'repository activations are immutable'
+         USING ERRCODE='integrity_constraint_violation'; END $$`,
+    `ALTER FUNCTION project_repository_activation_is_immutable() OWNER TO ${boundaryOwnerRole}`,
+    `CREATE TRIGGER project_repository_activation_is_immutable
+       BEFORE UPDATE OR DELETE ON project_repository_activation
+       FOR EACH ROW EXECUTE FUNCTION project_repository_activation_is_immutable()`,
     `GRANT SELECT,INSERT ON project_repository_activation TO ${boundaryOwnerRole}`,
     `GRANT USAGE ON SEQUENCE project_repository_activation_activation_seq TO ${boundaryOwnerRole}`,
     `GRANT INSERT ON project_repository TO ${boundaryOwnerRole}`,

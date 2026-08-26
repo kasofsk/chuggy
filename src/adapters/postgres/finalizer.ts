@@ -621,15 +621,15 @@ async function finalizerDurableView(
   LEFT JOIN finalization_request_configuration h
     ON h.tenant=f.tenant AND h.project=f.project AND h.request=f.request
   LEFT JOIN LATERAL (
-    SELECT x.* FROM project_repository x
-     WHERE x.tenant=f.tenant AND x.project=f.project
-       AND x.repository=coalesce(h.repository,(
-         SELECT active.repository FROM read_project_repository_binding(f.tenant,f.project) active))
-     LIMIT 1) b ON true
-  LEFT JOIN LATERAL (
     SELECT x.* FROM finalization_attempt x
      WHERE x.tenant = f.tenant AND x.project = f.project AND x.request = f.request
      ORDER BY x.prepared_at DESC, x.attempt DESC LIMIT 1) a ON true
+  LEFT JOIN LATERAL (
+    SELECT x.* FROM project_repository x
+     WHERE x.tenant=f.tenant AND x.project=f.project
+       AND x.repository=coalesce(a.repository,h.repository,(
+         SELECT active.repository FROM read_project_repository_binding(f.tenant,f.project) active))
+     LIMIT 1) b ON true
   LEFT JOIN commit_permit p
     ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
   LEFT JOIN finalization_reconciliation r
