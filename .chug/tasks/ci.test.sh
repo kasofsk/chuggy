@@ -31,8 +31,8 @@ unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF \
 	CHUG_CI_SUITE_TIMEOUT_SECS CHUG_CI_SUITES_BUDGET_SECS
 
 ROOT="$(cd "$HERE/../.." && pwd)"
-grep -F '    ./.chug/tasks/ci.sh' "$ROOT/Justfile" >/dev/null
-grep -F '    CHUG_CI_FULL=1 ./.chug/tasks/ci.sh' "$ROOT/Justfile" >/dev/null
+grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
+grep -F '    CHUG_CI_FULL=1 ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
 
 # Read off the sequencer rather than listed here: the roster is the calls, and
 # a second copy of it would be the half that drifts.
