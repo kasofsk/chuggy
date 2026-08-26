@@ -6,6 +6,7 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresWorkerPlaneAuthority,
+  postgresWorkerAttemptHeartbeats,
   postgresWorkerArtifactReservations,
   postgresWorkerReportStore,
 } from "../../src/adapters/postgres/workerPlane.ts";
@@ -197,6 +198,52 @@ test("a lost attempt cannot use its worker boundary", async () => {
       attempt.capability.secret,
     ).terminalize(schedulerReport(attempt, "Pass")),
     { terminalized: "Fenced" },
+  );
+});
+
+test("a worker heartbeat renews only a still-live fenced attempt", async () => {
+  const attempt = await placedAttempt("worker-heartbeat");
+  const heartbeats = postgresWorkerAttemptHeartbeats(workerPool);
+  await rig.harness.query(
+    `UPDATE execution_attempt SET lease_expires_at=now()+interval '1 second'
+      WHERE tenant=$1 AND project=$2 AND execution=$3 AND attempt=$4`,
+    [
+      attempt.partition.tenant,
+      attempt.partition.project,
+      attempt.execution,
+      attempt.attempt,
+    ],
+  );
+  assert.equal(
+    await heartbeats.heartbeat(
+      attempt.capability.secret,
+      attempt.generation,
+      300,
+    ),
+    true,
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT lease_expires_at > now()+interval '250 seconds' AS renewed
+         FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND execution=$3 AND attempt=$4`,
+      [
+        attempt.partition.tenant,
+        attempt.partition.project,
+        attempt.execution,
+        attempt.attempt,
+      ],
+    ),
+    [{ renewed: true }],
+  );
+  assert.equal(await rig.store.attemptEnded(attempt, "Lost", "Vanished"), true);
+  assert.equal(
+    await heartbeats.heartbeat(
+      attempt.capability.secret,
+      attempt.generation,
+      300,
+    ),
+    false,
   );
 });
 

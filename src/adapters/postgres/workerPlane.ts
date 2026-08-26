@@ -18,6 +18,7 @@ import { asResultManifestId } from "../../interpreter/resultManifest.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import type {
   WorkerAttemptAuthority,
+  WorkerAttemptHeartbeatPort,
   WorkerArtifactReservationPort,
   WorkerInputReference,
   WorkerPlaneAuthority,
@@ -110,6 +111,21 @@ export function postgresWorkerPlaneAuthority(
   pool: pg.Pool,
 ): WorkerPlaneAuthority {
   return { authenticate: (secret) => workerAuthenticate(pool, secret) };
+}
+
+export function postgresWorkerAttemptHeartbeats(
+  pool: pg.Pool,
+): WorkerAttemptHeartbeatPort {
+  return {
+    heartbeat: async (secret, generation, leaseSecs) => {
+      const digest = createHash("sha256").update(secret, "utf8").digest("hex");
+      const renewed = await pool.query<{ renewed: boolean | null }>(
+        sql`SELECT heartbeat_worker_attempt(
+          ${digest},${generation},${leaseSecs})::boolean AS renewed`,
+      );
+      return renewed.rows[0]?.renewed === true;
+    },
+  };
 }
 
 export function postgresWorkerArtifactReservations(

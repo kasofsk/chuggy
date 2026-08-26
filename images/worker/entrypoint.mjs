@@ -1,11 +1,13 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
+import { createInterface } from "node:readline";
 
-import { claudeInvocation } from "./claude.mjs";
+import { claudeInvocation, claudeResult } from "./claude.mjs";
+import { keepWorkerLease } from "./lease.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
 
@@ -80,15 +82,35 @@ async function runClaude(task, directory) {
   const token = (
     await readFile("/var/run/chuggy/credentials/claude-code", "utf8")
   ).trim();
-  const { stdout } = await command("claude", claudeInvocation(task), {
+  const child = spawn("claude", claudeInvocation(task), {
     cwd: directory,
     env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token },
+    stdio: ["ignore", "pipe", "inherit"],
   });
-  const output = JSON.parse(stdout);
-  const result = output.structured_output;
-  if (result?.verdict !== "Pass" && result?.verdict !== "Fail")
-    throw new Error("Claude Code returned no structured verdict");
-  return { output, result };
+  const exited = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (exitCode, exitSignal) =>
+      resolve([exitCode, exitSignal]),
+    );
+  });
+  let resultEvent;
+  const lines = createInterface({ input: child.stdout });
+  for await (const line of lines) {
+    process.stdout.write(`${line}\n`);
+    try {
+      const event = JSON.parse(line);
+      if (event?.type === "result" && event.structured_output !== undefined)
+        resultEvent = event;
+    } catch {
+      throw new Error("Claude Code emitted invalid streaming JSON");
+    }
+  }
+  const [code, signal] = await exited;
+  if (code !== 0)
+    throw new Error(
+      `Claude Code exited ${code ?? `after signal ${signal ?? "unknown"}`}`,
+    );
+  return claudeResult([resultEvent]);
 }
 
 function artifact(path, content) {
@@ -161,34 +183,40 @@ async function main() {
     await readFile(task.workerPlane.capabilityFile, "utf8")
   ).trim();
   activeBearer = bearer;
-  const input = await (await workerRequest(task, bearer, "/v1/input")).json();
-  const repositoryId = oneReference(input, "Repository");
-  const repository = repositories[repositoryId];
-  if (typeof repository !== "string")
-    throw new Error(`no repository location for ${repositoryId}`);
-  const base = oneReference(input, "TargetCommit");
-  const directory = await cloneRepository(
-    repository,
-    base,
-    required("CHUG_WORKER_WORKSPACE"),
-  );
-  await prepareWorker(task, directory);
-  const { output, result } = await runClaude(task, directory);
-  const source = await workSource(
-    task,
-    repositoryId,
-    repository,
-    base,
-    directory,
-    result.verdict,
-  );
-  const diagnostics = [await diagnostic(task, bearer, output)];
-  await report(task, bearer, {
-    verdict: result.verdict,
-    handoffs: [],
-    ...(source === undefined ? {} : { source }),
-    diagnostics,
-  });
+  const stopLease = keepWorkerLease(task, bearer);
+  try {
+    const input = await (await workerRequest(task, bearer, "/v1/input")).json();
+    const repositoryId = oneReference(input, "Repository");
+    const repository = repositories[repositoryId];
+    if (typeof repository !== "string")
+      throw new Error(`no repository location for ${repositoryId}`);
+    const base = oneReference(input, "TargetCommit");
+    const directory = await cloneRepository(
+      repository,
+      base,
+      required("CHUG_WORKER_WORKSPACE"),
+    );
+    await prepareWorker(task, directory);
+    const { output, result } = await runClaude(task, directory);
+    const source = await workSource(
+      task,
+      repositoryId,
+      repository,
+      base,
+      directory,
+      result.verdict,
+    );
+    const diagnostics = [await diagnostic(task, bearer, output)];
+    await stopLease();
+    await report(task, bearer, {
+      verdict: result.verdict,
+      handoffs: [],
+      ...(source === undefined ? {} : { source }),
+      diagnostics,
+    });
+  } finally {
+    await stopLease();
+  }
 }
 
 main().catch(async (failure) => {

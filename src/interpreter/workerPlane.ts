@@ -31,6 +31,14 @@ export interface WorkerPlaneAuthority {
   ): Promise<WorkerAttemptAuthority | undefined>;
 }
 
+export interface WorkerAttemptHeartbeatPort {
+  heartbeat(
+    secret: AttemptCapabilitySecret,
+    generation: number,
+    leaseSecs: number,
+  ): Promise<boolean>;
+}
+
 export type WorkerArtifactStored =
   | { readonly stored: "Stored" }
   | {
