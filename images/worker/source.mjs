@@ -6,7 +6,7 @@ export function ticketBranch(task) {
 }
 
 export function resultDocument(manifest) {
-  return { version: manifest.source === undefined ? 1 : 2, ...manifest };
+  return { version: 3, ...manifest };
 }
 
 export async function commitAndPushSource({

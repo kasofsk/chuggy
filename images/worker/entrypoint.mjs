@@ -169,6 +169,10 @@ async function report(task, bearer, manifest) {
   });
 }
 
+function reportSummary(summary) {
+  return summary.replace(/\s+/gu, " ").trim();
+}
+
 async function main() {
   const task = parsed("CHUG_WORKER_TASK");
   activeTask = task;
@@ -213,6 +217,7 @@ async function main() {
     await stopLease();
     await report(task, bearer, {
       verdict: result.verdict,
+      report: reportSummary(result.summary),
       handoffs: [],
       ...(source === undefined ? {} : { source }),
       diagnostics,
@@ -239,6 +244,7 @@ main().catch(async (failure) => {
       );
       await report(activeTask, activeBearer, {
         verdict: "Fail",
+        report: message,
         handoffs: [],
         diagnostics: [error],
       });

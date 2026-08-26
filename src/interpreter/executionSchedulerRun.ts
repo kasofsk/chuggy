@@ -89,7 +89,6 @@
 import {
   checkedExecutionSchedulerConfig,
   recordScheduler,
-  taskPurposeForKind,
   type AttemptEvidence,
   type AttemptLoss,
   type AttemptOpening,
@@ -114,10 +113,12 @@ import {
   type PinnedConfigurationPort,
   type PinnedTaskConfiguration,
   type PracticeCatalog,
+  type PriorWorkReportsPort,
   type RuntimeFacts,
   type RuntimeFactsPort,
   type TaskInvocation,
   type TaskConfigurationReadFault,
+  type TaskPurpose,
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 
@@ -128,6 +129,7 @@ export interface ExecutionSchedulerService {
   readonly policy: ExecutionPolicy;
   readonly configurations: PinnedConfigurationPort;
   readonly runtimeFacts: RuntimeFactsPort;
+  readonly priorWorkReports: PriorWorkReportsPort;
   readonly practices: PracticeCatalog;
   readonly config: ExecutionSchedulerConfig;
   readonly ticketService: TicketServiceConfig;
@@ -435,6 +437,17 @@ interface TaskLaunch {
   readonly invocation: TaskInvocation;
 }
 
+/** Selects the authored evaluation role after its pinned configuration has been read. */
+function schedulerTaskPurpose(
+  execution: LogicalExecution,
+  configuration: PinnedTaskConfiguration,
+): TaskPurpose {
+  if (execution.taskKind === "Work") return "Work";
+  return execution.stage === undefined
+    ? "Review"
+    : (configuration.evaluations?.[execution.stage]?.purpose ?? "Review");
+}
+
 /** Resolves policy, gathers the pinned briefing inputs and composes one invocation. */
 async function schedulerPrepare(
   service: ExecutionSchedulerService,
@@ -453,12 +466,17 @@ async function schedulerPrepare(
     await schedulerUnready(service, execution, attempt, runtime);
     return undefined;
   }
+  const priorWorkReports = await service.priorWorkReports.reports(
+    execution.partition,
+    execution.execution,
+  );
   const composed = composeTaskInvocation(service.practices, {
-    purpose: taskPurposeForKind(execution.taskKind),
+    purpose: schedulerTaskPurpose(execution, configuration),
     ...(execution.stage === undefined ? {} : { stage: execution.stage }),
     pin: execution,
     configuration,
     runtime,
+    priorWorkReports,
     grant: policy.grant,
   });
   switch (composed.composed) {

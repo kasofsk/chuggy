@@ -30,6 +30,11 @@ const schedulerSourceInsertPrivilege = {
   privilege_type: "INSERT",
   columns: sourceInsertColumns,
 };
+const schedulerReportInsertPrivilege = {
+  table_name: "execution_result_report",
+  privilege_type: "INSERT",
+  columns: "manifest,project,report,tenant",
+};
 
 let harness: PostgresHarness;
 before(async () => {
@@ -615,6 +620,7 @@ test("the scheduler's write surface is exactly the columns execution and capacit
         privilege_type: "INSERT",
         columns: "bytes,digest,manifest,ordinal,path,project,role,tenant",
       },
+      schedulerReportInsertPrivilege,
       schedulerSourceInsertPrivilege,
       {
         table_name: "project",
@@ -652,6 +658,7 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "execution_request_task",
       "execution_result",
       "execution_result_artifact",
+      "execution_result_report",
       "execution_result_source",
       "project",
       "recovery_epoch",

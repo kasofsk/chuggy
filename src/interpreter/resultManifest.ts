@@ -80,11 +80,14 @@ export type CanonicalManifest = string & {
 };
 
 /** The schema version workers author now; retained version-one manifests remain readable. */
-export const resultManifestSchemaVersion = 2;
+export const resultManifestSchemaVersion = 3;
 
 /** The schema versions retained manifests may carry. */
 export type ResultManifestSchemaVersion =
-  1 | typeof resultManifestSchemaVersion;
+  1 | 2 | typeof resultManifestSchemaVersion;
+
+/** The largest structured worker summary retained for a later evaluation. */
+export const resultReportCharsMax = 8_192;
 
 /** The longest artifact path a stored row carries, which an object key must still hold. */
 export const artifactPathCharsMax = 256;
@@ -187,6 +190,7 @@ export interface ResultManifest {
   readonly manifest: ResultManifestId;
   readonly binding: ManifestAttemptBinding;
   readonly verdict: Verdict;
+  readonly report?: string;
   readonly handoffs: readonly ArtifactRow[];
   readonly source?: SourceHandoff;
   readonly diagnostics: readonly ArtifactRow[];
@@ -233,6 +237,7 @@ export type ManifestRejection =
   | "MissingField"
   | "UnsupportedSchemaVersion"
   | "UnknownVerdict"
+  | "ReportMalformed"
   | "TooManyHandoffs"
   | "TooManyDiagnostics"
   | "HandoffsOnFailedVerdict"
@@ -254,6 +259,7 @@ export const allManifestRejections: readonly ManifestRejection[] = [
   "MissingField",
   "UnsupportedSchemaVersion",
   "UnknownVerdict",
+  "ReportMalformed",
   "TooManyHandoffs",
   "TooManyDiagnostics",
   "HandoffsOnFailedVerdict",
@@ -362,6 +368,7 @@ export function asArtifactPath(value: string): ArtifactPath {
 /** The label that separates this construction from any other digest this tree computes. */
 const resultManifestFormatV1 = "chuggy:result-manifest:v1";
 const resultManifestFormatV2 = "chuggy:result-manifest:v2";
+const resultManifestFormatV3 = "chuggy:result-manifest:v3";
 
 /** Length-prefixes each part, so no opaque value can spell out a boundary. */
 function resultManifestInput(parts: readonly string[]): string {
@@ -384,7 +391,9 @@ export function canonicalResultManifest(
   return resultManifestInput([
     manifest.schemaVersion === 1
       ? resultManifestFormatV1
-      : resultManifestFormatV2,
+      : manifest.schemaVersion === 2
+        ? resultManifestFormatV2
+        : resultManifestFormatV3,
     manifest.binding.partition.tenant,
     manifest.binding.partition.project,
     manifest.binding.execution,
@@ -392,6 +401,7 @@ export function canonicalResultManifest(
     manifest.manifest,
     String(manifest.schemaVersion),
     manifest.verdict,
+    ...(manifest.schemaVersion === 3 ? [manifest.report ?? ""] : []),
     ...resultManifestRowParts(manifest.handoffs),
     ...resultManifestRowParts(manifest.diagnostics),
     ...(manifest.schemaVersion === 1
@@ -522,17 +532,44 @@ function manifestEnvelope(
   const record = manifestRecord(parsed);
   if (record === undefined) return manifestRejected("TextUnreadable");
   const version = record["version"];
-  if (version !== 1 && version !== resultManifestSchemaVersion)
+  if (version !== 1 && version !== 2 && version !== resultManifestSchemaVersion)
     return manifestRejected("UnsupportedSchemaVersion");
   const keys =
     version === 1
       ? ["version", "verdict", "handoffs", "diagnostics"]
-      : ["version", "verdict", "handoffs", "diagnostics", "source"];
+      : version === 2
+        ? ["version", "verdict", "handoffs", "diagnostics", "source"]
+        : ["version", "verdict", "report", "handoffs", "diagnostics", "source"];
   if (!manifestKeysAre(record, keys))
     return manifestRejected("UnexpectedField");
   if (record["verdict"] !== "Pass" && record["verdict"] !== "Fail")
     return manifestRejected("UnknownVerdict");
   return { value: record };
+}
+
+/** Reads the bounded printable summary carried only by current manifests. */
+function manifestReport(
+  record: Record<string, unknown>,
+): string | undefined | ManifestAccepted {
+  if (record["version"] !== 3) return undefined;
+  const report = record["report"];
+  if (
+    typeof report !== "string" ||
+    report.length === 0 ||
+    report.length > resultReportCharsMax ||
+    !report.isWellFormed() ||
+    [...report].some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return (
+        code < artifactPathFirstPrintable ||
+        (code >= artifactPathFirstUpperControl &&
+          code <= artifactPathLastUpperControl)
+      );
+    })
+  ) {
+    return manifestRejected("ReportMalformed");
+  }
+  return report;
 }
 
 /** One source handoff, or the refusal reading its four bounded identities earns. */
@@ -618,6 +655,8 @@ export function acceptResultManifest(
   if ("accepted" in lists) return lists;
   const source = manifestSource(envelope.value);
   if (source !== undefined && "accepted" in source) return source;
+  const report = manifestReport(envelope.value);
+  if (report !== undefined && typeof report !== "string") return report;
   if (source !== undefined && envelope.value["verdict"] === "Fail")
     return manifestRejected("SourceOnFailedVerdict");
   if (source !== undefined && lists.handoffs.length > 0)
@@ -628,6 +667,7 @@ export function acceptResultManifest(
     manifest,
     binding,
     verdict: envelope.value["verdict"] as Verdict,
+    ...(typeof report === "string" ? { report } : {}),
     handoffs: lists.handoffs,
     ...(source === undefined ? {} : { source }),
     diagnostics: lists.diagnostics,

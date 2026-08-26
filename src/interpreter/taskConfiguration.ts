@@ -18,6 +18,7 @@ export interface PurposeBlock {
 /** What one indexed evaluation stage is told beyond the shared brief. */
 export interface EvaluationBlock extends PurposeBlock {
   readonly practices: readonly string[];
+  readonly purpose: "Review" | "Check";
 }
 
 /** Runtime inputs whose canonical authored bytes travel with every task invocation. */
@@ -257,7 +258,12 @@ function authoredTaskConfigurationEvaluationBlock(
   const practices = authoredTaskConfigurationStringArray(
     (value as Record<string, unknown>)["practices"],
   );
-  return practices === undefined ? undefined : { ...block, practices };
+  const purpose = (value as Record<string, unknown>)["purpose"];
+  if (purpose !== undefined && purpose !== "Review" && purpose !== "Check")
+    return undefined;
+  return practices === undefined
+    ? undefined
+    : { ...block, practices, purpose: purpose ?? "Review" };
 }
 
 function authoredTaskConfigurationEvaluationBlocks(

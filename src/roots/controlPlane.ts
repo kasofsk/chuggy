@@ -53,6 +53,7 @@ import {
   gitScratchWritablePrecondition,
 } from "../adapters/git/gitPrerequisites.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
+import { postgresPriorWorkReports } from "../adapters/postgres/evaluationReports.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import {
   finalizerRole,
@@ -342,7 +343,10 @@ export interface SchedulerProcessRootConfig {
     readonly recoveryEpoch: RecoveryEpoch;
     readonly cluster: ClusterId;
   };
-  readonly service: Omit<ExecutionSchedulerService, "store" | "configurations">;
+  readonly service: Omit<
+    ExecutionSchedulerService,
+    "store" | "configurations" | "priorWorkReports"
+  >;
   readonly additional?: readonly RuntimePrecondition[];
 }
 
@@ -355,6 +359,7 @@ export function schedulerProcessRootService(
     ...service,
     store: postgresExecutionScheduler(pool),
     configurations: postgresPinnedConfigurations(pool),
+    priorWorkReports: postgresPriorWorkReports(pool),
   };
 }
 

@@ -77,6 +77,8 @@ import { schedulerRole } from "./schema.ts";
 const exhaustedManifestText = JSON.stringify({
   version: resultManifestSchemaVersion,
   verdict: "Fail",
+  report:
+    "The safe retry budget was exhausted before a worker reported a result.",
   handoffs: [],
   diagnostics: [],
   source: null,
@@ -291,6 +293,13 @@ async function schedulerWriteManifest(
                ${ordinal}::bigint,${manifest.schemaVersion},${manifest.digest},
                ${manifest.verdict})`,
   );
+  if (manifest.report !== undefined) {
+    await client.query(
+      sql`INSERT INTO execution_result_report(tenant,project,manifest,report)
+          VALUES (${manifest.binding.partition.tenant},${manifest.binding.partition.project},
+                  ${manifest.manifest},${manifest.report})`,
+    );
+  }
   if (manifest.source !== undefined) {
     await client.query(
       sql`INSERT INTO execution_result_source

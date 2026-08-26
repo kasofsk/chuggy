@@ -61,11 +61,17 @@ test("source publication commits all changes and pushes a new attempt ref", asyn
   );
 });
 
-test("a source report uses the schema that declares a source field", () => {
-  assert.equal(resultDocument({ verdict: "Fail" }).version, 1);
+test("every worker report uses the schema that carries its summary", () => {
   assert.equal(
-    resultDocument({ verdict: "Pass", source: { repository: "chuggy" } })
-      .version,
-    2,
+    resultDocument({ verdict: "Fail", report: "failed" }).version,
+    3,
+  );
+  assert.equal(
+    resultDocument({
+      verdict: "Pass",
+      report: "passed",
+      source: { repository: "chuggy" },
+    }).version,
+    3,
   );
 });
