@@ -35,6 +35,8 @@ export const draftDeleteFunction = "delete_draft";
 export const draftReleaseFunction = "release_draft_fenced";
 export const notificationPublishFunction = "publish_project_notification";
 export const projectChangeAppendFunction = "append_project_change";
+export const projectChangeSweepFunction = "sweep_project_change";
+export const projectChangeRetainedFunction = "project_change_retains";
 export const projectChangeBridgeFunction =
   "project_notification_appends_a_change";
 export const projectChangeExecutionFunction = "execution_appends_a_change";

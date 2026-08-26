@@ -11,6 +11,8 @@ import {
   notificationPublishFunction,
   projectAuthorizationFunction,
   projectChangeAppendFunction,
+  projectChangeRetainedFunction,
+  projectChangeSweepFunction,
   repositoryBindingReadFunction,
   schedulerRole,
   selectorReviewRole,
@@ -365,16 +367,32 @@ test("the change log is written through its own boundary and read by the API alo
       postgresHarnessDenial("project_notification"),
     );
   }
-  assert.equal(
-    await harness.attemptAs(
-      apiRole,
-      "SELECT sequence,tenant,project,kind,resource,created_at FROM project_change",
-    ),
-    undefined,
-  );
+  for (const permitted of [
+    "SELECT sequence,tenant,project,kind,resource,created_at FROM project_change",
+    `SELECT ${projectChangeSweepFunction}(1)`,
+    `SELECT ${projectChangeRetainedFunction}(1)`,
+  ]) {
+    assert.equal(await harness.attemptAs(apiRole, permitted), undefined);
+  }
   assert.match(
     (await harness.attemptAs(
       apiRole,
+      `SELECT ${projectChangeAppendFunction}('tenant','project','Ticket','1')`,
+    )) ?? "",
+    postgresHarnessDenial(projectChangeAppendFunction),
+  );
+  for (const role of [ticketServiceRole, schedulerRole, finalizerRole]) {
+    assert.match(
+      (await harness.attemptAs(
+        role,
+        `SELECT ${projectChangeSweepFunction}(1)`,
+      )) ?? "",
+      postgresHarnessDenial(projectChangeSweepFunction),
+    );
+  }
+  assert.match(
+    (await harness.attemptAs(
+      finalizerRole,
       `SELECT ${projectChangeAppendFunction}('tenant','project','Ticket','1')`,
     )) ?? "",
     postgresHarnessDenial(projectChangeAppendFunction),

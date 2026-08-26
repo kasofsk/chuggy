@@ -81,6 +81,28 @@ test("an expired cursor resets instead of pretending the stream is complete", as
   );
 });
 
+test("every kind the roster declares reads back through the store", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "notify-kinds",
+  );
+  for (const kind of notificationKinds) {
+    await subject.harness.query(
+      `SELECT ${notificationPublishFunction}($1,$2,$3,'resource',NULL,NULL)`,
+      [partition.tenant, partition.project, kind],
+    );
+  }
+  const read = await postgresNotifications(subject.pool).read(partition, {
+    after: 0,
+    limit: notificationKinds.length,
+  });
+  assert.ok(read.result === "Events", `the read was ${read.result}`);
+  assert.deepEqual(
+    read.events.map((event) => event.kind),
+    [...notificationKinds],
+  );
+});
+
 test("a cursor beyond the project log resets to its latest event", async () => {
   const partition = await postgresHarnessProject(
     subject.harness.store,

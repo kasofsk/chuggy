@@ -143,14 +143,21 @@ async function countedProject(label: string): Promise<SchedulerProject> {
 }
 
 /**
- * What the installation was already carrying, read through a project of its own
- * that registers nothing. The installation backlog counts every project in the
- * database and the gate gives a worker one database for several suites, so the
- * count below is a delta rather than a total.
+ * What the installation was already carrying, read from the server rather than
+ * through the port the case is about: a baseline the mapping under test
+ * produced would cancel a constant error in that mapping on both sides.
  */
 async function installationBacklog(label: string): Promise<number> {
   const idle = await schedulerProject(rig, label);
-  return (await context.context(idle.partition)).backlog.installation;
+  const read = await ingress.query<{ carried: string }>(
+    `SELECT installation_backlog::text AS carried FROM ${backlogFunction}($1,$2)`,
+    [idle.partition.tenant, idle.partition.project],
+  );
+  const carried = read.rows[0]?.carried;
+  if (carried === undefined) {
+    throw new Error("postgres scheduler context: the backlog read nothing");
+  }
+  return Number(carried);
 }
 
 test("the advisory context reports this project's own work and this cluster's total", async () => {

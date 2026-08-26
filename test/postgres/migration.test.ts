@@ -14,6 +14,8 @@ import {
   migrations,
   notificationPublishFunction,
   projectChangeAppendFunction,
+  projectChangeRetainedFunction,
+  projectChangeSweepFunction,
   schedulerRole,
   repositoryBindingReadFunction,
   ticketServiceRole,
@@ -1155,33 +1157,45 @@ test("migration 27 makes cross-repository request configuration immutable", asyn
   });
 });
 
-test("migration 38 gives an upgraded database the change log and its boundary alone", async () => {
-  await migrationDatabase("project_change", async (subject) => {
+const appendCall = `${projectChangeAppendFunction}(text,text,text,text)`;
+
+/** Who may execute each of the change log's three doors on an upgraded database. */
+const projectChangeExecutors = [
+  [schedulerRole, appendCall, true],
+  [finalizerRole, appendCall, false],
+  [apiRole, appendCall, false],
+  [ticketServiceRole, appendCall, false],
+  [apiRole, `${projectChangeSweepFunction}(bigint)`, true],
+  [apiRole, `${projectChangeRetainedFunction}(bigint)`, true],
+  [schedulerRole, `${projectChangeSweepFunction}(bigint)`, false],
+  [finalizerRole, `${projectChangeSweepFunction}(bigint)`, false],
+] as const;
+
+/** What the API holds on the relation itself, which is the read and nothing else. */
+const projectChangeApiPrivileges = [
+  ["SELECT", true],
+  ["INSERT", false],
+  ["UPDATE", false],
+  ["DELETE", false],
+] as const;
+
+test("migration 38 grants the change log's doors to the roles that reach them", async () => {
+  await migrationDatabase("project_change_grants", async (subject) => {
     await migrationSeedApplied(subject, 38);
     await applyMigration(subject, 38);
-    for (const [role, granted] of [
-      [schedulerRole, true],
-      [finalizerRole, true],
-      [apiRole, false],
-      [ticketServiceRole, false],
-    ] as const) {
+    for (const [role, signature, granted] of projectChangeExecutors) {
       assert.equal(
         (
           await subject.query<{ granted: boolean }>(
             "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-            [role, `${projectChangeAppendFunction}(text,text,text,text)`],
+            [role, signature],
           )
         ).rows[0]?.granted,
         granted,
-        `${role} may execute the append boundary`,
+        `${role} may execute ${signature}`,
       );
     }
-    for (const [privilege, granted] of [
-      ["SELECT", true],
-      ["INSERT", false],
-      ["UPDATE", false],
-      ["DELETE", false],
-    ] as const) {
+    for (const [privilege, granted] of projectChangeApiPrivileges) {
       assert.equal(
         (
           await subject.query<{ granted: boolean }>(
@@ -1193,6 +1207,22 @@ test("migration 38 gives an upgraded database the change log and its boundary al
         `${apiRole} holds ${privilege} on the change log`,
       );
     }
+  });
+});
+
+test("migration 38 leaves an upgraded database bridging and replayable from nothing", async () => {
+  await migrationDatabase("project_change", async (subject) => {
+    await migrationSeedApplied(subject, 38);
+    await applyMigration(subject, 38);
+    assert.equal(
+      (
+        await subject.query<{ retained: boolean }>(
+          `SELECT ${projectChangeRetainedFunction}(0) AS retained`,
+        )
+      ).rows[0]?.retained,
+      true,
+      "an empty log has lost nothing a cursor was holding",
+    );
     await subject.query(
       "INSERT INTO recovery_epoch (epoch) VALUES ('epoch-project-change')",
     );

@@ -1,17 +1,24 @@
 /**
  * The durable change log against a real server: that an append survives only a
- * commit, that its doorbell carries the sequence, that every writer the schema
- * declares reaches it, and that the log stays bounded.
+ * commit, that its doorbell rings once for a transaction however much it
+ * appended, that every writer the schema declares reaches it, and that the
+ * sweep keeps it bounded and says what it left.
  *
  * THE DOORBELL IS READ ON A CONNECTION OF ITS OWN, because a notification is
  * delivered to sessions other than the one that wrote it and only once the
  * writer commits. A case reading it on the writing session would be asserting
  * that the server queued something, which is the half a rollback does anyway.
  *
- * NOTHING HERE SLEEPS FOR AN ABSENCE. A case claiming a notification was never
- * delivered commits a later one and waits for that instead: delivery on one
- * connection is ordered, so the later payload arriving without the earlier one
- * is the absence, decided rather than waited out.
+ * NOTHING HERE SLEEPS FOR AN ABSENCE. A case claiming a delivery never
+ * happened commits a sibling one and waits for that instead, then counts what
+ * arrived: delivery on one connection is ordered, so the sibling arriving
+ * alone is the absence, decided rather than waited out.
+ *
+ * THE SWEEP CASE IS LAST AND IT IS INSTALLATION-WIDE. The bound is over the
+ * whole log rather than one project, so a sweep run before another case would
+ * be deleting that case's rows; it is written where nothing follows it, and it
+ * fills the log by insert rather than through the append boundary because what
+ * it is about is which rows survive rather than how they arrived.
  *
  * THE EXECUTION SIDE IS DRIVEN AS `chuggy_scheduler`. Every trigger on those
  * four relations fires as whoever wrote the row, so a case driving them as the
@@ -29,10 +36,13 @@ import pg from "pg";
 import {
   notificationPublishFunction,
   projectChangeAppendFunction,
+  projectChangeRetainedFunction,
+  projectChangeSweepFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import { notificationKinds } from "../../src/contract/rosters.ts";
 import {
   projectChangeChannel,
+  projectChangePayload,
   projectChangeRetentionMax,
 } from "../../src/interpreter/projectChange.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -55,16 +65,23 @@ after(async () => {
   await rig.close();
 });
 
-/** How long a case waits for a payload it has already committed the write for. */
+/** How long a case waits for a delivery it has already committed the write for. */
 const doorbellWaitMsMax = 5_000;
 
 /** How often that wait asks the server, which is what bounds the loop asking. */
 const doorbellAskMs = 25;
 
+/** How many further asks a case makes before it claims nothing else arrived. */
+const doorbellQuiesceAsks = 4;
+
+/** How far past the bound the sweep case fills the log, which is what it then removes. */
+const projectChangeSweptExcess = 4;
+
 /** One connection listening on the change channel, and every payload it was handed. */
 interface ProjectChangeDoorbell {
   readonly rung: readonly string[];
-  readonly waitFor: (payload: string) => Promise<void>;
+  readonly settled: (deliveries: number) => Promise<void>;
+  readonly quiesced: () => Promise<void>;
 }
 
 /** Listens on the channel for the body, and gives the connection back whatever it did. */
@@ -75,23 +92,31 @@ async function withDoorbell(
   await listener.connect();
   const rung: string[] = [];
   listener.on("notification", (delivered) => {
-    if (delivered.payload !== undefined) rung.push(delivered.payload);
+    rung.push(delivered.payload ?? "");
   });
   try {
     await listener.query(`LISTEN ${projectChangeChannel}`);
     await body({
       rung,
-      waitFor: async (payload) => {
+      settled: async (deliveries) => {
         for (
           let waited = 0;
           waited < doorbellWaitMsMax;
           waited += doorbellAskMs
         ) {
           await listener.query("SELECT 1");
-          if (rung.includes(payload)) return;
+          if (rung.length >= deliveries) return;
           await delay(doorbellAskMs);
         }
-        throw new Error(`project change: ${payload} was never delivered`);
+        throw new Error(
+          `project change: ${String(deliveries)} delivery(s) never arrived, ${String(rung.length)} did`,
+        );
+      },
+      quiesced: async () => {
+        for (let asked = 0; asked < doorbellQuiesceAsks; asked += 1) {
+          await listener.query("SELECT 1");
+          await delay(doorbellAskMs);
+        }
       },
     });
   } finally {
@@ -147,28 +172,56 @@ test("a rolled-back change is neither appended nor rung", async () => {
       [rolled.tenant, rolled.project],
     );
     const staged = (await session.query(
-      `SELECT max(sequence)::text AS sequence FROM project_change
+      `SELECT count(*)::text AS staged FROM project_change
         WHERE tenant=$1 AND project=$2`,
       [rolled.tenant, rolled.project],
-    )) as readonly { sequence: string | null }[];
-    const discarded = staged[0]?.sequence;
-    assert.ok(discarded, "the staged append had a sequence to discard");
+    )) as readonly { staged: string }[];
+    assert.equal(staged[0]?.staged, "1", "the transaction staged its append");
     await session.rollback();
 
-    await doorbell.waitFor(await publishedChange(kept, "Ticket", "1"));
+    await publishedChange(kept, "Ticket", "1");
+    await doorbell.settled(1);
+    await doorbell.quiesced();
     assert.deepEqual(await changesOf(rolled), []);
-    assert.equal(doorbell.rung.includes(discarded), false);
+    assert.deepEqual(doorbell.rung, [projectChangePayload]);
   });
 });
 
-test("a committed change is appended and rung with its own sequence", async () => {
+test("a committed change is appended and rings the doorbell", async () => {
   const partition = await postgresHarnessProject(rig.harness.store, "rung");
   await withDoorbell(async (doorbell) => {
-    const sequence = await publishedChange(partition, "Draft", "draft-one");
-    await doorbell.waitFor(sequence);
+    await publishedChange(partition, "Draft", "draft-one");
+    await doorbell.settled(1);
     assert.deepEqual(await changesOf(partition), [
       { kind: "Draft", resource: "draft-one" },
     ]);
+    assert.deepEqual(doorbell.rung, [projectChangePayload]);
+  });
+});
+
+test("one transaction rings once however many changes it appended", async () => {
+  const partition = await postgresHarnessProject(
+    rig.harness.store,
+    "coalesced",
+  );
+  const sibling = await postgresHarnessProject(
+    rig.harness.store,
+    "coalesced-after",
+  );
+  const appended = 50;
+  await withDoorbell(async (doorbell) => {
+    const session = await rig.harness.begin();
+    await session.query(
+      `SELECT ${projectChangeAppendFunction}($1,$2,'Ticket',counted::text)
+         FROM generate_series(1,$3::bigint) AS series(counted)`,
+      [partition.tenant, partition.project, appended],
+    );
+    await session.commit();
+    await publishedChange(sibling, "Ticket", "1");
+    await doorbell.settled(2);
+    await doorbell.quiesced();
+    assert.equal(await changeCount(partition), appended);
+    assert.equal(doorbell.rung.length, 2);
   });
 });
 
@@ -183,22 +236,6 @@ test("every publication kind bridges to a change of the same kind and resource",
       kind,
       resource: `resource-${String(index)}`,
     })),
-  );
-});
-
-test("retention keeps a project's newest changes and drops the rest", async () => {
-  const partition = await postgresHarnessProject(rig.harness.store, "retained");
-  const appended = projectChangeRetentionMax + 2;
-  await rig.harness.query(
-    `SELECT ${projectChangeAppendFunction}($1,$2,'Ticket',counted::text)
-       FROM generate_series(1,$3::bigint) AS series(counted)`,
-    [partition.tenant, partition.project, appended],
-  );
-  const kept = await changesOf(partition);
-  assert.equal(kept.length, projectChangeRetentionMax);
-  assert.deepEqual(
-    [kept.at(0)?.resource, kept.at(-1)?.resource],
-    [String(appended - projectChangeRetentionMax + 1), String(appended)],
   );
 });
 
@@ -347,4 +384,120 @@ test("an update assigning a watched column its own value appends nothing", async
     [...named, registration.execution],
   );
   assert.equal(await changeCount(registration.partition), before);
+});
+
+/** The whole log's bounds, which is what the sweep moves and the retained-check reads. */
+async function projectChangeBounds(): Promise<{
+  earliest: number;
+  latest: number;
+  held: number;
+}> {
+  const [read] = (await rig.harness.query(
+    `SELECT coalesce(min(sequence),0)::text AS earliest,
+            coalesce(max(sequence),0)::text AS latest,
+            count(*)::text AS held FROM project_change`,
+  )) as readonly { earliest: string; latest: string; held: string }[];
+  if (read === undefined) {
+    throw new Error("project change: the log reported no bounds");
+  }
+  return {
+    earliest: Number(read.earliest),
+    latest: Number(read.latest),
+    held: Number(read.held),
+  };
+}
+
+/** The oldest sequences the log is holding, which is the end a sweep works from. */
+async function projectChangeOldest(count: number): Promise<readonly number[]> {
+  return (
+    (await rig.harness.query(
+      `SELECT sequence::text AS held FROM project_change
+        ORDER BY project_change.sequence LIMIT $1`,
+      [count],
+    )) as readonly { held: string }[]
+  ).map((row) => Number(row.held));
+}
+
+/** Runs one sweep with the bound given and answers how many rows it removed. */
+async function sweptRows(limit: number): Promise<number> {
+  const [removed] = (await rig.harness.query(
+    `SELECT ${projectChangeSweepFunction}($1::bigint)::text AS removed`,
+    [limit],
+  )) as readonly { removed: string }[];
+  if (removed === undefined) {
+    throw new Error("project change: the sweep answered nothing");
+  }
+  return Number(removed.removed);
+}
+
+/** Whether the server says a consumer holding this cursor can still be replayed. */
+async function projectChangeRetains(cursor: number): Promise<boolean> {
+  const [answered] = (await rig.harness.query(
+    `SELECT ${projectChangeRetainedFunction}($1::bigint) AS retained`,
+    [cursor],
+  )) as readonly { retained: boolean }[];
+  if (answered === undefined) {
+    throw new Error("project change: the retained check answered nothing");
+  }
+  return answered.retained;
+}
+
+test("a sweep refuses a bound that would remove nothing", async () => {
+  for (const limit of [0, -1, null]) {
+    await assert.rejects(
+      rig.harness.query(`SELECT ${projectChangeSweepFunction}($1::bigint)`, [
+        limit,
+      ]),
+      /at least one row/u,
+    );
+  }
+});
+
+test("the sweep keeps the installation's newest changes and says what it removed", async () => {
+  const partition = await postgresHarnessProject(rig.harness.store, "swept");
+  await rig.harness.query(
+    `INSERT INTO project_change (tenant,project,kind,resource)
+     SELECT $1,$2,'Ticket',counted::text
+       FROM generate_series(1,$3::bigint) AS series(counted)`,
+    [
+      partition.tenant,
+      partition.project,
+      projectChangeRetentionMax + projectChangeSweptExcess,
+    ],
+  );
+  const filled = await projectChangeBounds();
+  const excess = filled.held - projectChangeRetentionMax;
+  assert.ok(
+    excess >= projectChangeSweptExcess,
+    `the log was filled past its bound, and holds ${String(filled.held)}`,
+  );
+  const oldest = await projectChangeOldest(excess + 1);
+
+  assert.equal(
+    await sweptRows(excess - 1),
+    excess - 1,
+    "the sweep removes no more than the bound it was given",
+  );
+  assert.equal(await sweptRows(excess), 1);
+  assert.equal(await sweptRows(excess), 0);
+
+  const swept = await projectChangeBounds();
+  assert.deepEqual(
+    [swept.held, swept.latest, swept.earliest],
+    [projectChangeRetentionMax, filled.latest, oldest.at(excess)],
+  );
+});
+
+test("the retained check tells a cursor the sweep passed from one it did not", async () => {
+  const bounds = await projectChangeBounds();
+  assert.ok(bounds.held > 0, "the log has a boundary to be on either side of");
+  assert.deepEqual(
+    [
+      await projectChangeRetains(bounds.earliest - 1),
+      await projectChangeRetains(bounds.earliest),
+      await projectChangeRetains(bounds.latest),
+      await projectChangeRetains(bounds.earliest - 2),
+    ],
+    [true, true, true, false],
+  );
 });
