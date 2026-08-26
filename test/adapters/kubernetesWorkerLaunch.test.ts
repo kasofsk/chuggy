@@ -29,6 +29,7 @@ import {
   kubernetesNameCharsMax,
   kubernetesWorkerContainerName,
   kubernetesWorkerPodName,
+  kubernetesWorkerPodRequest,
   kubernetesWorkerTaskVariable,
   type KubernetesWorkerLaunchConfig,
   type KubernetesWorkerTask,
@@ -62,6 +63,12 @@ writeFileSync(tokenFile, `${token}\n`);
 /** The image this suite's placement requires, which is the one a container runs. */
 const workerImage = "registry.invalid/worker:1";
 
+const workspaceCredentialMount = {
+  secretName: "workspace-credential",
+  key: "token",
+  mountPath: "/run/chuggy/credentials/workspace",
+} as const;
+
 const config: KubernetesWorkerLaunchConfig = {
   apiBaseUrl: "https://cluster.invalid:6443",
   namespace: "chuggy-workers",
@@ -70,11 +77,7 @@ const config: KubernetesWorkerLaunchConfig = {
   capabilityFile: "/run/chuggy/capability",
   workspacePath: "/workspace",
   credentialMounts: {
-    workspace: {
-      secretName: "workspace-credential",
-      key: "token",
-      mountPath: "/run/chuggy/credentials/workspace",
-    },
+    workspace: workspaceCredentialMount,
   },
   environment: { CHUG_WORKER_REPOSITORIES: '{"repository":"url"}' },
   serviceAccountName: "chuggy-worker",
@@ -122,14 +125,16 @@ const configuration: PinnedTaskConfiguration = {
   review: { instructions: ["Walk the call paths the change reaches."] },
 };
 
-function taskInvocation(): AttemptPlacement["invocation"] {
+function taskInvocation(
+  authorityGrant: PolicyAuthorityGrant = grant,
+): AttemptPlacement["invocation"] {
   const composed = composeTaskInvocation(blessedPracticeCatalog, {
     purpose: "Work",
     pin: configuration,
     configuration,
     runtime: { changedFiles: [], handoff: [] },
     priorWorkReports: { reports: [] },
-    grant,
+    grant: authorityGrant,
   });
   if (composed.composed !== "Composed")
     throw new Error("the fixture configuration does not compose");
@@ -345,10 +350,16 @@ function expectedPod(name: string): unknown {
         { name: "worker-workspace", emptyDir: { sizeLimit: "10Gi" } },
         {
           name: "worker-credential-0",
-          secret: {
-            secretName: "workspace-credential",
+          projected: {
             defaultMode: 0o400,
-            items: [{ key: "token", path: "workspace" }],
+            sources: [
+              {
+                secret: {
+                  name: "workspace-credential",
+                  items: [{ key: "token", path: "workspace" }],
+                },
+              },
+            ],
           },
         },
       ],
@@ -618,6 +629,55 @@ test("an authority credential the site cannot mount is a definitive inability", 
   assert.deepEqual(reached, []);
 });
 
+test("sibling credentials share one projected directory without changing their paths", () => {
+  const siblingGrant = { ...grant, credentials: ["workspace", "release"] };
+  const requested = kubernetesWorkerPodRequest(
+    {
+      ...config,
+      credentialMounts: {
+        ...config.credentialMounts,
+        release: {
+          secretName: "release-credential",
+          key: "password",
+          mountPath: "/run/chuggy/credentials/release",
+        },
+      },
+    },
+    { ...placement, invocation: taskInvocation(siblingGrant) },
+  );
+  assert.equal(requested.requested, "Pod");
+  if (requested.requested !== "Pod") return;
+  assert.deepEqual(requested.pod.spec.containers[0]?.volumeMounts.slice(-1), [
+    {
+      name: "worker-credential-0",
+      mountPath: "/run/chuggy/credentials",
+      readOnly: true,
+    },
+  ]);
+  assert.deepEqual(requested.pod.spec.volumes.slice(-1), [
+    {
+      name: "worker-credential-0",
+      projected: {
+        defaultMode: 0o400,
+        sources: [
+          {
+            secret: {
+              name: "release-credential",
+              items: [{ key: "password", path: "release" }],
+            },
+          },
+          {
+            secret: {
+              name: "workspace-credential",
+              items: [{ key: "token", path: "workspace" }],
+            },
+          },
+        ],
+      },
+    },
+  ]);
+});
+
 test("the image a pod runs is the requirement's own", async () => {
   const reached: ClusterReached[] = [];
   const workers = kubernetesWorkerLaunch(
@@ -772,5 +832,44 @@ test("site environment cannot replace the worker task document", () => {
         environment: { [kubernetesWorkerTaskVariable]: "replacement" },
       }),
     /CHUG_WORKER_TASK/u,
+  );
+});
+
+test("credential directory mounts cannot replace workspace or capability mounts", () => {
+  for (const [mountPath, target] of [
+    ["/workspace/token", "workspace"],
+    ["/run/chuggy/capability/token", "capability"],
+  ] as const) {
+    assert.throws(
+      () =>
+        checkedKubernetesWorkerLaunchConfig({
+          ...config,
+          credentialMounts: {
+            workspace: {
+              ...workspaceCredentialMount,
+              mountPath,
+            },
+          },
+        }),
+      new RegExp(`worker mount path .*${target}`, "u"),
+    );
+  }
+});
+
+test("two credentials cannot project to the same final file", () => {
+  assert.throws(
+    () =>
+      checkedKubernetesWorkerLaunchConfig({
+        ...config,
+        credentialMounts: {
+          workspace: workspaceCredentialMount,
+          release: {
+            secretName: "release-credential",
+            key: "password",
+            mountPath: workspaceCredentialMount.mountPath,
+          },
+        },
+      }),
+    /worker mount path .* is repeated/u,
   );
 });
