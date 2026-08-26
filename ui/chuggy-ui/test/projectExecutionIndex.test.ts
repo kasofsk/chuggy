@@ -159,6 +159,9 @@ test("a walk that the wire ends is complete and says so", async () => {
   expect(held.asked[1]?.after).toBe("All-1");
   expect(answered.outcome === "Ok" && answered.value.truncated).toBe(false);
   expect(
+    answered.outcome === "Ok" && projectExecutionIndexAt(answered.value, 1),
+  ).toBeDefined();
+  expect(
     answered.outcome === "Ok" && projectExecutionIndexAt(answered.value, 2),
   ).toBeDefined();
 });

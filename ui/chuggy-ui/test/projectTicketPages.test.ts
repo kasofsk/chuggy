@@ -105,6 +105,19 @@ test("the row cap stops a walk the page budget has not stopped", () => {
   expect(rows.tickets.length).toBe(projectTicketRowsMax);
 });
 
+test("a page carrying more than the cap has room for is cut at the cap", () => {
+  const oversized = page(
+    Array.from({ length: projectTicketRowsMax + 20 }, (_unused, at) => ({
+      ticket: at + 1,
+      phase: "Pending" as const,
+      sequence: 1,
+    })),
+    "again",
+  );
+  const rows = projectTicketRowsAppend(projectTicketRowsEmpty, oversized);
+  expect(rows.tickets.length).toBe(projectTicketRowsMax);
+});
+
 test("a page walk stops at the page budget even while a cursor is offered", () => {
   let rows: ProjectTicketRows = projectTicketRowsEmpty;
   for (let read = 0; read < projectTicketPagesMax; read += 1)
@@ -276,6 +289,23 @@ test("a read with no rows behind it answers with the refusal itself", async () =
   const held = reading([unreachable]);
   const answered = await projectTicketRowsRead(undefined, held.readPage);
   expect(answered.outcome).toBe("Unreachable");
+});
+
+test("a refetch reads the pages the reader had and no more, however many the wire offers", async () => {
+  const held = reading(
+    Array.from({ length: projectTicketPagesMax }, (_unused, at) => ({
+      outcome: "Ok" as const,
+      value: page(
+        [{ ticket: at + 1, phase: "Pending" as const, sequence: 1 }],
+        "again",
+      ),
+    })),
+  );
+  await projectTicketRowsRead(
+    { ...projectTicketRowsEmpty, pagesRead: 2 },
+    held.readPage,
+  );
+  expect(held.cursors.length).toBe(2);
 });
 
 test("a read stops at the page budget however many the reader asked for", async () => {
