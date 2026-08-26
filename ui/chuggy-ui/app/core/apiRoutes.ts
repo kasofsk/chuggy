@@ -144,6 +144,7 @@ export interface ProjectPage {
   readonly after?: number | undefined;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
+  readonly minimumSequence?: number | undefined;
   readonly order?: "RecentActivity" | undefined;
   readonly phase?: readonly string[] | undefined;
 }
@@ -159,6 +160,7 @@ export function apiProject(
       after: page.after,
       cursor: page.cursor,
       limit: page.limit,
+      minimumSequence: page.minimumSequence,
       order: page.order,
       phase: page.phase,
     }),
