@@ -35,6 +35,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { basename, dirname } from "node:path";
 
 import type { ExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import type {
@@ -206,6 +207,18 @@ export interface KubernetesPod {
         }[];
       };
       readonly emptyDir?: { readonly sizeLimit?: string };
+      readonly projected?: {
+        readonly defaultMode: number;
+        readonly sources: readonly {
+          readonly secret: {
+            readonly name: string;
+            readonly items: readonly {
+              readonly key: string;
+              readonly path: string;
+            }[];
+          };
+        }[];
+      };
     }[];
   };
 }
@@ -253,7 +266,8 @@ export function checkedKubernetesWorkerLaunchConfig(
     throw new RangeError("worker capability file must be absolute");
   if (!config.workspacePath.startsWith("/"))
     throw new RangeError("worker workspace path must be absolute");
-  const paths = new Set([config.capabilityFile, config.workspacePath]);
+  const mountPaths = new Set([config.capabilityFile, config.workspacePath]);
+  const credentialPaths = new Set<string>();
   if (Object.hasOwn(config.environment, kubernetesWorkerTaskVariable))
     throw new RangeError(
       `worker environment may not replace ${kubernetesWorkerTaskVariable}`,
@@ -268,9 +282,16 @@ export function checkedKubernetesWorkerLaunchConfig(
       throw new RangeError(
         `worker credential ${credential} mount path must be absolute`,
       );
-    if (paths.has(mount.mountPath))
+    const directory = dirname(mount.mountPath);
+    if (directory === "/")
+      throw new RangeError(
+        `worker credential ${credential} mount path must have a dedicated directory`,
+      );
+    if (mountPaths.has(directory))
+      throw new RangeError(`worker mount path ${directory} is repeated`);
+    if (credentialPaths.has(mount.mountPath))
       throw new RangeError(`worker mount path ${mount.mountPath} is repeated`);
-    paths.add(mount.mountPath);
+    credentialPaths.add(mount.mountPath);
   }
   kubernetesPositive(config.activeDeadlineSecs, "worker active deadline");
   kubernetesPositive(config.requestTimeoutSecsMax, "cluster request timeout");
@@ -459,28 +480,48 @@ function kubernetesWorkerCredentials(
   config: KubernetesWorkerLaunchConfig,
   authority: PolicyAuthorityGrant,
 ): KubernetesWorkerCredentialSelection | undefined {
-  const volumes: KubernetesPod["spec"]["volumes"][number][] = [];
-  const mounts: KubernetesContainer["volumeMounts"][number][] = [];
-  for (const [index, credential] of authority.credentials.entries()) {
+  const directories = new Map<
+    string,
+    {
+      readonly name: string;
+      readonly sources: {
+        readonly secret: {
+          readonly name: string;
+          readonly items: readonly {
+            readonly key: string;
+            readonly path: string;
+          }[];
+        };
+      }[];
+    }
+  >();
+  for (const credential of authority.credentials) {
     const supplied = config.credentialMounts[credential];
     if (supplied === undefined) return undefined;
-    const name = `worker-credential-${String(index)}`;
-    volumes.push({
-      name,
+    const directory = dirname(supplied.mountPath);
+    const selected = directories.get(directory) ?? {
+      name: `worker-credential-${String(directories.size)}`,
+      sources: [],
+    };
+    selected.sources.push({
       secret: {
-        secretName: supplied.secretName,
-        defaultMode: 0o400,
-        items: [{ key: supplied.key, path: "credential" }],
+        name: supplied.secretName,
+        items: [{ key: supplied.key, path: basename(supplied.mountPath) }],
       },
     });
-    mounts.push({
-      name,
-      mountPath: supplied.mountPath,
-      subPath: "credential",
-      readOnly: true,
-    });
+    directories.set(directory, selected);
   }
-  return { volumes, mounts };
+  return {
+    volumes: [...directories.values()].map(({ name, sources }) => ({
+      name,
+      projected: { defaultMode: 0o400, sources },
+    })),
+    mounts: [...directories.entries()].map(([mountPath, { name }]) => ({
+      name,
+      mountPath,
+      readOnly: true,
+    })),
+  };
 }
 
 /** The one worker container, separated from its pod so both documents stay reviewable. */
