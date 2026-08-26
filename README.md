@@ -12,5 +12,6 @@ What exists today is the proved model, the implementation, and the gates that ru
 
 ```sh
 just hooks    # once per clone
-just check    # every gate
+just check    # gates affected by this change
+just check-full
 ```
