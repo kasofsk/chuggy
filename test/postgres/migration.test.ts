@@ -1340,3 +1340,40 @@ test("the migration that projects the reason leaves a database already carrying 
     await assertProjectedReasonGrants(subject);
   });
 });
+
+test("migration 40 preserves bindings and activates the established binding", async () => {
+  await migrationDatabase("repository_activation", async (subject) => {
+    await migrationSeedApplied(subject, 40);
+    await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-40')`);
+    await subject.query(
+      `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+       VALUES('tenant-40','project-40','Active',0,1)`,
+    );
+    await subject.query(
+      `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,bound_at)
+       VALUES('tenant-40','project-40','established','epoch-40','2026-01-01'),
+             ('tenant-40','project-40','historical','epoch-40','2026-01-02')`,
+    );
+
+    await applyMigration(subject, 40);
+
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT repository,recovery_epoch
+             FROM ${repositoryBindingReadFunction}('tenant-40','project-40')`,
+        )
+      ).rows,
+      [{ repository: "established", recovery_epoch: "epoch-40" }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT repository FROM project_repository
+            WHERE tenant='tenant-40' AND project='project-40' ORDER BY repository`,
+        )
+      ).rows,
+      [{ repository: "established" }, { repository: "historical" }],
+    );
+  });
+});

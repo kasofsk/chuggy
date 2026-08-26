@@ -484,13 +484,13 @@ test("a changed repository binding fences the entire import", async () => {
     asRecoveryEpoch(`changed-${randomUUID()}`),
   );
   await harness.query(
-    `UPDATE project_repository SET recovery_epoch=$4
-       WHERE tenant=$1 AND project=$2 AND repository=$3`,
+    `SELECT activate_project_repository($1,$2,$3,$3,$4,$5,'Test','authoring')`,
     [
       partition.tenant,
       partition.project,
       binding.repository,
       changedRecoveryEpoch,
+      `operation-${randomUUID()}`,
     ],
   );
   assert.deepEqual(
