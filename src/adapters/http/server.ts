@@ -32,6 +32,7 @@ import {
 import {
   parseConfigurationCursor,
   parseInventoryCursor,
+  parseNativeActionCursor,
   parseTicketActivityCursor,
   parseConfigurationCreation,
   parseRepositoryConfigurationImport,
@@ -54,10 +55,12 @@ import {
   draftRevisionResponse,
   failureResponse,
   inventoryResponse,
+  nativeActionsResponse,
   notificationsResponse,
   operationResponse,
   projectResponse,
   projectEntryResponse,
+  ticketNativeActionsResponse,
   ticketResponse,
   executionResponse,
   executionsResponse,
@@ -111,6 +114,8 @@ type InitialNativeWeb = Pick<
   | "reviseDraft"
   | "submit"
   | "ticket"
+  | "ticketNativeActions"
+  | "nativeActions"
   | "execution"
   | "executions"
   | "operationalStatus"
@@ -391,7 +396,40 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
     );
     send(reply, ticketResponse(resource));
   });
+  registerNativeActions(app, web, root);
   registerOperationalRoutes(app, web, root);
+}
+
+function registerNativeActions(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  app.get(`${root}/tickets/:ticket/native-actions`, async (request, reply) => {
+    const params = record(request.params);
+    const actions = await web.ticketNativeActions(
+      principalOf(request),
+      partitionOf(request),
+      asTicketIdField(params, "ticket"),
+    );
+    send(reply, ticketNativeActionsResponse(actions));
+  });
+  app.get(`${root}/native-actions`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["cursor", "limit"]);
+    const partition = partitionOf(request);
+    const result = await web.nativeActions(principalOf(request), partition, {
+      ...(query["cursor"] === undefined
+        ? {}
+        : {
+            after: parseNativeActionCursor(
+              textField(query, "cursor"),
+              partition,
+            ),
+          }),
+      limit: integerField(query, "limit", 50),
+    });
+    send(reply, nativeActionsResponse(partition, result));
+  });
 }
 
 function registerOperationalRoutes(

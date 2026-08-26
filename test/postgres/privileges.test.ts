@@ -572,6 +572,57 @@ test("the function a migration grants execute on is the boundary owner's and is 
   );
 });
 
+test("the API reads a ticket's open questions and no more of the desk", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT a.action,a.kind,a.authorizing_seq,a.state,r.resolution
+         FROM native_action a
+         JOIN native_action_resolution r USING (tenant, project, action)
+        WHERE a.ticket=1`,
+    ),
+    undefined,
+  );
+  for (const column of [
+    "attempt",
+    "resolution",
+    "effect_position",
+    "action_version",
+    "required_capability",
+    "reason",
+  ]) {
+    const refusal = await harness.attemptAs(
+      apiRole,
+      `SELECT ${column} FROM native_action`,
+    );
+    assert.match(refusal ?? "", postgresHarnessDenial("native_action"));
+  }
+  assert.deepEqual(
+    await harness.query(
+      `SELECT table_name, privilege_type,
+              string_agg(column_name, ',' ORDER BY column_name) AS columns
+         FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_schema='public'
+          AND table_name IN ('native_action','native_action_resolution')
+        GROUP BY table_name, privilege_type
+        ORDER BY table_name, privilege_type`,
+      [apiRole],
+    ),
+    [
+      {
+        table_name: "native_action",
+        privilege_type: "SELECT",
+        columns: "action,authorizing_seq,kind,project,state,tenant,ticket",
+      },
+      {
+        table_name: "native_action_resolution",
+        privilege_type: "SELECT",
+        columns: "action,project,resolution,tenant",
+      },
+    ],
+  );
+});
+
 test("the scheduler cannot write ticket state or append history", async () => {
   for (const [statement, object] of [
     ["INSERT INTO journal_entry DEFAULT VALUES", "journal_entry"],

@@ -14,11 +14,13 @@ import type {
 import type { DispatchViewPage } from "../../interpreter/dispatchView.ts";
 import type {
   AuthorizedResult,
+  NativeActionPage,
   NativeCancellation,
   NativeSubmissionResult,
   OperationResource,
   ProjectInventoryPage,
   ProjectRead,
+  TicketNativeAction,
   TicketResource,
 } from "../../interpreter/nativeWeb.ts";
 import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
@@ -40,6 +42,7 @@ import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
 import {
   encodeConfigurationCursor,
   encodeInventoryCursor,
+  encodeNativeActionCursor,
   encodeTicketActivityCursor,
 } from "./contract.ts";
 import {
@@ -251,6 +254,34 @@ export function ticketResponse(
   return resource === undefined
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, resource);
+}
+
+/** A ticket nobody may read and a ticket that does not exist answer alike. */
+export function ticketNativeActionsResponse(
+  actions: readonly TicketNativeAction[] | undefined,
+): NativeHttpResponse {
+  return actions === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { actions });
+}
+
+export function nativeActionsResponse(
+  partition: Partition,
+  result: AuthorizedResult<NativeActionPage>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        actions: result.value.actions,
+        ...(result.value.nextAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeNativeActionCursor(
+                partition,
+                result.value.nextAfter,
+              ),
+            }),
+      });
 }
 
 export function operationalStatusResponse(

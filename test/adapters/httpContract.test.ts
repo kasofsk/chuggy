@@ -11,8 +11,10 @@ import {
   encodeConfigurationCursor,
   parseConfigurationCursor,
   encodeInventoryCursor,
+  encodeNativeActionCursor,
   encodeTicketActivityCursor,
   parseInventoryCursor,
+  parseNativeActionCursor,
   parseTicketActivityCursor,
   parseConfigurationCreation,
   parseRepositoryConfigurationImport,
@@ -204,6 +206,18 @@ test("ticket activity cursors bind the composite position to one project", () =>
     parseTicketActivityCursor(cursor, parsePartition("tenant", "other")),
   );
   assert.throws(() => parseTicketActivityCursor(`${cursor}=`, partition));
+});
+
+test("native action cursors bind the fence and its tie-breaker to one project", () => {
+  const partition = parsePartition("tenant", "project");
+  const position = { authorizingSequence: 7, action: "escalation" };
+  const cursor = encodeNativeActionCursor(partition, position);
+  assert.deepEqual(parseNativeActionCursor(cursor, partition), position);
+  assert.throws(() =>
+    parseNativeActionCursor(cursor, parsePartition("tenant", "other")),
+  );
+  assert.throws(() => parseNativeActionCursor(`${cursor}=`, partition));
+  assert.throws(() => parseNativeActionCursor("not-json", partition));
 });
 
 test("a purpose-specific mutation becomes its one application command", () => {

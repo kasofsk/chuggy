@@ -71,7 +71,10 @@ import {
   allNativeActionResolutions,
   nativeActionResolutions as interpretedNativeActionResolutions,
 } from "../../src/interpreter/ticketCommand.ts";
-import { projectPageLimitMax } from "../../src/interpreter/nativeWeb.ts";
+import {
+  nativeActionPageLimitMax,
+  projectPageLimitMax,
+} from "../../src/interpreter/nativeWeb.ts";
 import type { OperationRefusalCode } from "../../src/interpreter/nativeWeb.ts";
 import {
   executionPageLimitMax,
@@ -161,6 +164,7 @@ test("one page bound serves every collection route", () => {
   assert.equal(nativeHttpPageItemsMax, executionPageLimitMax);
   assert.equal(nativeHttpPageItemsMax, notificationPageLimitMax);
   assert.equal(nativeHttpPageItemsMax, dispatchViewPageLimitMax);
+  assert.equal(nativeHttpPageItemsMax, nativeActionPageLimitMax);
 });
 
 test("the rosters with no runtime list are exhaustive over their unions", () => {

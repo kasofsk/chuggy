@@ -64,6 +64,8 @@ type ServedWeb = Pick<
   | "cancel"
   | "configuration"
   | "configurations"
+  | "ticketNativeActions"
+  | "nativeActions"
   | "createConfiguration"
   | "importRepositoryConfigurations"
   | "createDraft"
@@ -90,6 +92,8 @@ function servedWeb(readable: boolean): ServedWeb {
     cancel: notFound,
     configuration: () => Promise.resolve(undefined),
     configurations: notFound,
+    ticketNativeActions: () => Promise.resolve(undefined),
+    nativeActions: notFound,
     createConfiguration: notFound,
     importRepositoryConfigurations: notFound,
     createDraft: notFound,

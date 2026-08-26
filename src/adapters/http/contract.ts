@@ -32,7 +32,10 @@ import {
   type ConfigurationRevisionId,
 } from "../../interpreter/authoring.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
-import type { TicketActivityPosition } from "../../interpreter/nativeWeb.ts";
+import type {
+  NativeActionPosition,
+  TicketActivityPosition,
+} from "../../interpreter/nativeWeb.ts";
 import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
 import {
   asIdempotencyKey,
@@ -78,6 +81,14 @@ const ticketActivityCursorSchema = z.strictObject({
   project: z.string(),
   sequence: z.number().int().safe().nonnegative(),
   ticket: z.number().int().safe().positive(),
+});
+
+const nativeActionCursorSchema = z.strictObject({
+  version: z.literal(nativeHttpVersion),
+  tenant: z.string(),
+  project: z.string(),
+  authorizingSequence: z.number().int().safe().positive(),
+  action: z.string().min(1),
 });
 
 export interface ParsedConfigurationCreation {
@@ -172,15 +183,27 @@ export function encodeTicketActivityCursor(
   ).toString("base64url");
 }
 
+/**
+ * A cursor's payload, decoded from the base64url JSON every cursor is written
+ * as. A value that is neither leaves here as the `RangeError` the error handler
+ * already reads as the caller's fault, rather than as the `SyntaxError`
+ * `JSON.parse` raises and no handler can tell from a corrupt stored document.
+ */
+function decodedCursor(value: string, what: string): unknown {
+  if (value.length === 0 || value.length > nativeHttpCursorCharsMax)
+    throw new RangeError(`${what} cursor is empty or too long`);
+  try {
+    return JSON.parse(Buffer.from(value, "base64url").toString());
+  } catch (cause) {
+    throw new RangeError(`${what} cursor is not base64url JSON`, { cause });
+  }
+}
+
 export function parseTicketActivityCursor(
   value: string,
   expected: Partition,
 ): TicketActivityPosition {
-  if (value.length === 0 || value.length > nativeHttpCursorCharsMax)
-    throw new RangeError("ticket activity cursor is empty or too long");
-  const decoded: unknown = JSON.parse(
-    Buffer.from(value, "base64url").toString(),
-  );
+  const decoded: unknown = decodedCursor(value, "ticket activity");
   const cursor = ticketActivityCursorSchema.parse(decoded);
   const partition = parsePartition(cursor.tenant, cursor.project);
   if (
@@ -194,6 +217,42 @@ export function parseTicketActivityCursor(
   };
   if (encodeTicketActivityCursor(partition, parsed) !== value)
     throw new RangeError("ticket activity cursor is not canonically encoded");
+  return parsed;
+}
+
+export function encodeNativeActionCursor(
+  partition: Partition,
+  cursor: NativeActionPosition,
+): string {
+  return Buffer.from(
+    JSON.stringify({
+      version: nativeHttpVersion,
+      tenant: partition.tenant,
+      project: partition.project,
+      authorizingSequence: cursor.authorizingSequence,
+      action: cursor.action,
+    }),
+  ).toString("base64url");
+}
+
+export function parseNativeActionCursor(
+  value: string,
+  expected: Partition,
+): NativeActionPosition {
+  const decoded: unknown = decodedCursor(value, "native action");
+  const cursor = nativeActionCursorSchema.parse(decoded);
+  const partition = parsePartition(cursor.tenant, cursor.project);
+  if (
+    partition.tenant !== expected.tenant ||
+    partition.project !== expected.project
+  )
+    throw new RangeError("native action cursor belongs to another project");
+  const parsed = {
+    authorizingSequence: cursor.authorizingSequence,
+    action: cursor.action,
+  };
+  if (encodeNativeActionCursor(partition, parsed) !== value)
+    throw new RangeError("native action cursor is not canonically encoded");
   return parsed;
 }
 
@@ -216,11 +275,7 @@ export function parseConfigurationCursor(
   value: string,
   expected: Partition,
 ): ConfigurationPageCursor {
-  if (value.length === 0 || value.length > nativeHttpCursorCharsMax)
-    throw new RangeError("configuration cursor is empty or too long");
-  const decoded: unknown = JSON.parse(
-    Buffer.from(value, "base64url").toString(),
-  );
+  const decoded: unknown = decodedCursor(value, "configuration");
   const cursor = configurationCursorSchema.parse(decoded);
   const partition = parsePartition(cursor.tenant, cursor.project);
   if (
@@ -248,11 +303,7 @@ export function encodeInventoryCursor(partition: Partition): string {
 }
 
 export function parseInventoryCursor(value: string): Partition {
-  if (value.length === 0 || value.length > nativeHttpCursorCharsMax)
-    throw new RangeError("inventory cursor is empty or too long");
-  const decoded: unknown = JSON.parse(
-    Buffer.from(value, "base64url").toString(),
-  );
+  const decoded: unknown = decodedCursor(value, "inventory");
   const cursor = inventoryCursorSchema.parse(decoded);
   const partition = parsePartition(cursor.tenant, cursor.project);
   if (encodeInventoryCursor(partition) !== value)
