@@ -302,7 +302,13 @@ export function ProjectTable(): ReactNode {
       </div>
       {executions.state === "Failed" ? (
         <p className="panel-failed">
-          what each ticket is running could not be read — {executions.reason}
+          what each ticket ran could not be read — {executions.reason}
+        </p>
+      ) : null}
+      {executions.state === "Ready" && index.truncated ? (
+        <p className="panel-absent">
+          the index of what each ticket ran was truncated at its page budget, so
+          the rows it did not reach say “not read” rather than nothing
         </p>
       ) : null}
       {partialFailure === undefined ? null : (
