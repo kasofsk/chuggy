@@ -3,7 +3,25 @@ import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresInstallationAuthority } from "../adapters/postgres/installationAuthority.ts";
 import { postgresProjectAccess } from "../adapters/postgres/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerContext.ts";
-import { createNativeHttpApp } from "../adapters/http/server.ts";
+import {
+  createNativeHttpApp,
+  nativeHttpLimitsDefault,
+} from "../adapters/http/server.ts";
+import { projectResourceReader } from "../adapters/http/eventStream.ts";
+import {
+  postgresProjectChangeDoorbell,
+  postgresProjectChangeLog,
+} from "../adapters/postgres/projectChangeLog.ts";
+import { systemStreamTimers } from "../adapters/runtime/systemStreamTimers.ts";
+import {
+  projectStreamHub,
+  projectStreamLimitsDefault,
+  type ProjectStreamHub,
+  type ProjectStreamLimits,
+  type ProjectStreamNote,
+  type ProjectStreamReport,
+} from "../interpreter/projectStream.ts";
+import { assertNever } from "../domain/assertNever.ts";
 import {
   oidcAuthentication,
   type OidcAuthenticationConfig,
@@ -207,6 +225,99 @@ function repositoryConfigurationSnapshots() {
   });
 }
 
+function streamNoteText(note: ProjectStreamNote): string {
+  const totals = `streams=${String(note.streamsOpen)} rows=${String(note.rowsRead)}`;
+  switch (note.note) {
+    case "Sourced":
+      return `source is ${note.state}, ${totals}`;
+    case "Refused":
+      return `refused a stream at capacity, ${totals}`;
+    case "SlowClientClosed":
+      return `closed a stream that stopped reading, ${totals}`;
+    case "Swept":
+      return `swept ${String(note.removed)} change rows, ${totals}`;
+    case "ReadFailed":
+      return `the change log read failed: ${note.failure}, ${totals}`;
+    default:
+      return assertNever(note);
+  }
+}
+
+/** The stream hub reports where the rest of this root does: the process's own error stream. */
+const nativeStreamReport: ProjectStreamReport = {
+  noted: (note) => {
+    process.stderr.write(`project stream: ${streamNoteText(note)}\n`);
+  },
+};
+
+function nativeStreamLimits(): ProjectStreamLimits {
+  return {
+    ...projectStreamLimitsDefault,
+    connectionsMax: positiveEnvironment(
+      "CHUG_API_STREAM_CONNECTIONS_MAX",
+      projectStreamLimitsDefault.connectionsMax,
+    ),
+    maxAgeMs: positiveEnvironment(
+      "CHUG_API_STREAM_MAX_AGE_MS",
+      projectStreamLimitsDefault.maxAgeMs,
+    ),
+    heartbeatMs: positiveEnvironment(
+      "CHUG_API_STREAM_HEARTBEAT_MS",
+      projectStreamLimitsDefault.heartbeatMs,
+    ),
+    sweepMs: positiveEnvironment(
+      "CHUG_API_STREAM_SWEEP_MS",
+      projectStreamLimitsDefault.sweepMs,
+    ),
+    sweepRowsMax: positiveEnvironment(
+      "CHUG_API_STREAM_SWEEP_ROWS_MAX",
+      projectStreamLimitsDefault.sweepRowsMax,
+    ),
+  };
+}
+
+function nativeStreamHub(
+  pool: ReturnType<typeof postgresPool>,
+  web: Parameters<typeof projectResourceReader>[0],
+): ProjectStreamHub {
+  return projectStreamHub({
+    log: postgresProjectChangeLog(pool),
+    doorbell: postgresProjectChangeDoorbell(
+      requiredEnvironment(databaseUrlVariable),
+    ),
+    reader: projectResourceReader(web),
+    timers: systemStreamTimers,
+    report: nativeStreamReport,
+    limits: nativeStreamLimits(),
+  });
+}
+
+/**
+ * Ends every stream before the drain begins, because a stream is a response
+ * that never finishes and a drain that waited for one would wait out its
+ * deadline.
+ */
+function nativeShutdown(
+  app: ReturnType<typeof createNativeHttpApp>,
+  hub: ProjectStreamHub,
+  drainMs: number,
+): () => Promise<void> {
+  let started = false;
+  return async () => {
+    if (started) return;
+    started = true;
+    await hub.close();
+    const force = setTimeout(() => {
+      app.server.closeAllConnections();
+    }, drainMs);
+    try {
+      await app.close();
+    } finally {
+      clearTimeout(force);
+    }
+  };
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
@@ -241,27 +352,24 @@ async function main(): Promise<void> {
     selectorContextSource(pool, selectorReviewPool),
     repositoryConfigurationSnapshots(),
   );
+  const hub = nativeStreamHub(pool, web);
   const app = createNativeHttpApp(
     web,
     authentication,
     nativeReadiness(pool, selectorReviewPool),
     postgresInstallationAuthority(pool),
+    nativeHttpLimitsDefault,
+    hub,
   );
-  app.addHook("onClose", () => closePools(pool, selectorReviewPool));
-  const drainMs = positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000);
-  let shutdownStarted = false;
-  const shutdown = async (): Promise<void> => {
-    if (shutdownStarted) return;
-    shutdownStarted = true;
-    const force = setTimeout(() => {
-      app.server.closeAllConnections();
-    }, drainMs);
-    try {
-      await app.close();
-    } finally {
-      clearTimeout(force);
-    }
-  };
+  app.addHook("onClose", async () => {
+    await hub.close();
+    await closePools(pool, selectorReviewPool);
+  });
+  const shutdown = nativeShutdown(
+    app,
+    hub,
+    positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000),
+  );
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
       void shutdown().catch((failure: unknown) => {

@@ -39,6 +39,7 @@ test("the golden is the document and not an empty stand-in", () => {
     "draft",
     "draftInitialization",
     "drafts",
+    "events",
     "execution",
     "executions",
     "installation",

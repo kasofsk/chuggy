@@ -43,6 +43,7 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/operations",
     "/api/v1/tenants/:tenant/projects/:project/operations/:operation",
     "/api/v1/tenants/:tenant/projects/:project/notifications",
+    "/api/v1/tenants/:tenant/projects/:project/events",
     "/api/v1/tenants/:tenant/projects/:project/configurations",
     "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
     "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
@@ -57,10 +58,12 @@ test("the frontend contract is generated from the checked request schemas", () =
   const document = nativeHttpContractDocument() as {
     schemas: { publicMutation: { oneOf: unknown[] } };
     notifications: string;
+    events: string;
     caching: string;
   };
   assert.ok(document.schemas.publicMutation.oneOf.length > 0);
   assert.equal(document.notifications, "bounded-polling");
+  assert.equal(document.events, "sse");
   assert.equal(document.caching, "no-store");
 });
 

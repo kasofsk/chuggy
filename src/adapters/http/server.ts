@@ -16,6 +16,11 @@ import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import { asExecutionId } from "../../interpreter/schedulerIdentity.ts";
 import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
+import type {
+  ProjectStream,
+  ProjectStreamHub,
+} from "../../interpreter/projectStream.ts";
+import { projectStreamSocket } from "./eventStream.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
   nativeHttpBodyBytesMax,
@@ -52,6 +57,7 @@ import {
   notificationsResponse,
   operationResponse,
   projectResponse,
+  projectEntryResponse,
   ticketResponse,
   executionResponse,
   executionsResponse,
@@ -62,8 +68,14 @@ import {
   type NativeHttpResponse,
 } from "./outcomes.ts";
 
+/** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
+export interface AuthenticatedBearer {
+  readonly principal: Principal;
+  readonly expiresAtMs?: number | undefined;
+}
+
 export interface PrincipalAuthentication {
-  authenticateBearer(token: string): Promise<Principal | undefined>;
+  authenticateBearer(token: string): Promise<AuthenticatedBearer | undefined>;
 }
 
 export interface NativeHttpReadiness {
@@ -191,10 +203,12 @@ function principalOf(request: FastifyRequest): Principal {
 declare module "fastify" {
   interface FastifyContextConfig {
     public?: boolean;
+    streaming?: boolean;
   }
 
   interface FastifyRequest {
     principal?: Principal;
+    bearerExpiresAtMs?: number;
   }
 }
 
@@ -203,14 +217,15 @@ function registerAuthentication(
   authentication: PrincipalAuthentication,
 ): void {
   app.decorateRequest("principal");
+  app.decorateRequest("bearerExpiresAtMs");
   app.addHook("preHandler", async (request, reply) => {
     if (request.routeOptions.config.public === true) return;
     const token = bearer(request.headers.authorization);
-    const principal =
+    const bearerHolder =
       token === undefined
         ? undefined
         : await authentication.authenticateBearer(token).catch(() => undefined);
-    if (principal === undefined) {
+    if (bearerHolder === undefined) {
       void reply.header("www-authenticate", "Bearer");
       await reply
         .code(401)
@@ -220,7 +235,9 @@ function registerAuthentication(
         );
       return reply;
     }
-    request.principal = principal;
+    request.principal = bearerHolder.principal;
+    if (bearerHolder.expiresAtMs !== undefined)
+      request.bearerExpiresAtMs = bearerHolder.expiresAtMs;
   });
 }
 
@@ -232,6 +249,7 @@ function registerCapacity(app: FastifyInstance, requestsMax: number): void {
     return Promise.resolve();
   };
   app.addHook("onRequest", async (request, reply) => {
+    if (request.routeOptions.config.streaming === true) return;
     if (active >= requestsMax) {
       await reply
         .code(503)
@@ -731,12 +749,86 @@ function registerNotifications(
   );
 }
 
+/** Where a reconnecting stream says it got to, by header or by the fetch client's query. */
+function streamCursor(request: FastifyRequest): number | undefined {
+  const query = fieldsOnly(request.query, ["after"]);
+  if (query["after"] !== undefined) return integerField(query, "after");
+  const header = request.headers["last-event-id"];
+  if (header === undefined) return undefined;
+  if (typeof header !== "string")
+    throw new TypeError("last event id is not text");
+  return integerField({ "last-event-id": header }, "last-event-id");
+}
+
+/**
+ * Nothing here is hijacked until the stream has read everything it opens with,
+ * because a refusal that had already sent a head would be a refusal a browser
+ * reads as a stream. The socket may go away during those reads, so the handler
+ * that gives the slot back is attached before they begin.
+ */
+async function serveProjectEvents(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  web: InitialNativeWeb,
+  hub: ProjectStreamHub,
+): Promise<void> {
+  const partition = partitionOf(request);
+  const principal = principalOf(request);
+  const after = streamCursor(request);
+  const standing = await web.project(principal, partition, { limit: 1 });
+  if (standing.result !== "Found") {
+    send(reply, projectEntryResponse(standing));
+    return;
+  }
+  const watching: { stream?: ProjectStream; abandoned: boolean } = {
+    abandoned: false,
+  };
+  request.raw.on("close", () => {
+    watching.abandoned = true;
+    watching.stream?.close();
+  });
+  const opened = await hub.open({
+    partition,
+    principal,
+    after,
+    expiresAtMs: request.bearerExpiresAtMs,
+  });
+  if (opened.opened === "AtCapacity") {
+    await reply
+      .code(503)
+      .header("retry-after", "1")
+      .type(nativeHttpMediaType)
+      .send(nativeHttpError("ServerBusy", "The server is at capacity."));
+    return;
+  }
+  watching.stream = opened.stream;
+  if (watching.abandoned) {
+    opened.stream.close();
+    return;
+  }
+  reply.hijack();
+  opened.stream.begin(projectStreamSocket(reply));
+}
+
+function registerProjectEvents(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  hub: ProjectStreamHub,
+): void {
+  app.get(
+    "/api/v1/tenants/:tenant/projects/:project/events",
+    { config: { streaming: true } },
+    (request, reply) => serveProjectEvents(request, reply, web, hub),
+  );
+}
+
 export function createNativeHttpApp(
   web: InitialNativeWeb,
   authentication: PrincipalAuthentication,
   readiness: NativeHttpReadiness,
   authority: InstallationAuthorityRead,
   limits: NativeHttpLimits = nativeHttpLimitsDefault,
+  hub?: ProjectStreamHub,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -766,6 +858,7 @@ export function createNativeHttpApp(
   registerSelectorContext(app, web);
   registerOperations(app, web);
   registerNotifications(app, web);
+  if (hub !== undefined) registerProjectEvents(app, web, hub);
   registerConfigurations(app, web);
   registerDrafts(app, web);
   registerDispatchView(app, web);
