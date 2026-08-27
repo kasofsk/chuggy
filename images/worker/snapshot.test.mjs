@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import test from "node:test";
+
+import { credentialScrub } from "./runEvidence.mjs";
 
 import {
   configurationCandidates,
   runConfigurationBytesMax,
   runConfigurationDigestBytesMax,
+  runConfigurationFilesMax,
   runConfigurationFileBytesMax,
   runConfigurationSnapshot,
   runConfigurationWalkDepthMax,
@@ -165,6 +169,96 @@ test("a file past the per-file bound is truncated and keeps its whole digest", a
   assert.equal(snapshot.files[0].truncated, true);
   assert.equal(snapshot.files[0].bytes, oversized.length);
   assert.equal(snapshot.files[0].content.length, runConfigurationFileBytesMax);
+  assert.equal(
+    snapshot.files[0].digest,
+    createHash("sha256").update(oversized).digest("hex"),
+    "the digest is a reference to the file, not to the excerpt kept",
+  );
+});
+
+test("the argv and the init event are scrubbed before they are uploaded", async () => {
+  const secret = "sk-ant-oat01-0123456789abcdefghijklmnop";
+  const bytes = await runConfigurationSnapshot(
+    {
+      argv: ["-p", `briefing quoting ${secret}`],
+      init: { claude_code_version: "2.1.247", apiKeySource: secret },
+      cwd: undefined,
+      home: undefined,
+      scrub: credentialScrub([secret]),
+    },
+    fakeTree({}),
+  );
+  const snapshot = JSON.parse(bytes.toString("utf8"));
+
+  assert.ok(!bytes.toString("utf8").includes(secret));
+  assert.equal(snapshot.argv[1], "briefing quoting [redacted credential]");
+  assert.equal(snapshot.init.apiKeySource, "[redacted credential]");
+});
+
+test("an argv too large to carry is referenced by a digest of the argv itself", async () => {
+  const argv = [
+    "-p",
+    "a".repeat(runConfigurationBytesMax),
+    "b".repeat(runConfigurationBytesMax),
+  ];
+  const bytes = await runConfigurationSnapshot(
+    {
+      argv,
+      init: { claude_code_version: "2.1.247" },
+      cwd: undefined,
+      home: undefined,
+      scrub: (text) => text,
+    },
+    fakeTree({}),
+  );
+  const snapshot = JSON.parse(bytes.toString("utf8"));
+
+  assert.deepEqual(snapshot.argv, []);
+  assert.equal(
+    snapshot.argvTruncated.chuggy_truncated.digest,
+    createHash("sha256").update(JSON.stringify(argv)).digest("hex"),
+    "the reference has to survive the element boundaries it stands for",
+  );
+});
+
+test("a dropped list too long for the cap cannot push the body over it", async () => {
+  const packed = {};
+  const memory = [];
+  for (let index = 0; index < 4; index += 1) {
+    const path = `/memory/packed/${String(index)}/CLAUDE.md`;
+    packed[path] = "y".repeat(260_000);
+    memory.push(path);
+  }
+  for (let index = 4; index < runConfigurationFilesMax; index += 1)
+    memory.push(`/memory/huge/${String(index)}/CLAUDE.md`);
+  const services = {
+    readdir: async () => {
+      throw new Error("no directory");
+    },
+    stat: async (path) => ({
+      size: packed[path]?.length ?? runConfigurationDigestBytesMax + 1,
+      isFile: () => true,
+    }),
+    readFile: async (path) => Buffer.from(packed[path] ?? ""),
+  };
+  const bytes = await runConfigurationSnapshot(
+    {
+      argv: [],
+      init: { memory_paths: memory },
+      cwd: undefined,
+      home: undefined,
+      scrub: (text) => text,
+    },
+    services,
+  );
+  const snapshot = JSON.parse(bytes.toString("utf8"));
+
+  assert.ok(
+    bytes.byteLength <= runConfigurationBytesMax,
+    `snapshot was ${String(bytes.byteLength)} bytes against a cap of ${String(runConfigurationBytesMax)}`,
+  );
+  assert.ok(snapshot.files.length > 0);
+  assert.ok(snapshot.dropped.length > 0);
 });
 
 test("a file too large to digest is named by its size alone", async () => {

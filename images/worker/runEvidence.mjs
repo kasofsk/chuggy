@@ -63,7 +63,9 @@ const runTurnPagesMax = Math.ceil(runTurnSeriesMax / runPageItemsMax);
 
 /**
  * The scrub every uploaded byte passes through, replacing exact occurrences of
- * the credential values the worker was handed.
+ * the credential values the worker was handed. It matches a value as written,
+ * so one carrying a quote, a backslash or a newline is replaced in raw text but
+ * not where JSON has escaped it.
  */
 export function credentialScrub(secrets) {
   const values = [...new Set(secrets)]
@@ -174,9 +176,10 @@ function streamTokens(usage) {
 
 /**
  * One assistant turn's usage, or nothing when the event is not a turn the
- * runtime charged for.
+ * runtime charged for. It carries no instant: the plane dates the row it
+ * stores, and a worker clock is no authority on when a row was stored.
  */
-export function runTurn(event, ordinal, recordedAt) {
+export function runTurn(event, ordinal) {
   const model = event?.message?.model;
   if (event?.type !== "assistant" || typeof model !== "string")
     return undefined;
@@ -184,7 +187,6 @@ export function runTurn(event, ordinal, recordedAt) {
     ordinal,
     model: model.slice(0, runModelCharsMax),
     ...streamTokens(event.message.usage),
-    recordedAt,
   };
 }
 
@@ -266,8 +268,9 @@ export function runTotals(result, turns) {
 }
 
 /**
- * Which of the plane's run-ended labels this failure was, reading the runtime's
- * own account of the run before the worker's account of the plane.
+ * Which of the plane's run-ended labels this failure was. A run the runtime
+ * accounted for is labelled by that account, so a refused upload names the end
+ * only of a run nothing else speaks for.
  */
 export function endedEvidence(result, planeRefused) {
   const subtype = typeof result?.subtype === "string" ? result.subtype : "";
@@ -276,6 +279,7 @@ export function endedEvidence(result, planeRefused) {
   if (subtype === turnsExhaustedSubtype) return "RunTurnsExhausted";
   if (subtype.includes(rateLimitLabel) || stopReason.includes(rateLimitLabel))
     return "RunRateLimited";
+  if (result !== null && result !== undefined) return "RunFailed";
   return planeRefused === true ? "RunUploadRefused" : "RunFailed";
 }
 
@@ -287,15 +291,16 @@ function turnsTruncationLine(turns) {
   return JSON.stringify({ type: "chuggy_turns_truncated", turns });
 }
 
-function evidenceState(scrub, now) {
+function evidenceState(scrub) {
   return {
     scrub,
-    now,
     lines: [],
     bufferedBytes: 0,
     nextBatch: 1,
     stopped: false,
-    refused: false,
+    transcriptRefused: false,
+    planeRefused: false,
+    acknowledged: 0,
     ordinal: 0,
     turns: [],
     pending: [],
@@ -320,14 +325,24 @@ function wouldExceedBatch(state, text) {
 
 function foldTurn(state, event) {
   if (state.ordinal >= runTurnSeriesMax) return undefined;
-  const turn = runTurn(event, state.ordinal + 1, state.now().toISOString());
+  const turn = runTurn(event, state.ordinal + 1);
   if (turn === undefined) return undefined;
   state.ordinal += 1;
   state.turns.push(turn);
-  if (!state.refused) state.pending.push(turn);
+  if (!state.transcriptRefused && state.ordinal > state.acknowledged)
+    state.pending.push(turn);
   return state.ordinal === runTurnSeriesMax
     ? turnsTruncationLine(runTurnSeriesMax)
     : undefined;
+}
+
+async function acknowledgedTurns(answer) {
+  if (typeof answer?.json !== "function") return 0;
+  try {
+    return count((await answer.json())?.turnsRecorded);
+  } catch {
+    return 0;
+  }
 }
 
 async function deliverTurns(state, call) {
@@ -337,12 +352,19 @@ async function deliverTurns(state, call) {
     page += 1
   ) {
     const rows = state.pending.slice(0, runPageItemsMax);
-    await call("/v1/run/turns", {
+    const answer = await call("/v1/run/turns", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ turns: rows }),
     });
-    state.pending = state.pending.slice(rows.length);
+    state.acknowledged = Math.max(
+      state.acknowledged,
+      await acknowledgedTurns(answer),
+      rows.at(-1).ordinal,
+    );
+    state.pending = state.pending.filter(
+      (turn) => turn.ordinal > state.acknowledged,
+    );
   }
 }
 
@@ -368,7 +390,7 @@ function failureText(failure) {
 }
 
 function refuse(state, warn, what, failure) {
-  state.refused = true;
+  state.planeRefused = true;
   warn(`${what} refused: ${failureText(failure)}\n`);
 }
 
@@ -377,6 +399,7 @@ async function flushOnce(state, call, warn) {
     await deliverTurns(state, call);
     await deliverBatch(state, call);
   } catch (failure) {
+    state.transcriptRefused = true;
     state.lines = [];
     state.bufferedBytes = 0;
     state.pending = [];
@@ -418,7 +441,7 @@ function evidenceUploads(state, call, warn, flush, done) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          evidence: endedEvidence(state.result, state.refused),
+          evidence: endedEvidence(state.result, state.planeRefused),
         }),
       });
     },
@@ -434,21 +457,20 @@ function evidenceUploads(state, call, warn, flush, done) {
 export function runEvidenceRecorder(task, bearer, scrub, services = {}) {
   const {
     request = workerRequest,
-    now = () => new Date(),
     setInterval: schedule = globalThis.setInterval,
     clearInterval: unschedule = globalThis.clearInterval,
     warn = (text) => process.stderr.write(text),
   } = services;
-  const state = evidenceState(scrub, now);
+  const state = evidenceState(scrub);
   const call = (path, init) => request(task, bearer, path, init);
   const flush = () => {
     state.flushing = state.flushing.then(() => flushOnce(state, call, warn));
     return state.flushing;
   };
   const append = async (text) => {
-    if (state.stopped || state.refused) return;
+    if (state.stopped || state.transcriptRefused) return;
     if (wouldExceedBatch(state, text)) await flush();
-    if (!state.stopped && !state.refused) appendLine(state, text);
+    if (!state.stopped && !state.transcriptRefused) appendLine(state, text);
   };
   const timer = schedule(flush, runTranscriptFlushMs);
   timer?.unref?.();

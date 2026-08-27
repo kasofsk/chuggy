@@ -183,13 +183,21 @@ async function workerWorkspace(task, repositories, credentialFiles, bearer) {
   return { repositoryId, repository, base, directory, environment };
 }
 
-async function diagnostic(task, bearer, result) {
-  const content = Buffer.from(`${JSON.stringify(result, null, 2)}\n`);
-  return upload(task, bearer, ".chuggy/claude-result.json", content);
+async function diagnostic(context, result) {
+  const content = Buffer.from(
+    context.scrub(`${JSON.stringify(result, null, 2)}\n`),
+  );
+  return upload(
+    context.task,
+    context.bearer,
+    ".chuggy/claude-result.json",
+    content,
+    context.request,
+  );
 }
 
-async function report(task, bearer, manifest) {
-  await workerRequest(task, bearer, "/v1/report", {
+async function report(context, manifest) {
+  await context.request(context.task, context.bearer, "/v1/report", {
     method: "POST",
     headers: { "content-type": "text/plain; charset=utf-8" },
     body: JSON.stringify(resultDocument(manifest)),
@@ -276,17 +284,11 @@ async function main() {
       scrub,
       evidence,
     });
-    await evidence.finish();
-    const source = await workSource(task, workspace, result.verdict);
-    const diagnostics = [await diagnostic(task, bearer, output)];
-    await stopLease();
-    await report(task, bearer, {
-      verdict: result.verdict,
-      report: scrub(reportSummary(result.summary)),
-      handoffs: [],
-      ...(source === undefined ? {} : { source }),
-      diagnostics,
-    });
+    await publishWorkerResult(
+      { task, bearer, evidence, scrub, stopLease, request: workerRequest },
+      workspace,
+      { output, result },
+    );
   } finally {
     evidence.stop();
     try {
@@ -298,12 +300,35 @@ async function main() {
 }
 
 /**
+ * What a finished run leaves behind, in the order it has to leave it: the run's
+ * totals reach the plane before the report that terminalizes the execution, so
+ * a settled task never carries figures nothing wrote.
+ */
+export async function publishWorkerResult(
+  context,
+  workspace,
+  { output, result },
+) {
+  await context.evidence.finish();
+  const source = await workSource(context.task, workspace, result.verdict);
+  const diagnostics = [await diagnostic(context, output)];
+  await context.stopLease();
+  await report(context, {
+    verdict: result.verdict,
+    report: context.scrub(reportSummary(result.summary)),
+    handoffs: [],
+    ...(source === undefined ? {} : { source }),
+    diagnostics,
+  });
+}
+
+/**
  * What a crashed run leaves behind: its figures, its error text, and the label
  * that ends the attempt. It reports no verdict, because a run that died is a
  * lost attempt and never a failed task.
  */
 export async function reportWorkerFailure(
-  { task, bearer, evidence, request = workerRequest },
+  { task, bearer, evidence, request = workerRequest, scrub = scrubbed },
   message,
 ) {
   await evidence?.finish();
@@ -312,7 +337,7 @@ export async function reportWorkerFailure(
       task,
       bearer,
       ".chuggy/worker-error.txt",
-      Buffer.from(`${message}\n`),
+      Buffer.from(scrub(`${message}\n`)),
       request,
     );
   } catch {
@@ -329,7 +354,12 @@ async function reportActiveFailure(failure) {
   if (activeTask !== undefined && activeBearer !== undefined) {
     try {
       await reportWorkerFailure(
-        { task: activeTask, bearer: activeBearer, evidence: activeEvidence },
+        {
+          task: activeTask,
+          bearer: activeBearer,
+          evidence: activeEvidence,
+          scrub: scrubbed,
+        },
         message,
       );
     } catch {

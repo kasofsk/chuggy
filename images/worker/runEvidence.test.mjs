@@ -19,23 +19,32 @@ import {
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
 const secret = "sk-ant-oat01-0123456789abcdefghijklmnopqrstuvwxyz";
 
-function harness(behaviour = () => undefined) {
+function harness(options = {}) {
   const calls = [];
   let ticked;
-  const recorder = runEvidenceRecorder(task, "bearer", (text) => text, {
-    request: async (_task, _bearer, path, init) => {
-      calls.push({ path, init });
-      behaviour(path);
-      return { ok: true, status: 204 };
+  const recorder = runEvidenceRecorder(
+    task,
+    "bearer",
+    options.scrub ?? ((text) => text),
+    {
+      request: async (_task, _bearer, path, init) => {
+        calls.push({ path, init });
+        options.behaviour?.(path);
+        if (path !== "/v1/run/turns") return { ok: true, status: 204 };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ turnsRecorded: options.turnsRecorded ?? 0 }),
+        };
+      },
+      setInterval: (callback) => {
+        ticked = callback;
+        return { unref: () => undefined };
+      },
+      clearInterval: () => undefined,
+      warn: () => undefined,
     },
-    now: () => new Date("2026-08-27T12:00:00.000Z"),
-    setInterval: (callback) => {
-      ticked = callback;
-      return { unref: () => undefined };
-    },
-    clearInterval: () => undefined,
-    warn: () => undefined,
-  });
+  );
   return { recorder, calls, tick: () => ticked() };
 }
 
@@ -158,7 +167,6 @@ test("a run that emitted no result event still states its totals", () => {
         cache_read_input_tokens: 8,
       }),
       1,
-      "2026-08-27T12:00:00.000Z",
     ),
     runTurn(
       assistantEvent("claude-opus-4", {
@@ -168,7 +176,6 @@ test("a run that emitted no result event still states its totals", () => {
         cache_read_input_tokens: 128,
       }),
       2,
-      "2026-08-27T12:00:01.000Z",
     ),
     runTurn(
       assistantEvent("claude-haiku-4", {
@@ -178,7 +185,6 @@ test("a run that emitted no result event still states its totals", () => {
         cache_read_input_tokens: 2_048,
       }),
       3,
-      "2026-08-27T12:00:02.000Z",
     ),
   ];
   const totals = runTotals(undefined, turns);
@@ -211,11 +217,8 @@ test("a run that emitted no result event still states its totals", () => {
 });
 
 test("an event that is not a charged turn folds to nothing", () => {
-  assert.equal(runTurn({ type: "system" }, 1, "now"), undefined);
-  assert.equal(
-    runTurn({ type: "assistant", message: {} }, 1, "now"),
-    undefined,
-  );
+  assert.equal(runTurn({ type: "system" }, 1), undefined);
+  assert.equal(runTurn({ type: "assistant", message: {} }, 1), undefined);
 });
 
 test("an interval that produced no bytes ships nothing", async () => {
@@ -246,8 +249,26 @@ test("turns are posted before the batch that covers them", async () => {
       tokensOutput: 2,
       tokensCacheCreation: 0,
       tokensCacheRead: 0,
-      recordedAt: "2026-08-27T12:00:00.000Z",
     },
+  ]);
+});
+
+test("a turn row carries what the plane takes and nothing besides", async () => {
+  const { recorder, calls, tick } = harness();
+  const event = assistantEvent("claude-opus-4", { input_tokens: 1 });
+  await recorder.record(JSON.stringify(event), event);
+  await tick();
+
+  const [row] = JSON.parse(
+    calls.find(({ path }) => path === "/v1/run/turns").init.body,
+  ).turns;
+  assert.deepEqual(Object.keys(row).sort(), [
+    "model",
+    "ordinal",
+    "tokensCacheCreation",
+    "tokensCacheRead",
+    "tokensInput",
+    "tokensOutput",
   ]);
 });
 
@@ -320,8 +341,10 @@ test("the turn series stops at its bound and the transcript says so", async () =
 });
 
 test("a refused evidence call stops the transcript and never fails the run", async () => {
-  const { recorder, calls, tick } = harness((path) => {
-    if (path.startsWith("/v1/run/tran")) throw new Error("plane refused");
+  const { recorder, calls, tick } = harness({
+    behaviour: (path) => {
+      if (path.startsWith("/v1/run/tran")) throw new Error("plane refused");
+    },
   });
   const event = assistantEvent("claude-opus-4", { input_tokens: 1 });
   const line = JSON.stringify(event);
@@ -356,6 +379,112 @@ test("a run that outlived its evidence still names the plane as the reason", () 
     endedEvidence({ subtype: "error_during_execution" }, false),
     "RunFailed",
   );
+});
+
+test("every transcript byte the worker ships has passed the scrub", async () => {
+  const { recorder, calls, tick } = harness({
+    scrub: credentialScrub([secret]),
+  });
+  const event = { type: "user", message: { content: `env printed ${secret}` } };
+  await recorder.record(JSON.stringify(event), event);
+  await tick();
+
+  const shipped = calls
+    .filter(({ path }) => path.startsWith("/v1/run/tran"))
+    .map(({ init }) => init.body.toString("utf8"))
+    .join("");
+  assert.ok(!shipped.includes(secret));
+  assert.ok(shipped.includes("[redacted credential]"));
+});
+
+test("a refused configuration does not stop the transcript it precedes", async () => {
+  const { recorder, calls, tick } = harness({
+    behaviour: (path) => {
+      if (path === "/v1/run/configuration") throw new Error("plane refused");
+    },
+  });
+  const event = assistantEvent("claude-opus-4", { input_tokens: 1 });
+  await recorder.configuration(Buffer.from("{}"));
+  await recorder.record(JSON.stringify(event), event);
+  await tick();
+
+  assert.deepEqual(
+    calls.map(({ path }) => path),
+    ["/v1/run/configuration", "/v1/run/turns", "/v1/run/transcript/1"],
+  );
+});
+
+test("a lost acknowledgement is resynced from the plane's own high-water", async () => {
+  const { recorder, calls, tick } = harness({ turnsRecorded: 3 });
+  const event = assistantEvent("claude-opus-4", { input_tokens: 1 });
+  const line = JSON.stringify(event);
+  await recorder.record(line, event);
+  await tick();
+  await recorder.record(line, event);
+  await recorder.record(line, event);
+  await tick();
+  await recorder.record(line, event);
+  await tick();
+
+  const posted = calls.filter(({ path }) => path === "/v1/run/turns");
+  assert.equal(posted.length, 2);
+  assert.deepEqual(
+    JSON.parse(posted[0].init.body).turns.map(({ ordinal }) => ordinal),
+    [1],
+  );
+  assert.deepEqual(
+    JSON.parse(posted[1].init.body).turns.map(({ ordinal }) => ordinal),
+    [4],
+  );
+});
+
+test("a run the runtime accounted for is not labelled by an earlier refusal", async () => {
+  const refuseTranscript = {
+    behaviour: (path) => {
+      if (path.startsWith("/v1/run/tran")) throw new Error("plane refused");
+    },
+  };
+  const first = harness(refuseTranscript);
+  await first.recorder.record(JSON.stringify({ type: "system" }), {
+    type: "system",
+  });
+  await first.tick();
+  first.recorder.observed({
+    type: "result",
+    subtype: "error_during_execution",
+  });
+  await first.recorder.ended();
+
+  const second = harness(refuseTranscript);
+  second.recorder.observed({
+    type: "result",
+    subtype: "error_during_execution",
+  });
+  await second.recorder.record(JSON.stringify({ type: "system" }), {
+    type: "system",
+  });
+  await second.tick();
+  await second.recorder.ended();
+
+  for (const { calls } of [first, second])
+    assert.equal(
+      JSON.parse(calls.at(-1).init.body).evidence,
+      "RunFailed",
+      "the runtime's own account of the run outranks a refused upload",
+    );
+});
+
+test("a run nothing else accounts for is labelled by the refusal", async () => {
+  const { recorder, calls, tick } = harness({
+    behaviour: (path) => {
+      if (path.startsWith("/v1/run/tran")) throw new Error("plane refused");
+    },
+  });
+  await recorder.record(JSON.stringify({ type: "system" }), { type: "system" });
+  await tick();
+  await recorder.ended();
+
+  assert.equal(JSON.parse(calls.at(-1).init.body).evidence, "RunUploadRefused");
 });
 
 test("the totals a run ends with are posted once", async () => {

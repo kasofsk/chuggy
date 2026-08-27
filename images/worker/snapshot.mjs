@@ -40,6 +40,7 @@ export const runConfigurationWalkEntriesMax = 20_000;
 const instructionNames = ["CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"];
 const walkSkippedNames = [".git", "node_modules"];
 const pluginManifestPath = [".claude-plugin", "plugin.json"];
+const listSeparatorBytes = 1;
 
 function digestOf(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -236,9 +237,13 @@ function snapshotFrame(argv, init, scrub) {
   if (frameBytes(frame) <= runConfigurationBytesMax) return frame;
   frame.init = truncationMarker(JSON.stringify(scrubbedInit));
   if (frameBytes(frame) <= runConfigurationBytesMax) return frame;
-  frame.argvTruncated = truncationMarker(frame.argv.join(" "));
+  frame.argvTruncated = truncationMarker(JSON.stringify(frame.argv));
   frame.argv = [];
   return frame;
+}
+
+function entryCost(entry) {
+  return frameBytes(entry) + listSeparatorBytes;
 }
 
 function droppedReference(entry) {
@@ -252,7 +257,8 @@ function droppedReference(entry) {
 
 /**
  * The snapshot as the bytes the worker uploads, with every file that did not
- * fit its cap listed by path, size and digest instead.
+ * fit listed by path, size and digest instead. Every entry it holds, kept or
+ * dropped, is charged against the cap, so the body it returns is never over it.
  */
 export async function runConfigurationSnapshot(
   { argv, init, task, cwd, home, scrub },
@@ -271,12 +277,18 @@ export async function runConfigurationSnapshot(
     const { file, dropped } = await candidateEntry(candidate, services, scrub);
     const entry = file ?? dropped;
     if (entry === undefined) continue;
-    const held =
-      file !== undefined && used + frameBytes(file) <= runConfigurationBytesMax
-        ? file
-        : droppedReference(entry);
-    (held === file ? snapshot.files : snapshot.dropped).push(held);
-    used += frameBytes(held);
+    if (
+      file !== undefined &&
+      used + entryCost(file) <= runConfigurationBytesMax
+    ) {
+      snapshot.files.push(file);
+      used += entryCost(file);
+      continue;
+    }
+    const reference = droppedReference(entry);
+    if (used + entryCost(reference) > runConfigurationBytesMax) continue;
+    snapshot.dropped.push(reference);
+    used += entryCost(reference);
   }
   return Buffer.from(JSON.stringify(snapshot));
 }
