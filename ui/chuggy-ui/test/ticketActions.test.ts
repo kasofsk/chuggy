@@ -14,7 +14,7 @@ import {
   phaseRoster,
 } from "../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../src/contract/rosters.ts";
-import { actionsFor } from "../app/core/ticketActions.ts";
+import { actionsFor, manualDispatchAction } from "../app/core/ticketActions.ts";
 
 const offeredBy: Readonly<Record<TicketPhase, readonly string[]>> = {
   Pending: ["Revoke"],
@@ -61,4 +61,47 @@ test("an escalation offers the same two answers whatever wall it hit", () => {
         (offer) => offer.action,
       ),
     ).toEqual(["Resume", "Revoke"]);
+});
+
+test("manual dispatch echoes only the candidate version the view supplied", () => {
+  const action = manualDispatchAction(7, {
+    result: "Page",
+    token: {
+      tenant: "acme",
+      project: "atlas",
+      recoveryEpoch: "epoch",
+      schemaVersion: 1,
+      watermark: 9,
+      digest: "a".repeat(64),
+    },
+    candidates: [
+      {
+        ticket: 7,
+        ticketVersion: 12,
+        dependencies: [],
+        workFanout: 1,
+        program: [],
+        reworkPolicy: { type: "BudgetedRework", value: 1 },
+        finalizationPricing: "DeadlineOnly",
+        resumePricing: "RetryFree",
+        finalizer: "NoFinalizer",
+        configurationRevision: "r1",
+        configurationDigest: "b".repeat(64),
+        configurationCanonical: "{}",
+      },
+    ],
+    notificationCursor: 3,
+  });
+  expect(action).toEqual({
+    action: "Dispatch",
+    mutation: {
+      mutation: "ManualDispatch",
+      ticket: 7,
+      expectedTicketVersion: 12,
+    },
+  });
+});
+
+test("manual dispatch is absent when the strict view does not offer the ticket", () => {
+  expect(manualDispatchAction(7, { result: "Reset" })).toBeUndefined();
 });

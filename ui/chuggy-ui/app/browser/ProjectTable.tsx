@@ -14,7 +14,6 @@
  * would take a reader's pages away on a timer. "More" appends one page to the
  * entry instead of reading them all again.
  *
- * There is no dispatch control here, deliberately: dispatch is the selector's.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -175,24 +174,26 @@ function TicketTable(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   return (
-    <table className="ticket-table">
-      <thead>
-        <tr>
-          <th scope="col">ticket</th>
-          <th scope="col">configuration</th>
-          <th scope="col">phase</th>
-          <th scope="col">why</th>
-          <th scope="col">execution</th>
-          <th scope="col">runs on</th>
-          <th scope="col">last activity</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.rows.map((row) => (
-          <TicketRow key={row.ticket} row={row} partition={props.partition} />
-        ))}
-      </tbody>
-    </table>
+    <div className="ticket-table-scroll">
+      <table className="ticket-table">
+        <thead>
+          <tr>
+            <th scope="col">ticket</th>
+            <th scope="col">configuration</th>
+            <th scope="col">phase</th>
+            <th scope="col">why</th>
+            <th scope="col">execution</th>
+            <th scope="col">runs on</th>
+            <th scope="col">last activity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((row) => (
+            <TicketRow key={row.ticket} row={row} partition={props.partition} />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

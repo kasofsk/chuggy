@@ -24,6 +24,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   TicketNativeActionsResponse,
   TicketResponse,
+  DispatchViewResponse,
 } from "../../../../src/contract/responses.ts";
 import { apiCancelOperation } from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
@@ -42,8 +43,15 @@ import {
   ticketConfirmed,
 } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
-import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
+import {
+  projectListKey,
+  projectResourceKey,
+} from "../core/projectQueryKeys.ts";
+import {
+  actionsFor,
+  manualDispatchAction,
+  ticketActionSentence,
+} from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { useApiPorts } from "./api.ts";
 import { Panel } from "./Panel.tsx";
@@ -183,6 +191,11 @@ function useSubmitting(
   const [cancelled, setCancelled] = useState<string | undefined>(undefined);
   const key = projectResourceKey(partition, "Ticket", String(ticket));
   const openKey = projectResourceKey(partition, "NativeAction", String(ticket));
+  const dispatchKey = projectListKey(
+    partition,
+    "Ticket",
+    `dispatch:${String(ticket)}`,
+  );
 
   const follow = async (action: TicketAction): Promise<void> => {
     setCancelled(undefined);
@@ -201,6 +214,7 @@ function useSubmitting(
     );
     if (controller.signal.aborted) return;
     void client.invalidateQueries({ queryKey: openKey, exact: true });
+    void client.invalidateQueries({ queryKey: dispatchKey, exact: true });
     const confirmed = followed.ticket;
     if (confirmed === undefined) return;
     client.setQueryData(key, (held: TicketResponse | undefined) =>
@@ -233,6 +247,7 @@ export function TicketActions(props: {
   readonly ticket: number;
   readonly state: PanelState<TicketResponse>;
   readonly openState: PanelState<TicketNativeActionsResponse>;
+  readonly dispatchState: PanelState<DispatchViewResponse>;
 }): ReactNode {
   const submitting = useSubmitting(props.partition, props.ticket);
   const step = submitting.attempt?.step;
@@ -241,17 +256,32 @@ export function TicketActions(props: {
     step !== undefined && step.step !== "Settled" && step.step !== "Abandoned";
   const open =
     props.openState.state === "Ready" ? props.openState.value.actions : [];
+  const dispatch =
+    props.dispatchState.state === "Ready"
+      ? manualDispatchAction(props.ticket, props.dispatchState.value)
+      : undefined;
   return (
     <Panel title="actions" state={props.state}>
       {(value) => (
         <div className="action-panel">
           <ActionButtons
             actions={
-              open.length === 0 ? actionsFor(value) : nativeActionsAnswers(open)
+              open.length === 0
+                ? [
+                    ...(dispatch === undefined ? [] : [dispatch]),
+                    ...actionsFor(value),
+                  ]
+                : nativeActionsAnswers(open)
             }
             busy={busy}
             onChoose={submitting.submit}
           />
+          {props.dispatchState.state === "Failed" ? (
+            <p className="panel-failed">
+              dispatch availability could not be read —{" "}
+              {props.dispatchState.reason}
+            </p>
+          ) : null}
           {step === undefined ? null : <StepNote step={step} />}
           {pending === undefined ? null : (
             <button

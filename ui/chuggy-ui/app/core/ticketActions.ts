@@ -14,6 +14,7 @@
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
+import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
 
 /** Settled, or past the point of no return: the complement of `revocableIn`. */
 export const ticketUnrevocablePhases: readonly TicketPhase[] = [
@@ -38,7 +39,13 @@ export const ticketResumablePhases: readonly TicketPhase[] = [
  * so that one component draws both.
  */
 export type TicketActionName =
-  "Resume" | "Revoke" | "Retry" | "Abandon" | "Approve" | "Decline";
+  | "Dispatch"
+  | "Resume"
+  | "Revoke"
+  | "Retry"
+  | "Abandon"
+  | "Approve"
+  | "Decline";
 
 export interface TicketAction {
   readonly action: TicketActionName;
@@ -69,9 +76,29 @@ export function actionsFor(ticket: TicketResponse): readonly TicketAction[] {
   return offered;
 }
 
+export function manualDispatchAction(
+  ticket: number,
+  view: DispatchViewResponse,
+): TicketAction | undefined {
+  if (view.result === "Reset") return undefined;
+  const candidate = view.candidates.find((entry) => entry.ticket === ticket);
+  return candidate === undefined
+    ? undefined
+    : {
+        action: "Dispatch",
+        mutation: {
+          mutation: "ManualDispatch",
+          ticket,
+          expectedTicketVersion: candidate.ticketVersion,
+        },
+      };
+}
+
 /** What the button says, and what answering it does to the ticket. */
 export function ticketActionSentence(action: TicketActionName): string {
   switch (action) {
+    case "Dispatch":
+      return "dispatch this ticket from the version the console observed";
     case "Resume":
       return "rejoin the pipeline at the point this ticket was parked at";
     case "Revoke":

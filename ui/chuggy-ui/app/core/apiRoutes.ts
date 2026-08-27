@@ -14,6 +14,7 @@ import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import {
   configurationResponseSchema,
   configurationsResponseSchema,
+  dispatchViewResponseSchema,
   draftInitializationResponseSchema,
   draftResponseSchema,
   executionResponseSchema,
@@ -34,6 +35,7 @@ import {
 import type {
   ConfigurationResponse,
   ConfigurationsResponse,
+  DispatchViewResponse,
   DraftInitializationResponse,
   DraftResponse,
   ExecutionResponse,
@@ -181,6 +183,18 @@ export function apiTicket(
 ): Promise<ApiResult<TicketResponse>> {
   return apiGet(ports, apiSegments(partition, "tickets", ticket), (value) =>
     ticketResponseSchema.parse(value),
+  );
+}
+
+export function apiDispatchView(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  page: { readonly after?: number; readonly limit?: number } = {},
+): Promise<ApiResult<DispatchViewResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "dispatch-view"), page),
+    (value) => dispatchViewResponseSchema.parse(value),
   );
 }
 

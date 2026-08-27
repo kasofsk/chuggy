@@ -11,6 +11,7 @@ import { expect, test } from "vitest";
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import {
   apiConfiguration,
+  apiDispatchView,
   apiExecutions,
   apiNativeActions,
   apiProject,
@@ -85,6 +86,14 @@ test("each resource hangs from its partition under its own segment", async () =>
   await apiTicket(held.ports, partition, 12);
   expect(held.urls[0]).toBe(
     `${nativeHttpBasePath}/tenants/acme/projects/at%20las/tickets/12`,
+  );
+});
+
+test("a dispatch read can address one ticket-sized candidate page", async () => {
+  const held = recording(() => ({ result: "Reset" }));
+  await apiDispatchView(held.ports, partition, { after: 11, limit: 1 });
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/dispatch-view?after=11&limit=1`,
   );
 });
 
