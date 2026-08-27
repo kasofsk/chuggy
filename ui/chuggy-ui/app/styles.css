@@ -111,6 +111,7 @@ select:hover {
 
 .shell-body {
   flex: 1;
+  min-width: 0;
   padding: var(--gap-wide);
   display: grid;
   gap: var(--gap-wide);
@@ -215,6 +216,11 @@ select:hover {
   width: 100%;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
+}
+
+.ticket-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .ticket-table th,
