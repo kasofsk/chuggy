@@ -60,6 +60,7 @@ import {
   type SelectorPlanning,
 } from "./interpreter/selectorPlanning.ts";
 import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
+import { postgresTicketBrief } from "./adapters/postgres/ticketBrief.ts";
 import {
   asFinalizationAttemptId,
   asInputBundleId,
@@ -192,9 +193,9 @@ function finalizerDigestOf(canonical: CanonicalFinalization): string {
 
 /**
  * Wires the finalizer's durable authority to its finalizer-role credentials, the
- * Git port its caller composes and one project-owned artifact store, which is
- * where a credential and a storage root are answered from and never the
- * environment.
+ * Git port its caller composes, the brief its target is narrowed by and one
+ * project-owned artifact store, which is where a credential and a storage root
+ * are answered from and never the environment.
  */
 export function composeFinalizerService(
   finalizerPool: pg.Pool,
@@ -209,6 +210,7 @@ export function composeFinalizerService(
   return {
     store: postgresFinalizer(finalizerPool),
     git: runtime.git,
+    ticketBriefs: postgresTicketBrief(finalizerPool),
     handoffs: artifacts,
     artifacts,
     identities: finalizerIdentities(),

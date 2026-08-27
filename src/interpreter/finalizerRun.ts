@@ -40,6 +40,14 @@
  * lapsed is not self-healing and nothing claimable can be drawn until those rows
  * say so again.
  *
+ * THE TICKET'S OWN BRANCH IS THE LAST WORD ON WHERE ITS WORK LANDS. The target
+ * is the project's binding narrowed by the configuration's handoff role and
+ * then by the branch the ticket's brief names, which is the same narrowing
+ * `./executionSourceObservation.ts` observes the work against — so a ticket
+ * whose work was based on its own branch is promoted onto that branch and never
+ * onto whatever the remote's default happens to hold. A publication is the one
+ * exception, its destination being a repository the ticket never worked in.
+ *
  * PREPARATION OBSERVES THE TARGET TWICE AND INTEGRATES AGAINST THE SECOND. The
  * candidate is the tree of the target the view observed with the verified
  * handoff artifacts standing in it, so integrating it against that same commit
@@ -112,6 +120,7 @@ import {
   type ObservedTarget,
   type RepositoryBinding,
   inputBundleReferencesMax,
+  repositoryBindingNarrowed,
 } from "./finalizer.ts";
 import {
   canonicalFinalizationAttempt,
@@ -135,11 +144,13 @@ import {
 } from "./finalizerTelemetry.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
+import type { TicketBriefPort } from "./ticketBrief.ts";
 
 /** Everything a finalizer pass calls out through, and the bounds it works within. */
 export interface FinalizerService {
   readonly store: FinalizerStore & FinalizerPreparationStore;
   readonly git: GitPromotionPort;
+  readonly ticketBriefs: TicketBriefPort;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
   readonly identities: FinalizerIdentityFactory;
@@ -330,6 +341,26 @@ async function finalizerReadHolds(
 }
 
 /**
+ * Where one finalization's work belongs: the binding, narrowed by the
+ * configuration's handoff role where the durable view carried one, and then by
+ * the ticket's own branch. A publication's destination is the request's own and
+ * is narrowed by nothing, because it names a repository the ticket never
+ * worked in.
+ */
+async function finalizerGatherTarget(
+  service: FinalizerService,
+  view: FinalizationView,
+  repository: RepositoryBinding,
+): Promise<RepositoryBinding> {
+  if (view.handoffRequest?.kind === "PublishHandoff") return repository;
+  const brief = await service.ticketBriefs.brief(
+    view.claim.partition,
+    view.claim.ticket,
+  );
+  return repositoryBindingNarrowed(repository, brief?.branch);
+}
+
+/**
  * Everything the pure pass reads, the remote's current target among it. The read
  * happens here so the decision that follows awaits nothing.
  */
@@ -339,9 +370,15 @@ async function finalizerGather(
 ): Promise<FinalizationView | undefined> {
   const durable = await service.store.durableView(claim);
   if (durable === undefined || durable.repository === undefined) return durable;
-  const observed = await service.git.observeTarget(durable.repository);
-  if (observed.observed !== "Target") return durable;
-  return { ...durable, observedTarget: observed.target };
+  const repository = await finalizerGatherTarget(
+    service,
+    durable,
+    durable.repository,
+  );
+  const observed = await service.git.observeTarget(repository);
+  const view: FinalizationView = { ...durable, repository };
+  if (observed.observed !== "Target") return view;
+  return { ...view, observedTarget: observed.target };
 }
 
 /** What the view's prepared attempt pinned, refusing a view no promotion could act on. */

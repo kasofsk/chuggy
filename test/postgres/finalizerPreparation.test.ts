@@ -40,6 +40,7 @@ import {
 import type { AttemptRecord } from "../../src/interpreter/finalizerPreparation.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
+  finalizerBriefBranch,
   finalizerClaim,
   finalizerCommit,
   finalizerDigest,
@@ -68,6 +69,7 @@ after(async () => {
 /** One attempt row as a case reads it back. */
 interface AttemptState {
   readonly attempt: string;
+  readonly target_ref: string;
   readonly target_commit: string;
   readonly candidate_commit: string | null;
   readonly outcome: string;
@@ -83,7 +85,7 @@ async function attemptsOf(
   project: FinalizerProject,
 ): Promise<readonly AttemptState[]> {
   return (await rig.as(
-    `SELECT attempt, target_commit, candidate_commit, outcome, failure_kind,
+    `SELECT attempt, target_ref, target_commit, candidate_commit, outcome, failure_kind,
             conflict_manifest, conflict_manifest_digest, approval_required,
             attempt_digest
        FROM finalization_attempt WHERE tenant=$1 AND project=$2
@@ -161,6 +163,60 @@ test("a clean preparation writes the candidate over the observed target and reco
   assert.deepEqual(
     (await bundleOf(project)).map((each) => each.reference_kind),
     ["Repository", "ConfigurationRevision", "ResultManifest"],
+  );
+});
+
+/** The branch the brief-bearing case names, which is no remote's default. */
+const briefBranch = "refs/heads/chuggy/footer-2026";
+
+test("a ticket whose brief names a branch is prepared and promoted there and never on the default", async () => {
+  const { project, remote } = await finalizerSubject(rig, "briefbranch", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  finalizerGitVerb(remote.origin, "branch", "chuggy/footer-2026", "main");
+  finalizerRemoteCommit(remote, "moved.txt", "moved\n", "moved");
+  await finalizerBriefBranch(
+    rig,
+    project.partition,
+    project.ticket,
+    briefBranch,
+  );
+  const port = finalizerRemotePort(rig);
+  const untouched = finalizerGitVerb(
+    remote.origin,
+    "rev-parse",
+    "refs/heads/main",
+  );
+
+  const report = await finalizerPassOnce(rig, project, port, "briefbranch");
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.holds, 0);
+  const written = (await attemptsOf(project))[0];
+  assert.equal(written?.outcome, "Prepared");
+  assert.equal(written?.target_ref, briefBranch);
+  assert.equal(
+    written?.target_commit,
+    finalizerGitVerb(remote.origin, "rev-parse", briefBranch),
+  );
+  assert.notEqual(written?.target_commit, untouched);
+
+  await finalizerExpireClaim(rig, project);
+  const promoted = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "briefbranch-on",
+  );
+
+  assert.equal(promoted.promotions, 1);
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", briefBranch),
+    written?.candidate_commit,
+  );
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    untouched,
   );
 });
 
