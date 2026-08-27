@@ -91,6 +91,12 @@ function InboxCount(props: {
   );
 }
 
+/** Drawn under every page, including the landing route, which builds its own
+ * shell markup rather than mounting `Shell` below. */
+export function Footer(): ReactNode {
+  return <footer className="shell-foot">Copyright 2026. Chuggy</footer>;
+}
+
 export function Shell(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -141,6 +147,7 @@ export function Shell(props: {
       <main className="shell-body">
         <Outlet />
       </main>
+      <Footer />
     </div>
   );
 }
