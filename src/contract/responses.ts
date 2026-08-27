@@ -204,6 +204,16 @@ const executionRequirementSchema = z.discriminatedUnion("mode", [
   }),
 ]);
 
+/**
+ * The label the catalog holds for an admitted image. It sits beside the
+ * requirement rather than inside it, because the requirement is the digested
+ * value and a label is not part of what an execution is.
+ */
+export const workerSchema = z.strictObject({
+  name: identitySchema,
+  version: identitySchema,
+});
+
 export const executionSummarySchema = z.object({
   execution: identitySchema,
   ticket: ticketNumberSchema,
@@ -216,6 +226,7 @@ export const executionSummarySchema = z.object({
   requirement: executionRequirementSchema,
   requirementDigest: digestSchema,
   requirementSource: z.enum(requirementSources),
+  worker: workerSchema.optional(),
   platformDefaultVersion: ticketNumberSchema,
   status: z.enum(executionStatuses),
   outcome: z.enum(executionOutcomes).optional(),
@@ -402,6 +413,7 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
     ...configurationSummaryBase,
     readiness: z.literal("Ready"),
     image: z.string().min(1),
+    worker: workerSchema.optional(),
     practices: page(z.string().min(1)),
     workInstructionsCount: countSchema,
     reviewInstructionsCount: countSchema,

@@ -15,6 +15,8 @@ import {
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import {
   configuredOutputs,
+  executionSummaryImages,
+  executionSummaryLabelled,
   type ExecutionAttemptResource,
   type ExecutionListQuery,
   type ExecutionPage,
@@ -39,6 +41,7 @@ import {
   type ArtifactRole,
 } from "../../interpreter/resultManifest.ts";
 import { projectRowCounter } from "./rows.ts";
+import { postgresWorkerCatalog } from "./workerCatalog.ts";
 import {
   asExecutionRequirement,
   asRequirementSource,
@@ -244,8 +247,15 @@ async function executionPage(
   const rows = await executionRows(pool, partition, query);
   const page = rows.slice(0, query.limit);
   const next = rows.length > query.limit ? page.at(-1) : undefined;
+  const summaries = page.map(executionSummary);
+  const workers = await postgresWorkerCatalog(
+    pool,
+    executionSummaryImages(summaries),
+  );
   return {
-    executions: page.map(executionSummary),
+    executions: summaries.map((summary) =>
+      executionSummaryLabelled(summary, workers),
+    ),
     ...(next === undefined ? {} : { nextAfter: asExecutionId(next.execution) }),
   };
 }
@@ -380,8 +390,12 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
             );
       if (row.result_manifest !== null && result === undefined)
         throw new Error("operational read: execution result is absent");
+      const summary = executionSummary(row);
       return {
-        ...executionSummary(row),
+        ...executionSummaryLabelled(
+          summary,
+          await postgresWorkerCatalog(pool, executionSummaryImages([summary])),
+        ),
         attempts: await attempts(pool, partition, execution),
         ...(result === undefined ? {} : { result }),
       } satisfies ExecutionResource;

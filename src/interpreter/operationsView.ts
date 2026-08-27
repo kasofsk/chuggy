@@ -24,6 +24,7 @@ import type {
   ExecutionRequirement,
   RequirementSource,
 } from "./executionRequirement.ts";
+import type { Worker } from "./workerCatalog.ts";
 
 export type OutputRenderer = "UnifiedDiff" | "Markdown" | "Json" | "Text";
 
@@ -75,12 +76,35 @@ export interface ExecutionSummary {
   readonly requirement: ExecutionRequirement;
   readonly requirementDigest: string;
   readonly requirementSource: RequirementSource;
+  readonly worker?: Worker;
   readonly platformDefaultVersion: number;
   readonly status: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;
   readonly retriesSpent: number;
   readonly registeredAt: PublicInstant;
   readonly terminalAt?: PublicInstant;
+}
+
+/**
+ * The same summary carrying the label the image its requirement pins is
+ * catalogued under. A native requirement pins no image and keeps none.
+ */
+export function executionSummaryLabelled(
+  summary: ExecutionSummary,
+  workers: ReadonlyMap<string, Worker>,
+): ExecutionSummary {
+  if (summary.requirement.mode !== "Container") return summary;
+  const worker = workers.get(summary.requirement.image);
+  return worker === undefined ? summary : { ...summary, worker };
+}
+
+/** Every image the given summaries pin, which is what a catalog is asked for. */
+export function executionSummaryImages(
+  summaries: readonly ExecutionSummary[],
+): readonly string[] {
+  return summaries.flatMap((summary) =>
+    summary.requirement.mode === "Container" ? [summary.requirement.image] : [],
+  );
 }
 
 export interface ExecutionAttemptResource {

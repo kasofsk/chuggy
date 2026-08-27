@@ -27,6 +27,11 @@ import { postgresLimitsDefault } from "../../src/adapters/postgres/pool.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
+import {
+  admittedImagesMax,
+  workerImageCharsMax,
+  workerVersionCharsMax,
+} from "../../src/interpreter/workerCatalog.ts";
 
 const execute = promisify(execFile);
 
@@ -176,9 +181,114 @@ test("a complete environment parses into the plain data the process root takes",
         },
         imagesAdmitted: images,
       },
+      workerCatalog: [],
       runtimeFacts: {},
     },
   });
+});
+
+/** What one admitted-images list parses into: the images admitted and the catalog. */
+interface AdmittedImagesParsed {
+  readonly parsed?: {
+    readonly policy: { readonly imagesAdmitted: readonly string[] };
+    readonly workerCatalog: readonly unknown[];
+  };
+  readonly refused?: string;
+}
+
+async function parsedAdmittedImages(
+  admitted: readonly unknown[],
+): Promise<AdmittedImagesParsed> {
+  return JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_ADMITTED_IMAGES: JSON.stringify(admitted),
+      }),
+    ),
+  ) as AdmittedImagesParsed;
+}
+
+const namedWorker = {
+  image: "registry.invalid/worker:2",
+  name: "chuggy-worker",
+  version: "3",
+};
+
+test("a bare admitted image is admitted and named in no catalog", async () => {
+  const found = await parsedAdmittedImages([workerImage]);
+  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [workerImage]);
+  assert.deepEqual(found.parsed?.workerCatalog, []);
+});
+
+test("a named admitted image is admitted and published to the catalog", async () => {
+  const found = await parsedAdmittedImages([namedWorker]);
+  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [namedWorker.image]);
+  assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
+});
+
+test("both shapes mix, and admission never learns which entry was named", async () => {
+  const found = await parsedAdmittedImages([workerImage, namedWorker]);
+  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [
+    workerImage,
+    namedWorker.image,
+  ]);
+  assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
+});
+
+test("an admitted-images list naming one image twice is refused", async () => {
+  const found = await parsedAdmittedImages([
+    workerImage,
+    { ...namedWorker, image: workerImage },
+  ]);
+  assert.match(found.refused ?? "", /admits the image .* twice/u);
+});
+
+test("an admitted-images list spelling one worker label twice is refused", async () => {
+  const found = await parsedAdmittedImages([
+    { ...namedWorker, image: workerImage },
+    namedWorker,
+  ]);
+  assert.match(
+    found.refused ?? "",
+    new RegExp(
+      `names the worker ${namedWorker.name} version ${namedWorker.version} twice`,
+      "u",
+    ),
+  );
+});
+
+test("a worker name outside the configuration name rule is refused", async () => {
+  const found = await parsedAdmittedImages([
+    { ...namedWorker, name: "-worker" },
+  ]);
+  assert.match(found.refused ?? "", /is not a worker name/u);
+});
+
+test("a worker version longer than its bound is refused", async () => {
+  const found = await parsedAdmittedImages([
+    { ...namedWorker, version: "v".repeat(workerVersionCharsMax + 1) },
+  ]);
+  assert.match(found.refused ?? "", /is not a worker version/u);
+});
+
+test("a named image longer than the column that holds it is refused", async () => {
+  const found = await parsedAdmittedImages([
+    { ...namedWorker, image: "i".repeat(workerImageCharsMax + 1) },
+  ]);
+  assert.match(found.refused ?? "", /ADMITTED_IMAGES/u);
+  assert.equal(found.parsed, undefined);
+});
+
+test("an admitted-images list longer than its bound is refused", async () => {
+  const found = await parsedAdmittedImages(
+    Array.from(
+      { length: admittedImagesMax + 1 },
+      (_, at) => `registry.invalid/worker:${String(at)}`,
+    ),
+  );
+  assert.match(found.refused ?? "", /ADMITTED_IMAGES/u);
+  assert.equal(found.parsed, undefined);
 });
 
 test("every prerequisite variable is refused by its own name", async () => {

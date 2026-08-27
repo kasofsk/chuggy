@@ -36,6 +36,7 @@ const schedulerSourceInsertPrivilege = {
   privilege_type: "INSERT",
   columns: sourceInsertColumns,
 };
+const admittedWorkerColumns = "image,name,published_at,version";
 const schedulerReportInsertPrivilege = {
   table_name: "execution_result_report",
   privilege_type: "INSERT",
@@ -719,6 +720,73 @@ test("the scheduler cannot rewrite a settlement, a result or its own entitlement
   }
 });
 
+/** Every non-SELECT grant the scheduler role holds, which is the whole of its write surface. */
+const schedulerWritePrivileges = [
+  {
+    table_name: "admitted_worker",
+    privilege_type: "INSERT",
+    columns: admittedWorkerColumns,
+  },
+  {
+    table_name: "admitted_worker",
+    privilege_type: "UPDATE",
+    columns: admittedWorkerColumns,
+  },
+  {
+    table_name: "execution",
+    privilege_type: "INSERT",
+    columns:
+      "account,cluster,configuration_digest,configuration_revision,execution,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
+  },
+  {
+    table_name: "execution",
+    privilege_type: "UPDATE",
+    columns:
+      "attempt_next,placement_backoff_from,retries_spent,status,terminal_at",
+  },
+  {
+    table_name: "execution_attempt",
+    privilege_type: "INSERT",
+    columns:
+      "attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,lease_expires_at,lease_owner,manifest,opened_at,project,recovery_epoch,state,tenant,workload",
+  },
+  {
+    table_name: "execution_attempt",
+    privilege_type: "UPDATE",
+    columns:
+      "cleanup_completed_at,ended_at,evidence,generation,lease_expires_at,lease_owner,state,workload",
+  },
+  {
+    table_name: "execution_request",
+    privilege_type: "UPDATE",
+    columns: "claim_expires_at,claim_generation,claim_owner,state",
+  },
+  {
+    table_name: "execution_result",
+    privilege_type: "INSERT",
+    columns:
+      "attempt,digest,execution,manifest,manifest_ordinal,project,recorded_at,schema_version,tenant,verdict",
+  },
+  {
+    table_name: "execution_result_artifact",
+    privilege_type: "INSERT",
+    columns: "bytes,digest,manifest,ordinal,path,project,role,tenant",
+  },
+  schedulerReportInsertPrivilege,
+  schedulerSourceInsertPrivilege,
+  {
+    table_name: "project",
+    privilege_type: "UPDATE",
+    columns: "manifest_next",
+  },
+  {
+    table_name: "scheduler_incident",
+    privilege_type: "INSERT",
+    columns:
+      "attempt,evidence,execution,incident,kind,observed_at,project,tenant",
+  },
+];
+
 test("the scheduler's write surface is exactly the columns execution and capacity need", async () => {
   assert.deepEqual(
     await harness.query(
@@ -731,61 +799,7 @@ test("the scheduler's write surface is exactly the columns execution and capacit
         ORDER BY table_name, privilege_type`,
       [schedulerRole],
     ),
-    [
-      {
-        table_name: "execution",
-        privilege_type: "INSERT",
-        columns:
-          "account,cluster,configuration_digest,configuration_revision,execution,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
-      },
-      {
-        table_name: "execution",
-        privilege_type: "UPDATE",
-        columns:
-          "attempt_next,placement_backoff_from,retries_spent,status,terminal_at",
-      },
-      {
-        table_name: "execution_attempt",
-        privilege_type: "INSERT",
-        columns:
-          "attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,lease_expires_at,lease_owner,manifest,opened_at,project,recovery_epoch,state,tenant,workload",
-      },
-      {
-        table_name: "execution_attempt",
-        privilege_type: "UPDATE",
-        columns:
-          "cleanup_completed_at,ended_at,evidence,generation,lease_expires_at,lease_owner,state,workload",
-      },
-      {
-        table_name: "execution_request",
-        privilege_type: "UPDATE",
-        columns: "claim_expires_at,claim_generation,claim_owner,state",
-      },
-      {
-        table_name: "execution_result",
-        privilege_type: "INSERT",
-        columns:
-          "attempt,digest,execution,manifest,manifest_ordinal,project,recorded_at,schema_version,tenant,verdict",
-      },
-      {
-        table_name: "execution_result_artifact",
-        privilege_type: "INSERT",
-        columns: "bytes,digest,manifest,ordinal,path,project,role,tenant",
-      },
-      schedulerReportInsertPrivilege,
-      schedulerSourceInsertPrivilege,
-      {
-        table_name: "project",
-        privilege_type: "UPDATE",
-        columns: "manifest_next",
-      },
-      {
-        table_name: "scheduler_incident",
-        privilege_type: "INSERT",
-        columns:
-          "attempt,evidence,execution,incident,kind,observed_at,project,tenant",
-      },
-    ],
+    schedulerWritePrivileges,
   );
 });
 
@@ -801,6 +815,7 @@ test("the scheduler reads execution and capacity, and of the project only its li
   assert.deepEqual(
     read.map((row) => row.relation),
     [
+      "admitted_worker",
       "capacity_account",
       "configuration_revision",
       "draft_brief",

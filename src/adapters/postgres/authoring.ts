@@ -8,6 +8,7 @@ import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
   configurationRevisionSummary,
+  configurationRevisionSummaryLabelled,
   encodeDraftAuthoring,
   parseDraftAuthoring,
   type AuthoringStore,
@@ -37,6 +38,7 @@ import {
 } from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { projectRowCounter } from "./rows.ts";
 import { configurationRevisionDigest } from "./digest.ts";
+import { postgresWorkerCatalog } from "./workerCatalog.ts";
 import { domainConfigurationOf } from "../../interpreter/domainConfiguration.ts";
 
 interface DraftRow {
@@ -110,7 +112,7 @@ async function readConfigurations(
          LIMIT ${query.limit + 1}`,
   );
   const rows = found.rows.slice(0, query.limit);
-  const configurations = rows.map((row) =>
+  const summaries = rows.map((row) =>
     configurationRevisionSummary({
       revision: asConfigurationRevisionId(row.revision),
       ...(row.parent === null
@@ -121,6 +123,15 @@ async function readConfigurations(
       createdAt: asPublicInstant(row.created_at),
       provenance: configurationPageProvenance(row),
     }),
+  );
+  const workers = await postgresWorkerCatalog(
+    pool,
+    summaries.flatMap((summary) =>
+      summary.readiness === "Ready" ? [summary.image] : [],
+    ),
+  );
+  const configurations = summaries.map((summary) =>
+    configurationRevisionSummaryLabelled(summary, workers),
   );
   const last = rows.at(-1);
   return {

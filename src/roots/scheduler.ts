@@ -32,6 +32,7 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
       finalizer: config.finalizer,
       metrics: silentSchedulerTelemetry,
     },
+    workerCatalog: config.workerCatalog,
     additional: [kubernetesNamespacePrecondition(config.workers)],
   });
 }
