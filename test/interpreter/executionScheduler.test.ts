@@ -21,17 +21,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  allAttemptEvidence,
   checkedExecutionSchedulerConfig,
   executionCapacitySafe,
   executionEntitlementOf,
   executionMayAdmit,
   executionReservationDeficit,
   executionSchedulerDefaults,
+  schedulerEvidenceCharsMax,
+  type AttemptEvidenceRecord,
   type CapacityExecution,
   type Entitlement,
   type ExecutionSchedulerConfig,
 } from "../../src/interpreter/executionScheduler.ts";
 import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
+import { allBriefingFaults } from "../../src/interpreter/taskBriefing.ts";
 import {
   mailboxCompletionRoom,
   ticketServiceDefaults,
@@ -214,4 +218,23 @@ test("every arithmetic that reads an entitlement refuses an uncovered account", 
     () => executionCapacitySafe(4, entitlements, ledger),
     /no entitlement/u,
   );
+});
+
+test("every evidence a briefing refusal can record fits the column that keeps it", () => {
+  const recorded: AttemptEvidenceRecord[] = allAttemptEvidence.flatMap(
+    (evidence) =>
+      allBriefingFaults.map(
+        (fault): AttemptEvidenceRecord => `${evidence}: ${fault}`,
+      ),
+  );
+  assert.equal(
+    recorded.length,
+    allAttemptEvidence.length * allBriefingFaults.length,
+  );
+  for (const evidence of recorded) {
+    assert.ok(
+      evidence.length <= schedulerEvidenceCharsMax,
+      `${evidence} is longer than the evidence column admits`,
+    );
+  }
 });

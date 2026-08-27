@@ -50,15 +50,25 @@
  * on it that can hold a rendered prompt, a credential or source material,
  * which is how the retention rule is kept rather than remembered.
  *
+ * A PRIOR WORK REPORT IS A DOCUMENT AND NOT A LINE, so it is admitted under
+ * `resultReportCharsMax` — the bound the manifest that carried it and the row
+ * that retained it are both written against — rather than under the bound one
+ * authored criterion has. It is held to the same printable rule as the row it
+ * came from, so what a manifest may carry a briefing may render.
+ *
  * A REFUSAL IS `TicketConfigIncompatible` AND THE FAULT SAYS WHICH. The reason
  * vocabulary is the model's and is closed; `BriefingFault` is this module's
- * bounded diagnostic beside it, and `./executionSchedulerRun.ts` observes it at
- * the block it causes — so a blocked ticket can be explained without widening
- * what `Core` understands.
+ * bounded diagnostic beside it, and `./executionSchedulerRun.ts` writes it into
+ * the ended attempt's evidence beside the label — so a blocked ticket can be
+ * explained without widening what `Core` understands.
  */
 
 import { briefIntentLinesMax, briefLinksMax } from "../contract/brief.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
+import {
+  resultReportCharsMax,
+  resultTextControlCharacter,
+} from "./resultManifest.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ExecutionId } from "./schedulerIdentity.ts";
 import {
@@ -215,6 +225,7 @@ export type BriefingFault =
   | "EmptyBrief"
   | "EmptyLine"
   | "TextTooLong"
+  | "ReportTooLong"
   | "TextUnreadable"
   | "TooManyLines"
   | "StageNotCovered";
@@ -228,6 +239,7 @@ export const allBriefingFaults: readonly BriefingFault[] = [
   "EmptyBrief",
   "EmptyLine",
   "TextTooLong",
+  "ReportTooLong",
   "TextUnreadable",
   "TooManyLines",
   "StageNotCovered",
@@ -409,14 +421,34 @@ function briefingConfigurationFault(
 /** What the gathered runtime facts have to be to render, which is bounded and printable. */
 function briefingRuntimeFault(
   runtime: RuntimeFacts,
-  priorWorkReports: PriorWorkReports,
 ): BriefingFault | undefined {
   return briefingListsFault([
     [runtime.workspace === undefined ? [] : [runtime.workspace], 1],
     [runtime.changedFiles, runtimeChangedFilesMax],
     [runtime.handoff, runtimeHandoffLinesMax],
-    [priorWorkReports.reports, priorWorkReportsMax],
   ]);
+}
+
+/** What one earlier work task's report has to be to render, which is a document's bound. */
+function briefingReportFault(report: string): BriefingFault | undefined {
+  if (report.length === 0) return "EmptyLine";
+  if (report.length > resultReportCharsMax) return "ReportTooLong";
+  if (!report.isWellFormed() || resultTextControlCharacter(report))
+    return "TextUnreadable";
+  return undefined;
+}
+
+/** What the reports gathered for a review have to be, which is bounded and made of renderable reports. */
+function briefingReportsFault(
+  priorWorkReports: PriorWorkReports,
+): BriefingFault | undefined {
+  if (priorWorkReports.reports.length > priorWorkReportsMax)
+    return "TooManyLines";
+  for (const report of priorWorkReports.reports) {
+    const fault = briefingReportFault(report);
+    if (fault !== undefined) return fault;
+  }
+  return undefined;
 }
 
 /** What the ticket's own brief has to be to render, which is bounded and printable. */
@@ -642,7 +674,8 @@ export function composeTaskInvocation(
 ): TaskComposed {
   const fault =
     briefingConfigurationFault(view) ??
-    briefingRuntimeFault(view.runtime, view.priorWorkReports) ??
+    briefingRuntimeFault(view.runtime) ??
+    briefingReportsFault(view.priorWorkReports) ??
     briefingTicketBriefFault(view.brief);
   if (fault !== undefined) return { composed: "Blocked", fault };
   const resolved = resolvePractices(

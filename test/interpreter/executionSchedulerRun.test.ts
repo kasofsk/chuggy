@@ -45,7 +45,10 @@ import {
   executionSchedulerRegister,
   type ExecutionSchedulerService,
 } from "../../src/interpreter/executionSchedulerRun.ts";
-import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import {
+  asResultManifestId,
+  resultReportCharsMax,
+} from "../../src/interpreter/resultManifest.ts";
 import {
   blessedPracticeCatalog,
   type ConfigurationRead,
@@ -1040,8 +1043,35 @@ test("which briefing fault refused a ticket is observed at the block it caused",
     "reaping:0",
     "attemptOpened:Opened",
     "briefing:DigestMismatch",
-    "attemptEnded:Withdrawn:PolicyDenied",
+    "attemptEnded:Withdrawn:PolicyDenied: DigestMismatch",
     "blocking:Blocked:TicketConfigIncompatible",
+  ]);
+});
+
+test("the briefing fault a block turned on outlives the attempt it ended", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  await executionSchedulerLaunch(
+    {
+      ...service,
+      store: {
+        ...service.store,
+        unlaunched: () =>
+          Promise.resolve([{ ...execution, taskKind: "Evaluation" as const }]),
+      },
+      priorWorkReports: {
+        reports: () =>
+          Promise.resolve({
+            read: "Reports" as const,
+            reports: { reports: ["x".repeat(resultReportCharsMax + 1)] },
+          }),
+      },
+    },
+    epoch,
+  );
+  assert.deepEqual(calls, [
+    "ended:Withdrawn:PolicyDenied: ReportTooLong",
+    "blocked:TicketConfigIncompatible",
   ]);
 });
 
@@ -1067,7 +1097,7 @@ test("a practice no catalog blesses blocks the ticket rather than briefing witho
   });
   assert.equal(await executionSchedulerLaunch(service, epoch), 0);
   assert.deepEqual(calls, [
-    "ended:Withdrawn:PolicyDenied",
+    "ended:Withdrawn:PolicyDenied: UnknownPractice",
     "blocked:TicketConfigIncompatible",
   ]);
 });
