@@ -4,7 +4,9 @@
  *
  * The two quiet failures are here: a frame appended rather than replaced, which
  * shows one execution twice, and a frame written into a page it does not belong
- * to, which shows another ticket's work under this one.
+ * to, which shows another ticket's work under this one. The stage breakdown is
+ * a grouping of the same page, so it is held here beside the fold that keeps
+ * that page live.
  */
 
 import { expect, test } from "vitest";
@@ -13,7 +15,11 @@ import type {
   ExecutionResponse,
   ExecutionsResponse,
 } from "../../../src/contract/responses.ts";
-import { ticketExecutionsFolded } from "../app/core/ticketExecutions.ts";
+import { runStageLabel } from "../app/core/runTotals.ts";
+import {
+  ticketExecutionStages,
+  ticketExecutionsFolded,
+} from "../app/core/ticketExecutions.ts";
 
 const digest = "a".repeat(64);
 
@@ -148,4 +154,43 @@ test("a listed row this console cannot read is not written over the good one", (
   });
   expect(folded).toBe(held);
   expect(folded?.executions[0]?.status).toBe("Running");
+});
+
+/** The grouping is over the page this screen holds, so a row's figure is only
+ * ever as complete as that page — which is why the ticket's own total is the
+ * server's and this one is not. */
+test("the page's executions group into the stages that ran them", () => {
+  const totals = {
+    turns: 1,
+    durationMs: 1_000,
+    durationApiMs: 900,
+    tokensInput: 1,
+    tokensOutput: 2,
+    tokensCacheCreation: 3,
+    tokensCacheRead: 4,
+    costUsdMicros: 5_000,
+    costBasis: "List" as const,
+    permissionDenials: 0,
+    models: [],
+  };
+  const stages = ticketExecutionStages(
+    page([
+      execution("e1", { taskKind: "Work", stage: 1, runTotals: totals }),
+      execution("e2", {
+        taskKind: "Evaluation",
+        stage: 1,
+        status: "Terminal",
+        outcome: "Failed",
+        runTotals: totals,
+      }),
+      execution("e3", { taskKind: "Work", stage: 1, runTotals: totals }),
+    ]),
+  );
+  expect(stages.map((row) => runStageLabel(row))).toEqual([
+    "work stage 1",
+    "evaluation stage 1",
+  ]);
+  expect(stages[0]?.executions).toBe(2);
+  expect(stages[0]?.totals?.costUsdMicros).toBe(10_000);
+  expect(stages[1]?.totals?.costUsdMicros).toBe(5_000);
 });

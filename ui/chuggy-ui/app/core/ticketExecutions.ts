@@ -16,6 +16,8 @@ import type {
   ExecutionSummary,
   ExecutionsResponse,
 } from "../../../../src/contract/responses.ts";
+import { runStageRows } from "./runTotals.ts";
+import type { RunStageRow } from "./runTotals.ts";
 
 export interface ProjectExecutionChange {
   readonly resource: string;
@@ -79,4 +81,14 @@ export function ticketExecutionsFolded(
   const arrived = executionOf(change.representation);
   if (arrived === undefined || arrived.ticket !== ticket) return previous;
   return executionsWith(previous, arrived);
+}
+
+/**
+ * The page's executions grouped into the stages that ran them, which is a
+ * breakdown of rows this screen already holds rather than a further read.
+ */
+export function ticketExecutionStages(
+  page: ExecutionsResponse,
+): readonly RunStageRow[] {
+  return runStageRows(page.executions);
 }

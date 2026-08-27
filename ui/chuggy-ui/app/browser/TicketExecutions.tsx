@@ -1,11 +1,14 @@
 /**
- * Everything that has run for this ticket: each execution, what it ran on, the
- * attempts it took, the verdict it recorded and the artifacts it left.
+ * Everything that has run for this ticket: what each stage spent, then each
+ * execution, what it ran on, the runs it took, the verdict it recorded and the
+ * artifacts it left.
  *
- * The list is a page of summaries and an expanded execution is its own read,
- * so a live `Execution` frame lands in both without either being refetched. An
- * artifact is previewed only on demand and only where the wire says a renderer
- * exists, and the preview is drawn as characters and never interpreted.
+ * The stage rows are a grouping of the summaries this screen already holds, so
+ * the breakdown is live for the same reason the list is and costs no further
+ * read; the ticket's own total is the server's figure and is drawn beside the
+ * ticket, because a sum over a page that may be short would be quietly wrong.
+ * The list is a page of summaries and an expanded execution is its own read, so
+ * a live `Execution` frame lands in both without either being refetched.
  */
 
 import { useCallback, useState } from "react";
@@ -28,22 +31,21 @@ import {
   projectListKey,
   projectResourceKey,
 } from "../core/projectQueryKeys.ts";
-import { ticketExecutionsFolded } from "../core/ticketExecutions.ts";
+import { runStageCoverageSentence, runStageLabel } from "../core/runTotals.ts";
+import type { RunStageRow } from "../core/runTotals.ts";
+import {
+  ticketExecutionStages,
+  ticketExecutionsFolded,
+} from "../core/ticketExecutions.ts";
 import type { ProjectExecutionChange } from "../core/ticketExecutions.ts";
 import { usePanelQuery } from "./api.ts";
 import { Panel } from "./Panel.tsx";
+import { RunEvidence, RunTotalsLine } from "./RunEvidence.tsx";
 import { useProjectListFold } from "./stream.tsx";
 
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
 >["artifacts"][number];
-
-/** The place a per-execution agent log is drawn once one is served. */
-function ExecutionAgentLog(): ReactNode {
-  return (
-    <p className="panel-note">no agent log stream is served for an execution</p>
-  );
-}
 
 /** The artifact's own path under its execution is the resource this key names. */
 function ArtifactPreview(props: {
@@ -117,6 +119,7 @@ function ExecutionAttempts(props: {
           <th>attempt</th>
           <th>generation</th>
           <th>state</th>
+          <th>evidence</th>
           <th>opened</th>
           <th>ended</th>
         </tr>
@@ -127,6 +130,7 @@ function ExecutionAttempts(props: {
             <td>{attempt.number}</td>
             <td>{attempt.generation}</td>
             <td>{attempt.state}</td>
+            <td>{attempt.evidence ?? "—"}</td>
             <td>{attempt.openedAt}</td>
             <td>{attempt.endedAt ?? "—"}</td>
           </tr>
@@ -180,7 +184,7 @@ function ExecutionDetail(props: {
         <div className="execution-detail">
           <ExecutionAttempts execution={execution} />
           <ExecutionResult partition={props.partition} execution={execution} />
-          <ExecutionAgentLog />
+          <RunEvidence partition={props.partition} execution={execution} />
         </div>
       )}
     </Panel>
@@ -219,6 +223,11 @@ function ExecutionRow(props: {
         {summary.platformDefaultVersion}, cluster {summary.cluster},{" "}
         {summary.retriesSpent} retries spent
       </p>
+      {summary.runTotals === undefined ? (
+        <p className="panel-note">no run evidence was recorded</p>
+      ) : (
+        <RunTotalsLine totals={summary.runTotals} />
+      )}
       {open ? (
         <ExecutionDetail
           partition={props.partition}
@@ -226,6 +235,34 @@ function ExecutionRow(props: {
         />
       ) : null}
     </li>
+  );
+}
+
+function StageRow(props: { readonly row: RunStageRow }): ReactNode {
+  const row = props.row;
+  return (
+    <li className="stage">
+      <span className="stage-label">{runStageLabel(row)}</span>
+      <span className="execution-source">{runStageCoverageSentence(row)}</span>
+      {row.totals === undefined ? (
+        <span className="panel-note">no run evidence was recorded</span>
+      ) : (
+        <RunTotalsLine totals={row.totals} />
+      )}
+    </li>
+  );
+}
+
+/** The breakdown above the rows it is a breakdown of, which is the order a cost
+ * is read in. */
+function TicketStages(props: { readonly page: ExecutionsResponse }): ReactNode {
+  const rows = ticketExecutionStages(props.page);
+  return (
+    <ul className="stages">
+      {rows.map((row) => (
+        <StageRow key={runStageLabel(row)} row={row} />
+      ))}
+    </ul>
   );
 }
 
@@ -258,15 +295,18 @@ export function TicketExecutions(props: {
         page.executions.length === 0 ? (
           <p className="panel-note">nothing has run for this ticket</p>
         ) : (
-          <ul className="executions">
-            {page.executions.map((summary) => (
-              <ExecutionRow
-                key={summary.execution}
-                partition={partition}
-                summary={summary}
-              />
-            ))}
-          </ul>
+          <>
+            <TicketStages page={page} />
+            <ul className="executions">
+              {page.executions.map((summary) => (
+                <ExecutionRow
+                  key={summary.execution}
+                  partition={partition}
+                  summary={summary}
+                />
+              ))}
+            </ul>
+          </>
         )
       }
     </Panel>

@@ -53,6 +53,12 @@ export const runModelCharsMax = 128;
 /** The longest summary a result carries, restating what the manifest reader accepts. */
 export const resultReportCharsMax = 8_192;
 
+/**
+ * The first manifest schema version whose result carries a summary at all, below
+ * which a reader has none to draw rather than an empty one.
+ */
+export const resultReportSchemaVersionMin = 3;
+
 export const nativeHttpRoutes = {
   contract: `${nativeHttpBasePath}/contract`,
   installation: `${nativeHttpBasePath}/installation`,
