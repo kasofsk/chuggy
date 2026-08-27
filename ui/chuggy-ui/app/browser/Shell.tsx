@@ -141,6 +141,7 @@ export function Shell(props: {
       <main className="shell-body">
         <Outlet />
       </main>
+      <footer className="shell-foot">Copyright 2026. Chuggy</footer>
     </div>
   );
 }
