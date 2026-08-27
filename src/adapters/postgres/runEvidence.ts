@@ -3,6 +3,12 @@
  * execution's runs sum to, what a ticket's runs sum to, and the pages the three
  * public run routes answer with.
  *
+ * EVERY PAGED SORT NAMES ITS RELATION. A counter is carried to the wire as text
+ * under its own name, and an unqualified `ORDER BY` resolves to that output
+ * column rather than to the column beneath it — which sorts a page of counters
+ * as words while its cursor compares them as numbers, so the walk repeats rows
+ * and never reaches the ones between.
+ *
  * EVERY ROLLUP IS A SUM IN THE READ AND NOT A STORED COLUMN. A ticket's total
  * must be whole over every attempt of every execution, including the ones past
  * a page bound, so only the server can promise it and only in SQL.
@@ -462,7 +468,7 @@ async function runTurnsPage(
          WHERE tenant=${partition.tenant} AND project=${partition.project}
            AND execution=${execution} AND attempt=${attempt}
            AND ordinal>${query.after ?? 0}
-         ORDER BY ordinal LIMIT ${query.limit + 1}`,
+         ORDER BY execution_run_turn.ordinal LIMIT ${query.limit + 1}`,
   );
   const page = found.rows.slice(0, query.limit);
   const next = found.rows.length > query.limit ? page.at(-1) : undefined;
@@ -503,7 +509,8 @@ async function runTranscriptStored(
          WHERE tenant=${partition.tenant} AND project=${partition.project}
            AND execution=${execution} AND attempt=${attempt}
            AND batch>${after}
-         ORDER BY batch LIMIT ${runTranscriptPageBatchesMax + 1}`,
+         ORDER BY execution_run_transcript_batch.batch
+         LIMIT ${runTranscriptPageBatchesMax + 1}`,
   );
   const page = found.rows.slice(0, runTranscriptPageBatchesMax);
   const next =

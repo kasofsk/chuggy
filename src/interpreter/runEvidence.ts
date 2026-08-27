@@ -199,13 +199,24 @@ export interface RunTurnsPage {
   readonly nextAfter?: number;
 }
 
-/** One transcript batch as a read returns it, its bytes drawn from the store. */
-export interface RunTranscriptBatch {
+/** Where one batch stands in a run's transcript, whatever its bytes turned out to be. */
+interface RunTranscriptBatchAt {
   readonly batch: number;
   readonly recordedAt: PublicInstant;
   readonly bytes: number;
-  readonly content: string;
 }
+
+/**
+ * One transcript batch as a read returns it: its characters, or the reason it
+ * has none. A batch nothing can be drawn for is marked, so the batches beside
+ * it are still answered.
+ */
+export type RunTranscriptBatch =
+  | (RunTranscriptBatchAt & {
+      readonly read: "Content";
+      readonly content: string;
+    })
+  | (RunTranscriptBatchAt & { readonly read: "Missing" | "Corrupt" });
 
 /** One page of a run's transcript; `complete` is read from the attempt, never stored. */
 export interface RunTranscriptPage {

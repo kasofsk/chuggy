@@ -21,6 +21,7 @@ import {
 import {
   postgresTicketRunTotals,
   postgresAttemptRuns,
+  postgresRunEvidenceReads,
 } from "../../src/adapters/postgres/runEvidence.ts";
 import {
   postgresWorkerRunConfiguration,
@@ -261,6 +262,34 @@ test("a run's totals are written once and a different figure is refused", async 
   assert.equal(await record(4_200), "Stored");
   assert.equal(await record(4_200), "AlreadyStored");
   assert.equal(await record(9_900), "Conflict");
+  assert.equal(
+    await totals.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      totals: {
+        ...runTotalsFixture(4_200),
+        models: [
+          {
+            model: "totally-different",
+            tokensInput: 999,
+            tokensOutput: 999,
+            tokensCacheCreation: 999,
+            tokensCacheRead: 999,
+            costUsdMicros: 999,
+          },
+        ],
+      },
+    }),
+    "Conflict",
+  );
+  assert.equal(
+    await totals.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      totals: { ...runTotalsFixture(4_200), models: [] },
+    }),
+    "Conflict",
+  );
   assert.deepEqual(
     await rig.harness.query(
       `SELECT cost_usd_micros::text AS cost FROM execution_run_total
@@ -399,46 +428,45 @@ test("every run evidence row refuses an update and a delete", async () => {
   }
 });
 
-test("a fenced bearer, a stale generation and a superseded epoch write nothing", async () => {
-  const { attempt } = await placedAttempt("run-fenced");
-  const stale = {
-    secret: attempt.capability.secret,
-    generation: attempt.generation + 1,
-  };
+/** What one bearer may offer, which a fence refuses whichever precondition it fails. */
+type RunBearer = Awaited<ReturnType<typeof placedAttempt>>["attempt"];
+
+/**
+ * Every durable evidence write one bearer can make, each refused and each
+ * having opened no run: a precondition that let one of the four through would
+ * leave a row behind whatever the other three answered.
+ */
+async function runWritesAreFenced(
+  attempt: RunBearer,
+  generation: number,
+  what: string,
+): Promise<void> {
+  const write = { secret: attempt.capability.secret, generation };
   assert.equal(
-    await configurations.record({ ...stale, digest: digestOf("a"), bytes: 4 }),
+    await configurations.record({ ...write, digest: digestOf("a"), bytes: 4 }),
     "Fenced",
+    `${what}: a configuration`,
   );
   assert.equal(
     await transcripts.record({
-      ...stale,
+      ...write,
       batch: 1,
       digest: digestOf("a"),
       bytes: 4,
       events: 1,
     }),
     "Fenced",
+    `${what}: a transcript batch`,
   );
-  assert.deepEqual(await turns.record({ ...stale, turns: [] }), {
-    recorded: "Fenced",
-  });
-  assert.equal(
-    await totals.record({ ...stale, totals: runTotalsFixture(1) }),
-    "Fenced",
+  assert.deepEqual(
+    await turns.record({ ...write, turns: [] }),
+    { recorded: "Fenced" },
+    `${what}: a turn page`,
   );
-  const live = {
-    secret: attempt.capability.secret,
-    generation: attempt.generation,
-  };
-  await rig.harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
   assert.equal(
-    await configurations.record({ ...live, digest: digestOf("a"), bytes: 4 }),
+    await totals.record({ ...write, totals: runTotalsFixture(1) }),
     "Fenced",
-  );
-  assert.equal(await rig.store.attemptEnded(attempt, "Lost", "Vanished"), true);
-  assert.equal(
-    await configurations.record({ ...live, digest: digestOf("a"), bytes: 4 }),
-    "Fenced",
+    `${what}: the totals`,
   );
   assert.deepEqual(
     await rig.harness.query(
@@ -447,7 +475,109 @@ test("a fenced bearer, a stale generation and a superseded epoch write nothing",
       [attempt.partition.tenant, attempt.partition.project, attempt.execution],
     ),
     [{ opened: "0" }],
+    `${what}: a run was opened anyway`,
   );
+}
+
+test("a run's configuration fills once and carries no other column with it", async () => {
+  const { attempt } = await placedAttempt("run-fill-only");
+  const keys = [
+    attempt.partition.tenant,
+    attempt.partition.project,
+    attempt.execution,
+    attempt.attempt,
+  ];
+  assert.equal(
+    await transcripts.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      batch: 1,
+      digest: digestOf("a"),
+      bytes: 4,
+      events: 1,
+    }),
+    "Stored",
+  );
+  const where =
+    "WHERE tenant=$1 AND project=$2 AND execution=$3 AND attempt=$4";
+  await assert.rejects(
+    rig.harness.query(
+      `UPDATE execution_run
+          SET configuration_path='.chuggy/run/configuration.json',
+              configuration_digest=$5,configuration_bytes=16,
+              configuration_recorded_at=now(),
+              started_at=now()-interval '5 days' ${where}`,
+      [...keys, digestOf("c")],
+    ),
+    /written once/u,
+    "a fill carried another column with it",
+  );
+  assert.equal(
+    await configurations.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      digest: digestOf("c"),
+      bytes: 16,
+    }),
+    "Stored",
+  );
+  await assert.rejects(
+    rig.harness.query(
+      `UPDATE execution_run SET configuration_digest=$5 ${where}`,
+      [...keys, digestOf("d")],
+    ),
+    /written once/u,
+    "a filled configuration was rewritten",
+  );
+});
+
+test("a bearer naming a generation its attempt has left writes nothing", async () => {
+  const { attempt } = await placedAttempt("run-fenced-generation");
+  await runWritesAreFenced(
+    attempt,
+    attempt.generation + 1,
+    "a stale generation",
+  );
+});
+
+test("a bearer whose attempt has ended writes nothing, its epoch current", async () => {
+  const { attempt } = await placedAttempt("run-fenced-attempt");
+  assert.equal(await rig.store.attemptEnded(attempt, "Lost", "Vanished"), true);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT state FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      [attempt.partition.tenant, attempt.partition.project, attempt.attempt],
+    ),
+    [{ state: "Lost" }],
+  );
+  await runWritesAreFenced(attempt, attempt.generation, "an ended attempt");
+});
+
+test("a bearer whose execution has stopped writes nothing, its attempt live", async () => {
+  const { attempt } = await placedAttempt("run-fenced-execution");
+  await rig.harness.query(
+    `UPDATE execution SET status='Cancelled',terminal_at=now()
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [attempt.partition.tenant, attempt.partition.project, attempt.execution],
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT a.state,e.status FROM execution_attempt a
+         JOIN execution e ON e.tenant=a.tenant AND e.project=a.project
+                         AND e.execution=a.execution
+        WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3`,
+      [attempt.partition.tenant, attempt.partition.project, attempt.attempt],
+    ),
+    [{ state: "Running", status: "Cancelled" }],
+  );
+  await runWritesAreFenced(attempt, attempt.generation, "a stopped execution");
+});
+
+test("a bearer under a superseded recovery epoch writes nothing", async () => {
+  const { attempt } = await placedAttempt("run-fenced-epoch");
+  await rig.harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
+  await runWritesAreFenced(attempt, attempt.generation, "a superseded epoch");
 });
 
 test("a batch appends one execution change and the totals append a ticket change", async () => {
@@ -557,4 +687,110 @@ test("a ticket's run totals sum every execution past the page bound", async () =
       costUsdMicros: spread,
     },
   ]);
+});
+
+/** How many pages a walk over a bounded series may draw before it is a loop. */
+const runWalkPagesMax = 10;
+
+/** Every ordinal a paged walk drew, in the order the pages drew them. */
+async function runWalk(
+  page: (after: number | undefined) => Promise<{
+    readonly drawn: readonly number[];
+    readonly nextAfter?: number;
+  }>,
+): Promise<readonly number[]> {
+  const walked: number[] = [];
+  let after: number | undefined;
+  for (let pages = 0; pages < runWalkPagesMax; pages += 1) {
+    const drawn = await page(after);
+    walked.push(...drawn.drawn);
+    if (drawn.nextAfter === undefined) return walked;
+    after = drawn.nextAfter;
+  }
+  throw new Error(
+    "run walk: the page cursor did not reach the end of a bounded series",
+  );
+}
+
+/** A series is walked whole when it ascends strictly and skips nothing. */
+function runWalkIsWhole(walked: readonly number[], through: number): void {
+  assert.deepEqual(
+    [...walked],
+    Array.from({ length: through }, (_unused, index) => index + 1),
+  );
+  assert.equal(new Set(walked).size, walked.length, "the walk repeated a row");
+}
+
+test("a turn series past one page walks in ascending order and repeats nothing", async () => {
+  const { attempt } = await placedAttempt("run-turn-paging");
+  const series = 12;
+  assert.deepEqual(
+    await turns.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      turns: Array.from({ length: series }, (_unused, index) => ({
+        ordinal: index + 1,
+        model: `model-${String(index + 1)}`,
+        tokensInput: index + 1,
+        tokensOutput: 0,
+        tokensCacheCreation: 0,
+        tokensCacheRead: 0,
+      })),
+    }),
+    { recorded: "Recorded", turnsRecorded: series },
+  );
+  const reads = postgresRunEvidenceReads(apiPool);
+  const walked = await runWalk(async (after) => {
+    const page = await reads.turns(
+      attempt.partition,
+      attempt.execution,
+      attempt.attempt,
+      { ...(after === undefined ? {} : { after }), limit: 5 },
+    );
+    if (page === undefined) throw new Error("run walk: the attempt is absent");
+    for (const turn of page.turns)
+      assert.equal(turn.model, `model-${String(turn.ordinal)}`);
+    return {
+      drawn: page.turns.map((turn) => turn.ordinal),
+      ...(page.nextAfter === undefined ? {} : { nextAfter: page.nextAfter }),
+    };
+  });
+  runWalkIsWhole(walked, series);
+});
+
+test("a transcript past one page walks in ascending order and repeats nothing", async () => {
+  const { attempt } = await placedAttempt("run-batch-paging");
+  const series = 11;
+  for (let batch = 1; batch <= series; batch += 1)
+    assert.equal(
+      await transcripts.record({
+        secret: attempt.capability.secret,
+        generation: attempt.generation,
+        batch,
+        digest: digestOf(String(batch % 10)),
+        bytes: batch,
+        events: 1,
+      }),
+      "Stored",
+    );
+  const reads = postgresRunEvidenceReads(apiPool);
+  const walked = await runWalk(async (after) => {
+    const stored = await reads.transcript(
+      attempt.partition,
+      attempt.execution,
+      attempt.attempt,
+      after ?? 0,
+    );
+    if (stored === undefined)
+      throw new Error("run walk: the attempt is absent");
+    for (const object of stored.objects)
+      assert.equal(object.bytes, object.batch);
+    return {
+      drawn: stored.objects.map((object) => object.batch),
+      ...(stored.nextAfter === undefined
+        ? {}
+        : { nextAfter: stored.nextAfter }),
+    };
+  });
+  runWalkIsWhole(walked, series);
 });

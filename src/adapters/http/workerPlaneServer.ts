@@ -15,7 +15,10 @@ import {
   runTranscriptBatchesMax,
   runTurnSeriesMax,
 } from "../../contract/http.ts";
-import { runTotalsSchema } from "../../contract/responses.ts";
+import {
+  runModelUsageSchema,
+  runTotalsSchema,
+} from "../../contract/responses.ts";
 import {
   asAttemptCapabilitySecret,
   type AttemptCapabilitySecret,
@@ -43,6 +46,7 @@ import {
 } from "../../interpreter/resultManifest.ts";
 import type {
   WorkerArtifactReservationPort,
+  WorkerArtifactStored,
   WorkerArtifactUploadPort,
   WorkerAttemptHeartbeatPort,
   WorkerAttemptAuthority,
@@ -102,12 +106,27 @@ const workerRunTurnsSchema = z.strictObject({
     .max(nativeHttpPageItemsMax),
 });
 
+/**
+ * The same figures as a worker offers them. A response schema drops a field the
+ * wire does not name, so an older browser survives a newer server; a write
+ * refuses one instead, because a field the plane dropped in silence is a figure
+ * the worker believes it put on record.
+ */
+const workerRunTotalsSchema = z.strictObject({
+  ...runTotalsSchema.shape,
+  models: z
+    .array(z.strictObject(runModelUsageSchema.shape))
+    .max(nativeHttpPageItemsMax),
+});
+
 const workerRunEndedSchema = z.strictObject({
   evidence: z.enum(runEndedEvidences),
 });
 
 /** The offered totals as the durable port takes them, an absent label omitted. */
-function workerRunTotals(offered: z.infer<typeof runTotalsSchema>): RunTotals {
+function workerRunTotals(
+  offered: z.infer<typeof workerRunTotalsSchema>,
+): RunTotals {
   const { resultSubtype, stopReason, ...rest } = offered;
   return {
     ...rest,
@@ -267,30 +286,62 @@ async function workerRunWriter(
     : { authority, secret };
 }
 
-/** The bytes behind a recorded row, kept at the path the server itself derived. */
-async function workerRunObjectStored(
-  service: WorkerPlaneServerService,
-  authority: WorkerAttemptAuthority,
-  reply: FastifyReply,
-  path: ArtifactPath,
-  content: Uint8Array,
-): Promise<FastifyReply> {
-  const kept = await service.artifacts.store({ authority, path, content });
+/** What one refused write answers with, decided before any of it is sent. */
+interface WorkerRunRefusal {
+  readonly status: number;
+  readonly body: Readonly<Record<string, string>>;
+  readonly retryAfterSeconds?: number;
+}
+
+/** The refusal storing one object earned, or nothing where its bytes are kept. */
+function workerRunObjectRefusal(
+  kept: WorkerArtifactStored,
+): WorkerRunRefusal | undefined {
   switch (kept.stored) {
     case "Stored":
-      return reply.code(204).send();
+      return undefined;
     case "Conflict":
-      return reply.code(409).send({ action: "stop", reason: "Conflict" });
+      return { status: 409, body: { action: "stop", reason: "Conflict" } };
     case "Refused":
-      return reply
-        .code(kept.reason === "InvalidPath" ? 400 : 413)
-        .send({ action: "stop", reason: kept.reason });
+      return {
+        status: kept.reason === "InvalidPath" ? 400 : 413,
+        body: { action: "stop", reason: kept.reason },
+      };
     case "Unavailable":
-      return reply
-        .header("retry-after", String(kept.retryAfterSeconds))
-        .code(503)
-        .send({ action: "retry" });
+      return {
+        status: 503,
+        body: { action: "retry" },
+        retryAfterSeconds: kept.retryAfterSeconds,
+      };
   }
+}
+
+/**
+ * The bytes of one run-evidence object, kept before the row that points at
+ * them: an object no row names is inert, while a row whose object is absent is
+ * a hole the transcript's own high-water mark would then advance past.
+ */
+async function workerRunObjectKept(
+  service: WorkerPlaneServerService,
+  authority: WorkerAttemptAuthority,
+  path: ArtifactPath,
+  content: Uint8Array,
+): Promise<WorkerRunRefusal | undefined> {
+  return workerRunObjectRefusal(
+    await service.artifacts.store({ authority, path, content }),
+  );
+}
+
+function workerRunRefused(
+  reply: FastifyReply,
+  refusal: WorkerRunRefusal,
+): FastifyReply {
+  return refusal.retryAfterSeconds === undefined
+    ? reply.code(refusal.status).send(refusal.body)
+    : reply
+        .header("retry-after", String(refusal.retryAfterSeconds))
+        .code(refusal.status)
+        .send(refusal.body);
 }
 
 /** The digest of what a worker offered, which is what the durable row pins. */
@@ -309,23 +360,24 @@ function workerRunConfigurationRoute(
       return reply.code(415).send({ action: "stop" });
     if (request.body.byteLength > runConfigurationBytesMax)
       return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
+    const refusal = await workerRunObjectKept(
+      service,
+      writer.authority,
+      runConfigurationPath(),
+      request.body,
+    );
+    if (refusal !== undefined) return workerRunRefused(reply, refusal);
     const stored = await service.runEvidence.configurations.record({
       secret: writer.secret,
       generation: writer.authority.generation,
       digest: workerRunDigest(request.body),
       bytes: request.body.byteLength,
     });
-    if (stored !== "Stored" && stored !== "AlreadyStored")
-      return reply
-        .code(workerRunStatus(stored))
-        .send({ action: "stop", reason: stored });
-    return workerRunObjectStored(
-      service,
-      writer.authority,
-      reply,
-      runConfigurationPath(),
-      request.body,
-    );
+    return stored === "Stored" || stored === "AlreadyStored"
+      ? reply.code(204).send()
+      : reply
+          .code(workerRunStatus(stored))
+          .send({ action: "stop", reason: stored });
   });
 }
 
@@ -344,6 +396,13 @@ function workerRunTranscriptRoute(
       return reply.code(400).send({ action: "stop", reason: "InvalidBatch" });
     if (request.body.byteLength > runTranscriptBatchBytesMax)
       return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
+    const refusal = await workerRunObjectKept(
+      service,
+      writer.authority,
+      runTranscriptBatchPath(batch),
+      request.body,
+    );
+    if (refusal !== undefined) return workerRunRefused(reply, refusal);
     const stored = await service.runEvidence.transcripts.record({
       secret: writer.secret,
       generation: writer.authority.generation,
@@ -352,17 +411,11 @@ function workerRunTranscriptRoute(
       bytes: request.body.byteLength,
       events: workerRunEvents(request.body),
     });
-    if (stored !== "Stored" && stored !== "AlreadyStored")
-      return reply
-        .code(workerRunStatus(stored))
-        .send({ action: "stop", reason: stored });
-    return workerRunObjectStored(
-      service,
-      writer.authority,
-      reply,
-      runTranscriptBatchPath(batch),
-      request.body,
-    );
+    return stored === "Stored" || stored === "AlreadyStored"
+      ? reply.code(204).send()
+      : reply
+          .code(workerRunStatus(stored))
+          .send({ action: "stop", reason: stored });
   });
 }
 
@@ -387,7 +440,7 @@ function workerRunFigureRoutes(
   app.post(workerPlaneRoutes[9], async (request, reply) => {
     const writer = await workerRunWriter(service, request);
     if (writer === undefined) return reply.code(401).send({ action: "stop" });
-    const offered = runTotalsSchema.safeParse(request.body);
+    const offered = workerRunTotalsSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
     const stored = await service.runEvidence.totals.record({
       secret: writer.secret,

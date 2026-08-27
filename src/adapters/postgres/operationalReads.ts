@@ -342,7 +342,7 @@ async function attempts(
           FROM execution_attempt
          WHERE tenant=${partition.tenant} AND project=${partition.project}
            AND execution=${execution}
-         ORDER BY attempt_number LIMIT 100`,
+         ORDER BY execution_attempt.attempt_number LIMIT 100`,
   );
   const runs = await postgresAttemptRuns(pool, partition, execution);
   return found.rows.map((row) => attemptResource(row, runs.get(row.attempt)));

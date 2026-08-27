@@ -15,6 +15,11 @@
  * names one, and a run's bytes are bounded by the bounds here rather than by
  * the manifest's own reservation quota.
  *
+ * A RE-POSTED TOTAL IS THE SAME TOTAL OR IT IS A CONFLICT, and the per-model
+ * breakdown is part of what was offered. It is compared as a whole beside the
+ * scalars, ordered by the model that keys it, so a run cannot replace what it
+ * said it spent per model while leaving the sums alone.
+ *
  * WHAT THE CHANGE LOG HEARS. A run opening and a batch landing append an
  * `Execution` row, which is the resource a console re-reads to learn the
  * transcript's high-water mark. The totals append a `Ticket` row as well,
@@ -357,6 +362,31 @@ const offeredTokensAreWhole = offeredTokens
 
 const offeredToken = (field: string) => `(offered->>'${field}')::bigint`;
 
+/**
+ * The wire name of each model-usage field beside the column holding it, so the
+ * two sides of an equality over a breakdown are built from one list rather than
+ * from two that could name different fields.
+ */
+const modelUsageFields: readonly (readonly [string, string])[] = [
+  ["model", "model"],
+  ...offeredTokens.map(
+    (field, index) => [field, tokenColumns[index] ?? ""] as const,
+  ),
+  ["costUsdMicros", "cost_usd_micros"],
+];
+
+const storedModelUsage = modelUsageFields
+  .map(([wire, column]) => `'${wire}',${column}`)
+  .join(",");
+
+const offeredModelUsage = modelUsageFields
+  .map(([wire]) =>
+    wire === "model"
+      ? `'${wire}',offered->>'model'`
+      : `'${wire}',${offeredToken(wire)}`,
+  )
+  .join(",");
+
 const workerRunTurnsWrite = [
   `CREATE FUNCTION ${workerRunTurnsFunction}(
      in_secret_digest text,in_generation bigint,in_turns jsonb)
@@ -442,7 +472,7 @@ const workerRunTotalWrite = [
      in_permission_denials bigint,in_result_subtype text,in_stop_reason text,
      in_models jsonb) RETURNS text
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-     DECLARE bound record; stored record;
+     DECLARE bound record; stored record; kept jsonb; offered_usage jsonb;
      BEGIN
        SELECT * INTO bound FROM ${workerRunBindingFunction}(in_secret_digest,in_generation);
        IF NOT FOUND THEN RETURN 'Fenced'; END IF;
@@ -464,8 +494,15 @@ const workerRunTotalWrite = [
          ON CONFLICT DO NOTHING;
        SELECT ${totalColumns} INTO stored FROM execution_run_total WHERE ${runBound};
        IF FOUND THEN
+         SELECT coalesce(jsonb_agg(jsonb_build_object(${storedModelUsage})
+                                   ORDER BY model),'[]'::jsonb)
+           INTO kept FROM execution_run_model_usage WHERE ${runBound};
+         SELECT coalesce(jsonb_agg(jsonb_build_object(${offeredModelUsage})
+                                   ORDER BY offered->>'model'),'[]'::jsonb)
+           INTO offered_usage FROM jsonb_array_elements(in_models) x(offered);
          RETURN CASE WHEN (${totalStored})
                        IS NOT DISTINCT FROM (${totalOffered})
+                      AND kept IS NOT DISTINCT FROM offered_usage
                      THEN 'AlreadyStored' ELSE 'Conflict' END;
        END IF;
        INSERT INTO execution_run_total (${runKey},${totalColumns})

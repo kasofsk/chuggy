@@ -821,7 +821,11 @@ type NativeRunEvidenceMethods = Pick<
   "runTurns" | "runTranscript" | "runConfiguration"
 >;
 
-/** The bytes of one page of batches, or the first refusal drawing them met. */
+/**
+ * One page of batches with the bytes each one has. Only an outage refuses the
+ * page: a batch that is gone or fails its digest is marked, because a run that
+ * died leaves exactly that and the batches beside it are what a reader came for.
+ */
 async function nativeRunTranscriptBatches(
   contents: RunEvidenceContentPort,
   stored: Awaited<ReturnType<RunEvidenceReadStore["transcript"]>>,
@@ -830,13 +834,17 @@ async function nativeRunTranscriptBatches(
   const batches: RunTranscriptBatch[] = [];
   for (const object of stored.objects) {
     const drawn = await contents.readEvidence(object);
-    if (drawn.read !== "Content") return drawn;
-    batches.push({
+    if (drawn.read === "Unavailable") return drawn;
+    const at = {
       batch: object.batch,
       recordedAt: object.recordedAt,
       bytes: object.bytes,
-      content: drawn.content,
-    });
+    };
+    batches.push(
+      drawn.read === "Content"
+        ? { ...at, read: "Content", content: drawn.content }
+        : { ...at, read: drawn.read === "NotFound" ? "Missing" : "Corrupt" },
+    );
   }
   return {
     read: "Page",

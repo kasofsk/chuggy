@@ -96,7 +96,7 @@ const runTokensSchema = z.object({
 });
 
 /** One model's share of a run, which is what a per-model breakdown is a page of. */
-const runModelUsageSchema = runTokensSchema.extend({
+export const runModelUsageSchema = runTokensSchema.extend({
   model: z.string().min(1).max(runModelCharsMax),
   costUsdMicros: countSchema,
 });
@@ -385,12 +385,27 @@ export const runTurnsResponseSchema = z.object({
 });
 export type RunTurnsResponse = z.infer<typeof runTurnsResponseSchema>;
 
-const runTranscriptBatchSchema = z.object({
+const runTranscriptBatchAt = {
   batch: countSchema,
   recordedAt: instantSchema,
   bytes: countSchema,
-  content: z.string(),
-});
+};
+
+/**
+ * One batch of a run's transcript: its characters, or the reason it has none.
+ * A batch whose stored object is gone or fails its digest is marked rather than
+ * refusing the batches around it, because a run that died never retries the
+ * upload and those neighbours are the whole of what it left.
+ */
+const runTranscriptBatchSchema = z.discriminatedUnion("read", [
+  z.object({
+    ...runTranscriptBatchAt,
+    read: z.literal("Content"),
+    content: z.string(),
+  }),
+  z.object({ ...runTranscriptBatchAt, read: z.literal("Missing") }),
+  z.object({ ...runTranscriptBatchAt, read: z.literal("Corrupt") }),
+]);
 
 /**
  * One page of a run's transcript. `complete` says the attempt is no longer

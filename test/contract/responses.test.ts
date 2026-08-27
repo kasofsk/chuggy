@@ -746,14 +746,29 @@ test("the three run reads parse as the contract names them", () => {
     runTranscriptResponse({
       read: "Page",
       page: {
-        batches: [{ batch: 1, recordedAt: instant, bytes: 5, content: "{}\n" }],
+        batches: [
+          {
+            read: "Content",
+            batch: 1,
+            recordedAt: instant,
+            bytes: 5,
+            content: "{}\n",
+          },
+          { read: "Missing", batch: 2, recordedAt: instant, bytes: 7 },
+          { read: "Corrupt", batch: 3, recordedAt: instant, bytes: 9 },
+        ],
         observedAt: instant,
         complete: false,
       },
     }).body,
   );
   assert.equal(transcript.complete, false);
-  assert.equal(transcript.batches[0]?.content, "{}\n");
+  const first = transcript.batches[0];
+  assert.equal(first?.read === "Content" ? first.content : undefined, "{}\n");
+  assert.deepEqual(
+    transcript.batches.map((batch) => batch.read),
+    ["Content", "Missing", "Corrupt"],
+  );
   const snapshot = runConfigurationResponseSchema.parse(
     runConfigurationResponse({
       read: "Content",
@@ -791,12 +806,14 @@ test("a run figure past the bound the contract names is refused", () => {
         page: {
           batches: Array.from(
             { length: runTranscriptPageBatchesMax + 1 },
-            (_unused, index) => ({
-              batch: index + 1,
-              recordedAt: instant,
-              bytes: 0,
-              content: "",
-            }),
+            (_unused, index) =>
+              ({
+                read: "Content",
+                batch: index + 1,
+                recordedAt: instant,
+                bytes: 0,
+                content: "",
+              }) as const,
           ),
           observedAt: instant,
           complete: true,

@@ -369,6 +369,7 @@ test("identical terminal report redelivery reaches its absorbed operation", asyn
 function runEvidencePlane(
   evidence: Partial<WorkerRunEvidencePorts>,
   stored: unknown[] = [],
+  trace: string[] = [],
 ) {
   return createWorkerPlaneApp({
     ...heartbeatService,
@@ -383,6 +384,7 @@ function runEvidencePlane(
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: {
       store: (input) => {
+        trace.push("bytes");
         stored.push({ path: input.path, bytes: input.content.byteLength });
         return Promise.resolve({ stored: "Stored" });
       },
@@ -531,18 +533,16 @@ test("a recorded snapshot and batch are stored at the path the server derived", 
   await app.close();
 });
 
-test("a refused durable write stores no bytes and answers what refused it", async () => {
+test("a durable refusal is answered with what refused it", async () => {
   for (const [verdict, status] of [
     ["Conflict", 409],
     ["OutOfOrder", 409],
     ["Fenced", 409],
     ["QuotaExceeded", 413],
   ] as const) {
-    const stored: unknown[] = [];
-    const app = runEvidencePlane(
-      { transcripts: { record: () => Promise.resolve(verdict) } },
-      stored,
-    );
+    const app = runEvidencePlane({
+      transcripts: { record: () => Promise.resolve(verdict) },
+    });
     const response = await app.inject({
       method: "PUT",
       url: "/v1/run/transcript/1",
@@ -551,7 +551,84 @@ test("a refused durable write stores no bytes and answers what refused it", asyn
     });
     assert.equal(response.statusCode, status, verdict);
     assert.equal(response.json<{ reason: string }>().reason, verdict);
-    assert.deepEqual(stored, []);
+    await app.close();
+  }
+});
+
+test("the bytes are stored before the row that points at them", async () => {
+  for (const [url, port] of [
+    ["/v1/run/configuration", "configurations"],
+    ["/v1/run/transcript/1", "transcripts"],
+  ] as const) {
+    const trace: string[] = [];
+    const app = runEvidencePlane(
+      {
+        [port]: {
+          record: () => {
+            trace.push("row");
+            return Promise.resolve("Stored" as const);
+          },
+        },
+      },
+      [],
+      trace,
+    );
+    const response = await app.inject({
+      method: "PUT",
+      url,
+      headers: { ...held, ...octets },
+      payload: Buffer.from("{}\n"),
+    });
+    assert.equal(response.statusCode, 204, url);
+    assert.deepEqual(trace, ["bytes", "row"], url);
+    await app.close();
+  }
+});
+
+test("a store that could not keep the bytes records no row", async () => {
+  for (const url of [
+    "/v1/run/configuration",
+    "/v1/run/transcript/1",
+  ] as const) {
+    const trace: string[] = [];
+    const counted = () => {
+      trace.push("row");
+      return Promise.resolve("Stored" as const);
+    };
+    const app = createWorkerPlaneApp({
+      ...heartbeatService,
+      ...runEvidenceService,
+      runEvidence: {
+        ...runEvidenceService.runEvidence,
+        configurations: { record: counted },
+        transcripts: { record: counted },
+      },
+      authority: { authenticate: () => Promise.resolve(authority) },
+      reservations: {
+        reserve: () => Promise.resolve({ reserved: "Reserved" }),
+      },
+      artifacts: {
+        store: () => {
+          trace.push("bytes");
+          return Promise.resolve({
+            stored: "Unavailable",
+            retryAfterSeconds: 30,
+          });
+        },
+      },
+      reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+      ready: () => Promise.resolve(true),
+      uploadBytesMax: workerPlaneUploadBytesMax,
+    });
+    const response = await app.inject({
+      method: "PUT",
+      url,
+      headers: { ...held, ...octets },
+      payload: Buffer.from("{}\n"),
+    });
+    assert.equal(response.statusCode, 503, url);
+    assert.equal(response.headers["retry-after"], "30", url);
+    assert.deepEqual(trace, ["bytes"], url);
     await app.close();
   }
 });
@@ -662,9 +739,9 @@ test("a turn page answers with the high-water the boundary stored", async () => 
   await app.close();
 });
 
-test("a run's totals and its ending are taken as the contract names them", async () => {
-  const offered: unknown[] = [];
-  const app = runEvidencePlane({
+/** A plane whose totals and ending boundaries record what they were offered. */
+function runFigurePlane(offered: unknown[]) {
+  return runEvidencePlane({
     totals: {
       record: (input) => {
         offered.push(input.totals);
@@ -678,26 +755,33 @@ test("a run's totals and its ending are taken as the contract names them", async
       },
     },
   });
-  const totals = {
-    turns: 2,
-    durationMs: 10,
-    durationApiMs: 5,
-    tokensInput: 1,
-    tokensOutput: 2,
-    tokensCacheCreation: 3,
-    tokensCacheRead: 4,
-    costUsdMicros: 7,
-    costBasis: "List",
-    models: [],
-    permissionDenials: 0,
-  };
+}
+
+/** The figures one run reports, which every totals case varies one field of. */
+const runTotalsBody = {
+  turns: 2,
+  durationMs: 10,
+  durationApiMs: 5,
+  tokensInput: 1,
+  tokensOutput: 2,
+  tokensCacheCreation: 3,
+  tokensCacheRead: 4,
+  costUsdMicros: 7,
+  costBasis: "List",
+  models: [],
+  permissionDenials: 0,
+} as const;
+
+test("a run's totals and its ending are taken as the contract names them", async () => {
+  const offered: unknown[] = [];
+  const app = runFigurePlane(offered);
   assert.equal(
     (
       await app.inject({
         method: "POST",
         url: "/v1/run/totals",
         headers: held,
-        payload: totals,
+        payload: runTotalsBody,
       })
     ).statusCode,
     204,
@@ -713,9 +797,31 @@ test("a run's totals and its ending are taken as the contract names them", async
     ).statusCode,
     204,
   );
-  assert.deepEqual(offered, [totals, "RunRateLimited"]);
+  assert.deepEqual(offered, [runTotalsBody, "RunRateLimited"]);
+  await app.close();
+});
+
+test("a totals or ending body the contract does not name reaches no boundary", async () => {
+  const offered: unknown[] = [];
+  const app = runFigurePlane(offered);
+  const model = {
+    model: "claude-fixture",
+    tokensInput: 1,
+    tokensOutput: 1,
+    tokensCacheCreation: 1,
+    tokensCacheRead: 1,
+    costUsdMicros: 1,
+  };
   for (const [url, payload] of [
-    ["/v1/run/totals", { ...totals, costBasis: "Invoice" }],
+    ["/v1/run/totals", { ...runTotalsBody, costBasis: "Invoice" }],
+    [
+      "/v1/run/totals",
+      { ...runTotalsBody, recordedAt: "2026-08-27T00:00:00Z" },
+    ],
+    [
+      "/v1/run/totals",
+      { ...runTotalsBody, models: [{ ...model, recordedAt: "2026-08-27" }] },
+    ],
     ["/v1/run/ended", { evidence: "LeaseExpired" }],
     ["/v1/run/ended", { evidence: "RunFailed", extra: 1 }],
   ] as const) {
@@ -727,7 +833,7 @@ test("a run's totals and its ending are taken as the contract names them", async
     });
     assert.equal(refused.statusCode, 400, JSON.stringify(payload));
   }
-  assert.equal(offered.length, 2);
+  assert.deepEqual(offered, []);
   await app.close();
 });
 

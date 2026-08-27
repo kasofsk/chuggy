@@ -53,6 +53,12 @@ import {
   asAttemptId,
   asExecutionId,
 } from "../../src/interpreter/schedulerIdentity.ts";
+import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
+import {
+  runTranscriptBatchPath,
+  type RunEvidenceContentPort,
+  type RunEvidenceReadStore,
+} from "../../src/interpreter/runEvidence.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -165,6 +171,8 @@ function boundary(
   backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
   repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
   initialization?: ReturnType<AuthoringStore["initializeDraft"]>,
+  runEvidenceReads?: RunEvidenceReadStore,
+  runEvidenceContents?: RunEvidenceContentPort,
 ): {
   readonly web: ReturnType<typeof nativeWeb>;
   readonly calls: string[];
@@ -208,9 +216,59 @@ function boundary(
       undefined,
       undefined,
       repositoryConfigurationImports,
+      runEvidenceReads,
+      runEvidenceContents,
     ),
     calls,
   };
+}
+
+/** What one stored batch's bytes turned out to be, as a case names them. */
+type TranscriptDraw = "Content" | "NotFound" | "Corrupt" | "Unavailable";
+
+/** A boundary whose transcript page holds one object per named draw. */
+function transcriptBoundary(draws: readonly TranscriptDraw[]) {
+  const recordedAt = asPublicInstant("2026-08-27T00:00:00Z");
+  const objects = draws.map((_draw, index) => ({
+    partition,
+    execution: asExecutionId("execution"),
+    attempt: asAttemptId("attempt"),
+    path: runTranscriptBatchPath(index + 1),
+    digest: asArtifactDigest("a".repeat(64)),
+    bytes: index + 1,
+    batch: index + 1,
+    recordedAt,
+  }));
+  const reads: RunEvidenceReadStore = {
+    turns: () => Promise.resolve(undefined),
+    transcript: () =>
+      Promise.resolve({ objects, observedAt: recordedAt, complete: true }),
+    configuration: () => Promise.resolve(undefined),
+  };
+  const contents: RunEvidenceContentPort = {
+    readEvidence: (object) => {
+      const at = objects.findIndex((held) => held.path === object.path);
+      const draw = draws[at];
+      if (draw === "Content")
+        return Promise.resolve({
+          read: "Content",
+          content: `batch-${String(at + 1)}`,
+        });
+      if (draw === "Unavailable")
+        return Promise.resolve({ read: "Unavailable", retryAfterSeconds: 5 });
+      return Promise.resolve({
+        read: draw === "Corrupt" ? "Corrupt" : "NotFound",
+      });
+    },
+  };
+  return boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    reads,
+    contents,
+  ).web;
 }
 
 const readyConfiguration = asCanonicalConfiguration(
@@ -764,4 +822,47 @@ test("only the access kinds the authorization function knows narrow", () => {
   assert.equal(asProjectAccessKind("DispatchTicket"), "DispatchTicket");
   assert.throws(() => asProjectAccessKind("Dispatch"), RangeError);
   assert.throws(() => asProjectAccessKind(""), RangeError);
+});
+
+test("a transcript page marks a batch it cannot draw and answers the rest", async () => {
+  const page = await transcriptBoundary([
+    "Content",
+    "NotFound",
+    "Corrupt",
+    "Content",
+  ]).runTranscript(
+    principal,
+    partition,
+    asExecutionId("execution"),
+    asAttemptId("attempt"),
+    0,
+  );
+  assert.equal(page.read, "Page");
+  if (page.read !== "Page") return;
+  assert.deepEqual(
+    page.page.batches.map((batch) => [batch.batch, batch.read]),
+    [
+      [1, "Content"],
+      [2, "Missing"],
+      [3, "Corrupt"],
+      [4, "Content"],
+    ],
+  );
+  const last = page.page.batches[3];
+  assert.equal(last?.read === "Content" ? last.content : undefined, "batch-4");
+});
+
+test("an outage refuses the whole transcript page rather than marking it", async () => {
+  const page = await transcriptBoundary([
+    "Content",
+    "Unavailable",
+    "Content",
+  ]).runTranscript(
+    principal,
+    partition,
+    asExecutionId("execution"),
+    asAttemptId("attempt"),
+    0,
+  );
+  assert.deepEqual(page, { read: "Unavailable", retryAfterSeconds: 5 });
 });
