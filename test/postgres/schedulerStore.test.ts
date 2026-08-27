@@ -856,3 +856,25 @@ test("a cancelled ticket stops counting against the dispatch guard at once", asy
   );
   assert.equal(await backlogOf(), "0");
 });
+
+test("the briefing fault that ended an attempt is read back from its evidence", async () => {
+  const project = await schedulerProject(rig, "faulted", { tasks: 1 });
+  await registerAll(project, "faulted");
+  const attempt = await placedAttempt(project, "faulted");
+  assert.equal(
+    await rig.store.attemptEnded(
+      attempt,
+      "Withdrawn",
+      "PolicyDenied: ReportTooLong",
+    ),
+    true,
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT state,evidence FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      [project.partition.tenant, project.partition.project, attempt.attempt],
+    ),
+    [{ state: "Withdrawn", evidence: "PolicyDenied: ReportTooLong" }],
+  );
+});

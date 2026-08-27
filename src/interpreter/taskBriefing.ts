@@ -50,17 +50,38 @@
  * on it that can hold a rendered prompt, a credential or source material,
  * which is how the retention rule is kept rather than remembered.
  *
+ * A PRIOR WORK REPORT IS A DOCUMENT AND NOT A LINE, so it is admitted under
+ * `resultReportCharsMax` — the bound the manifest that carried it and the row
+ * that retained it are both written against — rather than under the bound one
+ * authored criterion has. It is held to the same printable rule as the row it
+ * came from, so what a manifest may carry a briefing may render.
+ *
+ * WHAT COMPOSITION HANDS OVER IS BOUNDED AS ONE VALUE, NOT LIST BY LIST. Every
+ * input has a bound of its own, and their sum is larger than an exec
+ * environment string holds — which is how a launched fabric carries the task —
+ * so a briefing that renders and an authored worker configuration beside it can
+ * together make a container that cannot start. `taskInvocationBytesMax` is the
+ * bound the carrier actually has, and `EnvelopeTooLong` is the refusal that
+ * replaces the failure to launch.
+ *
  * A REFUSAL IS `TicketConfigIncompatible` AND THE FAULT SAYS WHICH. The reason
  * vocabulary is the model's and is closed; `BriefingFault` is this module's
- * bounded diagnostic beside it, and `./executionSchedulerRun.ts` observes it at
- * the block it causes — so a blocked ticket can be explained without widening
- * what `Core` understands.
+ * bounded diagnostic beside it, and `./executionSchedulerRun.ts` writes it into
+ * the ended attempt's evidence beside the label — so a blocked ticket can be
+ * explained without widening what `Core` understands.
  */
 
 import { briefIntentLinesMax, briefLinksMax } from "../contract/brief.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
+import {
+  resultReportCharsMax,
+  resultTextControlCharacter,
+} from "./resultManifest.ts";
 import type { Partition } from "./projectStore.ts";
-import type { ExecutionId } from "./schedulerIdentity.ts";
+import {
+  schedulerIdentityCharsMax,
+  type ExecutionId,
+} from "./schedulerIdentity.ts";
 import {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
@@ -102,6 +123,7 @@ export type { TaskPurpose } from "./briefingTemplate.ts";
 import { briefIntentLines, type DraftBrief } from "./ticketBrief.ts";
 import {
   resolveTaskAuthority,
+  taskAuthorityGrant,
   type AuthorityRequest,
   type PolicyAuthorityGrant,
   type TaskAuthority,
@@ -206,6 +228,25 @@ export const runtimeChangedFilesMax = 64;
 /** The most handoff lines runtime context may carry. */
 export const runtimeHandoffLinesMax = 32;
 
+/**
+ * The bytes one environment string carries into an exec, which is `execve`'s
+ * `MAX_ARG_STRLEN`. It is the smallest carrier a launched task has, so it is
+ * the one composition is written against; a fabric that hands its worker the
+ * task another way has more room and needs none of it.
+ */
+export const taskEnvelopeBytesMax = 131_072;
+
+/** The identities and addresses a fabric adds around the invocation it was handed. */
+export const taskEnvelopeFabricIdentitiesMax = 32;
+
+/** The room those keep, so what a fabric adds cannot take the envelope past the carrier. */
+export const taskEnvelopeFabricBytesMax =
+  taskEnvelopeFabricIdentitiesMax * schedulerIdentityCharsMax;
+
+/** What one composed invocation may weigh, which is what is left of the carrier. */
+export const taskInvocationBytesMax =
+  taskEnvelopeBytesMax - taskEnvelopeFabricBytesMax;
+
 /** Why a briefing could not be composed, each of them a fact about the pinned configuration. */
 export type BriefingFault =
   | "RevisionMismatch"
@@ -215,6 +256,8 @@ export type BriefingFault =
   | "EmptyBrief"
   | "EmptyLine"
   | "TextTooLong"
+  | "ReportTooLong"
+  | "EnvelopeTooLong"
   | "TextUnreadable"
   | "TooManyLines"
   | "StageNotCovered";
@@ -228,6 +271,8 @@ export const allBriefingFaults: readonly BriefingFault[] = [
   "EmptyBrief",
   "EmptyLine",
   "TextTooLong",
+  "ReportTooLong",
+  "EnvelopeTooLong",
   "TextUnreadable",
   "TooManyLines",
   "StageNotCovered",
@@ -409,14 +454,34 @@ function briefingConfigurationFault(
 /** What the gathered runtime facts have to be to render, which is bounded and printable. */
 function briefingRuntimeFault(
   runtime: RuntimeFacts,
-  priorWorkReports: PriorWorkReports,
 ): BriefingFault | undefined {
   return briefingListsFault([
     [runtime.workspace === undefined ? [] : [runtime.workspace], 1],
     [runtime.changedFiles, runtimeChangedFilesMax],
     [runtime.handoff, runtimeHandoffLinesMax],
-    [priorWorkReports.reports, priorWorkReportsMax],
   ]);
+}
+
+/** What one earlier work task's report has to be to render, which is a document's bound. */
+function briefingReportFault(report: string): BriefingFault | undefined {
+  if (report.length === 0) return "EmptyLine";
+  if (report.length > resultReportCharsMax) return "ReportTooLong";
+  if (!report.isWellFormed() || resultTextControlCharacter(report))
+    return "TextUnreadable";
+  return undefined;
+}
+
+/** What the reports gathered for a review have to be, which is bounded and made of renderable reports. */
+function briefingReportsFault(
+  priorWorkReports: PriorWorkReports,
+): BriefingFault | undefined {
+  if (priorWorkReports.reports.length > priorWorkReportsMax)
+    return "TooManyLines";
+  for (const report of priorWorkReports.reports) {
+    const fault = briefingReportFault(report);
+    if (fault !== undefined) return fault;
+  }
+  return undefined;
 }
 
 /** What the ticket's own brief has to be to render, which is bounded and printable. */
@@ -635,6 +700,25 @@ export type TaskComposed =
   | { readonly composed: "Composed"; readonly invocation: TaskInvocation }
   | { readonly composed: "Blocked"; readonly fault: BriefingFault };
 
+/**
+ * What one invocation weighs on the wire: everything a fabric has to carry to
+ * its worker, and nothing the retention rule keeps behind. The provenance is
+ * left out because it is retained here rather than handed over.
+ */
+export function taskInvocationBytes(invocation: TaskInvocation): number {
+  return new TextEncoder().encode(
+    JSON.stringify({
+      briefing: {
+        templateVersion: invocation.briefing.templateVersion,
+        purpose: invocation.briefing.purpose,
+        text: invocation.briefing.text,
+      },
+      authority: taskAuthorityGrant(invocation.authority),
+      ...(invocation.worker === undefined ? {} : { worker: invocation.worker }),
+    }),
+  ).byteLength;
+}
+
 /** Composes one role's invocation from the pinned configuration and the gathered facts. */
 export function composeTaskInvocation(
   catalog: PracticeCatalog,
@@ -642,7 +726,8 @@ export function composeTaskInvocation(
 ): TaskComposed {
   const fault =
     briefingConfigurationFault(view) ??
-    briefingRuntimeFault(view.runtime, view.priorWorkReports) ??
+    briefingRuntimeFault(view.runtime) ??
+    briefingReportsFault(view.priorWorkReports) ??
     briefingTicketBriefFault(view.brief);
   if (fault !== undefined) return { composed: "Blocked", fault };
   const resolved = resolvePractices(
@@ -654,18 +739,18 @@ export function composeTaskInvocation(
     return { composed: "Blocked", fault: resolved.fault };
   }
   const briefing = renderBriefing(view, resolved.practices);
-  return {
-    composed: "Composed",
-    invocation: {
-      briefing,
-      authority: resolveTaskAuthority(
-        view.grant,
-        briefingAuthorityRequests(view),
-      ),
-      provenance: briefingProvenance(briefing, view.pin, resolved.practices),
-      ...(view.configuration.worker === undefined
-        ? {}
-        : { worker: view.configuration.worker }),
-    },
+  const invocation: TaskInvocation = {
+    briefing,
+    authority: resolveTaskAuthority(
+      view.grant,
+      briefingAuthorityRequests(view),
+    ),
+    provenance: briefingProvenance(briefing, view.pin, resolved.practices),
+    ...(view.configuration.worker === undefined
+      ? {}
+      : { worker: view.configuration.worker }),
   };
+  return taskInvocationBytes(invocation) > taskInvocationBytesMax
+    ? { composed: "Blocked", fault: "EnvelopeTooLong" }
+    : { composed: "Composed", invocation };
 }

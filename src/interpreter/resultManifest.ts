@@ -137,14 +137,14 @@ export function resultDigestFold(digest: ArtifactDigest): number {
   return Number.parseInt(digest.slice(0, resultDigestFoldHexChars), 16) + 1;
 }
 
-/** The first code point a path may carry, below which every value is a control character. */
-const artifactPathFirstPrintable = 0x20;
+/** The first code point retained text may carry, below which every value is a control character. */
+const resultTextFirstPrintable = 0x20;
 
 /** The first code point of the delete and C1 block, which survives encoding and renders as nothing. */
-const artifactPathFirstUpperControl = 0x7f;
+const resultTextFirstUpperControl = 0x7f;
 
 /** The last code point of that block. */
-const artifactPathLastUpperControl = 0x9f;
+const resultTextLastUpperControl = 0x9f;
 
 /** Which of a manifest's two lists an artifact was declared in. */
 export type ArtifactRole = "Handoff" | "Diagnostic";
@@ -313,14 +313,18 @@ export function asArtifactDigest(value: string): ArtifactDigest {
   return value as ArtifactDigest;
 }
 
-/** Whether any code point is one a key truncates at or a reader cannot see. */
-function artifactPathControlCharacter(value: string): boolean {
+/**
+ * Whether any code point is one a key truncates at or a reader cannot see.
+ * Retained text is held to this whether it is a path, a report or a briefing's
+ * copy of one, so the three admit the same characters by construction.
+ */
+export function resultTextControlCharacter(value: string): boolean {
   return [...value].some((character) => {
-    const code = character.codePointAt(0) ?? artifactPathFirstPrintable;
+    const code = character.codePointAt(0) ?? resultTextFirstPrintable;
     return (
-      code < artifactPathFirstPrintable ||
-      (code >= artifactPathFirstUpperControl &&
-        code <= artifactPathLastUpperControl)
+      code < resultTextFirstPrintable ||
+      (code >= resultTextFirstUpperControl &&
+        code <= resultTextLastUpperControl)
     );
   });
 }
@@ -341,7 +345,7 @@ export function artifactPathRejection(
   if (value.length === 0) return "PathEmpty";
   if (value.length > artifactPathCharsMax) return "PathTooLong";
   if (value.normalize("NFC") !== value) return "PathNotNormalForm";
-  if (artifactPathControlCharacter(value)) return "PathHasControlCharacter";
+  if (resultTextControlCharacter(value)) return "PathHasControlCharacter";
   if (value.includes("\\")) return "PathHasBackslash";
   if (value.startsWith("/")) return "PathAbsolute";
   const segments = value.split("/");
@@ -558,14 +562,7 @@ function manifestReport(
     report.length === 0 ||
     report.length > resultReportCharsMax ||
     !report.isWellFormed() ||
-    [...report].some((character) => {
-      const code = character.codePointAt(0) ?? 0;
-      return (
-        code < artifactPathFirstPrintable ||
-        (code >= artifactPathFirstUpperControl &&
-          code <= artifactPathLastUpperControl)
-      );
-    })
+    resultTextControlCharacter(report)
   ) {
     return manifestRejected("ReportMalformed");
   }

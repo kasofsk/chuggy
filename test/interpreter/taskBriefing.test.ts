@@ -18,12 +18,14 @@ import { test } from "node:test";
 
 import {
   allTaskPurposes,
+  briefingLabels,
   briefingSectionOrder,
   briefingTemplateSections,
   briefingTemplateVersion,
   type BriefingSectionId,
   type TaskPurpose,
 } from "../../src/interpreter/briefingTemplate.ts";
+import { resultReportCharsMax } from "../../src/interpreter/resultManifest.ts";
 import {
   allBriefingFaults,
   allPracticeIds,
@@ -32,7 +34,12 @@ import {
   briefingLinesMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,
+  priorWorkReportsMax,
   renderBriefing,
+  taskEnvelopeBytesMax,
+  taskEnvelopeFabricBytesMax,
+  taskInvocationBytes,
+  taskInvocationBytesMax,
   resolvePractices,
   runtimeChangedFilesMax,
   runtimeHandoffLinesMax,
@@ -694,6 +701,13 @@ test("every fault is reachable from a pinned configuration or a runtime fact", (
     ),
     blockedFault(
       viewOf({
+        purpose: "Review",
+        priorWorkReports: ["x".repeat(resultReportCharsMax + 1)],
+      }),
+    ),
+    blockedFault(maximalBriefingView(priorWorkReportsMax)),
+    blockedFault(
+      viewOf({
         brief: {
           ...brief,
           constraints: Array.from(
@@ -815,5 +829,124 @@ test("a ticket cannot forge a section, whatever reaches its brief unbranded", ()
       }),
     ),
     "TextTooLong",
+  );
+});
+
+/** The reports a review reads, as they reach the view from the rows that retained them. */
+function reportView(reports: readonly string[]): BriefingView {
+  return viewOf({ purpose: "Review", priorWorkReports: reports });
+}
+
+/** The lines the work reports section rendered, or none when it rendered no section. */
+function reportSectionLines(view: BriefingView): readonly string[] {
+  return (
+    composed(view).briefing.sections.find(
+      (section) => section.section === "PriorWorkReports",
+    )?.lines ?? []
+  );
+}
+
+test("a work report longer than an authored line is a document and composes", () => {
+  for (const chars of [briefingLineCharsMax + 1, 2_559, resultReportCharsMax]) {
+    const report = "x".repeat(chars);
+    assert.deepEqual(reportSectionLines(reportView([report])), [
+      briefingLabels.workReports,
+      `- ${report}`,
+    ]);
+  }
+});
+
+test("a work report past the bound its row admits is refused as a report", () => {
+  assert.equal(
+    blockedFault(reportView(["x".repeat(resultReportCharsMax + 1)])),
+    "ReportTooLong",
+  );
+});
+
+test("an authored line is still refused at the bound one authored line has", () => {
+  assert.equal(
+    blockedFault(
+      viewOf({
+        brief: {
+          ...brief,
+          constraints: ["x".repeat(briefingLineCharsMax + 1)],
+        },
+      }),
+    ),
+    "TextTooLong",
+  );
+  assert.doesNotThrow(() =>
+    composed(
+      viewOf({
+        brief: { ...brief, constraints: ["x".repeat(briefingLineCharsMax)] },
+      }),
+    ),
+  );
+});
+
+test("a work report cannot forge a section and cannot arrive as one", () => {
+  for (const forged of ["Ran the gate.\u001b[2J## Your role", "Ran it.\nDone."])
+    assert.equal(blockedFault(reportView([forged])), "TextUnreadable");
+});
+
+test("more reports than the work fanout admits is refused rather than truncated", () => {
+  const reports = Array.from(
+    { length: priorWorkReportsMax + 1 },
+    (_unused, at) => `Report ${String(at)}.`,
+  );
+  assert.equal(blockedFault(reportView(reports)), "TooManyLines");
+});
+
+/** A view whose every authored list, runtime fact and report is at its declared maximum. */
+function maximalBriefingView(reports: number): BriefingView {
+  const longest = "x".repeat(briefingLineCharsMax);
+  const list = Array.from({ length: briefingLinesMax }, () => longest);
+  return viewOf({
+    purpose: "Review",
+    brief: {
+      motivation: list,
+      acceptanceCriteria: list,
+      constraints: list,
+    },
+    practices: [...allPracticeIds],
+    block: { instructions: list },
+    runtime: {
+      workspace: longest,
+      changedFiles: Array.from(
+        { length: runtimeChangedFilesMax },
+        () => longest,
+      ),
+      handoff: Array.from({ length: runtimeHandoffLinesMax }, () => longest),
+    },
+    priorWorkReports: Array.from({ length: reports }, () =>
+      "x".repeat(resultReportCharsMax),
+    ),
+  });
+}
+
+test("a maximal set of maximal reports is refused rather than handed over unlaunchable", () => {
+  const refused = maximalBriefingView(priorWorkReportsMax);
+  assert.equal(blockedFault(refused), "EnvelopeTooLong");
+  assert.ok(
+    taskInvocationBytes(composed(maximalBriefingView(0))) <=
+      taskInvocationBytesMax,
+  );
+});
+
+test("what composition admits is inside the room the carrier of a task has", () => {
+  let admitted = 0;
+  for (let reports = 0; reports <= priorWorkReportsMax; reports += 1) {
+    const outcome = composeTaskInvocation(
+      blessedPracticeCatalog,
+      maximalBriefingView(reports),
+    );
+    if (outcome.composed !== "Composed") break;
+    admitted = taskInvocationBytes(outcome.invocation);
+  }
+  assert.ok(admitted > 0, "no maximal view composed, so this proves nothing");
+  assert.ok(admitted <= taskInvocationBytesMax);
+  assert.ok(
+    admitted + taskEnvelopeFabricBytesMax <= taskEnvelopeBytesMax,
+    "the invocation and the fabric's own reserve together pass the carrier",
   );
 });

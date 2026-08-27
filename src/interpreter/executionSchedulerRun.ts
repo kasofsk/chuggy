@@ -89,7 +89,7 @@
 import {
   checkedExecutionSchedulerConfig,
   recordScheduler,
-  type AttemptEvidence,
+  type AttemptEvidenceRecord,
   type AttemptLoss,
   type AttemptOpening,
   type BlockedReason,
@@ -177,7 +177,7 @@ async function schedulerEndAttempt(
   service: ExecutionSchedulerService,
   attempt: FencedAttempt,
   loss: AttemptLoss,
-  evidence: AttemptEvidence,
+  evidence: AttemptEvidenceRecord,
 ): Promise<boolean> {
   const ended = await service.store.attemptEnded(attempt, loss, evidence);
   recordScheduler(service.metrics, (metrics) => {
@@ -297,7 +297,7 @@ async function schedulerBlock(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
   attempt: PhysicalAttempt,
-  evidence: AttemptEvidence,
+  evidence: AttemptEvidenceRecord,
   reason: BlockedReason,
 ): Promise<void> {
   await schedulerEndAttempt(service, attempt, "Withdrawn", evidence);
@@ -419,7 +419,7 @@ async function schedulerUnready(
         service,
         execution,
         attempt,
-        "PolicyDenied",
+        `PolicyDenied: ${unready.fault}`,
         "TicketConfigIncompatible",
       );
       return;
@@ -516,7 +516,7 @@ async function schedulerPrepare(
         service,
         execution,
         attempt,
-        "PolicyDenied",
+        `PolicyDenied: ${composed.fault}`,
         "TicketConfigIncompatible",
       );
       return undefined;

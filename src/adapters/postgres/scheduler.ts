@@ -82,7 +82,7 @@ import {
   asExecutionId,
   executionOwnsSlot,
   type Admitted,
-  type AttemptEvidence,
+  type AttemptEvidenceRecord,
   type AttemptLoss,
   type AttemptOpened,
   type AttemptOpening,
@@ -892,7 +892,7 @@ async function schedulerAttemptEnded(
   client: pg.PoolClient,
   attempt: FencedAttempt,
   loss: AttemptLoss,
-  evidence: AttemptEvidence,
+  evidence: AttemptEvidenceRecord,
 ): Promise<boolean> {
   await schedulerLockAttemptExecution(client, attempt);
   const ended = await client.query(

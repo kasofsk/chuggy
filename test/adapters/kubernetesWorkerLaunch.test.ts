@@ -51,10 +51,19 @@ import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.ts";
 import {
+  allPracticeIds,
   blessedPracticeCatalog,
+  briefingLineCharsMax,
+  briefingLinesMax,
   composeTaskInvocation,
+  priorWorkReportsMax,
+  runtimeChangedFilesMax,
+  runtimeHandoffLinesMax,
+  taskEnvelopeBytesMax,
   type PinnedTaskConfiguration,
+  type TaskInvocation,
 } from "../../src/interpreter/taskBriefing.ts";
+import { resultReportCharsMax } from "../../src/interpreter/resultManifest.ts";
 
 const root = mkdtempSync(join(tmpdir(), "chuggy-cluster-"));
 after(() => {
@@ -937,5 +946,79 @@ test("two credentials cannot project to the same final file", () => {
         },
       }),
     /worker mount path .* is repeated/u,
+  );
+});
+
+/** A configuration whose every authored list is at the maximum the briefing rule admits. */
+function maximalConfiguration(): PinnedTaskConfiguration {
+  const list = Array.from({ length: briefingLinesMax }, () =>
+    "x".repeat(briefingLineCharsMax),
+  );
+  return {
+    ...configuration,
+    brief: {
+      motivation: list,
+      acceptanceCriteria: list,
+      constraints: list,
+    },
+    practices: [...allPracticeIds],
+    work: { instructions: list },
+    review: { instructions: list },
+  };
+}
+
+/** The heaviest invocation composition still admits, found by adding one report until it refuses. */
+function heaviestTaskInvocation(): TaskInvocation | undefined {
+  const longest = "x".repeat(briefingLineCharsMax);
+  const maximal = maximalConfiguration();
+  let heaviest: TaskInvocation | undefined;
+  for (let reports = 0; reports <= priorWorkReportsMax; reports += 1) {
+    const composed = composeTaskInvocation(blessedPracticeCatalog, {
+      purpose: "Review",
+      pin: maximal,
+      configuration: maximal,
+      runtime: {
+        workspace: longest,
+        changedFiles: Array.from(
+          { length: runtimeChangedFilesMax },
+          () => longest,
+        ),
+        handoff: Array.from({ length: runtimeHandoffLinesMax }, () => longest),
+      },
+      priorWorkReports: {
+        reports: Array.from({ length: reports }, () =>
+          "x".repeat(resultReportCharsMax),
+        ),
+      },
+      grant,
+    });
+    if (composed.composed !== "Composed") break;
+    heaviest = composed.invocation;
+  }
+  return heaviest;
+}
+
+test("the heaviest task a composition admits still fits the pod env that carries it", () => {
+  const invocation = heaviestTaskInvocation();
+  assert.ok(
+    invocation !== undefined,
+    "no invocation composed, so this proves nothing",
+  );
+  const requested = kubernetesWorkerPodRequest(config, {
+    ...placement,
+    taskKind: "Evaluation",
+    invocation,
+  });
+  assert.equal(requested.requested, "Pod");
+  if (requested.requested !== "Pod") return;
+  const variable = requested.pod.spec.containers[0]?.env.find(
+    ({ name }) => name === kubernetesWorkerTaskVariable,
+  );
+  assert.ok(variable);
+  const carried = new TextEncoder().encode(variable.value).byteLength;
+  assert.ok(carried > 0, "the task variable is empty, so this proves nothing");
+  assert.ok(
+    carried < taskEnvelopeBytesMax,
+    `the task variable is ${String(carried)} bytes, which no exec environment string carries`,
   );
 });

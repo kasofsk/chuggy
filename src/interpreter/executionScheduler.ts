@@ -479,6 +479,17 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
   "Fenced",
 ];
 
+/**
+ * What an ended attempt records: a label, or a label the fault that caused it
+ * qualifies. Both arms are closed and their longest inhabitant is shorter than
+ * the evidence column admits, so the diagnostic that explains a
+ * `TicketConfigIncompatible` block survives the attempt without the reason
+ * vocabulary or the label set growing to carry it.
+ */
+export type AttemptEvidenceRecord =
+  | AttemptEvidence
+  | `${AttemptEvidence}: ${BriefingFault | TaskConfigurationReadFault}`;
+
 /** What a registration pass found for one focused spawn request. */
 export type SpawnRegistered =
   | { readonly registered: "Registered"; readonly created: number }
@@ -634,7 +645,7 @@ export interface ExecutionSchedulerStore {
   attemptEnded(
     attempt: FencedAttempt,
     loss: AttemptLoss,
-    evidence: AttemptEvidence,
+    evidence: AttemptEvidenceRecord,
   ): Promise<boolean>;
 
   /**
@@ -894,7 +905,7 @@ export interface ExecutionSchedulerMetrics {
   attemptOpened(outcome: AttemptOpened["opened"]): void;
   briefing(fault: BriefingFault | TaskConfigurationReadFault): void;
   placement(outcome: AttemptPlacementOutcome["placed"]): void;
-  attemptEnded(loss: AttemptLoss, evidence: AttemptEvidence): void;
+  attemptEnded(loss: AttemptLoss, evidence: AttemptEvidenceRecord): void;
   manifest(outcome: "Accepted" | "Rejected"): void;
   terminalization(outcome: Terminalized["terminalized"]): void;
   blocking(outcome: Blocked["blocked"], reason: BlockedReason): void;
