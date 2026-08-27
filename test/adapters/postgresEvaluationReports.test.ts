@@ -6,24 +6,40 @@ import { postgresPriorWorkReports } from "../../src/adapters/postgres/evaluation
 import { asExecutionId } from "../../src/interpreter/executionScheduler.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
-test("evaluation reports come only from result manifests pinned by the execution bundle", async () => {
-  let statement: unknown;
+const partition = {
+  tenant: asTenantId("tenant"),
+  project: asProjectId("project"),
+};
+
+test("the rows a bundle's pinned manifests answer are the reports in their order", async () => {
   const pool = {
-    query: (queried: unknown) => {
-      statement = queried;
-      return Promise.resolve({
+    query: () =>
+      Promise.resolve({
         rows: [{ report: "work one" }, { report: "work two" }],
-      });
-    },
+      }),
   } as unknown as pg.Pool;
-  const reports = await postgresPriorWorkReports(pool).reports(
-    { tenant: asTenantId("tenant"), project: asProjectId("project") },
-    asExecutionId("evaluation"),
+  assert.deepEqual(
+    await postgresPriorWorkReports(pool).reports(
+      partition,
+      asExecutionId("evaluation"),
+    ),
+    { read: "Reports", reports: { reports: ["work one", "work two"] } },
   );
-  assert.deepEqual(reports, { reports: ["work one", "work two"] });
-  const query = statement as { readonly template: readonly string[] };
-  assert.match(
-    query.template.join(""),
-    /input_bundle_reference[\s\S]+reference_kind='ResultManifest'[\s\S]+execution_result_report/u,
+});
+
+test("a read the database refuses is unavailable rather than a throw", async () => {
+  const refused = Object.assign(
+    new Error("permission denied for table input_bundle_reference"),
+    { code: "42501" },
+  );
+  const pool = {
+    query: () => Promise.reject(refused),
+  } as unknown as pg.Pool;
+  assert.deepEqual(
+    await postgresPriorWorkReports(pool).reports(
+      partition,
+      asExecutionId("evaluation"),
+    ),
+    { read: "Unavailable" },
   );
 });

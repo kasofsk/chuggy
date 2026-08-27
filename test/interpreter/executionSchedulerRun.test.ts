@@ -235,7 +235,10 @@ function serviceWith(
     policy,
     configurations: { configuration: () => Promise.resolve(read) },
     runtimeFacts: { facts: () => Promise.resolve(facts) },
-    priorWorkReports: { reports: () => Promise.resolve({ reports: [] }) },
+    priorWorkReports: {
+      reports: () =>
+        Promise.resolve({ read: "Reports", reports: { reports: [] } }),
+    },
     ticketBriefs: { brief: () => Promise.resolve(brief) },
     practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
@@ -888,7 +891,8 @@ test("a code review receives the prior work report without giving it to the chec
       },
     }),
     priorWorkReports: {
-      reports: () => Promise.resolve({ reports }),
+      reports: () =>
+        Promise.resolve({ read: "Reports" as const, reports: { reports } }),
     },
   };
   const reviewStore: ExecutionSchedulerStore = {
@@ -1001,6 +1005,24 @@ test("runtime facts that cannot be gathered hold the attempt instead", async () 
     { read: "Unavailable" },
   );
   assert.equal(await executionSchedulerLaunch(service, epoch), 0);
+  assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("prior work reports that cannot be read hold the attempt instead", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  assert.equal(
+    await executionSchedulerLaunch(
+      {
+        ...service,
+        priorWorkReports: {
+          reports: () => Promise.resolve({ read: "Unavailable" as const }),
+        },
+      },
+      epoch,
+    ),
+    0,
+  );
   assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
 });
 

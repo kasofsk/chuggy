@@ -333,7 +333,7 @@ function processProgram(reachable: boolean): string {
         configuration: async () => ({ read: 'Configuration', configuration }),
       },
       runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
-      priorWorkReports: { reports: async () => ({ reports: [] }) },
+      priorWorkReports: { reports: async () => ({ read: 'Reports', reports: { reports: [] } }) },
       ticketBriefs: { brief: async () => undefined },
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,

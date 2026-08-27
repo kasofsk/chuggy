@@ -185,11 +185,16 @@ export interface PriorWorkReports {
   readonly reports: readonly string[];
 }
 
+/** What reading the pinned work reports found, an outage kept apart from no prior work. */
+export type PriorWorkReportsRead =
+  | { readonly read: "Reports"; readonly reports: PriorWorkReports }
+  | { readonly read: "Unavailable" };
+
 export interface PriorWorkReportsPort {
   reports(
     partition: Partition,
     execution: ExecutionId,
-  ): Promise<PriorWorkReports>;
+  ): Promise<PriorWorkReportsRead>;
 }
 
 /** Work fanout is bounded to this many reports by the release contract. */
