@@ -23,6 +23,7 @@ import {
   creationBodyFrom,
   creationBranchOf,
   creationBranchPrefixedSentence,
+  creationConfigurationSentence,
   creationIntentLines,
   creationOffered,
   latestReadyConfiguration,
@@ -62,6 +63,34 @@ test("the configuration is the newest ready revision, and none is drawable", () 
     undefined,
   );
   expect(latestReadyConfiguration([])).toBe(undefined);
+});
+
+test("the sentence names the configuration and keeps its revision on hover", () => {
+  expect(
+    creationConfigurationSentence({
+      ...creationSummary("repository:cfaca0a:chuggy", "Ready"),
+      provenance: {
+        source: "Repository",
+        repository: "kasofsk/chuggy",
+        commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
+        path: ".chug/configurations/chuggy.json",
+        name: "chuggy",
+      },
+      version: { name: "chuggy", number: 12 },
+    }),
+  ).toEqual({
+    text: "shaped by configuration chuggy #12 · cfaca0a, the latest revision this project has ready",
+    title: "repository:cfaca0a:chuggy",
+  });
+});
+
+test("a configuration with no version and no commit is named by its revision alone", () => {
+  expect(creationConfigurationSentence(creationSummary("r3", "Ready"))).toEqual(
+    {
+      text: "shaped by configuration r3, the latest revision this project has ready",
+      title: "r3",
+    },
+  );
 });
 
 test("a filled form becomes a body the wire's own parser accepts", () => {

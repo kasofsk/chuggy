@@ -27,7 +27,6 @@ import {
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type {
-  ConfigurationResponse,
   ConfigurationSummary,
   DraftInitializationResponse,
   DraftResponse,
@@ -35,6 +34,8 @@ import type {
 import type { z } from "zod";
 
 import { operationStateSentence } from "./codeSentences.ts";
+import { configurationCommitShort, configurationLabel } from "./labels.ts";
+import type { Label } from "./labels.ts";
 import type { OperationStep } from "./operationFollow.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
@@ -79,11 +80,24 @@ export function latestReadyConfiguration(
   return configurations.find((summary) => summary.readiness === "Ready");
 }
 
-/** The one sentence a screen says about the configuration it did not ask about. */
+/**
+ * The one sentence a screen says about the configuration it did not ask about,
+ * with the commit it was imported from where it came from one, and the revision
+ * itself on hover.
+ */
 export function creationConfigurationSentence(
-  configuration: ConfigurationResponse,
-): string {
-  return `shaped by configuration ${configuration.revision}, the latest revision this project has ready`;
+  configuration: ConfigurationSummary,
+): Label {
+  const label = configurationLabel(
+    configuration.revision,
+    configuration.version,
+  );
+  const commit = configurationCommitShort(configuration.provenance);
+  const named = commit === undefined ? label.text : `${label.text} · ${commit}`;
+  return {
+    text: `shaped by configuration ${named}, the latest revision this project has ready`,
+    title: label.title,
+  };
 }
 
 export function creationFormFrom(

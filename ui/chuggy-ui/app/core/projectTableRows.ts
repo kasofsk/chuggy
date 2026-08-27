@@ -6,8 +6,9 @@
  * stay separate cache entries that separate frames fold into.
  *
  * THE FIRST COLUMN IS A SLOT. A ticket resource carries no intent, so what the
- * slot shows is the configuration revision the ticket's execution ran from,
- * which is the only thing on the wire that says what a ticket is made of. When
+ * slot shows is the configuration the ticket's execution ran from, named where
+ * the wire names it, which is the only thing on the wire that says what a
+ * ticket is made of. When
  * a ticket states its own intent, this is where it goes and the row's other
  * columns do not move.
  *
@@ -24,13 +25,18 @@
  * stale.
  */
 
-import type { TicketResponse } from "../../../../src/contract/responses.ts";
+import type {
+  ExecutionSummary,
+  TicketResponse,
+} from "../../../../src/contract/responses.ts";
 import type {
   ExecutionOutcome,
   ExecutionStatus,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 
+import { configurationLabel, workerLabel } from "./labels.ts";
+import type { Label } from "./labels.ts";
 import { projectExecutionIndexAt } from "./projectExecutionIndex.ts";
 import type {
   ProjectExecutionIndex,
@@ -53,24 +59,24 @@ export interface ProjectTableRow {
   readonly section: TicketSection;
   readonly badge: string | undefined;
   readonly executionRead: ProjectTableExecutionRead;
-  readonly configurationRevision: string | undefined;
+  readonly configuration: Label | undefined;
   readonly executionStatus: ExecutionStatus | undefined;
   readonly executionOutcome: ExecutionOutcome | undefined;
-  readonly runsOn: string | undefined;
+  readonly runsOn: Label | undefined;
   readonly sequence: number;
   readonly activityAt: string | undefined;
 }
 
-/** What the task was placed on, in the one phrase the requirement's mode makes
- * available: a container is its image and a native task is its driver. */
-export function projectTableRunsOn(
-  requirement: ProjectExecutionKnown["execution"]["requirement"],
-): string {
+/** What the task was placed on, named where the catalog names it: a container
+ * is its worker or the image the catalog holds no worker for, and a native task
+ * is its driver. */
+export function projectTableRunsOn(execution: ExecutionSummary): Label {
+  const requirement = execution.requirement;
   switch (requirement.mode) {
     case "Container":
-      return requirement.image;
+      return workerLabel(execution.worker, requirement.image);
     case "Native":
-      return requirement.driver;
+      return { text: requirement.driver, title: requirement.driver };
   }
 }
 
@@ -99,13 +105,16 @@ export function projectTableRow(
     section: ticketSectionOf(ticket.phase),
     badge: ticketBadgeLabel(ticket.phase, ticket.reason),
     executionRead: read,
-    configurationRevision: execution?.configurationRevision,
-    executionStatus: execution?.status,
-    executionOutcome: execution?.outcome,
-    runsOn:
+    configuration:
       execution === undefined
         ? undefined
-        : projectTableRunsOn(execution.requirement),
+        : configurationLabel(
+            execution.configurationRevision,
+            execution.configurationVersion,
+          ),
+    executionStatus: execution?.status,
+    executionOutcome: execution?.outcome,
+    runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),
     sequence: ticket.sequence,
     activityAt: execution?.terminalAt ?? execution?.registeredAt,
   };

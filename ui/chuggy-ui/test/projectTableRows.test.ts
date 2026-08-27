@@ -56,13 +56,39 @@ const tickets: readonly TicketResponse[] = [
   { ticket: 3, phase: "Pending", sequence: 3 },
 ];
 
-test("a running ticket's row carries its status, what it runs on and its revision", () => {
+test("a running ticket's row carries its status, what it runs on and its configuration", () => {
   const row = projectTableRow(working, known(container), false);
   expect(row.executionStatus).toBe("Running");
-  expect(row.runsOn).toBe("registry/worker:1");
-  expect(row.configurationRevision).toBe("repository:abc:work");
+  expect(row.runsOn).toEqual({
+    text: "worker:1",
+    title: "registry/worker:1",
+  });
+  expect(row.configuration).toEqual({
+    text: "repository:abc:work",
+    title: "repository:abc:work",
+  });
   expect(row.activityAt).toBe("2026-08-26T10:00:00.000Z");
   expect(row.section).toBe("InProgress");
+});
+
+test("a row names the configuration and the worker the wire named", () => {
+  const row = projectTableRow(
+    working,
+    known({
+      ...container,
+      configurationVersion: { name: "work", number: 12 },
+      worker: { name: "chuggy-worker", version: "3" },
+    }),
+    false,
+  );
+  expect(row.configuration).toEqual({
+    text: "work #12",
+    title: "repository:abc:work",
+  });
+  expect(row.runsOn).toEqual({
+    text: "chuggy-worker 3",
+    title: "registry/worker:1",
+  });
 });
 
 test("a ticket running nothing states no execution rather than a blank one", () => {
@@ -73,7 +99,7 @@ test("a ticket running nothing states no execution rather than a blank one", () 
   );
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
-  expect(row.configurationRevision).toBeUndefined();
+  expect(row.configuration).toBeUndefined();
   expect(row.activityAt).toBeUndefined();
   expect(row.sequence).toBe(1);
 });
@@ -118,7 +144,7 @@ test("a row that is not joined draws none of the execution it holds", () => {
   const row = projectTableRow(working, known(failedOlder, false), true);
   expect(row.executionOutcome).toBeUndefined();
   expect(row.executionStatus).toBeUndefined();
-  expect(row.configurationRevision).toBeUndefined();
+  expect(row.configuration).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
   expect(row.activityAt).toBeUndefined();
 });
@@ -150,17 +176,23 @@ test("a truncated index marks every row it did not reach", () => {
   ]);
 });
 
-test("what a task runs on is its image or its driver, by the mode it names", () => {
-  expect(projectTableRunsOn(container.requirement)).toBe("registry/worker:1");
+test("what a task runs on is its worker or its driver, by the mode it names", () => {
+  expect(projectTableRunsOn(container)).toEqual({
+    text: "worker:1",
+    title: "registry/worker:1",
+  });
   expect(
     projectTableRunsOn({
-      mode: "Native",
-      architecture: "Arm64",
-      driver: "XcodeTesting",
-      xcodeVersionMin: 16,
-      sdkVersionMin: 18,
+      ...container,
+      requirement: {
+        mode: "Native",
+        architecture: "Arm64",
+        driver: "XcodeTesting",
+        xcodeVersionMin: 16,
+        sdkVersionMin: 18,
+      },
     }),
-  ).toBe("XcodeTesting");
+  ).toEqual({ text: "XcodeTesting", title: "XcodeTesting" });
 });
 
 test("the rows of one section are that section's and in the order read", () => {

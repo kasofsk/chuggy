@@ -143,8 +143,8 @@ function TicketRow(props: {
     <tr>
       <TicketNumberCell partition={props.partition} ticket={row.ticket} />
       <td className="cell-dim">
-        <span className="clipped">
-          {ticketRowExecutionCell(row, row.configurationRevision)}
+        <span className="clipped" title={row.configuration?.title}>
+          {ticketRowExecutionCell(row, row.configuration?.text)}
         </span>
       </td>
       <td>{row.phase}</td>
@@ -157,8 +157,8 @@ function TicketRow(props: {
       </td>
       <td>{ticketRowExecutionCell(row, status)}</td>
       <td className="cell-dim">
-        <span className="clipped">
-          {ticketRowExecutionCell(row, row.runsOn)}
+        <span className="clipped" title={row.runsOn?.title}>
+          {ticketRowExecutionCell(row, row.runsOn?.text)}
         </span>
       </td>
       <td className="cell-dim">

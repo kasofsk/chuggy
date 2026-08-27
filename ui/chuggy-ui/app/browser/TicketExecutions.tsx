@@ -23,6 +23,7 @@ import {
   apiOutputContent,
 } from "../core/apiRoutes.ts";
 import { artifactPreviewOffer } from "../core/artifactPreview.ts";
+import { executionRequirementLabel } from "../core/labels.ts";
 import {
   projectListKey,
   projectResourceKey,
@@ -36,13 +37,6 @@ import { useProjectListFold } from "./stream.tsx";
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
 >["artifacts"][number];
-
-function requirementLabel(summary: ExecutionSummary): string {
-  const requirement = summary.requirement;
-  if (requirement.mode === "Container")
-    return `${requirement.operatingSystem}/${requirement.architecture} ${requirement.image}`;
-  return `${requirement.architecture} ${requirement.driver}, xcode ≥ ${String(requirement.xcodeVersionMin)}, sdk ≥ ${String(requirement.sdkVersionMin)}`;
-}
 
 /** The place a per-execution agent log is drawn once one is served. */
 function ExecutionAgentLog(): ReactNode {
@@ -199,6 +193,7 @@ function ExecutionRow(props: {
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const summary = props.summary;
+  const requirement = executionRequirementLabel(summary);
   return (
     <li className="execution">
       <button
@@ -215,7 +210,9 @@ function ExecutionRow(props: {
         </span>
         <span className="execution-status">{summary.status}</span>
         <span className="execution-outcome">{summary.outcome ?? "—"}</span>
-        <span className="execution-ran-on">{requirementLabel(summary)}</span>
+        <span className="execution-ran-on" title={requirement.title}>
+          {requirement.text}
+        </span>
       </button>
       <p className="execution-source">
         {summary.requirementSource}, platform default{" "}
