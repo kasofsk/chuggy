@@ -117,6 +117,14 @@ select:hover {
   gap: var(--gap-wide);
 }
 
+.shell-foot {
+  padding: var(--gap) var(--gap-wide);
+  background: var(--ground-sunken);
+  border-top: 1px solid var(--edge);
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+}
+
 .switcher-note {
   color: var(--warn);
   font-size: var(--text-small);
