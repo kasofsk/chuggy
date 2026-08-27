@@ -37,18 +37,26 @@ import {
   asRepositoryId,
   type FinalizationClaim,
 } from "../../src/interpreter/finalizer.ts";
-import type { AttemptRecord } from "../../src/interpreter/finalizerPreparation.ts";
+import {
+  handoffAccepted,
+  handoffSuperseded,
+  type AttemptRecord,
+} from "../../src/interpreter/finalizerPreparation.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
   finalizerBriefBranch,
   finalizerClaim,
   finalizerCommit,
+  finalizerDeclareSource,
   finalizerDigest,
   finalizerExpireClaim,
   finalizerGitVerb,
   finalizerIdentity,
   finalizerMovingPort,
   finalizerPassOnce,
+  finalizerPassedWork,
+  finalizerProject,
+  finalizerSpawnTasks,
   finalizerRemoteCommit,
   finalizerRemotePort,
   finalizerRigOpen,
@@ -477,5 +485,65 @@ test("the conflict manifest the attempt names is stored, read-only, and hashes t
   assert.equal(
     evidence["mergeBase"],
     finalizerGitVerb(remote.seed, "rev-parse", "HEAD~1"),
+  );
+});
+
+test("a reworked ticket's gather hands back the source its latest passed work declared", async () => {
+  const project = await finalizerProject(rig, "supersede", undefined, 1);
+  const superseded = await finalizerPassedWork(rig, project, "a", []);
+  const latest = await finalizerPassedWork(rig, project, "b", []);
+  const retired = finalizerCommit();
+  const authoritative = finalizerCommit();
+  await finalizerDeclareSource(
+    rig,
+    project,
+    superseded,
+    "refs/heads/chuggy/tickets/1/attempts/one",
+    retired,
+  );
+  await finalizerDeclareSource(
+    rig,
+    project,
+    latest,
+    "refs/heads/chuggy/tickets/1/attempts/two",
+    authoritative,
+  );
+
+  const claim = await finalizerClaim(rig, project, "owner-supersede");
+  const gathering = await postgresFinalizer(rig.pool).handoffGathering(claim);
+
+  assert.deepEqual(
+    gathering.work.map((each) => each.execution),
+    [latest.execution, superseded.execution],
+  );
+  assert.deepEqual(
+    gathering.sources.map((each) => each.commit),
+    [authoritative, retired],
+  );
+  const accepted = handoffAccepted(handoffSuperseded(gathering));
+  if (accepted.accepted !== "Handoff") assert.fail(JSON.stringify(accepted));
+  if (accepted.handoff.kind !== "Source") assert.fail("a source handoff");
+  assert.equal(accepted.handoff.source.commit, authoritative);
+  assert.deepEqual(accepted.handoff.manifests, [latest.manifest]);
+});
+
+test("the work draw orders a ticket's spawns by the task number and not by its text", async () => {
+  const project = await finalizerProject(rig, "ordered", undefined, 1);
+  await finalizerSpawnTasks(rig, project, [5, 7, 10]);
+  for (const label of ["one", "three", "five", "seven", "ten"]) {
+    await finalizerPassedWork(rig, project, label, []);
+  }
+
+  const claim = await finalizerClaim(rig, project, "owner-ordered");
+  const gathering = await postgresFinalizer(rig.pool).handoffGathering(claim);
+
+  assert.deepEqual(
+    gathering.work.map((each) => each.task),
+    [10, 7, 5, 3, 1],
+  );
+  const arriving = { ...gathering, work: [...gathering.work].reverse() };
+  assert.deepEqual(
+    handoffSuperseded(arriving).work.map((each) => each.task),
+    [3, 5, 7, 10],
   );
 });

@@ -432,12 +432,13 @@ async function finalizerReport(
   memory: ProjectMemory,
   label: string,
   task: number,
+  verdict: Verdict = "Pass",
 ): Promise<ProjectMemory> {
   const accepted = await finalizerAccept(
     harness,
     partition,
     label,
-    finalizerTaskDone(task),
+    finalizerTaskDone(task, verdict),
   );
   if (accepted !== "Accepted") {
     throw new Error(`finalizer harness: the report was ${accepted}`);
@@ -501,6 +502,38 @@ export async function finalizerEntering(
   };
 }
 
+/** The most rework cycles a fixture asks for, which the released ticket's own budget bounds. */
+const finalizerReworksMax = 1;
+
+/**
+ * Fails the ticket's current evaluation and passes the work its rework spawns,
+ * which is how a fixture reaches finalization more than one spawn deep. It
+ * answers the evaluation task the fresh work's own passing left open.
+ */
+async function finalizerReworkCycle(
+  rig: FinalizerRig,
+  partition: Partition,
+  memory: ProjectMemory,
+  label: string,
+  evaluation: number,
+): Promise<ProjectMemory> {
+  const failed = await finalizerReport(
+    rig.harness,
+    partition,
+    memory,
+    `${label}-rework-${String(evaluation)}`,
+    evaluation,
+    "Fail",
+  );
+  return finalizerReport(
+    rig.harness,
+    partition,
+    failed,
+    `${label}-rework-work-${String(evaluation)}`,
+    evaluation + 1,
+  );
+}
+
 /**
  * A project whose ticket a real decision put into `Finalizing`, with the
  * repository binding a preparation needs. Everything up to the request is the
@@ -510,15 +543,33 @@ export async function finalizerProject(
   rig: FinalizerRig,
   label: string,
   repository?: string,
+  reworks = 0,
 ): Promise<FinalizerProject> {
+  if (reworks > finalizerReworksMax) {
+    throw new Error(
+      "finalizer harness: the released ticket cannot rework that often",
+    );
+  }
   const entering = await finalizerEntering(rig, label);
   const partition = entering.partition;
+  let carried = entering.memory;
+  let evaluation = 2;
+  for (let cycle = 0; cycle < reworks; cycle++) {
+    carried = await finalizerReworkCycle(
+      rig,
+      partition,
+      carried,
+      label,
+      evaluation,
+    );
+    evaluation += 2;
+  }
   const memory = await finalizerReport(
     rig.harness,
     partition,
-    entering.memory,
+    carried,
     label,
-    2,
+    evaluation,
   );
   const found = (await rig.harness.query(
     `SELECT request, ticket::text AS ticket, authorizing_seq::text AS seq,
@@ -897,7 +948,11 @@ export function finalizerStoreArtifact(
   chmodSync(file, 0o440);
 }
 
-/** The spawn request the project's dispatch left, and the next manifest ordinal free in it. */
+/**
+ * The earliest work task of the project's spawns that no execution has taken
+ * yet, and the next manifest ordinal free in the project. Each passed work a
+ * case writes therefore lands on its own spawn, in the order they were spawned.
+ */
 async function finalizerSpawnRequest(
   rig: FinalizerRig,
   project: FinalizerProject,
@@ -911,6 +966,9 @@ async function finalizerSpawnRequest(
          ON q.tenant = t.tenant AND q.project = t.project AND q.request = t.request
       WHERE t.tenant = $1 AND t.project = $2 AND t.kind = 'Work'
         AND q.kind = 'SpawnWork' AND q.ticket = $3
+        AND NOT EXISTS (SELECT 1 FROM execution e
+                         WHERE e.tenant = t.tenant AND e.project = t.project
+                           AND e.ticket = $3 AND e.task = t.task)
       ORDER BY t.task LIMIT 1`,
     [project.partition.tenant, project.partition.project, project.ticket],
   )) as readonly { request: string; task: string; taken: string }[];
@@ -1048,6 +1106,81 @@ export async function finalizerPassedWork(
   );
   await finalizerDeclareHandoffs(rig, project, work, handoffs);
   return work;
+}
+
+/** The most work tasks one case widens a spawn by, because every fixture set is bounded. */
+const finalizerSpawnTasksMax = 8;
+
+/**
+ * Widens the ticket's latest work spawn with the tasks a case names, which is
+ * how a fixture reaches task numbers whose text order is not their numeric
+ * order. Each is a work task of a spawn a real decision authorized.
+ */
+export async function finalizerSpawnTasks(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  tasks: readonly number[],
+): Promise<void> {
+  if (tasks.length > finalizerSpawnTasksMax) {
+    throw new Error(
+      "finalizer harness: that is more work tasks than a case widens a spawn by",
+    );
+  }
+  const found = (await rig.harness.query(
+    `SELECT t.request FROM execution_request_task t
+       JOIN execution_request q
+         ON q.tenant = t.tenant AND q.project = t.project AND q.request = t.request
+      WHERE t.tenant = $1 AND t.project = $2 AND t.kind = 'Work'
+        AND q.kind = 'SpawnWork' AND q.ticket = $3
+      ORDER BY t.task DESC LIMIT 1`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  )) as readonly { request: string }[];
+  const spawn = found[0];
+  if (spawn === undefined) {
+    throw new Error("finalizer harness: the ticket has no work spawn to widen");
+  }
+  for (const task of tasks) {
+    await rig.harness.query(
+      `INSERT INTO execution_request_task (tenant, project, request, task, kind)
+       VALUES ($1,$2,$3,$4,'Work')`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        spawn.request,
+        task,
+      ],
+    );
+  }
+}
+
+/**
+ * The immutable Git candidate one passed work declared, which is the handoff a
+ * worker leaves when it pushed a branch rather than files. The base it names is
+ * the base it was told to expect, because a row disagreeing with itself is one
+ * the schema refuses.
+ */
+export async function finalizerDeclareSource(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  work: FinalizerWork,
+  ref: string,
+  commit: string,
+): Promise<void> {
+  const base = finalizerCommit();
+  await rig.harness.query(
+    `INSERT INTO execution_result_source
+       (tenant, project, manifest, repository, ref, commit, base, expected_base)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      work.manifest,
+      project.repository,
+      ref,
+      commit,
+      base,
+    ],
+  );
 }
 
 /** How many entries one project's journal holds, which every refusal must leave alone. */

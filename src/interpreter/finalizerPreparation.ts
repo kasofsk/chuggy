@@ -24,6 +24,21 @@
  * none of them is retryable, which is what makes them a `PreparationFailed`
  * rather than a hold.
  *
+ * A REWORK SUPERSEDES RATHER THAN CONFLICTS. A ticket whose evaluation failed
+ * re-runs its work, so a gathering is several spawns deep and the work the
+ * evaluations judged is the latest of them; `handoffSuperseded` keeps that
+ * spawn's fan-out and drops the rest, so every refusal below reads one spawn's
+ * declarations rather than the ticket's whole history.
+ *
+ * THE TASK NUMBER IS WHAT ORDERS INCARNATIONS, and `model/domain.qnt`'s
+ * completion decider already rests on it: a ticket's task ids are unique across
+ * its whole history, so a completion naming an earlier incarnation's task is
+ * stale by identity rather than by any record of what it superseded. Election
+ * here is by highest task and not by which work passed last, which name the
+ * same spawn except where a superseded spawn's execution reports after a later
+ * spawn's — and there the highest task is the incarnation the evaluations
+ * judged and the late report is the stale one.
+ *
  * AN ATTEMPT IS WRITTEN ONCE AND PINS WHAT IT WAS BUILT FROM. The record
  * carries the observed target, the pinned configuration revision and digest,
  * the strategy and the input bundle, under a digest over canonical bytes that
@@ -130,6 +145,10 @@ export interface PinnedConfiguration {
 export interface HandoffWork {
   readonly execution: ExecutionId;
   readonly attempt: AttemptId;
+  /** The spawn whose fan-out this execution belongs to, which a rework supersedes whole. */
+  readonly spawn: string;
+  /** The ticket-local task number, which every later spawn's tasks exceed. */
+  readonly task: number;
   readonly manifest: ResultManifestId;
   readonly configuration: PinnedConfiguration;
   readonly canonical: CanonicalConfiguration;
@@ -277,6 +296,31 @@ function handoffArtifactRefusal(
   const bytes = artifacts.reduce((total, each) => total + each.bytes, 0);
   if (bytes > candidateBytesMax) return "TooManyBytes";
   return handoffPathRefusal(artifacts);
+}
+
+/**
+ * The ticket's authoritative passed work: the latest spawn's fan-out, with
+ * every earlier spawn's declarations dropped. A gathering naming no passed work
+ * at all is its own answer and comes back untouched.
+ */
+export function handoffSuperseded(
+  gathering: HandoffGathering,
+): HandoffGathering {
+  const latest = gathering.work.reduce<HandoffWork | undefined>(
+    (highest, each) =>
+      highest === undefined || each.task > highest.task ? each : highest,
+    undefined,
+  );
+  if (latest === undefined) return gathering;
+  const work = gathering.work.filter((each) => each.spawn === latest.spawn);
+  const declared = new Set<string>(work.map((each) => each.execution));
+  return {
+    work,
+    artifacts: gathering.artifacts.filter((each) =>
+      declared.has(each.execution),
+    ),
+    sources: gathering.sources.filter((each) => declared.has(each.execution)),
+  };
 }
 
 /**
@@ -459,7 +503,11 @@ export type ApprovalAsked =
  * a candidate was built from.
  */
 export interface FinalizerPreparationStore {
-  /** Everything the ticket's passed work declared, in path order, gathered before any decision runs. */
+  /**
+   * Everything the ticket's passed work declared, gathered before any decision
+   * runs, latest spawn first and then in path order so no bound can drop the
+   * spawn `handoffSuperseded` keeps.
+   */
   handoffGathering(claim: FinalizationClaim): Promise<HandoffGathering>;
 
   /** Writes the immutable attempt and the bundle it pinned in one transaction, or refuses both. */

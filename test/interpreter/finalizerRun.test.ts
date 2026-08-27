@@ -60,6 +60,7 @@ import {
   type HandoffGathering,
   type HandoffRead,
   type HandoffRequest,
+  type HandoffSource,
   type HandoffWork,
   type ProjectArtifactPort,
   type ProjectArtifactWrite,
@@ -197,6 +198,8 @@ interface FinalizerRecorder extends FinalizerStore, FinalizerPreparationStore {
 const passedWork: HandoffWork = {
   execution: asExecutionId("execution-run"),
   attempt: asAttemptId("attempt-run"),
+  spawn: "spawn-run",
+  task: 1,
   manifest: asResultManifestId("manifest-run"),
   configuration: { revision: "revision-run", digest: digestOf("revision-run") },
   canonical: asCanonicalConfiguration('{"image":"i","version":1}'),
@@ -724,6 +727,53 @@ test("a source handoff is verified from Git and integrated without reading artif
     },
   ]);
   assert.equal(store.attempts[0]?.outcome, "Prepared");
+});
+
+/** One immutable candidate the named execution declared, over the commit the marker spells. */
+function sourceOf(work: HandoffWork, marker: string): HandoffSource {
+  return {
+    execution: work.execution,
+    attempt: work.attempt,
+    repository: binding.repository,
+    ref: asGitRefName(
+      `refs/heads/chuggy/tickets/1/attempts/${marker.repeat(64)}`,
+    ),
+    commit: asGitObjectId(commitOf(marker)),
+    base: asGitObjectId(commitOf("a")),
+    expectedBase: asGitObjectId(commitOf("a")),
+  };
+}
+
+test("a ticket that reworked prepares the source its latest passed work declared", async () => {
+  const reworked: HandoffWork = {
+    ...passedWork,
+    execution: asExecutionId("execution-rework"),
+    attempt: asAttemptId("attempt-rework"),
+    manifest: asResultManifestId("manifest-rework"),
+    spawn: "spawn-rework",
+    task: 3,
+  };
+  const store = recordingStore([preparableView("request-one")]);
+  store.gathering = {
+    work: [reworked, passedWork],
+    artifacts: [],
+    sources: [sourceOf(reworked, "d"), sourceOf(passedWork, "c")],
+  };
+  const git = recordingGit();
+
+  await passOver(serviceOf(store, git, {}, recordingArtifacts()));
+
+  assert.deepEqual(
+    git.sourcePreparations.map((each) => each.commit),
+    [commitOf("d")],
+  );
+  assert.equal(store.attempts[0]?.outcome, "Prepared");
+  assert.deepEqual(
+    store.attempts[0]?.bundle.references
+      .filter((each) => each.kind === "ResultManifest")
+      .map((each) => each.reference),
+    ["manifest-rework"],
+  );
 });
 
 /** The release remote a publication names, which is no repository the ticket worked in. */
