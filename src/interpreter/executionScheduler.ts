@@ -480,14 +480,15 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
 ];
 
 /**
- * What an ended attempt records: a label, or a label the briefing fault that
- * caused it qualifies. Both arms are closed and their longest inhabitant is
- * shorter than the evidence column admits, so the diagnostic that explains a
+ * What an ended attempt records: a label, or a label the fault that caused it
+ * qualifies. Both arms are closed and their longest inhabitant is shorter than
+ * the evidence column admits, so the diagnostic that explains a
  * `TicketConfigIncompatible` block survives the attempt without the reason
  * vocabulary or the label set growing to carry it.
  */
 export type AttemptEvidenceRecord =
-  AttemptEvidence | `${AttemptEvidence}: ${BriefingFault}`;
+  | AttemptEvidence
+  | `${AttemptEvidence}: ${BriefingFault | TaskConfigurationReadFault}`;
 
 /** What a registration pass found for one focused spawn request. */
 export type SpawnRegistered =

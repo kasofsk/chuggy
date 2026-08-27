@@ -36,6 +36,7 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
 import { allBriefingFaults } from "../../src/interpreter/taskBriefing.ts";
+import { allTaskConfigurationReadFaults } from "../../src/interpreter/taskConfiguration.ts";
 import {
   mailboxCompletionRoom,
   ticketServiceDefaults,
@@ -220,17 +221,13 @@ test("every arithmetic that reads an entitlement refuses an uncovered account", 
   );
 });
 
-test("every evidence a briefing refusal can record fits the column that keeps it", () => {
+test("every evidence a refusal can record fits the column that keeps it", () => {
+  const faults = [...allBriefingFaults, ...allTaskConfigurationReadFaults];
   const recorded: AttemptEvidenceRecord[] = allAttemptEvidence.flatMap(
     (evidence) =>
-      allBriefingFaults.map(
-        (fault): AttemptEvidenceRecord => `${evidence}: ${fault}`,
-      ),
+      faults.map((fault): AttemptEvidenceRecord => `${evidence}: ${fault}`),
   );
-  assert.equal(
-    recorded.length,
-    allAttemptEvidence.length * allBriefingFaults.length,
-  );
+  assert.equal(recorded.length, allAttemptEvidence.length * faults.length);
   for (const evidence of recorded) {
     assert.ok(
       evidence.length <= schedulerEvidenceCharsMax,

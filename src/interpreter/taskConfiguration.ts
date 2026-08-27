@@ -81,9 +81,34 @@ export type TaskConfigurationFault =
   | "TextUnreadable"
   | "TooManyLines";
 
+/** Every authored fault, so a suite and an evidence label iterate rather than restate. */
+export const allTaskConfigurationFaults: readonly TaskConfigurationFault[] = [
+  "BriefingShapeMissing",
+  "MotivationInvalid",
+  "AcceptanceCriteriaInvalid",
+  "ConstraintsInvalid",
+  "PracticesInvalid",
+  "WorkInvalid",
+  "ReviewInvalid",
+  "EvaluationsInvalid",
+  "AuthorityInvalid",
+  "WorkerInvalid",
+  "EmptyBrief",
+  "UnknownPractice",
+  "DuplicatePractice",
+  "EmptyLine",
+  "TextTooLong",
+  "TextUnreadable",
+  "TooManyLines",
+];
+
 /** A definitive fault while reading authored content, including unreadable canonical bytes. */
 export type TaskConfigurationReadFault =
   TaskConfigurationFault | "ConfigurationUnreadable" | "DigestMismatch";
+
+/** Every read fault, which is every authored one and the two a read of its own adds. */
+export const allTaskConfigurationReadFaults: readonly TaskConfigurationReadFault[] =
+  [...allTaskConfigurationFaults, "ConfigurationUnreadable", "DigestMismatch"];
 
 /** A parsed authored briefing, or the bounded reason it cannot be one. */
 export type AuthoredTaskConfigurationReadiness =

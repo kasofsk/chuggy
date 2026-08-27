@@ -983,7 +983,7 @@ test("a pinned revision with incompatible authored content blocks the ticket", a
     0,
   );
   assert.deepEqual(calls, [
-    "ended:Withdrawn:PolicyDenied",
+    "ended:Withdrawn:PolicyDenied: BriefingShapeMissing",
     "blocked:TicketConfigIncompatible",
   ]);
   assert.ok(seen.includes("briefing:BriefingShapeMissing"));

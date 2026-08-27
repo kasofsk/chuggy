@@ -419,7 +419,7 @@ async function schedulerUnready(
         service,
         execution,
         attempt,
-        "PolicyDenied",
+        `PolicyDenied: ${unready.fault}`,
         "TicketConfigIncompatible",
       );
       return;

@@ -56,6 +56,14 @@
  * authored criterion has. It is held to the same printable rule as the row it
  * came from, so what a manifest may carry a briefing may render.
  *
+ * WHAT COMPOSITION HANDS OVER IS BOUNDED AS ONE VALUE, NOT LIST BY LIST. Every
+ * input has a bound of its own, and their sum is larger than an exec
+ * environment string holds — which is how a launched fabric carries the task —
+ * so a briefing that renders and an authored worker configuration beside it can
+ * together make a container that cannot start. `taskInvocationBytesMax` is the
+ * bound the carrier actually has, and `EnvelopeTooLong` is the refusal that
+ * replaces the failure to launch.
+ *
  * A REFUSAL IS `TicketConfigIncompatible` AND THE FAULT SAYS WHICH. The reason
  * vocabulary is the model's and is closed; `BriefingFault` is this module's
  * bounded diagnostic beside it, and `./executionSchedulerRun.ts` writes it into
@@ -70,7 +78,10 @@ import {
   resultTextControlCharacter,
 } from "./resultManifest.ts";
 import type { Partition } from "./projectStore.ts";
-import type { ExecutionId } from "./schedulerIdentity.ts";
+import {
+  schedulerIdentityCharsMax,
+  type ExecutionId,
+} from "./schedulerIdentity.ts";
 import {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
@@ -112,6 +123,7 @@ export type { TaskPurpose } from "./briefingTemplate.ts";
 import { briefIntentLines, type DraftBrief } from "./ticketBrief.ts";
 import {
   resolveTaskAuthority,
+  taskAuthorityGrant,
   type AuthorityRequest,
   type PolicyAuthorityGrant,
   type TaskAuthority,
@@ -216,6 +228,25 @@ export const runtimeChangedFilesMax = 64;
 /** The most handoff lines runtime context may carry. */
 export const runtimeHandoffLinesMax = 32;
 
+/**
+ * The bytes one environment string carries into an exec, which is `execve`'s
+ * `MAX_ARG_STRLEN`. It is the smallest carrier a launched task has, so it is
+ * the one composition is written against; a fabric that hands its worker the
+ * task another way has more room and needs none of it.
+ */
+export const taskEnvelopeBytesMax = 131_072;
+
+/** The identities and addresses a fabric adds around the invocation it was handed. */
+export const taskEnvelopeFabricIdentitiesMax = 32;
+
+/** The room those keep, so what a fabric adds cannot take the envelope past the carrier. */
+export const taskEnvelopeFabricBytesMax =
+  taskEnvelopeFabricIdentitiesMax * schedulerIdentityCharsMax;
+
+/** What one composed invocation may weigh, which is what is left of the carrier. */
+export const taskInvocationBytesMax =
+  taskEnvelopeBytesMax - taskEnvelopeFabricBytesMax;
+
 /** Why a briefing could not be composed, each of them a fact about the pinned configuration. */
 export type BriefingFault =
   | "RevisionMismatch"
@@ -226,6 +257,7 @@ export type BriefingFault =
   | "EmptyLine"
   | "TextTooLong"
   | "ReportTooLong"
+  | "EnvelopeTooLong"
   | "TextUnreadable"
   | "TooManyLines"
   | "StageNotCovered";
@@ -240,6 +272,7 @@ export const allBriefingFaults: readonly BriefingFault[] = [
   "EmptyLine",
   "TextTooLong",
   "ReportTooLong",
+  "EnvelopeTooLong",
   "TextUnreadable",
   "TooManyLines",
   "StageNotCovered",
@@ -667,6 +700,25 @@ export type TaskComposed =
   | { readonly composed: "Composed"; readonly invocation: TaskInvocation }
   | { readonly composed: "Blocked"; readonly fault: BriefingFault };
 
+/**
+ * What one invocation weighs on the wire: everything a fabric has to carry to
+ * its worker, and nothing the retention rule keeps behind. The provenance is
+ * left out because it is retained here rather than handed over.
+ */
+export function taskInvocationBytes(invocation: TaskInvocation): number {
+  return new TextEncoder().encode(
+    JSON.stringify({
+      briefing: {
+        templateVersion: invocation.briefing.templateVersion,
+        purpose: invocation.briefing.purpose,
+        text: invocation.briefing.text,
+      },
+      authority: taskAuthorityGrant(invocation.authority),
+      ...(invocation.worker === undefined ? {} : { worker: invocation.worker }),
+    }),
+  ).byteLength;
+}
+
 /** Composes one role's invocation from the pinned configuration and the gathered facts. */
 export function composeTaskInvocation(
   catalog: PracticeCatalog,
@@ -687,18 +739,18 @@ export function composeTaskInvocation(
     return { composed: "Blocked", fault: resolved.fault };
   }
   const briefing = renderBriefing(view, resolved.practices);
-  return {
-    composed: "Composed",
-    invocation: {
-      briefing,
-      authority: resolveTaskAuthority(
-        view.grant,
-        briefingAuthorityRequests(view),
-      ),
-      provenance: briefingProvenance(briefing, view.pin, resolved.practices),
-      ...(view.configuration.worker === undefined
-        ? {}
-        : { worker: view.configuration.worker }),
-    },
+  const invocation: TaskInvocation = {
+    briefing,
+    authority: resolveTaskAuthority(
+      view.grant,
+      briefingAuthorityRequests(view),
+    ),
+    provenance: briefingProvenance(briefing, view.pin, resolved.practices),
+    ...(view.configuration.worker === undefined
+      ? {}
+      : { worker: view.configuration.worker }),
   };
+  return taskInvocationBytes(invocation) > taskInvocationBytesMax
+    ? { composed: "Blocked", fault: "EnvelopeTooLong" }
+    : { composed: "Composed", invocation };
 }

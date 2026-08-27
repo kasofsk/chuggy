@@ -36,6 +36,10 @@ import {
   composeTaskInvocation,
   priorWorkReportsMax,
   renderBriefing,
+  taskEnvelopeBytesMax,
+  taskEnvelopeFabricBytesMax,
+  taskInvocationBytes,
+  taskInvocationBytesMax,
   resolvePractices,
   runtimeChangedFilesMax,
   runtimeHandoffLinesMax,
@@ -701,6 +705,7 @@ test("every fault is reachable from a pinned configuration or a runtime fact", (
         priorWorkReports: ["x".repeat(resultReportCharsMax + 1)],
       }),
     ),
+    blockedFault(maximalBriefingView(priorWorkReportsMax)),
     blockedFault(
       viewOf({
         brief: {
@@ -892,15 +897,56 @@ test("more reports than the work fanout admits is refused rather than truncated"
   assert.equal(blockedFault(reportView(reports)), "TooManyLines");
 });
 
-test("a maximal set of maximal reports renders inside the two bounds it has", () => {
-  const reports = Array.from({ length: priorWorkReportsMax }, () =>
-    "x".repeat(resultReportCharsMax),
-  );
-  const lines = reportSectionLines(reportView(reports));
-  assert.equal(lines.length, reports.length + 1);
+/** A view whose every authored list, runtime fact and report is at its declared maximum. */
+function maximalBriefingView(reports: number): BriefingView {
+  const longest = "x".repeat(briefingLineCharsMax);
+  const list = Array.from({ length: briefingLinesMax }, () => longest);
+  return viewOf({
+    purpose: "Review",
+    brief: {
+      motivation: list,
+      acceptanceCriteria: list,
+      constraints: list,
+    },
+    practices: [...allPracticeIds],
+    block: { instructions: list },
+    runtime: {
+      workspace: longest,
+      changedFiles: Array.from(
+        { length: runtimeChangedFilesMax },
+        () => longest,
+      ),
+      handoff: Array.from({ length: runtimeHandoffLinesMax }, () => longest),
+    },
+    priorWorkReports: Array.from({ length: reports }, () =>
+      "x".repeat(resultReportCharsMax),
+    ),
+  });
+}
+
+test("a maximal set of maximal reports is refused rather than handed over unlaunchable", () => {
+  const refused = maximalBriefingView(priorWorkReportsMax);
+  assert.equal(blockedFault(refused), "EnvelopeTooLong");
   assert.ok(
-    lines.join("\n").length <=
-      briefingLabels.workReports.length +
-        priorWorkReportsMax * (resultReportCharsMax + "- \n".length),
+    taskInvocationBytes(composed(maximalBriefingView(0))) <=
+      taskInvocationBytesMax,
+  );
+});
+
+test("what composition admits is inside the room the carrier of a task has", () => {
+  let admitted = 0;
+  for (let reports = 0; reports <= priorWorkReportsMax; reports += 1) {
+    const outcome = composeTaskInvocation(
+      blessedPracticeCatalog,
+      maximalBriefingView(reports),
+    );
+    if (outcome.composed !== "Composed") break;
+    admitted = taskInvocationBytes(outcome.invocation);
+  }
+  assert.ok(admitted > 0, "no maximal view composed, so this proves nothing");
+  assert.ok(admitted <= taskInvocationBytesMax);
+  assert.ok(
+    admitted + taskEnvelopeFabricBytesMax <= taskEnvelopeBytesMax,
+    "the invocation and the fabric's own reserve together pass the carrier",
   );
 });
