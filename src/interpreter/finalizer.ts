@@ -343,6 +343,18 @@ export interface RepositoryBinding {
   readonly credentialReference?: string;
 }
 
+/**
+ * The binding a more specific reference name narrows. It is the one spelling of
+ * that step, so an observation and a promotion cannot disagree about which ref
+ * a ticket's work belongs to.
+ */
+export function repositoryBindingNarrowed(
+  binding: RepositoryBinding,
+  ref: GitRefName | undefined,
+): RepositoryBinding {
+  return ref === undefined ? binding : { ...binding, targetRef: ref };
+}
+
 export interface PromoteForHandoffRequest {
   readonly kind: "PromoteForHandoff";
   readonly configurationRevision: string;

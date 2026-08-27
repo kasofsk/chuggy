@@ -247,6 +247,24 @@ test("the ticket service reads accepted promotion only through its narrow door",
   }
 });
 
+test("the finalizer reads the brief its target is narrowed by and writes none of it", async () => {
+  for (const relation of ["draft_brief", "draft_brief_link"]) {
+    const [read, ...written] = await everyVerb(relation);
+    assert.equal(
+      await harness.attemptAs(finalizerRole, read ?? ""),
+      undefined,
+      relation,
+    );
+    for (const statement of written) {
+      assert.match(
+        (await harness.attemptAs(finalizerRole, statement)) ?? "",
+        postgresHarnessDenial(relation),
+        statement,
+      );
+    }
+  }
+});
+
 test("the finalizer cannot open, withdraw or resolve a native action by hand", async () => {
   for (const statement of [
     "INSERT INTO native_action DEFAULT VALUES",
@@ -384,6 +402,8 @@ test("the finalizer's read surface is exactly the relations its view is gathered
     [
       "commit_permit",
       "configuration_revision",
+      "draft_brief",
+      "draft_brief_link",
       "execution",
       "execution_request_task",
       "execution_result",

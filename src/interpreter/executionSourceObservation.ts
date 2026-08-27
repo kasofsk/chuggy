@@ -4,7 +4,11 @@
  * is the most specific of the three and therefore the last word.
  */
 
-import type { GitPromotionPort, RepositoryBinding } from "./finalizer.ts";
+import {
+  repositoryBindingNarrowed,
+  type GitPromotionPort,
+  type RepositoryBinding,
+} from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
 import { authoredHandoffConfigurationReadiness } from "./handoffConfiguration.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
@@ -60,15 +64,17 @@ export function executionSourceObservation(
       const work = executionSourceConfiguredWork(
         request.configurationCanonical,
       );
-      const repository: RepositoryBinding = {
-        ...project,
-        ...(work === undefined ? {} : { repository: work.repository }),
-        ...(work === undefined ? {} : { targetRef: work.targetRef }),
-        ...(work === undefined
-          ? {}
-          : { credentialReference: work.credentialReference }),
-        ...(request.ref === undefined ? {} : { targetRef: request.ref }),
-      };
+      const repository: RepositoryBinding = repositoryBindingNarrowed(
+        {
+          ...project,
+          ...(work === undefined ? {} : { repository: work.repository }),
+          ...(work === undefined ? {} : { targetRef: work.targetRef }),
+          ...(work === undefined
+            ? {}
+            : { credentialReference: work.credentialReference }),
+        },
+        request.ref,
+      );
       const observed = await git.observeTarget(repository);
       return observed.observed === "Target"
         ? {

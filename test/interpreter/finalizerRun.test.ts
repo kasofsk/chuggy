@@ -98,6 +98,11 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  asBriefBranch,
+  asBriefIntent,
+  type TicketBriefPort,
+} from "../../src/interpreter/ticketBrief.ts";
 
 /** Every observation the finalizer declares, read off the sink that ignores them all. */
 const declared: readonly string[] = telemetryObservations(
@@ -278,6 +283,7 @@ function recordingStore(
 
 /** What one fixture remote was asked for, answering whatever the case chose. */
 interface GitRecorder extends GitPromotionPort {
+  readonly observations: RepositoryBinding[];
   readonly promotions: CandidatePromotion[];
   readonly proofs: AncestryProof[];
   readonly preparations: CandidatePreparation[];
@@ -290,9 +296,14 @@ interface GitRecorder extends GitPromotionPort {
   integrated: CandidateIntegrated;
 }
 
-/** A remote that records every act and answers each of them however the case chose. */
+/**
+ * A remote that records every act and answers each of them however the case
+ * chose. A binding that names a reference is observed at that reference, as the
+ * adapter behind this port does.
+ */
 function recordingGit(): GitRecorder {
   const own: GitRecorder = {
+    observations: [],
     promotions: [],
     proofs: [],
     preparations: [],
@@ -309,7 +320,20 @@ function recordingGit(): GitRecorder {
       integrated: "Candidate",
       candidate: asGitObjectId(commitOf("c")),
     },
-    observeTarget: () => Promise.resolve(own.observed),
+    observeTarget: (repository) => {
+      own.observations.push(repository);
+      return Promise.resolve(
+        repository.targetRef === undefined
+          ? own.observed
+          : {
+              observed: "Target",
+              target: {
+                ref: repository.targetRef,
+                commit: asGitObjectId(commitOf("a")),
+              },
+            },
+      );
+    },
     prepareCandidate: (preparation) => {
       own.preparations.push(preparation);
       return Promise.resolve(own.prepared);
@@ -394,6 +418,22 @@ function promotableView(request: string): FinalizationView {
   };
 }
 
+/** A brief port answering the branch a case names, and no brief at all when it names none. */
+function briefsOf(branch?: string): TicketBriefPort {
+  return {
+    brief: () =>
+      Promise.resolve(
+        branch === undefined
+          ? undefined
+          : {
+              intent: asBriefIntent("carry the ticket's own branch"),
+              links: [],
+              branch: asBriefBranch(branch),
+            },
+      ),
+  };
+}
+
 /** The service a case drives, over the ceilings it names. */
 function serviceOf(
   store: FinalizerRecorder,
@@ -405,6 +445,7 @@ function serviceOf(
   return {
     store,
     git,
+    ticketBriefs: briefsOf(),
     handoffs: artifacts,
     artifacts,
     identities: countingIdentities(),
@@ -586,6 +627,68 @@ test("a clean preparation builds over the observed target and records one prepar
   );
 });
 
+/** The branch the brief-bearing cases name, which is nobody's default. */
+const briefBranch = "refs/heads/chuggy/footer-2026";
+
+test("a finalization observes and pins the branch the ticket's brief names", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch),
+  });
+
+  assert.deepEqual(
+    git.observations.map((each) => each.targetRef),
+    [briefBranch, briefBranch],
+    "the target is read at the ticket's branch before and after the candidate",
+  );
+  assert.equal(git.integrations[0]?.target.ref, briefBranch);
+  assert.equal(store.attempts[0]?.target.ref, briefBranch);
+});
+
+test("a ticket whose brief names no branch is finalized against the binding's own default", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+
+  await passOver(serviceOf(store, git));
+
+  assert.deepEqual(
+    git.observations.map((each) => each.targetRef),
+    [undefined, undefined],
+  );
+  assert.equal(store.attempts[0]?.target.ref, "refs/heads/main");
+});
+
+test("the promotion pushes the branch the brief names and never the binding default", async () => {
+  const view = promotableView("request-one");
+  const store = recordingStore([
+    {
+      ...view,
+      attempt: {
+        ...attemptOf("request-one"),
+        target: {
+          ref: asGitRefName(briefBranch),
+          commit: asGitObjectId(commitOf("a")),
+        },
+      },
+    },
+  ]);
+  const git = recordingGit();
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch),
+  });
+
+  assert.equal(report.promotions, 1);
+  assert.deepEqual(
+    git.promotions.map((each) => each.target.ref),
+    [briefBranch],
+  );
+});
+
 test("a source handoff is verified from Git and integrated without reading artifact bytes", async () => {
   const store = recordingStore([preparableView("request-one")]);
   store.gathering = {
@@ -623,46 +726,42 @@ test("a source handoff is verified from Git and integrated without reading artif
   assert.equal(store.attempts[0]?.outcome, "Prepared");
 });
 
-test("a publication prepares only its pinned request in the handoff repository", async () => {
-  const request = "publish-unrelated-service";
-  const handoffRepository: RepositoryBinding = {
-    partition,
-    repository: asRepositoryId("ssh://git.internal/platform-releases"),
-    recoveryEpoch: epoch,
-    targetRef: asGitRefName("refs/heads/team-blue"),
-    credentialReference: "platform-release-writer",
-  };
-  const claim = { ...claimOf(request), kind: "PublishHandoff" as const };
-  const store = recordingStore([
-    {
-      lifecycle: "Active",
-      claim,
+/** The release remote a publication names, which is no repository the ticket worked in. */
+const handoffRepository: RepositoryBinding = {
+  partition,
+  repository: asRepositoryId("ssh://git.internal/platform-releases"),
+  recoveryEpoch: epoch,
+  targetRef: asGitRefName("refs/heads/team-blue"),
+  credentialReference: "platform-release-writer",
+};
+
+/** One claimed publication of an accepted work commit into that release remote. */
+function publicationView(request: string): FinalizationView {
+  return {
+    lifecycle: "Active",
+    claim: { ...claimOf(request), kind: "PublishHandoff" as const },
+    repository: handoffRepository,
+    handoffRequest: {
+      kind: "PublishHandoff",
+      configurationRevision: "revision-run",
+      configurationDigest: digestOf("revision-run"),
       repository: handoffRepository,
-      handoffRequest: {
-        kind: "PublishHandoff",
-        configurationRevision: "revision-run",
-        configurationDigest: digestOf("revision-run"),
-        repository: handoffRepository,
-        acceptedWorkRepository: asRepositoryId(
-          "ssh://git.internal/unrelated-service",
-        ),
-        acceptedWorkCommit: asGitObjectId(commitOf("f")),
-        destinationPath: "builds/unrelated/request.json",
-        output: '{"source":"immutable"}',
-        requestDigest: digestOf("publication"),
-      },
-      approval: "Pending",
-      attemptsMade: 0,
+      acceptedWorkRepository: asRepositoryId(
+        "ssh://git.internal/unrelated-service",
+      ),
+      acceptedWorkCommit: asGitObjectId(commitOf("f")),
+      destinationPath: "builds/unrelated/request.json",
+      output: '{"source":"immutable"}',
+      requestDigest: digestOf("publication"),
     },
-  ]);
-  const git = recordingGit();
-  git.observed = {
-    observed: "Target",
-    target: {
-      ref: asGitRefName("refs/heads/team-blue"),
-      commit: asGitObjectId(commitOf("a")),
-    },
+    approval: "Pending",
+    attemptsMade: 0,
   };
+}
+
+test("a publication prepares only its pinned request in the handoff repository", async () => {
+  const store = recordingStore([publicationView("publish-unrelated-service")]);
+  const git = recordingGit();
   const artifacts = recordingArtifacts();
 
   await passOver(serviceOf(store, git, {}, artifacts));
@@ -680,6 +779,22 @@ test("a publication prepares only its pinned request in the handoff repository",
     },
   ]);
   assert.equal(store.attempts[0]?.configuration.revision, "revision-run");
+});
+
+test("a publication keeps the destination it pinned however the ticket's brief reads", async () => {
+  const store = recordingStore([publicationView("publish-unrelated-service")]);
+  const git = recordingGit();
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch),
+  });
+
+  assert.deepEqual(
+    git.observations.map((each) => each.targetRef),
+    [handoffRepository.targetRef, handoffRepository.targetRef],
+  );
+  assert.equal(store.attempts[0]?.target.ref, handoffRepository.targetRef);
 });
 
 test("the pinned revision is what says a candidate needs a person's approval", async () => {

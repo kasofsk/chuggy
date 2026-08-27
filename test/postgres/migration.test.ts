@@ -1547,3 +1547,39 @@ test("migration 44 returns the scheduler the bundle references its briefing join
       );
   });
 });
+
+test("migration 45 gives the finalizer the brief its target is narrowed by", async () => {
+  await migrationDatabase("finalizer_ticket_brief", async (subject) => {
+    await migrationSeedApplied(subject, 45);
+    const privilege = async (relation: string, verb: string) =>
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_table_privilege($1,$2,$3) AS granted",
+          [finalizerRole, relation, verb],
+        )
+      ).rows[0]?.granted;
+    assert.equal(
+      await privilege("draft_brief", "SELECT"),
+      false,
+      "migration 42 gave the brief to the roles that render it and to no other",
+    );
+
+    await applyMigration(subject, 45);
+
+    for (const [relation, verb, granted] of [
+      ["draft_brief", "SELECT", true],
+      ["draft_brief", "INSERT", false],
+      ["draft_brief", "UPDATE", false],
+      ["draft_brief", "DELETE", false],
+      ["draft_brief_link", "SELECT", true],
+      ["draft_brief_link", "INSERT", false],
+      ["draft_brief_link", "DELETE", false],
+      ["draft", "SELECT", false],
+    ] as const)
+      assert.equal(
+        await privilege(relation, verb),
+        granted,
+        `${finalizerRole} holds ${verb} on ${relation}`,
+      );
+  });
+});

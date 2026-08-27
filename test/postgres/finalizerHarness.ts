@@ -73,6 +73,7 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
+import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
 import {
   finalizerPass,
@@ -537,6 +538,7 @@ export async function finalizerProject(
     );
   }
   const bound = await finalizerBind(rig, partition, label, repository);
+  await finalizerBriefBranch(rig, partition, Number(row.ticket), null);
   return {
     partition,
     request: row.request,
@@ -549,6 +551,28 @@ export async function finalizerProject(
     configurationDigest: bound.digest,
     memory,
   };
+}
+
+/**
+ * The branch this project's ticket names, or none. Every harness draft carries
+ * a brief naming one and a finalization's target is narrowed by it, so a
+ * fixture bound to a remote holding only `main` clears it and a case about a
+ * branch names its own.
+ */
+export async function finalizerBriefBranch(
+  rig: FinalizerRig,
+  partition: Partition,
+  ticket: number,
+  branch: string | null,
+): Promise<void> {
+  const updated = await rig.harness.query(
+    `UPDATE draft_brief SET branch=$4
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 RETURNING ticket`,
+    [partition.tenant, partition.project, ticket, branch],
+  );
+  if (updated.length !== 1) {
+    throw new Error("finalizer harness: the ticket carries no brief");
+  }
 }
 
 /** Hexadecimal no other call has produced, at least as long as the widest identity a case needs. */
@@ -824,6 +848,7 @@ export function finalizerService(
   return {
     store: postgresFinalizer(rig.pool),
     git,
+    ticketBriefs: postgresTicketBrief(rig.pool),
     handoffs: artifacts,
     artifacts,
     identities: finalizerIdentities(),
