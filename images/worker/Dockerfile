@@ -1,8 +1,25 @@
-FROM node:26.7.0-bookworm-slim
+# The image one attempt runs in, built by the fabric rather than by hand:
+# `builds/` in gdoteof/chuggy-fabric holds the request, and the profile it names
+# permits public HTTPS on 443 and nothing else outbound.
+#
+# THAT IS WHY THE BASE IS NOT THE SLIM ONE, AND WHY THE SOURCES ARE REWRITTEN.
+# Debian's apt fetches over port 80, which that profile refuses — the packages
+# below resolve and then fail to connect. Fetching them over 443 instead needs a
+# CA store to verify the server with, and the slim base has none at all: no
+# ca-certificates package, no /etc/ssl/certs. So the base is the one that ships
+# it, and the sources are moved to HTTPS before anything is fetched. Disabling
+# apt's peer verification would have kept the slim base and traded the transport
+# away for it, which is a weakening nothing here needs.
+#
+# The digest is the multi-architecture index's, read on 2026-08-27 with
+#   docker buildx imagetools inspect node:26.7.0-bookworm
+FROM node:26.7.0-bookworm@sha256:e929171d35b9df7773a3ec5b068e387fa109441dc90f91e6560af5d39b7e9bf1
 
 ARG CLAUDE_CODE_VERSION=latest
 
-RUN apt-get update \
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
+    /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && apt-get install --yes --no-install-recommends \
     build-essential ca-certificates curl fd-find git jq postgresql-client python3 ripgrep \
   && curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
