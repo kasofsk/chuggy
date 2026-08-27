@@ -56,6 +56,7 @@ import {
   finalizerPassOnce,
   finalizerPassedWork,
   finalizerProject,
+  finalizerSpawnTasks,
   finalizerRemoteCommit,
   finalizerRemotePort,
   finalizerRigOpen,
@@ -524,4 +525,25 @@ test("a reworked ticket's gather hands back the source its latest passed work de
   if (accepted.handoff.kind !== "Source") assert.fail("a source handoff");
   assert.equal(accepted.handoff.source.commit, authoritative);
   assert.deepEqual(accepted.handoff.manifests, [latest.manifest]);
+});
+
+test("the work draw orders a ticket's spawns by the task number and not by its text", async () => {
+  const project = await finalizerProject(rig, "ordered", undefined, 1);
+  await finalizerSpawnTasks(rig, project, [5, 7, 10]);
+  for (const label of ["one", "three", "five", "seven", "ten"]) {
+    await finalizerPassedWork(rig, project, label, []);
+  }
+
+  const claim = await finalizerClaim(rig, project, "owner-ordered");
+  const gathering = await postgresFinalizer(rig.pool).handoffGathering(claim);
+
+  assert.deepEqual(
+    gathering.work.map((each) => each.task),
+    [10, 7, 5, 3, 1],
+  );
+  const arriving = { ...gathering, work: [...gathering.work].reverse() };
+  assert.deepEqual(
+    handoffSuperseded(arriving).work.map((each) => each.task),
+    [3, 5, 7, 10],
+  );
 });

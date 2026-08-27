@@ -28,10 +28,16 @@
  * re-runs its work, so a gathering is several spawns deep and the work the
  * evaluations judged is the latest of them; `handoffSuperseded` keeps that
  * spawn's fan-out and drops the rest, so every refusal below reads one spawn's
- * declarations rather than the ticket's whole history. `model/domain.qnt`'s
- * work reduce says the same at its own grain: it overwrites the ticket's
- * artifact mark with what the spawn that just passed produced, so an earlier
- * spawn's output is history and never a second candidate.
+ * declarations rather than the ticket's whole history.
+ *
+ * THE TASK NUMBER IS WHAT ORDERS INCARNATIONS, and `model/domain.qnt`'s
+ * completion decider already rests on it: a ticket's task ids are unique across
+ * its whole history, so a completion naming an earlier incarnation's task is
+ * stale by identity rather than by any record of what it superseded. Election
+ * here is by highest task and not by which work passed last, which name the
+ * same spawn except where a superseded spawn's execution reports after a later
+ * spawn's — and there the highest task is the incarnation the evaluations
+ * judged and the late report is the stale one.
  *
  * AN ATTEMPT IS WRITTEN ONCE AND PINS WHAT IT WAS BUILT FROM. The record
  * carries the observed target, the pinned configuration revision and digest,

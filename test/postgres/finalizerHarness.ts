@@ -1108,6 +1108,51 @@ export async function finalizerPassedWork(
   return work;
 }
 
+/** The most work tasks one case widens a spawn by, because every fixture set is bounded. */
+const finalizerSpawnTasksMax = 8;
+
+/**
+ * Widens the ticket's latest work spawn with the tasks a case names, which is
+ * how a fixture reaches task numbers whose text order is not their numeric
+ * order. Each is a work task of a spawn a real decision authorized.
+ */
+export async function finalizerSpawnTasks(
+  rig: FinalizerRig,
+  project: FinalizerProject,
+  tasks: readonly number[],
+): Promise<void> {
+  if (tasks.length > finalizerSpawnTasksMax) {
+    throw new Error(
+      "finalizer harness: that is more work tasks than a case widens a spawn by",
+    );
+  }
+  const found = (await rig.harness.query(
+    `SELECT t.request FROM execution_request_task t
+       JOIN execution_request q
+         ON q.tenant = t.tenant AND q.project = t.project AND q.request = t.request
+      WHERE t.tenant = $1 AND t.project = $2 AND t.kind = 'Work'
+        AND q.kind = 'SpawnWork' AND q.ticket = $3
+      ORDER BY t.task DESC LIMIT 1`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  )) as readonly { request: string }[];
+  const spawn = found[0];
+  if (spawn === undefined) {
+    throw new Error("finalizer harness: the ticket has no work spawn to widen");
+  }
+  for (const task of tasks) {
+    await rig.harness.query(
+      `INSERT INTO execution_request_task (tenant, project, request, task, kind)
+       VALUES ($1,$2,$3,$4,'Work')`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        spawn.request,
+        task,
+      ],
+    );
+  }
+}
+
 /**
  * The immutable Git candidate one passed work declared, which is the handoff a
  * worker leaves when it pushed a branch rather than files. The base it names is

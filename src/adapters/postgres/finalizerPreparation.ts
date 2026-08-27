@@ -25,6 +25,11 @@
  * task id the domain mints, and every spawn's ids continue the ticket's
  * sequential history, so descending task order is descending spawn order.
  *
+ * EVERY ONE OF THOSE SORTS NAMES THE BIGINT AND NOT AN OUTPUT COLUMN. A bare
+ * name in `ORDER BY` binds to the select list first, and the work draw renders
+ * its task as text for the row type, so an unqualified sort there would order
+ * the ticket's spawns as text and put its tenth spawn behind its ninth.
+ *
  * THE FINALIZER READS EXECUTION ROWS AND WRITES NONE. Migration thirteen revokes
  * every scheduler relation from the role and then grants back `SELECT` on the
  * four a handoff is spelled across, which is the same revoke-then-narrow shape
@@ -161,7 +166,7 @@ async function preparationPassedWork(
        AND r.verdict = 'Pass')
      SELECT execution, attempt, source_request AS spawn, task::text AS task,
             manifest, configuration_revision, configuration_digest, canonical
-       FROM passed ORDER BY task DESC LIMIT ${candidateExecutionsMax + 1}`,
+       FROM passed ORDER BY passed.task DESC LIMIT ${candidateExecutionsMax + 1}`,
   );
   return found.rows;
 }

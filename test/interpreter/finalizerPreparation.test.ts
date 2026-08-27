@@ -190,6 +190,42 @@ test("two sources declared by one spawn are the conflict the refusal was written
   );
 });
 
+/** Every order three gathered spawns can arrive in, so no case turns on the row order. */
+const spawnOrders: readonly (readonly number[])[] = [
+  [0, 1, 2],
+  [0, 2, 1],
+  [1, 0, 2],
+  [1, 2, 0],
+  [2, 0, 1],
+  [2, 1, 0],
+];
+
+test("the spawn elected is the one holding the highest task, in whatever order the rows arrive", () => {
+  const spawns = [
+    workOf(oneConfiguration, "d", "spawn-two", 2),
+    workOf(oneConfiguration, "e", "spawn-nine", 9),
+    workOf(oneConfiguration, "f", "spawn-ten", 10),
+  ];
+  for (const order of spawnOrders) {
+    const work = order.flatMap((at) => spawns[at] ?? []);
+    const superseded = handoffSuperseded({
+      work,
+      artifacts: [],
+      sources: order.flatMap((at) => sourceOf("def"[at] ?? "")),
+    });
+    assert.deepEqual(
+      superseded.work.map((each) => each.execution),
+      ["execution-f"],
+      order.join(","),
+    );
+    assert.deepEqual(
+      superseded.sources.map((each) => each.execution),
+      ["execution-f"],
+      order.join(","),
+    );
+  }
+});
+
 test("a gathering with no passed work at all supersedes nothing", () => {
   const empty: HandoffGathering = { work: [], artifacts: [], sources: [] };
   assert.deepEqual(handoffSuperseded(empty), empty);
