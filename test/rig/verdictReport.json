@@ -148,7 +148,7 @@
                     {
                       "name": "error-context",
                       "contentType": "text/markdown",
-                      "path": "/home/geoff/claude/chuggy/.claude/worktrees/agent-a23951a0af19deae9/test-results/probe-a-drill-that-could-not-ask-the-rig/error-context.md"
+                      "path": "<captured>/test-results/probe-a-drill-that-could-not-ask-the-rig/error-context.md"
                     }
                   ],
                   "errorLocation": {
