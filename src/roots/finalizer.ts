@@ -18,6 +18,8 @@
  * this process holds, prints or hands a child carries a secret.
  */
 
+import { pathToFileURL } from "node:url";
+
 import { assertNever } from "../domain/assertNever.ts";
 import { composeFinalizerRuntime } from "../compose.ts";
 import { finalizerSettingsOf } from "../interpreter/finalizerSettings.ts";
@@ -58,25 +60,48 @@ function finalizerCouldNotRun(precondition: string): void {
   process.exitCode = finalizerCouldNotRunExit;
 }
 
-/** Ends the process's own resources, a drain that expired being a failure to report. */
-async function finalizerStop(runtime: ServiceRuntime): Promise<void> {
+/** Ends the process's own resources, answering whether the drain it was given expired. */
+async function finalizerStop(runtime: ServiceRuntime): Promise<boolean> {
   const stopped = await runtime.stop();
   if (stopped.stopped === "DrainExpired") {
     finalizerReport("the shutdown drain expired");
     process.exitCode = finalizerFailedExit;
-    return;
+    return true;
   }
   finalizerReport("stopped");
+  return false;
 }
 
-/** Starts the process, holds it until a signal, and reports what it left on. */
-async function finalizerRun(runtime: ServiceRuntime): Promise<void> {
+/**
+ * Holds the process for the started run and reports a loop that ended in
+ * failure. An expiry the stop has already reported is left to that report.
+ */
+async function finalizerSettled(
+  runtime: ServiceRuntime,
+  stop: () => Promise<void>,
+  drainExpired: () => boolean,
+): Promise<void> {
+  const ended = await runtime.settled();
+  if (ended.live) return;
+  if (drainExpired()) return;
+  finalizerReport(ended.failure ?? "unknown failure");
+  process.exitCode = finalizerFailedExit;
+  await stop();
+}
+
+/** Starts the process, holds it until a signal or a dead loop, and reports what it left on. */
+export async function finalizerRun(runtime: ServiceRuntime): Promise<void> {
+  let expired = false;
   let stopping: Promise<void> | undefined;
   const stop = (): Promise<void> =>
-    (stopping ??= finalizerStop(runtime).catch((failure: unknown) => {
-      finalizerReport(finalizerMessageOf(failure));
-      process.exitCode = finalizerFailedExit;
-    }));
+    (stopping ??= finalizerStop(runtime)
+      .then((drainExpired) => {
+        expired = drainExpired;
+      })
+      .catch((failure: unknown) => {
+        finalizerReport(finalizerMessageOf(failure));
+        process.exitCode = finalizerFailedExit;
+      }));
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
       void stop();
@@ -87,7 +112,7 @@ async function finalizerRun(runtime: ServiceRuntime): Promise<void> {
   switch (started.started) {
     case "Started":
       finalizerReport("ready");
-      return;
+      return finalizerSettled(runtime, stop, () => expired);
     case "Stopped":
       return stop();
     case "CouldNotRun":
@@ -120,7 +145,11 @@ async function main(): Promise<void> {
   );
 }
 
-await main().catch((failure: unknown) => {
-  finalizerReport(finalizerMessageOf(failure));
-  process.exitCode = finalizerFailedExit;
-});
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+)
+  await main().catch((failure: unknown) => {
+    finalizerReport(finalizerMessageOf(failure));
+    process.exitCode = finalizerFailedExit;
+  });

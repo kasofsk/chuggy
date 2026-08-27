@@ -180,6 +180,9 @@ test("a running selector reports health until signal-driven shutdown", async () 
   const program = `
     const root = await import('./src/roots/selector.ts');
     let passes = 0;
+    let end;
+    const settled = new Promise((resolve) => { end = resolve; });
+    const running = setInterval(() => {}, 1000);
     const runtime = {
       start: async () => {
         passes += 1;
@@ -187,7 +190,12 @@ test("a running selector reports health until signal-driven shutdown", async () 
         return { started: 'Started' };
       },
       health: () => ({ live: true, ready: true }),
-      stop: async () => ({ stopped: 'Stopped' }),
+      settled: () => settled,
+      stop: async () => {
+        clearInterval(running);
+        end({ live: true, ready: false });
+        return { stopped: 'Stopped' };
+      },
     };
     const result = await root.runSelector(runtime);
     process.stdout.write(JSON.stringify(result));
@@ -207,18 +215,14 @@ test("a running selector reports health until signal-driven shutdown", async () 
   });
 });
 
-test("a failed selector loop exits non-zero with its health failure", async () => {
+test("a failed selector loop exits non-zero with its settled failure", async () => {
   const program = `
     const root = await import('./src/roots/selector.ts');
-    let live = true;
+    const dead = { live: false, ready: false, failure: 'policy transport lost' };
     const runtime = {
-      start: () => {
-        setTimeout(() => { live = false; }, 1);
-        return Promise.resolve({ started: 'Started' });
-      },
-      health: () => live
-        ? { live: true, ready: true }
-        : { live: false, ready: false, failure: 'policy transport lost' },
+      start: () => Promise.resolve({ started: 'Started' }),
+      health: () => dead,
+      settled: () => new Promise((resolve) => setTimeout(() => resolve(dead), 1)),
       stop: () => Promise.resolve({ stopped: 'Stopped' }),
     };
     const result = await root.selectorMain(process.env, () => runtime);
@@ -246,15 +250,13 @@ test("failure and signal overlap share one shutdown", async () => {
       once: (name, listener) => listeners.set(name, listener),
       removeListener: (name) => listeners.delete(name),
     };
-    let inspected = false;
+    const dead = { live: false, ready: false, failure: 'lost source' };
     const runtime = {
       start: async () => ({ started: 'Started' }),
-      health: () => {
-        if (!inspected) {
-          inspected = true;
-          queueMicrotask(() => listeners.get('SIGTERM')?.());
-        }
-        return { live: false, ready: false, failure: 'lost source' };
+      health: () => dead,
+      settled: () => {
+        queueMicrotask(() => listeners.get('SIGTERM')?.());
+        return Promise.resolve(dead);
       },
       stop: async () => {
         stopCalls += 1;

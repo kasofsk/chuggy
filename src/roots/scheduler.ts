@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+
 import {
   kubernetesNamespacePrecondition,
   kubernetesWorkerLaunch,
@@ -60,9 +62,26 @@ function schedulerShutdown(
   };
 }
 
-async function main(): Promise<void> {
-  const config = schedulerCommandConfig(process.env);
-  const runtime = schedulerRuntime(config);
+/** Holds the process for the started run and reports a loop that ended in failure. */
+async function schedulerSettled(
+  runtime: ServiceRuntime,
+  shutdown: () => Promise<void>,
+): Promise<void> {
+  const ended = await runtime.settled();
+  if (ended.live) return;
+  process.stderr.write(
+    `execution scheduler: ${ended.failure ?? "unknown failure"}\n`,
+  );
+  process.exitCode = 1;
+  await shutdown();
+}
+
+export async function schedulerMain(
+  environment: NodeJS.ProcessEnv,
+  root: (config: SchedulerCommandConfig) => ServiceRuntime = schedulerRuntime,
+): Promise<void> {
+  const config = schedulerCommandConfig(environment);
+  const runtime = root(config);
   const shutdown = schedulerShutdown(
     runtime,
     config.runtime.shutdownDrainMilliseconds,
@@ -78,7 +97,8 @@ async function main(): Promise<void> {
     });
   }
   const started = await runtime.start();
-  if (started.started !== "CouldNotRun") return;
+  if (started.started === "Started") return schedulerSettled(runtime, shutdown);
+  if (started.started === "Stopped") return;
   process.stderr.write(
     `execution scheduler: could not run without ${started.precondition}\n`,
   );
@@ -86,9 +106,13 @@ async function main(): Promise<void> {
   await shutdown();
 }
 
-await main().catch((failure: unknown) => {
-  const message =
-    failure instanceof Error ? failure.message : "unknown startup failure";
-  process.stderr.write(`execution scheduler: ${message}\n`);
-  process.exitCode = 1;
-});
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+)
+  await schedulerMain(process.env).catch((failure: unknown) => {
+    const message =
+      failure instanceof Error ? failure.message : "unknown startup failure";
+    process.stderr.write(`execution scheduler: ${message}\n`);
+    process.exitCode = 1;
+  });
