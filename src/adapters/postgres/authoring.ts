@@ -37,11 +37,15 @@ import {
   repositoryConfigurationDeclarationsMax,
 } from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  configurationVersionOf,
+  type ConfigurationVersionRow,
+} from "./configurationVersion.ts";
 import { configurationRevisionDigest } from "./digest.ts";
 import { postgresWorkerCatalog } from "./workerCatalog.ts";
 import { domainConfigurationOf } from "../../interpreter/domainConfiguration.ts";
 
-interface DraftRow {
+interface DraftRow extends ConfigurationVersionRow {
   readonly ticket: string;
   readonly authoring_version: string;
   readonly state: string;
@@ -52,7 +56,13 @@ interface DraftRow {
   readonly links: string[] | null;
 }
 
-interface ConfigurationPageRow {
+interface ConfigurationRow extends ConfigurationVersionRow {
+  readonly parent: string | null;
+  readonly canonical: string;
+  readonly digest: string;
+}
+
+interface ConfigurationPageRow extends ConfigurationVersionRow {
   readonly revision: string;
   readonly parent: string | null;
   readonly canonical: string;
@@ -94,6 +104,21 @@ function configurationPageProvenance(
   };
 }
 
+function configurationPageSummary(row: ConfigurationPageRow) {
+  const version = configurationVersionOf(row);
+  return configurationRevisionSummary({
+    revision: asConfigurationRevisionId(row.revision),
+    ...(row.parent === null
+      ? {}
+      : { parent: asConfigurationRevisionId(row.parent) }),
+    canonical: asCanonicalConfiguration(row.canonical),
+    digest: row.digest,
+    createdAt: asPublicInstant(row.created_at),
+    provenance: configurationPageProvenance(row),
+    ...(version === undefined ? {} : { version }),
+  });
+}
+
 async function readConfigurations(
   pool: pg.Pool,
   partition: Partition,
@@ -101,10 +126,14 @@ async function readConfigurations(
 ): Promise<ConfigurationPage> {
   const found = await pool.query<ConfigurationPageRow>(
     sql`SELECT c.revision,c.parent,c.canonical,c.digest,c.created_at::text AS created_at,
-               p.repository,p.repository_commit AS commit,p.path,p.name
+               p.repository,p.repository_commit AS commit,p.path,p.name,
+               v.name AS version_name,v.number::text AS version_number
           FROM configuration_revision c
           LEFT JOIN repository_configuration_provenance p
             USING (tenant,project,revision)
+          LEFT JOIN repository_configuration_version v
+            ON v.tenant=c.tenant AND v.project=c.project
+           AND v.name=p.name AND v.digest=p.digest
          WHERE c.tenant=${partition.tenant} AND c.project=${partition.project}
            AND (${query.after?.createdAt ?? null}::timestamptz IS NULL
                 OR (c.created_at,c.revision) < (${query.after?.createdAt ?? null}::timestamptz,${query.after?.revision ?? null}))
@@ -112,18 +141,7 @@ async function readConfigurations(
          LIMIT ${query.limit + 1}`,
   );
   const rows = found.rows.slice(0, query.limit);
-  const summaries = rows.map((row) =>
-    configurationRevisionSummary({
-      revision: asConfigurationRevisionId(row.revision),
-      ...(row.parent === null
-        ? {}
-        : { parent: asConfigurationRevisionId(row.parent) }),
-      canonical: asCanonicalConfiguration(row.canonical),
-      digest: row.digest,
-      createdAt: asPublicInstant(row.created_at),
-      provenance: configurationPageProvenance(row),
-    }),
-  );
+  const summaries = rows.map(configurationPageSummary);
   const workers = await postgresWorkerCatalog(
     pool,
     summaries.flatMap((summary) =>
@@ -162,17 +180,25 @@ async function readDraft(
   const found = await pool.query<DraftRow>(
     sql`SELECT d.ticket,d.authoring_version,d.state,d.configuration_revision,r.authoring,
               b.intent,b.branch,
+              v.name AS version_name,v.number::text AS version_number,
               (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                 WHERE k.tenant=d.tenant AND k.project=d.project AND k.ticket=d.ticket) AS links
        FROM draft d JOIN draft_revision r USING (tenant,project,ticket,authoring_version)
        LEFT JOIN draft_brief b
          ON b.tenant=d.tenant AND b.project=d.project AND b.ticket=d.ticket
+       LEFT JOIN repository_configuration_provenance p
+         ON p.tenant=d.tenant AND p.project=d.project
+        AND p.revision=d.configuration_revision
+       LEFT JOIN repository_configuration_version v
+         ON v.tenant=d.tenant AND v.project=d.project
+        AND v.name=p.name AND v.digest=p.digest
       WHERE d.tenant=${partition.tenant} AND d.project=${partition.project}
         AND d.ticket=${ticket}`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
   const brief = draftBriefOf(row);
+  const configurationVersion = configurationVersionOf(row);
   return {
     partition,
     ticket: asTicketId(projectRowCounter(row.ticket, "draft ticket")),
@@ -184,6 +210,7 @@ async function readDraft(
     configurationRevision: asConfigurationRevisionId(
       row.configuration_revision,
     ),
+    ...(configurationVersion === undefined ? {} : { configurationVersion }),
     authoring: parseDraftAuthoring(row.authoring),
     ...(brief === undefined ? {} : { brief }),
   };
@@ -194,25 +221,30 @@ async function readConfiguration(
   partition: Partition,
   revision: string,
 ): Promise<ConfigurationRevisionResource | undefined> {
-  const found = await pool.query<{
-    parent: string | null;
-    canonical: string;
-    digest: string;
-  }>(
-    sql`SELECT parent,canonical,digest FROM configuration_revision
-      WHERE tenant=${partition.tenant} AND project=${partition.project}
-        AND revision=${revision}`,
+  const found = await pool.query<ConfigurationRow>(
+    sql`SELECT c.parent,c.canonical,c.digest,
+               v.name AS version_name,v.number::text AS version_number
+          FROM configuration_revision c
+          LEFT JOIN repository_configuration_provenance p
+            USING (tenant,project,revision)
+          LEFT JOIN repository_configuration_version v
+            ON v.tenant=c.tenant AND v.project=c.project
+           AND v.name=p.name AND v.digest=p.digest
+      WHERE c.tenant=${partition.tenant} AND c.project=${partition.project}
+        AND c.revision=${revision}`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
   const canonical = asCanonicalConfiguration(row.canonical);
   if (configurationRevisionDigest(canonical) !== row.digest)
     throw new Error("configuration revision content contradicts its digest");
+  const version = configurationVersionOf(row);
   const resource = {
     partition,
     revision: asConfigurationRevisionId(revision),
     canonical,
     digest: row.digest,
+    ...(version === undefined ? {} : { version }),
   };
   return row.parent === null
     ? resource
@@ -234,13 +266,16 @@ async function initializeDraft(
     const policy = await client.query<{ domain_configuration: string }>(
       sql`SELECT domain_configuration FROM deployment_authoring_policy WHERE singleton=true`,
     );
-    const configuration = await client.query<{
-      parent: string | null;
-      canonical: string;
-      digest: string;
-    }>(
-      sql`SELECT parent,canonical,digest FROM configuration_revision
-        WHERE tenant=${partition.tenant} AND project=${partition.project} AND revision=${revision}`,
+    const configuration = await client.query<ConfigurationRow>(
+      sql`SELECT c.parent,c.canonical,c.digest,
+                 v.name AS version_name,v.number::text AS version_number
+            FROM configuration_revision c
+            LEFT JOIN repository_configuration_provenance p
+              USING (tenant,project,revision)
+            LEFT JOIN repository_configuration_version v
+              ON v.tenant=c.tenant AND v.project=c.project
+             AND v.name=p.name AND v.digest=p.digest
+        WHERE c.tenant=${partition.tenant} AND c.project=${partition.project} AND c.revision=${revision}`,
     );
     const row = configuration.rows[0];
     const standing = project.rows[0];
@@ -284,13 +319,14 @@ async function initializeDraft(
 function initializedDraftOf(input: {
   readonly partition: Partition;
   readonly revision: string;
-  readonly row: { readonly parent: string | null; readonly digest: string };
+  readonly row: ConfigurationRow;
   readonly standing: { readonly head: string };
   readonly canonical: ReturnType<typeof asCanonicalConfiguration>;
   readonly dependencies: readonly { readonly ticket: string }[];
   readonly dependencyCandidatesMax: number;
   readonly configured: string;
 }) {
+  const version = configurationVersionOf(input.row);
   return {
     configuration: {
       partition: input.partition,
@@ -300,6 +336,7 @@ function initializedDraftOf(input: {
         : { parent: asConfigurationRevisionId(input.row.parent) }),
       canonical: input.canonical,
       digest: input.row.digest,
+      ...(version === undefined ? {} : { version }),
     },
     projectSequence: projectRowCounter(
       input.standing.head,

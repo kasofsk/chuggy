@@ -6,6 +6,7 @@ import type pg from "pg";
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
+import { migration048 } from "../../src/adapters/postgres/schema/migrations/048-repository-configuration-version.ts";
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
@@ -65,6 +66,16 @@ const authority = {
   subject: asAuthoritySubject("author"),
 };
 
+/** The migration's own backfill, so a case proves that statement and not a copy. */
+function configurationVersionBackfill(): string {
+  const statement = migration048.statements.find((value) =>
+    value.startsWith("INSERT INTO repository_configuration_version"),
+  );
+  if (statement === undefined)
+    throw new Error("the configuration version backfill is absent");
+  return statement;
+}
+
 async function repositoryBinding(partition: Partition) {
   const [row] = await harness.query(`SELECT epoch FROM recovery_epoch LIMIT 1`);
   const epoch = row?.["epoch"];
@@ -105,6 +116,7 @@ test("the ticket service refuses policy drift from the installed authority", asy
 function repositoryDeclarations(
   commitValue: string,
   names: readonly string[],
+  image = "worker:v1",
 ): readonly RepositoryConfigurationDeclaration[] {
   const ready = repositoryConfigurationImportReadiness({
     repository: asRepositoryId("repository"),
@@ -117,7 +129,7 @@ function repositoryDeclarations(
         name,
         configuration: {
           version: 1,
-          image: "worker:v1",
+          image,
           practices: [],
           brief: {
             motivation: ["The ticket should be completed."],
@@ -382,6 +394,105 @@ test("repository configuration imports are idempotent and expose provenance", as
     ),
     [{ count: 1 }],
   );
+});
+
+/** One single-name snapshot imported, and the version its revision came back with. */
+async function importedConfigurationVersion(
+  partition: Partition,
+  binding: Awaited<ReturnType<typeof repositoryBinding>>,
+  declarations: readonly RepositoryConfigurationDeclaration[],
+) {
+  assert.equal(
+    (
+      await harness.authoring.importRepositoryConfigurations({
+        partition,
+        binding,
+        authority,
+        declarations,
+      })
+    ).imported,
+    "Imported",
+  );
+  const declaration = declarations[0];
+  if (declaration === undefined)
+    throw new Error("configuration version fixture is absent");
+  const configuration = await harness.authoring.configuration(
+    partition,
+    declaration.revision,
+  );
+  return configuration?.version;
+}
+
+/** The numbers one partition's name carries, in the order they were assigned. */
+async function configurationVersionNumbers(partition: Partition) {
+  return await harness.query(
+    `SELECT number::text AS number FROM repository_configuration_version
+      WHERE tenant=$1 AND project=$2 ORDER BY number`,
+    [partition.tenant, partition.project],
+  );
+}
+
+test("a configuration version is per name and per distinct declaration", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "configuration-version",
+  );
+  const binding = await repositoryBinding(partition);
+  const first = repositoryDeclarations("1".repeat(40), ["work"]);
+  const unchanged = repositoryDeclarations("2".repeat(40), ["work"]);
+  const changed = repositoryDeclarations("3".repeat(40), ["work"], "worker:v2");
+  assert.deepEqual(
+    [
+      await importedConfigurationVersion(partition, binding, first),
+      await importedConfigurationVersion(partition, binding, unchanged),
+      await importedConfigurationVersion(partition, binding, changed),
+      await importedConfigurationVersion(partition, binding, first),
+    ],
+    [
+      { name: "work", number: 1 },
+      { name: "work", number: 1 },
+      { name: "work", number: 2 },
+      { name: "work", number: 1 },
+    ],
+  );
+  assert.deepEqual(await configurationVersionNumbers(partition), [
+    { number: "1" },
+    { number: "2" },
+  ]);
+});
+
+test("the version backfill reproduces the numbers the import assigned", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "configuration-version-backfill",
+  );
+  const binding = await repositoryBinding(partition);
+  for (const declarations of [
+    repositoryDeclarations("4".repeat(40), ["work"]),
+    repositoryDeclarations("5".repeat(40), ["work"], "worker:v2"),
+    repositoryDeclarations("6".repeat(40), ["work"]),
+  ])
+    await importedConfigurationVersion(partition, binding, declarations);
+  const assigned = await harness.query(
+    `SELECT digest,number::text AS number FROM repository_configuration_version
+      WHERE tenant=$1 AND project=$2 ORDER BY number`,
+    [partition.tenant, partition.project],
+  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM repository_configuration_version");
+    await client.query(configurationVersionBackfill());
+    const backfilled = await client.query(
+      `SELECT digest,number::text AS number FROM repository_configuration_version
+        WHERE tenant=$1 AND project=$2 ORDER BY number`,
+      [partition.tenant, partition.project],
+    );
+    assert.deepEqual(backfilled.rows, assigned);
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
+  }
 });
 
 test("repository imports retain changed commits and partition their identity", async () => {

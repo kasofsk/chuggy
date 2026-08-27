@@ -22,6 +22,10 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  configurationVersionOf,
+  type ConfigurationVersionRow,
+} from "./configurationVersion.ts";
 
 interface HeaderRow {
   readonly has_view: boolean;
@@ -32,7 +36,7 @@ interface HeaderRow {
   readonly notification_cursor: string;
 }
 
-interface CandidateRow {
+interface CandidateRow extends ConfigurationVersionRow {
   readonly ticket: string;
   readonly ticket_version: string;
   readonly work_fanout: string;
@@ -66,6 +70,7 @@ function candidateOf(
   }[],
 ): DispatchCandidate {
   const ticket = projectRowCounter(row.ticket, "dispatch ticket");
+  const configurationVersion = configurationVersionOf(row);
   return {
     ticket: asTicketId(ticket),
     ticketVersion: projectRowCounter(
@@ -88,6 +93,7 @@ function candidateOf(
     configurationRevision: row.configuration_revision,
     configurationDigest: row.configuration_digest,
     configurationCanonical: row.configuration_canonical,
+    ...(configurationVersion === undefined ? {} : { configurationVersion }),
   };
 }
 
@@ -129,13 +135,20 @@ async function readDispatchView(
     if (query.watermark !== undefined && query.watermark !== watermark)
       return { result: "Reset" };
     const found = await client.query<CandidateRow>(
-      sql`SELECT ticket::text,ticket_version::text,work_fanout::text,program,
-              rework_policy,finalization_pricing,resume_pricing,finalizer,
-            configuration_revision,configuration_digest,configuration_canonical
-         FROM dispatch_candidate
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
-          AND ticket>${query.after ?? 0}
-        ORDER BY ticket LIMIT ${query.limit + 1}`,
+      sql`SELECT d.ticket::text,d.ticket_version::text,d.work_fanout::text,d.program,
+              d.rework_policy,d.finalization_pricing,d.resume_pricing,d.finalizer,
+            d.configuration_revision,d.configuration_digest,d.configuration_canonical,
+            v.name AS version_name,v.number::text AS version_number
+         FROM dispatch_candidate d
+         LEFT JOIN repository_configuration_provenance p
+           ON p.tenant=d.tenant AND p.project=d.project
+          AND p.revision=d.configuration_revision
+         LEFT JOIN repository_configuration_version v
+           ON v.tenant=d.tenant AND v.project=d.project
+          AND v.name=p.name AND v.digest=p.digest
+        WHERE d.tenant=${partition.tenant} AND d.project=${partition.project}
+          AND d.ticket>${query.after ?? 0}
+        ORDER BY d.ticket LIMIT ${query.limit + 1}`,
     );
     const pageRows = found.rows.slice(0, query.limit);
     const tickets = pageRows.map((row) =>

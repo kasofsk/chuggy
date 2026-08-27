@@ -43,11 +43,15 @@ import {
 import { projectRowCounter } from "./rows.ts";
 import { postgresWorkerCatalog } from "./workerCatalog.ts";
 import {
+  configurationVersionOf,
+  type ConfigurationVersionRow,
+} from "./configurationVersion.ts";
+import {
   asExecutionRequirement,
   asRequirementSource,
 } from "../../interpreter/executionRequirement.ts";
 
-interface ExecutionViewRow {
+interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly execution: string;
   readonly ticket: string;
   readonly task: string;
@@ -119,6 +123,7 @@ function known<Value extends string>(
 }
 
 function executionSummary(row: ExecutionViewRow): ExecutionSummary {
+  const configurationVersion = configurationVersionOf(row);
   return {
     execution: asExecutionId(row.execution),
     ticket: asTicketId(projectRowCounter(row.ticket, "execution ticket")),
@@ -131,6 +136,7 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
     configurationRevision: asConfigurationRevisionId(
       row.configuration_revision,
     ),
+    ...(configurationVersion === undefined ? {} : { configurationVersion }),
     requirementIdentity: row.requirement_identity,
     requirement: asExecutionRequirement(row.requirement_value),
     requirementDigest: row.requirement_digest,
@@ -224,12 +230,19 @@ async function executionRows(
                c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
                e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
-               e.result_manifest
+               e.result_manifest,
+               v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c
             ON c.tenant=e.tenant AND c.project=e.project
            AND c.revision=e.configuration_revision AND c.digest=e.configuration_digest
           JOIN execution_request_task t ON t.tenant=e.tenant AND t.project=e.project
            AND t.request=e.source_request AND t.task=e.task
+          LEFT JOIN repository_configuration_provenance p
+            ON p.tenant=e.tenant AND p.project=e.project
+           AND p.revision=e.configuration_revision
+          LEFT JOIN repository_configuration_version v
+            ON v.tenant=e.tenant AND v.project=e.project
+           AND v.name=p.name AND v.digest=p.digest
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND e.execution>${query.after ?? ""}
            AND (${query.ticket ?? null}::bigint IS NULL OR e.ticket=${query.ticket ?? null})
@@ -274,12 +287,19 @@ async function oneExecution(
                c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
                e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
-               e.result_manifest
+               e.result_manifest,
+               v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c
             ON c.tenant=e.tenant AND c.project=e.project
            AND c.revision=e.configuration_revision AND c.digest=e.configuration_digest
           JOIN execution_request_task t ON t.tenant=e.tenant AND t.project=e.project
            AND t.request=e.source_request AND t.task=e.task
+          LEFT JOIN repository_configuration_provenance p
+            ON p.tenant=e.tenant AND p.project=e.project
+           AND p.revision=e.configuration_revision
+          LEFT JOIN repository_configuration_version v
+            ON v.tenant=e.tenant AND v.project=e.project
+           AND v.name=p.name AND v.digest=p.digest
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND e.execution=${execution}`,
   );

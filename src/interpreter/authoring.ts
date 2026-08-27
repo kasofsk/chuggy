@@ -22,6 +22,7 @@ import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
 import type { GitObjectId, RepositoryId } from "./finalizer.ts";
 import type {
+  ConfigurationVersion,
   RepositoryConfigurationName,
   RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
@@ -191,6 +192,7 @@ export interface DraftResource {
   readonly authoringVersion: number;
   readonly state: DraftState;
   readonly configurationRevision: ConfigurationRevisionId;
+  readonly configurationVersion?: ConfigurationVersion;
   readonly authoring: ReleaseAuthoring;
   readonly brief?: DraftBrief;
 }
@@ -201,6 +203,7 @@ export interface ConfigurationRevisionResource {
   readonly parent?: ConfigurationRevisionId;
   readonly canonical: CanonicalConfiguration;
   readonly digest: string;
+  readonly version?: ConfigurationVersion;
 }
 
 export interface ConfigurationPageCursor {
@@ -214,6 +217,7 @@ interface ConfigurationRevisionSummaryBase {
   readonly digest: string;
   readonly createdAt: PublicInstant;
   readonly provenance: ConfigurationRevisionProvenance;
+  readonly version?: ConfigurationVersion;
 }
 
 export type ConfigurationRevisionProvenance =
@@ -270,6 +274,7 @@ export function configurationRevisionSummary(input: {
   readonly digest: string;
   readonly createdAt: PublicInstant;
   readonly provenance: ConfigurationRevisionProvenance;
+  readonly version?: ConfigurationVersion;
 }): ConfigurationRevisionSummary {
   const readiness = releaseConfigurationReadiness(input.canonical);
   const base = {
@@ -278,6 +283,7 @@ export function configurationRevisionSummary(input: {
     digest: input.digest,
     createdAt: input.createdAt,
     provenance: input.provenance,
+    ...(input.version === undefined ? {} : { version: input.version }),
   };
   return readiness.readiness === "Incomplete"
     ? { ...base, readiness: "Incomplete" }

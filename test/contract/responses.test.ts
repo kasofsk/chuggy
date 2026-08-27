@@ -65,6 +65,7 @@ import {
   brief,
   briefedDraft,
   configuration,
+  configurationVersion,
   digest,
   draft as draftResource,
   execution,
@@ -73,6 +74,10 @@ import {
   instant,
   partition,
   revision,
+  versionedConfiguration,
+  versionedDispatchViewPage,
+  versionedDraft,
+  versionedExecutionSummary,
 } from "./representations.ts";
 
 test("a project read and a ticket read parse as the contract names them", () => {
@@ -405,6 +410,72 @@ test("a configuration read and its page parse with readiness and provenance", ()
     }).body,
   );
   assert.equal(page.configurations[0]?.readiness, "Ready");
+});
+
+test("a configuration version reaches every response that names a revision", () => {
+  const label = { name: "work", number: 3 };
+  assert.deepEqual(
+    configurationResponseSchema.parse(
+      configurationResponse(versionedConfiguration).body,
+    ).version,
+    label,
+  );
+  assert.deepEqual(
+    configurationsResponseSchema.parse(
+      configurationsResponse({
+        result: "Authorized",
+        value: {
+          partition,
+          configurations: [
+            {
+              revision,
+              digest,
+              createdAt: instant,
+              readiness: "Incomplete",
+              provenance: { source: "Authored" },
+              version: configurationVersion,
+            },
+          ],
+        },
+      }).body,
+    ).configurations[0]?.version,
+    label,
+  );
+  assert.deepEqual(
+    draftResponseSchema.parse(draftResponse(versionedDraft).body)
+      .configurationVersion,
+    label,
+  );
+  assert.deepEqual(
+    executionsResponseSchema.parse(
+      executionsResponse({
+        result: "Authorized",
+        value: { executions: [versionedExecutionSummary] },
+      }).body,
+    ).executions[0]?.configurationVersion,
+    label,
+  );
+  const view = dispatchViewResponseSchema.parse(
+    dispatchViewResponse({
+      result: "Authorized",
+      value: versionedDispatchViewPage,
+    }).body,
+  );
+  assert.deepEqual(
+    view.result === "Page"
+      ? view.candidates[0]?.configurationVersion
+      : undefined,
+    label,
+  );
+});
+
+test("a revision with no version carries none of the label's fields", () => {
+  const read = configurationResponseSchema.parse(
+    configurationResponse(configuration).body,
+  );
+  assert.equal("version" in read, false);
+  const drafted = draftResponseSchema.parse(draftResponse(draftResource).body);
+  assert.equal("configurationVersion" in drafted, false);
 });
 
 test("a worker label rides beside the requirement and the ready image, or is absent", () => {
