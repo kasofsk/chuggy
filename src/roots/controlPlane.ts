@@ -63,6 +63,8 @@ import {
   ticketServiceRole,
 } from "../adapters/postgres/schema.ts";
 import { postgresDomainConfigurationPrecondition } from "../adapters/postgres/domainConfiguration.ts";
+import { postgresWorkerCatalogPrecondition } from "../adapters/postgres/workerCatalog.ts";
+import type { AdmittedWorker } from "../interpreter/workerCatalog.ts";
 import {
   currentRuntimeSchemaContract,
   postgresRuntimeSchema,
@@ -350,6 +352,7 @@ export interface SchedulerProcessRootConfig {
     ExecutionSchedulerService,
     "store" | "configurations" | "priorWorkReports" | "ticketBriefs"
   >;
+  readonly workerCatalog: readonly AdmittedWorker[];
   readonly additional?: readonly RuntimePrecondition[];
 }
 
@@ -383,6 +386,7 @@ export function schedulerProcessRoot(
         additional: [
           postgresRolePrecondition(pool, schedulerRole),
           recoveryEpochPrecondition(pool, config.identity.recoveryEpoch),
+          postgresWorkerCatalogPrecondition(pool, config.workerCatalog),
           ...(config.additional ?? []),
         ],
       },

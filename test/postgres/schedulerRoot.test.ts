@@ -103,6 +103,13 @@ function schedulerRootUrl(): string {
   return url.toString();
 }
 
+/** The one named image this suite's root publishes, so a start can be read off the table. */
+const schedulerRootWorker = {
+  image: "registry.invalid/scheduler-root-worker:1",
+  name: "scheduler-root-worker",
+  version: "1",
+};
+
 /** One start of the root, with two supplied preconditions counting their own calls. */
 function schedulerRootProgram(): string {
   return `
@@ -122,6 +129,7 @@ function schedulerRootProgram(): string {
         cluster: 'cluster',
       },
       service: ports.schedulerRootService,
+      workerCatalog: ${JSON.stringify([schedulerRootWorker])},
       additional: supplied,
     });
     const started = await runtime.start();
@@ -148,6 +156,13 @@ test("a precondition the deployment supplies is reached past the database ones a
     },
     called: { met: 1, unmet: 1 },
   });
+  assert.deepEqual(
+    await harness.query(
+      "SELECT image,name,version FROM admitted_worker WHERE image=$1",
+      [schedulerRootWorker.image],
+    ),
+    [schedulerRootWorker],
+  );
 });
 
 test("the production scheduler root reads configurations through PostgreSQL", async () => {

@@ -377,6 +377,19 @@ test("a notification batch and a dispatch page parse as the server sends them", 
   assert.equal(view.result, "Reset");
 });
 
+/** One Ready summary, so the page case and the label case vary one field of the same value. */
+const readyConfiguration = {
+  revision,
+  digest,
+  createdAt: instant,
+  readiness: "Ready",
+  image: "worker:v1",
+  practices: ["RegressionCoverage"],
+  workInstructionsCount: 2,
+  reviewInstructionsCount: 1,
+  provenance: { source: "Authored" },
+} as const;
+
 test("a configuration read and its page parse with readiness and provenance", () => {
   const read = configurationResponseSchema.parse(
     configurationResponse(configuration).body,
@@ -387,23 +400,45 @@ test("a configuration read and its page parse with readiness and provenance", ()
       result: "Authorized",
       value: {
         partition,
-        configurations: [
-          {
-            revision,
-            digest,
-            createdAt: instant,
-            readiness: "Ready",
-            image: "worker:v1",
-            practices: ["RegressionCoverage"],
-            workInstructionsCount: 2,
-            reviewInstructionsCount: 1,
-            provenance: { source: "Authored" },
-          },
-        ],
+        configurations: [readyConfiguration],
       },
     }).body,
   );
   assert.equal(page.configurations[0]?.readiness, "Ready");
+});
+
+test("a worker label rides beside the requirement and the ready image, or is absent", () => {
+  const worker = { name: "chuggy-worker", version: "3" };
+  const labelled = executionsResponseSchema.parse(
+    executionsResponse({
+      result: "Authorized",
+      value: { executions: [{ ...executionSummary, worker }] },
+    }).body,
+  );
+  assert.deepEqual(labelled.executions[0]?.worker, worker);
+  assert.equal(
+    executionsResponseSchema.parse(
+      executionsResponse({
+        result: "Authorized",
+        value: { executions: [executionSummary] },
+      }).body,
+    ).executions[0]?.worker,
+    undefined,
+  );
+  const page = configurationsResponseSchema.parse(
+    configurationsResponse({
+      result: "Authorized",
+      value: {
+        partition,
+        configurations: [{ ...readyConfiguration, worker }],
+      },
+    }).body,
+  );
+  const summary = page.configurations[0];
+  assert.deepEqual(
+    summary?.readiness === "Ready" ? summary.worker : undefined,
+    worker,
+  );
 });
 
 /** The initialization body the server assembles, which two cases read differently. */

@@ -10,7 +10,8 @@
  * EVERY SITE DECISION ARRIVES AS DATA AND NONE IS DECIDED HERE. Admitted worker
  * images, resource budgets, the namespace, the service account, the node
  * selector and both security contexts are read and handed on unread; what this
- * module decides is only whether a deployment named them at all.
+ * module decides is whether a deployment named them at all, and whether the
+ * admitted-images list names one image, or one worker label, twice.
  *
  * A BOUND IS EITHER THE DEFAULT OR AN OVERRIDE OF ONE THAT EXISTS. The three
  * pass configurations are merged over the defaults their own modules publish,
@@ -54,6 +55,15 @@ import {
   type RecoveryEpoch,
 } from "../interpreter/projectStore.ts";
 import type { ServiceRuntimeConfig } from "../interpreter/serviceRuntime.ts";
+import { repositoryConfigurationNameCharsMax } from "../interpreter/repositoryConfigurationIdentity.ts";
+import {
+  admittedImagesMax,
+  asWorkerName,
+  asWorkerVersion,
+  workerImageCharsMax,
+  workerVersionCharsMax,
+  type AdmittedWorker,
+} from "../interpreter/workerCatalog.ts";
 import type { FilesystemAccess } from "../interpreter/taskAuthority.ts";
 import {
   ticketServiceDefaults,
@@ -75,6 +85,7 @@ export interface SchedulerCommandConfig {
   readonly finalizer: FinalizerConfig;
   readonly workers: KubernetesWorkerLaunchConfig;
   readonly policy: SuppliedExecutionPolicyConfig;
+  readonly workerCatalog: readonly AdmittedWorker[];
   readonly runtimeFacts: SuppliedRuntimeFactsConfig;
 }
 
@@ -134,7 +145,70 @@ const schedulerTaskKinds = Object.keys(
   schedulerPolicyShape,
 ) as readonly ExecutionTaskKind[];
 
-const schedulerImagesSchema = z.array(schedulerTextSchema).min(1);
+/**
+ * One admitted image, either the bare reference a deployment has always written
+ * or the same reference labelled. A bare entry is admitted and unnamed, so a
+ * deployment adopts labels one image at a time.
+ */
+const schedulerAdmittedImageSchema = z.union([
+  schedulerTextSchema,
+  z.strictObject({
+    image: schedulerTextSchema.max(workerImageCharsMax),
+    name: z.string().refine((value) => asWorkerName(value) !== undefined, {
+      message: `is not a worker name of at most ${String(repositoryConfigurationNameCharsMax)} characters`,
+    }),
+    version: z
+      .string()
+      .refine((value) => asWorkerVersion(value) !== undefined, {
+        message: `is not a worker version of at most ${String(workerVersionCharsMax)} characters`,
+      }),
+  }),
+]);
+
+type SchedulerAdmittedImage = z.infer<typeof schedulerAdmittedImageSchema>;
+
+/** The image one entry admits, whichever of the two shapes it was written in. */
+function schedulerAdmittedImage(entry: SchedulerAdmittedImage): string {
+  return typeof entry === "string" ? entry : entry.image;
+}
+
+/**
+ * Refuses a list that admits one image twice or spells one label twice. Both
+ * are settled here rather than at the catalog, because a deployment that means
+ * two things by one image has no reading a later boot could recover.
+ */
+function schedulerImagesAreDistinct(
+  entries: readonly SchedulerAdmittedImage[],
+  ctx: z.RefinementCtx,
+): void {
+  const images = new Set<string>();
+  const labels = new Set<string>();
+  for (const [index, entry] of entries.entries()) {
+    const image = schedulerAdmittedImage(entry);
+    if (images.has(image))
+      ctx.addIssue({
+        code: "custom",
+        path: [index],
+        message: `admits the image ${image} twice`,
+      });
+    images.add(image);
+    if (typeof entry === "string") continue;
+    const label = JSON.stringify([entry.name, entry.version]);
+    if (labels.has(label))
+      ctx.addIssue({
+        code: "custom",
+        path: [index],
+        message: `names the worker ${entry.name} version ${entry.version} twice`,
+      });
+    labels.add(label);
+  }
+}
+
+const schedulerImagesSchema = z
+  .array(schedulerAdmittedImageSchema)
+  .min(1)
+  .max(admittedImagesMax)
+  .superRefine(schedulerImagesAreDistinct);
 
 const schedulerResourcesSchema = z.strictObject({
   cpuRequest: schedulerTextSchema,
@@ -258,9 +332,17 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
   return merged;
 }
 
+/** Only the entries that named themselves, which are the ones a boot publishes. */
+function schedulerWorkerCatalog(
+  admitted: readonly SchedulerAdmittedImage[],
+): readonly AdmittedWorker[] {
+  return admitted.filter((entry) => typeof entry !== "string");
+}
+
 /** The execution policy this deployment states, one profile and grant per task kind. */
 function schedulerPolicy(
   environment: SchedulerEnvironment,
+  admitted: readonly SchedulerAdmittedImage[],
 ): SuppliedExecutionPolicyConfig {
   const parsed = schedulerJson(
     environment,
@@ -279,14 +361,7 @@ function schedulerPolicy(
       grant: supplied.grant,
     });
   }
-  return {
-    profiles,
-    imagesAdmitted: schedulerJson(
-      environment,
-      "ADMITTED_IMAGES",
-      schedulerImagesSchema,
-    ),
-  };
+  return { profiles, imagesAdmitted: admitted.map(schedulerAdmittedImage) };
 }
 
 /** The site policy a placed pod carries, every value of it read and handed on unread. */
@@ -406,6 +481,11 @@ export function schedulerCommandConfig(
   environment: SchedulerEnvironment,
 ): SchedulerCommandConfig {
   const workspace = schedulerOptional(environment, "WORKER_WORKSPACE");
+  const admitted = schedulerJson(
+    environment,
+    "ADMITTED_IMAGES",
+    schedulerImagesSchema,
+  );
   return {
     database: schedulerDatabase(environment),
     runtime: {
@@ -446,7 +526,8 @@ export function schedulerCommandConfig(
       finalizerDefaults,
     ),
     workers: schedulerWorkers(environment),
-    policy: schedulerPolicy(environment),
+    policy: schedulerPolicy(environment, admitted),
+    workerCatalog: schedulerWorkerCatalog(admitted),
     runtimeFacts: workspace === undefined ? {} : { workspace },
   };
 }

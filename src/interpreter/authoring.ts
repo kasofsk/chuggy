@@ -25,6 +25,7 @@ import type {
   RepositoryConfigurationName,
   RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
+import type { Worker } from "./workerCatalog.ts";
 import { encodeDecisionEventText, parseDecisionEventText } from "./wire.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
 import {
@@ -230,10 +231,24 @@ export type ConfigurationRevisionSummary =
   | (ConfigurationRevisionSummaryBase & {
       readonly readiness: "Ready";
       readonly image: string;
+      readonly worker?: Worker;
       readonly practices: readonly string[];
       readonly workInstructionsCount: number;
       readonly reviewInstructionsCount: number;
     });
+
+/**
+ * The same summary carrying the label its image is catalogued under. An
+ * incomplete revision pins nothing, and an image no catalog names keeps none.
+ */
+export function configurationRevisionSummaryLabelled(
+  summary: ConfigurationRevisionSummary,
+  workers: ReadonlyMap<string, Worker>,
+): ConfigurationRevisionSummary {
+  if (summary.readiness !== "Ready") return summary;
+  const worker = workers.get(summary.image);
+  return worker === undefined ? summary : { ...summary, worker };
+}
 
 export interface ConfigurationPage {
   readonly partition: Partition;
