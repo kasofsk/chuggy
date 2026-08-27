@@ -601,6 +601,13 @@ textarea:focus-visible {
   color: var(--bad);
 }
 
+.footer {
+  padding: var(--gap) var(--gap-wide);
+  border-top: 1px solid var(--edge);
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
