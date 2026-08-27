@@ -118,6 +118,7 @@ function draw(
             digest: next.configuration.digest,
             createdAt: "2026-08-26T00:00:00Z",
             provenance: { source: "Authored" },
+            version: { name: "chuggy", number: 12 },
             readiness: "Ready",
             image: "an-image",
             practices: [],
@@ -159,6 +160,17 @@ function drafts(sent: readonly Sent[]): readonly Sent[] {
     (one) => one.method === "POST" && one.path.endsWith("/drafts"),
   );
 }
+
+/** The sentence names the configuration nobody was asked about, so the revision
+ * it names it instead of has nowhere else on this screen to be. */
+test("the shaping sentence keeps the revision behind the name it draws", () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, []);
+  const sentence = screen.getByText(/^shaped by configuration chuggy #12,/u);
+  expect(sentence.getAttribute("title")).toBe(
+    creationInitialization.configuration.revision,
+  );
+});
 
 test("a release that settles as succeeded navigates, and to that ticket", async () => {
   const held = api({ state: "Succeeded" });

@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import { briefLinksMax } from "../../../../src/contract/brief.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
+  ConfigurationSummary,
   DraftInitializationResponse,
   DraftResponse,
 } from "../../../../src/contract/responses.ts";
@@ -197,14 +198,16 @@ function useMounted(): { readonly current: boolean } {
 function CreationFields(
   props: FormEdit & {
     readonly faults: readonly CreationFault[];
+    readonly configuration: ConfigurationSummary;
     readonly initialization: DraftInitializationResponse;
   },
 ): ReactNode {
   const { faults, form, initialization, onChange } = props;
+  const shaping = creationConfigurationSentence(props.configuration);
   return (
     <>
-      <p className="creation-configuration">
-        {creationConfigurationSentence(initialization.configuration)}
+      <p className="creation-configuration" title={shaping.title}>
+        {shaping.text}
       </p>
       <Intent form={form} onChange={onChange} />
       <Fault field="intent" faults={faults} />
@@ -337,6 +340,7 @@ export function CreationForm(props: {
         form={form}
         onChange={setEdited}
         faults={faults}
+        configuration={props.context.configuration}
         initialization={initialization}
       />
       <button

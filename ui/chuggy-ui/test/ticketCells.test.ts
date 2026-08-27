@@ -24,7 +24,7 @@ function row(executionRead: ProjectTableRow["executionRead"]): ProjectTableRow {
     section: "NeedsYou",
     badge: "work failed",
     executionRead,
-    configurationRevision: undefined,
+    configuration: undefined,
     executionStatus: undefined,
     executionOutcome: undefined,
     runsOn: undefined,

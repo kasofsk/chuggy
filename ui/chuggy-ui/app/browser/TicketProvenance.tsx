@@ -1,6 +1,7 @@
 /**
  * Where this ticket came from: the brief a person wrote, the authoring the
- * retained draft holds, and the configuration revision it was released under.
+ * retained draft holds, and the configuration it was released under, which is
+ * named where the wire names it and drawn as its revision where it is not.
  *
  * The draft is the record of what was released, so a ticket whose draft the
  * API will not show reads as an absence with its reason rather than as a page
@@ -15,6 +16,7 @@ import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
 import type { DraftResponse } from "../../../../src/contract/responses.ts";
 import { apiConfiguration } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
+import { configurationLabel } from "../core/labels.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import { usePanelQuery } from "./api.ts";
 import { Panel } from "./Panel.tsx";
@@ -67,23 +69,31 @@ export function TicketBrief(props: {
 }): ReactNode {
   return (
     <Panel title="brief" state={props.state}>
-      {(draft) => (
-        <dl className="fields">
-          {draft.brief === undefined ? (
-            <Field name="intent, links, branch">
-              <span className="panel-absent">
-                this ticket was released before a brief was kept for one
-              </span>
+      {(draft) => {
+        const released = configurationLabel(
+          draft.configurationRevision,
+          draft.configurationVersion,
+        );
+        return (
+          <dl className="fields">
+            {draft.brief === undefined ? (
+              <Field name="intent, links, branch">
+                <span className="panel-absent">
+                  this ticket was released before a brief was kept for one
+                </span>
+              </Field>
+            ) : (
+              <Brief brief={draft.brief} />
+            )}
+            <Field name="released under">
+              <span title={released.title}>{released.text}</span>
             </Field>
-          ) : (
-            <Brief brief={draft.brief} />
-          )}
-          <Field name="released under">{draft.configurationRevision}</Field>
-          <Field name="draft">
-            {draft.state} at version {draft.authoringVersion}
-          </Field>
-        </dl>
-      )}
+            <Field name="draft">
+              {draft.state} at version {draft.authoringVersion}
+            </Field>
+          </dl>
+        );
+      }}
     </Panel>
   );
 }
@@ -126,17 +136,22 @@ function Authoring(props: { readonly draft: DraftResponse }): ReactNode {
 function TicketConfiguration(props: {
   readonly partition: PartitionIdentity;
   readonly revision: string;
+  readonly version: DraftResponse["configurationVersion"];
 }): ReactNode {
   const [open, setOpen] = useState(false);
+  const label = configurationLabel(props.revision, props.version);
   const state = usePanelQuery(
     projectResourceKey(props.partition, "Configuration", props.revision),
     (ports) => apiConfiguration(ports, props.partition, props.revision),
   );
   return (
-    <Panel title={`configuration ${props.revision}`} state={state}>
+    <Panel title={`configuration ${label.text}`} state={state}>
       {(configuration) => (
         <div className="configuration">
           <dl className="fields">
+            <Field name="revision">
+              <code>{label.title}</code>
+            </Field>
             <Field name="digest">
               <code>{configuration.digest}</code>
             </Field>
@@ -175,6 +190,7 @@ export function TicketProvenance(props: {
         <TicketConfiguration
           partition={props.partition}
           revision={props.state.value.configurationRevision}
+          version={props.state.value.configurationVersion}
         />
       ) : null}
     </>
