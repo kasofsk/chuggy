@@ -104,6 +104,23 @@ function currentReport(verdict: string, report: unknown): string {
   });
 }
 
+/**
+ * The document `images/worker/entrypoint.mjs` builds, whose `source` key is
+ * absent rather than null whenever there is no source handoff. The shape is
+ * restated rather than imported: that module runs its own entrypoint on import
+ * and carries no types this suite could be checked against.
+ */
+function workerReport(verdict: string, source?: unknown): string {
+  return JSON.stringify({
+    version: 3,
+    verdict,
+    report: "the review the evaluator wrote",
+    handoffs: [],
+    ...(source === undefined ? {} : { source }),
+    diagnostics: [row("log/session.json")],
+  });
+}
+
 const source = {
   repository: "repository-one",
   ref: "refs/heads/chuggy/tickets/ticket-one/attempts/attempt-one",
@@ -136,7 +153,89 @@ test("an explicit empty manifest is accepted and is not the absence of one", () 
   const empty = accepted(report("Pass", []));
   assert.deepEqual(empty.handoffs, []);
   assert.deepEqual(empty.diagnostics, []);
-  assert.equal(rejection('{"version":1,"verdict":"Pass"}'), "UnexpectedField");
+  assert.equal(rejection('{"version":1,"verdict":"Pass"}'), "MissingField");
+});
+
+test("a report with no source handoff omits the key rather than spelling it null", () => {
+  for (const verdict of ["Fail", "Pass"] as const) {
+    const manifest = accepted(workerReport(verdict));
+    assert.equal(manifest.source, undefined);
+    assert.equal(manifest.verdict, verdict);
+    assert.equal(manifest.diagnostics.length, 1);
+  }
+});
+
+test("an omitted source and an explicit null are one declaration", () => {
+  assert.equal(accepted(workerReport("Fail", null)).source, undefined);
+  assert.equal(
+    accepted(workerReport("Fail")).digest,
+    accepted(workerReport("Fail", null)).digest,
+  );
+  assert.equal(
+    accepted(
+      JSON.stringify({
+        version: 2,
+        verdict: "Fail",
+        handoffs: [],
+        diagnostics: [],
+      }),
+    ).schemaVersion,
+    2,
+  );
+});
+
+test("a key optional at one schema version is unknown at the ones before it", () => {
+  assert.equal(
+    rejection(
+      JSON.stringify({
+        version: 1,
+        verdict: "Pass",
+        handoffs: [],
+        diagnostics: [],
+        source: null,
+      }),
+    ),
+    "UnexpectedField",
+  );
+  assert.equal(
+    rejection(
+      JSON.stringify({
+        version: 2,
+        verdict: "Pass",
+        report: "a review",
+        handoffs: [],
+        diagnostics: [],
+      }),
+    ),
+    "UnexpectedField",
+  );
+});
+
+test("the other envelope keys stay required and unknown ones stay refused", () => {
+  assert.equal(
+    rejection(
+      JSON.stringify({
+        version: 3,
+        verdict: "Pass",
+        handoffs: [],
+        diagnostics: [],
+      }),
+    ),
+    "MissingField",
+  );
+  assert.equal(
+    rejection(
+      JSON.stringify({
+        version: 3,
+        verdict: "Pass",
+        report: "a review",
+        handoffs: [],
+        diagnostics: [],
+        extra: 1,
+      }),
+    ),
+    "UnexpectedField",
+  );
 });
 
 test("a version-two passing manifest carries one bounded source handoff", () => {
@@ -408,31 +507,24 @@ test("a row that is not a row of the schema is missing its fields", () => {
   );
 });
 
-/** Every rejection a body of the wire form can be refused with, gathered from bodies. */
-function everyRejectionReached(): ReadonlySet<ManifestRejection> {
-  const handoffs = Array.from({ length: manifestHandoffsMax }, (_unused, at) =>
-    row(`out/${String(at)}`),
-  );
-  const large = Array.from(
-    { length: Math.floor(manifestBytesMax / artifactBytesMax) + 1 },
-    (_unused, at) => row(`out/${String(at)}`, artifactBytesMax),
-  );
-  return new Set<ManifestRejection>([
-    ...pathCases.map(([path]) => pathRejection(path)),
+/** The rejections the envelope alone earns, which is where a version and a key set are read. */
+function everyRejectionReachedInEnvelope(): readonly ManifestRejection[] {
+  return [
     rejection("x".repeat(resultManifestTextCharsMax + 1)),
     rejection("not json"),
-    rejection(report("Pass", [{ ...row("out/a"), extra: 1 }])),
     rejection(
       JSON.stringify({
-        version: 1,
+        version: 2,
         verdict: "Pass",
-        handoffs: ["out/a"],
+        handoffs: [],
         diagnostics: [],
+        source: null,
+        extra: 1,
       }),
     ),
     rejection(
       JSON.stringify({
-        version: 2,
+        version: 3,
         verdict: "Pass",
         handoffs: [],
         diagnostics: [],
@@ -446,11 +538,35 @@ function everyRejectionReached(): ReadonlySet<ManifestRejection> {
         diagnostics: [],
       }),
     ),
+    rejection(report("Skip", [])),
+  ];
+}
+
+/** Every rejection a body of the wire form can be refused with, gathered from bodies. */
+function everyRejectionReached(): ReadonlySet<ManifestRejection> {
+  const handoffs = Array.from({ length: manifestHandoffsMax }, (_unused, at) =>
+    row(`out/${String(at)}`),
+  );
+  const large = Array.from(
+    { length: Math.floor(manifestBytesMax / artifactBytesMax) + 1 },
+    (_unused, at) => row(`out/${String(at)}`, artifactBytesMax),
+  );
+  return new Set<ManifestRejection>([
+    ...pathCases.map(([path]) => pathRejection(path)),
+    ...everyRejectionReachedInEnvelope(),
+    rejection(report("Pass", [{ ...row("out/a"), extra: 1 }])),
+    rejection(
+      JSON.stringify({
+        version: 1,
+        verdict: "Pass",
+        handoffs: ["out/a"],
+        diagnostics: [],
+      }),
+    ),
     rejection(currentReport("Pass", "")),
     rejection(sourceReport("Pass", { ...source, commit: "not-an-object" })),
     rejection(sourceReport("Fail", source)),
     rejection(sourceReport("Pass", source, [row("out/a")])),
-    rejection(report("Skip", [])),
     rejection(report("Pass", [...handoffs, row("out/extra")])),
     rejection(
       report(
