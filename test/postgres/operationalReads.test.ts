@@ -142,3 +142,48 @@ test("an execution reads back empty until its run writes evidence", async () => 
   assert.equal(run?.configuration, undefined);
   assert.equal(run?.turnsRecorded, 0);
 });
+
+test("an execution's attempts are read in the order they were opened", async () => {
+  const project = await schedulerProject(rig, "operational-attempt-order");
+  await rig.store.registerSpawn(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      project.request,
+      schedulerOwner("operational-attempt-order"),
+    ),
+    executionSchedulerDefaults.nTasks,
+  );
+  const admitted = await rig.store.admit(project.cluster);
+  assert.ok(admitted.admitted === "Admitted");
+  const opened = 11;
+  for (let number = 1; number <= opened; number += 1) {
+    const attempt = await rig.store.openAttempt({
+      partition: project.partition,
+      execution: admitted.execution,
+      epoch: project.epoch,
+      leaseSecs: 300,
+      retriesMax: opened + 1,
+      placementBackoffSecs: 1,
+    });
+    assert.equal(attempt.opened, "Opened", `attempt ${String(number)}`);
+    if (attempt.opened !== "Opened" || number === opened) continue;
+    assert.equal(
+      await rig.store.attemptEnded(attempt.attempt, "Lost", "Vanished"),
+      true,
+    );
+    await rig.harness.query(
+      `UPDATE execution SET placement_backoff_from=NULL
+        WHERE tenant=$1 AND project=$2 AND execution=$3`,
+      [project.partition.tenant, project.partition.project, admitted.execution],
+    );
+  }
+  const detail = await postgresOperationalReads(ingress).execution(
+    project.partition,
+    admitted.execution,
+  );
+  assert.deepEqual(
+    detail?.attempts.map((attempt) => attempt.number),
+    Array.from({ length: opened }, (_unused, index) => index + 1),
+  );
+});
