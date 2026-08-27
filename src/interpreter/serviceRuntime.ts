@@ -54,8 +54,9 @@ export interface ServiceRuntime {
   health(): ServiceHealth;
   /**
    * The health a started run leaves behind once its loop ends, so a root learns
-   * a dead loop rather than idling beside one. A drain that expires never ends
-   * the loop and so never settles.
+   * a dead loop rather than idling beside one. A stop that gave up on its drain
+   * settles only when the over-running quantum returns, carrying that stop's
+   * own verdict, which the root has already been given.
    */
   settled(): Promise<ServiceHealth>;
 }

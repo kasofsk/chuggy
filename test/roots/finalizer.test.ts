@@ -118,6 +118,7 @@ function finalizerSpawn(environment: Environment): ChildProcess {
 function finalizerRan(
   child: ChildProcess,
   onStarting?: () => void,
+  onReady?: () => void,
 ): Promise<Ran> {
   return new Promise((resolve) => {
     let stderr = "";
@@ -125,6 +126,7 @@ function finalizerRan(
     child.stderr?.on("data", (chunk: string) => {
       stderr += chunk;
       if (chunk.includes("starting")) onStarting?.();
+      if (chunk.includes("ready")) onReady?.();
     });
     child.on("close", (code) => {
       resolve({ code, stderr });
@@ -226,25 +228,91 @@ const deadLoopProgram = `
   await root.finalizerRun(runtime);
 `;
 
-test("a loop that dies leaves the failure on stderr and a non-zero status", async () => {
-  const ran = await finalizerRan(
-    spawn(
-      process.execPath,
-      [
-        "--experimental-strip-types",
-        "--input-type=module",
-        "--eval",
-        deadLoopProgram,
-      ],
-      { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] },
-    ),
+/** A run a signal ends, which settles live and must read as no failure at all. */
+const orderlyStopProgram = `
+  const root = await import('./src/roots/finalizer.ts');
+  let end;
+  const settled = new Promise((resolve) => { end = resolve; });
+  const running = setInterval(() => {}, 1000);
+  const runtime = {
+    start: () => Promise.resolve({ started: 'Started' }),
+    health: () => ({ live: true, ready: true }),
+    settled: () => settled,
+    stop: () => {
+      clearInterval(running);
+      end({ live: true, ready: false });
+      return Promise.resolve({ stopped: 'Stopped' });
+    },
+  };
+  await root.finalizerRun(runtime);
+`;
+
+/**
+ * A quantum that ignores its abort until well past the drain, driven by the
+ * real runtime, which is the only way the late settlement is reached at all.
+ */
+const overRunningQuantumProgram = `
+  const root = await import('./src/roots/finalizer.ts');
+  const { serviceRuntime } = await import('./src/interpreter/serviceRuntime.ts');
+  const pacing = {
+    wait: (milliseconds, signal) => new Promise((resolve) => {
+      const timeout = setTimeout(resolve, milliseconds);
+      signal.addEventListener('abort', () => { clearTimeout(timeout); resolve(); }, { once: true });
+    }),
+  };
+  const runtime = serviceRuntime(
+    { run: () => new Promise((resolve) => setTimeout(resolve, 600)) },
+    pacing,
+    [],
+    { idleIntervalMilliseconds: 10, shutdownDrainMilliseconds: 100 },
   );
+  await root.finalizerRun(runtime);
+`;
+
+function finalizerProgram(source: string): ChildProcess {
+  return spawn(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", source],
+    { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] },
+  );
+}
+
+/** Runs one module program and signals it the moment it reports readiness. */
+function finalizerProgramSignalled(source: string): Promise<Ran> {
+  const child = finalizerProgram(source);
+  return finalizerRan(child, undefined, () => {
+    child.kill("SIGTERM");
+  });
+}
+
+test("a loop that dies leaves the failure on stderr and a non-zero status", async () => {
+  const ran = await finalizerRan(finalizerProgram(deadLoopProgram));
   assert.equal(ran.code, 1);
   assert.deepEqual(ran.stderr.trimEnd().split("\n"), [
     "finalizer: starting",
     "finalizer: ready",
     "finalizer: lost authority",
     "finalizer: stopped",
+  ]);
+});
+
+test("a signalled run settles live and leaves no failure and a zero status", async () => {
+  const ran = await finalizerProgramSignalled(orderlyStopProgram);
+  assert.equal(ran.code, 0);
+  assert.deepEqual(ran.stderr.trimEnd().split("\n"), [
+    "finalizer: starting",
+    "finalizer: ready",
+    "finalizer: stopped",
+  ]);
+});
+
+test("a drain the quantum outlasts is reported once, not again when it returns", async () => {
+  const ran = await finalizerProgramSignalled(overRunningQuantumProgram);
+  assert.equal(ran.code, 1);
+  assert.deepEqual(ran.stderr.trimEnd().split("\n"), [
+    "finalizer: starting",
+    "finalizer: ready",
+    "finalizer: the shutdown drain expired",
   ]);
 });
 

@@ -452,6 +452,29 @@ test("a signalled command stops within the drain it was given", async () => {
   }
 });
 
+/**
+ * Runs one module program against the command's environment, signalling it the
+ * moment it says it is ready, and reports how it left.
+ */
+async function schedulerProgramRan(source: string): Promise<CommandRan> {
+  const child = execFile(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", source],
+    { cwd: process.cwd(), env: { ...process.env, ...environment } },
+  );
+  let stderr = "";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  child.stdout?.on("data", (chunk: Buffer) => {
+    if (chunk.toString().includes("ready")) child.kill("SIGTERM");
+  });
+  const code = await new Promise<number | null>((resolve) => {
+    child.on("close", resolve);
+  });
+  return { code, stderr };
+}
+
 /** A dead loop, put to the command's own run against a runtime that reports one. */
 const deadLoopProgram = `
   const { schedulerMain } = await import('./src/roots/scheduler.ts');
@@ -465,26 +488,38 @@ const deadLoopProgram = `
   await schedulerMain(process.env, () => runtime);
 `;
 
+/** A run a signal ends, which settles live and must read as no failure at all. */
+const orderlyStopProgram = `
+  const { schedulerMain } = await import('./src/roots/scheduler.ts');
+  let end;
+  const settled = new Promise((resolve) => { end = resolve; });
+  const running = setInterval(() => {}, 1000);
+  const runtime = {
+    start: async () => {
+      process.stdout.write('ready\\n');
+      return { started: 'Started' };
+    },
+    health: () => ({ live: true, ready: true }),
+    settled: () => settled,
+    stop: async () => {
+      clearInterval(running);
+      end({ live: true, ready: false });
+      return { stopped: 'Stopped' };
+    },
+  };
+  await schedulerMain(process.env, () => runtime);
+`;
+
 test("a loop that dies leaves the failure on stderr and a non-zero status", async () => {
-  const child = execFile(
-    process.execPath,
-    [
-      "--experimental-strip-types",
-      "--input-type=module",
-      "--eval",
-      deadLoopProgram,
-    ],
-    { cwd: process.cwd(), env: { ...process.env, ...environment } },
-  );
-  let stderr = "";
-  child.stderr?.on("data", (chunk: Buffer) => {
-    stderr += chunk.toString();
-  });
-  const code = await new Promise<number | null>((resolve) => {
-    child.on("close", resolve);
-  });
-  assert.equal(code, 1);
-  assert.equal(stderr, "execution scheduler: lost authority\n");
+  const ran = await schedulerProgramRan(deadLoopProgram);
+  assert.equal(ran.code, 1);
+  assert.equal(ran.stderr, "execution scheduler: lost authority\n");
+});
+
+test("a signalled run settles live and leaves nothing on stderr and a zero status", async () => {
+  const ran = await schedulerProgramRan(orderlyStopProgram);
+  assert.equal(ran.code, 0);
+  assert.equal(ran.stderr, "");
 });
 
 test("an incomplete environment stops the command before it reaches anything", async () => {
