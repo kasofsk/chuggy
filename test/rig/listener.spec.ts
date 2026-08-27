@@ -31,7 +31,9 @@
  * and every attempt passes back through `Opening`, which `useStreamFallback` does
  * not count — so the fallback's sleep only survives once a rung of that ladder
  * outlasts `fallbackIntervalMs`, or once `streamOpenFailuresMax` attempts have
- * been spent and the console has given up for good. Both are inside the bound
+ * been spent and the console has given up for good. That gap is a stale screen
+ * under a banner that does not mention it, and it is filed as a console finding
+ * rather than left here: kasofsk/chuggy#372. Both paths are inside the bound
  * below, and neither ends until this drill lifts the refusal, so the banner is
  * asserted still up at the instant the text arrives: the read cannot have been
  * the stream's.

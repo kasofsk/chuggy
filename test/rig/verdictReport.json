@@ -1,0 +1,172 @@
+{
+  "stats": {
+    "startTime": "2026-08-27T01:28:03.138Z",
+    "duration": 267.73299999999995,
+    "expected": 1,
+    "skipped": 1,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "suites": [
+    {
+      "title": "probe.spec.ts",
+      "file": "probe.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "a drill that reached a verdict",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 600000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-27T01:28:03.364Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9223f0ac28d4fb57516f-4b9c2a5a1e8eb39a5b6b",
+          "file": "probe.spec.ts",
+          "line": 5,
+          "column": 6
+        },
+        {
+          "title": "a drill that did not run",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 600000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "description": "the installation runs its selector at no replicas, so nothing dispatches",
+                  "location": {
+                    "file": "<captured>/probe.spec.ts",
+                    "line": 10,
+                    "column": 9
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-27T01:28:03.384Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "the installation runs its selector at no replicas, so nothing dispatches",
+                      "location": {
+                        "file": "<captured>/probe.spec.ts",
+                        "line": 10,
+                        "column": 9
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "9223f0ac28d4fb57516f-42b29d23be3671d9e4c1",
+          "file": "probe.spec.ts",
+          "line": 9,
+          "column": 6
+        },
+        {
+          "title": "a drill that could not ask the rig",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 600000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 0,
+                  "error": {
+                    "message": "Error: the rig could not be asked: kubectl -n chuggy get deployment chuggy-ticket-service -o jsonpath={.status.readyReplicas} — ssh: Could not resolve hostname",
+                    "stack": "Error: the rig could not be asked: kubectl -n chuggy get deployment chuggy-ticket-service -o jsonpath={.status.readyReplicas} — ssh: Could not resolve hostname\n    at <captured>/probe.spec.ts:17:9",
+                    "location": {
+                      "file": "<captured>/probe.spec.ts",
+                      "column": 9,
+                      "line": 17
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 15 |\u001b[39m\n \u001b[90m 16 |\u001b[39m drill(\u001b[32m\"a drill that could not ask the rig\"\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 17 |\u001b[39m   \u001b[36mthrow\u001b[39m \u001b[36mnew\u001b[39m \u001b[33mError\u001b[39m(\n \u001b[90m    |\u001b[39m         \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 18 |\u001b[39m     \u001b[32m`${rigCouldNotRunPrefix}: kubectl -n chuggy get deployment chuggy-ticket-service -o jsonpath={.status.readyReplicas} — ssh: Could not resolve hostname`\u001b[39m\u001b[33m,\u001b[39m\n \u001b[90m 19 |\u001b[39m   )\u001b[33m;\u001b[39m\n \u001b[90m 20 |\u001b[39m })\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "<captured>/probe.spec.ts",
+                        "column": 9,
+                        "line": 17
+                      },
+                      "message": "Error: the rig could not be asked: kubectl -n chuggy get deployment chuggy-ticket-service -o jsonpath={.status.readyReplicas} — ssh: Could not resolve hostname\n\n\u001b[0m \u001b[90m 15 |\u001b[39m\n \u001b[90m 16 |\u001b[39m drill(\u001b[32m\"a drill that could not ask the rig\"\u001b[39m\u001b[33m,\u001b[39m () \u001b[33m=>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 17 |\u001b[39m   \u001b[36mthrow\u001b[39m \u001b[36mnew\u001b[39m \u001b[33mError\u001b[39m(\n \u001b[90m    |\u001b[39m         \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 18 |\u001b[39m     \u001b[32m`${rigCouldNotRunPrefix}: kubectl -n chuggy get deployment chuggy-ticket-service -o jsonpath={.status.readyReplicas} — ssh: Could not resolve hostname`\u001b[39m\u001b[33m,\u001b[39m\n \u001b[90m 19 |\u001b[39m   )\u001b[33m;\u001b[39m\n \u001b[90m 20 |\u001b[39m })\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at <captured>/probe.spec.ts:17:9\u001b[22m"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-08-27T01:28:03.389Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/geoff/claude/chuggy/.claude/worktrees/agent-a23951a0af19deae9/test-results/probe-a-drill-that-could-not-ask-the-rig/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "<captured>/probe.spec.ts",
+                    "column": 9,
+                    "line": 17
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "9223f0ac28d4fb57516f-1fa324a15d0b00d3c922",
+          "file": "probe.spec.ts",
+          "line": 16,
+          "column": 6
+        }
+      ]
+    }
+  ]
+}

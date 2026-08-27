@@ -30,8 +30,14 @@ export interface UnreachedDrill {
   readonly reason: string;
 }
 
-/** Both ways a run fails to establish anything, kept apart because they read differently. */
+/**
+ * Both ways a run fails to establish anything, kept apart because they read
+ * differently, and how many drills did reach one. The count is what a clean
+ * verdict says out loud: a program that printed nothing would look the same
+ * over a report it understood and one whose shape it no longer reads.
+ */
 export interface RunVerdict {
+  readonly reached: number;
   readonly skipped: readonly UnreachedDrill[];
   readonly unaskable: readonly UnreachedDrill[];
 }
@@ -72,10 +78,13 @@ function unaskableReason(test: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-function readSpec(
-  spec: Record<string, unknown>,
-  into: { skipped: UnreachedDrill[]; unaskable: UnreachedDrill[] },
-): void {
+interface Gathered {
+  reached: number;
+  readonly skipped: UnreachedDrill[];
+  readonly unaskable: UnreachedDrill[];
+}
+
+function readSpec(spec: Record<string, unknown>, into: Gathered): void {
   const title = asText(spec["title"]) ?? "an unnamed drill";
   for (const held of asArray(spec["tests"])) {
     const test = asRecord(held);
@@ -85,13 +94,11 @@ function readSpec(
       into.unaskable.push({ title, reason: unaskable });
     else if (asText(test["status"]) === "skipped")
       into.skipped.push({ title, reason: skipReason(test) });
+    else into.reached += 1;
   }
 }
 
-function readSuite(
-  suite: Record<string, unknown>,
-  into: { skipped: UnreachedDrill[]; unaskable: UnreachedDrill[] },
-): void {
+function readSuite(suite: Record<string, unknown>, into: Gathered): void {
   for (const held of asArray(suite["specs"])) {
     const spec = asRecord(held);
     if (spec !== undefined) readSpec(spec, into);
@@ -102,12 +109,9 @@ function readSuite(
   }
 }
 
-/** Every drill in the report that did not reach a verdict, and why. */
+/** Every drill in the report that did not reach a verdict, and how many did. */
 export function runVerdict(report: unknown): RunVerdict {
-  const into = {
-    skipped: [] as UnreachedDrill[],
-    unaskable: [] as UnreachedDrill[],
-  };
+  const into: Gathered = { reached: 0, skipped: [], unaskable: [] };
   const root = asRecord(report);
   if (root !== undefined) readSuite(root, into);
   return into;
@@ -123,6 +127,9 @@ function report(path: string): void {
     process.stderr.write(
       `acceptance: LINTER ERROR — ${drill.title} did not run: ${drill.reason}\n`,
     );
+  process.stdout.write(
+    `acceptance: ${String(verdict.reached)} drill(s) reached a verdict, ${String(verdict.skipped.length)} skipped, ${String(verdict.unaskable.length)} could not ask\n`,
+  );
   if (verdict.unaskable.length + verdict.skipped.length === 0) return;
   process.stderr.write(
     "acceptance: a drill that did not run establishes nothing; two is not a pass.\n",
