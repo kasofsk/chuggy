@@ -7,16 +7,20 @@
  * connection. What an attempt actually needs is a database nothing else is in,
  * and a database is cheap where a server is not.
  *
- * THE ATTEMPT GETS ITS OWN ROLE, NOT ONLY ITS OWN DATABASE. Agent-authored
- * code runs in this container and inherits this process's environment, so
- * whatever credential reaches the gates reaches the agent. A shared login
- * would therefore be a shared owner: every attempt on the server could read
- * and drop every other attempt's databases, which is the isolation the
- * per-attempt database was for. So the URL the site supplies is used once, to
- * make a role that owns one database and can make more beside it, and it is
- * removed from the environment before anything else runs. What the attempt's
- * role can still do is spend the server's disk, which is the deployment's to
- * bound.
+ * THE ATTEMPT GETS ITS OWN ROLE, NOT ONLY ITS OWN DATABASE. Agent-authored code
+ * runs in this container and inherits this process's environment, so whatever
+ * credential reaches the gates reaches the agent. A shared login would
+ * therefore be a shared owner: every attempt could read and drop every other
+ * attempt's databases, which is what the per-attempt database was for. So the
+ * URL the site supplies is used once, to make a role that owns one database and
+ * can make more beside it.
+ *
+ * DROPPING IT FROM THE ENVIRONMENT IS NOT HIDING IT. Nothing here puts that URL
+ * out of reach of a process running as this one's user, whose /proc still holds
+ * the environment this process was executed with; what the delete below stops
+ * is a credential nobody asked for arriving in every child. What bounds the
+ * credential itself is the server, and `deploy/rig/postgres/worker-database-roles.sql`
+ * is where that bound is stated and argued.
  *
  * EVERY DATABASE THE ROLE OWNS IS DROPPED WITH IT. The gates make databases of
  * their own — `.chug/tasks/check-postgres.sh` clones one per worker — so
