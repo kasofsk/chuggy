@@ -52,6 +52,12 @@ export interface ServiceRuntime {
   start(): Promise<ServiceStartResult>;
   stop(): Promise<ServiceStopResult>;
   health(): ServiceHealth;
+  /**
+   * The health a started run leaves behind once its loop ends, so a root learns
+   * a dead loop rather than idling beside one. A drain that expires never ends
+   * the loop and so never settles.
+   */
+  settled(): Promise<ServiceHealth>;
 }
 
 export type ServiceStopResult =
@@ -150,10 +156,25 @@ async function serviceRuntimeLoop(
   }
 }
 
+interface ServiceSettlement {
+  readonly reached: Promise<ServiceHealth>;
+  readonly reach: (health: ServiceHealth) => void;
+}
+
+/** One run's end, reached at most once and replaced when the next run may begin. */
+function serviceSettlement(): ServiceSettlement {
+  let reach!: (health: ServiceHealth) => void;
+  const reached = new Promise<ServiceHealth>((resolve) => {
+    reach = resolve;
+  });
+  return { reached, reach };
+}
+
 interface ServiceRuntimeOwn {
   control: AbortController | undefined;
   starting: Promise<ServiceStartResult> | undefined;
   loop: Promise<void> | undefined;
+  settlement: ServiceSettlement;
   state: ServiceRuntimeState;
   failure: string | undefined;
 }
@@ -183,15 +204,21 @@ function serviceStart(
     }
     if (signal.aborted) return { started: "Stopped" };
     own.state = "Running";
+    const settlement = own.settlement;
     own.loop = serviceRuntimeLoop(
       quantum,
       pacing,
       idleIntervalMilliseconds,
       signal,
-    ).catch((error: unknown) => {
-      own.failure = error instanceof Error ? error.message : "unknown failure";
-      own.state = "Failed";
-    });
+    )
+      .catch((error: unknown) => {
+        own.failure =
+          error instanceof Error ? error.message : "unknown failure";
+        own.state = "Failed";
+      })
+      .then(() => {
+        settlement.reach(serviceHealth(own.state, own.failure));
+      });
     return { started: "Started" };
   })();
   return own.starting;
@@ -225,6 +252,7 @@ async function serviceStop(
   own.control = undefined;
   own.starting = undefined;
   own.loop = undefined;
+  own.settlement = serviceSettlement();
   own.state = "Stopped";
   own.failure = undefined;
   return { stopped: "Stopped" };
@@ -249,6 +277,7 @@ export function serviceRuntime(
     control: undefined,
     starting: undefined,
     loop: undefined,
+    settlement: serviceSettlement(),
     state: "Stopped",
     failure: undefined,
   };
@@ -264,5 +293,6 @@ export function serviceRuntime(
       ),
     stop: () => serviceStop(own, pacing, shutdownDrainMilliseconds),
     health: () => serviceHealth(own.state, own.failure),
+    settled: () => own.settlement.reached,
   };
 }

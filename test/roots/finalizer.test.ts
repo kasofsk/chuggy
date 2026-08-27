@@ -213,6 +213,41 @@ test("a signal ends a start that is still in flight", async (t) => {
   assert.equal(ran.stderr.includes("ready"), false);
 });
 
+/** A dead loop, put to the command's own run against a runtime that reports one. */
+const deadLoopProgram = `
+  const root = await import('./src/roots/finalizer.ts');
+  const dead = { live: false, ready: false, failure: 'lost authority' };
+  const runtime = {
+    start: () => Promise.resolve({ started: 'Started' }),
+    health: () => dead,
+    settled: () => new Promise((resolve) => setTimeout(() => resolve(dead), 1)),
+    stop: () => Promise.resolve({ stopped: 'Stopped' }),
+  };
+  await root.finalizerRun(runtime);
+`;
+
+test("a loop that dies leaves the failure on stderr and a non-zero status", async () => {
+  const ran = await finalizerRan(
+    spawn(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "--eval",
+        deadLoopProgram,
+      ],
+      { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] },
+    ),
+  );
+  assert.equal(ran.code, 1);
+  assert.deepEqual(ran.stderr.trimEnd().split("\n"), [
+    "finalizer: starting",
+    "finalizer: ready",
+    "finalizer: lost authority",
+    "finalizer: stopped",
+  ]);
+});
+
 test("a shutdown that outlasts its drain says so rather than waiting", async (t) => {
   const { environment } = fixture(t, {
     CHUG_FINALIZER_DATABASE_URL: await stallingDatabase(t, 800),

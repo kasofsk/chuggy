@@ -18,6 +18,8 @@
  * this process holds, prints or hands a child carries a secret.
  */
 
+import { pathToFileURL } from "node:url";
+
 import { assertNever } from "../domain/assertNever.ts";
 import { composeFinalizerRuntime } from "../compose.ts";
 import { finalizerSettingsOf } from "../interpreter/finalizerSettings.ts";
@@ -69,8 +71,20 @@ async function finalizerStop(runtime: ServiceRuntime): Promise<void> {
   finalizerReport("stopped");
 }
 
-/** Starts the process, holds it until a signal, and reports what it left on. */
-async function finalizerRun(runtime: ServiceRuntime): Promise<void> {
+/** Holds the process for the started run and reports a loop that ended in failure. */
+async function finalizerSettled(
+  runtime: ServiceRuntime,
+  stop: () => Promise<void>,
+): Promise<void> {
+  const ended = await runtime.settled();
+  if (ended.live) return;
+  finalizerReport(ended.failure ?? "unknown failure");
+  process.exitCode = finalizerFailedExit;
+  await stop();
+}
+
+/** Starts the process, holds it until a signal or a dead loop, and reports what it left on. */
+export async function finalizerRun(runtime: ServiceRuntime): Promise<void> {
   let stopping: Promise<void> | undefined;
   const stop = (): Promise<void> =>
     (stopping ??= finalizerStop(runtime).catch((failure: unknown) => {
@@ -87,7 +101,7 @@ async function finalizerRun(runtime: ServiceRuntime): Promise<void> {
   switch (started.started) {
     case "Started":
       finalizerReport("ready");
-      return;
+      return finalizerSettled(runtime, stop);
     case "Stopped":
       return stop();
     case "CouldNotRun":
@@ -120,7 +134,11 @@ async function main(): Promise<void> {
   );
 }
 
-await main().catch((failure: unknown) => {
-  finalizerReport(finalizerMessageOf(failure));
-  process.exitCode = finalizerFailedExit;
-});
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+)
+  await main().catch((failure: unknown) => {
+    finalizerReport(finalizerMessageOf(failure));
+    process.exitCode = finalizerFailedExit;
+  });

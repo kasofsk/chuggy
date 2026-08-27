@@ -189,13 +189,21 @@ test("an unavailable database is could-not-run rather than a crash", async () =>
 test("SIGTERM drives bounded shutdown and preserves its result", async () => {
   const program = `
     const { runTicketService } = await import('./src/roots/ticketService.ts');
+    let end;
+    const settled = new Promise((resolve) => { end = resolve; });
+    const running = setInterval(() => {}, 1000);
     const runtime = {
       start: async () => {
         process.stdout.write('ready\\n');
         return { started: 'Started' };
       },
       health: () => ({ live: true, ready: true }),
-      stop: async () => ({ stopped: 'DrainExpired' }),
+      settled: () => settled,
+      stop: async () => {
+        clearInterval(running);
+        end({ live: true, ready: false });
+        return { stopped: 'DrainExpired' };
+      },
     };
     const result = await runTicketService(runtime);
     process.stdout.write(JSON.stringify(result));
@@ -213,15 +221,11 @@ test("SIGTERM drives bounded shutdown and preserves its result", async () => {
 test("a runtime failure produces a non-zero command result", async () => {
   const program = `
     const { ticketServiceMain } = await import('./src/roots/ticketService.ts');
-    let live = true;
+    const dead = { live: false, ready: false, failure: 'lost authority' };
     const runtime = {
-      start: () => {
-        setTimeout(() => { live = false; }, 1);
-        return Promise.resolve({ started: 'Started' });
-      },
-      health: () => live
-        ? { live: true, ready: true }
-        : { live: false, ready: false, failure: 'lost authority' },
+      start: () => Promise.resolve({ started: 'Started' }),
+      health: () => dead,
+      settled: () => new Promise((resolve) => setTimeout(() => resolve(dead), 1)),
       stop: () => Promise.resolve({ stopped: 'Stopped' }),
     };
     const result = await ticketServiceMain(process.env, () => runtime);

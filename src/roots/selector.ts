@@ -217,40 +217,6 @@ export function selectorCommandRoot(
   );
 }
 
-function selectorFailure(runtime: ServiceRuntime): string | undefined {
-  const health = runtime.health();
-  return health.live
-    ? undefined
-    : (health.failure ?? "unknown runtime failure");
-}
-
-function selectorFailureWait(runtime: ServiceRuntime): {
-  readonly found: Promise<string>;
-  readonly cancel: () => void;
-} {
-  let timeout: NodeJS.Timeout | undefined;
-  let cancelled = false;
-  const found = new Promise<string>((resolve) => {
-    const inspect = (): void => {
-      if (cancelled) return;
-      const failure = selectorFailure(runtime);
-      if (failure !== undefined) {
-        resolve(failure);
-        return;
-      }
-      timeout = setTimeout(inspect, 25);
-    };
-    inspect();
-  });
-  return {
-    found,
-    cancel: () => {
-      cancelled = true;
-      if (timeout !== undefined) clearTimeout(timeout);
-    },
-  };
-}
-
 export async function runSelector(
   runtime: ServiceRuntime,
   signals: ProcessSignals = process,
@@ -279,15 +245,18 @@ export async function runSelector(
     }
     if (started.started === "Stopped")
       return { outcome: "Stopped", stop: await stopRuntime() };
-    const failure = selectorFailureWait(runtime);
     const completion = await Promise.race([
-      failure.found.then((message) => ({ kind: "failure", message }) as const),
+      runtime
+        .settled()
+        .then((health) => ({ kind: "settled", health }) as const),
       signal.then(() => ({ kind: "signal" }) as const),
     ]);
-    failure.cancel();
-    if (completion.kind === "failure") {
+    if (completion.kind === "settled" && !completion.health.live) {
       await stopRuntime();
-      return { outcome: "Failed", failure: completion.message };
+      return {
+        outcome: "Failed",
+        failure: completion.health.failure ?? "unknown runtime failure",
+      };
     }
     return { outcome: "Stopped", stop: await stopRuntime() };
   } finally {

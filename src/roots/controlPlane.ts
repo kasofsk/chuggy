@@ -110,6 +110,7 @@ function ownedProcess(pool: pg.Pool, runtime: ServiceRuntime): ServiceRuntime {
       return runtime.start();
     },
     health: () => runtime.health(),
+    settled: () => runtime.settled(),
     stop: async () => {
       if (closed) return { stopped: "Stopped" };
       const stopped = await runtime.stop();

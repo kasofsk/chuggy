@@ -452,6 +452,41 @@ test("a signalled command stops within the drain it was given", async () => {
   }
 });
 
+/** A dead loop, put to the command's own run against a runtime that reports one. */
+const deadLoopProgram = `
+  const { schedulerMain } = await import('./src/roots/scheduler.ts');
+  const dead = { live: false, ready: false, failure: 'lost authority' };
+  const runtime = {
+    start: () => Promise.resolve({ started: 'Started' }),
+    health: () => dead,
+    settled: () => new Promise((resolve) => setTimeout(() => resolve(dead), 1)),
+    stop: () => Promise.resolve({ stopped: 'Stopped' }),
+  };
+  await schedulerMain(process.env, () => runtime);
+`;
+
+test("a loop that dies leaves the failure on stderr and a non-zero status", async () => {
+  const child = execFile(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      deadLoopProgram,
+    ],
+    { cwd: process.cwd(), env: { ...process.env, ...environment } },
+  );
+  let stderr = "";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  const code = await new Promise<number | null>((resolve) => {
+    child.on("close", resolve);
+  });
+  assert.equal(code, 1);
+  assert.equal(stderr, "execution scheduler: lost authority\n");
+});
+
 test("an incomplete environment stops the command before it reaches anything", async () => {
   const named = Object.fromEntries(
     Object.entries(environment).filter(

@@ -86,6 +86,37 @@ test("a failed quantum withdraws readiness and fails liveness", async () => {
   await runtime.stop();
 });
 
+test("a settlement carries the failure that ended the loop", async () => {
+  const runtime = serviceRuntime(
+    { run: () => Promise.reject(new Error("lost authority")) },
+    pacing,
+    [],
+    runtimeConfig,
+  );
+
+  await runtime.start();
+  assert.deepEqual(await runtime.settled(), {
+    live: false,
+    ready: false,
+    failure: "lost authority",
+  });
+  await runtime.stop();
+});
+
+test("an orderly stop settles the run without a failure", async () => {
+  const runtime = serviceRuntime(
+    { run: () => Promise.resolve() },
+    pacing,
+    [],
+    runtimeConfig,
+  );
+
+  await runtime.start();
+  const settled = runtime.settled();
+  await runtime.stop();
+  assert.deepEqual(await settled, { live: true, ready: false });
+});
+
 test("configuration refuses an unbounded busy loop", () => {
   assert.throws(
     () =>
